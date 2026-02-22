@@ -1,0 +1,7 @@
+.piece-projection {
+	opacity: 0.5;
+}
+
+.piece-projection:HOVER {
+	opacity: 1;
+}

@@ -1,0 +1,92 @@
+.play-account-header {
+	display: none;
+}
+
+.play-account-game, .play-account-game a {
+	color: #5133ab;
+}
+
+.play-account-game {
+	position: relative;
+	display: inline-block;
+	padding: 10px;
+	width: 100%;
+	text-align: right;
+}
+
+.play-account-game:HOVER {
+	background-color: #eee;
+}
+
+.play-account-game-open {
+	background-color: #eee;
+}
+
+.play-account-games:HOVER 
+.play-account-game-open {
+	background-color: white;
+}
+
+.play-account-games:HOVER 
+.play-account-game-open:HOVER {
+	background-color: #eee;
+}
+
+.play-account-game-name, 
+.play-account-game-versus {
+	display: block;
+}
+
+.play-account-game-versus {
+	font-size: 0.7em;
+}
+
+.play-account-game-leave {
+	position: absolute;
+	top: 30%;
+	left: 100%;
+	opacity: 0;
+	transition: opacity 500ms;
+}
+
+.play-account-game:HOVER .play-account-game-leave {
+	opacity: 0.25;
+}
+
+.play-account-game:HOVER .play-account-game-leave:HOVER {
+	opacity: 0.5;
+}
+
+/* Shift versus information in on hover.
+
+.play-account-game-versus {
+	height: 0;
+	opacity: 0;
+	transition: opacity 500ms;
+}
+
+.play-account-game:HOVER
+.play-account-game-versus {
+	height: 1em;
+	opacity: 1;
+}
+
+.play-account-game-open 
+.play-account-game-versus {
+	height: 1em;
+	opacity: 1;
+}
+
+.play-account-games:HOVER 
+.play-account-game-open 
+.play-account-game-versus {
+	height: 0;
+	opacity: 0;
+}
+
+.play-account-games:HOVER 
+.play-account-game-open:HOVER 
+.play-account-game-versus {
+	height: 1em;
+	opacity: 1;
+} */

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE urlrewrite PUBLIC "-//tuckey.org//DTD UrlRewrite 4.0//EN"
+        "http://www.tuckey.org/res/dtds/urlrewrite4.0.dtd">
+<urlrewrite>
+	<rule>
+        <from>^/play/([0-9]+)$</from>
+        <to>/play?game=$1</to>
+    </rule>
+    <outbound-rule>
+        <from>^/play\?game=([0-9]+)$</from>
+        <to>/play/$1</to>
+    </outbound-rule>
+	<rule>
+        <from>^/play/new$</from>
+        <to>/play?start=true</to>
+    </rule>
+    <outbound-rule>
+        <from>^/play\?start=true$</from>
+        <to>/play/new</to>
+    </outbound-rule>
+</urlrewrite>

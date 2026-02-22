@@ -1,0 +1,68 @@
+.player {
+	stroke-width: 2px;
+}
+
+#play-options-player-n, #play-options-player-n-settings {
+	display: none;
+}
+
+.play-options-player-header {
+	display: table;
+}
+
+.play-options-player-canvas {
+}
+
+.play-options-player-title {
+	display: table-cell;
+	vertical-align: top;
+}
+
+.play-options-player-name {
+	display: inline-block;
+	line-height: 0.95em;
+	padding: 8px;
+	border: thin solid white;
+}
+
+.play-options-player-local .play-options-player-name:HOVER {
+	border: thin dotted grey;
+}
+
+.play-options-player-local .play-options-player-name:FOCUS {
+	border: thin solid grey;
+}
+
+.play-options-player-settings {
+	height: 0;
+	opacity: 0;
+	transition: height 2s, opacity 1s;
+}
+
+.play-options-player-local:HOVER .play-options-player-settings {
+	height: 100px;
+	opacity: 1;
+	transition: height 1s, opacity 2s;
+}
+
+.play-options-player-setting {
+	margin-bottom: 1em;
+}
+
+#play-options-actions {
+	margin-top: 10em;
+}
+
+.play-options-action {
+	padding: 10px;
+	margin-bottom: 10px;
+	text-align: center;
+	font-size: 1.2em;
+	color: white;
+	opacity: 0.75;
+	transition: opacity 500ms;
+}
+
+.play-options-action:HOVER {
+	opacity: 1;
+}

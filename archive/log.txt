@@ -1,0 +1,19 @@
+righelt - log
+
+bug: pushing a piece that has no retreat does not work properly
+
+bug: when player quits game, show 'waiting for player' immedidately at other end
+
+refactor: move common functions of Player and Viewer into a superclass
+
+bug: hinting does not work very well for none, all
+	none: moves are not previewed
+	all: illegal moves are allowed
+	long fix: ...
+	short fix: force display.rushing == 'selected' (complete)
+	
+feature: undo, go back to selected move
+
+bug: pushing shift piece gets deleted if in captured zone
+	long fix: automatic push shift
+	short fix: no deletes until end of pushing shift (complete)

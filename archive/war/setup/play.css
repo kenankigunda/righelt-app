@@ -1,0 +1,65 @@
+@CHARSET "UTF-8";
+
+html, body {
+	margin: 0;
+	padding: 0;
+	font-family: "Segoe UI", sans-serif;
+}
+
+a {
+	text-decoration: none;
+	color: #8c0095;
+}
+
+#header {
+	height: 50px;
+	background: #660099;
+	margin-bottom: 20px;
+	text-align: center;
+}
+
+#header .header-title {
+	color: white;
+	font-size: 2em;
+}
+
+#info {
+	padding: 25px;
+	display: none;
+}
+
+#play-load {
+	opacity: 0;
+	transition: opacity 500ms;
+}
+
+#play-account {
+	float: left;
+	width: 15%;
+}
+
+#play-area {
+	float: left;
+	width: 35%;
+	margin-left: 10%;
+}
+
+#play-messages {
+	font-size: 0.7em;
+}
+
+#play-options {
+	float: left;
+	margin-left: 5%;
+	font-size: 0.7em;
+}
+
+#play-log {
+	float: left;
+	margin-left: 5%;
+	font-size: 0.7em;
+}
+
+.previewing {
+	opacity: 0.5;
+}
