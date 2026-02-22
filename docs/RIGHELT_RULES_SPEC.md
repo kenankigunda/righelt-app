@@ -45,7 +45,7 @@ On a normal turn, the active player may do exactly one of:
 - one legal piece action (`Move`, `Project`, `Rush`, or `Push`)
 
 Some actions open a temporary continuation phase:
-- `Push` opens a push sequence (with `Follow` and forced `Retreat` behavior).
+- `Push` opens a push sequence (with mandatory `Follow` to preserve push-group connectivity and forced `Retreat` behavior).
 - `Rush` can chain during a rush continuation sequence as allowed by movement legality.
 
 A turn ends when no continuation is active and control passes to opponent.
@@ -94,14 +94,16 @@ A turn ends when no continuation is active and control passes to opponent.
   - target becomes `pushed`,
   - attacker moves into target square,
   - follow-point is set to attacker’s previous square,
+  - acting player becomes obligated to perform `Follow` steps as needed so the pushing group remains connected,
   - retreat resolution for pushed piece becomes required.
 
 ## 5.6 Follow (during push continuation only)
 
 - Only legal while acting player is in push continuation.
+- Follow is mandatory (not optional) during push continuation whenever needed to keep the pushing group connected.
 - A friendly piece that has not already shifted this continuation may move into current follow-point.
 - After follow move, follow-point updates to that piece’s previous square.
-- Follow may repeat while legal.
+- Follow repeats until the connectivity obligation is satisfied and no additional mandatory follow exists.
 
 ## 5.7 Retreat (forced for pushed piece)
 
@@ -171,4 +173,3 @@ No other win condition exists in v1 spec.
 
 - Networking protocol, spectators, presence indicators, and UI hint rendering are not game rules.
 - Undo/time controls/ranked rulesets are outside v1.
-
