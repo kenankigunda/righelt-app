@@ -121,9 +121,9 @@ Righelt uses two independent systems: `Supply` and `Command`.
 - Pathfinding uses board occupancy/edge-block constraints as defined by implementation; this spec requires deterministic reachability behavior.
 - **Commander is NOT auto-supplied.**  
   Commander must satisfy the same supply path rule as all pieces.
-- If a piece (including Commander) is unsupplied after resolution, it is inactive.
+- If a non-Commander piece is unsupplied after resolution, it is inactive.
 - Non-Commander unsupplied pieces may be removed by rules engine during state resolution (matching legacy behavior).
-- Commander is never auto-removed by unsupply; it remains on board but inactive.
+- If a Commander is unsupplied after resolution stability, end-of-game evaluation applies immediately per Section 8.
 
 ## 6.2 Command
 
@@ -149,7 +149,7 @@ After any atomic action step, engine must resolve in this order:
 3. Recompute command propagation from each Commander.
 4. Recompute legal move sets for active side/continuation context.
 5. Apply forced retreat/removal consequences for currently pushed pieces, if applicable.
-6. Evaluate terminal condition.
+6. Evaluate end-of-game condition.
 
 If any step causes board changes (e.g., forced removals), rerun resolution until stable.
 
@@ -167,7 +167,7 @@ No other win condition exists in v1 spec.
 
 - Rules evaluation must be deterministic from current state and chosen action.
 - No hidden randomness.
-- Replay of recorded action sequence must produce identical terminal result.
+- Replay of recorded action sequence must produce identical end result.
 
 ## 10. Out of Scope
 
