@@ -4,6 +4,15 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - "apps/web/**"
+      - "packages/api-handler/**"
+      - "packages/shared-types/**"
+      - "db/migrations/**"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.json"
+      - "tsconfig.base.json"
 
 concurrency:
   group: deploy-main
