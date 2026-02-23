@@ -34,26 +34,26 @@ jobs:
       - name: Apply D1 migrations (dev db)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           pnpm dlx wrangler d1 migrations apply righelt-db-dev --config apps/web/wrangler.toml --remote
 
       - name: Deploy Worker (optional)
-        if: ${{ secrets.DEPLOY_STANDALONE_WORKER == 'true' }}
+        if: ${{ vars.DEPLOY_STANDALONE_WORKER == 'true' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           pnpm dlx wrangler deploy --config apps/worker/wrangler.toml
 
       - name: Deploy Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_PAGES_PROJECT: ${{ secrets.CLOUDFLARE_PAGES_PROJECT }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
         run: |
           if [ -z "$CLOUDFLARE_PAGES_PROJECT" ]; then
-            echo "CLOUDFLARE_PAGES_PROJECT secret is required."
+            echo "CLOUDFLARE_PAGES_PROJECT variable is required."
             exit 1
           fi
           pnpm dlx wrangler pages deploy apps/web --config apps/web/wrangler.toml --project-name "$CLOUDFLARE_PAGES_PROJECT"

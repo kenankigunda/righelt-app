@@ -1,9 +1,8 @@
-name = "righelt-web"
+name = "righelt"
 compatibility_date = "2026-02-23"
 pages_build_output_dir = "."
 
 [[d1_databases]]
 binding = "DB"
 database_name = "righelt-db-dev"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
-
+database_id = "22435cc4-6655-4bdf-a05d-d100cd8e6cc9"

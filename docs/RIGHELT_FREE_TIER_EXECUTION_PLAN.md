@@ -5,6 +5,48 @@ Status: Step-by-step implementation plan for standing up the free-tier architect
 Milestone success criterion:
 - The deployed production app provides one button that triggers a backend action and returns a response visible in the UI.
 
+## 0. Required IDs, Tokens, and URLs (and Where to Set Them)
+
+1. Cloudflare account ID:
+   - Get from Cloudflare dashboard (`Workers & Pages` overview).
+   - Set in GitHub Actions variable: `CLOUDFLARE_ACCOUNT_ID`.
+   - Also set locally as env var when using Wrangler manually:
+     - `CLOUDFLARE_ACCOUNT_ID=<your_account_id>`
+
+2. Cloudflare API token (with Workers/Pages/D1 deployment permissions):
+   - Get from Cloudflare `My Profile` > `API Tokens`.
+   - Set in GitHub secret: `CLOUDFLARE_API_TOKEN`.
+   - Also set locally as env var for manual deploy/migration commands:
+     - `CLOUDFLARE_API_TOKEN=<your_api_token>`
+
+3. D1 database name:
+   - Use `righelt-db-dev` for milestone 1.
+   - Apply to both wrangler configs via one command:
+     - `pnpm cf:set-db -- --name righelt-db-dev --id <your_d1_database_id>`
+
+4. D1 database ID (UUID):
+   - Get from Cloudflare D1 database details page.
+   - Apply with same command above (updates both files):
+     - `apps/web/wrangler.toml`
+     - `apps/worker/wrangler.toml`
+
+5. Cloudflare Pages project name:
+   - Use: `righelt`.
+   - Set in GitHub Actions variable: `CLOUDFLARE_PAGES_PROJECT`.
+
+6. Optional standalone Worker deploy toggle:
+   - If you want GitHub Actions to deploy `apps/worker` too, set:
+   - GitHub Actions variable: `DEPLOY_STANDALONE_WORKER=true`.
+
+7. Production app URL (Pages):
+   - Get from Pages deploy output (`https://<project>.pages.dev`).
+   - No code config required for API calls because frontend uses same-origin `/api/*`.
+   - Use this URL for verification and milestone testing.
+
+8. Optional standalone Worker URL:
+   - Get from `wrangler deploy` output.
+   - No code config required for this milestone setup.
+
 ## 1. Prepare Local Tooling
 
 1. Install Node.js 20+, `pnpm`, and `wrangler`.
@@ -25,7 +67,7 @@ Milestone success criterion:
 
 1. Create a Cloudflare account.
 2. Create one D1 database for development (example: `righelt-db-dev`).
-3. Create one Pages project (example: `righelt-web`).
+3. Create one Pages project named `righelt` (target URL: `righelt.pages.dev`).
 4. (Optional for milestone) Create one standalone Worker service (example: `righelt-api`).
 5. Use environment-qualified naming for future databases:
    - `righelt-db-dev`
@@ -101,13 +143,15 @@ Milestone success criterion:
    - deploy Pages frontend (with Functions)
    - deploy standalone Worker only if needed
 
-## 8. Configure GitHub Repository Secrets
+## 8. Configure GitHub Actions Secrets and Variables
 
-Set the following secrets:
+Set the following secret:
 1. `CLOUDFLARE_API_TOKEN`
-2. `CLOUDFLARE_ACCOUNT_ID`
-3. `CLOUDFLARE_PAGES_PROJECT`
-4. (Optional) `DEPLOY_STANDALONE_WORKER=true` if you want workflow to also deploy `apps/worker`.
+
+Set the following variables:
+1. `CLOUDFLARE_ACCOUNT_ID`
+2. `CLOUDFLARE_PAGES_PROJECT`
+3. (Optional) `DEPLOY_STANDALONE_WORKER=true` if you want workflow to also deploy `apps/worker`.
 
 ## 9. Deploy to Production
 
