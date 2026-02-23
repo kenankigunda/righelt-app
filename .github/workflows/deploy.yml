@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -28,16 +32,38 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
 
-      - name: Install Wrangler
-        run: pnpm dlx wrangler --version
+      - name: Preflight configuration check
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+          CLOUDFLARE_D1_DB_NAME: ${{ vars.CLOUDFLARE_D1_DB_NAME }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "Missing required secret: CLOUDFLARE_API_TOKEN"
+            exit 1
+          fi
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "Missing required variable: CLOUDFLARE_ACCOUNT_ID"
+            exit 1
+          fi
+          if [ -z "$CLOUDFLARE_PAGES_PROJECT" ]; then
+            echo "Missing required variable: CLOUDFLARE_PAGES_PROJECT"
+            exit 1
+          fi
+          echo "Using D1 DB name: ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev}"
+
+      - name: Wrangler version
+        run: pnpm exec wrangler --version
 
       - name: Apply D1 migrations (dev db)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_D1_DB_NAME: ${{ vars.CLOUDFLARE_D1_DB_NAME }}
         run: |
           cd apps/web
-          pnpm dlx wrangler d1 migrations apply righelt-db-dev --remote
+          pnpm exec wrangler d1 migrations apply "${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev}" --remote
 
       - name: Deploy Worker (optional)
         if: ${{ vars.DEPLOY_STANDALONE_WORKER == 'true' }}
@@ -45,7 +71,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          pnpm dlx wrangler deploy --config apps/worker/wrangler.toml
+          pnpm exec wrangler deploy --config apps/worker/wrangler.toml
 
       - name: Deploy Pages
         env:
@@ -58,4 +84,4 @@ jobs:
             exit 1
           fi
           cd apps/web
-          pnpm dlx wrangler pages deploy . --project-name "$CLOUDFLARE_PAGES_PROJECT"
+          pnpm exec wrangler pages deploy . --project-name "$CLOUDFLARE_PAGES_PROJECT"

@@ -152,7 +152,11 @@ Set the following secret:
 Set the following variables:
 1. `CLOUDFLARE_ACCOUNT_ID`
 2. `CLOUDFLARE_PAGES_PROJECT`
-3. (Optional) `DEPLOY_STANDALONE_WORKER=true` if you want workflow to also deploy `apps/worker`.
+3. (Optional) `CLOUDFLARE_D1_DB_NAME` (default fallback is `righelt-db-dev`).
+4. (Optional) `DEPLOY_STANDALONE_WORKER=true` if you want workflow to also deploy `apps/worker`.
+
+Workflow behavior note:
+1. Deploy workflow is serialized (`concurrency` enabled) to avoid overlapping deploy runs on rapid consecutive pushes.
 
 ## 9. Deploy to Production
 
