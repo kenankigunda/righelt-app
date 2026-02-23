@@ -46,11 +46,15 @@ When a recipient opens an invite link:
 2. Recipient sees `Join as player` and `Join as viewer` options.
 3. After selecting one option:
    - Existing participants are notified that either a player joined or a viewer joined.
+   - Default policy: joining as `Player` requires opposite-player approval unless the join is from a player-shared invite link.
 4. If recipient joins as `Viewer`:
    - They can view board and updates but cannot take game actions.
+   - They can share the invite link with additional participants.
    - They continue seeing `Join as player` while fewer than 2 player seats are filled.
    - Once both player seats are filled, `Join as player` is hidden for viewers.
 5. If recipient joins as `Player`:
+   - If the invite link was shared by a `Player`, recipient may join an eligible player seat without additional approval.
+   - If the invite link was shared by a `Viewer`, player-seat assignment requires approval from the opposite player before join completes.
    - They occupy an available player seat.
    - UI prompts the side to move to act.
    - UI prompts the non-active player to wait.
@@ -93,10 +97,11 @@ Each listed game must display:
 List behavior:
 - Selecting a game from this list opens that game as `Viewer`.
 - Opening from list alone must not auto-assign `Player 2` (or any player seat).
+- When a player seat is eligible, users entering from the home page list must still be shown `Join as player` and may request that seat.
 - A viewer may request to take an eligible player seat only when:
   - Seat is empty, or
   - Existing seat holder has been inactive for more than 5 minutes.
-- Such a takeover request must be approved by the opposite active player before assignment.
+- Such a takeover request must be approved by the opposite player before assignment.
 
 ## 9. Home Page Preview Board (Flow 7)
 
@@ -130,6 +135,9 @@ Tutorial restart:
 - `Viewer`:
   - Cannot make game moves.
   - Can view live board, history, and presence.
+  - Can share invite links.
+  - Invitees from viewer-shared links need opposite-player approval to join as `Player`.
+  - Users entering from the home page list need opposite-player approval to join as `Player`.
   - Can request/join as player only under Section 4 or Section 8 constraints.
 
 ## 12. Playground Mode
