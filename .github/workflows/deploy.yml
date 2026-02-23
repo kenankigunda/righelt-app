@@ -62,8 +62,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_D1_DB_NAME: ${{ vars.CLOUDFLARE_D1_DB_NAME }}
         run: |
-          cd apps/web
-          pnpm exec wrangler d1 migrations apply "${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev}" --config wrangler.toml --remote
+          pnpm exec wrangler d1 migrations apply "${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev}" --config apps/web/wrangler.toml --remote
 
       - name: Deploy Worker (optional)
         if: ${{ vars.DEPLOY_STANDALONE_WORKER == 'true' }}
