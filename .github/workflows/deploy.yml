@@ -36,7 +36,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          pnpm dlx wrangler d1 migrations apply righelt-db-dev --config apps/web/wrangler.toml --remote
+          cd apps/web
+          pnpm dlx wrangler d1 migrations apply righelt-db-dev --remote
 
       - name: Deploy Worker (optional)
         if: ${{ vars.DEPLOY_STANDALONE_WORKER == 'true' }}
@@ -56,4 +57,5 @@ jobs:
             echo "CLOUDFLARE_PAGES_PROJECT variable is required."
             exit 1
           fi
-          pnpm dlx wrangler pages deploy apps/web --config apps/web/wrangler.toml --project-name "$CLOUDFLARE_PAGES_PROJECT"
+          cd apps/web
+          pnpm dlx wrangler pages deploy . --project-name "$CLOUDFLARE_PAGES_PROJECT"
