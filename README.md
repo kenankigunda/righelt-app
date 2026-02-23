@@ -6,6 +6,7 @@ This repository is the foundation for the Righelt web app.
 
 - `docs/`
   - `RIGHELT_RULES_SPEC.md` (formal source-of-truth game specification)
+  - `RIGHELT_WEB_APP_SPEC.md` (formal source-of-truth web app behavior specification)
   - `RIGHELT_ENGINE_TEST_MATRIX.md` (engine acceptance scenarios)
   - `RIGHELT_PLAYER_RULES.md` (player-facing rules guide)
 - `archive/`
