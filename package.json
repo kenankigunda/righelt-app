@@ -8,7 +8,7 @@
     "dev:web": "cd apps/web && pnpm exec wrangler pages dev . --port 8788",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "cf:set-db": "node scripts/set-d1-binding.mjs",
-    "d1:migrate:dev": "cd apps/web && pnpm exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev}",
+    "d1:migrate:dev": "cd apps/web && pnpm exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml",
     "deploy:worker": "pnpm exec wrangler deploy --config apps/worker/wrangler.toml",
     "deploy:web": "cd apps/web && pnpm exec wrangler pages deploy . --project-name ${CLOUDFLARE_PAGES_PROJECT:-righelt}",
     "deploy:prod": "pnpm deploy:worker && pnpm deploy:web"

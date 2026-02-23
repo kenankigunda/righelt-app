@@ -120,7 +120,7 @@ Milestone success criterion:
 1. Apply D1 migration locally:
    ```bash
    cd apps/web
-   wrangler d1 migrations apply righelt-db-dev --local
+   wrangler d1 migrations apply righelt-db-dev --config wrangler.toml --local
    ```
 2. Run Pages locally with Functions:
    ```bash
