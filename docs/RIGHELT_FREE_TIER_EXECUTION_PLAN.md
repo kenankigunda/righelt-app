@@ -179,3 +179,21 @@ Pass when all are true:
 4. Flow works without local services.
 
 Fail if any of the above conditions are not met.
+
+## FUTURE WORK
+
+Multi-environment deployment setup:
+1. Add separate GitHub Actions environments (`Dev`, `Staging`, `Prod`) and bind deploy jobs to them.
+2. Store environment-specific configuration in each environment's variables/secrets.
+3. Use different Cloudflare resources per environment to prevent cross-environment data overlap.
+
+Expected environment-specific changes:
+1. `CLOUDFLARE_PAGES_PROJECT` (example: `righelt-dev`, `righelt-staging`, `righelt`).
+2. D1 database target (`righelt-db-dev`, `righelt-db-staging`, `righelt-db-prod`) and corresponding `database_id`.
+3. Optional standalone worker name/route per environment.
+4. Deployment promotion policy (auto deploy for dev, gated/manual approval for prod).
+5. Operational settings such as alert thresholds and feature flags.
+
+Cloudflare API token guidance:
+1. Token can be shared at first, but preferred model is one least-privilege token per environment.
+2. Keep tokens in environment secrets, not repository variables.
