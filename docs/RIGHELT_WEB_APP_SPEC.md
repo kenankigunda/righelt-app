@@ -12,6 +12,7 @@ If implementation behavior conflicts with this spec, this spec wins.
   - `Player 1`
   - `Player 2`
   - `Viewer`
+- `Playground mode`: A single-device mode where one device controls both `Player 1` and `Player 2` for the same game.
 - `Invite link`: Shareable URL that opens a specific game and enables join decisions.
 - `Live view`: Current board state with all real-time updates applied.
 - `History view`: Snapshot of board state immediately after a selected move index.
@@ -131,7 +132,20 @@ Tutorial restart:
   - Can view live board, history, and presence.
   - Can request/join as player only under Section 4 or Section 8 constraints.
 
-## 12. Notifications and Prompts
+## 12. Playground Mode
+
+- The app must provide a `Playground mode` option when starting a new game.
+- In `Playground mode`, the current device is assigned control of both player seats.
+- The same device may execute legal actions for whichever side is currently to move.
+- Turn order and all game-rule legality remain unchanged; only seat control differs.
+- Invite and viewer behavior remains available:
+  - Invite links may still be shared.
+  - Invite recipients can join as `Viewer`.
+  - Invite recipients cannot claim either player seat unless `Playground mode` is exited.
+- Presence should represent both player seats as controlled by the same device identity while connected.
+- Exiting `Playground mode` converts the game to standard multiplayer seating and re-enables normal player-join rules.
+
+## 13. Notifications and Prompts
 
 - Prompt text/content may vary, but these state prompts are required:
   - Opponent/viewer joined.
@@ -140,7 +154,7 @@ Tutorial restart:
   - Viewing history (not live).
   - Participant connected/disconnected.
 
-## 13. Out of Scope (v1)
+## 14. Out of Scope (v1)
 
 - Matchmaking/ranked queue.
 - Chat/voice.
