@@ -8,5 +8,5 @@ enabled = true
 [[d1_databases]]
 binding = "DB"
 database_name = "righelt-db-dev"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "22435cc4-6655-4bdf-a05d-d100cd8e6cc9"
 
