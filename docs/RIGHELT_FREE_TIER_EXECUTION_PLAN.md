@@ -34,9 +34,13 @@ Milestone success criterion:
 6. Capture:
    - `CLOUDFLARE_ACCOUNT_ID`
    - D1 `database_id`
-7. Replace `REPLACE_WITH_D1_DATABASE_ID` in:
+7. Set D1 binding once for both configs:
+   ```bash
+   pnpm cf:set-db -- --name righelt-db-dev --id <your_d1_database_id>
+   ```
+   This updates both:
    - `apps/web/wrangler.toml`
-   - `apps/worker/wrangler.toml` (if using standalone Worker deployment)
+   - `apps/worker/wrangler.toml`
 
 ## 3. Create Initial Milestone Schema
 

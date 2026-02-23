@@ -7,6 +7,7 @@
     "dev:worker": "wrangler dev --config apps/worker/wrangler.toml --port 8787",
     "dev:web": "wrangler pages dev apps/web --config apps/web/wrangler.toml --port 8788",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "cf:set-db": "node scripts/set-d1-binding.mjs",
     "d1:migrate:dev": "wrangler d1 migrations apply righelt-db-dev --config apps/web/wrangler.toml",
     "deploy:worker": "wrangler deploy --config apps/worker/wrangler.toml",
     "deploy:web": "wrangler pages deploy apps/web --config apps/web/wrangler.toml --project-name ${CLOUDFLARE_PAGES_PROJECT:-righelt-web}",
