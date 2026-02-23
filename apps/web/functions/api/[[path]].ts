@@ -1,21 +1,11 @@
 import { handleApiRequest } from "../../../../packages/api-handler/src";
-
-type Env = {
-  DB: {
-    prepare: (query: string) => {
-      bind: (...args: unknown[]) => {
-        run: () => Promise<{ success: boolean; meta?: { last_row_id?: number } }>;
-      };
-    };
-  };
-};
+import type { ApiEnv } from "../../../../packages/api-handler/src";
 
 type PagesContext = {
   request: Request;
-  env: Env;
+  env: ApiEnv;
 };
 
 export const onRequest = async (context: PagesContext): Promise<Response> => {
   return handleApiRequest(context.request, context.env);
 };
-
