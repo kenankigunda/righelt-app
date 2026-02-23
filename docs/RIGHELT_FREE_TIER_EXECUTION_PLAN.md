@@ -26,7 +26,7 @@ Milestone success criterion:
 1. Create a Cloudflare account.
 2. Create one D1 database for development (example: `righelt-db-dev`).
 3. Create one Pages project (example: `righelt-web`).
-4. Create one Worker service (example: `righelt-api`).
+4. (Optional for milestone) Create one standalone Worker service (example: `righelt-api`).
 5. Use environment-qualified naming for future databases:
    - `righelt-db-dev`
    - `righelt-db-staging`
@@ -34,10 +34,13 @@ Milestone success criterion:
 6. Capture:
    - `CLOUDFLARE_ACCOUNT_ID`
    - D1 `database_id`
+7. Replace `REPLACE_WITH_D1_DATABASE_ID` in:
+   - `apps/web/wrangler.toml`
+   - `apps/worker/wrangler.toml` (if using standalone Worker deployment)
 
 ## 3. Create Initial Milestone Schema
 
-1. Create `db/migrations/0001_milestone.sql`:
+1. Create `db/migrations/0001_initial.sql`:
    ```sql
    CREATE TABLE IF NOT EXISTS milestone_actions (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,18 +49,17 @@ Milestone success criterion:
    );
    ```
 
-## 4. Implement Minimal Backend Worker
+## 4. Implement Minimal Backend on Same Origin
 
-1. Add `apps/worker/wrangler.toml` with:
-   - worker name
-   - account id
-   - `main = "src/index.ts"`
-   - D1 binding (e.g., `DB`)
-2. Implement `apps/worker/src/index.ts` with:
+1. Implement shared API handler logic for:
    - `GET /api/health` returning `{ "ok": true }`
    - `POST /api/test-action`:
      - insert one row into `milestone_actions`
      - return `{ "ok": true, "actionId": ..., "createdAt": ... }`
+2. Wire same-origin Pages Functions route:
+   - `apps/web/functions/api/[[path]].ts`
+   - Binds D1 as `DB` via `apps/web/wrangler.toml`
+3. (Optional) Keep `apps/worker/src/index.ts` for standalone Worker deployment/testing.
 
 ## 5. Implement Minimal Frontend (One Button)
 
@@ -65,16 +67,23 @@ Milestone success criterion:
    - a button labeled `Run Test Action`
    - click handler calling `POST /api/test-action`
    - response renderer showing returned JSON
-2. Configure API routing/proxy so `/api/*` reaches Worker in dev and prod.
+2. Call same-origin `/api/*` endpoints directly (no hardcoded Worker URL config file).
 
 ## 6. Validate Locally Before Deployment
 
 1. Apply D1 migration locally:
    ```bash
-   wrangler d1 migrations apply righelt-db-dev --local --config apps/worker/wrangler.toml
+   wrangler d1 migrations apply righelt-db-dev --local --config apps/web/wrangler.toml
    ```
-2. Run web and worker locally.
-3. Click button and verify JSON includes a non-null `actionId`.
+2. Run Pages locally with Functions:
+   ```bash
+   pnpm dev:web
+   ```
+3. (Optional) Run standalone worker locally:
+   ```bash
+   pnpm dev:worker
+   ```
+4. Click button and verify JSON includes a non-null `actionId`.
 
 ## 7. Add GitHub Actions CI/CD
 
@@ -85,22 +94,23 @@ Milestone success criterion:
 2. Create `.github/workflows/deploy.yml`:
    - trigger on push to `main`
    - apply D1 migrations
-   - deploy Worker
-   - deploy Pages frontend
+   - deploy Pages frontend (with Functions)
+   - deploy standalone Worker only if needed
 
 ## 8. Configure GitHub Repository Secrets
 
 Set the following secrets:
 1. `CLOUDFLARE_API_TOKEN`
 2. `CLOUDFLARE_ACCOUNT_ID`
-3. `CLOUDFLARE_D1_DATABASE_ID`
-4. `CLOUDFLARE_PROJECT_NAME` (if required by deploy workflow)
+3. `CLOUDFLARE_PAGES_PROJECT`
+4. (Optional) `DEPLOY_STANDALONE_WORKER=true` if you want workflow to also deploy `apps/worker`.
 
 ## 9. Deploy to Production
 
 1. Commit and push the implementation.
 2. Wait for `deploy.yml` workflow to succeed.
 3. Open the production Pages URL.
+4. Verify `/api/health` on same domain returns `{ "ok": true }`.
 
 ## 10. End-to-End Milestone Test
 
