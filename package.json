@@ -4,14 +4,12 @@
   "version": "0.1.0",
   "description": "Righelt web app starter scaffold (Cloudflare free-tier).",
   "scripts": {
-    "dev:worker": "pnpm exec wrangler dev --config apps/worker/wrangler.toml --port 8787",
     "dev:web": "cd apps/web && pnpm exec wrangler pages dev . --port 8788",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "cf:set-db": "node scripts/set-d1-binding.mjs",
     "d1:migrate:dev": "pnpm exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config apps/web/wrangler.toml",
-    "deploy:worker": "pnpm exec wrangler deploy --config apps/worker/wrangler.toml",
     "deploy:web": "cd apps/web && pnpm exec wrangler pages deploy . --project-name ${CLOUDFLARE_PAGES_PROJECT:-righelt}",
-    "deploy:prod": "pnpm deploy:worker && pnpm deploy:web"
+    "deploy:prod": "pnpm deploy:web"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260215.0",

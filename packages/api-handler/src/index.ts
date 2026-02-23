@@ -41,7 +41,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
   const url = new URL(request.url);
 
   if (request.method === "GET" && url.pathname === "/api/health") {
-    return json({ ok: true, service: "righelt-api" });
+    return json({ ok: true, service: "righelt" });
   }
 
   if (request.method === "POST" && url.pathname === "/api/test-action") {
@@ -84,4 +84,3 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
 
   return json({ ok: false, error: "not_found" }, 404);
 };
-

@@ -39,10 +39,11 @@ CI/CD:
 
 Components:
 1. `apps/web`: frontend (home, game board, history sidebar, tutorial, playground controls).
-2. `apps/worker`: API routes + Durable Object classes.
-3. `packages/game-engine`: deterministic game engine shared by server runtime and tests.
-4. `packages/shared-types`: command/event schemas and shared DTOs.
-5. `db/migrations`: D1 SQL migrations.
+2. `apps/web/functions`: same-origin API routes (Pages Functions).
+3. `packages/api-handler`: shared HTTP API handler logic.
+4. `packages/game-engine`: deterministic game engine shared by server runtime and tests.
+5. `packages/shared-types`: command/event schemas and shared DTOs.
+6. `db/migrations`: D1 SQL migrations.
 
 Runtime flow:
 1. Client sends HTTP command (`/api/games/:id/commands`) or opens game WebSocket.
@@ -141,11 +142,11 @@ Required indices/projections:
 
 Recommended structure:
 - `apps/web`
-- `apps/worker`
+- `apps/web/functions`
+- `packages/api-handler`
 - `packages/game-engine`
 - `packages/shared-types`
 - `db/migrations`
-- `ops/wrangler.toml`
 - `.github/workflows/ci.yml`
 - `.github/workflows/deploy.yml`
 
@@ -153,7 +154,6 @@ CLI-first commands (example):
 - `pnpm test`
 - `pnpm test:engine`
 - `pnpm dev:web`
-- `pnpm dev:worker`
 - `pnpm deploy:staging`
 - `pnpm deploy:prod`
 
@@ -166,9 +166,9 @@ CLI-first commands (example):
 4. Engine acceptance matrix tests.
 
 `deploy.yml` (main/tag):
-1. Build frontend and worker artifacts.
+1. Build frontend artifacts.
 2. Apply D1 migrations.
-3. Deploy Worker/Pages via Wrangler.
+3. Deploy Pages (with Functions) via Wrangler.
 4. Run post-deploy health checks.
 
 ## 12. Free-Tier Guardrails

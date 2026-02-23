@@ -21,31 +21,28 @@ Milestone success criterion:
 
 3. D1 database name:
    - Use `righelt-db-dev` for milestone 1.
-   - Apply to both wrangler configs via one command:
+   - Apply to the Pages wrangler config via one command:
      - `pnpm cf:set-db -- --name righelt-db-dev --id <your_d1_database_id>`
 
 4. D1 database ID (UUID):
    - Get from Cloudflare D1 database details page.
-   - Apply with same command above (updates both files):
+   - Apply with same command above (updates):
      - `apps/web/wrangler.toml`
-     - `apps/worker/wrangler.toml`
 
 5. Cloudflare Pages project name:
    - Use: `righelt`.
    - Set in GitHub Actions variable: `CLOUDFLARE_PAGES_PROJECT`.
 
 6. Optional standalone Worker deploy toggle:
-   - If you want GitHub Actions to deploy `apps/worker` too, set:
-   - GitHub Actions variable: `DEPLOY_STANDALONE_WORKER=true`.
+   - Not used in the current milestone deployment flow (Pages-only).
 
 7. Production app URL (Pages):
    - Get from Pages deploy output (`https://<project>.pages.dev`).
    - No code config required for API calls because frontend uses same-origin `/api/*`.
    - Use this URL for verification and milestone testing.
 
-8. Optional standalone Worker URL:
-   - Get from `wrangler deploy` output.
-   - No code config required for this milestone setup.
+8. Standalone Worker URL:
+   - Not required for this milestone setup.
 
 ## 1. Prepare Local Tooling
 
@@ -58,7 +55,6 @@ Milestone success criterion:
 2. From the repository root, initialize required directories.
    ```bash
    mkdir -p apps/web
-   mkdir -p apps/worker/src
    mkdir -p db/migrations
    mkdir -p .github/workflows
    ```
@@ -68,7 +64,7 @@ Milestone success criterion:
 1. Create a Cloudflare account.
 2. Create one D1 database for development (example: `righelt-db-dev`).
 3. Create one Pages project named `righelt` (target URL: `righelt.pages.dev`).
-4. (Optional for milestone) Create one standalone Worker service (example: `righelt-api`).
+4. Do not create/deploy a standalone Worker for milestone 1.
 5. Use environment-qualified naming for future databases:
    - `righelt-db-dev`
    - `righelt-db-staging`
@@ -76,13 +72,12 @@ Milestone success criterion:
 6. Capture:
    - `CLOUDFLARE_ACCOUNT_ID`
    - D1 `database_id`
-7. Set D1 binding once for both configs:
+7. Set D1 binding for the Pages config:
    ```bash
    pnpm cf:set-db -- --name righelt-db-dev --id <your_d1_database_id>
    ```
-   This updates both:
+   This updates:
    - `apps/web/wrangler.toml`
-   - `apps/worker/wrangler.toml`
 
 ## 3. Create Initial Milestone Schema
 
@@ -105,7 +100,6 @@ Milestone success criterion:
 2. Wire same-origin Pages Functions route:
    - `apps/web/functions/api/[[path]].ts`
    - Binds D1 as `DB` via `apps/web/wrangler.toml`
-3. (Optional) Keep `apps/worker/src/index.ts` for standalone Worker deployment/testing.
 
 ## 5. Implement Minimal Frontend (One Button)
 
@@ -125,11 +119,7 @@ Milestone success criterion:
    ```bash
    pnpm dev:web
    ```
-3. (Optional) Run standalone worker locally:
-   ```bash
-   pnpm dev:worker
-   ```
-4. Click button and verify JSON includes a non-null `actionId`.
+3. Click button and verify JSON includes a non-null `actionId`.
 
 ## 7. Add GitHub Actions CI/CD
 
@@ -141,7 +131,6 @@ Milestone success criterion:
    - trigger on push to `main`
    - apply D1 migrations
    - deploy Pages frontend (with Functions)
-   - deploy standalone Worker only if needed
 
 ## 8. Configure GitHub Actions Secrets and Variables
 
@@ -152,7 +141,6 @@ Set the following variables:
 1. `CLOUDFLARE_ACCOUNT_ID`
 2. `CLOUDFLARE_PAGES_PROJECT`
 3. (Optional) `CLOUDFLARE_D1_DB_NAME` (default fallback is `righelt-db-dev`).
-4. (Optional) `DEPLOY_STANDALONE_WORKER=true` if you want workflow to also deploy `apps/worker`.
 
 Workflow behavior note:
 1. Deploy workflow is serialized (`concurrency` enabled) to avoid overlapping deploy runs on rapid consecutive pushes.

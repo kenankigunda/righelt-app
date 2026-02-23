@@ -4,7 +4,6 @@
     "noEmit": true
   },
   "include": [
-    "apps/worker/src/**/*.ts",
     "apps/web/functions/**/*.ts",
     "packages/api-handler/src/**/*.ts",
     "packages/shared-types/src/**/*.ts"

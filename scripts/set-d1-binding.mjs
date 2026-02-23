@@ -23,7 +23,7 @@ if (!dbName || !dbId) {
   process.exit(1);
 }
 
-const targets = ["apps/web/wrangler.toml", "apps/worker/wrangler.toml"];
+const targets = ["apps/web/wrangler.toml"];
 
 for (const file of targets) {
   const current = readFileSync(file, "utf8");
@@ -39,4 +39,3 @@ for (const file of targets) {
   writeFileSync(file, updated, "utf8");
   console.log(`Updated ${file}`);
 }
-

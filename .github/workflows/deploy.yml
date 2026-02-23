@@ -64,14 +64,6 @@ jobs:
         run: |
           pnpm exec wrangler d1 migrations apply "${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev}" --config apps/web/wrangler.toml --remote
 
-      - name: Deploy Worker (optional)
-        if: ${{ vars.DEPLOY_STANDALONE_WORKER == 'true' }}
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          pnpm exec wrangler deploy --config apps/worker/wrangler.toml
-
       - name: Deploy Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
