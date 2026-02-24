@@ -63,6 +63,60 @@ const asAction = (value: unknown): Action | null => {
   return value as Action;
 };
 
+const BOARD_SIZE = 10;
+
+const compareActions = (left: Action, right: Action): number => {
+  if (left.type !== right.type) {
+    return left.type.localeCompare(right.type);
+  }
+  if (!left.to && !right.to) {
+    return 0;
+  }
+  if (!left.to) {
+    return -1;
+  }
+  if (!right.to) {
+    return 1;
+  }
+  if (left.to.row !== right.to.row) {
+    return left.to.row - right.to.row;
+  }
+  return left.to.col - right.to.col;
+};
+
+const enumeratePieceActions = (state: GameState, pieceId: string): Action[] => {
+  const piece = state.pieces.find((candidate) => candidate.id === pieceId);
+  if (!piece) {
+    return [];
+  }
+
+  const candidates: Action[] = [];
+  const withTargets = ["move", "project", "rush", "push", "follow", "retreat"] as const;
+
+  for (const type of withTargets) {
+    for (let row = 0; row < BOARD_SIZE; row += 1) {
+      for (let col = 0; col < BOARD_SIZE; col += 1) {
+        const action: Action = {
+          type,
+          actorId: piece.id,
+          from: {
+            row: piece.position.row,
+            col: piece.position.col,
+          },
+          to: { row, col },
+        };
+
+        const validation = validateAction(state, action);
+        if (validation.ok) {
+          candidates.push(action);
+        }
+      }
+    }
+  }
+
+  return candidates.sort(compareActions);
+};
+
 export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<Response> => {
   const url = new URL(request.url);
 
@@ -87,6 +141,27 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
       ok: true,
       state: resolved,
       legalActions: listLegalActions(resolved),
+    });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/engine/playground/piece-moves") {
+    const body = await parseJsonBody(request);
+    const state = asGameState(body.state);
+    const pieceId = typeof body.pieceId === "string" ? body.pieceId : null;
+
+    if (!state) {
+      return json({ ok: false, error: "invalid_state" }, 400);
+    }
+    if (!pieceId) {
+      return json({ ok: false, error: "invalid_piece_id" }, 400);
+    }
+
+    const resolved = resolveToStability(state, { artifactMode: "full" });
+    return json({
+      ok: true,
+      state: resolved,
+      pieceId,
+      actions: enumeratePieceActions(resolved, pieceId),
     });
   }
 

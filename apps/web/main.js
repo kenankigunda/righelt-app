@@ -24,6 +24,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 let state = null;
 let legalActions = [];
+let selectedPieceMoves = [];
 let selectedPieceId = null;
 let selectedSource = null;
 let selectedTarget = null;
@@ -33,7 +34,6 @@ let currentFixtureId = null;
 let cellByCoordinateKey = new Map();
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
-const sameCoordinate = (a, b) => Boolean(a && b && a.row === b.row && a.col === b.col);
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "unset");
 const pieceMarker = (piece) => `${piece.kind === "commander" ? "C" : "U"}${piece.owner === "P1" ? "1" : "2"}`;
 
@@ -109,28 +109,7 @@ const getGroupInfoForPiece = (piece) => {
   };
 };
 
-const getSelectedPieceActions = () => {
-  const piece = getSelectedPiece();
-  if (!piece) {
-    return [];
-  }
-
-  return legalActions.filter((action) => {
-    if (action.type === "pass") {
-      return false;
-    }
-
-    if (action.actorId) {
-      return action.actorId === piece.id;
-    }
-
-    if (action.from) {
-      return sameCoordinate(action.from, piece.position);
-    }
-
-    return false;
-  });
-};
+const getSelectedPieceActions = () => selectedPieceMoves;
 
 const renderMoveLog = () => {
   moveLogEl.innerHTML = "";
@@ -324,6 +303,7 @@ const renderStatus = () => {
 
   const selectedPiece = getSelectedPiece();
   if (!selectedPiece) {
+    selectedPieceMoves = [];
     selectedPieceEl.textContent = "No piece selected.";
     selectedPieceMovesEl.textContent = "[]";
   } else {
@@ -376,6 +356,30 @@ const reloadLegalActions = async () => {
   renderStatus();
 };
 
+const reloadSelectedPieceMoves = async () => {
+  const selectedPiece = getSelectedPiece();
+  if (!state || !selectedPiece) {
+    selectedPieceMoves = [];
+    renderBoard();
+    renderStatus();
+    return;
+  }
+
+  const response = await fetch("/api/engine/playground/piece-moves", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ state, pieceId: selectedPiece.id }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch selected piece moves: HTTP ${response.status}`);
+  }
+  const body = await response.json();
+  state = body.state ?? state;
+  selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
+  renderBoard();
+  renderStatus();
+};
+
 const loadInitialState = async () => {
   const response = await fetch("/api/engine/playground/state", { cache: "no-store" });
   if (!response.ok) {
@@ -384,6 +388,7 @@ const loadInitialState = async () => {
   const body = await response.json();
   state = body.state;
   legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
+  selectedPieceMoves = [];
   selectedPieceId = null;
   renderBoard();
   renderStatus();
@@ -458,10 +463,18 @@ boardEl.addEventListener("click", (event) => {
   refreshSelectionLabels();
   renderBoard();
   renderStatus();
+  void reloadSelectedPieceMoves().catch((error) => {
+    setActionResult({
+      ok: false,
+      error: "piece_moves_load_failed",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  });
 });
 
 resetSelectionEl.addEventListener("click", () => {
   selectedPieceId = null;
+  selectedPieceMoves = [];
   selectedSource = null;
   selectedTarget = null;
   refreshSelectionLabels();
@@ -491,6 +504,7 @@ submitActionEl.addEventListener("click", async () => {
     if (body.accepted) {
       state = body.state;
       legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
+      selectedPieceMoves = [];
       moveLog.push(`${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`);
       selectedTarget = null;
       refreshSelectionLabels();
@@ -502,6 +516,7 @@ submitActionEl.addEventListener("click", async () => {
     }
 
     state = body.state ?? state;
+    selectedPieceMoves = [];
     setActionResult({
       accepted: false,
       validation: body.validation,
@@ -532,6 +547,7 @@ loadFixtureEl.addEventListener("click", () => {
   }
   state = structuredClone(fixture.initial_state);
   legalActions = [];
+  selectedPieceMoves = [];
   selectedPieceId = null;
   selectedSource = null;
   selectedTarget = null;
@@ -594,6 +610,7 @@ replayFixtureEl.addEventListener("click", async () => {
       observedOutcome === fixture.expected_outcome;
 
     state = workingState;
+    selectedPieceMoves = [];
     selectedPieceId = null;
     selectedSource = null;
     selectedTarget = null;
