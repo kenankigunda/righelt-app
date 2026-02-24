@@ -519,6 +519,103 @@ function applyGroupPhase(state: GameState, mode: ArtifactMode): boolean {
   return false;
 }
 
+function applyContinuationPhase(state: GameState): boolean {
+  if (!state.continuation) {
+    return false;
+  }
+
+  if (state.outcome.status !== "ongoing") {
+    state.continuation = null;
+    return true;
+  }
+
+  const expectedOwner = state.continuation.owner;
+  if (state.sideToMove !== expectedOwner) {
+    state.continuation = null;
+    state.sideToMove = expectedOwner;
+    return true;
+  }
+
+  if (state.continuation.type === "push") {
+    const followPoint = state.continuation.followPoint;
+    if (!followPoint) {
+      state.continuation = null;
+      state.sideToMove = expectedOwner === "P1" ? "P2" : "P1";
+      return true;
+    }
+
+    const occupied = state.pieces.some(
+      (piece) => piece.position.row === followPoint.row && piece.position.col === followPoint.col,
+    );
+    if (occupied) {
+      return false;
+    }
+
+    const hasFriendlyAdjacent = state.pieces.some((piece) => {
+      if (piece.owner !== expectedOwner || piece.pushed || piece.shifted) {
+        return false;
+      }
+      const rowDelta = Math.abs(piece.position.row - followPoint.row);
+      const colDelta = Math.abs(piece.position.col - followPoint.col);
+      return rowDelta + colDelta === 1;
+    });
+
+    if (!hasFriendlyAdjacent) {
+      state.continuation = null;
+      state.sideToMove = expectedOwner === "P1" ? "P2" : "P1";
+      return true;
+    }
+    return false;
+  }
+
+  if (state.continuation.type === "rush") {
+    const ownerPieces = state.pieces.filter((piece) => piece.owner === expectedOwner && piece.supplied && piece.commanded);
+    const occupied = new Set(
+      state.pieces.map((piece) => coordinateKey(piece.position.row, piece.position.col)),
+    );
+
+    const hasRushCandidate = ownerPieces.some((piece) => {
+      for (let rowDelta = -1; rowDelta <= 1; rowDelta += 1) {
+        for (let colDelta = -1; colDelta <= 1; colDelta += 1) {
+          if (rowDelta === 0 && colDelta === 0) {
+            continue;
+          }
+          const targetRow = piece.position.row + rowDelta;
+          const targetCol = piece.position.col + colDelta;
+          if (!isInBounds(state.boardSize, targetRow, targetCol)) {
+            continue;
+          }
+          if (occupied.has(coordinateKey(targetRow, targetCol))) {
+            continue;
+          }
+
+          const enemyAdjacent = state.pieces.some((candidate) => {
+            if (candidate.owner === expectedOwner) {
+              return false;
+            }
+            return (
+              Math.abs(candidate.position.row - targetRow) <= 1 &&
+              Math.abs(candidate.position.col - targetCol) <= 1
+            );
+          });
+          if (enemyAdjacent) {
+            return true;
+          }
+        }
+      }
+      return false;
+    });
+
+    if (!hasRushCandidate) {
+      state.continuation = null;
+      state.sideToMove = expectedOwner === "P1" ? "P2" : "P1";
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function applySupplyPhase(state: GameState, mode: ArtifactMode): boolean {
   const p1Supply = computeSupplyForOwner(state, "P1");
   const p2Supply = computeSupplyForOwner(state, "P2");
@@ -639,6 +736,9 @@ function runResolvePass(state: GameState, mode: ArtifactMode): boolean {
   }
   // Phase 4: legal-set derivation + group composition baseline.
   if (applyGroupPhase(state, mode)) {
+    changed = true;
+  }
+  if (applyContinuationPhase(state)) {
     changed = true;
   }
   // Action-family legality integration lands after Track A merge sync.
