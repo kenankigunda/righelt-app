@@ -37,3 +37,18 @@ test("C-003 side alternation", () => {
 
   assert.equal(afterTwo.sideToMove, state.sideToMove);
 });
+
+test("C-004 pass legal during rush continuation", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      rushedPieceIds: ["U1-1"],
+      chainLength: 1,
+    },
+    pieces: [commander("C1", "P1", 3, 6), commander("C2", "P2", 6, 3)],
+  });
+
+  const result = validateAction(state, { type: "pass" });
+  assert.equal(result.ok, true);
+});

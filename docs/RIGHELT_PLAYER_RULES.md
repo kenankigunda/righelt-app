@@ -70,6 +70,8 @@ A tactical one-step move (including diagonals) that is only legal under the foll
 - Destination must be empty.
 - Orthogonal rushes require enemy contact near the destination.
 - Diagonal rushes require enemy contact in the relevant corner-adjacent lanes.
+- In a rush sequence, each individual piece can rush at most once.
+- After your first rush, extra rushes are optional: you may pass to end the rush sequence and end your turn.
 
 Use Rush for tempo and local repositioning around conflict.
 

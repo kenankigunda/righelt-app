@@ -25,6 +25,7 @@ export type ContinuationContext = {
   owner: PlayerId;
   followPoint?: Coordinate;
   pushedPieceId?: string;
+  rushedPieceIds?: string[];
   chainLength: number;
 };
 

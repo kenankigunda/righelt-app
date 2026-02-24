@@ -46,7 +46,7 @@ On a normal turn, the active player may do exactly one of:
 
 Some actions open a temporary continuation phase:
 - `Push` opens a push sequence (with mandatory `Follow` to preserve push-group connectivity and forced `Retreat` behavior).
-- `Rush` can chain during a rush continuation sequence as allowed by movement legality.
+- `Rush` can chain during a rush continuation sequence as allowed by movement legality, but each piece may rush at most once in that sequence.
 
 A turn ends when no continuation is active and control passes to opponent.
 
@@ -83,6 +83,10 @@ A turn ends when no continuation is active and control passes to opponent.
   - Diagonal rush target is legal if at least one of the two co-adjacent orthogonal squares (from source toward target) contains an enemy piece.
   - A currently pushed piece cannot diagonal-rush.
 - Rush enters rush continuation state; normal turn-end is deferred until continuation is closed.
+- During rush continuation:
+  - Legal actions are `Rush` and `Pass`.
+  - Additional rushes are optional; player may `Pass` to end rush continuation and end turn.
+  - Any single piece may rush at most once in that continuation sequence.
 
 ## 5.5 Push
 

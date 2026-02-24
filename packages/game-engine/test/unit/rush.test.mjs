@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyAction, validateAction } from "../../src/index.ts";
+import { applyAction, listLegalActions, validateAction } from "../../src/index.ts";
 import { commander, makeState, unit } from "../helpers/state-builders.mjs";
 
 test("F-001 orthogonal rush legal when target adjacent to enemy", () => {
@@ -107,4 +107,173 @@ test("F-006 rush destination occupied", () => {
     to: { row: 4, col: 5 },
   });
   assert.equal(result.ok, false);
+});
+
+test("F-007 a piece can only rush once per rush continuation", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      rushedPieceIds: ["U1-1"],
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 3, 6),
+      commander("C2", "P2", 6, 3),
+      unit("U1-1", "P1", 4, 4),
+      unit("U2-1", "P2", 4, 6),
+    ],
+  });
+
+  const result = validateAction(state, {
+    type: "rush",
+    actorId: "U1-1",
+    from: { row: 4, col: 4 },
+    to: { row: 4, col: 5 },
+  });
+  assert.equal(result.ok, false);
+});
+
+test("F-008 rush continuation can be ended by pass", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      rushedPieceIds: ["U1-1"],
+      chainLength: 1,
+    },
+    pieces: [commander("C1", "P1", 3, 6), commander("C2", "P2", 6, 3), unit("U1-1", "P1", 4, 4)],
+  });
+
+  const validation = validateAction(state, { type: "pass" });
+  assert.equal(validation.ok, true);
+
+  const next = applyAction(state, { type: "pass" }).state;
+  assert.equal(next.continuation, null);
+  assert.equal(next.sideToMove, "P2");
+  assert.equal(next.turnIndex, 1);
+});
+
+test("F-009 rush continuation rejects non-rush actions", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      rushedPieceIds: ["U1-1"],
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 3, 6),
+      commander("C2", "P2", 6, 3),
+      unit("U1-1", "P1", 4, 4),
+      unit("U2-1", "P2", 4, 6),
+    ],
+  });
+
+  const result = validateAction(state, {
+    type: "move",
+    actorId: "C1",
+    from: { row: 3, col: 6 },
+    to: { row: 3, col: 5 },
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.code, "CONTINUATION_REQUIRED");
+  }
+});
+
+test("F-010 listLegalActions includes pass and omits already-rushed pieces", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      rushedPieceIds: ["U1-1"],
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 0, 0, { commanded: false }),
+      commander("C2", "P2", 9, 9, { commanded: false }),
+      unit("U1-1", "P1", 4, 4),
+      unit("U1-2", "P1", 5, 5),
+      unit("U2-1", "P2", 5, 7),
+    ],
+  });
+
+  const legal = listLegalActions(state);
+  const passCount = legal.filter((action) => action.type === "pass").length;
+  assert.equal(passCount, 1);
+  assert.equal(
+    legal.some((action) => action.type === "rush" && action.actorId === "U1-1"),
+    false,
+  );
+  assert.equal(
+    legal.some((action) => action.type === "rush" && action.actorId === "U1-2"),
+    true,
+  );
+});
+
+test("F-011 distinct pieces can chain rushes in one continuation", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 0, 0, { commanded: false }),
+      commander("C2", "P2", 9, 9, { commanded: false }),
+      unit("U1-1", "P1", 4, 4),
+      unit("U1-2", "P1", 6, 6),
+      unit("U2-1", "P2", 4, 6),
+      unit("U2-2", "P2", 6, 8),
+    ],
+  });
+
+  const afterFirst = applyAction(state, {
+    type: "rush",
+    actorId: "U1-1",
+    from: { row: 4, col: 4 },
+    to: { row: 4, col: 5 },
+  }).state;
+
+  assert.equal(afterFirst.continuation?.type, "rush");
+  assert.deepEqual(afterFirst.continuation?.rushedPieceIds, ["U1-1"]);
+  assert.equal(afterFirst.continuation?.chainLength, 1);
+
+  const afterSecond = applyAction(afterFirst, {
+    type: "rush",
+    actorId: "U1-2",
+    from: { row: 6, col: 6 },
+    to: { row: 6, col: 7 },
+  }).state;
+
+  assert.equal(afterSecond.continuation?.type, "rush");
+  assert.deepEqual(afterSecond.continuation?.rushedPieceIds, ["U1-1", "U1-2"]);
+  assert.equal(afterSecond.continuation?.chainLength, 2);
+  assert.equal(afterSecond.sideToMove, "P1");
+});
+
+test("F-012 pass ends rush continuation even when more rushes are available", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      rushedPieceIds: ["U1-1"],
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 0, 0, { commanded: false }),
+      commander("C2", "P2", 9, 9, { commanded: false }),
+      unit("U1-1", "P1", 4, 4),
+      unit("U1-2", "P1", 5, 5),
+      unit("U2-1", "P2", 5, 7),
+    ],
+  });
+
+  const legal = listLegalActions(state);
+  assert.equal(
+    legal.some((action) => action.type === "rush" && action.actorId === "U1-2"),
+    true,
+  );
+
+  const next = applyAction(state, { type: "pass" }).state;
+  assert.equal(next.continuation, null);
+  assert.equal(next.sideToMove, "P2");
+  assert.equal(next.turnIndex, 1);
 });

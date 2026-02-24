@@ -142,11 +142,11 @@ function validateContinuation(state: GameState, action: Action): ValidationResul
   }
 
   if (state.continuation.type === "rush") {
-    if (action.type !== "rush") {
+    if (action.type !== "rush" && action.type !== "pass") {
       return {
         ok: false,
         code: "CONTINUATION_REQUIRED",
-        message: "Rush continuation requires additional rush actions",
+        message: "Rush continuation requires rush or pass",
       };
     }
   }
@@ -161,7 +161,7 @@ export function listLegalActions(state: GameState): Action[] {
 
   if (state.continuation) {
     if (state.continuation.type === "rush") {
-      return state.pieces
+      const rushActions = state.pieces
         .filter((piece) => piece.owner === state.sideToMove)
         .flatMap((piece) => {
           const actions: Action[] = [];
@@ -183,6 +183,7 @@ export function listLegalActions(state: GameState): Action[] {
           }
           return actions.filter((candidate) => validateAction(state, candidate).ok);
         });
+      return [...rushActions, { type: "pass" }];
     }
 
     return state.pieces
@@ -267,7 +268,7 @@ export function validateAction(state: GameState, action: Action): ValidationResu
   }
 
   if (action.type === "pass") {
-    if (state.continuation) {
+    if (state.continuation && state.continuation.type !== "rush") {
       return {
         ok: false,
         code: "CONTINUATION_REQUIRED",
@@ -364,6 +365,13 @@ export function validateAction(state: GameState, action: Action): ValidationResu
   }
 
   if (action.type === "rush") {
+    if (state.continuation?.type === "rush" && state.continuation.rushedPieceIds?.includes(actor.id)) {
+      return {
+        ok: false,
+        code: "RULE_VIOLATION",
+        message: "Piece may only rush once per rush sequence",
+      };
+    }
     if (!isActivePiece(actor)) {
       return {
         ok: false,

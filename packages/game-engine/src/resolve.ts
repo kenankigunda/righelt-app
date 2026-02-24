@@ -1,4 +1,5 @@
 import type { ArtifactContractV1, ArtifactMode, GameState, ResolveArtifacts } from "./types";
+import { validateAction } from "./legal";
 
 const MAX_RESOLVE_PASSES = 64;
 const SUPPLY_POINTS = {
@@ -50,6 +51,7 @@ function cloneState(state: GameState): GameState {
       ? {
           ...state.continuation,
           followPoint: state.continuation.followPoint ? { ...state.continuation.followPoint } : undefined,
+          rushedPieceIds: state.continuation.rushedPieceIds ? [...state.continuation.rushedPieceIds] : undefined,
         }
       : null,
     outcome: { ...state.outcome },
@@ -569,42 +571,30 @@ function applyContinuationPhase(state: GameState): boolean {
   }
 
   if (state.continuation.type === "rush") {
-    const ownerPieces = state.pieces.filter((piece) => piece.owner === expectedOwner && piece.supplied && piece.commanded);
-    const occupied = new Set(
-      state.pieces.map((piece) => coordinateKey(piece.position.row, piece.position.col)),
-    );
-
-    const hasRushCandidate = ownerPieces.some((piece) => {
-      for (let rowDelta = -1; rowDelta <= 1; rowDelta += 1) {
-        for (let colDelta = -1; colDelta <= 1; colDelta += 1) {
-          if (rowDelta === 0 && colDelta === 0) {
-            continue;
-          }
-          const targetRow = piece.position.row + rowDelta;
-          const targetCol = piece.position.col + colDelta;
-          if (!isInBounds(state.boardSize, targetRow, targetCol)) {
-            continue;
-          }
-          if (occupied.has(coordinateKey(targetRow, targetCol))) {
-            continue;
-          }
-
-          const enemyAdjacent = state.pieces.some((candidate) => {
-            if (candidate.owner === expectedOwner) {
-              return false;
+    const hasRushCandidate = state.pieces
+      .filter((piece) => piece.owner === expectedOwner)
+      .some((piece) => {
+        for (let rowDelta = -1; rowDelta <= 1; rowDelta += 1) {
+          for (let colDelta = -1; colDelta <= 1; colDelta += 1) {
+            if (rowDelta === 0 && colDelta === 0) {
+              continue;
             }
-            return (
-              Math.abs(candidate.position.row - targetRow) <= 1 &&
-              Math.abs(candidate.position.col - targetCol) <= 1
-            );
-          });
-          if (enemyAdjacent) {
-            return true;
+            const candidate = {
+              type: "rush" as const,
+              actorId: piece.id,
+              from: piece.position,
+              to: {
+                row: piece.position.row + rowDelta,
+                col: piece.position.col + colDelta,
+              },
+            };
+            if (validateAction(state, candidate).ok) {
+              return true;
+            }
           }
         }
-      }
-      return false;
-    });
+        return false;
+      });
 
     if (!hasRushCandidate) {
       state.continuation = null;

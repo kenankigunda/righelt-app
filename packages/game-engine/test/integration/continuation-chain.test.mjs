@@ -88,6 +88,84 @@ test("rush continuation closes and side switches when no rush candidates remain"
   assert.equal(resolved.sideToMove, "P2");
 });
 
+test("rush continuation closes when only previously rushed pieces have legal rushes", () => {
+  const state = baseState();
+  const p1Commander = state.pieces.find((piece) => piece.id === "C1");
+  if (!p1Commander) {
+    throw new Error("expected P1 commander");
+  }
+  p1Commander.position = { row: 0, col: 0 };
+  state.continuation = {
+    type: "rush",
+    owner: "P1",
+    rushedPieceIds: ["U1a"],
+    chainLength: 1,
+  };
+  state.pieces.push({
+    id: "U1a",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 4, col: 4 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U2a",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 4, col: 6 },
+    supplied: true,
+    commanded: true,
+  });
+
+  const resolved = resolveToStability(state, { artifactMode: "minimal" });
+  assert.equal(resolved.continuation, null);
+  assert.equal(resolved.sideToMove, "P2");
+});
+
+test("rush continuation remains active when an unused piece still has a legal rush", () => {
+  const state = baseState();
+  const p1Commander = state.pieces.find((piece) => piece.id === "C1");
+  if (!p1Commander) {
+    throw new Error("expected P1 commander");
+  }
+  p1Commander.position = { row: 0, col: 0 };
+  state.continuation = {
+    type: "rush",
+    owner: "P1",
+    rushedPieceIds: ["U1a"],
+    chainLength: 1,
+  };
+  state.pieces.push({
+    id: "U1a",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 4, col: 4 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U1b",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 0, col: 2 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U2a",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 0, col: 4 },
+    supplied: true,
+    commanded: true,
+  });
+
+  const resolved = resolveToStability(state, { artifactMode: "minimal" });
+  assert.equal(resolved.continuation?.type, "rush");
+  assert.equal(resolved.sideToMove, "P1");
+});
+
 test("terminal outcome clears continuation context", () => {
   const state = baseState();
   state.continuation = {

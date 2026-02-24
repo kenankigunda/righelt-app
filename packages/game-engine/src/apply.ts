@@ -137,9 +137,13 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
       next.continuation = {
         type: "rush",
         owner: actor.owner,
+        rushedPieceIds: [actor.id],
         chainLength: 1,
       };
     } else {
+      const rushedPieceIds = new Set(next.continuation.rushedPieceIds ?? []);
+      rushedPieceIds.add(actor.id);
+      next.continuation.rushedPieceIds = [...rushedPieceIds];
       next.continuation.chainLength += 1;
     }
   } else if (action.type === "push" && actor && action.to) {
