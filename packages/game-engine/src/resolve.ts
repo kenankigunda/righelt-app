@@ -748,11 +748,6 @@ function runResolvePass(state: GameState, mode: ArtifactMode): boolean {
     changed = true;
   }
 
-  // Phase 6: terminal evaluation.
-  if (evaluateTerminalPhase(state)) {
-    changed = true;
-  }
-
   return changed;
 }
 
@@ -770,6 +765,9 @@ export function resolveToStability(
   while (pass < maxPasses) {
     const changed = runResolvePass(state, mode);
     if (!changed) {
+      if (evaluateTerminalPhase(state) && state.continuation) {
+        state.continuation = null;
+      }
       return state;
     }
     pass += 1;
