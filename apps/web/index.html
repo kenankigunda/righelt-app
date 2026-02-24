@@ -16,7 +16,14 @@
       </section>
 
       <section class="grid">
-        <div class="left-column">
+        <div class="log-column">
+          <section class="panel history-panel">
+            <h2>Move Log</h2>
+            <ol id="move-log"></ol>
+          </section>
+        </div>
+
+        <div class="middle-column">
           <section class="panel board-panel">
             <h2>Board</h2>
             <p class="meta">Click a piece to inspect supply/command/group overlays and valid move previews.</p>
@@ -44,11 +51,6 @@
               <button id="replay-fixture" type="button">Replay Fixture</button>
             </div>
             <pre id="fixture-result" aria-live="polite">Fixture runner idle.</pre>
-          </section>
-
-          <section class="panel history-panel">
-            <h2>Move Log</h2>
-            <ol id="move-log"></ol>
           </section>
         </div>
 

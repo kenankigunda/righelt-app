@@ -24,7 +24,7 @@ body {
 }
 
 .layout {
-  width: min(1200px, 96vw);
+  width: min(1500px, 96vw);
   margin: 1.25rem auto 2rem;
   padding: 1rem;
 }
@@ -66,10 +66,11 @@ button {
 .grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: 2.1fr 1fr;
+  grid-template-columns: 0.85fr 2.1fr 1fr;
 }
 
-.left-column,
+.log-column,
+.middle-column,
 .right-column {
   display: grid;
   gap: 1rem;
@@ -361,7 +362,8 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .left-column,
+  .log-column,
+  .middle-column,
   .right-column {
     gap: 0.8rem;
   }
