@@ -181,7 +181,81 @@ Exit criteria:
 1. Matrix scenarios A-P are covered and passing.
 2. Node/browser parity is green for canonical fixtures.
 
-## 6. Minimal UI Harness Plan (Manual Verification Only)
+## 6. Parallel Worktree Execution Model
+
+This milestone can be run in parallel by multiple Codex threads using separate git worktrees.  
+Each worktree owns a bounded slice of files and test IDs, with periodic sync checkpoints.
+
+## 6.1 Minimal Base Work Required Before Parallelization
+
+This is the minimum serial setup required on a base branch before any parallel threads start:
+1. Create package scaffold for `packages/game-engine` and export surface placeholders.
+2. Add shared test infrastructure:
+   - test runner config
+   - `test:engine`, `test:engine:unit`, `test:engine:integration` scripts
+   - fixture schema + loader
+   - deterministic state hash helper
+3. Add canonical shared types used by all tracks (`GameState`, `Action`, `Outcome`, `ContinuationContext`).
+4. Add a matrix mapping manifest file (scenario ID -> owning track/test file) to avoid overlap.
+5. Freeze baseline contracts for engine API signatures listed in Section 4.
+
+Parallelization gate:
+1. Base branch builds.
+2. Empty engine tests run in CI.
+3. Worktree ownership map is committed.
+
+## 6.2 Worktree Execution Steps
+
+Recommended track split:
+1. Worktree A (`codex/engine-core`): state model, serialization, replay skeleton, determinism primitives.
+2. Worktree B (`codex/engine-actions`): legality + atomic apply for `Pass/Move/Project/Rush/Push/Follow/Retreat`.
+3. Worktree C (`codex/engine-resolve`): connectivity/supply/command/groups, stabilization loop, terminal evaluation.
+4. Worktree D (`codex/engine-tests`): matrix fixture corpus, integration scenarios, parity runners, coverage map.
+5. Worktree E (`codex/engine-ui-harness`): minimal manual UI harness wired only through engine API.
+
+Per-worktree execution sequence:
+1. Create worktree from latest integration base.
+2. Pull latest base commits before coding.
+3. Implement only owned scope and owned matrix IDs.
+4. Add/adjust tests only for owned scope plus required contract tests.
+5. Rebase/merge from integration base at each checkpoint (Section 6.3).
+6. Open PR into integration branch (not directly to `main`) with:
+   - changed files
+   - matrix IDs covered
+   - known dependencies on other tracks
+
+Track-specific target mapping:
+1. Worktree A: A, partial P (`P-006`, `P-008` foundations)
+2. Worktree B: C, D, E, F, G, L, `P-007`
+3. Worktree C: B, H, I, J, K, O
+4. Worktree D: M, P (`P-001..P-005`) and full matrix coverage enforcement
+5. Worktree E: manual harness + fixture-loader UX (non-authoritative)
+
+## 6.3 Checkpoints and Merge-Back Steps
+
+Use an integration branch (example: `codex/m2-engine-integration`) to combine parallel work.
+
+Checkpoint cadence:
+1. Checkpoint 1 (after base setup): all worktrees branch from same commit.
+2. Checkpoint 2 (after Phases 1-2 equivalent): merge A + B, run unit legality suite.
+3. Checkpoint 3 (after Phase 3 equivalent): merge C, run full unit + integration suites.
+4. Checkpoint 4 (after Phase 4 equivalent): merge D replay/continuation suites and validate deterministic replay.
+5. Checkpoint 5 (final hardening): merge E harness, run full matrix + parity + manual smoke checklist.
+
+Required checks at each merge checkpoint:
+1. `pnpm typecheck`
+2. `pnpm test:engine`
+3. Matrix manifest diff review (no orphaned IDs, no duplicate ownership)
+4. Determinism verification (repeat run hash equality on fixture subset)
+
+Final merge-back to `main`:
+1. Squash/fixup remaining integration conflicts in `codex/m2-engine-integration`.
+2. Run full CI gate including browser/server parity.
+3. Freeze matrix coverage report (A-P fully mapped and passing).
+4. Merge integration branch into `main`.
+5. Tag milestone completion commit for reproducible engine baseline.
+
+## 7. Minimal UI Harness Plan (Manual Verification Only)
 
 Purpose:
 1. Verify engine behavior interactively without coupling rules to UI code.
@@ -208,7 +282,7 @@ Manual smoke checklist:
 4. Trigger commander unsupply and verify immediate terminal result.
 5. Replay a stored action list and verify final hash/outcome matches tests.
 
-## 7. Test Strategy and Matrix Mapping
+## 8. Test Strategy and Matrix Mapping
 
 1. Unit tests:
    - Focus on local rule boundaries and invalid/edge inputs.
@@ -225,7 +299,7 @@ Required pass condition:
 1. Every matrix ID from `A-001` through `P-008` is linked to at least one automated test case.
 2. No matrix item is validated only by UI/manual checks.
 
-## 8. Risks and Mitigations
+## 9. Risks and Mitigations
 
 1. Risk: Ambiguity in continuation semantics (especially mandatory follow/rush chaining).
    - Mitigation: encode explicit continuation-state invariants and fixture-based edge cases early (Phase 4).
@@ -236,7 +310,7 @@ Required pass condition:
 4. Risk: UI harness accidentally becoming rule authority.
    - Mitigation: UI only consumes engine API; no duplicated legality logic.
 
-## 9. Definition of Done (Milestone 2)
+## 10. Definition of Done (Milestone 2)
 
 Milestone 2 is complete when:
 1. `packages/game-engine` exposes stable deterministic API listed in Section 4.
