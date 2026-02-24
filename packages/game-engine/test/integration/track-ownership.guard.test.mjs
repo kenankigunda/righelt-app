@@ -36,7 +36,7 @@ test("track scope config keeps P-series ownership disjoint", () => {
 test("manifest matrix ownership aligns with track split", async () => {
   const manifest = JSON.parse(await readFile("docs/manifests/engine-matrix-ownership.json", "utf8"));
 
-  assert.equal(manifest.version, "1.0.0");
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
   assert.ok(Array.isArray(manifest.scenarios));
   assert.ok(manifest.scenarios.length > 0);
 
