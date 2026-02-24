@@ -144,6 +144,10 @@ const pickBestActionTypeForTarget = (actionsAtTarget) => {
   return actionsAtTarget[0]?.type ?? null;
 };
 
+const selectPassAction = () => {
+  actionTypeEl.value = "pass";
+};
+
 const renderMoveLog = () => {
   moveLogEl.innerHTML = "";
   if (moveLog.length === 0) {
@@ -582,6 +586,7 @@ boardEl.addEventListener("click", (event) => {
     selectedTarget = null;
   } else if (!selectedSource) {
     selectedSource = clickedCoord;
+    selectPassAction();
   } else {
     selectedTarget = clickedCoord;
 
@@ -591,6 +596,8 @@ boardEl.addEventListener("click", (event) => {
     const nextActionType = pickBestActionTypeForTarget(actionsAtTarget);
     if (nextActionType) {
       actionTypeEl.value = nextActionType;
+    } else {
+      selectPassAction();
     }
   }
 
@@ -604,6 +611,17 @@ boardEl.addEventListener("click", (event) => {
       message: error instanceof Error ? error.message : "Unknown error",
     });
   });
+});
+
+document.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return;
+  }
+  if (target.closest("button, input, select, textarea, a, label, [role='button'], [role='link']")) {
+    return;
+  }
+  selectPassAction();
 });
 
 resetSelectionEl.addEventListener("click", () => {

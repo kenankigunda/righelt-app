@@ -5,6 +5,9 @@
   "description": "Righelt web app starter scaffold (Cloudflare free-tier).",
   "scripts": {
     "dev:web": "pnpm --dir apps/web exec wrangler pages dev . --port 8788",
+    "dev:web:a": "pnpm --dir apps/web exec wrangler pages dev . --port 8789",
+    "dev:web:b": "pnpm --dir apps/web exec wrangler pages dev . --port 8790",
+    "dev:web:c": "pnpm --dir apps/web exec wrangler pages dev . --port 8791",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "pnpm test:engine && pnpm test:api-handler",
     "test:engine": "tsx --test $(find packages/game-engine/test -name '*.test.mjs' -type f | sort)",
