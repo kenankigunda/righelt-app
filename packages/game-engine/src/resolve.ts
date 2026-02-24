@@ -428,27 +428,26 @@ function applyCommandPhase(state: GameState, mode: ArtifactMode): boolean {
 }
 
 function applyGroupPhase(state: GameState, mode: ArtifactMode): boolean {
-  const activeEdges = new Set(state.artifacts?.command.activeEdges ?? []);
-
   const adjacency = new Map<string, string[]>();
-  const pieceById = new Map(state.pieces.map((piece) => [piece.id, piece]));
   for (const piece of state.pieces) {
     adjacency.set(piece.id, []);
   }
 
-  for (const edgeId of activeEdges) {
-    const [aId, bId] = edgeId.split("|");
-    if (!aId || !bId) {
-      continue;
+  for (let i = 0; i < state.pieces.length; i += 1) {
+    for (let j = i + 1; j < state.pieces.length; j += 1) {
+      const left = state.pieces[i];
+      const right = state.pieces[j];
+      if (left.owner !== right.owner) {
+        continue;
+      }
+      const rowDelta = Math.abs(left.position.row - right.position.row);
+      const colDelta = Math.abs(left.position.col - right.position.col);
+      if (rowDelta + colDelta !== 1) {
+        continue;
+      }
+      adjacency.get(left.id)?.push(right.id);
+      adjacency.get(right.id)?.push(left.id);
     }
-    const a = pieceById.get(aId);
-    const b = pieceById.get(bId);
-    if (!a || !b || a.owner !== b.owner) {
-      continue;
-    }
-
-    adjacency.get(aId)?.push(bId);
-    adjacency.get(bId)?.push(aId);
   }
   for (const [pieceId, neighbors] of adjacency.entries()) {
     adjacency.set(pieceId, sortIds(neighbors));

@@ -111,7 +111,7 @@ function localGroupStrength(state: GameState, pieceId: string): number {
       if (candidate.owner !== seed.owner || visited.has(candidate.id)) {
         continue;
       }
-      if (isAnyAdjacent(candidate.position, current.position)) {
+      if (isOrthogonallyAdjacent(candidate.position, current.position)) {
         visited.add(candidate.id);
         queue.push(candidate);
       }

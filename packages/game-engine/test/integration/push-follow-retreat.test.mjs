@@ -265,3 +265,111 @@ test("G-011 forced removal when no retreat", () => {
 
   assert.equal(next.pieces.some((piece) => piece.id === "D1"), false);
 });
+
+test("G-012 diagonal adjacency does not contribute to attacker group strength", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("A1", "P1", 4, 1),
+      unit("A2", "P1", 3, 2),
+      unit("D1", "P2", 4, 3),
+    ],
+  });
+
+  const result = validateAction(state, {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 1 },
+    to: { row: 4, col: 3 },
+  });
+  assert.equal(result.ok, false);
+});
+
+test("G-013 diagonal adjacency does not contribute to defender group strength", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("A1", "P1", 4, 1),
+      unit("A2", "P1", 3, 1),
+      unit("D1", "P2", 4, 3),
+      unit("D2", "P2", 5, 4),
+    ],
+  });
+
+  const result = validateAction(state, {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 1 },
+    to: { row: 4, col: 3 },
+  });
+  assert.equal(result.ok, true);
+});
+
+test("G-014 orthogonal chain connectivity contributes to push strength", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("A1", "P1", 4, 1),
+      unit("A2", "P1", 4, 0),
+      unit("A3", "P1", 5, 0),
+      unit("D1", "P2", 4, 3),
+      unit("D2", "P2", 5, 3),
+    ],
+  });
+
+  const result = validateAction(state, {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 1 },
+    to: { row: 4, col: 3 },
+  });
+  assert.equal(result.ok, true);
+});
+
+test("G-015 push target must be first occupied square even when friendly piece blocks ray", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("A1", "P1", 4, 1),
+      unit("A2", "P1", 3, 1),
+      unit("F1", "P1", 4, 2),
+      unit("D1", "P2", 4, 3),
+    ],
+  });
+
+  const result = validateAction(state, {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 1 },
+    to: { row: 4, col: 3 },
+  });
+  assert.equal(result.ok, false);
+});
+
+test("G-016 push removes defender and ends turn when displacement square is out of bounds", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("A1", "P1", 4, 8),
+      unit("A2", "P1", 3, 8),
+      unit("D1", "P2", 4, 9),
+    ],
+  });
+
+  const next = applyAction(state, {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 8 },
+    to: { row: 4, col: 9 },
+  }).state;
+
+  assert.equal(next.pieces.some((piece) => piece.id === "D1"), false);
+  assert.equal(next.continuation, null);
+  assert.equal(next.sideToMove, "P2");
+  assert.equal(next.turnIndex, 1);
+});

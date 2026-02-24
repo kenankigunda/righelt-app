@@ -87,7 +87,8 @@ Push lets you displace an enemy piece, but only if your local formation is stron
 
 Group strength is the number of your own pieces in the connected local formation around the piece doing the push.
 
-- Count all friendly pieces that are connected into that same formation.
+- Count all friendly pieces connected by orthogonal (up/down/left/right) adjacency at distance 1.
+- Diagonal contact does not connect groups for push strength.
 - Do the same count for the defending piece’s formation.
 - A push is legal only when the attacker’s count is strictly higher than the defender’s.
 

@@ -15,7 +15,7 @@ test("group strength equals connected component size", () => {
     id: "U1a",
     owner: "P1",
     kind: "unit",
-    position: { row: 3, col: 8 },
+    position: { row: 3, col: 7 },
     supplied: true,
     commanded: false,
   });
@@ -23,7 +23,7 @@ test("group strength equals connected component size", () => {
     id: "U1b",
     owner: "P1",
     kind: "unit",
-    position: { row: 3, col: 9 },
+    position: { row: 3, col: 8 },
     supplied: true,
     commanded: false,
   });
@@ -56,7 +56,7 @@ test("group composition recomputes after board change", () => {
     id: "U1a",
     owner: "P1",
     kind: "unit",
-    position: { row: 3, col: 8 },
+    position: { row: 3, col: 7 },
     supplied: true,
     commanded: false,
   });
@@ -64,7 +64,7 @@ test("group composition recomputes after board change", () => {
     id: "U1b",
     owner: "P1",
     kind: "unit",
-    position: { row: 3, col: 9 },
+    position: { row: 3, col: 8 },
     supplied: true,
     commanded: false,
   });
@@ -83,4 +83,37 @@ test("group composition recomputes after board change", () => {
   const after = resolveToStability(before, { artifactMode: "full" });
   const afterStrength = after.artifacts?.groups.strengthByComponentId[after.artifacts?.groups.componentByPieceId.C1];
   assert.equal(afterStrength, 2);
+});
+
+test("diagonal neighbors are not in the same strength group", () => {
+  const state = createInitialState();
+
+  addPiece(state, {
+    id: "U1a",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 4, col: 4 },
+    supplied: true,
+    commanded: false,
+  });
+  addPiece(state, {
+    id: "U1b",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 5, col: 5 },
+    supplied: true,
+    commanded: false,
+  });
+
+  const resolved = resolveToStability(state, { artifactMode: "full" });
+  const groups = resolved.artifacts?.groups;
+  assert.ok(groups);
+
+  const first = groups.componentByPieceId.U1a;
+  const second = groups.componentByPieceId.U1b;
+  assert.ok(first);
+  assert.ok(second);
+  assert.notEqual(first, second);
+  assert.equal(groups.strengthByComponentId[first], 1);
+  assert.equal(groups.strengthByComponentId[second], 1);
 });

@@ -142,7 +142,7 @@ Righelt uses two independent systems: `Supply` and `Command`.
 ## 6.3 Push Strength Groups
 
 - Group strength is the size of the connected local group used for push comparison.
-- Connectivity for this purpose follows the command-edge neighborhood rules used by the engine’s group composer.
+- Connectivity for this purpose is orthogonal adjacency at distance 1 only (no diagonal links, no long-range line-of-sight links).
 
 ## 7. Resolution Order (Normative)
 
