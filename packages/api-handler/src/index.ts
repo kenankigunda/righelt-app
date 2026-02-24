@@ -1,4 +1,11 @@
 import type { ClientCommand, ServerEvent } from "../../shared-types/src";
+import {
+  applyAction,
+  createInitialState,
+  listLegalActions,
+  validateAction,
+} from "../../game-engine/src";
+import type { Action, GameState } from "../../game-engine/src";
 
 type D1RunResult = {
   success: boolean;
@@ -37,8 +44,91 @@ const parseJsonBody = async (request: Request): Promise<Record<string, unknown>>
   }
 };
 
+const asGameState = (value: unknown): GameState | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  return value as GameState;
+};
+
+const asAction = (value: unknown): Action | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  if (typeof (value as Action).type !== "string") {
+    return null;
+  }
+  return value as Action;
+};
+
 export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<Response> => {
   const url = new URL(request.url);
+
+  if (request.method === "GET" && url.pathname === "/api/engine/playground/state") {
+    const state = createInitialState();
+    return json({
+      ok: true,
+      state,
+      legalActions: listLegalActions(state),
+    });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/engine/playground/legal") {
+    const body = await parseJsonBody(request);
+    const state = asGameState(body.state);
+    if (!state) {
+      return json({ ok: false, error: "invalid_state" }, 400);
+    }
+
+    return json({
+      ok: true,
+      legalActions: listLegalActions(state),
+    });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/engine/playground/apply") {
+    const body = await parseJsonBody(request);
+    const state = asGameState(body.state);
+    const action = asAction(body.action);
+    if (!state) {
+      return json({ ok: false, error: "invalid_state" }, 400);
+    }
+    if (!action) {
+      return json({ ok: false, error: "invalid_action" }, 400);
+    }
+
+    const validation = validateAction(state, action);
+    if (!validation.ok) {
+      return json({
+        ok: true,
+        accepted: false,
+        validation,
+        state,
+        legalActions: listLegalActions(state),
+      });
+    }
+
+    try {
+      const result = applyAction(state, action);
+      return json({
+        ok: true,
+        accepted: true,
+        validation,
+        state: result.state,
+        outcome: result.outcome,
+        legalActions: listLegalActions(result.state),
+      });
+    } catch (error) {
+      return json(
+        {
+          ok: false,
+          error: "apply_failed",
+          message: error instanceof Error ? error.message : "Unknown applyAction error",
+        },
+        501,
+      );
+    }
+  }
 
   if (request.method === "GET" && url.pathname === "/api/health") {
     return json({ ok: true, service: "righelt" });

@@ -3,16 +3,73 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Righelt Milestone Test</title>
+    <title>Righelt Engine Playground</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="layout">
-      <h1>Righelt Deployment Test</h1>
-      <p>Click the button to trigger a real backend write and return a response.</p>
-      <p class="meta" id="deploy-meta">Deployment info: loading...</p>
-      <button id="run-test-action" type="button">Run Test Action</button>
-      <pre id="result" aria-live="polite">No response yet.</pre>
+      <section class="hero">
+        <h1>Engine Playground</h1>
+        <p>
+          Manual harness for Milestone 2. All state changes flow through shared engine API endpoints.
+        </p>
+      </section>
+
+      <section class="grid">
+        <section class="panel board-panel">
+          <h2>Board</h2>
+          <p class="meta">Click two cells to set source and destination.</p>
+          <div class="board" id="board" aria-label="10 by 10 board"></div>
+        </section>
+
+        <section class="panel controls-panel">
+          <h2>Action Controls</h2>
+          <div class="form-row">
+            <label for="action-type">Action</label>
+            <select id="action-type">
+              <option value="pass">Pass</option>
+              <option value="move">Move</option>
+              <option value="project">Project</option>
+              <option value="rush">Rush</option>
+              <option value="push">Push</option>
+              <option value="follow">Follow</option>
+              <option value="retreat">Retreat</option>
+            </select>
+          </div>
+          <div class="coord-row">
+            <div>
+              <p class="label">Source</p>
+              <p id="source-value">unset</p>
+            </div>
+            <div>
+              <p class="label">Destination</p>
+              <p id="target-value">unset</p>
+            </div>
+          </div>
+          <div class="button-row">
+            <button id="submit-action" type="button">Apply Action</button>
+            <button id="reset-selection" type="button" class="secondary">Clear Selection</button>
+          </div>
+          <pre id="action-result" aria-live="polite">Awaiting action.</pre>
+        </section>
+
+        <section class="panel status-panel">
+          <h2>Engine Status</h2>
+          <ul class="status-list">
+            <li>Side to move: <strong id="side-to-move">-</strong></li>
+            <li>Turn index: <strong id="turn-index">-</strong></li>
+            <li>Continuation: <strong id="continuation">none</strong></li>
+            <li>Commander supply: <strong id="commander-supply">-</strong></li>
+          </ul>
+          <h3>Legal Actions</h3>
+          <pre id="legal-actions">[]</pre>
+        </section>
+
+        <section class="panel history-panel">
+          <h2>Move Log</h2>
+          <ol id="move-log"></ol>
+        </section>
+      </section>
     </main>
     <script type="module" src="./main.js"></script>
   </body>
