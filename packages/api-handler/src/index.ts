@@ -29,12 +29,12 @@ export type ApiEnv = {
   DB: D1DatabaseLike;
 };
 
-const json = (body: unknown, status = 200): Response =>
+const json = (body: unknown, status = 200, cacheControl = "no-store"): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store"
+      "cache-control": cacheControl
     }
   });
 
@@ -128,7 +128,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
       ok: true,
       state: INITIAL_PLAYGROUND_STATE,
       legalActions: INITIAL_PLAYGROUND_LEGAL_ACTIONS,
-    });
+    }, 200, "public, max-age=0, s-maxage=60, stale-while-revalidate=300");
   }
 
   if (request.method === "POST" && url.pathname === "/api/engine/playground/legal") {

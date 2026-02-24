@@ -28,6 +28,10 @@ test("GET /api/engine/playground/state returns deterministic bootstrap payload",
 
   const response = await handleApiRequest(request, env);
   assert.equal(response.status, 200);
+  assert.equal(
+    response.headers.get("cache-control"),
+    "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
+  );
 
   const body = await response.json();
   assert.equal(body.ok, true);
@@ -52,4 +56,15 @@ test("bootstrap payload is not affected by client-side mutation of prior respons
 
   assert.equal(secondBody.state.turnIndex, 0);
   assert.equal(secondBody.state.sideToMove, "P1");
+});
+
+test("non-bootstrap API responses remain non-cacheable", async () => {
+  const env = buildEnv();
+  const request = new Request("https://righelt.pages.dev/api/health", {
+    method: "GET",
+  });
+
+  const response = await handleApiRequest(request, env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
 });
