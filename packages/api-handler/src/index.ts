@@ -65,6 +65,9 @@ const asAction = (value: unknown): Action | null => {
 
 const BOARD_SIZE = 10;
 
+const INITIAL_PLAYGROUND_STATE = resolveToStability(createInitialState(), { artifactMode: "full" });
+const INITIAL_PLAYGROUND_LEGAL_ACTIONS = listLegalActions(INITIAL_PLAYGROUND_STATE);
+
 const compareActions = (left: Action, right: Action): number => {
   if (left.type !== right.type) {
     return left.type.localeCompare(right.type);
@@ -121,11 +124,10 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
   const url = new URL(request.url);
 
   if (request.method === "GET" && url.pathname === "/api/engine/playground/state") {
-    const state = resolveToStability(createInitialState(), { artifactMode: "full" });
     return json({
       ok: true,
-      state,
-      legalActions: listLegalActions(state),
+      state: INITIAL_PLAYGROUND_STATE,
+      legalActions: INITIAL_PLAYGROUND_LEGAL_ACTIONS,
     });
   }
 
