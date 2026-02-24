@@ -185,3 +185,23 @@ Tutorial restart:
 - Chat/voice.
 - Payments/monetization.
 - Mobile native apps.
+
+## 15. Fast-Start Baseline (Mandatory for All Future Work)
+
+This section is normative and applies to every new endpoint, page, and performance-affecting change.
+
+- Startup-path endpoints must avoid repeated deterministic computation per request:
+  - If payload content is deterministic for a deployment/version, it must be precomputed at module scope and reused.
+  - Request handlers on the startup path must not rebuild static bootstrap payloads on each call.
+- Cache behavior must be explicit per endpoint:
+  - Stable bootstrap/read endpoints must return explicit cache policy suitable for edge reuse (for example `s-maxage` with `stale-while-revalidate`).
+  - Mutable/user-specific/safety-sensitive endpoints must remain non-cacheable (`no-store`) unless a stricter endpoint contract is documented.
+- Edge/API cold-start import surface must be minimized:
+  - API handlers must use direct module imports for required symbols.
+  - Barrel imports on startup-path handlers are disallowed unless a measured benchmark demonstrates no startup regression.
+- Page initialization must prioritize first meaningful render:
+  - Initial UI render must not block on non-critical requests.
+  - Non-essential data loading must happen after first render and progressively enhance the page.
+- New startup-path code must carry verification:
+  - Tests must assert bootstrap endpoint cache headers and response determinism.
+  - Performance-sensitive changes must include a short note in PR/commit text describing startup impact and why the chosen approach preserves fast start.
