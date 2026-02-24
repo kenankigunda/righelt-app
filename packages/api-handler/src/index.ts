@@ -1,13 +1,10 @@
 import type { ClientCommand, ServerEvent } from "../../shared-types/src";
-import {
-  applyAction,
-  createInitialState,
-  deterministicStateHash,
-  listLegalActions,
-  resolveToStability,
-  validateAction,
-} from "../../game-engine/src";
-import type { Action, GameState } from "../../game-engine/src";
+import { applyAction } from "../../game-engine/src/apply";
+import { createInitialState } from "../../game-engine/src/state";
+import { deterministicStateHash } from "../../game-engine/src/hash";
+import { listLegalActions, validateAction } from "../../game-engine/src/legal";
+import { resolveToStability } from "../../game-engine/src/resolve";
+import type { Action, GameState } from "../../game-engine/src/types";
 
 type D1RunResult = {
   success: boolean;
