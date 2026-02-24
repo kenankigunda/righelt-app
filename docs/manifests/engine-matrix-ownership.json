@@ -1,0 +1,86 @@
+{
+  "version": "1.0.0",
+  "description": "Milestone 2 matrix ownership map for parallel worktrees.",
+  "scenarios": [
+    {
+      "matrixId": "A",
+      "ownerTrack": "A",
+      "defaultTestFile": "packages/game-engine/test/unit/initialization.test.mjs"
+    },
+    {
+      "matrixId": "B",
+      "ownerTrack": "B",
+      "defaultTestFile": "packages/game-engine/test/unit/supply-terminal.test.mjs"
+    },
+    {
+      "matrixId": "C",
+      "ownerTrack": "A",
+      "defaultTestFile": "packages/game-engine/test/unit/pass-turn.test.mjs"
+    },
+    {
+      "matrixId": "D",
+      "ownerTrack": "A",
+      "defaultTestFile": "packages/game-engine/test/unit/move.test.mjs"
+    },
+    {
+      "matrixId": "E",
+      "ownerTrack": "A",
+      "defaultTestFile": "packages/game-engine/test/unit/project.test.mjs"
+    },
+    {
+      "matrixId": "F",
+      "ownerTrack": "A",
+      "defaultTestFile": "packages/game-engine/test/unit/rush.test.mjs"
+    },
+    {
+      "matrixId": "G",
+      "ownerTrack": "A",
+      "defaultTestFile": "packages/game-engine/test/integration/push-follow-retreat.test.mjs"
+    },
+    {
+      "matrixId": "H",
+      "ownerTrack": "B",
+      "defaultTestFile": "packages/game-engine/test/unit/supply-system.test.mjs"
+    },
+    {
+      "matrixId": "I",
+      "ownerTrack": "B",
+      "defaultTestFile": "packages/game-engine/test/unit/command-system.test.mjs"
+    },
+    {
+      "matrixId": "J",
+      "ownerTrack": "B",
+      "defaultTestFile": "packages/game-engine/test/unit/group-strength.test.mjs"
+    },
+    {
+      "matrixId": "K",
+      "ownerTrack": "B",
+      "defaultTestFile": "packages/game-engine/test/integration/stabilization-order.test.mjs"
+    },
+    {
+      "matrixId": "L",
+      "ownerTrack": "A",
+      "defaultTestFile": "packages/game-engine/test/unit/negative-integrity.test.mjs"
+    },
+    {
+      "matrixId": "M",
+      "ownerTrack": "C",
+      "defaultTestFile": "packages/game-engine/test/integration/golden-scenarios.test.mjs"
+    },
+    {
+      "matrixId": "O",
+      "ownerTrack": "B",
+      "defaultTestFile": "packages/game-engine/test/integration/continuation-chain.test.mjs"
+    },
+    {
+      "matrixId": "P",
+      "ownerTrack": "B",
+      "defaultTestFile": "packages/game-engine/test/integration/replay-parity.test.mjs"
+    },
+    {
+      "matrixId": "Q",
+      "ownerTrack": "B",
+      "defaultTestFile": "packages/game-engine/test/integration/artifact-contract.test.mjs"
+    }
+  ]
+}

@@ -6,6 +6,7 @@
   "include": [
     "apps/web/functions/**/*.ts",
     "packages/api-handler/src/**/*.ts",
-    "packages/shared-types/src/**/*.ts"
+    "packages/shared-types/src/**/*.ts",
+    "packages/game-engine/src/**/*.ts"
   ]
 }

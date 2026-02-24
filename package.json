@@ -6,6 +6,9 @@
   "scripts": {
     "dev:web": "pnpm --dir apps/web exec wrangler pages dev . --port 8788",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:engine": "node --test $(find packages/game-engine/test -name '*.test.mjs' -type f | sort)",
+    "test:engine:unit": "node --test $(find packages/game-engine/test/unit -name '*.test.mjs' -type f | sort)",
+    "test:engine:integration": "node --test $(find packages/game-engine/test/integration -name '*.test.mjs' -type f | sort)",
     "cf:set-db": "node scripts/set-d1-binding.mjs",
     "d1:migrate:dev": "pnpm --dir apps/web exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml",
     "deploy:web": "pnpm --dir apps/web exec wrangler pages deploy . --project-name ${CLOUDFLARE_PAGES_PROJECT:-righelt}",

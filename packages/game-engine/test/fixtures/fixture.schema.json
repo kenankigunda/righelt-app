@@ -1,0 +1,63 @@
+{
+  "$id": "righelt.engine.fixture.schema.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "id",
+    "matrixId",
+    "title",
+    "initial_state",
+    "action_sequence",
+    "expected_final_state_hash",
+    "expected_outcome"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "matrixId": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "initial_state": {
+      "type": "object"
+    },
+    "action_sequence": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "expected_final_state_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "expected_outcome": {
+      "type": "string",
+      "enum": [
+        "ongoing",
+        "p1_win",
+        "p2_win",
+        "draw"
+      ]
+    },
+    "expected_error": {
+      "type": "object",
+      "required": [
+        "index",
+        "code"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "code": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
