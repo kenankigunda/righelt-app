@@ -1,0 +1,5 @@
+{
+  "id": "P-005",
+  "title": "Client/server deterministic parity fixture set",
+  "fixtures": ["M-001", "M-002", "M-003", "M-004"]
+}
