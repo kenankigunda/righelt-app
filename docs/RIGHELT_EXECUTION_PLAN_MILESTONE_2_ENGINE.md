@@ -20,7 +20,7 @@ Implement and validate `packages/game-engine` so it can:
 
 In scope:
 1. Core deterministic rules engine per `docs/RIGHELT_RULES_SPEC.md`.
-2. Acceptance tests mapped to `docs/RIGHELT_ENGINE_TEST_MATRIX.md` (A-P).
+2. Acceptance tests mapped to `docs/RIGHELT_ENGINE_TEST_MATRIX.md` (A-Q).
 3. Lightweight browser UI harness for manual board/action verification.
 4. Engine API surface suitable for later AI training and server authority use.
 
@@ -210,10 +210,10 @@ Exit criteria:
 Matrix focus:
 1. M-001..M-004
 2. P-005
-3. Full A-P regression pass
+3. Full A-Q regression pass
 
 Exit criteria:
-1. Matrix scenarios A-P are covered and passing.
+1. Matrix scenarios A-Q are covered and passing.
 2. Node/browser parity is green for canonical fixtures.
 
 ## 6. Parallel Worktree Execution Model
@@ -234,20 +234,20 @@ This is the minimum serial setup required on a base branch before any parallel t
 4. Add a matrix mapping manifest file (scenario ID -> owning track/test file) to avoid overlap.
 5. Freeze baseline contracts for engine API signatures listed in Section 4.
 6. Freeze artifact schema and deterministic tie-break policy from Section 4.1.
+7. Add guard tests that authoritative engine modules do not import third-party graph/pathfinding dependencies.
 
 Parallelization gate:
 1. Base branch builds.
 2. Empty engine tests run in CI.
 3. Worktree ownership map is committed.
+4. Artifact contract and tie-break policy are committed and versioned.
 
 ## 6.2 Worktree Execution Steps
 
-Recommended track split:
-1. Worktree A (`codex/engine-core`): state model, serialization, replay skeleton, determinism primitives.
-2. Worktree B (`codex/engine-actions`): legality + atomic apply for `Pass/Move/Project/Rush/Push/Follow/Retreat`.
-3. Worktree C (`codex/engine-resolve`): connectivity/supply/command/groups, stabilization loop, terminal evaluation.
-4. Worktree D (`codex/engine-tests`): matrix fixture corpus, integration scenarios, parity runners, coverage map.
-5. Worktree E (`codex/engine-ui-harness`): minimal manual UI harness wired only through engine API.
+Recommended 3-worktree split (simpler first-time setup):
+1. Worktree A (`codex/engine-core`): state model, action legality + atomic apply, serialization, replay skeleton, determinism primitives, artifact core types/order utilities.
+2. Worktree B (`codex/engine-resolve`): connectivity/supply/command/groups, stabilization loop, terminal evaluation, continuation closure semantics, artifact producers.
+3. Worktree C (`codex/engine-validation-ui`): matrix fixture corpus, integration/parity runners, coverage map, Q-series artifact tests, import-policy guard tests, and minimal manual UI harness.
 
 Per-worktree execution sequence:
 1. Create worktree from latest integration base.
@@ -261,11 +261,9 @@ Per-worktree execution sequence:
    - known dependencies on other tracks
 
 Track-specific target mapping:
-1. Worktree A: A, partial P (`P-006`, `P-008` foundations)
-2. Worktree B: C, D, E, F, G, L, `P-007`
-3. Worktree C: B, H, I, J, K, O
-4. Worktree D: M, P (`P-001..P-005`) and full matrix coverage enforcement
-5. Worktree E: manual harness + fixture-loader UX (non-authoritative)
+1. Worktree A: A, C, D, E, F, G, L, partial P (`P-006`, `P-007`, `P-008` foundations)
+2. Worktree B: B, H, I, J, K, O, partial P (`P-001..P-004`), Q
+3. Worktree C: M, `P-005`, full matrix coverage enforcement, and manual harness + fixture-loader UX (non-authoritative; consumes frozen artifact contract)
 
 ## 6.3 Checkpoints and Merge-Back Steps
 
@@ -273,21 +271,21 @@ Use an integration branch (example: `codex/m2-engine-integration`) to combine pa
 
 Checkpoint cadence:
 1. Checkpoint 1 (after base setup): all worktrees branch from same commit.
-2. Checkpoint 2 (after Phases 1-2 equivalent): merge A + B, run unit legality suite.
-3. Checkpoint 3 (after Phase 3 equivalent): merge C, run full unit + integration suites.
-4. Checkpoint 4 (after Phase 4 equivalent): merge D replay/continuation suites and validate deterministic replay.
-5. Checkpoint 5 (final hardening): merge E harness, run full matrix + parity + manual smoke checklist.
+2. Checkpoint 2 (after Phases 1-2 equivalent): merge A, run unit legality + determinism suite.
+3. Checkpoint 3 (artifact contract checkpoint): merge B, freeze artifact schema/tie-break behavior, run artifact-focused and continuation suites before UI integration.
+4. Checkpoint 4 (final hardening): merge C, run full matrix + parity + manual smoke checklist.
 
 Required checks at each merge checkpoint:
 1. `pnpm typecheck`
 2. `pnpm test:engine`
 3. Matrix manifest diff review (no orphaned IDs, no duplicate ownership)
 4. Determinism verification (repeat run hash equality on fixture subset)
+5. Authoritative import-policy guard test (no third-party graph/pathfinding dependencies in rules modules)
 
 Final merge-back to `main`:
 1. Squash/fixup remaining integration conflicts in `codex/m2-engine-integration`.
 2. Run full CI gate including browser/server parity.
-3. Freeze matrix coverage report (A-P fully mapped and passing).
+3. Freeze matrix coverage report (A-Q fully mapped and passing).
 4. Merge integration branch into `main`.
 5. Tag milestone completion commit for reproducible engine baseline.
 
@@ -332,7 +330,7 @@ Manual smoke checklist:
    - Manual, non-blocking, for quick behavioral confidence.
 
 Required pass condition:
-1. Every matrix ID from `A-001` through `P-008` is linked to at least one automated test case.
+1. Every matrix ID from `A-001` through `Q-007` is linked to at least one automated test case.
 2. No matrix item is validated only by UI/manual checks.
 
 ## 9. Risks and Mitigations
@@ -350,7 +348,7 @@ Required pass condition:
 
 Milestone 2 is complete when:
 1. `packages/game-engine` exposes stable deterministic API listed in Section 4.
-2. Automated tests cover and pass all matrix scenarios `A-P`.
+2. Automated tests cover and pass all matrix scenarios `A-Q`.
 3. Headless replay supports validation, deterministic failure indexing, and final-only mode.
 4. Minimal UI harness supports interactive manual verification but contains no rules logic.
 5. CI includes mandatory engine test gate for PRs.
