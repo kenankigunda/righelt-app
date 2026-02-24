@@ -2,6 +2,7 @@ import type { ClientCommand, ServerEvent } from "../../shared-types/src";
 import {
   applyAction,
   createInitialState,
+  deterministicStateHash,
   listLegalActions,
   validateAction,
 } from "../../game-engine/src";
@@ -128,6 +129,20 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
         501,
       );
     }
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/engine/playground/hash") {
+    const body = await parseJsonBody(request);
+    const state = asGameState(body.state);
+    if (!state) {
+      return json({ ok: false, error: "invalid_state" }, 400);
+    }
+
+    return json({
+      ok: true,
+      hash: deterministicStateHash(state),
+      outcome: state.outcome,
+    });
   }
 
   if (request.method === "GET" && url.pathname === "/api/health") {

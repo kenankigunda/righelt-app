@@ -11,6 +11,10 @@ const continuationEl = document.getElementById("continuation");
 const commanderSupplyEl = document.getElementById("commander-supply");
 const legalActionsEl = document.getElementById("legal-actions");
 const moveLogEl = document.getElementById("move-log");
+const fixtureSelectEl = document.getElementById("fixture-select");
+const loadFixtureEl = document.getElementById("load-fixture");
+const replayFixtureEl = document.getElementById("replay-fixture");
+const fixtureResultEl = document.getElementById("fixture-result");
 
 const BOARD_SIZE = 10;
 
@@ -19,11 +23,17 @@ let legalActions = [];
 let selectedSource = null;
 let selectedTarget = null;
 const moveLog = [];
+let fixtures = [];
+let currentFixtureId = null;
 
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "unset");
 
 const setActionResult = (value) => {
   actionResultEl.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+};
+
+const setFixtureResult = (value) => {
+  fixtureResultEl.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
 };
 
 const refreshSelectionLabels = () => {
@@ -125,6 +135,41 @@ const loadInitialState = async () => {
   renderMoveLog();
 };
 
+const computeStateHash = async (candidateState) => {
+  const response = await fetch("/api/engine/playground/hash", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ state: candidateState }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to compute hash: HTTP ${response.status}`);
+  }
+  const body = await response.json();
+  return body.hash;
+};
+
+const loadFixtureCatalog = async () => {
+  const response = await fetch("/fixtures/m-golden-fixtures.json", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Failed to load fixtures: HTTP ${response.status}`);
+  }
+  const catalog = await response.json();
+  fixtures = Array.isArray(catalog.fixtures) ? catalog.fixtures : [];
+  fixtureSelectEl.innerHTML = "";
+  for (const fixture of fixtures) {
+    const option = document.createElement("option");
+    option.value = fixture.id;
+    option.textContent = `${fixture.id} - ${fixture.title}`;
+    fixtureSelectEl.appendChild(option);
+  }
+  if (fixtures.length > 0) {
+    currentFixtureId = fixtures[0].id;
+    fixtureSelectEl.value = currentFixtureId;
+  }
+};
+
+const getSelectedFixture = () => fixtures.find((fixture) => fixture.id === currentFixtureId) ?? null;
+
 const buildActionPayload = () => {
   const type = actionTypeEl.value;
   if (type === "pass") {
@@ -215,8 +260,113 @@ submitActionEl.addEventListener("click", async () => {
   }
 });
 
+fixtureSelectEl.addEventListener("change", () => {
+  currentFixtureId = fixtureSelectEl.value;
+});
+
+loadFixtureEl.addEventListener("click", () => {
+  const fixture = getSelectedFixture();
+  if (!fixture) {
+    setFixtureResult({ ok: false, error: "fixture_not_found" });
+    return;
+  }
+  state = structuredClone(fixture.initial_state);
+  legalActions = [];
+  selectedSource = null;
+  selectedTarget = null;
+  moveLog.length = 0;
+  moveLog.push(`Loaded fixture ${fixture.id}`);
+  refreshSelectionLabels();
+  renderBoard();
+  renderStatus();
+  renderMoveLog();
+  void reloadLegalActions().catch(() => {});
+  setFixtureResult({
+    ok: true,
+    fixtureId: fixture.id,
+    title: fixture.title,
+    expected: {
+      hash: fixture.expected_final_state_hash,
+      outcome: fixture.expected_outcome,
+    },
+  });
+});
+
+replayFixtureEl.addEventListener("click", async () => {
+  const fixture = getSelectedFixture();
+  if (!fixture) {
+    setFixtureResult({ ok: false, error: "fixture_not_found" });
+    return;
+  }
+
+  replayFixtureEl.disabled = true;
+  setFixtureResult(`Running ${fixture.id}...`);
+  try {
+    let workingState = structuredClone(fixture.initial_state);
+    let acceptedCount = 0;
+    let failure = null;
+
+    for (let index = 0; index < fixture.action_sequence.length; index += 1) {
+      const action = fixture.action_sequence[index];
+      const response = await fetch("/api/engine/playground/apply", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ state: workingState, action }),
+      });
+      const body = await response.json();
+      if (!response.ok || !body.accepted) {
+        failure = {
+          index,
+          action,
+          response: body,
+        };
+        break;
+      }
+      acceptedCount += 1;
+      workingState = body.state;
+    }
+
+    const observedHash = await computeStateHash(workingState);
+    const observedOutcome = workingState?.outcome?.status ?? "ongoing";
+    const pass = !failure &&
+      observedHash === fixture.expected_final_state_hash &&
+      observedOutcome === fixture.expected_outcome;
+
+    state = workingState;
+    selectedSource = null;
+    selectedTarget = null;
+    refreshSelectionLabels();
+    renderBoard();
+    await reloadLegalActions();
+    renderMoveLog();
+
+    setFixtureResult({
+      fixtureId: fixture.id,
+      acceptedCount,
+      expected: {
+        hash: fixture.expected_final_state_hash,
+        outcome: fixture.expected_outcome,
+      },
+      observed: {
+        hash: observedHash,
+        outcome: observedOutcome,
+      },
+      pass,
+      failure,
+    });
+  } catch (error) {
+    setFixtureResult({
+      ok: false,
+      error: "replay_failed",
+      message: error instanceof Error ? error.message : "Unknown replay error",
+    });
+  } finally {
+    replayFixtureEl.disabled = false;
+  }
+});
+
 refreshSelectionLabels();
-void loadInitialState().catch((error) => {
+Promise.all([loadInitialState(), loadFixtureCatalog()]).catch((error) => {
   setActionResult({
     ok: false,
     error: "load_failed",
