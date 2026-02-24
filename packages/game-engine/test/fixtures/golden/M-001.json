@@ -1,0 +1,48 @@
+{
+  "id": "M-001",
+  "matrixId": "M",
+  "title": "Minimal supply-cut win",
+  "initial_state": {
+    "boardSize": 10,
+    "sideToMove": "P1",
+    "turnIndex": 18,
+    "pieces": [
+      {
+        "id": "C1",
+        "owner": "P1",
+        "kind": "commander",
+        "position": { "row": 3, "col": 6 },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "C2",
+        "owner": "P2",
+        "kind": "commander",
+        "position": { "row": 6, "col": 3 },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U1a",
+        "owner": "P1",
+        "kind": "unit",
+        "position": { "row": 5, "col": 3 },
+        "supplied": true,
+        "commanded": true
+      }
+    ],
+    "continuation": null,
+    "outcome": { "status": "ongoing" }
+  },
+  "action_sequence": [
+    {
+      "type": "move",
+      "actorId": "C1",
+      "from": { "row": 3, "col": 6 },
+      "to": { "row": 3, "col": 5 }
+    }
+  ],
+  "expected_final_state_hash": "14d8f5d5d9f11ed0dedf845518840cbf360e5553fdb8aca71893f447f76ec3f1",
+  "expected_outcome": "p1_win"
+}

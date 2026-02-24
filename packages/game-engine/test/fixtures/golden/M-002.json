@@ -1,0 +1,56 @@
+{
+  "id": "M-002",
+  "matrixId": "M",
+  "title": "Simultaneous draw by mutual supply cut",
+  "initial_state": {
+    "boardSize": 10,
+    "sideToMove": "P2",
+    "turnIndex": 22,
+    "pieces": [
+      {
+        "id": "C1",
+        "owner": "P1",
+        "kind": "commander",
+        "position": { "row": 3, "col": 6 },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "C2",
+        "owner": "P2",
+        "kind": "commander",
+        "position": { "row": 6, "col": 3 },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U1a",
+        "owner": "P1",
+        "kind": "unit",
+        "position": { "row": 4, "col": 5 },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U2a",
+        "owner": "P2",
+        "kind": "unit",
+        "position": { "row": 5, "col": 4 },
+        "supplied": true,
+        "commanded": true
+      }
+    ],
+    "continuation": null,
+    "outcome": { "status": "ongoing" }
+  },
+  "action_sequence": [
+    {
+      "type": "project",
+      "actorId": "U2a",
+      "from": { "row": 5, "col": 4 },
+      "to": { "row": 5, "col": 6 }
+    }
+  ],
+  "expected_final_state_hash": "a54b9779dc7737cff52ecf8f6f2f62232277cb2718f5ab2f3c6f03f80f2f8d04",
+  "expected_outcome": "draw"
+}

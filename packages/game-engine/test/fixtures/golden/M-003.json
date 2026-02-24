@@ -1,0 +1,72 @@
+{
+  "id": "M-003",
+  "matrixId": "M",
+  "title": "Push chain into forced no-retreat then win",
+  "initial_state": {
+    "boardSize": 10,
+    "sideToMove": "P1",
+    "turnIndex": 31,
+    "pieces": [
+      {
+        "id": "C1",
+        "owner": "P1",
+        "kind": "commander",
+        "position": { "row": 3, "col": 6 },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "C2",
+        "owner": "P2",
+        "kind": "commander",
+        "position": { "row": 6, "col": 3 },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U1a",
+        "owner": "P1",
+        "kind": "unit",
+        "position": { "row": 5, "col": 2 },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U1b",
+        "owner": "P1",
+        "kind": "unit",
+        "position": { "row": 5, "col": 1 },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U2a",
+        "owner": "P2",
+        "kind": "unit",
+        "position": { "row": 5, "col": 3 },
+        "supplied": true,
+        "commanded": true,
+        "pushed": false
+      }
+    ],
+    "continuation": null,
+    "outcome": { "status": "ongoing" }
+  },
+  "action_sequence": [
+    {
+      "type": "push",
+      "actorId": "U1a",
+      "from": { "row": 5, "col": 2 },
+      "targetId": "U2a",
+      "to": { "row": 5, "col": 3 }
+    },
+    {
+      "type": "follow",
+      "actorId": "U1b",
+      "from": { "row": 5, "col": 1 },
+      "to": { "row": 5, "col": 2 }
+    }
+  ],
+  "expected_final_state_hash": "3fa2d6b7f26a6ec0467dbf8227c212fe66b5f2d2eb4bc400c8f98ed7cd8af0c5",
+  "expected_outcome": "p1_win"
+}

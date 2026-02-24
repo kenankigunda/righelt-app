@@ -1,0 +1,65 @@
+{
+  "id": "M-004",
+  "matrixId": "M",
+  "title": "Replay parity with recorded log",
+  "initial_state": {
+    "boardSize": 10,
+    "sideToMove": "P1",
+    "turnIndex": 0,
+    "pieces": [
+      {
+        "id": "C1",
+        "owner": "P1",
+        "kind": "commander",
+        "position": { "row": 3, "col": 6 },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "C2",
+        "owner": "P2",
+        "kind": "commander",
+        "position": { "row": 6, "col": 3 },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U1a",
+        "owner": "P1",
+        "kind": "unit",
+        "position": { "row": 4, "col": 6 },
+        "supplied": true,
+        "commanded": true
+      },
+      {
+        "id": "U2a",
+        "owner": "P2",
+        "kind": "unit",
+        "position": { "row": 5, "col": 3 },
+        "supplied": true,
+        "commanded": true
+      }
+    ],
+    "continuation": null,
+    "outcome": { "status": "ongoing" }
+  },
+  "action_sequence": [
+    {
+      "type": "project",
+      "actorId": "U1a",
+      "from": { "row": 4, "col": 6 },
+      "to": { "row": 2, "col": 6 }
+    },
+    {
+      "type": "pass"
+    },
+    {
+      "type": "move",
+      "actorId": "C1",
+      "from": { "row": 3, "col": 6 },
+      "to": { "row": 3, "col": 5 }
+    }
+  ],
+  "expected_final_state_hash": "fdd300f4f31fd43dd3a9b17795a2ddf51195f8f89a8952ddd4572bf6f7509d3d",
+  "expected_outcome": "ongoing"
+}
