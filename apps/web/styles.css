@@ -69,6 +69,13 @@ button {
   grid-template-columns: 2.1fr 1fr;
 }
 
+.left-column,
+.right-column {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
 .panel {
   background: var(--paper);
   border: 1px solid var(--line);
@@ -78,10 +85,6 @@ button {
 
 .panel h2 {
   margin-top: 0;
-}
-
-.board-panel {
-  grid-row: span 2;
 }
 
 .board {
@@ -358,7 +361,8 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .board-panel {
-    grid-row: auto;
+  .left-column,
+  .right-column {
+    gap: 0.8rem;
   }
 }
