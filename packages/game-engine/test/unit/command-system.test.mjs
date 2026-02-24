@@ -1,0 +1,98 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import { createInitialState } from "../../src/state.ts";
+import { resolveToStability } from "../../src/resolve.ts";
+
+function addPiece(state, piece) {
+  state.pieces.push(piece);
+}
+
+test("commander commands itself", () => {
+  const state = createInitialState();
+  const resolved = resolveToStability(state, { artifactMode: "full" });
+
+  const c1 = resolved.pieces.find((piece) => piece.id === "C1");
+  const c2 = resolved.pieces.find((piece) => piece.id === "C2");
+  assert.equal(Boolean(c1?.commanded), true);
+  assert.equal(Boolean(c2?.commanded), true);
+});
+
+test("orthogonal command edge through empty squares is created", () => {
+  const state = createInitialState();
+  addPiece(state, {
+    id: "U1a",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 3, col: 9 },
+    supplied: true,
+    commanded: false,
+  });
+
+  const resolved = resolveToStability(state, { artifactMode: "full" });
+  assert.ok(resolved.artifacts?.command.candidateEdges.includes("C1|U1a"));
+  assert.ok(resolved.artifacts?.command.activeEdges.includes("C1|U1a"));
+});
+
+test("diagonal command edge allowed only at distance 1", () => {
+  const state = createInitialState();
+  addPiece(state, {
+    id: "U1a",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 4, col: 7 },
+    supplied: true,
+    commanded: false,
+  });
+  addPiece(state, {
+    id: "U1b",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 5, col: 8 },
+    supplied: true,
+    commanded: false,
+  });
+
+  const resolved = resolveToStability(state, { artifactMode: "full" });
+  assert.ok(resolved.artifacts?.command.candidateEdges.includes("U1a|U1b"));
+  assert.equal(resolved.artifacts?.command.candidateEdges.includes("C1|U1b"), false);
+});
+
+test("edge intersections produce cut edges and block command propagation", () => {
+  const state = createInitialState();
+
+  addPiece(state, {
+    id: "U1a",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 3, col: 9 },
+    supplied: true,
+    commanded: false,
+  });
+  addPiece(state, {
+    id: "U2a",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 1, col: 8 },
+    supplied: true,
+    commanded: false,
+  });
+  addPiece(state, {
+    id: "U2b",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 8, col: 8 },
+    supplied: true,
+    commanded: false,
+  });
+
+  const resolved = resolveToStability(state, { artifactMode: "full" });
+  assert.ok(resolved.artifacts?.command.candidateEdges.includes("C1|U1a"));
+  assert.ok(resolved.artifacts?.command.candidateEdges.includes("U2a|U2b"));
+  assert.ok(resolved.artifacts?.command.cutEdges.includes("C1|U1a"));
+  assert.ok(resolved.artifacts?.command.cutEdges.includes("U2a|U2b"));
+  assert.equal(resolved.artifacts?.command.activeEdges.includes("C1|U1a"), false);
+
+  const u1a = resolved.pieces.find((piece) => piece.id === "U1a");
+  assert.equal(Boolean(u1a?.commanded), false);
+});

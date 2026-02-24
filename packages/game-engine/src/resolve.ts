@@ -191,6 +191,240 @@ function computeBaselineArtifacts(state: GameState, mode: ArtifactMode): Resolve
   };
 }
 
+type CommandEdge = {
+  owner: "P1" | "P2";
+  fromId: string;
+  toId: string;
+  from: { row: number; col: number };
+  to: { row: number; col: number };
+  id: string;
+};
+
+function makeEdgeId(aId: string, bId: string): string {
+  return aId.localeCompare(bId) <= 0 ? `${aId}|${bId}` : `${bId}|${aId}`;
+}
+
+function isClearOrthogonalLine(
+  state: GameState,
+  a: { row: number; col: number },
+  b: { row: number; col: number },
+  occupied: Map<string, string>,
+): boolean {
+  if (a.row !== b.row && a.col !== b.col) {
+    return false;
+  }
+
+  if (a.row === b.row) {
+    const start = Math.min(a.col, b.col) + 1;
+    const end = Math.max(a.col, b.col);
+    for (let col = start; col < end; col += 1) {
+      if (occupied.has(coordinateKey(a.row, col))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  const start = Math.min(a.row, b.row) + 1;
+  const end = Math.max(a.row, b.row);
+  for (let row = start; row < end; row += 1) {
+    if (occupied.has(coordinateKey(row, a.col))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function segmentIntersectionPoint(
+  edgeA: CommandEdge,
+  edgeB: CommandEdge,
+): { row: number; col: number } | null {
+  const horizontalA = edgeA.from.row === edgeA.to.row;
+  const horizontalB = edgeB.from.row === edgeB.to.row;
+
+  if (horizontalA === horizontalB) {
+    return null;
+  }
+
+  const horizontal = horizontalA ? edgeA : edgeB;
+  const vertical = horizontalA ? edgeB : edgeA;
+
+  const row = horizontal.from.row;
+  const col = vertical.from.col;
+
+  const minCol = Math.min(horizontal.from.col, horizontal.to.col);
+  const maxCol = Math.max(horizontal.from.col, horizontal.to.col);
+  const minRow = Math.min(vertical.from.row, vertical.to.row);
+  const maxRow = Math.max(vertical.from.row, vertical.to.row);
+
+  if (col <= minCol || col >= maxCol || row <= minRow || row >= maxRow) {
+    return null;
+  }
+
+  return { row, col };
+}
+
+function buildCommandEdges(state: GameState): CommandEdge[] {
+  const occupied = new Map(state.pieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece.id]));
+  const edges = new Map<string, CommandEdge>();
+
+  for (const owner of ["P1", "P2"] as const) {
+    const ownPieces = state.pieces
+      .filter((piece) => piece.owner === owner)
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    for (let i = 0; i < ownPieces.length; i += 1) {
+      for (let j = i + 1; j < ownPieces.length; j += 1) {
+        const a = ownPieces[i];
+        const b = ownPieces[j];
+        const rowDelta = Math.abs(a.position.row - b.position.row);
+        const colDelta = Math.abs(a.position.col - b.position.col);
+
+        const diagonalAllowed = rowDelta === 1 && colDelta === 1;
+        const orthogonalVisible =
+          (a.position.row === b.position.row || a.position.col === b.position.col) &&
+          isClearOrthogonalLine(state, a.position, b.position, occupied);
+
+        if (!diagonalAllowed && !orthogonalVisible) {
+          continue;
+        }
+
+        const id = makeEdgeId(a.id, b.id);
+        edges.set(id, {
+          owner,
+          fromId: a.id,
+          toId: b.id,
+          from: { ...a.position },
+          to: { ...b.position },
+          id,
+        });
+      }
+    }
+  }
+
+  return [...edges.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function applyCommandPhase(state: GameState, mode: ArtifactMode): boolean {
+  const edges = buildCommandEdges(state);
+  const edgesByOwner = {
+    P1: edges.filter((edge) => edge.owner === "P1"),
+    P2: edges.filter((edge) => edge.owner === "P2"),
+  } as const;
+
+  const cutEdges = new Set<string>();
+  for (const p1Edge of edgesByOwner.P1) {
+    for (const p2Edge of edgesByOwner.P2) {
+      if (segmentIntersectionPoint(p1Edge, p2Edge)) {
+        cutEdges.add(p1Edge.id);
+        cutEdges.add(p2Edge.id);
+      }
+    }
+  }
+
+  const activeEdges = edges.filter((edge) => !cutEdges.has(edge.id));
+
+  let changed = false;
+  const shortestPathToCommanderByPieceId: Record<string, { row: number; col: number }[]> = {};
+
+  for (const owner of ["P1", "P2"] as const) {
+    const commanderId = owner === "P1" ? "C1" : "C2";
+    const ownPieceIds = sortIds(state.pieces.filter((piece) => piece.owner === owner).map((piece) => piece.id));
+
+    const adjacency = new Map<string, string[]>();
+    for (const pieceId of ownPieceIds) {
+      adjacency.set(pieceId, []);
+    }
+
+    for (const edge of activeEdges.filter((candidate) => candidate.owner === owner)) {
+      adjacency.get(edge.fromId)?.push(edge.toId);
+      adjacency.get(edge.toId)?.push(edge.fromId);
+    }
+    for (const [pieceId, neighbors] of adjacency.entries()) {
+      adjacency.set(pieceId, sortIds(neighbors));
+    }
+
+    const visited = new Set<string>();
+    const parent = new Map<string, string | null>();
+    const queue: string[] = [];
+    if (adjacency.has(commanderId)) {
+      queue.push(commanderId);
+      visited.add(commanderId);
+      parent.set(commanderId, null);
+    }
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) {
+        break;
+      }
+      const neighbors = adjacency.get(current) ?? [];
+      for (const next of neighbors) {
+        if (visited.has(next)) {
+          continue;
+        }
+        visited.add(next);
+        parent.set(next, current);
+        queue.push(next);
+      }
+    }
+
+    for (const piece of state.pieces.filter((candidate) => candidate.owner === owner)) {
+      const nextCommanded = visited.has(piece.id);
+      if (piece.commanded !== nextCommanded) {
+        piece.commanded = nextCommanded;
+        changed = true;
+      }
+
+      if (mode === "full" && nextCommanded) {
+        const pathNodes: string[] = [];
+        let cursor: string | null | undefined = piece.id;
+        while (cursor) {
+          pathNodes.push(cursor);
+          cursor = parent.get(cursor);
+        }
+        const pathCoordinates: { row: number; col: number }[] = [];
+        for (const pathNodeId of pathNodes) {
+          const pathNode = state.pieces.find((candidate) => candidate.id === pathNodeId);
+          if (!pathNode) {
+            continue;
+          }
+          pathCoordinates.push({ row: pathNode.position.row, col: pathNode.position.col });
+        }
+        shortestPathToCommanderByPieceId[piece.id] = pathCoordinates;
+      }
+    }
+  }
+
+  const nextCommandArtifact = {
+    candidateEdges: sortIds(edges.map((edge) => edge.id)),
+    cutEdges: sortIds(cutEdges),
+    activeEdges: sortIds(activeEdges.map((edge) => edge.id)),
+    shortestPathToCommanderByPieceId: mode === "full" ? shortestPathToCommanderByPieceId : {},
+  };
+
+  if (!state.artifacts || JSON.stringify(state.artifacts.command) !== JSON.stringify(nextCommandArtifact)) {
+    state.artifacts = state.artifacts
+      ? {
+          ...state.artifacts,
+          command: nextCommandArtifact,
+        }
+      : {
+          mode,
+          supply: [],
+          command: nextCommandArtifact,
+          groups: {
+            componentByPieceId: {},
+            membersByComponentId: {},
+            strengthByComponentId: {},
+          },
+        };
+    changed = true;
+  }
+
+  return changed;
+}
+
 function applySupplyPhase(state: GameState, mode: ArtifactMode): boolean {
   const p1Supply = computeSupplyForOwner(state, "P1");
   const p2Supply = computeSupplyForOwner(state, "P2");
@@ -289,6 +523,9 @@ function runResolvePass(state: GameState, mode: ArtifactMode): boolean {
   if (state.artifacts?.supply) {
     nextArtifacts.supply = state.artifacts.supply;
   }
+  if (state.artifacts?.command) {
+    nextArtifacts.command = state.artifacts.command;
+  }
   if (JSON.stringify(state.artifacts) !== JSON.stringify(nextArtifacts)) {
     state.artifacts = nextArtifacts;
     changed = true;
@@ -300,7 +537,9 @@ function runResolvePass(state: GameState, mode: ArtifactMode): boolean {
   }
 
   // Phase 3: command.
-  // Full command propagation and cut-edge logic land in Step 4.
+  if (applyCommandPhase(state, mode)) {
+    changed = true;
+  }
   // Phase 4: legal-set derivation.
   // Action-family legality integration lands after Track A merge sync.
 
