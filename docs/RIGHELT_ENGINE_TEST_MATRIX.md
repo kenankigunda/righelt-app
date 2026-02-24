@@ -1,4 +1,4 @@
-# Righelt Engine Test Matrix (v1)
+# Righelt Engine Test Matrix (v2)
 
 Status: Normative acceptance matrix for engine implementation against `RIGHELT_RULES_SPEC.md`.
 
@@ -371,3 +371,66 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 - Add state hash assertions for replay tests.
 - Keep deterministic fixture IDs stable for CI.
 
+## O. Continuation Chains and Recursive Completion
+
+### O-001 Rush continuation can chain multiple atomic rushes
+- Given: A rush continuation state where same-side legal rush follow-up exists after first rush step.
+- When: Apply first rush, then apply legal second rush in continuation.
+- Then: Continuation remains active until no legal mandatory/selected rush continuation steps remain.
+
+### O-002 Continuation closes exactly when no continuation obligations remain
+- Given: Push or rush continuation state that is one step away from completion.
+- When: Apply final required continuation step.
+- Then: Continuation context clears and side-to-move switches once.
+
+### O-003 Premature turn-ending action rejected during continuation
+- Given: Active continuation context (`push` or `rush`) with legal continuation steps available.
+- When: Player attempts non-continuation action (including another piece action type).
+- Then: Rejected; continuation context unchanged.
+
+### O-004 Recursive resolve handles continuation-induced forced removals
+- Given: Continuation step that triggers forced retreat/removal and creates secondary supply/command changes.
+- When: Resolve.
+- Then: Engine reruns stabilization passes until fixed point before terminal evaluation.
+
+## P. Headless Engine, Log Validation, and Cross-Runtime Parity
+
+### P-001 Headless command-log replay without UI state
+- Given: Initial state and stored command list `S`.
+- When: Engine replays `S` in headless mode (no UI hooks, no rendering callbacks).
+- Then: Replay succeeds/fails strictly by rules legality and returns deterministic final state + outcome.
+
+### P-002 Invalid command in log fails at exact index
+- Given: Stored command list with first illegal command at index `k`.
+- When: Headless replay validates and applies sequentially.
+- Then: Replay halts at `k` with deterministic validation error and unchanged state from `k-1`.
+
+### P-003 Optional snapshot-only replay path
+- Given: Legal command list `S`.
+- When: Replay with intermediate snapshots disabled.
+- Then: Engine can produce final state and terminal outcome without materializing intermediate UI states.
+
+### P-004 Snapshot parity between full-trace and final-only modes
+- Given: Same initial state and legal list `S`.
+- When: Replay once with per-step snapshots and once in final-only mode.
+- Then: Final state hash, side-to-move, continuation flags, and outcome are identical.
+
+### P-005 Client/server deterministic parity
+- Given: Canonical fixture set `F` (initial states + action sequences).
+- When: Execute `F` in browser-target build and server-target build.
+- Then: Each fixture yields identical final state hash, legality decisions, continuation transitions, and outcome.
+
+### P-006 Serialization round-trip stability
+- Given: Engine state with continuation context and derived flags.
+- When: Serialize -> deserialize -> continue replay.
+- Then: Legal move generation, validation outcomes, and final state match non-round-tripped run.
+
+### P-007 Legal action generation equals validation boundary
+- Given: Arbitrary non-terminal state.
+- When: Enumerate legal actions `L`, then validate each `a in L` and a sampled set `not in L`.
+- Then: All `a in L` are accepted and all sampled `not in L` are rejected.
+
+### P-008 Deterministic history emission
+- Given: Same initial state and same legal command list.
+- When: Produce machine-readable move history twice.
+- Then: History entries (ordering, action encoding, resulting metadata) are byte-identical.
