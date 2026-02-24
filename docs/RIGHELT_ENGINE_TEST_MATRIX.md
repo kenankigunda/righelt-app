@@ -1,4 +1,4 @@
-# Righelt Engine Test Matrix (v2)
+# Righelt Engine Test Matrix (v3)
 
 Status: Normative acceptance matrix for engine implementation against `RIGHELT_RULES_SPEC.md`.
 
@@ -370,6 +370,7 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
   - `expected_terminal`
 - Add state hash assertions for replay tests.
 - Keep deterministic fixture IDs stable for CI.
+- Add contract test that authoritative engine modules do not import third-party graph/pathfinding libraries.
 
 ## O. Continuation Chains and Recursive Completion
 
@@ -434,3 +435,40 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 - Given: Same initial state and same legal command list.
 - When: Produce machine-readable move history twice.
 - Then: History entries (ordering, action encoding, resulting metadata) are byte-identical.
+
+## Q. Analysis Artifacts for UI Indicators
+
+### Q-001 Supply shortest-path artifact present
+- Given: State where a piece is supplied.
+- When: Resolve with full artifact mode.
+- Then: Engine returns shortest path from piece to own supply point for that piece.
+
+### Q-002 Supply shortest-path deterministic tie-break
+- Given: State where multiple equal-length supply paths exist.
+- When: Resolve same state repeatedly (and across runtimes).
+- Then: Returned shortest path is identical in all runs.
+
+### Q-003 Command artifact includes edges and cut edges
+- Given: State with at least one friendly command edge and at least one edge intersection.
+- When: Resolve with full artifact mode.
+- Then: Engine returns candidate edges, cut-edge identifiers, and active propagation edges consistently.
+
+### Q-004 Command path-to-commander artifact present
+- Given: Commanded piece reachable from Commander via uncut edges.
+- When: Resolve with full artifact mode.
+- Then: Engine returns deterministic shortest path-to-commander artifact for that piece.
+
+### Q-005 Group artifact exposes connected components and strengths
+- Given: State with at least two friendly components of different sizes.
+- When: Resolve with full artifact mode.
+- Then: Engine returns component id per piece, members per component, and strength per component.
+
+### Q-006 Rules booleans derive from same artifact build
+- Given: Any non-terminal state.
+- When: Resolve with full artifact mode.
+- Then: `supplied`, `commanded`, and push-strength decisions are consistent with returned supply/command/group artifacts.
+
+### Q-007 Full vs minimal artifact mode parity
+- Given: Same initial state and legal command list.
+- When: Replay once with minimal artifacts and once with full artifacts.
+- Then: Final state hash, legality decisions, continuation state, and terminal outcome are identical.

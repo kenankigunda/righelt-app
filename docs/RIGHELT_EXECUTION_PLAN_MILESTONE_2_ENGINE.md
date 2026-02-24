@@ -66,6 +66,38 @@ Notes:
 2. No hidden global state or runtime randomness.
 3. Validation errors must be deterministic and machine-readable.
 
+## 4.1 Connectivity/Pathing Implementation Policy and Artifact Contract
+
+Policy for authoritative rules logic:
+1. Implement supply, command, cut-edge detection, and group connectedness directly in `packages/game-engine`.
+2. Do not depend on third-party graph/pathfinding libraries for authoritative game outcomes.
+3. Optional third-party helpers are allowed only for non-authoritative tooling (debug viewers, offline analysis), never for rule decisions.
+
+Reasoning:
+1. Board size is small; full deterministic recomputation per atomic step is simple and reliable.
+2. Engine needs custom UI-ready artifacts (shortest lines, cut edges, groups) not cleanly guaranteed by generic libraries.
+3. Cross-runtime determinism is easier to control with in-engine tie-break rules.
+
+Required resolve artifacts for UI and tests:
+1. Supply artifacts:
+   - reachability set per player
+   - shortest path to supply per piece
+   - supply distance per piece
+2. Command artifacts:
+   - candidate edges
+   - cut-edge set
+   - active propagation edges
+   - shortest path-to-commander per commanded piece
+3. Group artifacts:
+   - component id per piece
+   - members per component
+   - strength per component
+
+Artifact delivery requirements:
+1. Artifacts are derived by engine resolve and returned in deterministic order.
+2. Rules booleans (`supplied`, `commanded`, push strength) are computed from the same artifact build.
+3. Engine supports lightweight and full artifact modes so headless replay can avoid unnecessary payload.
+
 ## 5. Milestone Work Plan
 
 ## Phase 0: Package and Test Harness Foundation
@@ -91,10 +123,11 @@ Exit criteria:
    - board occupancy
    - side-to-move
    - continuation context
-   - derived artifacts (`supplied`, `commanded`, groups, edges)
+   - derived artifacts (`supplied`, `commanded`, groups, edges, shortest paths)
 2. Implement `createInitialState()` per rules Section 2.
 3. Implement serialization round-trip and stable state hashing.
 4. Implement deterministic replay skeleton (apply without full legality yet).
+5. Define deterministic tie-break rules for shortest-path selection and edge ordering.
 
 Matrix focus:
 1. A-001, A-002, A-003
@@ -129,13 +162,14 @@ Exit criteria:
 2. No state mutation on rejected actions.
 
 ## Phase 3: Connectivity, Supply, Command, Groups, and Resolution Order
-1. Implement connectivity artifact rebuild.
+1. Implement connectivity artifact rebuild (in-engine, no third-party rules dependency).
 2. Implement supply recomputation for all pieces including commanders.
 3. Implement command propagation and edge cuts.
 4. Implement push strength group composition.
 5. Implement full normative resolution pipeline order.
 6. Implement rerun-until-stable loop.
 7. Implement terminal evaluation from stabilized state.
+8. Expose full resolve artifacts for UI indicator rendering.
 
 Matrix focus:
 1. B-001..B-006
@@ -147,6 +181,7 @@ Matrix focus:
 Exit criteria:
 1. Resolution pipeline behavior matches rules Section 7 and Section 8 outcomes.
 2. Stabilization loop converges deterministically.
+3. Artifact outputs are stable and sufficient for shortest-line and group indicators.
 
 ## Phase 4: Continuation Chain Completion and Headless Replay
 1. Implement push continuation obligations (mandatory follow semantics).
@@ -198,6 +233,7 @@ This is the minimum serial setup required on a base branch before any parallel t
 3. Add canonical shared types used by all tracks (`GameState`, `Action`, `Outcome`, `ContinuationContext`).
 4. Add a matrix mapping manifest file (scenario ID -> owning track/test file) to avoid overlap.
 5. Freeze baseline contracts for engine API signatures listed in Section 4.
+6. Freeze artifact schema and deterministic tie-break policy from Section 4.1.
 
 Parallelization gate:
 1. Base branch builds.
