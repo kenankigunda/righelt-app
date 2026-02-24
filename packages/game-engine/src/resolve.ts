@@ -425,6 +425,100 @@ function applyCommandPhase(state: GameState, mode: ArtifactMode): boolean {
   return changed;
 }
 
+function applyGroupPhase(state: GameState, mode: ArtifactMode): boolean {
+  const activeEdges = new Set(state.artifacts?.command.activeEdges ?? []);
+
+  const adjacency = new Map<string, string[]>();
+  const pieceById = new Map(state.pieces.map((piece) => [piece.id, piece]));
+  for (const piece of state.pieces) {
+    adjacency.set(piece.id, []);
+  }
+
+  for (const edgeId of activeEdges) {
+    const [aId, bId] = edgeId.split("|");
+    if (!aId || !bId) {
+      continue;
+    }
+    const a = pieceById.get(aId);
+    const b = pieceById.get(bId);
+    if (!a || !b || a.owner !== b.owner) {
+      continue;
+    }
+
+    adjacency.get(aId)?.push(bId);
+    adjacency.get(bId)?.push(aId);
+  }
+  for (const [pieceId, neighbors] of adjacency.entries()) {
+    adjacency.set(pieceId, sortIds(neighbors));
+  }
+
+  const componentByPieceId: Record<string, string> = {};
+  const membersByComponentId: Record<string, string[]> = {};
+  const strengthByComponentId: Record<string, number> = {};
+  const visited = new Set<string>();
+
+  const orderedPieces = [...state.pieces].sort((a, b) => a.id.localeCompare(b.id));
+  for (const startPiece of orderedPieces) {
+    if (visited.has(startPiece.id)) {
+      continue;
+    }
+    const queue = [startPiece.id];
+    visited.add(startPiece.id);
+    const componentMembers: string[] = [];
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) {
+        break;
+      }
+      componentMembers.push(current);
+      for (const next of adjacency.get(current) ?? []) {
+        if (visited.has(next)) {
+          continue;
+        }
+        visited.add(next);
+        queue.push(next);
+      }
+    }
+
+    const sortedMembers = sortIds(componentMembers);
+    const componentId = `${startPiece.owner}:${sortedMembers[0]}`;
+    membersByComponentId[componentId] = sortedMembers;
+    strengthByComponentId[componentId] = sortedMembers.length;
+    for (const pieceId of sortedMembers) {
+      componentByPieceId[pieceId] = componentId;
+    }
+  }
+
+  const nextGroupsArtifact = {
+    componentByPieceId,
+    membersByComponentId,
+    strengthByComponentId,
+  };
+
+  if (!state.artifacts || JSON.stringify(state.artifacts.groups) !== JSON.stringify(nextGroupsArtifact)) {
+    state.artifacts = state.artifacts
+      ? {
+          ...state.artifacts,
+          groups: nextGroupsArtifact,
+        }
+      : {
+          mode,
+          supply: [],
+          command: {
+            candidateEdges: [],
+            cutEdges: [],
+            activeEdges: [],
+            shortestPathToCommanderByPieceId: {},
+          },
+          groups: nextGroupsArtifact,
+        };
+    return true;
+  }
+
+  return false;
+}
+
 function applySupplyPhase(state: GameState, mode: ArtifactMode): boolean {
   const p1Supply = computeSupplyForOwner(state, "P1");
   const p2Supply = computeSupplyForOwner(state, "P2");
@@ -526,6 +620,9 @@ function runResolvePass(state: GameState, mode: ArtifactMode): boolean {
   if (state.artifacts?.command) {
     nextArtifacts.command = state.artifacts.command;
   }
+  if (state.artifacts?.groups) {
+    nextArtifacts.groups = state.artifacts.groups;
+  }
   if (JSON.stringify(state.artifacts) !== JSON.stringify(nextArtifacts)) {
     state.artifacts = nextArtifacts;
     changed = true;
@@ -540,7 +637,10 @@ function runResolvePass(state: GameState, mode: ArtifactMode): boolean {
   if (applyCommandPhase(state, mode)) {
     changed = true;
   }
-  // Phase 4: legal-set derivation.
+  // Phase 4: legal-set derivation + group composition baseline.
+  if (applyGroupPhase(state, mode)) {
+    changed = true;
+  }
   // Action-family legality integration lands after Track A merge sync.
 
   // Phase 5: forced effects.
