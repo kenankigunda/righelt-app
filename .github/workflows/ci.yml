@@ -5,6 +5,7 @@ on:
     paths:
       - "apps/web/**"
       - "packages/api-handler/**"
+      - "packages/game-engine/**"
       - "packages/shared-types/**"
       - "db/migrations/**"
       - "package.json"
@@ -17,6 +18,7 @@ on:
     paths:
       - "apps/web/**"
       - "packages/api-handler/**"
+      - "packages/game-engine/**"
       - "packages/shared-types/**"
       - "db/migrations/**"
       - "package.json"
@@ -47,3 +49,9 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+      - name: Engine tests
+        run: pnpm test:engine
+
+      - name: API handler tests
+        run: pnpm test:api-handler

@@ -26,14 +26,20 @@ export type ApiEnv = {
   DB: D1DatabaseLike;
 };
 
-const json = (body: unknown, status = 200, cacheControl = "no-store"): Response =>
+const CACHE_NO_STORE = "no-store";
+const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
+
+const json = (body: unknown, status = 200, cacheControl = CACHE_NO_STORE): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": cacheControl
-    }
+      "cache-control": cacheControl,
+    },
   });
+
+const jsonNoStore = (body: unknown, status = 200): Response => json(body, status, CACHE_NO_STORE);
+const jsonBootstrap = (body: unknown, status = 200): Response => json(body, status, CACHE_BOOTSTRAP_SHORT);
 
 const parseJsonBody = async (request: Request): Promise<Record<string, unknown>> => {
   try {
@@ -121,18 +127,18 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
   const url = new URL(request.url);
 
   if (request.method === "GET" && url.pathname === "/api/engine/playground/state") {
-    return json({
+    return jsonBootstrap({
       ok: true,
       state: INITIAL_PLAYGROUND_STATE,
       legalActions: INITIAL_PLAYGROUND_LEGAL_ACTIONS,
-    }, 200, "public, max-age=0, s-maxage=60, stale-while-revalidate=300");
+    });
   }
 
   if (request.method === "POST" && url.pathname === "/api/engine/playground/legal") {
     const body = await parseJsonBody(request);
     const state = asGameState(body.state);
     if (!state) {
-      return json({ ok: false, error: "invalid_state" }, 400);
+      return jsonNoStore({ ok: false, error: "invalid_state" }, 400);
     }
 
     const resolved = resolveToStability(state, { artifactMode: "full" });
@@ -149,10 +155,10 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
     const pieceId = typeof body.pieceId === "string" ? body.pieceId : null;
 
     if (!state) {
-      return json({ ok: false, error: "invalid_state" }, 400);
+      return jsonNoStore({ ok: false, error: "invalid_state" }, 400);
     }
     if (!pieceId) {
-      return json({ ok: false, error: "invalid_piece_id" }, 400);
+      return jsonNoStore({ ok: false, error: "invalid_piece_id" }, 400);
     }
 
     const resolved = resolveToStability(state, { artifactMode: "full" });
@@ -169,10 +175,10 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
     const state = asGameState(body.state);
     const action = asAction(body.action);
     if (!state) {
-      return json({ ok: false, error: "invalid_state" }, 400);
+      return jsonNoStore({ ok: false, error: "invalid_state" }, 400);
     }
     if (!action) {
-      return json({ ok: false, error: "invalid_action" }, 400);
+      return jsonNoStore({ ok: false, error: "invalid_action" }, 400);
     }
 
     const resolved = resolveToStability(state, { artifactMode: "full" });
@@ -199,7 +205,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
         legalActions: listLegalActions(stabilized),
       });
     } catch (error) {
-      return json(
+      return jsonNoStore(
         {
           ok: false,
           error: "apply_failed",
@@ -214,7 +220,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
     const body = await parseJsonBody(request);
     const state = asGameState(body.state);
     if (!state) {
-      return json({ ok: false, error: "invalid_state" }, 400);
+      return jsonNoStore({ ok: false, error: "invalid_state" }, 400);
     }
 
     return json({
@@ -225,7 +231,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
   }
 
   if (request.method === "GET" && url.pathname === "/api/health") {
-    return json({ ok: true, service: "righelt" });
+    return jsonNoStore({ ok: true, service: "righelt" });
   }
 
   if (request.method === "POST" && url.pathname === "/api/test-action") {
@@ -240,7 +246,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
       .run();
 
     if (!insert.success) {
-      return json({ ok: false, error: "insert_failed" }, 500);
+      return jsonNoStore({ ok: false, error: "insert_failed" }, 500);
     }
 
     const actionId = insert.meta?.last_row_id ?? null;
@@ -252,7 +258,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
       payload: { actionId, message }
     };
 
-    return json({ ok: true, actionId, createdAt, event });
+    return jsonNoStore({ ok: true, actionId, createdAt, event });
   }
 
   if (request.method === "POST" && url.pathname === "/api/commands/validate") {
@@ -260,11 +266,11 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
     const command = body.command as ClientCommand | undefined;
 
     if (!command || typeof command.type !== "string") {
-      return json({ ok: false, error: "invalid_command" }, 400);
+      return jsonNoStore({ ok: false, error: "invalid_command" }, 400);
     }
 
-    return json({ ok: true, accepted: true, commandType: command.type });
+    return jsonNoStore({ ok: true, accepted: true, commandType: command.type });
   }
 
-  return json({ ok: false, error: "not_found" }, 404);
+  return jsonNoStore({ ok: false, error: "not_found" }, 404);
 };

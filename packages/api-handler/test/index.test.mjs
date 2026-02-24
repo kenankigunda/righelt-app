@@ -3,6 +3,9 @@ import test from "node:test";
 
 import { handleApiRequest } from "../src/index.ts";
 
+const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
+const CACHE_NO_STORE = "no-store";
+
 function buildEnv() {
   return {
     DB: {
@@ -28,10 +31,7 @@ test("GET /api/engine/playground/state returns deterministic bootstrap payload",
 
   const response = await handleApiRequest(request, env);
   assert.equal(response.status, 200);
-  assert.equal(
-    response.headers.get("cache-control"),
-    "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
-  );
+  assert.equal(response.headers.get("cache-control"), CACHE_BOOTSTRAP_SHORT);
 
   const body = await response.json();
   assert.equal(body.ok, true);
@@ -66,5 +66,54 @@ test("non-bootstrap API responses remain non-cacheable", async () => {
 
   const response = await handleApiRequest(request, env);
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("cache-control"), CACHE_NO_STORE);
+});
+
+test("startup route keeps a deterministic response body across repeated requests", async () => {
+  const env = buildEnv();
+  const request = new Request("https://righelt.pages.dev/api/engine/playground/state", {
+    method: "GET",
+  });
+
+  const firstResponse = await handleApiRequest(request, env);
+  const secondResponse = await handleApiRequest(request, env);
+
+  const firstPayload = await firstResponse.text();
+  const secondPayload = await secondResponse.text();
+
+  assert.equal(firstPayload, secondPayload);
+});
+
+test("mutable and validation endpoints default to no-store cache policy", async () => {
+  const env = buildEnv();
+  const requestCases = [
+    new Request("https://righelt.pages.dev/api/engine/playground/legal", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }),
+    new Request("https://righelt.pages.dev/api/engine/playground/piece-moves", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }),
+    new Request("https://righelt.pages.dev/api/engine/playground/hash", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }),
+    new Request("https://righelt.pages.dev/api/commands/validate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }),
+    new Request("https://righelt.pages.dev/api/unknown", {
+      method: "GET",
+    }),
+  ];
+
+  for (const request of requestCases) {
+    const response = await handleApiRequest(request, env);
+    assert.equal(response.headers.get("cache-control"), CACHE_NO_STORE);
+  }
 });
