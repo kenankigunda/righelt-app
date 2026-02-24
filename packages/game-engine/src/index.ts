@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./deterministic";
 export * from "./fixtures";
 export * from "./hash";
 export * from "./state";

@@ -8,6 +8,7 @@ import type {
   GroupArtifact,
   Outcome,
   OutcomeStatus,
+  Piece,
   ResolveArtifacts,
   SupplyArtifact,
 } from "../../shared-types/src/engine";
@@ -22,6 +23,7 @@ export type {
   GroupArtifact,
   Outcome,
   OutcomeStatus,
+  Piece,
   ResolveArtifacts,
   SupplyArtifact,
 };

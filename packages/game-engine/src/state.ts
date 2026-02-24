@@ -1,8 +1,9 @@
 import type { GameState } from "./types";
+import { BOARD_SIZE, createMinimalArtifacts, normalizeState } from "./deterministic";
 
 export function createInitialState(): GameState {
-  return {
-    boardSize: 10,
+  const initial: GameState = {
+    boardSize: BOARD_SIZE,
     sideToMove: "P1",
     turnIndex: 0,
     pieces: [
@@ -27,5 +28,8 @@ export function createInitialState(): GameState {
     outcome: {
       status: "ongoing",
     },
+    artifacts: createMinimalArtifacts(),
   };
+
+  return normalizeState(initial);
 }

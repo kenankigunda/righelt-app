@@ -1,21 +1,8 @@
-function stableSortObject(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(stableSortObject);
-  }
+import { serializeState } from "./serialize";
+import type { GameState } from "./types";
 
-  if (value !== null && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
-      a.localeCompare(b),
-    );
-    return Object.fromEntries(entries.map(([k, v]) => [k, stableSortObject(v)]));
-  }
-
-  return value;
-}
-
-export function deterministicStateHash(value: unknown): string {
-  const normalized = stableSortObject(value);
-  const serialized = JSON.stringify(normalized);
+export function deterministicStateHash(value: GameState): string {
+  const serialized = serializeState(value);
 
   const seeds = [
     0x811c9dc5, 0x9e3779b1, 0x85ebca6b, 0xc2b2ae35, 0x27d4eb2f, 0x165667b1, 0xd3a2646c,
