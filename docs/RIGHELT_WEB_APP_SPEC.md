@@ -16,6 +16,7 @@ If implementation behavior conflicts with this spec, this spec wins.
 - `Invite link`: Shareable URL that opens a specific game and enables join decisions.
 - `Live view`: Current board state with all real-time updates applied.
 - `History view`: Snapshot of board state immediately after a selected move index.
+- `Offline mode`: Device has no network connectivity or cannot reach backend services.
 - `Connected status`:
   - `Connected`: Client currently active on the game.
   - `Disconnected`: Client not currently active.
@@ -152,6 +153,22 @@ Tutorial restart:
   - Invite recipients cannot claim either player seat unless `Playground mode` is exited.
 - Presence should represent both player seats as controlled by the same device identity while connected.
 - Exiting `Playground mode` converts the game to standard multiplayer seating and re-enables normal player-join rules.
+
+### 12.1 Offline Playground Requirements
+
+- `Playground mode` must be runnable with no network access.
+- Users must be able to start a new playground game while offline from the home page and play full turns locally.
+- While offline, move validation and rule resolution must run fully on-device; no server round trip may be required to continue play.
+- The app must persist offline playground game state locally (including move history) so a reload on the same device restores the game.
+- If a local persistence write fails, the UI must show a non-dismissed warning that offline progress may be lost.
+- Offline playground sessions are single-device only:
+  - Invite creation/sharing must be disabled while offline.
+  - Join-as-player/join-as-viewer actions for other devices must be unavailable while offline.
+  - Presence indicators for remote participants must be hidden or replaced with an `Offline` state.
+- The game board must show a clear `Offline` indicator whenever backend connectivity is unavailable.
+- The web app shell and assets required for playground mode (HTML/CSS/JS/fonts/icons) must be cached for offline startup after at least one successful online load.
+- When connectivity returns, the app may offer an explicit `Go online` action for that local playground game; this transition must require user confirmation and must not happen automatically mid-turn.
+- Until user confirms `Go online`, the local offline game remains device-local and does not appear in public/home game lists.
 
 ## 13. Notifications and Prompts
 
