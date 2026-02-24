@@ -622,6 +622,13 @@ document.addEventListener("click", (event) => {
     return;
   }
   selectPassAction();
+  selectedPieceId = null;
+  selectedPieceMoves = [];
+  selectedSource = null;
+  selectedTarget = null;
+  refreshSelectionLabels();
+  renderBoard();
+  renderStatus();
 });
 
 resetSelectionEl.addEventListener("click", () => {
