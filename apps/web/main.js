@@ -1,4 +1,5 @@
 const boardEl = document.getElementById("board");
+const overlayLinesEl = document.getElementById("overlay-lines");
 const actionTypeEl = document.getElementById("action-type");
 const sourceValueEl = document.getElementById("source-value");
 const targetValueEl = document.getElementById("target-value");
@@ -9,6 +10,8 @@ const sideToMoveEl = document.getElementById("side-to-move");
 const turnIndexEl = document.getElementById("turn-index");
 const continuationEl = document.getElementById("continuation");
 const commanderSupplyEl = document.getElementById("commander-supply");
+const selectedPieceEl = document.getElementById("selected-piece");
+const selectedPieceMovesEl = document.getElementById("selected-piece-moves");
 const legalActionsEl = document.getElementById("legal-actions");
 const moveLogEl = document.getElementById("move-log");
 const fixtureSelectEl = document.getElementById("fixture-select");
@@ -17,16 +20,22 @@ const replayFixtureEl = document.getElementById("replay-fixture");
 const fixtureResultEl = document.getElementById("fixture-result");
 
 const BOARD_SIZE = 10;
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 let state = null;
 let legalActions = [];
+let selectedPieceId = null;
 let selectedSource = null;
 let selectedTarget = null;
 const moveLog = [];
 let fixtures = [];
 let currentFixtureId = null;
+let cellByCoordinateKey = new Map();
 
+const coordKey = (coord) => `${coord.row},${coord.col}`;
+const sameCoordinate = (a, b) => Boolean(a && b && a.row === b.row && a.col === b.col);
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "unset");
+const pieceMarker = (piece) => `${piece.kind === "commander" ? "C" : "U"}${piece.owner === "P1" ? "1" : "2"}`;
 
 const setActionResult = (value) => {
   actionResultEl.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -46,50 +55,81 @@ const findPieceAt = (row, col) => {
   return state.pieces.find((piece) => piece.position.row === row && piece.position.col === col) ?? null;
 };
 
-const renderBoard = () => {
-  boardEl.innerHTML = "";
-  for (let row = 0; row < BOARD_SIZE; row += 1) {
-    for (let col = 0; col < BOARD_SIZE; col += 1) {
-      const cell = document.createElement("button");
-      cell.type = "button";
-      cell.className = "cell";
-      const isSource = selectedSource && selectedSource.row === row && selectedSource.col === col;
-      const isTarget = selectedTarget && selectedTarget.row === row && selectedTarget.col === col;
-      if (isSource) cell.classList.add("source");
-      if (isTarget) cell.classList.add("target");
-
-      cell.dataset.row = String(row);
-      cell.dataset.col = String(col);
-
-      const piece = findPieceAt(row, col);
-      const marker = document.createElement("span");
-      marker.className = "piece";
-      marker.textContent = piece
-        ? `${piece.kind === "commander" ? "C" : "U"}${piece.owner === "P1" ? "1" : "2"}`
-        : ".";
-      cell.appendChild(marker);
-
-      const coord = document.createElement("span");
-      coord.className = "coord";
-      coord.textContent = `${row},${col}`;
-      cell.appendChild(coord);
-      boardEl.appendChild(cell);
-    }
-  }
+const findPieceById = (pieceId) => {
+  if (!state || !pieceId) return null;
+  return state.pieces.find((piece) => piece.id === pieceId) ?? null;
 };
 
-const renderStatus = () => {
-  if (!state) return;
-  sideToMoveEl.textContent = state.sideToMove;
-  turnIndexEl.textContent = String(state.turnIndex);
-  continuationEl.textContent = state.continuation
-    ? `${state.continuation.type} (owner ${state.continuation.owner})`
-    : "none";
+const getSelectedPiece = () => {
+  const piece = findPieceById(selectedPieceId);
+  if (!piece) {
+    selectedPieceId = null;
+    return null;
+  }
+  return piece;
+};
 
-  const c1 = state.pieces.find((piece) => piece.id === "C1");
-  const c2 = state.pieces.find((piece) => piece.id === "C2");
-  commanderSupplyEl.textContent = `C1=${c1?.supplied ?? "-"} | C2=${c2?.supplied ?? "-"}`;
-  legalActionsEl.textContent = JSON.stringify(legalActions, null, 2);
+const getSupplyArtifactFor = (owner) => {
+  if (!state?.artifacts?.supply) {
+    return null;
+  }
+  return state.artifacts.supply.find((entry) => entry.player === owner) ?? null;
+};
+
+const getSupplyPathForPiece = (piece) => {
+  const supplyArtifact = getSupplyArtifactFor(piece.owner);
+  return supplyArtifact?.shortestPathByPieceId?.[piece.id] ?? [];
+};
+
+const getCommandPathForPiece = (piece) => state?.artifacts?.command?.shortestPathToCommanderByPieceId?.[piece.id] ?? [];
+
+const getGroupInfoForPiece = (piece) => {
+  const groups = state?.artifacts?.groups;
+  if (!groups) {
+    return {
+      componentId: null,
+      members: [],
+      strength: null,
+    };
+  }
+
+  const componentId = groups.componentByPieceId[piece.id] ?? null;
+  if (!componentId) {
+    return {
+      componentId: null,
+      members: [],
+      strength: null,
+    };
+  }
+
+  return {
+    componentId,
+    members: groups.membersByComponentId[componentId] ?? [],
+    strength: groups.strengthByComponentId[componentId] ?? null,
+  };
+};
+
+const getSelectedPieceActions = () => {
+  const piece = getSelectedPiece();
+  if (!piece) {
+    return [];
+  }
+
+  return legalActions.filter((action) => {
+    if (action.type === "pass") {
+      return false;
+    }
+
+    if (action.actorId) {
+      return action.actorId === piece.id;
+    }
+
+    if (action.from) {
+      return sameCoordinate(action.from, piece.position);
+    }
+
+    return false;
+  });
 };
 
 const renderMoveLog = () => {
@@ -107,6 +147,218 @@ const renderMoveLog = () => {
   }
 };
 
+const setOverlayViewBox = () => {
+  const width = boardEl.clientWidth;
+  const height = boardEl.clientHeight;
+  overlayLinesEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
+};
+
+const getCellCenter = (coord) => {
+  const cell = cellByCoordinateKey.get(coordKey(coord));
+  if (!cell) {
+    return null;
+  }
+
+  return {
+    x: cell.offsetLeft + cell.offsetWidth / 2,
+    y: cell.offsetTop + cell.offsetHeight / 2,
+  };
+};
+
+const drawPath = (path, stroke, dashPattern = null) => {
+  if (!path || path.length < 2) {
+    return;
+  }
+
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const start = getCellCenter(path[i]);
+    const end = getCellCenter(path[i + 1]);
+    if (!start || !end) {
+      continue;
+    }
+
+    const line = document.createElementNS(SVG_NS, "line");
+    line.setAttribute("x1", String(start.x));
+    line.setAttribute("y1", String(start.y));
+    line.setAttribute("x2", String(end.x));
+    line.setAttribute("y2", String(end.y));
+    line.setAttribute("stroke", stroke);
+    line.setAttribute("stroke-width", "3");
+    line.setAttribute("stroke-linecap", "round");
+    if (dashPattern) {
+      line.setAttribute("stroke-dasharray", dashPattern);
+    }
+    overlayLinesEl.appendChild(line);
+  }
+};
+
+const clearCellDecorations = () => {
+  for (const cell of cellByCoordinateKey.values()) {
+    cell.classList.remove("group-member", "selected-piece");
+    cell.querySelectorAll(".group-strength-badge,.move-ghost").forEach((node) => node.remove());
+  }
+};
+
+const renderPieceOverlays = () => {
+  clearCellDecorations();
+  overlayLinesEl.innerHTML = "";
+  setOverlayViewBox();
+
+  const piece = getSelectedPiece();
+  if (!piece) {
+    return;
+  }
+
+  const pieceCell = cellByCoordinateKey.get(coordKey(piece.position));
+  if (pieceCell) {
+    pieceCell.classList.add("selected-piece");
+  }
+
+  const groupInfo = getGroupInfoForPiece(piece);
+  if (groupInfo.members.length > 0) {
+    const memberPieces = groupInfo.members
+      .map((pieceId) => findPieceById(pieceId))
+      .filter((candidate) => Boolean(candidate));
+
+    for (const member of memberPieces) {
+      const memberCell = cellByCoordinateKey.get(coordKey(member.position));
+      memberCell?.classList.add("group-member");
+    }
+
+    const anchor = memberPieces
+      .map((member) => member.position)
+      .sort((a, b) => {
+        if (a.row !== b.row) {
+          return a.row - b.row;
+        }
+        return a.col - b.col;
+      })[0];
+
+    if (anchor) {
+      const anchorCell = cellByCoordinateKey.get(coordKey(anchor));
+      if (anchorCell && typeof groupInfo.strength === "number") {
+        const badge = document.createElement("span");
+        badge.className = "group-strength-badge";
+        badge.textContent = String(groupInfo.strength);
+        anchorCell.appendChild(badge);
+      }
+    }
+  }
+
+  drawPath(getSupplyPathForPiece(piece), "#2f8e63");
+  drawPath(getCommandPathForPiece(piece), "#2470c7");
+
+  const selectedActions = getSelectedPieceActions();
+  const seenTargets = new Set();
+  for (const action of selectedActions) {
+    if (!action.to) {
+      continue;
+    }
+
+    const targetKey = coordKey(action.to);
+    if (seenTargets.has(targetKey)) {
+      continue;
+    }
+    seenTargets.add(targetKey);
+
+    drawPath([piece.position, action.to], "#8b5ec0", "5 5");
+    const targetCell = cellByCoordinateKey.get(targetKey);
+    if (targetCell) {
+      const ghost = document.createElement("span");
+      ghost.className = "move-ghost";
+      ghost.textContent = pieceMarker(piece);
+      targetCell.appendChild(ghost);
+    }
+  }
+};
+
+const renderBoard = () => {
+  boardEl.innerHTML = "";
+  cellByCoordinateKey = new Map();
+
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      const cell = document.createElement("button");
+      cell.type = "button";
+      cell.className = "cell";
+
+      const isSource = selectedSource && selectedSource.row === row && selectedSource.col === col;
+      const isTarget = selectedTarget && selectedTarget.row === row && selectedTarget.col === col;
+      if (isSource) cell.classList.add("source");
+      if (isTarget) cell.classList.add("target");
+
+      cell.dataset.row = String(row);
+      cell.dataset.col = String(col);
+
+      const piece = findPieceAt(row, col);
+      const marker = document.createElement("span");
+      marker.className = "piece";
+      marker.textContent = piece ? pieceMarker(piece) : ".";
+      cell.appendChild(marker);
+
+      const coord = document.createElement("span");
+      coord.className = "coord";
+      coord.textContent = `${row},${col}`;
+      cell.appendChild(coord);
+
+      boardEl.appendChild(cell);
+      cellByCoordinateKey.set(`${row},${col}`, cell);
+    }
+  }
+
+  renderPieceOverlays();
+};
+
+const renderStatus = () => {
+  if (!state) return;
+
+  sideToMoveEl.textContent = state.sideToMove;
+  turnIndexEl.textContent = String(state.turnIndex);
+  continuationEl.textContent = state.continuation
+    ? `${state.continuation.type} (owner ${state.continuation.owner})`
+    : "none";
+
+  const c1 = state.pieces.find((piece) => piece.id === "C1");
+  const c2 = state.pieces.find((piece) => piece.id === "C2");
+  commanderSupplyEl.textContent = `C1=${c1?.supplied ?? "-"} | C2=${c2?.supplied ?? "-"}`;
+
+  const selectedPiece = getSelectedPiece();
+  if (!selectedPiece) {
+    selectedPieceEl.textContent = "No piece selected.";
+    selectedPieceMovesEl.textContent = "[]";
+  } else {
+    const groupInfo = getGroupInfoForPiece(selectedPiece);
+    const selectedActions = getSelectedPieceActions();
+
+    selectedPieceEl.textContent = JSON.stringify(
+      {
+        id: selectedPiece.id,
+        owner: selectedPiece.owner,
+        kind: selectedPiece.kind,
+        position: selectedPiece.position,
+        supplied: selectedPiece.supplied,
+        commanded: selectedPiece.commanded,
+        groupComponentId: groupInfo.componentId,
+        groupStrength: groupInfo.strength,
+      },
+      null,
+      2,
+    );
+
+    selectedPieceMovesEl.textContent = JSON.stringify(
+      selectedActions.map((action) => ({
+        type: action.type,
+        from: action.from ?? null,
+        to: action.to ?? null,
+      })),
+      null,
+      2,
+    );
+  }
+
+  legalActionsEl.textContent = JSON.stringify(legalActions, null, 2);
+};
+
 const reloadLegalActions = async () => {
   if (!state) return;
   const response = await fetch("/api/engine/playground/legal", {
@@ -118,7 +370,9 @@ const reloadLegalActions = async () => {
     throw new Error(`Failed to fetch legal actions: HTTP ${response.status}`);
   }
   const body = await response.json();
+  state = body.state ?? state;
   legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
+  renderBoard();
   renderStatus();
 };
 
@@ -130,6 +384,7 @@ const loadInitialState = async () => {
   const body = await response.json();
   state = body.state;
   legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
+  selectedPieceId = null;
   renderBoard();
   renderStatus();
   renderMoveLog();
@@ -187,26 +442,31 @@ boardEl.addEventListener("click", (event) => {
   if (!cell) return;
   const row = Number(cell.dataset.row);
   const col = Number(cell.dataset.col);
-  const clicked = { row, col };
+  const clickedCoord = { row, col };
+  const clickedPiece = findPieceAt(row, col);
 
-  if (!selectedSource) {
-    selectedSource = clicked;
-  } else if (!selectedTarget) {
-    selectedTarget = clicked;
-  } else {
-    selectedSource = clicked;
+  if (clickedPiece) {
+    selectedPieceId = clickedPiece.id;
+    selectedSource = { ...clickedPiece.position };
     selectedTarget = null;
+  } else if (!selectedSource) {
+    selectedSource = clickedCoord;
+  } else {
+    selectedTarget = clickedCoord;
   }
 
   refreshSelectionLabels();
   renderBoard();
+  renderStatus();
 });
 
 resetSelectionEl.addEventListener("click", () => {
+  selectedPieceId = null;
   selectedSource = null;
   selectedTarget = null;
   refreshSelectionLabels();
   renderBoard();
+  renderStatus();
 });
 
 submitActionEl.addEventListener("click", async () => {
@@ -232,7 +492,6 @@ submitActionEl.addEventListener("click", async () => {
       state = body.state;
       legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
       moveLog.push(`${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`);
-      selectedSource = null;
       selectedTarget = null;
       refreshSelectionLabels();
       renderBoard();
@@ -242,6 +501,7 @@ submitActionEl.addEventListener("click", async () => {
       return;
     }
 
+    state = body.state ?? state;
     setActionResult({
       accepted: false,
       validation: body.validation,
@@ -272,6 +532,7 @@ loadFixtureEl.addEventListener("click", () => {
   }
   state = structuredClone(fixture.initial_state);
   legalActions = [];
+  selectedPieceId = null;
   selectedSource = null;
   selectedTarget = null;
   moveLog.length = 0;
@@ -333,6 +594,7 @@ replayFixtureEl.addEventListener("click", async () => {
       observedOutcome === fixture.expected_outcome;
 
     state = workingState;
+    selectedPieceId = null;
     selectedSource = null;
     selectedTarget = null;
     refreshSelectionLabels();

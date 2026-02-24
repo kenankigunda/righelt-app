@@ -4,6 +4,7 @@ import {
   createInitialState,
   deterministicStateHash,
   listLegalActions,
+  resolveToStability,
   validateAction,
 } from "../../game-engine/src";
 import type { Action, GameState } from "../../game-engine/src";
@@ -66,7 +67,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
   const url = new URL(request.url);
 
   if (request.method === "GET" && url.pathname === "/api/engine/playground/state") {
-    const state = createInitialState();
+    const state = resolveToStability(createInitialState(), { artifactMode: "full" });
     return json({
       ok: true,
       state,
@@ -81,9 +82,11 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
       return json({ ok: false, error: "invalid_state" }, 400);
     }
 
+    const resolved = resolveToStability(state, { artifactMode: "full" });
     return json({
       ok: true,
-      legalActions: listLegalActions(state),
+      state: resolved,
+      legalActions: listLegalActions(resolved),
     });
   }
 
@@ -98,26 +101,28 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
       return json({ ok: false, error: "invalid_action" }, 400);
     }
 
-    const validation = validateAction(state, action);
+    const resolved = resolveToStability(state, { artifactMode: "full" });
+    const validation = validateAction(resolved, action);
     if (!validation.ok) {
       return json({
         ok: true,
         accepted: false,
         validation,
-        state,
-        legalActions: listLegalActions(state),
+        state: resolved,
+        legalActions: listLegalActions(resolved),
       });
     }
 
     try {
-      const result = applyAction(state, action);
+      const result = applyAction(resolved, action);
+      const stabilized = resolveToStability(result.state, { artifactMode: "full" });
       return json({
         ok: true,
         accepted: true,
         validation,
-        state: result.state,
-        outcome: result.outcome,
-        legalActions: listLegalActions(result.state),
+        state: stabilized,
+        outcome: stabilized.outcome,
+        legalActions: listLegalActions(stabilized),
       });
     } catch (error) {
       return json(

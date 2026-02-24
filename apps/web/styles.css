@@ -85,12 +85,27 @@ button {
 }
 
 .board {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(10, minmax(28px, 1fr));
   gap: 4px;
 }
 
+.board-wrap {
+  position: relative;
+}
+
+.overlay-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
 .cell {
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -115,6 +130,74 @@ button {
 .cell.target {
   border-color: var(--accent-2);
   box-shadow: inset 0 0 0 1px var(--accent-2);
+}
+
+.cell.group-member {
+  background: #eef8f1;
+}
+
+.cell.selected-piece {
+  border-color: #2b4c94;
+  box-shadow: inset 0 0 0 1px #2b4c94;
+}
+
+.group-strength-badge {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #0b3122;
+  background: #bde7cc;
+  border: 1px solid #6ab084;
+  border-radius: 999px;
+  padding: 1px 5px;
+}
+
+.move-ghost {
+  position: absolute;
+  inset: auto 4px 16px auto;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #7b5aa1;
+  opacity: 0.45;
+}
+
+.overlay-key {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin-right: 0.35rem;
+  vertical-align: -2px;
+  border: 1px solid transparent;
+}
+
+.swatch.supply {
+  background: #2f8e63;
+}
+
+.swatch.command {
+  background: #2470c7;
+}
+
+.swatch.move {
+  background: #8b5ec0;
+}
+
+.swatch.group {
+  background: #bde7cc;
+  border-color: #6ab084;
 }
 
 .piece {
