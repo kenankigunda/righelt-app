@@ -1,13 +1,267 @@
 import test from "node:test";
+import assert from "node:assert/strict";
+import { applyAction, validateAction } from "../../src/index.ts";
+import { commander, makeState, unit } from "../helpers/state-builders.mjs";
 
-test.todo("G-001 push legal with stronger attacker group");
-test.todo("G-002 push illegal on equal strength");
-test.todo("G-003 push illegal on weaker attacker");
-test.todo("G-004 push targeting rules (first occupied on orthogonal ray)");
-test.todo("G-005 cannot push while disallowed temporary state");
-test.todo("G-006 follow legal into follow-point");
-test.todo("G-007 follow illegal outside push continuation");
-test.todo("G-008 follow cannot reuse shifted piece");
-test.todo("G-009 retreat legal to orthogonal empty square");
-test.todo("G-010 retreat illegal to diagonal square");
-test.todo("G-011 forced removal when no retreat");
+test("G-001 push legal with stronger attacker group", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("A1", "P1", 4, 1),
+      unit("A2", "P1", 3, 1),
+      unit("D1", "P2", 4, 3),
+    ],
+  });
+
+  const result = validateAction(state, {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 1 },
+    to: { row: 4, col: 3 },
+  });
+  assert.equal(result.ok, true);
+
+  const next = applyAction(state, {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 1 },
+    to: { row: 4, col: 3 },
+  }).state;
+
+  assert.deepEqual(next.pieces.find((piece) => piece.id === "A1")?.position, { row: 4, col: 3 });
+  assert.equal(next.pieces.find((piece) => piece.id === "D1")?.pushed, true);
+  assert.deepEqual(next.continuation?.followPoint, { row: 4, col: 1 });
+});
+
+test("G-002 push illegal on equal strength", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("A1", "P1", 4, 1),
+      unit("D1", "P2", 4, 3),
+    ],
+  });
+  const result = validateAction(state, {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 1 },
+    to: { row: 4, col: 3 },
+  });
+  assert.equal(result.ok, false);
+});
+
+test("G-003 push illegal on weaker attacker", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("A1", "P1", 4, 1),
+      unit("D1", "P2", 4, 3),
+      unit("D2", "P2", 5, 3),
+    ],
+  });
+  const result = validateAction(state, {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 1 },
+    to: { row: 4, col: 3 },
+  });
+  assert.equal(result.ok, false);
+});
+
+test("G-004 push targeting rules (first occupied on orthogonal ray)", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("A1", "P1", 4, 1),
+      unit("A2", "P1", 3, 1),
+      unit("D1", "P2", 4, 3),
+      unit("D2", "P2", 4, 5),
+    ],
+  });
+  const result = validateAction(state, {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 1 },
+    to: { row: 4, col: 5 },
+  });
+  assert.equal(result.ok, false);
+});
+
+test("G-005 cannot push while disallowed temporary state", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("A1", "P1", 4, 1, { shifted: true }),
+      unit("A2", "P1", 3, 1),
+      unit("D1", "P2", 4, 3),
+    ],
+  });
+  const result = validateAction(state, {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 1 },
+    to: { row: 4, col: 3 },
+  });
+  assert.equal(result.ok, false);
+});
+
+test("G-006 follow legal into follow-point", () => {
+  const state = makeState({
+    continuation: {
+      type: "push",
+      owner: "P1",
+      followPoint: { row: 4, col: 3 },
+      pushedPieceId: "D1",
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("A1", "P1", 4, 4, { shifted: true }),
+      unit("F1", "P1", 4, 2),
+      unit("D1", "P2", 4, 6, { pushed: true }),
+    ],
+  });
+  const result = validateAction(state, {
+    type: "follow",
+    actorId: "F1",
+    from: { row: 4, col: 2 },
+    to: { row: 4, col: 3 },
+  });
+  assert.equal(result.ok, true);
+
+  const next = applyAction(state, {
+    type: "follow",
+    actorId: "F1",
+    from: { row: 4, col: 2 },
+    to: { row: 4, col: 3 },
+  }).state;
+  assert.deepEqual(next.pieces.find((piece) => piece.id === "F1")?.position, { row: 4, col: 3 });
+  assert.deepEqual(next.continuation?.followPoint, { row: 4, col: 2 });
+});
+
+test("G-007 follow illegal outside push continuation", () => {
+  const state = makeState({
+    pieces: [commander("C1", "P1", 0, 0), commander("C2", "P2", 9, 9), unit("F1", "P1", 4, 2)],
+  });
+  const result = validateAction(state, {
+    type: "follow",
+    actorId: "F1",
+    from: { row: 4, col: 2 },
+    to: { row: 4, col: 3 },
+  });
+  assert.equal(result.ok, false);
+});
+
+test("G-008 follow cannot reuse shifted piece", () => {
+  const state = makeState({
+    continuation: {
+      type: "push",
+      owner: "P1",
+      followPoint: { row: 4, col: 3 },
+      pushedPieceId: "D1",
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("F1", "P1", 4, 2, { shifted: true }),
+      unit("D1", "P2", 4, 6, { pushed: true }),
+    ],
+  });
+  const result = validateAction(state, {
+    type: "follow",
+    actorId: "F1",
+    from: { row: 4, col: 2 },
+    to: { row: 4, col: 3 },
+  });
+  assert.equal(result.ok, false);
+});
+
+test("G-009 retreat legal to orthogonal empty square", () => {
+  const state = makeState({
+    sideToMove: "P2",
+    continuation: {
+      type: "push",
+      owner: "P1",
+      followPoint: { row: 4, col: 1 },
+      pushedPieceId: "D1",
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("D1", "P2", 4, 4, { pushed: true }),
+    ],
+  });
+  const result = validateAction(state, {
+    type: "retreat",
+    actorId: "D1",
+    from: { row: 4, col: 4 },
+    to: { row: 4, col: 5 },
+  });
+  assert.equal(result.ok, true);
+
+  const next = applyAction(state, {
+    type: "retreat",
+    actorId: "D1",
+    from: { row: 4, col: 4 },
+    to: { row: 4, col: 5 },
+  }).state;
+  assert.equal(next.pieces.find((piece) => piece.id === "D1")?.pushed, false);
+});
+
+test("G-010 retreat illegal to diagonal square", () => {
+  const state = makeState({
+    sideToMove: "P2",
+    continuation: {
+      type: "push",
+      owner: "P1",
+      followPoint: { row: 4, col: 1 },
+      pushedPieceId: "D1",
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("D1", "P2", 4, 4, { pushed: true }),
+    ],
+  });
+  const result = validateAction(state, {
+    type: "retreat",
+    actorId: "D1",
+    from: { row: 4, col: 4 },
+    to: { row: 5, col: 5 },
+  });
+  assert.equal(result.ok, false);
+});
+
+test("G-011 forced removal when no retreat", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 0, 0),
+      commander("C2", "P2", 9, 9),
+      unit("A1", "P1", 4, 1),
+      unit("A2", "P1", 3, 1),
+      unit("A3", "P1", 5, 1),
+      unit("D1", "P2", 4, 3),
+      unit("B1", "P1", 3, 4),
+      unit("B2", "P2", 5, 4),
+      unit("B3", "P1", 4, 5),
+    ],
+  });
+
+  const next = applyAction(state, {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 1 },
+    to: { row: 4, col: 3 },
+  }).state;
+
+  assert.equal(next.pieces.some((piece) => piece.id === "D1"), false);
+});
