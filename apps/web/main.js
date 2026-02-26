@@ -27,6 +27,7 @@ assertGameBoardAdapter(boardAdapter);
 let currentRoute = parseRouteFromHash(window.location.hash);
 let mountedBoardGameId = null;
 let busy = false;
+const LIVE_POLL_MS = 1500;
 
 const escapeHtml = (value) =>
   String(value)
@@ -38,6 +39,27 @@ const escapeHtml = (value) =>
 
 const formatStatus = (connected) =>
   connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip offline">Disconnected</span>';
+
+const renderBoardPlaceholder = (game) => {
+  const lastMove = game.moves.length > 0 ? game.moves[game.moves.length - 1] : null;
+  const turnIndex = game.currentSnapshot?.turnIndex;
+  const sideToMove = game.currentSnapshot?.sideToMove;
+  const mode = game.inHistoryMode ? `history #${(game.historyIndex ?? 0) + 1}` : "live";
+
+  if (!lastMove) {
+    return `<div class="alert">Board placeholder: no moves recorded yet. Mode: ${mode}. Turn ${escapeHtml(
+      String(turnIndex ?? 0),
+    )}, side ${escapeHtml(String(sideToMove ?? "-"))}.</div>`;
+  }
+
+  return `<div class="alert">Board placeholder: ${escapeHtml(
+    String(game.moves.length),
+  )} move(s). Last move #${escapeHtml(String(lastMove.index + 1))} ${escapeHtml(
+    lastMove.notation,
+  )} at ${escapeHtml(lastMove.at)}. Mode: ${mode}. Turn ${escapeHtml(
+    String(turnIndex ?? 0),
+  )}, side ${escapeHtml(String(sideToMove ?? "-"))}.</div>`;
+};
 
 const renderHeader = () => `
   <header class="shell-header">
@@ -208,6 +230,7 @@ const renderGame = (gameId, inviteFromRole = null) => {
             <div id="board" class="board"></div>
             <svg id="overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
           </div>
+          ${renderBoardPlaceholder(game)}
         </section>
 
         <section class="panel">
@@ -310,6 +333,18 @@ const syncRouteData = async () => {
   }
 };
 
+const syncRouteDataPassive = async () => {
+  if (busy) {
+    return;
+  }
+  try {
+    await syncRouteData();
+    render();
+  } catch (error) {
+    window.__righeltLastError = error instanceof Error ? error.message : String(error);
+  }
+};
+
 const navigateTo = (hash) => {
   if (window.location.hash === hash) {
     currentRoute = parseRouteFromHash(hash);
@@ -333,6 +368,16 @@ window.addEventListener("offline", () => {
   transport.setOffline(true);
   void withBusy(syncRouteData);
 });
+
+setInterval(() => {
+  if (document.visibilityState === "hidden") {
+    return;
+  }
+  if (currentRoute.name !== "game" && currentRoute.name !== "home") {
+    return;
+  }
+  void syncRouteDataPassive();
+}, LIVE_POLL_MS);
 
 appEl.addEventListener("click", async (event) => {
   const target = event.target;
