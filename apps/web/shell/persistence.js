@@ -1,0 +1,28 @@
+const SHELL_STATE_KEY = "righelt.shell.state.v1";
+const IDENTITY_KEY = "righelt.identity.id.v1";
+const TUTORIAL_KEY = "righelt.tutorial.done.v1";
+
+export const loadJson = (storage, key, fallback) => {
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) {
+      return fallback;
+    }
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+};
+
+export const saveJson = (storage, key, value) => {
+  storage.setItem(key, JSON.stringify(value));
+};
+
+export const loadShellState = (storage) => loadJson(storage, SHELL_STATE_KEY, { games: [] });
+export const saveShellState = (storage, state) => saveJson(storage, SHELL_STATE_KEY, state);
+
+export const loadIdentity = (storage) => storage.getItem(IDENTITY_KEY);
+export const saveIdentity = (storage, identityId) => storage.setItem(IDENTITY_KEY, identityId);
+
+export const loadTutorialCompleted = (storage) => storage.getItem(TUTORIAL_KEY) === "1";
+export const saveTutorialCompleted = (storage, value) => storage.setItem(TUTORIAL_KEY, value ? "1" : "0");

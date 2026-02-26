@@ -3,109 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Righelt Engine Playground</title>
+    <title>Righelt</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="layout">
-      <section class="hero">
-        <h1>Engine Playground</h1>
-        <p>
-          Manual harness for Milestone 2. All state changes flow through shared engine API endpoints.
-        </p>
-      </section>
-
-      <section class="grid">
-        <div class="log-column">
-          <section class="panel history-panel">
-            <h2>Move Log</h2>
-            <ol id="move-log"></ol>
-          </section>
-        </div>
-
-        <div class="middle-column">
-          <section class="panel board-panel">
-            <h2>Board</h2>
-            <p class="meta">Click a piece to inspect supply/command/group overlays and valid move previews.</p>
-            <div class="board-wrap">
-              <div class="board" id="board" aria-label="10 by 10 board"></div>
-              <svg id="overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
-            </div>
-            <div class="overlay-key" aria-label="Overlay color key">
-              <span><i class="swatch supply"></i>Supply line</span>
-              <span><i class="swatch command"></i>Command line</span>
-              <span><i class="swatch move"></i>Valid move preview</span>
-              <span><i class="swatch group"></i>Group highlight</span>
-              <span><i class="swatch supply-point"></i>Supply point</span>
-            </div>
-          </section>
-
-          <section class="panel fixture-panel">
-            <h2>Fixture Loader (M)</h2>
-            <div class="form-row">
-              <label for="fixture-select">Golden fixture</label>
-              <select id="fixture-select"></select>
-            </div>
-            <div class="button-row">
-              <button id="load-fixture" type="button" class="secondary">Load Fixture</button>
-              <button id="replay-fixture" type="button">Replay Fixture</button>
-              <button id="save-fixture" type="button" class="secondary">Save as Fixture</button>
-              <button id="update-fixture" type="button" class="secondary">Update Fixture</button>
-            </div>
-            <pre id="fixture-result" aria-live="polite">Fixture runner idle.</pre>
-          </section>
-        </div>
-
-        <div class="right-column">
-          <section class="panel controls-panel">
-            <h2>Action Controls</h2>
-            <div class="form-row">
-              <label for="action-type">Action</label>
-              <select id="action-type">
-                <option value="pass">Pass</option>
-                <option value="move">Move</option>
-                <option value="project">Project</option>
-                <option value="rush">Rush</option>
-                <option value="push">Push</option>
-                <option value="follow">Follow</option>
-                <option value="retreat">Retreat</option>
-              </select>
-            </div>
-            <div class="coord-row">
-              <div>
-                <p class="label">Source</p>
-                <p id="source-value">unset</p>
-              </div>
-              <div>
-                <p class="label">Destination</p>
-                <p id="target-value">unset</p>
-              </div>
-            </div>
-            <div class="button-row">
-              <button id="submit-action" type="button">Apply Action</button>
-              <button id="reset-selection" type="button" class="secondary">Clear Selection</button>
-            </div>
-            <pre id="action-result" aria-live="polite">Awaiting action.</pre>
-          </section>
-
-          <section class="panel status-panel">
-            <h2>Engine Status</h2>
-            <ul class="status-list">
-              <li>Side to move: <strong id="side-to-move">-</strong></li>
-              <li>Turn index: <strong id="turn-index">-</strong></li>
-              <li>Continuation: <strong id="continuation">none</strong></li>
-              <li>Commander supply: <strong id="commander-supply">-</strong></li>
-            </ul>
-            <h3>Selected Piece</h3>
-            <pre id="selected-piece">No piece selected.</pre>
-            <h3>Selected Piece Valid Moves</h3>
-            <pre id="selected-piece-moves">[]</pre>
-            <h3>Legal Actions</h3>
-            <pre id="legal-actions">[]</pre>
-          </section>
-        </div>
-      </section>
-    </main>
+    <main id="app" class="app-root" aria-live="polite"></main>
     <script type="module" src="./main.js"></script>
   </body>
 </html>

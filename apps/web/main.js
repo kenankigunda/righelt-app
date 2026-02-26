@@ -1,676 +1,495 @@
-import {
-  buildActionPayload,
-  shouldResetSelectionOnDocumentClick,
-  shouldSubmitOnEnter,
-} from "./interaction.js";
 import { assertGameBoardAdapter } from "./board-adapter-contract.js";
 import { createEnginePlaygroundBoardAdapter } from "./board-adapters/engine-playground-adapter.js";
+import { getBootstrapPayload } from "./shell/bootstrap.js";
+import { buildGameHash, buildHomeHash, buildTutorialHash, parseRouteFromHash } from "./shell/routes.js";
+import { createShellStore } from "./shell/store.js";
+import { createTutorialController } from "./shell/tutorial.js";
 
-const boardEl = document.getElementById("board");
-const overlayLinesEl = document.getElementById("overlay-lines");
-const actionTypeEl = document.getElementById("action-type");
-const sourceValueEl = document.getElementById("source-value");
-const targetValueEl = document.getElementById("target-value");
-const submitActionEl = document.getElementById("submit-action");
-const resetSelectionEl = document.getElementById("reset-selection");
-const actionResultEl = document.getElementById("action-result");
-const sideToMoveEl = document.getElementById("side-to-move");
-const turnIndexEl = document.getElementById("turn-index");
-const continuationEl = document.getElementById("continuation");
-const commanderSupplyEl = document.getElementById("commander-supply");
-const selectedPieceEl = document.getElementById("selected-piece");
-const selectedPieceMovesEl = document.getElementById("selected-piece-moves");
-const legalActionsEl = document.getElementById("legal-actions");
-const moveLogEl = document.getElementById("move-log");
-const fixtureSelectEl = document.getElementById("fixture-select");
-const loadFixtureEl = document.getElementById("load-fixture");
-const replayFixtureEl = document.getElementById("replay-fixture");
-const saveFixtureEl = document.getElementById("save-fixture");
-const updateFixtureEl = document.getElementById("update-fixture");
-const fixtureResultEl = document.getElementById("fixture-result");
+const appEl = document.getElementById("app");
+const bootstrap = getBootstrapPayload();
 
-let state = null;
-let legalActions = [];
-let selectedPieceMoves = [];
-let selectedPieceId = null;
-let selectedSource = null;
-let selectedTarget = null;
-const moveLog = [];
-let fixtures = [];
-let currentFixtureId = null;
-let fixtureCatalog = { id: "M", title: "Milestone 2 Golden Scenarios", fixtures: [] };
+const createMemoryStorageFallback = () => {
+  const map = new Map();
+  return {
+    getItem: (key) => (map.has(key) ? map.get(key) : null),
+    setItem: (key, value) => map.set(key, String(value)),
+    removeItem: (key) => map.delete(key),
+  };
+};
 
+const storage = typeof window.localStorage !== "undefined" ? window.localStorage : createMemoryStorageFallback();
+
+const loadBoardState = async () => {
+  try {
+    const response = await fetch("/api/engine/playground/state", { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const body = await response.json();
+    return {
+      state: body.state,
+      legalActions: Array.isArray(body.legalActions) ? body.legalActions : [],
+    };
+  } catch {
+    return {
+      state: { pieces: [], sideToMove: "P1", turnIndex: 0 },
+      legalActions: [],
+    };
+  }
+};
+
+const store = createShellStore({
+  storage,
+  loadBoardState,
+  saveWarning: () => {
+    window.__righeltSaveWarning = "offline_progress_may_be_lost";
+  },
+});
+
+const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 const boardAdapter = createEnginePlaygroundBoardAdapter();
 assertGameBoardAdapter(boardAdapter);
-boardAdapter.mount({
-  boardEl,
-  overlayLinesEl,
-  onCellClick: handleBoardCellClick,
-});
 
-const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "unset");
+let currentRoute = parseRouteFromHash(window.location.hash);
+let mountedBoardGameId = null;
 
-const getCurrentSelection = () => ({
-  selectedPieceId,
-  source: selectedSource,
-  target: selectedTarget,
-});
+const escapeHtml = (value) =>
+  String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 
-const applySelection = (selection) => {
-  selectedPieceId = selection.selectedPieceId;
-  selectedSource = selection.source;
-  selectedTarget = selection.target;
+const formatStatus = (connected) =>
+  connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip offline">Disconnected</span>';
+
+const renderHeader = () => `
+  <header class="shell-header">
+    <div>
+      <h1>Righelt Web Shell</h1>
+      <p class="small">Identity <span class="mono">${escapeHtml(store.getIdentityId())}</span></p>
+    </div>
+    <div class="nav-row">
+      <a class="button-link secondary" href="${buildHomeHash()}">Home</a>
+      <a class="button-link secondary" href="${buildTutorialHash()}">Tutorial</a>
+      <button data-action="toggle-offline" class="secondary">Toggle Offline</button>
+    </div>
+  </header>
+`;
+
+const renderHome = () => {
+  const games = store.listGames();
+  const listHtml =
+    games.length === 0
+      ? "<p class=\"small\">No games yet.</p>"
+      : `<ol class="game-list">${games
+          .map(
+            (game) => `<li>
+            <a href="${buildGameHash(game.id)}">${escapeHtml(game.id)}</a>
+            <span class="small">latest ${escapeHtml(game.lastMoveAt || game.createdAt)}</span>
+          </li>`,
+          )
+          .join("")}</ol>`;
+
+  return `
+    <section class="layout-grid">
+      <div class="stack">
+        <section class="panel">
+          <h2>Start</h2>
+          <div class="row">
+            <button data-action="create-game">Play Game</button>
+            <button data-action="create-playground" class="secondary">Playground Mode</button>
+            <button data-action="create-offline-playground" class="warn">Offline Playground</button>
+          </div>
+          <p class="small">Playground controls both seats on one device. Offline playground is local-only.</p>
+        </section>
+
+        <section class="panel">
+          <h2>Active Games</h2>
+          ${listHtml}
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <h2>Preview Board</h2>
+          <p class="small">Non-authoritative preview sequence.</p>
+          <div class="preview">Preview replay surface</div>
+        </section>
+      </div>
+    </section>
+  `;
 };
 
-const clearSelection = () => {
-  selectedPieceId = null;
-  selectedPieceMoves = [];
-  selectedSource = null;
-  selectedTarget = null;
-};
-
-function handleBoardCellClick(clickedCoord) {
-  const result = boardAdapter.nextSelectionForCell({
-    snapshot: state,
-    selection: getCurrentSelection(),
-    selectedPieceMoves,
-    currentActionType: actionTypeEl.value,
-    clickedCoord,
-  });
-
-  applySelection(result.selection);
-  actionTypeEl.value = result.nextActionType;
-
-  refreshSelectionLabels();
-  renderBoard();
-  renderStatus();
-  void reloadSelectedPieceMoves().catch((error) => {
-    setActionResult({
-      ok: false,
-      error: "piece_moves_load_failed",
-      message: error instanceof Error ? error.message : "Unknown error",
-    });
-  });
-}
-
-const setActionResult = (value) => {
-  actionResultEl.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-};
-
-const setFixtureResult = (value) => {
-  fixtureResultEl.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-};
-
-const refreshSelectionLabels = () => {
-  sourceValueEl.textContent = formatCoordinate(selectedSource);
-  targetValueEl.textContent = formatCoordinate(selectedTarget);
-};
-
-const renderMoveLog = () => {
-  moveLogEl.innerHTML = "";
-  if (moveLog.length === 0) {
-    const empty = document.createElement("li");
-    empty.textContent = "No actions submitted yet.";
-    moveLogEl.appendChild(empty);
-    return;
-  }
-  for (const entry of moveLog) {
-    const li = document.createElement("li");
-    li.textContent = entry;
-    moveLogEl.appendChild(li);
-  }
-};
-
-const renderBoard = () => {
-  if (!state) {
-    return;
-  }
-  boardAdapter.render({
-    snapshot: state,
-    selection: getCurrentSelection(),
-    selectedPieceMoves,
-  });
-};
-
-const renderStatus = () => {
-  if (!state) return;
-
-  sideToMoveEl.textContent = state.sideToMove;
-  turnIndexEl.textContent = String(state.turnIndex);
-  continuationEl.textContent = state.continuation
-    ? `${state.continuation.type} (owner ${state.continuation.owner})`
-    : "none";
-
-  commanderSupplyEl.textContent = boardAdapter.getCommanderSupplySummary(state);
-
-  const pieceSummary = boardAdapter.getSelectedPieceSummary({
-    snapshot: state,
-    selectedPieceId,
-    selectedPieceMoves,
-  });
-
-  if (!pieceSummary) {
-    selectedPieceMoves = [];
-    selectedPieceEl.textContent = "No piece selected.";
-    selectedPieceMovesEl.textContent = "[]";
-  } else {
-    selectedPieceEl.textContent = JSON.stringify(pieceSummary.details, null, 2);
-    selectedPieceMovesEl.textContent = JSON.stringify(pieceSummary.actions, null, 2);
+const renderGame = (gameId, inviteFromRole = null) => {
+  const opened = store.openAsViewer(gameId);
+  const game = store.getGameViewModel(gameId);
+  if (!opened || !game) {
+    return `<section class="panel"><h2>Game not found</h2><p class="small">Return to home and create a game.</p></section>`;
   }
 
-  legalActionsEl.textContent = JSON.stringify(legalActions, null, 2);
-};
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildGameHash(game.id, game.myRole)}`;
 
-const reloadLegalActions = async () => {
-  if (!state) return;
-  const response = await fetch("/api/engine/playground/legal", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ state }),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch legal actions: HTTP ${response.status}`);
-  }
-  const body = await response.json();
-  state = body.state ?? state;
-  legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
-  renderBoard();
-  renderStatus();
-};
+  const participants = [
+    { label: "Player 1", value: game.player1 },
+    { label: "Player 2", value: game.player2 },
+  ];
 
-const reloadSelectedPieceMoves = async () => {
-  const selectedPiece = boardAdapter.getPieceById(state, selectedPieceId);
-  if (!state || !selectedPiece) {
-    selectedPieceMoves = [];
-    renderBoard();
-    renderStatus();
-    return;
-  }
-
-  const response = await fetch("/api/engine/playground/piece-moves", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ state, pieceId: selectedPiece.id }),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch selected piece moves: HTTP ${response.status}`);
-  }
-  const body = await response.json();
-  state = body.state ?? state;
-  selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
-  renderBoard();
-  renderStatus();
-};
-
-const loadInitialState = async () => {
-  const response = await fetch("/api/engine/playground/state", { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Failed to load initial state: HTTP ${response.status}`);
-  }
-  const body = await response.json();
-  state = body.state;
-  legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
-  clearSelection();
-  renderBoard();
-  renderStatus();
-  renderMoveLog();
-};
-
-const computeStateHash = async (candidateState) => {
-  const response = await fetch("/api/engine/playground/hash", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ state: candidateState }),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to compute hash: HTTP ${response.status}`);
-  }
-  const body = await response.json();
-  return body.hash;
-};
-
-const getFixtureWriterBaseUrl = () => {
-  const host = window.location.hostname;
-  if (host !== "localhost" && host !== "127.0.0.1") {
-    return null;
-  }
-  const browserPort = Number.parseInt(window.location.port || "80", 10);
-  if (!Number.isFinite(browserPort)) {
-    return null;
-  }
-  return `http://${host}:${browserPort + 1000}`;
-};
-
-const computeExpectedFromCurrentState = async () => {
-  if (!state) {
-    throw new Error("No active state to save");
-  }
-  const expectedHash = await computeStateHash(state);
-  const expectedOutcome = state?.outcome?.status ?? "ongoing";
-  return { expectedHash, expectedOutcome };
-};
-
-const downloadFixtureCatalog = (catalog, filename) => {
-  const blob = new Blob([`${JSON.stringify(catalog, null, 2)}\n`], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-};
-
-const updateFixtureOptions = () => {
-  const selectedId = currentFixtureId;
-  fixtureSelectEl.innerHTML = "";
-  for (const fixture of fixtures) {
-    const option = document.createElement("option");
-    option.value = fixture.id;
-    option.textContent = `${fixture.id} - ${fixture.title}`;
-    fixtureSelectEl.appendChild(option);
-  }
-  if (fixtures.length === 0) {
-    currentFixtureId = null;
-    return;
-  }
-  currentFixtureId = selectedId && fixtures.some((fixture) => fixture.id === selectedId) ? selectedId : fixtures[0].id;
-  fixtureSelectEl.value = currentFixtureId;
-};
-
-const tryLocalFixtureWrite = async (pathSuffix, payload) => {
-  const base = getFixtureWriterBaseUrl();
-  if (!base) {
-    return { ok: false, reason: "not_localhost" };
-  }
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 1500);
-  try {
-    const response = await fetch(`${base}${pathSuffix}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      return { ok: false, reason: "local_write_failed", body };
-    }
-    const body = await response.json();
-    return { ok: true, body };
-  } catch {
-    clearTimeout(timeout);
-    return { ok: false, reason: "local_writer_unreachable" };
-  }
-};
-
-const loadFixtureCatalog = async () => {
-  const response = await fetch("/fixtures/m-golden-fixtures.json", { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Failed to load fixtures: HTTP ${response.status}`);
-  }
-  const catalog = await response.json();
-  fixtureCatalog = {
-    id: typeof catalog.id === "string" ? catalog.id : "M",
-    title: typeof catalog.title === "string" ? catalog.title : "Milestone 2 Golden Scenarios",
-    fixtures: Array.isArray(catalog.fixtures) ? catalog.fixtures : [],
-  };
-  fixtures = fixtureCatalog.fixtures;
-  updateFixtureOptions();
-};
-
-const getSelectedFixture = () => fixtures.find((fixture) => fixture.id === currentFixtureId) ?? null;
-
-const getNextFixtureId = () => {
-  const prefix = (fixtureCatalog.id || "M").toUpperCase();
-  let maxNumeric = 0;
-  let maxDigits = 3;
-  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
-
-  for (const fixture of fixtures) {
-    const match = pattern.exec(fixture.id);
-    if (!match) {
-      continue;
-    }
-    const digits = match[1];
-    const numeric = Number.parseInt(digits, 10);
-    if (!Number.isFinite(numeric)) {
-      continue;
-    }
-    maxNumeric = Math.max(maxNumeric, numeric);
-    maxDigits = Math.max(maxDigits, digits.length);
-  }
-
-  const nextNumeric = String(maxNumeric + 1).padStart(maxDigits, "0");
-  return `${prefix}-${nextNumeric}`;
-};
-
-document.addEventListener("click", (event) => {
-  const target = event.target;
-  if (!shouldResetSelectionOnDocumentClick(target)) {
-    return;
-  }
-  actionTypeEl.value = "pass";
-  clearSelection();
-  refreshSelectionLabels();
-  renderBoard();
-  renderStatus();
-});
-
-document.addEventListener("keydown", (event) => {
-  if (
-    !shouldSubmitOnEnter({
-      key: event.key,
-      target: event.target,
-      actionType: actionTypeEl.value,
-      submitDisabled: submitActionEl.disabled,
-    })
-  ) {
-    return;
-  }
-  event.preventDefault();
-  submitActionEl.click();
-});
-
-resetSelectionEl.addEventListener("click", () => {
-  clearSelection();
-  refreshSelectionLabels();
-  renderBoard();
-  renderStatus();
-});
-
-submitActionEl.addEventListener("click", async () => {
-  if (!state) return;
-  submitActionEl.disabled = true;
-  setActionResult("Applying action...");
-  const action = buildActionPayload(actionTypeEl.value, selectedSource, selectedTarget);
-
-  try {
-    const response = await fetch("/api/engine/playground/apply", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ state, action }),
-    });
-    const body = await response.json();
-
-    if (!response.ok) {
-      setActionResult(body);
-      return;
-    }
-
-    if (body.accepted) {
-      state = body.state;
-      legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
-      selectedPieceMoves = [];
-      moveLog.push(`${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`);
-      selectedTarget = null;
-      refreshSelectionLabels();
-      renderBoard();
-      renderStatus();
-      renderMoveLog();
-      setActionResult({ accepted: true, outcome: body.outcome ?? state.outcome });
-      return;
-    }
-
-    state = body.state ?? state;
-    selectedPieceMoves = [];
-    setActionResult({
-      accepted: false,
-      validation: body.validation,
-    });
-    await reloadLegalActions();
-    moveLog.push(`REJECTED ${action.type.toUpperCase()}: ${body.validation?.code ?? "unknown"}`);
-    renderMoveLog();
-  } catch (error) {
-    setActionResult({
-      ok: false,
-      error: "request_failed",
-      message: error instanceof Error ? error.message : "Unknown error",
-    });
-  } finally {
-    submitActionEl.disabled = false;
-  }
-});
-
-fixtureSelectEl.addEventListener("change", () => {
-  currentFixtureId = fixtureSelectEl.value;
-});
-
-loadFixtureEl.addEventListener("click", () => {
-  const fixture = getSelectedFixture();
-  if (!fixture) {
-    setFixtureResult({ ok: false, error: "fixture_not_found" });
-    return;
-  }
-  state = structuredClone(fixture.initial_state);
-  legalActions = [];
-  clearSelection();
-  moveLog.length = 0;
-  moveLog.push(`Loaded fixture ${fixture.id}`);
-  refreshSelectionLabels();
-  renderBoard();
-  renderStatus();
-  renderMoveLog();
-  void reloadLegalActions().catch(() => {});
-  setFixtureResult({
-    ok: true,
-    fixtureId: fixture.id,
-    title: fixture.title,
-    expected: {
-      hash: fixture.expected_final_state_hash,
-      outcome: fixture.expected_outcome,
-    },
-  });
-});
-
-replayFixtureEl.addEventListener("click", async () => {
-  const fixture = getSelectedFixture();
-  if (!fixture) {
-    setFixtureResult({ ok: false, error: "fixture_not_found" });
-    return;
-  }
-
-  replayFixtureEl.disabled = true;
-  setFixtureResult(`Running ${fixture.id}...`);
-  try {
-    let workingState = structuredClone(fixture.initial_state);
-    let acceptedCount = 0;
-    let failure = null;
-
-    for (let index = 0; index < fixture.action_sequence.length; index += 1) {
-      const action = fixture.action_sequence[index];
-      const response = await fetch("/api/engine/playground/apply", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ state: workingState, action }),
-      });
-      const body = await response.json();
-      if (!response.ok || !body.accepted) {
-        failure = {
-          index,
-          action,
-          response: body,
-        };
-        break;
+  const participantRows = participants
+    .map((entry) => {
+      if (!entry.value) {
+        return `<li>${entry.label}: <span class="small">Open seat</span></li>`;
       }
-      acceptedCount += 1;
-      workingState = body.state;
-    }
+      return `<li>${entry.label}: <span class="mono">${escapeHtml(entry.value.identityId)}</span> ${formatStatus(entry.value.connected)}</li>`;
+    })
+    .join("");
 
-    const observedHash = await computeStateHash(workingState);
-    const observedOutcome = workingState?.outcome?.status ?? "ongoing";
-    const pass = !failure &&
-      observedHash === fixture.expected_final_state_hash &&
-      observedOutcome === fixture.expected_outcome;
+  const viewersRow = `<li>Viewers: ${game.viewers.length}</li>`;
 
-    state = workingState;
-    clearSelection();
-    refreshSelectionLabels();
-    renderBoard();
-    await reloadLegalActions();
-    renderMoveLog();
+  const historyRows =
+    game.moves.length === 0
+      ? "<li class=\"small\">No moves yet.</li>"
+      : game.moves
+          .map(
+            (move) => `<li class="history-item" data-action="jump-history" data-game-id="${escapeHtml(
+              game.id,
+            )}" data-move-index="${move.index}">#${move.index + 1} ${escapeHtml(move.notation)} <span class="small">${escapeHtml(
+              move.at,
+            )}</span></li>`,
+          )
+          .join("");
 
-    setFixtureResult({
-      fixtureId: fixture.id,
-      acceptedCount,
-      expected: {
-        hash: fixture.expected_final_state_hash,
-        outcome: fixture.expected_outcome,
-      },
-      observed: {
-        hash: observedHash,
-        outcome: observedOutcome,
-      },
-      pass,
-      failure,
-    });
-  } catch (error) {
-    setFixtureResult({
-      ok: false,
-      error: "replay_failed",
-      message: error instanceof Error ? error.message : "Unknown replay error",
-    });
-  } finally {
-    replayFixtureEl.disabled = false;
-  }
-});
+  const pendingRows =
+    game.pendingJoinRequests.length === 0
+      ? "<li class=\"small\">No pending requests</li>"
+      : game.pendingJoinRequests
+          .map(
+            (request) => `<li>
+              <span class="mono">${escapeHtml(request.identityId)}</span> requests ${escapeHtml(request.requestedSeat)}
+              <button class="secondary" data-action="approve-request" data-game-id="${escapeHtml(
+                game.id,
+              )}" data-requester-id="${escapeHtml(request.identityId)}">Approve</button>
+            </li>`,
+          )
+          .join("");
 
-saveFixtureEl.addEventListener("click", async () => {
-  if (!state) {
-    setFixtureResult({ ok: false, error: "no_state_loaded" });
+  const latestNote = game.notifications[0] || "Ready";
+  const offlineBanner =
+    game.showOfflineState || inviteFromRole === "offline"
+      ? `<div class="alert warn">Offline mode: invite and remote join actions are disabled.</div>`
+      : "";
+
+  const historyBanner = game.inHistoryMode
+    ? '<div class="alert">Viewing history snapshot (not live). New moves keep appending.</div>'
+    : "";
+
+  return `
+    <section class="layout-grid">
+      <div class="stack">
+        <section class="panel">
+          <h2>Game <span class="mono">${escapeHtml(game.id)}</span></h2>
+          <p class="small">Role: <strong>${escapeHtml(game.myRole)}</strong></p>
+          ${offlineBanner}
+          ${historyBanner}
+          <div class="row">
+            <button data-action="record-move" data-game-id="${escapeHtml(game.id)}">Record Simulated Move</button>
+            <button class="secondary" data-action="toggle-p1" data-game-id="${escapeHtml(game.id)}">Toggle P1 Connection</button>
+            <button class="secondary" data-action="toggle-p2" data-game-id="${escapeHtml(game.id)}">Toggle P2 Connection</button>
+            <button class="warn" data-action="go-online" data-game-id="${escapeHtml(game.id)}" ${
+              game.offlineLocal ? "" : "disabled"
+            }>Go online</button>
+          </div>
+          <p class="small">Latest: ${escapeHtml(latestNote)}</p>
+        </section>
+
+        <section class="panel">
+          <h2>Join / Invite</h2>
+          <div class="row">
+            <button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary">Join as viewer</button>
+            <button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${
+              game.showJoinActions ? "" : "disabled"
+            }>Join as player</button>
+            <button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${
+              game.canInvite ? "" : "disabled"
+            }>Invite</button>
+          </div>
+          <p class="small">Invite link: <span class="mono">${escapeHtml(inviteLink)}</span></p>
+          <ul class="participant-list">${pendingRows}</ul>
+        </section>
+
+        <section class="panel">
+          <h2>History</h2>
+          <div class="row">
+            <button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" ${
+              game.inHistoryMode ? "" : "disabled"
+            }>Return to live</button>
+          </div>
+          <ol class="history-list">${historyRows}</ol>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <h2>Board</h2>
+          <div class="board-wrap">
+            <div id="board" class="board"></div>
+            <svg id="overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Participants</h2>
+          <ul class="participant-list">${participantRows}${viewersRow}</ul>
+        </section>
+
+        <section class="panel">
+          <h2>Tutorial</h2>
+          <div class="row">
+            <a class="button-link secondary" href="${buildTutorialHash(game.id)}">Restart tutorial</a>
+          </div>
+        </section>
+      </div>
+    </section>
+  `;
+};
+
+const renderTutorial = (gameId) => {
+  const state = tutorial.current();
+  return `
+    <section class="panel">
+      <h2>Tutorial</h2>
+      <p class="small">Step ${state.index + 1} of ${state.total}</p>
+      <p>${escapeHtml(state.step)}</p>
+      <div class="row">
+        <button data-action="tutorial-next">Next</button>
+        <button class="secondary" data-action="tutorial-skip">Skip Step</button>
+        <button class="secondary" data-action="tutorial-complete" data-game-id="${escapeHtml(gameId || "")}">Finish Tutorial</button>
+      </div>
+    </section>
+  `;
+};
+
+const renderNotFound = () => `
+  <section class="panel">
+    <h2>Route not found</h2>
+    <a class="button-link" href="${buildHomeHash()}">Return home</a>
+  </section>
+`;
+
+const mountBoardForGame = (game) => {
+  const boardEl = document.getElementById("board");
+  const overlayLinesEl = document.getElementById("overlay-lines");
+  if (!boardEl || !overlayLinesEl || !game) {
+    mountedBoardGameId = null;
     return;
   }
 
-  const fixtureId = getNextFixtureId();
-  const title = window.prompt("Fixture title:", `Saved from playground ${fixtureId}`);
-  if (!title) {
-    return;
+  if (mountedBoardGameId !== game.id) {
+    boardAdapter.mount({ boardEl, overlayLinesEl, onCellClick: () => {} });
+    mountedBoardGameId = game.id;
   }
 
-  saveFixtureEl.disabled = true;
-  try {
-    const { expectedHash, expectedOutcome } = await computeExpectedFromCurrentState();
-    const fixture = {
-      id: fixtureId,
-      title,
-      initial_state: structuredClone(state),
-      action_sequence: [],
-      expected_final_state_hash: expectedHash,
-      expected_outcome: expectedOutcome,
-    };
-
-    const localWrite = await tryLocalFixtureWrite("/fixtures/save", { fixture });
-    const nextCatalog = {
-      ...fixtureCatalog,
-      fixtures: [...fixtures, fixture],
-    };
-
-    fixtureCatalog = nextCatalog;
-    fixtures = fixtureCatalog.fixtures;
-    currentFixtureId = fixtureId;
-    updateFixtureOptions();
-
-    if (localWrite.ok) {
-      setFixtureResult({
-        ok: true,
-        mode: "local_write",
-        fixtureId,
-        expected: { hash: expectedHash, outcome: expectedOutcome },
-      });
-      return;
-    }
-
-    downloadFixtureCatalog(nextCatalog, "m-golden-fixtures.updated.json");
-    setFixtureResult({
-      ok: true,
-      mode: "download_fallback",
-      fixtureId,
-      expected: { hash: expectedHash, outcome: expectedOutcome },
-      localWrite,
-    });
-  } catch (error) {
-    setFixtureResult({
-      ok: false,
-      error: "save_fixture_failed",
-      message: error instanceof Error ? error.message : "Unknown error",
-    });
-  } finally {
-    saveFixtureEl.disabled = false;
-  }
-});
-
-updateFixtureEl.addEventListener("click", async () => {
-  if (!state) {
-    setFixtureResult({ ok: false, error: "no_state_loaded" });
-    return;
-  }
-  const fixture = getSelectedFixture();
-  if (!fixture) {
-    setFixtureResult({ ok: false, error: "fixture_not_found" });
-    return;
-  }
-
-  updateFixtureEl.disabled = true;
-  try {
-    const { expectedHash, expectedOutcome } = await computeExpectedFromCurrentState();
-    const updatedFixture = {
-      ...fixture,
-      expected_final_state_hash: expectedHash,
-      expected_outcome: expectedOutcome,
-    };
-    const nextCatalog = {
-      ...fixtureCatalog,
-      fixtures: fixtures.map((entry) => (entry.id === fixture.id ? updatedFixture : entry)),
-    };
-
-    const localWrite = await tryLocalFixtureWrite("/fixtures/update", {
-      fixtureId: fixture.id,
-      expected_final_state_hash: expectedHash,
-      expected_outcome: expectedOutcome,
-    });
-
-    fixtureCatalog = nextCatalog;
-    fixtures = fixtureCatalog.fixtures;
-    updateFixtureOptions();
-
-    if (localWrite.ok) {
-      setFixtureResult({
-        ok: true,
-        mode: "local_write",
-        fixtureId: fixture.id,
-        expected: { hash: expectedHash, outcome: expectedOutcome },
-      });
-      return;
-    }
-
-    downloadFixtureCatalog(nextCatalog, "m-golden-fixtures.updated.json");
-    setFixtureResult({
-      ok: true,
-      mode: "download_fallback",
-      fixtureId: fixture.id,
-      expected: { hash: expectedHash, outcome: expectedOutcome },
-      localWrite,
-    });
-  } catch (error) {
-    setFixtureResult({
-      ok: false,
-      error: "update_fixture_failed",
-      message: error instanceof Error ? error.message : "Unknown error",
-    });
-  } finally {
-    updateFixtureEl.disabled = false;
-  }
-});
-
-refreshSelectionLabels();
-Promise.all([loadInitialState(), loadFixtureCatalog()]).catch((error) => {
-  setActionResult({
-    ok: false,
-    error: "load_failed",
-    message: error instanceof Error ? error.message : "Unknown error",
+  boardAdapter.render({
+    snapshot: game.currentSnapshot,
+    selection: { selectedPieceId: null, source: null, target: null },
+    selectedPieceMoves: [],
   });
+};
+
+const render = () => {
+  let body = "";
+  if (currentRoute.name === "home") {
+    body = renderHome();
+  } else if (currentRoute.name === "game") {
+    body = renderGame(currentRoute.gameId, currentRoute.inviteFromRole);
+  } else if (currentRoute.name === "tutorial") {
+    body = renderTutorial(currentRoute.gameId);
+  } else {
+    body = renderNotFound();
+  }
+
+  appEl.innerHTML = `${renderHeader()}${body}`;
+
+  if (currentRoute.name === "game") {
+    mountBoardForGame(store.getGameViewModel(currentRoute.gameId));
+  }
+};
+
+const navigateTo = (hash) => {
+  if (window.location.hash === hash) {
+    currentRoute = parseRouteFromHash(hash);
+    render();
+    return;
+  }
+  window.location.hash = hash;
+};
+
+window.addEventListener("hashchange", () => {
+  currentRoute = parseRouteFromHash(window.location.hash);
+  render();
 });
+
+window.addEventListener("online", () => {
+  store.setOffline(false);
+  render();
+});
+
+window.addEventListener("offline", () => {
+  store.setOffline(true);
+  render();
+});
+
+appEl.addEventListener("click", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const actionEl = target.closest("[data-action]");
+  if (!actionEl) {
+    return;
+  }
+
+  const action = actionEl.getAttribute("data-action");
+
+  if (action === "create-game") {
+    const game = await store.createGame({ playgroundMode: false, offlineLocal: false });
+    navigateTo(buildGameHash(game.id));
+    return;
+  }
+
+  if (action === "create-playground") {
+    const game = await store.createGame({ playgroundMode: true, offlineLocal: false });
+    navigateTo(buildGameHash(game.id));
+    return;
+  }
+
+  if (action === "create-offline-playground") {
+    store.setOffline(true);
+    const game = await store.createGame({ playgroundMode: true, offlineLocal: true });
+    navigateTo(buildGameHash(game.id, "offline"));
+    return;
+  }
+
+  if (action === "toggle-offline") {
+    const next = !(window.__righeltOffline || false);
+    window.__righeltOffline = next;
+    store.setOffline(next);
+    render();
+    return;
+  }
+
+  if (action === "go-online") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    const confirmed = window.confirm("Go online with this local game?");
+    store.goOnlineGame({ gameId, confirmed });
+    render();
+    return;
+  }
+
+  if (action === "join-viewer") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    store.joinGame({ gameId, mode: "viewer", inviteFromRole: currentRoute.inviteFromRole });
+    render();
+    return;
+  }
+
+  if (action === "join-player") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    store.joinGame({ gameId, mode: "player", inviteFromRole: currentRoute.inviteFromRole });
+    render();
+    return;
+  }
+
+  if (action === "approve-request") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const requester = actionEl.getAttribute("data-requester-id");
+    if (!gameId || !requester) return;
+    store.approvePendingRequest({ gameId, requesterIdentityId: requester });
+    render();
+    return;
+  }
+
+  if (action === "copy-invite") {
+    const link = actionEl.getAttribute("data-link") || "";
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(link);
+    }
+    window.__righeltLastInvite = link;
+    return;
+  }
+
+  if (action === "record-move") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    const view = store.getGameViewModel(gameId);
+    if (!view) return;
+
+    const label = `Move ${view.moves.length + 1}`;
+    store.addMove({ gameId, notation: label, snapshot: view.currentSnapshot });
+    render();
+    return;
+  }
+
+  if (action === "jump-history") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
+    if (!gameId || !Number.isFinite(moveIndex)) return;
+    store.selectHistoryMove({ gameId, moveIndex });
+    render();
+    return;
+  }
+
+  if (action === "return-live") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    store.returnToLive({ gameId });
+    render();
+    return;
+  }
+
+  if (action === "toggle-p1" || action === "toggle-p2") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    const game = store.getGameViewModel(gameId);
+    if (!game) return;
+    const role = action === "toggle-p1" ? "Player 1" : "Player 2";
+    const current = role === "Player 1" ? game.player1 : game.player2;
+    if (!current) return;
+    store.setParticipantConnected({ gameId, role, connected: !current.connected });
+    render();
+    return;
+  }
+
+  if (action === "tutorial-next" || action === "tutorial-skip") {
+    tutorial.next();
+    render();
+    return;
+  }
+
+  if (action === "tutorial-complete") {
+    store.markTutorialCompleted();
+    tutorial.reset();
+    const gameId = actionEl.getAttribute("data-game-id");
+    navigateTo(gameId ? buildGameHash(gameId) : buildHomeHash());
+  }
+});
+
+const initialRender = async () => {
+  if (navigator.onLine === false) {
+    store.setOffline(true);
+  }
+
+  if (currentRoute.name === "home" && !store.getTutorialCompleted()) {
+    navigateTo(buildTutorialHash());
+    return;
+  }
+
+  render();
+};
+
+void initialRender();
