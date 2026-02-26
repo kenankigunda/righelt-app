@@ -435,15 +435,28 @@ export function createEnginePlaygroundBoardAdapter() {
           cell.className = "cell";
           const cellPiece = findPieceAt(snapshot, row, col);
           const hasSource = Boolean(selection.source);
-          const hasActionToCell = (Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves).some(
+          const previews = Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves;
+          const previewsAtCell = previews.filter(
             (action) => action.to && action.to.row === row && action.to.col === col,
           );
+          const legalAtCell = selectedPieceMoves.filter(
+            (action) => action.to && action.to.row === row && action.to.col === col,
+          );
+          const hasActionToCell = previewsAtCell.length > 0;
+          const hasBlockedSupplyPreview =
+            previewsAtCell.some(
+              (action) => action.legal === false && action.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED",
+            ) && legalAtCell.length === 0;
+
           const selectable =
             Boolean(allowFreeSelection) ||
             Boolean(cellPiece) ||
             (!hasSource ? false : hasActionToCell);
           if (!selectable) {
             cell.classList.add("unselectable");
+          }
+          if (hasBlockedSupplyPreview) {
+            cell.classList.add("disallowed-preview");
           }
 
           const isSource = selection.source && selection.source.row === row && selection.source.col === col;
@@ -452,16 +465,7 @@ export function createEnginePlaygroundBoardAdapter() {
           if (isTarget) cell.classList.add("target");
 
           if (isTarget) {
-            const previewsAtTarget = (Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves).filter(
-              (action) => action.to && action.to.row === row && action.to.col === col,
-            );
-            const legalAtTarget = selectedPieceMoves.filter(
-              (action) => action.to && action.to.row === row && action.to.col === col,
-            );
-            const hasBlockedSupplyPreview = previewsAtTarget.some(
-              (action) => action.legal === false && action.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED",
-            );
-            if (hasBlockedSupplyPreview && legalAtTarget.length === 0) {
+            if (hasBlockedSupplyPreview) {
               cell.classList.add("disallowed-target");
               cell.setAttribute("data-disallow-reason", "Disallowed: destination would be unsupplied.");
             }
