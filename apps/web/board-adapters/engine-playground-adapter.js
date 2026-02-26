@@ -412,7 +412,7 @@ export function createEnginePlaygroundBoardAdapter() {
       };
     },
 
-    render({ snapshot, selection, selectedPieceMoves, selectedPieceMovePreviews }) {
+    render({ snapshot, selection, selectedPieceMoves, selectedPieceMovePreviews, allowFreeSelection }) {
       if (!boardEl) {
         throw new Error("Adapter not mounted");
       }
@@ -425,6 +425,18 @@ export function createEnginePlaygroundBoardAdapter() {
           const cell = document.createElement("button");
           cell.type = "button";
           cell.className = "cell";
+          const cellPiece = findPieceAt(snapshot, row, col);
+          const hasSource = Boolean(selection.source);
+          const hasActionToCell = selectedPieceMoves.some(
+            (action) => action.to && action.to.row === row && action.to.col === col,
+          );
+          const selectable =
+            Boolean(allowFreeSelection) ||
+            Boolean(cellPiece) ||
+            (!hasSource ? false : hasActionToCell);
+          if (!selectable) {
+            cell.classList.add("unselectable");
+          }
 
           const isSource = selection.source && selection.source.row === row && selection.source.col === col;
           const isTarget = selection.target && selection.target.row === row && selection.target.col === col;
@@ -434,9 +446,8 @@ export function createEnginePlaygroundBoardAdapter() {
           cell.dataset.row = String(row);
           cell.dataset.col = String(col);
 
-          const piece = findPieceAt(snapshot, row, col);
-          const marker = piece ? buildPieceToken(piece) : document.createElement("span");
-          if (!piece) {
+          const marker = cellPiece ? buildPieceToken(cellPiece) : document.createElement("span");
+          if (!cellPiece) {
             marker.className = "piece-empty";
             marker.textContent = ".";
           }
