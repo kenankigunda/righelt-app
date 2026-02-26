@@ -85,6 +85,23 @@ button.danger {
   background: var(--danger);
 }
 
+button:disabled,
+.button-link[aria-disabled="true"] {
+  background: #d7d2c6;
+  border-color: #c3bcab;
+  color: #7c7568;
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+button.secondary:disabled {
+  background: #f1eee6;
+  border-color: #d6d0c2;
+  color: #8a8375;
+}
+
 .layout-grid {
   display: grid;
   gap: 1rem;
