@@ -19,3 +19,15 @@ test("startup API handler avoids game-engine barrel imports", async () => {
     );
   }
 });
+
+test("startup bootstrap payload is precomputed at module scope", async () => {
+  const source = await readFile(API_HANDLER_ENTRYPOINT, "utf8");
+  assert.equal(
+    source.includes("const INITIAL_PLAYGROUND_STATE = resolveToStability(createInitialState(), { artifactMode: \"full\" });"),
+    true,
+  );
+  assert.equal(
+    source.includes("const INITIAL_PLAYGROUND_LEGAL_ACTIONS = listLegalActions(INITIAL_PLAYGROUND_STATE);"),
+    true,
+  );
+});

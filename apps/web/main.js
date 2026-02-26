@@ -1,3 +1,10 @@
+import {
+  buildActionPayload,
+  pickBestActionTypeForTarget,
+  shouldResetSelectionOnDocumentClick,
+  shouldSubmitOnEnter,
+} from "./interaction.js";
+
 const boardEl = document.getElementById("board");
 const overlayLinesEl = document.getElementById("overlay-lines");
 const actionTypeEl = document.getElementById("action-type");
@@ -125,27 +132,6 @@ const getGroupInfoForPiece = (piece) => {
 };
 
 const getSelectedPieceActions = () => selectedPieceMoves;
-
-const ACTION_PRIORITY = ["move", "rush", "project", "push", "follow", "retreat"];
-
-const pickBestActionTypeForTarget = (actionsAtTarget) => {
-  if (actionsAtTarget.length === 0) {
-    return null;
-  }
-
-  const currentType = actionTypeEl.value;
-  if (actionsAtTarget.some((action) => action.type === currentType)) {
-    return currentType;
-  }
-
-  for (const type of ACTION_PRIORITY) {
-    if (actionsAtTarget.some((action) => action.type === type)) {
-      return type;
-    }
-  }
-
-  return actionsAtTarget[0]?.type ?? null;
-};
 
 const selectPassAction = () => {
   actionTypeEl.value = "pass";
@@ -661,18 +647,6 @@ const getNextFixtureId = () => {
   return `${prefix}-${nextNumeric}`;
 };
 
-const buildActionPayload = () => {
-  const type = actionTypeEl.value;
-  if (type === "pass") {
-    return { type };
-  }
-  return {
-    type,
-    from: selectedSource,
-    to: selectedTarget,
-  };
-};
-
 boardEl.addEventListener("click", (event) => {
   const cell = event.target.closest(".cell");
   if (!cell) return;
@@ -694,7 +668,7 @@ boardEl.addEventListener("click", (event) => {
     const actionsAtTarget = getSelectedPieceActions().filter(
       (action) => action.to && action.to.row === clickedCoord.row && action.to.col === clickedCoord.col,
     );
-    const nextActionType = pickBestActionTypeForTarget(actionsAtTarget);
+    const nextActionType = pickBestActionTypeForTarget(actionsAtTarget, actionTypeEl.value);
     if (nextActionType) {
       actionTypeEl.value = nextActionType;
     } else {
@@ -716,10 +690,7 @@ boardEl.addEventListener("click", (event) => {
 
 document.addEventListener("click", (event) => {
   const target = event.target;
-  if (!(target instanceof Element)) {
-    return;
-  }
-  if (target.closest("button, input, select, textarea, a, label, [role='button'], [role='link']")) {
+  if (!shouldResetSelectionOnDocumentClick(target)) {
     return;
   }
   selectPassAction();
@@ -733,18 +704,14 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter") {
-    return;
-  }
-  const target = event.target;
   if (
-    target instanceof Element &&
-    (target.closest("input, textarea, [contenteditable='true']") ||
-      target.closest("button, a, [role='button'], [role='link']"))
+    !shouldSubmitOnEnter({
+      key: event.key,
+      target: event.target,
+      actionType: actionTypeEl.value,
+      submitDisabled: submitActionEl.disabled,
+    })
   ) {
-    return;
-  }
-  if (actionTypeEl.value === "pass" || submitActionEl.disabled) {
     return;
   }
   event.preventDefault();
@@ -765,7 +732,7 @@ submitActionEl.addEventListener("click", async () => {
   if (!state) return;
   submitActionEl.disabled = true;
   setActionResult("Applying action...");
-  const action = buildActionPayload();
+  const action = buildActionPayload(actionTypeEl.value, selectedSource, selectedTarget);
 
   try {
     const response = await fetch("/api/engine/playground/apply", {

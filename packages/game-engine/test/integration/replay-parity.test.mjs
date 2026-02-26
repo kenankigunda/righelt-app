@@ -56,6 +56,45 @@ test("headless replay returns deterministic final state and outcome", () => {
   assert.equal(runA.trace.length, 4);
 });
 
+test("P-001 headless replay executes command logs without UI state", () => {
+  const result = replayActions(createInitialState(), [{ type: "pass" }, { type: "pass" }], {
+    includeTrace: false,
+    artifactMode: "minimal",
+  });
+  assert.equal(result.failure, undefined);
+  assert.equal(result.finalState.turnIndex, 2);
+  assert.equal(result.finalState.sideToMove, "P1");
+});
+
+test("P-002 replay stops at first invalid command index", () => {
+  const result = replayActions(
+    createInitialState(),
+    [{ type: "pass" }, { type: "move" }, { type: "pass" }],
+    { includeTrace: false, artifactMode: "minimal" },
+  );
+  assert.ok(result.failure);
+  assert.equal(result.failure?.index, 1);
+  assert.equal(result.finalState.turnIndex, 1);
+});
+
+test("P-003 replay supports final-state-only mode", () => {
+  const result = replayActions(createInitialState(), [{ type: "pass" }, { type: "pass" }], {
+    includeTrace: false,
+    artifactMode: "full",
+  });
+  assert.equal(result.trace, undefined);
+  assert.equal(result.failure, undefined);
+});
+
+test("P-004 full-trace and final-only replay modes end in identical final state", () => {
+  const initial = createInitialState();
+  const actions = [{ type: "pass" }, { type: "pass" }, { type: "pass" }];
+  const traced = replayActions(initial, actions, { includeTrace: true, artifactMode: "minimal" });
+  const finalOnly = replayActions(initial, actions, { includeTrace: false, artifactMode: "minimal" });
+  assert.equal(deterministicStateHash(traced.finalState), deterministicStateHash(finalOnly.finalState));
+  assert.equal(traced.outcome.status, finalOnly.outcome.status);
+});
+
 expectReplayFailure({
   label: "replay failure reports INVALID_SHAPE for malformed command and keeps previous state",
   initial: createInitialState(),
