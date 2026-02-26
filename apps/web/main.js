@@ -17,6 +17,8 @@ const moveLogEl = document.getElementById("move-log");
 const fixtureSelectEl = document.getElementById("fixture-select");
 const loadFixtureEl = document.getElementById("load-fixture");
 const replayFixtureEl = document.getElementById("replay-fixture");
+const saveFixtureEl = document.getElementById("save-fixture");
+const updateFixtureEl = document.getElementById("update-fixture");
 const fixtureResultEl = document.getElementById("fixture-result");
 
 const BOARD_SIZE = 10;
@@ -31,6 +33,7 @@ let selectedTarget = null;
 const moveLog = [];
 let fixtures = [];
 let currentFixtureId = null;
+let fixtureCatalog = { id: "M", title: "Milestone 2 Golden Scenarios", fixtures: [] };
 let cellByCoordinateKey = new Map();
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
@@ -538,13 +541,43 @@ const computeStateHash = async (candidateState) => {
   return body.hash;
 };
 
-const loadFixtureCatalog = async () => {
-  const response = await fetch("/fixtures/m-golden-fixtures.json", { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Failed to load fixtures: HTTP ${response.status}`);
+const getFixtureWriterBaseUrl = () => {
+  const host = window.location.hostname;
+  if (host !== "localhost" && host !== "127.0.0.1") {
+    return null;
   }
-  const catalog = await response.json();
-  fixtures = Array.isArray(catalog.fixtures) ? catalog.fixtures : [];
+  const browserPort = Number.parseInt(window.location.port || "80", 10);
+  if (!Number.isFinite(browserPort)) {
+    return null;
+  }
+  return `http://${host}:${browserPort + 1000}`;
+};
+
+const computeExpectedFromCurrentState = async () => {
+  if (!state) {
+    throw new Error("No active state to save");
+  }
+  const expectedHash = await computeStateHash(state);
+  const expectedOutcome = state?.outcome?.status ?? "ongoing";
+  return { expectedHash, expectedOutcome };
+};
+
+const downloadFixtureCatalog = (catalog, filename) => {
+  const blob = new Blob([`${JSON.stringify(catalog, null, 2)}\n`], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+};
+
+const updateFixtureOptions = () => {
+  const selectedId = currentFixtureId;
   fixtureSelectEl.innerHTML = "";
   for (const fixture of fixtures) {
     const option = document.createElement("option");
@@ -552,13 +585,81 @@ const loadFixtureCatalog = async () => {
     option.textContent = `${fixture.id} - ${fixture.title}`;
     fixtureSelectEl.appendChild(option);
   }
-  if (fixtures.length > 0) {
-    currentFixtureId = fixtures[0].id;
-    fixtureSelectEl.value = currentFixtureId;
+  if (fixtures.length === 0) {
+    currentFixtureId = null;
+    return;
+  }
+  currentFixtureId = selectedId && fixtures.some((fixture) => fixture.id === selectedId) ? selectedId : fixtures[0].id;
+  fixtureSelectEl.value = currentFixtureId;
+};
+
+const tryLocalFixtureWrite = async (pathSuffix, payload) => {
+  const base = getFixtureWriterBaseUrl();
+  if (!base) {
+    return { ok: false, reason: "not_localhost" };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 1500);
+  try {
+    const response = await fetch(`${base}${pathSuffix}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      return { ok: false, reason: "local_write_failed", body };
+    }
+    const body = await response.json();
+    return { ok: true, body };
+  } catch {
+    clearTimeout(timeout);
+    return { ok: false, reason: "local_writer_unreachable" };
   }
 };
 
+const loadFixtureCatalog = async () => {
+  const response = await fetch("/fixtures/m-golden-fixtures.json", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Failed to load fixtures: HTTP ${response.status}`);
+  }
+  const catalog = await response.json();
+  fixtureCatalog = {
+    id: typeof catalog.id === "string" ? catalog.id : "M",
+    title: typeof catalog.title === "string" ? catalog.title : "Milestone 2 Golden Scenarios",
+    fixtures: Array.isArray(catalog.fixtures) ? catalog.fixtures : [],
+  };
+  fixtures = fixtureCatalog.fixtures;
+  updateFixtureOptions();
+};
+
 const getSelectedFixture = () => fixtures.find((fixture) => fixture.id === currentFixtureId) ?? null;
+
+const getNextFixtureId = () => {
+  const prefix = (fixtureCatalog.id || "M").toUpperCase();
+  let maxNumeric = 0;
+  let maxDigits = 3;
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+
+  for (const fixture of fixtures) {
+    const match = pattern.exec(fixture.id);
+    if (!match) {
+      continue;
+    }
+    const digits = match[1];
+    const numeric = Number.parseInt(digits, 10);
+    if (!Number.isFinite(numeric)) {
+      continue;
+    }
+    maxNumeric = Math.max(maxNumeric, numeric);
+    maxDigits = Math.max(maxDigits, digits.length);
+  }
+
+  const nextNumeric = String(maxNumeric + 1).padStart(maxDigits, "0");
+  return `${prefix}-${nextNumeric}`;
+};
 
 const buildActionPayload = () => {
   const type = actionTypeEl.value;
@@ -629,6 +730,25 @@ document.addEventListener("click", (event) => {
   refreshSelectionLabels();
   renderBoard();
   renderStatus();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") {
+    return;
+  }
+  const target = event.target;
+  if (
+    target instanceof Element &&
+    (target.closest("input, textarea, [contenteditable='true']") ||
+      target.closest("button, a, [role='button'], [role='link']"))
+  ) {
+    return;
+  }
+  if (actionTypeEl.value === "pass" || submitActionEl.disabled) {
+    return;
+  }
+  event.preventDefault();
+  submitActionEl.click();
 });
 
 resetSelectionEl.addEventListener("click", () => {
@@ -800,6 +920,133 @@ replayFixtureEl.addEventListener("click", async () => {
     });
   } finally {
     replayFixtureEl.disabled = false;
+  }
+});
+
+saveFixtureEl.addEventListener("click", async () => {
+  if (!state) {
+    setFixtureResult({ ok: false, error: "no_state_loaded" });
+    return;
+  }
+
+  const fixtureId = getNextFixtureId();
+  const title = window.prompt("Fixture title:", `Saved from playground ${fixtureId}`);
+  if (!title) {
+    return;
+  }
+
+  saveFixtureEl.disabled = true;
+  try {
+    const { expectedHash, expectedOutcome } = await computeExpectedFromCurrentState();
+    const fixture = {
+      id: fixtureId,
+      title,
+      initial_state: structuredClone(state),
+      action_sequence: [],
+      expected_final_state_hash: expectedHash,
+      expected_outcome: expectedOutcome,
+    };
+
+    const localWrite = await tryLocalFixtureWrite("/fixtures/save", { fixture });
+    const nextCatalog = {
+      ...fixtureCatalog,
+      fixtures: [...fixtures, fixture],
+    };
+
+    fixtureCatalog = nextCatalog;
+    fixtures = fixtureCatalog.fixtures;
+    currentFixtureId = fixtureId;
+    updateFixtureOptions();
+
+    if (localWrite.ok) {
+      setFixtureResult({
+        ok: true,
+        mode: "local_write",
+        fixtureId,
+        expected: { hash: expectedHash, outcome: expectedOutcome },
+      });
+      return;
+    }
+
+    downloadFixtureCatalog(nextCatalog, "m-golden-fixtures.updated.json");
+    setFixtureResult({
+      ok: true,
+      mode: "download_fallback",
+      fixtureId,
+      expected: { hash: expectedHash, outcome: expectedOutcome },
+      localWrite,
+    });
+  } catch (error) {
+    setFixtureResult({
+      ok: false,
+      error: "save_fixture_failed",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  } finally {
+    saveFixtureEl.disabled = false;
+  }
+});
+
+updateFixtureEl.addEventListener("click", async () => {
+  if (!state) {
+    setFixtureResult({ ok: false, error: "no_state_loaded" });
+    return;
+  }
+  const fixture = getSelectedFixture();
+  if (!fixture) {
+    setFixtureResult({ ok: false, error: "fixture_not_found" });
+    return;
+  }
+
+  updateFixtureEl.disabled = true;
+  try {
+    const { expectedHash, expectedOutcome } = await computeExpectedFromCurrentState();
+    const updatedFixture = {
+      ...fixture,
+      expected_final_state_hash: expectedHash,
+      expected_outcome: expectedOutcome,
+    };
+    const nextCatalog = {
+      ...fixtureCatalog,
+      fixtures: fixtures.map((entry) => (entry.id === fixture.id ? updatedFixture : entry)),
+    };
+
+    const localWrite = await tryLocalFixtureWrite("/fixtures/update", {
+      fixtureId: fixture.id,
+      expected_final_state_hash: expectedHash,
+      expected_outcome: expectedOutcome,
+    });
+
+    fixtureCatalog = nextCatalog;
+    fixtures = fixtureCatalog.fixtures;
+    updateFixtureOptions();
+
+    if (localWrite.ok) {
+      setFixtureResult({
+        ok: true,
+        mode: "local_write",
+        fixtureId: fixture.id,
+        expected: { hash: expectedHash, outcome: expectedOutcome },
+      });
+      return;
+    }
+
+    downloadFixtureCatalog(nextCatalog, "m-golden-fixtures.updated.json");
+    setFixtureResult({
+      ok: true,
+      mode: "download_fallback",
+      fixtureId: fixture.id,
+      expected: { hash: expectedHash, outcome: expectedOutcome },
+      localWrite,
+    });
+  } catch (error) {
+    setFixtureResult({
+      ok: false,
+      error: "update_fixture_failed",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  } finally {
+    updateFixtureEl.disabled = false;
   }
 });
 

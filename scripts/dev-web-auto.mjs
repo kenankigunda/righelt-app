@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import http from "node:http";
 import { watch, promises as fs } from "node:fs";
 import path from "node:path";
 
@@ -8,6 +9,7 @@ const watchBackend = args.includes("--watch-backend");
 
 const cwd = process.cwd();
 const touchTarget = path.join(cwd, "apps/web/functions/api/[[path]].ts");
+const fixtureCatalogPath = path.join(cwd, "apps/web/fixtures/m-golden-fixtures.json");
 const watchRoots = [
   path.join(cwd, "packages/api-handler/src"),
   path.join(cwd, "packages/game-engine/src"),
@@ -18,6 +20,161 @@ const watchableExt = new Set([".ts", ".js", ".mjs", ".cjs", ".json"]);
 let touchTimer = null;
 let openTimer = null;
 let openedBrowser = false;
+let fixtureServer = null;
+
+const fixtureWriterPort = (() => {
+  const numeric = Number.parseInt(port, 10);
+  if (!Number.isFinite(numeric)) {
+    return 9788;
+  }
+  return numeric + 1000;
+})();
+
+const jsonResponse = (response, status, body) => {
+  response.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "content-type",
+    "cache-control": "no-store",
+  });
+  response.end(JSON.stringify(body));
+};
+
+const readFixtureCatalog = async () => {
+  const raw = await fs.readFile(fixtureCatalogPath, "utf8");
+  return JSON.parse(raw);
+};
+
+const writeFixtureCatalog = async (catalog) => {
+  await fs.writeFile(fixtureCatalogPath, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
+};
+
+const readJsonBody = (request) =>
+  new Promise((resolve, reject) => {
+    let payload = "";
+    request.on("data", (chunk) => {
+      payload += chunk.toString();
+    });
+    request.on("end", () => {
+      if (!payload) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(payload));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    request.on("error", reject);
+  });
+
+const startFixtureWriterServer = () => {
+  fixtureServer = http.createServer(async (request, response) => {
+    if (!request.url || !request.method) {
+      jsonResponse(response, 400, { ok: false, error: "invalid_request" });
+      return;
+    }
+
+    if (request.method === "OPTIONS") {
+      jsonResponse(response, 200, { ok: true });
+      return;
+    }
+
+    if (request.method === "GET" && request.url === "/fixtures/catalog") {
+      try {
+        const catalog = await readFixtureCatalog();
+        jsonResponse(response, 200, { ok: true, catalog });
+      } catch (error) {
+        jsonResponse(response, 500, {
+          ok: false,
+          error: "catalog_read_failed",
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && request.url === "/fixtures/update") {
+      try {
+        const body = await readJsonBody(request);
+        const fixtureId = typeof body.fixtureId === "string" ? body.fixtureId : "";
+        const expectedHash = typeof body.expected_final_state_hash === "string" ? body.expected_final_state_hash : "";
+        const expectedOutcome = typeof body.expected_outcome === "string" ? body.expected_outcome : "";
+
+        if (!fixtureId || !expectedHash || !expectedOutcome) {
+          jsonResponse(response, 400, { ok: false, error: "invalid_payload" });
+          return;
+        }
+
+        const catalog = await readFixtureCatalog();
+        const fixture = catalog.fixtures.find((entry) => entry.id === fixtureId);
+        if (!fixture) {
+          jsonResponse(response, 404, { ok: false, error: "fixture_not_found" });
+          return;
+        }
+
+        fixture.expected_final_state_hash = expectedHash;
+        fixture.expected_outcome = expectedOutcome;
+        await writeFixtureCatalog(catalog);
+        jsonResponse(response, 200, { ok: true, fixtureId, catalog });
+      } catch (error) {
+        jsonResponse(response, 500, {
+          ok: false,
+          error: "fixture_update_failed",
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && request.url === "/fixtures/save") {
+      try {
+        const body = await readJsonBody(request);
+        const fixture = body.fixture;
+        if (!fixture || typeof fixture !== "object") {
+          jsonResponse(response, 400, { ok: false, error: "invalid_payload" });
+          return;
+        }
+
+        const fixtureId = typeof fixture.id === "string" ? fixture.id : "";
+        const title = typeof fixture.title === "string" ? fixture.title : "";
+        const expectedHash =
+          typeof fixture.expected_final_state_hash === "string" ? fixture.expected_final_state_hash : "";
+        const expectedOutcome = typeof fixture.expected_outcome === "string" ? fixture.expected_outcome : "";
+
+        if (!fixtureId || !title || !expectedHash || !expectedOutcome) {
+          jsonResponse(response, 400, { ok: false, error: "invalid_fixture_shape" });
+          return;
+        }
+
+        const catalog = await readFixtureCatalog();
+        if (catalog.fixtures.some((entry) => entry.id === fixtureId)) {
+          jsonResponse(response, 409, { ok: false, error: "fixture_exists" });
+          return;
+        }
+
+        catalog.fixtures.push(fixture);
+        await writeFixtureCatalog(catalog);
+        jsonResponse(response, 200, { ok: true, fixtureId, catalog });
+      } catch (error) {
+        jsonResponse(response, 500, {
+          ok: false,
+          error: "fixture_save_failed",
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+      return;
+    }
+
+    jsonResponse(response, 404, { ok: false, error: "not_found" });
+  });
+
+  fixtureServer.listen(fixtureWriterPort, "127.0.0.1", () => {
+    console.log(`[dev-web] local fixture writer available at http://127.0.0.1:${fixtureWriterPort}`);
+  });
+};
 
 const openBrowserForUrl = (url) => {
   if (openedBrowser) {
@@ -86,6 +243,7 @@ console.log(
     ? `[dev-web] starting on :${port} with backend watcher enabled`
     : `[dev-web] starting on :${port}`,
 );
+startFixtureWriterServer();
 
 const wrangler = spawn(
   "pnpm",
@@ -142,6 +300,11 @@ const shutdown = () => {
 
   for (const watcher of watchers) {
     watcher.close();
+  }
+
+  if (fixtureServer) {
+    fixtureServer.close();
+    fixtureServer = null;
   }
 
   if (!wrangler.killed) {
