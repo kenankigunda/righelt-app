@@ -36,6 +36,8 @@ For orchestrated features, use:
 
 - `Cp` = commit + push + wait before continuing
 - `Cpn` = commit + push + take the next action
+- `Rbom` = rebase on latest origin main
+- `Fp` = force push (`--force-with-lease`)
 
 ## License
 
