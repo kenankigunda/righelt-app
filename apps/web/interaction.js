@@ -18,6 +18,22 @@ export function pickBestActionTypeForTarget(actionsAtTarget, currentType) {
   return actionsAtTarget[0]?.type ?? null;
 }
 
+export function shouldAllowSelectionAtTarget({
+  allowFreeSelection,
+  hasSelectedSource,
+  actionsAtTarget,
+}) {
+  if (allowFreeSelection) {
+    return true;
+  }
+
+  if (!hasSelectedSource) {
+    return false;
+  }
+
+  return Array.isArray(actionsAtTarget) && actionsAtTarget.length > 0;
+}
+
 export function buildActionPayload(type, source, target) {
   if (type === "pass") {
     return { type };

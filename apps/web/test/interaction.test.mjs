@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildActionPayload,
   pickBestActionTypeForTarget,
+  shouldAllowSelectionAtTarget,
   shouldResetSelectionOnDocumentClick,
   shouldSubmitOnEnter,
 } from "../interaction.js";
@@ -91,5 +92,45 @@ test("shouldSubmitOnEnter allows enter for actionable board context", () => {
   assert.equal(
     shouldSubmitOnEnter({ key: "Enter", target: boardTarget, actionType: "move", submitDisabled: true }),
     false,
+  );
+});
+
+test("shouldAllowSelectionAtTarget enforces strict mode by default", () => {
+  assert.equal(
+    shouldAllowSelectionAtTarget({
+      allowFreeSelection: false,
+      hasSelectedSource: false,
+      actionsAtTarget: [],
+    }),
+    false,
+  );
+
+  assert.equal(
+    shouldAllowSelectionAtTarget({
+      allowFreeSelection: false,
+      hasSelectedSource: true,
+      actionsAtTarget: [],
+    }),
+    false,
+  );
+
+  assert.equal(
+    shouldAllowSelectionAtTarget({
+      allowFreeSelection: false,
+      hasSelectedSource: true,
+      actionsAtTarget: [{ type: "move", to: { row: 3, col: 4 } }],
+    }),
+    true,
+  );
+});
+
+test("shouldAllowSelectionAtTarget allows free mode", () => {
+  assert.equal(
+    shouldAllowSelectionAtTarget({
+      allowFreeSelection: true,
+      hasSelectedSource: false,
+      actionsAtTarget: [],
+    }),
+    true,
   );
 });

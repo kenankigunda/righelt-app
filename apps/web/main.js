@@ -50,6 +50,7 @@ if (shouldMountShell) {
   const saveFixtureEl = document.getElementById("save-fixture");
   const updateFixtureEl = document.getElementById("update-fixture");
   const fixtureResultEl = document.getElementById("fixture-result");
+  const allowFreeSelectionEl = document.getElementById("allow-free-selection");
 
 let state = null;
 let legalActions = [];
@@ -100,6 +101,7 @@ function handleBoardCellClick(clickedCoord) {
     selectedPieceMoves,
     currentActionType: actionTypeEl.value,
     clickedCoord,
+    allowFreeSelection: Boolean(allowFreeSelectionEl?.checked),
   });
 
   applySelection(result.selection);

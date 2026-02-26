@@ -1,4 +1,4 @@
-import { pickBestActionTypeForTarget } from "../interaction.js";
+import { pickBestActionTypeForTarget, shouldAllowSelectionAtTarget } from "../interaction.js";
 
 const BOARD_SIZE = 10;
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -353,7 +353,7 @@ export function createEnginePlaygroundBoardAdapter() {
       return findPieceById(snapshot, pieceId);
     },
 
-    nextSelectionForCell({ snapshot, selection, selectedPieceMoves, currentActionType, clickedCoord }) {
+    nextSelectionForCell({ snapshot, selection, selectedPieceMoves, currentActionType, clickedCoord, allowFreeSelection }) {
       const clickedPiece = findPieceAt(snapshot, clickedCoord.row, clickedCoord.col);
 
       if (clickedPiece) {
@@ -368,6 +368,17 @@ export function createEnginePlaygroundBoardAdapter() {
       }
 
       if (!selection.source) {
+        if (!shouldAllowSelectionAtTarget({
+          allowFreeSelection: Boolean(allowFreeSelection),
+          hasSelectedSource: false,
+          actionsAtTarget: [],
+        })) {
+          return {
+            selection,
+            nextActionType: currentActionType,
+          };
+        }
+
         return {
           selection: {
             ...selection,
@@ -380,6 +391,16 @@ export function createEnginePlaygroundBoardAdapter() {
       const actionsAtTarget = selectedPieceMoves.filter(
         (action) => action.to && action.to.row === clickedCoord.row && action.to.col === clickedCoord.col,
       );
+      if (!shouldAllowSelectionAtTarget({
+        allowFreeSelection: Boolean(allowFreeSelection),
+        hasSelectedSource: true,
+        actionsAtTarget,
+      })) {
+        return {
+          selection,
+          nextActionType: currentActionType,
+        };
+      }
       const suggestedAction = pickBestActionTypeForTarget(actionsAtTarget, currentActionType) ?? "pass";
 
       return {
