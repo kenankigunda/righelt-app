@@ -29,6 +29,10 @@ let currentRoute = parseRouteFromHash(window.location.hash);
 let mountedBoardGameId = null;
 let busy = false;
 let liveSyncConnectedRoute = "";
+const openedViewerGames = new Set();
+let wsStatus = { state: "disconnected", scope: null, gameId: null, reconnectAttempts: 0 };
+let wsLastEvent = "none";
+const WS_FALLBACK_POLL_MS = 1200;
 
 const escapeHtml = (value) =>
   String(value)
@@ -67,6 +71,9 @@ const renderHeader = () => `
     <div>
       <h1>Righelt Web Shell</h1>
       <p class="small">Identity <span class="mono">${escapeHtml(transport.getIdentityId())}</span></p>
+      <p class="small">Live sync: <span class="mono">${escapeHtml(
+        `${wsStatus.state}${wsStatus.scope ? `:${wsStatus.scope}` : ""}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`,
+      )}</span> | Last event: <span class="mono">${escapeHtml(wsLastEvent)}</span></p>
     </div>
     <div class="nav-row">
       <a class="button-link secondary" href="${buildHomeHash()}">Home</a>
@@ -330,7 +337,9 @@ const syncRouteData = async () => {
     return;
   }
   if (currentRoute.name === "game") {
-    await transport.loadGame(currentRoute.gameId, { openAsViewer: true });
+    const firstOpen = !openedViewerGames.has(currentRoute.gameId);
+    await transport.loadGame(currentRoute.gameId, { openAsViewer: firstOpen });
+    openedViewerGames.add(currentRoute.gameId);
   }
 };
 
@@ -349,12 +358,20 @@ const syncRouteDataPassive = async () => {
 const liveSync = createLiveSyncClient({
   identityId: transport.getIdentityId(),
   onEvent: (payload) => {
+    wsLastEvent = payload?.type
+      ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
+      : "unknown";
     if (payload?.type === "game.updated" || payload?.type === "socket.connected") {
       void syncRouteDataPassive();
     }
+    render();
   },
   onError: (error) => {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
+  },
+  onStatus: (status) => {
+    wsStatus = status;
+    render();
   },
 });
 
@@ -366,7 +383,7 @@ const syncLiveChannel = () => {
         ? "home"
         : "none";
 
-  if (routeKey === liveSyncConnectedRoute) {
+  if (routeKey === liveSyncConnectedRoute && wsStatus.state === "connected") {
     return;
   }
   liveSyncConnectedRoute = routeKey;
@@ -410,8 +427,22 @@ window.addEventListener("online", () => {
 window.addEventListener("offline", () => {
   transport.setOffline(true);
   liveSync.disconnect();
+  liveSyncConnectedRoute = "";
   void withBusy(syncRouteData);
 });
+
+setInterval(() => {
+  if (document.visibilityState === "hidden") {
+    return;
+  }
+  if (currentRoute.name !== "game" && currentRoute.name !== "home") {
+    return;
+  }
+  if (wsStatus.state === "connected") {
+    return;
+  }
+  void syncRouteDataPassive();
+}, WS_FALLBACK_POLL_MS);
 
 appEl.addEventListener("click", async (event) => {
   const target = event.target;

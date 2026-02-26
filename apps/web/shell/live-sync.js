@@ -10,7 +10,7 @@ const createWsUrl = ({ scope, identityId, gameId = null }) => {
   return `${protocol}://${window.location.host}/api/shell/ws?${params.toString()}`;
 };
 
-export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {} }) => {
+export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {}, onStatus = () => {} }) => {
   let socket = null;
   let stopped = false;
   let reconnectAttempts = 0;
@@ -60,12 +60,14 @@ export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {} }
     cleanupSocket();
     clearReconnect();
     mode = { scope, gameId };
+    onStatus({ state: "connecting", scope, gameId, reconnectAttempts });
 
     const ws = new WebSocket(createWsUrl({ scope, identityId, gameId }));
     socket = ws;
 
     ws.addEventListener("open", () => {
       reconnectAttempts = 0;
+      onStatus({ state: "connected", scope, gameId, reconnectAttempts });
     });
 
     ws.addEventListener("message", (event) => {
@@ -79,9 +81,11 @@ export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {} }
 
     ws.addEventListener("error", () => {
       onError(new Error("websocket_error"));
+      onStatus({ state: "error", scope, gameId, reconnectAttempts });
     });
 
     ws.addEventListener("close", () => {
+      onStatus({ state: "closed", scope, gameId, reconnectAttempts });
       if (!stopped) {
         scheduleReconnect();
       }
@@ -96,6 +100,7 @@ export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {} }
       clearReconnect();
       cleanupSocket();
       mode = null;
+      onStatus({ state: "disconnected", scope: null, gameId: null, reconnectAttempts });
     },
     resume: () => {
       stopped = false;

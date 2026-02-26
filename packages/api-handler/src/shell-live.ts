@@ -112,11 +112,12 @@ const findRoleForIdentity = (game: ShellGame, identityId: string): string => {
   return "Guest";
 };
 
-const ensureViewer = (game: ShellGame, identityId: string) => {
+const ensureViewer = (game: ShellGame, identityId: string): boolean => {
   if (game.viewers.some((viewer) => viewer.identityId === identityId)) {
-    return;
+    return false;
   }
   game.viewers.push({ identityId, connected: true, joinedAt: now() });
+  return true;
 };
 
 const withViewModel = (game: ShellGame, identityId: string, offline = false) => {
@@ -353,9 +354,11 @@ export const handleShellLiveRequest = async (
       }
 
       if (url.searchParams.get("openAsViewer") === "1") {
-        ensureViewer(game, identityId);
-        game.updatedAt = now();
-        broadcastLiveUpdate(game.id, "viewer_open");
+        const added = ensureViewer(game, identityId);
+        if (added) {
+          game.updatedAt = now();
+          broadcastLiveUpdate(game.id, "viewer_open");
+        }
       }
 
       return {
@@ -387,10 +390,12 @@ export const handleShellLiveRequest = async (
       }
 
       if (mode === "viewer") {
-        ensureViewer(game, identityId);
+        const added = ensureViewer(game, identityId);
         game.updatedAt = now();
-        addNotification(game, "Viewer joined");
-        broadcastLiveUpdate(game.id, "viewer_joined");
+        if (added) {
+          addNotification(game, "Viewer joined");
+          broadcastLiveUpdate(game.id, "viewer_joined");
+        }
         return { handled: true, status: 200, body: { ok: true, pendingApproval: false, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
       }
 
@@ -406,7 +411,7 @@ export const handleShellLiveRequest = async (
       const inviteFromRole = typeof body.inviteFromRole === "string" ? body.inviteFromRole : null;
       const sharedByPlayer = inviteFromRole === "Player 1" || inviteFromRole === "Player 2";
       if (!sharedByPlayer) {
-        ensureViewer(game, identityId);
+        const added = ensureViewer(game, identityId);
         game.pendingJoinRequests.push({
           identityId,
           requestedSeat,
@@ -415,7 +420,7 @@ export const handleShellLiveRequest = async (
         });
         game.updatedAt = now();
         addNotification(game, "Player seat request pending approval");
-        broadcastLiveUpdate(game.id, "player_join_requested");
+        broadcastLiveUpdate(game.id, added ? "player_join_requested" : "player_join_requested_existing_viewer");
         return {
           handled: true,
           status: 200,
