@@ -84,6 +84,20 @@ test("startup route keeps a deterministic response body across repeated requests
   assert.equal(firstPayload, secondPayload);
 });
 
+test("startup route keeps deterministic legalActions payload across requests", async () => {
+  const env = buildEnv();
+  const request = new Request("https://righelt.pages.dev/api/engine/playground/state", {
+    method: "GET",
+  });
+
+  const firstResponse = await handleApiRequest(request, env);
+  const secondResponse = await handleApiRequest(request, env);
+  const firstBody = await firstResponse.json();
+  const secondBody = await secondResponse.json();
+
+  assert.deepEqual(firstBody.legalActions, secondBody.legalActions);
+});
+
 test("mutable and validation endpoints default to no-store cache policy", async () => {
   const env = buildEnv();
   const requestCases = [

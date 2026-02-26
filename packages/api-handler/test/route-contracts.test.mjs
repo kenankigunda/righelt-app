@@ -293,3 +293,54 @@ test("/api/engine/playground/apply illegal action returns accepted=false with va
   assert.equal(body.legalActions.length > 0, true);
   assert.equal(typeof body.state?.turnIndex, "number");
 });
+
+test("/api/engine/playground/piece-moves returns invalid_piece_id when pieceId is missing", async () => {
+  const { env } = buildEnv();
+  const stateResponse = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/engine/playground/state", { method: "GET" }),
+    env,
+  );
+  const stateBody = await stateResponse.json();
+
+  const response = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/engine/playground/piece-moves", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state: stateBody.state }),
+    }),
+    env,
+  );
+
+  const body = await response.json();
+  assert.equal(response.status, 400);
+  assert.equal(response.headers.get("cache-control"), CACHE_NO_STORE);
+  assert.equal(body.ok, false);
+  assert.equal(body.error, "invalid_piece_id");
+});
+
+test("/api/engine/playground/apply returns invalid_action for malformed action payload", async () => {
+  const { env } = buildEnv();
+  const stateResponse = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/engine/playground/state", { method: "GET" }),
+    env,
+  );
+  const stateBody = await stateResponse.json();
+
+  const response = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/engine/playground/apply", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        state: stateBody.state,
+        action: { from: { row: 3, col: 6 }, to: { row: 3, col: 7 } },
+      }),
+    }),
+    env,
+  );
+
+  const body = await response.json();
+  assert.equal(response.status, 400);
+  assert.equal(response.headers.get("cache-control"), CACHE_NO_STORE);
+  assert.equal(body.ok, false);
+  assert.equal(body.error, "invalid_action");
+});
