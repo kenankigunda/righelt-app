@@ -357,6 +357,17 @@ button {
   pointer-events: none;
 }
 
+.axis-label.axis-medium {
+  color: #7e4f18;
+  font-weight: 800;
+}
+
+.axis-label.axis-strong {
+  color: #0f5fa0;
+  font-weight: 900;
+  text-shadow: 0 0 0.01px currentColor;
+}
+
 .axis-label.col-axis {
   bottom: -11px;
   left: 50%;

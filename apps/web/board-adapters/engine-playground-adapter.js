@@ -491,6 +491,18 @@ export function createEnginePlaygroundBoardAdapter() {
           if (row === BOARD_SIZE - 1) {
             const colAxis = document.createElement("span");
             colAxis.className = "axis-label col-axis";
+            const source = selection.source;
+            const target = selection.target;
+            const hasDifferentTarget = Boolean(
+              source &&
+                target &&
+                (source.row !== target.row || source.col !== target.col),
+            );
+            if (source && col === source.col) {
+              colAxis.classList.add("axis-strong");
+            } else if (hasDifferentTarget && target && col === target.col && (!source || source.col !== target.col)) {
+              colAxis.classList.add("axis-medium");
+            }
             colAxis.textContent = String(col);
             cell.appendChild(colAxis);
           }
@@ -498,6 +510,18 @@ export function createEnginePlaygroundBoardAdapter() {
           if (col === 0) {
             const rowAxis = document.createElement("span");
             rowAxis.className = "axis-label row-axis";
+            const source = selection.source;
+            const target = selection.target;
+            const hasDifferentTarget = Boolean(
+              source &&
+                target &&
+                (source.row !== target.row || source.col !== target.col),
+            );
+            if (source && row === source.row) {
+              rowAxis.classList.add("axis-strong");
+            } else if (hasDifferentTarget && target && row === target.row && (!source || source.row !== target.row)) {
+              rowAxis.classList.add("axis-medium");
+            }
             rowAxis.textContent = String(row);
             cell.appendChild(rowAxis);
           }
