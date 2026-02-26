@@ -3,6 +3,7 @@
 Status: Normative source of truth for product and UX behavior of the web application.
 
 This document defines application-level behavior around game creation, invites, joining, live updates, presence, history viewing, lobby listing, preview board, and onboarding tutorial.
+The surrounding web app must remain implementation-independent from the game board and may integrate any board backend/UI that conforms to this spec's board integration contract.
 If implementation behavior conflicts with this spec, this spec wins.
 
 ## 1. Core Concepts
@@ -20,6 +21,60 @@ If implementation behavior conflicts with this spec, this spec wins.
 - `Connected status`:
   - `Connected`: Client currently active on the game.
   - `Disconnected`: Client not currently active.
+- `Board integration contract`: Stable API boundary used by the web app shell to host a game board implementation.
+
+## 1.1 Board Implementation Independence (Normative)
+
+- The web app shell (routing, identity, invites, join decisions, presence, history UI, lobby/home surfaces, tutorial orchestration, notifications, and offline shell behavior) must not directly depend on any board-specific internals.
+- All game-board integrations must occur only through the `Board integration contract` in this section.
+- A board implementation may be swapped (UI renderer, rules engine location, transport/backend model) without changing shell behavior specified in Sections 2-15.
+- Board-specific rendering details are replaceable; shell-level UX states and decisions remain authoritative in this spec.
+
+### 1.1.1 Required Board Contract Surface
+
+Every board implementation must provide:
+
+- `Capabilities`:
+  - Report whether it supports `live`, `history`, `tutorial`, and `offline-local` execution modes.
+  - Report legal action affordances for current state/role when requested by shell.
+- `State`:
+  - Deterministic board snapshot format sufficient for render and history playback.
+  - Move/action metadata needed for history entries and turn ownership.
+  - Explicit status for `ready`, `applying-update`, `error`, and `desynced`.
+- `Commands`:
+  - `initialize(sessionContext, initialSnapshot)`.
+  - `applyRemoteUpdate(update)`.
+  - `requestLocalAction(actionIntent)` returning acceptance/rejection with reason.
+  - `jumpToHistory(moveIndex)` and `returnToLive()`.
+  - `dispose()`.
+- `Events` emitted to shell:
+  - `stateChanged`.
+  - `actionCommitted`.
+  - `actionRejected` (with reason code).
+  - `modeChanged` (`live`/`history`/`tutorial`).
+  - `syncStatusChanged`.
+  - `fatalError`.
+
+### 1.1.2 Ownership Boundary
+
+- Shell owns:
+  - Identity persistence and role restoration.
+  - Invite/share and join approval workflows.
+  - Presence indicators and participant roster UX.
+  - History panel container and `Return to live` controls.
+  - Home list/preview board placement and routing.
+  - Tutorial trigger policy and completion bookkeeping.
+- Board owns:
+  - Rule legality and board-state transitions.
+  - Board rendering and board-local interaction handling.
+  - Producing deterministic snapshots/events through the contract.
+
+### 1.1.3 Compatibility Requirement for Swapping Boards
+
+- A replacement board implementation is compliant only if:
+  - It satisfies the contract in Section 1.1.1.
+  - It preserves shell-observable behavior in Sections 2-15.
+  - No shell code changes are required beyond selecting/configuring the board adapter.
 
 ## 2. Identity and Rejoin
 
