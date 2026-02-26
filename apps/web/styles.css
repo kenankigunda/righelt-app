@@ -288,20 +288,21 @@ button {
 .piece-token.move-ghost.illegal-unsupplied::after {
   content: "";
   position: absolute;
-  left: 2px;
-  top: 8px;
-  width: 16px;
-  height: 2px;
-  background: #7a1616;
+  left: -1px;
+  top: 7px;
+  width: 22px;
+  height: 3px;
+  background: #8f0f0f;
+  box-shadow: 0 0 0 1px rgba(255, 244, 244, 0.8);
   border-radius: 2px;
 }
 
 .piece-token.move-ghost.illegal-unsupplied::before {
-  transform: rotate(35deg);
+  transform: rotate(40deg);
 }
 
 .piece-token.move-ghost.illegal-unsupplied::after {
-  transform: rotate(-35deg);
+  transform: rotate(-40deg);
 }
 
 .piece-empty {
