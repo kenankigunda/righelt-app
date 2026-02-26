@@ -10,15 +10,58 @@
         "sideToMove": "P1",
         "turnIndex": 18,
         "pieces": [
-          { "id": "C1", "owner": "P1", "kind": "commander", "position": { "row": 3, "col": 6 }, "supplied": true, "commanded": true },
-          { "id": "C2", "owner": "P2", "kind": "commander", "position": { "row": 6, "col": 3 }, "supplied": true, "commanded": true },
-          { "id": "U1a", "owner": "P1", "kind": "unit", "position": { "row": 5, "col": 3 }, "supplied": true, "commanded": true }
+          {
+            "id": "C1",
+            "owner": "P1",
+            "kind": "commander",
+            "position": {
+              "row": 3,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "C2",
+            "owner": "P2",
+            "kind": "commander",
+            "position": {
+              "row": 6,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "U1a",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true
+          }
         ],
         "continuation": null,
-        "outcome": { "status": "ongoing" }
+        "outcome": {
+          "status": "ongoing"
+        }
       },
       "action_sequence": [
-        { "type": "move", "actorId": "C1", "from": { "row": 3, "col": 6 }, "to": { "row": 3, "col": 5 } }
+        {
+          "type": "move",
+          "actorId": "C1",
+          "from": {
+            "row": 3,
+            "col": 6
+          },
+          "to": {
+            "row": 3,
+            "col": 5
+          }
+        }
       ],
       "expected_final_state_hash": "14d8f5d5d9f11ed0dedf845518840cbf360e5553fdb8aca71893f447f76ec3f1",
       "expected_outcome": "p1_win"
@@ -31,16 +74,69 @@
         "sideToMove": "P2",
         "turnIndex": 22,
         "pieces": [
-          { "id": "C1", "owner": "P1", "kind": "commander", "position": { "row": 3, "col": 6 }, "supplied": true, "commanded": true },
-          { "id": "C2", "owner": "P2", "kind": "commander", "position": { "row": 6, "col": 3 }, "supplied": true, "commanded": true },
-          { "id": "U1a", "owner": "P1", "kind": "unit", "position": { "row": 4, "col": 5 }, "supplied": true, "commanded": true },
-          { "id": "U2a", "owner": "P2", "kind": "unit", "position": { "row": 5, "col": 4 }, "supplied": true, "commanded": true }
+          {
+            "id": "C1",
+            "owner": "P1",
+            "kind": "commander",
+            "position": {
+              "row": 3,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "C2",
+            "owner": "P2",
+            "kind": "commander",
+            "position": {
+              "row": 6,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "U1a",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 5
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "U2a",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 4
+            },
+            "supplied": true,
+            "commanded": true
+          }
         ],
         "continuation": null,
-        "outcome": { "status": "ongoing" }
+        "outcome": {
+          "status": "ongoing"
+        }
       },
       "action_sequence": [
-        { "type": "project", "actorId": "U2a", "from": { "row": 5, "col": 4 }, "to": { "row": 5, "col": 6 } }
+        {
+          "type": "project",
+          "actorId": "U2a",
+          "from": {
+            "row": 5,
+            "col": 4
+          },
+          "to": {
+            "row": 5,
+            "col": 6
+          }
+        }
       ],
       "expected_final_state_hash": "a54b9779dc7737cff52ecf8f6f2f62232277cb2718f5ab2f3c6f03f80f2f8d04",
       "expected_outcome": "draw"
@@ -53,18 +149,94 @@
         "sideToMove": "P1",
         "turnIndex": 31,
         "pieces": [
-          { "id": "C1", "owner": "P1", "kind": "commander", "position": { "row": 3, "col": 6 }, "supplied": true, "commanded": true },
-          { "id": "C2", "owner": "P2", "kind": "commander", "position": { "row": 6, "col": 3 }, "supplied": true, "commanded": true },
-          { "id": "U1a", "owner": "P1", "kind": "unit", "position": { "row": 5, "col": 2 }, "supplied": true, "commanded": true },
-          { "id": "U1b", "owner": "P1", "kind": "unit", "position": { "row": 5, "col": 1 }, "supplied": true, "commanded": true },
-          { "id": "U2a", "owner": "P2", "kind": "unit", "position": { "row": 5, "col": 3 }, "supplied": true, "commanded": true, "pushed": false }
+          {
+            "id": "C1",
+            "owner": "P1",
+            "kind": "commander",
+            "position": {
+              "row": 3,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "C2",
+            "owner": "P2",
+            "kind": "commander",
+            "position": {
+              "row": 6,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "U1a",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 2
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "U1b",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 1
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "U2a",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "pushed": false
+          }
         ],
         "continuation": null,
-        "outcome": { "status": "ongoing" }
+        "outcome": {
+          "status": "ongoing"
+        }
       },
       "action_sequence": [
-        { "type": "push", "actorId": "U1a", "from": { "row": 5, "col": 2 }, "targetId": "U2a", "to": { "row": 5, "col": 3 } },
-        { "type": "follow", "actorId": "U1b", "from": { "row": 5, "col": 1 }, "to": { "row": 5, "col": 2 } }
+        {
+          "type": "push",
+          "actorId": "U1a",
+          "from": {
+            "row": 5,
+            "col": 2
+          },
+          "targetId": "U2a",
+          "to": {
+            "row": 5,
+            "col": 3
+          }
+        },
+        {
+          "type": "follow",
+          "actorId": "U1b",
+          "from": {
+            "row": 5,
+            "col": 1
+          },
+          "to": {
+            "row": 5,
+            "col": 2
+          }
+        }
       ],
       "expected_final_state_hash": "3fa2d6b7f26a6ec0467dbf8227c212fe66b5f2d2eb4bc400c8f98ed7cd8af0c5",
       "expected_outcome": "p1_win"
@@ -77,20 +249,606 @@
         "sideToMove": "P1",
         "turnIndex": 0,
         "pieces": [
-          { "id": "C1", "owner": "P1", "kind": "commander", "position": { "row": 3, "col": 6 }, "supplied": true, "commanded": true },
-          { "id": "C2", "owner": "P2", "kind": "commander", "position": { "row": 6, "col": 3 }, "supplied": true, "commanded": true },
-          { "id": "U1a", "owner": "P1", "kind": "unit", "position": { "row": 4, "col": 6 }, "supplied": true, "commanded": true },
-          { "id": "U2a", "owner": "P2", "kind": "unit", "position": { "row": 5, "col": 3 }, "supplied": true, "commanded": true }
+          {
+            "id": "C1",
+            "owner": "P1",
+            "kind": "commander",
+            "position": {
+              "row": 3,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "C2",
+            "owner": "P2",
+            "kind": "commander",
+            "position": {
+              "row": 6,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "U1a",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "U2a",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true
+          }
         ],
         "continuation": null,
-        "outcome": { "status": "ongoing" }
+        "outcome": {
+          "status": "ongoing"
+        }
       },
       "action_sequence": [
-        { "type": "project", "actorId": "U1a", "from": { "row": 4, "col": 6 }, "to": { "row": 2, "col": 6 } },
-        { "type": "pass" },
-        { "type": "move", "actorId": "C1", "from": { "row": 3, "col": 6 }, "to": { "row": 3, "col": 5 } }
+        {
+          "type": "project",
+          "actorId": "U1a",
+          "from": {
+            "row": 4,
+            "col": 6
+          },
+          "to": {
+            "row": 2,
+            "col": 6
+          }
+        },
+        {
+          "type": "pass"
+        },
+        {
+          "type": "move",
+          "actorId": "C1",
+          "from": {
+            "row": 3,
+            "col": 6
+          },
+          "to": {
+            "row": 3,
+            "col": 5
+          }
+        }
       ],
       "expected_final_state_hash": "fdd300f4f31fd43dd3a9b17795a2ddf51195f8f89a8952ddd4572bf6f7509d3d",
+      "expected_outcome": "ongoing"
+    },
+    {
+      "id": "M-005",
+      "title": "Cannot project into fortress",
+      "initial_state": {
+        "boardSize": 10,
+        "sideToMove": "P2",
+        "turnIndex": 5,
+        "pieces": [
+          {
+            "id": "C1",
+            "owner": "P1",
+            "kind": "commander",
+            "position": {
+              "row": 3,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "U1-1",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "U1-2",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 3,
+              "col": 4
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "U1-3",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 4
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "C2",
+            "owner": "P2",
+            "kind": "commander",
+            "position": {
+              "row": 6,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "U2-1",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 6,
+              "col": 5
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "U2-2",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true
+          }
+        ],
+        "continuation": null,
+        "outcome": {
+          "status": "ongoing"
+        },
+        "artifacts": {
+          "mode": "full",
+          "supply": [
+            {
+              "player": "P1",
+              "reachability": [
+                "C1",
+                "U1-1",
+                "U1-2",
+                "U1-3"
+              ],
+              "shortestPathByPieceId": {
+                "C1": [
+                  {
+                    "row": 3,
+                    "col": 6
+                  },
+                  {
+                    "row": 2,
+                    "col": 6
+                  },
+                  {
+                    "row": 1,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-1": [
+                  {
+                    "row": 5,
+                    "col": 6
+                  },
+                  {
+                    "row": 4,
+                    "col": 6
+                  },
+                  {
+                    "row": 3,
+                    "col": 6
+                  },
+                  {
+                    "row": 2,
+                    "col": 6
+                  },
+                  {
+                    "row": 1,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-2": [
+                  {
+                    "row": 3,
+                    "col": 4
+                  },
+                  {
+                    "row": 2,
+                    "col": 4
+                  },
+                  {
+                    "row": 1,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 5
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-3": [
+                  {
+                    "row": 5,
+                    "col": 4
+                  },
+                  {
+                    "row": 4,
+                    "col": 4
+                  },
+                  {
+                    "row": 3,
+                    "col": 4
+                  },
+                  {
+                    "row": 2,
+                    "col": 4
+                  },
+                  {
+                    "row": 1,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 5
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C1": 6,
+                "U1-1": 8,
+                "U1-2": 8,
+                "U1-3": 10
+              }
+            },
+            {
+              "player": "P2",
+              "reachability": [
+                "C2",
+                "U2-1",
+                "U2-2"
+              ],
+              "shortestPathByPieceId": {
+                "C2": [
+                  {
+                    "row": 6,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 2
+                  },
+                  {
+                    "row": 6,
+                    "col": 1
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-1": [
+                  {
+                    "row": 6,
+                    "col": 5
+                  },
+                  {
+                    "row": 6,
+                    "col": 4
+                  },
+                  {
+                    "row": 6,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 2
+                  },
+                  {
+                    "row": 6,
+                    "col": 1
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-2": [
+                  {
+                    "row": 4,
+                    "col": 3
+                  },
+                  {
+                    "row": 4,
+                    "col": 2
+                  },
+                  {
+                    "row": 4,
+                    "col": 1
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C2": 6,
+                "U2-1": 8,
+                "U2-2": 8
+              }
+            }
+          ],
+          "command": {
+            "candidateEdges": [
+              "C1|U1-1",
+              "C1|U1-2",
+              "C2|U2-1",
+              "C2|U2-2",
+              "U1-1|U1-3",
+              "U1-2|U1-3"
+            ],
+            "cutEdges": [],
+            "activeEdges": [
+              "C1|U1-1",
+              "C1|U1-2",
+              "C2|U2-1",
+              "C2|U2-2",
+              "U1-1|U1-3",
+              "U1-2|U1-3"
+            ],
+            "shortestPathToCommanderByPieceId": {
+              "C1": [
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "U1-1": [
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "U1-2": [
+                {
+                  "row": 3,
+                  "col": 4
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "U1-3": [
+                {
+                  "row": 5,
+                  "col": 4
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "C2": [
+                {
+                  "row": 6,
+                  "col": 3
+                }
+              ],
+              "U2-1": [
+                {
+                  "row": 6,
+                  "col": 5
+                },
+                {
+                  "row": 6,
+                  "col": 3
+                }
+              ],
+              "U2-2": [
+                {
+                  "row": 4,
+                  "col": 3
+                },
+                {
+                  "row": 6,
+                  "col": 3
+                }
+              ]
+            }
+          },
+          "groups": {
+            "componentByPieceId": {
+              "C1": "P1:C1",
+              "C2": "P2:C2",
+              "U1-1": "P1:U1-1",
+              "U1-2": "P1:U1-2",
+              "U1-3": "P1:U1-3",
+              "U2-1": "P2:U2-1",
+              "U2-2": "P2:U2-2"
+            },
+            "membersByComponentId": {
+              "P1:C1": [
+                "C1"
+              ],
+              "P2:C2": [
+                "C2"
+              ],
+              "P1:U1-1": [
+                "U1-1"
+              ],
+              "P1:U1-2": [
+                "U1-2"
+              ],
+              "P1:U1-3": [
+                "U1-3"
+              ],
+              "P2:U2-1": [
+                "U2-1"
+              ],
+              "P2:U2-2": [
+                "U2-2"
+              ]
+            },
+            "strengthByComponentId": {
+              "P1:C1": 1,
+              "P2:C2": 1,
+              "P1:U1-1": 1,
+              "P1:U1-2": 1,
+              "P1:U1-3": 1,
+              "P2:U2-1": 1,
+              "P2:U2-2": 1
+            }
+          }
+        }
+      },
+      "action_sequence": [],
+      "expected_final_state_hash": "8e66372da9e241d1be6b8b5b2c2730bd83b4a427fcad8fd1a37801946a3db02d",
       "expected_outcome": "ongoing"
     }
   ]
