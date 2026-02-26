@@ -1,0 +1,69 @@
+feature_id: F-030-shell
+integration_branch: codex/f-030-shell-integration
+max_parallel_streams: 3
+shared_acceptance:
+  - pnpm --filter @righelt/web test
+  - pnpm test:api-handler
+  - pnpm test:engine
+streams:
+  - id: S1
+    goal: Build app shell foundation and routing boundaries independent of board internals.
+    worktree: ../righelt-F-030-shell-S1
+    branch: codex/F-030-shell-S1
+    depends_on: []
+    acceptance_checks:
+      - pnpm --filter @righelt/web typecheck
+      - pnpm --filter @righelt/web test
+      - pnpm --filter @righelt/web test -- routing
+      - pnpm --filter @righelt/web test -- bootstrap
+    agent_profile: shell-foundation
+  - id: S2
+    goal: Implement home/game shell UX flows for identity, join, presence, history, and notifications.
+    worktree: ../righelt-F-030-shell-S2
+    branch: codex/F-030-shell-S2
+    depends_on:
+      - S1
+    acceptance_checks:
+      - pnpm --filter @righelt/web test
+      - pnpm --filter @righelt/web test -- join
+      - pnpm --filter @righelt/web test -- presence
+      - pnpm --filter @righelt/web test -- history
+      - pnpm --filter @righelt/web test -- notifications
+    agent_profile: shell-ux-core
+  - id: S3
+    goal: Implement tutorial and playground/offline shell behavior.
+    worktree: ../righelt-F-030-shell-S3
+    branch: codex/F-030-shell-S3
+    depends_on:
+      - S1
+    acceptance_checks:
+      - pnpm --filter @righelt/web test
+      - pnpm --filter @righelt/web test -- tutorial
+      - pnpm --filter @righelt/web test -- offline
+      - pnpm --filter @righelt/web test -- playground
+    agent_profile: shell-ux-offline
+  - id: S4
+    goal: Enforce startup-path API and cache contracts per fast-start baseline.
+    worktree: ../righelt-F-030-shell-S4
+    branch: codex/F-030-shell-S4
+    depends_on:
+      - S1
+    acceptance_checks:
+      - pnpm test:api-handler
+      - pnpm --filter @righelt/web test -- bootstrap
+      - pnpm --filter @righelt/web test -- cache
+    agent_profile: shell-api-performance
+  - id: S5
+    goal: Integrate streams, reconcile tests, and prove end-to-end shell correctness.
+    worktree: ../righelt-F-030-shell-S5
+    branch: codex/F-030-shell-S5
+    depends_on:
+      - S2
+      - S3
+      - S4
+    acceptance_checks:
+      - pnpm --filter @righelt/web test
+      - pnpm test:api-handler
+      - pnpm test:engine
+      - pnpm --filter @righelt/web test -- e2e
+    agent_profile: shell-integration
