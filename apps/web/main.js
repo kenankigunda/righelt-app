@@ -1,9 +1,10 @@
 import {
   buildActionPayload,
-  pickBestActionTypeForTarget,
   shouldResetSelectionOnDocumentClick,
   shouldSubmitOnEnter,
 } from "./interaction.js";
+import { assertGameBoardAdapter } from "./board-adapter-contract.js";
+import { createEnginePlaygroundBoardAdapter } from "./board-adapters/engine-playground-adapter.js";
 
 const boardEl = document.getElementById("board");
 const overlayLinesEl = document.getElementById("overlay-lines");
@@ -28,9 +29,6 @@ const saveFixtureEl = document.getElementById("save-fixture");
 const updateFixtureEl = document.getElementById("update-fixture");
 const fixtureResultEl = document.getElementById("fixture-result");
 
-const BOARD_SIZE = 10;
-const SVG_NS = "http://www.w3.org/2000/svg";
-
 let state = null;
 let legalActions = [];
 let selectedPieceMoves = [];
@@ -41,23 +39,59 @@ const moveLog = [];
 let fixtures = [];
 let currentFixtureId = null;
 let fixtureCatalog = { id: "M", title: "Milestone 2 Golden Scenarios", fixtures: [] };
-let cellByCoordinateKey = new Map();
 
-const coordKey = (coord) => `${coord.row},${coord.col}`;
+const boardAdapter = createEnginePlaygroundBoardAdapter();
+assertGameBoardAdapter(boardAdapter);
+boardAdapter.mount({
+  boardEl,
+  overlayLinesEl,
+  onCellClick: handleBoardCellClick,
+});
+
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "unset");
-const isSupplyPoint = (row, col) => (row === 0 && col === 9) || (row === 9 && col === 0);
-const buildPieceToken = (piece, ghost = false) => {
-  const token = document.createElement("span");
-  token.className = `piece-token ${piece.owner === "P1" ? "p1" : "p2"} ${piece.kind}`;
-  if (!piece.supplied || !piece.commanded) {
-    token.classList.add("inactive");
-  }
-  if (ghost) {
-    token.classList.add("ghost");
-  }
-  token.textContent = piece.kind === "commander" ? "C" : "";
-  return token;
+
+const getCurrentSelection = () => ({
+  selectedPieceId,
+  source: selectedSource,
+  target: selectedTarget,
+});
+
+const applySelection = (selection) => {
+  selectedPieceId = selection.selectedPieceId;
+  selectedSource = selection.source;
+  selectedTarget = selection.target;
 };
+
+const clearSelection = () => {
+  selectedPieceId = null;
+  selectedPieceMoves = [];
+  selectedSource = null;
+  selectedTarget = null;
+};
+
+function handleBoardCellClick(clickedCoord) {
+  const result = boardAdapter.nextSelectionForCell({
+    snapshot: state,
+    selection: getCurrentSelection(),
+    selectedPieceMoves,
+    currentActionType: actionTypeEl.value,
+    clickedCoord,
+  });
+
+  applySelection(result.selection);
+  actionTypeEl.value = result.nextActionType;
+
+  refreshSelectionLabels();
+  renderBoard();
+  renderStatus();
+  void reloadSelectedPieceMoves().catch((error) => {
+    setActionResult({
+      ok: false,
+      error: "piece_moves_load_failed",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  });
+}
 
 const setActionResult = (value) => {
   actionResultEl.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -70,71 +104,6 @@ const setFixtureResult = (value) => {
 const refreshSelectionLabels = () => {
   sourceValueEl.textContent = formatCoordinate(selectedSource);
   targetValueEl.textContent = formatCoordinate(selectedTarget);
-};
-
-const findPieceAt = (row, col) => {
-  if (!state) return null;
-  return state.pieces.find((piece) => piece.position.row === row && piece.position.col === col) ?? null;
-};
-
-const findPieceById = (pieceId) => {
-  if (!state || !pieceId) return null;
-  return state.pieces.find((piece) => piece.id === pieceId) ?? null;
-};
-
-const getSelectedPiece = () => {
-  const piece = findPieceById(selectedPieceId);
-  if (!piece) {
-    selectedPieceId = null;
-    return null;
-  }
-  return piece;
-};
-
-const getSupplyArtifactFor = (owner) => {
-  if (!state?.artifacts?.supply) {
-    return null;
-  }
-  return state.artifacts.supply.find((entry) => entry.player === owner) ?? null;
-};
-
-const getSupplyPathForPiece = (piece) => {
-  const supplyArtifact = getSupplyArtifactFor(piece.owner);
-  return supplyArtifact?.shortestPathByPieceId?.[piece.id] ?? [];
-};
-
-const getCommandPathForPiece = (piece) => state?.artifacts?.command?.shortestPathToCommanderByPieceId?.[piece.id] ?? [];
-
-const getGroupInfoForPiece = (piece) => {
-  const groups = state?.artifacts?.groups;
-  if (!groups) {
-    return {
-      componentId: null,
-      members: [],
-      strength: null,
-    };
-  }
-
-  const componentId = groups.componentByPieceId[piece.id] ?? null;
-  if (!componentId) {
-    return {
-      componentId: null,
-      members: [],
-      strength: null,
-    };
-  }
-
-  return {
-    componentId,
-    members: groups.membersByComponentId[componentId] ?? [],
-    strength: groups.strengthByComponentId[componentId] ?? null,
-  };
-};
-
-const getSelectedPieceActions = () => selectedPieceMoves;
-
-const selectPassAction = () => {
-  actionTypeEl.value = "pass";
 };
 
 const renderMoveLog = () => {
@@ -152,259 +121,15 @@ const renderMoveLog = () => {
   }
 };
 
-const setOverlayViewBox = () => {
-  const width = boardEl.clientWidth;
-  const height = boardEl.clientHeight;
-  overlayLinesEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
-};
-
-const getCellCenter = (coord) => {
-  const cell = cellByCoordinateKey.get(coordKey(coord));
-  if (!cell) {
-    return null;
-  }
-
-  return {
-    x: cell.offsetLeft + cell.offsetWidth / 2,
-    y: cell.offsetTop + cell.offsetHeight / 2,
-  };
-};
-
-const getPreviewOffset = (actionType) => {
-  if (actionType === "move") {
-    return { x: -14, y: -14 };
-  }
-  if (actionType === "rush") {
-    return { x: 14, y: 14 };
-  }
-  return { x: 0, y: 0 };
-};
-
-const drawPath = (path, stroke, dashPattern = null) => {
-  if (!path || path.length < 2) {
-    return;
-  }
-
-  for (let i = 0; i < path.length - 1; i += 1) {
-    const start = getCellCenter(path[i]);
-    const end = getCellCenter(path[i + 1]);
-    if (!start || !end) {
-      continue;
-    }
-
-    const line = document.createElementNS(SVG_NS, "line");
-    line.setAttribute("x1", String(start.x));
-    line.setAttribute("y1", String(start.y));
-    line.setAttribute("x2", String(end.x));
-    line.setAttribute("y2", String(end.y));
-    line.setAttribute("stroke", stroke);
-    line.setAttribute("stroke-width", "3");
-    line.setAttribute("stroke-linecap", "round");
-    if (dashPattern) {
-      line.setAttribute("stroke-dasharray", dashPattern);
-    }
-    overlayLinesEl.appendChild(line);
-  }
-};
-
-const ensureArrowMarker = () => {
-  let defs = overlayLinesEl.querySelector("defs");
-  if (!defs) {
-    defs = document.createElementNS(SVG_NS, "defs");
-    overlayLinesEl.appendChild(defs);
-  }
-
-  let marker = defs.querySelector("#preview-arrow");
-  if (!marker) {
-    marker = document.createElementNS(SVG_NS, "marker");
-    marker.setAttribute("id", "preview-arrow");
-    marker.setAttribute("viewBox", "0 0 10 10");
-    marker.setAttribute("refX", "8");
-    marker.setAttribute("refY", "5");
-    marker.setAttribute("markerWidth", "5");
-    marker.setAttribute("markerHeight", "5");
-    marker.setAttribute("orient", "auto-start-reverse");
-    marker.setAttribute("markerUnits", "strokeWidth");
-
-    const arrowPath = document.createElementNS(SVG_NS, "path");
-    arrowPath.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
-    arrowPath.setAttribute("fill", "#8b5ec0");
-    arrowPath.setAttribute("fill-opacity", "0.55");
-    marker.appendChild(arrowPath);
-    defs.appendChild(marker);
-  }
-};
-
-const drawArrowLine = (from, to, stroke, endOffset = { x: 0, y: 0 }) => {
-  const start = getCellCenter(from);
-  const end = getCellCenter(to);
-  if (!start || !end) {
-    return;
-  }
-
-  const rawEnd = {
-    x: end.x + endOffset.x,
-    y: end.y + endOffset.y,
-  };
-  const deltaX = rawEnd.x - start.x;
-  const deltaY = rawEnd.y - start.y;
-  const distance = Math.hypot(deltaX, deltaY);
-  const stopBeforeGhost = 16;
-  const shortenBy = Math.min(stopBeforeGhost, Math.max(0, distance - 4));
-  const unitX = distance > 0 ? deltaX / distance : 0;
-  const unitY = distance > 0 ? deltaY / distance : 0;
-  const shortenedEnd = {
-    x: rawEnd.x - unitX * shortenBy,
-    y: rawEnd.y - unitY * shortenBy,
-  };
-
-  const line = document.createElementNS(SVG_NS, "line");
-  line.setAttribute("x1", String(start.x));
-  line.setAttribute("y1", String(start.y));
-  line.setAttribute("x2", String(shortenedEnd.x));
-  line.setAttribute("y2", String(shortenedEnd.y));
-  line.setAttribute("stroke", stroke);
-  line.setAttribute("stroke-width", "2.5");
-  line.setAttribute("stroke-linecap", "round");
-  line.setAttribute("stroke-opacity", "0.5");
-  line.setAttribute("marker-end", "url(#preview-arrow)");
-  overlayLinesEl.appendChild(line);
-};
-
-const clearCellDecorations = () => {
-  for (const cell of cellByCoordinateKey.values()) {
-    cell.classList.remove("group-member", "selected-piece");
-    cell.querySelectorAll(".group-strength-badge,.move-ghost").forEach((node) => node.remove());
-  }
-};
-
-const renderPieceOverlays = () => {
-  clearCellDecorations();
-  overlayLinesEl.innerHTML = "";
-  setOverlayViewBox();
-  ensureArrowMarker();
-
-  const piece = getSelectedPiece();
-  if (!piece) {
-    return;
-  }
-
-  const pieceCell = cellByCoordinateKey.get(coordKey(piece.position));
-  if (pieceCell) {
-    pieceCell.classList.add("selected-piece");
-  }
-
-  const groupInfo = getGroupInfoForPiece(piece);
-  if (groupInfo.members.length > 0) {
-    const memberPieces = groupInfo.members
-      .map((pieceId) => findPieceById(pieceId))
-      .filter((candidate) => Boolean(candidate));
-
-    for (const member of memberPieces) {
-      const memberCell = cellByCoordinateKey.get(coordKey(member.position));
-      memberCell?.classList.add("group-member");
-    }
-
-    const anchor = memberPieces
-      .map((member) => member.position)
-      .sort((a, b) => {
-        if (a.row !== b.row) {
-          return a.row - b.row;
-        }
-        return a.col - b.col;
-      })[0];
-
-    if (anchor) {
-      const anchorCell = cellByCoordinateKey.get(coordKey(anchor));
-      if (anchorCell && typeof groupInfo.strength === "number") {
-        const badge = document.createElement("span");
-        badge.className = "group-strength-badge";
-        badge.textContent = String(groupInfo.strength);
-        anchorCell.appendChild(badge);
-      }
-    }
-  }
-
-  drawPath(getSupplyPathForPiece(piece), "#2f8e63");
-  drawPath(getCommandPathForPiece(piece), "#2470c7");
-
-  const selectedActions = getSelectedPieceActions();
-  const seenPreviews = new Set();
-  for (const action of selectedActions) {
-    if (!action.to) {
-      continue;
-    }
-
-    const targetKey = coordKey(action.to);
-    const previewKey = `${action.type}:${targetKey}`;
-    if (seenPreviews.has(previewKey)) {
-      continue;
-    }
-    seenPreviews.add(previewKey);
-
-    if (action.type === "move" || action.type === "rush") {
-      drawArrowLine(piece.position, action.to, "#8b5ec0", getPreviewOffset(action.type));
-    } else {
-      drawPath([piece.position, action.to], "#8b5ec0", "5 5");
-    }
-    const targetCell = cellByCoordinateKey.get(targetKey);
-    if (targetCell) {
-      const ghost = buildPieceToken(piece, true);
-      ghost.classList.add("move-ghost");
-      if (action.type === "move") {
-        ghost.classList.add("offset-move");
-      } else if (action.type === "rush") {
-        ghost.classList.add("offset-rush");
-      }
-      targetCell.appendChild(ghost);
-    }
-  }
-};
-
 const renderBoard = () => {
-  boardEl.innerHTML = "";
-  cellByCoordinateKey = new Map();
-
-  for (let row = 0; row < BOARD_SIZE; row += 1) {
-    for (let col = 0; col < BOARD_SIZE; col += 1) {
-      const cell = document.createElement("button");
-      cell.type = "button";
-      cell.className = "cell";
-
-      const isSource = selectedSource && selectedSource.row === row && selectedSource.col === col;
-      const isTarget = selectedTarget && selectedTarget.row === row && selectedTarget.col === col;
-      if (isSource) cell.classList.add("source");
-      if (isTarget) cell.classList.add("target");
-
-      cell.dataset.row = String(row);
-      cell.dataset.col = String(col);
-
-      const piece = findPieceAt(row, col);
-      const marker = piece ? buildPieceToken(piece) : document.createElement("span");
-      if (!piece) {
-        marker.className = "piece-empty";
-        marker.textContent = ".";
-      }
-      cell.appendChild(marker);
-
-      if (isSupplyPoint(row, col)) {
-        const supplyMarker = document.createElement("span");
-        supplyMarker.className = "supply-point-marker";
-        supplyMarker.textContent = "◆";
-        cell.appendChild(supplyMarker);
-      }
-
-      const coord = document.createElement("span");
-      coord.className = "coord";
-      coord.textContent = `${row},${col}`;
-      cell.appendChild(coord);
-
-      boardEl.appendChild(cell);
-      cellByCoordinateKey.set(`${row},${col}`, cell);
-    }
+  if (!state) {
+    return;
   }
-
-  renderPieceOverlays();
+  boardAdapter.render({
+    snapshot: state,
+    selection: getCurrentSelection(),
+    selectedPieceMoves,
+  });
 };
 
 const renderStatus = () => {
@@ -416,43 +141,21 @@ const renderStatus = () => {
     ? `${state.continuation.type} (owner ${state.continuation.owner})`
     : "none";
 
-  const c1 = state.pieces.find((piece) => piece.id === "C1");
-  const c2 = state.pieces.find((piece) => piece.id === "C2");
-  commanderSupplyEl.textContent = `C1=${c1?.supplied ?? "-"} | C2=${c2?.supplied ?? "-"}`;
+  commanderSupplyEl.textContent = boardAdapter.getCommanderSupplySummary(state);
 
-  const selectedPiece = getSelectedPiece();
-  if (!selectedPiece) {
+  const pieceSummary = boardAdapter.getSelectedPieceSummary({
+    snapshot: state,
+    selectedPieceId,
+    selectedPieceMoves,
+  });
+
+  if (!pieceSummary) {
     selectedPieceMoves = [];
     selectedPieceEl.textContent = "No piece selected.";
     selectedPieceMovesEl.textContent = "[]";
   } else {
-    const groupInfo = getGroupInfoForPiece(selectedPiece);
-    const selectedActions = getSelectedPieceActions();
-
-    selectedPieceEl.textContent = JSON.stringify(
-      {
-        id: selectedPiece.id,
-        owner: selectedPiece.owner,
-        kind: selectedPiece.kind,
-        position: selectedPiece.position,
-        supplied: selectedPiece.supplied,
-        commanded: selectedPiece.commanded,
-        groupComponentId: groupInfo.componentId,
-        groupStrength: groupInfo.strength,
-      },
-      null,
-      2,
-    );
-
-    selectedPieceMovesEl.textContent = JSON.stringify(
-      selectedActions.map((action) => ({
-        type: action.type,
-        from: action.from ?? null,
-        to: action.to ?? null,
-      })),
-      null,
-      2,
-    );
+    selectedPieceEl.textContent = JSON.stringify(pieceSummary.details, null, 2);
+    selectedPieceMovesEl.textContent = JSON.stringify(pieceSummary.actions, null, 2);
   }
 
   legalActionsEl.textContent = JSON.stringify(legalActions, null, 2);
@@ -476,7 +179,7 @@ const reloadLegalActions = async () => {
 };
 
 const reloadSelectedPieceMoves = async () => {
-  const selectedPiece = getSelectedPiece();
+  const selectedPiece = boardAdapter.getPieceById(state, selectedPieceId);
   if (!state || !selectedPiece) {
     selectedPieceMoves = [];
     renderBoard();
@@ -507,8 +210,7 @@ const loadInitialState = async () => {
   const body = await response.json();
   state = body.state;
   legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
-  selectedPieceMoves = [];
-  selectedPieceId = null;
+  clearSelection();
   renderBoard();
   renderStatus();
   renderMoveLog();
@@ -647,57 +349,13 @@ const getNextFixtureId = () => {
   return `${prefix}-${nextNumeric}`;
 };
 
-boardEl.addEventListener("click", (event) => {
-  const cell = event.target.closest(".cell");
-  if (!cell) return;
-  const row = Number(cell.dataset.row);
-  const col = Number(cell.dataset.col);
-  const clickedCoord = { row, col };
-  const clickedPiece = findPieceAt(row, col);
-
-  if (clickedPiece) {
-    selectedPieceId = clickedPiece.id;
-    selectedSource = { ...clickedPiece.position };
-    selectedTarget = null;
-  } else if (!selectedSource) {
-    selectedSource = clickedCoord;
-    selectPassAction();
-  } else {
-    selectedTarget = clickedCoord;
-
-    const actionsAtTarget = getSelectedPieceActions().filter(
-      (action) => action.to && action.to.row === clickedCoord.row && action.to.col === clickedCoord.col,
-    );
-    const nextActionType = pickBestActionTypeForTarget(actionsAtTarget, actionTypeEl.value);
-    if (nextActionType) {
-      actionTypeEl.value = nextActionType;
-    } else {
-      selectPassAction();
-    }
-  }
-
-  refreshSelectionLabels();
-  renderBoard();
-  renderStatus();
-  void reloadSelectedPieceMoves().catch((error) => {
-    setActionResult({
-      ok: false,
-      error: "piece_moves_load_failed",
-      message: error instanceof Error ? error.message : "Unknown error",
-    });
-  });
-});
-
 document.addEventListener("click", (event) => {
   const target = event.target;
   if (!shouldResetSelectionOnDocumentClick(target)) {
     return;
   }
-  selectPassAction();
-  selectedPieceId = null;
-  selectedPieceMoves = [];
-  selectedSource = null;
-  selectedTarget = null;
+  actionTypeEl.value = "pass";
+  clearSelection();
   refreshSelectionLabels();
   renderBoard();
   renderStatus();
@@ -719,10 +377,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 resetSelectionEl.addEventListener("click", () => {
-  selectedPieceId = null;
-  selectedPieceMoves = [];
-  selectedSource = null;
-  selectedTarget = null;
+  clearSelection();
   refreshSelectionLabels();
   renderBoard();
   renderStatus();
@@ -793,10 +448,7 @@ loadFixtureEl.addEventListener("click", () => {
   }
   state = structuredClone(fixture.initial_state);
   legalActions = [];
-  selectedPieceMoves = [];
-  selectedPieceId = null;
-  selectedSource = null;
-  selectedTarget = null;
+  clearSelection();
   moveLog.length = 0;
   moveLog.push(`Loaded fixture ${fixture.id}`);
   refreshSelectionLabels();
@@ -856,10 +508,7 @@ replayFixtureEl.addEventListener("click", async () => {
       observedOutcome === fixture.expected_outcome;
 
     state = workingState;
-    selectedPieceMoves = [];
-    selectedPieceId = null;
-    selectedSource = null;
-    selectedTarget = null;
+    clearSelection();
     refreshSelectionLabels();
     renderBoard();
     await reloadLegalActions();
