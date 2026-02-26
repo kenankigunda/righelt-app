@@ -122,11 +122,18 @@ Righelt uses two independent systems: `Supply` and `Command`.
 ## 6.1 Supply
 
 - A piece is supplied iff a path exists from its square to its owner’s supply point under pathfinding constraints.
-- Pathfinding uses board occupancy/edge-block constraints as defined by implementation; this spec requires deterministic reachability behavior.
+- Supply pathfinding is orthogonal-only (no diagonal supply traversal).
+- A supply path may traverse:
+  - empty squares
+  - squares occupied by friendly pieces (including the starting square)
+- A supply path may not traverse:
+  - squares occupied by enemy pieces
+  - interior cells crossed by enemy command edges (orthogonal line-of-sight command links block supply traversal through their interior cells)
+- Enemy command-edge blocking for supply is evaluated from the same deterministic command-edge build used by resolution artifacts.
 - **Commander is NOT auto-supplied.**  
   Commander must satisfy the same supply path rule as all pieces.
 - If a non-Commander piece is unsupplied after resolution, it is inactive.
-- Non-Commander unsupplied pieces may be removed by rules engine during state resolution (matching legacy behavior).
+- Non-Commander unsupplied pieces are removed during forced-effects resolution.
 - If a Commander is unsupplied after resolution stability, end-of-game evaluation applies immediately per Section 8.
 
 ## 6.2 Command

@@ -109,7 +109,14 @@ Righelt is fundamentally a network game.
 
 Every piece (including Commander) needs a route back to its own supply point.
 
-If routes collapse, pieces can become inactive and vulnerable.
+Supply routes use orthogonal travel through empty or friendly-occupied squares.
+
+Supply routes are blocked by:
+- enemy pieces
+- enemy command lines crossing board cells between their linked pieces
+
+If a non-Commander has no supply route after resolution, it is removed from the board.
+If a Commander has no supply route after resolution, the game ends immediately (win/loss/draw as applicable).
 
 ## 5.2 Command network
 

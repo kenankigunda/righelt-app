@@ -123,3 +123,16 @@ test("K-003 terminal check uses stabilized state after prior phase updates", () 
   const resolved = resolveToStability(state, { artifactMode: "minimal" });
   assert.equal(resolved.outcome.status, "ongoing");
 });
+
+test("H-005 stabilized resolve removes piece cut off by enemy command-edge wall", () => {
+  const state = createInitialState();
+  addPiece(state, { id: "U1h5", owner: "P1", kind: "unit", position: { row: 8, col: 9 }, supplied: true, commanded: true });
+  addPiece(state, { id: "U2h5a", owner: "P2", kind: "unit", position: { row: 4, col: 0 }, supplied: true, commanded: true });
+  addPiece(state, { id: "U2h5b", owner: "P2", kind: "unit", position: { row: 4, col: 9 }, supplied: true, commanded: true });
+
+  const resolved = resolveToStability(state, { artifactMode: "full" });
+  assert.equal(resolved.pieces.some((piece) => piece.id === "U1h5"), false);
+  const commander = resolved.pieces.find((piece) => piece.id === "C1");
+  assert.equal(Boolean(commander?.supplied), true);
+  assert.equal(resolved.outcome.status, "ongoing");
+});
