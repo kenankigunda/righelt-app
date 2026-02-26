@@ -27,15 +27,23 @@
  *   snapshot: unknown,
  *   selection: BoardSelection,
  *   selectedPieceMoves: unknown[],
+ *   selectedPieceMovePreviews?: unknown[],
  * }) => void} render
  * @property {(snapshot: unknown) => string} getCommanderSupplySummary
  * @property {(input: {
  *   snapshot: unknown,
  *   selectedPieceId: string | null,
  *   selectedPieceMoves: unknown[],
+ *   selectedPieceMovePreviews?: unknown[],
  * }) => null | {
  *   details: Record<string, unknown>,
- *   actions: Array<{ type: string, from: BoardCoord | null, to: BoardCoord | null }>,
+ *   actions: Array<{
+ *     type: string,
+ *     from: BoardCoord | null,
+ *     to: BoardCoord | null,
+ *     legal?: boolean,
+ *     blockedReason?: string | null,
+ *   }>,
  * }} getSelectedPieceSummary
  */
 

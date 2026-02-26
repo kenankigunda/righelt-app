@@ -26,7 +26,7 @@
         <div class="middle-column">
           <section class="panel board-panel">
             <h2>Board</h2>
-            <p class="meta">Click a piece to inspect supply/command/group overlays and valid move previews.</p>
+            <p class="meta">Click a piece to inspect supply/command/group overlays and move previews.</p>
             <div class="board-wrap">
               <div class="board" id="board" aria-label="10 by 10 board"></div>
               <svg id="overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
@@ -35,6 +35,7 @@
               <span><i class="swatch supply"></i>Supply line</span>
               <span><i class="swatch command"></i>Command line</span>
               <span><i class="swatch move"></i>Valid move preview</span>
+              <span><i class="swatch move-blocked"></i>Unsupplied destination preview</span>
               <span><i class="swatch group"></i>Group highlight</span>
               <span><i class="swatch supply-point"></i>Supply point</span>
             </div>
@@ -98,7 +99,7 @@
             </ul>
             <h3>Selected Piece</h3>
             <pre id="selected-piece">No piece selected.</pre>
-            <h3>Selected Piece Valid Moves</h3>
+            <h3>Selected Piece Move Previews</h3>
             <pre id="selected-piece-moves">[]</pre>
             <h3>Legal Actions</h3>
             <pre id="legal-actions">[]</pre>

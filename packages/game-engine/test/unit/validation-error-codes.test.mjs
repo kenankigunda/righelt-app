@@ -72,6 +72,26 @@ test("validation error code map is reachable for all defined variants", () => {
       action: { type: "pass" },
     },
     {
+      code: "SUPPLY_DESTINATION_UNSUPPLIED",
+      state: makeState({
+        pieces: [
+          commander("C1", "P1", 4, 4),
+          commander("C2", "P2", 6, 3),
+          { id: "U2-wall-top", owner: "P2", kind: "unit", position: { row: 0, col: 4 }, supplied: true, commanded: true },
+          { id: "U2-wall-bottom", owner: "P2", kind: "unit", position: { row: 9, col: 4 }, supplied: true, commanded: true },
+          { id: "U2-block-north", owner: "P2", kind: "unit", position: { row: 3, col: 5 }, supplied: true, commanded: true },
+          { id: "U2-block-south", owner: "P2", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true },
+          { id: "U2-block-east", owner: "P2", kind: "unit", position: { row: 4, col: 6 }, supplied: true, commanded: true },
+        ],
+      }),
+      action: {
+        type: "move",
+        actorId: "C1",
+        from: { row: 4, col: 4 },
+        to: { row: 4, col: 5 },
+      },
+    },
+    {
       code: "RULE_VIOLATION",
       state: makeState({
         pieces: [commander("C1", "P1", 3, 6), commander("C2", "P2", 6, 3)],

@@ -90,6 +90,22 @@ const compareActions = (left: Action, right: Action): number => {
   return left.to.col - right.to.col;
 };
 
+type PieceMovePreview = Action & {
+  legal: boolean;
+  blockedReason?: "SUPPLY_DESTINATION_UNSUPPLIED";
+};
+
+const compareActionPreviews = (left: PieceMovePreview, right: PieceMovePreview): number => {
+  const actionOrder = compareActions(left, right);
+  if (actionOrder !== 0) {
+    return actionOrder;
+  }
+  if (left.legal !== right.legal) {
+    return left.legal ? -1 : 1;
+  }
+  return (left.blockedReason ?? "").localeCompare(right.blockedReason ?? "");
+};
+
 const enumeratePieceActions = (state: GameState, pieceId: string): Action[] => {
   const piece = state.pieces.find((candidate) => candidate.id === pieceId);
   if (!piece) {
@@ -121,6 +137,51 @@ const enumeratePieceActions = (state: GameState, pieceId: string): Action[] => {
   }
 
   return candidates.sort(compareActions);
+};
+
+const enumeratePieceActionPreviews = (state: GameState, pieceId: string): PieceMovePreview[] => {
+  const piece = state.pieces.find((candidate) => candidate.id === pieceId);
+  if (!piece) {
+    return [];
+  }
+
+  const previews: PieceMovePreview[] = [];
+  const withTargets = ["move", "project", "rush", "push", "follow", "retreat"] as const;
+
+  for (const type of withTargets) {
+    for (let row = 0; row < BOARD_SIZE; row += 1) {
+      for (let col = 0; col < BOARD_SIZE; col += 1) {
+        const action: Action = {
+          type,
+          actorId: piece.id,
+          from: {
+            row: piece.position.row,
+            col: piece.position.col,
+          },
+          to: { row, col },
+        };
+
+        const validation = validateAction(state, action);
+        if (validation.ok) {
+          previews.push({
+            ...action,
+            legal: true,
+          });
+          continue;
+        }
+
+        if (validation.code === "SUPPLY_DESTINATION_UNSUPPLIED") {
+          previews.push({
+            ...action,
+            legal: false,
+            blockedReason: "SUPPLY_DESTINATION_UNSUPPLIED",
+          });
+        }
+      }
+    }
+  }
+
+  return previews.sort(compareActionPreviews);
 };
 
 export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<Response> => {
@@ -167,6 +228,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
       state: resolved,
       pieceId,
       actions: enumeratePieceActions(resolved, pieceId),
+      previewActions: enumeratePieceActionPreviews(resolved, pieceId),
     });
   }
 

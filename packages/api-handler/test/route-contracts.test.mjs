@@ -222,8 +222,10 @@ test("/api/engine/playground/piece-moves returns deterministic sorted actions", 
 
   assert.equal(firstBody.ok, true);
   assert.equal(Array.isArray(firstBody.actions), true);
+  assert.equal(Array.isArray(firstBody.previewActions), true);
   assert.equal(firstBody.actions.length > 0, true);
   assert.deepEqual(firstBody.actions, secondBody.actions);
+  assert.deepEqual(firstBody.previewActions, secondBody.previewActions);
 
   const serialized = firstBody.actions.map((action) => JSON.stringify(action));
   const sorted = [...serialized].sort((left, right) => left.localeCompare(right));
@@ -254,6 +256,61 @@ test("/api/engine/playground/piece-moves returns [] for unknown pieceId with sta
   assert.equal(body.ok, true);
   assert.equal(body.pieceId, "UNKNOWN");
   assert.deepEqual(body.actions, []);
+  assert.deepEqual(body.previewActions, []);
+});
+
+test("/api/engine/playground/piece-moves includes unsupplied-blocked previews but not legal actions", async () => {
+  const { env } = buildEnv();
+  const baseResponse = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/engine/playground/state", { method: "GET" }),
+    env,
+  );
+  const baseBody = await baseResponse.json();
+
+  const state = {
+    ...baseBody.state,
+    sideToMove: "P1",
+    pieces: [
+      { id: "C1", owner: "P1", kind: "commander", position: { row: 4, col: 4 }, supplied: true, commanded: true },
+      { id: "C2", owner: "P2", kind: "commander", position: { row: 6, col: 3 }, supplied: true, commanded: true },
+      { id: "U2-wall-top", owner: "P2", kind: "unit", position: { row: 0, col: 4 }, supplied: true, commanded: true },
+      { id: "U2-wall-bottom", owner: "P2", kind: "unit", position: { row: 9, col: 4 }, supplied: true, commanded: true },
+      { id: "U2-block-north", owner: "P2", kind: "unit", position: { row: 3, col: 5 }, supplied: true, commanded: true },
+      { id: "U2-block-south", owner: "P2", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true },
+      { id: "U2-block-east", owner: "P2", kind: "unit", position: { row: 4, col: 6 }, supplied: true, commanded: true },
+    ],
+    continuation: null,
+    outcome: { status: "ongoing" },
+  };
+
+  const response = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/engine/playground/piece-moves", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state, pieceId: "C1" }),
+    }),
+    env,
+  );
+
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+
+  assert.equal(
+    body.actions.some((action) => action.type === "move" && action.to?.row === 4 && action.to?.col === 5),
+    false,
+  );
+  assert.equal(
+    body.previewActions.some(
+      (action) =>
+        action.type === "move" &&
+        action.to?.row === 4 &&
+        action.to?.col === 5 &&
+        action.legal === false &&
+        action.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED",
+    ),
+    true,
+  );
 });
 
 test("/api/engine/playground/apply illegal action returns accepted=false with validation and legalActions", async () => {

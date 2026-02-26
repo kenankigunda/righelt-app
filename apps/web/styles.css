@@ -208,6 +208,31 @@ button {
   background: #8b5ec0;
 }
 
+.swatch.move-blocked {
+  position: relative;
+  background: #8b5ec0;
+}
+
+.swatch.move-blocked::before,
+.swatch.move-blocked::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 1px;
+  width: 10px;
+  height: 2px;
+  background: #7a1616;
+  border-radius: 2px;
+}
+
+.swatch.move-blocked::before {
+  transform: rotate(35deg);
+}
+
+.swatch.move-blocked::after {
+  transform: rotate(-35deg);
+}
+
 .swatch.group {
   background: #bde7cc;
   border-color: #6ab084;
@@ -257,6 +282,26 @@ button {
 
 .piece-token.ghost {
   opacity: 0.35;
+}
+
+.piece-token.move-ghost.illegal-unsupplied::before,
+.piece-token.move-ghost.illegal-unsupplied::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 8px;
+  width: 16px;
+  height: 2px;
+  background: #7a1616;
+  border-radius: 2px;
+}
+
+.piece-token.move-ghost.illegal-unsupplied::before {
+  transform: rotate(35deg);
+}
+
+.piece-token.move-ghost.illegal-unsupplied::after {
+  transform: rotate(-35deg);
 }
 
 .piece-empty {

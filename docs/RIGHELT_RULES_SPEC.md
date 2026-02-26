@@ -61,6 +61,7 @@ A turn ends when no continuation is active and control passes to opponent.
 
 - Source piece must be active Commander of side to move.
 - Destination must be orthogonally adjacent and empty.
+- Destination is legal only if Commander would still be supplied after relocation.
 - Commander moves to destination.
 - Turn ends.
 
@@ -69,6 +70,7 @@ A turn ends when no continuation is active and control passes to opponent.
 - Source piece must be active and belong to side to move.
 - Destination must be exactly 2 squares orthogonally away.
 - Intermediate square and destination must both be empty.
+- Destination is legal only if the created Unit would be supplied on that square after the projection.
 - A new `Unit` of the same owner is created on destination.
 - Source piece remains in place.
 - Turn ends.
@@ -77,6 +79,7 @@ A turn ends when no continuation is active and control passes to opponent.
 
 - Source piece must be active and belong to side to move.
 - Destination must be empty.
+- Destination is legal only if the rushing piece would be supplied after relocation.
 - Rush target is one square away in any of 8 directions.
 - Additional rush legality:
   - Orthogonal rush target is legal if at least one square adjacent to target contains an enemy piece.
@@ -87,6 +90,9 @@ A turn ends when no continuation is active and control passes to opponent.
   - Legal actions are `Rush` and `Pass`.
   - Additional rushes are optional; player may `Pass` to end rush continuation and end turn.
   - Any single piece may rush at most once in that continuation sequence.
+
+For action legality, supply is a hard destination constraint for `Move`, `Project`, and `Rush`.
+Post-action command loss does not invalidate those actions; command is evaluated in resolution after the action is applied.
 
 ## 5.5 Push
 

@@ -109,6 +109,11 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 - When: `Move` attempted.
 - Then: Rejected.
 
+### D-006 Move destination must remain supplied
+- Given: Commander has an adjacent empty destination but would be unsupplied on that destination.
+- When: `Move` attempted.
+- Then: Rejected.
+
 ## E. Project
 
 ### E-001 Project at distance 2 orthogonal legal
@@ -135,6 +140,16 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 - Given: Source piece not active.
 - When: `Project` attempted.
 - Then: Rejected.
+
+### E-006 Project destination must be supplied for created unit
+- Given: Source piece active and geometric projection is valid, but destination would be unsupplied for the new unit.
+- When: `Project` attempted.
+- Then: Rejected.
+
+### E-007 Project can be legal even if resulting piece is uncommanded
+- Given: Source piece active, projection destination supplied, and resulting command edge to Commander is cut after resolution.
+- When: `Project` attempted and resolve runs.
+- Then: Action is accepted and resulting projected piece may be uncommanded.
 
 ## F. Rush
 
@@ -165,6 +180,11 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 
 ### F-006 Rush destination occupied
 - Given: Rush destination occupied.
+- When: `Rush` attempted.
+- Then: Rejected.
+
+### F-007 Rush destination must remain supplied
+- Given: Rush destination is geometrically legal and empty but would leave rusher unsupplied.
 - When: `Rush` attempted.
 - Then: Rejected.
 
