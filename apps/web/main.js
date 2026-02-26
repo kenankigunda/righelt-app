@@ -9,6 +9,7 @@ import { createEnginePlaygroundBoardAdapter } from "./board-adapters/engine-play
 const boardEl = document.getElementById("board");
 const overlayLinesEl = document.getElementById("overlay-lines");
 const actionTypeEl = document.getElementById("action-type");
+const allowFreeSelectionEl = document.getElementById("allow-free-selection");
 const sourceValueEl = document.getElementById("source-value");
 const targetValueEl = document.getElementById("target-value");
 const submitActionEl = document.getElementById("submit-action");
@@ -78,6 +79,7 @@ function handleBoardCellClick(clickedCoord) {
     selectedPieceMoves,
     currentActionType: actionTypeEl.value,
     clickedCoord,
+    allowFreeSelection: Boolean(allowFreeSelectionEl?.checked),
   });
 
   applySelection(result.selection);

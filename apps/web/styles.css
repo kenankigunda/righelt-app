@@ -342,6 +342,19 @@ button {
   gap: 0.35rem;
 }
 
+.toggle-row {
+  margin-top: 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.toggle-row input {
+  margin: 0;
+}
+
 select {
   border: 1px solid var(--line);
   border-radius: 8px;

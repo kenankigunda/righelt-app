@@ -237,6 +237,9 @@ Tutorial restart:
   - legal previews render as normal ghost destinations
   - supply-blocked previews still render at the destination, but the ghost piece is crossed out to indicate illegality
   - target/action picking must use legal actions only; blocked previews are informational and must not be auto-selected as legal actions
+- Playground board selection mode:
+  - default (toggle off): users may only pick source cells that contain pieces and destination cells that have at least one legal action from the selected source
+  - free-selection mode (toggle on): users may click arbitrary empty source/destination cells for inspection/manual experimentation
 
 ## 13. Notifications and Prompts
 

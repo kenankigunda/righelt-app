@@ -22,6 +22,7 @@
  *   selectedPieceMoves: unknown[],
  *   currentActionType: string,
  *   clickedCoord: BoardCoord,
+ *   allowFreeSelection?: boolean,
  * }) => { selection: BoardSelection, nextActionType: string }} nextSelectionForCell
  * @property {(input: {
  *   snapshot: unknown,
