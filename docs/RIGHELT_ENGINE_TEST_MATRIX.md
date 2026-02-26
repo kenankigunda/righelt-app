@@ -253,6 +253,16 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 - When: Resolve.
 - Then: Supply statuses recomputed before terminal check.
 
+### H-005 Enemy command-edge cells block supply routes
+- Given: Piece has geometric route to supply through empty cells, but every route crosses interior cells of enemy command edges.
+- When: Resolve to stability.
+- Then: Piece is unsupplied.
+
+### H-006 Friendly command-edge cells do not block own supply routes
+- Given: Piece has supply route that crosses interior cells of friendly command edges.
+- When: Resolve to stability.
+- Then: Piece remains supplied.
+
 ## I. Command System
 
 ### I-001 Commander commands itself

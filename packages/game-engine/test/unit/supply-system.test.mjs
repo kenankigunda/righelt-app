@@ -147,3 +147,36 @@ test("H-003 unsupplied non-commander is removed by forced effects", () => {
   const resolved = resolveToStability(state, { artifactMode: "minimal" });
   assert.equal(resolved.pieces.some((piece) => piece.id === "U1h3"), false);
 });
+
+test("supply is blocked by enemy command-edge cells", () => {
+  const state = createInitialState();
+  addPiece(state, { id: "U1edge", owner: "P1", kind: "unit", position: { row: 8, col: 9 }, supplied: true, commanded: true });
+  addPiece(state, { id: "U2wallL", owner: "P2", kind: "unit", position: { row: 4, col: 0 }, supplied: true, commanded: true });
+  addPiece(state, { id: "U2wallR", owner: "P2", kind: "unit", position: { row: 4, col: 9 }, supplied: true, commanded: true });
+
+  const resolved = resolveToStability(state, { artifactMode: "full" });
+  assert.equal(resolved.pieces.some((piece) => piece.id === "U1edge"), false);
+  const p1Supply = resolved.artifacts?.supply.find((entry) => entry.player === "P1");
+  assert.equal(Boolean(p1Supply?.shortestPathByPieceId.U1edge), false);
+});
+
+test("supply is blocked by enemy vertical command-edge cells", () => {
+  const state = createInitialState();
+  addPiece(state, { id: "U1edgeV", owner: "P1", kind: "unit", position: { row: 9, col: 1 }, supplied: true, commanded: true });
+  addPiece(state, { id: "U2wallTop", owner: "P2", kind: "unit", position: { row: 0, col: 5 }, supplied: true, commanded: true });
+  addPiece(state, { id: "U2wallBottom", owner: "P2", kind: "unit", position: { row: 9, col: 5 }, supplied: true, commanded: true });
+
+  const resolved = resolveToStability(state, { artifactMode: "minimal" });
+  assert.equal(resolved.pieces.some((piece) => piece.id === "U1edgeV"), false);
+});
+
+test("friendly command-edge cells do not block own supply routes", () => {
+  const state = createInitialState();
+  addPiece(state, { id: "U1reachable", owner: "P1", kind: "unit", position: { row: 8, col: 8 }, supplied: false, commanded: false });
+  addPiece(state, { id: "U1wallL", owner: "P1", kind: "unit", position: { row: 4, col: 0 }, supplied: true, commanded: true });
+  addPiece(state, { id: "U1wallR", owner: "P1", kind: "unit", position: { row: 4, col: 9 }, supplied: true, commanded: true });
+
+  const resolved = resolveToStability(state, { artifactMode: "minimal" });
+  const piece = resolved.pieces.find((candidate) => candidate.id === "U1reachable");
+  assert.equal(Boolean(piece?.supplied), true);
+});

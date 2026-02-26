@@ -68,12 +68,41 @@ function computeSupplyForOwner(
   distanceByPieceId: Record<string, number>;
   reachability: string[];
 } {
+  const enemyBlockedByEdge = new Set<string>();
+  for (const edge of buildCommandEdges(state)) {
+    if (edge.owner === owner) {
+      continue;
+    }
+
+    if (edge.from.row === edge.to.row) {
+      const row = edge.from.row;
+      const startCol = Math.min(edge.from.col, edge.to.col) + 1;
+      const endCol = Math.max(edge.from.col, edge.to.col);
+      for (let col = startCol; col < endCol; col += 1) {
+        enemyBlockedByEdge.add(coordinateKey(row, col));
+      }
+      continue;
+    }
+
+    if (edge.from.col === edge.to.col) {
+      const col = edge.from.col;
+      const startRow = Math.min(edge.from.row, edge.to.row) + 1;
+      const endRow = Math.max(edge.from.row, edge.to.row);
+      for (let row = startRow; row < endRow; row += 1) {
+        enemyBlockedByEdge.add(coordinateKey(row, col));
+      }
+    }
+  }
+
   const supplyPoint = SUPPLY_POINTS[owner];
   const occupiedByCoordinate = new Map(
     state.pieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece]),
   );
 
   const isTraversable = (row: number, col: number): boolean => {
+    if (enemyBlockedByEdge.has(coordinateKey(row, col))) {
+      return false;
+    }
     const occupant = occupiedByCoordinate.get(coordinateKey(row, col));
     if (!occupant) {
       return true;
