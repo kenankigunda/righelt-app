@@ -353,7 +353,15 @@ export function createEnginePlaygroundBoardAdapter() {
       return findPieceById(snapshot, pieceId);
     },
 
-    nextSelectionForCell({ snapshot, selection, selectedPieceMoves, currentActionType, clickedCoord, allowFreeSelection }) {
+    nextSelectionForCell({
+      snapshot,
+      selection,
+      selectedPieceMoves,
+      selectedPieceMovePreviews,
+      currentActionType,
+      clickedCoord,
+      allowFreeSelection,
+    }) {
       const clickedPiece = findPieceAt(snapshot, clickedCoord.row, clickedCoord.col);
 
       if (clickedPiece) {
@@ -388,20 +396,20 @@ export function createEnginePlaygroundBoardAdapter() {
         };
       }
 
-      const actionsAtTarget = selectedPieceMoves.filter(
+      const actionPreviewsAtTarget = (Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves).filter(
         (action) => action.to && action.to.row === clickedCoord.row && action.to.col === clickedCoord.col,
       );
       if (!shouldAllowSelectionAtTarget({
         allowFreeSelection: Boolean(allowFreeSelection),
         hasSelectedSource: true,
-        actionsAtTarget,
+        actionsAtTarget: actionPreviewsAtTarget,
       })) {
         return {
           selection,
           nextActionType: currentActionType,
         };
       }
-      const suggestedAction = pickBestActionTypeForTarget(actionsAtTarget, currentActionType) ?? "pass";
+      const suggestedAction = pickBestActionTypeForTarget(actionPreviewsAtTarget, currentActionType) ?? "pass";
 
       return {
         selection: {
@@ -427,7 +435,7 @@ export function createEnginePlaygroundBoardAdapter() {
           cell.className = "cell";
           const cellPiece = findPieceAt(snapshot, row, col);
           const hasSource = Boolean(selection.source);
-          const hasActionToCell = selectedPieceMoves.some(
+          const hasActionToCell = (Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves).some(
             (action) => action.to && action.to.row === row && action.to.col === col,
           );
           const selectable =
@@ -442,6 +450,22 @@ export function createEnginePlaygroundBoardAdapter() {
           const isTarget = selection.target && selection.target.row === row && selection.target.col === col;
           if (isSource) cell.classList.add("source");
           if (isTarget) cell.classList.add("target");
+
+          if (isTarget) {
+            const previewsAtTarget = (Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves).filter(
+              (action) => action.to && action.to.row === row && action.to.col === col,
+            );
+            const legalAtTarget = selectedPieceMoves.filter(
+              (action) => action.to && action.to.row === row && action.to.col === col,
+            );
+            const hasBlockedSupplyPreview = previewsAtTarget.some(
+              (action) => action.legal === false && action.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED",
+            );
+            if (hasBlockedSupplyPreview && legalAtTarget.length === 0) {
+              cell.classList.add("disallowed-target");
+              cell.setAttribute("data-disallow-reason", "Disallowed: destination would be unsupplied.");
+            }
+          }
 
           cell.dataset.row = String(row);
           cell.dataset.col = String(col);

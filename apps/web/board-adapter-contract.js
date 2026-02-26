@@ -20,6 +20,7 @@
  *   snapshot: unknown,
  *   selection: BoardSelection,
  *   selectedPieceMoves: unknown[],
+ *   selectedPieceMovePreviews?: unknown[],
  *   currentActionType: string,
  *   clickedCoord: BoardCoord,
  *   allowFreeSelection?: boolean,

@@ -1,5 +1,6 @@
 import {
   buildActionPayload,
+  pickBestActionTypeForTarget,
   shouldResetSelectionOnDocumentClick,
   shouldSubmitOnEnter,
 } from "./interaction.js";
@@ -41,6 +42,7 @@ if (shouldMountShell) {
   const continuationEl = document.getElementById("continuation");
   const commanderSupplyEl = document.getElementById("commander-supply");
   const selectedPieceEl = document.getElementById("selected-piece");
+  const selectedMovePreviewEl = document.getElementById("selected-move-preview");
   const selectedPieceMovesEl = document.getElementById("selected-piece-moves");
   const legalActionsEl = document.getElementById("legal-actions");
   const moveLogEl = document.getElementById("move-log");
@@ -73,6 +75,7 @@ boardAdapter.mount({
 });
 
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "unset");
+const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
 
 const getCurrentSelection = () => ({
   selectedPieceId,
@@ -94,11 +97,82 @@ const clearSelection = () => {
   selectedTarget = null;
 };
 
+const actionsAtTarget = (coord) =>
+  selectedPieceMoves.filter((action) => action.to && action.to.row === coord.row && action.to.col === coord.col);
+
+const submitCurrentAction = async () => {
+  if (!state) return;
+  submitActionEl.disabled = true;
+  setActionResult("Applying action...");
+  const action = buildActionPayload(actionTypeEl.value, selectedSource, selectedTarget);
+
+  try {
+    const response = await fetch("/api/engine/playground/apply", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state, action }),
+    });
+    const body = await response.json();
+
+    if (!response.ok) {
+      setActionResult(body);
+      return;
+    }
+
+    if (body.accepted) {
+      state = body.state;
+      legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
+      selectedPieceMoves = [];
+      selectedPieceMovePreviews = [];
+      moveLog.push(`${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`);
+      selectedTarget = null;
+      refreshSelectionLabels();
+      renderBoard();
+      renderStatus();
+      renderMoveLog();
+      setActionResult({ accepted: true, outcome: body.outcome ?? state.outcome });
+      return;
+    }
+
+    state = body.state ?? state;
+    selectedPieceMoves = [];
+    selectedPieceMovePreviews = [];
+    setActionResult({
+      accepted: false,
+      validation: body.validation,
+    });
+    await reloadLegalActions();
+    moveLog.push(`REJECTED ${action.type.toUpperCase()}: ${body.validation?.code ?? "unknown"}`);
+    renderMoveLog();
+  } catch (error) {
+    setActionResult({
+      ok: false,
+      error: "request_failed",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  } finally {
+    submitActionEl.disabled = false;
+  }
+};
+
 function handleBoardCellClick(clickedCoord) {
+  if (sameCoordinate(selectedTarget, clickedCoord)) {
+    const candidates = actionsAtTarget(clickedCoord);
+    if (candidates.length > 0) {
+      const nextType = pickBestActionTypeForTarget(candidates, actionTypeEl.value);
+      if (nextType && actionTypeEl.value !== nextType) {
+        actionTypeEl.value = nextType;
+      }
+      void submitCurrentAction();
+      return;
+    }
+  }
+
   const result = boardAdapter.nextSelectionForCell({
     snapshot: state,
     selection: getCurrentSelection(),
     selectedPieceMoves,
+    selectedPieceMovePreviews,
     currentActionType: actionTypeEl.value,
     clickedCoord,
     allowFreeSelection: Boolean(allowFreeSelectionEl?.checked),
@@ -182,10 +256,57 @@ const renderStatus = () => {
     selectedPieceMoves = [];
     selectedPieceMovePreviews = [];
     selectedPieceEl.textContent = "No piece selected.";
+    selectedMovePreviewEl.textContent = "No destination selected.";
     selectedPieceMovesEl.textContent = "[]";
   } else {
     selectedPieceEl.textContent = JSON.stringify(pieceSummary.details, null, 2);
     selectedPieceMovesEl.textContent = JSON.stringify(pieceSummary.actions, null, 2);
+
+    if (!selectedTarget) {
+      selectedMovePreviewEl.textContent = "No destination selected.";
+    } else {
+      const previewsAtTarget = selectedPieceMovePreviews.filter(
+        (action) => action.to && action.to.row === selectedTarget.row && action.to.col === selectedTarget.col,
+      );
+      const legalAtTarget = selectedPieceMoves.filter(
+        (action) => action.to && action.to.row === selectedTarget.row && action.to.col === selectedTarget.col,
+      );
+
+      const preferredPreview =
+        previewsAtTarget.find((action) => action.type === actionTypeEl.value) ??
+        previewsAtTarget[0] ??
+        null;
+
+      if (!preferredPreview) {
+        selectedMovePreviewEl.textContent = JSON.stringify(
+          {
+            destination: selectedTarget,
+            selectable: false,
+            reason: "No move preview exists for this destination.",
+          },
+          null,
+          2,
+        );
+      } else {
+        const disallowedReason =
+          preferredPreview.legal === false && preferredPreview.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED"
+            ? "Disallowed: destination would be unsupplied."
+            : preferredPreview.legal === false
+              ? `Disallowed: ${preferredPreview.blockedReason ?? "rule violation"}.`
+              : null;
+
+        selectedMovePreviewEl.textContent = JSON.stringify(
+          {
+            actionType: preferredPreview.type,
+            destination: selectedTarget,
+            legal: legalAtTarget.some((action) => action.type === preferredPreview.type),
+            reason: disallowedReason ?? "Legal preview.",
+          },
+          null,
+          2,
+        );
+      }
+    }
   }
 
   legalActionsEl.textContent = JSON.stringify(legalActions, null, 2);
@@ -416,58 +537,7 @@ resetSelectionEl.addEventListener("click", () => {
 });
 
 submitActionEl.addEventListener("click", async () => {
-  if (!state) return;
-  submitActionEl.disabled = true;
-  setActionResult("Applying action...");
-  const action = buildActionPayload(actionTypeEl.value, selectedSource, selectedTarget);
-
-  try {
-    const response = await fetch("/api/engine/playground/apply", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ state, action }),
-    });
-    const body = await response.json();
-
-    if (!response.ok) {
-      setActionResult(body);
-      return;
-    }
-
-    if (body.accepted) {
-      state = body.state;
-      legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
-      selectedPieceMoves = [];
-      selectedPieceMovePreviews = [];
-      moveLog.push(`${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`);
-      selectedTarget = null;
-      refreshSelectionLabels();
-      renderBoard();
-      renderStatus();
-      renderMoveLog();
-      setActionResult({ accepted: true, outcome: body.outcome ?? state.outcome });
-      return;
-    }
-
-    state = body.state ?? state;
-    selectedPieceMoves = [];
-    selectedPieceMovePreviews = [];
-    setActionResult({
-      accepted: false,
-      validation: body.validation,
-    });
-    await reloadLegalActions();
-    moveLog.push(`REJECTED ${action.type.toUpperCase()}: ${body.validation?.code ?? "unknown"}`);
-    renderMoveLog();
-  } catch (error) {
-    setActionResult({
-      ok: false,
-      error: "request_failed",
-      message: error instanceof Error ? error.message : "Unknown error",
-    });
-  } finally {
-    submitActionEl.disabled = false;
-  }
+  void submitCurrentAction();
 });
 
 fixtureSelectEl.addEventListener("change", () => {
