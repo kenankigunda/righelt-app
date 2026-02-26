@@ -117,3 +117,33 @@ test("diagonal neighbors are not in the same strength group", () => {
   assert.equal(groups.strengthByComponentId[first], 1);
   assert.equal(groups.strengthByComponentId[second], 1);
 });
+
+test("J-001 group strength equals orthogonally-connected member count", () => {
+  const state = createInitialState();
+  addPiece(state, { id: "U1j1", owner: "P1", kind: "unit", position: { row: 3, col: 7 }, supplied: true, commanded: true });
+  addPiece(state, { id: "U1j2", owner: "P1", kind: "unit", position: { row: 3, col: 8 }, supplied: true, commanded: true });
+  addPiece(state, { id: "U1j3", owner: "P1", kind: "unit", position: { row: 9, col: 9 }, supplied: true, commanded: true });
+
+  const resolved = resolveToStability(state, { artifactMode: "full" });
+  const groups = resolved.artifacts?.groups;
+  assert.ok(groups);
+  const c1Component = groups.componentByPieceId.C1;
+  assert.equal(groups.strengthByComponentId[c1Component], 3);
+});
+
+test("J-002 group strengths recompute after board-change connectivity shift", () => {
+  const state = createInitialState();
+  addPiece(state, { id: "U1j4", owner: "P1", kind: "unit", position: { row: 3, col: 7 }, supplied: true, commanded: true });
+  addPiece(state, { id: "U1j5", owner: "P1", kind: "unit", position: { row: 3, col: 8 }, supplied: true, commanded: true });
+
+  const before = resolveToStability(state, { artifactMode: "full" });
+  const moved = before.pieces.find((piece) => piece.id === "U1j5");
+  assert.ok(moved);
+  moved.position = { row: 9, col: 0 };
+
+  const after = resolveToStability(before, { artifactMode: "full" });
+  const groups = after.artifacts?.groups;
+  assert.ok(groups);
+  const c1Component = groups.componentByPieceId.C1;
+  assert.equal(groups.strengthByComponentId[c1Component], 2);
+});

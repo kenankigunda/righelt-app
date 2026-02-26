@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { resolveToStability } from "../../src/resolve.ts";
+import { applyAction, validateAction } from "../../src/index.ts";
 
 function baseState() {
   return {
@@ -209,5 +210,147 @@ test("terminal outcome clears continuation context", () => {
 
   const resolved = resolveToStability(state, { artifactMode: "minimal" });
   assert.notEqual(resolved.outcome.status, "ongoing");
+  assert.equal(resolved.continuation, null);
+});
+
+test("O-001 rush continuation can chain multiple rush actions", () => {
+  const state = baseState();
+  state.pieces.push({
+    id: "U1o1a",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 4, col: 4 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U1o1b",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 6, col: 6 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U2o1a",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 4, col: 6 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U2o1b",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 6, col: 8 },
+    supplied: true,
+    commanded: true,
+  });
+
+  const afterFirst = applyAction(state, {
+    type: "rush",
+    actorId: "U1o1a",
+    from: { row: 4, col: 4 },
+    to: { row: 4, col: 5 },
+  }).state;
+  const afterSecond = applyAction(afterFirst, {
+    type: "rush",
+    actorId: "U1o1b",
+    from: { row: 6, col: 6 },
+    to: { row: 6, col: 7 },
+  }).state;
+
+  assert.equal(afterSecond.continuation?.type, "rush");
+  assert.equal(afterSecond.continuation?.chainLength, 2);
+});
+
+test("O-002 continuation closes exactly when obligations are exhausted", () => {
+  const state = baseState();
+  state.continuation = {
+    type: "push",
+    owner: "P1",
+    followPoint: { row: 4, col: 4 },
+    chainLength: 1,
+  };
+
+  const resolved = resolveToStability(state, { artifactMode: "minimal" });
+  assert.equal(resolved.continuation, null);
+  assert.equal(resolved.sideToMove, "P2");
+});
+
+test("O-003 non-continuation action is rejected while continuation is active", () => {
+  const state = baseState();
+  state.continuation = {
+    type: "push",
+    owner: "P1",
+    followPoint: { row: 4, col: 4 },
+    chainLength: 1,
+  };
+
+  const result = validateAction(state, {
+    type: "move",
+    actorId: "C1",
+    from: { row: 3, col: 6 },
+    to: { row: 3, col: 7 },
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.code, "CONTINUATION_REQUIRED");
+  }
+});
+
+test("O-004 resolve handles continuation-induced forced removals before terminal check", () => {
+  const state = baseState();
+  state.continuation = {
+    type: "push",
+    owner: "P1",
+    pushedPieceId: "U2o4",
+    chainLength: 1,
+  };
+  state.pieces.push({
+    id: "U2o4",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 4, col: 4 },
+    supplied: true,
+    commanded: true,
+    pushed: true,
+  });
+  state.pieces.push({
+    id: "U1o4a",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 3, col: 4 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U1o4b",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 5, col: 4 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U1o4c",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 4, col: 5 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U1o4d",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 4, col: 3 },
+    supplied: true,
+    commanded: true,
+  });
+
+  const resolved = resolveToStability(state, { artifactMode: "minimal" });
+  assert.equal(resolved.pieces.some((piece) => piece.id === "U2o4"), false);
   assert.equal(resolved.continuation, null);
 });
