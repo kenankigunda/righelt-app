@@ -171,7 +171,11 @@ const renderGame = (gameId, inviteFromRole = null) => {
               <span class="mono">${escapeHtml(request.identityId)}</span> requests ${escapeHtml(request.requestedSeat)}
               <button class="secondary" data-action="approve-request" data-game-id="${escapeHtml(
                 game.id,
-              )}" data-requester-id="${escapeHtml(request.identityId)}" ${busy ? "disabled" : ""}>Approve</button>
+              )}" data-requester-id="${escapeHtml(request.identityId)}" ${
+                !busy && Array.isArray(game.approvableRequesterIds) && game.approvableRequesterIds.includes(request.identityId)
+                  ? ""
+                  : "disabled"
+              }>Approve</button>
             </li>`,
           )
           .join("");
@@ -195,7 +199,9 @@ const renderGame = (gameId, inviteFromRole = null) => {
           ${offlineBanner}
           ${historyBanner}
           <div class="row">
-            <button data-action="record-move" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Record Live Move</button>
+            <button data-action="record-move" data-game-id="${escapeHtml(game.id)}" ${
+              game.canRecordMove && !busy ? "" : "disabled"
+            }>Record Live Move</button>
             <button class="secondary" data-action="toggle-p1" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle P1 Connection</button>
             <button class="secondary" data-action="toggle-p2" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle P2 Connection</button>
             <button class="warn" data-action="go-online" data-game-id="${escapeHtml(game.id)}" ${
@@ -208,9 +214,11 @@ const renderGame = (gameId, inviteFromRole = null) => {
         <section class="panel">
           <h2>Join / Invite</h2>
           <div class="row">
-            <button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${busy ? "disabled" : ""}>Join as viewer</button>
+            <button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
+              game.canJoinAsViewer && !busy ? "" : "disabled"
+            }>Join as viewer</button>
             <button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${
-              game.showJoinActions && !busy ? "" : "disabled"
+              game.canJoinAsPlayer && game.showJoinActions && !busy ? "" : "disabled"
             }>Join as player</button>
             <button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${
               game.canInvite && !busy ? "" : "disabled"

@@ -134,3 +134,62 @@ test("live transport: offline-local game hidden until go-online confirmation", a
   const listAfterBody = await listAfter.json();
   assert.equal(listAfterBody.games.some((entry) => entry.id === gameId), true);
 });
+
+test("live transport: move endpoint rejects non-player and wrong-turn players", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createBody = await create.json();
+  const gameId = createBody.game.id;
+
+  const nonPlayerMove = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-viewer" }),
+    env,
+  );
+  assert.equal(nonPlayerMove.status, 403);
+  assert.equal((await nonPlayerMove.json()).error, "role_not_allowed");
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-player2",
+      mode: "player",
+      inviteFromRole: "Player 1",
+    }),
+    env,
+  );
+
+  const wrongTurnMove = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-player2" }),
+    env,
+  );
+  assert.equal(wrongTurnMove.status, 409);
+  assert.equal((await wrongTurnMove.json()).error, "not_your_turn");
+});
+
+test("live transport: approve rejects unauthorized approver", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-joiner",
+      mode: "player",
+      inviteFromRole: null,
+    }),
+    env,
+  );
+
+  const unauthorizedApprove = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/approve`, "POST", {
+      identityId: "id-random",
+      requesterIdentityId: "id-joiner",
+    }),
+    env,
+  );
+  assert.equal(unauthorizedApprove.status, 403);
+  assert.equal((await unauthorizedApprove.json()).error, "approval_not_allowed");
+});

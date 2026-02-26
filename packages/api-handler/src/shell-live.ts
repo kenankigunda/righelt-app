@@ -120,6 +120,22 @@ const ensureViewer = (game: ShellGame, identityId: string): boolean => {
   return true;
 };
 
+const getSeatIdentity = (game: ShellGame, seat: "Player 1" | "Player 2"): string | null => {
+  if (seat === "Player 1") {
+    return game.player1?.identityId ?? null;
+  }
+  return game.player2?.identityId ?? null;
+};
+
+const getApproverIdentityForSeat = (game: ShellGame, seat: "Player 1" | "Player 2"): string | null => {
+  if (seat === "Player 1") {
+    return game.player2?.identityId ?? null;
+  }
+  return game.player1?.identityId ?? null;
+};
+
+const getSideToMoveSeat = (game: ShellGame): "Player 1" | "Player 2" => (game.board.state.sideToMove === "P1" ? "Player 1" : "Player 2");
+
 const withViewModel = (game: ShellGame, identityId: string, offline = false) => {
   const myRole = findRoleForIdentity(game, identityId);
   const inHistoryMode = typeof game.historyIndex === "number";
@@ -128,15 +144,26 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
       ? game.moves[game.historyIndex].snapshot
       : game.board.state;
 
+  const sideToMoveSeat = getSideToMoveSeat(game);
+  const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
+  const isPlayer = myRole === "Player 1" || myRole === "Player 2";
+  const legalNow = listLegalActions(game.board.state);
+  const approvableRequesterIds = game.pendingJoinRequests
+    .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
+    .map((request) => request.identityId);
+
   return {
     ...clone(game),
     myRole,
     inHistoryMode,
     currentSnapshot,
     canJoinAsPlayer: myRole !== "Player 1" && myRole !== "Player 2" && !game.playgroundMode && (!game.player1 || !game.player2),
+    canJoinAsViewer: myRole === "Guest" && !offline && !game.offlineLocal,
     canInvite: !offline && !game.offlineLocal,
     showOfflineState: offline || game.offlineLocal,
     showJoinActions: !offline && !game.offlineLocal,
+    canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
+    approvableRequesterIds,
   };
 };
 
@@ -403,6 +430,10 @@ export const handleShellLiveRequest = async (
         return { handled: true, status: 409, body: { ok: false, error: "playground_player_join_disabled" }, cacheControl: "no-store" };
       }
 
+      if (game.player1?.identityId === identityId || game.player2?.identityId === identityId) {
+        return { handled: true, status: 409, body: { ok: false, error: "identity_already_player" }, cacheControl: "no-store" };
+      }
+
       const requestedSeat = !game.player1 ? "Player 1" : !game.player2 ? "Player 2" : null;
       if (!requestedSeat) {
         return { handled: true, status: 409, body: { ok: false, error: "no_player_seat_available" }, cacheControl: "no-store" };
@@ -452,6 +483,10 @@ export const handleShellLiveRequest = async (
       }
 
       const requestItem = game.pendingJoinRequests[requestIndex];
+      const approverIdentityId = getApproverIdentityForSeat(game, requestItem.requestedSeat);
+      if (!approverIdentityId || approverIdentityId !== identityId) {
+        return { handled: true, status: 403, body: { ok: false, error: "approval_not_allowed" }, cacheControl: "no-store" };
+      }
       game.pendingJoinRequests.splice(requestIndex, 1);
 
       if (requestItem.requestedSeat === "Player 1" && !game.player1) {
@@ -468,6 +503,15 @@ export const handleShellLiveRequest = async (
     }
 
     if (route.length === 3 && route[2] === "moves") {
+      const role = findRoleForIdentity(game, identityId);
+      if (role !== "Player 1" && role !== "Player 2") {
+        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: "no-store" };
+      }
+      const sideToMoveSeat = getSideToMoveSeat(game);
+      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
+      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
+        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: "no-store" };
+      }
       const notation = typeof body.notation === "string" ? body.notation : undefined;
       const moved = applyServerMove(game, notation);
       if (!moved.ok) {
