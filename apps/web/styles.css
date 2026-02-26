@@ -346,13 +346,26 @@ button {
   color: #94a0a4;
 }
 
-.coord {
+.axis-label {
   position: absolute;
-  left: 4px;
-  bottom: 3px;
-  z-index: 2;
-  font-size: 0.7rem;
+  z-index: 4;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
   color: var(--muted);
+  pointer-events: none;
+}
+
+.axis-label.col-axis {
+  bottom: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.axis-label.row-axis {
+  left: -11px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .supply-point-marker {

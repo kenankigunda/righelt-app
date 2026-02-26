@@ -488,10 +488,19 @@ export function createEnginePlaygroundBoardAdapter() {
             cell.appendChild(supplyMarker);
           }
 
-          const coord = document.createElement("span");
-          coord.className = "coord";
-          coord.textContent = `${row},${col}`;
-          cell.appendChild(coord);
+          if (row === BOARD_SIZE - 1) {
+            const colAxis = document.createElement("span");
+            colAxis.className = "axis-label col-axis";
+            colAxis.textContent = String(col);
+            cell.appendChild(colAxis);
+          }
+
+          if (col === 0) {
+            const rowAxis = document.createElement("span");
+            rowAxis.className = "axis-label row-axis";
+            rowAxis.textContent = String(row);
+            cell.appendChild(rowAxis);
+          }
 
           boardEl.appendChild(cell);
           cellByCoordinateKey.set(`${row},${col}`, cell);
