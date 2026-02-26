@@ -1,8 +1,9 @@
 import { assertGameBoardAdapter } from "./board-adapter-contract.js";
 import { createEnginePlaygroundBoardAdapter } from "./board-adapters/engine-playground-adapter.js";
 import { getBootstrapPayload } from "./shell/bootstrap.js";
+import { createLiveTransportStore } from "./shell/live-transport.js";
+import { loadTutorialCompleted, saveTutorialCompleted } from "./shell/persistence.js";
 import { buildGameHash, buildHomeHash, buildTutorialHash, parseRouteFromHash } from "./shell/routes.js";
-import { createShellStore } from "./shell/store.js";
 import { createTutorialController } from "./shell/tutorial.js";
 
 const appEl = document.getElementById("app");
@@ -18,40 +19,14 @@ const createMemoryStorageFallback = () => {
 };
 
 const storage = typeof window.localStorage !== "undefined" ? window.localStorage : createMemoryStorageFallback();
-
-const loadBoardState = async () => {
-  try {
-    const response = await fetch("/api/engine/playground/state", { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const body = await response.json();
-    return {
-      state: body.state,
-      legalActions: Array.isArray(body.legalActions) ? body.legalActions : [],
-    };
-  } catch {
-    return {
-      state: { pieces: [], sideToMove: "P1", turnIndex: 0 },
-      legalActions: [],
-    };
-  }
-};
-
-const store = createShellStore({
-  storage,
-  loadBoardState,
-  saveWarning: () => {
-    window.__righeltSaveWarning = "offline_progress_may_be_lost";
-  },
-});
-
+const transport = createLiveTransportStore({ storage });
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 const boardAdapter = createEnginePlaygroundBoardAdapter();
 assertGameBoardAdapter(boardAdapter);
 
 let currentRoute = parseRouteFromHash(window.location.hash);
 let mountedBoardGameId = null;
+let busy = false;
 
 const escapeHtml = (value) =>
   String(value)
@@ -68,7 +43,7 @@ const renderHeader = () => `
   <header class="shell-header">
     <div>
       <h1>Righelt Web Shell</h1>
-      <p class="small">Identity <span class="mono">${escapeHtml(store.getIdentityId())}</span></p>
+      <p class="small">Identity <span class="mono">${escapeHtml(transport.getIdentityId())}</span></p>
     </div>
     <div class="nav-row">
       <a class="button-link secondary" href="${buildHomeHash()}">Home</a>
@@ -79,7 +54,7 @@ const renderHeader = () => `
 `;
 
 const renderHome = () => {
-  const games = store.listGames();
+  const games = transport.listGames();
   const listHtml =
     games.length === 0
       ? "<p class=\"small\">No games yet.</p>"
@@ -98,11 +73,11 @@ const renderHome = () => {
         <section class="panel">
           <h2>Start</h2>
           <div class="row">
-            <button data-action="create-game">Play Game</button>
-            <button data-action="create-playground" class="secondary">Playground Mode</button>
-            <button data-action="create-offline-playground" class="warn">Offline Playground</button>
+            <button data-action="create-game" ${busy ? "disabled" : ""}>Play Game</button>
+            <button data-action="create-playground" class="secondary" ${busy ? "disabled" : ""}>Playground Mode</button>
+            <button data-action="create-offline-playground" class="warn" ${busy ? "disabled" : ""}>Offline Playground</button>
           </div>
-          <p class="small">Playground controls both seats on one device. Offline playground is local-only.</p>
+          <p class="small">Server-backed game sessions with live state transitions.</p>
         </section>
 
         <section class="panel">
@@ -123,14 +98,12 @@ const renderHome = () => {
 };
 
 const renderGame = (gameId, inviteFromRole = null) => {
-  const opened = store.openAsViewer(gameId);
-  const game = store.getGameViewModel(gameId);
-  if (!opened || !game) {
-    return `<section class="panel"><h2>Game not found</h2><p class="small">Return to home and create a game.</p></section>`;
+  const game = transport.getGameViewModel(gameId);
+  if (!game) {
+    return `<section class="panel"><h2>Loading game...</h2><p class="small">Fetching latest server state.</p></section>`;
   }
 
   const inviteLink = `${window.location.origin}${window.location.pathname}${buildGameHash(game.id, game.myRole)}`;
-
   const participants = [
     { label: "Player 1", value: game.player1 },
     { label: "Player 2", value: game.player2 },
@@ -146,7 +119,6 @@ const renderGame = (gameId, inviteFromRole = null) => {
     .join("");
 
   const viewersRow = `<li>Viewers: ${game.viewers.length}</li>`;
-
   const historyRows =
     game.moves.length === 0
       ? "<li class=\"small\">No moves yet.</li>"
@@ -169,7 +141,7 @@ const renderGame = (gameId, inviteFromRole = null) => {
               <span class="mono">${escapeHtml(request.identityId)}</span> requests ${escapeHtml(request.requestedSeat)}
               <button class="secondary" data-action="approve-request" data-game-id="${escapeHtml(
                 game.id,
-              )}" data-requester-id="${escapeHtml(request.identityId)}">Approve</button>
+              )}" data-requester-id="${escapeHtml(request.identityId)}" ${busy ? "disabled" : ""}>Approve</button>
             </li>`,
           )
           .join("");
@@ -193,11 +165,11 @@ const renderGame = (gameId, inviteFromRole = null) => {
           ${offlineBanner}
           ${historyBanner}
           <div class="row">
-            <button data-action="record-move" data-game-id="${escapeHtml(game.id)}">Record Simulated Move</button>
-            <button class="secondary" data-action="toggle-p1" data-game-id="${escapeHtml(game.id)}">Toggle P1 Connection</button>
-            <button class="secondary" data-action="toggle-p2" data-game-id="${escapeHtml(game.id)}">Toggle P2 Connection</button>
+            <button data-action="record-move" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Record Live Move</button>
+            <button class="secondary" data-action="toggle-p1" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle P1 Connection</button>
+            <button class="secondary" data-action="toggle-p2" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle P2 Connection</button>
             <button class="warn" data-action="go-online" data-game-id="${escapeHtml(game.id)}" ${
-              game.offlineLocal ? "" : "disabled"
+              game.offlineLocal && !busy ? "" : "disabled"
             }>Go online</button>
           </div>
           <p class="small">Latest: ${escapeHtml(latestNote)}</p>
@@ -206,12 +178,12 @@ const renderGame = (gameId, inviteFromRole = null) => {
         <section class="panel">
           <h2>Join / Invite</h2>
           <div class="row">
-            <button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary">Join as viewer</button>
+            <button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${busy ? "disabled" : ""}>Join as viewer</button>
             <button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${
-              game.showJoinActions ? "" : "disabled"
+              game.showJoinActions && !busy ? "" : "disabled"
             }>Join as player</button>
             <button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${
-              game.canInvite ? "" : "disabled"
+              game.canInvite && !busy ? "" : "disabled"
             }>Invite</button>
           </div>
           <p class="small">Invite link: <span class="mono">${escapeHtml(inviteLink)}</span></p>
@@ -222,7 +194,7 @@ const renderGame = (gameId, inviteFromRole = null) => {
           <h2>History</h2>
           <div class="row">
             <button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" ${
-              game.inHistoryMode ? "" : "disabled"
+              game.inHistoryMode && !busy ? "" : "disabled"
             }>Return to live</button>
           </div>
           <ol class="history-list">${historyRows}</ol>
@@ -310,16 +282,38 @@ const render = () => {
   }
 
   appEl.innerHTML = `${renderHeader()}${body}`;
-
   if (currentRoute.name === "game") {
-    mountBoardForGame(store.getGameViewModel(currentRoute.gameId));
+    mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
+  }
+};
+
+const withBusy = async (fn) => {
+  busy = true;
+  render();
+  try {
+    await fn();
+  } catch (error) {
+    window.__righeltLastError = error instanceof Error ? error.message : String(error);
+  } finally {
+    busy = false;
+    render();
+  }
+};
+
+const syncRouteData = async () => {
+  if (currentRoute.name === "home") {
+    await transport.refreshGames();
+    return;
+  }
+  if (currentRoute.name === "game") {
+    await transport.loadGame(currentRoute.gameId, { openAsViewer: true });
   }
 };
 
 const navigateTo = (hash) => {
   if (window.location.hash === hash) {
     currentRoute = parseRouteFromHash(hash);
-    render();
+    void withBusy(syncRouteData);
     return;
   }
   window.location.hash = hash;
@@ -327,17 +321,17 @@ const navigateTo = (hash) => {
 
 window.addEventListener("hashchange", () => {
   currentRoute = parseRouteFromHash(window.location.hash);
-  render();
+  void withBusy(syncRouteData);
 });
 
 window.addEventListener("online", () => {
-  store.setOffline(false);
-  render();
+  transport.setOffline(false);
+  void withBusy(syncRouteData);
 });
 
 window.addEventListener("offline", () => {
-  store.setOffline(true);
-  render();
+  transport.setOffline(true);
+  void withBusy(syncRouteData);
 });
 
 appEl.addEventListener("click", async (event) => {
@@ -353,143 +347,140 @@ appEl.addEventListener("click", async (event) => {
 
   const action = actionEl.getAttribute("data-action");
 
-  if (action === "create-game") {
-    const game = await store.createGame({ playgroundMode: false, offlineLocal: false });
-    navigateTo(buildGameHash(game.id));
-    return;
-  }
-
-  if (action === "create-playground") {
-    const game = await store.createGame({ playgroundMode: true, offlineLocal: false });
-    navigateTo(buildGameHash(game.id));
-    return;
-  }
-
-  if (action === "create-offline-playground") {
-    store.setOffline(true);
-    const game = await store.createGame({ playgroundMode: true, offlineLocal: true });
-    navigateTo(buildGameHash(game.id, "offline"));
-    return;
-  }
-
-  if (action === "toggle-offline") {
-    const next = !(window.__righeltOffline || false);
-    window.__righeltOffline = next;
-    store.setOffline(next);
-    render();
-    return;
-  }
-
-  if (action === "go-online") {
-    const gameId = actionEl.getAttribute("data-game-id");
-    if (!gameId) return;
-    const confirmed = window.confirm("Go online with this local game?");
-    store.goOnlineGame({ gameId, confirmed });
-    render();
-    return;
-  }
-
-  if (action === "join-viewer") {
-    const gameId = actionEl.getAttribute("data-game-id");
-    if (!gameId) return;
-    store.joinGame({ gameId, mode: "viewer", inviteFromRole: currentRoute.inviteFromRole });
-    render();
-    return;
-  }
-
-  if (action === "join-player") {
-    const gameId = actionEl.getAttribute("data-game-id");
-    if (!gameId) return;
-    store.joinGame({ gameId, mode: "player", inviteFromRole: currentRoute.inviteFromRole });
-    render();
-    return;
-  }
-
-  if (action === "approve-request") {
-    const gameId = actionEl.getAttribute("data-game-id");
-    const requester = actionEl.getAttribute("data-requester-id");
-    if (!gameId || !requester) return;
-    store.approvePendingRequest({ gameId, requesterIdentityId: requester });
-    render();
-    return;
-  }
-
-  if (action === "copy-invite") {
-    const link = actionEl.getAttribute("data-link") || "";
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(link);
+  await withBusy(async () => {
+    if (action === "create-game") {
+      const game = await transport.createGame({ playgroundMode: false, offlineLocal: false });
+      navigateTo(buildGameHash(game.id));
+      return;
     }
-    window.__righeltLastInvite = link;
-    return;
-  }
 
-  if (action === "record-move") {
-    const gameId = actionEl.getAttribute("data-game-id");
-    if (!gameId) return;
-    const view = store.getGameViewModel(gameId);
-    if (!view) return;
+    if (action === "create-playground") {
+      const game = await transport.createGame({ playgroundMode: true, offlineLocal: false });
+      navigateTo(buildGameHash(game.id));
+      return;
+    }
 
-    const label = `Move ${view.moves.length + 1}`;
-    store.addMove({ gameId, notation: label, snapshot: view.currentSnapshot });
-    render();
-    return;
-  }
+    if (action === "create-offline-playground") {
+      transport.setOffline(true);
+      const game = await transport.createGame({ playgroundMode: true, offlineLocal: true });
+      navigateTo(buildGameHash(game.id, "offline"));
+      return;
+    }
 
-  if (action === "jump-history") {
-    const gameId = actionEl.getAttribute("data-game-id");
-    const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
-    if (!gameId || !Number.isFinite(moveIndex)) return;
-    store.selectHistoryMove({ gameId, moveIndex });
-    render();
-    return;
-  }
+    if (action === "toggle-offline") {
+      const next = !(window.__righeltOffline || false);
+      window.__righeltOffline = next;
+      transport.setOffline(next);
+      await syncRouteData();
+      return;
+    }
 
-  if (action === "return-live") {
-    const gameId = actionEl.getAttribute("data-game-id");
-    if (!gameId) return;
-    store.returnToLive({ gameId });
-    render();
-    return;
-  }
+    if (action === "go-online") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      if (!gameId) return;
+      const confirmed = window.confirm("Go online with this local game?");
+      await transport.goOnlineGame({ gameId, confirmed });
+      await syncRouteData();
+      return;
+    }
 
-  if (action === "toggle-p1" || action === "toggle-p2") {
-    const gameId = actionEl.getAttribute("data-game-id");
-    if (!gameId) return;
-    const game = store.getGameViewModel(gameId);
-    if (!game) return;
-    const role = action === "toggle-p1" ? "Player 1" : "Player 2";
-    const current = role === "Player 1" ? game.player1 : game.player2;
-    if (!current) return;
-    store.setParticipantConnected({ gameId, role, connected: !current.connected });
-    render();
-    return;
-  }
+    if (action === "join-viewer") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      if (!gameId) return;
+      await transport.joinGame({ gameId, mode: "viewer", inviteFromRole: currentRoute.inviteFromRole });
+      await syncRouteData();
+      return;
+    }
 
-  if (action === "tutorial-next" || action === "tutorial-skip") {
-    tutorial.next();
-    render();
-    return;
-  }
+    if (action === "join-player") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      if (!gameId) return;
+      await transport.joinGame({ gameId, mode: "player", inviteFromRole: currentRoute.inviteFromRole });
+      await syncRouteData();
+      return;
+    }
 
-  if (action === "tutorial-complete") {
-    store.markTutorialCompleted();
-    tutorial.reset();
-    const gameId = actionEl.getAttribute("data-game-id");
-    navigateTo(gameId ? buildGameHash(gameId) : buildHomeHash());
-  }
+    if (action === "approve-request") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      const requester = actionEl.getAttribute("data-requester-id");
+      if (!gameId || !requester) return;
+      await transport.approvePendingRequest({ gameId, requesterIdentityId: requester });
+      await syncRouteData();
+      return;
+    }
+
+    if (action === "copy-invite") {
+      const link = actionEl.getAttribute("data-link") || "";
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(link);
+      }
+      window.__righeltLastInvite = link;
+      return;
+    }
+
+    if (action === "record-move") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      if (!gameId) return;
+      await transport.addMove({ gameId });
+      await syncRouteData();
+      return;
+    }
+
+    if (action === "jump-history") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
+      if (!gameId || !Number.isFinite(moveIndex)) return;
+      await transport.selectHistoryMove({ gameId, moveIndex });
+      await syncRouteData();
+      return;
+    }
+
+    if (action === "return-live") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      if (!gameId) return;
+      await transport.returnToLive({ gameId });
+      await syncRouteData();
+      return;
+    }
+
+    if (action === "toggle-p1" || action === "toggle-p2") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      if (!gameId) return;
+      const game = transport.getGameViewModel(gameId);
+      if (!game) return;
+      const role = action === "toggle-p1" ? "Player 1" : "Player 2";
+      const current = role === "Player 1" ? game.player1 : game.player2;
+      if (!current) return;
+      await transport.setParticipantConnected({ gameId, role, connected: !current.connected });
+      await syncRouteData();
+      return;
+    }
+
+    if (action === "tutorial-next" || action === "tutorial-skip") {
+      tutorial.next();
+      return;
+    }
+
+    if (action === "tutorial-complete") {
+      saveTutorialCompleted(storage, true);
+      tutorial.reset();
+      const gameId = actionEl.getAttribute("data-game-id");
+      navigateTo(gameId ? buildGameHash(gameId) : buildHomeHash());
+    }
+  });
 });
 
 const initialRender = async () => {
   if (navigator.onLine === false) {
-    store.setOffline(true);
+    transport.setOffline(true);
   }
 
-  if (currentRoute.name === "home" && !store.getTutorialCompleted()) {
+  if (currentRoute.name === "home" && !loadTutorialCompleted(storage)) {
     navigateTo(buildTutorialHash());
     return;
   }
 
-  render();
+  await withBusy(syncRouteData);
 };
 
 void initialRender();
