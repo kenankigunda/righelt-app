@@ -134,6 +134,7 @@ const renderBoard = () => {
     selection: getCurrentSelection(),
     selectedPieceMoves,
     selectedPieceMovePreviews,
+    allowFreeSelection: Boolean(allowFreeSelectionEl?.checked),
   });
 };
 

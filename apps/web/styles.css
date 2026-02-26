@@ -120,8 +120,12 @@ button {
   background: #fbf8f0;
 }
 
-.cell:hover {
+.cell:not(.unselectable):hover {
   border-color: var(--accent);
+}
+
+.cell.unselectable {
+  cursor: default;
 }
 
 .cell.source {
