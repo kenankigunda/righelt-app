@@ -94,6 +94,11 @@ Merge by dependency/topological order, never by completion timestamp alone.
 - Run required shared acceptance checks before final integration.
 - If tests cannot run, state why and what remains unverified.
 - Prefer deterministic, non-watch test commands in agent execution.
+- Every stream must add and/or extend a comprehensive test set for its spec-covered subset, with explicit regression-focused assertions.
+- Stream test plans must map expected behavior to source references (spec sections, test matrix rows, and identified gaps requiring new tests).
+- Validated correctness is a hard gate: do not advance a stream to the next development step until required tests for the current step pass.
+- During multi-stream execution, the coordinator owns cross-stream test conflict resolution and final end-to-end correctness validation against desired behavior.
+
 
 ## 9) Git Safety and Change Hygiene
 
@@ -126,7 +131,7 @@ When starting a coordinated feature:
 
 1. Confirm `feature_id`, `plan.yaml`, and integration branch.
 2. Validate plan schema/rules.
-3. Ensure stream briefs exist.
+3. Ensure each stream brief includes a comprehensive spec-mapped test plan (including gap tests) and explicit per-step correctness gates.
 4. Ensure worktrees/branches exist.
 5. Start coordinator loop with current ready streams.
 
