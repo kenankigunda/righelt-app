@@ -156,6 +156,20 @@ const submitCurrentAction = async () => {
 };
 
 function handleBoardCellClick(clickedCoord) {
+  const allowFreeSelection = Boolean(allowFreeSelectionEl?.checked);
+  const clickedPiece = boardAdapter.getPieceAt(state, clickedCoord);
+  const hasPreviewAtClicked = selectedPieceMovePreviews.some(
+    (action) => action.to && action.to.row === clickedCoord.row && action.to.col === clickedCoord.col,
+  );
+  if (!allowFreeSelection && !clickedPiece && !hasPreviewAtClicked) {
+    actionTypeEl.value = "pass";
+    clearSelection();
+    refreshSelectionLabels();
+    renderBoard();
+    renderStatus();
+    return;
+  }
+
   if (sameCoordinate(selectedTarget, clickedCoord)) {
     const candidates = actionsAtTarget(clickedCoord);
     if (candidates.length > 0) {
@@ -175,7 +189,7 @@ function handleBoardCellClick(clickedCoord) {
     selectedPieceMovePreviews,
     currentActionType: actionTypeEl.value,
     clickedCoord,
-    allowFreeSelection: Boolean(allowFreeSelectionEl?.checked),
+    allowFreeSelection,
   });
 
   applySelection(result.selection);
