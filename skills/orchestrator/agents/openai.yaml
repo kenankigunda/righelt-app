@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orchestrator"
+  short_description: "Coordinate multi-stream worktree delivery."
+  default_prompt: "Coordinate this feature from a plan manifest with variable stream count, worktree setup, gate tracking, and dependency-aware merges."
