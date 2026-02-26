@@ -32,7 +32,7 @@ let liveSyncConnectedRoute = "";
 const openedViewerGames = new Set();
 let wsStatus = { state: "disconnected", scope: null, gameId: null, reconnectAttempts: 0 };
 let wsLastEvent = "none";
-const WS_FALLBACK_POLL_MS = 1200;
+const WS_RECONCILE_MS = 2000;
 
 const escapeHtml = (value) =>
   String(value)
@@ -438,11 +438,8 @@ setInterval(() => {
   if (currentRoute.name !== "game" && currentRoute.name !== "home") {
     return;
   }
-  if (wsStatus.state === "connected") {
-    return;
-  }
   void syncRouteDataPassive();
-}, WS_FALLBACK_POLL_MS);
+}, WS_RECONCILE_MS);
 
 appEl.addEventListener("click", async (event) => {
   const target = event.target;
