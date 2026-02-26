@@ -49,6 +49,204 @@ function isActivePiece(piece: { supplied: boolean; commanded: boolean; pushed?: 
   return piece.supplied && piece.commanded && !piece.pushed && !piece.shifted;
 }
 
+const SUPPLY_POINTS = {
+  P1: { row: 0, col: 9 },
+  P2: { row: 9, col: 0 },
+} as const;
+
+type PieceForSupplyCheck = {
+  id: string;
+  owner: "P1" | "P2";
+  position: { row: number; col: number };
+};
+
+function coordinateKey(row: number, col: number): string {
+  return `${row},${col}`;
+}
+
+function sortedOrthogonalNeighbors(row: number, col: number): { row: number; col: number }[] {
+  return [
+    { row: row - 1, col },
+    { row: row + 1, col },
+    { row, col: col - 1 },
+    { row, col: col + 1 },
+  ]
+    .filter((next) => !outOfBounds(next))
+    .sort((a, b) => (a.row === b.row ? a.col - b.col : a.row - b.row));
+}
+
+function isClearOrthogonalLineForPieces(
+  a: { row: number; col: number },
+  b: { row: number; col: number },
+  occupied: Map<string, string>,
+): boolean {
+  if (a.row !== b.row && a.col !== b.col) {
+    return false;
+  }
+
+  if (a.row === b.row) {
+    const start = Math.min(a.col, b.col) + 1;
+    const end = Math.max(a.col, b.col);
+    for (let col = start; col < end; col += 1) {
+      if (occupied.has(coordinateKey(a.row, col))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  const start = Math.min(a.row, b.row) + 1;
+  const end = Math.max(a.row, b.row);
+  for (let row = start; row < end; row += 1) {
+    if (occupied.has(coordinateKey(row, a.col))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function buildCommandEdgesForPieces(pieces: PieceForSupplyCheck[]) {
+  const occupied = new Map(pieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece.id]));
+  const edges: {
+    owner: "P1" | "P2";
+    from: { row: number; col: number };
+    to: { row: number; col: number };
+  }[] = [];
+
+  for (const owner of ["P1", "P2"] as const) {
+    const ownPieces = pieces
+      .filter((piece) => piece.owner === owner)
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    for (let i = 0; i < ownPieces.length; i += 1) {
+      for (let j = i + 1; j < ownPieces.length; j += 1) {
+        const a = ownPieces[i];
+        const b = ownPieces[j];
+        const rowDelta = Math.abs(a.position.row - b.position.row);
+        const colDelta = Math.abs(a.position.col - b.position.col);
+        const diagonalAllowed = rowDelta === 1 && colDelta === 1;
+        const orthogonalVisible =
+          (a.position.row === b.position.row || a.position.col === b.position.col) &&
+          isClearOrthogonalLineForPieces(a.position, b.position, occupied);
+
+        if (!diagonalAllowed && !orthogonalVisible) {
+          continue;
+        }
+
+        edges.push({
+          owner,
+          from: { ...a.position },
+          to: { ...b.position },
+        });
+      }
+    }
+  }
+
+  return edges;
+}
+
+function isCoordinateSuppliedForOwner(
+  pieces: PieceForSupplyCheck[],
+  owner: "P1" | "P2",
+  target: { row: number; col: number },
+): boolean {
+  const enemyBlockedByEdge = new Set<string>();
+  for (const edge of buildCommandEdgesForPieces(pieces)) {
+    if (edge.owner === owner) {
+      continue;
+    }
+
+    if (edge.from.row === edge.to.row) {
+      const row = edge.from.row;
+      const startCol = Math.min(edge.from.col, edge.to.col) + 1;
+      const endCol = Math.max(edge.from.col, edge.to.col);
+      for (let col = startCol; col < endCol; col += 1) {
+        enemyBlockedByEdge.add(coordinateKey(row, col));
+      }
+      continue;
+    }
+
+    if (edge.from.col === edge.to.col) {
+      const col = edge.from.col;
+      const startRow = Math.min(edge.from.row, edge.to.row) + 1;
+      const endRow = Math.max(edge.from.row, edge.to.row);
+      for (let row = startRow; row < endRow; row += 1) {
+        enemyBlockedByEdge.add(coordinateKey(row, col));
+      }
+    }
+  }
+
+  const occupiedByCoordinate = new Map(pieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece]));
+  const supplyPoint = SUPPLY_POINTS[owner];
+  const targetKey = coordinateKey(target.row, target.col);
+  const supplyKey = coordinateKey(supplyPoint.row, supplyPoint.col);
+
+  const isTraversable = (row: number, col: number): boolean => {
+    if (enemyBlockedByEdge.has(coordinateKey(row, col))) {
+      return false;
+    }
+    const occupant = occupiedByCoordinate.get(coordinateKey(row, col));
+    return !occupant || occupant.owner === owner;
+  };
+
+  const visited = new Set<string>();
+  if (!isTraversable(supplyPoint.row, supplyPoint.col)) {
+    return false;
+  }
+  visited.add(supplyKey);
+  const queue: { row: number; col: number }[] = [{ ...supplyPoint }];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      break;
+    }
+
+    for (const next of sortedOrthogonalNeighbors(current.row, current.col)) {
+      const nextKey = coordinateKey(next.row, next.col);
+      if (visited.has(nextKey) || !isTraversable(next.row, next.col)) {
+        continue;
+      }
+      visited.add(nextKey);
+      queue.push(next);
+    }
+  }
+
+  return visited.has(targetKey);
+}
+
+function wouldBeSuppliedAfterRelocation(
+  state: GameState,
+  actorId: string,
+  owner: "P1" | "P2",
+  destination: { row: number; col: number },
+): boolean {
+  const hypothetical: PieceForSupplyCheck[] = state.pieces.map((piece) => ({
+    id: piece.id,
+    owner: piece.owner,
+    position: piece.id === actorId ? { ...destination } : { ...piece.position },
+  }));
+  return isCoordinateSuppliedForOwner(hypothetical, owner, destination);
+}
+
+function wouldProjectedPieceBeSupplied(
+  state: GameState,
+  owner: "P1" | "P2",
+  destination: { row: number; col: number },
+): boolean {
+  const hypothetical: PieceForSupplyCheck[] = state.pieces.map((piece) => ({
+    id: piece.id,
+    owner: piece.owner,
+    position: { ...piece.position },
+  }));
+  hypothetical.push({
+    id: "__projected__",
+    owner,
+    position: { ...destination },
+  });
+  return isCoordinateSuppliedForOwner(hypothetical, owner, destination);
+}
+
 function resolveActor(state: GameState, action: Action) {
   if (action.actorId) {
     return state.pieces.find((piece) => piece.id === action.actorId);
@@ -332,6 +530,13 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         message: "Move destination is occupied",
       };
     }
+    if (!wouldBeSuppliedAfterRelocation(state, actor.id, actor.owner, action.to)) {
+      return {
+        ok: false,
+        code: "SUPPLY_DESTINATION_UNSUPPLIED",
+        message: "Move destination would be unsupplied",
+      };
+    }
     return { ok: true };
   }
 
@@ -359,6 +564,13 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         ok: false,
         code: "RULE_VIOLATION",
         message: "Project path and destination must be empty",
+      };
+    }
+    if (!wouldProjectedPieceBeSupplied(state, actor.owner, action.to)) {
+      return {
+        ok: false,
+        code: "SUPPLY_DESTINATION_UNSUPPLIED",
+        message: "Project destination would be unsupplied",
       };
     }
     return { ok: true };
@@ -426,6 +638,14 @@ export function validateAction(state: GameState, action: Action): ValidationResu
           message: "Orthogonal rush destination must be adjacent to at least one enemy",
         };
       }
+    }
+
+    if (!wouldBeSuppliedAfterRelocation(state, actor.id, actor.owner, action.to)) {
+      return {
+        ok: false,
+        code: "SUPPLY_DESTINATION_UNSUPPLIED",
+        message: "Rush destination would be unsupplied",
+      };
     }
 
     return { ok: true };

@@ -214,7 +214,7 @@ export function createEnginePlaygroundBoardAdapter() {
     }
   };
 
-  const renderPieceOverlays = ({ snapshot, selectedPieceId, selectedPieceMoves }) => {
+  const renderPieceOverlays = ({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) => {
     if (!overlayLinesEl) {
       return;
     }
@@ -269,7 +269,8 @@ export function createEnginePlaygroundBoardAdapter() {
     drawPath(getCommandPathForPiece(snapshot, piece), "#2470c7");
 
     const seenPreviews = new Set();
-    for (const action of selectedPieceMoves) {
+    const previews = Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves;
+    for (const action of previews) {
       if (!action.to) {
         continue;
       }
@@ -290,6 +291,9 @@ export function createEnginePlaygroundBoardAdapter() {
       if (targetCell) {
         const ghost = buildPieceToken(piece, true);
         ghost.classList.add("move-ghost");
+        if (action.legal === false && action.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED") {
+          ghost.classList.add("illegal-unsupplied");
+        }
         if (action.type === "move") {
           ghost.classList.add("offset-move");
         } else if (action.type === "rush") {
@@ -387,7 +391,7 @@ export function createEnginePlaygroundBoardAdapter() {
       };
     },
 
-    render({ snapshot, selection, selectedPieceMoves }) {
+    render({ snapshot, selection, selectedPieceMoves, selectedPieceMovePreviews }) {
       if (!boardEl) {
         throw new Error("Adapter not mounted");
       }
@@ -438,6 +442,7 @@ export function createEnginePlaygroundBoardAdapter() {
         snapshot,
         selectedPieceId: selection.selectedPieceId,
         selectedPieceMoves,
+        selectedPieceMovePreviews,
       });
     },
 
@@ -447,7 +452,7 @@ export function createEnginePlaygroundBoardAdapter() {
       return `C1=${c1?.supplied ?? "-"} | C2=${c2?.supplied ?? "-"}`;
     },
 
-    getSelectedPieceSummary({ snapshot, selectedPieceId, selectedPieceMoves }) {
+    getSelectedPieceSummary({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) {
       const selectedPiece = findPieceById(snapshot, selectedPieceId);
       if (!selectedPiece) {
         return null;
@@ -465,10 +470,12 @@ export function createEnginePlaygroundBoardAdapter() {
           groupComponentId: groupInfo.componentId,
           groupStrength: groupInfo.strength,
         },
-        actions: selectedPieceMoves.map((action) => ({
+        actions: (Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves).map((action) => ({
           type: action.type,
           from: action.from ?? null,
           to: action.to ?? null,
+          legal: action.legal ?? true,
+          blockedReason: action.blockedReason ?? null,
         })),
       };
     },

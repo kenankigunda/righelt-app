@@ -250,6 +250,19 @@ Tutorial restart:
 - When connectivity returns, the app may offer an explicit `Go online` action for that local playground game; this transition must require user confirmation and must not happen automatically mid-turn.
 - Until user confirms `Go online`, the local offline game remains device-local and does not appear in public/home game lists.
 
+### 12.2 Playground Move Preview Semantics
+
+- Piece move previews in playground are split into:
+  - legal destination actions (submittable)
+  - blocked destination previews (non-submittable) for actions that fail only due to destination supply (`SUPPLY_DESTINATION_UNSUPPLIED`)
+- The `/api/engine/playground/piece-moves` contract must expose:
+  - `actions`: legal-only actions
+  - `previewActions`: legal actions plus supply-blocked destination previews, each with a `legal` flag and optional `blockedReason`
+- UI behavior:
+  - legal previews render as normal ghost destinations
+  - supply-blocked previews still render at the destination, but the ghost piece is crossed out to indicate illegality
+  - target/action picking must use legal actions only; blocked previews are informational and must not be auto-selected as legal actions
+
 ## 13. Notifications and Prompts
 
 - Prompt text/content may vary, but these state prompts are required:

@@ -277,3 +277,27 @@ test("F-012 pass ends rush continuation even when more rushes are available", ()
   assert.equal(next.sideToMove, "P2");
   assert.equal(next.turnIndex, 1);
 });
+
+test("F-013 rush destination that would be unsupplied is illegal", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 3, 6),
+      commander("C2", "P2", 6, 3),
+      unit("U1-1", "P1", 4, 4),
+      unit("U2-1", "P2", 4, 6),
+      unit("U2-wall-top", "P2", 0, 4),
+      unit("U2-wall-bottom", "P2", 9, 4),
+      unit("U2-block-north", "P2", 3, 5),
+      unit("U2-block-south", "P2", 5, 5),
+    ],
+  });
+
+  const result = validateAction(state, {
+    type: "rush",
+    actorId: "U1-1",
+    from: { row: 4, col: 4 },
+    to: { row: 4, col: 5 },
+  });
+
+  assert.equal(result.ok, false);
+});

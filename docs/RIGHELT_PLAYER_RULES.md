@@ -53,12 +53,14 @@ Do nothing and end your turn.
 ## 4.2 Move (Commander only)
 
 - Move your Commander one square orthogonally (up/down/left/right) to an empty square.
+- The destination must still leave your Commander supplied.
 
 ## 4.3 Project (create a unit)
 
 - Choose one of your active pieces.
 - Place a new unit exactly two squares away in a straight orthogonal line.
 - The middle square and destination must both be empty.
+- The destination must be a square where that new unit is supplied.
 - The source piece stays where it is.
 
 This is how your board presence grows.
@@ -68,12 +70,17 @@ This is how your board presence grows.
 A tactical one-step move (including diagonals) that is only legal under the following conditions:
 
 - Destination must be empty.
+- Destination must still leave the rushing piece supplied.
 - Orthogonal rushes require enemy contact near the destination.
 - Diagonal rushes require enemy contact in the relevant corner-adjacent lanes.
 - In a rush sequence, each individual piece can rush at most once.
 - After your first rush, extra rushes are optional: you may pass to end the rush sequence and end your turn.
 
 Use Rush for tempo and local repositioning around conflict.
+
+Important legality note:
+- You cannot choose a destination that would make the moved/created piece unsupplied.
+- It is allowed to make a move that later leaves a piece uncommanded after resolution.
 
 ## 4.5 Push
 

@@ -35,6 +35,7 @@ export type ValidationErrorCode =
   | "SOURCE_EMPTY"
   | "CONTINUATION_REQUIRED"
   | "TERMINAL_GAME"
+  | "SUPPLY_DESTINATION_UNSUPPLIED"
   | "RULE_VIOLATION";
 
 export type ValidationResult =

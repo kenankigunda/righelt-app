@@ -54,6 +54,7 @@ if (shouldMountShell) {
 let state = null;
 let legalActions = [];
 let selectedPieceMoves = [];
+let selectedPieceMovePreviews = [];
 let selectedPieceId = null;
 let selectedSource = null;
 let selectedTarget = null;
@@ -87,6 +88,7 @@ const applySelection = (selection) => {
 const clearSelection = () => {
   selectedPieceId = null;
   selectedPieceMoves = [];
+  selectedPieceMovePreviews = [];
   selectedSource = null;
   selectedTarget = null;
 };
@@ -151,6 +153,7 @@ const renderBoard = () => {
     snapshot: state,
     selection: getCurrentSelection(),
     selectedPieceMoves,
+    selectedPieceMovePreviews,
   });
 };
 
@@ -169,10 +172,12 @@ const renderStatus = () => {
     snapshot: state,
     selectedPieceId,
     selectedPieceMoves,
+    selectedPieceMovePreviews,
   });
 
   if (!pieceSummary) {
     selectedPieceMoves = [];
+    selectedPieceMovePreviews = [];
     selectedPieceEl.textContent = "No piece selected.";
     selectedPieceMovesEl.textContent = "[]";
   } else {
@@ -204,6 +209,7 @@ const reloadSelectedPieceMoves = async () => {
   const selectedPiece = boardAdapter.getPieceById(state, selectedPieceId);
   if (!state || !selectedPiece) {
     selectedPieceMoves = [];
+    selectedPieceMovePreviews = [];
     renderBoard();
     renderStatus();
     return;
@@ -220,6 +226,7 @@ const reloadSelectedPieceMoves = async () => {
   const body = await response.json();
   state = body.state ?? state;
   selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
+  selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
   renderBoard();
   renderStatus();
 };
@@ -428,6 +435,7 @@ submitActionEl.addEventListener("click", async () => {
       state = body.state;
       legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
       selectedPieceMoves = [];
+      selectedPieceMovePreviews = [];
       moveLog.push(`${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`);
       selectedTarget = null;
       refreshSelectionLabels();
@@ -440,6 +448,7 @@ submitActionEl.addEventListener("click", async () => {
 
     state = body.state ?? state;
     selectedPieceMoves = [];
+    selectedPieceMovePreviews = [];
     setActionResult({
       accepted: false,
       validation: body.validation,
