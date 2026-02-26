@@ -91,6 +91,38 @@ test("command artifact includes candidate/cut/active edges and commander paths",
   assert.ok(Array.isArray(command.shortestPathToCommanderByPieceId.C1));
 });
 
+test("Q-003 command artifact reports stable candidate/cut/active edge sets", () => {
+  const buildState = () => {
+    const state = createInitialState();
+    addPiece(state, { id: "U1q3", owner: "P1", kind: "unit", position: { row: 3, col: 9 }, supplied: true, commanded: false });
+    addPiece(state, { id: "U2q3a", owner: "P2", kind: "unit", position: { row: 1, col: 8 }, supplied: true, commanded: false });
+    addPiece(state, { id: "U2q3b", owner: "P2", kind: "unit", position: { row: 8, col: 8 }, supplied: true, commanded: false });
+    return state;
+  };
+
+  const runA = resolveToStability(buildState(), { artifactMode: "full" });
+  const runB = resolveToStability(buildState(), { artifactMode: "full" });
+  assert.deepEqual(runA.artifacts?.command.candidateEdges, runB.artifacts?.command.candidateEdges);
+  assert.deepEqual(runA.artifacts?.command.cutEdges, runB.artifacts?.command.cutEdges);
+  assert.deepEqual(runA.artifacts?.command.activeEdges, runB.artifacts?.command.activeEdges);
+});
+
+test("Q-004 commanded piece path-to-commander artifact is present and deterministic", () => {
+  const buildState = () => {
+    const state = createInitialState();
+    addPiece(state, { id: "U1q4", owner: "P1", kind: "unit", position: { row: 3, col: 9 }, supplied: true, commanded: false });
+    return state;
+  };
+
+  const runA = resolveToStability(buildState(), { artifactMode: "full" });
+  const runB = resolveToStability(buildState(), { artifactMode: "full" });
+  assert.ok(Array.isArray(runA.artifacts?.command.shortestPathToCommanderByPieceId.U1q4));
+  assert.deepEqual(
+    runA.artifacts?.command.shortestPathToCommanderByPieceId.U1q4,
+    runB.artifacts?.command.shortestPathToCommanderByPieceId.U1q4,
+  );
+});
+
 test("group artifact exposes components, members, and strengths", () => {
   const state = createInitialState();
   addPiece(state, {
