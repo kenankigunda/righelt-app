@@ -2,6 +2,7 @@ import { assertGameBoardAdapter } from "./board-adapter-contract.js";
 import { createEnginePlaygroundBoardAdapter } from "./board-adapters/engine-playground-adapter.js";
 import { getBootstrapPayload } from "./shell/bootstrap.js";
 import { createLiveTransportStore } from "./shell/live-transport.js";
+import { createLiveSyncClient } from "./shell/live-sync.js";
 import { loadTutorialCompleted, saveTutorialCompleted } from "./shell/persistence.js";
 import { buildGameHash, buildHomeHash, buildTutorialHash, parseRouteFromHash } from "./shell/routes.js";
 import { createTutorialController } from "./shell/tutorial.js";
@@ -27,7 +28,7 @@ assertGameBoardAdapter(boardAdapter);
 let currentRoute = parseRouteFromHash(window.location.hash);
 let mountedBoardGameId = null;
 let busy = false;
-const LIVE_POLL_MS = 1500;
+let liveSyncConnectedRoute = "";
 
 const escapeHtml = (value) =>
   String(value)
@@ -345,9 +346,48 @@ const syncRouteDataPassive = async () => {
   }
 };
 
+const liveSync = createLiveSyncClient({
+  identityId: transport.getIdentityId(),
+  onEvent: (payload) => {
+    if (payload?.type === "game.updated" || payload?.type === "socket.connected") {
+      void syncRouteDataPassive();
+    }
+  },
+  onError: (error) => {
+    window.__righeltLastError = error instanceof Error ? error.message : String(error);
+  },
+});
+
+const syncLiveChannel = () => {
+  const routeKey =
+    currentRoute.name === "game"
+      ? `game:${currentRoute.gameId}`
+      : currentRoute.name === "home"
+        ? "home"
+        : "none";
+
+  if (routeKey === liveSyncConnectedRoute) {
+    return;
+  }
+  liveSyncConnectedRoute = routeKey;
+
+  liveSync.disconnect();
+
+  if (currentRoute.name === "home") {
+    liveSync.resume();
+    liveSync.connectHome();
+    return;
+  }
+  if (currentRoute.name === "game") {
+    liveSync.resume();
+    liveSync.connectGame(currentRoute.gameId);
+  }
+};
+
 const navigateTo = (hash) => {
   if (window.location.hash === hash) {
     currentRoute = parseRouteFromHash(hash);
+    syncLiveChannel();
     void withBusy(syncRouteData);
     return;
   }
@@ -356,28 +396,22 @@ const navigateTo = (hash) => {
 
 window.addEventListener("hashchange", () => {
   currentRoute = parseRouteFromHash(window.location.hash);
+  syncLiveChannel();
   void withBusy(syncRouteData);
 });
 
 window.addEventListener("online", () => {
   transport.setOffline(false);
+  liveSync.resume();
+  syncLiveChannel();
   void withBusy(syncRouteData);
 });
 
 window.addEventListener("offline", () => {
   transport.setOffline(true);
+  liveSync.disconnect();
   void withBusy(syncRouteData);
 });
-
-setInterval(() => {
-  if (document.visibilityState === "hidden") {
-    return;
-  }
-  if (currentRoute.name !== "game" && currentRoute.name !== "home") {
-    return;
-  }
-  void syncRouteDataPassive();
-}, LIVE_POLL_MS);
 
 appEl.addEventListener("click", async (event) => {
   const target = event.target;
@@ -525,6 +559,7 @@ const initialRender = async () => {
     return;
   }
 
+  syncLiveChannel();
   await withBusy(syncRouteData);
 };
 

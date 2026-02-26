@@ -49,12 +49,60 @@ type ShellGame = {
 
 const games = new Map<string, ShellGame>();
 let seq = 0;
+const homeSubscribers = new Set<any>();
+const gameSubscribers = new Map<string, Set<any>>();
 
 const now = () => new Date().toISOString();
 const clone = <T>(value: T): T => structuredClone(value);
 const nextId = () => {
   seq += 1;
   return `game-${seq.toString().padStart(6, "0")}`;
+};
+
+const getGameSubscriberSet = (gameId: string) => {
+  let set = gameSubscribers.get(gameId);
+  if (!set) {
+    set = new Set();
+    gameSubscribers.set(gameId, set);
+  }
+  return set;
+};
+
+const removeSocketFromAll = (socket: any) => {
+  homeSubscribers.delete(socket);
+  for (const [gameId, subscribers] of gameSubscribers.entries()) {
+    subscribers.delete(socket);
+    if (subscribers.size === 0) {
+      gameSubscribers.delete(gameId);
+    }
+  }
+};
+
+const sendSocketEvent = (socket: any, payload: Record<string, unknown>) => {
+  try {
+    socket.send(JSON.stringify(payload));
+  } catch {
+    removeSocketFromAll(socket);
+  }
+};
+
+const broadcastLiveUpdate = (gameId: string, reason: string) => {
+  const payload = {
+    type: "game.updated",
+    gameId,
+    reason,
+    at: now(),
+  };
+  for (const socket of homeSubscribers.values()) {
+    sendSocketEvent(socket, payload);
+  }
+  const subscribers = gameSubscribers.get(gameId);
+  if (!subscribers) {
+    return;
+  }
+  for (const socket of subscribers.values()) {
+    sendSocketEvent(socket, payload);
+  }
 };
 
 const findRoleForIdentity = (game: ShellGame, identityId: string): string => {
@@ -164,6 +212,49 @@ const applyServerMove = (game: ShellGame, notation?: string) => {
   return { ok: true as const, move };
 };
 
+export const handleShellLiveWebSocketUpgrade = (request: Request): Response | null => {
+  const url = new URL(request.url);
+  const route = parsePath(url.pathname);
+  if (!route || request.method !== "GET" || route.length !== 1 || route[0] !== "ws") {
+    return null;
+  }
+
+  const wsCtor = (globalThis as any).WebSocketPair;
+  if (!wsCtor) {
+    return new Response("WebSocket upgrade not supported in this runtime", { status: 426 });
+  }
+
+  const scope = url.searchParams.get("scope");
+  const gameId = scope === "game" ? asIdentity(url.searchParams.get("gameId")) : null;
+  const socketPair = new wsCtor();
+  const client = socketPair[0];
+  const server = socketPair[1];
+  server.accept();
+
+  if (scope === "home") {
+    homeSubscribers.add(server);
+  } else if (scope === "game" && gameId) {
+    getGameSubscriberSet(gameId).add(server);
+  } else {
+    return new Response("Invalid websocket scope", { status: 400 });
+  }
+
+  sendSocketEvent(server, { type: "socket.connected", scope, gameId, at: now() });
+
+  server.addEventListener("message", (event: MessageEvent) => {
+    const text = typeof event.data === "string" ? event.data : "";
+    if (text === "ping") {
+      sendSocketEvent(server, { type: "pong", at: now() });
+    }
+  });
+
+  server.addEventListener("close", () => {
+    removeSocketFromAll(server);
+  });
+
+  return new Response(null, { status: 101, webSocket: client } as any);
+};
+
 export const handleShellLiveRequest = async (
   request: Request,
 ): Promise<{ handled: boolean; status: number; body: Record<string, unknown>; cacheControl: string } | null> => {
@@ -239,6 +330,7 @@ export const handleShellLiveRequest = async (
     };
 
     games.set(game.id, game);
+    broadcastLiveUpdate(game.id, "game_created");
     return {
       handled: true,
       status: 200,
@@ -263,6 +355,7 @@ export const handleShellLiveRequest = async (
       if (url.searchParams.get("openAsViewer") === "1") {
         ensureViewer(game, identityId);
         game.updatedAt = now();
+        broadcastLiveUpdate(game.id, "viewer_open");
       }
 
       return {
@@ -297,6 +390,7 @@ export const handleShellLiveRequest = async (
         ensureViewer(game, identityId);
         game.updatedAt = now();
         addNotification(game, "Viewer joined");
+        broadcastLiveUpdate(game.id, "viewer_joined");
         return { handled: true, status: 200, body: { ok: true, pendingApproval: false, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
       }
 
@@ -321,6 +415,7 @@ export const handleShellLiveRequest = async (
         });
         game.updatedAt = now();
         addNotification(game, "Player seat request pending approval");
+        broadcastLiveUpdate(game.id, "player_join_requested");
         return {
           handled: true,
           status: 200,
@@ -336,6 +431,7 @@ export const handleShellLiveRequest = async (
       }
       game.updatedAt = now();
       addNotification(game, "Player joined");
+      broadcastLiveUpdate(game.id, "player_joined");
       return { handled: true, status: 200, body: { ok: true, pendingApproval: false, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
 
@@ -361,6 +457,7 @@ export const handleShellLiveRequest = async (
       }
       game.updatedAt = now();
       addNotification(game, "Player request approved");
+      broadcastLiveUpdate(game.id, "player_request_approved");
 
       return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
@@ -371,6 +468,7 @@ export const handleShellLiveRequest = async (
       if (!moved.ok) {
         return { handled: true, status: 409, body: { ok: false, error: moved.error }, cacheControl: "no-store" };
       }
+      broadcastLiveUpdate(game.id, "move_recorded");
       return { handled: true, status: 200, body: { ok: true, move: moved.move, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
 
@@ -382,12 +480,14 @@ export const handleShellLiveRequest = async (
       game.historyIndex = moveIndex;
       game.updatedAt = now();
       addNotification(game, "Viewing history (not live)");
+      broadcastLiveUpdate(game.id, "history_selected");
       return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
 
     if (route.length === 3 && route[2] === "live") {
       game.historyIndex = null;
       game.updatedAt = now();
+      broadcastLiveUpdate(game.id, "return_live");
       return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
 
@@ -404,6 +504,7 @@ export const handleShellLiveRequest = async (
       entry.connected = connected;
       game.updatedAt = now();
       addNotification(game, `Participant ${connected ? "connected" : "disconnected"}`);
+      broadcastLiveUpdate(game.id, connected ? "participant_connected" : "participant_disconnected");
       return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
 
@@ -415,6 +516,7 @@ export const handleShellLiveRequest = async (
       game.offlineLocal = false;
       game.updatedAt = now();
       addNotification(game, "Game moved online");
+      broadcastLiveUpdate(game.id, "game_moved_online");
       return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
 

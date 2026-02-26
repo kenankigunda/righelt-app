@@ -5,7 +5,7 @@ import { deterministicStateHash } from "../../game-engine/src/hash";
 import { listLegalActions, validateAction } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import type { Action, GameState } from "../../game-engine/src/types";
-import { handleShellLiveRequest } from "./shell-live";
+import { handleShellLiveRequest, handleShellLiveWebSocketUpgrade } from "./shell-live";
 
 type D1RunResult = {
   success: boolean;
@@ -126,6 +126,10 @@ const enumeratePieceActions = (state: GameState, pieceId: string): Action[] => {
 
 export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<Response> => {
   const url = new URL(request.url);
+  const websocketUpgrade = handleShellLiveWebSocketUpgrade(request);
+  if (websocketUpgrade) {
+    return websocketUpgrade;
+  }
   const liveResponse = await handleShellLiveRequest(request);
   if (liveResponse?.handled) {
     return json(liveResponse.body, liveResponse.status, liveResponse.cacheControl);
