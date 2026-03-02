@@ -43,6 +43,11 @@ const isSeatRequestEligible = (game, seat) => {
   return false;
 };
 
+const getSeatForSide = (side) => (side === "P1" ? "Player 1" : "Player 2");
+const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
+const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
+const getActiveTurn = (game) => game.turns[game.turns.length - 1] || null;
+
 export const createShellStore = ({
   storage,
   now = () => new Date().toISOString(),
@@ -86,6 +91,17 @@ export const createShellStore = ({
       player2: playgroundMode ? { identityId, connected: true, joinedAt: timestamp } : null,
       viewers: [],
       pendingJoinRequests: [],
+      turns: [
+        {
+          index: board.state.turnIndex ?? 0,
+          startedAt: timestamp,
+          endedAt: null,
+          playerSeat: getSeatForSide(board.state.sideToMove),
+          status: "active",
+          moveIndexes: [],
+          lastMoveAt: null,
+        },
+      ],
       moves: [],
       historyIndex: null,
       notifications: ["Game created", playgroundMode ? "Playground mode active" : "Invite a second player"],
@@ -207,24 +223,74 @@ export const createShellStore = ({
   const addMove = ({ gameId, notation, snapshot }) => {
     const game = getGame(gameId);
     if (!game) return null;
+    const activeTurn = getActiveTurn(game);
+    if (!activeTurn) return null;
 
     const move = {
       index: game.moves.length,
+      turnIndex: activeTurn.index,
+      turnMoveIndex: activeTurn.moveIndexes.length,
       at: now(),
       notation,
-      snapshot: snapshot || game.board.state,
+      snapshot: {
+        ...(snapshot || game.board.state),
+        sideToMove: getSideForSeat(activeTurn.playerSeat),
+        turnIndex: activeTurn.index,
+      },
     };
     game.moves.push(move);
+    activeTurn.moveIndexes.push(move.index);
+    activeTurn.lastMoveAt = move.at;
     if (game.moves.length > MAX_HISTORY) {
       game.moves.shift();
       for (let i = 0; i < game.moves.length; i += 1) {
         game.moves[i].index = i;
       }
+      game.turns.forEach((turn) => {
+        turn.moveIndexes = turn.moveIndexes.map((_, index) => {
+          const moveAtIndex = game.moves.find((move) => move.turnIndex === turn.index && move.turnMoveIndex === index);
+          return moveAtIndex ? moveAtIndex.index : -1;
+        }).filter((index) => index >= 0);
+      });
     }
 
+    game.board.state = structuredClone(move.snapshot);
     game.lastMoveAt = move.at;
     game.updatedAt = move.at;
-    game.notifications.unshift("Move recorded");
+    game.notifications.unshift(`Move recorded in turn ${activeTurn.index + 1}`);
+    persist();
+    return clone(game);
+  };
+
+  const endTurn = ({ gameId }) => {
+    const game = getGame(gameId);
+    if (!game) return null;
+    const activeTurn = getActiveTurn(game);
+    if (!activeTurn || activeTurn.moveIndexes.length === 0) {
+      return { ok: false, error: "turn_has_no_moves" };
+    }
+
+    const endedAt = now();
+    activeTurn.endedAt = endedAt;
+    activeTurn.status = "complete";
+
+    const nextSeat = getNextSeat(activeTurn.playerSeat);
+    game.turns.push({
+      index: activeTurn.index + 1,
+      startedAt: endedAt,
+      endedAt: null,
+      playerSeat: nextSeat,
+      status: "active",
+      moveIndexes: [],
+      lastMoveAt: null,
+    });
+    game.board.state = {
+      ...game.board.state,
+      sideToMove: getSideForSeat(nextSeat),
+      turnIndex: activeTurn.index + 1,
+    };
+    game.updatedAt = endedAt;
+    game.notifications.unshift(`Turn ${activeTurn.index + 1} ended. ${nextSeat} to play`);
     persist();
     return clone(game);
   };
@@ -282,11 +348,17 @@ export const createShellStore = ({
         typeof game.historyIndex === "number" && game.moves[game.historyIndex]
           ? game.moves[game.historyIndex].snapshot
           : game.board.state,
+      currentTurn: clone(getActiveTurn(game)),
       canJoinAsPlayer:
         role !== "Player 1" && role !== "Player 2" && !game.playgroundMode && (!game.player1 || !game.player2),
       canInvite: !offline && !game.offlineLocal,
       showOfflineState: offline || game.offlineLocal,
       showJoinActions: !offline && !game.offlineLocal,
+      canEndTurn:
+        (role === "Player 1" || role === "Player 2") &&
+        typeof game.historyIndex !== "number" &&
+        getActiveTurn(game)?.playerSeat === role &&
+        getActiveTurn(game)?.moveIndexes.length > 0,
     };
   };
 
@@ -298,6 +370,7 @@ export const createShellStore = ({
     openAsViewer,
     approvePendingRequest,
     addMove,
+    endTurn,
     selectHistoryMove,
     returnToLive,
     setParticipantConnected,

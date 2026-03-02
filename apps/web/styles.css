@@ -85,6 +85,23 @@ button.danger {
   background: var(--danger);
 }
 
+button:disabled,
+.button-link[aria-disabled="true"] {
+  background: #d7d2c6;
+  border-color: #c3bcab;
+  color: #7c7568;
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+button.secondary:disabled {
+  background: #f1eee6;
+  border-color: #d6d0c2;
+  color: #8a8375;
+}
+
 .layout-grid {
   display: grid;
   gap: 1rem;
@@ -173,6 +190,13 @@ button.danger {
   gap: 0.35rem;
 }
 
+.history-turn-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
 .history-item {
   cursor: pointer;
 }
@@ -190,6 +214,32 @@ button.danger {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.invite-gate {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.invite-gate-modal {
+  position: sticky;
+  top: 1rem;
+  z-index: 2;
+  box-shadow: 0 18px 40px rgba(29, 45, 53, 0.12);
+}
+
+.invite-gate-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+}
+
+.invite-gate-content {
+  filter: grayscale(0.4);
+  opacity: 0.48;
+  pointer-events: none;
+  user-select: none;
 }
 
 .mono {

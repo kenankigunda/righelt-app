@@ -13,7 +13,10 @@ test("e2e shell flow: create, invite-join request, approve, history, offline-loc
   const approved = store.approvePendingRequest({ gameId: game.id, requesterIdentityId: requester });
   assert.equal(approved.ok, true);
 
-  store.addMove({ gameId: game.id, notation: "M1", snapshot: { turnIndex: 1 } });
+  store.addMove({ gameId: game.id, notation: "M1", snapshot: { turnIndex: 0, sideToMove: "P1" } });
+  store.addMove({ gameId: game.id, notation: "M2", snapshot: { turnIndex: 0, sideToMove: "P1" } });
+  assert.equal(store.getGameViewModel(game.id).currentTurn.moveIndexes.length, 2);
+  assert.equal(store.endTurn({ gameId: game.id }).ok !== false, true);
   store.selectHistoryMove({ gameId: game.id, moveIndex: 0 });
   assert.equal(store.getGameViewModel(game.id).inHistoryMode, true);
   store.returnToLive({ gameId: game.id });

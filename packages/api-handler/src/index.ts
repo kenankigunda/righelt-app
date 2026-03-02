@@ -5,6 +5,7 @@ import { deterministicStateHash } from "../../game-engine/src/hash";
 import { listLegalActions, validateAction } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import type { Action, GameState } from "../../game-engine/src/types";
+import { handleShellLiveRequest, handleShellLiveWebSocketUpgrade } from "./shell-live";
 
 type D1RunResult = {
   success: boolean;
@@ -70,18 +71,6 @@ const BOARD_SIZE = 10;
 
 const INITIAL_PLAYGROUND_STATE = resolveToStability(createInitialState(), { artifactMode: "full" });
 const INITIAL_PLAYGROUND_LEGAL_ACTIONS = listLegalActions(INITIAL_PLAYGROUND_STATE);
-const SHELL_BOOTSTRAP_PAYLOAD = Object.freeze({
-  ok: true,
-  app: "righelt-web-shell",
-  specVersion: 1,
-  tutorialSteps: Object.freeze([
-    "Select your role",
-    "Review board state",
-    "Make a move",
-    "Inspect history and return live",
-    "Invite participants",
-  ]),
-});
 
 const compareActions = (left: Action, right: Action): number => {
   if (left.type !== right.type) {
@@ -137,6 +126,14 @@ const enumeratePieceActions = (state: GameState, pieceId: string): Action[] => {
 
 export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<Response> => {
   const url = new URL(request.url);
+  const websocketUpgrade = handleShellLiveWebSocketUpgrade(request);
+  if (websocketUpgrade) {
+    return websocketUpgrade;
+  }
+  const liveResponse = await handleShellLiveRequest(request);
+  if (liveResponse?.handled) {
+    return json(liveResponse.body, liveResponse.status, liveResponse.cacheControl);
+  }
 
   if (request.method === "GET" && url.pathname === "/api/engine/playground/state") {
     return jsonBootstrap({
@@ -144,10 +141,6 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
       state: INITIAL_PLAYGROUND_STATE,
       legalActions: INITIAL_PLAYGROUND_LEGAL_ACTIONS,
     });
-  }
-
-  if (request.method === "GET" && url.pathname === "/api/shell/bootstrap") {
-    return jsonBootstrap(SHELL_BOOTSTRAP_PAYLOAD);
   }
 
   if (request.method === "POST" && url.pathname === "/api/engine/playground/legal") {
