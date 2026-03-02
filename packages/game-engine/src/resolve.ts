@@ -272,33 +272,126 @@ function isClearOrthogonalLine(
   return true;
 }
 
+function orientation(
+  a: { row: number; col: number },
+  b: { row: number; col: number },
+  c: { row: number; col: number },
+): number {
+  return (b.col - a.col) * (c.row - a.row) - (b.row - a.row) * (c.col - a.col);
+}
+
+function samePoint(
+  left: { row: number; col: number },
+  right: { row: number; col: number },
+): boolean {
+  return left.row === right.row && left.col === right.col;
+}
+
+function pointStrictlyInsideSegment(
+  point: { row: number; col: number },
+  a: { row: number; col: number },
+  b: { row: number; col: number },
+): boolean {
+  const minRow = Math.min(a.row, b.row);
+  const maxRow = Math.max(a.row, b.row);
+  const minCol = Math.min(a.col, b.col);
+  const maxCol = Math.max(a.col, b.col);
+  return (
+    point.row >= minRow &&
+    point.row <= maxRow &&
+    point.col >= minCol &&
+    point.col <= maxCol &&
+    !samePoint(point, a) &&
+    !samePoint(point, b)
+  );
+}
+
+function collinearSegmentsOverlapInInterior(
+  edgeA: CommandEdge,
+  edgeB: CommandEdge,
+): boolean {
+  const vertical = edgeA.from.col === edgeA.to.col && edgeB.from.col === edgeB.to.col && edgeA.from.col === edgeB.from.col;
+  if (vertical) {
+    const start = Math.max(Math.min(edgeA.from.row, edgeA.to.row), Math.min(edgeB.from.row, edgeB.to.row));
+    const end = Math.min(Math.max(edgeA.from.row, edgeA.to.row), Math.max(edgeB.from.row, edgeB.to.row));
+    return end > start;
+  }
+
+  const horizontal = edgeA.from.row === edgeA.to.row && edgeB.from.row === edgeB.to.row && edgeA.from.row === edgeB.from.row;
+  if (horizontal) {
+    const start = Math.max(Math.min(edgeA.from.col, edgeA.to.col), Math.min(edgeB.from.col, edgeB.to.col));
+    const end = Math.min(Math.max(edgeA.from.col, edgeA.to.col), Math.max(edgeB.from.col, edgeB.to.col));
+    return end > start;
+  }
+
+  const diagonalSlopeA = {
+    row: edgeA.to.row - edgeA.from.row,
+    col: edgeA.to.col - edgeA.from.col,
+  };
+  const diagonalSlopeB = {
+    row: edgeB.to.row - edgeB.from.row,
+    col: edgeB.to.col - edgeB.from.col,
+  };
+
+  if (Math.abs(diagonalSlopeA.row) !== Math.abs(diagonalSlopeA.col) || Math.abs(diagonalSlopeB.row) !== Math.abs(diagonalSlopeB.col)) {
+    return false;
+  }
+
+  const sameSlopeSign = Math.sign(diagonalSlopeA.row) === Math.sign(diagonalSlopeA.col) &&
+    Math.sign(diagonalSlopeB.row) === Math.sign(diagonalSlopeB.col);
+  const oppositeSlopeSign = Math.sign(diagonalSlopeA.row) === -Math.sign(diagonalSlopeA.col) &&
+    Math.sign(diagonalSlopeB.row) === -Math.sign(diagonalSlopeB.col);
+  if (!sameSlopeSign && !oppositeSlopeSign) {
+    return false;
+  }
+
+  const project = sameSlopeSign
+    ? (point: { row: number; col: number }) => point.row + point.col
+    : (point: { row: number; col: number }) => point.row - point.col;
+  const start = Math.max(Math.min(project(edgeA.from), project(edgeA.to)), Math.min(project(edgeB.from), project(edgeB.to)));
+  const end = Math.min(Math.max(project(edgeA.from), project(edgeA.to)), Math.max(project(edgeB.from), project(edgeB.to)));
+  return end > start;
+}
+
 function segmentIntersectionPoint(
   edgeA: CommandEdge,
   edgeB: CommandEdge,
 ): { row: number; col: number } | null {
-  const horizontalA = edgeA.from.row === edgeA.to.row;
-  const horizontalB = edgeB.from.row === edgeB.to.row;
+  const a = edgeA.from;
+  const b = edgeA.to;
+  const c = edgeB.from;
+  const d = edgeB.to;
 
-  if (horizontalA === horizontalB) {
-    return null;
+  const o1 = orientation(a, b, c);
+  const o2 = orientation(a, b, d);
+  const o3 = orientation(c, d, a);
+  const o4 = orientation(c, d, b);
+
+  if (o1 === 0 && o2 === 0 && o3 === 0 && o4 === 0) {
+    return collinearSegmentsOverlapInInterior(edgeA, edgeB) ? { row: Number.NaN, col: Number.NaN } : null;
   }
 
-  const horizontal = horizontalA ? edgeA : edgeB;
-  const vertical = horizontalA ? edgeB : edgeA;
-
-  const row = horizontal.from.row;
-  const col = vertical.from.col;
-
-  const minCol = Math.min(horizontal.from.col, horizontal.to.col);
-  const maxCol = Math.max(horizontal.from.col, horizontal.to.col);
-  const minRow = Math.min(vertical.from.row, vertical.to.row);
-  const maxRow = Math.max(vertical.from.row, vertical.to.row);
-
-  if (col <= minCol || col >= maxCol || row <= minRow || row >= maxRow) {
-    return null;
+  if ((o1 === 0 && pointStrictlyInsideSegment(c, a, b)) || (o2 === 0 && pointStrictlyInsideSegment(d, a, b))) {
+    return { row: o1 === 0 ? c.row : d.row, col: o1 === 0 ? c.col : d.col };
+  }
+  if ((o3 === 0 && pointStrictlyInsideSegment(a, c, d)) || (o4 === 0 && pointStrictlyInsideSegment(b, c, d))) {
+    return { row: o3 === 0 ? a.row : b.row, col: o3 === 0 ? a.col : b.col };
   }
 
-  return { row, col };
+  if ((o1 > 0 && o2 < 0 || o1 < 0 && o2 > 0) && (o3 > 0 && o4 < 0 || o3 < 0 && o4 > 0)) {
+    const denominator = (a.row - b.row) * (c.col - d.col) - (a.col - b.col) * (c.row - d.row);
+    if (denominator === 0) {
+      return { row: Number.NaN, col: Number.NaN };
+    }
+    const determinantA = a.row * b.col - a.col * b.row;
+    const determinantB = c.row * d.col - c.col * d.row;
+    return {
+      row: (determinantA * (c.row - d.row) - (a.row - b.row) * determinantB) / denominator,
+      col: (determinantA * (c.col - d.col) - (a.col - b.col) * determinantB) / denominator,
+    };
+  }
+
+  return null;
 }
 
 function buildCommandEdges(state: GameState): CommandEdge[] {

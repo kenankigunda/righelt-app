@@ -96,3 +96,42 @@ test("edge intersections produce cut edges and block command propagation", () =>
   const u1a = resolved.pieces.find((piece) => piece.id === "U1a");
   assert.equal(Boolean(u1a?.commanded), false);
 });
+
+test("diagonal enemy edge intersections cut both command edges", () => {
+  const state = createInitialState();
+
+  addPiece(state, {
+    id: "U1a",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 4, col: 7 },
+    supplied: true,
+    commanded: false,
+  });
+  addPiece(state, {
+    id: "U2a",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 3, col: 7 },
+    supplied: true,
+    commanded: false,
+  });
+  addPiece(state, {
+    id: "U2b",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 4, col: 6 },
+    supplied: true,
+    commanded: false,
+  });
+
+  const resolved = resolveToStability(state, { artifactMode: "full" });
+  assert.ok(resolved.artifacts?.command.candidateEdges.includes("C1|U1a"));
+  assert.ok(resolved.artifacts?.command.candidateEdges.includes("U2a|U2b"));
+  assert.ok(resolved.artifacts?.command.cutEdges.includes("C1|U1a"));
+  assert.ok(resolved.artifacts?.command.cutEdges.includes("U2a|U2b"));
+  assert.equal(resolved.artifacts?.command.activeEdges.includes("U2a|U2b"), false);
+
+  const p2Target = resolved.pieces.find((piece) => piece.id === "U2b");
+  assert.equal(Boolean(p2Target?.commanded), false);
+});
