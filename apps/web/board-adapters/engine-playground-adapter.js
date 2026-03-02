@@ -5,6 +5,24 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
 const isSupplyPoint = (row, col) => (row === 0 && col === 9) || (row === 9 && col === 0);
+const actionPreviewLabel = (actionType) => {
+  switch (actionType) {
+    case "move":
+      return "Move commander to this square";
+    case "project":
+      return "Project new piece to this square";
+    case "rush":
+      return "Rush piece to this square";
+    case "push":
+      return "Push piece onto this square";
+    case "follow":
+      return "Follow piece to this square";
+    case "retreat":
+      return "Retreat piece to this square";
+    default:
+      return "Move to this square";
+  }
+};
 
 function findPieceAt(snapshot, row, col) {
   if (!snapshot) return null;
@@ -420,7 +438,7 @@ export function createEnginePlaygroundBoardAdapter() {
       };
     },
 
-    render({ snapshot, selection, selectedPieceMoves, selectedPieceMovePreviews, allowFreeSelection }) {
+    render({ snapshot, selection, selectedPieceMoves, selectedPieceMovePreviews, allowFreeSelection, currentActionType }) {
       if (!boardEl) {
         throw new Error("Adapter not mounted");
       }
@@ -462,7 +480,14 @@ export function createEnginePlaygroundBoardAdapter() {
           const isSource = selection.source && selection.source.row === row && selection.source.col === col;
           const isTarget = selection.target && selection.target.row === row && selection.target.col === col;
           if (isSource) cell.classList.add("source");
-          if (isTarget) cell.classList.add("target");
+          if (isTarget) {
+            cell.classList.add("target");
+            const targetActionType =
+              pickBestActionTypeForTarget(previewsAtCell, currentActionType) ??
+              currentActionType ??
+              "move";
+            cell.setAttribute("data-target-label", actionPreviewLabel(targetActionType));
+          }
 
           if (isTarget) {
             if (hasBlockedSupplyPreview) {
