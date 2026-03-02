@@ -130,6 +130,16 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return { ...body, game: upsertGame(body.game) };
   };
 
+  const endTurn = async ({ gameId }) => {
+    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/end-turn`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId }),
+    });
+    const body = await mustOk(response);
+    return { ...body, game: upsertGame(body.game) };
+  };
+
   const selectHistoryMove = async ({ gameId, moveIndex }) => {
     const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/history`), {
       method: "POST",
@@ -190,6 +200,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     joinGame,
     approvePendingRequest,
     addMove,
+    endTurn,
     selectHistoryMove,
     returnToLive,
     setParticipantConnected,

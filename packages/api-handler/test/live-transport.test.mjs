@@ -87,9 +87,30 @@ test("live transport: join approval flow and presence/history/move transitions",
   );
   const moveBody = await move.json();
   assert.equal(moveBody.game.moves.length, 1);
+  assert.equal(moveBody.game.currentTurn.playerSeat, "Player 1");
+  assert.equal(moveBody.game.currentTurn.moveIndexes.length, 1);
+  assert.equal(moveBody.game.currentSnapshot.sideToMove, "P1");
+
+  const secondMove = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
+    env,
+  );
+  const secondMoveBody = await secondMove.json();
+  assert.equal(secondMoveBody.game.moves.length, 2);
+  assert.equal(secondMoveBody.game.currentTurn.moveIndexes.length, 2);
+  assert.equal(secondMoveBody.game.currentSnapshot.sideToMove, "P1");
+
+  const endTurn = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: "id-owner" }),
+    env,
+  );
+  const endTurnBody = await endTurn.json();
+  assert.equal(endTurnBody.game.currentTurn.playerSeat, "Player 2");
+  assert.equal(endTurnBody.game.currentTurn.moveIndexes.length, 0);
+  assert.equal(endTurnBody.game.currentSnapshot.sideToMove, "P2");
 
   const history = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-owner", moveIndex: 0 }),
+    req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-owner", moveIndex: 1 }),
     env,
   );
   const historyBody = await history.json();
@@ -197,6 +218,35 @@ test("live transport: move endpoint rejects non-player and wrong-turn players", 
   );
   assert.equal(wrongTurnMove.status, 409);
   assert.equal((await wrongTurnMove.json()).error, "not_your_turn");
+
+  const endTurn = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
+    env,
+  );
+  assert.equal(endTurn.status, 200);
+
+  await handleApiRequest(req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: "id-owner" }), env);
+
+  const nowPlayer2Move = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-player2" }),
+    env,
+  );
+  assert.equal(nowPlayer2Move.status, 200);
+});
+
+test("live transport: end-turn rejects empty turns", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+
+  const endTurn = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: "id-owner" }),
+    env,
+  );
+  assert.equal(endTurn.status, 409);
+  assert.equal((await endTurn.json()).error, "turn_has_no_moves");
 });
 
 test("live transport: approve rejects unauthorized approver", async () => {
