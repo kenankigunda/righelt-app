@@ -12,6 +12,7 @@
   --warning: #a5630f;
   --danger: #b6432f;
   --info: #1a5ca1;
+  --section-item-gap: 0.75rem;
 }
 
 body {
@@ -210,7 +211,13 @@ button.secondary:disabled {
   background: #fbf8f1;
 }
 
-.history-list,
+.history-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: var(--section-item-gap);
+}
+
 .participant-list,
 .game-list {
   margin: 0;
@@ -243,6 +250,41 @@ button.secondary:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.section-actions {
+  padding-bottom: var(--section-item-gap);
+}
+
+.section-stack {
+  display: grid;
+  gap: var(--section-item-gap);
+}
+
+.section-stack > * {
+  margin: 0;
+}
+
+.section-followup {
+  display: grid;
+  gap: var(--section-item-gap);
+}
+
+.section-followup > * {
+  margin: 0;
+}
+
+.history-turn {
+  margin: 0;
+}
+
+.history-turn-body {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.history-turn-header > :not(:last-child) {
+  margin-right: 0.35rem;
 }
 
 .invite-gate {

@@ -189,10 +189,14 @@ const renderTurnHistory = (game) => {
         )
         .join("");
 
-      return `<li>
-        <strong>Turn ${escapeHtml(String(turn.index + 1))}</strong> <span class="small">${escapeHtml(turn.playerSeat)}</span>
-        <span class="small">${escapeHtml(turn.status)}</span>
-        <ol class="history-turn-list">${turnMoves || '<li class="small">No moves in this turn yet.</li>'}</ol>
+      return `<li class="history-turn">
+        <div class="history-turn-body">
+          <div class="history-turn-header">
+            <strong>Turn ${escapeHtml(String(turn.index + 1))}</strong> <span class="small">${escapeHtml(turn.playerSeat)}</span>
+            <span class="small">${escapeHtml(turn.status)}</span>
+          </div>
+          <ol class="history-turn-list">${turnMoves || '<li class="small">No moves in this turn yet.</li>'}</ol>
+        </div>
       </li>`;
     })
     .join("");
@@ -374,32 +378,36 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
       <div class="stack">
         <section class="panel">
           <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
-          <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
-          <p class="small">Role: <strong>${escapeHtml(game.myRole)}</strong></p>
-          ${historyBanner}
-          <div class="row">
-            <button data-action="record-move" data-game-id="${escapeHtml(game.id)}" ${
-              game.canRecordMove && !busy ? "" : "disabled"
-            }>${game.showOfflineState ? "Record Offline Move" : "Record Live Move"}</button>
-            <button class="secondary" data-action="end-turn" data-game-id="${escapeHtml(game.id)}" ${
-              game.canEndTurn && !busy ? "" : "disabled"
-            }>End Turn</button>
-            <button class="warn" data-action="toggle-offline" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle Offline</button>
+          <div class="section-stack">
+            <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
+            <p class="small">Role: <strong>${escapeHtml(game.myRole)}</strong></p>
+            ${historyBanner}
+            <div class="row section-actions">
+              <button data-action="record-move" data-game-id="${escapeHtml(game.id)}" ${
+                game.canRecordMove && !busy ? "" : "disabled"
+              }>${game.showOfflineState ? "Record Offline Move" : "Record Live Move"}</button>
+              <button class="secondary" data-action="end-turn" data-game-id="${escapeHtml(game.id)}" ${
+                game.canEndTurn && !busy ? "" : "disabled"
+              }>End Turn</button>
+              <button class="warn" data-action="toggle-offline" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle Offline</button>
+            </div>
+            <div class="section-followup">
+              <p class="small">Active turn: ${
+                game.currentTurn
+                  ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${escapeHtml(game.currentTurn.playerSeat)} · ${escapeHtml(
+                      String(game.currentTurn.moveIndexes.length),
+                    )} move(s)`
+                  : "n/a"
+              }</p>
+              <p class="small">Latest: ${escapeHtml(latestNote)}</p>
+            </div>
           </div>
-          <p class="small">Active turn: ${
-            game.currentTurn
-              ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${escapeHtml(game.currentTurn.playerSeat)} · ${escapeHtml(
-                  String(game.currentTurn.moveIndexes.length),
-                )} move(s)`
-              : "n/a"
-          }</p>
-          <p class="small">Latest: ${escapeHtml(latestNote)}</p>
         </section>
 
         <section class="panel">
           <h2>Join / Invite</h2>
           ${pendingSeatNotice}
-          <div class="row">
+          <div class="row section-actions">
             <button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
               game.canJoinAsViewer && !busy ? "" : "disabled"
             }>Join as viewer</button>
@@ -410,18 +418,22 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
               game.canInvite && !busy ? "" : "disabled"
             }>Invite</button>
           </div>
-          ${inviteFeedback ? `<p class="small">${escapeHtml(inviteFeedback)}</p>` : ""}
-          <ul class="participant-list">${pendingRows}</ul>
+          <div class="section-followup">
+            ${inviteFeedback ? `<p class="small">${escapeHtml(inviteFeedback)}</p>` : ""}
+            <ul class="participant-list">${pendingRows}</ul>
+          </div>
         </section>
 
         <section class="panel">
           <h2>History</h2>
-          <div class="row">
+          <div class="row section-actions">
             <button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" ${
               game.inHistoryMode && !busy ? "" : "disabled"
             }>Return to live</button>
           </div>
-          <ol class="history-list">${historyRows}</ol>
+          <div class="section-followup">
+            <ol class="history-list">${historyRows}</ol>
+          </div>
         </section>
       </div>
 
