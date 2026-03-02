@@ -96,21 +96,41 @@ When a user creates a game from the home page:
 
 ## 4. Invite Join Flow (Flow 2)
 
-When a recipient opens an invite link:
+Two invite classes exist:
 
-1. Recipient is taken to the game board.
-2. Recipient sees `Join as player` and `Join as viewer` options.
-3. After selecting one option:
-   - Existing participants are notified that either a player joined or a viewer joined.
-   - Default policy: joining as `Player` requires opposite-player approval unless the join is from a player-shared invite link.
-4. If recipient joins as `Viewer`:
+- `Player invite`:
+  - Produced when a current `Player` uses the `Invite` action.
+  - Grants immediate player-seat join when an eligible player seat is open.
+- `Non-player invite`:
+  - Produced when a current `Viewer` uses the `Invite` action.
+  - Also used when a different device visits the canonical game URL directly instead of an invite token link.
+  - Never grants immediate player-seat assignment; player-seat entry becomes an approval request.
+
+When a recipient opens either invite type:
+
+1. Recipient sees the game board in the background, greyed out and not interactable.
+2. Recipient sees an invite screen at the top of the page with `Join as player` and `Join as viewer` options.
+3. The invite screen must show feasible actions as enabled and non-feasible actions as disabled/greyed out with a short explainer.
+   - Example: `Game already has the maximum number of players`.
+4. If recipient selects `Join as viewer`:
+   - Join is applied immediately for both invite classes.
+   - Recipient then transitions onto the canonical live game route and receives live updates there.
+5. If recipient selects `Join as player` from a `Player invite`:
+   - Join is applied immediately when an eligible player seat is open.
+   - Existing participants are notified that a player joined.
+   - Recipient then transitions onto the canonical live game route and receives live updates there.
+6. If recipient selects `Join as player` from a `Non-player invite`:
+   - Recipient is added as `Viewer` immediately if not already present.
+   - A player-seat request is sent to the approving player.
+   - Recipient is shown that the action is pending approval.
+   - If approval is granted, recipient is upgraded from `Viewer` to `Player`.
+   - If approval is not yet granted, recipient remains `Viewer`.
+7. If recipient joins as `Viewer`:
    - They can view board and updates but cannot take game actions.
    - They can share the invite link with additional participants.
    - They continue seeing `Join as player` while fewer than 2 player seats are filled.
-   - Once both player seats are filled, `Join as player` is hidden for viewers.
-5. If recipient joins as `Player`:
-   - If the invite link was shared by a `Player`, recipient may join an eligible player seat without additional approval.
-   - If the invite link was shared by a `Viewer`, player-seat assignment requires approval from the opposite player before join completes.
+   - Once both player seats are filled, `Join as player` is disabled with an explainer rather than silently disappearing.
+8. If recipient joins as `Player`:
    - They occupy an available player seat.
    - UI prompts the side to move to act.
    - UI prompts the non-active player to wait.
@@ -151,8 +171,8 @@ Each listed game must display:
 - Viewer metrics: `active viewers / peak viewers`.
 
 List behavior:
-- Selecting a game from this list opens that game as `Viewer`.
-- Opening from list alone must not auto-assign `Player 2` (or any player seat).
+- Selecting a game from this list on a device that is not already a participant/viewer opens the `Non-player invite` screen for that game rather than silently adding the device as `Viewer`.
+- Opening from list or direct game URL alone must not auto-assign a player seat or silently auto-add a new viewer.
 - When a player seat is eligible, users entering from the home page list must still be shown `Join as player` and may request that seat.
 - A viewer may request to take an eligible player seat only when:
   - Seat is empty, or
@@ -192,8 +212,8 @@ Tutorial restart:
   - Cannot make game moves.
   - Can view live board, history, and presence.
   - Can share invite links.
-  - Invitees from viewer-shared links need opposite-player approval to join as `Player`.
-  - Users entering from the home page list need opposite-player approval to join as `Player`.
+  - Invitees from viewer-shared links use the `Non-player invite` path and need opposite-player approval to join as `Player`.
+  - Users entering from the home page list or direct game URL on a new device use the `Non-player invite` path and need opposite-player approval to join as `Player`.
   - Can request/join as player only under Section 4 or Section 8 constraints.
 
 ## 12. Playground Mode

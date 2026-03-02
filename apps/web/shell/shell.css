@@ -235,6 +235,22 @@ button.secondary:disabled {
   font-size: 0.78rem;
 }
 
+.invite-choice-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.invite-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.invite-choice-note {
+  min-width: min(100%, 18rem);
+}
+
 .invite-gate-content {
   filter: grayscale(0.4);
   opacity: 0.48;

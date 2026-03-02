@@ -62,7 +62,6 @@ let currentRoute = parseRouteFromHash(window.location.hash);
 let mountedBoardGameId = null;
 let busy = false;
 let liveSyncConnectedRoute = "";
-const openedViewerGames = new Set();
 let wsStatus = { state: "disconnected", scope: null, gameId: null, reconnectAttempts: 0 };
 let wsLastEvent = "none";
 const WS_RECONCILE_MS = 2000;
@@ -168,6 +167,28 @@ const setInviteFeedback = (message) => {
   }
 };
 
+const getInviteContextForGame = (game, routeName = currentRoute.name) => {
+  if (!game || game.myRole !== "Guest") {
+    return null;
+  }
+  if (routeName === "invite" && resolvedInvite?.gameId === game.id) {
+    const inviteType =
+      resolvedInvite.inviteFromRole === "Player 1" || resolvedInvite.inviteFromRole === "Player 2" ? "player" : "non-player";
+    return {
+      gameId: game.id,
+      inviteToken: resolvedInvite.inviteToken,
+      inviteFromRole: resolvedInvite.inviteFromRole,
+      inviteType,
+    };
+  }
+  return {
+    gameId: game.id,
+    inviteToken: null,
+    inviteFromRole: null,
+    inviteType: "non-player",
+  };
+};
+
 const renderHome = () => {
   const games = transport.listGames();
   const listHtml =
@@ -239,6 +260,9 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
 
   const viewersRow = `<li>Viewers: ${game.viewers.length}</li>`;
   const historyRows = renderTurnHistory(game);
+  const pendingSeatNotice = game.pendingPlayerRequestSeat
+    ? `<div class="alert">Player join request pending approval for ${escapeHtml(game.pendingPlayerRequestSeat)}.</div>`
+    : "";
 
   const pendingRows =
     game.pendingJoinRequests.length === 0
@@ -301,6 +325,7 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
 
         <section class="panel">
           <h2>Join / Invite</h2>
+          ${pendingSeatNotice}
           <div class="row">
             <button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
               game.canJoinAsViewer && !busy ? "" : "disabled"
@@ -354,38 +379,61 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   `;
 };
 
-const renderInviteLanding = () => {
-  if (!routeHydrated || !resolvedInvite?.gameId) {
+const renderInviteLanding = (inviteContext) => {
+  if (!routeHydrated || !inviteContext?.gameId) {
     return `<section class="panel"><h2>Loading invite...</h2><p class="small">Resolving invite destination.</p></section>`;
   }
 
-  const game = transport.getGameViewModel(resolvedInvite.gameId);
-  const background = renderGame(resolvedInvite.gameId, resolvedInvite.inviteFromRole, resolvedInvite.inviteToken);
+  const game = transport.getGameViewModel(inviteContext.gameId);
+  const background = renderGame(inviteContext.gameId, inviteContext.inviteFromRole, inviteContext.inviteToken);
   if (!game) {
     return background;
   }
 
   const canJoinPlayer = game.canJoinAsPlayer && game.showJoinActions;
   const canJoinViewer = game.canJoinAsViewer;
-  const inviteContext =
-    resolvedInvite.inviteFromRole === "Player 1" || resolvedInvite.inviteFromRole === "Player 2"
-      ? `${resolvedInvite.inviteFromRole} shared this invite.`
-      : "A game invite was shared with you.";
+  const playerActionLabel = inviteContext.inviteType === "player" ? "Join as player" : "Request to join as player";
+  const inviteMessage =
+    inviteContext.inviteType === "player"
+      ? `${inviteContext.inviteFromRole} shared a player invite.`
+      : currentRoute.name === "game"
+        ? "You opened this game's direct link from a different device."
+        : "A non-player invite was shared with you.";
+  const playerExplainer = canJoinPlayer
+    ? inviteContext.inviteType === "player"
+      ? "Joining as player will be applied immediately."
+      : "Joining as player will send a request to the approving player and add you as viewer in the interim."
+    : game.joinAsPlayerDisabledReason || "Player joining is unavailable.";
+  const viewerExplainer = canJoinViewer
+    ? "Joining as viewer is applied immediately."
+    : game.joinAsViewerDisabledReason || "Viewer joining is unavailable.";
+  const pendingNotice = game.pendingPlayerRequestSeat
+    ? `<div class="alert">Player join request pending approval for ${escapeHtml(game.pendingPlayerRequestSeat)}.</div>`
+    : "";
 
   return `
     <section class="invite-gate">
       <section class="panel invite-gate-modal">
         <p class="small invite-gate-kicker">Invite received</p>
         <h2>Choose how to enter this game</h2>
-        <p>${escapeHtml(inviteContext)} Join now to enter the live game route and receive updates.</p>
-        <div class="row">
-          <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" ${
-            canJoinPlayer && !busy ? "" : "disabled"
-          }>Join as player</button>
-          <button data-action="accept-invite-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
-            canJoinViewer && !busy ? "" : "disabled"
-          }>Join as viewer</button>
-          <a class="button-link secondary" href="${buildHomeHash()}">Back home</a>
+        <p>${escapeHtml(inviteMessage)} Join now to enter the live game route and receive updates.</p>
+        ${pendingNotice}
+        <div class="invite-choice-list">
+          <div class="invite-choice-row">
+            <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" ${
+              canJoinPlayer && !busy ? "" : "disabled"
+            }>${escapeHtml(playerActionLabel)}</button>
+            <span class="small invite-choice-note">${escapeHtml(playerExplainer)}</span>
+          </div>
+          <div class="invite-choice-row">
+            <button data-action="accept-invite-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
+              canJoinViewer && !busy ? "" : "disabled"
+            }>Join as viewer</button>
+            <span class="small invite-choice-note">${escapeHtml(viewerExplainer)}</span>
+          </div>
+          <div class="invite-choice-row">
+            <a class="button-link secondary" href="${buildHomeHash()}">Back home</a>
+          </div>
         </div>
         <p class="small">
           ${
@@ -450,9 +498,13 @@ const render = () => {
   if (currentRoute.name === "home") {
     body = renderHome();
   } else if (currentRoute.name === "game") {
-    body = renderGame(currentRoute.gameId, currentRoute.inviteFromRole);
+    const game = transport.getGameViewModel(currentRoute.gameId);
+    const inviteContext = getInviteContextForGame(game, "game");
+    body = inviteContext ? renderInviteLanding(inviteContext) : renderGame(currentRoute.gameId, currentRoute.inviteFromRole);
   } else if (currentRoute.name === "invite") {
-    body = renderInviteLanding();
+    const game = resolvedInvite?.gameId ? transport.getGameViewModel(resolvedInvite.gameId) : null;
+    const inviteContext = getInviteContextForGame(game, "invite");
+    body = inviteContext ? renderInviteLanding(inviteContext) : renderGame(resolvedInvite?.gameId || null, resolvedInvite?.inviteFromRole || null, resolvedInvite?.inviteToken || null);
   } else if (currentRoute.name === "tutorial") {
     body = renderTutorial(currentRoute.gameId);
   } else {
@@ -489,9 +541,7 @@ const syncRouteData = async () => {
   }
   if (currentRoute.name === "game") {
     resolvedInvite = null;
-    const firstOpen = !openedViewerGames.has(currentRoute.gameId);
-    await transport.loadGame(currentRoute.gameId, { openAsViewer: firstOpen });
-    openedViewerGames.add(currentRoute.gameId);
+    await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
     routeHydrated = true;
     return;
   }
@@ -537,7 +587,13 @@ const liveSync = createLiveSyncClient({
 });
 
 const syncLiveChannel = () => {
-  const routeKey = currentRoute.name === "game" ? `game:${currentRoute.gameId}` : currentRoute.name === "home" ? "home" : "none";
+  const currentGame = currentRoute.name === "game" ? transport.getGameViewModel(currentRoute.gameId) : null;
+  const routeKey =
+    currentRoute.name === "game" && currentGame?.myRole !== "Guest"
+      ? `game:${currentRoute.gameId}`
+      : currentRoute.name === "home"
+        ? "home"
+        : "none";
 
   if (routeKey === liveSyncConnectedRoute && wsStatus.state === "connected") {
     return;
@@ -662,7 +718,7 @@ appEl.addEventListener("click", async (event) => {
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
         inviteToken: resolvedInvite?.inviteToken || null,
       });
-      if (currentRoute.name === "invite") {
+      if (currentRoute.name === "invite" || currentRoute.name === "game") {
         navigateTo(buildGameHash(gameId));
         return;
       }
@@ -673,13 +729,16 @@ appEl.addEventListener("click", async (event) => {
     if (action === "join-player" || action === "accept-invite-player") {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
-      await transport.joinGame({
+      const result = await transport.joinGame({
         gameId,
         mode: "player",
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
         inviteToken: resolvedInvite?.inviteToken || null,
       });
-      if (currentRoute.name === "invite") {
+      if (result.pendingApproval) {
+        setInviteFeedback("Player join request sent. You are now viewing the game while approval is pending.");
+      }
+      if (currentRoute.name === "invite" || currentRoute.name === "game") {
         navigateTo(buildGameHash(gameId));
         return;
       }

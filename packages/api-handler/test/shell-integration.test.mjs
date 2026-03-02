@@ -98,3 +98,22 @@ test("shell integration: invite availability reflects backend-driven remaining j
   const accepted = await harness.acceptInviteAsViewer(viewer, inviteHash);
   assert.equal(accepted.game.myRole, "Viewer");
 });
+
+test("shell integration: direct game route on a new device behaves like a non-player invite", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-shell-int-5");
+  const guest = harness.createClient("id-guest-shell-int-5");
+
+  const created = await owner.store.createGame({ playgroundMode: false, offlineLocal: false });
+  const guestView = await harness.refreshGame(guest, created.id);
+
+  assert.equal(guestView.myRole, "Guest");
+  assert.equal(guestView.viewers.some((viewer) => viewer.identityId === guest.identityId), false);
+  assert.equal(guestView.canJoinAsViewer, true);
+  assert.equal(guestView.canJoinAsPlayer, true);
+
+  const result = await guest.store.joinGame({ gameId: created.id, mode: "player" });
+  assert.equal(result.pendingApproval, true);
+  assert.equal(result.game.myRole, "Viewer");
+  assert.equal(result.game.pendingPlayerRequestSeat, "Player 2");
+});

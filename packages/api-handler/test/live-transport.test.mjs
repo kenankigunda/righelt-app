@@ -50,6 +50,13 @@ test("live transport: create/list/get game lifecycle is server-backed", async ()
   const inviteBody = await inviteResolve.json();
   assert.equal(inviteBody.gameId, gameId);
   assert.equal(inviteBody.inviteFromRole, "Player 1");
+
+  const directOpen = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-direct`), env);
+  const directBody = await directOpen.json();
+  assert.equal(directBody.game.myRole, "Guest");
+  assert.equal(directBody.game.viewers.some((viewer) => viewer.identityId === "id-direct"), false);
+  assert.equal(directBody.game.canJoinAsViewer, true);
+  assert.equal(directBody.game.canJoinAsPlayer, true);
 });
 
 test("live transport: join approval flow and presence/history/move transitions", async () => {
@@ -153,6 +160,43 @@ test("live transport: player invite token enables immediate player join without 
   assert.equal(join.status, 200);
   assert.equal(joinBody.pendingApproval, false);
   assert.equal(joinBody.game.player2.identityId, "id-player2");
+});
+
+test("live transport: non-player invite token requires approval for player join and joins viewer immediately", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await create.json();
+  const gameId = createdBody.game.id;
+
+  const viewerJoin = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-viewer",
+      mode: "viewer",
+    }),
+    env,
+  );
+  assert.equal(viewerJoin.status, 200);
+
+  const viewerOpen = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-viewer`), env);
+  const viewerBody = await viewerOpen.json();
+  const viewerInviteToken = viewerBody.game.inviteToken;
+
+  const join = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-requester",
+      mode: "player",
+      inviteToken: viewerInviteToken,
+    }),
+    env,
+  );
+  const joinBody = await join.json();
+  assert.equal(join.status, 200);
+  assert.equal(joinBody.pendingApproval, true);
+  assert.equal(joinBody.game.myRole, "Viewer");
+  assert.equal(joinBody.game.pendingPlayerRequestSeat, "Player 2");
+  assert.equal(joinBody.game.viewers.some((viewer) => viewer.identityId === "id-requester"), true);
 });
 
 test("live transport: offline-local game hidden until go-online confirmation", async () => {

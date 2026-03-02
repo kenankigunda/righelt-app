@@ -232,6 +232,38 @@ const getNextSeat = (seat: "Player 1" | "Player 2"): "Player 1" | "Player 2" => 
 const getSideForSeat = (seat: "Player 1" | "Player 2"): GameState["sideToMove"] => (seat === "Player 1" ? "P1" : "P2");
 const getActiveTurn = (game: ShellGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
 
+const getJoinAsPlayerDisabledReason = (game: ShellGame, identityId: string, offline: boolean, myRole: string) => {
+  if (myRole === "Player 1" || myRole === "Player 2") {
+    return "You are already joined as a player.";
+  }
+  if (offline || game.offlineLocal) {
+    return "Remote joining is unavailable while offline.";
+  }
+  if (game.playgroundMode) {
+    return "Playground mode does not accept remote player joins.";
+  }
+  if (game.player1 && game.player2) {
+    return "Game already has the maximum number of players.";
+  }
+  if (findRoleForIdentity(game, identityId) === "Viewer") {
+    return null;
+  }
+  return null;
+};
+
+const getJoinAsViewerDisabledReason = (game: ShellGame, offline: boolean, myRole: string) => {
+  if (myRole === "Viewer") {
+    return "You are already joined as a viewer.";
+  }
+  if (myRole === "Player 1" || myRole === "Player 2") {
+    return "You are already in this game.";
+  }
+  if (offline || game.offlineLocal) {
+    return "Remote joining is unavailable while offline.";
+  }
+  return null;
+};
+
 const withViewModel = (game: ShellGame, identityId: string, offline = false) => {
   applyPresenceFreshness(game);
   const myRole = findRoleForIdentity(game, identityId);
@@ -249,14 +281,19 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
   const approvableRequesterIds = game.pendingJoinRequests
     .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
     .map((request) => request.identityId);
+  const myPendingJoinRequest = game.pendingJoinRequests.find((request) => request.identityId === identityId) ?? null;
+  const joinAsPlayerDisabledReason = getJoinAsPlayerDisabledReason(game, identityId, offline, myRole);
+  const joinAsViewerDisabledReason = getJoinAsViewerDisabledReason(game, offline, myRole);
 
   return {
     ...clone(game),
     myRole,
     inHistoryMode,
     currentSnapshot,
-    canJoinAsPlayer: myRole !== "Player 1" && myRole !== "Player 2" && !game.playgroundMode && (!game.player1 || !game.player2),
-    canJoinAsViewer: myRole === "Guest" && !offline && !game.offlineLocal,
+    canJoinAsPlayer: !joinAsPlayerDisabledReason,
+    canJoinAsViewer: !joinAsViewerDisabledReason,
+    joinAsPlayerDisabledReason,
+    joinAsViewerDisabledReason,
     canInvite: !offline && !game.offlineLocal,
     inviteToken:
       myRole === "Player 1"
@@ -269,6 +306,7 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
     canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
     canEndTurn: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && Boolean(activeTurn && activeTurn.moveIndexes.length > 0),
     currentTurn: activeTurn ? clone(activeTurn) : null,
+    pendingPlayerRequestSeat: myPendingJoinRequest?.requestedSeat ?? null,
     approvableRequesterIds,
   };
 };
