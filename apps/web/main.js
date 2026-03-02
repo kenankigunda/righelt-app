@@ -54,7 +54,13 @@ boardAdapter.mount({
 
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "unset");
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
-const actionPreviewLabel = (actionType) => {
+const actionPreviewLabel = (actionType, snapshot) => {
+  if (snapshot?.continuation?.type === "rush" && actionType === "rush") {
+    return "Continue rush on this square";
+  }
+  if (snapshot?.continuation?.type === "push" && actionType === "follow") {
+    return "Continue push on this square";
+  }
   switch (actionType) {
     case "move":
       return "Move commander to this square";
@@ -308,7 +314,7 @@ const renderStatus = () => {
 
         selectedMovePreviewEl.textContent = JSON.stringify(
           {
-            actionLabel: actionPreviewLabel(preferredPreview.type),
+            actionLabel: actionPreviewLabel(preferredPreview.type, state),
             destination: selectedTarget,
             legal: legalAtTarget.some((action) => action.type === preferredPreview.type),
             reason: disallowedReason ?? "Legal preview.",
