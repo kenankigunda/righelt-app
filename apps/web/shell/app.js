@@ -9,6 +9,7 @@ import {
   buildHomeHash,
   buildInviteHash,
   buildTutorialHash,
+  getLiveSyncRouteKey,
   isShellRootHash,
   parseRouteFromHash,
   shouldLiveSyncRoute,
@@ -595,13 +596,7 @@ const liveSync = createLiveSyncClient({
 });
 
 const syncLiveChannel = () => {
-  const currentGame = currentRoute.name === "game" ? transport.getGameViewModel(currentRoute.gameId) : null;
-  const routeKey =
-    currentRoute.name === "game" && currentGame?.myRole !== "Guest"
-      ? `game:${currentRoute.gameId}`
-      : currentRoute.name === "home"
-        ? "home"
-        : "none";
+  const routeKey = getLiveSyncRouteKey(currentRoute);
 
   if (routeKey === liveSyncConnectedRoute && wsStatus.state === "connected") {
     return;

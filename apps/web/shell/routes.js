@@ -76,6 +76,9 @@ export const shouldLiveSyncRoute = (route) => route?.name === "home" || route?.n
 export const shouldPassiveRefreshRoute = (route) =>
   route?.name === "home" || route?.name === "game" || route?.name === "invite";
 
+export const getLiveSyncRouteKey = (route) =>
+  route?.name === "game" ? `game:${route.gameId}` : route?.name === "home" ? "home" : "none";
+
 export const isShellRootHash = (hash) => {
   if (!hash) {
     return false;

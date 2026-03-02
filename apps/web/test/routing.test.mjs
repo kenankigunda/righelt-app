@@ -5,6 +5,7 @@ import {
   buildHomeHash,
   buildInviteHash,
   buildTutorialHash,
+  getLiveSyncRouteKey,
   isShellRootHash,
   isShellRouteHash,
   parseRouteFromHash,
@@ -47,6 +48,10 @@ test("routing distinguishes live sync routes from passive refresh routes", () =>
   assert.equal(shouldLiveSyncRoute({ name: "game", gameId: "game-1" }), true);
   assert.equal(shouldLiveSyncRoute({ name: "invite", inviteToken: "token-123" }), false);
   assert.equal(shouldLiveSyncRoute({ name: "tutorial" }), false);
+
+  assert.equal(getLiveSyncRouteKey({ name: "home" }), "home");
+  assert.equal(getLiveSyncRouteKey({ name: "game", gameId: "game-1" }), "game:game-1");
+  assert.equal(getLiveSyncRouteKey({ name: "invite", inviteToken: "token-123" }), "none");
 
   assert.equal(shouldPassiveRefreshRoute({ name: "home" }), true);
   assert.equal(shouldPassiveRefreshRoute({ name: "game", gameId: "game-1" }), true);

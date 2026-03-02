@@ -6,6 +6,7 @@ class MockSocket {
   constructor(url) {
     this.url = url;
     this.listeners = new Map();
+    this.sent = [];
     MockSocket.instances.push(this);
   }
 
@@ -25,6 +26,10 @@ class MockSocket {
     }
   }
 
+  send(payload) {
+    this.sent.push(payload);
+  }
+
   close() {
     this.emit("close", {});
   }
@@ -33,9 +38,22 @@ class MockSocket {
 test("live sync connects to home and game websocket scopes and forwards events", async () => {
   const originalWs = globalThis.WebSocket;
   const originalWindow = globalThis.window;
+  const originalSetInterval = globalThis.setInterval;
+  const originalClearInterval = globalThis.clearInterval;
+  const intervals = [];
 
   const events = [];
   globalThis.WebSocket = MockSocket;
+  globalThis.setInterval = (fn, delay) => {
+    const token = { fn, delay, cleared: false };
+    intervals.push(token);
+    return token;
+  };
+  globalThis.clearInterval = (token) => {
+    if (token) {
+      token.cleared = true;
+    }
+  };
   globalThis.window = {
     location: {
       protocol: "http:",
@@ -52,6 +70,10 @@ test("live sync connects to home and game websocket scopes and forwards events",
     client.connectHome();
     assert.equal(MockSocket.instances.length, 1);
     assert.match(MockSocket.instances[0].url, /scope=home/);
+    MockSocket.instances[0].emit("open");
+    assert.equal(intervals.length, 1);
+    intervals[0].fn();
+    assert.deepEqual(MockSocket.instances[0].sent, ["ping"]);
 
     MockSocket.instances[0].emit("message", { data: JSON.stringify({ type: "game.updated", gameId: "g1" }) });
     assert.equal(events.length, 1);
@@ -63,9 +85,12 @@ test("live sync connects to home and game websocket scopes and forwards events",
     assert.match(MockSocket.instances[1].url, /gameId=g-123/);
 
     client.disconnect();
+    assert.equal(intervals[0].cleared, true);
   } finally {
     globalThis.WebSocket = originalWs;
     globalThis.window = originalWindow;
+    globalThis.setInterval = originalSetInterval;
+    globalThis.clearInterval = originalClearInterval;
     MockSocket.instances.length = 0;
   }
 });

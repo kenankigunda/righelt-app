@@ -1,5 +1,6 @@
 const WS_RECONNECT_BASE_MS = 500;
 const WS_RECONNECT_MAX_MS = 6000;
+const WS_HEARTBEAT_MS = 10_000;
 
 const createWsUrl = ({ scope, identityId, gameId = null }) => {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
@@ -16,6 +17,7 @@ export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {}, 
   let reconnectAttempts = 0;
   let reconnectTimer = null;
   let mode = null;
+  let heartbeatTimer = null;
 
   const clearReconnect = () => {
     if (reconnectTimer) {
@@ -24,7 +26,15 @@ export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {}, 
     }
   };
 
+  const clearHeartbeat = () => {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+  };
+
   const cleanupSocket = () => {
+    clearHeartbeat();
     if (!socket) {
       return;
     }
@@ -67,6 +77,14 @@ export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {}, 
 
     ws.addEventListener("open", () => {
       reconnectAttempts = 0;
+      clearHeartbeat();
+      heartbeatTimer = setInterval(() => {
+        try {
+          ws.send("ping");
+        } catch {
+          clearHeartbeat();
+        }
+      }, WS_HEARTBEAT_MS);
       onStatus({ state: "connected", scope, gameId, reconnectAttempts });
     });
 
@@ -98,6 +116,7 @@ export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {}, 
     disconnect: () => {
       stopped = true;
       clearReconnect();
+      clearHeartbeat();
       cleanupSocket();
       mode = null;
       onStatus({ state: "disconnected", scope: null, gameId: null, reconnectAttempts });
