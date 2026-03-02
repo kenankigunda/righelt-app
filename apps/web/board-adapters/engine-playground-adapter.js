@@ -87,6 +87,19 @@ function buildPieceToken(piece, ghost = false) {
   return token;
 }
 
+function getInactiveSelectedPieceLabel(piece) {
+  if (!piece || (piece.supplied && piece.commanded)) {
+    return null;
+  }
+  if (!piece.supplied && !piece.commanded) {
+    return "Inactive: no connection back to its commander or supply point.";
+  }
+  if (!piece.supplied) {
+    return "Inactive: no connection back to its supply point.";
+  }
+  return "Inactive: no connection back to its commander.";
+}
+
 function getSupplyArtifactFor(snapshot, owner) {
   if (!snapshot?.artifacts?.supply) {
     return null;
@@ -299,6 +312,11 @@ export function createEnginePlaygroundBoardAdapter() {
     const pieceCell = cellByCoordinateKey.get(coordKey(piece.position));
     if (pieceCell) {
       pieceCell.classList.add("selected-piece");
+      const inactiveLabel = getInactiveSelectedPieceLabel(piece);
+      if (inactiveLabel) {
+        pieceCell.classList.add("inactive-selected-piece");
+        pieceCell.setAttribute("data-inactive-label", inactiveLabel);
+      }
     }
 
     const groupInfo = getGroupInfoForPiece(snapshot, piece);

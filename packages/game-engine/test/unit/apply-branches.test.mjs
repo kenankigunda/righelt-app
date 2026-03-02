@@ -43,15 +43,16 @@ test("applyAction retains shifted actor during continuation until turn end", () 
     continuation: {
       type: "push",
       owner: "P1",
+      attackerOwner: "P1",
+      phase: "follow",
       followPoint: { row: 4, col: 3 },
-      pushedPieceId: "D1",
+      followGroupPieceIds: ["F1"],
       chainLength: 1,
     },
     pieces: [
       commander("C1", "P1", 0, 0),
       commander("C2", "P2", 9, 9),
       unit("F1", "P1", 4, 2),
-      unit("D1", "P2", 4, 6, { pushed: true }),
     ],
   });
 

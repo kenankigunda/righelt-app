@@ -416,7 +416,28 @@ export function listLegalActions(state: GameState): Action[] {
     return state.continuation.phase === "retreat" ? getPushRetreatActions(state) : getPushFollowActions(state);
   }
 
-  return [{ type: "pass" }];
+  const actions: Action[] = [{ type: "pass" }];
+  const withTargets = ["move", "project", "rush", "push"] as const;
+
+  for (const piece of state.pieces.filter((candidate) => candidate.owner === state.sideToMove)) {
+    for (const type of withTargets) {
+      for (let row = 0; row < BOARD_SIZE; row += 1) {
+        for (let col = 0; col < BOARD_SIZE; col += 1) {
+          const action: Action = {
+            type,
+            actorId: piece.id,
+            from: { ...piece.position },
+            to: { row, col },
+          };
+          if (validateAction(state, action).ok) {
+            actions.push(action);
+          }
+        }
+      }
+    }
+  }
+
+  return actions;
 }
 
 export function validateAction(state: GameState, action: Action): ValidationResult {

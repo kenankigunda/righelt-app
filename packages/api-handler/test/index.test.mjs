@@ -37,7 +37,9 @@ test("GET /api/engine/playground/state returns deterministic bootstrap payload",
   assert.equal(body.ok, true);
   assert.equal(body.state.turnIndex, 0);
   assert.equal(body.state.sideToMove, "P1");
-  assert.deepEqual(body.legalActions, [{ type: "pass" }]);
+  assert.equal(Array.isArray(body.legalActions), true);
+  assert.equal(body.legalActions.some((action) => action.type === "pass"), true);
+  assert.equal(body.legalActions.some((action) => action.type === "move"), true);
 });
 
 test("bootstrap payload is not affected by client-side mutation of prior response body", async () => {

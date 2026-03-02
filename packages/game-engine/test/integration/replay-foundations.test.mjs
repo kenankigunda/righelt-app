@@ -31,6 +31,12 @@ test("P-007 legal action generation equals validation boundary", () => {
   const legal = listLegalActions(initial);
 
   assert.ok(legal.length > 0, "expected at least one legal action");
+  assert.equal(legal.some((action) => action.type === "pass"), true, "expected pass to remain legal");
+  assert.equal(
+    legal.some((action) => action.type === "move" && action.actorId === "C1"),
+    true,
+    "expected initial commander moves to be generated",
+  );
   for (const action of legal) {
     const result = validateAction(initial, action);
     assert.equal(result.ok, true, `listed legal action rejected: ${JSON.stringify(action)}`);
