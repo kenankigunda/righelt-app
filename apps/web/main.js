@@ -1,6 +1,7 @@
 import {
   getBlockedPreviewLabel,
   buildActionPayload,
+  deriveAutoSelectedTarget,
   deriveForcedContinuationSelection,
   pickBestActionTypeForTarget,
   shouldResetSelectionOnDocumentClick,
@@ -142,6 +143,11 @@ const pushMoveLogEntry = (text, player = null) => {
 
 const setBoardPreviewPrompt = (text) => {
   boardPreviewLabelEl.textContent = text;
+};
+
+const setRushContinuationPrompt = (player) => {
+  const toneClass = player === "P1" ? "player-tone-p1" : player === "P2" ? "player-tone-p2" : "player-tone-neutral";
+  boardPreviewLabelEl.innerHTML = `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares:`;
 };
 
 const setBoardPreviewAction = (text) => {
@@ -417,6 +423,7 @@ const renderBoard = () => {
   boardAdapter.render({
     snapshot: state,
     selection: getCurrentSelection(),
+    legalActions,
     selectedPieceMoves,
     selectedPieceMovePreviews,
     removalEffects,
@@ -452,7 +459,11 @@ const renderStatus = () => {
     selectedPieceEl.textContent = "No piece selected.";
     selectedMovePreviewEl.textContent = "No destination selected.";
     selectedPieceMovesEl.textContent = "[]";
-    setBoardPreviewPrompt("Select a piece to see it supply and command lines + what it can do:");
+    if (state.continuation?.type === "rush") {
+      setRushContinuationPrompt(state.sideToMove);
+    } else {
+      setBoardPreviewPrompt("Select a piece to see it supply and command lines + what it can do:");
+    }
   } else {
     selectedPieceEl.textContent = JSON.stringify(pieceSummary.details, null, 2);
     selectedPieceMovesEl.textContent = JSON.stringify(pieceSummary.actions, null, 2);
@@ -564,6 +575,9 @@ const reloadSelectedPieceMoves = async () => {
   state = body.state ?? state;
   selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
   selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
+  if (!selectedTarget) {
+    selectedTarget = deriveAutoSelectedTarget(selectedPieceMoves);
+  }
   renderBoard();
   renderStatus();
 };

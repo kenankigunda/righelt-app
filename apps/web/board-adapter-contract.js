@@ -28,6 +28,7 @@
  * @property {(input: {
  *   snapshot: unknown,
  *   selection: BoardSelection,
+ *   legalActions?: unknown[],
  *   selectedPieceMoves: unknown[],
  *   selectedPieceMovePreviews?: unknown[],
  *   removalEffects?: unknown[],

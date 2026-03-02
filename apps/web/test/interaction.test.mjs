@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {
   BLOCKED_PREVIEW_REASON,
   buildActionPayload,
+  deriveContinuationHighlightByPieceId,
+  deriveAutoSelectedTarget,
   deriveForcedContinuationSelection,
   getBlockedPreviewLabel,
   pickBestActionTypeForTarget,
@@ -234,4 +236,61 @@ test("deriveForcedContinuationSelection auto-selects lone follow actor but not t
     target: null,
     actionType: "follow",
   });
+});
+
+test("deriveAutoSelectedTarget returns the only legal destination", () => {
+  const result = deriveAutoSelectedTarget([
+    { type: "move", to: { row: 4, col: 5 } },
+  ]);
+
+  assert.deepEqual(result, { row: 4, col: 5 });
+});
+
+test("deriveAutoSelectedTarget does not select when there are multiple legal moves", () => {
+  const result = deriveAutoSelectedTarget([
+    { type: "move", to: { row: 4, col: 5 } },
+    { type: "rush", to: { row: 5, col: 5 } },
+  ]);
+
+  assert.equal(result, null);
+});
+
+test("deriveContinuationHighlightByPieceId marks shifted push group members as moved", () => {
+  const result = deriveContinuationHighlightByPieceId(
+    {
+      continuation: {
+        type: "push",
+        followGroupPieceIds: ["A1", "A2", "A3"],
+      },
+      pieces: [
+        { id: "A1", shifted: true },
+        { id: "A2", shifted: false },
+        { id: "A3", shifted: false },
+      ],
+    },
+    [],
+  );
+
+  assert.deepEqual([...result.movedPieceIds].sort(), ["A1"]);
+  assert.deepEqual([...result.pendingPieceIds].sort(), ["A2", "A3"]);
+});
+
+test("deriveContinuationHighlightByPieceId marks rushed pieces as moved and legal rush actors as pending", () => {
+  const result = deriveContinuationHighlightByPieceId(
+    {
+      continuation: {
+        type: "rush",
+        rushedPieceIds: ["R1"],
+      },
+      pieces: [{ id: "R1" }, { id: "R2" }, { id: "R3" }],
+    },
+    [
+      { type: "rush", actorId: "R1", to: { row: 4, col: 4 } },
+      { type: "rush", actorId: "R2", to: { row: 4, col: 5 } },
+      { type: "pass" },
+    ],
+  );
+
+  assert.deepEqual([...result.movedPieceIds].sort(), ["R1"]);
+  assert.deepEqual([...result.pendingPieceIds].sort(), ["R2"]);
 });

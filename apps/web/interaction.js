@@ -106,6 +106,19 @@ export function deriveForcedContinuationSelection(snapshot, legalActions) {
   return null;
 }
 
+export function deriveAutoSelectedTarget(actions) {
+  if (!Array.isArray(actions) || actions.length !== 1) {
+    return null;
+  }
+
+  const [onlyAction] = actions;
+  if (!onlyAction?.to) {
+    return null;
+  }
+
+  return { ...onlyAction.to };
+}
+
 export function buildActionPayload(type, source, target, actorId = null) {
   if (type === "pass") {
     return { type };
@@ -117,6 +130,46 @@ export function buildActionPayload(type, source, target, actorId = null) {
     from: source,
     to: target,
   };
+}
+
+export function deriveContinuationHighlightByPieceId(snapshot, legalActions) {
+  const movedPieceIds = new Set();
+  const pendingPieceIds = new Set();
+
+  if (!snapshot?.continuation) {
+    return { movedPieceIds, pendingPieceIds };
+  }
+
+  if (snapshot.continuation.type === "push") {
+    for (const pieceId of snapshot.continuation.followGroupPieceIds ?? []) {
+      const piece = snapshot.pieces?.find((candidate) => candidate.id === pieceId);
+      if (!piece) {
+        continue;
+      }
+      if (piece.shifted) {
+        movedPieceIds.add(pieceId);
+      } else {
+        pendingPieceIds.add(pieceId);
+      }
+    }
+    return { movedPieceIds, pendingPieceIds };
+  }
+
+  if (snapshot.continuation.type === "rush") {
+    for (const pieceId of snapshot.continuation.rushedPieceIds ?? []) {
+      movedPieceIds.add(pieceId);
+    }
+    for (const action of Array.isArray(legalActions) ? legalActions : []) {
+      if (action?.type !== "rush" || typeof action.actorId !== "string") {
+        continue;
+      }
+      if (!movedPieceIds.has(action.actorId)) {
+        pendingPieceIds.add(action.actorId);
+      }
+    }
+  }
+
+  return { movedPieceIds, pendingPieceIds };
 }
 
 export function shouldResetSelectionOnDocumentClick(target) {

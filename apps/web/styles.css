@@ -54,6 +54,15 @@ body {
   font-size: 1.3rem;
 }
 
+.board-preview-highlight-chip {
+  display: inline-block;
+  padding: 0.05rem 0.45rem 0.12rem;
+  border-radius: 999px;
+  background: #e6f2d3;
+  border: 1px solid #c7db9f;
+  line-height: 1.1;
+}
+
 .player-tone-p1 {
   color: #c2452f;
 }
@@ -223,8 +232,16 @@ button {
   background: #eef8f1;
 }
 
-.cell.follow-group-member {
-  background: #f2f7e8;
+.cell.continuation-member {
+  transition: background-color 120ms ease;
+}
+
+.cell.continuation-moved {
+  background: #f5f7ef;
+}
+
+.cell.continuation-pending {
+  background: #e6f2d3;
 }
 
 .cell.selected-piece {

@@ -1,4 +1,5 @@
 import {
+  deriveContinuationHighlightByPieceId,
   getBlockedPreviewLabel,
   pickBestActionTypeForTarget,
   shouldAllowSelectionAtTarget,
@@ -142,6 +143,24 @@ function getGroupInfoForPiece(snapshot, piece) {
   };
 }
 
+function applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey) {
+  const { movedPieceIds, pendingPieceIds } = deriveContinuationHighlightByPieceId(snapshot, legalActions);
+  for (const pieceId of movedPieceIds) {
+    const piece = findPieceById(snapshot, pieceId);
+    if (!piece) {
+      continue;
+    }
+    cellByCoordinateKey.get(coordKey(piece.position))?.classList.add("continuation-member", "continuation-moved");
+  }
+  for (const pieceId of pendingPieceIds) {
+    const piece = findPieceById(snapshot, pieceId);
+    if (!piece) {
+      continue;
+    }
+    cellByCoordinateKey.get(coordKey(piece.position))?.classList.add("continuation-member", "continuation-pending");
+  }
+}
+
 export function createEnginePlaygroundBoardAdapter() {
   let boardEl = null;
   let overlayLinesEl = null;
@@ -280,12 +299,20 @@ export function createEnginePlaygroundBoardAdapter() {
 
   const clearCellDecorations = () => {
     for (const cell of cellByCoordinateKey.values()) {
-      cell.classList.remove("group-member", "follow-group-member", "selected-piece");
+      cell.classList.remove(
+        "group-member",
+        "continuation-member",
+        "continuation-moved",
+        "continuation-pending",
+        "selected-piece",
+        "inactive-selected-piece",
+      );
+      cell.removeAttribute("data-inactive-label");
       cell.querySelectorAll(".group-strength-badge,.move-ghost").forEach((node) => node.remove());
     }
   };
 
-  const renderPieceOverlays = ({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) => {
+  const renderPieceOverlays = ({ snapshot, legalActions, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) => {
     if (!overlayLinesEl) {
       return;
     }
@@ -297,15 +324,7 @@ export function createEnginePlaygroundBoardAdapter() {
 
     const piece = findPieceById(snapshot, selectedPieceId);
     if (!piece) {
-      if (snapshot?.continuation?.type === "push") {
-        for (const pieceId of snapshot.continuation.followGroupPieceIds ?? []) {
-          const followPiece = findPieceById(snapshot, pieceId);
-          if (!followPiece) {
-            continue;
-          }
-          cellByCoordinateKey.get(coordKey(followPiece.position))?.classList.add("follow-group-member");
-        }
-      }
+      applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey);
       return;
     }
 
@@ -350,15 +369,7 @@ export function createEnginePlaygroundBoardAdapter() {
       }
     }
 
-    if (snapshot?.continuation?.type === "push") {
-      for (const pieceId of snapshot.continuation.followGroupPieceIds ?? []) {
-        const followPiece = findPieceById(snapshot, pieceId);
-        if (!followPiece) {
-          continue;
-        }
-        cellByCoordinateKey.get(coordKey(followPiece.position))?.classList.add("follow-group-member");
-      }
-    }
+    applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey);
 
     drawPath(getSupplyPathForPiece(snapshot, piece), "#2f8e63");
     drawPath(getCommandPathForPiece(snapshot, piece), "#2470c7");
@@ -537,6 +548,7 @@ export function createEnginePlaygroundBoardAdapter() {
     render({
       snapshot,
       selection,
+      legalActions,
       selectedPieceMoves,
       selectedPieceMovePreviews,
       removalEffects,
@@ -698,6 +710,7 @@ export function createEnginePlaygroundBoardAdapter() {
 
       renderPieceOverlays({
         snapshot,
+        legalActions,
         selectedPieceId: selection.selectedPieceId,
         selectedPieceMoves,
         selectedPieceMovePreviews,
