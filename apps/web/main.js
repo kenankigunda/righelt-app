@@ -35,6 +35,7 @@ let wsLastEvent = "none";
 const WS_RECONCILE_MS = 2000;
 let inviteFeedback = "";
 let inviteFeedbackTimer = null;
+let routeHydrated = false;
 
 const escapeHtml = (value) =>
   String(value)
@@ -144,6 +145,10 @@ const renderHome = () => {
 };
 
 const renderGame = (gameId, inviteFromRole = null) => {
+  if (!routeHydrated) {
+    return `<section class="panel"><h2>Loading game...</h2><p class="small">Synchronizing current game state.</p></section>`;
+  }
+
   const game = transport.getGameViewModel(gameId);
   if (!game) {
     return `<section class="panel"><h2>Loading game...</h2><p class="small">Fetching latest server state.</p></section>`;
@@ -359,13 +364,17 @@ const withBusy = async (fn) => {
 const syncRouteData = async () => {
   if (currentRoute.name === "home") {
     await transport.refreshGames();
+    routeHydrated = true;
     return;
   }
   if (currentRoute.name === "game") {
     const firstOpen = !openedViewerGames.has(currentRoute.gameId);
     await transport.loadGame(currentRoute.gameId, { openAsViewer: firstOpen });
     openedViewerGames.add(currentRoute.gameId);
+    routeHydrated = true;
+    return;
   }
+  routeHydrated = true;
 };
 
 const syncRouteDataPassive = async () => {
@@ -429,6 +438,7 @@ const syncLiveChannel = () => {
 const navigateTo = (hash) => {
   if (window.location.hash === hash) {
     currentRoute = parseRouteFromHash(hash);
+    routeHydrated = false;
     syncLiveChannel();
     void withBusy(syncRouteData);
     return;
@@ -438,6 +448,7 @@ const navigateTo = (hash) => {
 
 window.addEventListener("hashchange", () => {
   currentRoute = parseRouteFromHash(window.location.hash);
+  routeHydrated = false;
   syncLiveChannel();
   void withBusy(syncRouteData);
 });
@@ -615,6 +626,7 @@ const initialRender = async () => {
     return;
   }
 
+  routeHydrated = false;
   syncLiveChannel();
   await withBusy(syncRouteData);
 };
