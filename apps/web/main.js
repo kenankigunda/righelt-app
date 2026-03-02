@@ -480,7 +480,11 @@ const renderStatus = () => {
       if (pieceSummary.details.owner !== state.sideToMove) {
         setBoardPreviewPrompt("Opponent piece. Supply and command lines shown only:");
       } else if (selectedPieceMoves.length === 0) {
-        setBoardPreviewPrompt("No moves for this piece at this time. Supply and command lines shown only:");
+        if (state.continuation?.type === "rush") {
+          setRushContinuationPrompt(state.sideToMove);
+        } else {
+          setBoardPreviewPrompt("No moves for this piece at this time. Supply and command lines shown only:");
+        }
       } else {
         setBoardPreviewPrompt("Select a square to move to:");
       }
