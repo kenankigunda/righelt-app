@@ -9,6 +9,7 @@ import {
   buildHomeHash,
   buildInviteHash,
   buildTutorialHash,
+  isShellRootHash,
   parseRouteFromHash,
   shouldLiveSyncRoute,
   shouldPassiveRefreshRoute,
@@ -18,6 +19,10 @@ import { createTutorialController } from "./tutorial.js";
 const appEl = document.getElementById("app");
 const playgroundAppEl = document.getElementById("playground-app");
 const bootstrap = getBootstrapPayload();
+
+if (isShellRootHash(window.location.hash)) {
+  window.location.replace(`${window.location.pathname}${window.location.search}${buildHomeHash()}`);
+}
 
 const ensureShellStylesheet = () => {
   if (document.getElementById("shell-stylesheet")) {

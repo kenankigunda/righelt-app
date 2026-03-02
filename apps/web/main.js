@@ -5,8 +5,11 @@ import {
 } from "./interaction.js";
 import { assertGameBoardAdapter } from "./board-adapter-contract.js";
 import { createEnginePlaygroundBoardAdapter } from "./board-adapters/engine-playground-adapter.js";
-import { isShellRouteHash } from "./shell/routes.js";
+import { buildHomeHash, isShellRouteHash, isShellRootHash } from "./shell/routes.js";
 
+if (isShellRootHash(window.location.hash)) {
+  window.location.replace(`${window.location.pathname}${window.location.search}${buildHomeHash()}`);
+}
 const shouldMountShell = isShellRouteHash(window.location.hash);
 window.addEventListener("hashchange", () => {
   if (isShellRouteHash(window.location.hash) !== shouldMountShell) {
