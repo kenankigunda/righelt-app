@@ -419,9 +419,14 @@ button {
 }
 
 .piece-token.removal-piece {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   z-index: 2;
   animation: removal-piece-flash 0.36s ease-in-out 5 alternate;
   animation-fill-mode: forwards;
+  pointer-events: none;
 }
 
 @keyframes removal-piece-flash {
