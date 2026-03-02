@@ -87,8 +87,9 @@ Important legality note:
 Push lets you displace an enemy piece, but only if your local formation is stronger.
 
 - You can push only if your local **group strength** is greater than the defender’s.
-- If legal, your piece advances into the enemy piece’s square and the enemy piece is forced to retreat.
-- Friendly pieces may then **follow** into the vacated trail during the push sequence.
+- If legal, your piece advances into the enemy piece’s square and the enemy piece is temporarily stacked there as a pushed piece.
+- The pushed piece’s owner must then resolve a forced retreat.
+- After that retreat, the pushing player completes any required **follow** moves through the vacated trail.
 
 ### What is group strength?
 
@@ -106,7 +107,23 @@ If strengths are equal, or the defender is stronger, you cannot push.
 
 A pushed piece must retreat to an adjacent orthogonal empty square.
 
-- If there is no legal retreat square, that piece is removed.
+- After a push, play temporarily passes to the owner of the pushed piece.
+- During that brief retreat step, retreat is the only action they may take.
+- They may still inspect other pieces, but no other actions are legal.
+- The vacated follow trail square is reserved for the follow sequence and is not a legal retreat destination.
+- If there is only one retreat square, that retreat is effectively forced.
+- If there is no legal retreat square, the pushed piece is destroyed immediately.
+- If the pushed piece is destroyed because there is no retreat square, play does not pause for a retreat step and stays with the pushing player for follow completion.
+
+### Follow rule
+
+After retreat finishes, play immediately returns to the pushing player.
+
+- Friendly pieces may need to **follow** into the vacated chain to keep the pushing structure connected.
+- If only one piece can make the next required follow, that piece is effectively forced.
+- If that forced piece has only one follow square, that move is effectively forced.
+- When no more follow moves are possible, the push sequence ends.
+- If that means only `Pass` would remain, the turn ends automatically and normal play continues with the other player.
 
 ## 5. Networks: Supply and Command
 

@@ -67,6 +67,9 @@ function normalizeContinuation(value: ContinuationContext | null): ContinuationC
   return {
     ...value,
     followPoint: value.followPoint ? cloneCoordinate(value.followPoint) : undefined,
+    followGroupPieceIds: value.followGroupPieceIds
+      ? [...value.followGroupPieceIds].sort((a, b) => a.localeCompare(b))
+      : undefined,
     rushedPieceIds: value.rushedPieceIds ? [...value.rushedPieceIds].sort((a, b) => a.localeCompare(b)) : undefined,
   };
 }

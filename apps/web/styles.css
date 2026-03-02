@@ -200,6 +200,10 @@ button {
   background: #eef8f1;
 }
 
+.cell.follow-group-member {
+  background: #f2f7e8;
+}
+
 .cell.selected-piece {
   border-color: #2b4c94;
   box-shadow: inset 0 0 0 1px #2b4c94;
@@ -338,6 +342,33 @@ button {
   font-weight: 800;
   color: #ffffff;
   border: 2px solid transparent;
+}
+
+.piece-stack {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: inline-block;
+}
+
+.piece-stack .piece-token {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.piece-token.stacked-pushed {
+  opacity: 0.9;
+}
+
+.piece-token.stacked-underlay {
+  transform: translate(-28%, -18%);
+  z-index: 0;
+}
+
+.piece-token.stacked-top {
+  z-index: 1;
 }
 
 .piece-token.p1 {

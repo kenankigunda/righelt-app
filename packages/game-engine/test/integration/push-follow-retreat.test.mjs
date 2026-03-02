@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyAction, validateAction } from "../../src/index.ts";
+import { applyAction, listLegalActions, validateAction } from "../../src/index.ts";
 import { commander, makeState, unit } from "../helpers/state-builders.mjs";
 
 test("G-001 push legal with stronger attacker group", () => {
@@ -30,8 +30,18 @@ test("G-001 push legal with stronger attacker group", () => {
   }).state;
 
   assert.deepEqual(next.pieces.find((piece) => piece.id === "A1")?.position, { row: 4, col: 3 });
+  assert.deepEqual(next.pieces.find((piece) => piece.id === "D1")?.position, { row: 4, col: 3 });
   assert.equal(next.pieces.find((piece) => piece.id === "D1")?.pushed, true);
   assert.deepEqual(next.continuation?.followPoint, { row: 4, col: 1 });
+  assert.equal(next.continuation?.phase, "retreat");
+  assert.equal(next.continuation?.owner, "P2");
+  assert.equal(next.continuation?.attackerOwner, "P1");
+  assert.equal(next.sideToMove, "P2");
+  assert.deepEqual(
+    listLegalActions(next).map((action) => action.type),
+    ["retreat", "retreat", "retreat", "retreat"],
+  );
+  assert.equal(listLegalActions(next).every((action) => action.actorId === "D1"), true);
 });
 
 test("G-002 push illegal on equal strength", () => {
@@ -115,8 +125,10 @@ test("G-006 follow legal into follow-point", () => {
     continuation: {
       type: "push",
       owner: "P1",
+      attackerOwner: "P1",
+      phase: "follow",
       followPoint: { row: 4, col: 3 },
-      pushedPieceId: "D1",
+      followGroupPieceIds: ["A1", "F1"],
       chainLength: 1,
     },
     pieces: [
@@ -163,8 +175,10 @@ test("G-008 follow cannot reuse shifted piece", () => {
     continuation: {
       type: "push",
       owner: "P1",
+      attackerOwner: "P1",
+      phase: "follow",
       followPoint: { row: 4, col: 3 },
-      pushedPieceId: "D1",
+      followGroupPieceIds: ["F1"],
       chainLength: 1,
     },
     pieces: [
@@ -188,14 +202,19 @@ test("G-009 retreat legal to orthogonal empty square", () => {
     sideToMove: "P2",
     continuation: {
       type: "push",
-      owner: "P1",
-      followPoint: { row: 4, col: 1 },
+      owner: "P2",
+      attackerOwner: "P1",
+      phase: "retreat",
+      followPoint: { row: 4, col: 3 },
       pushedPieceId: "D1",
+      followGroupPieceIds: ["A1", "A2"],
       chainLength: 1,
     },
     pieces: [
       commander("C1", "P1", 0, 0),
       commander("C2", "P2", 9, 9),
+      unit("A1", "P1", 4, 4, { shifted: true }),
+      unit("A2", "P1", 4, 2),
       unit("D1", "P2", 4, 4, { pushed: true }),
     ],
   });
@@ -214,6 +233,17 @@ test("G-009 retreat legal to orthogonal empty square", () => {
     to: { row: 4, col: 5 },
   }).state;
   assert.equal(next.pieces.find((piece) => piece.id === "D1")?.pushed, false);
+  assert.equal(next.sideToMove, "P1");
+  assert.equal(next.continuation?.phase, "follow");
+  assert.equal(next.continuation?.owner, "P1");
+  assert.deepEqual(listLegalActions(next), [
+    {
+      type: "follow",
+      actorId: "A2",
+      from: { row: 4, col: 2 },
+      to: { row: 4, col: 3 },
+    },
+  ]);
 });
 
 test("G-010 retreat illegal to diagonal square", () => {
@@ -221,7 +251,9 @@ test("G-010 retreat illegal to diagonal square", () => {
     sideToMove: "P2",
     continuation: {
       type: "push",
-      owner: "P1",
+      owner: "P2",
+      attackerOwner: "P1",
+      phase: "retreat",
       followPoint: { row: 4, col: 1 },
       pushedPieceId: "D1",
       chainLength: 1,
@@ -248,11 +280,10 @@ test("G-011 forced removal when no retreat", () => {
       commander("C2", "P2", 9, 9),
       unit("A1", "P1", 4, 1),
       unit("A2", "P1", 3, 1),
-      unit("A3", "P1", 5, 1),
-      unit("D1", "P2", 4, 3),
-      unit("B1", "P1", 3, 4),
-      unit("B2", "P2", 5, 4),
-      unit("B3", "P1", 4, 5),
+      unit("D1", "P2", 4, 2),
+      unit("B1", "P1", 3, 2),
+      unit("B2", "P2", 5, 2),
+      unit("B3", "P1", 4, 3),
     ],
   });
 
@@ -260,10 +291,13 @@ test("G-011 forced removal when no retreat", () => {
     type: "push",
     actorId: "A1",
     from: { row: 4, col: 1 },
-    to: { row: 4, col: 3 },
+    to: { row: 4, col: 2 },
   }).state;
 
   assert.equal(next.pieces.some((piece) => piece.id === "D1"), false);
+  assert.equal(next.continuation?.phase, "follow");
+  assert.equal(next.continuation?.owner, "P1");
+  assert.equal(next.sideToMove, "P1");
 });
 
 test("G-012 diagonal adjacency does not contribute to attacker group strength", () => {
@@ -350,7 +384,7 @@ test("G-015 push target must be first occupied square even when friendly piece b
   assert.equal(result.ok, false);
 });
 
-test("G-016 push removes defender and ends turn when displacement square is out of bounds", () => {
+test("G-016 edge push still grants retreat through the attacker origin square", () => {
   const state = makeState({
     pieces: [
       commander("C1", "P1", 0, 0),
@@ -368,8 +402,11 @@ test("G-016 push removes defender and ends turn when displacement square is out 
     to: { row: 4, col: 9 },
   }).state;
 
-  assert.equal(next.pieces.some((piece) => piece.id === "D1"), false);
-  assert.equal(next.continuation, null);
+  assert.equal(next.pieces.some((piece) => piece.id === "D1"), true);
+  assert.equal(next.pieces.find((piece) => piece.id === "D1")?.pushed, true);
+  assert.deepEqual(next.pieces.find((piece) => piece.id === "D1")?.position, { row: 4, col: 9 });
+  assert.equal(next.continuation?.phase, "retreat");
+  assert.equal(next.continuation?.owner, "P2");
   assert.equal(next.sideToMove, "P2");
-  assert.equal(next.turnIndex, 1);
+  assert.equal(next.turnIndex, 0);
 });

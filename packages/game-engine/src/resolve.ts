@@ -50,6 +50,7 @@ function cloneState(state: GameState): GameState {
     continuation: state.continuation
       ? {
           ...state.continuation,
+          followGroupPieceIds: state.continuation.followGroupPieceIds ? [...state.continuation.followGroupPieceIds] : undefined,
           followPoint: state.continuation.followPoint ? { ...state.continuation.followPoint } : undefined,
           rushedPieceIds: state.continuation.rushedPieceIds ? [...state.continuation.rushedPieceIds] : undefined,
         }
@@ -57,6 +58,10 @@ function cloneState(state: GameState): GameState {
     outcome: { ...state.outcome },
     artifacts: state.artifacts ? JSON.parse(JSON.stringify(state.artifacts)) : undefined,
   };
+}
+
+function networkPieces(state: GameState) {
+  return state.pieces.filter((piece) => !piece.pushed);
 }
 
 function computeSupplyForOwner(
@@ -96,7 +101,7 @@ function computeSupplyForOwner(
 
   const supplyPoint = SUPPLY_POINTS[owner];
   const occupiedByCoordinate = new Map(
-    state.pieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece]),
+    networkPieces(state).map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece]),
   );
 
   const isTraversable = (row: number, col: number): boolean => {
@@ -141,7 +146,7 @@ function computeSupplyForOwner(
   const shortestPathByPieceId: Record<string, { row: number; col: number }[]> = {};
   const distanceByPieceId: Record<string, number> = {};
 
-  for (const piece of state.pieces.filter((candidate) => candidate.owner === owner)) {
+  for (const piece of state.pieces.filter((candidate) => candidate.owner === owner && !candidate.pushed)) {
     const pieceKey = coordinateKey(piece.position.row, piece.position.col);
     const supplied = visited.has(pieceKey);
     suppliedByPieceId[piece.id] = supplied;
@@ -173,8 +178,9 @@ function computeSupplyForOwner(
 }
 
 function computeBaselineArtifacts(state: GameState, mode: ArtifactMode): ResolveArtifacts {
-  const p1Pieces = state.pieces.filter((piece) => piece.owner === "P1");
-  const p2Pieces = state.pieces.filter((piece) => piece.owner === "P2");
+  const visiblePieces = networkPieces(state);
+  const p1Pieces = visiblePieces.filter((piece) => piece.owner === "P1");
+  const p2Pieces = visiblePieces.filter((piece) => piece.owner === "P2");
 
   const p1Components = Object.fromEntries(
     sortIds(p1Pieces.map((piece) => piece.id)).map((pieceId) => [pieceId, `P1:${pieceId}`]),
@@ -296,11 +302,12 @@ function segmentIntersectionPoint(
 }
 
 function buildCommandEdges(state: GameState): CommandEdge[] {
-  const occupied = new Map(state.pieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece.id]));
+  const visiblePieces = networkPieces(state);
+  const occupied = new Map(visiblePieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece.id]));
   const edges = new Map<string, CommandEdge>();
 
   for (const owner of ["P1", "P2"] as const) {
-    const ownPieces = state.pieces
+    const ownPieces = visiblePieces
       .filter((piece) => piece.owner === owner)
       .sort((a, b) => a.id.localeCompare(b.id));
 
@@ -360,7 +367,8 @@ function applyCommandPhase(state: GameState, mode: ArtifactMode): boolean {
 
   for (const owner of ["P1", "P2"] as const) {
     const commanderId = owner === "P1" ? "C1" : "C2";
-    const ownPieceIds = sortIds(state.pieces.filter((piece) => piece.owner === owner).map((piece) => piece.id));
+    const visiblePieces = networkPieces(state);
+    const ownPieceIds = sortIds(visiblePieces.filter((piece) => piece.owner === owner).map((piece) => piece.id));
 
     const adjacency = new Map<string, string[]>();
     for (const pieceId of ownPieceIds) {
@@ -401,6 +409,9 @@ function applyCommandPhase(state: GameState, mode: ArtifactMode): boolean {
     }
 
     for (const piece of state.pieces.filter((candidate) => candidate.owner === owner)) {
+      if (piece.pushed) {
+        continue;
+      }
       const nextCommanded = visited.has(piece.id);
       if (piece.commanded !== nextCommanded) {
         piece.commanded = nextCommanded;
@@ -457,15 +468,16 @@ function applyCommandPhase(state: GameState, mode: ArtifactMode): boolean {
 }
 
 function applyGroupPhase(state: GameState, mode: ArtifactMode): boolean {
+  const visiblePieces = networkPieces(state);
   const adjacency = new Map<string, string[]>();
-  for (const piece of state.pieces) {
+  for (const piece of visiblePieces) {
     adjacency.set(piece.id, []);
   }
 
-  for (let i = 0; i < state.pieces.length; i += 1) {
-    for (let j = i + 1; j < state.pieces.length; j += 1) {
-      const left = state.pieces[i];
-      const right = state.pieces[j];
+  for (let i = 0; i < visiblePieces.length; i += 1) {
+    for (let j = i + 1; j < visiblePieces.length; j += 1) {
+      const left = visiblePieces[i];
+      const right = visiblePieces[j];
       if (left.owner !== right.owner) {
         continue;
       }
@@ -487,7 +499,7 @@ function applyGroupPhase(state: GameState, mode: ArtifactMode): boolean {
   const strengthByComponentId: Record<string, number> = {};
   const visited = new Set<string>();
 
-  const orderedPieces = [...state.pieces].sort((a, b) => a.id.localeCompare(b.id));
+  const orderedPieces = [...visiblePieces].sort((a, b) => a.id.localeCompare(b.id));
   for (const startPiece of orderedPieces) {
     if (visited.has(startPiece.id)) {
       continue;
@@ -561,28 +573,73 @@ function applyContinuationPhase(state: GameState): boolean {
 
   const expectedOwner = state.continuation.owner;
   if (state.sideToMove !== expectedOwner) {
-    state.continuation = null;
     state.sideToMove = expectedOwner;
     return true;
   }
 
   if (state.continuation.type === "push") {
+    const attackerOwner = state.continuation.attackerOwner ?? expectedOwner;
+
+    if (state.continuation.phase === "retreat") {
+      const pushedPiece = state.continuation.pushedPieceId
+        ? state.pieces.find((piece) => piece.id === state.continuation?.pushedPieceId)
+        : undefined;
+      if (!pushedPiece) {
+        state.continuation.phase = "follow";
+        state.continuation.owner = attackerOwner;
+        state.continuation.pushedPieceId = undefined;
+        state.sideToMove = attackerOwner;
+        return true;
+      }
+
+      const retreatCandidates = [
+        { row: pushedPiece.position.row - 1, col: pushedPiece.position.col },
+        { row: pushedPiece.position.row + 1, col: pushedPiece.position.col },
+        { row: pushedPiece.position.row, col: pushedPiece.position.col - 1 },
+        { row: pushedPiece.position.row, col: pushedPiece.position.col + 1 },
+      ].filter((to) =>
+        validateAction(state, {
+          type: "retreat",
+          actorId: pushedPiece.id,
+          from: pushedPiece.position,
+          to,
+        }).ok,
+      );
+
+      if (retreatCandidates.length === 0) {
+        state.pieces = state.pieces.filter((piece) => piece.id !== pushedPiece.id);
+        state.continuation.phase = "follow";
+        state.continuation.owner = attackerOwner;
+        state.continuation.pushedPieceId = undefined;
+        state.sideToMove = attackerOwner;
+        return true;
+      }
+      return false;
+    }
+
     const followPoint = state.continuation.followPoint;
     if (!followPoint) {
       state.continuation = null;
-      state.sideToMove = expectedOwner === "P1" ? "P2" : "P1";
+      state.sideToMove = attackerOwner === "P1" ? "P2" : "P1";
+      state.turnIndex += 1;
       return true;
     }
 
     const occupied = state.pieces.some(
-      (piece) => piece.position.row === followPoint.row && piece.position.col === followPoint.col,
+      (piece) => !piece.pushed && piece.position.row === followPoint.row && piece.position.col === followPoint.col,
     );
     if (occupied) {
       return false;
     }
 
+    const allowedPieces = new Set(state.continuation.followGroupPieceIds ?? []);
     const hasFriendlyAdjacent = state.pieces.some((piece) => {
-      if (piece.owner !== expectedOwner || piece.pushed || piece.shifted) {
+      if (
+        piece.owner !== expectedOwner ||
+        piece.pushed ||
+        piece.shifted ||
+        (allowedPieces.size > 0 && !allowedPieces.has(piece.id))
+      ) {
         return false;
       }
       const rowDelta = Math.abs(piece.position.row - followPoint.row);
@@ -592,7 +649,13 @@ function applyContinuationPhase(state: GameState): boolean {
 
     if (!hasFriendlyAdjacent) {
       state.continuation = null;
-      state.sideToMove = expectedOwner === "P1" ? "P2" : "P1";
+      state.sideToMove = attackerOwner === "P1" ? "P2" : "P1";
+      state.turnIndex += 1;
+      for (const piece of state.pieces) {
+        if (piece.shifted) {
+          piece.shifted = false;
+        }
+      }
       return true;
     }
     return false;
@@ -640,6 +703,9 @@ function applySupplyPhase(state: GameState, mode: ArtifactMode): boolean {
   let changed = false;
 
   for (const piece of state.pieces) {
+    if (piece.pushed) {
+      continue;
+    }
     const ownerSupply = piece.owner === "P1" ? p1Supply : p2Supply;
     const nextSupplied = Boolean(ownerSupply.suppliedByPieceId[piece.id]);
     if (piece.supplied !== nextSupplied) {
@@ -692,7 +758,7 @@ function applySupplyPhase(state: GameState, mode: ArtifactMode): boolean {
 
 function applyForcedEffectsPhase(state: GameState): boolean {
   const beforeCount = state.pieces.length;
-  state.pieces = state.pieces.filter((piece) => piece.kind === "commander" || piece.supplied);
+  state.pieces = state.pieces.filter((piece) => piece.pushed || piece.kind === "commander" || piece.supplied);
   return state.pieces.length !== beforeCount;
 }
 

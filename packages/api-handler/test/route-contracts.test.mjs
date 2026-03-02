@@ -411,12 +411,12 @@ test("/api/engine/playground/apply returns removedPieces notice for no-retreat r
     ...createInitialState(),
     pieces: [
       ...createInitialState().pieces,
-      { id: "A1", owner: "P1", kind: "unit", position: { row: 1, col: 1 }, supplied: true, commanded: true },
-      { id: "A2", owner: "P1", kind: "unit", position: { row: 1, col: 2 }, supplied: true, commanded: true },
-      { id: "D1", owner: "P2", kind: "unit", position: { row: 3, col: 1 }, supplied: true, commanded: true },
-      { id: "B1", owner: "P1", kind: "unit", position: { row: 4, col: 1 }, supplied: true, commanded: true },
-      { id: "B2", owner: "P1", kind: "unit", position: { row: 3, col: 2 }, supplied: true, commanded: true },
-      { id: "B3", owner: "P1", kind: "unit", position: { row: 3, col: 0 }, supplied: true, commanded: true },
+      { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 1 }, supplied: true, commanded: true },
+      { id: "A2", owner: "P1", kind: "unit", position: { row: 3, col: 1 }, supplied: true, commanded: true },
+      { id: "D1", owner: "P2", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
+      { id: "B1", owner: "P1", kind: "unit", position: { row: 3, col: 2 }, supplied: true, commanded: true },
+      { id: "B2", owner: "P2", kind: "unit", position: { row: 5, col: 2 }, supplied: true, commanded: true },
+      { id: "B3", owner: "P1", kind: "unit", position: { row: 4, col: 3 }, supplied: true, commanded: true },
     ],
   }, { artifactMode: "full" });
 
@@ -429,8 +429,8 @@ test("/api/engine/playground/apply returns removedPieces notice for no-retreat r
         action: {
           type: "push",
           actorId: "A1",
-          from: { row: 1, col: 1 },
-          to: { row: 3, col: 1 },
+          from: { row: 4, col: 1 },
+          to: { row: 4, col: 2 },
         },
       }),
     }),
@@ -445,9 +445,9 @@ test("/api/engine/playground/apply returns removedPieces notice for no-retreat r
   assert.deepEqual(body.removedPieces, [
     {
       pieceId: "D1",
-      position: { row: 3, col: 1 },
+      position: { row: 4, col: 2 },
       reason: "no_retreat",
-      message: "Piece at (3, 1) destroyed because it could not retreat",
+      message: "Piece at (4, 2) destroyed because it could not retreat",
     },
   ]);
 });
@@ -488,6 +488,75 @@ test("/api/engine/playground/apply returns removedPieces notice for loss-of-supp
       position: { row: 4, col: 5 },
       reason: "loss_of_supply",
       message: "Piece at (4, 5) destroyed due to loss of supply",
+    },
+  ]);
+});
+
+test("/api/engine/playground/apply keeps push continuation active after retreat when follow remains", async () => {
+  const { env } = buildEnv();
+  const initial = resolveToStability({
+    ...createInitialState(),
+    pieces: [
+      ...createInitialState().pieces,
+      { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 1 }, supplied: true, commanded: true },
+      { id: "A2", owner: "P1", kind: "unit", position: { row: 3, col: 1 }, supplied: true, commanded: true },
+      { id: "D1", owner: "P2", kind: "unit", position: { row: 4, col: 3 }, supplied: true, commanded: true },
+    ],
+  }, { artifactMode: "full" });
+
+  const pushResponse = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/engine/playground/apply", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        state: initial,
+        action: {
+          type: "push",
+          actorId: "A1",
+          from: { row: 4, col: 1 },
+          to: { row: 4, col: 3 },
+        },
+      }),
+    }),
+    env,
+  );
+  const pushed = await pushResponse.json();
+
+  assert.equal(pushResponse.status, 200);
+  assert.equal(pushed.accepted, true);
+  assert.equal(pushed.state.sideToMove, "P2");
+  assert.equal(pushed.state.continuation?.type, "push");
+  assert.equal(pushed.state.continuation?.phase, "retreat");
+
+  const retreatResponse = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/engine/playground/apply", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        state: pushed.state,
+        action: {
+          type: "retreat",
+          actorId: "D1",
+          from: { row: 4, col: 3 },
+          to: { row: 4, col: 4 },
+        },
+      }),
+    }),
+    env,
+  );
+  const retreated = await retreatResponse.json();
+
+  assert.equal(retreatResponse.status, 200);
+  assert.equal(retreated.accepted, true);
+  assert.equal(retreated.state.sideToMove, "P1");
+  assert.equal(retreated.state.continuation?.type, "push");
+  assert.equal(retreated.state.continuation?.phase, "follow");
+  assert.deepEqual(retreated.legalActions, [
+    {
+      type: "follow",
+      actorId: "A2",
+      from: { row: 3, col: 1 },
+      to: { row: 4, col: 1 },
     },
   ]);
 });

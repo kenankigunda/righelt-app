@@ -291,9 +291,13 @@ function firstOccupiedOnRay(
 }
 
 function localGroupStrength(state: GameState, pieceId: string): number {
+  return localGroupMembers(state, pieceId).length;
+}
+
+export function localGroupMembers(state: GameState, pieceId: string): string[] {
   const seed = state.pieces.find((piece) => piece.id === pieceId);
   if (!seed) {
-    return 0;
+    return [];
   }
 
   const queue = [seed];
@@ -316,11 +320,58 @@ function localGroupStrength(state: GameState, pieceId: string): number {
     }
   }
 
-  return visited.size;
+  return [...visited].sort((a, b) => a.localeCompare(b));
 }
 
 function enemyAdjacentCount(state: GameState, owner: "P1" | "P2", center: { row: number; col: number }): number {
   return state.pieces.filter((piece) => piece.owner !== owner && isAnyAdjacent(piece.position, center)).length;
+}
+
+function getPushRetreatActions(state: GameState): Action[] {
+  if (!state.continuation || state.continuation.type !== "push" || state.continuation.phase !== "retreat") {
+    return [];
+  }
+
+  const pushedPiece = state.continuation.pushedPieceId
+    ? state.pieces.find((piece) => piece.id === state.continuation?.pushedPieceId)
+    : undefined;
+  if (!pushedPiece) {
+    return [];
+  }
+
+  return [
+    { row: pushedPiece.position.row - 1, col: pushedPiece.position.col },
+    { row: pushedPiece.position.row + 1, col: pushedPiece.position.col },
+    { row: pushedPiece.position.row, col: pushedPiece.position.col - 1 },
+    { row: pushedPiece.position.row, col: pushedPiece.position.col + 1 },
+  ].map((to) => ({
+    type: "retreat" as const,
+    actorId: pushedPiece.id,
+    from: pushedPiece.position,
+    to,
+  })).filter((candidate) => validateAction(state, candidate).ok);
+}
+
+function getPushFollowActions(state: GameState): Action[] {
+  if (!state.continuation || state.continuation.type !== "push" || state.continuation.phase !== "follow") {
+    return [];
+  }
+
+  const followPoint = state.continuation.followPoint;
+  if (!followPoint) {
+    return [];
+  }
+
+  const allowedPieces = new Set(state.continuation.followGroupPieceIds ?? []);
+  return state.pieces
+    .filter((piece) => piece.owner === state.sideToMove && (allowedPieces.size === 0 || allowedPieces.has(piece.id)))
+    .map((piece) => ({
+      type: "follow" as const,
+      actorId: piece.id,
+      from: piece.position,
+      to: followPoint,
+    }))
+    .filter((candidate) => validateAction(state, candidate).ok);
 }
 
 function validateContinuation(state: GameState, action: Action): ValidationResult | null {
@@ -329,11 +380,22 @@ function validateContinuation(state: GameState, action: Action): ValidationResul
   }
 
   if (state.continuation.type === "push") {
-    if (action.type !== "follow" && action.type !== "retreat") {
+    if (state.continuation.phase === "retreat") {
+      if (action.type !== "retreat") {
+        return {
+          ok: false,
+          code: "CONTINUATION_REQUIRED",
+          message: "Push retreat phase requires retreat action",
+        };
+      }
+      return null;
+    }
+
+    if (action.type !== "follow") {
       return {
         ok: false,
         code: "CONTINUATION_REQUIRED",
-        message: "Push continuation requires follow or retreat actions",
+        message: "Push follow phase requires follow action",
       };
     }
     return null;
@@ -384,52 +446,7 @@ export function listLegalActions(state: GameState): Action[] {
       return [...rushActions, { type: "pass" }];
     }
 
-    return state.pieces
-      .flatMap((piece) => [
-        {
-          type: "follow" as const,
-          actorId: piece.id,
-          from: piece.position,
-          to: state.continuation?.followPoint,
-        },
-        {
-          type: "retreat" as const,
-          actorId: piece.id,
-          from: piece.position,
-          to: {
-            row: piece.position.row - 1,
-            col: piece.position.col,
-          },
-        },
-        {
-          type: "retreat" as const,
-          actorId: piece.id,
-          from: piece.position,
-          to: {
-            row: piece.position.row + 1,
-            col: piece.position.col,
-          },
-        },
-        {
-          type: "retreat" as const,
-          actorId: piece.id,
-          from: piece.position,
-          to: {
-            row: piece.position.row,
-            col: piece.position.col - 1,
-          },
-        },
-        {
-          type: "retreat" as const,
-          actorId: piece.id,
-          from: piece.position,
-          to: {
-            row: piece.position.row,
-            col: piece.position.col + 1,
-          },
-        },
-      ])
-      .filter((candidate) => validateAction(state, candidate).ok);
+    return state.continuation.phase === "retreat" ? getPushRetreatActions(state) : getPushFollowActions(state);
   }
 
   return [{ type: "pass" }];
@@ -696,11 +713,11 @@ export function validateAction(state: GameState, action: Action): ValidationResu
   }
 
   if (action.type === "follow") {
-    if (!state.continuation || state.continuation.type !== "push") {
+    if (!state.continuation || state.continuation.type !== "push" || state.continuation.phase !== "follow") {
       return {
         ok: false,
         code: "RULE_VIOLATION",
-        message: "Follow is only legal during push continuation",
+        message: "Follow is only legal during push follow phase",
       };
     }
     if (actor.shifted) {
@@ -724,15 +741,40 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         message: "Follow-point must be empty",
       };
     }
+    if (
+      Array.isArray(state.continuation.followGroupPieceIds) &&
+      state.continuation.followGroupPieceIds.length > 0 &&
+      !state.continuation.followGroupPieceIds.includes(actor.id)
+    ) {
+      return {
+        ok: false,
+        code: "RULE_VIOLATION",
+        message: "Follow actor must belong to the pushing group",
+      };
+    }
+    if (!isOrthogonallyAdjacent(actor.position, state.continuation.followPoint)) {
+      return {
+        ok: false,
+        code: "RULE_VIOLATION",
+        message: "Follow actor must be orthogonally adjacent to current follow-point",
+      };
+    }
     return { ok: true };
   }
 
   if (action.type === "retreat") {
-    if (!actor.pushed) {
+    if (!state.continuation || state.continuation.type !== "push" || state.continuation.phase !== "retreat") {
       return {
         ok: false,
         code: "RULE_VIOLATION",
-        message: "Only pushed pieces may retreat",
+        message: "Retreat is only legal during push retreat phase",
+      };
+    }
+    if (!actor.pushed || actor.id !== state.continuation.pushedPieceId) {
+      return {
+        ok: false,
+        code: "RULE_VIOLATION",
+        message: "Only the pushed piece may retreat",
       };
     }
     if (!action.to || !isOrthogonallyAdjacent(actor.position, action.to)) {
@@ -747,6 +789,13 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         ok: false,
         code: "RULE_VIOLATION",
         message: "Retreat destination is occupied",
+      };
+    }
+    if (state.continuation.followPoint && sameCoordinate(action.to, state.continuation.followPoint)) {
+      return {
+        ok: false,
+        code: "RULE_VIOLATION",
+        message: "Retreat destination cannot be the reserved follow-point",
       };
     }
     return { ok: true };

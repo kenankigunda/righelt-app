@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   BLOCKED_PREVIEW_REASON,
   buildActionPayload,
+  deriveForcedContinuationSelection,
   getBlockedPreviewLabel,
   pickBestActionTypeForTarget,
   shouldPreferActionTargetOnOccupiedCell,
@@ -50,9 +51,10 @@ test("buildActionPayload returns pass shape for pass", () => {
 
 test("buildActionPayload returns targeted payload for non-pass", () => {
   assert.deepEqual(
-    buildActionPayload("move", { row: 3, col: 6 }, { row: 3, col: 7 }),
+    buildActionPayload("move", { row: 3, col: 6 }, { row: 3, col: 7 }, "C1"),
     {
       type: "move",
+      actorId: "C1",
       from: { row: 3, col: 6 },
       to: { row: 3, col: 7 },
     },
@@ -176,4 +178,48 @@ test("getBlockedPreviewLabel maps player-facing preview copy", () => {
     getBlockedPreviewLabel(BLOCKED_PREVIEW_REASON.PUSH_STRENGTH_TOO_WEAK),
     "Disallowed: group strength too low to push this piece.",
   );
+});
+
+test("deriveForcedContinuationSelection auto-selects pushed piece and lone retreat", () => {
+  const result = deriveForcedContinuationSelection(
+    {
+      continuation: {
+        type: "push",
+        phase: "retreat",
+        pushedPieceId: "D1",
+      },
+      pieces: [{ id: "D1", position: { row: 4, col: 4 } }],
+    },
+    [{ type: "retreat", actorId: "D1", to: { row: 4, col: 5 } }],
+  );
+
+  assert.deepEqual(result, {
+    selectedPieceId: "D1",
+    source: { row: 4, col: 4 },
+    target: { row: 4, col: 5 },
+    actionType: "retreat",
+  });
+});
+
+test("deriveForcedContinuationSelection auto-selects lone follow actor but not target when multiple moves exist", () => {
+  const result = deriveForcedContinuationSelection(
+    {
+      continuation: {
+        type: "push",
+        phase: "follow",
+      },
+      pieces: [{ id: "F1", position: { row: 4, col: 2 } }],
+    },
+    [
+      { type: "follow", actorId: "F1", to: { row: 4, col: 3 } },
+      { type: "follow", actorId: "F1", to: { row: 3, col: 2 } },
+    ],
+  );
+
+  assert.deepEqual(result, {
+    selectedPieceId: "F1",
+    source: { row: 4, col: 2 },
+    target: null,
+    actionType: "follow",
+  });
 });

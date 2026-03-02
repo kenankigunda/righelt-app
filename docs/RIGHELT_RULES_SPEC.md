@@ -45,7 +45,9 @@ On a normal turn, the active player may do exactly one of:
 - one legal piece action (`Move`, `Project`, `Rush`, or `Push`)
 
 Some actions open a temporary continuation phase:
-- `Push` opens a push sequence (with mandatory `Follow` to preserve push-group connectivity and forced `Retreat` behavior).
+- `Push` opens a push sequence with two ordered sub-phases:
+  - defender retreat phase,
+  - attacker follow phase.
 - `Rush` can chain during a rush continuation sequence as allowed by movement legality, but each piece may rush at most once in that sequence.
 
 A turn ends when no continuation is active and control passes to opponent.
@@ -100,26 +102,38 @@ Post-action command loss does not invalidate those actions; command is evaluated
 - Target must be an enemy piece found in one of 4 orthogonal rays from attacker (first occupied square on that ray).
 - Push is legal only if `attacker_group_strength > defender_group_strength`.
 - On push:
-  - attacker enters push continuation state,
-  - target becomes `pushed`,
   - attacker moves into target square,
+  - target piece remains on that same square in temporary `pushed` state,
+  - pushing piece is the top piece on the stacked pushed square,
   - follow-point is set to attacker’s previous square,
-  - acting player becomes obligated to perform `Follow` steps as needed so the pushing group remains connected,
-  - retreat resolution for pushed piece becomes required.
+  - follow-group connectivity obligation is recorded from the attacker side,
+  - play immediately passes to the owner of the pushed piece for forced `Retreat`, unless no retreat square exists.
+  - if no orthogonally adjacent empty retreat square exists, the pushed piece is removed immediately, the retreat sub-phase is skipped, and play remains with the attacker for the follow sub-phase.
 
-## 5.6 Follow (during push continuation only)
+## 5.6 Retreat (forced for pushed piece)
 
-- Only legal while acting player is in push continuation.
-- Follow is mandatory (not optional) during push continuation whenever needed to keep the pushing group connected.
-- A friendly piece that has not already shifted this continuation may move into current follow-point.
-- After follow move, follow-point updates to that piece’s previous square.
-- Follow repeats until the connectivity obligation is satisfied and no additional mandatory follow exists.
+- Retreat is the only legal action for the owner of the pushed piece during the retreat sub-phase.
+- Only the currently pushed piece may retreat.
+- Retreat destination must be an orthogonally adjacent empty square that is not the current follow-point.
+- If there is exactly one legal retreat square, that retreat source and destination are considered forced.
+- If there is no legal retreat square, the pushed piece is removed and no retreat action is taken.
+- After retreat completes, `pushed` state clears and play immediately returns to the attacker for follow continuation.
 
-## 5.7 Retreat (forced for pushed piece)
+## 5.7 Follow (during attacker follow sub-phase only)
 
-- A pushed piece may retreat only to an orthogonally adjacent empty square.
-- If no retreat square exists, that piece is removed.
-- After retreat/removal, pushed state clears.
+- Follow is legal only during attacker follow sub-phase.
+- During attacker follow sub-phase, no non-follow non-pass regular action is legal.
+- Follow is mandatory whenever needed to keep the recorded pushing group connected through the current follow-point.
+- A friendly piece that has not already shifted this push sequence may move into current follow-point.
+- After a follow move:
+  - that piece becomes shifted for this push sequence,
+  - follow-point updates to that piece’s previous square.
+- If there is exactly one legal follow actor, that actor is forced.
+- If that forced actor has exactly one legal follow destination, that destination is forced.
+- Light UI highlighting may indicate all pieces in the connectivity-constrained follow group; this is representational and not a separate rule.
+- When no follow action remains legal:
+  - if `Pass` is the only legal action for the attacker, the push continuation closes automatically,
+  - control passes to opponent for a normal turn.
 
 ## 6. Connectivity Systems
 
@@ -165,7 +179,9 @@ After any atomic action step, engine must resolve in this order:
 2. Recompute supply for both sides (including both Commanders).
 3. Recompute command propagation from each Commander.
 4. Recompute legal move sets for active side/continuation context.
-5. Apply forced retreat/removal consequences for currently pushed pieces, if applicable.
+5. For push continuation:
+  - if retreat sub-phase is pending and no retreat square exists, remove pushed piece and advance to attacker follow sub-phase,
+  - if attacker follow sub-phase is pending and no follow remains legal, close continuation and pass turn normally.
 6. Evaluate end-of-game condition.
 
 If any step causes board changes (e.g., forced removals), rerun resolution until stable.

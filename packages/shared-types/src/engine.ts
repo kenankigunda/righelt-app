@@ -19,12 +19,16 @@ export type Piece = {
 };
 
 export type ContinuationType = "push" | "rush";
+export type PushContinuationPhase = "retreat" | "follow";
 
 export type ContinuationContext = {
   type: ContinuationType;
   owner: PlayerId;
+  attackerOwner?: PlayerId;
+  phase?: PushContinuationPhase;
   followPoint?: Coordinate;
   pushedPieceId?: string;
+  followGroupPieceIds?: string[];
   rushedPieceIds?: string[];
   chainLength: number;
 };

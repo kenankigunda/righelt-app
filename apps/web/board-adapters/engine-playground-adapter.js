@@ -41,9 +41,34 @@ function findPieceAt(snapshot, row, col) {
   return snapshot.pieces.find((piece) => piece.position.row === row && piece.position.col === col) ?? null;
 }
 
+function findPiecesAt(snapshot, row, col) {
+  if (!snapshot) return [];
+  return snapshot.pieces.filter((piece) => piece.position.row === row && piece.position.col === col);
+}
+
 function findPieceById(snapshot, pieceId) {
   if (!snapshot || !pieceId) return null;
   return snapshot.pieces.find((piece) => piece.id === pieceId) ?? null;
+}
+
+function findPreferredPieceAt(snapshot, row, col) {
+  const pieces = findPiecesAt(snapshot, row, col);
+  if (pieces.length === 0) {
+    return null;
+  }
+
+  if (snapshot?.continuation?.type === "push" && snapshot.continuation.phase === "retreat") {
+    const pushedPiece = pieces.find((piece) => piece.id === snapshot.continuation?.pushedPieceId);
+    if (pushedPiece) {
+      return pushedPiece;
+    }
+  }
+
+  return (
+    pieces.find((piece) => piece.owner === snapshot?.sideToMove) ??
+    pieces.find((piece) => !piece.pushed) ??
+    pieces[0]
+  );
 }
 
 function buildPieceToken(piece, ghost = false) {
@@ -51,6 +76,9 @@ function buildPieceToken(piece, ghost = false) {
   token.className = `piece-token ${piece.owner === "P1" ? "p1" : "p2"} ${piece.kind}`;
   if (!piece.supplied || !piece.commanded) {
     token.classList.add("inactive");
+  }
+  if (piece.pushed) {
+    token.classList.add("pushed-piece");
   }
   if (ghost) {
     token.classList.add("ghost");
@@ -239,7 +267,7 @@ export function createEnginePlaygroundBoardAdapter() {
 
   const clearCellDecorations = () => {
     for (const cell of cellByCoordinateKey.values()) {
-      cell.classList.remove("group-member", "selected-piece");
+      cell.classList.remove("group-member", "follow-group-member", "selected-piece");
       cell.querySelectorAll(".group-strength-badge,.move-ghost").forEach((node) => node.remove());
     }
   };
@@ -256,6 +284,15 @@ export function createEnginePlaygroundBoardAdapter() {
 
     const piece = findPieceById(snapshot, selectedPieceId);
     if (!piece) {
+      if (snapshot?.continuation?.type === "push") {
+        for (const pieceId of snapshot.continuation.followGroupPieceIds ?? []) {
+          const followPiece = findPieceById(snapshot, pieceId);
+          if (!followPiece) {
+            continue;
+          }
+          cellByCoordinateKey.get(coordKey(followPiece.position))?.classList.add("follow-group-member");
+        }
+      }
       return;
     }
 
@@ -292,6 +329,16 @@ export function createEnginePlaygroundBoardAdapter() {
           badge.textContent = String(groupInfo.strength);
           anchorCell.appendChild(badge);
         }
+      }
+    }
+
+    if (snapshot?.continuation?.type === "push") {
+      for (const pieceId of snapshot.continuation.followGroupPieceIds ?? []) {
+        const followPiece = findPieceById(snapshot, pieceId);
+        if (!followPiece) {
+          continue;
+        }
+        cellByCoordinateKey.get(coordKey(followPiece.position))?.classList.add("follow-group-member");
       }
     }
 
@@ -376,7 +423,7 @@ export function createEnginePlaygroundBoardAdapter() {
     },
 
     getPieceAt(snapshot, coord) {
-      return findPieceAt(snapshot, coord.row, coord.col);
+      return findPreferredPieceAt(snapshot, coord.row, coord.col);
     },
 
     getPieceById(snapshot, pieceId) {
@@ -539,12 +586,41 @@ export function createEnginePlaygroundBoardAdapter() {
           cell.dataset.row = String(row);
           cell.dataset.col = String(col);
 
-          const marker = cellPiece ? buildPieceToken(cellPiece) : document.createElement("span");
-          if (!cellPiece) {
-            marker.className = "piece-empty";
-            marker.textContent = ".";
+          const cellPieces = findPiecesAt(snapshot, row, col);
+          if (cellPieces.length > 1) {
+            const stack = document.createElement("span");
+            stack.className = "piece-stack";
+            const sortedPieces = [...cellPieces].sort((left, right) => {
+              if (left.pushed !== right.pushed) {
+                return left.pushed ? -1 : 1;
+              }
+              if (left.owner !== right.owner) {
+                return left.owner.localeCompare(right.owner);
+              }
+              return left.id.localeCompare(right.id);
+            });
+            for (const [index, pieceInStack] of sortedPieces.entries()) {
+              const token = buildPieceToken(pieceInStack);
+              token.classList.add("stacked-piece");
+              if (index === 0 && pieceInStack.pushed) {
+                token.classList.add("stacked-underlay");
+              }
+              if (pieceInStack.pushed) {
+                token.classList.add("stacked-pushed");
+              } else {
+                token.classList.add("stacked-top");
+              }
+              stack.appendChild(token);
+            }
+            cell.appendChild(stack);
+          } else {
+            const marker = cellPiece ? buildPieceToken(cellPiece) : document.createElement("span");
+            if (!cellPiece) {
+              marker.className = "piece-empty";
+              marker.textContent = ".";
+            }
+            cell.appendChild(marker);
           }
-          cell.appendChild(marker);
 
           if (removalEffect) {
             const flash = document.createElement("span");

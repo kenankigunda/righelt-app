@@ -304,8 +304,12 @@ test("O-004 resolve handles continuation-induced forced removals before terminal
   const state = baseState();
   state.continuation = {
     type: "push",
-    owner: "P1",
+    owner: "P2",
+    attackerOwner: "P1",
+    phase: "retreat",
+    followPoint: { row: 1, col: 1 },
     pushedPieceId: "U2o4",
+    followGroupPieceIds: ["U1o4a"],
     chainLength: 1,
   };
   state.pieces.push({
@@ -353,4 +357,6 @@ test("O-004 resolve handles continuation-induced forced removals before terminal
   const resolved = resolveToStability(state, { artifactMode: "minimal" });
   assert.equal(resolved.pieces.some((piece) => piece.id === "U2o4"), false);
   assert.equal(resolved.continuation, null);
+  assert.equal(resolved.sideToMove, "P2");
+  assert.equal(resolved.turnIndex, 1);
 });
