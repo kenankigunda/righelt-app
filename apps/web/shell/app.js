@@ -335,8 +335,6 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
             <button class="secondary" data-action="end-turn" data-game-id="${escapeHtml(game.id)}" ${
               game.canEndTurn && !busy ? "" : "disabled"
             }>End Turn</button>
-            <button class="secondary" data-action="toggle-p1" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle P1 Connection</button>
-            <button class="secondary" data-action="toggle-p2" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle P2 Connection</button>
             <button class="warn" data-action="go-online" data-game-id="${escapeHtml(game.id)}" ${
               game.offlineLocal && !busy ? "" : "disabled"
             }>Go online</button>
@@ -824,19 +822,6 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
       await transport.returnToLive({ gameId });
-      await syncRouteData();
-      return;
-    }
-
-    if (action === "toggle-p1" || action === "toggle-p2") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      const game = transport.getGameViewModel(gameId);
-      if (!game) return;
-      const role = action === "toggle-p1" ? "Player 1" : "Player 2";
-      const current = role === "Player 1" ? game.player1 : game.player2;
-      if (!current) return;
-      await transport.setParticipantConnected({ gameId, role, connected: !current.connected });
       await syncRouteData();
       return;
     }
