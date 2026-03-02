@@ -147,7 +147,7 @@ const setBoardPreviewPrompt = (text) => {
 
 const setRushContinuationPrompt = (player) => {
   const toneClass = player === "P1" ? "player-tone-p1" : player === "P2" ? "player-tone-p2" : "player-tone-neutral";
-  boardPreviewLabelEl.innerHTML = `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares:`;
+  boardPreviewLabelEl.innerHTML = `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares, or <button type="button" class="board-preview-inline-button" data-board-preview-action="pass">end your turn now</button>:`;
 };
 
 const setPushFollowContinuationPrompt = (player) => {
@@ -205,11 +205,11 @@ const showRemovalEffects = (effects) => {
 const actionsAtTarget = (coord) =>
   selectedPieceMoves.filter((action) => action.to && action.to.row === coord.row && action.to.col === coord.col);
 
-const submitCurrentAction = async () => {
+const submitCurrentAction = async (actionOverride = null) => {
   if (!state) return;
   submitActionEl.disabled = true;
   setActionResult("Applying action...");
-  const action = buildActionPayload(actionTypeEl.value, selectedSource, selectedTarget, selectedPieceId);
+  const action = actionOverride ?? buildActionPayload(actionTypeEl.value, selectedSource, selectedTarget, selectedPieceId);
   const previousState = state;
 
   try {
@@ -828,6 +828,18 @@ document.addEventListener("click", (event) => {
   refreshSelectionLabels();
   renderBoard();
   renderStatus();
+});
+
+boardPreviewLabelEl.addEventListener("click", (event) => {
+  const actionButton = event.target.closest("[data-board-preview-action]");
+  if (!actionButton) {
+    return;
+  }
+  const previewAction = actionButton.getAttribute("data-board-preview-action");
+  if (previewAction !== "pass") {
+    return;
+  }
+  void submitCurrentAction({ type: "pass" });
 });
 
 document.addEventListener("keydown", (event) => {

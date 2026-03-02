@@ -63,6 +63,23 @@ body {
   line-height: 1.1;
 }
 
+.board-preview-inline-button {
+  display: inline-block;
+  margin: 0 0 0.1rem;
+  padding: 0.08rem 0.45rem 0.18rem;
+  border-radius: 999px;
+  border: 1px solid #b9c4cd;
+  background: #fffdf8;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 600;
+  vertical-align: baseline;
+}
+
+.board-preview-inline-button:hover {
+  border-color: var(--accent);
+}
+
 .player-tone-p1 {
   color: #c2452f;
 }
