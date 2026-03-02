@@ -9,6 +9,7 @@ import { createEnginePlaygroundBoardAdapter } from "./board-adapters/engine-play
 
 const boardEl = document.getElementById("board");
 const overlayLinesEl = document.getElementById("overlay-lines");
+const boardPreviewLabelEl = document.getElementById("board-preview-label");
 const actionTypeEl = document.getElementById("action-type");
 const allowFreeSelectionEl = document.getElementById("allow-free-selection");
 const sourceValueEl = document.getElementById("source-value");
@@ -275,12 +276,14 @@ const renderStatus = () => {
     selectedPieceEl.textContent = "No piece selected.";
     selectedMovePreviewEl.textContent = "No destination selected.";
     selectedPieceMovesEl.textContent = "[]";
+    boardPreviewLabelEl.innerHTML = "<strong>No move preview selected.</strong>";
   } else {
     selectedPieceEl.textContent = JSON.stringify(pieceSummary.details, null, 2);
     selectedPieceMovesEl.textContent = JSON.stringify(pieceSummary.actions, null, 2);
 
     if (!selectedTarget) {
       selectedMovePreviewEl.textContent = "No destination selected.";
+      boardPreviewLabelEl.innerHTML = "<strong>No move preview selected.</strong>";
     } else {
       const previewsAtTarget = selectedPieceMovePreviews.filter(
         (action) => action.to && action.to.row === selectedTarget.row && action.to.col === selectedTarget.col,
@@ -304,6 +307,7 @@ const renderStatus = () => {
           null,
           2,
         );
+        boardPreviewLabelEl.innerHTML = "<strong>No move preview selected.</strong>";
       } else {
         const disallowedReason =
           preferredPreview.legal === false && preferredPreview.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED"
@@ -322,6 +326,7 @@ const renderStatus = () => {
           null,
           2,
         );
+        boardPreviewLabelEl.innerHTML = `<strong>${actionPreviewLabel(preferredPreview.type, state)}</strong>`;
       }
     }
   }

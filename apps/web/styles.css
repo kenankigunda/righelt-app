@@ -47,6 +47,12 @@ body {
   font-size: 0.9rem;
 }
 
+.board-preview-label {
+  margin: 0.35rem 0 0.75rem;
+  color: var(--ink);
+  min-height: 1.1rem;
+}
+
 button {
   border: 1px solid transparent;
   padding: 0.65rem 0.9rem;
