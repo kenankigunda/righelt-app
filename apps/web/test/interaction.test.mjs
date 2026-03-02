@@ -45,6 +45,18 @@ test("pickBestActionTypeForTarget falls back to priority order", () => {
   assert.equal(result, "project");
 });
 
+test("pickBestActionTypeForTarget prefers rush over move on the same target", () => {
+  const result = pickBestActionTypeForTarget(
+    [
+      { type: "move", to: { row: 1, col: 1 } },
+      { type: "rush", to: { row: 1, col: 1 } },
+    ],
+    "project",
+  );
+
+  assert.equal(result, "rush");
+});
+
 test("buildActionPayload returns pass shape for pass", () => {
   assert.deepEqual(buildActionPayload("pass", { row: 3, col: 6 }, { row: 3, col: 7 }), { type: "pass" });
 });

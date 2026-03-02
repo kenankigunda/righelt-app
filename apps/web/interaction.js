@@ -1,4 +1,4 @@
-export const ACTION_PRIORITY = ["move", "rush", "project", "push", "follow", "retreat"];
+export const ACTION_PRIORITY = ["rush", "move", "project", "push", "follow", "retreat"];
 export const BLOCKED_PREVIEW_REASON = {
   SUPPLY_DESTINATION_UNSUPPLIED: "SUPPLY_DESTINATION_UNSUPPLIED",
   PUSH_STRENGTH_TOO_WEAK: "PUSH_STRENGTH_TOO_WEAK",
