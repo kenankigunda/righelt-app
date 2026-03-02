@@ -37,3 +37,16 @@ test("player-shared invite can fill open player seat immediately", async () => {
   const vm = store.getGameViewModel(game.id);
   assert.ok(vm.player2);
 });
+
+test("player 1 can convert an open-seat game to play-as-both-players mode", async () => {
+  const { store } = createTestStore();
+  const game = await store.createGame();
+
+  const result = store.playAsBothPlayers({ gameId: game.id });
+  assert.equal(result.ok, true);
+
+  const vm = store.getGameViewModel(game.id);
+  assert.equal(vm.player2?.identityId, vm.player1?.identityId);
+  assert.equal(vm.playgroundMode, true);
+  assert.equal(vm.canPlayAsBothPlayers, false);
+});

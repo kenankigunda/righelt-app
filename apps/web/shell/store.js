@@ -184,6 +184,27 @@ export const createShellStore = ({
     return { ok: true, role: requestedSeat, game: clone(game) };
   };
 
+  const playAsBothPlayers = ({ gameId }) => {
+    const game = getGame(gameId);
+    if (!game) {
+      return { ok: false, error: "game_not_found" };
+    }
+    if (game.player1?.identityId !== identityId) {
+      return { ok: false, error: "not_player1" };
+    }
+    if (game.player2) {
+      return { ok: false, error: "player2_already_joined" };
+    }
+
+    game.player2 = { identityId, connected: true, joinedAt: now() };
+    game.playgroundMode = true;
+    game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.requestedSeat !== "Player 2");
+    game.notifications.unshift("Play as both players enabled");
+    game.updatedAt = now();
+    persist();
+    return { ok: true, game: clone(game) };
+  };
+
   const approvePendingRequest = ({ gameId, requesterIdentityId }) => {
     const game = getGame(gameId);
     if (!game) return { ok: false, error: "game_not_found" };
@@ -351,6 +372,7 @@ export const createShellStore = ({
       currentTurn: clone(getActiveTurn(game)),
       canJoinAsPlayer:
         role !== "Player 1" && role !== "Player 2" && !game.playgroundMode && (!game.player1 || !game.player2),
+      canPlayAsBothPlayers: role === "Player 1" && !game.player2,
       canInvite: !offline && !game.offlineLocal,
       showOfflineState: offline || game.offlineLocal,
       showJoinActions: !offline && !game.offlineLocal,
@@ -367,6 +389,7 @@ export const createShellStore = ({
   return {
     createGame,
     joinGame,
+    playAsBothPlayers,
     openAsViewer,
     approvePendingRequest,
     addMove,

@@ -321,6 +321,7 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
     currentSnapshot,
     canJoinAsPlayer: !joinAsPlayerDisabledReason,
     canJoinAsViewer: !joinAsViewerDisabledReason,
+    canPlayAsBothPlayers: myRole === "Player 1" && !game.player2,
     joinAsPlayerDisabledReason,
     joinAsViewerDisabledReason,
     canInvite: !offline && !game.offlineLocal,
@@ -757,6 +758,22 @@ export const handleShellLiveRequest = async (
       addNotification(game, "Player joined");
       broadcastLiveUpdate(game.id, "player_joined");
       return { handled: true, status: 200, body: { ok: true, pendingApproval: false, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
+    }
+
+    if (route.length === 3 && route[2] === "play-as-both") {
+      if (game.player1?.identityId !== identityId) {
+        return { handled: true, status: 409, body: { ok: false, error: "not_player1" }, cacheControl: "no-store" };
+      }
+      if (game.player2) {
+        return { handled: true, status: 409, body: { ok: false, error: "player2_already_joined" }, cacheControl: "no-store" };
+      }
+
+      promoteIdentityToSeat(game, "Player 2", identityId);
+      game.playgroundMode = true;
+      game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.requestedSeat !== "Player 2");
+      addNotification(game, "Play as both players enabled");
+      broadcastLiveUpdate(game.id, "play_as_both_players");
+      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
 
     if (route.length === 3 && route[2] === "approve") {

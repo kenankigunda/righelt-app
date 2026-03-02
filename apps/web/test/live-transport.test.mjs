@@ -86,6 +86,49 @@ test("live transport store uses backend responses for create/load/join flows", a
   assert.equal(calls.some((entry) => String(entry.url).includes("/join")), true);
 });
 
+test("live transport store can promote player 1 to both seats when player 2 is open", async () => {
+  const calls = [];
+  const fetcher = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || "GET" });
+
+    if (String(url).startsWith("/api/shell/games/game-000001/play-as-both") && init.method === "POST") {
+      return Response.json({
+        ok: true,
+        game: {
+          id: "game-000001",
+          createdAt: "2026-02-26T00:00:00.000Z",
+          lastMoveAt: null,
+          updatedAt: "2026-02-26T00:00:00.000Z",
+          offlineLocal: false,
+          playgroundMode: true,
+          player1: { identityId: "id-a", connected: true },
+          player2: { identityId: "id-a", connected: true },
+          viewers: [],
+          pendingJoinRequests: [],
+          moves: [],
+          notifications: ["Play as both players enabled"],
+          myRole: "Player 1",
+          inHistoryMode: false,
+          currentSnapshot: { sideToMove: "P1", turnIndex: 0, pieces: [] },
+          canPlayAsBothPlayers: false,
+          showJoinActions: true,
+          canInvite: true,
+          showOfflineState: false,
+        },
+      });
+    }
+
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
+  const result = await store.playAsBothPlayers({ gameId: "game-000001" });
+
+  assert.equal(result.game.playgroundMode, true);
+  assert.equal(result.game.player2?.identityId, "id-a");
+  assert.equal(calls.some((entry) => entry.url.startsWith("/api/shell/games/game-000001/play-as-both")), true);
+});
+
 test("live transport store keeps offline moves local until reconnect", async () => {
   const calls = [];
   const gameId = "game-offline-1";

@@ -283,9 +283,8 @@ const renderHome = () => {
         <section class="panel">
           <h2>Start</h2>
           <div class="row">
-            <button data-action="create-game" ${busy ? "disabled" : ""}>Play Game</button>
-            <button data-action="create-playground" class="secondary" ${busy ? "disabled" : ""}>Playground Mode</button>
-            <button data-action="create-offline-playground" class="warn" ${busy ? "disabled" : ""}>Offline Play</button>
+            <button data-action="create-game" ${busy ? "disabled" : ""}>Play with friends</button>
+            <button data-action="create-offline-playground" class="warn" ${busy ? "disabled" : ""}>Play locally</button>
           </div>
           <p class="small">Server-backed game sessions with live state transitions.</p>
         </section>
@@ -416,6 +415,13 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
             <button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${
               game.canJoinAsPlayer && game.showJoinActions && !busy ? "" : "disabled"
             }>Join as player</button>
+            ${
+              game.canPlayAsBothPlayers
+                ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
+                    !game.showOfflineState && !busy ? "" : "disabled"
+                  }>Play as both players</button>`
+                : ""
+            }
             <button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${
               game.canInvite && !busy ? "" : "disabled"
             }>Invite</button>
@@ -826,12 +832,6 @@ appEl.addEventListener("click", async (event) => {
       return;
     }
 
-    if (action === "create-playground") {
-      const game = await transport.createGame({ playgroundMode: true, offlineLocal: false });
-      navigateTo(buildGameHash(game.id));
-      return;
-    }
-
     if (action === "create-offline-playground") {
       await transport.setOffline(true);
       const game = await transport.createGame({ playgroundMode: true, offlineLocal: true });
@@ -889,6 +889,14 @@ appEl.addEventListener("click", async (event) => {
         navigateTo(buildGameHash(gameId));
         return;
       }
+      await syncRouteData();
+      return;
+    }
+
+    if (action === "play-as-both-players") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      if (!gameId) return;
+      await transport.playAsBothPlayers({ gameId });
       await syncRouteData();
       return;
     }
