@@ -442,7 +442,7 @@ const renderStatus = () => {
 
   sideToMoveEl.textContent = state.sideToMove;
   setPlayerTone(sideToMoveEl, state.sideToMove);
-  boardTurnIndicatorEl.textContent = state.sideToMove === "P1" ? "Player 1" : "Player 2";
+  boardTurnIndicatorEl.textContent = state.sideToMove === "P1" ? "Player 1 to play" : "Player 2 to play";
   setPlayerTone(boardTurnIndicatorEl, state.sideToMove);
   turnIndexEl.textContent = String(state.turnIndex);
   continuationEl.textContent = state.continuation
