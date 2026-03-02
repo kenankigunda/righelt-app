@@ -76,6 +76,12 @@ Every board implementation must provide:
   - It preserves shell-observable behavior in Sections 2-15.
   - No shell code changes are required beyond selecting/configuring the board adapter.
 
+### 1.1.4 UI Writing Convention for Pills
+
+- Inline pills/chips used inside instructional copy are treated as self-contained UI tokens rather than prose.
+- When a board preview label or similar instruction ends with a pill/chip or inline action button, no trailing punctuation is used after that UI token.
+- Ordinary prose-only board preview labels continue using the established trailing colon format.
+
 ## 2. Identity and Rejoin
 
 - The app must persist a device-local identity token.

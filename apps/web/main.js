@@ -147,12 +147,12 @@ const setBoardPreviewPrompt = (text) => {
 
 const setRushContinuationPrompt = (player) => {
   const toneClass = player === "P1" ? "player-tone-p1" : player === "P2" ? "player-tone-p2" : "player-tone-neutral";
-  boardPreviewLabelEl.innerHTML = `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares, or <button type="button" class="board-preview-inline-button" data-board-preview-action="pass">end your turn now</button>:`;
+  boardPreviewLabelEl.innerHTML = `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares, or <button type="button" class="board-preview-inline-button" data-board-preview-action="pass">end your turn now</button>`;
 };
 
 const setPushFollowContinuationPrompt = (player) => {
   const toneClass = player === "P1" ? "player-tone-p1" : player === "P2" ? "player-tone-p2" : "player-tone-neutral";
-  boardPreviewLabelEl.innerHTML = `Follow your push on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares:`;
+  boardPreviewLabelEl.innerHTML = `Follow your push on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares`;
 };
 
 const setBoardPreviewAction = (text) => {
