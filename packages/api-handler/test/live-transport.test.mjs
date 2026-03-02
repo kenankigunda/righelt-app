@@ -78,6 +78,17 @@ test("live transport: join approval flow and presence/history/move transitions",
   const pendingBody = await joinPending.json();
   assert.equal(pendingBody.pendingApproval, true);
 
+  const secondPending = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-other",
+      mode: "player",
+      inviteFromRole: null,
+    }),
+    env,
+  );
+  const secondPendingBody = await secondPending.json();
+  assert.equal(secondPendingBody.pendingApproval, true);
+
   const approve = await handleApiRequest(
     req(`/api/shell/games/${gameId}/approve`, "POST", {
       identityId: "id-owner",
@@ -89,6 +100,7 @@ test("live transport: join approval flow and presence/history/move transitions",
   assert.equal(Boolean(approveBody.game.player2), true);
   assert.equal(approveBody.game.player2.identityId, "id-joiner");
   assert.equal(approveBody.game.viewers.some((viewer) => viewer.identityId === "id-joiner"), false);
+  assert.equal(approveBody.game.pendingJoinRequests.length, 0);
 
   const move = await handleApiRequest(
     req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
@@ -181,6 +193,7 @@ test("live transport: player invite token enables immediate player join without 
   assert.equal(join.status, 200);
   assert.equal(joinBody.pendingApproval, false);
   assert.equal(joinBody.game.player2.identityId, "id-player2");
+  assert.equal(joinBody.game.pendingJoinRequests.length, 0);
 });
 
 test("live transport: non-player invite token requires approval for player join and joins viewer immediately", async () => {

@@ -231,6 +231,10 @@ const promoteIdentityToSeat = (game: ShellGame, seat: "Player 1" | "Player 2", i
   game.player2 = participant;
 };
 
+const dismissCompetingJoinRequests = (game: ShellGame, acceptedIdentityId: string) => {
+  game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.identityId === acceptedIdentityId);
+};
+
 const getSeatIdentity = (game: ShellGame, seat: "Player 1" | "Player 2"): string | null => {
   if (seat === "Player 1") {
     return game.player1?.identityId ?? null;
@@ -748,6 +752,7 @@ export const handleShellLiveRequest = async (
       } else {
         promoteIdentityToSeat(game, "Player 2", identityId);
       }
+      dismissCompetingJoinRequests(game, identityId);
       game.updatedAt = now();
       addNotification(game, "Player joined");
       broadcastLiveUpdate(game.id, "player_joined");
@@ -778,6 +783,7 @@ export const handleShellLiveRequest = async (
       if (requestItem.requestedSeat === "Player 2" && !game.player2) {
         promoteIdentityToSeat(game, "Player 2", requestItem.identityId);
       }
+      dismissCompetingJoinRequests(game, requestItem.identityId);
       game.updatedAt = now();
       addNotification(game, "Player request approved");
       broadcastLiveUpdate(game.id, "player_request_approved");
