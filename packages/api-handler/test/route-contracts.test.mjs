@@ -401,11 +401,11 @@ test("/api/engine/playground/apply returns removedPieces notice for no-retreat r
   ]);
 });
 
-test("/api/engine/playground/apply returns removedPieces notice for loss-of-supply removal from M-006", async () => {
+test("/api/engine/playground/apply returns removedPieces notice for loss-of-supply removal from M-007", async () => {
   const { env } = buildEnv();
   const rawCatalog = await readFile(new URL("../../../apps/web/fixtures/m-golden-fixtures.json", import.meta.url), "utf8");
   const catalog = JSON.parse(rawCatalog);
-  const fixture = catalog.fixtures.find((entry) => entry.id === "M-006");
+  const fixture = catalog.fixtures.find((entry) => entry.id === "M-007");
 
   assert.ok(fixture);
 

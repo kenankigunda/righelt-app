@@ -4,6 +4,172 @@
   "fixtures": [
     {
       "id": "M-001",
+      "title": "Game start",
+      "description": "This fixture matches the default opening board with only the two commanders in play. It serves as the clean reset state for the playground before any scenario-specific structure has been added.\n\nNext move: Choose any legal opening move.",
+      "incorrect": false,
+      "initial_state": {
+        "boardSize": 10,
+        "sideToMove": "P1",
+        "turnIndex": 0,
+        "pieces": [
+          {
+            "id": "C1",
+            "owner": "P1",
+            "kind": "commander",
+            "position": {
+              "row": 3,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true
+          },
+          {
+            "id": "C2",
+            "owner": "P2",
+            "kind": "commander",
+            "position": {
+              "row": 6,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true
+          }
+        ],
+        "continuation": null,
+        "outcome": {
+          "status": "ongoing"
+        },
+        "artifacts": {
+          "mode": "full",
+          "supply": [
+            {
+              "player": "P1",
+              "reachability": [
+                "C1"
+              ],
+              "shortestPathByPieceId": {
+                "C1": [
+                  {
+                    "row": 3,
+                    "col": 6
+                  },
+                  {
+                    "row": 2,
+                    "col": 6
+                  },
+                  {
+                    "row": 1,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C1": 6
+              }
+            },
+            {
+              "player": "P2",
+              "reachability": [
+                "C2"
+              ],
+              "shortestPathByPieceId": {
+                "C2": [
+                  {
+                    "row": 6,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 2
+                  },
+                  {
+                    "row": 6,
+                    "col": 1
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C2": 6
+              }
+            }
+          ],
+          "command": {
+            "candidateEdges": [],
+            "cutEdges": [],
+            "activeEdges": [],
+            "shortestPathToCommanderByPieceId": {
+              "C1": [
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "C2": [
+                {
+                  "row": 6,
+                  "col": 3
+                }
+              ]
+            }
+          },
+          "groups": {
+            "componentByPieceId": {
+              "C1": "P1:C1",
+              "C2": "P2:C2"
+            },
+            "membersByComponentId": {
+              "P1:C1": [
+                "C1"
+              ],
+              "P2:C2": [
+                "C2"
+              ]
+            },
+            "strengthByComponentId": {
+              "P1:C1": 1,
+              "P2:C2": 1
+            }
+          }
+        }
+      },
+      "action_sequence": [],
+      "expected_final_state_hash": "3dab87ec2a420bd843e90082747b5a1ce098daa6ff3ed9d88974fb7993d240ec",
+      "expected_outcome": "ongoing"
+    },
+    {
+      "id": "M-002",
       "title": "Minimal supply-cut win",
       "description": "This fixture is set up so P1 can win immediately by moving the commander left one square. That move cuts C2's last remaining supply route, so the game ends in P1's favor as soon as the position stabilizes.\n\nNext move: P1 moves commander from (3, 6) to (3, 5).",
       "incorrect": false,
@@ -81,7 +247,7 @@
       "expected_outcome": "p1_win"
     },
     {
-      "id": "M-002",
+      "id": "M-003",
       "title": "Simultaneous draw by mutual supply cut",
       "description": "This fixture is set up so P2 can force both commanders to become unsupplied in the same resolution pass. The projection extends P2's structure while simultaneously collapsing both sides' supply, so the stabilized result is a draw.\n\nNext move: P2 projects from (5, 4) to (5, 6).",
       "incorrect": false,
@@ -170,7 +336,7 @@
       "expected_outcome": "draw"
     },
     {
-      "id": "M-003",
+      "id": "M-004",
       "title": "Push chain into forced no-retreat then win",
       "description": "This fixture is set up to illustrate a forced-destruction push sequence. P1 first pushes the P2 unit on (5, 3), and the follow-up move completes the chain so the pushed piece has no legal retreat and is destroyed, leaving P1 winning the stabilized position.\n\nNext move: P1 pushes from (5, 2) to (5, 3), then follows from (5, 1) to (5, 2).",
       "incorrect": false,
@@ -284,7 +450,7 @@
       "expected_outcome": "p1_win"
     },
     {
-      "id": "M-004",
+      "id": "M-005",
       "title": "Replay parity with recorded log",
       "description": "This fixture is set up as a short recorded sequence for replay and parity checking rather than an immediate tactical finish. The expected continuation is a project, then a pass, then a commander move, and the point is that both runtimes should land on the same ongoing state.\n\nNext move: P1 projects from (4, 6) to (2, 6).",
       "incorrect": false,
@@ -388,7 +554,7 @@
       "expected_outcome": "ongoing"
     },
     {
-      "id": "M-005",
+      "id": "M-006",
       "title": "Cannot project into fortress",
       "description": "This fixture is set up to inspect a blocked projection preview around a fortified structure. The notable next attempt is a P2 projection that looks geometrically plausible but should remain strategically invalid because the destination is effectively protected by the surrounding position.\n\nNext move: P2 attempts to project into the fortress from the available previewed source square.",
       "incorrect": false,
@@ -922,7 +1088,7 @@
       "expected_outcome": "ongoing"
     },
     {
-      "id": "M-006",
+      "id": "M-007",
       "title": "Imminent loss on supply",
       "description": "This fixture is set up to show an imminent supply-loss destruction. P1 can project into the structural gap on the left, and that new piece cuts off the P2 unit on (4, 5) from any remaining supply route, so the unit is destroyed during stabilization.\n\nNext move: P1 projects from (3, 6) to (3, 4).",
       "incorrect": false,
