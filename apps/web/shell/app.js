@@ -3,11 +3,12 @@ import { createEnginePlaygroundBoardAdapter } from "../board-adapters/engine-pla
 import { getBootstrapPayload } from "./bootstrap.js";
 import { createLiveTransportStore } from "./live-transport.js";
 import { createLiveSyncClient } from "./live-sync.js";
-import { loadTutorialCompleted, saveTutorialCompleted } from "./persistence.js";
+import { saveTutorialCompleted } from "./persistence.js";
 import {
   buildGameHash,
   buildHomeHash,
   buildInviteHash,
+  buildPlaygroundHash,
   buildTutorialHash,
   isShellRootHash,
   parseRouteFromHash,
@@ -216,6 +217,7 @@ const renderHeader = () => `
       <div class="nav-row">
         <a class="button-link secondary" href="/">Playground</a>
         <a class="button-link secondary" href="${buildHomeHash()}">Home</a>
+        <a class="button-link secondary" href="${buildPlaygroundHash()}">Playground</a>
         <a class="button-link secondary" href="${buildTutorialHash()}">Tutorial</a>
       </div>
       <div class="nav-row nav-row-single">
@@ -972,11 +974,6 @@ appEl.addEventListener("click", async (event) => {
 const initialRender = async () => {
   if (navigator.onLine === false) {
     await transport.setOffline(true);
-  }
-
-  if (currentRoute.name === "home" && !loadTutorialCompleted(storage)) {
-    navigateTo(buildTutorialHash());
-    return;
   }
 
   routeHydrated = false;
