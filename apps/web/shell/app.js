@@ -81,6 +81,25 @@ const escapeHtml = (value) =>
 const formatStatus = (connected) =>
   connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip offline">Disconnected</span>';
 
+const formatDisplayGameId = (gameId) => {
+  const value = String(gameId || "");
+  if (!value.startsWith("game-")) {
+    return value.slice(0, 6);
+  }
+  return `game-${value.slice(5, 11)}`;
+};
+
+const formatClientDateTime = (value) => {
+  const timestamp = Date.parse(String(value || ""));
+  if (!Number.isFinite(timestamp)) {
+    return "Unknown";
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(timestamp));
+};
+
 const renderBoardPlaceholder = (game) => {
   const lastMove = game.moves.length > 0 ? game.moves[game.moves.length - 1] : null;
   const currentTurn = game.currentTurn;
@@ -197,7 +216,7 @@ const renderHome = () => {
       : `<ol class="game-list">${games
           .map(
             (game) => `<li>
-            <a href="${buildGameHash(game.id)}">${escapeHtml(game.id)}</a>
+            <a href="${buildGameHash(game.id)}">${escapeHtml(formatDisplayGameId(game.id))}</a>
             <span class="small">latest ${escapeHtml(game.lastMoveAt || game.createdAt)}</span>
           </li>`,
           )
@@ -304,7 +323,8 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
     <section class="layout-grid">
       <div class="stack">
         <section class="panel">
-          <h2>Game <span class="mono">${escapeHtml(game.id)}</span></h2>
+          <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
+          <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
           <p class="small">Role: <strong>${escapeHtml(game.myRole)}</strong></p>
           ${offlineBanner}
           ${historyBanner}
