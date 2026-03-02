@@ -5,11 +5,13 @@ import { createInitialState } from "../../game-engine/src/state";
 import type { Action, GameState } from "../../game-engine/src/types";
 
 const MAX_HISTORY = 200;
+const PRESENCE_STALE_MS = 30_000;
 
 type Participant = {
   identityId: string;
   connected: boolean;
   joinedAt: string;
+  lastSeenAt: string;
 };
 
 type Viewer = Participant;
@@ -52,11 +54,62 @@ let seq = 0;
 const homeSubscribers = new Set<any>();
 const gameSubscribers = new Map<string, Set<any>>();
 
-const now = () => new Date().toISOString();
+const now = () => new Date(Date.now()).toISOString();
 const clone = <T>(value: T): T => structuredClone(value);
 const nextId = () => {
   seq += 1;
   return `game-${seq.toString().padStart(6, "0")}`;
+};
+
+const toTimestamp = (value: string | null | undefined) => {
+  if (!value) return 0;
+  const ts = Date.parse(value);
+  return Number.isFinite(ts) ? ts : 0;
+};
+
+const isFreshPresence = (participant: Participant | null) => {
+  if (!participant) {
+    return false;
+  }
+  const seenAt = participant.lastSeenAt || participant.joinedAt;
+  return Date.now() - toTimestamp(seenAt) <= PRESENCE_STALE_MS;
+};
+
+const applyPresenceFreshness = (game: ShellGame) => {
+  if (game.player1) {
+    game.player1.connected = isFreshPresence(game.player1);
+  }
+  if (game.player2) {
+    game.player2.connected = isFreshPresence(game.player2);
+  }
+  for (const viewer of game.viewers) {
+    viewer.connected = isFreshPresence(viewer);
+  }
+};
+
+const touchIdentityPresence = (game: ShellGame, identityId: string) => {
+  const touchedAt = now();
+  if (game.player1?.identityId === identityId) {
+    game.player1.connected = true;
+    game.player1.lastSeenAt = touchedAt;
+  }
+  if (game.player2?.identityId === identityId) {
+    game.player2.connected = true;
+    game.player2.lastSeenAt = touchedAt;
+  }
+  for (const viewer of game.viewers) {
+    if (viewer.identityId === identityId) {
+      viewer.connected = true;
+      viewer.lastSeenAt = touchedAt;
+    }
+  }
+};
+
+const touchIdentityAcrossGames = (identityId: string) => {
+  for (const game of games.values()) {
+    touchIdentityPresence(game, identityId);
+    applyPresenceFreshness(game);
+  }
 };
 
 const getGameSubscriberSet = (gameId: string) => {
@@ -114,9 +167,11 @@ const findRoleForIdentity = (game: ShellGame, identityId: string): string => {
 
 const ensureViewer = (game: ShellGame, identityId: string): boolean => {
   if (game.viewers.some((viewer) => viewer.identityId === identityId)) {
+    touchIdentityPresence(game, identityId);
     return false;
   }
-  game.viewers.push({ identityId, connected: true, joinedAt: now() });
+  const touchedAt = now();
+  game.viewers.push({ identityId, connected: true, joinedAt: touchedAt, lastSeenAt: touchedAt });
   return true;
 };
 
@@ -137,6 +192,7 @@ const getApproverIdentityForSeat = (game: ShellGame, seat: "Player 1" | "Player 
 const getSideToMoveSeat = (game: ShellGame): "Player 1" | "Player 2" => (game.board.state.sideToMove === "P1" ? "Player 1" : "Player 2");
 
 const withViewModel = (game: ShellGame, identityId: string, offline = false) => {
+  applyPresenceFreshness(game);
   const myRole = findRoleForIdentity(game, identityId);
   const inHistoryMode = typeof game.historyIndex === "number";
   const currentSnapshot =
@@ -253,6 +309,7 @@ export const handleShellLiveWebSocketUpgrade = (request: Request): Response | nu
   }
 
   const scope = url.searchParams.get("scope");
+  const identityId = asIdentity(url.searchParams.get("identityId"));
   const gameId = scope === "game" ? asIdentity(url.searchParams.get("gameId")) : null;
   const socketPair = new wsCtor();
   const client = socketPair[0];
@@ -260,8 +317,16 @@ export const handleShellLiveWebSocketUpgrade = (request: Request): Response | nu
   server.accept();
 
   if (scope === "home") {
+    if (identityId) {
+      touchIdentityAcrossGames(identityId);
+    }
     homeSubscribers.add(server);
   } else if (scope === "game" && gameId) {
+    const game = games.get(gameId);
+    if (game && identityId) {
+      touchIdentityPresence(game, identityId);
+      applyPresenceFreshness(game);
+    }
     getGameSubscriberSet(gameId).add(server);
   } else {
     return new Response("Invalid websocket scope", { status: 400 });
@@ -320,6 +385,8 @@ export const handleShellLiveRequest = async (
       return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: "no-store" };
     }
 
+    touchIdentityAcrossGames(identityId);
+
     return {
       handled: true,
       status: 200,
@@ -348,8 +415,8 @@ export const handleShellLiveRequest = async (
       playgroundMode,
       offlineLocal,
       board: { state: initial },
-      player1: { identityId, connected: true, joinedAt: createdAt },
-      player2: playgroundMode ? { identityId, connected: true, joinedAt: createdAt } : null,
+      player1: { identityId, connected: true, joinedAt: createdAt, lastSeenAt: createdAt },
+      player2: playgroundMode ? { identityId, connected: true, joinedAt: createdAt, lastSeenAt: createdAt } : null,
       viewers: [],
       pendingJoinRequests: [],
       moves: [],
@@ -380,6 +447,7 @@ export const handleShellLiveRequest = async (
         return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: "no-store" };
       }
 
+      touchIdentityPresence(game, identityId);
       if (url.searchParams.get("openAsViewer") === "1") {
         const added = ensureViewer(game, identityId);
         if (added) {
@@ -461,9 +529,11 @@ export const handleShellLiveRequest = async (
       }
 
       if (requestedSeat === "Player 1") {
-        game.player1 = { identityId, connected: true, joinedAt: now() };
+        const joinedAt = now();
+        game.player1 = { identityId, connected: true, joinedAt, lastSeenAt: joinedAt };
       } else {
-        game.player2 = { identityId, connected: true, joinedAt: now() };
+        const joinedAt = now();
+        game.player2 = { identityId, connected: true, joinedAt, lastSeenAt: joinedAt };
       }
       game.updatedAt = now();
       addNotification(game, "Player joined");
@@ -490,10 +560,12 @@ export const handleShellLiveRequest = async (
       game.pendingJoinRequests.splice(requestIndex, 1);
 
       if (requestItem.requestedSeat === "Player 1" && !game.player1) {
-        game.player1 = { identityId: requestItem.identityId, connected: true, joinedAt: now() };
+        const joinedAt = now();
+        game.player1 = { identityId: requestItem.identityId, connected: true, joinedAt, lastSeenAt: joinedAt };
       }
       if (requestItem.requestedSeat === "Player 2" && !game.player2) {
-        game.player2 = { identityId: requestItem.identityId, connected: true, joinedAt: now() };
+        const joinedAt = now();
+        game.player2 = { identityId: requestItem.identityId, connected: true, joinedAt, lastSeenAt: joinedAt };
       }
       game.updatedAt = now();
       addNotification(game, "Player request approved");
@@ -551,6 +623,7 @@ export const handleShellLiveRequest = async (
         return { handled: true, status: 404, body: { ok: false, error: "participant_not_found" }, cacheControl: "no-store" };
       }
       entry.connected = connected;
+      entry.lastSeenAt = connected ? now() : new Date(0).toISOString();
       game.updatedAt = now();
       addNotification(game, `Participant ${connected ? "connected" : "disconnected"}`);
       broadcastLiveUpdate(game.id, connected ? "participant_connected" : "participant_disconnected");

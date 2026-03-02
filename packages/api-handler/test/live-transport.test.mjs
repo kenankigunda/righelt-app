@@ -193,3 +193,39 @@ test("live transport: approve rejects unauthorized approver", async () => {
   assert.equal(unauthorizedApprove.status, 403);
   assert.equal((await unauthorizedApprove.json()).error, "approval_not_allowed");
 });
+
+test("live transport: stale participants load as disconnected until they become active again", async () => {
+  const realNow = Date.now;
+  let fakeNow = new Date("2026-02-26T00:00:00.000Z").getTime();
+  Date.now = () => fakeNow;
+
+  try {
+    const create = await handleApiRequest(
+      req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+      env,
+    );
+    const gameId = (await create.json()).game.id;
+
+    await handleApiRequest(
+      req(`/api/shell/games/${gameId}/join`, "POST", {
+        identityId: "id-player2",
+        mode: "player",
+        inviteFromRole: "Player 1",
+      }),
+      env,
+    );
+
+    fakeNow += 31_000;
+
+    const ownerView = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+    const ownerBody = await ownerView.json();
+    assert.equal(ownerBody.game.player1.connected, true);
+    assert.equal(ownerBody.game.player2.connected, false);
+
+    const player2View = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-player2`), env);
+    const player2Body = await player2View.json();
+    assert.equal(player2Body.game.player2.connected, true);
+  } finally {
+    Date.now = realNow;
+  }
+});
