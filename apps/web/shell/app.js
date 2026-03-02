@@ -184,18 +184,23 @@ const renderTurnHistory = (game) => {
 
 const renderHeader = () => `
   <header class="shell-header">
-    <div>
+    <div class="shell-header-main">
       <h1>Righelt Web Shell</h1>
       <p class="small">Identity <span class="mono">${escapeHtml(transport.getIdentityId())}</span></p>
-      <p class="small">Live sync: <span class="mono">${escapeHtml(
+      <p class="small shell-header-status">Live sync: <span class="mono">${escapeHtml(
         `${wsStatus.state}${wsStatus.scope ? `:${wsStatus.scope}` : ""}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`,
-      )}</span> | Last event: <span class="mono">${escapeHtml(wsLastEvent)}</span></p>
+      )}</span></p>
+      <p class="small shell-header-status">Last event: <span class="mono">${escapeHtml(wsLastEvent)}</span></p>
     </div>
-    <div class="nav-row">
-      <a class="button-link secondary" href="/">Playground</a>
-      <a class="button-link secondary" href="${buildHomeHash()}">Home</a>
-      <a class="button-link secondary" href="${buildTutorialHash()}">Tutorial</a>
-      <button data-action="toggle-offline" class="secondary">Toggle Offline</button>
+    <div class="shell-header-actions">
+      <div class="nav-row">
+        <a class="button-link secondary" href="/">Playground</a>
+        <a class="button-link secondary" href="${buildHomeHash()}">Home</a>
+        <a class="button-link secondary" href="${buildTutorialHash()}">Tutorial</a>
+      </div>
+      <div class="nav-row nav-row-single">
+        <button data-action="toggle-offline" class="secondary">Toggle Offline</button>
+      </div>
     </div>
   </header>
 `;

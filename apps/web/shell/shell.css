@@ -44,7 +44,7 @@ body {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .shell-header h1 {
@@ -52,10 +52,36 @@ body {
   font-size: 1.25rem;
 }
 
+.shell-header-main,
+.shell-header-actions {
+  min-width: 0;
+}
+
+.shell-header-main {
+  flex: 1 1 28rem;
+}
+
+.shell-header-status {
+  margin: 0.2rem 0 0;
+}
+
+.shell-header-actions {
+  flex: 1 1 24rem;
+  display: grid;
+  gap: 0.5rem;
+  justify-items: end;
+}
+
 .nav-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.nav-row-single {
+  justify-content: flex-end;
 }
 
 button,
