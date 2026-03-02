@@ -165,29 +165,6 @@ button {
   pointer-events: none;
 }
 
-.removal-flash {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-  border-radius: 6px;
-  background:
-    radial-gradient(circle at center, rgba(255, 214, 102, 0.85) 0%, rgba(255, 130, 80, 0.75) 34%, rgba(184, 24, 24, 0.6) 66%, transparent 100%);
-  animation: removal-flash-pulse 0.36s ease-in-out 5 alternate;
-}
-
-@keyframes removal-flash-pulse {
-  from {
-    opacity: 0.25;
-    transform: scale(0.94);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
 .cell.disallowed-preview::before {
   content: "";
   position: absolute;
@@ -366,6 +343,22 @@ button {
 
 .piece-token.ghost {
   opacity: 0.35;
+}
+
+.piece-token.removal-piece {
+  z-index: 2;
+  animation: removal-piece-flash 0.36s ease-in-out 5 alternate;
+  animation-fill-mode: forwards;
+}
+
+@keyframes removal-piece-flash {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0.08;
+  }
 }
 
 .piece-token.move-ghost.illegal-unsupplied::before,
