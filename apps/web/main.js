@@ -572,6 +572,47 @@ const loadFixtureCatalog = async () => {
 
 const getSelectedFixture = () => fixtures.find((fixture) => fixture.id === currentFixtureId) ?? null;
 
+const getFixtureNextMove = (fixture) => {
+  if (!fixture || typeof fixture !== "object") {
+    return null;
+  }
+  const candidate = fixture.next_move ?? fixture.action_sequence?.[0] ?? null;
+  if (!candidate || typeof candidate !== "object" || typeof candidate.type !== "string") {
+    return null;
+  }
+  return candidate;
+};
+
+const applyFixtureNextMoveSelection = async (fixture) => {
+  const nextMove = getFixtureNextMove(fixture);
+  if (!nextMove || !nextMove.from || !nextMove.to) {
+    actionTypeEl.value = nextMove?.type ?? "pass";
+    clearSelection();
+    refreshSelectionLabels();
+    renderBoard();
+    renderStatus();
+    return;
+  }
+
+  const selectedPiece =
+    (typeof nextMove.actorId === "string" && boardAdapter.getPieceById(state, nextMove.actorId)) ||
+    boardAdapter.getPieceAt(state, nextMove.from);
+
+  selectedPieceId = selectedPiece?.id ?? null;
+  selectedSource = { ...nextMove.from };
+  selectedTarget = { ...nextMove.to };
+  actionTypeEl.value = nextMove.type;
+  refreshSelectionLabels();
+
+  if (!selectedPieceId) {
+    renderBoard();
+    renderStatus();
+    return;
+  }
+
+  await reloadSelectedPieceMoves();
+};
+
 const getNextFixtureId = () => {
   const prefix = (fixtureCatalog.id || "M").toUpperCase();
   let maxNumeric = 0;
@@ -684,7 +725,7 @@ fixtureIncorrectToggleEl?.addEventListener("change", async () => {
   });
 });
 
-loadFixtureEl.addEventListener("click", () => {
+loadFixtureEl.addEventListener("click", async () => {
   const fixture = getSelectedFixture();
   if (!fixture) {
     setFixtureResult({ ok: false, error: "fixture_not_found" });
@@ -696,11 +737,14 @@ loadFixtureEl.addEventListener("click", () => {
   clearSelection();
   moveLog.length = 0;
   moveLog.push(`Loaded fixture ${fixture.id}`);
-  refreshSelectionLabels();
-  renderBoard();
-  renderStatus();
   renderMoveLog();
-  void reloadLegalActions().catch(() => {});
+  try {
+    await reloadLegalActions();
+    await applyFixtureNextMoveSelection(fixture);
+  } catch {
+    renderBoard();
+    renderStatus();
+  }
   setFixtureResult({
     ok: true,
     fixtureId: fixture.id,
