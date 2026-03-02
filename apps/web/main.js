@@ -77,28 +77,29 @@ boardAdapter.mount({
 
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "unset");
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
-const actionPreviewLabel = (actionType, snapshot) => {
+const actionPreviewLabel = (actionType, snapshot, destination) => {
+  const suffix = destination ? ` (${destination.row},${destination.col})` : "";
   if (snapshot?.continuation?.type === "rush" && actionType === "rush") {
-    return "Continue rush on this square";
+    return `Continue rush on${suffix}`;
   }
   if (snapshot?.continuation?.type === "push" && actionType === "follow") {
-    return "Continue push on this square";
+    return `Continue push on${suffix}`;
   }
   switch (actionType) {
     case "move":
-      return "Move commander to this square";
+      return `Move commander to${suffix}`;
     case "project":
-      return "Project new piece to this square";
+      return `Project new piece to${suffix}`;
     case "rush":
-      return "Rush piece to this square";
+      return `Rush piece to${suffix}`;
     case "push":
-      return "Push piece onto this square";
+      return `Push piece onto${suffix}`;
     case "follow":
-      return "Follow piece to this square";
+      return `Follow piece to${suffix}`;
     case "retreat":
-      return "Retreat piece to this square";
+      return `Retreat piece to${suffix}`;
     default:
-      return "Move to this square";
+      return `Move to${suffix}`;
   }
 };
 
@@ -340,7 +341,7 @@ const renderStatus = () => {
 
         selectedMovePreviewEl.textContent = JSON.stringify(
           {
-            actionLabel: actionPreviewLabel(preferredPreview.type, state),
+            actionLabel: actionPreviewLabel(preferredPreview.type, state, selectedTarget),
             destination: selectedTarget,
             legal: legalAtTarget.some((action) => action.type === preferredPreview.type),
             reason: disallowedReason ?? "Legal preview.",
@@ -348,7 +349,7 @@ const renderStatus = () => {
           null,
           2,
         );
-        boardPreviewLabelEl.innerHTML = `<strong>${actionPreviewLabel(preferredPreview.type, state)}</strong>`;
+        boardPreviewLabelEl.innerHTML = `<strong>${actionPreviewLabel(preferredPreview.type, state, selectedTarget)}</strong>`;
       }
     }
   }
