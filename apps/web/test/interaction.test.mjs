@@ -2,8 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  BLOCKED_PREVIEW_REASON,
   buildActionPayload,
+  getBlockedPreviewLabel,
   pickBestActionTypeForTarget,
+  shouldPreferActionTargetOnOccupiedCell,
   shouldAllowSelectionAtTarget,
   shouldResetSelectionOnDocumentClick,
   shouldSubmitOnEnter,
@@ -132,5 +135,45 @@ test("shouldAllowSelectionAtTarget allows free mode", () => {
       actionsAtTarget: [],
     }),
     true,
+  );
+});
+
+test("shouldPreferActionTargetOnOccupiedCell only prefers enemy target cells with previews", () => {
+  assert.equal(
+    shouldPreferActionTargetOnOccupiedCell({
+      selectedPieceOwner: "P1",
+      clickedPieceOwner: "P2",
+      actionsAtTarget: [{ type: "push", to: { row: 4, col: 5 } }],
+    }),
+    true,
+  );
+
+  assert.equal(
+    shouldPreferActionTargetOnOccupiedCell({
+      selectedPieceOwner: "P1",
+      clickedPieceOwner: "P2",
+      actionsAtTarget: [],
+    }),
+    false,
+  );
+
+  assert.equal(
+    shouldPreferActionTargetOnOccupiedCell({
+      selectedPieceOwner: "P1",
+      clickedPieceOwner: "P1",
+      actionsAtTarget: [{ type: "push", to: { row: 4, col: 5 } }],
+    }),
+    false,
+  );
+});
+
+test("getBlockedPreviewLabel maps player-facing preview copy", () => {
+  assert.equal(
+    getBlockedPreviewLabel(BLOCKED_PREVIEW_REASON.SUPPLY_DESTINATION_UNSUPPLIED),
+    "Disallowed: destination would be unsupplied.",
+  );
+  assert.equal(
+    getBlockedPreviewLabel(BLOCKED_PREVIEW_REASON.PUSH_STRENGTH_TOO_WEAK),
+    "Disallowed: group strength too low to push this piece.",
   );
 });

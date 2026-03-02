@@ -316,6 +316,57 @@ test("/api/engine/playground/piece-moves includes unsupplied-blocked previews bu
   );
 });
 
+test("/api/engine/playground/piece-moves includes blocked push previews for inadequate group strength", async () => {
+  const { env } = buildEnv();
+  const baseResponse = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/engine/playground/state", { method: "GET" }),
+    env,
+  );
+  const baseBody = await baseResponse.json();
+
+  const state = {
+    ...baseBody.state,
+    pieces: [
+      ...baseBody.state.pieces,
+      { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 3 }, supplied: true, commanded: true },
+      { id: "A2", owner: "P1", kind: "unit", position: { row: 3, col: 3 }, supplied: true, commanded: true },
+      { id: "D1", owner: "P2", kind: "unit", position: { row: 5, col: 3 }, supplied: true, commanded: true },
+    ],
+  };
+
+  const response = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/engine/playground/piece-moves", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state, pieceId: "A1" }),
+    }),
+    env,
+  );
+
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(
+    body.actions.some((action) => action.type === "push" && action.to?.row === 4 && action.to?.col === 3),
+    false,
+  );
+  assert.equal(
+    body.actions.some((action) => action.type === "push" && action.to?.row === 5 && action.to?.col === 3),
+    false,
+  );
+  assert.equal(
+    body.previewActions.some(
+      (action) =>
+        action.type === "push" &&
+        action.to?.row === 5 &&
+        action.to?.col === 3 &&
+        action.legal === false &&
+        action.blockedReason === "PUSH_STRENGTH_TOO_WEAK",
+    ),
+    true,
+  );
+});
+
 test("/api/engine/playground/apply illegal action returns accepted=false with validation and legalActions", async () => {
   const { env } = buildEnv();
 

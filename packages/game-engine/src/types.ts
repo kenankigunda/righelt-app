@@ -36,6 +36,7 @@ export type ValidationErrorCode =
   | "CONTINUATION_REQUIRED"
   | "TERMINAL_GAME"
   | "SUPPLY_DESTINATION_UNSUPPLIED"
+  | "PUSH_STRENGTH_TOO_WEAK"
   | "RULE_VIOLATION";
 
 export type ValidationResult =

@@ -100,7 +100,7 @@ const compareActions = (left: Action, right: Action): number => {
 
 type PieceMovePreview = Action & {
   legal: boolean;
-  blockedReason?: "SUPPLY_DESTINATION_UNSUPPLIED";
+  blockedReason?: "SUPPLY_DESTINATION_UNSUPPLIED" | "PUSH_STRENGTH_TOO_WEAK";
 };
 
 const compareActionPreviews = (left: PieceMovePreview, right: PieceMovePreview): number => {
@@ -228,11 +228,14 @@ const enumeratePieceActionPreviews = (state: GameState, pieceId: string): PieceM
           continue;
         }
 
-        if (validation.code === "SUPPLY_DESTINATION_UNSUPPLIED") {
+        if (
+          validation.code === "SUPPLY_DESTINATION_UNSUPPLIED" ||
+          validation.code === "PUSH_STRENGTH_TOO_WEAK"
+        ) {
           previews.push({
             ...action,
             legal: false,
-            blockedReason: "SUPPLY_DESTINATION_UNSUPPLIED",
+            blockedReason: validation.code,
           });
         }
       }

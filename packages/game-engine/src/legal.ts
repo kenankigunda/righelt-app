@@ -688,7 +688,7 @@ export function validateAction(state: GameState, action: Action): ValidationResu
     if (attackerStrength <= defenderStrength) {
       return {
         ok: false,
-        code: "RULE_VIOLATION",
+        code: "PUSH_STRENGTH_TOO_WEAK",
         message: "Push requires strictly greater attacker group strength",
       };
     }

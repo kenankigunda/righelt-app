@@ -1,4 +1,9 @@
-import { pickBestActionTypeForTarget, shouldAllowSelectionAtTarget } from "../interaction.js";
+import {
+  getBlockedPreviewLabel,
+  pickBestActionTypeForTarget,
+  shouldAllowSelectionAtTarget,
+  shouldPreferActionTargetOnOccupiedCell,
+} from "../interaction.js";
 
 const BOARD_SIZE = 10;
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -388,6 +393,28 @@ export function createEnginePlaygroundBoardAdapter() {
       allowFreeSelection,
     }) {
       const clickedPiece = findPieceAt(snapshot, clickedCoord.row, clickedCoord.col);
+      const selectedPiece = findPieceById(snapshot, selection.selectedPieceId);
+      const actionPreviewsAtTarget = (Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves).filter(
+        (action) => action.to && action.to.row === clickedCoord.row && action.to.col === clickedCoord.col,
+      );
+
+      if (
+        clickedPiece &&
+        shouldPreferActionTargetOnOccupiedCell({
+          selectedPieceOwner: selectedPiece?.owner ?? null,
+          clickedPieceOwner: clickedPiece.owner,
+          actionsAtTarget: actionPreviewsAtTarget,
+        })
+      ) {
+        const suggestedAction = pickBestActionTypeForTarget(actionPreviewsAtTarget, currentActionType) ?? "pass";
+        return {
+          selection: {
+            ...selection,
+            target: clickedCoord,
+          },
+          nextActionType: suggestedAction,
+        };
+      }
 
       if (clickedPiece) {
         return {
@@ -421,9 +448,6 @@ export function createEnginePlaygroundBoardAdapter() {
         };
       }
 
-      const actionPreviewsAtTarget = (Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves).filter(
-        (action) => action.to && action.to.row === clickedCoord.row && action.to.col === clickedCoord.col,
-      );
       if (!shouldAllowSelectionAtTarget({
         allowFreeSelection: Boolean(allowFreeSelection),
         hasSelectedSource: true,
@@ -479,10 +503,8 @@ export function createEnginePlaygroundBoardAdapter() {
             (action) => action.to && action.to.row === row && action.to.col === col,
           );
           const hasActionToCell = previewsAtCell.length > 0;
-          const hasBlockedSupplyPreview =
-            previewsAtCell.some(
-              (action) => action.legal === false && action.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED",
-            ) && legalAtCell.length === 0;
+          const blockedPreview = previewsAtCell.find((action) => action.legal === false) ?? null;
+          const hasBlockedPreview = Boolean(blockedPreview) && legalAtCell.length === 0;
 
           const selectable =
             Boolean(allowFreeSelection) ||
@@ -491,7 +513,7 @@ export function createEnginePlaygroundBoardAdapter() {
           if (!selectable) {
             cell.classList.add("unselectable");
           }
-          if (hasBlockedSupplyPreview) {
+          if (hasBlockedPreview) {
             cell.classList.add("disallowed-preview");
           }
           const removalEffect = removalByCoordinateKey.get(`${row},${col}`);
@@ -508,9 +530,9 @@ export function createEnginePlaygroundBoardAdapter() {
           }
 
           if (isTarget) {
-            if (hasBlockedSupplyPreview) {
+            if (hasBlockedPreview) {
               cell.classList.add("disallowed-target");
-              cell.setAttribute("data-disallow-reason", "Disallowed: destination would be unsupplied.");
+              cell.setAttribute("data-disallow-reason", getBlockedPreviewLabel(blockedPreview?.blockedReason ?? null));
             }
           }
 

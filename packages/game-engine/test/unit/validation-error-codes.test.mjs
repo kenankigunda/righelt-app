@@ -103,6 +103,23 @@ test("validation error code map is reachable for all defined variants", () => {
         to: { row: 4, col: 7 },
       },
     },
+    {
+      code: "PUSH_STRENGTH_TOO_WEAK",
+      state: makeState({
+        pieces: [
+          commander("C1", "P1", 0, 0),
+          commander("C2", "P2", 9, 9),
+          { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 1 }, supplied: true, commanded: true },
+          { id: "D1", owner: "P2", kind: "unit", position: { row: 4, col: 3 }, supplied: true, commanded: true },
+        ],
+      }),
+      action: {
+        type: "push",
+        actorId: "A1",
+        from: { row: 4, col: 1 },
+        to: { row: 4, col: 3 },
+      },
+    },
   ];
 
   for (const entry of cases) {
