@@ -54,6 +54,18 @@ body {
   font-size: 1.3rem;
 }
 
+.player-tone-p1 {
+  color: #c2452f;
+}
+
+.player-tone-p2 {
+  color: #2d67c7;
+}
+
+.player-tone-neutral {
+  color: var(--muted);
+}
+
 button {
   border: 1px solid transparent;
   padding: 0.65rem 0.9rem;
@@ -95,6 +107,17 @@ button {
 
 .panel h2 {
   margin-top: 0;
+}
+
+.board-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.board-heading-separator {
+  color: var(--muted);
 }
 
 .board {
@@ -586,6 +609,22 @@ pre {
 
 #move-log li + li {
   margin-top: 0.3rem;
+}
+
+#move-log li.player-tone-p1,
+#side-to-move.player-tone-p1,
+#board-turn-indicator.player-tone-p1 {
+  color: #c2452f;
+}
+
+#move-log li.player-tone-p2,
+#side-to-move.player-tone-p2,
+#board-turn-indicator.player-tone-p2 {
+  color: #2d67c7;
+}
+
+#move-log li.player-tone-neutral {
+  color: var(--muted);
 }
 
 button:disabled {

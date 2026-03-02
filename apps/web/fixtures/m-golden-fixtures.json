@@ -1539,7 +1539,7 @@
     {
       "id": "M-008",
       "title": "Basic push",
-      "description": "Basic push",
+      "description": "This fixture is set up to test a simple push sequence. P2 can immediately start the push by driving the commander from (6, 4) into the adjacent P1 piece on (5, 4), which then begins the retreat-and-follow flow.\n\nNext move: P2 pushes from (6, 4) to (5, 4).",
       "incorrect": false,
       "initial_state": {
         "boardSize": 10,
@@ -1988,6 +1988,18 @@
         }
       },
       "action_sequence": [],
+      "next_move": {
+        "type": "push",
+        "actorId": "C2",
+        "from": {
+          "row": 6,
+          "col": 4
+        },
+        "to": {
+          "row": 5,
+          "col": 4
+        }
+      },
       "expected_final_state_hash": "b67db96d78989101622f1963c7555bfdcb29abcfe03dfb018fc19b86aaaa646d",
       "expected_outcome": "ongoing"
     }
