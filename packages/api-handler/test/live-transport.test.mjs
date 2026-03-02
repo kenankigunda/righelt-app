@@ -87,6 +87,8 @@ test("live transport: join approval flow and presence/history/move transitions",
   );
   const approveBody = await approve.json();
   assert.equal(Boolean(approveBody.game.player2), true);
+  assert.equal(approveBody.game.player2.identityId, "id-joiner");
+  assert.equal(approveBody.game.viewers.some((viewer) => viewer.identityId === "id-joiner"), false);
 
   const move = await handleApiRequest(
     req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
