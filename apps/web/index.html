@@ -7,11 +7,14 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="layout">
+    <main id="playground-app" class="layout">
       <section class="hero">
         <h1>Engine Playground</h1>
         <p>
           Manual harness for Milestone 2. All state changes flow through shared engine API endpoints.
+        </p>
+        <p>
+          <a href="#/shell/home">Open Web Shell</a>
         </p>
       </section>
 
@@ -106,6 +109,7 @@
         </div>
       </section>
     </main>
+    <main id="app" class="app-root" aria-live="polite" hidden></main>
     <script type="module" src="./main.js"></script>
   </body>
 </html>

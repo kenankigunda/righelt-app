@@ -1,0 +1,18 @@
+feature_id: F-031-live-transport
+integration_branch: codex/f-031-live-transport-integration
+max_parallel_streams: 1
+shared_acceptance:
+  - pnpm --filter @righelt/web test
+  - pnpm test:api-handler
+  - pnpm test:engine
+streams:
+  - id: L1
+    goal: Replace local simulated shell transitions with server-backed live transport transitions.
+    worktree: ../righelt-F-031-live-transport-L1
+    branch: codex/F-031-live-transport-L1
+    depends_on: []
+    acceptance_checks:
+      - pnpm --filter @righelt/web test -- live-transport
+      - pnpm --filter @righelt/web test -- e2e
+      - pnpm test:api-handler
+    agent_profile: shell-live-transport

@@ -5,29 +5,51 @@ import {
 } from "./interaction.js";
 import { assertGameBoardAdapter } from "./board-adapter-contract.js";
 import { createEnginePlaygroundBoardAdapter } from "./board-adapters/engine-playground-adapter.js";
+import { buildHomeHash, isShellRouteHash, isShellRootHash } from "./shell/routes.js";
 
-const boardEl = document.getElementById("board");
-const overlayLinesEl = document.getElementById("overlay-lines");
-const actionTypeEl = document.getElementById("action-type");
-const sourceValueEl = document.getElementById("source-value");
-const targetValueEl = document.getElementById("target-value");
-const submitActionEl = document.getElementById("submit-action");
-const resetSelectionEl = document.getElementById("reset-selection");
-const actionResultEl = document.getElementById("action-result");
-const sideToMoveEl = document.getElementById("side-to-move");
-const turnIndexEl = document.getElementById("turn-index");
-const continuationEl = document.getElementById("continuation");
-const commanderSupplyEl = document.getElementById("commander-supply");
-const selectedPieceEl = document.getElementById("selected-piece");
-const selectedPieceMovesEl = document.getElementById("selected-piece-moves");
-const legalActionsEl = document.getElementById("legal-actions");
-const moveLogEl = document.getElementById("move-log");
-const fixtureSelectEl = document.getElementById("fixture-select");
-const loadFixtureEl = document.getElementById("load-fixture");
-const replayFixtureEl = document.getElementById("replay-fixture");
-const saveFixtureEl = document.getElementById("save-fixture");
-const updateFixtureEl = document.getElementById("update-fixture");
-const fixtureResultEl = document.getElementById("fixture-result");
+if (isShellRootHash(window.location.hash)) {
+  window.location.replace(`${window.location.pathname}${window.location.search}${buildHomeHash()}`);
+}
+const shouldMountShell = isShellRouteHash(window.location.hash);
+window.addEventListener("hashchange", () => {
+  if (isShellRouteHash(window.location.hash) !== shouldMountShell) {
+    window.location.reload();
+  }
+});
+
+if (shouldMountShell) {
+  const playgroundAppEl = document.getElementById("playground-app");
+  const shellAppEl = document.getElementById("app");
+  if (playgroundAppEl) {
+    playgroundAppEl.hidden = true;
+  }
+  if (shellAppEl) {
+    shellAppEl.hidden = false;
+  }
+  await import("./shell/app.js");
+} else {
+  const boardEl = document.getElementById("board");
+  const overlayLinesEl = document.getElementById("overlay-lines");
+  const actionTypeEl = document.getElementById("action-type");
+  const sourceValueEl = document.getElementById("source-value");
+  const targetValueEl = document.getElementById("target-value");
+  const submitActionEl = document.getElementById("submit-action");
+  const resetSelectionEl = document.getElementById("reset-selection");
+  const actionResultEl = document.getElementById("action-result");
+  const sideToMoveEl = document.getElementById("side-to-move");
+  const turnIndexEl = document.getElementById("turn-index");
+  const continuationEl = document.getElementById("continuation");
+  const commanderSupplyEl = document.getElementById("commander-supply");
+  const selectedPieceEl = document.getElementById("selected-piece");
+  const selectedPieceMovesEl = document.getElementById("selected-piece-moves");
+  const legalActionsEl = document.getElementById("legal-actions");
+  const moveLogEl = document.getElementById("move-log");
+  const fixtureSelectEl = document.getElementById("fixture-select");
+  const loadFixtureEl = document.getElementById("load-fixture");
+  const replayFixtureEl = document.getElementById("replay-fixture");
+  const saveFixtureEl = document.getElementById("save-fixture");
+  const updateFixtureEl = document.getElementById("update-fixture");
+  const fixtureResultEl = document.getElementById("fixture-result");
 
 let state = null;
 let legalActions = [];
@@ -674,3 +696,4 @@ Promise.all([loadInitialState(), loadFixtureCatalog()]).catch((error) => {
     message: error instanceof Error ? error.message : "Unknown error",
   });
 });
+}
