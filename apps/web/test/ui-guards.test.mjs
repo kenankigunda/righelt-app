@@ -35,6 +35,13 @@ test("approvable player requests use blocking accept-or-ignore gate", () => {
   assert.match(source, /invite-gate-content/);
 });
 
+test("game, join/invite, and history use shared section spacing structure", () => {
+  assert.match(source, /class="row section-actions"/);
+  assert.match(source, /class="section-followup"/);
+  assert.match(source, /class="section-stack"/);
+  assert.match(source, /class="history-turn-body"/);
+});
+
 test("offline toggles sync current identity presence", () => {
   assert.match(source, /await syncCurrentIdentityPresence\(!next\)/);
   assert.match(source, /void syncCurrentIdentityPresence\(true\)/);

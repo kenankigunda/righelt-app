@@ -125,6 +125,10 @@ When a recipient opens either invite type:
    - Recipient is shown that the action is pending approval.
    - If approval is granted, recipient is upgraded from `Viewer` to `Player`.
    - If approval is not yet granted, recipient remains `Viewer`.
+   - The approving player must be shown a blocking top-of-page approval surface, with the rest of the game page greyed out and non-interactable, matching the invite-entry UX pattern.
+   - That approval surface must provide `Accept` and `Ignore` options.
+   - Selecting `Ignore` dismisses the blocking approval surface for now, but the pending request remains visible in the `Join / Invite` section until accepted or otherwise resolved.
+   - If one player-seat request is accepted, competing pending player-seat requests for that game are dismissed immediately.
 7. If recipient joins as `Viewer`:
    - They can view board and updates but cannot take game actions.
    - They can share the invite link with additional participants.
@@ -152,7 +156,8 @@ When a recipient opens either invite type:
 
 ## 7. Move History Sidebar (Flow 5)
 
-- Game page must show a sidebar/history panel listing all moves in order.
+- Game page must show a sidebar/history panel listing turn history in order.
+- The history panel must group moves beneath their parent turn.
 - Users can click any move entry.
 - Clicking an entry switches board from `Live view` to `History view` at post-move state for that entry.
 - While user is in `History view`:
