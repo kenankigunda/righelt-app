@@ -96,11 +96,25 @@ function getGroupInfoForPiece(snapshot, piece) {
   };
 }
 
+function getInactivePieceLabel(piece) {
+  if (piece.supplied === false && piece.commanded === false) {
+    return "Inactive: no connection back to its commander or supply point.";
+  }
+  if (piece.supplied === false) {
+    return "Inactive: no connection back to its supply point.";
+  }
+  if (piece.commanded === false) {
+    return "Inactive: no connection back to its commander.";
+  }
+  return null;
+}
+
 export function createEnginePlaygroundBoardAdapter() {
   let boardEl = null;
   let overlayLinesEl = null;
   let onCellClick = null;
   let cellByCoordinateKey = new Map();
+  let overlayLineLayerEl = null;
 
   const setOverlayViewBox = () => {
     if (!boardEl || !overlayLinesEl) {
@@ -111,36 +125,135 @@ export function createEnginePlaygroundBoardAdapter() {
     overlayLinesEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
   };
 
+  const getElementCenter = (element) => {
+    if (!element || !overlayLinesEl) {
+      return null;
+    }
+
+    const overlayRect = overlayLinesEl.getBoundingClientRect();
+    const elementRect = element.getBoundingClientRect();
+    return {
+      x: elementRect.left - overlayRect.left + elementRect.width / 2,
+      y: elementRect.top - overlayRect.top + elementRect.height / 2,
+    };
+  };
+
   const getCellCenter = (coord) => {
     const cell = cellByCoordinateKey.get(coordKey(coord));
     if (!cell) {
       return null;
     }
 
-    return {
-      x: cell.offsetLeft + cell.offsetWidth / 2,
-      y: cell.offsetTop + cell.offsetHeight / 2,
-    };
+    return getElementCenter(cell);
   };
 
-  const getPreviewOffset = (actionType) => {
-    if (actionType === "move") {
-      return { x: -14, y: -14 };
+  const getRenderedAnchor = (coord, options = {}) => {
+    const cell = cellByCoordinateKey.get(coordKey(coord));
+    if (!cell) {
+      return null;
     }
-    if (actionType === "rush") {
-      return { x: 14, y: 14 };
+
+    if (options.previewActionType) {
+      const previewToken = cell.querySelector(`.move-ghost[data-preview-action="${options.previewActionType}"]`);
+      const previewCenter = getElementCenter(previewToken);
+      if (previewCenter) {
+        return previewCenter;
+      }
     }
-    return { x: 0, y: 0 };
+
+    const pieceToken = cell.querySelector(".piece-token:not(.move-ghost):not(.removal-piece)");
+    const pieceCenter = getElementCenter(pieceToken);
+    if (pieceCenter) {
+      return pieceCenter;
+    }
+
+    const supplyMarker = cell.querySelector(".supply-point-marker");
+    const supplyCenter = getElementCenter(supplyMarker);
+    if (supplyCenter) {
+      return supplyCenter;
+    }
+
+    return getCellCenter(coord);
   };
 
-  const drawPath = (path, stroke, dashPattern = null) => {
-    if (!overlayLinesEl || !path || path.length < 2) {
+  const prepareOverlayLineLayer = () => {
+    if (!overlayLinesEl) {
+      return;
+    }
+
+    overlayLinesEl.innerHTML = "";
+
+    const defs = document.createElementNS(SVG_NS, "defs");
+    overlayLinesEl.appendChild(defs);
+
+    const marker = document.createElementNS(SVG_NS, "marker");
+    marker.setAttribute("id", "preview-arrow");
+    marker.setAttribute("viewBox", "0 0 10 10");
+    marker.setAttribute("refX", "8");
+    marker.setAttribute("refY", "5");
+    marker.setAttribute("markerWidth", "5");
+    marker.setAttribute("markerHeight", "5");
+    marker.setAttribute("orient", "auto-start-reverse");
+    marker.setAttribute("markerUnits", "strokeWidth");
+
+    const arrowPath = document.createElementNS(SVG_NS, "path");
+    arrowPath.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+    arrowPath.setAttribute("fill", "#8b5ec0");
+    arrowPath.setAttribute("fill-opacity", "0.55");
+    marker.appendChild(arrowPath);
+    defs.appendChild(marker);
+
+    const mask = document.createElementNS(SVG_NS, "mask");
+    mask.setAttribute("id", "piece-occlusion-mask");
+
+    const base = document.createElementNS(SVG_NS, "rect");
+    base.setAttribute("x", "0");
+    base.setAttribute("y", "0");
+    base.setAttribute("width", "100%");
+    base.setAttribute("height", "100%");
+    base.setAttribute("fill", "white");
+    mask.appendChild(base);
+    defs.appendChild(mask);
+
+    overlayLineLayerEl = document.createElementNS(SVG_NS, "g");
+    overlayLineLayerEl.setAttribute("mask", "url(#piece-occlusion-mask)");
+    overlayLinesEl.appendChild(overlayLineLayerEl);
+  };
+
+  const updateOverlayOcclusionMask = () => {
+    const mask = overlayLinesEl?.querySelector("#piece-occlusion-mask");
+    if (!mask) {
+      return;
+    }
+
+    mask.querySelectorAll("circle").forEach((node) => node.remove());
+    const occludedTokens = boardEl?.querySelectorAll(".piece-token,.move-ghost") ?? [];
+    for (const token of occludedTokens) {
+      const center = getElementCenter(token);
+      if (!center) {
+        continue;
+      }
+
+      const circle = document.createElementNS(SVG_NS, "circle");
+      circle.setAttribute("cx", String(center.x));
+      circle.setAttribute("cy", String(center.y));
+      circle.setAttribute("r", token.classList.contains("move-ghost") ? "12" : "13");
+      circle.setAttribute("fill", "black");
+      mask.appendChild(circle);
+    }
+  };
+
+  const drawPath = (path, stroke, dashPattern = null, endPreviewActionType = null) => {
+    if (!overlayLineLayerEl || !path || path.length < 2) {
       return;
     }
 
     for (let i = 0; i < path.length - 1; i += 1) {
-      const start = getCellCenter(path[i]);
-      const end = getCellCenter(path[i + 1]);
+      const start = getRenderedAnchor(path[i]);
+      const end = getRenderedAnchor(
+        path[i + 1],
+        endPreviewActionType && i === path.length - 2 ? { previewActionType: endPreviewActionType } : {},
+      );
       if (!start || !end) {
         continue;
       }
@@ -156,85 +269,38 @@ export function createEnginePlaygroundBoardAdapter() {
       if (dashPattern) {
         line.setAttribute("stroke-dasharray", dashPattern);
       }
-      overlayLinesEl.appendChild(line);
+      overlayLineLayerEl.appendChild(line);
     }
   };
 
-  const ensureArrowMarker = () => {
-    if (!overlayLinesEl) {
+  const drawArrowLine = (from, to, stroke, previewActionType = null) => {
+    if (!overlayLineLayerEl) {
       return;
     }
 
-    let defs = overlayLinesEl.querySelector("defs");
-    if (!defs) {
-      defs = document.createElementNS(SVG_NS, "defs");
-      overlayLinesEl.appendChild(defs);
-    }
-
-    let marker = defs.querySelector("#preview-arrow");
-    if (!marker) {
-      marker = document.createElementNS(SVG_NS, "marker");
-      marker.setAttribute("id", "preview-arrow");
-      marker.setAttribute("viewBox", "0 0 10 10");
-      marker.setAttribute("refX", "8");
-      marker.setAttribute("refY", "5");
-      marker.setAttribute("markerWidth", "5");
-      marker.setAttribute("markerHeight", "5");
-      marker.setAttribute("orient", "auto-start-reverse");
-      marker.setAttribute("markerUnits", "strokeWidth");
-
-      const arrowPath = document.createElementNS(SVG_NS, "path");
-      arrowPath.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
-      arrowPath.setAttribute("fill", "#8b5ec0");
-      arrowPath.setAttribute("fill-opacity", "0.55");
-      marker.appendChild(arrowPath);
-      defs.appendChild(marker);
-    }
-  };
-
-  const drawArrowLine = (from, to, stroke, endOffset = { x: 0, y: 0 }) => {
-    if (!overlayLinesEl) {
-      return;
-    }
-
-    const start = getCellCenter(from);
-    const end = getCellCenter(to);
+    const start = getRenderedAnchor(from);
+    const end = getRenderedAnchor(to, previewActionType ? { previewActionType } : {});
     if (!start || !end) {
       return;
     }
 
-    const rawEnd = {
-      x: end.x + endOffset.x,
-      y: end.y + endOffset.y,
-    };
-    const deltaX = rawEnd.x - start.x;
-    const deltaY = rawEnd.y - start.y;
-    const distance = Math.hypot(deltaX, deltaY);
-    const stopBeforeGhost = 16;
-    const shortenBy = Math.min(stopBeforeGhost, Math.max(0, distance - 4));
-    const unitX = distance > 0 ? deltaX / distance : 0;
-    const unitY = distance > 0 ? deltaY / distance : 0;
-    const shortenedEnd = {
-      x: rawEnd.x - unitX * shortenBy,
-      y: rawEnd.y - unitY * shortenBy,
-    };
-
     const line = document.createElementNS(SVG_NS, "line");
     line.setAttribute("x1", String(start.x));
     line.setAttribute("y1", String(start.y));
-    line.setAttribute("x2", String(shortenedEnd.x));
-    line.setAttribute("y2", String(shortenedEnd.y));
+    line.setAttribute("x2", String(end.x));
+    line.setAttribute("y2", String(end.y));
     line.setAttribute("stroke", stroke);
     line.setAttribute("stroke-width", "2.5");
     line.setAttribute("stroke-linecap", "round");
     line.setAttribute("stroke-opacity", "0.5");
     line.setAttribute("marker-end", "url(#preview-arrow)");
-    overlayLinesEl.appendChild(line);
+    overlayLineLayerEl.appendChild(line);
   };
 
   const clearCellDecorations = () => {
     for (const cell of cellByCoordinateKey.values()) {
-      cell.classList.remove("group-member", "selected-piece");
+      cell.classList.remove("group-member", "selected-piece", "inactive-selected-piece");
+      cell.removeAttribute("data-inactive-label");
       cell.querySelectorAll(".group-strength-badge,.move-ghost").forEach((node) => node.remove());
     }
   };
@@ -245,9 +311,8 @@ export function createEnginePlaygroundBoardAdapter() {
     }
 
     clearCellDecorations();
-    overlayLinesEl.innerHTML = "";
     setOverlayViewBox();
-    ensureArrowMarker();
+    prepareOverlayLineLayer();
 
     const piece = findPieceById(snapshot, selectedPieceId);
     if (!piece) {
@@ -257,6 +322,11 @@ export function createEnginePlaygroundBoardAdapter() {
     const pieceCell = cellByCoordinateKey.get(coordKey(piece.position));
     if (pieceCell) {
       pieceCell.classList.add("selected-piece");
+      const inactiveLabel = getInactivePieceLabel(piece);
+      if (inactiveLabel) {
+        pieceCell.classList.add("inactive-selected-piece");
+        pieceCell.setAttribute("data-inactive-label", inactiveLabel);
+      }
     }
 
     const groupInfo = getGroupInfoForPiece(snapshot, piece);
@@ -290,11 +360,9 @@ export function createEnginePlaygroundBoardAdapter() {
       }
     }
 
-    drawPath(getSupplyPathForPiece(snapshot, piece), "#2f8e63");
-    drawPath(getCommandPathForPiece(snapshot, piece), "#2470c7");
-
     const seenPreviews = new Set();
     const previews = Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves;
+    const previewLines = [];
     for (const action of previews) {
       if (!action.to) {
         continue;
@@ -307,15 +375,11 @@ export function createEnginePlaygroundBoardAdapter() {
       }
       seenPreviews.add(previewKey);
 
-      if (action.type === "move" || action.type === "rush") {
-        drawArrowLine(piece.position, action.to, "#8b5ec0", getPreviewOffset(action.type));
-      } else {
-        drawPath([piece.position, action.to], "#8b5ec0", "5 5");
-      }
       const targetCell = cellByCoordinateKey.get(targetKey);
       if (targetCell) {
         const ghost = buildPieceToken(piece, true);
         ghost.classList.add("move-ghost");
+        ghost.dataset.previewAction = action.type;
         if (action.legal === false && action.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED") {
           ghost.classList.add("illegal-unsupplied");
         }
@@ -325,6 +389,18 @@ export function createEnginePlaygroundBoardAdapter() {
           ghost.classList.add("offset-rush");
         }
         targetCell.appendChild(ghost);
+      }
+      previewLines.push(action);
+    }
+
+    updateOverlayOcclusionMask();
+    drawPath(getSupplyPathForPiece(snapshot, piece), "#2f8e63");
+    drawPath(getCommandPathForPiece(snapshot, piece), "#2470c7");
+    for (const action of previewLines) {
+      if (action.type === "move" || action.type === "rush") {
+        drawArrowLine(piece.position, action.to, "#8b5ec0", action.type);
+      } else {
+        drawPath([piece.position, action.to], "#8b5ec0", "5 5", action.type);
       }
     }
   };
@@ -366,6 +442,7 @@ export function createEnginePlaygroundBoardAdapter() {
       }
       boardEl = null;
       overlayLinesEl = null;
+      overlayLineLayerEl = null;
       onCellClick = null;
       cellByCoordinateKey = new Map();
     },
@@ -517,18 +594,19 @@ export function createEnginePlaygroundBoardAdapter() {
           cell.dataset.row = String(row);
           cell.dataset.col = String(col);
 
-          const marker = cellPiece ? buildPieceToken(cellPiece) : document.createElement("span");
-          if (!cellPiece) {
+          const marker = cellPiece
+            ? buildPieceToken(cellPiece)
+            : removalEffect?.piece
+              ? buildPieceToken(removalEffect.piece)
+              : document.createElement("span");
+          if (!cellPiece && !removalEffect?.piece) {
             marker.className = "piece-empty";
             marker.textContent = ".";
           }
-          cell.appendChild(marker);
-
-          if (removalEffect) {
-            const flash = document.createElement("span");
-            flash.className = "removal-flash";
-            cell.appendChild(flash);
+          if (removalEffect?.piece) {
+            marker.classList.add("removal-piece");
           }
+          cell.appendChild(marker);
 
           if (isSupplyPoint(row, col)) {
             const supplyMarker = document.createElement("span");
