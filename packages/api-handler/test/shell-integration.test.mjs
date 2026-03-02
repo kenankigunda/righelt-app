@@ -11,7 +11,7 @@ test("shell integration: opaque invite token resolves and joins into canonical g
   const created = await owner.store.createGame({ playgroundMode: false, offlineLocal: false });
   const inviteHash = harness.buildPlayerInviteHash(created);
 
-  assert.match(inviteHash, /^#\/shell\/invite\//);
+  assert.match(inviteHash, /^#\/invite\//);
   assert.equal(inviteHash.includes(created.id), false);
 
   const accepted = await harness.acceptInviteAsPlayer(guest, inviteHash);
