@@ -27,6 +27,8 @@ const selectedPieceMovesEl = document.getElementById("selected-piece-moves");
 const legalActionsEl = document.getElementById("legal-actions");
 const moveLogEl = document.getElementById("move-log");
 const fixtureSelectEl = document.getElementById("fixture-select");
+const fixtureDescriptionEl = document.getElementById("fixture-description");
+const fixtureIncorrectToggleEl = document.getElementById("fixture-incorrect-toggle");
 const loadFixtureEl = document.getElementById("load-fixture");
 const replayFixtureEl = document.getElementById("replay-fixture");
 const saveFixtureEl = document.getElementById("save-fixture");
@@ -242,6 +244,45 @@ const setActionResult = (value) => {
 
 const setFixtureResult = (value) => {
   fixtureResultEl.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+};
+
+const normalizeFixture = (fixture) => ({
+  ...fixture,
+  description: typeof fixture.description === "string" ? fixture.description : fixture.title,
+  incorrect: fixture.incorrect === true,
+});
+
+const escapeHtml = (value) =>
+  String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+
+const renderSelectedFixtureDescription = () => {
+  if (!fixtureDescriptionEl) {
+    return;
+  }
+  const fixture = getSelectedFixture();
+  if (fixtureIncorrectToggleEl) {
+    fixtureIncorrectToggleEl.checked = Boolean(fixture?.incorrect);
+    fixtureIncorrectToggleEl.disabled = !fixture;
+  }
+  const description = fixture?.description ??
+    "Select a fixture to inspect what scenario it is intended to illustrate.";
+  const paragraphs = description.split(/\n\s*\n/).map((paragraph) => paragraph.trim()).filter(Boolean);
+  const renderedParagraphs = [];
+  if (fixture?.incorrect) {
+    renderedParagraphs.push('<p class="fixture-status fixture-status-incorrect"><strong>Marked incorrect.</strong></p>');
+  }
+  renderedParagraphs.push(...paragraphs.map((paragraph) => {
+    if (paragraph.startsWith("Next move:")) {
+      return `<p><strong>${escapeHtml(paragraph)}</strong></p>`;
+    }
+    return `<p>${escapeHtml(paragraph)}</p>`;
+  }));
+  fixtureDescriptionEl.innerHTML = renderedParagraphs.join("");
 };
 
 const refreshSelectionLabels = () => {
@@ -473,7 +514,7 @@ const updateFixtureOptions = () => {
   for (const fixture of fixtures) {
     const option = document.createElement("option");
     option.value = fixture.id;
-    option.textContent = `${fixture.id} - ${fixture.title}`;
+    option.textContent = `${fixture.id} - ${fixture.title}${fixture.incorrect ? " [incorrect]" : ""}`;
     fixtureSelectEl.appendChild(option);
   }
   if (fixtures.length === 0) {
@@ -482,6 +523,7 @@ const updateFixtureOptions = () => {
   }
   currentFixtureId = selectedId && fixtures.some((fixture) => fixture.id === selectedId) ? selectedId : fixtures[0].id;
   fixtureSelectEl.value = currentFixtureId;
+  renderSelectedFixtureDescription();
 };
 
 const tryLocalFixtureWrite = async (pathSuffix, payload) => {
@@ -520,7 +562,9 @@ const loadFixtureCatalog = async () => {
   fixtureCatalog = {
     id: typeof catalog.id === "string" ? catalog.id : "M",
     title: typeof catalog.title === "string" ? catalog.title : "Milestone 2 Golden Scenarios",
-    fixtures: Array.isArray(catalog.fixtures) ? catalog.fixtures : [],
+    fixtures: Array.isArray(catalog.fixtures)
+      ? catalog.fixtures.map(normalizeFixture)
+      : [],
   };
   fixtures = fixtureCatalog.fixtures;
   updateFixtureOptions();
@@ -592,6 +636,52 @@ submitActionEl.addEventListener("click", async () => {
 
 fixtureSelectEl.addEventListener("change", () => {
   currentFixtureId = fixtureSelectEl.value;
+  renderSelectedFixtureDescription();
+});
+
+fixtureIncorrectToggleEl?.addEventListener("change", async () => {
+  const fixture = getSelectedFixture();
+  if (!fixture) {
+    return;
+  }
+
+  const updatedFixture = {
+    ...fixture,
+    incorrect: fixtureIncorrectToggleEl.checked,
+  };
+  const nextCatalog = {
+    ...fixtureCatalog,
+    fixtures: fixtures.map((entry) => (entry.id === fixture.id ? updatedFixture : entry)),
+  };
+
+  fixtureCatalog = nextCatalog;
+  fixtures = fixtureCatalog.fixtures;
+  updateFixtureOptions();
+
+  const localWrite = await tryLocalFixtureWrite("/fixtures/update", {
+    fixtureId: fixture.id,
+    description: updatedFixture.description,
+    incorrect: updatedFixture.incorrect,
+  });
+
+  if (localWrite.ok) {
+    setFixtureResult({
+      ok: true,
+      mode: "local_write",
+      fixtureId: fixture.id,
+      incorrect: updatedFixture.incorrect,
+    });
+    return;
+  }
+
+  downloadFixtureCatalog(nextCatalog, "m-golden-fixtures.updated.json");
+  setFixtureResult({
+    ok: true,
+    mode: "download_fallback",
+    fixtureId: fixture.id,
+    incorrect: updatedFixture.incorrect,
+    localWrite,
+  });
 });
 
 loadFixtureEl.addEventListener("click", () => {
@@ -712,6 +802,8 @@ saveFixtureEl.addEventListener("click", async () => {
     const fixture = {
       id: fixtureId,
       title,
+      description: title,
+      incorrect: false,
       initial_state: structuredClone(state),
       action_sequence: [],
       expected_final_state_hash: expectedHash,
@@ -786,6 +878,8 @@ updateFixtureEl.addEventListener("click", async () => {
       fixtureId: fixture.id,
       expected_final_state_hash: expectedHash,
       expected_outcome: expectedOutcome,
+      description: updatedFixture.description,
+      incorrect: updatedFixture.incorrect,
     });
 
     fixtureCatalog = nextCatalog;
