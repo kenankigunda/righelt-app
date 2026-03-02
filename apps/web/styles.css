@@ -209,6 +209,32 @@ button.secondary:disabled {
   gap: 0.5rem;
 }
 
+.invite-gate {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.invite-gate-modal {
+  position: sticky;
+  top: 1rem;
+  z-index: 2;
+  box-shadow: 0 18px 40px rgba(29, 45, 53, 0.12);
+}
+
+.invite-gate-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+}
+
+.invite-gate-content {
+  filter: grayscale(0.4);
+  opacity: 0.48;
+  pointer-events: none;
+  user-select: none;
+}
+
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }

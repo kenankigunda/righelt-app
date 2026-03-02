@@ -6,7 +6,8 @@ import {
   buildInviteHash,
   buildTutorialHash,
   parseRouteFromHash,
-  shouldLiveReconcileRoute,
+  shouldLiveSyncRoute,
+  shouldPassiveRefreshRoute,
 } from "../shell/routes.js";
 
 test("routing resolves home hash variants", () => {
@@ -38,10 +39,14 @@ test("routing resolves opaque invite path", () => {
   assert.equal(buildInviteHash("abc123"), "#/invite/abc123");
 });
 
-test("routing marks invite routes for live reconciliation", () => {
-  assert.equal(shouldLiveReconcileRoute({ name: "home" }), true);
-  assert.equal(shouldLiveReconcileRoute({ name: "game", gameId: "game-1" }), true);
-  assert.equal(shouldLiveReconcileRoute({ name: "invite", inviteToken: "token-123" }), true);
-  assert.equal(shouldLiveReconcileRoute({ name: "tutorial" }), false);
-  assert.equal(shouldLiveReconcileRoute({ name: "not-found" }), false);
+test("routing distinguishes live sync routes from passive refresh routes", () => {
+  assert.equal(shouldLiveSyncRoute({ name: "home" }), true);
+  assert.equal(shouldLiveSyncRoute({ name: "game", gameId: "game-1" }), true);
+  assert.equal(shouldLiveSyncRoute({ name: "invite", inviteToken: "token-123" }), false);
+  assert.equal(shouldLiveSyncRoute({ name: "tutorial" }), false);
+
+  assert.equal(shouldPassiveRefreshRoute({ name: "home" }), true);
+  assert.equal(shouldPassiveRefreshRoute({ name: "game", gameId: "game-1" }), true);
+  assert.equal(shouldPassiveRefreshRoute({ name: "invite", inviteToken: "token-123" }), true);
+  assert.equal(shouldPassiveRefreshRoute({ name: "not-found" }), false);
 });

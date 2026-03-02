@@ -10,7 +10,8 @@ import {
   buildInviteHash,
   buildTutorialHash,
   parseRouteFromHash,
-  shouldLiveReconcileRoute,
+  shouldLiveSyncRoute,
+  shouldPassiveRefreshRoute,
 } from "./shell/routes.js";
 import { createTutorialController } from "./shell/tutorial.js";
 
@@ -295,6 +296,54 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   `;
 };
 
+const renderInviteLanding = () => {
+  if (!routeHydrated || !resolvedInvite?.gameId) {
+    return `<section class="panel"><h2>Loading invite...</h2><p class="small">Resolving invite destination.</p></section>`;
+  }
+
+  const game = transport.getGameViewModel(resolvedInvite.gameId);
+  const background = renderGame(resolvedInvite.gameId, resolvedInvite.inviteFromRole, resolvedInvite.inviteToken);
+  if (!game) {
+    return background;
+  }
+
+  const canJoinPlayer = game.canJoinAsPlayer && game.showJoinActions;
+  const canJoinViewer = game.canJoinAsViewer;
+  const inviteContext =
+    resolvedInvite.inviteFromRole === "Player 1" || resolvedInvite.inviteFromRole === "Player 2"
+      ? `${resolvedInvite.inviteFromRole} shared this invite.`
+      : "A game invite was shared with you.";
+
+  return `
+    <section class="invite-gate">
+      <section class="panel invite-gate-modal">
+        <p class="small invite-gate-kicker">Invite received</p>
+        <h2>Choose how to enter this game</h2>
+        <p>${escapeHtml(inviteContext)} Join now to enter the live game route and receive updates.</p>
+        <div class="row">
+          <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" ${
+            canJoinPlayer && !busy ? "" : "disabled"
+          }>Join as player</button>
+          <button data-action="accept-invite-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
+            canJoinViewer && !busy ? "" : "disabled"
+          }>Join as viewer</button>
+          <a class="button-link secondary" href="${buildHomeHash()}">Back home</a>
+        </div>
+        <p class="small">
+          ${
+            canJoinPlayer || canJoinViewer
+              ? "The game preview is shown below, but it stays locked until you choose a role."
+              : "No join mode is currently available for this invite."
+          }
+        </p>
+      </section>
+      <div class="invite-gate-content" aria-hidden="true">
+        ${background}
+      </div>
+    </section>
+  `;
+};
+
 const renderTutorial = (gameId) => {
   const state = tutorial.current();
   return `
@@ -345,7 +394,7 @@ const render = () => {
   } else if (currentRoute.name === "game") {
     body = renderGame(currentRoute.gameId, currentRoute.inviteFromRole);
   } else if (currentRoute.name === "invite") {
-    body = renderGame(resolvedInvite?.gameId || null, resolvedInvite?.inviteFromRole || null, resolvedInvite?.inviteToken || null);
+    body = renderInviteLanding();
   } else if (currentRoute.name === "tutorial") {
     body = renderTutorial(currentRoute.gameId);
   } else {
@@ -369,9 +418,6 @@ const withBusy = async (fn) => {
   } catch (error) {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
   } finally {
-    if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
-      syncLiveChannel();
-    }
     busy = false;
     render();
   }
@@ -393,9 +439,7 @@ const syncRouteData = async () => {
   }
   if (currentRoute.name === "invite") {
     resolvedInvite = await transport.resolveInvite(currentRoute.inviteToken);
-    const firstOpen = !openedViewerGames.has(resolvedInvite.gameId);
-    await transport.loadGame(resolvedInvite.gameId, { openAsViewer: firstOpen });
-    openedViewerGames.add(resolvedInvite.gameId);
+    await transport.loadGame(resolvedInvite.gameId, { openAsViewer: false });
     routeHydrated = true;
     return;
   }
@@ -435,14 +479,7 @@ const liveSync = createLiveSyncClient({
 });
 
 const syncLiveChannel = () => {
-  const routeKey =
-    currentRoute.name === "game"
-      ? `game:${currentRoute.gameId}`
-      : currentRoute.name === "invite" && resolvedInvite?.gameId
-        ? `game:${resolvedInvite.gameId}`
-      : currentRoute.name === "home"
-        ? "home"
-        : "none";
+  const routeKey = currentRoute.name === "game" ? `game:${currentRoute.gameId}` : currentRoute.name === "home" ? "home" : "none";
 
   if (routeKey === liveSyncConnectedRoute && wsStatus.state === "connected") {
     return;
@@ -450,6 +487,10 @@ const syncLiveChannel = () => {
   liveSyncConnectedRoute = routeKey;
 
   liveSync.disconnect();
+
+  if (!shouldLiveSyncRoute(currentRoute)) {
+    return;
+  }
 
   if (currentRoute.name === "home") {
     liveSync.resume();
@@ -459,11 +500,6 @@ const syncLiveChannel = () => {
   if (currentRoute.name === "game") {
     liveSync.resume();
     liveSync.connectGame(currentRoute.gameId);
-    return;
-  }
-  if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
-    liveSync.resume();
-    liveSync.connectGame(resolvedInvite.gameId);
   }
 };
 
@@ -503,7 +539,7 @@ setInterval(() => {
   if (document.visibilityState === "hidden") {
     return;
   }
-  if (!shouldLiveReconcileRoute(currentRoute)) {
+  if (!shouldPassiveRefreshRoute(currentRoute)) {
     return;
   }
   void syncRouteDataPassive();
@@ -559,7 +595,7 @@ appEl.addEventListener("click", async (event) => {
       return;
     }
 
-    if (action === "join-viewer") {
+    if (action === "join-viewer" || action === "accept-invite-viewer") {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
       await transport.joinGame({
@@ -568,11 +604,15 @@ appEl.addEventListener("click", async (event) => {
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
         inviteToken: resolvedInvite?.inviteToken || null,
       });
+      if (currentRoute.name === "invite") {
+        navigateTo(buildGameHash(gameId));
+        return;
+      }
       await syncRouteData();
       return;
     }
 
-    if (action === "join-player") {
+    if (action === "join-player" || action === "accept-invite-player") {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
       await transport.joinGame({
@@ -581,6 +621,10 @@ appEl.addEventListener("click", async (event) => {
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
         inviteToken: resolvedInvite?.inviteToken || null,
       });
+      if (currentRoute.name === "invite") {
+        navigateTo(buildGameHash(gameId));
+        return;
+      }
       await syncRouteData();
       return;
     }

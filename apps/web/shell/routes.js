@@ -64,5 +64,7 @@ export const buildTutorialHash = (gameId = null) => {
   return `#/tutorial/${encodeURIComponent(gameId)}`;
 };
 
-export const shouldLiveReconcileRoute = (route) =>
+export const shouldLiveSyncRoute = (route) => route?.name === "home" || route?.name === "game";
+
+export const shouldPassiveRefreshRoute = (route) =>
   route?.name === "home" || route?.name === "game" || route?.name === "invite";
