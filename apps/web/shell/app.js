@@ -258,7 +258,15 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
     })
     .join("");
 
-  const viewersRow = `<li>Viewers: ${game.viewers.length}</li>`;
+  const viewerRows =
+    game.viewers.length === 0
+      ? '<li>Viewers: <span class="small">None</span></li>'
+      : game.viewers
+          .map(
+            (viewer) =>
+              `<li>Viewer: <span class="mono">${escapeHtml(viewer.identityId)}</span> ${formatStatus(viewer.connected)}</li>`,
+          )
+          .join("");
   const historyRows = renderTurnHistory(game);
   const pendingSeatNotice = game.pendingPlayerRequestSeat
     ? `<div class="alert">Player join request pending approval for ${escapeHtml(game.pendingPlayerRequestSeat)}.</div>`
@@ -365,7 +373,7 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
 
         <section class="panel">
           <h2>Participants</h2>
-          <ul class="participant-list">${participantRows}${viewersRow}</ul>
+          <ul class="participant-list">${participantRows}${viewerRows}</ul>
         </section>
 
         <section class="panel">
