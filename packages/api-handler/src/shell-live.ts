@@ -250,6 +250,11 @@ const getSeatForSide = (side: GameState["sideToMove"]): "Player 1" | "Player 2" 
 const getNextSeat = (seat: "Player 1" | "Player 2"): "Player 1" | "Player 2" => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getSideForSeat = (seat: "Player 1" | "Player 2"): GameState["sideToMove"] => (seat === "Player 1" ? "P1" : "P2");
 const getActiveTurn = (game: ShellGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
+const canOperateOfflinePlaygroundTurn = (game: ShellGame, identityId: string) =>
+  game.offlineLocal &&
+  game.playgroundMode &&
+  game.player1?.identityId === identityId &&
+  game.player2?.identityId === identityId;
 
 const getJoinAsPlayerDisabledReason = (game: ShellGame, identityId: string, offline: boolean, myRole: string) => {
   if (myRole === "Player 1" || myRole === "Player 2") {
@@ -297,6 +302,7 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
   const isPlayer = myRole === "Player 1" || myRole === "Player 2";
   const legalNow = listLegalActions(game.board.state);
   const activeTurn = getActiveTurn(game);
+  const offlineTurnControlAllowed = !offline || canOperateOfflinePlaygroundTurn(game, identityId);
   const approvableRequesterIds = game.pendingJoinRequests
     .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
     .map((request) => request.identityId);
@@ -323,7 +329,12 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
     showOfflineState: offline || game.offlineLocal,
     showJoinActions: !offline && !game.offlineLocal,
     canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
-    canEndTurn: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && Boolean(activeTurn && activeTurn.moveIndexes.length > 0),
+    canEndTurn:
+      offlineTurnControlAllowed &&
+      isPlayer &&
+      !inHistoryMode &&
+      sideToMoveIdentity === identityId &&
+      Boolean(activeTurn && activeTurn.moveIndexes.length > 0),
     currentTurn: activeTurn ? clone(activeTurn) : null,
     pendingPlayerRequestSeat: myPendingJoinRequest?.requestedSeat ?? null,
     approvableRequesterIds,

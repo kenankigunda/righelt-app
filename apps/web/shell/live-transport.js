@@ -5,6 +5,7 @@ const MAX_HISTORY = 200;
 const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
+const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
 const renumberHistory = (game) => {
   game.moves.forEach((move, index) => {
     move.index = index;
@@ -63,6 +64,20 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     next.showOfflineState = true;
     next.canInvite = false;
     next.showJoinActions = false;
+    const sideToMoveSeat = getSideToMoveSeat(next);
+    const sideToMoveIdentity = sideToMoveSeat === "Player 1" ? next.player1?.identityId ?? null : next.player2?.identityId ?? null;
+    const dualSeatOfflinePlayground =
+      next.offlineLocal &&
+      next.playgroundMode &&
+      next.player1?.identityId === identityId &&
+      next.player2?.identityId === identityId;
+    next.canEndTurn =
+      Boolean(dualSeatOfflinePlayground) &&
+      next.myRole !== "Viewer" &&
+      next.myRole !== "Guest" &&
+      !next.inHistoryMode &&
+      sideToMoveIdentity === identityId &&
+      Boolean(getActiveTurn(next)?.moveIndexes?.length);
     return next;
   };
 

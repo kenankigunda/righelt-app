@@ -290,6 +290,31 @@ test("live transport: offline view does not reconnect participant and offline mo
   assert.equal((await offlineMove.json()).error, "offline_move_local_only");
 });
 
+test("live transport: offline playground exposes end-turn when one identity controls both seats", async () => {
+  const created = await handleApiRequest(
+    req("/api/shell/games?offline=1", "POST", { identityId: "id-local", playgroundMode: true, offlineLocal: true }),
+    env,
+  );
+  const createdBody = await created.json();
+  const gameId = createdBody.game.id;
+
+  const moved = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves?offline=1`, "POST", { identityId: "id-local" }),
+    env,
+  );
+  assert.equal(moved.status, 200);
+
+  const view = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-local&offline=1`), env);
+  const body = await view.json();
+  assert.equal(body.game.canEndTurn, true);
+
+  const ended = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/end-turn?offline=1`, "POST", { identityId: "id-local" }),
+    env,
+  );
+  assert.equal(ended.status, 200);
+});
+
 test("live transport: move endpoint rejects non-player and wrong-turn players", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),

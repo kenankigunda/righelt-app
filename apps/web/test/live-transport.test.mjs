@@ -199,3 +199,48 @@ test("live transport store overlays offline view state onto cached games", async
   assert.equal(vm.canInvite, false);
   assert.equal(vm.showJoinActions, false);
 });
+
+test("live transport store allows offline end-turn only for dual-seat offline playground", async () => {
+  const gameId = "game-offline-playground";
+  const storage = createMemoryStorage();
+  storage.setItem("righelt.identity.id.v1", "id-a");
+  const baseGame = {
+    id: gameId,
+    createdAt: "2026-02-26T00:00:00.000Z",
+    lastMoveAt: "2026-02-26T00:00:01.000Z",
+    updatedAt: "2026-02-26T00:00:01.000Z",
+    offlineLocal: true,
+    playgroundMode: true,
+    player1: { identityId: "id-a", connected: true },
+    player2: { identityId: "id-a", connected: true },
+    viewers: [],
+    pendingJoinRequests: [],
+    turns: [{ index: 0, startedAt: "2026-02-26T00:00:00.000Z", endedAt: null, playerSeat: "Player 1", status: "active", moveIndexes: [0], lastMoveAt: "2026-02-26T00:00:01.000Z" }],
+    moves: [{ index: 0, turnIndex: 0, turnMoveIndex: 0, at: "2026-02-26T00:00:01.000Z", notation: "PASS", snapshot: { sideToMove: "P1", turnIndex: 0, pieces: [] } }],
+    notifications: ["Offline move recorded"],
+    myRole: "Player 1",
+    inHistoryMode: false,
+    currentSnapshot: { sideToMove: "P1", turnIndex: 0, pieces: [] },
+    board: { state: { sideToMove: "P1", turnIndex: 0, pieces: [] } },
+    canInvite: false,
+    canEndTurn: false,
+    showJoinActions: false,
+    showOfflineState: false,
+  };
+  const fetcher = async (url) => {
+    if (String(url).startsWith("/api/shell/games?")) {
+      return Response.json({ ok: true, games: [] });
+    }
+    if (String(url).startsWith(`/api/shell/games/${gameId}?`)) {
+      return Response.json({ ok: true, game: baseGame });
+    }
+    return Response.json({ ok: true, game: baseGame });
+  };
+
+  const store = createLiveTransportStore({ storage, fetcher, random: () => 0.12345 });
+  await store.loadGame(gameId);
+  await store.setOffline(true);
+
+  const vm = store.getGameViewModel(gameId);
+  assert.equal(vm.canEndTurn, true);
+});

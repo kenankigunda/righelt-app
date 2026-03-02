@@ -263,7 +263,7 @@ const renderHome = () => {
           <div class="row">
             <button data-action="create-game" ${busy ? "disabled" : ""}>Play Game</button>
             <button data-action="create-playground" class="secondary" ${busy ? "disabled" : ""}>Playground Mode</button>
-            <button data-action="create-offline-playground" class="warn" ${busy ? "disabled" : ""}>Offline Playground</button>
+            <button data-action="create-offline-playground" class="warn" ${busy ? "disabled" : ""}>Offline Play</button>
           </div>
           <p class="small">Server-backed game sessions with live state transitions.</p>
         </section>
