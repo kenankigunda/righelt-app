@@ -5,28 +5,29 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
 const isSupplyPoint = (row, col) => (row === 0 && col === 9) || (row === 9 && col === 0);
-const actionPreviewLabel = (actionType, snapshot) => {
+const formatActionPreviewLabel = (actionType, snapshot, destination) => {
+  const suffix = destination ? ` (${destination.row},${destination.col})` : "";
   if (snapshot?.continuation?.type === "rush" && actionType === "rush") {
-    return "Continue rush on this square";
+    return `Continue rush on${suffix}`;
   }
   if (snapshot?.continuation?.type === "push" && actionType === "follow") {
-    return "Continue push on this square";
+    return `Continue push on${suffix}`;
   }
   switch (actionType) {
     case "move":
-      return "Move commander to this square";
+      return `Move commander to${suffix}`;
     case "project":
-      return "Project new piece to this square";
+      return `Project new piece to${suffix}`;
     case "rush":
-      return "Rush piece to this square";
+      return `Rush piece to${suffix}`;
     case "push":
-      return "Push piece onto this square";
+      return `Push piece onto${suffix}`;
     case "follow":
-      return "Follow piece to this square";
+      return `Follow piece to${suffix}`;
     case "retreat":
-      return "Retreat piece to this square";
+      return `Retreat piece to${suffix}`;
     default:
-      return "Move to this square";
+      return `Move to${suffix}`;
   }
 };
 
@@ -488,11 +489,6 @@ export function createEnginePlaygroundBoardAdapter() {
           if (isSource) cell.classList.add("source");
           if (isTarget) {
             cell.classList.add("target");
-            const targetActionType =
-              pickBestActionTypeForTarget(previewsAtCell, currentActionType) ??
-              currentActionType ??
-              "move";
-            cell.setAttribute("data-target-label", actionPreviewLabel(targetActionType, snapshot));
           }
 
           if (isTarget) {
