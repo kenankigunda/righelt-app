@@ -59,6 +59,7 @@ let state = null;
 let legalActions = [];
 let selectedPieceMoves = [];
 let selectedPieceMovePreviews = [];
+let removalEffects = [];
 let selectedPieceId = null;
 let selectedSource = null;
 let selectedTarget = null;
@@ -66,6 +67,7 @@ const moveLog = [];
 let fixtures = [];
 let currentFixtureId = null;
 let fixtureCatalog = { id: "M", title: "Milestone 2 Golden Scenarios", fixtures: [] };
+let removalEffectsTimer = null;
 
 const boardAdapter = createEnginePlaygroundBoardAdapter();
 assertGameBoardAdapter(boardAdapter);
@@ -123,6 +125,28 @@ const clearSelection = () => {
   selectedTarget = null;
 };
 
+const clearRemovalEffects = () => {
+  removalEffects = [];
+  if (removalEffectsTimer) {
+    clearTimeout(removalEffectsTimer);
+    removalEffectsTimer = null;
+  }
+};
+
+const showRemovalEffects = (effects) => {
+  clearRemovalEffects();
+  removalEffects = Array.isArray(effects) ? effects : [];
+  if (removalEffects.length === 0) {
+    return;
+  }
+  renderBoard();
+  removalEffectsTimer = setTimeout(() => {
+    removalEffects = [];
+    removalEffectsTimer = null;
+    renderBoard();
+  }, 2400);
+};
+
 const actionsAtTarget = (coord) =>
   selectedPieceMoves.filter((action) => action.to && action.to.row === coord.row && action.to.col === coord.col);
 
@@ -152,6 +176,7 @@ const submitCurrentAction = async () => {
       selectedPieceMovePreviews = [];
       moveLog.push(`${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`);
       selectedTarget = null;
+      showRemovalEffects(body.removedPieces);
       refreshSelectionLabels();
       renderBoard();
       renderStatus();
@@ -270,6 +295,7 @@ const renderBoard = () => {
     selection: getCurrentSelection(),
     selectedPieceMoves,
     selectedPieceMovePreviews,
+    removalEffects,
     allowFreeSelection: Boolean(allowFreeSelectionEl?.checked),
     currentActionType: actionTypeEl.value,
   });
@@ -408,6 +434,7 @@ const loadInitialState = async () => {
   const body = await response.json();
   state = body.state;
   legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
+  clearRemovalEffects();
   clearSelection();
   renderBoard();
   renderStatus();
@@ -597,6 +624,7 @@ loadFixtureEl.addEventListener("click", () => {
   }
   state = structuredClone(fixture.initial_state);
   legalActions = [];
+  clearRemovalEffects();
   clearSelection();
   moveLog.length = 0;
   moveLog.push(`Loaded fixture ${fixture.id}`);

@@ -147,22 +147,45 @@ button {
   box-shadow: inset 0 0 0 1px var(--accent-2);
 }
 
-.cell.target::after {
-  content: attr(data-target-label);
+.cell.removal-effect::after {
+  content: attr(data-removal-label);
   position: absolute;
   left: 50%;
   bottom: calc(100% + 6px);
   transform: translateX(-50%);
-  background: #1f2b33;
-  color: #f6fbff;
-  border: 1px solid #49616d;
+  background: #3d1515;
+  color: #fff4f4;
+  border: 1px solid #d04a4a;
   border-radius: 6px;
   padding: 4px 7px;
   font-size: 0.68rem;
   line-height: 1.25;
   white-space: nowrap;
-  z-index: 5;
+  z-index: 6;
   pointer-events: none;
+}
+
+.removal-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: 6px;
+  background:
+    radial-gradient(circle at center, rgba(255, 214, 102, 0.85) 0%, rgba(255, 130, 80, 0.75) 34%, rgba(184, 24, 24, 0.6) 66%, transparent 100%);
+  animation: removal-flash-pulse 0.36s ease-in-out 5 alternate;
+}
+
+@keyframes removal-flash-pulse {
+  from {
+    opacity: 0.25;
+    transform: scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .cell.disallowed-preview::before {

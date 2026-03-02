@@ -27,6 +27,13 @@ export type ApiEnv = {
   DB: D1DatabaseLike;
 };
 
+type RemovedPieceNotice = {
+  pieceId: string;
+  position: { row: number; col: number };
+  reason: "loss_of_supply" | "no_retreat";
+  message: string;
+};
+
 const CACHE_NO_STORE = "no-store";
 const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
 
@@ -138,6 +145,48 @@ const enumeratePieceActions = (state: GameState, pieceId: string): Action[] => {
   }
 
   return candidates.sort(compareActions);
+};
+
+const collectRemovedPieceNotices = (
+  before: GameState,
+  afterApply: GameState,
+  afterStability: GameState,
+): RemovedPieceNotice[] => {
+  const afterApplyIds = new Set(afterApply.pieces.map((piece) => piece.id));
+  const afterStableIds = new Set(afterStability.pieces.map((piece) => piece.id));
+  const notices: RemovedPieceNotice[] = [];
+
+  for (const piece of before.pieces) {
+    if (!afterApplyIds.has(piece.id)) {
+      notices.push({
+        pieceId: piece.id,
+        position: { ...piece.position },
+        reason: "no_retreat",
+        message: `Piece at (${piece.position.row}, ${piece.position.col}) destroyed because it could not retreat`,
+      });
+    }
+  }
+
+  for (const piece of afterApply.pieces) {
+    if (!afterStableIds.has(piece.id)) {
+      notices.push({
+        pieceId: piece.id,
+        position: { ...piece.position },
+        reason: "loss_of_supply",
+        message: `Piece at (${piece.position.row}, ${piece.position.col}) destroyed due to loss of supply`,
+      });
+    }
+  }
+
+  return notices.sort((left, right) => {
+    if (left.position.row !== right.position.row) {
+      return left.position.row - right.position.row;
+    }
+    if (left.position.col !== right.position.col) {
+      return left.position.col - right.position.col;
+    }
+    return left.pieceId.localeCompare(right.pieceId);
+  });
 };
 
 const enumeratePieceActionPreviews = (state: GameState, pieceId: string): PieceMovePreview[] => {
@@ -267,6 +316,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
     try {
       const result = applyAction(resolved, action);
       const stabilized = resolveToStability(result.state, { artifactMode: "full" });
+      const removedPieces = collectRemovedPieceNotices(resolved, result.state, stabilized);
       return json({
         ok: true,
         accepted: true,
@@ -274,6 +324,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
         state: stabilized,
         outcome: stabilized.outcome,
         legalActions: listLegalActions(stabilized),
+        removedPieces,
       });
     } catch (error) {
       return jsonNoStore(

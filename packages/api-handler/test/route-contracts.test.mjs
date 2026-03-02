@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { handleApiRequest } from "../src/index.ts";
+import { createInitialState } from "../../game-engine/src/state.ts";
+import { resolveToStability } from "../../game-engine/src/resolve.ts";
 
 const CACHE_NO_STORE = "no-store";
 
@@ -349,6 +351,53 @@ test("/api/engine/playground/apply illegal action returns accepted=false with va
   assert.equal(Array.isArray(body.legalActions), true);
   assert.equal(body.legalActions.length > 0, true);
   assert.equal(typeof body.state?.turnIndex, "number");
+});
+
+test("/api/engine/playground/apply returns removedPieces notice for no-retreat removal", async () => {
+  const { env } = buildEnv();
+  const state = resolveToStability({
+    ...createInitialState(),
+    pieces: [
+      ...createInitialState().pieces,
+      { id: "A1", owner: "P1", kind: "unit", position: { row: 1, col: 1 }, supplied: true, commanded: true },
+      { id: "A2", owner: "P1", kind: "unit", position: { row: 1, col: 2 }, supplied: true, commanded: true },
+      { id: "D1", owner: "P2", kind: "unit", position: { row: 3, col: 1 }, supplied: true, commanded: true },
+      { id: "B1", owner: "P1", kind: "unit", position: { row: 4, col: 1 }, supplied: true, commanded: true },
+      { id: "B2", owner: "P1", kind: "unit", position: { row: 3, col: 2 }, supplied: true, commanded: true },
+      { id: "B3", owner: "P1", kind: "unit", position: { row: 3, col: 0 }, supplied: true, commanded: true },
+    ],
+  }, { artifactMode: "full" });
+
+  const response = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/engine/playground/apply", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        state,
+        action: {
+          type: "push",
+          actorId: "A1",
+          from: { row: 1, col: 1 },
+          to: { row: 3, col: 1 },
+        },
+      }),
+    }),
+    env,
+  );
+
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.accepted, true);
+  assert.equal(Array.isArray(body.removedPieces), true);
+  assert.deepEqual(body.removedPieces, [
+    {
+      pieceId: "D1",
+      position: { row: 3, col: 1 },
+      reason: "no_retreat",
+      message: "Piece at (3, 1) destroyed because it could not retreat",
+    },
+  ]);
 });
 
 test("/api/engine/playground/piece-moves returns invalid_piece_id when pieceId is missing", async () => {

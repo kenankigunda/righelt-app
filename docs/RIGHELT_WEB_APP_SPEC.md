@@ -266,6 +266,20 @@ Tutorial restart:
   - default (toggle off): users may only pick source cells that contain pieces and destination cells that have at least one legal action from the selected source
   - free-selection mode (toggle on): users may click arbitrary empty source/destination cells for inspection/manual experimentation
 
+### 12.3 Playground Removal Feedback
+
+- The `/api/engine/playground/apply` success contract may include `removedPieces`, a transient list of piece-removal notices for pieces removed as part of the accepted action resolution.
+- Each removal notice must include:
+  - `pieceId`
+  - `position`
+  - `reason` (`no_retreat` or `loss_of_supply`)
+  - `message` (player-facing text suitable for direct tooltip display)
+- Playground UI must render removal notices as transient board-local feedback at the removed piece's former square.
+- The default treatment is:
+  - a short flashing highlight on the affected square
+  - a tooltip with the supplied player-facing explanation
+- Removal notices are informational only and must not alter deterministic engine state or replay artifacts.
+
 ## 13. Notifications and Prompts
 
 - Prompt text/content may vary, but these state prompts are required:
