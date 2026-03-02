@@ -47,9 +47,15 @@ type ShellGame = {
   moves: MoveEntry[];
   historyIndex: number | null;
   notifications: string[];
+  inviteTokens: {
+    viewer: string;
+    player1: string;
+    player2: string;
+  };
 };
 
 const games = new Map<string, ShellGame>();
+const inviteIndex = new Map<string, { gameId: string; sharedByRole: "Viewer" | "Player 1" | "Player 2" }>();
 let seq = 0;
 const homeSubscribers = new Set<any>();
 const gameSubscribers = new Map<string, Set<any>>();
@@ -59,6 +65,24 @@ const clone = <T>(value: T): T => structuredClone(value);
 const nextId = () => {
   seq += 1;
   return `game-${seq.toString().padStart(6, "0")}`;
+};
+
+const createInviteToken = () => {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+};
+
+const createInviteTokens = (gameId: string) => {
+  const tokens = {
+    viewer: createInviteToken(),
+    player1: createInviteToken(),
+    player2: createInviteToken(),
+  };
+  inviteIndex.set(tokens.viewer, { gameId, sharedByRole: "Viewer" });
+  inviteIndex.set(tokens.player1, { gameId, sharedByRole: "Player 1" });
+  inviteIndex.set(tokens.player2, { gameId, sharedByRole: "Player 2" });
+  return tokens;
 };
 
 const toTimestamp = (value: string | null | undefined) => {
@@ -216,6 +240,12 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
     canJoinAsPlayer: myRole !== "Player 1" && myRole !== "Player 2" && !game.playgroundMode && (!game.player1 || !game.player2),
     canJoinAsViewer: myRole === "Guest" && !offline && !game.offlineLocal,
     canInvite: !offline && !game.offlineLocal,
+    inviteToken:
+      myRole === "Player 1"
+        ? game.inviteTokens.player1
+        : myRole === "Player 2"
+          ? game.inviteTokens.player2
+          : game.inviteTokens.viewer,
     showOfflineState: offline || game.offlineLocal,
     showJoinActions: !offline && !game.offlineLocal,
     canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
@@ -395,6 +425,27 @@ export const handleShellLiveRequest = async (
     };
   }
 
+  if (request.method === "GET" && route.length === 2 && route[0] === "invites") {
+    const token = asIdentity(route[1]);
+    if (!token) {
+      return { handled: true, status: 400, body: { ok: false, error: "invalid_invite_token" }, cacheControl: "no-store" };
+    }
+    const invite = inviteIndex.get(token);
+    if (!invite) {
+      return { handled: true, status: 404, body: { ok: false, error: "invite_not_found" }, cacheControl: "no-store" };
+    }
+    const game = games.get(invite.gameId);
+    if (!game) {
+      return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: "no-store" };
+    }
+    return {
+      handled: true,
+      status: 200,
+      body: { ok: true, gameId: invite.gameId, inviteToken: token, inviteFromRole: invite.sharedByRole },
+      cacheControl: "no-store",
+    };
+  }
+
   if (request.method === "POST" && route.length === 1 && route[0] === "games") {
     const body = await parseBody(request);
     const identityId = asIdentity(body.identityId);
@@ -422,7 +473,9 @@ export const handleShellLiveRequest = async (
       moves: [],
       historyIndex: null,
       notifications: ["Game created", playgroundMode ? "Playground mode active" : "Invite a second player"],
+      inviteTokens: { viewer: "", player1: "", player2: "" },
     };
+    game.inviteTokens = createInviteTokens(game.id);
 
     games.set(game.id, game);
     broadcastLiveUpdate(game.id, "game_created");
@@ -507,7 +560,14 @@ export const handleShellLiveRequest = async (
         return { handled: true, status: 409, body: { ok: false, error: "no_player_seat_available" }, cacheControl: "no-store" };
       }
 
-      const inviteFromRole = typeof body.inviteFromRole === "string" ? body.inviteFromRole : null;
+      const inviteToken = typeof body.inviteToken === "string" ? body.inviteToken : null;
+      const inviteMeta = inviteToken ? inviteIndex.get(inviteToken) : null;
+      const inviteFromRole =
+        inviteMeta && inviteMeta.gameId === game.id
+          ? inviteMeta.sharedByRole
+          : typeof body.inviteFromRole === "string"
+            ? body.inviteFromRole
+            : null;
       const sharedByPlayer = inviteFromRole === "Player 1" || inviteFromRole === "Player 2";
       if (!sharedByPlayer) {
         const added = ensureViewer(game, identityId);

@@ -41,6 +41,15 @@ test("live transport: create/list/get game lifecycle is server-backed", async ()
   const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-b&openAsViewer=1`), env);
   const openBody = await open.json();
   assert.equal(openBody.game.viewers.some((viewer) => viewer.identityId === "id-b"), true);
+
+  const inviteToken = createBody.game.inviteToken;
+  assert.equal(typeof inviteToken, "string");
+  assert.equal(inviteToken.length > 20, true);
+
+  const inviteResolve = await handleApiRequest(req(`/api/shell/invites/${inviteToken}`), env);
+  const inviteBody = await inviteResolve.json();
+  assert.equal(inviteBody.gameId, gameId);
+  assert.equal(inviteBody.inviteFromRole, "Player 1");
 });
 
 test("live transport: join approval flow and presence/history/move transitions", async () => {
@@ -100,6 +109,29 @@ test("live transport: join approval flow and presence/history/move transitions",
   );
   const presenceBody = await presence.json();
   assert.equal(presenceBody.game.player2.connected, false);
+});
+
+test("live transport: player invite token enables immediate player join without guessable game role query", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await create.json();
+  const gameId = createdBody.game.id;
+  const inviteToken = createdBody.game.inviteToken;
+
+  const join = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-player2",
+      mode: "player",
+      inviteToken,
+    }),
+    env,
+  );
+  const joinBody = await join.json();
+  assert.equal(join.status, 200);
+  assert.equal(joinBody.pendingApproval, false);
+  assert.equal(joinBody.game.player2.identityId, "id-player2");
 });
 
 test("live transport: offline-local game hidden until go-online confirmation", async () => {

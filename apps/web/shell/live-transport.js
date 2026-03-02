@@ -92,11 +92,19 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return upsertGame(body.game);
   };
 
-  const joinGame = async ({ gameId, mode, inviteFromRole = null }) => {
+  const resolveInvite = async (inviteToken) => {
+    const response = await fetcher(withOfflineQuery(`/api/shell/invites/${encodeURIComponent(inviteToken)}`), {
+      method: "GET",
+      cache: "no-store",
+    });
+    return mustOk(response);
+  };
+
+  const joinGame = async ({ gameId, mode, inviteFromRole = null, inviteToken = null }) => {
     const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/join`), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, mode, inviteFromRole }),
+      body: JSON.stringify({ identityId, mode, inviteFromRole, inviteToken }),
     });
     const body = await mustOk(response);
     return { ...body, game: upsertGame(body.game) };
@@ -177,6 +185,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   return {
     refreshGames,
     loadGame,
+    resolveInvite,
     createGame,
     joinGame,
     approvePendingRequest,

@@ -28,6 +28,13 @@ export const parseRouteFromHash = (hash) => {
     };
   }
 
+  if (parts[0] === "invite" && parts[1]) {
+    return {
+      name: "invite",
+      inviteToken: decodeURIComponent(parts[1]),
+    };
+  }
+
   if (parts[0] === "tutorial") {
     return {
       name: "tutorial",
@@ -47,6 +54,8 @@ export const buildGameHash = (gameId, inviteFromRole = null) => {
   }
   return `#/game/${safe}?from=${encodeURIComponent(inviteFromRole)}`;
 };
+
+export const buildInviteHash = (inviteToken) => `#/invite/${encodeURIComponent(inviteToken)}`;
 
 export const buildTutorialHash = (gameId = null) => {
   if (!gameId) {

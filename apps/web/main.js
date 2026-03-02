@@ -4,7 +4,7 @@ import { getBootstrapPayload } from "./shell/bootstrap.js";
 import { createLiveTransportStore } from "./shell/live-transport.js";
 import { createLiveSyncClient } from "./shell/live-sync.js";
 import { loadTutorialCompleted, saveTutorialCompleted } from "./shell/persistence.js";
-import { buildGameHash, buildHomeHash, buildTutorialHash, parseRouteFromHash } from "./shell/routes.js";
+import { buildGameHash, buildHomeHash, buildInviteHash, buildTutorialHash, parseRouteFromHash } from "./shell/routes.js";
 import { createTutorialController } from "./shell/tutorial.js";
 
 const appEl = document.getElementById("app");
@@ -36,6 +36,7 @@ const WS_RECONCILE_MS = 2000;
 let inviteFeedback = "";
 let inviteFeedbackTimer = null;
 let routeHydrated = false;
+let resolvedInvite = null;
 
 const escapeHtml = (value) =>
   String(value)
@@ -144,7 +145,7 @@ const renderHome = () => {
   `;
 };
 
-const renderGame = (gameId, inviteFromRole = null) => {
+const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   if (!routeHydrated) {
     return `<section class="panel"><h2>Loading game...</h2><p class="small">Synchronizing current game state.</p></section>`;
   }
@@ -154,7 +155,7 @@ const renderGame = (gameId, inviteFromRole = null) => {
     return `<section class="panel"><h2>Loading game...</h2><p class="small">Fetching latest server state.</p></section>`;
   }
 
-  const inviteLink = `${window.location.origin}${window.location.pathname}${buildGameHash(game.id, game.myRole)}`;
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id)}`;
   const participants = [
     { label: "Player 1", value: game.player1 },
     { label: "Player 2", value: game.player2 },
@@ -336,6 +337,8 @@ const render = () => {
     body = renderHome();
   } else if (currentRoute.name === "game") {
     body = renderGame(currentRoute.gameId, currentRoute.inviteFromRole);
+  } else if (currentRoute.name === "invite") {
+    body = renderGame(resolvedInvite?.gameId || null, resolvedInvite?.inviteFromRole || null, resolvedInvite?.inviteToken || null);
   } else if (currentRoute.name === "tutorial") {
     body = renderTutorial(currentRoute.gameId);
   } else {
@@ -345,6 +348,9 @@ const render = () => {
   appEl.innerHTML = `${renderHeader()}${body}`;
   if (currentRoute.name === "game") {
     mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
+  }
+  if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
+    mountBoardForGame(transport.getGameViewModel(resolvedInvite.gameId));
   }
 };
 
@@ -356,6 +362,9 @@ const withBusy = async (fn) => {
   } catch (error) {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
   } finally {
+    if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
+      syncLiveChannel();
+    }
     busy = false;
     render();
   }
@@ -368,9 +377,18 @@ const syncRouteData = async () => {
     return;
   }
   if (currentRoute.name === "game") {
+    resolvedInvite = null;
     const firstOpen = !openedViewerGames.has(currentRoute.gameId);
     await transport.loadGame(currentRoute.gameId, { openAsViewer: firstOpen });
     openedViewerGames.add(currentRoute.gameId);
+    routeHydrated = true;
+    return;
+  }
+  if (currentRoute.name === "invite") {
+    resolvedInvite = await transport.resolveInvite(currentRoute.inviteToken);
+    const firstOpen = !openedViewerGames.has(resolvedInvite.gameId);
+    await transport.loadGame(resolvedInvite.gameId, { openAsViewer: firstOpen });
+    openedViewerGames.add(resolvedInvite.gameId);
     routeHydrated = true;
     return;
   }
@@ -413,6 +431,8 @@ const syncLiveChannel = () => {
   const routeKey =
     currentRoute.name === "game"
       ? `game:${currentRoute.gameId}`
+      : currentRoute.name === "invite" && resolvedInvite?.gameId
+        ? `game:${resolvedInvite.gameId}`
       : currentRoute.name === "home"
         ? "home"
         : "none";
@@ -432,6 +452,11 @@ const syncLiveChannel = () => {
   if (currentRoute.name === "game") {
     liveSync.resume();
     liveSync.connectGame(currentRoute.gameId);
+    return;
+  }
+  if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
+    liveSync.resume();
+    liveSync.connectGame(resolvedInvite.gameId);
   }
 };
 
@@ -530,7 +555,12 @@ appEl.addEventListener("click", async (event) => {
     if (action === "join-viewer") {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
-      await transport.joinGame({ gameId, mode: "viewer", inviteFromRole: currentRoute.inviteFromRole });
+      await transport.joinGame({
+        gameId,
+        mode: "viewer",
+        inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
+        inviteToken: resolvedInvite?.inviteToken || null,
+      });
       await syncRouteData();
       return;
     }
@@ -538,7 +568,12 @@ appEl.addEventListener("click", async (event) => {
     if (action === "join-player") {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
-      await transport.joinGame({ gameId, mode: "player", inviteFromRole: currentRoute.inviteFromRole });
+      await transport.joinGame({
+        gameId,
+        mode: "player",
+        inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
+        inviteToken: resolvedInvite?.inviteToken || null,
+      });
       await syncRouteData();
       return;
     }
