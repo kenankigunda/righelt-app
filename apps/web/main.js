@@ -150,6 +150,11 @@ const setRushContinuationPrompt = (player) => {
   boardPreviewLabelEl.innerHTML = `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares:`;
 };
 
+const setPushFollowContinuationPrompt = (player) => {
+  const toneClass = player === "P1" ? "player-tone-p1" : player === "P2" ? "player-tone-p2" : "player-tone-neutral";
+  boardPreviewLabelEl.innerHTML = `Follow your push on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares:`;
+};
+
 const setBoardPreviewAction = (text) => {
   boardPreviewLabelEl.innerHTML = `Click again to <strong>${escapeHtml(text)}</strong>`;
 };
@@ -461,6 +466,8 @@ const renderStatus = () => {
     selectedPieceMovesEl.textContent = "[]";
     if (state.continuation?.type === "rush") {
       setRushContinuationPrompt(state.sideToMove);
+    } else if (state.continuation?.type === "push" && state.continuation.phase === "follow") {
+      setPushFollowContinuationPrompt(state.sideToMove);
     } else {
       setBoardPreviewPrompt("Select a piece to see it supply and command lines + what it can do:");
     }
