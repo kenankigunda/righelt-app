@@ -1,6 +1,7 @@
 import {
   getBlockedPreviewLabel,
   buildActionPayload,
+  deriveContinuationHighlightByPieceId,
   deriveAutoSelectedTarget,
   deriveForcedContinuationSelection,
   pickBestActionTypeForTarget,
@@ -145,6 +146,44 @@ const setBoardPreviewPrompt = (text) => {
   boardPreviewLabelEl.textContent = text;
 };
 
+const setBoardPreviewPromptHtml = (html) => {
+  boardPreviewLabelEl.innerHTML = html;
+};
+
+const getBoardPreviewCoordinateChipClass = (coord) => {
+  if (!coord) {
+    return "board-preview-coordinate-chip-neutral";
+  }
+
+  if (selectedTarget && sameCoordinate(coord, selectedTarget)) {
+    return "board-preview-coordinate-chip-target";
+  }
+  if (selectedSource && sameCoordinate(coord, selectedSource)) {
+    return "board-preview-coordinate-chip-source";
+  }
+
+  const continuationHighlights = deriveContinuationHighlightByPieceId(state, legalActions);
+  const pieceAtCoord = state?.pieces?.find((piece) => sameCoordinate(piece.position, coord));
+  if (pieceAtCoord) {
+    if (continuationHighlights.pendingPieceIds.has(pieceAtCoord.id)) {
+      return "board-preview-coordinate-chip-continuation-pending";
+    }
+    if (continuationHighlights.movedPieceIds.has(pieceAtCoord.id)) {
+      return "board-preview-coordinate-chip-continuation-moved";
+    }
+  }
+
+  return "board-preview-coordinate-chip-neutral";
+};
+
+const renderBoardPreviewCoordinate = (coord) => {
+  if (!coord) {
+    return "";
+  }
+  const chipClass = getBoardPreviewCoordinateChipClass(coord);
+  return `<span class="board-preview-coordinate-chip ${chipClass}">${escapeHtml(`${coord.row},${coord.col}`)}</span>`;
+};
+
 const setRushContinuationPrompt = (player) => {
   const toneClass = player === "P1" ? "player-tone-p1" : player === "P2" ? "player-tone-p2" : "player-tone-neutral";
   boardPreviewLabelEl.innerHTML = `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares, or <button type="button" class="board-preview-inline-button" data-board-preview-action="pass">end your turn now</button>`;
@@ -155,8 +194,27 @@ const setPushFollowContinuationPrompt = (player) => {
   boardPreviewLabelEl.innerHTML = `Follow your push on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares`;
 };
 
+const getPushRetreatPrompt = (snapshot, selectedPieceId) => {
+  if (snapshot?.continuation?.type !== "push" || snapshot.continuation.phase !== "retreat") {
+    return null;
+  }
+  const pushedPiece = snapshot.pieces?.find((piece) => piece.id === snapshot.continuation?.pushedPieceId);
+  if (!pushedPiece) {
+    return null;
+  }
+  const suffix = selectedPieceId === pushedPiece.id ? "Select a square to retreat to:" : "Select it to retreat:";
+  return `Your piece on the <span class="board-preview-retreat-chip">highlighted square</span> has been pushed! ${escapeHtml(suffix)}`;
+};
+
 const setBoardPreviewAction = (text) => {
-  boardPreviewLabelEl.innerHTML = `Click again to <strong>${escapeHtml(text)}</strong>`;
+  const coordinateMatch = text.match(/\(\d+,\d+\)$/);
+  if (!coordinateMatch || !selectedTarget) {
+    boardPreviewLabelEl.innerHTML = `Click again to <strong>${escapeHtml(text)}</strong>`;
+    return;
+  }
+
+  const labelWithoutCoordinate = text.slice(0, coordinateMatch.index).trimEnd();
+  boardPreviewLabelEl.innerHTML = `Click again to <strong>${escapeHtml(labelWithoutCoordinate)} ${renderBoardPreviewCoordinate(selectedTarget)}</strong>`;
 };
 
 const getCurrentSelection = () => ({
@@ -464,7 +522,10 @@ const renderStatus = () => {
     selectedPieceEl.textContent = "No piece selected.";
     selectedMovePreviewEl.textContent = "No destination selected.";
     selectedPieceMovesEl.textContent = "[]";
-    if (state.continuation?.type === "rush") {
+    const pushRetreatPrompt = getPushRetreatPrompt(state, selectedPieceId);
+    if (pushRetreatPrompt) {
+      setBoardPreviewPromptHtml(pushRetreatPrompt);
+    } else if (state.continuation?.type === "rush") {
       setRushContinuationPrompt(state.sideToMove);
     } else if (state.continuation?.type === "push" && state.continuation.phase === "follow") {
       setPushFollowContinuationPrompt(state.sideToMove);
@@ -477,7 +538,10 @@ const renderStatus = () => {
 
     if (!selectedTarget) {
       selectedMovePreviewEl.textContent = "No destination selected.";
-      if (pieceSummary.details.owner !== state.sideToMove) {
+      const pushRetreatPrompt = getPushRetreatPrompt(state, selectedPieceId);
+      if (pushRetreatPrompt) {
+        setBoardPreviewPromptHtml(pushRetreatPrompt);
+      } else if (pieceSummary.details.owner !== state.sideToMove) {
         setBoardPreviewPrompt("Opponent piece. Supply and command lines shown only:");
       } else if (selectedPieceMoves.length === 0) {
         if (state.continuation?.type === "rush") {

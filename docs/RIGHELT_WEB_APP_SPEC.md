@@ -79,6 +79,16 @@ Every board implementation must provide:
 ### 1.1.4 UI Writing Convention for Pills
 
 - Inline pills/chips used inside instructional copy are treated as self-contained UI tokens rather than prose.
+- When a board position appears in plain text, it uses parentheses, for example `(x,y)`.
+- When a board position inside the board preview label is rendered as an inline chip, the chip text omits parentheses because the chip already distinguishes it visually.
+- The coordinate chip color must match the current visual treatment of that square on the board as closely as the UI allows:
+  - selected source square -> source chip treatment
+  - selected destination square -> destination chip treatment
+  - continuation square already moved -> faint continuation chip treatment
+  - continuation square still to move -> prominent continuation chip treatment
+  - otherwise -> neutral square chip treatment
+- During push retreat flow, the pushed piece's square must use a dedicated retreat highlight treatment.
+- The retreat instruction should refer to that location as `highlighted square` in a pill matching the retreat highlight, rather than by coordinates.
 - When a board preview label or similar instruction ends with a pill/chip or inline action button, no trailing punctuation is used after that UI token.
 - Ordinary prose-only board preview labels continue using the established trailing colon format.
 

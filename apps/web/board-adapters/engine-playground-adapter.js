@@ -304,6 +304,7 @@ export function createEnginePlaygroundBoardAdapter() {
         "continuation-member",
         "continuation-moved",
         "continuation-pending",
+        "retreat-piece",
         "selected-piece",
         "inactive-selected-piece",
       );
@@ -325,6 +326,12 @@ export function createEnginePlaygroundBoardAdapter() {
     const piece = findPieceById(snapshot, selectedPieceId);
     if (!piece) {
       applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey);
+      if (snapshot?.continuation?.type === "push" && snapshot.continuation.phase === "retreat") {
+        const pushedPiece = findPieceById(snapshot, snapshot.continuation.pushedPieceId);
+        if (pushedPiece) {
+          cellByCoordinateKey.get(coordKey(pushedPiece.position))?.classList.add("retreat-piece");
+        }
+      }
       return;
     }
 
@@ -370,6 +377,12 @@ export function createEnginePlaygroundBoardAdapter() {
     }
 
     applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey);
+    if (snapshot?.continuation?.type === "push" && snapshot.continuation.phase === "retreat") {
+      const pushedPiece = findPieceById(snapshot, snapshot.continuation.pushedPieceId);
+      if (pushedPiece) {
+        cellByCoordinateKey.get(coordKey(pushedPiece.position))?.classList.add("retreat-piece");
+      }
+    }
 
     drawPath(getSupplyPathForPiece(snapshot, piece), "#2f8e63");
     drawPath(getCommandPathForPiece(snapshot, piece), "#2470c7");

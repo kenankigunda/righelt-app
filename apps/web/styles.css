@@ -63,6 +63,56 @@ body {
   line-height: 1.1;
 }
 
+.board-preview-retreat-chip {
+  display: inline-block;
+  padding: 0.05rem 0.45rem 0.12rem;
+  border-radius: 999px;
+  background: #f3e7c5;
+  border: 1px solid #d1b06a;
+  color: #72531a;
+  line-height: 1.1;
+}
+
+.board-preview-coordinate-chip {
+  display: inline-block;
+  padding: 0.05rem 0.45rem 0.12rem;
+  border-radius: 999px;
+  border: 1px solid #cac7bd;
+  line-height: 1.1;
+  background: #fbf8f0;
+  color: var(--ink);
+}
+
+.board-preview-coordinate-chip-neutral {
+  background: #fbf8f0;
+  border-color: #cac7bd;
+  color: var(--ink);
+}
+
+.board-preview-coordinate-chip-source {
+  background: #edf7f1;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.board-preview-coordinate-chip-target {
+  background: #fbefeb;
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
+
+.board-preview-coordinate-chip-continuation-pending {
+  background: #e6f2d3;
+  border-color: #c7db9f;
+  color: var(--ink);
+}
+
+.board-preview-coordinate-chip-continuation-moved {
+  background: #f5f7ef;
+  border-color: #d7dec9;
+  color: var(--muted);
+}
+
 .board-preview-inline-button {
   display: inline-block;
   margin: 0 0 0.1rem;
@@ -259,6 +309,12 @@ button {
 
 .cell.continuation-pending {
   background: #e6f2d3;
+}
+
+.cell.retreat-piece {
+  background: #f3e7c5;
+  border-color: #d1b06a;
+  box-shadow: inset 0 0 0 1px #d1b06a;
 }
 
 .cell.selected-piece {
