@@ -100,32 +100,6 @@ const formatClientDateTime = (value) => {
   }).format(new Date(timestamp));
 };
 
-const getCurrentViewedGameId = () => {
-  if (currentRoute.name === "game") {
-    return currentRoute.gameId;
-  }
-  if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
-    return resolvedInvite.gameId;
-  }
-  return null;
-};
-
-const syncCurrentIdentityPresence = async (connected) => {
-  const gameId = getCurrentViewedGameId();
-  if (!gameId) {
-    return;
-  }
-  const game = transport.getGameViewModel(gameId);
-  if (!game) {
-    return;
-  }
-  const role = game.myRole;
-  if (role !== "Player 1" && role !== "Player 2" && role !== "Viewer") {
-    return;
-  }
-  await transport.setParticipantConnected({ gameId, role, connected });
-};
-
 const renderBoardPlaceholder = (game) => {
   const lastMove = game.moves.length > 0 ? game.moves[game.moves.length - 1] : null;
   const currentTurn = game.currentTurn;
@@ -193,7 +167,6 @@ const renderHeader = () => `
       <a class="button-link secondary" href="/">Playground</a>
       <a class="button-link secondary" href="${buildHomeHash()}">Home</a>
       <a class="button-link secondary" href="${buildTutorialHash()}">Tutorial</a>
-      <button data-action="toggle-offline" class="secondary">Toggle Offline</button>
     </div>
   </header>
 `;
@@ -256,7 +229,6 @@ const renderHome = () => {
           <div class="row">
             <button data-action="create-game" ${busy ? "disabled" : ""}>Play Game</button>
             <button data-action="create-playground" class="secondary" ${busy ? "disabled" : ""}>Playground Mode</button>
-            <button data-action="create-offline-playground" class="warn" ${busy ? "disabled" : ""}>Offline Playground</button>
           </div>
           <p class="small">Server-backed game sessions with live state transitions.</p>
         </section>
@@ -336,17 +308,12 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
           .join("");
 
   const latestNote = game.notifications[0] || "Ready";
-  const offlineBanner =
-    game.showOfflineState || inviteFromRole === "offline"
-      ? `<div class="alert warn">Offline mode: invite and remote join actions are disabled.</div>`
-      : "";
 
   const historyBanner = game.inHistoryMode
     ? '<div class="alert">Viewing history snapshot (not live). New moves keep appending.</div>'
     : "";
 
   return `
-    ${offlineBanner ? `<section class="panel">${offlineBanner}</section>` : ""}
     <section class="layout-grid">
       <div class="stack">
         <section class="panel">
@@ -357,11 +324,10 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
           <div class="row">
             <button data-action="record-move" data-game-id="${escapeHtml(game.id)}" ${
               game.canRecordMove && !busy ? "" : "disabled"
-            }>${game.showOfflineState ? "Record Offline Move" : "Record Live Move"}</button>
+            }>Record Live Move</button>
             <button class="secondary" data-action="end-turn" data-game-id="${escapeHtml(game.id)}" ${
               game.canEndTurn && !busy ? "" : "disabled"
             }>End Turn</button>
-            <button class="warn" data-action="toggle-offline" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle Offline</button>
           </div>
           <p class="small">Active turn: ${
             game.currentTurn
@@ -686,16 +652,12 @@ window.addEventListener("hashchange", () => {
 });
 
 window.addEventListener("online", () => {
-  transport.setOffline(false);
-  void syncCurrentIdentityPresence(true);
   liveSync.resume();
   syncLiveChannel();
   void withBusy(syncRouteData);
 });
 
 window.addEventListener("offline", () => {
-  transport.setOffline(true);
-  void syncCurrentIdentityPresence(false);
   liveSync.disconnect();
   liveSyncConnectedRoute = "";
   void withBusy(syncRouteData);
@@ -734,30 +696,6 @@ appEl.addEventListener("click", async (event) => {
     if (action === "create-playground") {
       const game = await transport.createGame({ playgroundMode: true, offlineLocal: false });
       navigateTo(buildGameHash(game.id));
-      return;
-    }
-
-    if (action === "create-offline-playground") {
-      transport.setOffline(true);
-      const game = await transport.createGame({ playgroundMode: true, offlineLocal: true });
-      navigateTo(buildGameHash(game.id, "offline"));
-      return;
-    }
-
-    if (action === "toggle-offline") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const next = !(window.__righeltOffline || false);
-      if (!next && gameId) {
-        const game = transport.getGameViewModel(gameId);
-        if (game?.offlineLocal) {
-          const confirmed = window.confirm("Go online with this local game?");
-          await transport.goOnlineGame({ gameId, confirmed });
-        }
-      }
-      await syncCurrentIdentityPresence(!next);
-      window.__righeltOffline = next;
-      transport.setOffline(next);
-      await syncRouteData();
       return;
     }
 
@@ -867,10 +805,6 @@ appEl.addEventListener("click", async (event) => {
 });
 
 const initialRender = async () => {
-  if (navigator.onLine === false) {
-    transport.setOffline(true);
-  }
-
   if (currentRoute.name === "home" && !loadTutorialCompleted(storage)) {
     navigateTo(buildTutorialHash());
     return;

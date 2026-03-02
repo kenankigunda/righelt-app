@@ -13,6 +13,7 @@ const createMemoryStorage = () => {
 
 test("live transport store uses backend responses for create/load/join flows", async () => {
   const calls = [];
+  const createdGameId = "game-opaque-test-id";
   const fetcher = async (url, init = {}) => {
     calls.push({ url, method: init.method || "GET" });
 
@@ -25,7 +26,7 @@ test("live transport store uses backend responses for create/load/join flows", a
         ok: true,
         pendingApproval: true,
         game: {
-          id: "game-000001",
+          id: createdGameId,
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: null,
           updatedAt: "2026-02-26T00:00:00.000Z",
@@ -50,7 +51,7 @@ test("live transport store uses backend responses for create/load/join flows", a
       return Response.json({
         ok: true,
         game: {
-          id: "game-000001",
+          id: createdGameId,
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: null,
           updatedAt: "2026-02-26T00:00:00.000Z",
@@ -77,9 +78,9 @@ test("live transport store uses backend responses for create/load/join flows", a
   const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
   await store.refreshGames();
   const created = await store.createGame();
-  assert.equal(created.id, "game-000001");
+  assert.equal(created.id, createdGameId);
 
-  const joined = await store.joinGame({ gameId: "game-000001", mode: "player", inviteFromRole: null });
+  const joined = await store.joinGame({ gameId: createdGameId, mode: "player", inviteFromRole: null });
   assert.equal(joined.pendingApproval, true);
 
   assert.equal(calls.some((entry) => String(entry.url).includes("/api/shell/games")), true);

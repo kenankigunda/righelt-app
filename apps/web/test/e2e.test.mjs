@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createTestStore } from "./support.mjs";
 
-test("e2e shell flow: create, invite-join request, approve, history, offline-local go-online", async () => {
+test("e2e shell flow: create, invite-join request, approve, history", async () => {
   const { store } = createTestStore();
   const game = await store.createGame({ playgroundMode: false, offlineLocal: false });
 
@@ -21,9 +21,4 @@ test("e2e shell flow: create, invite-join request, approve, history, offline-loc
   assert.equal(store.getGameViewModel(game.id).inHistoryMode, true);
   store.returnToLive({ gameId: game.id });
   assert.equal(store.getGameViewModel(game.id).inHistoryMode, false);
-
-  const offlineGame = await store.createGame({ playgroundMode: true, offlineLocal: true });
-  assert.equal(store.listGames().some((entry) => entry.id === offlineGame.id), false);
-  assert.equal(store.goOnlineGame({ gameId: offlineGame.id, confirmed: true }).ok, true);
-  assert.equal(store.listGames().some((entry) => entry.id === offlineGame.id), true);
 });

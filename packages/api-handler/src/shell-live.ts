@@ -251,12 +251,9 @@ const getNextSeat = (seat: "Player 1" | "Player 2"): "Player 1" | "Player 2" => 
 const getSideForSeat = (seat: "Player 1" | "Player 2"): GameState["sideToMove"] => (seat === "Player 1" ? "P1" : "P2");
 const getActiveTurn = (game: ShellGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
 
-const getJoinAsPlayerDisabledReason = (game: ShellGame, identityId: string, offline: boolean, myRole: string) => {
+const getJoinAsPlayerDisabledReason = (game: ShellGame, identityId: string, myRole: string) => {
   if (myRole === "Player 1" || myRole === "Player 2") {
     return "You are already joined as a player.";
-  }
-  if (offline || game.offlineLocal) {
-    return "Remote joining is unavailable while offline.";
   }
   if (game.playgroundMode) {
     return "Playground mode does not accept remote player joins.";
@@ -270,20 +267,17 @@ const getJoinAsPlayerDisabledReason = (game: ShellGame, identityId: string, offl
   return null;
 };
 
-const getJoinAsViewerDisabledReason = (game: ShellGame, offline: boolean, myRole: string) => {
+const getJoinAsViewerDisabledReason = (game: ShellGame, myRole: string) => {
   if (myRole === "Viewer") {
     return "You are already joined as a viewer.";
   }
   if (myRole === "Player 1" || myRole === "Player 2") {
     return "You are already in this game.";
   }
-  if (offline || game.offlineLocal) {
-    return "Remote joining is unavailable while offline.";
-  }
   return null;
 };
 
-const withViewModel = (game: ShellGame, identityId: string, offline = false) => {
+const withViewModel = (game: ShellGame, identityId: string) => {
   applyPresenceFreshness(game);
   const myRole = findRoleForIdentity(game, identityId);
   const inHistoryMode = typeof game.historyIndex === "number";
@@ -301,8 +295,8 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
     .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
     .map((request) => request.identityId);
   const myPendingJoinRequest = game.pendingJoinRequests.find((request) => request.identityId === identityId) ?? null;
-  const joinAsPlayerDisabledReason = getJoinAsPlayerDisabledReason(game, identityId, offline, myRole);
-  const joinAsViewerDisabledReason = getJoinAsViewerDisabledReason(game, offline, myRole);
+  const joinAsPlayerDisabledReason = getJoinAsPlayerDisabledReason(game, identityId, myRole);
+  const joinAsViewerDisabledReason = getJoinAsViewerDisabledReason(game, myRole);
 
   return {
     ...clone(game),
@@ -313,15 +307,14 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
     canJoinAsViewer: !joinAsViewerDisabledReason,
     joinAsPlayerDisabledReason,
     joinAsViewerDisabledReason,
-    canInvite: !offline && !game.offlineLocal,
+    canInvite: true,
     inviteToken:
       myRole === "Player 1"
         ? game.inviteTokens.player1
         : myRole === "Player 2"
           ? game.inviteTokens.player2
           : game.inviteTokens.viewer,
-    showOfflineState: offline || game.offlineLocal,
-    showJoinActions: !offline && !game.offlineLocal,
+    showJoinActions: true,
     canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
     canEndTurn: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && Boolean(activeTurn && activeTurn.moveIndexes.length > 0),
     currentTurn: activeTurn ? clone(activeTurn) : null,
@@ -332,7 +325,6 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
 
 const listVisibleGames = (identityId: string) => {
   return [...games.values()]
-    .filter((game) => !game.offlineLocal)
     .sort((left, right) => {
       const leftTs = left.lastMoveAt || left.createdAt;
       const rightTs = right.lastMoveAt || right.createdAt;
@@ -516,8 +508,6 @@ export const handleShellLiveRequest = async (
     return null;
   }
 
-  const offline = url.searchParams.get("offline") === "1";
-
   if (request.method === "GET" && route.length === 1 && route[0] === "bootstrap") {
     return {
       handled: true,
@@ -622,7 +612,7 @@ export const handleShellLiveRequest = async (
     return {
       handled: true,
       status: 200,
-      body: { ok: true, game: withViewModel(game, identityId, offline) },
+      body: { ok: true, game: withViewModel(game, identityId) },
       cacheControl: "no-store",
     };
   }
@@ -652,7 +642,7 @@ export const handleShellLiveRequest = async (
       return {
         handled: true,
         status: 200,
-        body: { ok: true, game: withViewModel(game, identityId, offline) },
+        body: { ok: true, game: withViewModel(game, identityId) },
         cacheControl: "no-store",
       };
     }
@@ -673,10 +663,6 @@ export const handleShellLiveRequest = async (
         return { handled: true, status: 400, body: { ok: false, error: "invalid_mode" }, cacheControl: "no-store" };
       }
 
-      if (offline && !game.offlineLocal) {
-        return { handled: true, status: 409, body: { ok: false, error: "offline_join_blocked" }, cacheControl: "no-store" };
-      }
-
       if (mode === "viewer") {
         const added = ensureViewer(game, identityId);
         game.updatedAt = now();
@@ -684,7 +670,7 @@ export const handleShellLiveRequest = async (
           addNotification(game, "Viewer joined");
           broadcastLiveUpdate(game.id, "viewer_joined");
         }
-        return { handled: true, status: 200, body: { ok: true, pendingApproval: false, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
+        return { handled: true, status: 200, body: { ok: true, pendingApproval: false, game: withViewModel(game, identityId) }, cacheControl: "no-store" };
       }
 
       if (game.playgroundMode) {
@@ -723,7 +709,7 @@ export const handleShellLiveRequest = async (
         return {
           handled: true,
           status: 200,
-          body: { ok: true, pendingApproval: true, game: withViewModel(game, identityId, offline) },
+          body: { ok: true, pendingApproval: true, game: withViewModel(game, identityId) },
           cacheControl: "no-store",
         };
       }
@@ -736,7 +722,7 @@ export const handleShellLiveRequest = async (
       game.updatedAt = now();
       addNotification(game, "Player joined");
       broadcastLiveUpdate(game.id, "player_joined");
-      return { handled: true, status: 200, body: { ok: true, pendingApproval: false, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
+      return { handled: true, status: 200, body: { ok: true, pendingApproval: false, game: withViewModel(game, identityId) }, cacheControl: "no-store" };
     }
 
     if (route.length === 3 && route[2] === "approve") {
@@ -767,7 +753,7 @@ export const handleShellLiveRequest = async (
       addNotification(game, "Player request approved");
       broadcastLiveUpdate(game.id, "player_request_approved");
 
-      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
+      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId) }, cacheControl: "no-store" };
     }
 
     if (route.length === 3 && route[2] === "moves") {
@@ -786,7 +772,7 @@ export const handleShellLiveRequest = async (
         return { handled: true, status: 409, body: { ok: false, error: moved.error }, cacheControl: "no-store" };
       }
       broadcastLiveUpdate(game.id, "move_recorded");
-      return { handled: true, status: 200, body: { ok: true, move: moved.move, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
+      return { handled: true, status: 200, body: { ok: true, move: moved.move, game: withViewModel(game, identityId) }, cacheControl: "no-store" };
     }
 
     if (route.length === 3 && route[2] === "end-turn") {
@@ -804,7 +790,7 @@ export const handleShellLiveRequest = async (
         return { handled: true, status: 409, body: { ok: false, error: ended.error }, cacheControl: "no-store" };
       }
       broadcastLiveUpdate(game.id, "turn_ended");
-      return { handled: true, status: 200, body: { ok: true, turn: ended.turn, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
+      return { handled: true, status: 200, body: { ok: true, turn: ended.turn, game: withViewModel(game, identityId) }, cacheControl: "no-store" };
     }
 
     if (route.length === 3 && route[2] === "history") {
@@ -816,14 +802,14 @@ export const handleShellLiveRequest = async (
       game.updatedAt = now();
       addNotification(game, "Viewing history (not live)");
       broadcastLiveUpdate(game.id, "history_selected");
-      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
+      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId) }, cacheControl: "no-store" };
     }
 
     if (route.length === 3 && route[2] === "live") {
       game.historyIndex = null;
       game.updatedAt = now();
       broadcastLiveUpdate(game.id, "return_live");
-      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
+      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId) }, cacheControl: "no-store" };
     }
 
     if (route.length === 3 && route[2] === "presence") {
@@ -847,19 +833,7 @@ export const handleShellLiveRequest = async (
       game.updatedAt = now();
       addNotification(game, `Participant ${connected ? "connected" : "disconnected"}`);
       broadcastLiveUpdate(game.id, connected ? "participant_connected" : "participant_disconnected");
-      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
-    }
-
-    if (route.length === 3 && route[2] === "go-online") {
-      const confirmed = body.confirmed === true;
-      if (!confirmed) {
-        return { handled: true, status: 409, body: { ok: false, error: "confirmation_required" }, cacheControl: "no-store" };
-      }
-      game.offlineLocal = false;
-      game.updatedAt = now();
-      addNotification(game, "Game moved online");
-      broadcastLiveUpdate(game.id, "game_moved_online");
-      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
+      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId) }, cacheControl: "no-store" };
     }
 
     return { handled: true, status: 404, body: { ok: false, error: "not_found" }, cacheControl: "no-store" };

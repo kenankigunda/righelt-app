@@ -29,11 +29,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     saveIdentity(storage, identityId);
   }
 
-  let offline = false;
   let games = [];
   let gameById = new Map();
-
-  const withOfflineQuery = (path) => `${path}${path.includes("?") ? "&" : "?"}offline=${offline ? "1" : "0"}`;
 
   const syncCacheFromList = (nextGames) => {
     games = clone(nextGames);
@@ -44,9 +41,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     const next = clone(game);
     gameById.set(next.id, next);
     const current = games.filter((entry) => entry.id !== next.id);
-    if (!next.offlineLocal) {
-      current.push(next);
-    }
+    current.push(next);
     current.sort((left, right) => {
       const leftTs = left.lastMoveAt || left.createdAt;
       const rightTs = right.lastMoveAt || right.createdAt;
@@ -57,7 +52,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const refreshGames = async () => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games?identityId=${encodeURIComponent(identityId)}`), {
+    const response = await fetcher(`/api/shell/games?identityId=${encodeURIComponent(identityId)}`, {
       method: "GET",
       cache: "no-store",
     });
@@ -68,11 +63,9 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const loadGame = async (gameId, { openAsViewer = false } = {}) => {
     const response = await fetcher(
-      withOfflineQuery(
-        `/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}${
+      `/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}${
           openAsViewer ? "&openAsViewer=1" : ""
         }`,
-      ),
       {
         method: "GET",
         cache: "no-store",
@@ -83,7 +76,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const createGame = async ({ playgroundMode = false, offlineLocal = false } = {}) => {
-    const response = await fetcher(withOfflineQuery("/api/shell/games"), {
+    const response = await fetcher("/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, playgroundMode, offlineLocal }),
@@ -93,7 +86,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const resolveInvite = async (inviteToken) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/invites/${encodeURIComponent(inviteToken)}`), {
+    const response = await fetcher(`/api/shell/invites/${encodeURIComponent(inviteToken)}`, {
       method: "GET",
       cache: "no-store",
     });
@@ -101,7 +94,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const joinGame = async ({ gameId, mode, inviteFromRole = null, inviteToken = null }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/join`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/join`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, mode, inviteFromRole, inviteToken }),
@@ -111,7 +104,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const approvePendingRequest = async ({ gameId, requesterIdentityId }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/approve`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/approve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, requesterIdentityId }),
@@ -121,7 +114,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const addMove = async ({ gameId, notation }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/moves`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/moves`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, notation }),
@@ -131,7 +124,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const endTurn = async ({ gameId }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/end-turn`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/end-turn`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId }),
@@ -141,7 +134,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const selectHistoryMove = async ({ gameId, moveIndex }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/history`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/history`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, moveIndex }),
@@ -151,7 +144,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const returnToLive = async ({ gameId }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/live`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/live`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId }),
@@ -161,20 +154,10 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const setParticipantConnected = async ({ gameId, role, connected }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/presence`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/presence`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, role, connected }),
-    });
-    const body = await mustOk(response);
-    return upsertGame(body.game);
-  };
-
-  const goOnlineGame = async ({ gameId, confirmed }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/go-online`), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, confirmed }),
     });
     const body = await mustOk(response);
     return upsertGame(body.game);
@@ -184,10 +167,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const getGameViewModel = (gameId) => {
     const game = gameById.get(gameId);
     return game ? clone(game) : null;
-  };
-
-  const setOffline = (value) => {
-    offline = value;
   };
 
   const getIdentityId = () => identityId;
@@ -204,10 +183,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     selectHistoryMove,
     returnToLive,
     setParticipantConnected,
-    goOnlineGame,
     listGames,
     getGameViewModel,
-    setOffline,
     getIdentityId,
   };
 };

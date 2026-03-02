@@ -220,39 +220,6 @@ test("live transport: non-player invite token requires approval for player join 
   assert.equal(joinBody.game.viewers.some((viewer) => viewer.identityId === "id-requester"), true);
 });
 
-test("live transport: offline-local game hidden until go-online confirmation", async () => {
-  const createOffline = await handleApiRequest(
-    req("/api/shell/games?offline=1", "POST", {
-      identityId: "id-local",
-      playgroundMode: true,
-      offlineLocal: true,
-    }),
-    env,
-  );
-  const createBody = await createOffline.json();
-  const gameId = createBody.game.id;
-
-  const listBefore = await handleApiRequest(req("/api/shell/games?identityId=id-local&offline=1"), env);
-  const listBeforeBody = await listBefore.json();
-  assert.equal(listBeforeBody.games.some((entry) => entry.id === gameId), false);
-
-  const denied = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/go-online?offline=1`, "POST", { identityId: "id-local", confirmed: false }),
-    env,
-  );
-  assert.equal(denied.status, 409);
-
-  const allow = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/go-online?offline=1`, "POST", { identityId: "id-local", confirmed: true }),
-    env,
-  );
-  assert.equal(allow.status, 200);
-
-  const listAfter = await handleApiRequest(req("/api/shell/games?identityId=id-local&offline=1"), env);
-  const listAfterBody = await listAfter.json();
-  assert.equal(listAfterBody.games.some((entry) => entry.id === gameId), true);
-});
-
 test("live transport: move endpoint rejects non-player and wrong-turn players", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
