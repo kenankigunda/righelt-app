@@ -253,6 +253,43 @@ test("live transport: offline-local game hidden until go-online confirmation", a
   assert.equal(listAfterBody.games.some((entry) => entry.id === gameId), true);
 });
 
+test("live transport: offline view does not reconnect participant and offline moves are local only", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-player2",
+      mode: "player",
+      inviteFromRole: "Player 1",
+    }),
+    env,
+  );
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/presence`, "POST", {
+      identityId: "id-player2",
+      role: "Player 2",
+      connected: false,
+    }),
+    env,
+  );
+
+  const offlineView = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-player2&offline=1`), env);
+  const offlineBody = await offlineView.json();
+  assert.equal(offlineBody.game.player2.connected, false);
+
+  const offlineMove = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves?offline=1`, "POST", { identityId: "id-owner" }),
+    env,
+  );
+  assert.equal(offlineMove.status, 409);
+  assert.equal((await offlineMove.json()).error, "offline_move_local_only");
+});
+
 test("live transport: move endpoint rejects non-player and wrong-turn players", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),

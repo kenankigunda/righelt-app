@@ -686,19 +686,23 @@ window.addEventListener("hashchange", () => {
 });
 
 window.addEventListener("online", () => {
-  transport.setOffline(false);
-  void syncCurrentIdentityPresence(true);
-  liveSync.resume();
-  syncLiveChannel();
-  void withBusy(syncRouteData);
+  void withBusy(async () => {
+    await transport.setOffline(false);
+    void syncCurrentIdentityPresence(true);
+    liveSync.resume();
+    syncLiveChannel();
+    await syncRouteData();
+  });
 });
 
 window.addEventListener("offline", () => {
-  transport.setOffline(true);
-  void syncCurrentIdentityPresence(false);
-  liveSync.disconnect();
-  liveSyncConnectedRoute = "";
-  void withBusy(syncRouteData);
+  void withBusy(async () => {
+    await transport.setOffline(true);
+    void syncCurrentIdentityPresence(false);
+    liveSync.disconnect();
+    liveSyncConnectedRoute = "";
+    await syncRouteData();
+  });
 });
 
 setInterval(() => {
@@ -738,7 +742,7 @@ appEl.addEventListener("click", async (event) => {
     }
 
     if (action === "create-offline-playground") {
-      transport.setOffline(true);
+      await transport.setOffline(true);
       const game = await transport.createGame({ playgroundMode: true, offlineLocal: true });
       navigateTo(buildGameHash(game.id, "offline"));
       return;
@@ -756,7 +760,7 @@ appEl.addEventListener("click", async (event) => {
       }
       await syncCurrentIdentityPresence(!next);
       window.__righeltOffline = next;
-      transport.setOffline(next);
+      await transport.setOffline(next);
       await syncRouteData();
       return;
     }
@@ -868,7 +872,7 @@ appEl.addEventListener("click", async (event) => {
 
 const initialRender = async () => {
   if (navigator.onLine === false) {
-    transport.setOffline(true);
+    await transport.setOffline(true);
   }
 
   if (currentRoute.name === "home" && !loadTutorialCompleted(storage)) {

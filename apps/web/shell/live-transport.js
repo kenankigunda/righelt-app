@@ -1,6 +1,20 @@
 import { loadIdentity, saveIdentity } from "./persistence.js";
 
 const clone = (value) => structuredClone(value);
+const MAX_HISTORY = 200;
+const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
+const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
+const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
+const renumberHistory = (game) => {
+  game.moves.forEach((move, index) => {
+    move.index = index;
+  });
+  game.turns.forEach((turn) => {
+    turn.moveIndexes = turn.moveIndexes
+      .map((_, turnMoveIndex) => game.moves.find((move) => move.turnIndex === turn.index && move.turnMoveIndex === turnMoveIndex)?.index ?? -1)
+      .filter((index) => index >= 0);
+  });
+};
 
 const createIdentity = (random = Math.random) => `id-${random().toString(36).slice(2, 10)}`;
 
@@ -32,12 +46,24 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   let offline = false;
   let games = [];
   let gameById = new Map();
+  const offlinePendingByGameId = new Map();
 
   const withOfflineQuery = (path) => `${path}${path.includes("?") ? "&" : "?"}offline=${offline ? "1" : "0"}`;
 
   const syncCacheFromList = (nextGames) => {
     games = clone(nextGames);
     gameById = new Map(games.map((game) => [game.id, game]));
+  };
+
+  const applyClientOfflineViewState = (game) => {
+    const next = clone(game);
+    if (!offline) {
+      return next;
+    }
+    next.showOfflineState = true;
+    next.canInvite = false;
+    next.showJoinActions = false;
+    return next;
   };
 
   const upsertGame = (game) => {
@@ -56,7 +82,134 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return next;
   };
 
+  const queueOfflineMutation = (gameId, mutation) => {
+    const current = offlinePendingByGameId.get(gameId) ?? [];
+    current.push(mutation);
+    offlinePendingByGameId.set(gameId, current);
+  };
+
+  const computeOfflineMoveState = async (state) => {
+    const legalResponse = await fetcher("/api/engine/playground/legal", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state }),
+    });
+    const legalBody = await mustOk(legalResponse);
+    const action = Array.isArray(legalBody.legalActions) && legalBody.legalActions.length > 0 ? legalBody.legalActions[0] : null;
+    if (!action) {
+      throw new Error("no_legal_actions");
+    }
+
+    const applyResponse = await fetcher("/api/engine/playground/apply", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state: legalBody.state, action }),
+    });
+    const applyBody = await mustOk(applyResponse);
+    if (applyBody.accepted !== true || !applyBody.state) {
+      throw new Error(applyBody.validation?.code || "offline_apply_failed");
+    }
+    return {
+      action,
+      state: applyBody.state,
+    };
+  };
+
+  const applyOfflineMove = async (game, notation) => {
+    const activeTurn = getActiveTurn(game);
+    if (!activeTurn) {
+      throw new Error("turn_not_initialized");
+    }
+    const computed = await computeOfflineMoveState(game.board.state);
+    const next = computed.state;
+    next.sideToMove = getSideForSeat(activeTurn.playerSeat);
+    next.turnIndex = activeTurn.index;
+
+    const at = new Date().toISOString();
+    const move = {
+      index: game.moves.length,
+      turnIndex: activeTurn.index,
+      turnMoveIndex: activeTurn.moveIndexes.length,
+      at,
+      notation: notation || String(computed.action.type || "MOVE").toUpperCase(),
+      snapshot: next,
+    };
+    game.moves.push(move);
+    activeTurn.moveIndexes.push(move.index);
+    activeTurn.lastMoveAt = at;
+    if (game.moves.length > MAX_HISTORY) {
+      game.moves.shift();
+      renumberHistory(game);
+    }
+    game.board.state = next;
+    game.lastMoveAt = at;
+    game.updatedAt = at;
+    game.notifications = [`Offline move recorded`, ...(game.notifications ?? [])].slice(0, 50);
+    return move;
+  };
+
+  const applyOfflineEndTurn = (game) => {
+    const activeTurn = getActiveTurn(game);
+    if (!activeTurn || activeTurn.moveIndexes.length === 0) {
+      throw new Error("turn_has_no_moves");
+    }
+    const endedAt = new Date().toISOString();
+    activeTurn.endedAt = endedAt;
+    activeTurn.status = "complete";
+    const nextSeat = getNextSeat(activeTurn.playerSeat);
+    const nextTurn = {
+      index: activeTurn.index + 1,
+      startedAt: endedAt,
+      endedAt: null,
+      playerSeat: nextSeat,
+      status: "active",
+      moveIndexes: [],
+      lastMoveAt: null,
+    };
+    game.turns.push(nextTurn);
+    game.board.state = {
+      ...game.board.state,
+      sideToMove: getSideForSeat(nextSeat),
+      turnIndex: nextTurn.index,
+    };
+    game.updatedAt = endedAt;
+    game.notifications = [`Offline turn ended`, ...(game.notifications ?? [])].slice(0, 50);
+    return nextTurn;
+  };
+
+  const flushOfflineQueue = async () => {
+    const entries = [...offlinePendingByGameId.entries()];
+    offlinePendingByGameId.clear();
+    for (const [gameId, mutations] of entries) {
+      for (const mutation of mutations) {
+        if (mutation.type === "move") {
+          const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/moves`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ identityId, notation: mutation.notation }),
+          });
+          const body = await mustOk(response);
+          upsertGame(body.game);
+          continue;
+        }
+        if (mutation.type === "end-turn") {
+          const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/end-turn`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ identityId }),
+          });
+          const body = await mustOk(response);
+          upsertGame(body.game);
+        }
+      }
+      await loadGame(gameId);
+    }
+  };
+
   const refreshGames = async () => {
+    if (offline) {
+      return listGames();
+    }
     const response = await fetcher(withOfflineQuery(`/api/shell/games?identityId=${encodeURIComponent(identityId)}`), {
       method: "GET",
       cache: "no-store",
@@ -67,6 +220,9 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const loadGame = async (gameId, { openAsViewer = false } = {}) => {
+    if (offline) {
+      return getGameViewModel(gameId);
+    }
     const response = await fetcher(
       withOfflineQuery(
         `/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}${
@@ -121,6 +277,16 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const addMove = async ({ gameId, notation }) => {
+    if (offline) {
+      const game = getGameViewModel(gameId);
+      if (!game) {
+        throw new Error("game_not_found");
+      }
+      const next = clone(game);
+      await applyOfflineMove(next, notation);
+      queueOfflineMutation(gameId, { type: "move", notation });
+      return { ok: true, game: upsertGame(next) };
+    }
     const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/moves`), {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -131,6 +297,16 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const endTurn = async ({ gameId }) => {
+    if (offline) {
+      const game = getGameViewModel(gameId);
+      if (!game) {
+        throw new Error("game_not_found");
+      }
+      const next = clone(game);
+      const turn = applyOfflineEndTurn(next);
+      queueOfflineMutation(gameId, { type: "end-turn" });
+      return { ok: true, turn, game: upsertGame(next) };
+    }
     const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/end-turn`), {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -180,14 +356,19 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return upsertGame(body.game);
   };
 
-  const listGames = () => clone(games);
+  const listGames = () => games.map((game) => applyClientOfflineViewState(game));
   const getGameViewModel = (gameId) => {
     const game = gameById.get(gameId);
-    return game ? clone(game) : null;
+    return game ? applyClientOfflineViewState(game) : null;
   };
 
   const setOffline = (value) => {
+    const previous = offline;
     offline = value;
+    if (previous && !offline) {
+      return flushOfflineQueue();
+    }
+    return Promise.resolve();
   };
 
   const getIdentityId = () => identityId;

@@ -544,7 +544,9 @@ export const handleShellLiveRequest = async (
       return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: "no-store" };
     }
 
-    touchIdentityAcrossGames(identityId);
+    if (!offline) {
+      touchIdentityAcrossGames(identityId);
+    }
 
     return {
       handled: true,
@@ -640,8 +642,10 @@ export const handleShellLiveRequest = async (
         return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: "no-store" };
       }
 
-      touchIdentityPresence(game, identityId);
-      if (url.searchParams.get("openAsViewer") === "1") {
+      if (!offline) {
+        touchIdentityPresence(game, identityId);
+      }
+      if (!offline && url.searchParams.get("openAsViewer") === "1") {
         const added = ensureViewer(game, identityId);
         if (added) {
           game.updatedAt = now();
@@ -771,6 +775,9 @@ export const handleShellLiveRequest = async (
     }
 
     if (route.length === 3 && route[2] === "moves") {
+      if (offline && !game.offlineLocal) {
+        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: "no-store" };
+      }
       const role = findRoleForIdentity(game, identityId);
       if (role !== "Player 1" && role !== "Player 2") {
         return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: "no-store" };
@@ -790,6 +797,9 @@ export const handleShellLiveRequest = async (
     }
 
     if (route.length === 3 && route[2] === "end-turn") {
+      if (offline && !game.offlineLocal) {
+        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: "no-store" };
+      }
       const role = findRoleForIdentity(game, identityId);
       if (role !== "Player 1" && role !== "Player 2") {
         return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: "no-store" };
