@@ -28,6 +28,13 @@ test("UI disables approve unless requester is in approvableRequesterIds", () => 
   assert.match(source, /game\.approvableRequesterIds\.includes\(request\.identityId\)/);
 });
 
+test("approvable player requests use blocking accept-or-ignore gate", () => {
+  assert.match(source, /data-action="accept-request"/);
+  assert.match(source, /data-action="ignore-request"/);
+  assert.match(source, /renderApprovalGate/);
+  assert.match(source, /invite-gate-content/);
+});
+
 test("offline toggles sync current identity presence", () => {
   assert.match(source, /await syncCurrentIdentityPresence\(!next\)/);
   assert.match(source, /void syncCurrentIdentityPresence\(true\)/);

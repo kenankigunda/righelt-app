@@ -69,6 +69,7 @@ let inviteFeedback = "";
 let inviteFeedbackTimer = null;
 let routeHydrated = false;
 let resolvedInvite = null;
+const ignoredApprovalRequests = new Set();
 
 const escapeHtml = (value) =>
   String(value)
@@ -152,6 +153,21 @@ const renderBoardPlaceholder = (game) => {
   )}. Mode: ${mode}. Turn ${escapeHtml(
     String(turnIndex ?? 0),
   )}, side ${escapeHtml(String(sideToMove ?? "-"))}.</div>`;
+};
+
+const getApprovalRequestKey = (gameId, requesterId) => `${gameId}:${requesterId}`;
+
+const getActiveApprovalRequest = (game) => {
+  if (!game || !Array.isArray(game.pendingJoinRequests) || !Array.isArray(game.approvableRequesterIds)) {
+    return null;
+  }
+  return (
+    game.pendingJoinRequests.find(
+      (request) =>
+        game.approvableRequesterIds.includes(request.identityId) &&
+        !ignoredApprovalRequests.has(getApprovalRequestKey(game.id, request.identityId)),
+    ) ?? null
+  );
 };
 
 const renderTurnHistory = (game) => {
@@ -285,7 +301,7 @@ const renderHome = () => {
   `;
 };
 
-const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
+const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
   if (!routeHydrated) {
     return `<section class="panel"><h2>Loading game...</h2><p class="small">Synchronizing current game state.</p></section>`;
   }
@@ -395,7 +411,6 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
             }>Invite</button>
           </div>
           ${inviteFeedback ? `<p class="small">${escapeHtml(inviteFeedback)}</p>` : ""}
-          <p class="small">Invite link: <span class="mono">${escapeHtml(inviteLink)}</span></p>
           <ul class="participant-list">${pendingRows}</ul>
         </section>
 
@@ -436,13 +451,68 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   `;
 };
 
+const renderApprovalGate = (game, request) => {
+  const background = renderGameContent(game.id);
+  return `
+    <section class="invite-gate">
+      <section class="panel invite-gate-modal">
+        <p class="small invite-gate-kicker">Approval required</p>
+        <h2>Respond to this player request</h2>
+        <p><span class="mono">${escapeHtml(request.identityId)}</span> wants to join as ${escapeHtml(
+          request.requestedSeat,
+        )}.</p>
+        <div class="invite-choice-list">
+          <div class="invite-choice-row">
+            <button
+              data-action="accept-request"
+              data-game-id="${escapeHtml(game.id)}"
+              data-requester-id="${escapeHtml(request.identityId)}"
+              ${busy ? "disabled" : ""}
+            >Accept</button>
+            <span class="small invite-choice-note">Approve the request and promote this participant into the requested player seat.</span>
+          </div>
+          <div class="invite-choice-row">
+            <button
+              class="secondary"
+              data-action="ignore-request"
+              data-game-id="${escapeHtml(game.id)}"
+              data-requester-id="${escapeHtml(request.identityId)}"
+              ${busy ? "disabled" : ""}
+            >Ignore</button>
+            <span class="small invite-choice-note">Dismiss this prompt for now. The request remains visible in Join / Invite.</span>
+          </div>
+        </div>
+        <p class="small">The game is shown below, but it stays locked until you accept or ignore this request.</p>
+      </section>
+      <div class="invite-gate-content" aria-hidden="true">
+        ${background}
+      </div>
+    </section>
+  `;
+};
+
+const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
+  if (!routeHydrated) {
+    return renderGameContent(gameId, inviteFromRole, inviteToken);
+  }
+  const game = transport.getGameViewModel(gameId);
+  if (!game) {
+    return renderGameContent(gameId, inviteFromRole, inviteToken);
+  }
+  const approvalRequest = getActiveApprovalRequest(game);
+  if (approvalRequest) {
+    return renderApprovalGate(game, approvalRequest);
+  }
+  return renderGameContent(gameId, inviteFromRole, inviteToken);
+};
+
 const renderInviteLanding = (inviteContext) => {
   if (!routeHydrated || !inviteContext?.gameId) {
     return `<section class="panel"><h2>Loading invite...</h2><p class="small">Resolving invite destination.</p></section>`;
   }
 
   const game = transport.getGameViewModel(inviteContext.gameId);
-  const background = renderGame(inviteContext.gameId, inviteContext.inviteFromRole, inviteContext.inviteToken);
+  const background = renderGameContent(inviteContext.gameId, inviteContext.inviteFromRole, inviteContext.inviteToken);
   if (!game) {
     return background;
   }
@@ -809,12 +879,22 @@ appEl.addEventListener("click", async (event) => {
       return;
     }
 
-    if (action === "approve-request") {
+    if (action === "approve-request" || action === "accept-request") {
       const gameId = actionEl.getAttribute("data-game-id");
       const requester = actionEl.getAttribute("data-requester-id");
       if (!gameId || !requester) return;
+      ignoredApprovalRequests.delete(getApprovalRequestKey(gameId, requester));
       await transport.approvePendingRequest({ gameId, requesterIdentityId: requester });
       await syncRouteData();
+      return;
+    }
+
+    if (action === "ignore-request") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      const requester = actionEl.getAttribute("data-requester-id");
+      if (!gameId || !requester) return;
+      ignoredApprovalRequests.add(getApprovalRequestKey(gameId, requester));
+      render();
       return;
     }
 
