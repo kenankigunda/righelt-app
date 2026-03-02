@@ -10,7 +10,7 @@ test("G-001 push legal with stronger attacker group", () => {
       commander("C2", "P2", 9, 9),
       unit("A1", "P1", 4, 1),
       unit("A2", "P1", 3, 1),
-      unit("D1", "P2", 4, 3),
+      unit("D1", "P2", 4, 2),
     ],
   });
 
@@ -18,7 +18,7 @@ test("G-001 push legal with stronger attacker group", () => {
     type: "push",
     actorId: "A1",
     from: { row: 4, col: 1 },
-    to: { row: 4, col: 3 },
+    to: { row: 4, col: 2 },
   });
   assert.equal(result.ok, true);
 
@@ -26,11 +26,11 @@ test("G-001 push legal with stronger attacker group", () => {
     type: "push",
     actorId: "A1",
     from: { row: 4, col: 1 },
-    to: { row: 4, col: 3 },
+    to: { row: 4, col: 2 },
   }).state;
 
-  assert.deepEqual(next.pieces.find((piece) => piece.id === "A1")?.position, { row: 4, col: 3 });
-  assert.deepEqual(next.pieces.find((piece) => piece.id === "D1")?.position, { row: 4, col: 3 });
+  assert.deepEqual(next.pieces.find((piece) => piece.id === "A1")?.position, { row: 4, col: 2 });
+  assert.deepEqual(next.pieces.find((piece) => piece.id === "D1")?.position, { row: 4, col: 2 });
   assert.equal(next.pieces.find((piece) => piece.id === "D1")?.pushed, true);
   assert.deepEqual(next.continuation?.followPoint, { row: 4, col: 1 });
   assert.equal(next.continuation?.phase, "retreat");
@@ -39,7 +39,7 @@ test("G-001 push legal with stronger attacker group", () => {
   assert.equal(next.sideToMove, "P2");
   assert.deepEqual(
     listLegalActions(next).map((action) => action.type),
-    ["retreat", "retreat", "retreat", "retreat"],
+    ["retreat", "retreat", "retreat"],
   );
   assert.equal(listLegalActions(next).every((action) => action.actorId === "D1"), true);
 });
@@ -50,14 +50,14 @@ test("G-002 push illegal on equal strength", () => {
       commander("C1", "P1", 0, 0),
       commander("C2", "P2", 9, 9),
       unit("A1", "P1", 4, 1),
-      unit("D1", "P2", 4, 3),
+      unit("D1", "P2", 4, 2),
     ],
   });
   const result = validateAction(state, {
     type: "push",
     actorId: "A1",
     from: { row: 4, col: 1 },
-    to: { row: 4, col: 3 },
+    to: { row: 4, col: 2 },
   });
   assert.equal(result.ok, false);
 });
@@ -68,20 +68,20 @@ test("G-003 push illegal on weaker attacker", () => {
       commander("C1", "P1", 0, 0),
       commander("C2", "P2", 9, 9),
       unit("A1", "P1", 4, 1),
-      unit("D1", "P2", 4, 3),
-      unit("D2", "P2", 5, 3),
+      unit("D1", "P2", 4, 2),
+      unit("D2", "P2", 5, 2),
     ],
   });
   const result = validateAction(state, {
     type: "push",
     actorId: "A1",
     from: { row: 4, col: 1 },
-    to: { row: 4, col: 3 },
+    to: { row: 4, col: 2 },
   });
   assert.equal(result.ok, false);
 });
 
-test("G-004 push targeting rules (first occupied on orthogonal ray)", () => {
+test("G-004 push target must be orthogonally adjacent enemy", () => {
   const state = makeState({
     pieces: [
       commander("C1", "P1", 0, 0),
@@ -89,14 +89,13 @@ test("G-004 push targeting rules (first occupied on orthogonal ray)", () => {
       unit("A1", "P1", 4, 1),
       unit("A2", "P1", 3, 1),
       unit("D1", "P2", 4, 3),
-      unit("D2", "P2", 4, 5),
     ],
   });
   const result = validateAction(state, {
     type: "push",
     actorId: "A1",
     from: { row: 4, col: 1 },
-    to: { row: 4, col: 5 },
+    to: { row: 4, col: 3 },
   });
   assert.equal(result.ok, false);
 });
@@ -108,14 +107,14 @@ test("G-005 cannot push while disallowed temporary state", () => {
       commander("C2", "P2", 9, 9),
       unit("A1", "P1", 4, 1, { shifted: true }),
       unit("A2", "P1", 3, 1),
-      unit("D1", "P2", 4, 3),
+      unit("D1", "P2", 4, 2),
     ],
   });
   const result = validateAction(state, {
     type: "push",
     actorId: "A1",
     from: { row: 4, col: 1 },
-    to: { row: 4, col: 3 },
+    to: { row: 4, col: 2 },
   });
   assert.equal(result.ok, false);
 });
@@ -307,7 +306,7 @@ test("G-012 diagonal adjacency does not contribute to attacker group strength", 
       commander("C2", "P2", 9, 9),
       unit("A1", "P1", 4, 1),
       unit("A2", "P1", 3, 2),
-      unit("D1", "P2", 4, 3),
+      unit("D1", "P2", 4, 2),
     ],
   });
 
@@ -315,7 +314,7 @@ test("G-012 diagonal adjacency does not contribute to attacker group strength", 
     type: "push",
     actorId: "A1",
     from: { row: 4, col: 1 },
-    to: { row: 4, col: 3 },
+    to: { row: 4, col: 2 },
   });
   assert.equal(result.ok, false);
 });
@@ -327,8 +326,8 @@ test("G-013 diagonal adjacency does not contribute to defender group strength", 
       commander("C2", "P2", 9, 9),
       unit("A1", "P1", 4, 1),
       unit("A2", "P1", 3, 1),
-      unit("D1", "P2", 4, 3),
-      unit("D2", "P2", 5, 4),
+      unit("D1", "P2", 4, 2),
+      unit("D2", "P2", 5, 3),
     ],
   });
 
@@ -336,7 +335,7 @@ test("G-013 diagonal adjacency does not contribute to defender group strength", 
     type: "push",
     actorId: "A1",
     from: { row: 4, col: 1 },
-    to: { row: 4, col: 3 },
+    to: { row: 4, col: 2 },
   });
   assert.equal(result.ok, true);
 });
@@ -349,8 +348,8 @@ test("G-014 orthogonal chain connectivity contributes to push strength", () => {
       unit("A1", "P1", 4, 1),
       unit("A2", "P1", 4, 0),
       unit("A3", "P1", 5, 0),
-      unit("D1", "P2", 4, 3),
-      unit("D2", "P2", 5, 3),
+      unit("D1", "P2", 4, 2),
+      unit("D2", "P2", 5, 2),
     ],
   });
 
@@ -358,12 +357,12 @@ test("G-014 orthogonal chain connectivity contributes to push strength", () => {
     type: "push",
     actorId: "A1",
     from: { row: 4, col: 1 },
-    to: { row: 4, col: 3 },
+    to: { row: 4, col: 2 },
   });
   assert.equal(result.ok, true);
 });
 
-test("G-015 push target must be first occupied square even when friendly piece blocks ray", () => {
+test("G-015 push target cannot be a friendly adjacent piece", () => {
   const state = makeState({
     pieces: [
       commander("C1", "P1", 0, 0),
@@ -379,7 +378,7 @@ test("G-015 push target must be first occupied square even when friendly piece b
     type: "push",
     actorId: "A1",
     from: { row: 4, col: 1 },
-    to: { row: 4, col: 3 },
+    to: { row: 4, col: 2 },
   });
   assert.equal(result.ok, false);
 });

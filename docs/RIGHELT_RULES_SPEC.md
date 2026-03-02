@@ -99,7 +99,7 @@ Post-action command loss does not invalidate those actions; command is evaluated
 ## 5.5 Push
 
 - Attacker must be active, belong to side to move, and not be in a restricted temporary state.
-- Target must be an enemy piece found in one of 4 orthogonal rays from attacker (first occupied square on that ray).
+- Target must be an orthogonally adjacent enemy piece.
 - Push is legal only if `attacker_group_strength > defender_group_strength`.
 - On push:
   - attacker moves into target square,

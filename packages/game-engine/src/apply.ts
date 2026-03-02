@@ -1,40 +1,9 @@
 import type { Action, ApplyResult, GameState } from "./types";
-import { BOARD_SIZE } from "./deterministic";
 import { normalizeState } from "./deterministic";
 import { localGroupMembers, validateAction } from "./legal";
 
 function isEmptySquare(state: GameState, row: number, col: number) {
   return !state.pieces.some((piece) => piece.position.row === row && piece.position.col === col);
-}
-
-function getOrthogonalDirection(
-  from: { row: number; col: number },
-  to: { row: number; col: number },
-): { row: number; col: number } {
-  if (from.row === to.row) {
-    return { row: 0, col: Math.sign(to.col - from.col) };
-  }
-  return { row: Math.sign(to.row - from.row), col: 0 };
-}
-
-function findFirstOccupiedOnRay(
-  state: GameState,
-  from: { row: number; col: number },
-  direction: { row: number; col: number },
-) {
-  let row = from.row + direction.row;
-  let col = from.col + direction.col;
-
-  while (row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE) {
-    const piece = state.pieces.find((candidate) => candidate.position.row === row && candidate.position.col === col);
-    if (piece) {
-      return piece;
-    }
-    row += direction.row;
-    col += direction.col;
-  }
-
-  return undefined;
 }
 
 function orthogonallyAdjacentEmptySquares(state: GameState, row: number, col: number) {
@@ -135,8 +104,9 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
   } else if (action.type === "push" && actor && action.to) {
     const origin = { ...actor.position };
     const pushingGroupPieceIds = localGroupMembers(next, actor.id);
-    const direction = getOrthogonalDirection(actor.position, action.to);
-    const defender = findFirstOccupiedOnRay(next, actor.position, direction);
+    const defender = next.pieces.find(
+      (candidate) => candidate.position.row === action.to?.row && candidate.position.col === action.to?.col,
+    );
     if (!defender) {
       throw new Error("Push defender not found");
     }

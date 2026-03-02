@@ -500,7 +500,7 @@ test("/api/engine/playground/apply keeps push continuation active after retreat 
       ...createInitialState().pieces,
       { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 1 }, supplied: true, commanded: true },
       { id: "A2", owner: "P1", kind: "unit", position: { row: 3, col: 1 }, supplied: true, commanded: true },
-      { id: "D1", owner: "P2", kind: "unit", position: { row: 4, col: 3 }, supplied: true, commanded: true },
+      { id: "D1", owner: "P2", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
     ],
   }, { artifactMode: "full" });
 
@@ -514,7 +514,7 @@ test("/api/engine/playground/apply keeps push continuation active after retreat 
           type: "push",
           actorId: "A1",
           from: { row: 4, col: 1 },
-          to: { row: 4, col: 3 },
+          to: { row: 4, col: 2 },
         },
       }),
     }),
@@ -537,8 +537,8 @@ test("/api/engine/playground/apply keeps push continuation active after retreat 
         action: {
           type: "retreat",
           actorId: "D1",
-          from: { row: 4, col: 3 },
-          to: { row: 4, col: 4 },
+          from: { row: 4, col: 2 },
+          to: { row: 4, col: 3 },
         },
       }),
     }),

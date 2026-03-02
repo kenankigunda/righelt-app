@@ -257,39 +257,6 @@ function resolveActor(state: GameState, action: Action) {
   return undefined;
 }
 
-function getOrthogonalDirection(
-  from: { row: number; col: number },
-  to: { row: number; col: number },
-): { row: number; col: number } | undefined {
-  if (from.row === to.row && from.col !== to.col) {
-    return { row: 0, col: Math.sign(to.col - from.col) };
-  }
-  if (from.col === to.col && from.row !== to.row) {
-    return { row: Math.sign(to.row - from.row), col: 0 };
-  }
-  return undefined;
-}
-
-function firstOccupiedOnRay(
-  state: GameState,
-  from: { row: number; col: number },
-  direction: { row: number; col: number },
-) {
-  let row = from.row + direction.row;
-  let col = from.col + direction.col;
-
-  while (row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE) {
-    const piece = getPieceAt(state, { row, col });
-    if (piece) {
-      return piece;
-    }
-    row += direction.row;
-    col += direction.col;
-  }
-
-  return undefined;
-}
-
 function localGroupStrength(state: GameState, pieceId: string): number {
   return localGroupMembers(state, pieceId).length;
 }
@@ -683,25 +650,24 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         message: "Push requires target coordinate",
       };
     }
-    const direction = getOrthogonalDirection(actor.position, action.to);
-    if (!direction) {
+    if (!isOrthogonallyAdjacent(actor.position, action.to)) {
       return {
         ok: false,
         code: "RULE_VIOLATION",
-        message: "Push target must be on an orthogonal ray",
+        message: "Push target must be an orthogonally adjacent square",
       };
     }
-    const firstOccupied = firstOccupiedOnRay(state, actor.position, direction);
-    if (!firstOccupied || firstOccupied.owner === actor.owner || !sameCoordinate(firstOccupied.position, action.to)) {
+    const defender = getPieceAt(state, action.to);
+    if (!defender || defender.owner === actor.owner) {
       return {
         ok: false,
         code: "RULE_VIOLATION",
-        message: "Push target must be first occupied enemy on selected orthogonal ray",
+        message: "Push target must contain an orthogonally adjacent enemy piece",
       };
     }
 
     const attackerStrength = localGroupStrength(state, actor.id);
-    const defenderStrength = localGroupStrength(state, firstOccupied.id);
+    const defenderStrength = localGroupStrength(state, defender.id);
     if (attackerStrength <= defenderStrength) {
       return {
         ok: false,

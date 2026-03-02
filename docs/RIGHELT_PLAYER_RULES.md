@@ -86,6 +86,7 @@ Important legality note:
 
 Push lets you displace an enemy piece, but only if your local formation is stronger.
 
+- The enemy piece you push must be directly orthogonally adjacent to the pushing piece.
 - You can push only if your local **group strength** is greater than the defender’s.
 - If legal, your piece advances into the enemy piece’s square and the enemy piece is temporarily stacked there as a pushed piece.
 - The pushed piece’s owner must then resolve a forced retreat.
