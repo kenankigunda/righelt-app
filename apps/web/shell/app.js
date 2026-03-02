@@ -215,13 +215,13 @@ const renderHeader = () => `
     </div>
     <div class="shell-header-actions">
       <div class="nav-row">
-        <a class="button-link secondary" href="/">Playground</a>
-        <a class="button-link secondary" href="${buildHomeHash()}">Home</a>
+        ${
+          currentRoute.name !== "home"
+            ? `<a class="button-link secondary" href="${buildHomeHash()}">Home</a>`
+            : ""
+        }
         <a class="button-link secondary" href="${buildPlaygroundHash()}">Playground</a>
         <a class="button-link secondary" href="${buildTutorialHash()}">Tutorial</a>
-      </div>
-      <div class="nav-row nav-row-single">
-        <button data-action="toggle-offline" class="secondary">Toggle Offline</button>
       </div>
     </div>
   </header>
