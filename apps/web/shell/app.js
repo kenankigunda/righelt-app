@@ -100,6 +100,8 @@ const formatClientDateTime = (value) => {
   }).format(new Date(timestamp));
 };
 
+const renderPlaceholderBadge = () => '<span class="status-chip offline">Not yet implemented</span>';
+
 const getCurrentViewedGameId = () => {
   if (currentRoute.name === "game") {
     return currentRoute.gameId;
@@ -269,7 +271,7 @@ const renderHome = () => {
 
       <div class="stack">
         <section class="panel">
-          <h2>Preview Board</h2>
+          <h2>Preview Board ${renderPlaceholderBadge()}</h2>
           <p class="small">Non-authoritative preview sequence.</p>
           <div class="preview">Preview replay surface</div>
         </section>
@@ -419,7 +421,7 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
         </section>
 
         <section class="panel">
-          <h2>Tutorial</h2>
+          <h2>Tutorial ${renderPlaceholderBadge()}</h2>
           <div class="row">
             <a class="button-link secondary" href="${buildTutorialHash(game.id)}">Restart tutorial</a>
           </div>
@@ -504,7 +506,7 @@ const renderTutorial = (gameId) => {
   const state = tutorial.current();
   return `
     <section class="panel">
-      <h2>Tutorial</h2>
+      <h2>Tutorial ${renderPlaceholderBadge()}</h2>
       <p class="small">Step ${state.index + 1} of ${state.total}</p>
       <p>${escapeHtml(state.step)}</p>
       <div class="row">
