@@ -4,7 +4,14 @@ import { getBootstrapPayload } from "./shell/bootstrap.js";
 import { createLiveTransportStore } from "./shell/live-transport.js";
 import { createLiveSyncClient } from "./shell/live-sync.js";
 import { loadTutorialCompleted, saveTutorialCompleted } from "./shell/persistence.js";
-import { buildGameHash, buildHomeHash, buildInviteHash, buildTutorialHash, parseRouteFromHash } from "./shell/routes.js";
+import {
+  buildGameHash,
+  buildHomeHash,
+  buildInviteHash,
+  buildTutorialHash,
+  parseRouteFromHash,
+  shouldLiveReconcileRoute,
+} from "./shell/routes.js";
 import { createTutorialController } from "./shell/tutorial.js";
 
 const appEl = document.getElementById("app");
@@ -496,7 +503,7 @@ setInterval(() => {
   if (document.visibilityState === "hidden") {
     return;
   }
-  if (currentRoute.name !== "game" && currentRoute.name !== "home") {
+  if (!shouldLiveReconcileRoute(currentRoute)) {
     return;
   }
   void syncRouteDataPassive();

@@ -63,3 +63,6 @@ export const buildTutorialHash = (gameId = null) => {
   }
   return `#/tutorial/${encodeURIComponent(gameId)}`;
 };
+
+export const shouldLiveReconcileRoute = (route) =>
+  route?.name === "home" || route?.name === "game" || route?.name === "invite";

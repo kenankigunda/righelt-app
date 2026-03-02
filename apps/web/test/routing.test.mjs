@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildGameHash, buildHomeHash, buildInviteHash, buildTutorialHash, parseRouteFromHash } from "../shell/routes.js";
+import {
+  buildGameHash,
+  buildHomeHash,
+  buildInviteHash,
+  buildTutorialHash,
+  parseRouteFromHash,
+  shouldLiveReconcileRoute,
+} from "../shell/routes.js";
 
 test("routing resolves home hash variants", () => {
   assert.deepEqual(parseRouteFromHash(""), { name: "home" });
@@ -29,4 +36,12 @@ test("routing resolves opaque invite path", () => {
     inviteToken: "token-123",
   });
   assert.equal(buildInviteHash("abc123"), "#/invite/abc123");
+});
+
+test("routing marks invite routes for live reconciliation", () => {
+  assert.equal(shouldLiveReconcileRoute({ name: "home" }), true);
+  assert.equal(shouldLiveReconcileRoute({ name: "game", gameId: "game-1" }), true);
+  assert.equal(shouldLiveReconcileRoute({ name: "invite", inviteToken: "token-123" }), true);
+  assert.equal(shouldLiveReconcileRoute({ name: "tutorial" }), false);
+  assert.equal(shouldLiveReconcileRoute({ name: "not-found" }), false);
 });
