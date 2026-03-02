@@ -335,9 +335,7 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
             <button class="secondary" data-action="end-turn" data-game-id="${escapeHtml(game.id)}" ${
               game.canEndTurn && !busy ? "" : "disabled"
             }>End Turn</button>
-            <button class="warn" data-action="go-online" data-game-id="${escapeHtml(game.id)}" ${
-              game.offlineLocal && !busy ? "" : "disabled"
-            }>Go online</button>
+            <button class="warn" data-action="toggle-offline" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle Offline</button>
           </div>
           <p class="small">Active turn: ${
             game.currentTurn
@@ -719,18 +717,17 @@ appEl.addEventListener("click", async (event) => {
     }
 
     if (action === "toggle-offline") {
+      const gameId = actionEl.getAttribute("data-game-id");
       const next = !(window.__righeltOffline || false);
+      if (!next && gameId) {
+        const game = transport.getGameViewModel(gameId);
+        if (game?.offlineLocal) {
+          const confirmed = window.confirm("Go online with this local game?");
+          await transport.goOnlineGame({ gameId, confirmed });
+        }
+      }
       window.__righeltOffline = next;
       transport.setOffline(next);
-      await syncRouteData();
-      return;
-    }
-
-    if (action === "go-online") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      const confirmed = window.confirm("Go online with this local game?");
-      await transport.goOnlineGame({ gameId, confirmed });
       await syncRouteData();
       return;
     }
