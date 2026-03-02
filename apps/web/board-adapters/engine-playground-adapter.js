@@ -5,7 +5,13 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
 const isSupplyPoint = (row, col) => (row === 0 && col === 9) || (row === 9 && col === 0);
-const actionPreviewLabel = (actionType) => {
+const actionPreviewLabel = (actionType, snapshot) => {
+  if (snapshot?.continuation?.type === "rush" && actionType === "rush") {
+    return "Continue rush on this square";
+  }
+  if (snapshot?.continuation?.type === "push" && actionType === "follow") {
+    return "Continue push on this square";
+  }
   switch (actionType) {
     case "move":
       return "Move commander to this square";
@@ -486,7 +492,7 @@ export function createEnginePlaygroundBoardAdapter() {
               pickBestActionTypeForTarget(previewsAtCell, currentActionType) ??
               currentActionType ??
               "move";
-            cell.setAttribute("data-target-label", actionPreviewLabel(targetActionType));
+            cell.setAttribute("data-target-label", actionPreviewLabel(targetActionType, snapshot));
           }
 
           if (isTarget) {
