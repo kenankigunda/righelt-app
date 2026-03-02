@@ -30,6 +30,7 @@
  *   selection: BoardSelection,
  *   selectedPieceMoves: unknown[],
  *   selectedPieceMovePreviews?: unknown[],
+ *   removalEffects?: unknown[],
  * }) => void} render
  * @property {(snapshot: unknown) => string} getCommanderSupplySummary
  * @property {(input: {

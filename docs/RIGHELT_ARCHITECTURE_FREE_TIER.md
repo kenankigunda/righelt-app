@@ -72,6 +72,7 @@ Rules:
 - Both logical seats (`P1`, `P2`) remain intact; only control mapping differs.
 - In playground mode, only the controller device can submit actions for either side, respecting turn order and legality.
 - Playground UI preview overlays may include non-submittable destination hints when blocked solely by destination supply; these are carried separately from legal actions in preview payloads.
+- Playground apply responses may also carry transient `removedPieces` notices so the client can animate and explain forced removals without mutating engine history/state contracts.
 - Invite recipients may join only as `Viewer` while playground is active.
 - `exit_playground` converts to standard seating and re-enables normal player-join policies.
 

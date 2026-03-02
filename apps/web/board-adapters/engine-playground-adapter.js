@@ -445,13 +445,24 @@ export function createEnginePlaygroundBoardAdapter() {
       };
     },
 
-    render({ snapshot, selection, selectedPieceMoves, selectedPieceMovePreviews, allowFreeSelection, currentActionType }) {
+    render({
+      snapshot,
+      selection,
+      selectedPieceMoves,
+      selectedPieceMovePreviews,
+      removalEffects,
+      allowFreeSelection,
+      currentActionType,
+    }) {
       if (!boardEl) {
         throw new Error("Adapter not mounted");
       }
 
       boardEl.innerHTML = "";
       cellByCoordinateKey = new Map();
+      const removalByCoordinateKey = new Map(
+        (Array.isArray(removalEffects) ? removalEffects : []).map((effect) => [coordKey(effect.position), effect]),
+      );
 
       for (let row = 0; row < BOARD_SIZE; row += 1) {
         for (let col = 0; col < BOARD_SIZE; col += 1) {
@@ -483,6 +494,11 @@ export function createEnginePlaygroundBoardAdapter() {
           if (hasBlockedSupplyPreview) {
             cell.classList.add("disallowed-preview");
           }
+          const removalEffect = removalByCoordinateKey.get(`${row},${col}`);
+          if (removalEffect) {
+            cell.classList.add("removal-effect");
+            cell.setAttribute("data-removal-label", removalEffect.message);
+          }
 
           const isSource = selection.source && selection.source.row === row && selection.source.col === col;
           const isTarget = selection.target && selection.target.row === row && selection.target.col === col;
@@ -507,6 +523,12 @@ export function createEnginePlaygroundBoardAdapter() {
             marker.textContent = ".";
           }
           cell.appendChild(marker);
+
+          if (removalEffect) {
+            const flash = document.createElement("span");
+            flash.className = "removal-flash";
+            cell.appendChild(flash);
+          }
 
           if (isSupplyPoint(row, col)) {
             const supplyMarker = document.createElement("span");
