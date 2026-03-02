@@ -151,6 +151,7 @@ const collectRemovedPieceNotices = (
   before: GameState,
   afterApply: GameState,
   afterStability: GameState,
+  action: Action,
 ): RemovedPieceNotice[] => {
   const afterApplyIds = new Set(afterApply.pieces.map((piece) => piece.id));
   const afterStableIds = new Set(afterStability.pieces.map((piece) => piece.id));
@@ -158,11 +159,18 @@ const collectRemovedPieceNotices = (
 
   for (const piece of before.pieces) {
     if (!afterApplyIds.has(piece.id)) {
+      const reason =
+        piece.pushed || action.type === "push" || action.type === "retreat"
+          ? "no_retreat"
+          : "loss_of_supply";
       notices.push({
         pieceId: piece.id,
         position: { ...piece.position },
-        reason: "no_retreat",
-        message: `Piece at (${piece.position.row}, ${piece.position.col}) destroyed because it could not retreat`,
+        reason,
+        message:
+          reason === "no_retreat"
+            ? `Piece at (${piece.position.row}, ${piece.position.col}) destroyed because it could not retreat`
+            : `Piece at (${piece.position.row}, ${piece.position.col}) destroyed due to loss of supply`,
       });
     }
   }
@@ -316,7 +324,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
     try {
       const result = applyAction(resolved, action);
       const stabilized = resolveToStability(result.state, { artifactMode: "full" });
-      const removedPieces = collectRemovedPieceNotices(resolved, result.state, stabilized);
+      const removedPieces = collectRemovedPieceNotices(resolved, result.state, stabilized, action);
       return json({
         ok: true,
         accepted: true,

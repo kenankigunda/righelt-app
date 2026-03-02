@@ -102,8 +102,10 @@ const startFixtureWriterServer = () => {
         const fixtureId = typeof body.fixtureId === "string" ? body.fixtureId : "";
         const expectedHash = typeof body.expected_final_state_hash === "string" ? body.expected_final_state_hash : "";
         const expectedOutcome = typeof body.expected_outcome === "string" ? body.expected_outcome : "";
+        const description = typeof body.description === "string" ? body.description : null;
+        const incorrect = typeof body.incorrect === "boolean" ? body.incorrect : null;
 
-        if (!fixtureId || !expectedHash || !expectedOutcome) {
+        if (!fixtureId || (!expectedHash && !expectedOutcome && description === null && incorrect === null)) {
           jsonResponse(response, 400, { ok: false, error: "invalid_payload" });
           return;
         }
@@ -115,8 +117,18 @@ const startFixtureWriterServer = () => {
           return;
         }
 
-        fixture.expected_final_state_hash = expectedHash;
-        fixture.expected_outcome = expectedOutcome;
+        if (expectedHash) {
+          fixture.expected_final_state_hash = expectedHash;
+        }
+        if (expectedOutcome) {
+          fixture.expected_outcome = expectedOutcome;
+        }
+        if (description !== null) {
+          fixture.description = description;
+        }
+        if (incorrect !== null) {
+          fixture.incorrect = incorrect;
+        }
         await writeFixtureCatalog(catalog);
         jsonResponse(response, 200, { ok: true, fixtureId, catalog });
       } catch (error) {

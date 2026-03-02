@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { handleApiRequest } from "../src/index.ts";
@@ -396,6 +397,46 @@ test("/api/engine/playground/apply returns removedPieces notice for no-retreat r
       position: { row: 3, col: 1 },
       reason: "no_retreat",
       message: "Piece at (3, 1) destroyed because it could not retreat",
+    },
+  ]);
+});
+
+test("/api/engine/playground/apply returns removedPieces notice for loss-of-supply removal from M-006", async () => {
+  const { env } = buildEnv();
+  const rawCatalog = await readFile(new URL("../../../apps/web/fixtures/m-golden-fixtures.json", import.meta.url), "utf8");
+  const catalog = JSON.parse(rawCatalog);
+  const fixture = catalog.fixtures.find((entry) => entry.id === "M-006");
+
+  assert.ok(fixture);
+
+  const response = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/engine/playground/apply", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        state: fixture.initial_state,
+        action: {
+          type: "project",
+          actorId: "C1",
+          from: { row: 3, col: 6 },
+          to: { row: 3, col: 4 },
+        },
+      }),
+    }),
+    env,
+  );
+
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.accepted, true);
+  assert.equal(Array.isArray(body.removedPieces), true);
+  assert.deepEqual(body.removedPieces, [
+    {
+      pieceId: "U2-2",
+      position: { row: 4, col: 5 },
+      reason: "loss_of_supply",
+      message: "Piece at (4, 5) destroyed due to loss of supply",
     },
   ]);
 });

@@ -1,5 +1,7 @@
 import {
+  getBlockedPreviewLabel,
   buildActionPayload,
+  deriveForcedContinuationSelection,
   pickBestActionTypeForTarget,
   shouldResetSelectionOnDocumentClick,
   shouldSubmitOnEnter,
@@ -29,31 +31,34 @@ if (shouldMountShell) {
   }
   await import("./shell/app.js");
 } else {
-  const boardEl = document.getElementById("board");
-  const overlayLinesEl = document.getElementById("overlay-lines");
-  const boardPreviewLabelEl = document.getElementById("board-preview-label");
-  const actionTypeEl = document.getElementById("action-type");
-  const sourceValueEl = document.getElementById("source-value");
-  const targetValueEl = document.getElementById("target-value");
-  const submitActionEl = document.getElementById("submit-action");
-  const resetSelectionEl = document.getElementById("reset-selection");
-  const actionResultEl = document.getElementById("action-result");
-  const sideToMoveEl = document.getElementById("side-to-move");
-  const turnIndexEl = document.getElementById("turn-index");
-  const continuationEl = document.getElementById("continuation");
-  const commanderSupplyEl = document.getElementById("commander-supply");
-  const selectedPieceEl = document.getElementById("selected-piece");
-  const selectedMovePreviewEl = document.getElementById("selected-move-preview");
-  const selectedPieceMovesEl = document.getElementById("selected-piece-moves");
-  const legalActionsEl = document.getElementById("legal-actions");
-  const moveLogEl = document.getElementById("move-log");
-  const fixtureSelectEl = document.getElementById("fixture-select");
-  const loadFixtureEl = document.getElementById("load-fixture");
-  const replayFixtureEl = document.getElementById("replay-fixture");
-  const saveFixtureEl = document.getElementById("save-fixture");
-  const updateFixtureEl = document.getElementById("update-fixture");
-  const fixtureResultEl = document.getElementById("fixture-result");
-  const allowFreeSelectionEl = document.getElementById("allow-free-selection");
+const boardEl = document.getElementById("board");
+const overlayLinesEl = document.getElementById("overlay-lines");
+const boardPreviewLabelEl = document.getElementById("board-preview-label");
+const boardTurnIndicatorEl = document.getElementById("board-turn-indicator");
+const actionTypeEl = document.getElementById("action-type");
+const allowFreeSelectionEl = document.getElementById("allow-free-selection");
+const sourceValueEl = document.getElementById("source-value");
+const targetValueEl = document.getElementById("target-value");
+const submitActionEl = document.getElementById("submit-action");
+const resetSelectionEl = document.getElementById("reset-selection");
+const actionResultEl = document.getElementById("action-result");
+const sideToMoveEl = document.getElementById("side-to-move");
+const turnIndexEl = document.getElementById("turn-index");
+const continuationEl = document.getElementById("continuation");
+const commanderSupplyEl = document.getElementById("commander-supply");
+const selectedPieceEl = document.getElementById("selected-piece");
+const selectedMovePreviewEl = document.getElementById("selected-move-preview");
+const selectedPieceMovesEl = document.getElementById("selected-piece-moves");
+const legalActionsEl = document.getElementById("legal-actions");
+const moveLogEl = document.getElementById("move-log");
+const fixtureSelectEl = document.getElementById("fixture-select");
+const fixtureDescriptionEl = document.getElementById("fixture-description");
+const fixtureIncorrectToggleEl = document.getElementById("fixture-incorrect-toggle");
+const loadFixtureEl = document.getElementById("load-fixture");
+const replayFixtureEl = document.getElementById("replay-fixture");
+const saveFixtureEl = document.getElementById("save-fixture");
+const updateFixtureEl = document.getElementById("update-fixture");
+const fixtureResultEl = document.getElementById("fixture-result");
 
 let state = null;
 let legalActions = [];
@@ -68,6 +73,13 @@ let fixtures = [];
 let currentFixtureId = null;
 let fixtureCatalog = { id: "M", title: "Milestone 2 Golden Scenarios", fixtures: [] };
 let removalEffectsTimer = null;
+let selectedPieceMovesRequestId = 0;
+
+const PLAYER_TONE_CLASSES = ["player-tone-p1", "player-tone-p2", "player-tone-neutral"];
+
+const invalidateSelectedPieceMovesRequests = () => {
+  selectedPieceMovesRequestId += 1;
+};
 
 const boardAdapter = createEnginePlaygroundBoardAdapter();
 assertGameBoardAdapter(boardAdapter);
@@ -82,27 +94,57 @@ const sameCoordinate = (left, right) => Boolean(left && right && left.row === ri
 const actionPreviewLabel = (actionType, snapshot, destination) => {
   const suffix = destination ? ` (${destination.row},${destination.col})` : "";
   if (snapshot?.continuation?.type === "rush" && actionType === "rush") {
-    return `Continue rush on${suffix}`;
+    return `continue rush on${suffix}`;
   }
   if (snapshot?.continuation?.type === "push" && actionType === "follow") {
-    return `Continue push on${suffix}`;
+    return `continue push on${suffix}`;
   }
   switch (actionType) {
     case "move":
-      return `Move commander to${suffix}`;
+      return `move commander to${suffix}`;
     case "project":
-      return `Project new piece to${suffix}`;
+      return `project new piece to${suffix}`;
     case "rush":
-      return `Rush piece to${suffix}`;
+      return `rush piece to${suffix}`;
     case "push":
-      return `Push piece onto${suffix}`;
+      return `push piece onto${suffix}`;
     case "follow":
-      return `Follow piece to${suffix}`;
+      return `follow piece to${suffix}`;
     case "retreat":
-      return `Retreat piece to${suffix}`;
+      return `retreat piece to${suffix}`;
     default:
-      return `Move to${suffix}`;
+      return `move to${suffix}`;
   }
+};
+
+const setPlayerTone = (element, player) => {
+  if (!element) {
+    return;
+  }
+  element.classList.remove(...PLAYER_TONE_CLASSES);
+  if (player === "P1") {
+    element.classList.add("player-tone-p1");
+    return;
+  }
+  if (player === "P2") {
+    element.classList.add("player-tone-p2");
+    return;
+  }
+  element.classList.add("player-tone-neutral");
+};
+
+const describeActionForLog = (action) => `${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`;
+
+const pushMoveLogEntry = (text, player = null) => {
+  moveLog.push({ text, player });
+};
+
+const setBoardPreviewPrompt = (text) => {
+  boardPreviewLabelEl.textContent = text;
+};
+
+const setBoardPreviewAction = (text) => {
+  boardPreviewLabelEl.innerHTML = `Click again to <strong>${escapeHtml(text)}</strong>`;
 };
 
 const getCurrentSelection = () => ({
@@ -123,6 +165,7 @@ const clearSelection = () => {
   selectedPieceMovePreviews = [];
   selectedSource = null;
   selectedTarget = null;
+  invalidateSelectedPieceMovesRequests();
 };
 
 const clearRemovalEffects = () => {
@@ -154,7 +197,8 @@ const submitCurrentAction = async () => {
   if (!state) return;
   submitActionEl.disabled = true;
   setActionResult("Applying action...");
-  const action = buildActionPayload(actionTypeEl.value, selectedSource, selectedTarget);
+  const action = buildActionPayload(actionTypeEl.value, selectedSource, selectedTarget, selectedPieceId);
+  const previousState = state;
 
   try {
     const response = await fetch("/api/engine/playground/apply", {
@@ -170,22 +214,39 @@ const submitCurrentAction = async () => {
     }
 
     if (body.accepted) {
+      invalidateSelectedPieceMovesRequests();
       state = body.state;
       legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
       selectedPieceMoves = [];
       selectedPieceMovePreviews = [];
-      moveLog.push(`${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`);
-      selectedTarget = null;
-      showRemovalEffects(body.removedPieces);
+      pushMoveLogEntry(describeActionForLog(action), previousState?.sideToMove ?? null);
+      if (!applyForcedContinuationSelection()) {
+        if (previousState?.sideToMove && state?.sideToMove && previousState.sideToMove !== state.sideToMove) {
+          clearSelection();
+        } else {
+          selectedTarget = null;
+        }
+      }
+      showRemovalEffects(
+        (Array.isArray(body.removedPieces) ? body.removedPieces : []).map((effect) => ({
+          ...effect,
+          piece:
+            previousState?.pieces?.find((piece) => piece.id === effect.pieceId) ?? null,
+        })),
+      );
       refreshSelectionLabels();
       renderBoard();
       renderStatus();
       renderMoveLog();
+      if (selectedPieceId) {
+        await reloadSelectedPieceMoves();
+      }
       setActionResult({ accepted: true, outcome: body.outcome ?? state.outcome });
       return;
     }
 
     state = body.state ?? state;
+    invalidateSelectedPieceMovesRequests();
     selectedPieceMoves = [];
     selectedPieceMovePreviews = [];
     setActionResult({
@@ -193,7 +254,7 @@ const submitCurrentAction = async () => {
       validation: body.validation,
     });
     await reloadLegalActions();
-    moveLog.push(`REJECTED ${action.type.toUpperCase()}: ${body.validation?.code ?? "unknown"}`);
+    pushMoveLogEntry(`REJECTED ${action.type.toUpperCase()}: ${body.validation?.code ?? "unknown"}`, previousState?.sideToMove ?? null);
     renderMoveLog();
   } catch (error) {
     setActionResult({
@@ -243,8 +304,16 @@ function handleBoardCellClick(clickedCoord) {
     allowFreeSelection,
   });
 
+  const previousSelection = getCurrentSelection();
   applySelection(result.selection);
   actionTypeEl.value = result.nextActionType;
+
+  const pieceChanged = previousSelection.selectedPieceId !== result.selection.selectedPieceId;
+  if (pieceChanged) {
+    invalidateSelectedPieceMovesRequests();
+    selectedPieceMoves = [];
+    selectedPieceMovePreviews = [];
+  }
 
   refreshSelectionLabels();
   renderBoard();
@@ -266,9 +335,62 @@ const setFixtureResult = (value) => {
   fixtureResultEl.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
 };
 
+const normalizeFixture = (fixture) => ({
+  ...fixture,
+  description: typeof fixture.description === "string" ? fixture.description : fixture.title,
+  incorrect: fixture.incorrect === true,
+});
+
+const escapeHtml = (value) =>
+  String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+
+const renderSelectedFixtureDescription = () => {
+  if (!fixtureDescriptionEl) {
+    return;
+  }
+  const fixture = getSelectedFixture();
+  if (fixtureIncorrectToggleEl) {
+    fixtureIncorrectToggleEl.checked = Boolean(fixture?.incorrect);
+    fixtureIncorrectToggleEl.disabled = !fixture;
+  }
+  const description = fixture?.description ??
+    "Select a fixture to inspect what scenario it is intended to illustrate.";
+  const paragraphs = description.split(/\n\s*\n/).map((paragraph) => paragraph.trim()).filter(Boolean);
+  const renderedParagraphs = [];
+  if (fixture?.incorrect) {
+    renderedParagraphs.push('<p class="fixture-status fixture-status-incorrect"><strong>Marked incorrect.</strong></p>');
+  }
+  renderedParagraphs.push(...paragraphs.map((paragraph) => {
+    if (paragraph.startsWith("Next move:")) {
+      return `<p><strong>${escapeHtml(paragraph)}</strong></p>`;
+    }
+    return `<p>${escapeHtml(paragraph)}</p>`;
+  }));
+  fixtureDescriptionEl.innerHTML = renderedParagraphs.join("");
+};
+
 const refreshSelectionLabels = () => {
   sourceValueEl.textContent = formatCoordinate(selectedSource);
   targetValueEl.textContent = formatCoordinate(selectedTarget);
+};
+
+const applyForcedContinuationSelection = () => {
+  const forcedSelection = deriveForcedContinuationSelection(state, legalActions);
+  if (!forcedSelection) {
+    return false;
+  }
+
+  selectedPieceId = forcedSelection.selectedPieceId;
+  selectedSource = forcedSelection.source;
+  selectedTarget = forcedSelection.target;
+  actionTypeEl.value = forcedSelection.actionType;
+  refreshSelectionLabels();
+  return true;
 };
 
 const renderMoveLog = () => {
@@ -281,7 +403,8 @@ const renderMoveLog = () => {
   }
   for (const entry of moveLog) {
     const li = document.createElement("li");
-    li.textContent = entry;
+    li.textContent = typeof entry === "string" ? entry : entry.text;
+    setPlayerTone(li, typeof entry === "string" ? null : entry.player);
     moveLogEl.appendChild(li);
   }
 };
@@ -305,9 +428,12 @@ const renderStatus = () => {
   if (!state) return;
 
   sideToMoveEl.textContent = state.sideToMove;
+  setPlayerTone(sideToMoveEl, state.sideToMove);
+  boardTurnIndicatorEl.textContent = state.sideToMove === "P1" ? "Player 1" : "Player 2";
+  setPlayerTone(boardTurnIndicatorEl, state.sideToMove);
   turnIndexEl.textContent = String(state.turnIndex);
   continuationEl.textContent = state.continuation
-    ? `${state.continuation.type} (owner ${state.continuation.owner})`
+    ? `${state.continuation.type}${state.continuation.phase ? `/${state.continuation.phase}` : ""} (owner ${state.continuation.owner})`
     : "none";
 
   commanderSupplyEl.textContent = boardAdapter.getCommanderSupplySummary(state);
@@ -325,14 +451,20 @@ const renderStatus = () => {
     selectedPieceEl.textContent = "No piece selected.";
     selectedMovePreviewEl.textContent = "No destination selected.";
     selectedPieceMovesEl.textContent = "[]";
-    boardPreviewLabelEl.innerHTML = "<strong>No move preview selected.</strong>";
+    setBoardPreviewPrompt("Select a piece to see it supply and command lines + what it can do:");
   } else {
     selectedPieceEl.textContent = JSON.stringify(pieceSummary.details, null, 2);
     selectedPieceMovesEl.textContent = JSON.stringify(pieceSummary.actions, null, 2);
 
     if (!selectedTarget) {
       selectedMovePreviewEl.textContent = "No destination selected.";
-      boardPreviewLabelEl.innerHTML = "<strong>No move preview selected.</strong>";
+      if (pieceSummary.details.owner !== state.sideToMove) {
+        setBoardPreviewPrompt("Opponent piece. Supply and command lines shown only:");
+      } else if (selectedPieceMoves.length === 0) {
+        setBoardPreviewPrompt("No moves for this piece at this time. Supply and command lines shown only:");
+      } else {
+        setBoardPreviewPrompt("Select a square to move to:");
+      }
     } else {
       const previewsAtTarget = selectedPieceMovePreviews.filter(
         (action) => action.to && action.to.row === selectedTarget.row && action.to.col === selectedTarget.col,
@@ -356,14 +488,12 @@ const renderStatus = () => {
           null,
           2,
         );
-        boardPreviewLabelEl.innerHTML = "<strong>No move preview selected.</strong>";
+        setBoardPreviewPrompt("Select a square to move to:");
       } else {
         const disallowedReason =
-          preferredPreview.legal === false && preferredPreview.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED"
-            ? "Disallowed: destination would be unsupplied."
-            : preferredPreview.legal === false
-              ? `Disallowed: ${preferredPreview.blockedReason ?? "rule violation"}.`
-              : null;
+          preferredPreview.legal === false
+            ? getBlockedPreviewLabel(preferredPreview.blockedReason ?? null)
+            : null;
 
         selectedMovePreviewEl.textContent = JSON.stringify(
           {
@@ -375,7 +505,11 @@ const renderStatus = () => {
           null,
           2,
         );
-        boardPreviewLabelEl.innerHTML = `<strong>${actionPreviewLabel(preferredPreview.type, state, selectedTarget)}</strong>`;
+        if (preferredPreview.legal === false) {
+          setBoardPreviewPrompt("Select a square to move to:");
+        } else {
+          setBoardPreviewAction(actionPreviewLabel(preferredPreview.type, state, selectedTarget));
+        }
       }
     }
   }
@@ -396,6 +530,7 @@ const reloadLegalActions = async () => {
   const body = await response.json();
   state = body.state ?? state;
   legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
+  applyForcedContinuationSelection();
   renderBoard();
   renderStatus();
 };
@@ -410,6 +545,9 @@ const reloadSelectedPieceMoves = async () => {
     return;
   }
 
+  const requestId = ++selectedPieceMovesRequestId;
+  const requestedPieceId = selectedPiece.id;
+
   const response = await fetch("/api/engine/playground/piece-moves", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -419,6 +557,9 @@ const reloadSelectedPieceMoves = async () => {
     throw new Error(`Failed to fetch selected piece moves: HTTP ${response.status}`);
   }
   const body = await response.json();
+  if (requestId !== selectedPieceMovesRequestId || selectedPieceId !== requestedPieceId) {
+    return;
+  }
   state = body.state ?? state;
   selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
   selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
@@ -426,7 +567,8 @@ const reloadSelectedPieceMoves = async () => {
   renderStatus();
 };
 
-const loadInitialState = async () => {
+const loadDefaultEngineState = async () => {
+  invalidateSelectedPieceMovesRequests();
   const response = await fetch("/api/engine/playground/state", { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Failed to load initial state: HTTP ${response.status}`);
@@ -436,6 +578,7 @@ const loadInitialState = async () => {
   legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
   clearRemovalEffects();
   clearSelection();
+  applyForcedContinuationSelection();
   renderBoard();
   renderStatus();
   renderMoveLog();
@@ -495,7 +638,7 @@ const updateFixtureOptions = () => {
   for (const fixture of fixtures) {
     const option = document.createElement("option");
     option.value = fixture.id;
-    option.textContent = `${fixture.id} - ${fixture.title}`;
+    option.textContent = `${fixture.id} - ${fixture.title}${fixture.incorrect ? " [incorrect]" : ""}`;
     fixtureSelectEl.appendChild(option);
   }
   if (fixtures.length === 0) {
@@ -504,6 +647,7 @@ const updateFixtureOptions = () => {
   }
   currentFixtureId = selectedId && fixtures.some((fixture) => fixture.id === selectedId) ? selectedId : fixtures[0].id;
   fixtureSelectEl.value = currentFixtureId;
+  renderSelectedFixtureDescription();
 };
 
 const tryLocalFixtureWrite = async (pathSuffix, payload) => {
@@ -542,13 +686,91 @@ const loadFixtureCatalog = async () => {
   fixtureCatalog = {
     id: typeof catalog.id === "string" ? catalog.id : "M",
     title: typeof catalog.title === "string" ? catalog.title : "Milestone 2 Golden Scenarios",
-    fixtures: Array.isArray(catalog.fixtures) ? catalog.fixtures : [],
+    fixtures: Array.isArray(catalog.fixtures)
+      ? catalog.fixtures.map(normalizeFixture)
+      : [],
   };
   fixtures = fixtureCatalog.fixtures;
   updateFixtureOptions();
 };
 
 const getSelectedFixture = () => fixtures.find((fixture) => fixture.id === currentFixtureId) ?? null;
+
+const getFixtureNextMove = (fixture) => {
+  if (!fixture || typeof fixture !== "object") {
+    return null;
+  }
+  const candidate = fixture.next_move ?? fixture.action_sequence?.[0] ?? null;
+  if (!candidate || typeof candidate !== "object" || typeof candidate.type !== "string") {
+    return null;
+  }
+  return candidate;
+};
+
+const applyFixtureNextMoveSelection = async (fixture) => {
+  const nextMove = getFixtureNextMove(fixture);
+  if (!nextMove || !nextMove.from || !nextMove.to) {
+    actionTypeEl.value = nextMove?.type ?? "pass";
+    clearSelection();
+    refreshSelectionLabels();
+    renderBoard();
+    renderStatus();
+    return;
+  }
+
+  const selectedPiece =
+    (typeof nextMove.actorId === "string" && boardAdapter.getPieceById(state, nextMove.actorId)) ||
+    boardAdapter.getPieceAt(state, nextMove.from);
+
+  selectedPieceId = selectedPiece?.id ?? null;
+  selectedSource = { ...nextMove.from };
+  selectedTarget = { ...nextMove.to };
+  actionTypeEl.value = nextMove.type;
+  refreshSelectionLabels();
+
+  if (!selectedPieceId) {
+    renderBoard();
+    renderStatus();
+    return;
+  }
+
+  await reloadSelectedPieceMoves();
+};
+
+const loadFixtureIntoPlayground = async (fixture, { announce = true } = {}) => {
+  if (!fixture) {
+    throw new Error("Fixture is required");
+  }
+
+  invalidateSelectedPieceMovesRequests();
+  state = structuredClone(fixture.initial_state);
+  legalActions = [];
+  clearRemovalEffects();
+  clearSelection();
+  moveLog.length = 0;
+  pushMoveLogEntry(`Loaded fixture ${fixture.id}`);
+  renderMoveLog();
+
+  try {
+    await reloadLegalActions();
+    await applyFixtureNextMoveSelection(fixture);
+  } catch {
+    renderBoard();
+    renderStatus();
+  }
+
+  if (announce) {
+    setFixtureResult({
+      ok: true,
+      fixtureId: fixture.id,
+      title: fixture.title,
+      expected: {
+        hash: fixture.expected_final_state_hash,
+        outcome: fixture.expected_outcome,
+      },
+    });
+  }
+};
 
 const getNextFixtureId = () => {
   const prefix = (fixtureCatalog.id || "M").toUpperCase();
@@ -614,34 +836,61 @@ submitActionEl.addEventListener("click", async () => {
 
 fixtureSelectEl.addEventListener("change", () => {
   currentFixtureId = fixtureSelectEl.value;
+  renderSelectedFixtureDescription();
 });
 
-loadFixtureEl.addEventListener("click", () => {
+fixtureIncorrectToggleEl?.addEventListener("change", async () => {
+  const fixture = getSelectedFixture();
+  if (!fixture) {
+    return;
+  }
+
+  const updatedFixture = {
+    ...fixture,
+    incorrect: fixtureIncorrectToggleEl.checked,
+  };
+  const nextCatalog = {
+    ...fixtureCatalog,
+    fixtures: fixtures.map((entry) => (entry.id === fixture.id ? updatedFixture : entry)),
+  };
+
+  fixtureCatalog = nextCatalog;
+  fixtures = fixtureCatalog.fixtures;
+  updateFixtureOptions();
+
+  const localWrite = await tryLocalFixtureWrite("/fixtures/update", {
+    fixtureId: fixture.id,
+    description: updatedFixture.description,
+    incorrect: updatedFixture.incorrect,
+  });
+
+  if (localWrite.ok) {
+    setFixtureResult({
+      ok: true,
+      mode: "local_write",
+      fixtureId: fixture.id,
+      incorrect: updatedFixture.incorrect,
+    });
+    return;
+  }
+
+  downloadFixtureCatalog(nextCatalog, "m-golden-fixtures.updated.json");
+  setFixtureResult({
+    ok: true,
+    mode: "download_fallback",
+    fixtureId: fixture.id,
+    incorrect: updatedFixture.incorrect,
+    localWrite,
+  });
+});
+
+loadFixtureEl.addEventListener("click", async () => {
   const fixture = getSelectedFixture();
   if (!fixture) {
     setFixtureResult({ ok: false, error: "fixture_not_found" });
     return;
   }
-  state = structuredClone(fixture.initial_state);
-  legalActions = [];
-  clearRemovalEffects();
-  clearSelection();
-  moveLog.length = 0;
-  moveLog.push(`Loaded fixture ${fixture.id}`);
-  refreshSelectionLabels();
-  renderBoard();
-  renderStatus();
-  renderMoveLog();
-  void reloadLegalActions().catch(() => {});
-  setFixtureResult({
-    ok: true,
-    fixtureId: fixture.id,
-    title: fixture.title,
-    expected: {
-      hash: fixture.expected_final_state_hash,
-      outcome: fixture.expected_outcome,
-    },
-  });
+  await loadFixtureIntoPlayground(fixture);
 });
 
 replayFixtureEl.addEventListener("click", async () => {
@@ -734,6 +983,8 @@ saveFixtureEl.addEventListener("click", async () => {
     const fixture = {
       id: fixtureId,
       title,
+      description: title,
+      incorrect: false,
       initial_state: structuredClone(state),
       action_sequence: [],
       expected_final_state_hash: expectedHash,
@@ -808,6 +1059,8 @@ updateFixtureEl.addEventListener("click", async () => {
       fixtureId: fixture.id,
       expected_final_state_hash: expectedHash,
       expected_outcome: expectedOutcome,
+      description: updatedFixture.description,
+      incorrect: updatedFixture.incorrect,
     });
 
     fixtureCatalog = nextCatalog;
@@ -844,11 +1097,21 @@ updateFixtureEl.addEventListener("click", async () => {
 });
 
 refreshSelectionLabels();
-Promise.all([loadInitialState(), loadFixtureCatalog()]).catch((error) => {
-  setActionResult({
-    ok: false,
-    error: "load_failed",
-    message: error instanceof Error ? error.message : "Unknown error",
-  });
-});
+void (async () => {
+  try {
+    await loadFixtureCatalog();
+    const defaultFixture = getSelectedFixture();
+    if (defaultFixture) {
+      await loadFixtureIntoPlayground(defaultFixture, { announce: false });
+      return;
+    }
+    await loadDefaultEngineState();
+  } catch (error) {
+    setActionResult({
+      ok: false,
+      error: "load_failed",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+})();
 }
