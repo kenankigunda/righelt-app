@@ -322,6 +322,8 @@ test("live transport: approve rejects unauthorized approver", async () => {
 
 test("live transport: stale participants load as disconnected until they become active again", async () => {
   const realNow = Date.now;
+  const OriginalWebSocketPair = globalThis.WebSocketPair;
+  const OriginalResponse = globalThis.Response;
   let fakeNow = new Date("2026-02-26T00:00:00.000Z").getTime();
   Date.now = () => fakeNow;
 
@@ -345,13 +347,64 @@ test("live transport: stale participants load as disconnected until they become 
 
     const ownerView = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
     const ownerBody = await ownerView.json();
-    assert.equal(ownerBody.game.player1.connected, true);
+    assert.equal(ownerBody.game.player1.connected, false);
     assert.equal(ownerBody.game.player2.connected, false);
 
     const player2View = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-player2`), env);
     const player2Body = await player2View.json();
-    assert.equal(player2Body.game.player2.connected, true);
+    assert.equal(player2Body.game.player1.connected, false);
+    assert.equal(player2Body.game.player2.connected, false);
+
+    class MockSocket {
+      constructor() {
+        this.listeners = new Map();
+      }
+      accept() {}
+      addEventListener(name, fn) {
+        if (!this.listeners.has(name)) {
+          this.listeners.set(name, []);
+        }
+        this.listeners.get(name).push(fn);
+      }
+      send() {}
+      close() {
+        const handlers = this.listeners.get("close") || [];
+        for (const handler of handlers) {
+          handler({});
+        }
+      }
+    }
+
+    class MockWebSocketPair {
+      constructor() {
+        this[0] = new MockSocket();
+        this[1] = new MockSocket();
+      }
+    }
+
+    globalThis.WebSocketPair = MockWebSocketPair;
+    globalThis.Response = class MockUpgradeResponse {
+      constructor(_body, init = {}) {
+        this.status = init.status ?? 200;
+        this.webSocket = init.webSocket ?? null;
+      }
+    };
+
+    const upgrade = await handleApiRequest(
+      new Request(`https://example.test/api/shell/ws?scope=game&gameId=${gameId}&identityId=id-player2`),
+      env,
+    );
+    assert.equal(upgrade.status, 101);
+
+    globalThis.Response = OriginalResponse;
+
+    const reactivatedView = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-player2`), env);
+    const reactivatedBody = await reactivatedView.json();
+    assert.equal(reactivatedBody.game.player1.connected, false);
+    assert.equal(reactivatedBody.game.player2.connected, true);
   } finally {
     Date.now = realNow;
+    globalThis.WebSocketPair = OriginalWebSocketPair;
+    globalThis.Response = OriginalResponse;
   }
 });

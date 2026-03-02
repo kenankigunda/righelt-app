@@ -72,6 +72,8 @@ const inviteIndex = new Map<string, { gameId: string; sharedByRole: "Viewer" | "
 let seq = 0;
 const homeSubscribers = new Set<any>();
 const gameSubscribers = new Map<string, Set<any>>();
+const socketIdentityMeta = new WeakMap<any, { identityId: string | null }>();
+const activeIdentitySockets = new Map<string, number>();
 
 const now = () => new Date(Date.now()).toISOString();
 const clone = <T>(value: T): T => structuredClone(value);
@@ -112,15 +114,22 @@ const isFreshPresence = (participant: Participant | null) => {
   return Date.now() - toTimestamp(seenAt) <= PRESENCE_STALE_MS;
 };
 
+const hasActiveIdentityConnection = (identityId: string | null | undefined) => {
+  if (!identityId) {
+    return false;
+  }
+  return (activeIdentitySockets.get(identityId) ?? 0) > 0;
+};
+
 const applyPresenceFreshness = (game: ShellGame) => {
   if (game.player1) {
-    game.player1.connected = isFreshPresence(game.player1);
+    game.player1.connected = hasActiveIdentityConnection(game.player1.identityId) && isFreshPresence(game.player1);
   }
   if (game.player2) {
-    game.player2.connected = isFreshPresence(game.player2);
+    game.player2.connected = hasActiveIdentityConnection(game.player2.identityId) && isFreshPresence(game.player2);
   }
   for (const viewer of game.viewers) {
-    viewer.connected = isFreshPresence(viewer);
+    viewer.connected = hasActiveIdentityConnection(viewer.identityId) && isFreshPresence(viewer);
   }
 };
 
@@ -149,6 +158,57 @@ const touchIdentityAcrossGames = (identityId: string) => {
   }
 };
 
+const disconnectIdentityAcrossGames = (identityId: string) => {
+  for (const game of games.values()) {
+    let changed = false;
+    if (game.player1?.identityId === identityId && game.player1.connected) {
+      game.player1.connected = false;
+      game.player1.lastSeenAt = new Date(0).toISOString();
+      changed = true;
+    }
+    if (game.player2?.identityId === identityId && game.player2.connected) {
+      game.player2.connected = false;
+      game.player2.lastSeenAt = new Date(0).toISOString();
+      changed = true;
+    }
+    for (const viewer of game.viewers) {
+      if (viewer.identityId === identityId && viewer.connected) {
+        viewer.connected = false;
+        viewer.lastSeenAt = new Date(0).toISOString();
+        changed = true;
+      }
+    }
+    if (changed) {
+      game.updatedAt = now();
+      broadcastLiveUpdate(game.id, "participant_disconnected");
+    }
+  }
+};
+
+const registerSocketIdentity = (socket: any, identityId: string | null) => {
+  socketIdentityMeta.set(socket, { identityId });
+  if (!identityId) {
+    return;
+  }
+  activeIdentitySockets.set(identityId, (activeIdentitySockets.get(identityId) ?? 0) + 1);
+};
+
+const unregisterSocketIdentity = (socket: any) => {
+  const meta = socketIdentityMeta.get(socket);
+  socketIdentityMeta.delete(socket);
+  const identityId = meta?.identityId;
+  if (!identityId) {
+    return;
+  }
+  const nextCount = (activeIdentitySockets.get(identityId) ?? 0) - 1;
+  if (nextCount > 0) {
+    activeIdentitySockets.set(identityId, nextCount);
+    return;
+  }
+  activeIdentitySockets.delete(identityId);
+  disconnectIdentityAcrossGames(identityId);
+};
+
 const getGameSubscriberSet = (gameId: string) => {
   let set = gameSubscribers.get(gameId);
   if (!set) {
@@ -159,6 +219,7 @@ const getGameSubscriberSet = (gameId: string) => {
 };
 
 const removeSocketFromAll = (socket: any) => {
+  unregisterSocketIdentity(socket);
   homeSubscribers.delete(socket);
   for (const [gameId, subscribers] of gameSubscribers.entries()) {
     subscribers.delete(socket);
@@ -455,6 +516,7 @@ export const handleShellLiveWebSocketUpgrade = (request: Request): Response | nu
   const client = socketPair[0];
   const server = socketPair[1];
   server.accept();
+  registerSocketIdentity(server, identityId);
 
   if (scope === "home") {
     if (identityId) {
