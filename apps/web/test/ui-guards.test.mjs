@@ -11,6 +11,10 @@ test("UI disables record-move based on canRecordMove capability", () => {
   assert.match(source, /game\.canRecordMove\s*&&\s*!busy/);
 });
 
+test("UI disables end-turn based on canEndTurn capability", () => {
+  assert.match(source, /game\.canEndTurn\s*&&\s*!busy/);
+});
+
 test("UI disables join-player based on canJoinAsPlayer capability", () => {
   assert.match(source, /game\.canJoinAsPlayer\s*&&\s*game\.showJoinActions\s*&&\s*!busy/);
 });

@@ -25,9 +25,21 @@ type JoinRequest = {
 
 type MoveEntry = {
   index: number;
+  turnIndex: number;
+  turnMoveIndex: number;
   at: string;
   notation: string;
   snapshot: GameState;
+};
+
+type TurnEntry = {
+  index: number;
+  startedAt: string;
+  endedAt: string | null;
+  playerSeat: "Player 1" | "Player 2";
+  status: "active" | "complete";
+  moveIndexes: number[];
+  lastMoveAt: string | null;
 };
 
 type ShellGame = {
@@ -44,6 +56,7 @@ type ShellGame = {
   player2: Participant | null;
   viewers: Viewer[];
   pendingJoinRequests: JoinRequest[];
+  turns: TurnEntry[];
   moves: MoveEntry[];
   historyIndex: number | null;
   notifications: string[];
@@ -214,6 +227,10 @@ const getApproverIdentityForSeat = (game: ShellGame, seat: "Player 1" | "Player 
 };
 
 const getSideToMoveSeat = (game: ShellGame): "Player 1" | "Player 2" => (game.board.state.sideToMove === "P1" ? "Player 1" : "Player 2");
+const getSeatForSide = (side: GameState["sideToMove"]): "Player 1" | "Player 2" => (side === "P1" ? "Player 1" : "Player 2");
+const getNextSeat = (seat: "Player 1" | "Player 2"): "Player 1" | "Player 2" => (seat === "Player 1" ? "Player 2" : "Player 1");
+const getSideForSeat = (seat: "Player 1" | "Player 2"): GameState["sideToMove"] => (seat === "Player 1" ? "P1" : "P2");
+const getActiveTurn = (game: ShellGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
 
 const withViewModel = (game: ShellGame, identityId: string, offline = false) => {
   applyPresenceFreshness(game);
@@ -228,6 +245,7 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
   const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
   const isPlayer = myRole === "Player 1" || myRole === "Player 2";
   const legalNow = listLegalActions(game.board.state);
+  const activeTurn = getActiveTurn(game);
   const approvableRequesterIds = game.pendingJoinRequests
     .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
     .map((request) => request.identityId);
@@ -249,6 +267,8 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
     showOfflineState: offline || game.offlineLocal,
     showJoinActions: !offline && !game.offlineLocal,
     canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
+    canEndTurn: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && Boolean(activeTurn && activeTurn.moveIndexes.length > 0),
+    currentTurn: activeTurn ? clone(activeTurn) : null,
     approvableRequesterIds,
   };
 };
@@ -297,7 +317,24 @@ const pickLegalAction = (state: GameState): Action | null => {
   return legal[0] as Action;
 };
 
+const renumberHistory = (game: ShellGame) => {
+  game.moves.forEach((move, index) => {
+    move.index = index;
+  });
+  game.turns.forEach((turn) => {
+    turn.moveIndexes = turn.moveIndexes
+      .map((_, turnMoveIndex) =>
+        game.moves.find((move) => move.turnIndex === turn.index && move.turnMoveIndex === turnMoveIndex)?.index ?? -1,
+      )
+      .filter((index) => index >= 0);
+  });
+};
+
 const applyServerMove = (game: ShellGame, notation?: string) => {
+  const activeTurn = getActiveTurn(game);
+  if (!activeTurn) {
+    return { ok: false as const, error: "turn_not_initialized" };
+  }
   const stable = resolveToStability(game.board.state, { artifactMode: "full" });
   const action = pickLegalAction(stable);
   if (!action) {
@@ -305,25 +342,60 @@ const applyServerMove = (game: ShellGame, notation?: string) => {
   }
   const applied = applyAction(stable, action);
   const next = resolveToStability(applied.state, { artifactMode: "full" });
+  next.sideToMove = getSideForSeat(activeTurn.playerSeat);
+  next.turnIndex = activeTurn.index;
 
   const move: MoveEntry = {
     index: game.moves.length,
+    turnIndex: activeTurn.index,
+    turnMoveIndex: activeTurn.moveIndexes.length,
     at: now(),
     notation: notation || action.type.toUpperCase(),
     snapshot: next,
   };
   game.moves.push(move);
+  activeTurn.moveIndexes.push(move.index);
+  activeTurn.lastMoveAt = move.at;
   if (game.moves.length > MAX_HISTORY) {
     game.moves.shift();
-    for (let i = 0; i < game.moves.length; i += 1) {
-      game.moves[i].index = i;
-    }
+    renumberHistory(game);
   }
   game.board.state = next;
   game.lastMoveAt = move.at;
   game.updatedAt = move.at;
-  addNotification(game, "Move recorded");
+  addNotification(game, `Move recorded in turn ${activeTurn.index + 1}`);
   return { ok: true as const, move };
+};
+
+const endServerTurn = (game: ShellGame) => {
+  const activeTurn = getActiveTurn(game);
+  if (!activeTurn) {
+    return { ok: false as const, error: "turn_not_initialized" };
+  }
+  if (activeTurn.moveIndexes.length === 0) {
+    return { ok: false as const, error: "turn_has_no_moves" };
+  }
+
+  const endedAt = now();
+  activeTurn.endedAt = endedAt;
+  activeTurn.status = "complete";
+
+  const nextSeat = getNextSeat(activeTurn.playerSeat);
+  const nextTurn: TurnEntry = {
+    index: activeTurn.index + 1,
+    startedAt: endedAt,
+    endedAt: null,
+    playerSeat: nextSeat,
+    status: "active",
+    moveIndexes: [],
+    lastMoveAt: null,
+  };
+  game.turns.push(nextTurn);
+  game.board.state.sideToMove = getSideForSeat(nextSeat);
+  game.board.state.turnIndex = nextTurn.index;
+  game.updatedAt = endedAt;
+  addNotification(game, `Turn ${activeTurn.index + 1} ended. ${nextSeat} to play`);
+  return { ok: true as const, turn: clone(nextTurn) };
 };
 
 export const handleShellLiveWebSocketUpgrade = (request: Request): Response | null => {
@@ -470,6 +542,17 @@ export const handleShellLiveRequest = async (
       player2: playgroundMode ? { identityId, connected: true, joinedAt: createdAt, lastSeenAt: createdAt } : null,
       viewers: [],
       pendingJoinRequests: [],
+      turns: [
+        {
+          index: initial.turnIndex ?? 0,
+          startedAt: createdAt,
+          endedAt: null,
+          playerSeat: getSeatForSide(initial.sideToMove),
+          status: "active",
+          moveIndexes: [],
+          lastMoveAt: null,
+        },
+      ],
       moves: [],
       historyIndex: null,
       notifications: ["Game created", playgroundMode ? "Playground mode active" : "Invite a second player"],
@@ -651,6 +734,24 @@ export const handleShellLiveRequest = async (
       }
       broadcastLiveUpdate(game.id, "move_recorded");
       return { handled: true, status: 200, body: { ok: true, move: moved.move, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
+    }
+
+    if (route.length === 3 && route[2] === "end-turn") {
+      const role = findRoleForIdentity(game, identityId);
+      if (role !== "Player 1" && role !== "Player 2") {
+        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: "no-store" };
+      }
+      const sideToMoveSeat = getSideToMoveSeat(game);
+      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
+      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
+        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: "no-store" };
+      }
+      const ended = endServerTurn(game);
+      if (!ended.ok) {
+        return { handled: true, status: 409, body: { ok: false, error: ended.error }, cacheControl: "no-store" };
+      }
+      broadcastLiveUpdate(game.id, "turn_ended");
+      return { handled: true, status: 200, body: { ok: true, turn: ended.turn, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
 
     if (route.length === 3 && route[2] === "history") {

@@ -59,6 +59,7 @@ const formatStatus = (connected) =>
 
 const renderBoardPlaceholder = (game) => {
   const lastMove = game.moves.length > 0 ? game.moves[game.moves.length - 1] : null;
+  const currentTurn = game.currentTurn;
   const turnIndex = game.currentSnapshot?.turnIndex;
   const sideToMove = game.currentSnapshot?.sideToMove;
   const mode = game.inHistoryMode ? `history #${(game.historyIndex ?? 0) + 1}` : "live";
@@ -66,16 +67,48 @@ const renderBoardPlaceholder = (game) => {
   if (!lastMove) {
     return `<div class="alert">Board placeholder: no moves recorded yet. Mode: ${mode}. Turn ${escapeHtml(
       String(turnIndex ?? 0),
-    )}, side ${escapeHtml(String(sideToMove ?? "-"))}.</div>`;
+    )}, side ${escapeHtml(String(sideToMove ?? "-"))}. Active turn: ${escapeHtml(
+      currentTurn ? `${currentTurn.index + 1} (${currentTurn.playerSeat})` : "n/a",
+    )}.</div>`;
   }
 
   return `<div class="alert">Board placeholder: ${escapeHtml(
     String(game.moves.length),
   )} move(s). Last move #${escapeHtml(String(lastMove.index + 1))} ${escapeHtml(
     lastMove.notation,
-  )} at ${escapeHtml(lastMove.at)}. Mode: ${mode}. Turn ${escapeHtml(
+  )} at ${escapeHtml(lastMove.at)}. Move ${escapeHtml(String((lastMove.turnMoveIndex ?? 0) + 1))} of turn ${escapeHtml(
+    String((lastMove.turnIndex ?? 0) + 1),
+  )}. Mode: ${mode}. Turn ${escapeHtml(
     String(turnIndex ?? 0),
   )}, side ${escapeHtml(String(sideToMove ?? "-"))}.</div>`;
+};
+
+const renderTurnHistory = (game) => {
+  if (!Array.isArray(game.turns) || game.turns.length === 0) {
+    return "<li class=\"small\">No turns yet.</li>";
+  }
+
+  return game.turns
+    .map((turn) => {
+      const turnMoves = turn.moveIndexes
+        .map((moveIndex) => game.moves[moveIndex])
+        .filter(Boolean)
+        .map(
+          (move) => `<li class="history-item" data-action="jump-history" data-game-id="${escapeHtml(
+            game.id,
+          )}" data-move-index="${move.index}">Move ${escapeHtml(String(move.turnMoveIndex + 1))}: ${escapeHtml(
+            move.notation,
+          )} <span class="small">${escapeHtml(move.at)}</span></li>`,
+        )
+        .join("");
+
+      return `<li>
+        <strong>Turn ${escapeHtml(String(turn.index + 1))}</strong> <span class="small">${escapeHtml(turn.playerSeat)}</span>
+        <span class="small">${escapeHtml(turn.status)}</span>
+        <ol class="history-turn-list">${turnMoves || '<li class="small">No moves in this turn yet.</li>'}</ol>
+      </li>`;
+    })
+    .join("");
 };
 
 const renderHeader = () => `
@@ -179,18 +212,7 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
     .join("");
 
   const viewersRow = `<li>Viewers: ${game.viewers.length}</li>`;
-  const historyRows =
-    game.moves.length === 0
-      ? "<li class=\"small\">No moves yet.</li>"
-      : game.moves
-          .map(
-            (move) => `<li class="history-item" data-action="jump-history" data-game-id="${escapeHtml(
-              game.id,
-            )}" data-move-index="${move.index}">#${move.index + 1} ${escapeHtml(move.notation)} <span class="small">${escapeHtml(
-              move.at,
-            )}</span></li>`,
-          )
-          .join("");
+  const historyRows = renderTurnHistory(game);
 
   const pendingRows =
     game.pendingJoinRequests.length === 0
@@ -232,12 +254,22 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
             <button data-action="record-move" data-game-id="${escapeHtml(game.id)}" ${
               game.canRecordMove && !busy ? "" : "disabled"
             }>Record Live Move</button>
+            <button class="secondary" data-action="end-turn" data-game-id="${escapeHtml(game.id)}" ${
+              game.canEndTurn && !busy ? "" : "disabled"
+            }>End Turn</button>
             <button class="secondary" data-action="toggle-p1" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle P1 Connection</button>
             <button class="secondary" data-action="toggle-p2" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle P2 Connection</button>
             <button class="warn" data-action="go-online" data-game-id="${escapeHtml(game.id)}" ${
               game.offlineLocal && !busy ? "" : "disabled"
             }>Go online</button>
           </div>
+          <p class="small">Active turn: ${
+            game.currentTurn
+              ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${escapeHtml(game.currentTurn.playerSeat)} · ${escapeHtml(
+                  String(game.currentTurn.moveIndexes.length),
+                )} move(s)`
+              : "n/a"
+          }</p>
           <p class="small">Latest: ${escapeHtml(latestNote)}</p>
         </section>
 
@@ -654,6 +686,14 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
       await transport.addMove({ gameId });
+      await syncRouteData();
+      return;
+    }
+
+    if (action === "end-turn") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      if (!gameId) return;
+      await transport.endTurn({ gameId });
       await syncRouteData();
       return;
     }
