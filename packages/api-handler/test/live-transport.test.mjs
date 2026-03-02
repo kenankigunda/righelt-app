@@ -139,6 +139,25 @@ test("live transport: join approval flow and presence/history/move transitions",
   );
   const presenceBody = await presence.json();
   assert.equal(presenceBody.game.player2.connected, false);
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-viewer",
+      mode: "viewer",
+    }),
+    env,
+  );
+
+  const viewerPresence = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/presence`, "POST", {
+      identityId: "id-viewer",
+      role: "Viewer",
+      connected: false,
+    }),
+    env,
+  );
+  const viewerPresenceBody = await viewerPresence.json();
+  assert.equal(viewerPresenceBody.game.viewers.find((viewer) => viewer.identityId === "id-viewer")?.connected, false);
 });
 
 test("live transport: player invite token enables immediate player join without guessable game role query", async () => {

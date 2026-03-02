@@ -69,22 +69,19 @@ type ShellGame = {
 
 const games = new Map<string, ShellGame>();
 const inviteIndex = new Map<string, { gameId: string; sharedByRole: "Viewer" | "Player 1" | "Player 2" }>();
-let seq = 0;
 const homeSubscribers = new Set<any>();
 const gameSubscribers = new Map<string, Set<any>>();
 
 const now = () => new Date(Date.now()).toISOString();
 const clone = <T>(value: T): T => structuredClone(value);
-const nextId = () => {
-  seq += 1;
-  return `game-${seq.toString().padStart(6, "0")}`;
-};
 
 const createInviteToken = () => {
   const bytes = new Uint8Array(18);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
 };
+
+const nextId = () => `game-${createInviteToken()}`;
 
 const createInviteTokens = (gameId: string) => {
   const tokens = {
@@ -830,12 +827,18 @@ export const handleShellLiveRequest = async (
     }
 
     if (route.length === 3 && route[2] === "presence") {
-      const role = body.role === "Player 1" || body.role === "Player 2" ? body.role : null;
+      const role =
+        body.role === "Player 1" || body.role === "Player 2" || body.role === "Viewer" ? body.role : null;
       const connected = body.connected === true;
       if (!role) {
         return { handled: true, status: 400, body: { ok: false, error: "invalid_role" }, cacheControl: "no-store" };
       }
-      const entry = role === "Player 1" ? game.player1 : game.player2;
+      const entry =
+        role === "Player 1"
+          ? game.player1
+          : role === "Player 2"
+            ? game.player2
+            : game.viewers.find((viewer) => viewer.identityId === identityId) ?? null;
       if (!entry) {
         return { handled: true, status: 404, body: { ok: false, error: "participant_not_found" }, cacheControl: "no-store" };
       }

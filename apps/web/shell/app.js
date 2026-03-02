@@ -100,6 +100,32 @@ const formatClientDateTime = (value) => {
   }).format(new Date(timestamp));
 };
 
+const getCurrentViewedGameId = () => {
+  if (currentRoute.name === "game") {
+    return currentRoute.gameId;
+  }
+  if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
+    return resolvedInvite.gameId;
+  }
+  return null;
+};
+
+const syncCurrentIdentityPresence = async (connected) => {
+  const gameId = getCurrentViewedGameId();
+  if (!gameId) {
+    return;
+  }
+  const game = transport.getGameViewModel(gameId);
+  if (!game) {
+    return;
+  }
+  const role = game.myRole;
+  if (role !== "Player 1" && role !== "Player 2" && role !== "Viewer") {
+    return;
+  }
+  await transport.setParticipantConnected({ gameId, role, connected });
+};
+
 const renderBoardPlaceholder = (game) => {
   const lastMove = game.moves.length > 0 ? game.moves[game.moves.length - 1] : null;
   const currentTurn = game.currentTurn;
@@ -320,18 +346,18 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
     : "";
 
   return `
+    ${offlineBanner ? `<section class="panel">${offlineBanner}</section>` : ""}
     <section class="layout-grid">
       <div class="stack">
         <section class="panel">
           <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
           <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
           <p class="small">Role: <strong>${escapeHtml(game.myRole)}</strong></p>
-          ${offlineBanner}
           ${historyBanner}
           <div class="row">
             <button data-action="record-move" data-game-id="${escapeHtml(game.id)}" ${
               game.canRecordMove && !busy ? "" : "disabled"
-            }>Record Live Move</button>
+            }>${game.showOfflineState ? "Record Offline Move" : "Record Live Move"}</button>
             <button class="secondary" data-action="end-turn" data-game-id="${escapeHtml(game.id)}" ${
               game.canEndTurn && !busy ? "" : "disabled"
             }>End Turn</button>
@@ -661,6 +687,7 @@ window.addEventListener("hashchange", () => {
 
 window.addEventListener("online", () => {
   transport.setOffline(false);
+  void syncCurrentIdentityPresence(true);
   liveSync.resume();
   syncLiveChannel();
   void withBusy(syncRouteData);
@@ -668,6 +695,7 @@ window.addEventListener("online", () => {
 
 window.addEventListener("offline", () => {
   transport.setOffline(true);
+  void syncCurrentIdentityPresence(false);
   liveSync.disconnect();
   liveSyncConnectedRoute = "";
   void withBusy(syncRouteData);
@@ -726,6 +754,7 @@ appEl.addEventListener("click", async (event) => {
           await transport.goOnlineGame({ gameId, confirmed });
         }
       }
+      await syncCurrentIdentityPresence(!next);
       window.__righeltOffline = next;
       transport.setOffline(next);
       await syncRouteData();

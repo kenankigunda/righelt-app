@@ -9,6 +9,7 @@ const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
 
 test("UI disables record-move based on canRecordMove capability", () => {
   assert.match(source, /game\.canRecordMove\s*&&\s*!busy/);
+  assert.match(source, /game\.showOfflineState\s*\?\s*"Record Offline Move"\s*:\s*"Record Live Move"/);
 });
 
 test("UI disables end-turn based on canEndTurn capability", () => {
@@ -25,4 +26,10 @@ test("UI disables join-viewer based on canJoinAsViewer capability", () => {
 
 test("UI disables approve unless requester is in approvableRequesterIds", () => {
   assert.match(source, /game\.approvableRequesterIds\.includes\(request\.identityId\)/);
+});
+
+test("offline toggles sync current identity presence", () => {
+  assert.match(source, /await syncCurrentIdentityPresence\(!next\)/);
+  assert.match(source, /void syncCurrentIdentityPresence\(true\)/);
+  assert.match(source, /void syncCurrentIdentityPresence\(false\)/);
 });
