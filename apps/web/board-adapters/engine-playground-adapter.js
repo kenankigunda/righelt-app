@@ -622,10 +622,10 @@ export function createEnginePlaygroundBoardAdapter() {
             cell.appendChild(marker);
           }
 
-          if (removalEffect) {
-            const flash = document.createElement("span");
-            flash.className = "removal-flash";
-            cell.appendChild(flash);
+          if (removalEffect?.piece) {
+            const removalPiece = buildPieceToken(removalEffect.piece);
+            removalPiece.classList.add("removal-piece");
+            cell.appendChild(removalPiece);
           }
 
           if (isSupplyPoint(row, col)) {
