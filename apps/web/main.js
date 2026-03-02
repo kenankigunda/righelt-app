@@ -33,6 +33,8 @@ const openedViewerGames = new Set();
 let wsStatus = { state: "disconnected", scope: null, gameId: null, reconnectAttempts: 0 };
 let wsLastEvent = "none";
 const WS_RECONCILE_MS = 2000;
+let inviteFeedback = "";
+let inviteFeedbackTimer = null;
 
 const escapeHtml = (value) =>
   String(value)
@@ -82,6 +84,20 @@ const renderHeader = () => `
     </div>
   </header>
 `;
+
+const setInviteFeedback = (message) => {
+  inviteFeedback = message;
+  if (inviteFeedbackTimer) {
+    clearTimeout(inviteFeedbackTimer);
+    inviteFeedbackTimer = null;
+  }
+  if (message) {
+    inviteFeedbackTimer = setTimeout(() => {
+      inviteFeedback = "";
+      render();
+    }, 1800);
+  }
+};
 
 const renderHome = () => {
   const games = transport.listGames();
@@ -224,6 +240,7 @@ const renderGame = (gameId, inviteFromRole = null) => {
               game.canInvite && !busy ? "" : "disabled"
             }>Invite</button>
           </div>
+          ${inviteFeedback ? `<p class="small">${escapeHtml(inviteFeedback)}</p>` : ""}
           <p class="small">Invite link: <span class="mono">${escapeHtml(inviteLink)}</span></p>
           <ul class="participant-list">${pendingRows}</ul>
         </section>
@@ -526,10 +543,13 @@ appEl.addEventListener("click", async (event) => {
 
     if (action === "copy-invite") {
       const link = actionEl.getAttribute("data-link") || "";
+      let copied = false;
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(link);
+        copied = true;
       }
       window.__righeltLastInvite = link;
+      setInviteFeedback(copied ? "Copied to clipboard" : "Clipboard unavailable");
       return;
     }
 
