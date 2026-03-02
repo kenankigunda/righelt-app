@@ -172,7 +172,7 @@
       "id": "M-002",
       "title": "Minimal supply-cut win",
       "description": "This fixture is set up so P1 can win immediately by moving the commander left one square. That move cuts C2's last remaining supply route, so the game ends in P1's favor as soon as the position stabilizes.\n\nNext move: P1 moves commander from (3, 6) to (3, 5).",
-      "incorrect": false,
+      "incorrect": true,
       "initial_state": {
         "boardSize": 10,
         "sideToMove": "P1",
@@ -250,7 +250,7 @@
       "id": "M-003",
       "title": "Simultaneous draw by mutual supply cut",
       "description": "This fixture is set up so P2 can force both commanders to become unsupplied in the same resolution pass. The projection extends P2's structure while simultaneously collapsing both sides' supply, so the stabilized result is a draw.\n\nNext move: P2 projects from (5, 4) to (5, 6).",
-      "incorrect": false,
+      "incorrect": true,
       "initial_state": {
         "boardSize": 10,
         "sideToMove": "P2",
@@ -339,7 +339,7 @@
       "id": "M-004",
       "title": "Push chain into forced no-retreat then win",
       "description": "This fixture is set up to illustrate a forced-destruction push sequence. P1 first pushes the P2 unit on (5, 3), and the follow-up move completes the chain so the pushed piece has no legal retreat and is destroyed, leaving P1 winning the stabilized position.\n\nNext move: P1 pushes from (5, 2) to (5, 3), then follows from (5, 1) to (5, 2).",
-      "incorrect": false,
+      "incorrect": true,
       "initial_state": {
         "boardSize": 10,
         "sideToMove": "P1",
