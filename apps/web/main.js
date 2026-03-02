@@ -76,6 +76,24 @@ boardAdapter.mount({
 
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "unset");
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
+const actionPreviewLabel = (actionType) => {
+  switch (actionType) {
+    case "move":
+      return "Move commander to this square";
+    case "project":
+      return "Project new piece to this square";
+    case "rush":
+      return "Rush piece to this square";
+    case "push":
+      return "Push piece onto this square";
+    case "follow":
+      return "Follow piece to this square";
+    case "retreat":
+      return "Retreat piece to this square";
+    default:
+      return "Move to this square";
+  }
+};
 
 const getCurrentSelection = () => ({
   selectedPieceId,
@@ -245,6 +263,7 @@ const renderBoard = () => {
     selectedPieceMoves,
     selectedPieceMovePreviews,
     allowFreeSelection: Boolean(allowFreeSelectionEl?.checked),
+    currentActionType: actionTypeEl.value,
   });
 };
 
@@ -311,7 +330,7 @@ const renderStatus = () => {
 
         selectedMovePreviewEl.textContent = JSON.stringify(
           {
-            actionType: preferredPreview.type,
+            actionLabel: actionPreviewLabel(preferredPreview.type),
             destination: selectedTarget,
             legal: legalAtTarget.some((action) => action.type === preferredPreview.type),
             reason: disallowedReason ?? "Legal preview.",
