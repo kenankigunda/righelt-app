@@ -30,6 +30,7 @@
           <section class="panel board-panel">
             <h2>Board</h2>
             <p class="meta">Click a piece to inspect supply/command/group overlays and move previews.</p>
+            <p class="board-preview-label" id="board-preview-label"><strong>No move preview selected.</strong></p>
             <div class="board-wrap">
               <div class="board" id="board" aria-label="10 by 10 board"></div>
               <svg id="overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
@@ -37,8 +38,7 @@
             <div class="overlay-key" aria-label="Overlay color key">
               <span><i class="swatch supply"></i>Supply line</span>
               <span><i class="swatch command"></i>Command line</span>
-              <span><i class="swatch move"></i>Valid move preview</span>
-              <span><i class="swatch move-blocked"></i>Unsupplied destination preview</span>
+              <span><i class="swatch move"></i>Move preview</span>
               <span><i class="swatch group"></i>Group highlight</span>
               <span><i class="swatch supply-point"></i>Supply point</span>
             </div>
