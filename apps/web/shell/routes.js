@@ -1,4 +1,5 @@
 const HOME_ROUTE = { name: "home" };
+const SHELL_ROUTE_PREFIXES = ["/home", "/game/", "/invite/", "/tutorial"];
 
 const trimSlash = (value) => value.replace(/^\/+|\/+$/g, "");
 
@@ -17,6 +18,10 @@ export const parseRouteFromHash = (hash) => {
   const query = new URLSearchParams(queryText);
 
   if (parts.length === 0) {
+    return HOME_ROUTE;
+  }
+
+  if (parts[0] === "home") {
     return HOME_ROUTE;
   }
 
@@ -45,7 +50,7 @@ export const parseRouteFromHash = (hash) => {
   return { name: "not-found" };
 };
 
-export const buildHomeHash = () => "#/";
+export const buildHomeHash = () => "#/home";
 
 export const buildGameHash = (gameId, inviteFromRole = null) => {
   const safe = encodeURIComponent(gameId);
@@ -68,3 +73,12 @@ export const shouldLiveSyncRoute = (route) => route?.name === "home" || route?.n
 
 export const shouldPassiveRefreshRoute = (route) =>
   route?.name === "home" || route?.name === "game" || route?.name === "invite";
+
+export const isShellRouteHash = (hash) => {
+  if (!hash || hash === "#" || hash === "#/" || hash === "") {
+    return false;
+  }
+
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  return SHELL_ROUTE_PREFIXES.some((prefix) => raw === prefix || raw.startsWith(prefix));
+};

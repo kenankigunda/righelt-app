@@ -1,0 +1,253 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #f4f1e8;
+  --paper: #fffdf8;
+  --ink: #1d2d35;
+  --line: #d2ccb9;
+  --muted: #5b6a6f;
+  --accent: #0d7a5a;
+  --warning: #a5630f;
+  --danger: #b6432f;
+  --info: #1a5ca1;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at 12% 8%, #fdf6e5 0%, transparent 30%),
+    radial-gradient(circle at 88% 92%, #e8eef9 0%, transparent 36%),
+    var(--bg);
+  color: var(--ink);
+}
+
+.app-root {
+  width: min(1200px, 96vw);
+  margin: 1rem auto 2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.shell-header,
+.panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+}
+
+.shell-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.shell-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.nav-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+button,
+.button-link {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.55rem 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+button.secondary,
+.button-link.secondary {
+  background: #fff;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+button.warn {
+  background: var(--warning);
+}
+
+button.danger {
+  background: var(--danger);
+}
+
+button:disabled,
+.button-link[aria-disabled="true"] {
+  background: #d7d2c6;
+  border-color: #c3bcab;
+  color: #7c7568;
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+button.secondary:disabled {
+  background: #f1eee6;
+  border-color: #d6d0c2;
+  color: #8a8375;
+}
+
+.layout-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1.1fr 1.8fr;
+}
+
+.stack {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.meta,
+.small {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.status-chip {
+  display: inline-block;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  padding: 0.1rem 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.status-chip.live {
+  color: #0d7a5a;
+}
+
+.status-chip.offline {
+  color: var(--danger);
+}
+
+.alert {
+  border-left: 4px solid var(--info);
+  background: #f2f8ff;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.92rem;
+}
+
+.alert.warn {
+  border-left-color: var(--warning);
+  background: #fff5e9;
+}
+
+.alert.danger {
+  border-left-color: var(--danger);
+  background: #fff0ed;
+}
+
+.board-wrap {
+  position: relative;
+}
+
+.board {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(10, minmax(26px, 1fr));
+  gap: 4px;
+}
+
+.overlay-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.cell {
+  min-height: 42px;
+  border-radius: 6px;
+  border: 1px solid #c9c5b8;
+  background: #fbf8f1;
+}
+
+.history-list,
+.participant-list,
+.game-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.history-turn-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.history-item {
+  cursor: pointer;
+}
+
+.preview {
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  min-height: 84px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.invite-gate {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.invite-gate-modal {
+  position: sticky;
+  top: 1rem;
+  z-index: 2;
+  box-shadow: 0 18px 40px rgba(29, 45, 53, 0.12);
+}
+
+.invite-gate-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+}
+
+.invite-gate-content {
+  filter: grayscale(0.4);
+  opacity: 0.48;
+  pointer-events: none;
+  user-select: none;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+@media (max-width: 900px) {
+  .layout-grid {
+    grid-template-columns: 1fr;
+  }
+}

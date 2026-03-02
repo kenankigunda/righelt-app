@@ -1,760 +1,696 @@
+import {
+  buildActionPayload,
+  shouldResetSelectionOnDocumentClick,
+  shouldSubmitOnEnter,
+} from "./interaction.js";
 import { assertGameBoardAdapter } from "./board-adapter-contract.js";
 import { createEnginePlaygroundBoardAdapter } from "./board-adapters/engine-playground-adapter.js";
-import { getBootstrapPayload } from "./shell/bootstrap.js";
-import { createLiveTransportStore } from "./shell/live-transport.js";
-import { createLiveSyncClient } from "./shell/live-sync.js";
-import { loadTutorialCompleted, saveTutorialCompleted } from "./shell/persistence.js";
-import {
-  buildGameHash,
-  buildHomeHash,
-  buildInviteHash,
-  buildTutorialHash,
-  parseRouteFromHash,
-  shouldLiveSyncRoute,
-  shouldPassiveRefreshRoute,
-} from "./shell/routes.js";
-import { createTutorialController } from "./shell/tutorial.js";
+import { isShellRouteHash } from "./shell/routes.js";
 
-const appEl = document.getElementById("app");
-const bootstrap = getBootstrapPayload();
-
-const createMemoryStorageFallback = () => {
-  const map = new Map();
-  return {
-    getItem: (key) => (map.has(key) ? map.get(key) : null),
-    setItem: (key, value) => map.set(key, String(value)),
-    removeItem: (key) => map.delete(key),
-  };
-};
-
-const storage = typeof window.localStorage !== "undefined" ? window.localStorage : createMemoryStorageFallback();
-const transport = createLiveTransportStore({ storage });
-const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
-const boardAdapter = createEnginePlaygroundBoardAdapter();
-assertGameBoardAdapter(boardAdapter);
-
-let currentRoute = parseRouteFromHash(window.location.hash);
-let mountedBoardGameId = null;
-let busy = false;
-let liveSyncConnectedRoute = "";
-const openedViewerGames = new Set();
-let wsStatus = { state: "disconnected", scope: null, gameId: null, reconnectAttempts: 0 };
-let wsLastEvent = "none";
-const WS_RECONCILE_MS = 2000;
-let inviteFeedback = "";
-let inviteFeedbackTimer = null;
-let routeHydrated = false;
-let resolvedInvite = null;
-
-const escapeHtml = (value) =>
-  String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-
-const formatStatus = (connected) =>
-  connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip offline">Disconnected</span>';
-
-const renderBoardPlaceholder = (game) => {
-  const lastMove = game.moves.length > 0 ? game.moves[game.moves.length - 1] : null;
-  const currentTurn = game.currentTurn;
-  const turnIndex = game.currentSnapshot?.turnIndex;
-  const sideToMove = game.currentSnapshot?.sideToMove;
-  const mode = game.inHistoryMode ? `history #${(game.historyIndex ?? 0) + 1}` : "live";
-
-  if (!lastMove) {
-    return `<div class="alert">Board placeholder: no moves recorded yet. Mode: ${mode}. Turn ${escapeHtml(
-      String(turnIndex ?? 0),
-    )}, side ${escapeHtml(String(sideToMove ?? "-"))}. Active turn: ${escapeHtml(
-      currentTurn ? `${currentTurn.index + 1} (${currentTurn.playerSeat})` : "n/a",
-    )}.</div>`;
+const shouldMountShell = isShellRouteHash(window.location.hash);
+window.addEventListener("hashchange", () => {
+  if (isShellRouteHash(window.location.hash) !== shouldMountShell) {
+    window.location.reload();
   }
+});
 
-  return `<div class="alert">Board placeholder: ${escapeHtml(
-    String(game.moves.length),
-  )} move(s). Last move #${escapeHtml(String(lastMove.index + 1))} ${escapeHtml(
-    lastMove.notation,
-  )} at ${escapeHtml(lastMove.at)}. Move ${escapeHtml(String((lastMove.turnMoveIndex ?? 0) + 1))} of turn ${escapeHtml(
-    String((lastMove.turnIndex ?? 0) + 1),
-  )}. Mode: ${mode}. Turn ${escapeHtml(
-    String(turnIndex ?? 0),
-  )}, side ${escapeHtml(String(sideToMove ?? "-"))}.</div>`;
-};
-
-const renderTurnHistory = (game) => {
-  if (!Array.isArray(game.turns) || game.turns.length === 0) {
-    return "<li class=\"small\">No turns yet.</li>";
+if (shouldMountShell) {
+  const playgroundAppEl = document.getElementById("playground-app");
+  const shellAppEl = document.getElementById("app");
+  if (playgroundAppEl) {
+    playgroundAppEl.hidden = true;
   }
-
-  return game.turns
-    .map((turn) => {
-      const turnMoves = turn.moveIndexes
-        .map((moveIndex) => game.moves[moveIndex])
-        .filter(Boolean)
-        .map(
-          (move) => `<li class="history-item" data-action="jump-history" data-game-id="${escapeHtml(
-            game.id,
-          )}" data-move-index="${move.index}">Move ${escapeHtml(String(move.turnMoveIndex + 1))}: ${escapeHtml(
-            move.notation,
-          )} <span class="small">${escapeHtml(move.at)}</span></li>`,
-        )
-        .join("");
-
-      return `<li>
-        <strong>Turn ${escapeHtml(String(turn.index + 1))}</strong> <span class="small">${escapeHtml(turn.playerSeat)}</span>
-        <span class="small">${escapeHtml(turn.status)}</span>
-        <ol class="history-turn-list">${turnMoves || '<li class="small">No moves in this turn yet.</li>'}</ol>
-      </li>`;
-    })
-    .join("");
-};
-
-const renderHeader = () => `
-  <header class="shell-header">
-    <div>
-      <h1>Righelt Web Shell</h1>
-      <p class="small">Identity <span class="mono">${escapeHtml(transport.getIdentityId())}</span></p>
-      <p class="small">Live sync: <span class="mono">${escapeHtml(
-        `${wsStatus.state}${wsStatus.scope ? `:${wsStatus.scope}` : ""}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`,
-      )}</span> | Last event: <span class="mono">${escapeHtml(wsLastEvent)}</span></p>
-    </div>
-    <div class="nav-row">
-      <a class="button-link secondary" href="${buildHomeHash()}">Home</a>
-      <a class="button-link secondary" href="${buildTutorialHash()}">Tutorial</a>
-      <button data-action="toggle-offline" class="secondary">Toggle Offline</button>
-    </div>
-  </header>
-`;
-
-const setInviteFeedback = (message) => {
-  inviteFeedback = message;
-  if (inviteFeedbackTimer) {
-    clearTimeout(inviteFeedbackTimer);
-    inviteFeedbackTimer = null;
+  if (shellAppEl) {
+    shellAppEl.hidden = false;
   }
-  if (message) {
-    inviteFeedbackTimer = setTimeout(() => {
-      inviteFeedback = "";
-      render();
-    }, 1800);
-  }
-};
-
-const renderHome = () => {
-  const games = transport.listGames();
-  const listHtml =
-    games.length === 0
-      ? "<p class=\"small\">No games yet.</p>"
-      : `<ol class="game-list">${games
-          .map(
-            (game) => `<li>
-            <a href="${buildGameHash(game.id)}">${escapeHtml(game.id)}</a>
-            <span class="small">latest ${escapeHtml(game.lastMoveAt || game.createdAt)}</span>
-          </li>`,
-          )
-          .join("")}</ol>`;
-
-  return `
-    <section class="layout-grid">
-      <div class="stack">
-        <section class="panel">
-          <h2>Start</h2>
-          <div class="row">
-            <button data-action="create-game" ${busy ? "disabled" : ""}>Play Game</button>
-            <button data-action="create-playground" class="secondary" ${busy ? "disabled" : ""}>Playground Mode</button>
-            <button data-action="create-offline-playground" class="warn" ${busy ? "disabled" : ""}>Offline Playground</button>
-          </div>
-          <p class="small">Server-backed game sessions with live state transitions.</p>
-        </section>
-
-        <section class="panel">
-          <h2>Active Games</h2>
-          ${listHtml}
-        </section>
-      </div>
-
-      <div class="stack">
-        <section class="panel">
-          <h2>Preview Board</h2>
-          <p class="small">Non-authoritative preview sequence.</p>
-          <div class="preview">Preview replay surface</div>
-        </section>
-      </div>
-    </section>
-  `;
-};
-
-const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
-  if (!routeHydrated) {
-    return `<section class="panel"><h2>Loading game...</h2><p class="small">Synchronizing current game state.</p></section>`;
-  }
-
-  const game = transport.getGameViewModel(gameId);
-  if (!game) {
-    return `<section class="panel"><h2>Loading game...</h2><p class="small">Fetching latest server state.</p></section>`;
-  }
-
-  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id)}`;
-  const participants = [
-    { label: "Player 1", value: game.player1 },
-    { label: "Player 2", value: game.player2 },
-  ];
-
-  const participantRows = participants
-    .map((entry) => {
-      if (!entry.value) {
-        return `<li>${entry.label}: <span class="small">Open seat</span></li>`;
-      }
-      return `<li>${entry.label}: <span class="mono">${escapeHtml(entry.value.identityId)}</span> ${formatStatus(entry.value.connected)}</li>`;
-    })
-    .join("");
-
-  const viewersRow = `<li>Viewers: ${game.viewers.length}</li>`;
-  const historyRows = renderTurnHistory(game);
-
-  const pendingRows =
-    game.pendingJoinRequests.length === 0
-      ? "<li class=\"small\">No pending requests</li>"
-      : game.pendingJoinRequests
-          .map(
-            (request) => `<li>
-              <span class="mono">${escapeHtml(request.identityId)}</span> requests ${escapeHtml(request.requestedSeat)}
-              <button class="secondary" data-action="approve-request" data-game-id="${escapeHtml(
-                game.id,
-              )}" data-requester-id="${escapeHtml(request.identityId)}" ${
-                !busy && Array.isArray(game.approvableRequesterIds) && game.approvableRequesterIds.includes(request.identityId)
-                  ? ""
-                  : "disabled"
-              }>Approve</button>
-            </li>`,
-          )
-          .join("");
-
-  const latestNote = game.notifications[0] || "Ready";
-  const offlineBanner =
-    game.showOfflineState || inviteFromRole === "offline"
-      ? `<div class="alert warn">Offline mode: invite and remote join actions are disabled.</div>`
-      : "";
-
-  const historyBanner = game.inHistoryMode
-    ? '<div class="alert">Viewing history snapshot (not live). New moves keep appending.</div>'
-    : "";
-
-  return `
-    <section class="layout-grid">
-      <div class="stack">
-        <section class="panel">
-          <h2>Game <span class="mono">${escapeHtml(game.id)}</span></h2>
-          <p class="small">Role: <strong>${escapeHtml(game.myRole)}</strong></p>
-          ${offlineBanner}
-          ${historyBanner}
-          <div class="row">
-            <button data-action="record-move" data-game-id="${escapeHtml(game.id)}" ${
-              game.canRecordMove && !busy ? "" : "disabled"
-            }>Record Live Move</button>
-            <button class="secondary" data-action="end-turn" data-game-id="${escapeHtml(game.id)}" ${
-              game.canEndTurn && !busy ? "" : "disabled"
-            }>End Turn</button>
-            <button class="secondary" data-action="toggle-p1" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle P1 Connection</button>
-            <button class="secondary" data-action="toggle-p2" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle P2 Connection</button>
-            <button class="warn" data-action="go-online" data-game-id="${escapeHtml(game.id)}" ${
-              game.offlineLocal && !busy ? "" : "disabled"
-            }>Go online</button>
-          </div>
-          <p class="small">Active turn: ${
-            game.currentTurn
-              ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${escapeHtml(game.currentTurn.playerSeat)} · ${escapeHtml(
-                  String(game.currentTurn.moveIndexes.length),
-                )} move(s)`
-              : "n/a"
-          }</p>
-          <p class="small">Latest: ${escapeHtml(latestNote)}</p>
-        </section>
-
-        <section class="panel">
-          <h2>Join / Invite</h2>
-          <div class="row">
-            <button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
-              game.canJoinAsViewer && !busy ? "" : "disabled"
-            }>Join as viewer</button>
-            <button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${
-              game.canJoinAsPlayer && game.showJoinActions && !busy ? "" : "disabled"
-            }>Join as player</button>
-            <button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${
-              game.canInvite && !busy ? "" : "disabled"
-            }>Invite</button>
-          </div>
-          ${inviteFeedback ? `<p class="small">${escapeHtml(inviteFeedback)}</p>` : ""}
-          <p class="small">Invite link: <span class="mono">${escapeHtml(inviteLink)}</span></p>
-          <ul class="participant-list">${pendingRows}</ul>
-        </section>
-
-        <section class="panel">
-          <h2>History</h2>
-          <div class="row">
-            <button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" ${
-              game.inHistoryMode && !busy ? "" : "disabled"
-            }>Return to live</button>
-          </div>
-          <ol class="history-list">${historyRows}</ol>
-        </section>
-      </div>
-
-      <div class="stack">
-        <section class="panel">
-          <h2>Board</h2>
-          <div class="board-wrap">
-            <div id="board" class="board"></div>
-            <svg id="overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
-          </div>
-          ${renderBoardPlaceholder(game)}
-        </section>
-
-        <section class="panel">
-          <h2>Participants</h2>
-          <ul class="participant-list">${participantRows}${viewersRow}</ul>
-        </section>
-
-        <section class="panel">
-          <h2>Tutorial</h2>
-          <div class="row">
-            <a class="button-link secondary" href="${buildTutorialHash(game.id)}">Restart tutorial</a>
-          </div>
-        </section>
-      </div>
-    </section>
-  `;
-};
-
-const renderInviteLanding = () => {
-  if (!routeHydrated || !resolvedInvite?.gameId) {
-    return `<section class="panel"><h2>Loading invite...</h2><p class="small">Resolving invite destination.</p></section>`;
-  }
-
-  const game = transport.getGameViewModel(resolvedInvite.gameId);
-  const background = renderGame(resolvedInvite.gameId, resolvedInvite.inviteFromRole, resolvedInvite.inviteToken);
-  if (!game) {
-    return background;
-  }
-
-  const canJoinPlayer = game.canJoinAsPlayer && game.showJoinActions;
-  const canJoinViewer = game.canJoinAsViewer;
-  const inviteContext =
-    resolvedInvite.inviteFromRole === "Player 1" || resolvedInvite.inviteFromRole === "Player 2"
-      ? `${resolvedInvite.inviteFromRole} shared this invite.`
-      : "A game invite was shared with you.";
-
-  return `
-    <section class="invite-gate">
-      <section class="panel invite-gate-modal">
-        <p class="small invite-gate-kicker">Invite received</p>
-        <h2>Choose how to enter this game</h2>
-        <p>${escapeHtml(inviteContext)} Join now to enter the live game route and receive updates.</p>
-        <div class="row">
-          <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" ${
-            canJoinPlayer && !busy ? "" : "disabled"
-          }>Join as player</button>
-          <button data-action="accept-invite-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
-            canJoinViewer && !busy ? "" : "disabled"
-          }>Join as viewer</button>
-          <a class="button-link secondary" href="${buildHomeHash()}">Back home</a>
-        </div>
-        <p class="small">
-          ${
-            canJoinPlayer || canJoinViewer
-              ? "The game preview is shown below, but it stays locked until you choose a role."
-              : "No join mode is currently available for this invite."
-          }
-        </p>
-      </section>
-      <div class="invite-gate-content" aria-hidden="true">
-        ${background}
-      </div>
-    </section>
-  `;
-};
-
-const renderTutorial = (gameId) => {
-  const state = tutorial.current();
-  return `
-    <section class="panel">
-      <h2>Tutorial</h2>
-      <p class="small">Step ${state.index + 1} of ${state.total}</p>
-      <p>${escapeHtml(state.step)}</p>
-      <div class="row">
-        <button data-action="tutorial-next">Next</button>
-        <button class="secondary" data-action="tutorial-skip">Skip Step</button>
-        <button class="secondary" data-action="tutorial-complete" data-game-id="${escapeHtml(gameId || "")}">Finish Tutorial</button>
-      </div>
-    </section>
-  `;
-};
-
-const renderNotFound = () => `
-  <section class="panel">
-    <h2>Route not found</h2>
-    <a class="button-link" href="${buildHomeHash()}">Return home</a>
-  </section>
-`;
-
-const mountBoardForGame = (game) => {
+  await import("./shell/app.js");
+} else {
   const boardEl = document.getElementById("board");
   const overlayLinesEl = document.getElementById("overlay-lines");
-  if (!boardEl || !overlayLinesEl || !game) {
-    mountedBoardGameId = null;
+  const actionTypeEl = document.getElementById("action-type");
+  const sourceValueEl = document.getElementById("source-value");
+  const targetValueEl = document.getElementById("target-value");
+  const submitActionEl = document.getElementById("submit-action");
+  const resetSelectionEl = document.getElementById("reset-selection");
+  const actionResultEl = document.getElementById("action-result");
+  const sideToMoveEl = document.getElementById("side-to-move");
+  const turnIndexEl = document.getElementById("turn-index");
+  const continuationEl = document.getElementById("continuation");
+  const commanderSupplyEl = document.getElementById("commander-supply");
+  const selectedPieceEl = document.getElementById("selected-piece");
+  const selectedPieceMovesEl = document.getElementById("selected-piece-moves");
+  const legalActionsEl = document.getElementById("legal-actions");
+  const moveLogEl = document.getElementById("move-log");
+  const fixtureSelectEl = document.getElementById("fixture-select");
+  const loadFixtureEl = document.getElementById("load-fixture");
+  const replayFixtureEl = document.getElementById("replay-fixture");
+  const saveFixtureEl = document.getElementById("save-fixture");
+  const updateFixtureEl = document.getElementById("update-fixture");
+  const fixtureResultEl = document.getElementById("fixture-result");
+
+let state = null;
+let legalActions = [];
+let selectedPieceMoves = [];
+let selectedPieceId = null;
+let selectedSource = null;
+let selectedTarget = null;
+const moveLog = [];
+let fixtures = [];
+let currentFixtureId = null;
+let fixtureCatalog = { id: "M", title: "Milestone 2 Golden Scenarios", fixtures: [] };
+
+const boardAdapter = createEnginePlaygroundBoardAdapter();
+assertGameBoardAdapter(boardAdapter);
+boardAdapter.mount({
+  boardEl,
+  overlayLinesEl,
+  onCellClick: handleBoardCellClick,
+});
+
+const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "unset");
+
+const getCurrentSelection = () => ({
+  selectedPieceId,
+  source: selectedSource,
+  target: selectedTarget,
+});
+
+const applySelection = (selection) => {
+  selectedPieceId = selection.selectedPieceId;
+  selectedSource = selection.source;
+  selectedTarget = selection.target;
+};
+
+const clearSelection = () => {
+  selectedPieceId = null;
+  selectedPieceMoves = [];
+  selectedSource = null;
+  selectedTarget = null;
+};
+
+function handleBoardCellClick(clickedCoord) {
+  const result = boardAdapter.nextSelectionForCell({
+    snapshot: state,
+    selection: getCurrentSelection(),
+    selectedPieceMoves,
+    currentActionType: actionTypeEl.value,
+    clickedCoord,
+  });
+
+  applySelection(result.selection);
+  actionTypeEl.value = result.nextActionType;
+
+  refreshSelectionLabels();
+  renderBoard();
+  renderStatus();
+  void reloadSelectedPieceMoves().catch((error) => {
+    setActionResult({
+      ok: false,
+      error: "piece_moves_load_failed",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  });
+}
+
+const setActionResult = (value) => {
+  actionResultEl.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+};
+
+const setFixtureResult = (value) => {
+  fixtureResultEl.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+};
+
+const refreshSelectionLabels = () => {
+  sourceValueEl.textContent = formatCoordinate(selectedSource);
+  targetValueEl.textContent = formatCoordinate(selectedTarget);
+};
+
+const renderMoveLog = () => {
+  moveLogEl.innerHTML = "";
+  if (moveLog.length === 0) {
+    const empty = document.createElement("li");
+    empty.textContent = "No actions submitted yet.";
+    moveLogEl.appendChild(empty);
     return;
   }
-
-  if (mountedBoardGameId !== game.id) {
-    boardAdapter.mount({ boardEl, overlayLinesEl, onCellClick: () => {} });
-    mountedBoardGameId = game.id;
+  for (const entry of moveLog) {
+    const li = document.createElement("li");
+    li.textContent = entry;
+    moveLogEl.appendChild(li);
   }
+};
 
+const renderBoard = () => {
+  if (!state) {
+    return;
+  }
   boardAdapter.render({
-    snapshot: game.currentSnapshot,
-    selection: { selectedPieceId: null, source: null, target: null },
-    selectedPieceMoves: [],
+    snapshot: state,
+    selection: getCurrentSelection(),
+    selectedPieceMoves,
   });
 };
 
-const render = () => {
-  let body = "";
-  if (currentRoute.name === "home") {
-    body = renderHome();
-  } else if (currentRoute.name === "game") {
-    body = renderGame(currentRoute.gameId, currentRoute.inviteFromRole);
-  } else if (currentRoute.name === "invite") {
-    body = renderInviteLanding();
-  } else if (currentRoute.name === "tutorial") {
-    body = renderTutorial(currentRoute.gameId);
+const renderStatus = () => {
+  if (!state) return;
+
+  sideToMoveEl.textContent = state.sideToMove;
+  turnIndexEl.textContent = String(state.turnIndex);
+  continuationEl.textContent = state.continuation
+    ? `${state.continuation.type} (owner ${state.continuation.owner})`
+    : "none";
+
+  commanderSupplyEl.textContent = boardAdapter.getCommanderSupplySummary(state);
+
+  const pieceSummary = boardAdapter.getSelectedPieceSummary({
+    snapshot: state,
+    selectedPieceId,
+    selectedPieceMoves,
+  });
+
+  if (!pieceSummary) {
+    selectedPieceMoves = [];
+    selectedPieceEl.textContent = "No piece selected.";
+    selectedPieceMovesEl.textContent = "[]";
   } else {
-    body = renderNotFound();
+    selectedPieceEl.textContent = JSON.stringify(pieceSummary.details, null, 2);
+    selectedPieceMovesEl.textContent = JSON.stringify(pieceSummary.actions, null, 2);
   }
 
-  appEl.innerHTML = `${renderHeader()}${body}`;
-  if (currentRoute.name === "game") {
-    mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
-  }
-  if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
-    mountBoardForGame(transport.getGameViewModel(resolvedInvite.gameId));
-  }
+  legalActionsEl.textContent = JSON.stringify(legalActions, null, 2);
 };
 
-const withBusy = async (fn) => {
-  busy = true;
-  render();
+const reloadLegalActions = async () => {
+  if (!state) return;
+  const response = await fetch("/api/engine/playground/legal", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ state }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch legal actions: HTTP ${response.status}`);
+  }
+  const body = await response.json();
+  state = body.state ?? state;
+  legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
+  renderBoard();
+  renderStatus();
+};
+
+const reloadSelectedPieceMoves = async () => {
+  const selectedPiece = boardAdapter.getPieceById(state, selectedPieceId);
+  if (!state || !selectedPiece) {
+    selectedPieceMoves = [];
+    renderBoard();
+    renderStatus();
+    return;
+  }
+
+  const response = await fetch("/api/engine/playground/piece-moves", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ state, pieceId: selectedPiece.id }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch selected piece moves: HTTP ${response.status}`);
+  }
+  const body = await response.json();
+  state = body.state ?? state;
+  selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
+  renderBoard();
+  renderStatus();
+};
+
+const loadInitialState = async () => {
+  const response = await fetch("/api/engine/playground/state", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Failed to load initial state: HTTP ${response.status}`);
+  }
+  const body = await response.json();
+  state = body.state;
+  legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
+  clearSelection();
+  renderBoard();
+  renderStatus();
+  renderMoveLog();
+};
+
+const computeStateHash = async (candidateState) => {
+  const response = await fetch("/api/engine/playground/hash", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ state: candidateState }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to compute hash: HTTP ${response.status}`);
+  }
+  const body = await response.json();
+  return body.hash;
+};
+
+const getFixtureWriterBaseUrl = () => {
+  const host = window.location.hostname;
+  if (host !== "localhost" && host !== "127.0.0.1") {
+    return null;
+  }
+  const browserPort = Number.parseInt(window.location.port || "80", 10);
+  if (!Number.isFinite(browserPort)) {
+    return null;
+  }
+  return `http://${host}:${browserPort + 1000}`;
+};
+
+const computeExpectedFromCurrentState = async () => {
+  if (!state) {
+    throw new Error("No active state to save");
+  }
+  const expectedHash = await computeStateHash(state);
+  const expectedOutcome = state?.outcome?.status ?? "ongoing";
+  return { expectedHash, expectedOutcome };
+};
+
+const downloadFixtureCatalog = (catalog, filename) => {
+  const blob = new Blob([`${JSON.stringify(catalog, null, 2)}\n`], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+};
+
+const updateFixtureOptions = () => {
+  const selectedId = currentFixtureId;
+  fixtureSelectEl.innerHTML = "";
+  for (const fixture of fixtures) {
+    const option = document.createElement("option");
+    option.value = fixture.id;
+    option.textContent = `${fixture.id} - ${fixture.title}`;
+    fixtureSelectEl.appendChild(option);
+  }
+  if (fixtures.length === 0) {
+    currentFixtureId = null;
+    return;
+  }
+  currentFixtureId = selectedId && fixtures.some((fixture) => fixture.id === selectedId) ? selectedId : fixtures[0].id;
+  fixtureSelectEl.value = currentFixtureId;
+};
+
+const tryLocalFixtureWrite = async (pathSuffix, payload) => {
+  const base = getFixtureWriterBaseUrl();
+  if (!base) {
+    return { ok: false, reason: "not_localhost" };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 1500);
   try {
-    await fn();
-  } catch (error) {
-    window.__righeltLastError = error instanceof Error ? error.message : String(error);
-  } finally {
-    busy = false;
-    render();
-  }
-};
-
-const syncRouteData = async () => {
-  if (currentRoute.name === "home") {
-    await transport.refreshGames();
-    routeHydrated = true;
-    return;
-  }
-  if (currentRoute.name === "game") {
-    resolvedInvite = null;
-    const firstOpen = !openedViewerGames.has(currentRoute.gameId);
-    await transport.loadGame(currentRoute.gameId, { openAsViewer: firstOpen });
-    openedViewerGames.add(currentRoute.gameId);
-    routeHydrated = true;
-    return;
-  }
-  if (currentRoute.name === "invite") {
-    resolvedInvite = await transport.resolveInvite(currentRoute.inviteToken);
-    await transport.loadGame(resolvedInvite.gameId, { openAsViewer: false });
-    routeHydrated = true;
-    return;
-  }
-  routeHydrated = true;
-};
-
-const syncRouteDataPassive = async () => {
-  if (busy) {
-    return;
-  }
-  try {
-    await syncRouteData();
-    render();
-  } catch (error) {
-    window.__righeltLastError = error instanceof Error ? error.message : String(error);
-  }
-};
-
-const liveSync = createLiveSyncClient({
-  identityId: transport.getIdentityId(),
-  onEvent: (payload) => {
-    wsLastEvent = payload?.type
-      ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
-      : "unknown";
-    if (payload?.type === "game.updated" || payload?.type === "socket.connected") {
-      void syncRouteDataPassive();
+    const response = await fetch(`${base}${pathSuffix}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      return { ok: false, reason: "local_write_failed", body };
     }
-    render();
-  },
-  onError: (error) => {
-    window.__righeltLastError = error instanceof Error ? error.message : String(error);
-  },
-  onStatus: (status) => {
-    wsStatus = status;
-    render();
-  },
-});
-
-const syncLiveChannel = () => {
-  const routeKey = currentRoute.name === "game" ? `game:${currentRoute.gameId}` : currentRoute.name === "home" ? "home" : "none";
-
-  if (routeKey === liveSyncConnectedRoute && wsStatus.state === "connected") {
-    return;
-  }
-  liveSyncConnectedRoute = routeKey;
-
-  liveSync.disconnect();
-
-  if (!shouldLiveSyncRoute(currentRoute)) {
-    return;
-  }
-
-  if (currentRoute.name === "home") {
-    liveSync.resume();
-    liveSync.connectHome();
-    return;
-  }
-  if (currentRoute.name === "game") {
-    liveSync.resume();
-    liveSync.connectGame(currentRoute.gameId);
+    const body = await response.json();
+    return { ok: true, body };
+  } catch {
+    clearTimeout(timeout);
+    return { ok: false, reason: "local_writer_unreachable" };
   }
 };
 
-const navigateTo = (hash) => {
-  if (window.location.hash === hash) {
-    currentRoute = parseRouteFromHash(hash);
-    routeHydrated = false;
-    syncLiveChannel();
-    void withBusy(syncRouteData);
-    return;
+const loadFixtureCatalog = async () => {
+  const response = await fetch("/fixtures/m-golden-fixtures.json", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Failed to load fixtures: HTTP ${response.status}`);
   }
-  window.location.hash = hash;
+  const catalog = await response.json();
+  fixtureCatalog = {
+    id: typeof catalog.id === "string" ? catalog.id : "M",
+    title: typeof catalog.title === "string" ? catalog.title : "Milestone 2 Golden Scenarios",
+    fixtures: Array.isArray(catalog.fixtures) ? catalog.fixtures : [],
+  };
+  fixtures = fixtureCatalog.fixtures;
+  updateFixtureOptions();
 };
 
-window.addEventListener("hashchange", () => {
-  currentRoute = parseRouteFromHash(window.location.hash);
-  routeHydrated = false;
-  syncLiveChannel();
-  void withBusy(syncRouteData);
-});
+const getSelectedFixture = () => fixtures.find((fixture) => fixture.id === currentFixtureId) ?? null;
 
-window.addEventListener("online", () => {
-  transport.setOffline(false);
-  liveSync.resume();
-  syncLiveChannel();
-  void withBusy(syncRouteData);
-});
+const getNextFixtureId = () => {
+  const prefix = (fixtureCatalog.id || "M").toUpperCase();
+  let maxNumeric = 0;
+  let maxDigits = 3;
+  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
 
-window.addEventListener("offline", () => {
-  transport.setOffline(true);
-  liveSync.disconnect();
-  liveSyncConnectedRoute = "";
-  void withBusy(syncRouteData);
-});
-
-setInterval(() => {
-  if (document.visibilityState === "hidden") {
-    return;
+  for (const fixture of fixtures) {
+    const match = pattern.exec(fixture.id);
+    if (!match) {
+      continue;
+    }
+    const digits = match[1];
+    const numeric = Number.parseInt(digits, 10);
+    if (!Number.isFinite(numeric)) {
+      continue;
+    }
+    maxNumeric = Math.max(maxNumeric, numeric);
+    maxDigits = Math.max(maxDigits, digits.length);
   }
-  if (!shouldPassiveRefreshRoute(currentRoute)) {
-    return;
-  }
-  void syncRouteDataPassive();
-}, WS_RECONCILE_MS);
 
-appEl.addEventListener("click", async (event) => {
+  const nextNumeric = String(maxNumeric + 1).padStart(maxDigits, "0");
+  return `${prefix}-${nextNumeric}`;
+};
+
+document.addEventListener("click", (event) => {
   const target = event.target;
-  if (!(target instanceof HTMLElement)) {
+  if (!shouldResetSelectionOnDocumentClick(target)) {
     return;
   }
+  actionTypeEl.value = "pass";
+  clearSelection();
+  refreshSelectionLabels();
+  renderBoard();
+  renderStatus();
+});
 
-  const actionEl = target.closest("[data-action]");
-  if (!actionEl) {
+document.addEventListener("keydown", (event) => {
+  if (
+    !shouldSubmitOnEnter({
+      key: event.key,
+      target: event.target,
+      actionType: actionTypeEl.value,
+      submitDisabled: submitActionEl.disabled,
+    })
+  ) {
     return;
   }
+  event.preventDefault();
+  submitActionEl.click();
+});
 
-  const action = actionEl.getAttribute("data-action");
+resetSelectionEl.addEventListener("click", () => {
+  clearSelection();
+  refreshSelectionLabels();
+  renderBoard();
+  renderStatus();
+});
 
-  await withBusy(async () => {
-    if (action === "create-game") {
-      const game = await transport.createGame({ playgroundMode: false, offlineLocal: false });
-      navigateTo(buildGameHash(game.id));
+submitActionEl.addEventListener("click", async () => {
+  if (!state) return;
+  submitActionEl.disabled = true;
+  setActionResult("Applying action...");
+  const action = buildActionPayload(actionTypeEl.value, selectedSource, selectedTarget);
+
+  try {
+    const response = await fetch("/api/engine/playground/apply", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state, action }),
+    });
+    const body = await response.json();
+
+    if (!response.ok) {
+      setActionResult(body);
       return;
     }
 
-    if (action === "create-playground") {
-      const game = await transport.createGame({ playgroundMode: true, offlineLocal: false });
-      navigateTo(buildGameHash(game.id));
+    if (body.accepted) {
+      state = body.state;
+      legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
+      selectedPieceMoves = [];
+      moveLog.push(`${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`);
+      selectedTarget = null;
+      refreshSelectionLabels();
+      renderBoard();
+      renderStatus();
+      renderMoveLog();
+      setActionResult({ accepted: true, outcome: body.outcome ?? state.outcome });
       return;
     }
 
-    if (action === "create-offline-playground") {
-      transport.setOffline(true);
-      const game = await transport.createGame({ playgroundMode: true, offlineLocal: true });
-      navigateTo(buildGameHash(game.id, "offline"));
-      return;
-    }
+    state = body.state ?? state;
+    selectedPieceMoves = [];
+    setActionResult({
+      accepted: false,
+      validation: body.validation,
+    });
+    await reloadLegalActions();
+    moveLog.push(`REJECTED ${action.type.toUpperCase()}: ${body.validation?.code ?? "unknown"}`);
+    renderMoveLog();
+  } catch (error) {
+    setActionResult({
+      ok: false,
+      error: "request_failed",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  } finally {
+    submitActionEl.disabled = false;
+  }
+});
 
-    if (action === "toggle-offline") {
-      const next = !(window.__righeltOffline || false);
-      window.__righeltOffline = next;
-      transport.setOffline(next);
-      await syncRouteData();
-      return;
-    }
+fixtureSelectEl.addEventListener("change", () => {
+  currentFixtureId = fixtureSelectEl.value;
+});
 
-    if (action === "go-online") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      const confirmed = window.confirm("Go online with this local game?");
-      await transport.goOnlineGame({ gameId, confirmed });
-      await syncRouteData();
-      return;
-    }
-
-    if (action === "join-viewer" || action === "accept-invite-viewer") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      await transport.joinGame({
-        gameId,
-        mode: "viewer",
-        inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
-        inviteToken: resolvedInvite?.inviteToken || null,
-      });
-      if (currentRoute.name === "invite") {
-        navigateTo(buildGameHash(gameId));
-        return;
-      }
-      await syncRouteData();
-      return;
-    }
-
-    if (action === "join-player" || action === "accept-invite-player") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      await transport.joinGame({
-        gameId,
-        mode: "player",
-        inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
-        inviteToken: resolvedInvite?.inviteToken || null,
-      });
-      if (currentRoute.name === "invite") {
-        navigateTo(buildGameHash(gameId));
-        return;
-      }
-      await syncRouteData();
-      return;
-    }
-
-    if (action === "approve-request") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const requester = actionEl.getAttribute("data-requester-id");
-      if (!gameId || !requester) return;
-      await transport.approvePendingRequest({ gameId, requesterIdentityId: requester });
-      await syncRouteData();
-      return;
-    }
-
-    if (action === "copy-invite") {
-      const link = actionEl.getAttribute("data-link") || "";
-      let copied = false;
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(link);
-        copied = true;
-      }
-      window.__righeltLastInvite = link;
-      setInviteFeedback(copied ? "Copied to clipboard" : "Clipboard unavailable");
-      return;
-    }
-
-    if (action === "record-move") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      await transport.addMove({ gameId });
-      await syncRouteData();
-      return;
-    }
-
-    if (action === "end-turn") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      await transport.endTurn({ gameId });
-      await syncRouteData();
-      return;
-    }
-
-    if (action === "jump-history") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
-      if (!gameId || !Number.isFinite(moveIndex)) return;
-      await transport.selectHistoryMove({ gameId, moveIndex });
-      await syncRouteData();
-      return;
-    }
-
-    if (action === "return-live") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      await transport.returnToLive({ gameId });
-      await syncRouteData();
-      return;
-    }
-
-    if (action === "toggle-p1" || action === "toggle-p2") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      const game = transport.getGameViewModel(gameId);
-      if (!game) return;
-      const role = action === "toggle-p1" ? "Player 1" : "Player 2";
-      const current = role === "Player 1" ? game.player1 : game.player2;
-      if (!current) return;
-      await transport.setParticipantConnected({ gameId, role, connected: !current.connected });
-      await syncRouteData();
-      return;
-    }
-
-    if (action === "tutorial-next" || action === "tutorial-skip") {
-      tutorial.next();
-      return;
-    }
-
-    if (action === "tutorial-complete") {
-      saveTutorialCompleted(storage, true);
-      tutorial.reset();
-      const gameId = actionEl.getAttribute("data-game-id");
-      navigateTo(gameId ? buildGameHash(gameId) : buildHomeHash());
-    }
+loadFixtureEl.addEventListener("click", () => {
+  const fixture = getSelectedFixture();
+  if (!fixture) {
+    setFixtureResult({ ok: false, error: "fixture_not_found" });
+    return;
+  }
+  state = structuredClone(fixture.initial_state);
+  legalActions = [];
+  clearSelection();
+  moveLog.length = 0;
+  moveLog.push(`Loaded fixture ${fixture.id}`);
+  refreshSelectionLabels();
+  renderBoard();
+  renderStatus();
+  renderMoveLog();
+  void reloadLegalActions().catch(() => {});
+  setFixtureResult({
+    ok: true,
+    fixtureId: fixture.id,
+    title: fixture.title,
+    expected: {
+      hash: fixture.expected_final_state_hash,
+      outcome: fixture.expected_outcome,
+    },
   });
 });
 
-const initialRender = async () => {
-  if (navigator.onLine === false) {
-    transport.setOffline(true);
-  }
-
-  if (currentRoute.name === "home" && !loadTutorialCompleted(storage)) {
-    navigateTo(buildTutorialHash());
+replayFixtureEl.addEventListener("click", async () => {
+  const fixture = getSelectedFixture();
+  if (!fixture) {
+    setFixtureResult({ ok: false, error: "fixture_not_found" });
     return;
   }
 
-  routeHydrated = false;
-  syncLiveChannel();
-  await withBusy(syncRouteData);
-};
+  replayFixtureEl.disabled = true;
+  setFixtureResult(`Running ${fixture.id}...`);
+  try {
+    let workingState = structuredClone(fixture.initial_state);
+    let acceptedCount = 0;
+    let failure = null;
 
-void initialRender();
+    for (let index = 0; index < fixture.action_sequence.length; index += 1) {
+      const action = fixture.action_sequence[index];
+      const response = await fetch("/api/engine/playground/apply", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ state: workingState, action }),
+      });
+      const body = await response.json();
+      if (!response.ok || !body.accepted) {
+        failure = {
+          index,
+          action,
+          response: body,
+        };
+        break;
+      }
+      acceptedCount += 1;
+      workingState = body.state;
+    }
+
+    const observedHash = await computeStateHash(workingState);
+    const observedOutcome = workingState?.outcome?.status ?? "ongoing";
+    const pass = !failure &&
+      observedHash === fixture.expected_final_state_hash &&
+      observedOutcome === fixture.expected_outcome;
+
+    state = workingState;
+    clearSelection();
+    refreshSelectionLabels();
+    renderBoard();
+    await reloadLegalActions();
+    renderMoveLog();
+
+    setFixtureResult({
+      fixtureId: fixture.id,
+      acceptedCount,
+      expected: {
+        hash: fixture.expected_final_state_hash,
+        outcome: fixture.expected_outcome,
+      },
+      observed: {
+        hash: observedHash,
+        outcome: observedOutcome,
+      },
+      pass,
+      failure,
+    });
+  } catch (error) {
+    setFixtureResult({
+      ok: false,
+      error: "replay_failed",
+      message: error instanceof Error ? error.message : "Unknown replay error",
+    });
+  } finally {
+    replayFixtureEl.disabled = false;
+  }
+});
+
+saveFixtureEl.addEventListener("click", async () => {
+  if (!state) {
+    setFixtureResult({ ok: false, error: "no_state_loaded" });
+    return;
+  }
+
+  const fixtureId = getNextFixtureId();
+  const title = window.prompt("Fixture title:", `Saved from playground ${fixtureId}`);
+  if (!title) {
+    return;
+  }
+
+  saveFixtureEl.disabled = true;
+  try {
+    const { expectedHash, expectedOutcome } = await computeExpectedFromCurrentState();
+    const fixture = {
+      id: fixtureId,
+      title,
+      initial_state: structuredClone(state),
+      action_sequence: [],
+      expected_final_state_hash: expectedHash,
+      expected_outcome: expectedOutcome,
+    };
+
+    const localWrite = await tryLocalFixtureWrite("/fixtures/save", { fixture });
+    const nextCatalog = {
+      ...fixtureCatalog,
+      fixtures: [...fixtures, fixture],
+    };
+
+    fixtureCatalog = nextCatalog;
+    fixtures = fixtureCatalog.fixtures;
+    currentFixtureId = fixtureId;
+    updateFixtureOptions();
+
+    if (localWrite.ok) {
+      setFixtureResult({
+        ok: true,
+        mode: "local_write",
+        fixtureId,
+        expected: { hash: expectedHash, outcome: expectedOutcome },
+      });
+      return;
+    }
+
+    downloadFixtureCatalog(nextCatalog, "m-golden-fixtures.updated.json");
+    setFixtureResult({
+      ok: true,
+      mode: "download_fallback",
+      fixtureId,
+      expected: { hash: expectedHash, outcome: expectedOutcome },
+      localWrite,
+    });
+  } catch (error) {
+    setFixtureResult({
+      ok: false,
+      error: "save_fixture_failed",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  } finally {
+    saveFixtureEl.disabled = false;
+  }
+});
+
+updateFixtureEl.addEventListener("click", async () => {
+  if (!state) {
+    setFixtureResult({ ok: false, error: "no_state_loaded" });
+    return;
+  }
+  const fixture = getSelectedFixture();
+  if (!fixture) {
+    setFixtureResult({ ok: false, error: "fixture_not_found" });
+    return;
+  }
+
+  updateFixtureEl.disabled = true;
+  try {
+    const { expectedHash, expectedOutcome } = await computeExpectedFromCurrentState();
+    const updatedFixture = {
+      ...fixture,
+      expected_final_state_hash: expectedHash,
+      expected_outcome: expectedOutcome,
+    };
+    const nextCatalog = {
+      ...fixtureCatalog,
+      fixtures: fixtures.map((entry) => (entry.id === fixture.id ? updatedFixture : entry)),
+    };
+
+    const localWrite = await tryLocalFixtureWrite("/fixtures/update", {
+      fixtureId: fixture.id,
+      expected_final_state_hash: expectedHash,
+      expected_outcome: expectedOutcome,
+    });
+
+    fixtureCatalog = nextCatalog;
+    fixtures = fixtureCatalog.fixtures;
+    updateFixtureOptions();
+
+    if (localWrite.ok) {
+      setFixtureResult({
+        ok: true,
+        mode: "local_write",
+        fixtureId: fixture.id,
+        expected: { hash: expectedHash, outcome: expectedOutcome },
+      });
+      return;
+    }
+
+    downloadFixtureCatalog(nextCatalog, "m-golden-fixtures.updated.json");
+    setFixtureResult({
+      ok: true,
+      mode: "download_fallback",
+      fixtureId: fixture.id,
+      expected: { hash: expectedHash, outcome: expectedOutcome },
+      localWrite,
+    });
+  } catch (error) {
+    setFixtureResult({
+      ok: false,
+      error: "update_fixture_failed",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  } finally {
+    updateFixtureEl.disabled = false;
+  }
+});
+
+refreshSelectionLabels();
+Promise.all([loadInitialState(), loadFixtureCatalog()]).catch((error) => {
+  setActionResult({
+    ok: false,
+    error: "load_failed",
+    message: error instanceof Error ? error.message : "Unknown error",
+  });
+});
+}

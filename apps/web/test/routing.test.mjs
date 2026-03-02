@@ -5,6 +5,7 @@ import {
   buildHomeHash,
   buildInviteHash,
   buildTutorialHash,
+  isShellRouteHash,
   parseRouteFromHash,
   shouldLiveSyncRoute,
   shouldPassiveRefreshRoute,
@@ -13,7 +14,8 @@ import {
 test("routing resolves home hash variants", () => {
   assert.deepEqual(parseRouteFromHash(""), { name: "home" });
   assert.deepEqual(parseRouteFromHash("#/"), { name: "home" });
-  assert.equal(buildHomeHash(), "#/");
+  assert.deepEqual(parseRouteFromHash("#/home"), { name: "home" });
+  assert.equal(buildHomeHash(), "#/home");
 });
 
 test("routing resolves game path with inviter role", () => {
@@ -49,4 +51,13 @@ test("routing distinguishes live sync routes from passive refresh routes", () =>
   assert.equal(shouldPassiveRefreshRoute({ name: "game", gameId: "game-1" }), true);
   assert.equal(shouldPassiveRefreshRoute({ name: "invite", inviteToken: "token-123" }), true);
   assert.equal(shouldPassiveRefreshRoute({ name: "not-found" }), false);
+});
+
+test("routing identifies shell hashes distinctly from playground default", () => {
+  assert.equal(isShellRouteHash(""), false);
+  assert.equal(isShellRouteHash("#/"), false);
+  assert.equal(isShellRouteHash("#/home"), true);
+  assert.equal(isShellRouteHash("#/game/game-1"), true);
+  assert.equal(isShellRouteHash("#/invite/token-1"), true);
+  assert.equal(isShellRouteHash("#/tutorial"), true);
 });

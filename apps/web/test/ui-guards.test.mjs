@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
-const source = readFileSync(join(testDir, "..", "main.js"), "utf8");
+const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
 
 test("UI disables record-move based on canRecordMove capability", () => {
   assert.match(source, /game\.canRecordMove\s*&&\s*!busy/);

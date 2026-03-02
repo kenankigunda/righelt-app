@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
-const mainSource = readFileSync(join(testDir, "..", "main.js"), "utf8");
+const mainSource = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
 
 test("shell entry imports board adapter only via contract+adapter modules", () => {
   assert.match(mainSource, /board-adapter-contract\.js/);
