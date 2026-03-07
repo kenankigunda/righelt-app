@@ -1,11 +1,12 @@
 import { applyAction } from "../../game-engine/src/apply";
-import { listLegalActions } from "../../game-engine/src/legal";
+import { listLegalActions, validateAction } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import { createInitialState } from "../../game-engine/src/state";
 import type { Action, GameState } from "../../game-engine/src/types";
 
 const MAX_HISTORY = 200;
 const PRESENCE_STALE_MS = 30_000;
+const BOARD_SIZE = 10;
 
 type Participant = {
   identityId: string;
@@ -334,6 +335,7 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
     showOfflineState: offline || game.offlineLocal,
     showJoinActions: !offline && !game.offlineLocal,
     canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
+    legalActions: legalNow,
     canEndTurn:
       offlineTurnControlAllowed &&
       isPlayer &&
@@ -374,6 +376,10 @@ const parseBody = async (request: Request): Promise<Record<string, unknown>> => 
 };
 
 const asIdentity = (value: unknown) => (typeof value === "string" && value.trim().length > 0 ? value.trim() : null);
+const asGameState = (value: unknown): GameState | null =>
+  value && typeof value === "object" ? (value as GameState) : null;
+const asAction = (value: unknown): Action | null =>
+  value && typeof value === "object" && typeof (value as Action).type === "string" ? (value as Action) : null;
 
 const addNotification = (game: ShellGame, message: string) => {
   game.notifications.unshift(message);
@@ -390,6 +396,110 @@ const pickLegalAction = (state: GameState): Action | null => {
   return legal[0] as Action;
 };
 
+type PieceMovePreview = Action & {
+  legal: boolean;
+  blockedReason?: "SUPPLY_DESTINATION_UNSUPPLIED" | "PUSH_STRENGTH_TOO_WEAK";
+};
+
+const compareActions = (left: Action, right: Action): number => {
+  if (left.type !== right.type) {
+    return left.type.localeCompare(right.type);
+  }
+  if (!left.to && !right.to) {
+    return 0;
+  }
+  if (!left.to) {
+    return -1;
+  }
+  if (!right.to) {
+    return 1;
+  }
+  if (left.to.row !== right.to.row) {
+    return left.to.row - right.to.row;
+  }
+  return left.to.col - right.to.col;
+};
+
+const compareActionPreviews = (left: PieceMovePreview, right: PieceMovePreview): number => {
+  const actionOrder = compareActions(left, right);
+  if (actionOrder !== 0) {
+    return actionOrder;
+  }
+  if (left.legal !== right.legal) {
+    return left.legal ? -1 : 1;
+  }
+  return (left.blockedReason ?? "").localeCompare(right.blockedReason ?? "");
+};
+
+const enumeratePieceActions = (state: GameState, pieceId: string): Action[] => {
+  const piece = state.pieces.find((candidate) => candidate.id === pieceId);
+  if (!piece) {
+    return [];
+  }
+
+  const candidates: Action[] = [];
+  const withTargets = ["move", "project", "rush", "push", "follow", "retreat"] as const;
+
+  for (const type of withTargets) {
+    for (let row = 0; row < BOARD_SIZE; row += 1) {
+      for (let col = 0; col < BOARD_SIZE; col += 1) {
+        const action: Action = {
+          type,
+          actorId: piece.id,
+          from: { row: piece.position.row, col: piece.position.col },
+          to: { row, col },
+        };
+        const validation = validateAction(state, action);
+        if (validation.ok) {
+          candidates.push(action);
+        }
+      }
+    }
+  }
+
+  return candidates.sort(compareActions);
+};
+
+const enumeratePieceActionPreviews = (state: GameState, pieceId: string): PieceMovePreview[] => {
+  const piece = state.pieces.find((candidate) => candidate.id === pieceId);
+  if (!piece) {
+    return [];
+  }
+
+  const previews: PieceMovePreview[] = [];
+  const withTargets = ["move", "project", "rush", "push", "follow", "retreat"] as const;
+
+  for (const type of withTargets) {
+    for (let row = 0; row < BOARD_SIZE; row += 1) {
+      for (let col = 0; col < BOARD_SIZE; col += 1) {
+        const action: Action = {
+          type,
+          actorId: piece.id,
+          from: { row: piece.position.row, col: piece.position.col },
+          to: { row, col },
+        };
+        const validation = validateAction(state, action);
+        if (validation.ok) {
+          previews.push({ ...action, legal: true });
+          continue;
+        }
+        if (
+          validation.code === "SUPPLY_DESTINATION_UNSUPPLIED" ||
+          validation.code === "PUSH_STRENGTH_TOO_WEAK"
+        ) {
+          previews.push({
+            ...action,
+            legal: false,
+            blockedReason: validation.code,
+          });
+        }
+      }
+    }
+  }
+
+  return previews.sort(compareActionPreviews);
+};
+
 const renumberHistory = (game: ShellGame) => {
   game.moves.forEach((move, index) => {
     move.index = index;
@@ -403,15 +513,15 @@ const renumberHistory = (game: ShellGame) => {
   });
 };
 
-const applyServerMove = (game: ShellGame, notation?: string) => {
+const applyServerAction = (game: ShellGame, action: Action, notation?: string) => {
   const activeTurn = getActiveTurn(game);
   if (!activeTurn) {
     return { ok: false as const, error: "turn_not_initialized" };
   }
   const stable = resolveToStability(game.board.state, { artifactMode: "full" });
-  const action = pickLegalAction(stable);
-  if (!action) {
-    return { ok: false as const, error: "no_legal_actions" };
+  const validation = validateAction(stable, action);
+  if (!validation.ok) {
+    return { ok: false as const, error: validation.code || "invalid_action", validation, state: stable };
   }
   const applied = applyAction(stable, action);
   const next = resolveToStability(applied.state, { artifactMode: "full" });
@@ -437,7 +547,16 @@ const applyServerMove = (game: ShellGame, notation?: string) => {
   game.lastMoveAt = move.at;
   game.updatedAt = move.at;
   addNotification(game, `Move recorded in turn ${activeTurn.index + 1}`);
-  return { ok: true as const, move };
+  return { ok: true as const, move, state: next };
+};
+
+const applyServerMove = (game: ShellGame, notation?: string) => {
+  const stable = resolveToStability(game.board.state, { artifactMode: "full" });
+  const action = pickLegalAction(stable);
+  if (!action) {
+    return { ok: false as const, error: "no_legal_actions" };
+  }
+  return applyServerAction(game, action, notation);
 };
 
 const endServerTurn = (game: ShellGame) => {
@@ -828,6 +947,126 @@ export const handleShellLiveRequest = async (
       }
       broadcastLiveUpdate(game.id, "move_recorded");
       return { handled: true, status: 200, body: { ok: true, move: moved.move, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
+    }
+
+    if (route.length === 3 && route[2] === "legal") {
+      if (offline && !game.offlineLocal) {
+        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: "no-store" };
+      }
+      const role = findRoleForIdentity(game, identityId);
+      if (role !== "Player 1" && role !== "Player 2") {
+        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: "no-store" };
+      }
+      const sideToMoveSeat = getSideToMoveSeat(game);
+      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
+      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
+        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: "no-store" };
+      }
+      const stable = resolveToStability(game.board.state, { artifactMode: "full" });
+      return {
+        handled: true,
+        status: 200,
+        body: { ok: true, state: stable, legalActions: listLegalActions(stable), game: withViewModel(game, identityId, offline) },
+        cacheControl: "no-store",
+      };
+    }
+
+    if (route.length === 3 && route[2] === "piece-moves") {
+      if (offline && !game.offlineLocal) {
+        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: "no-store" };
+      }
+      const role = findRoleForIdentity(game, identityId);
+      if (role !== "Player 1" && role !== "Player 2") {
+        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: "no-store" };
+      }
+      const sideToMoveSeat = getSideToMoveSeat(game);
+      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
+      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
+        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: "no-store" };
+      }
+
+      const bodyState = asGameState(body.state);
+      const pieceId = asIdentity(body.pieceId);
+      if (!bodyState) {
+        return { handled: true, status: 400, body: { ok: false, error: "invalid_state" }, cacheControl: "no-store" };
+      }
+      if (!pieceId) {
+        return { handled: true, status: 400, body: { ok: false, error: "invalid_piece_id" }, cacheControl: "no-store" };
+      }
+
+      const stable = resolveToStability(game.board.state, { artifactMode: "full" });
+      return {
+        handled: true,
+        status: 200,
+        body: {
+          ok: true,
+          state: stable,
+          pieceId,
+          actions: enumeratePieceActions(stable, pieceId),
+          previewActions: enumeratePieceActionPreviews(stable, pieceId),
+          game: withViewModel(game, identityId, offline),
+        },
+        cacheControl: "no-store",
+      };
+    }
+
+    if (route.length === 3 && route[2] === "apply") {
+      if (offline && !game.offlineLocal) {
+        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: "no-store" };
+      }
+      const role = findRoleForIdentity(game, identityId);
+      if (role !== "Player 1" && role !== "Player 2") {
+        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: "no-store" };
+      }
+      const sideToMoveSeat = getSideToMoveSeat(game);
+      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
+      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
+        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: "no-store" };
+      }
+
+      const bodyState = asGameState(body.state);
+      const action = asAction(body.action);
+      if (!bodyState) {
+        return { handled: true, status: 400, body: { ok: false, error: "invalid_state" }, cacheControl: "no-store" };
+      }
+      if (!action) {
+        return { handled: true, status: 400, body: { ok: false, error: "invalid_action" }, cacheControl: "no-store" };
+      }
+
+      const notation = typeof body.notation === "string" ? body.notation : undefined;
+      const moved = applyServerAction(game, action, notation);
+      if (!moved.ok) {
+        if (moved.validation && moved.state) {
+          return {
+            handled: true,
+            status: 200,
+            body: {
+              ok: true,
+              accepted: false,
+              validation: moved.validation,
+              state: moved.state,
+              legalActions: listLegalActions(moved.state),
+              game: withViewModel(game, identityId, offline),
+            },
+            cacheControl: "no-store",
+          };
+        }
+        return { handled: true, status: 409, body: { ok: false, error: moved.error }, cacheControl: "no-store" };
+      }
+      broadcastLiveUpdate(game.id, "move_recorded");
+      return {
+        handled: true,
+        status: 200,
+        body: {
+          ok: true,
+          accepted: true,
+          move: moved.move,
+          state: moved.state,
+          legalActions: listLegalActions(moved.state),
+          game: withViewModel(game, identityId, offline),
+        },
+        cacheControl: "no-store",
+      };
     }
 
     if (route.length === 3 && route[2] === "end-turn") {

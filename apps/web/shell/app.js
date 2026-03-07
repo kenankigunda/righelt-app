@@ -1,5 +1,7 @@
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEnginePlaygroundBoardAdapter } from "../board-adapters/engine-playground-adapter.js";
+import { createBoardRuntime } from "../board/runtime/board-runtime.js";
+import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
 import { createLiveTransportStore } from "./live-transport.js";
 import { createLiveSyncClient } from "./live-sync.js";
@@ -61,6 +63,7 @@ assertGameBoardAdapter(boardAdapter);
 
 let currentRoute = parseRouteFromHash(window.location.hash);
 let mountedBoardGameId = null;
+let boardRuntime = null;
 let busy = false;
 let liveSyncConnectedRoute = "";
 let wsStatus = { state: "disconnected", scope: null, gameId: null, reconnectAttempts: 0 };
@@ -128,32 +131,6 @@ const syncCurrentIdentityPresence = async (connected) => {
     return;
   }
   await transport.setParticipantConnected({ gameId, role, connected });
-};
-
-const renderBoardPlaceholder = (game) => {
-  const lastMove = game.moves.length > 0 ? game.moves[game.moves.length - 1] : null;
-  const currentTurn = game.currentTurn;
-  const turnIndex = game.currentSnapshot?.turnIndex;
-  const sideToMove = game.currentSnapshot?.sideToMove;
-  const mode = game.inHistoryMode ? `history #${(game.historyIndex ?? 0) + 1}` : "live";
-
-  if (!lastMove) {
-    return `<div class="alert">Board placeholder: no moves recorded yet. Mode: ${mode}. Turn ${escapeHtml(
-      String(turnIndex ?? 0),
-    )}, side ${escapeHtml(String(sideToMove ?? "-"))}. Active turn: ${escapeHtml(
-      currentTurn ? `${currentTurn.index + 1} (${currentTurn.playerSeat})` : "n/a",
-    )}.</div>`;
-  }
-
-  return `<div class="alert">Board placeholder: ${escapeHtml(
-    String(game.moves.length),
-  )} move(s). Last move #${escapeHtml(String(lastMove.index + 1))} ${escapeHtml(
-    lastMove.notation,
-  )} at ${escapeHtml(lastMove.at)}. Move ${escapeHtml(String((lastMove.turnMoveIndex ?? 0) + 1))} of turn ${escapeHtml(
-    String((lastMove.turnIndex ?? 0) + 1),
-  )}. Mode: ${mode}. Turn ${escapeHtml(
-    String(turnIndex ?? 0),
-  )}, side ${escapeHtml(String(sideToMove ?? "-"))}.</div>`;
 };
 
 const getApprovalRequestKey = (gameId, requesterId) => `${gameId}:${requesterId}`;
@@ -447,12 +424,19 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
 
       <div class="stack">
         <section class="panel">
-          <h2>Board</h2>
+          <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="board-turn-indicator">-</span></h2>
+          <p class="board-preview-label" id="board-preview-label">Select a piece to see it supply and command lines + what it can do:</p>
           <div class="board-wrap">
             <div id="board" class="board"></div>
             <svg id="overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
           </div>
-          ${renderBoardPlaceholder(game)}
+          <div class="overlay-key" aria-label="Overlay color key">
+            <span><i class="swatch supply"></i>Supply line</span>
+            <span><i class="swatch command"></i>Command line</span>
+            <span><i class="swatch move"></i>Move preview</span>
+            <span><i class="swatch group"></i>Group strength</span>
+            <span><i class="swatch supply-point"></i>Supply point</span>
+          </div>
         </section>
 
         <section class="panel">
@@ -623,20 +607,47 @@ const renderNotFound = () => `
 const mountBoardForGame = (game) => {
   const boardEl = document.getElementById("board");
   const overlayLinesEl = document.getElementById("overlay-lines");
-  if (!boardEl || !overlayLinesEl || !game) {
+  const boardPreviewLabelEl = document.getElementById("board-preview-label");
+  const boardTurnIndicatorEl = document.getElementById("board-turn-indicator");
+  if (!boardEl || !overlayLinesEl || !boardPreviewLabelEl || !boardTurnIndicatorEl || !game) {
     mountedBoardGameId = null;
+    if (boardRuntime) {
+      boardRuntime.destroy();
+      boardRuntime = null;
+    }
     return;
   }
 
-  if (mountedBoardGameId !== game.id) {
-    boardAdapter.mount({ boardEl, overlayLinesEl, onCellClick: () => {} });
+  if (mountedBoardGameId !== game.id || !boardRuntime) {
+    if (boardRuntime) {
+      boardRuntime.destroy();
+    }
+    boardRuntime = createBoardRuntime({
+      boardAdapter,
+      host: createShellBoardHost({
+        transport,
+        gameId: game.id,
+        canInteract: () => Boolean(transport.getGameViewModel(game.id)?.canRecordMove),
+      }),
+      controls: {
+        getActionType: () => "pass",
+        setActionType: () => {},
+        getAllowFreeSelection: () => false,
+      },
+    });
     mountedBoardGameId = game.id;
+    boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
+    void boardRuntime.loadSnapshot(game.currentSnapshot, {
+      legalActions: Array.isArray(game.legalActions) ? game.legalActions : null,
+      resetSelection: true,
+    });
+    return;
   }
 
-  boardAdapter.render({
-    snapshot: game.currentSnapshot,
-    selection: { selectedPieceId: null, source: null, target: null },
-    selectedPieceMoves: [],
+  boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
+  void boardRuntime.loadSnapshot(game.currentSnapshot, {
+    legalActions: Array.isArray(game.legalActions) ? game.legalActions : null,
+    resetSelection: false,
   });
 };
 
@@ -659,6 +670,13 @@ const render = () => {
   }
 
   appEl.innerHTML = `${renderHeader()}${body}`;
+  if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
+    mountedBoardGameId = null;
+    if (boardRuntime) {
+      boardRuntime.destroy();
+      boardRuntime = null;
+    }
+  }
   if (currentRoute.name === "game") {
     mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
   }

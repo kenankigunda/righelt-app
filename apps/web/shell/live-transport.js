@@ -321,6 +321,45 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return { ...body, game: upsertGame(body.game) };
   };
 
+  const loadGameLegalActions = async ({ gameId, state }) => {
+    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/legal`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId, state }),
+    });
+    const body = await mustOk(response);
+    if (body.game) {
+      upsertGame(body.game);
+    }
+    return body;
+  };
+
+  const loadGamePieceMoves = async ({ gameId, state, pieceId }) => {
+    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/piece-moves`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId, state, pieceId }),
+    });
+    const body = await mustOk(response);
+    if (body.game) {
+      upsertGame(body.game);
+    }
+    return body;
+  };
+
+  const applyGameAction = async ({ gameId, state, action }) => {
+    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/apply`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId, state, action }),
+    });
+    const body = await mustOk(response);
+    if (body.game) {
+      upsertGame(body.game);
+    }
+    return body;
+  };
+
   const endTurn = async ({ gameId }) => {
     if (offline) {
       const game = getGameViewModel(gameId);
@@ -407,6 +446,9 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     playAsBothPlayers,
     approvePendingRequest,
     addMove,
+    loadGameLegalActions,
+    loadGamePieceMoves,
+    applyGameAction,
     endTurn,
     selectHistoryMove,
     returnToLive,
