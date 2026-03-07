@@ -6,14 +6,12 @@ import { fileURLToPath } from "node:url";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
 const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
+const shellHostSource = readFileSync(join(testDir, "..", "board", "hosts", "shell-host.js"), "utf8");
 
-test("UI disables record-move based on canRecordMove capability", () => {
-  assert.match(source, /game\.canRecordMove\s*&&\s*!busy/);
-  assert.match(source, /game\.showOfflineState\s*\?\s*"Record Offline Move"\s*:\s*"Record Live Move"/);
-});
-
-test("UI disables end-turn based on canEndTurn capability", () => {
-  assert.match(source, /game\.canEndTurn\s*&&\s*!busy/);
+test("game controls do not render standalone record-move or end-turn buttons", () => {
+  assert.doesNotMatch(source, /data-action="record-move"/);
+  assert.doesNotMatch(source, /data-action="end-turn"/);
+  assert.match(shellHostSource, /action\?\.type === "pass"/);
 });
 
 test("UI disables join-player based on canJoinAsPlayer capability", () => {

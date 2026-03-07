@@ -361,12 +361,6 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
             <p class="small">Role: <strong>${escapeHtml(game.myRole)}</strong></p>
             ${historyBanner}
             <div class="row section-actions">
-              <button data-action="record-move" data-game-id="${escapeHtml(game.id)}" ${
-                game.canRecordMove && !busy ? "" : "disabled"
-              }>${game.showOfflineState ? "Record Offline Move" : "Record Live Move"}</button>
-              <button class="secondary" data-action="end-turn" data-game-id="${escapeHtml(game.id)}" ${
-                game.canEndTurn && !busy ? "" : "disabled"
-              }>End Turn</button>
               <button class="warn" data-action="toggle-offline" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle Offline</button>
             </div>
             <div class="section-followup">
@@ -424,11 +418,11 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
 
       <div class="stack">
         <section class="panel">
-          <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="board-turn-indicator">-</span></h2>
-          <p class="board-preview-label" id="board-preview-label">Select a piece to see it supply and command lines + what it can do:</p>
+          <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span></h2>
+          <p class="board-preview-label" id="shell-board-preview-label">Select a piece to see it supply and command lines + what it can do:</p>
           <div class="board-wrap">
-            <div id="board" class="board"></div>
-            <svg id="overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
+            <div id="shell-board" class="board"></div>
+            <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
           </div>
           <div class="overlay-key" aria-label="Overlay color key">
             <span><i class="swatch supply"></i>Supply line</span>
@@ -605,16 +599,21 @@ const renderNotFound = () => `
 `;
 
 const mountBoardForGame = (game) => {
-  const boardEl = document.getElementById("board");
-  const overlayLinesEl = document.getElementById("overlay-lines");
-  const boardPreviewLabelEl = document.getElementById("board-preview-label");
-  const boardTurnIndicatorEl = document.getElementById("board-turn-indicator");
+  const boardEl = document.getElementById("shell-board");
+  const overlayLinesEl = document.getElementById("shell-overlay-lines");
+  const boardPreviewLabelEl = document.getElementById("shell-board-preview-label");
+  const boardTurnIndicatorEl = document.getElementById("shell-board-turn-indicator");
   if (!boardEl || !overlayLinesEl || !boardPreviewLabelEl || !boardTurnIndicatorEl || !game) {
     mountedBoardGameId = null;
     if (boardRuntime) {
       boardRuntime.destroy();
       boardRuntime = null;
     }
+    return;
+  }
+
+  const snapshot = game.currentSnapshot ?? null;
+  if (!snapshot) {
     return;
   }
 
@@ -627,17 +626,23 @@ const mountBoardForGame = (game) => {
       host: createShellBoardHost({
         transport,
         gameId: game.id,
-        canInteract: () => Boolean(transport.getGameViewModel(game.id)?.canRecordMove),
+        canInteract: () => {
+          const view = transport.getGameViewModel(game.id);
+          return Boolean(view?.canRecordMove || view?.canEndTurn);
+        },
       }),
       controls: {
         getActionType: () => "pass",
         setActionType: () => {},
         getAllowFreeSelection: () => false,
+        onMoveRecorded: () => {
+          render();
+        },
       },
     });
     mountedBoardGameId = game.id;
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
-    void boardRuntime.loadSnapshot(game.currentSnapshot, {
+    void boardRuntime.loadSnapshot(snapshot, {
       legalActions: Array.isArray(game.legalActions) ? game.legalActions : null,
       resetSelection: true,
     });
@@ -645,7 +650,7 @@ const mountBoardForGame = (game) => {
   }
 
   boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
-  void boardRuntime.loadSnapshot(game.currentSnapshot, {
+  void boardRuntime.loadSnapshot(snapshot, {
     legalActions: Array.isArray(game.legalActions) ? game.legalActions : null,
     resetSelection: false,
   });
@@ -947,22 +952,6 @@ appEl.addEventListener("click", async (event) => {
       }
       window.__righeltLastInvite = link;
       setInviteFeedback(copied ? "Copied to clipboard" : "Clipboard unavailable");
-      return;
-    }
-
-    if (action === "record-move") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      await transport.addMove({ gameId });
-      await syncRouteData();
-      return;
-    }
-
-    if (action === "end-turn") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      await transport.endTurn({ gameId });
-      await syncRouteData();
       return;
     }
 

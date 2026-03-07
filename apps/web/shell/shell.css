@@ -185,32 +185,6 @@ button.secondary:disabled {
   background: #fff0ed;
 }
 
-.board-wrap {
-  position: relative;
-}
-
-.board {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(10, minmax(26px, 1fr));
-  gap: 4px;
-}
-
-.overlay-lines {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-.cell {
-  min-height: 42px;
-  border-radius: 6px;
-  border: 1px solid #c9c5b8;
-  background: #fbf8f1;
-}
-
 .history-list {
   margin: 0;
   padding-left: 1.2rem;
