@@ -167,13 +167,22 @@ const renderTurnHistory = (game) => {
     return "<li class=\"small\">No turns yet.</li>";
   }
 
-  const selectedMoveIndex = typeof game.historyIndex === "number" ? game.historyIndex : game.moves.length > 0 ? game.moves.length - 1 : null;
   const activeTurnIndex = typeof game.currentTurn?.index === "number" ? game.currentTurn.index : null;
+  const liveSelectedEmptyTurnIndex =
+    !game.inHistoryMode && activeTurnIndex !== null && game.currentTurn?.moveIndexes?.length === 0 ? activeTurnIndex : null;
+  const selectedMoveIndex =
+    typeof game.historyIndex === "number"
+      ? game.historyIndex
+      : liveSelectedEmptyTurnIndex !== null
+        ? null
+        : game.moves.length > 0
+          ? game.moves.length - 1
+          : null;
   const emptyTurnText = "No moves in this turn yet.";
 
   return game.turns
     .map((turn) => {
-      const showLiveSelectedEmpty = !game.inHistoryMode && activeTurnIndex === turn.index && turn.moveIndexes.length === 0;
+      const showLiveSelectedEmpty = liveSelectedEmptyTurnIndex === turn.index && turn.moveIndexes.length === 0;
       const emptyTurnItem = game.inHistoryMode
         ? `<li class="history-item history-return-live" data-action="return-live" data-game-id="${escapeHtml(game.id)}">${escapeHtml(
             emptyTurnText,
@@ -445,7 +454,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
           <div class="row section-actions">
             <button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" ${
               game.inHistoryMode && !busy ? "" : "disabled"
-            }>Return to live</button>
+            }>${game.inHistoryMode ? "Return to live view" : "You are on the live view"}</button>
           </div>
           <div class="section-followup">
             <ol class="history-list">${historyRows}</ol>
