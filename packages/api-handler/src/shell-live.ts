@@ -62,7 +62,7 @@ type ShellGame = {
   pendingJoinRequests: JoinRequest[];
   turns: TurnEntry[];
   moves: MoveEntry[];
-  historyIndex: number | null;
+  historyIndexByIdentity: Record<string, number>;
   notifications: string[];
   inviteTokens: {
     viewer: string;
@@ -328,14 +328,15 @@ const getJoinAsViewerDisabledReason = (game: ShellGame, offline: boolean, myRole
 const withViewModel = (game: ShellGame, identityId: string, offline = false) => {
   applyPresenceFreshness(game);
   const myRole = findRoleForIdentity(game, identityId);
-  const inHistoryMode = typeof game.historyIndex === "number";
+  const historyIndex = typeof game.historyIndexByIdentity[identityId] === "number" ? game.historyIndexByIdentity[identityId] : null;
+  const inHistoryMode = typeof historyIndex === "number";
   const currentSnapshot =
-    typeof game.historyIndex === "number" && game.moves[game.historyIndex]
-      ? game.moves[game.historyIndex].selectionSnapshot
+    typeof historyIndex === "number" && game.moves[historyIndex]
+      ? game.moves[historyIndex].selectionSnapshot
       : game.board.state;
   const historySelectionAction =
-    typeof game.historyIndex === "number" && game.moves[game.historyIndex]
-      ? clone(game.moves[game.historyIndex].action)
+    typeof historyIndex === "number" && game.moves[historyIndex]
+      ? clone(game.moves[historyIndex].action)
       : null;
 
   const activeTurn = getActiveTurn(game);
@@ -355,6 +356,8 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
 
   return {
     ...clone(game),
+    historyIndexByIdentity: undefined,
+    historyIndex,
     myRole,
     inHistoryMode,
     currentSnapshot,
@@ -805,7 +808,7 @@ export const handleShellLiveRequest = async (
         },
       ],
       moves: [],
-      historyIndex: null,
+      historyIndexByIdentity: {},
       notifications: ["Game created", playgroundMode ? "Playground mode active" : "Invite a second player"],
       inviteTokens: { viewer: "", player1: "", player2: "" },
     };
@@ -1155,17 +1158,12 @@ export const handleShellLiveRequest = async (
       if (moveIndex < 0 || moveIndex >= game.moves.length) {
         return { handled: true, status: 400, body: { ok: false, error: "invalid_move_index" }, cacheControl: "no-store" };
       }
-      game.historyIndex = moveIndex;
-      game.updatedAt = now();
-      addNotification(game, "Viewing history (not live)");
-      broadcastLiveUpdate(game.id, "history_selected");
+      game.historyIndexByIdentity[identityId] = moveIndex;
       return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
 
     if (route.length === 3 && route[2] === "live") {
-      game.historyIndex = null;
-      game.updatedAt = now();
-      broadcastLiveUpdate(game.id, "return_live");
+      delete game.historyIndexByIdentity[identityId];
       return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
 

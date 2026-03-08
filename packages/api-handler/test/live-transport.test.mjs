@@ -137,10 +137,20 @@ test("live transport: join approval flow and presence/history/move transitions",
   );
   const historyBody = await history.json();
   assert.equal(historyBody.game.inHistoryMode, true);
+  assert.equal(historyBody.game.historyIndex, 1);
+
+  const joinerViewDuringHistory = await handleApiRequest(
+    req(`/api/shell/games/${gameId}?identityId=id-joiner`, "GET"),
+    env,
+  );
+  const joinerHistoryBody = await joinerViewDuringHistory.json();
+  assert.equal(joinerHistoryBody.game.inHistoryMode, false);
+  assert.equal(joinerHistoryBody.game.historyIndex, null);
 
   const live = await handleApiRequest(req(`/api/shell/games/${gameId}/live`, "POST", { identityId: "id-owner" }), env);
   const liveBody = await live.json();
   assert.equal(liveBody.game.inHistoryMode, false);
+  assert.equal(liveBody.game.historyIndex, null);
 
   const presence = await handleApiRequest(
     req(`/api/shell/games/${gameId}/presence`, "POST", {
