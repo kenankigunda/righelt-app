@@ -222,14 +222,23 @@ button.secondary:disabled {
 }
 
 .history-move-at {
-  display: none;
-  opacity: 0.6;
+  display: block;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
   padding-left: 0.15rem;
+  transform: translateY(-0.15rem);
+  transition:
+    max-height 160ms ease,
+    opacity 160ms ease,
+    transform 160ms ease;
 }
 
 .history-item:hover .history-move-at,
 .history-item.is-selected .history-move-at {
-  display: block;
+  max-height: 1.2rem;
+  opacity: 0.6;
+  transform: translateY(0);
 }
 
 .history-item.is-selected .history-move-line {
@@ -243,6 +252,13 @@ button.secondary:disabled {
 .history-item.is-live-selected .history-move-line,
 .history-empty-line.is-live-selected .history-move-line {
   font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .history-move-at {
+    transition: none;
+    transform: none;
+  }
 }
 
 .player-tone-p1 {
