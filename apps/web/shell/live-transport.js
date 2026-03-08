@@ -22,6 +22,13 @@ const getControlSeatForTurn = (state, turnOwnerSeat) => {
   }
   return turnOwnerSeat;
 };
+const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "(?,?)");
+const defaultNotationForAction = (action) => {
+  if (action?.type === "pass") {
+    return "PASS";
+  }
+  return `${String(action?.type || "move").toUpperCase()} ${formatCoordinate(action?.from)} -> ${formatCoordinate(action?.to)}`;
+};
 const renumberHistory = (game) => {
   game.moves.forEach((move, index) => {
     move.index = index;
@@ -162,8 +169,9 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       index: game.moves.length,
       turnIndex: activeTurn.index,
       turnMoveIndex: activeTurn.moveIndexes.length,
+      actorSide: game.board.state.sideToMove,
       at,
-      notation: notation || String(computed.action.type || "MOVE").toUpperCase(),
+      notation: notation || defaultNotationForAction(computed.action),
       snapshot: next,
     };
     game.moves.push(move);

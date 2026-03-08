@@ -209,6 +209,31 @@ button.secondary:disabled {
 
 .history-item {
   cursor: pointer;
+  display: grid;
+  gap: 0.08rem;
+}
+
+.history-move-line {
+  font-weight: 600;
+}
+
+.history-move-at {
+  display: none;
+  opacity: 0.6;
+  padding-left: 0.15rem;
+}
+
+.history-item:hover .history-move-at,
+.history-item.is-selected .history-move-at {
+  display: block;
+}
+
+.player-tone-p1 {
+  color: #c2452f;
+}
+
+.player-tone-p2 {
+  color: #2d67c7;
 }
 
 .preview {

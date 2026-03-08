@@ -85,6 +85,19 @@ const escapeHtml = (value) =>
 
 const formatStatus = (connected) =>
   connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip offline">Disconnected</span>';
+const playerToneClassForSeat = (seat) => (seat === "Player 1" ? "player-tone-p1" : seat === "Player 2" ? "player-tone-p2" : "player-tone-neutral");
+const playerToneClassForSide = (side) => (side === "P1" ? "player-tone-p1" : side === "P2" ? "player-tone-p2" : "player-tone-neutral");
+const renderSeatLabel = (seat) => `<span class="${playerToneClassForSeat(seat)}">${escapeHtml(seat || "Unknown")}</span>`;
+const renderRoleLabel = (role) => {
+  if (role === "Player 1" || role === "Player 2") {
+    return `<strong class="${playerToneClassForSeat(role)}">${escapeHtml(role)}</strong>`;
+  }
+  return `<strong>${escapeHtml(role || "Unknown")}</strong>`;
+};
+const colorizePlayerReferences = (text) =>
+  escapeHtml(text || "")
+    .replaceAll("Player 1", '<span class="player-tone-p1">Player 1</span>')
+    .replaceAll("Player 2", '<span class="player-tone-p2">Player 2</span>');
 
 const formatDisplayGameId = (gameId) => {
   const value = String(gameId || "");
@@ -159,18 +172,21 @@ const renderTurnHistory = (game) => {
         .map((moveIndex) => game.moves[moveIndex])
         .filter(Boolean)
         .map(
-          (move) => `<li class="history-item" data-action="jump-history" data-game-id="${escapeHtml(
+          (move) => `<li class="history-item${game.historyIndex === move.index ? " is-selected" : ""}" data-action="jump-history" data-game-id="${escapeHtml(
             game.id,
-          )}" data-move-index="${move.index}">Move ${escapeHtml(String(move.index + 1))}: ${escapeHtml(
-            move.notation,
-          )} <span class="small">${escapeHtml(move.at)}</span></li>`,
+          )}" data-move-index="${move.index}">
+            <span class="history-move-line ${playerToneClassForSide(move.actorSide || (turn.playerSeat === "Player 1" ? "P1" : "P2"))}">Move ${escapeHtml(
+              String(move.index + 1),
+            )}: ${escapeHtml(move.notation)}</span>
+            <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
+          </li>`,
         )
         .join("");
 
       return `<li class="history-turn">
         <div class="history-turn-body">
           <div class="history-turn-header">
-            <strong>Turn ${escapeHtml(String(turn.index + 1))}</strong> <span class="small">${escapeHtml(turn.playerSeat)}</span>
+            <strong>Turn ${escapeHtml(String(turn.index + 1))}</strong> <span class="small ${playerToneClassForSeat(turn.playerSeat)}">${escapeHtml(turn.playerSeat)}</span>
             <span class="small">${escapeHtml(turn.status)}</span>
           </div>
           <ol class="history-turn-list">${turnMoves || '<li class="small">No moves in this turn yet.</li>'}</ol>
@@ -302,9 +318,9 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
   const participantRows = participants
     .map((entry) => {
       if (!entry.value) {
-        return `<li>${entry.label}: <span class="small">Open seat</span></li>`;
+        return `<li>${renderSeatLabel(entry.label)}: <span class="small">Open seat</span></li>`;
       }
-      return `<li>${entry.label}: <span class="mono">${escapeHtml(entry.value.identityId)}</span> ${formatStatus(entry.value.connected)}</li>`;
+      return `<li>${renderSeatLabel(entry.label)}: <span class="mono">${escapeHtml(entry.value.identityId)}</span> ${formatStatus(entry.value.connected)}</li>`;
     })
     .join("");
 
@@ -319,7 +335,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
           .join("");
   const historyRows = renderTurnHistory(game);
   const pendingSeatNotice = game.pendingPlayerRequestSeat
-    ? `<div class="alert">Player join request pending approval for ${escapeHtml(game.pendingPlayerRequestSeat)}.</div>`
+    ? `<div class="alert">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
     : "";
 
   const pendingRows =
@@ -328,7 +344,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
       : game.pendingJoinRequests
           .map(
             (request) => `<li>
-              <span class="mono">${escapeHtml(request.identityId)}</span> requests ${escapeHtml(request.requestedSeat)}
+              <span class="mono">${escapeHtml(request.identityId)}</span> requests ${renderSeatLabel(request.requestedSeat)}
               <button class="secondary" data-action="approve-request" data-game-id="${escapeHtml(
                 game.id,
               )}" data-requester-id="${escapeHtml(request.identityId)}" ${
@@ -358,7 +374,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
           <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
           <div class="section-stack">
             <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
-            <p class="small">Role: <strong>${escapeHtml(game.myRole)}</strong></p>
+            <p class="small">Role: ${renderRoleLabel(game.myRole)}</p>
             ${historyBanner}
             <div class="row section-actions">
               <button class="warn" data-action="toggle-offline" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle Offline</button>
@@ -366,12 +382,12 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
             <div class="section-followup">
               <p class="small">Active turn: ${
                 game.currentTurn
-                  ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${escapeHtml(game.currentTurn.playerSeat)} · ${escapeHtml(
+                  ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderSeatLabel(game.currentTurn.playerSeat)} · ${escapeHtml(
                       String(game.currentTurn.moveIndexes.length),
                     )} move(s)`
                   : "n/a"
               }</p>
-              <p class="small">Latest: ${escapeHtml(latestNote)}</p>
+              <p class="small">Latest: ${colorizePlayerReferences(latestNote)}</p>
             </div>
           </div>
         </section>
@@ -456,9 +472,7 @@ const renderApprovalGate = (game, request) => {
       <section class="panel invite-gate-modal">
         <p class="small invite-gate-kicker">Approval required</p>
         <h2>Respond to this player request</h2>
-        <p><span class="mono">${escapeHtml(request.identityId)}</span> wants to join as ${escapeHtml(
-          request.requestedSeat,
-        )}.</p>
+        <p><span class="mono">${escapeHtml(request.identityId)}</span> wants to join as ${renderSeatLabel(request.requestedSeat)}.</p>
         <div class="invite-choice-list">
           <div class="invite-choice-row">
             <button
@@ -533,7 +547,7 @@ const renderInviteLanding = (inviteContext) => {
     ? "Joining as viewer is applied immediately."
     : game.joinAsViewerDisabledReason || "Viewer joining is unavailable.";
   const pendingNotice = game.pendingPlayerRequestSeat
-    ? `<div class="alert">Player join request pending approval for ${escapeHtml(game.pendingPlayerRequestSeat)}.</div>`
+    ? `<div class="alert">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
     : "";
 
   return `
@@ -541,7 +555,7 @@ const renderInviteLanding = (inviteContext) => {
       <section class="panel invite-gate-modal">
         <p class="small invite-gate-kicker">Invite received</p>
         <h2>Choose how to enter this game</h2>
-        <p>${escapeHtml(inviteMessage)} Join now to enter the live game route and receive updates.</p>
+        <p>${colorizePlayerReferences(inviteMessage)} Join now to enter the live game route and receive updates.</p>
         ${pendingNotice}
         <div class="invite-choice-list">
           <div class="invite-choice-row">

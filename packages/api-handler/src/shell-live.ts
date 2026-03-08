@@ -28,6 +28,7 @@ type MoveEntry = {
   index: number;
   turnIndex: number;
   turnMoveIndex: number;
+  actorSide: "P1" | "P2";
   at: string;
   notation: string;
   snapshot: GameState;
@@ -255,6 +256,16 @@ const getSeatForSide = (side: GameState["sideToMove"]): "Player 1" | "Player 2" 
 const getNextSeat = (seat: "Player 1" | "Player 2"): "Player 1" | "Player 2" => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getSideForSeat = (seat: "Player 1" | "Player 2"): GameState["sideToMove"] => (seat === "Player 1" ? "P1" : "P2");
 const getActiveTurn = (game: ShellGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
+const formatCoordinate = (coord: { row: number; col: number } | null | undefined) =>
+  coord ? `(${coord.row},${coord.col})` : "(?,?)";
+const defaultNotationForAction = (action: Action) => {
+  if (action.type === "pass") {
+    return "PASS";
+  }
+  const from = formatCoordinate(action.from);
+  const to = formatCoordinate(action.to);
+  return `${action.type.toUpperCase()} ${from} -> ${to}`;
+};
 const getControlSeatForTurn = (
   state: GameState,
   turnOwnerSeat: "Player 1" | "Player 2",
@@ -556,8 +567,9 @@ const applyServerAction = (game: ShellGame, action: Action, notation?: string) =
     index: game.moves.length,
     turnIndex: activeTurn.index,
     turnMoveIndex: activeTurn.moveIndexes.length,
+    actorSide: stable.sideToMove,
     at: now(),
-    notation: notation || action.type.toUpperCase(),
+    notation: notation || defaultNotationForAction(action),
     snapshot: next,
   };
   game.moves.push(move);
