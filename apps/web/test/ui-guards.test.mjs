@@ -11,7 +11,8 @@ const shellHostSource = readFileSync(join(testDir, "..", "board", "hosts", "shel
 test("game controls do not render standalone record-move or end-turn buttons", () => {
   assert.doesNotMatch(source, /data-action="record-move"/);
   assert.doesNotMatch(source, /data-action="end-turn"/);
-  assert.match(shellHostSource, /action\?\.type === "pass"/);
+  assert.match(shellHostSource, /boardMessage:\s*\{\s*type:\s*"move_sent"\s*\}/);
+  assert.match(shellHostSource, /boardMessage:\s*\{\s*type:\s*"turn_ended"\s*\}/);
 });
 
 test("UI disables join-player based on canJoinAsPlayer capability", () => {

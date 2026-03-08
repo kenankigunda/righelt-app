@@ -513,6 +513,32 @@ const renumberHistory = (game: ShellGame) => {
   });
 };
 
+const syncTurnFromEngineControl = (game: ShellGame, activeTurn: TurnEntry, at: string) => {
+  const nextSeat = getSeatForSide(game.board.state.sideToMove);
+  const controlPassed = nextSeat !== activeTurn.playerSeat || game.board.state.turnIndex !== activeTurn.index;
+  if (!controlPassed) {
+    game.board.state.sideToMove = getSideForSeat(activeTurn.playerSeat);
+    game.board.state.turnIndex = activeTurn.index;
+    return;
+  }
+
+  activeTurn.endedAt = at;
+  activeTurn.status = "complete";
+
+  const nextTurn: TurnEntry = {
+    index: activeTurn.index + 1,
+    startedAt: at,
+    endedAt: null,
+    playerSeat: nextSeat,
+    status: "active",
+    moveIndexes: [],
+    lastMoveAt: null,
+  };
+  game.turns.push(nextTurn);
+  game.board.state.sideToMove = getSideForSeat(nextSeat);
+  game.board.state.turnIndex = nextTurn.index;
+};
+
 const applyServerAction = (game: ShellGame, action: Action, notation?: string) => {
   const activeTurn = getActiveTurn(game);
   if (!activeTurn) {
@@ -525,14 +551,13 @@ const applyServerAction = (game: ShellGame, action: Action, notation?: string) =
   }
   const applied = applyAction(stable, action);
   const next = resolveToStability(applied.state, { artifactMode: "full" });
-  next.sideToMove = getSideForSeat(activeTurn.playerSeat);
-  next.turnIndex = activeTurn.index;
+  const at = now();
 
   const move: MoveEntry = {
     index: game.moves.length,
     turnIndex: activeTurn.index,
     turnMoveIndex: activeTurn.moveIndexes.length,
-    at: now(),
+    at,
     notation: notation || action.type.toUpperCase(),
     snapshot: next,
   };
@@ -544,6 +569,7 @@ const applyServerAction = (game: ShellGame, action: Action, notation?: string) =
     renumberHistory(game);
   }
   game.board.state = next;
+  syncTurnFromEngineControl(game, activeTurn, at);
   game.lastMoveAt = move.at;
   game.updatedAt = move.at;
   addNotification(game, `Move recorded in turn ${activeTurn.index + 1}`);

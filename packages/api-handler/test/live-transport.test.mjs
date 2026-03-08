@@ -108,27 +108,19 @@ test("live transport: join approval flow and presence/history/move transitions",
   );
   const moveBody = await move.json();
   assert.equal(moveBody.game.moves.length, 1);
-  assert.equal(moveBody.game.currentTurn.playerSeat, "Player 1");
-  assert.equal(moveBody.game.currentTurn.moveIndexes.length, 1);
-  assert.equal(moveBody.game.currentSnapshot.sideToMove, "P1");
+  assert.equal(moveBody.game.currentTurn.playerSeat, "Player 2");
+  assert.equal(moveBody.game.currentTurn.moveIndexes.length, 0);
+  assert.equal(moveBody.game.currentSnapshot.sideToMove, "P2");
 
   const secondMove = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-joiner" }),
     env,
   );
   const secondMoveBody = await secondMove.json();
   assert.equal(secondMoveBody.game.moves.length, 2);
-  assert.equal(secondMoveBody.game.currentTurn.moveIndexes.length, 2);
+  assert.equal(secondMoveBody.game.currentTurn.playerSeat, "Player 1");
+  assert.equal(secondMoveBody.game.currentTurn.moveIndexes.length, 0);
   assert.equal(secondMoveBody.game.currentSnapshot.sideToMove, "P1");
-
-  const endTurn = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: "id-owner" }),
-    env,
-  );
-  const endTurnBody = await endTurn.json();
-  assert.equal(endTurnBody.game.currentTurn.playerSeat, "Player 2");
-  assert.equal(endTurnBody.game.currentTurn.moveIndexes.length, 0);
-  assert.equal(endTurnBody.game.currentSnapshot.sideToMove, "P2");
 
   const history = await handleApiRequest(
     req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-owner", moveIndex: 1 }),
@@ -303,7 +295,7 @@ test("live transport: offline view does not reconnect participant and offline mo
   assert.equal((await offlineMove.json()).error, "offline_move_local_only");
 });
 
-test("live transport: offline playground exposes end-turn when one identity controls both seats", async () => {
+test("live transport: offline playground auto-handoff keeps end-turn disabled on fresh active turns", async () => {
   const created = await handleApiRequest(
     req("/api/shell/games?offline=1", "POST", { identityId: "id-local", playgroundMode: true, offlineLocal: true }),
     env,
@@ -319,13 +311,14 @@ test("live transport: offline playground exposes end-turn when one identity cont
 
   const view = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-local&offline=1`), env);
   const body = await view.json();
-  assert.equal(body.game.canEndTurn, true);
+  assert.equal(body.game.canEndTurn, false);
 
   const ended = await handleApiRequest(
     req(`/api/shell/games/${gameId}/end-turn?offline=1`, "POST", { identityId: "id-local" }),
     env,
   );
-  assert.equal(ended.status, 200);
+  assert.equal(ended.status, 409);
+  assert.equal((await ended.json()).error, "turn_has_no_moves");
 });
 
 test("live transport: move endpoint rejects non-player and wrong-turn players", async () => {

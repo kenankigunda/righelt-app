@@ -24,7 +24,7 @@ test("shell integration: opaque invite token resolves and joins into canonical g
   assert.equal(accepted.game.myRole, "Player 2");
 });
 
-test("shell integration: multiple moves stay in the active turn until end-turn", async () => {
+test("shell integration: move submission follows side-to-move control between participants", async () => {
   const harness = createShellIntegrationHarness();
   const owner = harness.createClient("id-owner-shell-int-2");
   const guest = harness.createClient("id-guest-shell-int-2");
@@ -32,19 +32,24 @@ test("shell integration: multiple moves stay in the active turn until end-turn",
   const created = await owner.store.createGame({ playgroundMode: false, offlineLocal: false });
   await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
 
-  await owner.store.addMove({ gameId: created.id, notation: "M1" });
-  await owner.store.addMove({ gameId: created.id, notation: "M2" });
+  const firstMove = await owner.store.addMove({ gameId: created.id, notation: "M1" });
+  const nextSide = firstMove.game.currentSnapshot.sideToMove;
+  const nextMover = nextSide === "P1" ? owner : guest;
+
+  const secondMove = await nextMover.store.addMove({ gameId: created.id, notation: "M2" });
+  assert.equal(secondMove.game.moves.length, 2);
 
   const ownerView = await harness.refreshGame(owner, created.id);
   const guestView = await harness.refreshGame(guest, created.id);
 
-  assert.equal(ownerView.currentTurn.playerSeat, "Player 1");
-  assert.equal(ownerView.currentTurn.moveIndexes.length, 2);
-  assert.equal(ownerView.currentSnapshot.sideToMove, "P1");
-  assert.equal(guestView.currentTurn.playerSeat, "Player 1");
-  assert.equal(guestView.currentTurn.moveIndexes.length, 2);
+  assert.equal(ownerView.moves.length, 2);
+  assert.equal(guestView.moves.length, 2);
+  assert.equal(ownerView.currentTurn.moveIndexes.length, 0);
+  assert.equal(guestView.currentTurn.moveIndexes.length, 0);
 
-  await assert.rejects(() => guest.store.addMove({ gameId: created.id, notation: "M3" }), (error) => {
+  const sideToMove = ownerView.currentSnapshot.sideToMove;
+  const wrongMover = sideToMove === "P1" ? guest : owner;
+  await assert.rejects(() => wrongMover.store.addMove({ gameId: created.id, notation: "M3" }), (error) => {
     assert.equal(error.code, "not_your_turn");
     return true;
   });
@@ -58,8 +63,13 @@ test("shell integration: ending a turn hands control to the next player after re
   const created = await owner.store.createGame({ playgroundMode: false, offlineLocal: false });
   await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
 
-  await owner.store.addMove({ gameId: created.id, notation: "M1" });
-  await owner.store.endTurn({ gameId: created.id });
+  const firstMove = await owner.store.addMove({ gameId: created.id, notation: "M1" });
+  const currentSide = firstMove.game.currentSnapshot.sideToMove;
+  const currentActor = currentSide === "P1" ? owner : guest;
+  await assert.rejects(() => currentActor.store.endTurn({ gameId: created.id }), (error) => {
+    assert.equal(error.code, "turn_has_no_moves");
+    return true;
+  });
 
   const ownerView = await harness.refreshGame(owner, created.id);
   const guestView = await harness.refreshGame(guest, created.id);

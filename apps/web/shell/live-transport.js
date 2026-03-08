@@ -17,6 +17,34 @@ const renumberHistory = (game) => {
   });
 };
 
+const syncOfflineTurnFromEngineControl = (game, activeTurn, at) => {
+  const nextSeat = getSideToMoveSeat(game);
+  const controlPassed = nextSeat !== activeTurn.playerSeat || game.board.state.turnIndex !== activeTurn.index;
+  if (!controlPassed) {
+    game.board.state.sideToMove = getSideForSeat(activeTurn.playerSeat);
+    game.board.state.turnIndex = activeTurn.index;
+    return;
+  }
+
+  activeTurn.endedAt = at;
+  activeTurn.status = "complete";
+  const nextTurn = {
+    index: activeTurn.index + 1,
+    startedAt: at,
+    endedAt: null,
+    playerSeat: nextSeat,
+    status: "active",
+    moveIndexes: [],
+    lastMoveAt: null,
+  };
+  game.turns.push(nextTurn);
+  game.board.state = {
+    ...game.board.state,
+    sideToMove: getSideForSeat(nextSeat),
+    turnIndex: nextTurn.index,
+  };
+};
+
 const createIdentity = (random = Math.random) => `id-${random().toString(36).slice(2, 10)}`;
 
 const readJson = async (response) => {
@@ -137,8 +165,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     }
     const computed = await computeOfflineMoveState(game.board.state);
     const next = computed.state;
-    next.sideToMove = getSideForSeat(activeTurn.playerSeat);
-    next.turnIndex = activeTurn.index;
 
     const at = new Date().toISOString();
     const move = {
@@ -157,6 +183,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       renumberHistory(game);
     }
     game.board.state = next;
+    syncOfflineTurnFromEngineControl(game, activeTurn, at);
     game.lastMoveAt = at;
     game.updatedAt = at;
     game.notifications = [`Offline move recorded`, ...(game.notifications ?? [])].slice(0, 50);
