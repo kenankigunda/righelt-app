@@ -49,11 +49,26 @@ Every board implementation must provide:
   - `dispose()`.
 - `Events` emitted to shell:
   - `stateChanged`.
-  - `actionCommitted`.
-  - `actionRejected` (with reason code).
+  - `moveSent` (board has produced a move payload that shell should transmit/store).
+  - `turnEnded` (board has ended the turn and ownership passed).
+  - `actionRejected` (board declined to commit requested intent; optional reason metadata may be included).
   - `modeChanged` (`live`/`history`/`tutorial`).
   - `syncStatusChanged`.
   - `fatalError`.
+
+### 1.1.1.1 Shell Event Consumption Rule
+
+- Shell must treat board events as semantic messages only.
+- Shell must not branch on board-internal action types (`move`, `project`, `rush`, etc.) or board-rule details.
+- Shell is allowed to react only to abstract board messages such as:
+  - `moveSent`
+  - `turnEnded`
+- `actionRejected` is an abstract failure signal only:
+  - shell may show generic failure status/notification and record telemetry
+  - shell must not branch game flow or policy on rejection reason codes/messages
+  - board-owned UI may present rule-specific rejection details inside the board surface
+- Any game-specific decision of when a move is committed or when a turn ends is board-owned behavior.
+- This rule is mandatory for board swap compatibility in Section 1.1.3.
 
 ### 1.1.2 Ownership Boundary
 
