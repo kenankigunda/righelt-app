@@ -46,6 +46,11 @@ const isSeatRequestEligible = (game, seat) => {
 const getSeatForSide = (side) => (side === "P1" ? "Player 1" : "Player 2");
 const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
+const defaultHistoryAction = (snapshot, nextSnapshot) => ({
+  type: "move",
+  from: snapshot?.pieces?.[0]?.position ?? { row: 0, col: 0 },
+  to: nextSnapshot?.pieces?.[0]?.position ?? { row: 0, col: 0 },
+});
 const getActiveTurn = (game) => game.turns[game.turns.length - 1] || null;
 
 export const createShellStore = ({
@@ -253,6 +258,8 @@ export const createShellStore = ({
       turnMoveIndex: activeTurn.moveIndexes.length,
       at: now(),
       notation,
+      action: defaultHistoryAction(game.board.state, snapshot || game.board.state),
+      selectionSnapshot: structuredClone(game.board.state),
       snapshot: {
         ...(snapshot || game.board.state),
         sideToMove: getSideForSeat(activeTurn.playerSeat),
@@ -367,8 +374,12 @@ export const createShellStore = ({
       inHistoryMode: typeof game.historyIndex === "number",
       currentSnapshot:
         typeof game.historyIndex === "number" && game.moves[game.historyIndex]
-          ? game.moves[game.historyIndex].snapshot
+          ? game.moves[game.historyIndex].selectionSnapshot || game.moves[game.historyIndex].snapshot
           : game.board.state,
+      historySelectionAction:
+        typeof game.historyIndex === "number" && game.moves[game.historyIndex]
+          ? game.moves[game.historyIndex].action ?? null
+          : null,
       currentTurn: clone(getActiveTurn(game)),
       canJoinAsPlayer:
         role !== "Player 1" && role !== "Player 2" && !game.playgroundMode && (!game.player1 || !game.player2),

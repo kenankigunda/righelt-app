@@ -160,6 +160,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       throw new Error("turn_not_initialized");
     }
     const computed = await computeOfflineMoveState(game.board.state);
+    const selectionSnapshot = structuredClone(game.board.state);
     const next = computed.state;
     next.sideToMove = getSideForSeat(getControlSeatForTurn(next, activeTurn.playerSeat));
     next.turnIndex = activeTurn.index;
@@ -172,6 +173,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       actorSide: game.board.state.sideToMove,
       at,
       notation: notation || defaultNotationForAction(computed.action),
+      action: structuredClone(computed.action),
+      selectionSnapshot,
       snapshot: next,
     };
     game.moves.push(move);

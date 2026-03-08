@@ -632,14 +632,39 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     renderStatus();
   };
 
-  const loadSnapshot = async (snapshot, { legalActions: incomingLegalActions = null, resetSelection = true } = {}) => {
+  const applySelectionPreviewFromAction = (action) => {
+    if (!action || !action.from || !action.to) {
+      setActionType(action?.type ?? defaultActionType);
+      return;
+    }
+    const selectedPiece =
+      (typeof action.actorId === "string" && boardAdapter.getPieceById(state, action.actorId)) ||
+      boardAdapter.getPieceAt(state, action.from);
+    selectedPieceId = selectedPiece?.id ?? null;
+    selectedSource = { ...action.from };
+    selectedTarget = { ...action.to };
+    setActionType(action.type);
+  };
+
+  const loadSnapshot = async (
+    snapshot,
+    { legalActions: incomingLegalActions = null, resetSelection = true, selectionAction = null } = {},
+  ) => {
     state = structuredClone(snapshot);
     legalActions = Array.isArray(incomingLegalActions) ? incomingLegalActions : [];
     clearRemovalEffects();
     if (resetSelection) {
       clearSelection();
     }
+    selectedPieceMoves = [];
+    selectedPieceMovePreviews = [];
     applyForcedContinuationSelection();
+    if (selectionAction) {
+      applySelectionPreviewFromAction(selectionAction);
+      selectedPieceMoves = [structuredClone(selectionAction)];
+      selectedPieceMovePreviews = [structuredClone(selectionAction)];
+      legalActions = [structuredClone(selectionAction)];
+    }
     refreshSelectionLabels();
     renderBoard();
 

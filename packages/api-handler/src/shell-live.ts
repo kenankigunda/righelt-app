@@ -31,6 +31,8 @@ type MoveEntry = {
   actorSide: "P1" | "P2";
   at: string;
   notation: string;
+  action: Action;
+  selectionSnapshot: GameState;
   snapshot: GameState;
 };
 
@@ -329,8 +331,12 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
   const inHistoryMode = typeof game.historyIndex === "number";
   const currentSnapshot =
     typeof game.historyIndex === "number" && game.moves[game.historyIndex]
-      ? game.moves[game.historyIndex].snapshot
+      ? game.moves[game.historyIndex].selectionSnapshot
       : game.board.state;
+  const historySelectionAction =
+    typeof game.historyIndex === "number" && game.moves[game.historyIndex]
+      ? clone(game.moves[game.historyIndex].action)
+      : null;
 
   const activeTurn = getActiveTurn(game);
   const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(game);
@@ -375,6 +381,7 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
       turnOwnerIdentity === identityId &&
       Boolean(activeTurn && activeTurn.moveIndexes.length > 0),
     currentTurn: activeTurn ? clone(activeTurn) : null,
+    historySelectionAction,
     turnOwnerSeat,
     controlSeat,
     control: controlSeat === turnOwnerSeat ? "turn-owner" : "opponent",
@@ -570,6 +577,8 @@ const applyServerAction = (game: ShellGame, action: Action, notation?: string) =
     actorSide: stable.sideToMove,
     at: now(),
     notation: notation || defaultNotationForAction(action),
+    action: clone(action),
+    selectionSnapshot: stable,
     snapshot: next,
   };
   game.moves.push(move);
