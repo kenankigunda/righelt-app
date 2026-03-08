@@ -50,6 +50,8 @@ Every board implementation must provide:
 - `Events` emitted to shell:
   - `stateChanged`.
   - `moveSent` (board has produced a move payload that shell should transmit/store).
+    - includes abstract control metadata for post-move control within the current turn:
+      - `control: "turn-owner" | "opponent"`
   - `turnEnded` (board has ended the turn and ownership passed).
   - `actionRejected` (board declined to commit requested intent; optional reason metadata may be included).
   - `modeChanged` (`live`/`history`/`tutorial`).
@@ -60,9 +62,14 @@ Every board implementation must provide:
 
 - Shell must treat board events as semantic messages only.
 - Shell must not branch on board-internal action types (`move`, `project`, `rush`, etc.) or board-rule details.
+- Shell must not branch on board phase internals.
 - Shell is allowed to react only to abstract board messages such as:
   - `moveSent`
   - `turnEnded`
+- For control routing inside a turn, shell may only consume `moveSent.control` with values:
+  - `turn-owner`
+  - `opponent`
+- Shell must not consume or infer any phase identifiers.
 - `actionRejected` is an abstract failure signal only:
   - shell may show generic failure status/notification and record telemetry
   - shell must not branch game flow or policy on rejection reason codes/messages
@@ -70,7 +77,40 @@ Every board implementation must provide:
 - Any game-specific decision of when a move is committed or when a turn ends is board-owned behavior.
 - This rule is mandatory for board swap compatibility in Section 1.1.3.
 
-### 1.1.1.2 Pass vs End Turn (Current Board Behavior)
+### 1.1.1.2 Turn Owner vs Control (Current Board Behavior)
+
+- Shell turn model remains unchanged:
+  - moves are recorded within a shell turn owned by `currentTurn.playerSeat` (`turn-owner`)
+  - shell advances to the next turn only when board emits `turnEnded`
+- Board owns temporary control routing inside a turn.
+  - `control` starts as `turn-owner` by default
+  - board may shift control to `opponent` for board-defined internal sequences
+  - board reports control to shell only as abstract labels:
+    - `turn-owner`
+    - `opponent`
+- `phase` is board-internal implementation detail.
+  - board may use phases (for example push retreat/follow phases) to compute control
+  - shell must not know or depend on phase names
+
+### 1.1.1.3 Push-Retreat-Follow Control Sequence (Current Board)
+
+For the current board implementation:
+
+- Start of turn:
+  - control = `turn-owner`
+  - board is in default action selection behavior
+- After `push` commit:
+  - board enters internal retreat phase
+  - board emits `moveSent` with `control = "opponent"`
+- After `retreat` commit:
+  - board enters internal follow phase
+  - board emits `moveSent` with `control = "turn-owner"`
+- After `follow` commits:
+  - board may allow one or more legal follows within the same shell turn
+  - when follow sequence is complete, board emits `turnEnded`
+  - shell then advances to next turn and updates turn-owner
+
+### 1.1.1.4 Pass vs End Turn (Current Board Behavior)
 
 - `Pass` is a board action type.
   - It is submitted through normal board action flow.

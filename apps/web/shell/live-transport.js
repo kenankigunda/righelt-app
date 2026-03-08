@@ -6,6 +6,22 @@ const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
+const getControlSeatForTurn = (state, turnOwnerSeat) => {
+  const continuation = state?.continuation;
+  if (!continuation) {
+    return turnOwnerSeat;
+  }
+  if (continuation.type === "push") {
+    if (continuation.phase === "retreat") {
+      return getNextSeat(turnOwnerSeat);
+    }
+    return turnOwnerSeat;
+  }
+  if (continuation.type === "rush") {
+    return turnOwnerSeat;
+  }
+  return turnOwnerSeat;
+};
 const renumberHistory = (game) => {
   game.moves.forEach((move, index) => {
     move.index = index;
@@ -64,8 +80,9 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     next.showOfflineState = true;
     next.canInvite = false;
     next.showJoinActions = false;
-    const sideToMoveSeat = getSideToMoveSeat(next);
-    const sideToMoveIdentity = sideToMoveSeat === "Player 1" ? next.player1?.identityId ?? null : next.player2?.identityId ?? null;
+    const activeTurn = getActiveTurn(next);
+    const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(next);
+    const turnOwnerIdentity = turnOwnerSeat === "Player 1" ? next.player1?.identityId ?? null : next.player2?.identityId ?? null;
     const dualSeatOfflinePlayground =
       next.offlineLocal &&
       next.playgroundMode &&
@@ -76,7 +93,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       next.myRole !== "Viewer" &&
       next.myRole !== "Guest" &&
       !next.inHistoryMode &&
-      sideToMoveIdentity === identityId &&
+      turnOwnerIdentity === identityId &&
       Boolean(getActiveTurn(next)?.moveIndexes?.length);
     return next;
   };
@@ -137,7 +154,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     }
     const computed = await computeOfflineMoveState(game.board.state);
     const next = computed.state;
-    next.sideToMove = getSideForSeat(activeTurn.playerSeat);
+    next.sideToMove = getSideForSeat(getControlSeatForTurn(next, activeTurn.playerSeat));
     next.turnIndex = activeTurn.index;
 
     const at = new Date().toISOString();

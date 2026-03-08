@@ -43,15 +43,21 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let selectedPieceMovesRequestId = 0;
   let mounted = false;
   let removalEffectsTimer = null;
+  let internalActionType = defaultActionType;
 
   const getActionType = () => {
     const value = controls.getActionType?.();
-    return typeof value === "string" && value ? value : defaultActionType;
+    if (typeof value === "string" && value) {
+      internalActionType = value;
+      return value;
+    }
+    return internalActionType;
   };
 
   const setActionType = (next) => {
+    internalActionType = typeof next === "string" && next ? next : defaultActionType;
     if (controls.setActionType) {
-      controls.setActionType(next);
+      controls.setActionType(internalActionType);
     }
   };
 

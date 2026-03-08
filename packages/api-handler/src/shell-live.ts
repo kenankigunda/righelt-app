@@ -255,6 +255,25 @@ const getSeatForSide = (side: GameState["sideToMove"]): "Player 1" | "Player 2" 
 const getNextSeat = (seat: "Player 1" | "Player 2"): "Player 1" | "Player 2" => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getSideForSeat = (seat: "Player 1" | "Player 2"): GameState["sideToMove"] => (seat === "Player 1" ? "P1" : "P2");
 const getActiveTurn = (game: ShellGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
+const getControlSeatForTurn = (
+  state: GameState,
+  turnOwnerSeat: "Player 1" | "Player 2",
+): "Player 1" | "Player 2" => {
+  const continuation = state.continuation;
+  if (!continuation) {
+    return turnOwnerSeat;
+  }
+  if (continuation.type === "push") {
+    if (continuation.phase === "retreat") {
+      return getNextSeat(turnOwnerSeat);
+    }
+    return turnOwnerSeat;
+  }
+  if (continuation.type === "rush") {
+    return turnOwnerSeat;
+  }
+  return turnOwnerSeat;
+};
 const canOperateOfflinePlaygroundTurn = (game: ShellGame, identityId: string) =>
   game.offlineLocal &&
   game.playgroundMode &&
@@ -302,11 +321,13 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
       ? game.moves[game.historyIndex].snapshot
       : game.board.state;
 
-  const sideToMoveSeat = getSideToMoveSeat(game);
-  const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
+  const activeTurn = getActiveTurn(game);
+  const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(game);
+  const controlSeat = getControlSeatForTurn(game.board.state, turnOwnerSeat);
+  const sideToMoveIdentity = getSeatIdentity(game, controlSeat);
+  const turnOwnerIdentity = getSeatIdentity(game, turnOwnerSeat);
   const isPlayer = myRole === "Player 1" || myRole === "Player 2";
   const legalNow = listLegalActions(game.board.state);
-  const activeTurn = getActiveTurn(game);
   const offlineTurnControlAllowed = !offline || canOperateOfflinePlaygroundTurn(game, identityId);
   const approvableRequesterIds = game.pendingJoinRequests
     .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
@@ -340,9 +361,12 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
       offlineTurnControlAllowed &&
       isPlayer &&
       !inHistoryMode &&
-      sideToMoveIdentity === identityId &&
+      turnOwnerIdentity === identityId &&
       Boolean(activeTurn && activeTurn.moveIndexes.length > 0),
     currentTurn: activeTurn ? clone(activeTurn) : null,
+    turnOwnerSeat,
+    controlSeat,
+    control: controlSeat === turnOwnerSeat ? "turn-owner" : "opponent",
     pendingPlayerRequestSeat: myPendingJoinRequest?.requestedSeat ?? null,
     approvableRequesterIds,
   };
@@ -525,7 +549,7 @@ const applyServerAction = (game: ShellGame, action: Action, notation?: string) =
   }
   const applied = applyAction(stable, action);
   const next = resolveToStability(applied.state, { artifactMode: "full" });
-  next.sideToMove = getSideForSeat(activeTurn.playerSeat);
+  next.sideToMove = getSideForSeat(getControlSeatForTurn(next, activeTurn.playerSeat));
   next.turnIndex = activeTurn.index;
 
   const move: MoveEntry = {
@@ -1077,9 +1101,12 @@ export const handleShellLiveRequest = async (
       if (role !== "Player 1" && role !== "Player 2") {
         return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: "no-store" };
       }
-      const sideToMoveSeat = getSideToMoveSeat(game);
-      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
-      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
+      const activeTurn = getActiveTurn(game);
+      if (!activeTurn) {
+        return { handled: true, status: 409, body: { ok: false, error: "turn_not_initialized" }, cacheControl: "no-store" };
+      }
+      const turnOwnerIdentity = getSeatIdentity(game, activeTurn.playerSeat);
+      if (!turnOwnerIdentity || turnOwnerIdentity !== identityId) {
         return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: "no-store" };
       }
       const ended = endServerTurn(game);

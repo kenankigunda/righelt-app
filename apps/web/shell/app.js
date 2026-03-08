@@ -632,8 +632,6 @@ const mountBoardForGame = (game) => {
         },
       }),
       controls: {
-        getActionType: () => "pass",
-        setActionType: () => {},
         getAllowFreeSelection: () => false,
         onMoveRecorded: () => {
           render();

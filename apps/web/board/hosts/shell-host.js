@@ -1,3 +1,14 @@
+const getControlLabel = ({ state, currentTurn }) => {
+  if (!state || !currentTurn) {
+    return "turn-owner";
+  }
+  const continuation = state.continuation;
+  if (continuation?.type === "push" && continuation.phase === "retreat") {
+    return "opponent";
+  }
+  return "turn-owner";
+};
+
 export const createShellBoardHost = ({ transport, gameId, canInteract }) => ({
   async loadInitialState() {
     const game = transport.getGameViewModel(gameId);
@@ -15,9 +26,13 @@ export const createShellBoardHost = ({ transport, gameId, canInteract }) => ({
   async applyAction(state, action) {
     const response = await transport.applyGameAction({ gameId, state, action });
     if (response?.accepted) {
+      const current = response.game ?? transport.getGameViewModel(gameId);
       return {
         ...response,
-        boardMessage: { type: "move_sent" },
+        boardMessage: {
+          type: "move_sent",
+          control: getControlLabel({ state: response.state, currentTurn: current?.currentTurn }),
+        },
       };
     }
     return response;
