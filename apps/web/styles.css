@@ -201,11 +201,16 @@ button {
   display: grid;
   grid-template-columns: repeat(10, minmax(28px, 1fr));
   gap: 4px;
+  width: 100%;
+  min-width: 0;
 }
 
 .board-wrap {
   position: relative;
   padding-bottom: 1rem;
+  width: 100%;
+  min-width: 0;
+  overflow-x: clip;
 }
 
 .overlay-lines {
@@ -381,6 +386,12 @@ button {
   gap: 0.6rem 1rem;
   font-size: 0.82rem;
   color: var(--muted);
+  min-width: 0;
+}
+
+.overlay-key span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .swatch {
@@ -736,5 +747,55 @@ button:disabled {
   .middle-column,
   .right-column {
     gap: 0.8rem;
+  }
+}
+
+@media (max-width: 700px) {
+  .board {
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    gap: 1px;
+  }
+
+  .cell {
+    min-height: 0;
+    aspect-ratio: 1 / 1;
+    padding: 1px;
+  }
+
+  .piece-token {
+    width: 15px;
+    height: 15px;
+    font-size: 0.5rem;
+    border-width: 1.25px;
+  }
+
+  .piece-stack {
+    font-size: 0.74rem;
+  }
+
+  .axis-label {
+    font-size: 0.52rem;
+  }
+
+  .axis-label.col-axis {
+    bottom: 2px;
+  }
+
+  .axis-label.row-axis {
+    left: 2px;
+  }
+
+  .overlay-key {
+    gap: 0.45rem 0.65rem;
+    font-size: 0.78rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .piece-token {
+    width: 13px;
+    height: 13px;
+    font-size: 0.45rem;
+    border-width: 1px;
   }
 }

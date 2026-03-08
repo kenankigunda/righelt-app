@@ -27,10 +27,11 @@ body {
 }
 
 .app-root {
-  width: min(1200px, 96vw);
+  width: min(1200px, calc(100vw - 1rem));
   margin: 1rem auto 2rem;
   display: grid;
   gap: 1rem;
+  min-width: 0;
 }
 
 .shell-header,
@@ -39,6 +40,7 @@ body {
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 0.9rem 1rem;
+  max-width: 100%;
 }
 
 .shell-header {
@@ -133,12 +135,18 @@ button.secondary:disabled {
   display: grid;
   gap: 1rem;
   grid-template-columns: 1.05fr 1.9fr 1.05fr;
+  min-width: 0;
 }
 
 .stack {
   display: grid;
   gap: 1rem;
   align-content: start;
+  min-width: 0;
+}
+
+.panel {
+  min-width: 0;
 }
 
 .meta,
@@ -202,6 +210,11 @@ button.secondary:disabled {
   padding-left: 1.2rem;
   display: grid;
   gap: 0.35rem;
+}
+
+.participant-list li,
+.game-list li {
+  overflow-wrap: anywhere;
 }
 
 .history-turn-list {
@@ -363,9 +376,20 @@ button.secondary:disabled {
 
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 900px) {
+  .app-root {
+    width: calc(100vw - 1rem);
+    margin: 0.5rem auto 1rem;
+  }
+
+  .shell-header,
+  .panel {
+    padding: 0.75rem 0.8rem;
+  }
+
   .layout-grid {
     grid-template-columns: 1fr;
   }
