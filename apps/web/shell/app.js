@@ -161,7 +161,7 @@ const renderTurnHistory = (game) => {
         .map(
           (move) => `<li class="history-item" data-action="jump-history" data-game-id="${escapeHtml(
             game.id,
-          )}" data-move-index="${move.index}">Move ${escapeHtml(String(move.turnMoveIndex + 1))}: ${escapeHtml(
+          )}" data-move-index="${move.index}">Move ${escapeHtml(String(move.index + 1))}: ${escapeHtml(
             move.notation,
           )} <span class="small">${escapeHtml(move.at)}</span></li>`,
         )
