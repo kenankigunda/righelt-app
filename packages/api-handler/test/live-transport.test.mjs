@@ -110,21 +110,17 @@ test("live transport: join approval flow and presence/history/move transitions",
   assert.equal(moveBody.game.moves.length, 1);
   assert.equal(moveBody.game.currentTurn.playerSeat, "Player 1");
   assert.equal(moveBody.game.currentTurn.moveIndexes.length, 1);
-  assert.equal(moveBody.game.currentSnapshot.sideToMove, "P1");
-
-  const secondMove = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
-    env,
-  );
+  const secondMover = moveBody.game.currentSnapshot.sideToMove === "P1" ? "id-owner" : "id-joiner";
+  const secondMove = await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: secondMover }), env);
   const secondMoveBody = await secondMove.json();
+  assert.equal(secondMove.status, 200);
   assert.equal(secondMoveBody.game.moves.length, 2);
   assert.equal(secondMoveBody.game.currentTurn.moveIndexes.length, 2);
-  assert.equal(secondMoveBody.game.currentSnapshot.sideToMove, "P1");
+  const sideToMove = secondMoveBody.game.currentSnapshot.sideToMove;
+  assert.equal(sideToMove === "P1" || sideToMove === "P2", true);
 
-  const endTurn = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: "id-owner" }),
-    env,
-  );
+  const turnEnder = secondMoveBody.game.currentSnapshot.sideToMove === "P1" ? "id-owner" : "id-joiner";
+  const endTurn = await handleApiRequest(req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: turnEnder }), env);
   const endTurnBody = await endTurn.json();
   assert.equal(endTurnBody.game.currentTurn.playerSeat, "Player 2");
   assert.equal(endTurnBody.game.currentTurn.moveIndexes.length, 0);
@@ -372,6 +368,25 @@ test("live transport: move endpoint rejects non-player and wrong-turn players", 
     env,
   );
   assert.equal(nowPlayer2Move.status, 200);
+});
+
+test("live transport: explicit apply preserves engine side-to-move transitions", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner-apply", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createBody = await create.json();
+  const gameId = createBody.game.id;
+
+  const apply = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/apply`, "POST", { identityId: "id-owner-apply", state: createBody.game.currentSnapshot, action: { type: "pass" } }),
+    env,
+  );
+  const applyBody = await apply.json();
+
+  assert.equal(apply.status, 200);
+  assert.equal(applyBody.accepted, true);
+  assert.equal(applyBody.state.sideToMove, "P2");
 });
 
 test("live transport: end-turn rejects empty turns", async () => {

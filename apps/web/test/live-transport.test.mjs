@@ -170,7 +170,7 @@ test("live transport store keeps offline moves local until reconnect", async () 
       return Response.json({ ok: true, state: { sideToMove: "P1", turnIndex: 0, pieces: [] }, legalActions: [{ type: "pass" }] });
     }
     if (String(url) === "/api/engine/playground/apply") {
-      return Response.json({ ok: true, accepted: true, state: { sideToMove: "P1", turnIndex: 0, pieces: [] } });
+      return Response.json({ ok: true, accepted: true, state: { sideToMove: "P2", turnIndex: 0, pieces: [] } });
     }
     if (String(url) === `/api/shell/games/${gameId}/moves`) {
       return Response.json({
@@ -194,6 +194,7 @@ test("live transport store keeps offline moves local until reconnect", async () 
   await store.setOffline(true);
   const localMove = await store.addMove({ gameId });
   assert.equal(localMove.game.moves.length, 1);
+  assert.equal(localMove.game.moves[0].snapshot.sideToMove, "P2");
   assert.equal(calls.some((entry) => entry.url === `/api/shell/games/${gameId}/moves`), false);
 
   await store.setOffline(false);

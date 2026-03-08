@@ -621,6 +621,7 @@ const mountBoardForGame = (game) => {
     if (boardRuntime) {
       boardRuntime.destroy();
     }
+    let boardActionType = "pass";
     boardRuntime = createBoardRuntime({
       boardAdapter,
       host: createShellBoardHost({
@@ -632,10 +633,17 @@ const mountBoardForGame = (game) => {
         },
       }),
       controls: {
-        getActionType: () => "pass",
-        setActionType: () => {},
+        getActionType: () => boardActionType,
+        setActionType: (nextActionType) => {
+          boardActionType = typeof nextActionType === "string" && nextActionType ? nextActionType : "pass";
+        },
         getAllowFreeSelection: () => false,
-        onMoveRecorded: () => {
+        onBoardMessage: (message) => {
+          if (message?.type === "move_sent" || message?.type === "turn_ended") {
+            render();
+          }
+        },
+        onActionResult: () => {
           render();
         },
       },

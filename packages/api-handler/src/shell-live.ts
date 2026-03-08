@@ -525,8 +525,6 @@ const applyServerAction = (game: ShellGame, action: Action, notation?: string) =
   }
   const applied = applyAction(stable, action);
   const next = resolveToStability(applied.state, { artifactMode: "full" });
-  next.sideToMove = getSideForSeat(activeTurn.playerSeat);
-  next.turnIndex = activeTurn.index;
 
   const move: MoveEntry = {
     index: game.moves.length,

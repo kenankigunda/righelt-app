@@ -137,8 +137,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     }
     const computed = await computeOfflineMoveState(game.board.state);
     const next = computed.state;
-    next.sideToMove = getSideForSeat(activeTurn.playerSeat);
-    next.turnIndex = activeTurn.index;
 
     const at = new Date().toISOString();
     const move = {
