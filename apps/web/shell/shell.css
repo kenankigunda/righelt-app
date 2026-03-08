@@ -214,7 +214,7 @@ button.secondary:disabled {
 }
 
 .history-move-line {
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .history-move-at {
@@ -226,6 +226,10 @@ button.secondary:disabled {
 .history-item:hover .history-move-at,
 .history-item.is-selected .history-move-at {
   display: block;
+}
+
+.history-item.is-selected .history-move-line {
+  font-weight: 600;
 }
 
 .player-tone-p1 {
