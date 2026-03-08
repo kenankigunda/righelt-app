@@ -186,7 +186,7 @@ const renderBoardPreviewCoordinate = (coord) => {
 
 const setRushContinuationPrompt = (player) => {
   const toneClass = player === "P1" ? "player-tone-p1" : player === "P2" ? "player-tone-p2" : "player-tone-neutral";
-  boardPreviewLabelEl.innerHTML = `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares, or <button type="button" class="board-preview-inline-button" data-board-preview-action="pass">end your turn now</button>`;
+  boardPreviewLabelEl.innerHTML = `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares, or <button type="button" class="board-preview-inline-button" data-board-preview-action="end-turn">end your turn now</button>`;
 };
 
 const setPushFollowContinuationPrompt = (player) => {
@@ -330,6 +330,41 @@ const submitCurrentAction = async (actionOverride = null) => {
     setActionResult({
       ok: false,
       error: "request_failed",
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+  } finally {
+    submitActionEl.disabled = false;
+  }
+};
+
+const endCurrentTurn = async () => {
+  if (!state) return;
+  submitActionEl.disabled = true;
+  setActionResult("Ending turn...");
+  try {
+    const response = await fetch("/api/engine/playground/end-turn", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state }),
+    });
+    const body = await response.json();
+    if (!response.ok || body.accepted !== true) {
+      setActionResult(body);
+      return;
+    }
+    invalidateSelectedPieceMovesRequests();
+    state = body.state ?? state;
+    legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
+    clearSelection();
+    refreshSelectionLabels();
+    renderBoard();
+    renderStatus();
+    renderMoveLog();
+    setActionResult({ accepted: true, outcome: body.outcome ?? state.outcome });
+  } catch (error) {
+    setActionResult({
+      ok: false,
+      error: "end_turn_failed",
       message: error instanceof Error ? error.message : "Unknown error",
     });
   } finally {
@@ -904,10 +939,10 @@ boardPreviewLabelEl.addEventListener("click", (event) => {
     return;
   }
   const previewAction = actionButton.getAttribute("data-board-preview-action");
-  if (previewAction !== "pass") {
+  if (previewAction !== "end-turn") {
     return;
   }
-  void submitCurrentAction({ type: "pass" });
+  void endCurrentTurn();
 });
 
 document.addEventListener("keydown", (event) => {

@@ -363,6 +363,48 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
     });
   }
 
+  if (request.method === "POST" && url.pathname === "/api/engine/playground/end-turn") {
+    const body = await parseJsonBody(request);
+    const state = asGameState(body.state);
+    if (!state) {
+      return jsonNoStore({ ok: false, error: "invalid_state" }, 400);
+    }
+
+    const resolved = resolveToStability(state, { artifactMode: "full" });
+    const passAction: Action = { type: "pass" };
+    const validation = validateAction(resolved, passAction);
+    if (!validation.ok) {
+      return json({
+        ok: true,
+        accepted: false,
+        validation,
+        state: resolved,
+        legalActions: listLegalActions(resolved),
+      });
+    }
+
+    try {
+      const result = applyAction(resolved, passAction);
+      const stabilized = resolveToStability(result.state, { artifactMode: "full" });
+      return json({
+        ok: true,
+        accepted: true,
+        state: stabilized,
+        outcome: stabilized.outcome,
+        legalActions: listLegalActions(stabilized),
+      });
+    } catch (error) {
+      return jsonNoStore(
+        {
+          ok: false,
+          error: "end_turn_failed",
+          message: error instanceof Error ? error.message : "Unknown end-turn error",
+        },
+        501,
+      );
+    }
+  }
+
   if (request.method === "GET" && url.pathname === "/api/health") {
     return jsonNoStore({ ok: true, service: "righelt" });
   }

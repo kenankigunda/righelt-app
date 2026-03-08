@@ -164,7 +164,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   const setRushContinuationPrompt = (player) => {
     const toneClass = player === "P1" ? "player-tone-p1" : player === "P2" ? "player-tone-p2" : "player-tone-neutral";
     setBoardPreviewPromptHtml(
-      `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares, or <button type="button" class="board-preview-inline-button" data-board-preview-action="pass">end your turn now</button>`,
+      `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares, or <button type="button" class="board-preview-inline-button" data-board-preview-action="end-turn">end your turn now</button>`,
     );
   };
 
@@ -393,7 +393,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         selectedPieceMoves = [];
         selectedPieceMovePreviews = [];
 
-        controls.onMoveRecorded?.({ action, previousState });
+        controls.onBoardMessage?.(body.boardMessage ?? { type: "move_sent", origin: "board-runtime" });
 
         if (!applyForcedContinuationSelection()) {
           if (previousState?.sideToMove && state?.sideToMove && previousState.sideToMove !== state.sideToMove) {
@@ -411,6 +411,29 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
           await reloadSelectedPieceMoves();
         }
         setResult({ accepted: true, outcome: body.outcome ?? state.outcome });
+
+        const continuationType = state?.continuation?.type ?? null;
+        const shouldAutoEndTurn = continuationType !== "rush" && continuationType !== "push";
+        if (shouldAutoEndTurn) {
+          const alreadyEndedByAction =
+            previousState?.sideToMove !== state?.sideToMove ||
+            previousState?.turnIndex !== state?.turnIndex;
+
+          if (!alreadyEndedByAction && typeof host.endTurn === "function") {
+            const endResult = await host.endTurn(state);
+            if (endResult?.accepted) {
+              state = endResult.state ?? state;
+              legalActions = Array.isArray(endResult.legalActions) ? endResult.legalActions : legalActions;
+              clearSelection();
+              refreshSelectionLabels();
+              renderBoard();
+              renderStatus();
+              setResult({ accepted: true, outcome: endResult.outcome ?? state.outcome });
+            }
+          }
+
+          controls.onBoardMessage?.({ type: "turn_ended", origin: "board-runtime" });
+        }
         return;
       }
 
@@ -525,10 +548,36 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return;
     }
     const previewAction = actionButton.getAttribute("data-board-preview-action");
-    if (previewAction !== "pass") {
+    if (previewAction === "end-turn") {
+      void endCurrentTurn();
       return;
     }
-    void submitCurrentAction({ type: "pass" });
+  };
+
+  const endCurrentTurn = async () => {
+    if (!state || typeof host.endTurn !== "function" || host.canInteract?.(state) === false) {
+      return;
+    }
+    controls.onSubmitting?.(true);
+    try {
+      const result = await host.endTurn(state);
+      if (!result?.accepted) {
+        setResult({ accepted: false, validation: result?.validation ?? null });
+        return;
+      }
+      state = result.state ?? state;
+      legalActions = Array.isArray(result.legalActions) ? result.legalActions : legalActions;
+      clearSelection();
+      refreshSelectionLabels();
+      renderBoard();
+      renderStatus();
+      setResult({ accepted: true, outcome: result.outcome ?? state.outcome });
+      controls.onBoardMessage?.(result.boardMessage ?? { type: "turn_ended", origin: "board-runtime" });
+    } catch (error) {
+      setResult({ ok: false, error: "end_turn_failed", message: error instanceof Error ? error.message : "Unknown error" });
+    } finally {
+      controls.onSubmitting?.(false);
+    }
   };
 
   const bindElements = (nextElements) => {

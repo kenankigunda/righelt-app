@@ -36,6 +36,14 @@ export const createPlaygroundBoardHost = (fetcher = fetch) => ({
     });
     return response.json();
   },
+  async endTurn(state) {
+    const response = await fetcher("/api/engine/playground/end-turn", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state }),
+    });
+    return response.json();
+  },
   canInteract() {
     return true;
   },

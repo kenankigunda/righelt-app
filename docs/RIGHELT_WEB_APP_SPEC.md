@@ -70,6 +70,19 @@ Every board implementation must provide:
 - Any game-specific decision of when a move is committed or when a turn ends is board-owned behavior.
 - This rule is mandatory for board swap compatibility in Section 1.1.3.
 
+### 1.1.1.2 Pass vs End Turn (Current Board Behavior)
+
+- `Pass` is a board action type.
+  - It is submitted through normal board action flow.
+  - It appears in move history as a move entry.
+- `End turn` is not a board action type.
+  - It is a board-to-shell semantic message (`turnEnded`) and corresponding board command.
+  - It must not appear as a move entry in move history.
+- Board decides when to emit `turnEnded` for this game implementation.
+  - Board auto-emits `turnEnded` when the turn should close (for example after `project`, after `pass`, or after other non-continuation commits).
+  - Board may emit `turnEnded` early during optional continuation windows (for example during rush) when the user elects to stop.
+- Shell must treat `turnEnded` as an abstract control message and must not infer it from action-type heuristics.
+
 ### 1.1.2 Ownership Boundary
 
 - Shell owns:
