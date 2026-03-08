@@ -17,12 +17,14 @@ test("game controls do not render standalone record-move or end-turn buttons", (
   assert.match(shellHostSource, /boardMessage:\s*\{\s*type:\s*"turn_ended"\s*\}/);
 });
 
-test("UI disables join-player based on canJoinAsPlayer capability", () => {
-  assert.match(source, /game\.canJoinAsPlayer\s*&&\s*game\.showJoinActions\s*&&\s*!busy/);
+test("UI hides join-player unless canJoinAsPlayer and showJoinActions", () => {
+  assert.match(source, /game\.canJoinAsPlayer\s*&&\s*game\.showJoinActions/);
+  assert.match(source, /data-action="join-player"/);
 });
 
-test("UI disables join-viewer based on canJoinAsViewer capability", () => {
-  assert.match(source, /game\.canJoinAsViewer\s*&&\s*!busy/);
+test("UI hides join-viewer unless canJoinAsViewer", () => {
+  assert.match(source, /game\.canJoinAsViewer/);
+  assert.match(source, /data-action="join-viewer"/);
 });
 
 test("UI disables approve unless requester is in approvableRequesterIds", () => {

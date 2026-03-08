@@ -408,12 +408,20 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
           <h2>Join / Invite</h2>
           ${pendingSeatNotice}
           <div class="row section-actions">
-            <button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
-              game.canJoinAsViewer && !busy ? "" : "disabled"
-            }>Join as viewer</button>
-            <button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${
-              game.canJoinAsPlayer && game.showJoinActions && !busy ? "" : "disabled"
-            }>Join as player</button>
+            ${
+              game.canJoinAsViewer
+                ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
+                    !busy ? "" : "disabled"
+                  }>Join as viewer</button>`
+                : ""
+            }
+            ${
+              game.canJoinAsPlayer && game.showJoinActions
+                ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${
+                    !busy ? "" : "disabled"
+                  }>Join as player</button>`
+                : ""
+            }
             ${
               game.canPlayAsBothPlayers
                 ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
@@ -423,7 +431,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
             }
             <button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${
               game.canInvite && !busy ? "" : "disabled"
-            }>Invite</button>
+            }>Invite someone else</button>
           </div>
           <div class="section-followup">
             ${inviteFeedback ? `<p class="small">${escapeHtml(inviteFeedback)}</p>` : ""}
