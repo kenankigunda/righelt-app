@@ -410,9 +410,6 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
           <div class="section-stack">
             <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
             <p class="small">Role: ${renderRoleLabel(game.myRole)}</p>
-            <div class="row section-actions">
-              <button class="warn" data-action="toggle-offline" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle Offline</button>
-            </div>
             <div class="section-followup">
               <p class="small">Active turn: ${
                 game.currentTurn
@@ -498,13 +495,6 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
           </div>
           <div class="section-followup">
             <ol class="history-list">${historyRows}</ol>
-          </div>
-        </section>
-
-        <section class="panel">
-          <h2>Tutorial ${renderPlaceholderBadge()}</h2>
-          <div class="row">
-            <a class="button-link secondary" href="${buildTutorialHash(game.id)}">Restart tutorial</a>
           </div>
         </section>
       </div>
