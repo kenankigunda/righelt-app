@@ -185,6 +185,10 @@ button.secondary:disabled {
   background: #fff0ed;
 }
 
+.history-mode-banner {
+  margin-bottom: 0.6rem;
+}
+
 .history-list {
   margin: 0;
   padding-left: 1.2rem;
@@ -229,6 +233,11 @@ button.secondary:disabled {
 }
 
 .history-item.is-selected .history-move-line {
+  font-weight: 600;
+}
+
+.history-item.is-live-selected .history-move-line,
+.history-empty-line.is-live-selected .history-move-line {
   font-weight: 600;
 }
 

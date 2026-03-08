@@ -63,6 +63,7 @@ assertGameBoardAdapter(boardAdapter);
 
 let currentRoute = parseRouteFromHash(window.location.hash);
 let mountedBoardGameId = null;
+let mountedHistoryMoveIndex = null;
 let boardRuntime = null;
 let busy = false;
 let liveSyncConnectedRoute = "";
@@ -166,21 +167,33 @@ const renderTurnHistory = (game) => {
     return "<li class=\"small\">No turns yet.</li>";
   }
 
+  const selectedMoveIndex = typeof game.historyIndex === "number" ? game.historyIndex : game.moves.length > 0 ? game.moves.length - 1 : null;
+  const activeTurnIndex = typeof game.currentTurn?.index === "number" ? game.currentTurn.index : null;
+  const emptyTurnText = "No moves in this turn yet.";
+
   return game.turns
     .map((turn) => {
+      const showLiveSelectedEmpty = !game.inHistoryMode && activeTurnIndex === turn.index && turn.moveIndexes.length === 0;
+      const emptyTurnItem = game.inHistoryMode
+        ? `<li class="history-item history-return-live" data-action="return-live" data-game-id="${escapeHtml(game.id)}">${escapeHtml(
+            emptyTurnText,
+          )}</li>`
+        : `<li class="history-empty-line${showLiveSelectedEmpty ? " is-live-selected" : ""}"><span class="history-move-line">${escapeHtml(
+            emptyTurnText,
+          )}</span></li>`;
       const turnMoves = turn.moveIndexes
         .map((moveIndex) => game.moves[moveIndex])
         .filter(Boolean)
-        .map(
-          (move) => `<li class="history-item${game.historyIndex === move.index ? " is-selected" : ""}" data-action="jump-history" data-game-id="${escapeHtml(
-            game.id,
-          )}" data-move-index="${move.index}">
+        .map((move) => {
+          const isSelected = game.inHistoryMode ? game.historyIndex === move.index : selectedMoveIndex === move.index;
+          const selectedClass = isSelected ? (game.inHistoryMode ? " is-selected" : " is-live-selected") : "";
+          return `<li class="history-item${selectedClass}" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">
             <span class="history-move-line ${playerToneClassForSide(move.actorSide || (turn.playerSeat === "Player 1" ? "P1" : "P2"))}">Move ${escapeHtml(
               String(move.index + 1),
             )}: ${escapeHtml(move.notation)}</span>
             <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
-          </li>`,
-        )
+          </li>`;
+        })
         .join("");
 
       return `<li class="history-turn">
@@ -189,7 +202,7 @@ const renderTurnHistory = (game) => {
             <strong>Turn ${escapeHtml(String(turn.index + 1))}</strong> <span class="small ${playerToneClassForSeat(turn.playerSeat)}">${escapeHtml(turn.playerSeat)}</span>
             <span class="small">${escapeHtml(turn.status)}</span>
           </div>
-          <ol class="history-turn-list">${turnMoves || '<li class="small">No moves in this turn yet.</li>'}</ol>
+          <ol class="history-turn-list">${turnMoves || emptyTurnItem}</ol>
         </div>
       </li>`;
     })
@@ -363,7 +376,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
       : "";
 
   const historyBanner = game.inHistoryMode
-    ? '<div class="alert">Viewing history snapshot (not live). New moves keep appending.</div>'
+    ? '<div class="alert history-mode-banner">Viewing history snapshot (not live). Incoming moves will appear at bottom.</div>'
     : "";
 
   return `
@@ -375,7 +388,6 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
           <div class="section-stack">
             <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
             <p class="small">Role: ${renderRoleLabel(game.myRole)}</p>
-            ${historyBanner}
             <div class="row section-actions">
               <button class="warn" data-action="toggle-offline" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Toggle Offline</button>
             </div>
@@ -421,6 +433,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
 
         <section class="panel">
           <h2>History</h2>
+          ${historyBanner}
           <div class="row section-actions">
             <button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" ${
               game.inHistoryMode && !busy ? "" : "disabled"
@@ -619,6 +632,7 @@ const mountBoardForGame = (game) => {
   const boardTurnIndicatorEl = document.getElementById("shell-board-turn-indicator");
   if (!boardEl || !overlayLinesEl || !boardPreviewLabelEl || !boardTurnIndicatorEl || !game) {
     mountedBoardGameId = null;
+    mountedHistoryMoveIndex = null;
     if (boardRuntime) {
       boardRuntime.destroy();
       boardRuntime = null;
@@ -627,6 +641,9 @@ const mountBoardForGame = (game) => {
   }
 
   const snapshot = game.currentSnapshot ?? null;
+  const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
+  const historySelectionAction = game.inHistoryMode ? game.historySelectionAction ?? null : null;
+  const historyLegalActions = historySelectionAction ? [historySelectionAction] : [];
   if (!snapshot) {
     return;
   }
@@ -653,18 +670,23 @@ const mountBoardForGame = (game) => {
       },
     });
     mountedBoardGameId = game.id;
+    mountedHistoryMoveIndex = historyMoveIndex;
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
     void boardRuntime.loadSnapshot(snapshot, {
-      legalActions: Array.isArray(game.legalActions) ? game.legalActions : null,
+      legalActions: game.inHistoryMode ? historyLegalActions : Array.isArray(game.legalActions) ? game.legalActions : null,
       resetSelection: true,
+      selectionAction: historySelectionAction,
     });
     return;
   }
 
+  const resetSelection = mountedHistoryMoveIndex !== historyMoveIndex;
+  mountedHistoryMoveIndex = historyMoveIndex;
   boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
   void boardRuntime.loadSnapshot(snapshot, {
-    legalActions: Array.isArray(game.legalActions) ? game.legalActions : null,
-    resetSelection: false,
+    legalActions: game.inHistoryMode ? historyLegalActions : Array.isArray(game.legalActions) ? game.legalActions : null,
+    resetSelection,
+    selectionAction: historySelectionAction,
   });
 };
 
@@ -689,6 +711,7 @@ const render = () => {
   appEl.innerHTML = `${renderHeader()}${body}`;
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     mountedBoardGameId = null;
+    mountedHistoryMoveIndex = null;
     if (boardRuntime) {
       boardRuntime.destroy();
       boardRuntime = null;
