@@ -64,6 +64,9 @@ assertGameBoardAdapter(boardAdapter);
 let currentRoute = parseRouteFromHash(window.location.hash);
 let mountedBoardGameId = null;
 let mountedHistoryMoveIndex = null;
+let mountedSnapshotKey = null;
+let mountedLegalActionsKey = null;
+let mountedSelectionActionKey = null;
 let boardRuntime = null;
 let busy = false;
 let liveSyncConnectedRoute = "";
@@ -117,6 +120,13 @@ const formatClientDateTime = (value) => {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(timestamp));
+};
+
+const toStableKey = (value) => {
+  if (value === null || typeof value === "undefined") {
+    return "null";
+  }
+  return JSON.stringify(value);
 };
 
 const renderPlaceholderBadge = () => '<span class="status-chip offline">Not yet implemented</span>';
@@ -178,15 +188,15 @@ const renderTurnHistory = (game) => {
         : game.moves.length > 0
           ? game.moves.length - 1
           : null;
-  const emptyTurnText = "No moves in this turn yet.";
+  const emptyTurnText = "Waiting on next move...";
 
   return game.turns
     .map((turn) => {
       const showLiveSelectedEmpty = liveSelectedEmptyTurnIndex === turn.index && turn.moveIndexes.length === 0;
       const emptyTurnItem = game.inHistoryMode
-        ? `<li class="history-item history-return-live" data-action="return-live" data-game-id="${escapeHtml(game.id)}">${escapeHtml(
-            emptyTurnText,
-          )}</li>`
+        ? `<li class="history-item history-return-live" data-action="return-live" data-game-id="${escapeHtml(
+            game.id,
+          )}"><span class="history-move-line">${escapeHtml(emptyTurnText)}</span></li>`
         : `<li class="history-empty-line${showLiveSelectedEmpty ? " is-live-selected" : ""}"><span class="history-move-line">${escapeHtml(
             emptyTurnText,
           )}</span></li>`;
@@ -362,7 +372,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
 
   const pendingRows =
     game.pendingJoinRequests.length === 0
-      ? "<li class=\"small\">No pending requests</li>"
+      ? "<li class=\"small\">No pending join requests</li>"
       : game.pendingJoinRequests
           .map(
             (request) => `<li>
@@ -384,9 +394,12 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
       ? `<div class="alert warn">Offline mode: invite and remote join actions are disabled.</div>`
       : "";
 
+  const historyMoveNumber =
+    typeof game.historyIndex === "number" ? String(game.historyIndex + 1) : "?";
   const historyBanner = game.inHistoryMode
-    ? '<div class="alert history-mode-banner">Viewing history snapshot (not live). Incoming moves will appear at bottom.</div>'
-    : "";
+    ? `<p class="small">Viewing history snapshot for move ${escapeHtml(historyMoveNumber)}.</p>
+       <p class="small">Incoming live moves will appear at bottom.</p>`
+    : '<p class="small">You are on the live view. Click moves below to see historical state.</p>';
 
   return `
     ${offlineBanner ? `<section class="panel">${offlineBanner}</section>` : ""}
@@ -452,9 +465,11 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
           <h2>History</h2>
           ${historyBanner}
           <div class="row section-actions">
-            <button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" ${
-              game.inHistoryMode && !busy ? "" : "disabled"
-            }>${game.inHistoryMode ? "Return to live view" : "You are on the live view"}</button>
+            ${
+              game.inHistoryMode && !busy
+                ? `<button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}">Return to live view</button>`
+                : ""
+            }
           </div>
           <div class="section-followup">
             <ol class="history-list">${historyRows}</ol>
@@ -650,6 +665,9 @@ const mountBoardForGame = (game) => {
   if (!boardEl || !overlayLinesEl || !boardPreviewLabelEl || !boardTurnIndicatorEl || !game) {
     mountedBoardGameId = null;
     mountedHistoryMoveIndex = null;
+    mountedSnapshotKey = null;
+    mountedLegalActionsKey = null;
+    mountedSelectionActionKey = null;
     if (boardRuntime) {
       boardRuntime.destroy();
       boardRuntime = null;
@@ -660,10 +678,20 @@ const mountBoardForGame = (game) => {
   const snapshot = game.currentSnapshot ?? null;
   const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
   const historySelectionAction = game.inHistoryMode ? game.historySelectionAction ?? null : null;
-  const historyLegalActions = historySelectionAction ? [historySelectionAction] : [];
+  const effectiveLegalActions = game.inHistoryMode
+    ? historySelectionAction
+      ? [historySelectionAction]
+      : []
+    : Array.isArray(game.legalActions)
+      ? game.legalActions
+      : [];
   if (!snapshot) {
     return;
   }
+
+  const snapshotKey = toStableKey(snapshot);
+  const legalActionsKey = toStableKey(effectiveLegalActions);
+  const selectionActionKey = toStableKey(historySelectionAction);
 
   if (mountedBoardGameId !== game.id || !boardRuntime) {
     if (boardRuntime) {
@@ -688,9 +716,12 @@ const mountBoardForGame = (game) => {
     });
     mountedBoardGameId = game.id;
     mountedHistoryMoveIndex = historyMoveIndex;
+    mountedSnapshotKey = snapshotKey;
+    mountedLegalActionsKey = legalActionsKey;
+    mountedSelectionActionKey = selectionActionKey;
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
     void boardRuntime.loadSnapshot(snapshot, {
-      legalActions: game.inHistoryMode ? historyLegalActions : Array.isArray(game.legalActions) ? game.legalActions : null,
+      legalActions: effectiveLegalActions,
       resetSelection: true,
       selectionAction: historySelectionAction,
     });
@@ -700,8 +731,19 @@ const mountBoardForGame = (game) => {
   const resetSelection = mountedHistoryMoveIndex !== historyMoveIndex;
   mountedHistoryMoveIndex = historyMoveIndex;
   boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
+  const shouldReloadSnapshot =
+    mountedSnapshotKey !== snapshotKey ||
+    mountedLegalActionsKey !== legalActionsKey ||
+    mountedSelectionActionKey !== selectionActionKey ||
+    resetSelection;
+  if (!shouldReloadSnapshot) {
+    return;
+  }
+  mountedSnapshotKey = snapshotKey;
+  mountedLegalActionsKey = legalActionsKey;
+  mountedSelectionActionKey = selectionActionKey;
   void boardRuntime.loadSnapshot(snapshot, {
-    legalActions: game.inHistoryMode ? historyLegalActions : Array.isArray(game.legalActions) ? game.legalActions : null,
+    legalActions: effectiveLegalActions,
     resetSelection,
     selectionAction: historySelectionAction,
   });
@@ -729,6 +771,9 @@ const render = () => {
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     mountedBoardGameId = null;
     mountedHistoryMoveIndex = null;
+    mountedSnapshotKey = null;
+    mountedLegalActionsKey = null;
+    mountedSelectionActionKey = null;
     if (boardRuntime) {
       boardRuntime.destroy();
       boardRuntime = null;
@@ -1003,7 +1048,7 @@ appEl.addEventListener("click", async (event) => {
         copied = true;
       }
       window.__righeltLastInvite = link;
-      setInviteFeedback(copied ? "Copied to clipboard" : "Clipboard unavailable");
+      setInviteFeedback(copied ? "Invite link copied to clipboard" : "Clipboard unavailable");
       return;
     }
 

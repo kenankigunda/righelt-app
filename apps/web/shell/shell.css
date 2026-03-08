@@ -236,6 +236,10 @@ button.secondary:disabled {
   font-weight: 600;
 }
 
+.history-item:hover .history-move-line {
+  font-weight: 600;
+}
+
 .history-item.is-live-selected .history-move-line,
 .history-empty-line.is-live-selected .history-move-line {
   font-weight: 600;
