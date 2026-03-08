@@ -399,7 +399,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
   const historyBanner = game.inHistoryMode
     ? `<p class="small">Viewing history snapshot for move ${escapeHtml(historyMoveNumber)}.</p>
        <p class="small">Incoming live moves will appear at bottom.</p>`
-    : '<p class="small">You are on the live view. Click moves below to see historical state.</p>';
+    : '<p class="small">You are on the live view.</p><p class="small">Click moves below to see historical state.</p>';
 
   return `
     ${offlineBanner ? `<section class="panel">${offlineBanner}</section>` : ""}
