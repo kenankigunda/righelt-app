@@ -462,18 +462,8 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
         </section>
 
         <section class="panel">
-          <h2>History</h2>
-          ${historyBanner}
-          <div class="row section-actions">
-            ${
-              game.inHistoryMode && !busy
-                ? `<button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}">Return to live view</button>`
-                : ""
-            }
-          </div>
-          <div class="section-followup">
-            <ol class="history-list">${historyRows}</ol>
-          </div>
+          <h2>Participants</h2>
+          <ul class="participant-list">${participantRows}${viewerRows}</ul>
         </section>
       </div>
 
@@ -493,10 +483,22 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
             <span><i class="swatch supply-point"></i>Supply point</span>
           </div>
         </section>
+      </div>
 
+      <div class="stack">
         <section class="panel">
-          <h2>Participants</h2>
-          <ul class="participant-list">${participantRows}${viewerRows}</ul>
+          <h2>History</h2>
+          ${historyBanner}
+          <div class="row section-actions">
+            ${
+              game.inHistoryMode && !busy
+                ? `<button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}">Return to live view</button>`
+                : ""
+            }
+          </div>
+          <div class="section-followup">
+            <ol class="history-list">${historyRows}</ol>
+          </div>
         </section>
 
         <section class="panel">

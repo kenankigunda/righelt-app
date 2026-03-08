@@ -132,7 +132,7 @@ button.secondary:disabled {
 .layout-grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: 1.1fr 1.8fr;
+  grid-template-columns: 1.05fr 1.9fr 1.05fr;
 }
 
 .stack {
