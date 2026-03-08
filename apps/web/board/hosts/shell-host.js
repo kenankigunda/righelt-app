@@ -38,28 +38,30 @@ export const createShellBoardHost = ({ transport, gameId, canInteract }) => ({
     return response;
   },
   async endTurn(state) {
-    const current = transport.getGameViewModel(gameId);
-    if (!current?.canEndTurn) {
+    try {
+      const result = await transport.endTurn({ gameId });
+      const game = result?.game ?? transport.getGameViewModel(gameId);
+      const snapshot = game?.currentSnapshot ?? state;
+      const legalActions = Array.isArray(game?.legalActions) ? game.legalActions : [];
+      return {
+        ok: true,
+        accepted: true,
+        state: snapshot,
+        legalActions,
+        outcome: snapshot?.outcome ?? null,
+        boardMessage: { type: "turn_ended" },
+      };
+    } catch (error) {
+      const code = typeof error?.code === "string" ? error.code : "end_turn_failed";
+      const current = transport.getGameViewModel(gameId);
       return {
         ok: true,
         accepted: false,
-        validation: { ok: false, code: "turn_has_no_moves", message: "Turn has no moves to end yet." },
-        state,
+        validation: { ok: false, code, message: "Turn could not be ended." },
+        state: current?.currentSnapshot ?? state,
         legalActions: Array.isArray(current?.legalActions) ? current.legalActions : [],
       };
     }
-    const result = await transport.endTurn({ gameId });
-    const game = result?.game ?? transport.getGameViewModel(gameId);
-    const snapshot = game?.currentSnapshot ?? state;
-    const legalActions = Array.isArray(game?.legalActions) ? game.legalActions : [];
-    return {
-      ok: true,
-      accepted: true,
-      state: snapshot,
-      legalActions,
-      outcome: snapshot?.outcome ?? null,
-      boardMessage: { type: "turn_ended" },
-    };
   },
   canInteract,
 });

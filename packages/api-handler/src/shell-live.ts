@@ -607,8 +607,20 @@ const endServerTurn = (game: ShellGame) => {
     lastMoveAt: null,
   };
   game.turns.push(nextTurn);
-  game.board.state.sideToMove = getSideForSeat(nextSeat);
-  game.board.state.turnIndex = nextTurn.index;
+  game.board.state = resolveToStability(
+    {
+      ...game.board.state,
+      sideToMove: getSideForSeat(nextSeat),
+      turnIndex: nextTurn.index,
+      continuation: null,
+      pieces: game.board.state.pieces.map((piece) => ({
+        ...piece,
+        shifted: false,
+        pushed: false,
+      })),
+    },
+    { artifactMode: "full" },
+  );
   game.updatedAt = endedAt;
   addNotification(game, `Turn ${activeTurn.index + 1} ended. ${nextSeat} to play`);
   return { ok: true as const, turn: clone(nextTurn) };

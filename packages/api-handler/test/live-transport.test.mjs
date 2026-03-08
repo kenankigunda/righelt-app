@@ -129,6 +129,7 @@ test("live transport: join approval flow and presence/history/move transitions",
   assert.equal(endTurnBody.game.currentTurn.playerSeat, "Player 2");
   assert.equal(endTurnBody.game.currentTurn.moveIndexes.length, 0);
   assert.equal(endTurnBody.game.currentSnapshot.sideToMove, "P2");
+  assert.equal(endTurnBody.game.currentSnapshot.continuation, null);
 
   const history = await handleApiRequest(
     req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-owner", moveIndex: 1 }),
