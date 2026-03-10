@@ -108,6 +108,40 @@ test("live transport: game reads do not stay stale when persistent state changes
   assert.equal(refreshedBody.game.notifications[0], "Player joined");
 });
 
+test("live transport: stale read during GET must not overwrite newer persisted game state", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createBody = await create.json();
+  const gameId = createBody.game.id;
+
+  const staleState = env.DB.getGameState(gameId);
+  assert.equal(Boolean(staleState), true);
+
+  const overwritten = env.DB.overwriteGameState(gameId, (state) => ({
+    ...state,
+    updatedAt: "2026-03-10T02:00:00.000Z",
+    lastMoveAt: "2026-03-10T02:00:00.000Z",
+    player2: {
+      identityId: "id-player2",
+      connected: true,
+      joinedAt: "2026-03-10T02:00:00.000Z",
+      lastSeenAt: "2026-03-10T02:00:00.000Z",
+    },
+    notifications: ["Player joined", ...(Array.isArray(state.notifications) ? state.notifications : [])],
+  }));
+  assert.equal(overwritten, true);
+
+  env.DB.setNextGameReadOverride(gameId, staleState);
+  const staleRead = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+  assert.equal(staleRead.status, 200);
+
+  const persistedAfterRead = env.DB.getGameState(gameId);
+  assert.equal(persistedAfterRead?.player2?.identityId, "id-player2");
+  assert.equal(persistedAfterRead?.notifications?.[0], "Player joined");
+});
+
 test("live transport: invite and game resolution survive process-local cache reset", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
