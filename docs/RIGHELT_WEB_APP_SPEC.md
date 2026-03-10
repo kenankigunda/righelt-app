@@ -402,6 +402,10 @@ This section is normative and applies to every new endpoint, page, and performan
 - Cache behavior must be explicit per endpoint:
   - Stable bootstrap/read endpoints must return explicit cache policy suitable for edge reuse (for example `s-maxage` with `stale-while-revalidate`).
   - Mutable/user-specific/safety-sensitive endpoints must remain non-cacheable (`no-store`) unless a stricter endpoint contract is documented.
+  - Read endpoints must be side-effect free against durable state:
+    - `GET` handlers must not persist writes, enqueue mutations, or rewrite state derived from reads.
+    - If an operation mutates durable state, model it as a mutation endpoint (`POST`/`PATCH`/`PUT`) even if it is idempotent from the caller perspective.
+    - Any intentional exception must be explicitly documented with rationale and guarded by regression tests proving stale reads cannot overwrite newer state.
 - Edge/API cold-start import surface must be minimized:
   - API handlers must use direct module imports for required symbols.
   - Barrel imports on startup-path handlers are disallowed unless a measured benchmark demonstrates no startup regression.
