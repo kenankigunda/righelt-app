@@ -61,6 +61,13 @@ const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 const boardAdapter = createEnginePlaygroundBoardAdapter();
 assertGameBoardAdapter(boardAdapter);
 
+const toStableKey = (value) => {
+  if (value === null || typeof value === "undefined") {
+    return "null";
+  }
+  return JSON.stringify(value);
+};
+
 let currentRoute = parseRouteFromHash(window.location.hash);
 let mountedBoardGameId = null;
 let mountedHistoryMoveIndex = null;
@@ -71,6 +78,7 @@ let boardRuntime = null;
 let busy = false;
 let liveSyncConnectedRoute = "";
 let wsStatus = { state: "disconnected", scope: null, gameId: null, reconnectAttempts: 0 };
+let lastWsStatusKey = toStableKey(wsStatus);
 let wsLastEvent = "none";
 const WS_RECONCILE_MS = 2000;
 let inviteFeedback = "";
@@ -78,6 +86,7 @@ let inviteFeedbackTimer = null;
 let routeHydrated = false;
 let resolvedInvite = null;
 const ignoredApprovalRequests = new Set();
+let lastRenderedMarkup = "";
 
 const escapeHtml = (value) =>
   String(value)
@@ -120,13 +129,6 @@ const formatClientDateTime = (value) => {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(timestamp));
-};
-
-const toStableKey = (value) => {
-  if (value === null || typeof value === "undefined") {
-    return "null";
-  }
-  return JSON.stringify(value);
 };
 
 const renderPlaceholderBadge = () => '<span class="status-chip offline">Not yet implemented</span>';
@@ -759,7 +761,11 @@ const render = () => {
     body = renderNotFound();
   }
 
-  appEl.innerHTML = `${renderHeader()}${body}`;
+  const nextMarkup = `${renderHeader()}${body}`;
+  if (nextMarkup !== lastRenderedMarkup) {
+    appEl.innerHTML = nextMarkup;
+    lastRenderedMarkup = nextMarkup;
+  }
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     mountedBoardGameId = null;
     mountedHistoryMoveIndex = null;
@@ -833,6 +839,7 @@ const liveSync = createLiveSyncClient({
       : "unknown";
     if (payload?.type === "game.updated" || payload?.type === "socket.connected") {
       void syncRouteDataPassive();
+      return;
     }
     render();
   },
@@ -840,6 +847,11 @@ const liveSync = createLiveSyncClient({
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
   },
   onStatus: (status) => {
+    const statusKey = toStableKey(status);
+    if (statusKey === lastWsStatusKey) {
+      return;
+    }
+    lastWsStatusKey = statusKey;
     wsStatus = status;
     render();
   },

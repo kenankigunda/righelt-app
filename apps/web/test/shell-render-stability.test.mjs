@@ -1,0 +1,29 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const testDir = fileURLToPath(new URL(".", import.meta.url));
+const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
+
+test("shell render commits markup only when it changes", () => {
+  assert.match(source, /let lastRenderedMarkup = "";/);
+  assert.match(source, /const nextMarkup = `\$\{renderHeader\(\)\}\$\{body\}`;/);
+  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;\s*\}/s);
+  assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
+});
+
+test("live sync update events defer to passive sync without immediate render", () => {
+  assert.match(
+    source,
+    /if \(payload\?\.type === "game\.updated" \|\| payload\?\.type === "socket\.connected"\) \{\s*void syncRouteDataPassive\(\);\s*return;\s*\}\s*render\(\);/s,
+  );
+});
+
+test("live sync status renders are deduplicated by stable status key", () => {
+  assert.match(source, /let lastWsStatusKey = toStableKey\(wsStatus\);/);
+  assert.match(source, /const statusKey = toStableKey\(status\);/);
+  assert.match(source, /if \(statusKey === lastWsStatusKey\) \{\s*return;\s*\}/s);
+  assert.match(source, /lastWsStatusKey = statusKey;\s*wsStatus = status;\s*render\(\);/s);
+});
