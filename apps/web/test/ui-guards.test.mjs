@@ -51,11 +51,11 @@ test("offline toggles sync current identity presence", () => {
   assert.match(source, /void syncCurrentIdentityPresence\(false\)/);
 });
 
-test("invite acceptance suppresses repeated invite gate until post-join hydration stabilizes", () => {
-  assert.match(source, /const inviteGateSuppressionByGameId = new Map\(\);/);
-  assert.match(source, /const INVITE_GATE_SUPPRESSION_MS = 15000;/);
-  assert.match(source, /if \(routeName === "game" && isInviteGateSuppressedForGame\(game\.id\)\) \{\s*return null;\s*\}/s);
-  assert.match(source, /if \(action === "accept-invite-viewer"\) \{\s*suppressInviteGateForGame\(gameId\);\s*\}/s);
-  assert.match(source, /if \(action === "accept-invite-player"\) \{\s*suppressInviteGateForGame\(gameId\);\s*\}/s);
-  assert.match(source, /if \(game\?\.myRole && game\.myRole !== "Guest"\) \{\s*clearInviteGateSuppressionForGame\(currentRoute\.gameId\);\s*\}/s);
+test("invite acceptance skips one immediate game hydration fetch and relies on join response state", () => {
+  assert.match(source, /const skipNextGameHydrationForGameId = new Set\(\);/);
+  assert.match(source, /const markSkipNextGameHydration = \(gameId\) => \{/);
+  assert.match(source, /const consumeSkipNextGameHydration = \(gameId\) => \{/);
+  assert.match(source, /if \(!consumeSkipNextGameHydration\(currentRoute\.gameId\)\) \{\s*await transport\.loadGame\(currentRoute\.gameId, \{ openAsViewer: false \}\);\s*\}/s);
+  assert.match(source, /if \(action === "accept-invite-viewer"\) \{\s*markSkipNextGameHydration\(gameId\);\s*\}/s);
+  assert.match(source, /if \(action === "accept-invite-player"\) \{\s*markSkipNextGameHydration\(gameId\);\s*\}/s);
 });
