@@ -5,6 +5,7 @@ import {
   createEnginePlaygroundBoardAdapter,
   getPieceRenderStatus,
   getInactiveSelectedPieceLabel,
+  getSelectedPieceTooltipLabel,
 } from "../board-adapters/engine-playground-adapter.js";
 
 test("getPieceRenderStatus prefers display booleans over actionable booleans", () => {
@@ -170,5 +171,72 @@ test("inactive label uses future-tense copy during continuation for commander an
       { continuation: { type: "push" } },
     ),
     "Will be inactive if not moved: no connection back to its supply point.",
+  );
+});
+
+test("selected piece tooltip explains frozen start-of-sequence command block", () => {
+  assert.equal(
+    getSelectedPieceTooltipLabel(
+      {
+        supplied: false,
+        commanded: false,
+        displaySupplied: true,
+        displayCommanded: true,
+      },
+      {
+        continuation: {
+          type: "rush",
+          frozenPieceStatesById: {
+            U1: { supplied: true, commanded: false },
+          },
+        },
+        pieces: [],
+      },
+    ),
+    null,
+  );
+
+  assert.equal(
+    getSelectedPieceTooltipLabel(
+      {
+        id: "U1",
+        supplied: true,
+        commanded: false,
+        displaySupplied: true,
+        displayCommanded: true,
+      },
+      {
+        continuation: {
+          type: "push",
+          frozenPieceStatesById: {
+            U1: { supplied: true, commanded: false },
+          },
+        },
+      },
+    ),
+    "Cannot move: was not commanded at start of push.",
+  );
+});
+
+test("selected piece tooltip explains frozen start-of-sequence supply block", () => {
+  assert.equal(
+    getSelectedPieceTooltipLabel(
+      {
+        id: "U1",
+        supplied: false,
+        commanded: true,
+        displaySupplied: true,
+        displayCommanded: true,
+      },
+      {
+        continuation: {
+          type: "rush",
+          frozenPieceStatesById: {
+            U1: { supplied: false, commanded: true },
+          },
+        },
+      },
+    ),
+    "Cannot move: was not supplied at start of rush.",
   );
 });

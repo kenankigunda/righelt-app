@@ -112,6 +112,45 @@ export function getInactiveSelectedPieceLabel(piece, snapshot) {
   return `${continuationPrefix}no connection back to its commander.`;
 }
 
+function getFrozenSequenceStartStatus(piece, snapshot) {
+  if (!piece || !snapshot?.continuation?.frozenPieceStatesById) {
+    return null;
+  }
+
+  return snapshot.continuation.frozenPieceStatesById[piece.id] ?? null;
+}
+
+export function getSelectedPieceTooltipLabel(piece, snapshot) {
+  const inactiveLabel = getInactiveSelectedPieceLabel(piece, snapshot);
+  if (inactiveLabel) {
+    return inactiveLabel;
+  }
+
+  const renderStatus = getPieceRenderStatus(piece);
+  const frozenStatus = getFrozenSequenceStartStatus(piece, snapshot);
+  const continuationType = snapshot?.continuation?.type;
+  if (!frozenStatus || (continuationType !== "rush" && continuationType !== "push")) {
+    return null;
+  }
+  const continuationLabel = continuationType === "rush" ? "rush" : "push";
+
+  if (!renderStatus.supplied || !renderStatus.commanded) {
+    return null;
+  }
+
+  if (!frozenStatus.supplied && !frozenStatus.commanded) {
+    return `Cannot move: was not commanded or supplied at start of ${continuationLabel}.`;
+  }
+  if (!frozenStatus.supplied) {
+    return `Cannot move: was not supplied at start of ${continuationLabel}.`;
+  }
+  if (!frozenStatus.commanded) {
+    return `Cannot move: was not commanded at start of ${continuationLabel}.`;
+  }
+
+  return null;
+}
+
 function getSupplyArtifactFor(snapshot, owner) {
   if (!snapshot?.artifacts?.supply) {
     return null;
@@ -349,10 +388,10 @@ export function createEnginePlaygroundBoardAdapter() {
     const pieceCell = cellByCoordinateKey.get(coordKey(piece.position));
     if (pieceCell) {
       pieceCell.classList.add("selected-piece");
-      const inactiveLabel = getInactiveSelectedPieceLabel(piece, snapshot);
-      if (inactiveLabel) {
+      const tooltipLabel = getSelectedPieceTooltipLabel(piece, snapshot);
+      if (tooltipLabel) {
         pieceCell.classList.add("inactive-selected-piece");
-        pieceCell.setAttribute("data-inactive-label", inactiveLabel);
+        pieceCell.setAttribute("data-inactive-label", tooltipLabel);
       }
     }
 
