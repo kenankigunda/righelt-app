@@ -54,6 +54,7 @@ Some actions open a temporary continuation phase:
 - When a `Rush` or `Push` begins, the initiating player snapshots their own command/supply state as it existed before that opening action resolves.
 - That initiating-player command/supply snapshot remains frozen for the entire continuation sequence and is not refreshed mid-sequence.
 - During that frozen window, UI display should still show the live end-now command/supply result for the current board position, even when that differs from the frozen actionable state.
+- Frozen command/supply never overrides destination-supply legality: any action that relocates or creates a piece is still illegal if the resulting destination square would leave that piece unsupplied.
 - Once the continuation closes, normal resolution resumes and the initiating player’s live command/supply state is recomputed before forced removals and terminal evaluation.
 
 A turn ends when no continuation is active and control passes to opponent.
@@ -101,7 +102,7 @@ A turn ends when no continuation is active and control passes to opponent.
   - The rushing player continues to use the command/supply state frozen at the start of the rush sequence for the duration of that sequence.
   - UI may show a rushing piece as currently unsupplied/uncommanded if live end-now evaluation says so, but that alone does not remove its continuation eligibility.
 
-For action legality, supply is a hard destination constraint for `Move`, `Project`, and `Rush`.
+For action legality, supply is a hard destination constraint for `Move`, `Project`, `Rush`, `Push`, `Follow`, and `Retreat`.
 Post-action command loss does not invalidate those actions; command is evaluated in resolution after the action is applied.
 
 ## 5.5 Push
@@ -109,6 +110,7 @@ Post-action command loss does not invalidate those actions; command is evaluated
 - Attacker must be active, belong to side to move, and not be in a restricted temporary state.
 - Target must be an orthogonally adjacent enemy piece.
 - Push is legal only if `attacker_group_strength > defender_group_strength`.
+- Push destination is legal only if the pushing piece would still be supplied on the pushed square after the push board state is formed.
 - On push:
   - attacker moves into target square,
   - target piece remains on that same square in temporary `pushed` state,
@@ -125,6 +127,7 @@ Post-action command loss does not invalidate those actions; command is evaluated
 - Retreat is the only legal action for the owner of the pushed piece during the retreat sub-phase.
 - Only the currently pushed piece may retreat.
 - Retreat destination must be an orthogonally adjacent empty square that is not the current follow-point.
+- Retreat destination is legal only if the retreating piece would still be supplied after relocation.
 - If there is exactly one legal retreat square, that retreat source and destination are considered forced.
 - If there is no legal retreat square, the pushed piece is removed and no retreat action is taken.
 - After retreat completes, `pushed` state clears and play immediately returns to the attacker for follow continuation.
@@ -135,6 +138,7 @@ Post-action command loss does not invalidate those actions; command is evaluated
 - During attacker follow sub-phase, no non-follow non-pass regular action is legal.
 - Follow is mandatory whenever needed to keep the recorded pushing group connected through the current follow-point.
 - A friendly piece that has not already shifted this push sequence may move into current follow-point.
+- Follow destination is legal only if the following piece would still be supplied after relocation.
 - After a follow move:
   - that piece becomes shifted for this push sequence,
   - follow-point updates to that piece’s previous square.

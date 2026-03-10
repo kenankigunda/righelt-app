@@ -251,6 +251,21 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 - When: Resolve forced retreat step.
 - Then: Pushed piece removed.
 
+### G-017 Push illegal when pushed destination would leave attacker unsupplied
+- Given: Push geometry and strength are valid, but after forming the pushed square the attacking piece would be unsupplied on that destination.
+- When: `Push`.
+- Then: Rejected with destination-supply failure.
+
+### G-018 Follow illegal when follow destination would leave follower unsupplied
+- Given: Follow actor is otherwise eligible, but moving into follow-point would leave that piece unsupplied.
+- When: `Follow`.
+- Then: Rejected with destination-supply failure.
+
+### G-019 Retreat illegal when retreat destination would leave retreating piece unsupplied
+- Given: Retreat destination is orthogonally adjacent and empty, but would leave the retreating piece unsupplied.
+- When: `Retreat`.
+- Then: Rejected with destination-supply failure.
+
 ## H. Supply System
 
 ### H-001 Supplied true when path exists

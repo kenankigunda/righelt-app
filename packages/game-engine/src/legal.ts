@@ -236,6 +236,14 @@ function isCoordinateSuppliedForOwner(
   return visited.has(targetKey);
 }
 
+function wouldCoordinateBeSuppliedForOwner(
+  pieces: PieceForSupplyCheck[],
+  owner: "P1" | "P2",
+  destination: { row: number; col: number },
+) {
+  return isCoordinateSuppliedForOwner(pieces, owner, destination);
+}
+
 function wouldBeSuppliedAfterRelocation(
   state: GameState,
   actorId: string,
@@ -247,7 +255,7 @@ function wouldBeSuppliedAfterRelocation(
     owner: piece.owner,
     position: piece.id === actorId ? { ...destination } : { ...piece.position },
   }));
-  return isCoordinateSuppliedForOwner(hypothetical, owner, destination);
+  return wouldCoordinateBeSuppliedForOwner(hypothetical, owner, destination);
 }
 
 function wouldProjectedPieceBeSupplied(
@@ -265,7 +273,25 @@ function wouldProjectedPieceBeSupplied(
     owner,
     position: { ...destination },
   });
-  return isCoordinateSuppliedForOwner(hypothetical, owner, destination);
+  return wouldCoordinateBeSuppliedForOwner(hypothetical, owner, destination);
+}
+
+function wouldBeSuppliedAfterPush(
+  state: GameState,
+  actorId: string,
+  defenderId: string,
+  owner: "P1" | "P2",
+  destination: { row: number; col: number },
+): boolean {
+  const hypothetical: PieceForSupplyCheck[] = state.pieces
+    .filter((piece) => piece.id !== defenderId)
+    .map((piece) => ({
+      id: piece.id,
+      owner: piece.owner,
+      position: piece.id === actorId ? { ...destination } : { ...piece.position },
+    }));
+
+  return wouldCoordinateBeSuppliedForOwner(hypothetical, owner, destination);
 }
 
 function resolveActor(state: GameState, action: Action) {
@@ -717,6 +743,13 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         message: "Push requires strictly greater attacker group strength",
       };
     }
+    if (!wouldBeSuppliedAfterPush(state, actor.id, defender.id, actor.owner, action.to)) {
+      return {
+        ok: false,
+        code: "SUPPLY_DESTINATION_UNSUPPLIED",
+        message: "Push destination would be unsupplied",
+      };
+    }
     return { ok: true };
   }
 
@@ -767,6 +800,13 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         message: "Follow actor must be orthogonally adjacent to current follow-point",
       };
     }
+    if (!wouldBeSuppliedAfterRelocation(state, actor.id, actor.owner, state.continuation.followPoint)) {
+      return {
+        ok: false,
+        code: "SUPPLY_DESTINATION_UNSUPPLIED",
+        message: "Follow destination would be unsupplied",
+      };
+    }
     return { ok: true };
   }
 
@@ -804,6 +844,13 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         ok: false,
         code: "RULE_VIOLATION",
         message: "Retreat destination cannot be the reserved follow-point",
+      };
+    }
+    if (!wouldBeSuppliedAfterRelocation(state, actor.id, actor.owner, action.to)) {
+      return {
+        ok: false,
+        code: "SUPPLY_DESTINATION_UNSUPPLIED",
+        message: "Retreat destination would be unsupplied",
       };
     }
     return { ok: true };

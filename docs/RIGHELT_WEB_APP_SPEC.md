@@ -122,7 +122,8 @@ For the current board implementation:
   - Board auto-emits `turnEnded` when the turn should close (for example after `project`, after `pass`, or after other non-continuation commits).
   - Board may emit `turnEnded` early during optional continuation windows (for example during rush) when the user elects to stop.
 - During rush and push continuations, the board must continue to treat the initiating player's command/supply state as frozen from the moment that sequence started.
-- Any command/supply change created during the continuation is reconciled only after the continuation fully closes for move legality and forced-removal purposes.
+- Any command/supply change created during the continuation is reconciled only after the continuation fully closes for frozen-status checks and forced-removal purposes.
+- However, destination-supply legality is never frozen: the board must not offer or commit a move/retreat/follow/push destination that would leave the moved piece unsupplied on that destination.
 - Even so, the board should visually render pieces using the live "if the sequence ended now" command/supply result at the current board position.
 - A piece that was eligible at the start of the continuation must remain highlighted/selectable/movable for that continuation when the frozen rules still allow it, even if its live displayed status now appears inactive.
 - Shell must treat `turnEnded` as an abstract control message and must not infer it from action-type heuristics.
