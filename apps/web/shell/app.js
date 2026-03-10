@@ -86,7 +86,7 @@ let inviteFeedback = "";
 let inviteFeedbackTimer = null;
 let routeHydrated = false;
 let resolvedInvite = null;
-const skipNextGameHydrationForGameId = new Set();
+const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
 let lastRenderedMarkup = "";
 
@@ -270,26 +270,18 @@ const setInviteFeedback = (message) => {
   }
 };
 
-const markSkipNextGameHydration = (gameId) => {
+const markInviteChoiceCommitted = (gameId) => {
   if (!gameId) {
     return;
   }
-  skipNextGameHydrationForGameId.add(gameId);
-};
-
-const consumeSkipNextGameHydration = (gameId) => {
-  if (!gameId) {
-    return false;
-  }
-  if (!skipNextGameHydrationForGameId.has(gameId)) {
-    return false;
-  }
-  skipNextGameHydrationForGameId.delete(gameId);
-  return true;
+  inviteChoiceCommittedByGameId.add(gameId);
 };
 
 const getInviteContextForGame = (game, routeName = currentRoute.name) => {
   if (!game || game.myRole !== "Guest") {
+    return null;
+  }
+  if (routeName === "game" && inviteChoiceCommittedByGameId.has(game.id)) {
     return null;
   }
   if (routeName === "invite" && resolvedInvite?.gameId === game.id) {
@@ -842,9 +834,7 @@ const syncRouteData = async () => {
   }
   if (currentRoute.name === "game") {
     resolvedInvite = null;
-    if (!consumeSkipNextGameHydration(currentRoute.gameId)) {
-      await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
-    }
+    await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
     routeHydrated = true;
     return;
   }
@@ -896,9 +886,8 @@ const liveSync = createLiveSyncClient({
 });
 
 const syncLiveChannel = () => {
-  const currentGame = currentRoute.name === "game" ? transport.getGameViewModel(currentRoute.gameId) : null;
   const routeKey =
-    currentRoute.name === "game" && currentGame?.myRole !== "Guest"
+    currentRoute.name === "game"
       ? `game:${currentRoute.gameId}`
       : currentRoute.name === "home"
         ? "home"
@@ -1027,9 +1016,7 @@ appEl.addEventListener("click", async (event) => {
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
         inviteToken: resolvedInvite?.inviteToken || null,
       });
-      if (action === "accept-invite-viewer") {
-        markSkipNextGameHydration(gameId);
-      }
+      markInviteChoiceCommitted(gameId);
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
         navigateTo(buildGameHash(gameId));
         return;
@@ -1047,9 +1034,7 @@ appEl.addEventListener("click", async (event) => {
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
         inviteToken: resolvedInvite?.inviteToken || null,
       });
-      if (action === "accept-invite-player") {
-        markSkipNextGameHydration(gameId);
-      }
+      markInviteChoiceCommitted(gameId);
       if (result.pendingApproval) {
         setInviteFeedback("Player join request sent. You are now viewing the game while approval is pending.");
       }

@@ -3,6 +3,7 @@ const normalizeQuery = (query) => String(query).replace(/\s+/g, " ").trim();
 export const createFakeD1 = () => {
   const shellGames = new Map();
   const shellInvites = new Map();
+  const nextGameReadOverrideById = new Map();
   let selectGameByIdCount = 0;
 
   const prepare = (query) => {
@@ -48,7 +49,13 @@ export const createFakeD1 = () => {
       async first() {
         if (normalized.includes("SELECT state_json FROM shell_live_games WHERE game_id = ?1")) {
           selectGameByIdCount += 1;
-          const row = shellGames.get(params[0]);
+          const gameId = params[0];
+          const override = nextGameReadOverrideById.get(gameId);
+          if (override) {
+            nextGameReadOverrideById.delete(gameId);
+            return { state_json: JSON.stringify(override) };
+          }
+          const row = shellGames.get(gameId);
           return row ? { state_json: row.state_json } : null;
         }
 
@@ -88,6 +95,7 @@ export const createFakeD1 = () => {
     reset() {
       shellGames.clear();
       shellInvites.clear();
+      nextGameReadOverrideById.clear();
       selectGameByIdCount = 0;
     },
     overwriteGameState(gameId, update) {
@@ -102,6 +110,16 @@ export const createFakeD1 = () => {
       row.latest_activity_at = next.lastMoveAt || next.updatedAt || next.createdAt || row.latest_activity_at;
       shellGames.set(gameId, row);
       return true;
+    },
+    setNextGameReadOverride(gameId, state) {
+      nextGameReadOverrideById.set(gameId, structuredClone(state));
+    },
+    getGameState(gameId) {
+      const row = shellGames.get(gameId);
+      if (!row || typeof row.state_json !== "string") {
+        return null;
+      }
+      return JSON.parse(row.state_json);
     },
     getStats() {
       return {
