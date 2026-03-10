@@ -11,6 +11,11 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
 const isSupplyPoint = (row, col) => (row === 0 && col === 9) || (row === 9 && col === 0);
+export const getPieceRenderStatus = (piece) => ({
+  supplied: piece?.displaySupplied ?? piece?.supplied ?? false,
+  commanded: piece?.displayCommanded ?? piece?.commanded ?? false,
+});
+
 const formatActionPreviewLabel = (actionType, snapshot, destination) => {
   const suffix = destination ? ` (${destination.row},${destination.col})` : "";
   if (snapshot?.continuation?.type === "rush" && actionType === "rush") {
@@ -75,7 +80,8 @@ function findPreferredPieceAt(snapshot, row, col) {
 function buildPieceToken(piece, ghost = false) {
   const token = document.createElement("span");
   token.className = `piece-token ${piece.owner === "P1" ? "p1" : "p2"} ${piece.kind}`;
-  if (!piece.supplied || !piece.commanded) {
+  const renderStatus = getPieceRenderStatus(piece);
+  if (!renderStatus.supplied || !renderStatus.commanded) {
     token.classList.add("inactive");
   }
   if (piece.pushed) {
@@ -89,13 +95,14 @@ function buildPieceToken(piece, ghost = false) {
 }
 
 function getInactiveSelectedPieceLabel(piece) {
-  if (!piece || (piece.supplied && piece.commanded)) {
+  const renderStatus = getPieceRenderStatus(piece);
+  if (!piece || (renderStatus.supplied && renderStatus.commanded)) {
     return null;
   }
-  if (!piece.supplied && !piece.commanded) {
+  if (!renderStatus.supplied && !renderStatus.commanded) {
     return "Inactive: no connection back to its commander or supply point.";
   }
-  if (!piece.supplied) {
+  if (!renderStatus.supplied) {
     return "Inactive: no connection back to its supply point.";
   }
   return "Inactive: no connection back to its commander.";
@@ -733,7 +740,7 @@ export function createEnginePlaygroundBoardAdapter() {
     getCommanderSupplySummary(snapshot) {
       const c1 = snapshot.pieces.find((piece) => piece.id === "C1");
       const c2 = snapshot.pieces.find((piece) => piece.id === "C2");
-      return `C1=${c1?.supplied ?? "-"} | C2=${c2?.supplied ?? "-"}`;
+      return `C1=${getPieceRenderStatus(c1).supplied} | C2=${getPieceRenderStatus(c2).supplied}`;
     },
 
     getSelectedPieceSummary({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) {
@@ -749,8 +756,10 @@ export function createEnginePlaygroundBoardAdapter() {
           owner: selectedPiece.owner,
           kind: selectedPiece.kind,
           position: selectedPiece.position,
-          supplied: selectedPiece.supplied,
-          commanded: selectedPiece.commanded,
+          supplied: getPieceRenderStatus(selectedPiece).supplied,
+          commanded: getPieceRenderStatus(selectedPiece).commanded,
+          actionableSupplied: selectedPiece.supplied,
+          actionableCommanded: selectedPiece.commanded,
           groupComponentId: groupInfo.componentId,
           groupStrength: groupInfo.strength,
         },

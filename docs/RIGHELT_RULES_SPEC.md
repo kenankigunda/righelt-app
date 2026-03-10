@@ -38,6 +38,8 @@ Each piece also has two derived booleans:
 
 A piece is **active** iff `supplied == true` and `commanded == true` and it is not in a temporary state that forbids acting.
 
+For UI rendering, implementations may also expose live display status that answers: "if the continuation ended at this exact board position, would this piece currently be supplied/commanded?"
+
 ## 4. Turn Structure
 
 On a normal turn, the active player may do exactly one of:
@@ -51,6 +53,7 @@ Some actions open a temporary continuation phase:
 - `Rush` can chain during a rush continuation sequence as allowed by movement legality, but each piece may rush at most once in that sequence.
 - When a `Rush` or `Push` begins, the initiating player snapshots their own command/supply state as it existed before that opening action resolves.
 - That initiating-player command/supply snapshot remains frozen for the entire continuation sequence and is not refreshed mid-sequence.
+- During that frozen window, UI display should still show the live end-now command/supply result for the current board position, even when that differs from the frozen actionable state.
 - Once the continuation closes, normal resolution resumes and the initiating player’s live command/supply state is recomputed before forced removals and terminal evaluation.
 
 A turn ends when no continuation is active and control passes to opponent.
@@ -96,6 +99,7 @@ A turn ends when no continuation is active and control passes to opponent.
   - Additional rushes are optional; player may `Pass` to end rush continuation and end turn.
   - Any single piece may rush at most once in that continuation sequence.
   - The rushing player continues to use the command/supply state frozen at the start of the rush sequence for the duration of that sequence.
+  - UI may show a rushing piece as currently unsupplied/uncommanded if live end-now evaluation says so, but that alone does not remove its continuation eligibility.
 
 For action legality, supply is a hard destination constraint for `Move`, `Project`, and `Rush`.
 Post-action command loss does not invalidate those actions; command is evaluated in resolution after the action is applied.
@@ -112,6 +116,7 @@ Post-action command loss does not invalidate those actions; command is evaluated
   - follow-point is set to attacker’s previous square,
   - follow-group connectivity obligation is recorded from the attacker side,
   - attacker-side command/supply state is frozen from the pre-push board and remains frozen until push continuation closes,
+  - UI may still show attacker-side pieces using the live end-now command/supply result while the frozen continuation eligibility remains in force,
   - play immediately passes to the owner of the pushed piece for forced `Retreat`, unless no retreat square exists.
   - if no orthogonally adjacent empty retreat square exists, the pushed piece is removed immediately, the retreat sub-phase is skipped, and play remains with the attacker for the follow sub-phase.
 

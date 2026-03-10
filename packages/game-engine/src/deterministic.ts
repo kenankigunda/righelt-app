@@ -41,6 +41,8 @@ function normalizePiece(piece: Piece): Piece {
   return {
     ...piece,
     position: cloneCoordinate(piece.position),
+    displaySupplied: piece.displaySupplied ?? piece.supplied,
+    displayCommanded: piece.displayCommanded ?? piece.commanded,
   };
 }
 

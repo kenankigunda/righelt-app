@@ -265,6 +265,7 @@ test("push continuation keeps initiating player command state frozen until the s
   const frozenResolved = resolveToStability(state, { artifactMode: "minimal" });
   const followerDuringContinuation = frozenResolved.pieces.find((piece) => piece.id === "F1");
   assert.equal(followerDuringContinuation?.commanded, true);
+  assert.equal(followerDuringContinuation?.displayCommanded, false);
   assert.equal(frozenResolved.continuation?.type, "push");
 
   const afterClose = resolveToStability(
@@ -276,6 +277,7 @@ test("push continuation keeps initiating player command state frozen until the s
   );
   const followerAfterClose = afterClose.pieces.find((piece) => piece.id === "F1");
   assert.equal(followerAfterClose?.commanded, false);
+  assert.equal(followerAfterClose?.displayCommanded, false);
 });
 
 test("O-001 rush continuation can chain multiple rush actions", () => {

@@ -14,6 +14,8 @@ export type Piece = {
   position: Coordinate;
   supplied: boolean;
   commanded: boolean;
+  displaySupplied?: boolean;
+  displayCommanded?: boolean;
   pushed?: boolean;
   shifted?: boolean;
 };

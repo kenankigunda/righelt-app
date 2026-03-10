@@ -44,6 +44,9 @@ On your turn, you normally do one of the following:
 
 Some actions (especially Push and Rush) can create short continuation sequences before turn control fully passes.
 
+During those continuation sequences, a piece that started the sequence able to act can still finish that sequence even if the board position has already cut its live supply or command.
+The interface may show that piece as it would look if the sequence stopped immediately, but it remains usable for the continuation while that sequence is still open.
+
 ## 4. Actions
 
 ## 4.1 Pass
@@ -75,6 +78,7 @@ A tactical one-step move (including diagonals) that is only legal under the foll
 - Diagonal rushes require enemy contact in the relevant corner-adjacent lanes.
 - In a rush sequence, each individual piece can rush at most once.
 - After your first rush, extra rushes are optional: you may pass to end the rush sequence and end your turn.
+- During the rush sequence, the game still remembers which of your pieces were allowed to keep acting from the start of the sequence, even if the board display now shows a broken supply/command line.
 
 Use Rush for tempo and local repositioning around conflict.
 
@@ -91,6 +95,7 @@ Push lets you displace an enemy piece, but only if your local formation is stron
 - If legal, your piece advances into the enemy piece’s square and the enemy piece is temporarily stacked there as a pushed piece.
 - The pushed piece’s owner must then resolve a forced retreat.
 - After that retreat, the pushing player completes any required **follow** moves through the vacated trail.
+- During that push continuation, the display can show that some of the attacker's pieces would now be inactive if play stopped immediately, but pieces that were still entitled to continue from the start of the push remain usable until the push sequence finishes.
 
 ### What is group strength?
 

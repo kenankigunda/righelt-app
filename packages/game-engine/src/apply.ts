@@ -98,6 +98,8 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
       position: { ...action.to },
       supplied: true,
       commanded: true,
+      displaySupplied: true,
+      displayCommanded: true,
     });
     endTurn();
   } else if (action.type === "rush" && actor && action.to) {
