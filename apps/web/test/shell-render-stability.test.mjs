@@ -27,3 +27,10 @@ test("live sync status renders are deduplicated by stable status key", () => {
   assert.match(source, /if \(statusKey === lastWsStatusKey\) \{\s*return;\s*\}/s);
   assert.match(source, /lastWsStatusKey = statusKey;\s*wsStatus = status;\s*render\(\);/s);
 });
+
+test("syncLiveChannel does not disconnect/reconnect while same route is still connecting", () => {
+  assert.match(
+    source,
+    /if \(routeKey === liveSyncConnectedRoute && \(wsStatus\.state === "connected" \|\| wsStatus\.state === "connecting"\)\) \{\s*return;\s*\}/s,
+  );
+});

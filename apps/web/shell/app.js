@@ -866,7 +866,7 @@ const syncLiveChannel = () => {
         ? "home"
         : "none";
 
-  if (routeKey === liveSyncConnectedRoute && wsStatus.state === "connected") {
+  if (routeKey === liveSyncConnectedRoute && (wsStatus.state === "connected" || wsStatus.state === "connecting")) {
     return;
   }
   liveSyncConnectedRoute = routeKey;
