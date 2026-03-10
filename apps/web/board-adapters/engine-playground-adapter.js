@@ -539,7 +539,7 @@ export function createEnginePlaygroundBoardAdapter() {
       clickedCoord,
       allowFreeSelection,
     }) {
-      const clickedPiece = findPieceAt(snapshot, clickedCoord.row, clickedCoord.col);
+      const clickedPiece = findPreferredPieceAt(snapshot, clickedCoord.row, clickedCoord.col);
       const selectedPiece = findPieceById(snapshot, selection.selectedPieceId);
       const actionPreviewsAtTarget = (Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves).filter(
         (action) => action.to && action.to.row === clickedCoord.row && action.to.col === clickedCoord.col,
