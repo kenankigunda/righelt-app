@@ -2,17 +2,10 @@ name: Deploy
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "apps/web/**"
-      - "packages/api-handler/**"
-      - "packages/shared-types/**"
-      - "db/migrations/**"
-      - "package.json"
-      - "pnpm-workspace.yaml"
-      - "tsconfig.json"
-      - "tsconfig.base.json"
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
 
 concurrency:
   group: deploy-main
@@ -20,6 +13,11 @@ concurrency:
 
 jobs:
   deploy:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     environment: Dev
     permissions:
@@ -27,6 +25,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
