@@ -51,11 +51,18 @@ test("offline toggles sync current identity presence", () => {
   assert.match(source, /void syncCurrentIdentityPresence\(false\)/);
 });
 
-test("invite acceptance skips one immediate game hydration fetch and relies on join response state", () => {
-  assert.match(source, /const skipNextGameHydrationForGameId = new Set\(\);/);
-  assert.match(source, /const markSkipNextGameHydration = \(gameId\) => \{/);
-  assert.match(source, /const consumeSkipNextGameHydration = \(gameId\) => \{/);
-  assert.match(source, /if \(!consumeSkipNextGameHydration\(currentRoute\.gameId\)\) \{\s*await transport\.loadGame\(currentRoute\.gameId, \{ openAsViewer: false \}\);\s*\}/s);
-  assert.match(source, /if \(action === "accept-invite-viewer"\) \{\s*markSkipNextGameHydration\(gameId\);\s*\}/s);
-  assert.match(source, /if \(action === "accept-invite-player"\) \{\s*markSkipNextGameHydration\(gameId\);\s*\}/s);
+test("invite choice commit suppresses repeat game-route invite gate and join actions commit choice", () => {
+  assert.match(source, /const inviteChoiceCommittedByGameId = new Set\(\);/);
+  assert.match(source, /const markInviteChoiceCommitted = \(gameId\) => \{/);
+  assert.match(source, /if \(routeName === "game" && inviteChoiceCommittedByGameId\.has\(game\.id\)\) \{\s*return null;\s*\}/s);
+  assert.match(source, /if \(action === "join-viewer" \|\| action === "accept-invite-viewer"\)[\s\S]*?markInviteChoiceCommitted\(gameId\);/s);
+  assert.match(source, /if \(action === "join-player" \|\| action === "accept-invite-player"\)[\s\S]*?markInviteChoiceCommitted\(gameId\);/s);
+  assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*resolvedInvite = null;\s*await transport\.loadGame\(currentRoute\.gameId, \{ openAsViewer: false \}\);\s*routeHydrated = true;\s*return;\s*\}/s);
+});
+
+test("game route live sync connection is not gated by participant role", () => {
+  assert.match(
+    source,
+    /const routeKey =\s*currentRoute\.name === "game"\s*\?\s*`game:\$\{currentRoute\.gameId\}`\s*:\s*currentRoute\.name === "home"\s*\?\s*"home"\s*:\s*"none";/s,
+  );
 });
