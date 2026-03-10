@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { applyAction, listLegalActions, validateAction } from "../../src/index.ts";
+import { resolveToStability } from "../../src/resolve.ts";
 import { commander, makeState, unit } from "../helpers/state-builders.mjs";
 
 test("F-001 orthogonal rush legal when target adjacent to enemy", () => {
@@ -300,4 +301,100 @@ test("F-013 rush destination that would be unsupplied is illegal", () => {
   });
 
   assert.equal(result.ok, false);
+});
+
+test("F-014 rush continuation uses frozen commanded state for the initiating player", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      frozenOwner: "P1",
+      frozenPieceStatesById: {
+        C1: { supplied: true, commanded: true },
+        "U1-1": { supplied: true, commanded: true },
+      },
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 0, 9),
+      commander("C2", "P2", 9, 0),
+      unit("U1-1", "P1", 4, 4, { commanded: false, supplied: true }),
+      unit("U2-1", "P2", 4, 6),
+    ],
+  });
+
+  const result = validateAction(state, {
+    type: "rush",
+    actorId: "U1-1",
+    from: { row: 4, col: 4 },
+    to: { row: 4, col: 5 },
+  });
+
+  assert.equal(result.ok, true);
+});
+
+test("F-015 rush continuation can display a piece as inactive while it remains legally usable", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      frozenOwner: "P1",
+      frozenPieceStatesById: {
+        C1: { supplied: true, commanded: true },
+        "U1-1": { supplied: true, commanded: true },
+      },
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 0, 9, { commanded: true, supplied: true }),
+      commander("C2", "P2", 9, 0, { commanded: true, supplied: true }),
+      unit("U1-1", "P1", 4, 4, {
+        supplied: true,
+        commanded: true,
+        displaySupplied: false,
+        displayCommanded: false,
+      }),
+      unit("U2-1", "P2", 4, 6),
+    ],
+  });
+
+  const legal = validateAction(state, {
+    type: "rush",
+    actorId: "U1-1",
+    from: { row: 4, col: 4 },
+    to: { row: 4, col: 5 },
+  });
+
+  assert.equal(legal.ok, true);
+  assert.equal(state.pieces.find((piece) => piece.id === "U1-1")?.displayCommanded, false);
+});
+
+test("F-016 rush continuation updates display supply without dropping frozen usability", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      frozenOwner: "P1",
+      frozenPieceStatesById: {
+        C1: { supplied: true, commanded: true },
+        "U1-1": { supplied: true, commanded: true },
+      },
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 3, 6),
+      commander("C2", "P2", 6, 3),
+      unit("U1-1", "P1", 4, 5),
+      unit("U2-1", "P2", 4, 6),
+      unit("U2-wall-top", "P2", 0, 4),
+      unit("U2-wall-bottom", "P2", 9, 4),
+      unit("U2-block-north", "P2", 3, 5),
+      unit("U2-block-south", "P2", 5, 5),
+    ],
+  });
+
+  const resolved = resolveToStability(state, { artifactMode: "minimal" });
+  const piece = resolved.pieces.find((candidate) => candidate.id === "U1-1");
+  assert.equal(piece?.supplied, true);
+  assert.equal(piece?.displaySupplied, false);
 });

@@ -14,6 +14,8 @@ export function createInitialState(): GameState {
         position: { row: 3, col: 6 },
         supplied: true,
         commanded: true,
+        displaySupplied: true,
+        displayCommanded: true,
       },
       {
         id: "C2",
@@ -22,6 +24,8 @@ export function createInitialState(): GameState {
         position: { row: 6, col: 3 },
         supplied: true,
         commanded: true,
+        displaySupplied: true,
+        displayCommanded: true,
       },
     ],
     continuation: null,

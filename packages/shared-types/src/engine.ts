@@ -14,12 +14,18 @@ export type Piece = {
   position: Coordinate;
   supplied: boolean;
   commanded: boolean;
+  displaySupplied?: boolean;
+  displayCommanded?: boolean;
   pushed?: boolean;
   shifted?: boolean;
 };
 
 export type ContinuationType = "push" | "rush";
 export type PushContinuationPhase = "retreat" | "follow";
+export type FrozenPieceState = {
+  supplied: boolean;
+  commanded: boolean;
+};
 
 export type ContinuationContext = {
   type: ContinuationType;
@@ -30,6 +36,8 @@ export type ContinuationContext = {
   pushedPieceId?: string;
   followGroupPieceIds?: string[];
   rushedPieceIds?: string[];
+  frozenOwner?: PlayerId;
+  frozenPieceStatesById?: Record<string, FrozenPieceState>;
   chainLength: number;
 };
 

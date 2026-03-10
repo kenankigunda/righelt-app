@@ -25,6 +25,8 @@ test("A-001 standard setup", () => {
       position: { row: 3, col: 6 },
       supplied: true,
       commanded: true,
+      displaySupplied: true,
+      displayCommanded: true,
     },
     {
       id: "C2",
@@ -33,6 +35,8 @@ test("A-001 standard setup", () => {
       position: { row: 6, col: 3 },
       supplied: true,
       commanded: true,
+      displaySupplied: true,
+      displayCommanded: true,
     },
   ]);
 });

@@ -409,3 +409,110 @@ test("G-016 edge push still grants retreat through the attacker origin square", 
   assert.equal(next.sideToMove, "P2");
   assert.equal(next.turnIndex, 0);
 });
+
+test("G-017 push illegal when pushed destination would leave attacker unsupplied", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 3, 6),
+      commander("C2", "P2", 6, 3),
+      unit("A1", "P1", 4, 4),
+      unit("A2", "P1", 4, 3),
+      unit("A3", "P1", 3, 3),
+      unit("A4", "P1", 5, 3),
+      unit("A5", "P1", 6, 3),
+      unit("D1", "P2", 4, 5),
+      unit("U2-wall-top", "P2", 0, 4),
+      unit("U2-wall-bottom", "P2", 9, 4),
+      unit("U2-block-north", "P2", 3, 5),
+      unit("U2-block-south", "P2", 5, 5),
+      unit("U2-block-east", "P2", 4, 6),
+    ],
+  });
+
+  const result = validateAction(state, {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 4 },
+    to: { row: 4, col: 5 },
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.code, "SUPPLY_DESTINATION_UNSUPPLIED");
+  }
+});
+
+test("G-018 follow illegal when follow destination would leave follower unsupplied", () => {
+  const state = makeState({
+    continuation: {
+      type: "push",
+      owner: "P1",
+      attackerOwner: "P1",
+      phase: "follow",
+      followPoint: { row: 4, col: 5 },
+      followGroupPieceIds: ["A1", "F1"],
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 3, 6),
+      commander("C2", "P2", 6, 3),
+      unit("A1", "P1", 4, 6, { shifted: true }),
+      unit("F1", "P1", 4, 4),
+      unit("D1", "P2", 4, 7, { pushed: true }),
+      unit("U2-wall-top", "P2", 0, 4),
+      unit("U2-wall-bottom", "P2", 9, 4),
+      unit("U2-block-north", "P2", 3, 5),
+      unit("U2-block-south", "P2", 5, 5),
+      unit("U2-block-east", "P2", 4, 6),
+    ],
+  });
+
+  const result = validateAction(state, {
+    type: "follow",
+    actorId: "F1",
+    from: { row: 4, col: 4 },
+    to: { row: 4, col: 5 },
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.code, "SUPPLY_DESTINATION_UNSUPPLIED");
+  }
+});
+
+test("G-019 retreat illegal when retreat destination would leave retreating piece unsupplied", () => {
+  const state = makeState({
+    sideToMove: "P2",
+    continuation: {
+      type: "push",
+      owner: "P2",
+      attackerOwner: "P1",
+      phase: "retreat",
+      followPoint: { row: 4, col: 3 },
+      pushedPieceId: "D1",
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 3, 6),
+      commander("C2", "P2", 8, 1),
+      unit("D1", "P2", 5, 3, { pushed: true }),
+      unit("U1-wall-top", "P1", 0, 3),
+      unit("U1-wall-bottom", "P1", 9, 3),
+      unit("U1-block-north", "P1", 4, 4),
+      unit("U1-block-south", "P1", 6, 4),
+      unit("U1-block-east", "P1", 5, 5),
+    ],
+  });
+
+  const result = validateAction(state, {
+    type: "retreat",
+    actorId: "D1",
+    from: { row: 5, col: 3 },
+    to: { row: 5, col: 4 },
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.code, "SUPPLY_DESTINATION_UNSUPPLIED");
+  }
+});

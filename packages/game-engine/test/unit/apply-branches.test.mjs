@@ -67,3 +67,32 @@ test("applyAction retains shifted actor during continuation until turn end", () 
   assert.equal(Boolean(follower?.shifted), true);
   assert.equal(next.continuation?.type, "push");
 });
+
+test("applyAction snapshots initiating player command and supply when a continuation starts", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 0, 9, { commanded: true, supplied: true }),
+      commander("C2", "P2", 9, 0),
+      unit("U1-1", "P1", 4, 4, { commanded: true, supplied: true }),
+      unit("U2-1", "P2", 4, 6),
+    ],
+  });
+
+  const next = applyAction(state, {
+    type: "rush",
+    actorId: "U1-1",
+    from: { row: 4, col: 4 },
+    to: { row: 4, col: 5 },
+  }).state;
+
+  assert.equal(next.continuation?.type, "rush");
+  assert.equal(next.continuation?.frozenOwner, "P1");
+  assert.deepEqual(next.continuation?.frozenPieceStatesById?.["U1-1"], {
+    supplied: true,
+    commanded: true,
+  });
+  assert.deepEqual(next.continuation?.frozenPieceStatesById?.C1, {
+    supplied: true,
+    commanded: true,
+  });
+});

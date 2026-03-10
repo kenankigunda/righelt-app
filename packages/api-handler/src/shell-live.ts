@@ -36,6 +36,13 @@ type ShellLiveEnv = {
   DB: D1DatabaseLike;
 };
 
+type RemovedPieceNotice = {
+  pieceId: string;
+  position: { row: number; col: number };
+  reason: "loss_of_supply" | "no_retreat";
+  message: string;
+};
+
 type Participant = {
   identityId: string;
   connected: boolean;
@@ -113,6 +120,48 @@ export const __resetShellLiveStateForTests = () => {
 
 const now = () => new Date(Date.now()).toISOString();
 const clone = <T>(value: T): T => structuredClone(value);
+
+const collectRemovedPieceNotices = (
+  before: GameState,
+  afterApply: GameState,
+  afterStability: GameState,
+  action: Action,
+): RemovedPieceNotice[] => {
+  const afterApplyIds = new Set(afterApply.pieces.map((piece) => piece.id));
+  const afterStableIds = new Set(afterStability.pieces.map((piece) => piece.id));
+  const notices: RemovedPieceNotice[] = [];
+
+  for (const piece of before.pieces) {
+    if (!afterApplyIds.has(piece.id)) {
+      const reason =
+        piece.pushed || action.type === "push" || action.type === "retreat"
+          ? "no_retreat"
+          : "loss_of_supply";
+      notices.push({
+        pieceId: piece.id,
+        position: { ...piece.position },
+        reason,
+        message:
+          reason === "no_retreat"
+            ? `Piece at (${piece.position.row}, ${piece.position.col}) destroyed because it could not retreat`
+            : `Piece at (${piece.position.row}, ${piece.position.col}) destroyed due to loss of supply`,
+      });
+    }
+  }
+
+  for (const piece of afterApply.pieces) {
+    if (!afterStableIds.has(piece.id)) {
+      notices.push({
+        pieceId: piece.id,
+        position: { ...piece.position },
+        reason: "loss_of_supply",
+        message: `Piece at (${piece.position.row}, ${piece.position.col}) destroyed due to loss of supply`,
+      });
+    }
+  }
+
+  return notices;
+};
 
 const createInviteToken = () => {
   const bytes = new Uint8Array(18);
@@ -731,6 +780,7 @@ const applyServerAction = (game: ShellGame, action: Action, notation?: string) =
   }
   const applied = applyAction(stable, action);
   const next = resolveToStability(applied.state, { artifactMode: "full" });
+  const removedPieces = collectRemovedPieceNotices(stable, applied.state, next, action);
   next.sideToMove = getSideForSeat(getControlSeatForTurn(next, activeTurn.playerSeat));
   next.turnIndex = activeTurn.index;
 
@@ -756,7 +806,7 @@ const applyServerAction = (game: ShellGame, action: Action, notation?: string) =
   game.lastMoveAt = move.at;
   game.updatedAt = move.at;
   addNotification(game, `Move recorded in turn ${activeTurn.index + 1}`);
-  return { ok: true as const, move, state: next };
+  return { ok: true as const, move, state: next, removedPieces };
 };
 
 const applyServerMove = (game: ShellGame, notation?: string) => {
@@ -1300,6 +1350,7 @@ export const handleShellLiveRequest = async (
           accepted: true,
           move: moved.move,
           state: moved.state,
+          removedPieces: moved.removedPieces,
           legalActions: listLegalActions(moved.state),
           game: withViewModel(game, identityId, offline),
         },

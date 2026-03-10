@@ -8,9 +8,22 @@ import {
 
 const BOARD_SIZE = 10;
 const SVG_NS = "http://www.w3.org/2000/svg";
+const REMOVAL_FLASH_DURATION_MS = 1800;
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
 const isSupplyPoint = (row, col) => (row === 0 && col === 9) || (row === 9 && col === 0);
+export const getPieceRenderStatus = (piece) => ({
+  supplied: piece?.displaySupplied ?? piece?.supplied ?? false,
+  commanded: piece?.displayCommanded ?? piece?.commanded ?? false,
+});
+
+export const getRemovalAnimationDelayMs = (effect, now = Date.now()) => {
+  if (!effect || typeof effect.startedAt !== "number") {
+    return 0;
+  }
+  return Math.max(0, Math.min(now - effect.startedAt, REMOVAL_FLASH_DURATION_MS));
+};
+
 const formatActionPreviewLabel = (actionType, snapshot, destination) => {
   const suffix = destination ? ` (${destination.row},${destination.col})` : "";
   if (snapshot?.continuation?.type === "rush" && actionType === "rush") {
@@ -75,7 +88,8 @@ function findPreferredPieceAt(snapshot, row, col) {
 function buildPieceToken(piece, ghost = false) {
   const token = document.createElement("span");
   token.className = `piece-token ${piece.owner === "P1" ? "p1" : "p2"} ${piece.kind}`;
-  if (!piece.supplied || !piece.commanded) {
+  const renderStatus = getPieceRenderStatus(piece);
+  if (!renderStatus.supplied || !renderStatus.commanded) {
     token.classList.add("inactive");
   }
   if (piece.pushed) {
@@ -88,17 +102,61 @@ function buildPieceToken(piece, ghost = false) {
   return token;
 }
 
-function getInactiveSelectedPieceLabel(piece) {
-  if (!piece || (piece.supplied && piece.commanded)) {
+export function getInactiveSelectedPieceLabel(piece, snapshot) {
+  const renderStatus = getPieceRenderStatus(piece);
+  if (!piece || (renderStatus.supplied && renderStatus.commanded)) {
     return null;
   }
-  if (!piece.supplied && !piece.commanded) {
-    return "Inactive: no connection back to its commander or supply point.";
+  const continuationPrefix =
+    snapshot?.continuation?.type === "rush" || snapshot?.continuation?.type === "push"
+      ? "Will be inactive if not moved: "
+      : "Inactive: ";
+  if (!renderStatus.supplied && !renderStatus.commanded) {
+    return `${continuationPrefix}no connection back to its commander or supply point.`;
   }
-  if (!piece.supplied) {
-    return "Inactive: no connection back to its supply point.";
+  if (!renderStatus.supplied) {
+    return `${continuationPrefix}no connection back to its supply point.`;
   }
-  return "Inactive: no connection back to its commander.";
+  return `${continuationPrefix}no connection back to its commander.`;
+}
+
+function getFrozenSequenceStartStatus(piece, snapshot) {
+  if (!piece || !snapshot?.continuation?.frozenPieceStatesById) {
+    return null;
+  }
+
+  return snapshot.continuation.frozenPieceStatesById[piece.id] ?? null;
+}
+
+export function getSelectedPieceTooltipLabel(piece, snapshot) {
+  const inactiveLabel = getInactiveSelectedPieceLabel(piece, snapshot);
+  if (inactiveLabel) {
+    return inactiveLabel;
+  }
+
+  const renderStatus = getPieceRenderStatus(piece);
+  const frozenStatus = getFrozenSequenceStartStatus(piece, snapshot);
+  const continuationType = snapshot?.continuation?.type;
+  if (!frozenStatus || (continuationType !== "rush" && continuationType !== "push")) {
+    return null;
+  }
+  const continuationLabel = continuationType === "rush" ? "rush" : "push";
+
+  if (!renderStatus.supplied || !renderStatus.commanded) {
+    return null;
+  }
+
+  if (!frozenStatus.supplied && !frozenStatus.commanded) {
+    return `Cannot move: was not commanded or supplied at start of ${continuationLabel}.`;
+  }
+  if (!frozenStatus.supplied) {
+    return `Cannot move: was not supplied at start of ${continuationLabel}.`;
+  }
+  if (!frozenStatus.commanded) {
+    return `Cannot move: was not commanded at start of ${continuationLabel}.`;
+  }
+
+  return null;
 }
 
 function getSupplyArtifactFor(snapshot, owner) {
@@ -338,10 +396,10 @@ export function createEnginePlaygroundBoardAdapter() {
     const pieceCell = cellByCoordinateKey.get(coordKey(piece.position));
     if (pieceCell) {
       pieceCell.classList.add("selected-piece");
-      const inactiveLabel = getInactiveSelectedPieceLabel(piece);
-      if (inactiveLabel) {
+      const tooltipLabel = getSelectedPieceTooltipLabel(piece, snapshot);
+      if (tooltipLabel) {
         pieceCell.classList.add("inactive-selected-piece");
-        pieceCell.setAttribute("data-inactive-label", inactiveLabel);
+        pieceCell.setAttribute("data-inactive-label", tooltipLabel);
       }
     }
 
@@ -668,6 +726,10 @@ export function createEnginePlaygroundBoardAdapter() {
           if (removalEffect?.piece) {
             const removalPiece = buildPieceToken(removalEffect.piece);
             removalPiece.classList.add("removal-piece");
+            const animationDelayMs = getRemovalAnimationDelayMs(removalEffect);
+            if (animationDelayMs > 0) {
+              removalPiece.style.animationDelay = `-${animationDelayMs}ms`;
+            }
             cell.appendChild(removalPiece);
           }
 
@@ -733,7 +795,7 @@ export function createEnginePlaygroundBoardAdapter() {
     getCommanderSupplySummary(snapshot) {
       const c1 = snapshot.pieces.find((piece) => piece.id === "C1");
       const c2 = snapshot.pieces.find((piece) => piece.id === "C2");
-      return `C1=${c1?.supplied ?? "-"} | C2=${c2?.supplied ?? "-"}`;
+      return `C1=${getPieceRenderStatus(c1).supplied} | C2=${getPieceRenderStatus(c2).supplied}`;
     },
 
     getSelectedPieceSummary({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) {
@@ -749,8 +811,10 @@ export function createEnginePlaygroundBoardAdapter() {
           owner: selectedPiece.owner,
           kind: selectedPiece.kind,
           position: selectedPiece.position,
-          supplied: selectedPiece.supplied,
-          commanded: selectedPiece.commanded,
+          supplied: getPieceRenderStatus(selectedPiece).supplied,
+          commanded: getPieceRenderStatus(selectedPiece).commanded,
+          actionableSupplied: selectedPiece.supplied,
+          actionableCommanded: selectedPiece.commanded,
           groupComponentId: groupInfo.componentId,
           groupStrength: groupInfo.strength,
         },

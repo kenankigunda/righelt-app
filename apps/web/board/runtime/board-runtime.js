@@ -370,8 +370,25 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     renderStatus();
   };
 
-  const showRemovalEffects = () => {
+  const showRemovalEffects = (effects, previousState) => {
     clearRemovalEffects();
+    const startedAt = Date.now();
+    removalEffects = Array.isArray(effects)
+      ? effects.map((effect) => ({
+          ...effect,
+          startedAt,
+          piece: previousState?.pieces?.find((piece) => piece.id === effect.pieceId) ?? null,
+        }))
+      : [];
+    if (removalEffects.length === 0) {
+      return;
+    }
+    renderBoard();
+    removalEffectsTimer = setTimeout(() => {
+      removalEffects = [];
+      removalEffectsTimer = null;
+      renderBoard();
+    }, 2400);
   };
 
   const setResult = (value) => {
@@ -409,7 +426,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
           }
         }
 
-        showRemovalEffects();
+        showRemovalEffects(body.removedPieces, previousState);
         refreshSelectionLabels();
         renderBoard();
         renderStatus();
