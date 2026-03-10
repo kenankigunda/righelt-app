@@ -86,8 +86,10 @@ let inviteFeedback = "";
 let inviteFeedbackTimer = null;
 let routeHydrated = false;
 let resolvedInvite = null;
+const inviteGateSuppressionByGameId = new Map();
 const ignoredApprovalRequests = new Set();
 let lastRenderedMarkup = "";
+const INVITE_GATE_SUPPRESSION_MS = 15000;
 
 const escapeHtml = (value) =>
   String(value)
@@ -269,8 +271,40 @@ const setInviteFeedback = (message) => {
   }
 };
 
+const suppressInviteGateForGame = (gameId) => {
+  if (!gameId) {
+    return;
+  }
+  inviteGateSuppressionByGameId.set(gameId, Date.now() + INVITE_GATE_SUPPRESSION_MS);
+};
+
+const clearInviteGateSuppressionForGame = (gameId) => {
+  if (!gameId) {
+    return;
+  }
+  inviteGateSuppressionByGameId.delete(gameId);
+};
+
+const isInviteGateSuppressedForGame = (gameId) => {
+  if (!gameId) {
+    return false;
+  }
+  const expiresAt = inviteGateSuppressionByGameId.get(gameId);
+  if (!expiresAt) {
+    return false;
+  }
+  if (expiresAt <= Date.now()) {
+    inviteGateSuppressionByGameId.delete(gameId);
+    return false;
+  }
+  return true;
+};
+
 const getInviteContextForGame = (game, routeName = currentRoute.name) => {
   if (!game || game.myRole !== "Guest") {
+    return null;
+  }
+  if (routeName === "game" && isInviteGateSuppressedForGame(game.id)) {
     return null;
   }
   if (routeName === "invite" && resolvedInvite?.gameId === game.id) {
@@ -823,7 +857,10 @@ const syncRouteData = async () => {
   }
   if (currentRoute.name === "game") {
     resolvedInvite = null;
-    await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
+    const game = await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
+    if (game?.myRole && game.myRole !== "Guest") {
+      clearInviteGateSuppressionForGame(currentRoute.gameId);
+    }
     routeHydrated = true;
     return;
   }
@@ -1006,6 +1043,9 @@ appEl.addEventListener("click", async (event) => {
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
         inviteToken: resolvedInvite?.inviteToken || null,
       });
+      if (action === "accept-invite-viewer") {
+        suppressInviteGateForGame(gameId);
+      }
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
         navigateTo(buildGameHash(gameId));
         return;
@@ -1023,6 +1063,9 @@ appEl.addEventListener("click", async (event) => {
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
         inviteToken: resolvedInvite?.inviteToken || null,
       });
+      if (action === "accept-invite-player") {
+        suppressInviteGateForGame(gameId);
+      }
       if (result.pendingApproval) {
         setInviteFeedback("Player join request sent. You are now viewing the game while approval is pending.");
       }

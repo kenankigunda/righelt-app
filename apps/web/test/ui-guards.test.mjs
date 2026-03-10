@@ -50,3 +50,12 @@ test("offline toggles sync current identity presence", () => {
   assert.match(source, /void syncCurrentIdentityPresence\(true\)/);
   assert.match(source, /void syncCurrentIdentityPresence\(false\)/);
 });
+
+test("invite acceptance suppresses repeated invite gate until post-join hydration stabilizes", () => {
+  assert.match(source, /const inviteGateSuppressionByGameId = new Map\(\);/);
+  assert.match(source, /const INVITE_GATE_SUPPRESSION_MS = 15000;/);
+  assert.match(source, /if \(routeName === "game" && isInviteGateSuppressedForGame\(game\.id\)\) \{\s*return null;\s*\}/s);
+  assert.match(source, /if \(action === "accept-invite-viewer"\) \{\s*suppressInviteGateForGame\(gameId\);\s*\}/s);
+  assert.match(source, /if \(action === "accept-invite-player"\) \{\s*suppressInviteGateForGame\(gameId\);\s*\}/s);
+  assert.match(source, /if \(game\?\.myRole && game\.myRole !== "Guest"\) \{\s*clearInviteGateSuppressionForGame\(currentRoute\.gameId\);\s*\}/s);
+});
