@@ -94,18 +94,22 @@ function buildPieceToken(piece, ghost = false) {
   return token;
 }
 
-function getInactiveSelectedPieceLabel(piece) {
+export function getInactiveSelectedPieceLabel(piece, snapshot) {
   const renderStatus = getPieceRenderStatus(piece);
   if (!piece || (renderStatus.supplied && renderStatus.commanded)) {
     return null;
   }
+  const continuationPrefix =
+    snapshot?.continuation?.type === "rush" || snapshot?.continuation?.type === "push"
+      ? "Will be inactive if not moved: "
+      : "Inactive: ";
   if (!renderStatus.supplied && !renderStatus.commanded) {
-    return "Inactive: no connection back to its commander or supply point.";
+    return `${continuationPrefix}no connection back to its commander or supply point.`;
   }
   if (!renderStatus.supplied) {
-    return "Inactive: no connection back to its supply point.";
+    return `${continuationPrefix}no connection back to its supply point.`;
   }
-  return "Inactive: no connection back to its commander.";
+  return `${continuationPrefix}no connection back to its commander.`;
 }
 
 function getSupplyArtifactFor(snapshot, owner) {
@@ -345,7 +349,7 @@ export function createEnginePlaygroundBoardAdapter() {
     const pieceCell = cellByCoordinateKey.get(coordKey(piece.position));
     if (pieceCell) {
       pieceCell.classList.add("selected-piece");
-      const inactiveLabel = getInactiveSelectedPieceLabel(piece);
+      const inactiveLabel = getInactiveSelectedPieceLabel(piece, snapshot);
       if (inactiveLabel) {
         pieceCell.classList.add("inactive-selected-piece");
         pieceCell.setAttribute("data-inactive-label", inactiveLabel);

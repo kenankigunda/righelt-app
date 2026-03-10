@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   createEnginePlaygroundBoardAdapter,
   getPieceRenderStatus,
+  getInactiveSelectedPieceLabel,
 } from "../board-adapters/engine-playground-adapter.js";
 
 test("getPieceRenderStatus prefers display booleans over actionable booleans", () => {
@@ -76,6 +77,44 @@ test("selected piece summary exposes live render status and frozen actionable st
   });
 });
 
+test("selected piece summary keeps actionable status while continuation copy can describe future inactivity", () => {
+  const adapter = createEnginePlaygroundBoardAdapter();
+  const snapshot = {
+    continuation: {
+      type: "rush",
+    },
+    pieces: [
+      {
+        id: "U1",
+        owner: "P1",
+        kind: "unit",
+        position: { row: 6, col: 5 },
+        supplied: true,
+        commanded: true,
+        displaySupplied: false,
+        displayCommanded: true,
+      },
+    ],
+    artifacts: {
+      groups: {
+        componentByPieceId: {},
+        membersByComponentId: {},
+        strengthByComponentId: {},
+      },
+    },
+  };
+
+  const summary = adapter.getSelectedPieceSummary({
+    snapshot,
+    selectedPieceId: "U1",
+    selectedPieceMoves: [],
+    selectedPieceMovePreviews: [],
+  });
+
+  assert.equal(summary?.details.supplied, false);
+  assert.equal(summary?.details.actionableSupplied, true);
+});
+
 test("commander supply summary uses display supply status", () => {
   const adapter = createEnginePlaygroundBoardAdapter();
   const snapshot = {
@@ -104,4 +143,32 @@ test("commander supply summary uses display supply status", () => {
   };
 
   assert.equal(adapter.getCommanderSupplySummary(snapshot), "C1=false | C2=true");
+});
+
+test("inactive label uses future-tense copy during continuation for commander and supply loss", () => {
+  assert.equal(
+    getInactiveSelectedPieceLabel(
+      {
+        supplied: true,
+        commanded: true,
+        displaySupplied: true,
+        displayCommanded: false,
+      },
+      { continuation: { type: "rush" } },
+    ),
+    "Will be inactive if not moved: no connection back to its commander.",
+  );
+
+  assert.equal(
+    getInactiveSelectedPieceLabel(
+      {
+        supplied: true,
+        commanded: true,
+        displaySupplied: false,
+        displayCommanded: true,
+      },
+      { continuation: { type: "push" } },
+    ),
+    "Will be inactive if not moved: no connection back to its supply point.",
+  );
 });
