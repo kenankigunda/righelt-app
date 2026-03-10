@@ -1,4 +1,10 @@
 name: Deploy
+run-name: >-
+  ${{
+    github.event_name == 'workflow_run' &&
+    format('Deploy: {0}', github.event.workflow_run.display_title) ||
+    format('Deploy: {0}', github.ref_name)
+  }}
 
 on:
   workflow_dispatch:
