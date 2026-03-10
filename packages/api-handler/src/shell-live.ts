@@ -7,6 +7,34 @@ import type { Action, GameState } from "../../game-engine/src/types";
 const MAX_HISTORY = 200;
 const PRESENCE_STALE_MS = 30_000;
 const BOARD_SIZE = 10;
+const SHELL_LIVE_GAMES_TABLE = "shell_live_games";
+const SHELL_LIVE_INVITES_TABLE = "shell_live_invites";
+
+type D1RunResult = {
+  success: boolean;
+  meta?: {
+    last_row_id?: number;
+  };
+};
+
+type D1Result<T> = {
+  results?: T[];
+};
+
+type D1Statement = {
+  bind: (...args: unknown[]) => D1Statement;
+  first: <T = Record<string, unknown>>() => Promise<T | null>;
+  all: <T = Record<string, unknown>>() => Promise<D1Result<T>>;
+  run: () => Promise<D1RunResult>;
+};
+
+type D1DatabaseLike = {
+  prepare: (query: string) => D1Statement;
+};
+
+type ShellLiveEnv = {
+  DB: D1DatabaseLike;
+};
 
 type Participant = {
   identityId: string;
@@ -76,6 +104,13 @@ const inviteIndex = new Map<string, { gameId: string; sharedByRole: "Viewer" | "
 const homeSubscribers = new Set<any>();
 const gameSubscribers = new Map<string, Set<any>>();
 
+export const __resetShellLiveStateForTests = () => {
+  games.clear();
+  inviteIndex.clear();
+  homeSubscribers.clear();
+  gameSubscribers.clear();
+};
+
 const now = () => new Date(Date.now()).toISOString();
 const clone = <T>(value: T): T => structuredClone(value);
 
@@ -86,6 +121,132 @@ const createInviteToken = () => {
 };
 
 const nextId = () => `game-${createInviteToken()}`;
+
+const cacheGame = (game: ShellGame) => {
+  games.set(game.id, game);
+  inviteIndex.set(game.inviteTokens.viewer, { gameId: game.id, sharedByRole: "Viewer" });
+  inviteIndex.set(game.inviteTokens.player1, { gameId: game.id, sharedByRole: "Player 1" });
+  inviteIndex.set(game.inviteTokens.player2, { gameId: game.id, sharedByRole: "Player 2" });
+  return game;
+};
+
+const deserializeGame = (stateJson: string): ShellGame | null => {
+  try {
+    const parsed = JSON.parse(stateJson) as ShellGame;
+    if (!parsed || typeof parsed !== "object" || typeof parsed.id !== "string") {
+      return null;
+    }
+    return cacheGame(parsed);
+  } catch {
+    return null;
+  }
+};
+
+const saveGame = async (env: ShellLiveEnv, game: ShellGame) => {
+  cacheGame(game);
+  await env.DB.prepare(
+    `INSERT INTO ${SHELL_LIVE_GAMES_TABLE} (game_id, created_at, updated_at, latest_activity_at, offline_local, state_json)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+     ON CONFLICT(game_id) DO UPDATE SET
+       updated_at = excluded.updated_at,
+       latest_activity_at = excluded.latest_activity_at,
+       offline_local = excluded.offline_local,
+       state_json = excluded.state_json`,
+  )
+    .bind(
+      game.id,
+      game.createdAt,
+      game.updatedAt,
+      game.lastMoveAt || game.updatedAt || game.createdAt,
+      game.offlineLocal ? 1 : 0,
+      JSON.stringify(game),
+    )
+    .run();
+};
+
+const saveInviteTokens = async (env: ShellLiveEnv, game: ShellGame) => {
+  const statements = [
+    env.DB.prepare(
+      `INSERT INTO ${SHELL_LIVE_INVITES_TABLE} (token, game_id, shared_by_role, created_at)
+       VALUES (?1, ?2, ?3, ?4)
+       ON CONFLICT(token) DO UPDATE SET
+         game_id = excluded.game_id,
+         shared_by_role = excluded.shared_by_role,
+         created_at = excluded.created_at`,
+    )
+      .bind(game.inviteTokens.viewer, game.id, "Viewer", game.createdAt)
+      .run(),
+    env.DB.prepare(
+      `INSERT INTO ${SHELL_LIVE_INVITES_TABLE} (token, game_id, shared_by_role, created_at)
+       VALUES (?1, ?2, ?3, ?4)
+       ON CONFLICT(token) DO UPDATE SET
+         game_id = excluded.game_id,
+         shared_by_role = excluded.shared_by_role,
+         created_at = excluded.created_at`,
+    )
+      .bind(game.inviteTokens.player1, game.id, "Player 1", game.createdAt)
+      .run(),
+    env.DB.prepare(
+      `INSERT INTO ${SHELL_LIVE_INVITES_TABLE} (token, game_id, shared_by_role, created_at)
+       VALUES (?1, ?2, ?3, ?4)
+       ON CONFLICT(token) DO UPDATE SET
+         game_id = excluded.game_id,
+         shared_by_role = excluded.shared_by_role,
+         created_at = excluded.created_at`,
+    )
+      .bind(game.inviteTokens.player2, game.id, "Player 2", game.createdAt)
+      .run(),
+  ];
+  await Promise.all(statements);
+};
+
+const loadGame = async (env: ShellLiveEnv, gameId: string): Promise<ShellGame | null> => {
+  const cached = games.get(gameId);
+  if (cached) {
+    return cached;
+  }
+
+  const row = await env.DB.prepare(`SELECT state_json FROM ${SHELL_LIVE_GAMES_TABLE} WHERE game_id = ?1`)
+    .bind(gameId)
+    .first<{ state_json: string }>();
+  if (!row?.state_json) {
+    return null;
+  }
+  return deserializeGame(row.state_json);
+};
+
+const loadVisibleGames = async (env: ShellLiveEnv): Promise<ShellGame[]> => {
+  const result = await env.DB.prepare(
+    `SELECT state_json FROM ${SHELL_LIVE_GAMES_TABLE}
+     WHERE offline_local = 0
+     ORDER BY latest_activity_at DESC, created_at DESC`,
+  ).all<{ state_json: string }>();
+  return (result.results ?? [])
+    .map((row) => (typeof row.state_json === "string" ? deserializeGame(row.state_json) : null))
+    .filter((game): game is ShellGame => Boolean(game));
+};
+
+const resolveInvite = async (
+  env: ShellLiveEnv,
+  token: string,
+): Promise<{ gameId: string; sharedByRole: "Viewer" | "Player 1" | "Player 2" } | null> => {
+  const cached = inviteIndex.get(token);
+  if (cached) {
+    return cached;
+  }
+
+  const row = await env.DB.prepare(
+    `SELECT game_id, shared_by_role FROM ${SHELL_LIVE_INVITES_TABLE} WHERE token = ?1`,
+  )
+    .bind(token)
+    .first<{ game_id: string; shared_by_role: "Viewer" | "Player 1" | "Player 2" }>();
+  if (!row?.game_id || !row.shared_by_role) {
+    return null;
+  }
+  const invite = { gameId: row.game_id, sharedByRole: row.shared_by_role };
+  inviteIndex.set(token, invite);
+  return invite;
+};
 
 const createInviteTokens = (gameId: string) => {
   const tokens = {
@@ -704,6 +865,7 @@ export const handleShellLiveWebSocketUpgrade = (request: Request): Response | nu
 
 export const handleShellLiveRequest = async (
   request: Request,
+  env: ShellLiveEnv,
 ): Promise<{ handled: boolean; status: number; body: Record<string, unknown>; cacheControl: string } | null> => {
   const url = new URL(request.url);
   const route = parsePath(url.pathname);
@@ -739,8 +901,10 @@ export const handleShellLiveRequest = async (
       return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: "no-store" };
     }
 
+    const visibleGames = await loadVisibleGames(env);
     if (!offline) {
       touchIdentityAcrossGames(identityId);
+      await Promise.all(visibleGames.map((game) => saveGame(env, game)));
     }
 
     return {
@@ -756,11 +920,11 @@ export const handleShellLiveRequest = async (
     if (!token) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_invite_token" }, cacheControl: "no-store" };
     }
-    const invite = inviteIndex.get(token);
+    const invite = await resolveInvite(env, token);
     if (!invite) {
       return { handled: true, status: 404, body: { ok: false, error: "invite_not_found" }, cacheControl: "no-store" };
     }
-    const game = games.get(invite.gameId);
+    const game = await loadGame(env, invite.gameId);
     if (!game) {
       return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: "no-store" };
     }
@@ -814,7 +978,9 @@ export const handleShellLiveRequest = async (
     };
     game.inviteTokens = createInviteTokens(game.id);
 
-    games.set(game.id, game);
+    cacheGame(game);
+    await saveGame(env, game);
+    await saveInviteTokens(env, game);
     broadcastLiveUpdate(game.id, "game_created");
     return {
       handled: true,
@@ -826,7 +992,7 @@ export const handleShellLiveRequest = async (
 
   if (route.length >= 2 && route[0] === "games") {
     const gameId = route[1];
-    const game = games.get(gameId) || null;
+    const game = await loadGame(env, gameId);
     if (!game) {
       return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: "no-store" };
     }
@@ -844,8 +1010,11 @@ export const handleShellLiveRequest = async (
         const added = ensureViewer(game, identityId);
         if (added) {
           game.updatedAt = now();
+          await saveGame(env, game);
           broadcastLiveUpdate(game.id, "viewer_open");
         }
+      } else if (!offline) {
+        await saveGame(env, game);
       }
 
       return {
@@ -881,6 +1050,9 @@ export const handleShellLiveRequest = async (
         game.updatedAt = now();
         if (added) {
           addNotification(game, "Viewer joined");
+        }
+        await saveGame(env, game);
+        if (added) {
           broadcastLiveUpdate(game.id, "viewer_joined");
         }
         return { handled: true, status: 200, body: { ok: true, pendingApproval: false, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
@@ -900,7 +1072,7 @@ export const handleShellLiveRequest = async (
       }
 
       const inviteToken = typeof body.inviteToken === "string" ? body.inviteToken : null;
-      const inviteMeta = inviteToken ? inviteIndex.get(inviteToken) : null;
+      const inviteMeta = inviteToken ? await resolveInvite(env, inviteToken) : null;
       const inviteFromRole =
         inviteMeta && inviteMeta.gameId === game.id
           ? inviteMeta.sharedByRole
@@ -918,6 +1090,7 @@ export const handleShellLiveRequest = async (
         });
         game.updatedAt = now();
         addNotification(game, "Player seat request pending approval");
+        await saveGame(env, game);
         broadcastLiveUpdate(game.id, added ? "player_join_requested" : "player_join_requested_existing_viewer");
         return {
           handled: true,
@@ -935,6 +1108,7 @@ export const handleShellLiveRequest = async (
       dismissCompetingJoinRequests(game, identityId);
       game.updatedAt = now();
       addNotification(game, "Player joined");
+      await saveGame(env, game);
       broadcastLiveUpdate(game.id, "player_joined");
       return { handled: true, status: 200, body: { ok: true, pendingApproval: false, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
@@ -951,6 +1125,7 @@ export const handleShellLiveRequest = async (
       game.playgroundMode = true;
       game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.requestedSeat !== "Player 2");
       addNotification(game, "Play as both players enabled");
+      await saveGame(env, game);
       broadcastLiveUpdate(game.id, "play_as_both_players");
       return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
@@ -982,6 +1157,7 @@ export const handleShellLiveRequest = async (
       dismissCompetingJoinRequests(game, requestItem.identityId);
       game.updatedAt = now();
       addNotification(game, "Player request approved");
+      await saveGame(env, game);
       broadcastLiveUpdate(game.id, "player_request_approved");
 
       return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
@@ -1005,6 +1181,7 @@ export const handleShellLiveRequest = async (
       if (!moved.ok) {
         return { handled: true, status: 409, body: { ok: false, error: moved.error }, cacheControl: "no-store" };
       }
+      await saveGame(env, game);
       broadcastLiveUpdate(game.id, "move_recorded");
       return { handled: true, status: 200, body: { ok: true, move: moved.move, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
@@ -1113,6 +1290,7 @@ export const handleShellLiveRequest = async (
         }
         return { handled: true, status: 409, body: { ok: false, error: moved.error }, cacheControl: "no-store" };
       }
+      await saveGame(env, game);
       broadcastLiveUpdate(game.id, "move_recorded");
       return {
         handled: true,
@@ -1149,6 +1327,7 @@ export const handleShellLiveRequest = async (
       if (!ended.ok) {
         return { handled: true, status: 409, body: { ok: false, error: ended.error }, cacheControl: "no-store" };
       }
+      await saveGame(env, game);
       broadcastLiveUpdate(game.id, "turn_ended");
       return { handled: true, status: 200, body: { ok: true, turn: ended.turn, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
@@ -1159,11 +1338,13 @@ export const handleShellLiveRequest = async (
         return { handled: true, status: 400, body: { ok: false, error: "invalid_move_index" }, cacheControl: "no-store" };
       }
       game.historyIndexByIdentity[identityId] = moveIndex;
+      await saveGame(env, game);
       return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
 
     if (route.length === 3 && route[2] === "live") {
       delete game.historyIndexByIdentity[identityId];
+      await saveGame(env, game);
       return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
 
@@ -1187,6 +1368,7 @@ export const handleShellLiveRequest = async (
       entry.lastSeenAt = connected ? now() : new Date(0).toISOString();
       game.updatedAt = now();
       addNotification(game, `Participant ${connected ? "connected" : "disconnected"}`);
+      await saveGame(env, game);
       broadcastLiveUpdate(game.id, connected ? "participant_connected" : "participant_disconnected");
       return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }
@@ -1199,6 +1381,7 @@ export const handleShellLiveRequest = async (
       game.offlineLocal = false;
       game.updatedAt = now();
       addNotification(game, "Game moved online");
+      await saveGame(env, game);
       broadcastLiveUpdate(game.id, "game_moved_online");
       return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
     }

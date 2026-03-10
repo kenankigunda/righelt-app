@@ -1,20 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { handleApiRequest } from "../src/index.ts";
+import { __resetShellLiveStateForTests } from "../src/shell-live.ts";
+import { createFakeD1 } from "./support/fake-d1.mjs";
 
 const env = {
-  DB: {
-    prepare() {
-      return {
-        bind() {
-          return this;
-        },
-        async run() {
-          return { success: true, meta: { last_row_id: 1 } };
-        },
-      };
-    },
-  },
+  DB: createFakeD1(),
 };
 
 const req = (path, method = "GET", body = null) =>
@@ -23,6 +14,11 @@ const req = (path, method = "GET", body = null) =>
     headers: body ? { "content-type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
+
+test.beforeEach(() => {
+  __resetShellLiveStateForTests();
+  env.DB.reset();
+});
 
 test("live transport: create/list/get game lifecycle is server-backed", async () => {
   const create = await handleApiRequest(
@@ -57,6 +53,30 @@ test("live transport: create/list/get game lifecycle is server-backed", async ()
   assert.equal(directBody.game.viewers.some((viewer) => viewer.identityId === "id-direct"), false);
   assert.equal(directBody.game.canJoinAsViewer, true);
   assert.equal(directBody.game.canJoinAsPlayer, true);
+});
+
+test("live transport: invite and game resolution survive process-local cache reset", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createBody = await create.json();
+  const gameId = createBody.game.id;
+  const inviteToken = createBody.game.inviteToken;
+
+  __resetShellLiveStateForTests();
+
+  const inviteResolve = await handleApiRequest(req(`/api/shell/invites/${inviteToken}`), env);
+  const inviteBody = await inviteResolve.json();
+  assert.equal(inviteResolve.status, 200);
+  assert.equal(inviteBody.gameId, gameId);
+
+  __resetShellLiveStateForTests();
+
+  const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-b&openAsViewer=1`), env);
+  const openBody = await open.json();
+  assert.equal(open.status, 200);
+  assert.equal(openBody.game.id, gameId);
 });
 
 test("live transport: join approval flow and presence/history/move transitions", async () => {

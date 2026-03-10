@@ -16,6 +16,8 @@ type D1RunResult = {
 
 type D1Statement = {
   bind: (...args: unknown[]) => D1Statement;
+  first: <T = Record<string, unknown>>() => Promise<T | null>;
+  all: <T = Record<string, unknown>>() => Promise<{ results?: T[] }>;
   run: () => Promise<D1RunResult>;
 };
 
@@ -251,7 +253,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
   if (websocketUpgrade) {
     return websocketUpgrade;
   }
-  const liveResponse = await handleShellLiveRequest(request);
+  const liveResponse = await handleShellLiveRequest(request, env);
   if (liveResponse?.handled) {
     return json(liveResponse.body, liveResponse.status, liveResponse.cacheControl);
   }
