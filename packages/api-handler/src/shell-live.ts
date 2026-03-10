@@ -949,7 +949,6 @@ export const handleShellLiveRequest = async (
     const visibleGames = await loadVisibleGames(env);
     if (!offline) {
       touchIdentityAcrossGames(identityId);
-      await Promise.all(visibleGames.map((game) => saveGame(env, game)));
     }
 
     return {
@@ -1058,8 +1057,6 @@ export const handleShellLiveRequest = async (
           await saveGame(env, game);
           broadcastLiveUpdate(game.id, "viewer_open");
         }
-      } else if (!offline) {
-        await saveGame(env, game);
       }
 
       return {
