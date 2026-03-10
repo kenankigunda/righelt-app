@@ -301,3 +301,33 @@ test("F-013 rush destination that would be unsupplied is illegal", () => {
 
   assert.equal(result.ok, false);
 });
+
+test("F-014 rush continuation uses frozen commanded state for the initiating player", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      frozenOwner: "P1",
+      frozenPieceStatesById: {
+        C1: { supplied: true, commanded: true },
+        "U1-1": { supplied: true, commanded: true },
+      },
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 0, 9),
+      commander("C2", "P2", 9, 0),
+      unit("U1-1", "P1", 4, 4, { commanded: false, supplied: true }),
+      unit("U2-1", "P2", 4, 6),
+    ],
+  });
+
+  const result = validateAction(state, {
+    type: "rush",
+    actorId: "U1-1",
+    from: { row: 4, col: 4 },
+    to: { row: 4, col: 5 },
+  });
+
+  assert.equal(result.ok, true);
+});

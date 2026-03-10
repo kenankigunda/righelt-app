@@ -52,6 +52,14 @@ function cloneState(state: GameState): GameState {
           ...state.continuation,
           followGroupPieceIds: state.continuation.followGroupPieceIds ? [...state.continuation.followGroupPieceIds] : undefined,
           followPoint: state.continuation.followPoint ? { ...state.continuation.followPoint } : undefined,
+          frozenPieceStatesById: state.continuation.frozenPieceStatesById
+            ? Object.fromEntries(
+                Object.entries(state.continuation.frozenPieceStatesById).map(([pieceId, frozenState]) => [
+                  pieceId,
+                  { ...frozenState },
+                ]),
+              )
+            : undefined,
           rushedPieceIds: state.continuation.rushedPieceIds ? [...state.continuation.rushedPieceIds] : undefined,
         }
       : null,
@@ -62,6 +70,12 @@ function cloneState(state: GameState): GameState {
 
 function networkPieces(state: GameState) {
   return state.pieces.filter((piece) => !piece.pushed);
+}
+
+function isFrozenPieceDuringContinuation(state: GameState, pieceId: string, owner: "P1" | "P2") {
+  return Boolean(
+    state.continuation?.frozenOwner === owner && state.continuation.frozenPieceStatesById?.[pieceId],
+  );
 }
 
 function computeSupplyForOwner(
@@ -506,6 +520,9 @@ function applyCommandPhase(state: GameState, mode: ArtifactMode): boolean {
         continue;
       }
       const nextCommanded = visited.has(piece.id);
+      if (isFrozenPieceDuringContinuation(state, piece.id, piece.owner)) {
+        continue;
+      }
       if (piece.commanded !== nextCommanded) {
         piece.commanded = nextCommanded;
         changed = true;
@@ -799,6 +816,9 @@ function applySupplyPhase(state: GameState, mode: ArtifactMode): boolean {
     if (piece.pushed) {
       continue;
     }
+    if (isFrozenPieceDuringContinuation(state, piece.id, piece.owner)) {
+      continue;
+    }
     const ownerSupply = piece.owner === "P1" ? p1Supply : p2Supply;
     const nextSupplied = Boolean(ownerSupply.suppliedByPieceId[piece.id]);
     if (piece.supplied !== nextSupplied) {
@@ -851,7 +871,13 @@ function applySupplyPhase(state: GameState, mode: ArtifactMode): boolean {
 
 function applyForcedEffectsPhase(state: GameState): boolean {
   const beforeCount = state.pieces.length;
-  state.pieces = state.pieces.filter((piece) => piece.pushed || piece.kind === "commander" || piece.supplied);
+  state.pieces = state.pieces.filter(
+    (piece) =>
+      piece.pushed ||
+      piece.kind === "commander" ||
+      piece.supplied ||
+      isFrozenPieceDuringContinuation(state, piece.id, piece.owner),
+  );
   return state.pieces.length !== beforeCount;
 }
 

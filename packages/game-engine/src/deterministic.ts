@@ -2,6 +2,7 @@ import type {
   CommandArtifact,
   ContinuationContext,
   Coordinate,
+  FrozenPieceState,
   GameState,
   GroupArtifact,
   Piece,
@@ -64,6 +65,14 @@ function normalizeContinuation(value: ContinuationContext | null): ContinuationC
     return null;
   }
 
+  const frozenPieceStatesById = value.frozenPieceStatesById
+    ? Object.fromEntries(
+        Object.entries(value.frozenPieceStatesById)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([pieceId, frozenState]: [string, FrozenPieceState]) => [pieceId, { ...frozenState }]),
+      )
+    : undefined;
+
   return {
     ...value,
     followPoint: value.followPoint ? cloneCoordinate(value.followPoint) : undefined,
@@ -71,6 +80,7 @@ function normalizeContinuation(value: ContinuationContext | null): ContinuationC
       ? [...value.followGroupPieceIds].sort((a, b) => a.localeCompare(b))
       : undefined,
     rushedPieceIds: value.rushedPieceIds ? [...value.rushedPieceIds].sort((a, b) => a.localeCompare(b)) : undefined,
+    frozenPieceStatesById,
   };
 }
 

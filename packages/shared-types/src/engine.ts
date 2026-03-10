@@ -20,6 +20,10 @@ export type Piece = {
 
 export type ContinuationType = "push" | "rush";
 export type PushContinuationPhase = "retreat" | "follow";
+export type FrozenPieceState = {
+  supplied: boolean;
+  commanded: boolean;
+};
 
 export type ContinuationContext = {
   type: ContinuationType;
@@ -30,6 +34,8 @@ export type ContinuationContext = {
   pushedPieceId?: string;
   followGroupPieceIds?: string[];
   rushedPieceIds?: string[];
+  frozenOwner?: PlayerId;
+  frozenPieceStatesById?: Record<string, FrozenPieceState>;
   chainLength: number;
 };
 

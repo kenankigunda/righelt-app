@@ -1,4 +1,4 @@
-import type { Action, GameState, ValidationResult } from "./types";
+import type { Action, GameState, Piece, ValidationResult } from "./types";
 import { BOARD_SIZE } from "./deterministic";
 
 function outOfBounds(value: { row: number; col: number } | undefined): boolean {
@@ -47,6 +47,27 @@ function isOrthogonalDistance(
 
 function isActivePiece(piece: { supplied: boolean; commanded: boolean; pushed?: boolean; shifted?: boolean }) {
   return piece.supplied && piece.commanded && !piece.pushed && !piece.shifted;
+}
+
+function getFrozenPieceState(state: GameState, piece: Piece) {
+  if (state.continuation?.frozenOwner !== piece.owner) {
+    return null;
+  }
+
+  return state.continuation.frozenPieceStatesById?.[piece.id] ?? null;
+}
+
+function isActivePieceInContext(state: GameState, piece: Piece) {
+  const frozen = getFrozenPieceState(state, piece);
+  if (!frozen) {
+    return isActivePiece(piece);
+  }
+
+  return isActivePiece({
+    ...piece,
+    supplied: frozen.supplied,
+    commanded: frozen.commanded,
+  });
 }
 
 const SUPPLY_POINTS = {
@@ -514,7 +535,7 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         message: "Move is legal only for commanders",
       };
     }
-    if (!isActivePiece(actor)) {
+    if (!isActivePieceInContext(state, actor)) {
       return {
         ok: false,
         code: "RULE_VIOLATION",
@@ -546,7 +567,7 @@ export function validateAction(state: GameState, action: Action): ValidationResu
   }
 
   if (action.type === "project") {
-    if (!isActivePiece(actor)) {
+    if (!isActivePieceInContext(state, actor)) {
       return {
         ok: false,
         code: "RULE_VIOLATION",
@@ -589,7 +610,7 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         message: "Piece may only rush once per rush sequence",
       };
     }
-    if (!isActivePiece(actor)) {
+    if (!isActivePieceInContext(state, actor)) {
       return {
         ok: false,
         code: "RULE_VIOLATION",
@@ -657,7 +678,7 @@ export function validateAction(state: GameState, action: Action): ValidationResu
   }
 
   if (action.type === "push") {
-    if (!isActivePiece(actor) || actor.pushed || actor.shifted) {
+    if (!isActivePieceInContext(state, actor) || actor.pushed || actor.shifted) {
       return {
         ok: false,
         code: "RULE_VIOLATION",

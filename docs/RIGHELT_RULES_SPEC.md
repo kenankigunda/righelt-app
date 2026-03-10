@@ -49,6 +49,9 @@ Some actions open a temporary continuation phase:
   - defender retreat phase,
   - attacker follow phase.
 - `Rush` can chain during a rush continuation sequence as allowed by movement legality, but each piece may rush at most once in that sequence.
+- When a `Rush` or `Push` begins, the initiating player snapshots their own command/supply state as it existed before that opening action resolves.
+- That initiating-player command/supply snapshot remains frozen for the entire continuation sequence and is not refreshed mid-sequence.
+- Once the continuation closes, normal resolution resumes and the initiating player’s live command/supply state is recomputed before forced removals and terminal evaluation.
 
 A turn ends when no continuation is active and control passes to opponent.
 
@@ -92,6 +95,7 @@ A turn ends when no continuation is active and control passes to opponent.
   - Legal actions are `Rush` and `Pass`.
   - Additional rushes are optional; player may `Pass` to end rush continuation and end turn.
   - Any single piece may rush at most once in that continuation sequence.
+  - The rushing player continues to use the command/supply state frozen at the start of the rush sequence for the duration of that sequence.
 
 For action legality, supply is a hard destination constraint for `Move`, `Project`, and `Rush`.
 Post-action command loss does not invalidate those actions; command is evaluated in resolution after the action is applied.
@@ -107,6 +111,7 @@ Post-action command loss does not invalidate those actions; command is evaluated
   - pushing piece is the top piece on the stacked pushed square,
   - follow-point is set to attacker’s previous square,
   - follow-group connectivity obligation is recorded from the attacker side,
+  - attacker-side command/supply state is frozen from the pre-push board and remains frozen until push continuation closes,
   - play immediately passes to the owner of the pushed piece for forced `Retreat`, unless no retreat square exists.
   - if no orthogonally adjacent empty retreat square exists, the pushed piece is removed immediately, the retreat sub-phase is skipped, and play remains with the attacker for the follow sub-phase.
 
@@ -179,6 +184,7 @@ After any atomic action step, engine must resolve in this order:
 2. Recompute supply for both sides (including both Commanders).
 3. Recompute command propagation from each Commander.
 4. Recompute legal move sets for active side/continuation context.
+  - If a rush/push continuation is active, the initiating player keeps the frozen command/supply state captured at continuation start; live recomputation is deferred for that player until continuation end.
 5. For push continuation:
   - if retreat sub-phase is pending and no retreat square exists, remove pushed piece and advance to attacker follow sub-phase,
   - if attacker follow sub-phase is pending and no follow remains legal, close continuation and pass turn normally.

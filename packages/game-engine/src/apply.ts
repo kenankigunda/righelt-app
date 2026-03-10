@@ -49,6 +49,20 @@ function nextUnitId(state: GameState, owner: "P1" | "P2") {
   return `${prefix}${next}`;
 }
 
+function captureFrozenPieceStates(state: GameState, owner: "P1" | "P2") {
+  return Object.fromEntries(
+    state.pieces
+      .filter((piece) => piece.owner === owner)
+      .map((piece) => [
+        piece.id,
+        {
+          supplied: piece.supplied,
+          commanded: piece.commanded,
+        },
+      ]),
+  );
+}
+
 export function applyAction(state: GameState, action: Action): ApplyResult {
   const validation = validateAction(state, action);
   if (!validation.ok) {
@@ -92,6 +106,8 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
       next.continuation = {
         type: "rush",
         owner: actor.owner,
+        frozenOwner: actor.owner,
+        frozenPieceStatesById: captureFrozenPieceStates(state, actor.owner),
         rushedPieceIds: [actor.id],
         chainLength: 1,
       };
@@ -124,6 +140,8 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
       followPoint: origin,
       pushedPieceId: defender.id,
       followGroupPieceIds: pushingGroupPieceIds,
+      frozenOwner: actor.owner,
+      frozenPieceStatesById: captureFrozenPieceStates(state, actor.owner),
       chainLength: 1,
     };
     next.sideToMove = defender.owner;

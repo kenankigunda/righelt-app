@@ -121,6 +121,8 @@ For the current board implementation:
 - Board decides when to emit `turnEnded` for this game implementation.
   - Board auto-emits `turnEnded` when the turn should close (for example after `project`, after `pass`, or after other non-continuation commits).
   - Board may emit `turnEnded` early during optional continuation windows (for example during rush) when the user elects to stop.
+- During rush and push continuations, the board must continue to treat the initiating player's command/supply state as frozen from the moment that sequence started.
+- Any command/supply change created during the continuation is reconciled only after the continuation fully closes; the board must not flip those player-facing active/inactive states mid-sequence.
 - Shell must treat `turnEnded` as an abstract control message and must not infer it from action-type heuristics.
 
 ### 1.1.2 Ownership Boundary

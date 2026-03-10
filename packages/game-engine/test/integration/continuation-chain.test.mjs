@@ -213,6 +213,71 @@ test("terminal outcome clears continuation context", () => {
   assert.equal(resolved.continuation, null);
 });
 
+test("push continuation keeps initiating player command state frozen until the sequence closes", () => {
+  const state = baseState();
+  const commander = state.pieces.find((piece) => piece.id === "C1");
+  if (!commander) {
+    throw new Error("expected P1 commander");
+  }
+  commander.position = { row: 0, col: 9 };
+  state.continuation = {
+    type: "push",
+    owner: "P1",
+    attackerOwner: "P1",
+    phase: "follow",
+    followPoint: { row: 4, col: 3 },
+    followGroupPieceIds: ["A1", "F1"],
+    frozenOwner: "P1",
+    frozenPieceStatesById: {
+      C1: { supplied: true, commanded: true },
+      A1: { supplied: true, commanded: true },
+      F1: { supplied: true, commanded: true },
+    },
+    chainLength: 1,
+  };
+  state.pieces.push({
+    id: "A1",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 4, col: 4 },
+    supplied: true,
+    commanded: true,
+    shifted: true,
+  });
+  state.pieces.push({
+    id: "F1",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 4, col: 2 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "D1",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 4, col: 6 },
+    supplied: true,
+    commanded: true,
+    pushed: true,
+  });
+
+  const frozenResolved = resolveToStability(state, { artifactMode: "minimal" });
+  const followerDuringContinuation = frozenResolved.pieces.find((piece) => piece.id === "F1");
+  assert.equal(followerDuringContinuation?.commanded, true);
+  assert.equal(frozenResolved.continuation?.type, "push");
+
+  const afterClose = resolveToStability(
+    {
+      ...frozenResolved,
+      continuation: null,
+    },
+    { artifactMode: "minimal" },
+  );
+  const followerAfterClose = afterClose.pieces.find((piece) => piece.id === "F1");
+  assert.equal(followerAfterClose?.commanded, false);
+});
+
 test("O-001 rush continuation can chain multiple rush actions", () => {
   const state = baseState();
   state.pieces.push({
