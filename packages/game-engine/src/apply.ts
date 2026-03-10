@@ -1,5 +1,5 @@
 import type { Action, ApplyResult, GameState } from "./types";
-import { normalizeState } from "./deterministic";
+import { BOARD_SIZE, normalizeState } from "./deterministic";
 import { localGroupMembers, validateAction } from "./legal";
 
 function isEmptySquare(state: GameState, row: number, col: number) {
