@@ -248,7 +248,8 @@ const clearRemovalEffects = () => {
 
 const showRemovalEffects = (effects) => {
   clearRemovalEffects();
-  removalEffects = Array.isArray(effects) ? effects : [];
+  const startedAt = Date.now();
+  removalEffects = Array.isArray(effects) ? effects.map((effect) => ({ ...effect, startedAt })) : [];
   if (removalEffects.length === 0) {
     return;
   }

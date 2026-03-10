@@ -5,6 +5,7 @@ import {
   createEnginePlaygroundBoardAdapter,
   getPieceRenderStatus,
   getInactiveSelectedPieceLabel,
+  getRemovalAnimationDelayMs,
   getSelectedPieceTooltipLabel,
 } from "../board-adapters/engine-playground-adapter.js";
 
@@ -216,6 +217,12 @@ test("selected piece tooltip explains frozen start-of-sequence command block", (
     ),
     "Cannot move: was not commanded at start of push.",
   );
+});
+
+test("removal animation delay preserves in-progress flash timing across rerenders", () => {
+  assert.equal(getRemovalAnimationDelayMs(null, 5000), 0);
+  assert.equal(getRemovalAnimationDelayMs({ startedAt: 4200 }, 5000), 800);
+  assert.equal(getRemovalAnimationDelayMs({ startedAt: 2000 }, 5000), 1800);
 });
 
 test("selected piece tooltip explains frozen start-of-sequence supply block", () => {

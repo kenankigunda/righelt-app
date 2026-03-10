@@ -48,3 +48,38 @@ test("shell host endTurn maps transport rejection to accepted false validation",
   assert.equal(result.validation?.code, "turn_has_no_moves");
   assert.equal(result.state.sideToMove, "P1");
 });
+
+test("shell host applyAction preserves removedPieces from the transport response", async () => {
+  const removedPieces = [
+    {
+      pieceId: "A1",
+      position: { row: 4, col: 2 },
+      reason: "no_retreat",
+      message: "Piece at (4, 2) destroyed because it could not retreat",
+    },
+  ];
+  const transport = {
+    getGameViewModel() {
+      return {
+        currentTurn: { playerSeat: "Player 1" },
+      };
+    },
+    async applyGameAction() {
+      return {
+        accepted: true,
+        state: { sideToMove: "P1", turnIndex: 0, continuation: null, pieces: [] },
+        legalActions: [],
+        removedPieces,
+      };
+    },
+  };
+
+  const host = createShellBoardHost({ transport, gameId: "g-3", canInteract: () => true });
+  const result = await host.applyAction(
+    { sideToMove: "P1", turnIndex: 0, continuation: null, pieces: [] },
+    { type: "pass" },
+  );
+
+  assert.equal(result.accepted, true);
+  assert.deepEqual(result.removedPieces, removedPieces);
+});

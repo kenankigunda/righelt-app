@@ -8,6 +8,7 @@ import {
 
 const BOARD_SIZE = 10;
 const SVG_NS = "http://www.w3.org/2000/svg";
+const REMOVAL_FLASH_DURATION_MS = 1800;
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
 const isSupplyPoint = (row, col) => (row === 0 && col === 9) || (row === 9 && col === 0);
@@ -15,6 +16,13 @@ export const getPieceRenderStatus = (piece) => ({
   supplied: piece?.displaySupplied ?? piece?.supplied ?? false,
   commanded: piece?.displayCommanded ?? piece?.commanded ?? false,
 });
+
+export const getRemovalAnimationDelayMs = (effect, now = Date.now()) => {
+  if (!effect || typeof effect.startedAt !== "number") {
+    return 0;
+  }
+  return Math.max(0, Math.min(now - effect.startedAt, REMOVAL_FLASH_DURATION_MS));
+};
 
 const formatActionPreviewLabel = (actionType, snapshot, destination) => {
   const suffix = destination ? ` (${destination.row},${destination.col})` : "";
@@ -718,6 +726,10 @@ export function createEnginePlaygroundBoardAdapter() {
           if (removalEffect?.piece) {
             const removalPiece = buildPieceToken(removalEffect.piece);
             removalPiece.classList.add("removal-piece");
+            const animationDelayMs = getRemovalAnimationDelayMs(removalEffect);
+            if (animationDelayMs > 0) {
+              removalPiece.style.animationDelay = `-${animationDelayMs}ms`;
+            }
             cell.appendChild(removalPiece);
           }
 

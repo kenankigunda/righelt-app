@@ -6,6 +6,7 @@ import { getBootstrapPayload } from "./bootstrap.js";
 import { createLiveTransportStore } from "./live-transport.js";
 import { createLiveSyncClient } from "./live-sync.js";
 import { saveTutorialCompleted } from "./persistence.js";
+import { shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import {
   buildGameHash,
   buildHomeHash,
@@ -725,6 +726,22 @@ const mountBoardForGame = (game) => {
   const resetSelection = mountedHistoryMoveIndex !== historyMoveIndex;
   mountedHistoryMoveIndex = historyMoveIndex;
   boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
+  const runtimeSnapshotKey = toStableKey(boardRuntime.getState());
+  const runtimeLegalActionsKey = toStableKey(boardRuntime.getLegalActions());
+  if (shouldSkipBoardRuntimeReload({
+    runtimeSnapshotKey,
+    runtimeLegalActionsKey,
+    snapshotKey,
+    legalActionsKey,
+    mountedSelectionActionKey,
+    selectionActionKey,
+    resetSelection,
+  })) {
+    mountedSnapshotKey = snapshotKey;
+    mountedLegalActionsKey = legalActionsKey;
+    mountedSelectionActionKey = selectionActionKey;
+    return;
+  }
   const shouldReloadSnapshot =
     mountedSnapshotKey !== snapshotKey ||
     mountedLegalActionsKey !== legalActionsKey ||
