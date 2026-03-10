@@ -55,6 +55,59 @@ test("live transport: create/list/get game lifecycle is server-backed", async ()
   assert.equal(directBody.game.canJoinAsPlayer, true);
 });
 
+test("live transport: game reads query persistent storage even when process cache is warm", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createBody = await create.json();
+  const gameId = createBody.game.id;
+
+  const beforeReads = env.DB.getStats().selectGameByIdCount;
+  const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-a`), env);
+  const openBody = await open.json();
+  const afterReads = env.DB.getStats().selectGameByIdCount;
+
+  assert.equal(open.status, 200);
+  assert.equal(openBody.game.id, gameId);
+  assert.equal(afterReads > beforeReads, true);
+});
+
+test("live transport: game reads do not stay stale when persistent state changes outside process cache", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createBody = await create.json();
+  const gameId = createBody.game.id;
+
+  const warm = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+  assert.equal(warm.status, 200);
+  const warmBody = await warm.json();
+  assert.equal(warmBody.game.player2, null);
+  assert.equal(warmBody.game.notifications[0], "Game created");
+
+  const overwritten = env.DB.overwriteGameState(gameId, (state) => ({
+    ...state,
+    updatedAt: "2026-03-10T01:31:00.000Z",
+    lastMoveAt: "2026-03-10T01:31:00.000Z",
+    player2: {
+      identityId: "id-player2",
+      connected: true,
+      joinedAt: "2026-03-10T01:31:00.000Z",
+      lastSeenAt: "2026-03-10T01:31:00.000Z",
+    },
+    notifications: ["Player joined", ...(Array.isArray(state.notifications) ? state.notifications : [])],
+  }));
+  assert.equal(overwritten, true);
+
+  const refreshed = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+  const refreshedBody = await refreshed.json();
+  assert.equal(refreshed.status, 200);
+  assert.equal(refreshedBody.game.player2?.identityId, "id-player2");
+  assert.equal(refreshedBody.game.notifications[0], "Player joined");
+});
+
 test("live transport: invite and game resolution survive process-local cache reset", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),

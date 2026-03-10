@@ -3,6 +3,7 @@ const normalizeQuery = (query) => String(query).replace(/\s+/g, " ").trim();
 export const createFakeD1 = () => {
   const shellGames = new Map();
   const shellInvites = new Map();
+  let selectGameByIdCount = 0;
 
   const prepare = (query) => {
     const normalized = normalizeQuery(query);
@@ -46,6 +47,7 @@ export const createFakeD1 = () => {
       },
       async first() {
         if (normalized.includes("SELECT state_json FROM shell_live_games WHERE game_id = ?1")) {
+          selectGameByIdCount += 1;
           const row = shellGames.get(params[0]);
           return row ? { state_json: row.state_json } : null;
         }
@@ -86,6 +88,25 @@ export const createFakeD1 = () => {
     reset() {
       shellGames.clear();
       shellInvites.clear();
+      selectGameByIdCount = 0;
+    },
+    overwriteGameState(gameId, update) {
+      const row = shellGames.get(gameId);
+      if (!row || typeof row.state_json !== "string") {
+        return false;
+      }
+      const parsed = JSON.parse(row.state_json);
+      const next = update(parsed);
+      row.state_json = JSON.stringify(next);
+      row.updated_at = next.updatedAt || row.updated_at;
+      row.latest_activity_at = next.lastMoveAt || next.updatedAt || next.createdAt || row.latest_activity_at;
+      shellGames.set(gameId, row);
+      return true;
+    },
+    getStats() {
+      return {
+        selectGameByIdCount,
+      };
     },
   };
 };

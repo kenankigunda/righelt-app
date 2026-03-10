@@ -250,11 +250,6 @@ const saveInviteTokens = async (env: ShellLiveEnv, game: ShellGame) => {
 };
 
 const loadGame = async (env: ShellLiveEnv, gameId: string): Promise<ShellGame | null> => {
-  const cached = games.get(gameId);
-  if (cached) {
-    return cached;
-  }
-
   const row = await env.DB.prepare(`SELECT state_json FROM ${SHELL_LIVE_GAMES_TABLE} WHERE game_id = ?1`)
     .bind(gameId)
     .first<{ state_json: string }>();
