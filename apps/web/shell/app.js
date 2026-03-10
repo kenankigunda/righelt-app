@@ -86,6 +86,7 @@ let inviteFeedback = "";
 let inviteFeedbackTimer = null;
 let routeHydrated = false;
 let resolvedInvite = null;
+const skipNextGameHydrationForGameId = new Set();
 const ignoredApprovalRequests = new Set();
 let lastRenderedMarkup = "";
 
@@ -267,6 +268,24 @@ const setInviteFeedback = (message) => {
       render();
     }, 1800);
   }
+};
+
+const markSkipNextGameHydration = (gameId) => {
+  if (!gameId) {
+    return;
+  }
+  skipNextGameHydrationForGameId.add(gameId);
+};
+
+const consumeSkipNextGameHydration = (gameId) => {
+  if (!gameId) {
+    return false;
+  }
+  if (!skipNextGameHydrationForGameId.has(gameId)) {
+    return false;
+  }
+  skipNextGameHydrationForGameId.delete(gameId);
+  return true;
 };
 
 const getInviteContextForGame = (game, routeName = currentRoute.name) => {
@@ -823,7 +842,9 @@ const syncRouteData = async () => {
   }
   if (currentRoute.name === "game") {
     resolvedInvite = null;
-    await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
+    if (!consumeSkipNextGameHydration(currentRoute.gameId)) {
+      await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
+    }
     routeHydrated = true;
     return;
   }
@@ -1006,6 +1027,9 @@ appEl.addEventListener("click", async (event) => {
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
         inviteToken: resolvedInvite?.inviteToken || null,
       });
+      if (action === "accept-invite-viewer") {
+        markSkipNextGameHydration(gameId);
+      }
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
         navigateTo(buildGameHash(gameId));
         return;
@@ -1023,6 +1047,9 @@ appEl.addEventListener("click", async (event) => {
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
         inviteToken: resolvedInvite?.inviteToken || null,
       });
+      if (action === "accept-invite-player") {
+        markSkipNextGameHydration(gameId);
+      }
       if (result.pendingApproval) {
         setInviteFeedback("Player join request sent. You are now viewing the game while approval is pending.");
       }

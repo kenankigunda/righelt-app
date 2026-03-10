@@ -50,3 +50,12 @@ test("offline toggles sync current identity presence", () => {
   assert.match(source, /void syncCurrentIdentityPresence\(true\)/);
   assert.match(source, /void syncCurrentIdentityPresence\(false\)/);
 });
+
+test("invite acceptance skips one immediate game hydration fetch and relies on join response state", () => {
+  assert.match(source, /const skipNextGameHydrationForGameId = new Set\(\);/);
+  assert.match(source, /const markSkipNextGameHydration = \(gameId\) => \{/);
+  assert.match(source, /const consumeSkipNextGameHydration = \(gameId\) => \{/);
+  assert.match(source, /if \(!consumeSkipNextGameHydration\(currentRoute\.gameId\)\) \{\s*await transport\.loadGame\(currentRoute\.gameId, \{ openAsViewer: false \}\);\s*\}/s);
+  assert.match(source, /if \(action === "accept-invite-viewer"\) \{\s*markSkipNextGameHydration\(gameId\);\s*\}/s);
+  assert.match(source, /if \(action === "accept-invite-player"\) \{\s*markSkipNextGameHydration\(gameId\);\s*\}/s);
+});
