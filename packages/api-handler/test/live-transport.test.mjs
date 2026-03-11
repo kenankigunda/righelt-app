@@ -290,6 +290,47 @@ test("live transport: join approval flow and presence/history/move transitions",
   assert.equal(viewerPresenceBody.game.viewers.find((viewer) => viewer.identityId === "id-viewer")?.connected, false);
 });
 
+test("live transport: game reads omit per-move snapshots from the response payload", async () => {
+  const created = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await created.json();
+  const gameId = createdBody.game.id;
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-joiner",
+      mode: "player",
+      inviteFromRole: "Player 1",
+    }),
+    env,
+  );
+
+  await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
+  await handleApiRequest(req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-owner", moveIndex: 0 }), env);
+
+  const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+  const openText = await open.text();
+  const openBody = JSON.parse(openText);
+
+  assert.equal(open.status, 200);
+  assert.equal(openText.includes("\"selectionSnapshot\""), false);
+  assert.equal(openText.includes("\"snapshot\""), false);
+  assert.equal(openBody.game.moves.length, 1);
+  assert.deepEqual(Object.keys(openBody.game.moves[0]).sort(), [
+    "action",
+    "actorSide",
+    "at",
+    "index",
+    "notation",
+    "turnIndex",
+    "turnMoveIndex",
+  ]);
+  assert.equal(typeof openBody.game.currentSnapshot, "object");
+  assert.equal(openBody.game.historySelectionAction?.type, openBody.game.moves[0].action.type);
+});
+
 test("live transport: player invite token enables immediate player join without guessable game role query", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),

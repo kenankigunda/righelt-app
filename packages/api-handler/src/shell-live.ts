@@ -71,6 +71,16 @@ type MoveEntry = {
   snapshot: GameState;
 };
 
+type MoveHistoryViewEntry = {
+  index: number;
+  turnIndex: number;
+  turnMoveIndex: number;
+  actorSide: "P1" | "P2";
+  at: string;
+  notation: string;
+  action: Action;
+};
+
 type TurnEntry = {
   index: number;
   startedAt: string;
@@ -530,6 +540,16 @@ const getJoinAsViewerDisabledReason = (game: ShellGame, offline: boolean, myRole
   return null;
 };
 
+const toMoveHistoryViewEntry = (move: MoveEntry): MoveHistoryViewEntry => ({
+  index: move.index,
+  turnIndex: move.turnIndex,
+  turnMoveIndex: move.turnMoveIndex,
+  actorSide: move.actorSide,
+  at: move.at,
+  notation: move.notation,
+  action: clone(move.action),
+});
+
 const withViewModel = (game: ShellGame, identityId: string, offline = false) => {
   applyPresenceFreshness(game);
   const myRole = findRoleForIdentity(game, identityId);
@@ -560,12 +580,27 @@ const withViewModel = (game: ShellGame, identityId: string, offline = false) => 
   const joinAsViewerDisabledReason = getJoinAsViewerDisabledReason(game, offline, myRole);
 
   return {
-    ...clone(game),
-    historyIndexByIdentity: undefined,
+    id: game.id,
+    createdAt: game.createdAt,
+    lastMoveAt: game.lastMoveAt,
+    updatedAt: game.updatedAt,
+    playgroundMode: game.playgroundMode,
+    offlineLocal: game.offlineLocal,
+    board: {
+      state: clone(game.board.state),
+    },
+    player1: game.player1 ? clone(game.player1) : null,
+    player2: game.player2 ? clone(game.player2) : null,
+    viewers: clone(game.viewers),
+    pendingJoinRequests: clone(game.pendingJoinRequests),
+    turns: clone(game.turns),
+    moves: game.moves.map(toMoveHistoryViewEntry),
+    notifications: clone(game.notifications),
+    inviteTokens: clone(game.inviteTokens),
     historyIndex,
     myRole,
     inHistoryMode,
-    currentSnapshot,
+    currentSnapshot: clone(currentSnapshot),
     canJoinAsPlayer: !joinAsPlayerDisabledReason,
     canJoinAsViewer: !joinAsViewerDisabledReason,
     canPlayAsBothPlayers: myRole === "Player 1" && !game.player2,
