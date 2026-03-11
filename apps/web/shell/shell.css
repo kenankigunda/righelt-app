@@ -233,7 +233,7 @@ button.secondary:disabled {
   max-height: 0;
   opacity: 0;
   overflow: hidden;
-  padding-left: 0.15rem;
+  padding-left: 0;
   transform: translateY(-0.15rem);
   transition:
     max-height 160ms ease,

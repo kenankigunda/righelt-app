@@ -53,7 +53,7 @@ test("history navigation animates deselection before snapshot swap and queues bo
   assert.match(source, /const startHistoryPress = \(actionEl\) => \{/);
   assert.match(source, /const clearHistoryPress = \(\) => \{/);
   assert.match(source, /boardWrapEl\.classList\.add\("history-board-pressing"\);/);
-  assert.match(source, /window\.addEventListener\("pointerup", \(\) => \{\s*clearHistoryPress\(\);\s*\}\);/s);
+  assert.match(source, /window\.addEventListener\("pointerup", \(event\) => \{[\s\S]*action === "jump-history" \|\| action === "return-live"[\s\S]*return;[\s\S]*clearHistoryPress\(\);\s*\}\);/s);
   assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*action !== "jump-history" && action !== "return-live"[\s\S]*startHistoryPress\(actionEl\);/s);
   assert.match(source, /const animateHistoryDeselection = async \(actionEl\) => \{/);
   assert.match(source, /currentSelected\.classList\.add\("is-deselecting"\);/);
