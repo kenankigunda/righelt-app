@@ -47,6 +47,25 @@ const parseBody = async (request: Request): Promise<Record<string, unknown>> => 
 
 const roomStubForGame = (env: LiveGameRequestEnv, gameId: string) => env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(gameId));
 
+const forwardRequestToGameRoom = (
+  env: LiveGameRequestEnv,
+  gameId: string,
+  request: Request,
+  path: string,
+) => {
+  const headers = new Headers(request.headers);
+  headers.set("x-game-id", gameId);
+  return roomStubForGame(env, gameId).fetch(
+    new Request(`https://game-room${path}`, {
+      method: request.method,
+      headers,
+      body: request.body,
+      redirect: request.redirect,
+      duplex: "half",
+    } as RequestInit),
+  );
+};
+
 const fetchGameRoom = async (
   env: LiveGameRequestEnv,
   gameId: string,
@@ -69,7 +88,7 @@ export const handleLiveGameWebSocketUpgrade = async (request: Request, env: Live
     return null;
   }
   if (route.length === 3 && route[0] === "games" && route[2] === "ws") {
-    return fetchGameRoom(env, route[1], `/ws${url.search}`, { method: "GET" });
+    return forwardRequestToGameRoom(env, route[1], request, `/ws${url.search}`);
   }
   if (route.length === 1 && route[0] === "ws") {
     return new Response("Legacy websocket route removed", { status: 404 });
