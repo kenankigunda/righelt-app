@@ -87,6 +87,10 @@ let resolvedInvite = null;
 const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
 let lastRenderedMarkup = "";
+let pendingBoardTransition = false;
+let boardTransitionTimer = null;
+const HISTORY_SELECTION_EXIT_MS = 140;
+const BOARD_HISTORY_TRANSITION_MS = 220;
 
 const escapeHtml = (value) =>
   String(value)
@@ -132,6 +136,59 @@ const formatClientDateTime = (value) => {
 };
 
 const renderPlaceholderBadge = () => '<span class="status-chip offline">Not yet implemented</span>';
+const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+const delay = (ms) =>
+  new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+
+const queueBoardTransition = () => {
+  pendingBoardTransition = true;
+};
+
+const playBoardTransitionIfNeeded = () => {
+  if (!pendingBoardTransition || !appEl) {
+    return;
+  }
+  pendingBoardTransition = false;
+
+  const boardWrapEl = appEl.querySelector(".board-wrap");
+  if (!(boardWrapEl instanceof HTMLElement)) {
+    return;
+  }
+
+  if (boardTransitionTimer) {
+    window.clearTimeout(boardTransitionTimer);
+    boardTransitionTimer = null;
+  }
+
+  boardWrapEl.classList.remove("history-board-transition");
+  if (prefersReducedMotion()) {
+    return;
+  }
+
+  void boardWrapEl.offsetWidth;
+  boardWrapEl.classList.add("history-board-transition");
+  boardTransitionTimer = window.setTimeout(() => {
+    boardWrapEl.classList.remove("history-board-transition");
+    boardTransitionTimer = null;
+  }, BOARD_HISTORY_TRANSITION_MS);
+};
+
+const animateHistoryDeselection = async (actionEl) => {
+  if (prefersReducedMotion() || !appEl) {
+    return;
+  }
+  const currentSelected = appEl.querySelector(".history-item.is-selected, .history-item.is-live-selected");
+  if (!(currentSelected instanceof HTMLElement) || currentSelected === actionEl) {
+    return;
+  }
+
+  currentSelected.classList.add("is-deselecting");
+  currentSelected.classList.remove("is-selected");
+  currentSelected.classList.remove("is-live-selected");
+  await delay(HISTORY_SELECTION_EXIT_MS);
+};
 
 const getCurrentViewedGameId = () => {
   if (currentRoute.name === "game") {
@@ -703,6 +760,7 @@ const mountBoardForGame = (game) => {
     mountedLegalActionsKey = legalActionsKey;
     mountedSelectionActionKey = selectionActionKey;
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
+    playBoardTransitionIfNeeded();
     void boardRuntime.loadSnapshot(snapshot, {
       legalActions: effectiveLegalActions,
       resetSelection: true,
@@ -728,6 +786,7 @@ const mountBoardForGame = (game) => {
     mountedSnapshotKey = snapshotKey;
     mountedLegalActionsKey = legalActionsKey;
     mountedSelectionActionKey = selectionActionKey;
+    pendingBoardTransition = false;
     return;
   }
   const shouldReloadSnapshot =
@@ -741,6 +800,7 @@ const mountBoardForGame = (game) => {
   mountedSnapshotKey = snapshotKey;
   mountedLegalActionsKey = legalActionsKey;
   mountedSelectionActionKey = selectionActionKey;
+  playBoardTransitionIfNeeded();
   void boardRuntime.loadSnapshot(snapshot, {
     legalActions: effectiveLegalActions,
     resetSelection,
@@ -1077,6 +1137,8 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
       if (!gameId || !Number.isFinite(moveIndex)) return;
+      queueBoardTransition();
+      await animateHistoryDeselection(actionEl);
       await transport.selectHistoryMove({ gameId, moveIndex });
       await syncRouteData();
       return;
@@ -1085,6 +1147,8 @@ appEl.addEventListener("click", async (event) => {
     if (action === "return-live") {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
+      queueBoardTransition();
+      await animateHistoryDeselection(actionEl);
       await transport.returnToLive({ gameId });
       await syncRouteData();
       return;

@@ -212,6 +212,11 @@ button.secondary:disabled {
 
 .history-move-line {
   font-weight: 400;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
 }
 
 .history-move-at {
@@ -234,6 +239,18 @@ button.secondary:disabled {
   transform: translateY(0);
 }
 
+.history-item.is-deselecting .history-move-line {
+  opacity: 0.78;
+  transform: translateY(-0.05rem);
+}
+
+.history-item.is-deselecting .history-move-at,
+.history-item.is-deselecting:hover .history-move-at {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-0.18rem);
+}
+
 .history-item.is-selected .history-move-line {
   font-weight: 600;
 }
@@ -248,6 +265,7 @@ button.secondary:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .history-move-line,
   .history-move-at {
     transition: none;
     transform: none;
