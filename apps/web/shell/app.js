@@ -194,42 +194,37 @@ const renderTurnHistory = (game) => {
           : null;
   const emptyTurnText = "Waiting on next move...";
 
-  return game.turns
-    .map((turn) => {
-      const showLiveSelectedEmpty = liveSelectedEmptyTurnIndex === turn.index && turn.moveIndexes.length === 0;
-      const emptyTurnItem = game.inHistoryMode
-        ? `<li class="history-item history-return-live" data-action="return-live" data-game-id="${escapeHtml(
-            game.id,
-          )}"><span class="history-move-line">${escapeHtml(emptyTurnText)}</span></li>`
-        : `<li class="history-empty-line${showLiveSelectedEmpty ? " is-live-selected" : ""}"><span class="history-move-line">${escapeHtml(
-            emptyTurnText,
-          )}</span></li>`;
-      const turnMoves = turn.moveIndexes
-        .map((moveIndex) => game.moves[moveIndex])
-        .filter(Boolean)
-        .map((move) => {
-          const isSelected = game.inHistoryMode ? game.historyIndex === move.index : selectedMoveIndex === move.index;
-          const selectedClass = isSelected ? (game.inHistoryMode ? " is-selected" : " is-live-selected") : "";
-          return `<li class="history-item${selectedClass}" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">
-            <span class="history-move-line ${playerToneClassForSide(move.actorSide || (turn.playerSeat === "Player 1" ? "P1" : "P2"))}">Move ${escapeHtml(
-              String(move.index + 1),
-            )}: ${escapeHtml(move.notation)}</span>
-            <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
-          </li>`;
-        })
-        .join("");
+  const moveRows = game.turns.flatMap((turn) =>
+    turn.moveIndexes
+      .map((moveIndex) => game.moves[moveIndex])
+      .filter(Boolean)
+      .map((move) => {
+        const isSelected = game.inHistoryMode ? game.historyIndex === move.index : selectedMoveIndex === move.index;
+        const selectedClass = isSelected ? (game.inHistoryMode ? " is-selected" : " is-live-selected") : "";
+        return `<li class="history-item${selectedClass}" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">
+          <span class="history-move-line ${playerToneClassForSide(move.actorSide || (turn.playerSeat === "Player 1" ? "P1" : "P2"))}">Move ${escapeHtml(
+            String(move.index + 1),
+          )}: ${escapeHtml(move.notation)}</span>
+          <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
+        </li>`;
+      }),
+  );
 
-      return `<li class="history-turn">
-        <div class="history-turn-body">
-          <div class="history-turn-header">
-            <strong>Turn ${escapeHtml(String(turn.index + 1))}</strong> <span class="small ${playerToneClassForSeat(turn.playerSeat)}">${escapeHtml(turn.playerSeat)}</span>
-            <span class="small">${escapeHtml(turn.status)}</span>
-          </div>
-          <ol class="history-turn-list">${turnMoves || emptyTurnItem}</ol>
-        </div>
-      </li>`;
-    })
-    .join("");
+  const activeTurn = activeTurnIndex !== null ? game.turns.find((turn) => turn.index === activeTurnIndex) : null;
+  if (!activeTurn || activeTurn.moveIndexes.length > 0) {
+    return moveRows.join("");
+  }
+
+  const showLiveSelectedEmpty = liveSelectedEmptyTurnIndex === activeTurn.index;
+  const emptyTurnItem = game.inHistoryMode
+    ? `<li class="history-item history-return-live" data-action="return-live" data-game-id="${escapeHtml(
+        game.id,
+      )}"><span class="history-move-line">${escapeHtml(emptyTurnText)}</span></li>`
+    : `<li class="history-empty-line${showLiveSelectedEmpty ? " is-live-selected" : ""}"><span class="history-move-line">${escapeHtml(
+        emptyTurnText,
+      )}</span></li>`;
+
+  return `${moveRows.join("")}${emptyTurnItem}`;
 };
 
 const renderHeader = () => `

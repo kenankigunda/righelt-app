@@ -191,7 +191,7 @@ button.secondary:disabled {
 
 .history-list {
   margin: 0;
-  padding-left: 1.2rem;
+  padding-left: 0;
   display: grid;
   gap: var(--section-item-gap);
 }
@@ -202,13 +202,6 @@ button.secondary:disabled {
   padding-left: 1.2rem;
   display: grid;
   gap: 0.35rem;
-}
-
-.history-turn-list {
-  margin: 0.35rem 0 0;
-  padding-left: 1.2rem;
-  display: grid;
-  gap: 0.25rem;
 }
 
 .history-item {
@@ -285,7 +278,11 @@ button.secondary:disabled {
 }
 
 .section-actions {
-  padding-bottom: var(--section-item-gap);
+  margin-bottom: var(--section-item-gap);
+}
+
+.section-actions:empty {
+  margin-bottom: 0;
 }
 
 .section-stack {
@@ -304,19 +301,6 @@ button.secondary:disabled {
 
 .section-followup > * {
   margin: 0;
-}
-
-.history-turn {
-  margin: 0;
-}
-
-.history-turn-body {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.history-turn-header > :not(:last-child) {
-  margin-right: 0.35rem;
 }
 
 .invite-gate {
