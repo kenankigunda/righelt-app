@@ -209,6 +209,11 @@ button {
   transform-origin: 50% 45%;
 }
 
+.board-wrap.history-board-pressing {
+  transform: translateY(1px) scale(0.986);
+  filter: saturate(0.94);
+}
+
 .board-wrap.history-board-transition {
   animation: board-history-swap 240ms cubic-bezier(0.22, 0.8, 0.24, 1);
 }
@@ -248,8 +253,11 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .board-wrap.history-board-pressing,
   .board-wrap.history-board-transition {
     animation: none;
+    transform: none;
+    filter: none;
   }
 }
 

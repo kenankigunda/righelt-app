@@ -91,6 +91,7 @@ let pendingBoardTransition = false;
 let boardTransitionTimer = null;
 let pendingHistoryItemTransition = null;
 let historyItemTransitionTimer = null;
+const HISTORY_PRESS_FEEDBACK_MS = 70;
 const HISTORY_SELECTION_EXIT_MS = 140;
 const BOARD_HISTORY_TRANSITION_MS = 220;
 
@@ -232,6 +233,23 @@ const animateHistoryDeselection = async (actionEl) => {
   currentSelected.classList.remove("is-selected");
   currentSelected.classList.remove("is-live-selected");
   await delay(HISTORY_SELECTION_EXIT_MS);
+};
+
+const animateHistoryPress = async (actionEl) => {
+  if (prefersReducedMotion() || !appEl) {
+    return;
+  }
+
+  const boardWrapEl = appEl.querySelector(".board-wrap");
+  if (boardWrapEl instanceof HTMLElement) {
+    boardWrapEl.classList.add("history-board-pressing");
+  }
+
+  if (actionEl instanceof HTMLElement && actionEl.classList.contains("history-item")) {
+    actionEl.classList.add("is-pressing");
+  }
+
+  await delay(HISTORY_PRESS_FEEDBACK_MS);
 };
 
 const getCurrentViewedGameId = () => {
@@ -1185,6 +1203,7 @@ appEl.addEventListener("click", async (event) => {
       if (!gameId || !Number.isFinite(moveIndex)) return;
       queueHistoryItemTransition({ gameId, moveIndex });
       queueBoardTransition();
+      await animateHistoryPress(actionEl);
       await animateHistoryDeselection(actionEl);
       await transport.selectHistoryMove({ gameId, moveIndex });
       await syncRouteData();
@@ -1195,6 +1214,7 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
       queueBoardTransition();
+      await animateHistoryPress(actionEl);
       await animateHistoryDeselection(actionEl);
       await transport.returnToLive({ gameId });
       await syncRouteData();

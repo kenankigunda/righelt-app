@@ -215,6 +215,10 @@ button.secondary:disabled {
   transform: translateY(1px) scale(0.985);
 }
 
+.history-item.is-pressing {
+  transform: translateY(1px) scale(0.985);
+}
+
 .history-move-line {
   font-weight: 400;
   opacity: 1;
@@ -299,6 +303,7 @@ button.secondary:disabled {
     animation: none;
   }
 
+  .history-item.is-pressing,
   .history-item:active {
     transform: none;
   }
