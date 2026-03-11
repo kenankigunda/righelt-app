@@ -88,7 +88,9 @@ const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
 let lastRenderedMarkup = "";
 const HISTORY_SELECTION_EXIT_MS = 56;
+const HISTORY_RELEASE_BOUNCE_MS = 140;
 let pressedHistoryActionEl = null;
+let historyReleaseTimer = null;
 
 const escapeHtml = (value) =>
   String(value)
@@ -165,6 +167,39 @@ const clearHistoryPress = () => {
     pressedHistoryActionEl.classList.remove("is-pressing");
   }
   pressedHistoryActionEl = null;
+};
+
+const playHistoryReleaseBounce = (actionEl) => {
+  if (prefersReducedMotion() || !appEl) {
+    return;
+  }
+
+  const boardWrapEl = appEl.querySelector(".board-wrap");
+  if (boardWrapEl instanceof HTMLElement) {
+    boardWrapEl.classList.remove("history-board-release");
+    void boardWrapEl.offsetWidth;
+    boardWrapEl.classList.add("history-board-release");
+  }
+
+  if (actionEl instanceof HTMLElement && actionEl.classList.contains("history-item")) {
+    actionEl.classList.remove("history-item-release");
+    void actionEl.offsetWidth;
+    actionEl.classList.add("history-item-release");
+  }
+
+  if (historyReleaseTimer) {
+    window.clearTimeout(historyReleaseTimer);
+  }
+  historyReleaseTimer = window.setTimeout(() => {
+    const currentBoardWrapEl = appEl.querySelector(".board-wrap");
+    if (currentBoardWrapEl instanceof HTMLElement) {
+      currentBoardWrapEl.classList.remove("history-board-release");
+    }
+    if (actionEl instanceof HTMLElement) {
+      actionEl.classList.remove("history-item-release");
+    }
+    historyReleaseTimer = null;
+  }, HISTORY_RELEASE_BOUNCE_MS);
 };
 
 const startHistoryPress = (actionEl) => {
@@ -1129,6 +1164,7 @@ appEl.addEventListener("click", async (event) => {
       const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
       if (!gameId || !Number.isFinite(moveIndex)) return;
       clearHistoryPress();
+      playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
       await transport.selectHistoryMove({ gameId, moveIndex });
       await syncRouteData();
@@ -1139,6 +1175,7 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
       clearHistoryPress();
+      playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
       await transport.returnToLive({ gameId });
       await syncRouteData();

@@ -49,18 +49,17 @@ test("withBusy only repaints immediately for actions that need visible busy stat
   assert.match(source, /\}, \{ renderStart: shouldRenderBusyState \}\);/);
 });
 
-test("history navigation uses pointer-down press state without post-swap transition animation", () => {
+test("history navigation uses pointer-down press state with a single mouseup release bounce", () => {
   assert.match(source, /const startHistoryPress = \(actionEl\) => \{/);
   assert.match(source, /const clearHistoryPress = \(\) => \{/);
+  assert.match(source, /const playHistoryReleaseBounce = \(actionEl\) => \{/);
   assert.match(source, /boardWrapEl\.classList\.add\("history-board-pressing"\);/);
+  assert.match(source, /boardWrapEl\.classList\.add\("history-board-release"\);/);
+  assert.match(source, /actionEl\.classList\.add\("history-item-release"\);/);
   assert.match(source, /window\.addEventListener\("pointerup", \(event\) => \{[\s\S]*action === "jump-history" \|\| action === "return-live"[\s\S]*return;[\s\S]*clearHistoryPress\(\);\s*\}\);/s);
   assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*action !== "jump-history" && action !== "return-live"[\s\S]*startHistoryPress\(actionEl\);/s);
   assert.match(source, /const animateHistoryDeselection = async \(actionEl\) => \{/);
   assert.match(source, /currentSelected\.classList\.add\("is-deselecting"\);/);
-  assert.doesNotMatch(source, /queueHistoryItemTransition/);
-  assert.doesNotMatch(source, /playHistoryItemTransitionIfNeeded/);
-  assert.doesNotMatch(source, /queueBoardTransition/);
-  assert.doesNotMatch(source, /playBoardTransitionIfNeeded/);
-  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
-  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
+  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
+  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
 });
