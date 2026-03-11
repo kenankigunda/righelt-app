@@ -1,6 +1,6 @@
 name = "righelt"
 # This app deploys to Pages in advanced mode, so this remains Worker-style config.
-main = "_worker.ts"
+main = "_worker.js"
 compatibility_date = "2026-02-23"
 
 [assets]
