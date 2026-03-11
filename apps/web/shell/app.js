@@ -91,6 +91,8 @@ const ignoredApprovalRequests = new Set();
 let lastRenderedMarkup = "";
 let pendingBoardTransition = false;
 let boardTransitionTimer = null;
+let pendingHistoryItemTransition = null;
+let historyItemTransitionTimer = null;
 const HISTORY_SELECTION_EXIT_MS = 140;
 const BOARD_HISTORY_TRANSITION_MS = 220;
 
@@ -146,6 +148,48 @@ const delay = (ms) =>
 
 const queueBoardTransition = () => {
   pendingBoardTransition = true;
+};
+
+const queueHistoryItemTransition = ({ gameId, moveIndex }) => {
+  pendingHistoryItemTransition =
+    typeof gameId === "string" && Number.isFinite(moveIndex)
+      ? { gameId, moveIndex }
+      : null;
+};
+
+const playHistoryItemTransitionIfNeeded = (game) => {
+  if (!pendingHistoryItemTransition || !appEl || !game) {
+    return;
+  }
+  if (pendingHistoryItemTransition.gameId !== game.id) {
+    return;
+  }
+
+  const { moveIndex } = pendingHistoryItemTransition;
+  pendingHistoryItemTransition = null;
+  const itemEl = appEl.querySelector(
+    `.history-item[data-game-id="${CSS.escape(game.id)}"][data-move-index="${String(moveIndex)}"]`,
+  );
+  if (!(itemEl instanceof HTMLElement)) {
+    return;
+  }
+
+  if (historyItemTransitionTimer) {
+    window.clearTimeout(historyItemTransitionTimer);
+    historyItemTransitionTimer = null;
+  }
+
+  itemEl.classList.remove("history-item-transition");
+  if (prefersReducedMotion()) {
+    return;
+  }
+
+  void itemEl.offsetWidth;
+  itemEl.classList.add("history-item-transition");
+  historyItemTransitionTimer = window.setTimeout(() => {
+    itemEl.classList.remove("history-item-transition");
+    historyItemTransitionTimer = null;
+  }, BOARD_HISTORY_TRANSITION_MS);
 };
 
 const playBoardTransitionIfNeeded = () => {
@@ -778,6 +822,7 @@ const mountBoardForGame = (game) => {
     mountedLegalActionsKey = legalActionsKey;
     mountedSelectionActionKey = selectionActionKey;
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
+    playHistoryItemTransitionIfNeeded(game);
     playBoardTransitionIfNeeded();
     void boardRuntime.loadSnapshot(snapshot, {
       legalActions: effectiveLegalActions,
@@ -818,6 +863,7 @@ const mountBoardForGame = (game) => {
   mountedSnapshotKey = snapshotKey;
   mountedLegalActionsKey = legalActionsKey;
   mountedSelectionActionKey = selectionActionKey;
+  playHistoryItemTransitionIfNeeded(game);
   playBoardTransitionIfNeeded();
   void boardRuntime.loadSnapshot(snapshot, {
     legalActions: effectiveLegalActions,
@@ -1154,6 +1200,7 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
       if (!gameId || !Number.isFinite(moveIndex)) return;
+      queueHistoryItemTransition({ gameId, moveIndex });
       queueBoardTransition();
       await animateHistoryDeselection(actionEl);
       await transport.selectHistoryMove({ gameId, moveIndex });

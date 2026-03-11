@@ -208,6 +208,11 @@ button.secondary:disabled {
   cursor: pointer;
   display: grid;
   gap: 0.08rem;
+  transform-origin: 50% 50%;
+}
+
+.history-item:active {
+  transform: translateY(1px) scale(0.985);
 }
 
 .history-move-line {
@@ -251,6 +256,31 @@ button.secondary:disabled {
   transform: translateY(-0.18rem);
 }
 
+.history-item.history-item-transition {
+  animation: history-item-bounce 240ms cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+@keyframes history-item-bounce {
+  0% {
+    opacity: 0.82;
+    transform: translateY(1px) scale(0.985);
+  }
+
+  38% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.012);
+  }
+
+  68% {
+    transform: translateY(1px) scale(0.997);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .history-item.is-selected .history-move-line {
   font-weight: 600;
 }
@@ -265,6 +295,14 @@ button.secondary:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .history-item.history-item-transition {
+    animation: none;
+  }
+
+  .history-item:active {
+    transform: none;
+  }
+
   .history-move-line,
   .history-move-at {
     transition: none;
