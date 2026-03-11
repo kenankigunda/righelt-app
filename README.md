@@ -38,10 +38,16 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 
 - `Cp` = commit + push + wait before continuing
 - `Cpn` = commit + push + take the next action
+- `Dd` = do a deep investigation to understand holistically, give your diagnosis, and propose a change; wait before implementing
 - `Dfix` = diagnose and fix
 - `Ddfix` = do a deep investigation to diagnose and fix holistically
-- `Snb` = switch to a new branch
+- `Sb` = switch branch; expects either an explicit branch name or a description that can be used to infer the intended branch
+- `Snb` = switch to a new `codex/` branch whose name is auto-derived from the most recent non-`main` changes in flight; reuse the active feature/topic slug when clear, otherwise derive a short descriptive slug from the latest branch/commit context and append a disambiguating suffix if needed
 - `Sbtb` = switch back to this branch
+- `Audit branches` = run the detailed branch audit workflow in `docs/BRANCH_AUDIT_WORKFLOW.md` and update `docs/BRANCH_AUDIT.md`
+- `Aubr` = `Audit branches`
+- `Cleanup branches` = rerun `Audit branches` first, including updating `docs/BRANCH_AUDIT.md` when the audit changes, and stop if the refreshed audit differs from the previous audit, reporting the difference; never modify `main`; before any local-only branch deletions, update `docs/REMOTE_ONLY_BRANCH_SUMMARIES.md` as needed for branches that will remain remote-only; then delete `(a)` branches from local and remote, delete `(d)` branches from local only, delete `(e)` branches from remote only, and remove summary entries from `docs/REMOTE_ONLY_BRANCH_SUMMARIES.md` after confirming the corresponding remote branches were deleted
+- `Clbr` = `Cleanup branches`
 - `Rbom` = rebase on latest origin main
 - `Fp` = force push (`--force-with-lease`)
 - `Mmp` = merge to main and push
