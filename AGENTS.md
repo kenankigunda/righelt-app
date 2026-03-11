@@ -123,6 +123,7 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 - `Cpn` = commit + push + take the next action
 - `Dfix` = diagnose and fix
 - `Ddfix` = do a deep investigation to diagnose and fix holistically
+- `Sb` = switch branch; expects either an explicit branch name or a description that can be used to infer the intended branch
 - `Snb` = switch to a new `codex/` branch whose name is auto-derived from the most recent non-`main` changes in flight; reuse the active feature/topic slug when clear, otherwise derive a short descriptive slug from the latest branch/commit context and append a disambiguating suffix if needed
 - `Sbtb` = switch back to this branch
 - `Audit branches` = run the detailed branch audit workflow in `docs/BRANCH_AUDIT_WORKFLOW.md` and update `docs/BRANCH_AUDIT.md`
