@@ -57,3 +57,6 @@ jobs:
 
       - name: API handler tests
         run: pnpm test:api-handler
+
+      - name: Web tests
+        run: pnpm test:web
