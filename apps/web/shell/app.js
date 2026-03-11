@@ -145,6 +145,36 @@ const renderSectionActions = (actions) => {
   }
   return `<div class="row section-actions">${items.join("")}</div>`;
 };
+const animatePanelHeightChange = (panelEl, fromHeight) => {
+  if (prefersReducedMotion() || !(panelEl instanceof HTMLElement) || !Number.isFinite(fromHeight)) {
+    return;
+  }
+  const toHeight = panelEl.getBoundingClientRect().height;
+  if (Math.abs(toHeight - fromHeight) < 1) {
+    return;
+  }
+
+  panelEl.style.overflow = "hidden";
+  panelEl.style.height = `${fromHeight}px`;
+  void panelEl.offsetHeight;
+  panelEl.style.transition = "height 180ms ease";
+  panelEl.style.height = `${toHeight}px`;
+
+  const clearHeightAnimation = () => {
+    panelEl.style.transition = "";
+    panelEl.style.height = "";
+    panelEl.style.overflow = "";
+    panelEl.removeEventListener("transitionend", clearHeightAnimation);
+  };
+  panelEl.addEventListener("transitionend", clearHeightAnimation);
+};
+const renderFeedbackReveal = (message) => `
+  <div class="feedback-reveal${message ? " is-visible" : ""}" aria-live="polite">
+    <div class="feedback-reveal-body">
+      ${message ? `<p class="small">${escapeHtml(message)}</p>` : ""}
+    </div>
+  </div>
+`;
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
 const delay = (ms) =>
   new Promise((resolve) => {
@@ -516,10 +546,13 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
 
   const historyMoveNumber =
     typeof game.historyIndex === "number" ? String(game.historyIndex + 1) : "?";
+  const hasHistoryMoves = Array.isArray(game.moves) && game.moves.length > 0;
   const historyBanner = game.inHistoryMode
     ? `<p class="small">Viewing history snapshot for move ${escapeHtml(historyMoveNumber)}.</p>
        <p class="small">Incoming live moves will appear at bottom.</p>`
-    : '<p class="small">You are on the live view.</p><p class="small">Click moves below to see historical state.</p>';
+    : hasHistoryMoves
+      ? '<p class="small">You are on the live view.</p><p class="small">Click moves below to see historical state.</p>'
+      : '<p class="small">You are on the live view.</p>';
   const joinInviteActions = renderSectionActions([
     game.canJoinAsViewer
       ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${!busy ? "" : "disabled"}>Join as viewer</button>`
@@ -556,12 +589,12 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
           </div>
         </section>
 
-        <section class="panel">
+        <section class="panel" data-shell-panel="join-invite">
           <h2>Join / Invite</h2>
           ${pendingSeatNotice}
           ${joinInviteActions}
+          ${renderFeedbackReveal(inviteFeedback)}
           <div class="section-followup">
-            ${inviteFeedback ? `<p class="small">${escapeHtml(inviteFeedback)}</p>` : ""}
             <ul class="participant-list">${pendingRows}</ul>
           </div>
         </section>
@@ -859,6 +892,10 @@ const mountBoardForGame = (game) => {
 };
 
 const render = () => {
+  const previousJoinInvitePanelHeight =
+    appEl?.querySelector?.('[data-shell-panel="join-invite"]') instanceof HTMLElement
+      ? appEl.querySelector('[data-shell-panel="join-invite"]').getBoundingClientRect().height
+      : null;
   let body = "";
   if (currentRoute.name === "home") {
     body = renderHome();
@@ -880,6 +917,10 @@ const render = () => {
   if (nextMarkup !== lastRenderedMarkup) {
     appEl.innerHTML = nextMarkup;
     lastRenderedMarkup = nextMarkup;
+    const nextJoinInvitePanel = appEl.querySelector('[data-shell-panel="join-invite"]');
+    if (nextJoinInvitePanel instanceof HTMLElement && previousJoinInvitePanelHeight !== null) {
+      animatePanelHeightChange(nextJoinInvitePanel, previousJoinInvitePanelHeight);
+    }
   }
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     mountedBoardGameId = null;

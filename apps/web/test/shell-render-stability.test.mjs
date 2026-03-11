@@ -9,8 +9,10 @@ const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
 
 test("shell render commits markup only when it changes", () => {
   assert.match(source, /let lastRenderedMarkup = "";/);
+  assert.match(source, /const previousJoinInvitePanelHeight =/);
+  assert.match(source, /const animatePanelHeightChange = \(panelEl, fromHeight\) => \{/);
   assert.match(source, /const nextMarkup = `\$\{renderHeader\(\)\}\$\{body\}`;/);
-  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;\s*\}/s);
+  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*animatePanelHeightChange\(nextJoinInvitePanel, previousJoinInvitePanelHeight\);[\s\S]*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
 });
 
@@ -43,6 +45,8 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /const emptyTurnText = "Waiting on next move\.\.\."/);
   assert.match(source, /: `<div class="history-empty-line/);
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
+  assert.match(source, /const hasHistoryMoves = Array\.isArray\(game\.moves\) && game\.moves\.length > 0;/);
+  assert.match(source, /: hasHistoryMoves\s*\? '<p class="small">You are on the live view\.<\/p><p class="small">Click moves below to see historical state\.<\/p>'\s*: '<p class="small">You are on the live view\.<\/p>'/);
 });
 
 test("withBusy only repaints immediately for actions that need visible busy state", () => {
@@ -50,6 +54,8 @@ test("withBusy only repaints immediately for actions that need visible busy stat
   assert.match(source, /if \(renderStart\) \{\s*render\(\);\s*\}/s);
   assert.match(source, /const shouldRenderBusyState =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "return-live"/s);
   assert.match(source, /\}, \{ renderStart: shouldRenderBusyState \}\);/);
+  assert.match(source, /const renderFeedbackReveal = \(message\) =>/);
+  assert.match(source, /feedback-reveal\$\{message \? " is-visible" : ""\}/);
 });
 
 test("history navigation uses pointer-down press state with a single mouseup release bounce", () => {

@@ -169,6 +169,7 @@ For the current board implementation:
 
 - Interactive UI changes that can alter element height or cause nearby layout shifting must use smooth expand/collapse animation instead of abrupt jumps.
 - This applies to hover/click/reveal interactions and mode/state toggles where additional lines or controls appear/disappear.
+- This also applies to transient feedback revealed by an interaction, including helper text, inline confirmations, invite/share status, validation notices, and similar messages that appear or disappear in response to hover/click.
 - Motion should be subtle and brief (for example 120-220ms easing) and should preserve readability during transition.
 - Implementations must respect reduced-motion preferences and disable non-essential animation when `prefers-reduced-motion: reduce` is active.
 

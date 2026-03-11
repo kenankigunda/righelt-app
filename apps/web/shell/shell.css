@@ -373,6 +373,31 @@ button.button-release-bounce,
   margin-bottom: var(--section-item-gap);
 }
 
+.feedback-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-bottom: 0;
+  transition:
+    grid-template-rows 160ms ease,
+    opacity 160ms ease,
+    margin-bottom 160ms ease;
+}
+
+.feedback-reveal.is-visible {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-bottom: var(--section-item-gap);
+}
+
+.feedback-reveal-body {
+  overflow: hidden;
+}
+
+.feedback-reveal-body > * {
+  margin: 0;
+}
+
 .section-stack {
   display: grid;
   gap: var(--section-item-gap);
@@ -389,6 +414,12 @@ button.button-release-bounce,
 
 .section-followup > * {
   margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feedback-reveal {
+    transition: none;
+  }
 }
 
 .invite-gate {
