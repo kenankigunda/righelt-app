@@ -125,7 +125,7 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 - `Ddfix` = do a deep investigation to diagnose and fix holistically
 - `Snb` = switch to a new `codex/` branch whose name is auto-derived from the most recent non-`main` changes in flight; reuse the active feature/topic slug when clear, otherwise derive a short descriptive slug from the latest branch/commit context and append a disambiguating suffix if needed
 - `Sbtb` = switch back to this branch
-- `Audit branches` = audit local branches against `main`, remote tracking state, and attached worktrees; produce the grouped branch-state tables and update `docs/BRANCH_AUDIT.md`
+- `Audit branches` = when possible, fetch latest remote refs first, then audit local branches against `main`, remote tracking state, and attached worktrees; produce the grouped branch-state tables and update `docs/BRANCH_AUDIT.md`
 - `Rbom` = rebase on latest origin main
 - `Fp` = force push (`--force-with-lease`)
 - `Mmp` = merge to main and push
