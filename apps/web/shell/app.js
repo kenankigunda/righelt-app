@@ -87,6 +87,10 @@ let resolvedInvite = null;
 const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
 let lastRenderedMarkup = "";
+const HISTORY_SELECTION_EXIT_MS = 56;
+const HISTORY_RELEASE_BOUNCE_MS = 140;
+let pressedHistoryActionEl = null;
+let historyReleaseTimer = null;
 
 const escapeHtml = (value) =>
   String(value)
@@ -132,6 +136,95 @@ const formatClientDateTime = (value) => {
 };
 
 const renderPlaceholderBadge = () => '<span class="status-chip offline">Not yet implemented</span>';
+const renderSectionActions = (actions) => {
+  const items = actions.filter((value) => typeof value === "string" && value.trim().length > 0);
+  if (items.length === 0) {
+    return "";
+  }
+  return `<div class="row section-actions">${items.join("")}</div>`;
+};
+const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+const delay = (ms) =>
+  new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+
+const animateHistoryDeselection = async (actionEl) => {
+  if (prefersReducedMotion() || !appEl) {
+    return;
+  }
+  const currentSelected = appEl.querySelector(".history-item.is-selected, .history-item.is-live-selected");
+  if (!(currentSelected instanceof HTMLElement) || currentSelected === actionEl) {
+    return;
+  }
+
+  currentSelected.classList.add("is-deselecting");
+  currentSelected.classList.remove("is-selected");
+  currentSelected.classList.remove("is-live-selected");
+  await delay(HISTORY_SELECTION_EXIT_MS);
+};
+
+const clearHistoryPress = () => {
+  const boardWrapEl = appEl.querySelector(".board-wrap");
+  if (boardWrapEl instanceof HTMLElement) {
+    boardWrapEl.classList.remove("history-board-pressing");
+  }
+
+  if (pressedHistoryActionEl instanceof HTMLElement) {
+    pressedHistoryActionEl.classList.remove("is-pressing");
+  }
+  pressedHistoryActionEl = null;
+};
+
+const playHistoryReleaseBounce = (actionEl) => {
+  if (prefersReducedMotion() || !appEl) {
+    return;
+  }
+
+  const boardWrapEl = appEl.querySelector(".board-wrap");
+  if (boardWrapEl instanceof HTMLElement) {
+    boardWrapEl.classList.remove("history-board-release");
+    void boardWrapEl.offsetWidth;
+    boardWrapEl.classList.add("history-board-release");
+  }
+
+  if (actionEl instanceof HTMLElement && actionEl.classList.contains("history-item")) {
+    actionEl.classList.remove("history-item-release");
+    void actionEl.offsetWidth;
+    actionEl.classList.add("history-item-release");
+  }
+
+  if (historyReleaseTimer) {
+    window.clearTimeout(historyReleaseTimer);
+  }
+  historyReleaseTimer = window.setTimeout(() => {
+    const currentBoardWrapEl = appEl.querySelector(".board-wrap");
+    if (currentBoardWrapEl instanceof HTMLElement) {
+      currentBoardWrapEl.classList.remove("history-board-release");
+    }
+    if (actionEl instanceof HTMLElement) {
+      actionEl.classList.remove("history-item-release");
+    }
+    historyReleaseTimer = null;
+  }, HISTORY_RELEASE_BOUNCE_MS);
+};
+
+const startHistoryPress = (actionEl) => {
+  if (prefersReducedMotion() || !appEl || !(actionEl instanceof HTMLElement)) {
+    return;
+  }
+  clearHistoryPress();
+
+  const boardWrapEl = appEl.querySelector(".board-wrap");
+  if (boardWrapEl instanceof HTMLElement) {
+    boardWrapEl.classList.add("history-board-pressing");
+  }
+
+  if (actionEl.classList.contains("history-item")) {
+    actionEl.classList.add("is-pressing");
+    pressedHistoryActionEl = actionEl;
+  }
+};
 
 const getCurrentViewedGameId = () => {
   if (currentRoute.name === "game") {
@@ -176,42 +269,37 @@ const renderTurnHistory = (game) => {
           : null;
   const emptyTurnText = "Waiting on next move...";
 
-  return game.turns
-    .map((turn) => {
-      const showLiveSelectedEmpty = liveSelectedEmptyTurnIndex === turn.index && turn.moveIndexes.length === 0;
-      const emptyTurnItem = game.inHistoryMode
-        ? `<li class="history-item history-return-live" data-action="return-live" data-game-id="${escapeHtml(
-            game.id,
-          )}"><span class="history-move-line">${escapeHtml(emptyTurnText)}</span></li>`
-        : `<li class="history-empty-line${showLiveSelectedEmpty ? " is-live-selected" : ""}"><span class="history-move-line">${escapeHtml(
-            emptyTurnText,
-          )}</span></li>`;
-      const turnMoves = turn.moveIndexes
-        .map((moveIndex) => game.moves[moveIndex])
-        .filter(Boolean)
-        .map((move) => {
-          const isSelected = game.inHistoryMode ? game.historyIndex === move.index : selectedMoveIndex === move.index;
-          const selectedClass = isSelected ? (game.inHistoryMode ? " is-selected" : " is-live-selected") : "";
-          return `<li class="history-item${selectedClass}" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">
-            <span class="history-move-line ${playerToneClassForSide(move.actorSide || (turn.playerSeat === "Player 1" ? "P1" : "P2"))}">Move ${escapeHtml(
-              String(move.index + 1),
-            )}: ${escapeHtml(move.notation)}</span>
-            <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
-          </li>`;
-        })
-        .join("");
+  const moveRows = game.turns.flatMap((turn) =>
+    turn.moveIndexes
+      .map((moveIndex) => game.moves[moveIndex])
+      .filter(Boolean)
+      .map((move) => {
+        const isSelected = game.inHistoryMode ? game.historyIndex === move.index : selectedMoveIndex === move.index;
+        const selectedClass = isSelected ? (game.inHistoryMode ? " is-selected" : " is-live-selected") : "";
+        return `<li class="history-item ${playerToneClassForSide(move.actorSide || (turn.playerSeat === "Player 1" ? "P1" : "P2"))}${selectedClass}" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">
+          <span class="history-move-line">Move ${escapeHtml(
+            String(move.index + 1),
+          )}: ${escapeHtml(move.notation)}</span>
+          <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
+        </li>`;
+      }),
+  );
 
-      return `<li class="history-turn">
-        <div class="history-turn-body">
-          <div class="history-turn-header">
-            <strong>Turn ${escapeHtml(String(turn.index + 1))}</strong> <span class="small ${playerToneClassForSeat(turn.playerSeat)}">${escapeHtml(turn.playerSeat)}</span>
-            <span class="small">${escapeHtml(turn.status)}</span>
-          </div>
-          <ol class="history-turn-list">${turnMoves || emptyTurnItem}</ol>
-        </div>
-      </li>`;
-    })
-    .join("");
+  const activeTurn = activeTurnIndex !== null ? game.turns.find((turn) => turn.index === activeTurnIndex) : null;
+  if (!activeTurn || activeTurn.moveIndexes.length > 0) {
+    return moveRows.join("");
+  }
+
+  const showLiveSelectedEmpty = liveSelectedEmptyTurnIndex === activeTurn.index;
+  const emptyTurnItem = game.inHistoryMode
+    ? `<div class="history-empty-line history-return-live" data-action="return-live" data-game-id="${escapeHtml(
+        game.id,
+      )}"><span class="history-move-line">${escapeHtml(emptyTurnText)}</span></div>`
+    : `<div class="history-empty-line${showLiveSelectedEmpty ? " is-live-selected" : ""}"><span class="history-move-line">${escapeHtml(
+        emptyTurnText,
+      )}</span></div>`;
+
+  return `${moveRows.join("")}${emptyTurnItem}`;
 };
 
 const renderHeader = () => `
@@ -396,6 +484,25 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
     ? `<p class="small">Viewing history snapshot for move ${escapeHtml(historyMoveNumber)}.</p>
        <p class="small">Incoming live moves will appear at bottom.</p>`
     : '<p class="small">You are on the live view.</p><p class="small">Click moves below to see historical state.</p>';
+  const joinInviteActions = renderSectionActions([
+    game.canJoinAsViewer
+      ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${!busy ? "" : "disabled"}>Join as viewer</button>`
+      : "",
+    game.canJoinAsPlayer && game.showJoinActions
+      ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${!busy ? "" : "disabled"}>Join as player</button>`
+      : "",
+    game.canPlayAsBothPlayers
+      ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
+          !game.showOfflineState && !busy ? "" : "disabled"
+        }>Play as both players</button>`
+      : "",
+    `<button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${game.canInvite && !busy ? "" : "disabled"}>Invite someone else</button>`,
+  ]);
+  const historyActions = renderSectionActions([
+    game.inHistoryMode
+      ? `<button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Return to live view</button>`
+      : "",
+  ]);
 
   return `
     ${offlineBanner ? `<section class="panel">${offlineBanner}</section>` : ""}
@@ -422,32 +529,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
         <section class="panel">
           <h2>Join / Invite</h2>
           ${pendingSeatNotice}
-          <div class="row section-actions">
-            ${
-              game.canJoinAsViewer
-                ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
-                    !busy ? "" : "disabled"
-                  }>Join as viewer</button>`
-                : ""
-            }
-            ${
-              game.canJoinAsPlayer && game.showJoinActions
-                ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${
-                    !busy ? "" : "disabled"
-                  }>Join as player</button>`
-                : ""
-            }
-            ${
-              game.canPlayAsBothPlayers
-                ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
-                    !game.showOfflineState && !busy ? "" : "disabled"
-                  }>Play as both players</button>`
-                : ""
-            }
-            <button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${
-              game.canInvite && !busy ? "" : "disabled"
-            }>Invite someone else</button>
-          </div>
+          ${joinInviteActions}
           <div class="section-followup">
             ${inviteFeedback ? `<p class="small">${escapeHtml(inviteFeedback)}</p>` : ""}
             <ul class="participant-list">${pendingRows}</ul>
@@ -482,13 +564,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
         <section class="panel">
           <h2>History</h2>
           ${historyBanner}
-          <div class="row section-actions">
-            ${
-              game.inHistoryMode && !busy
-                ? `<button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}">Return to live view</button>`
-                : ""
-            }
-          </div>
+          ${historyActions}
           <div class="section-followup">
             <ol class="history-list">${historyRows}</ol>
           </div>
@@ -795,16 +871,20 @@ const render = () => {
   }
 };
 
-const withBusy = async (fn) => {
+const withBusy = async (fn, { renderStart = true, renderEnd = true } = {}) => {
   busy = true;
-  render();
+  if (renderStart) {
+    render();
+  }
   try {
     await fn();
   } catch (error) {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
   } finally {
     busy = false;
-    render();
+    if (renderEnd) {
+      render();
+    }
   }
 };
 
@@ -959,6 +1039,12 @@ appEl.addEventListener("click", async (event) => {
   }
 
   const action = actionEl.getAttribute("data-action");
+  const shouldRenderBusyState =
+    action !== "copy-invite" &&
+    action !== "jump-history" &&
+    action !== "return-live" &&
+    action !== "tutorial-next" &&
+    action !== "tutorial-skip";
 
   await withBusy(async () => {
     if (action === "create-game") {
@@ -1072,6 +1158,9 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
       if (!gameId || !Number.isFinite(moveIndex)) return;
+      clearHistoryPress();
+      playHistoryReleaseBounce(actionEl);
+      await animateHistoryDeselection(actionEl);
       await transport.selectHistoryMove({ gameId, moveIndex });
       await syncRouteData();
       return;
@@ -1080,6 +1169,9 @@ appEl.addEventListener("click", async (event) => {
     if (action === "return-live") {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
+      clearHistoryPress();
+      playHistoryReleaseBounce(actionEl);
+      await animateHistoryDeselection(actionEl);
       await transport.returnToLive({ gameId });
       await syncRouteData();
       return;
@@ -1096,7 +1188,39 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       navigateTo(gameId ? buildGameHash(gameId) : buildHomeHash());
     }
-  });
+  }, { renderStart: shouldRenderBusyState });
+});
+
+appEl.addEventListener("pointerdown", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  const actionEl = target.closest("[data-action]");
+  if (!(actionEl instanceof HTMLElement)) {
+    return;
+  }
+  const action = actionEl.getAttribute("data-action");
+  if (action !== "jump-history" && action !== "return-live") {
+    return;
+  }
+  startHistoryPress(actionEl);
+});
+
+window.addEventListener("pointerup", (event) => {
+  const target = event.target;
+  if (target instanceof HTMLElement) {
+    const actionEl = target.closest("[data-action]");
+    const action = actionEl?.getAttribute("data-action");
+    if (action === "jump-history" || action === "return-live") {
+      return;
+    }
+  }
+  clearHistoryPress();
+});
+
+window.addEventListener("pointercancel", () => {
+  clearHistoryPress();
 });
 
 const initialRender = async () => {

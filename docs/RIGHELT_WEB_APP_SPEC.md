@@ -172,6 +172,19 @@ For the current board implementation:
 - Motion should be subtle and brief (for example 120-220ms easing) and should preserve readability during transition.
 - Implementations must respect reduced-motion preferences and disable non-essential animation when `prefers-reduced-motion: reduce` is active.
 
+### 1.1.6 UI Motion Convention for Direct Interaction Feedback
+
+- Motion for user-triggered interactions must be attached to the interactive element itself, not only to nearby layout or background surfaces.
+- On pointer-down / mouse-down, the interacted control should show immediate pressed feedback.
+- On release, motion should resolve as one short continuous release animation, not as multiple stacked animations separated by a visible pause.
+- Prefer a single quick overbounce-and-settle on release over a delayed second bounce or a separate follow-up flourish.
+- When a related surface should feel coupled to the same interaction, it may mirror the same press/release timing, but the timing must stay synchronized with the interactive element.
+- Example pattern from shell history:
+  - the clicked move row compresses immediately on pointer-down
+  - the board may mirror that same pressed state at the same time
+  - on click/release, both perform one quick release bounce
+  - the history/state swap happens without adding a second delayed animation after that release bounce
+
 ## 2. Identity and Rejoin
 
 - The app must persist a device-local identity token.
