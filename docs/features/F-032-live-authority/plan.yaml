@@ -1,0 +1,49 @@
+feature_id: F-032-live-authority
+integration_branch: codex/f-032-live-authority-integration
+max_parallel_streams: 2
+shared_acceptance:
+  - pnpm --filter @righelt/web test
+  - pnpm test:api-handler
+  - pnpm test:engine
+streams:
+  - id: S1
+    goal: Define the new live-authority contracts, persistence schema, and orchestrator test harnesses with all legacy transport assumptions removed.
+    worktree: ../righelt-F-032-live-authority-S1
+    branch: codex/F-032-live-authority-S1
+    depends_on: []
+    acceptance_checks:
+      - pnpm test:api-handler
+      - pnpm --filter @righelt/web test -- routing live-transport live-sync
+    agent_profile: live-authority-foundation
+  - id: S2
+    goal: Implement GameRoomDO as the sole live game authority and remove the legacy shell live transport backend path.
+    worktree: ../righelt-F-032-live-authority-S2
+    branch: codex/F-032-live-authority-S2
+    depends_on:
+      - S1
+    acceptance_checks:
+      - pnpm test:api-handler
+    agent_profile: live-authority-backend
+  - id: S3
+    goal: Rewrite the shell client to consume the new game websocket protocol for invite and game routes, with legacy polling and invalidation logic removed.
+    worktree: ../righelt-F-032-live-authority-S3
+    branch: codex/F-032-live-authority-S3
+    depends_on:
+      - S1
+    acceptance_checks:
+      - pnpm --filter @righelt/web test -- live-sync live-transport join routing ui-guards
+      - pnpm --filter @righelt/web test -- shell-render-stability history
+    agent_profile: live-authority-frontend
+  - id: S4
+    goal: Integrate backend and frontend rewrites, remove remaining dead compatibility code, and prove end-to-end correctness.
+    worktree: ../righelt-F-032-live-authority-S4
+    branch: codex/F-032-live-authority-S4
+    depends_on:
+      - S2
+      - S3
+    acceptance_checks:
+      - pnpm --filter @righelt/web test
+      - pnpm test:api-handler
+      - pnpm test:engine
+      - pnpm --filter @righelt/web test -- e2e join live-sync
+    agent_profile: live-authority-integration
