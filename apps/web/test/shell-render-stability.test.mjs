@@ -50,13 +50,16 @@ test("withBusy only repaints immediately for actions that need visible busy stat
 });
 
 test("history navigation animates deselection before snapshot swap and queues board transition", () => {
+  assert.match(source, /const animateHistoryPress = async \(actionEl\) => \{/);
+  assert.match(source, /boardWrapEl\.classList\.add\("history-board-pressing"\);/);
+  assert.match(source, /actionEl\.classList\.add\("is-pressing"\);/);
   assert.match(source, /const animateHistoryDeselection = async \(actionEl\) => \{/);
   assert.match(source, /currentSelected\.classList\.add\("is-deselecting"\);/);
   assert.match(source, /const queueHistoryItemTransition = \(\{ gameId, moveIndex \}\) => \{/);
   assert.match(source, /const playHistoryItemTransitionIfNeeded = \(game\) => \{/);
   assert.match(source, /const playBoardTransitionIfNeeded = \(\) => \{/);
-  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*queueHistoryItemTransition\(\{ gameId, moveIndex \}\);[\s\S]*queueBoardTransition\(\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
-  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*queueBoardTransition\(\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
+  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*queueHistoryItemTransition\(\{ gameId, moveIndex \}\);[\s\S]*queueBoardTransition\(\);[\s\S]*await animateHistoryPress\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
+  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*queueBoardTransition\(\);[\s\S]*await animateHistoryPress\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
   assert.match(source, /playHistoryItemTransitionIfNeeded\(game\);\s*playBoardTransitionIfNeeded\(\);\s*void boardRuntime\.loadSnapshot\(/s);
   assert.match(source, /playBoardTransitionIfNeeded\(\);\s*void boardRuntime\.loadSnapshot\(/s);
 });
