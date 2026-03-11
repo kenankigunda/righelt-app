@@ -121,6 +121,7 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 
 - `Cp` = commit + push + wait before continuing
 - `Cpn` = commit + push + take the next action
+- `Dd` = do a deep analysis; expects a follow-on explanation of what to analyze and diagnose
 - `Dfix` = diagnose and fix
 - `Ddfix` = do a deep investigation to diagnose and fix holistically
 - `Sb` = switch branch; expects either an explicit branch name or a description that can be used to infer the intended branch
