@@ -34,3 +34,10 @@ test("syncLiveChannel does not disconnect/reconnect while same route is still co
     /if \(routeKey === liveSyncConnectedRoute && \(wsStatus\.state === "connected" \|\| wsStatus\.state === "connecting"\)\) \{\s*return;\s*\}/s,
   );
 });
+
+test("history renderer emits move-only rows without visible turn wrappers", () => {
+  assert.doesNotMatch(source, /class="history-turn"/);
+  assert.doesNotMatch(source, /class="history-turn-header"/);
+  assert.doesNotMatch(source, /class="history-turn-list"/);
+  assert.match(source, /const moveRows = game\.turns\.flatMap/);
+});
