@@ -9,3 +9,5 @@ type PagesContext = {
 export const onRequest = async (context: PagesContext): Promise<Response> => {
   return handleApiRequest(context.request, context.env);
 };
+
+export { GameRoomDO } from "../../../../packages/api-handler/src";
