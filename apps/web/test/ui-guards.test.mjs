@@ -44,11 +44,11 @@ test("game, join/invite, and history use shared section spacing structure", () =
   assert.match(source, /if \(items\.length === 0\) \{\s*return "";\s*\}/s);
   assert.match(source, /class="section-followup"/);
   assert.match(source, /class="section-stack"/);
-  assert.match(source, /data-action="return-live"/);
+  assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
 });
 
 test("history live-return control stays mounted during busy history navigation", () => {
-  assert.match(source, /game\.inHistoryMode\s*\?\s*`<button class="secondary" data-action="return-live"/);
+  assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
   assert.match(source, /data-action="return-live"[^`]*\$\{busy \? "disabled" : ""\}/);
 });
 

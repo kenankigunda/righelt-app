@@ -193,7 +193,17 @@ button.secondary:disabled {
   margin: 0;
   padding-left: 0;
   display: grid;
-  gap: 0;
+  gap: var(--section-item-gap);
+}
+
+button.is-pressing,
+.button-link.is-pressing {
+  transform: translateY(1px) scale(0.985);
+}
+
+button.button-release-bounce,
+.button-link.button-release-bounce {
+  animation: history-item-release 140ms cubic-bezier(0.18, 0.72, 0.24, 1);
 }
 
 .participant-list,
@@ -309,7 +319,7 @@ button.secondary:disabled {
 }
 
 .history-return-live {
-  cursor: pointer;
+  align-items: start;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -317,7 +327,14 @@ button.secondary:disabled {
     animation: none;
   }
 
+  button.button-release-bounce,
+  .button-link.button-release-bounce {
+    animation: none;
+  }
+
   .history-item.is-pressing,
+  button.is-pressing,
+  .button-link.is-pressing,
   .history-item:active {
     transform: none;
   }

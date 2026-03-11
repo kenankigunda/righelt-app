@@ -42,7 +42,7 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /const moveRows = game\.turns\.flatMap/);
   assert.match(source, /const emptyTurnText = "Waiting on next move\.\.\."/);
   assert.match(source, /: `<div class="history-empty-line/);
-  assert.match(source, /history-empty-line history-return-live/);
+  assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
 });
 
 test("withBusy only repaints immediately for actions that need visible busy state", () => {
@@ -54,15 +54,19 @@ test("withBusy only repaints immediately for actions that need visible busy stat
 
 test("history navigation uses pointer-down press state with a single mouseup release bounce", () => {
   assert.match(source, /const startHistoryPress = \(actionEl\) => \{/);
+  assert.match(source, /const startControlPress = \(controlEl\) => \{/);
   assert.match(source, /const clearHistoryPress = \(\) => \{/);
+  assert.match(source, /const clearControlPress = \(\) => \{/);
   assert.match(source, /const playHistoryReleaseBounce = \(actionEl\) => \{/);
+  assert.match(source, /const playControlReleaseBounce = \(controlEl\) => \{/);
   assert.match(source, /boardWrapEl\.classList\.add\("history-board-pressing"\);/);
   assert.match(source, /boardWrapEl\.classList\.add\("history-board-release"\);/);
   assert.match(source, /actionEl\.classList\.add\("history-item-release"\);/);
+  assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*const controlEl = target\.closest\("button, \.button-link"\);[\s\S]*startControlPress\(controlEl\);/s);
   assert.match(source, /window\.addEventListener\("pointerup", \(event\) => \{[\s\S]*action === "jump-history" \|\| action === "return-live"[\s\S]*return;[\s\S]*clearHistoryPress\(\);\s*\}\);/s);
   assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*action !== "jump-history" && action !== "return-live"[\s\S]*startHistoryPress\(actionEl\);/s);
   assert.match(source, /const animateHistoryDeselection = async \(actionEl\) => \{/);
   assert.match(source, /currentSelected\.classList\.add\("is-deselecting"\);/);
-  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
-  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
+  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearControlPress\(\);[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
+  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);/s);
 });

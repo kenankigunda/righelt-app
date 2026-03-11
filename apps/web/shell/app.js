@@ -91,6 +91,8 @@ const HISTORY_SELECTION_EXIT_MS = 56;
 const HISTORY_RELEASE_BOUNCE_MS = 140;
 let pressedHistoryActionEl = null;
 let historyReleaseTimer = null;
+let pressedControlEl = null;
+let controlReleaseTimer = null;
 
 const escapeHtml = (value) =>
   String(value)
@@ -176,6 +178,13 @@ const clearHistoryPress = () => {
   pressedHistoryActionEl = null;
 };
 
+const clearControlPress = () => {
+  if (pressedControlEl instanceof HTMLElement) {
+    pressedControlEl.classList.remove("is-pressing");
+  }
+  pressedControlEl = null;
+};
+
 const playHistoryReleaseBounce = (actionEl) => {
   if (prefersReducedMotion() || !appEl) {
     return;
@@ -209,6 +218,24 @@ const playHistoryReleaseBounce = (actionEl) => {
   }, HISTORY_RELEASE_BOUNCE_MS);
 };
 
+const playControlReleaseBounce = (controlEl) => {
+  if (prefersReducedMotion() || !(controlEl instanceof HTMLElement)) {
+    return;
+  }
+
+  controlEl.classList.remove("button-release-bounce");
+  void controlEl.offsetWidth;
+  controlEl.classList.add("button-release-bounce");
+
+  if (controlReleaseTimer) {
+    window.clearTimeout(controlReleaseTimer);
+  }
+  controlReleaseTimer = window.setTimeout(() => {
+    controlEl.classList.remove("button-release-bounce");
+    controlReleaseTimer = null;
+  }, HISTORY_RELEASE_BOUNCE_MS);
+};
+
 const startHistoryPress = (actionEl) => {
   if (prefersReducedMotion() || !appEl || !(actionEl instanceof HTMLElement)) {
     return;
@@ -224,6 +251,15 @@ const startHistoryPress = (actionEl) => {
     actionEl.classList.add("is-pressing");
     pressedHistoryActionEl = actionEl;
   }
+};
+
+const startControlPress = (controlEl) => {
+  if (prefersReducedMotion() || !(controlEl instanceof HTMLElement)) {
+    return;
+  }
+  clearControlPress();
+  controlEl.classList.add("is-pressing");
+  pressedControlEl = controlEl;
 };
 
 const getCurrentViewedGameId = () => {
@@ -292,9 +328,9 @@ const renderTurnHistory = (game) => {
 
   const showLiveSelectedEmpty = liveSelectedEmptyTurnIndex === activeTurn.index;
   const emptyTurnItem = game.inHistoryMode
-    ? `<div class="history-empty-line history-return-live" data-action="return-live" data-game-id="${escapeHtml(
+    ? `<div class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(
         game.id,
-      )}"><span class="history-move-line">${escapeHtml(emptyTurnText)}</span></div>`
+      )}" ${busy ? "disabled" : ""}>Return to live view</button></div>`
     : `<div class="history-empty-line${showLiveSelectedEmpty ? " is-live-selected" : ""}"><span class="history-move-line">${escapeHtml(
         emptyTurnText,
       )}</span></div>`;
@@ -498,12 +534,6 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
       : "",
     `<button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${game.canInvite && !busy ? "" : "disabled"}>Invite someone else</button>`,
   ]);
-  const historyActions = renderSectionActions([
-    game.inHistoryMode
-      ? `<button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Return to live view</button>`
-      : "",
-  ]);
-
   return `
     ${offlineBanner ? `<section class="panel">${offlineBanner}</section>` : ""}
     <section class="layout-grid">
@@ -564,7 +594,6 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
         <section class="panel">
           <h2>History</h2>
           ${historyBanner}
-          ${historyActions}
           <div class="section-followup">
             <ol class="history-list">${historyRows}</ol>
           </div>
@@ -1158,6 +1187,7 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
       if (!gameId || !Number.isFinite(moveIndex)) return;
+      clearControlPress();
       clearHistoryPress();
       playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
@@ -1196,6 +1226,10 @@ appEl.addEventListener("pointerdown", (event) => {
   if (!(target instanceof HTMLElement)) {
     return;
   }
+  const controlEl = target.closest("button, .button-link");
+  if (controlEl instanceof HTMLElement) {
+    startControlPress(controlEl);
+  }
   const actionEl = target.closest("[data-action]");
   if (!(actionEl instanceof HTMLElement)) {
     return;
@@ -1209,6 +1243,10 @@ appEl.addEventListener("pointerdown", (event) => {
 
 window.addEventListener("pointerup", (event) => {
   const target = event.target;
+  if (pressedControlEl instanceof HTMLElement) {
+    playControlReleaseBounce(pressedControlEl);
+  }
+  clearControlPress();
   if (target instanceof HTMLElement) {
     const actionEl = target.closest("[data-action]");
     const action = actionEl?.getAttribute("data-action");
