@@ -50,7 +50,8 @@ body {
 .board-preview-label {
   margin: 0.35rem 0 0.75rem;
   color: var(--ink);
-  min-height: 1.1rem;
+  line-height: 1.1;
+  min-height: calc(1.1em * 2);
   font-size: 1.3rem;
 }
 
