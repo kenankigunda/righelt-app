@@ -91,9 +91,9 @@ let pendingBoardTransition = false;
 let boardTransitionTimer = null;
 let pendingHistoryItemTransition = null;
 let historyItemTransitionTimer = null;
-const HISTORY_PRESS_FEEDBACK_MS = 70;
 const HISTORY_SELECTION_EXIT_MS = 140;
 const BOARD_HISTORY_TRANSITION_MS = 220;
+let pressedHistoryActionEl = null;
 
 const escapeHtml = (value) =>
   String(value)
@@ -235,21 +235,33 @@ const animateHistoryDeselection = async (actionEl) => {
   await delay(HISTORY_SELECTION_EXIT_MS);
 };
 
-const animateHistoryPress = async (actionEl) => {
-  if (prefersReducedMotion() || !appEl) {
+const clearHistoryPress = () => {
+  const boardWrapEl = appEl.querySelector(".board-wrap");
+  if (boardWrapEl instanceof HTMLElement) {
+    boardWrapEl.classList.remove("history-board-pressing");
+  }
+
+  if (pressedHistoryActionEl instanceof HTMLElement) {
+    pressedHistoryActionEl.classList.remove("is-pressing");
+  }
+  pressedHistoryActionEl = null;
+};
+
+const startHistoryPress = (actionEl) => {
+  if (prefersReducedMotion() || !appEl || !(actionEl instanceof HTMLElement)) {
     return;
   }
+  clearHistoryPress();
 
   const boardWrapEl = appEl.querySelector(".board-wrap");
   if (boardWrapEl instanceof HTMLElement) {
     boardWrapEl.classList.add("history-board-pressing");
   }
 
-  if (actionEl instanceof HTMLElement && actionEl.classList.contains("history-item")) {
+  if (actionEl.classList.contains("history-item")) {
     actionEl.classList.add("is-pressing");
+    pressedHistoryActionEl = actionEl;
   }
-
-  await delay(HISTORY_PRESS_FEEDBACK_MS);
 };
 
 const getCurrentViewedGameId = () => {
@@ -1201,9 +1213,9 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
       if (!gameId || !Number.isFinite(moveIndex)) return;
+      clearHistoryPress();
       queueHistoryItemTransition({ gameId, moveIndex });
       queueBoardTransition();
-      await animateHistoryPress(actionEl);
       await animateHistoryDeselection(actionEl);
       await transport.selectHistoryMove({ gameId, moveIndex });
       await syncRouteData();
@@ -1213,8 +1225,8 @@ appEl.addEventListener("click", async (event) => {
     if (action === "return-live") {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
+      clearHistoryPress();
       queueBoardTransition();
-      await animateHistoryPress(actionEl);
       await animateHistoryDeselection(actionEl);
       await transport.returnToLive({ gameId });
       await syncRouteData();
@@ -1233,6 +1245,30 @@ appEl.addEventListener("click", async (event) => {
       navigateTo(gameId ? buildGameHash(gameId) : buildHomeHash());
     }
   }, { renderStart: shouldRenderBusyState });
+});
+
+appEl.addEventListener("pointerdown", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  const actionEl = target.closest("[data-action]");
+  if (!(actionEl instanceof HTMLElement)) {
+    return;
+  }
+  const action = actionEl.getAttribute("data-action");
+  if (action !== "jump-history" && action !== "return-live") {
+    return;
+  }
+  startHistoryPress(actionEl);
+});
+
+window.addEventListener("pointerup", () => {
+  clearHistoryPress();
+});
+
+window.addEventListener("pointercancel", () => {
+  clearHistoryPress();
 });
 
 const initialRender = async () => {
