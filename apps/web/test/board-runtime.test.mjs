@@ -483,3 +483,95 @@ test("board runtime keeps selection while piece moves are still loading", async 
   releasePieceMoves?.();
   await new Promise((resolve) => setTimeout(resolve, 0));
 });
+
+test("board runtime surfaces auto end-turn rejection without emitting turn-ended message", async () => {
+  const actionResults = [];
+  const boardMessages = [];
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: noop,
+      getSelectedPieceSummary: ({ snapshot, selectedPieceId }) => {
+        const selectedPiece = snapshot?.pieces?.find((piece) => piece.id === selectedPieceId) ?? null;
+        if (!selectedPiece) {
+          return null;
+        }
+        return {
+          details: { owner: selectedPiece.owner },
+          actions: [],
+        };
+      },
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({
+        accepted: true,
+        state: {
+          sideToMove: "P1",
+          turnIndex: 0,
+          continuation: null,
+          outcome: null,
+          pieces: [],
+        },
+        legalActions: [{ type: "pass" }],
+      }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      endTurn: async () => ({
+        accepted: false,
+        validation: { ok: false, code: "turn_has_no_moves" },
+        state: {
+          sideToMove: "P1",
+          turnIndex: 0,
+          continuation: null,
+          outcome: null,
+          pieces: [],
+        },
+        legalActions: [{ type: "pass" }],
+      }),
+      canInteract: () => true,
+    },
+    controls: {
+      onActionResult: (value) => actionResults.push(value),
+      onBoardMessage: (value) => boardMessages.push(value),
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: null,
+    boardTurnIndicatorEl: null,
+  });
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      outcome: null,
+      pieces: [],
+    },
+    { legalActions: [{ type: "project", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }] },
+  );
+
+  await runtime.submitCurrentAction({
+    type: "project",
+    actorId: "A1",
+    from: { row: 4, col: 2 },
+    to: { row: 4, col: 3 },
+  });
+
+  assert.equal(boardMessages.some((message) => message?.type === "turn_ended"), false);
+  assert.deepEqual(actionResults.at(-1), {
+    accepted: false,
+    validation: { ok: false, code: "turn_has_no_moves" },
+  });
+});

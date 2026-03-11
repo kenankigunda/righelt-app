@@ -75,6 +75,7 @@ test("live transport: game reads query persistent storage even when process cach
   assert.equal(open.status, 200);
   assert.equal(openBody.game.id, gameId);
   assert.equal(afterReads > beforeReads, true);
+  assert.equal(typeof openBody.eventSeq, "number");
 });
 
 test("live transport: game reads do not stay stale when persistent state changes outside process cache", async () => {
@@ -222,6 +223,7 @@ test("live transport: join approval flow and presence/history/move transitions",
   assert.equal(moveBody.game.currentTurn.playerSeat, "Player 1");
   assert.equal(moveBody.game.currentTurn.moveIndexes.length, 1);
   assert.equal(moveBody.game.currentSnapshot.sideToMove, "P1");
+  assert.equal(typeof moveBody.eventSeq, "number");
 
   const secondMove = await handleApiRequest(
     req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
@@ -241,6 +243,7 @@ test("live transport: join approval flow and presence/history/move transitions",
   assert.equal(endTurnBody.game.currentTurn.moveIndexes.length, 0);
   assert.equal(endTurnBody.game.currentSnapshot.sideToMove, "P2");
   assert.equal(endTurnBody.game.currentSnapshot.continuation, null);
+  assert.equal(typeof endTurnBody.eventSeq, "number");
 
   const history = await handleApiRequest(
     req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-owner", moveIndex: 1 }),

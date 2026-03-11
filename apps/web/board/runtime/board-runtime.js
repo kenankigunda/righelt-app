@@ -506,7 +506,17 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
               renderBoard();
               renderStatus();
               setResult({ accepted: true, outcome: endResult.outcome ?? state.outcome });
+              controls.onBoardMessage?.(endResult.boardMessage ?? { type: "turn_ended", origin: "board-runtime" });
+              return;
             }
+
+            state = endResult?.state ?? state;
+            legalActions = Array.isArray(endResult?.legalActions) ? endResult.legalActions : legalActions;
+            refreshSelectionLabels();
+            renderBoard();
+            renderStatus();
+            setResult({ accepted: false, validation: endResult?.validation ?? null });
+            return;
           }
 
           controls.onBoardMessage?.({ type: "turn_ended", origin: "board-runtime" });

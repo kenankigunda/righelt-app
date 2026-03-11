@@ -117,7 +117,7 @@ export class GameRoomDO {
       });
       this.eventSeq = 1;
       await persistGameState(this.env, this.game, this.eventSeq, null);
-      return json({ ok: true, game: withViewModel(this.game, identityId) });
+      return json({ ok: true, game: withViewModel(this.game, identityId), eventSeq: this.eventSeq });
     }
 
     const body = await parseBody(request);
@@ -148,7 +148,7 @@ export class GameRoomDO {
           reason: added ? "viewer_joined" : "viewer_reconfirmed",
           game,
         });
-        return json({ ok: true, pendingApproval: false, game: withViewModel(game, identityId) });
+        return json({ ok: true, pendingApproval: false, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
       }
 
       if (game.playgroundMode) {
@@ -186,7 +186,7 @@ export class GameRoomDO {
           requestedSeat,
           game,
         });
-        return json({ ok: true, pendingApproval: true, game: withViewModel(game, identityId) });
+        return json({ ok: true, pendingApproval: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
       }
 
       promoteIdentityToSeat(game, requestedSeat, identityId, this.getSessionCount(identityId));
@@ -199,7 +199,7 @@ export class GameRoomDO {
         reason: "player_joined",
         game,
       });
-      return json({ ok: true, pendingApproval: false, game: withViewModel(game, identityId) });
+      return json({ ok: true, pendingApproval: false, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/approve") {
@@ -233,7 +233,7 @@ export class GameRoomDO {
         seat: requestItem.requestedSeat,
         game,
       });
-      return json({ ok: true, game: withViewModel(game, identityId) });
+      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/moves") {
@@ -256,7 +256,7 @@ export class GameRoomDO {
         reason: "move_recorded",
         game,
       });
-      return json({ ok: true, move: moved.move, game: withViewModel(game, identityId) });
+      return json({ ok: true, move: moved.move, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/apply") {
@@ -288,6 +288,7 @@ export class GameRoomDO {
             state: moved.state,
             legalActions: listLegalActions(moved.state),
             game: withViewModel(game, identityId),
+            eventSeq: this.eventSeq,
           });
         }
         return json({ ok: false, error: moved.error }, 409);
@@ -304,6 +305,7 @@ export class GameRoomDO {
         state: moved.state,
         removedPieces: moved.removedPieces,
         game: withViewModel(game, identityId),
+        eventSeq: this.eventSeq,
       });
     }
 
@@ -329,7 +331,7 @@ export class GameRoomDO {
         reason: "turn_ended",
         game,
       });
-      return json({ ok: true, turn: ended.turn, game: withViewModel(game, identityId) });
+      return json({ ok: true, turn: ended.turn, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/history") {
@@ -339,13 +341,13 @@ export class GameRoomDO {
       }
       game.historyIndexByIdentity[identityId] = moveIndex;
       await persistGameState(this.env, game, this.eventSeq, null);
-      return json({ ok: true, game: withViewModel(game, identityId) });
+      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/live") {
       delete game.historyIndexByIdentity[identityId];
       await persistGameState(this.env, game, this.eventSeq, null);
-      return json({ ok: true, game: withViewModel(game, identityId) });
+      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/play-as-both") {
@@ -364,7 +366,7 @@ export class GameRoomDO {
         reason: "play_as_both_players",
         game,
       });
-      return json({ ok: true, game: withViewModel(game, identityId) });
+      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/go-online") {
@@ -379,7 +381,7 @@ export class GameRoomDO {
         reason: "game_moved_online",
         game,
       });
-      return json({ ok: true, game: withViewModel(game, identityId) });
+      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/legal") {
@@ -389,6 +391,7 @@ export class GameRoomDO {
         state: stable,
         legalActions: listLegalActions(stable),
         game: withViewModel(game, identityId),
+        eventSeq: this.eventSeq,
       });
     }
 
@@ -404,6 +407,7 @@ export class GameRoomDO {
         actions: enumeratePieceActions(game.board.state, pieceId),
         previewActions: enumeratePieceActionPreviews(game.board.state, pieceId),
         game: withViewModel(game, identityId),
+        eventSeq: this.eventSeq,
       });
     }
 
