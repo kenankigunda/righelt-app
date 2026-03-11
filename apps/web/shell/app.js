@@ -87,12 +87,7 @@ let resolvedInvite = null;
 const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
 let lastRenderedMarkup = "";
-let pendingBoardTransition = false;
-let boardTransitionTimer = null;
-let pendingHistoryItemTransition = null;
-let historyItemTransitionTimer = null;
 const HISTORY_SELECTION_EXIT_MS = 56;
-const BOARD_HISTORY_TRANSITION_MS = 220;
 let pressedHistoryActionEl = null;
 
 const escapeHtml = (value) =>
@@ -144,81 +139,6 @@ const delay = (ms) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
-
-const queueBoardTransition = () => {
-  pendingBoardTransition = true;
-};
-
-const queueHistoryItemTransition = ({ gameId, moveIndex }) => {
-  pendingHistoryItemTransition =
-    typeof gameId === "string" && Number.isFinite(moveIndex)
-      ? { gameId, moveIndex }
-      : null;
-};
-
-const playHistoryItemTransitionIfNeeded = (game) => {
-  if (!pendingHistoryItemTransition || !appEl || !game) {
-    return;
-  }
-  if (pendingHistoryItemTransition.gameId !== game.id) {
-    return;
-  }
-
-  const { moveIndex } = pendingHistoryItemTransition;
-  pendingHistoryItemTransition = null;
-  const itemEl = appEl.querySelector(
-    `.history-item[data-game-id="${CSS.escape(game.id)}"][data-move-index="${String(moveIndex)}"]`,
-  );
-  if (!(itemEl instanceof HTMLElement)) {
-    return;
-  }
-
-  if (historyItemTransitionTimer) {
-    window.clearTimeout(historyItemTransitionTimer);
-    historyItemTransitionTimer = null;
-  }
-
-  itemEl.classList.remove("history-item-transition");
-  if (prefersReducedMotion()) {
-    return;
-  }
-
-  void itemEl.offsetWidth;
-  itemEl.classList.add("history-item-transition");
-  historyItemTransitionTimer = window.setTimeout(() => {
-    itemEl.classList.remove("history-item-transition");
-    historyItemTransitionTimer = null;
-  }, BOARD_HISTORY_TRANSITION_MS);
-};
-
-const playBoardTransitionIfNeeded = () => {
-  if (!pendingBoardTransition || !appEl) {
-    return;
-  }
-  pendingBoardTransition = false;
-
-  const boardWrapEl = appEl.querySelector(".board-wrap");
-  if (!(boardWrapEl instanceof HTMLElement)) {
-    return;
-  }
-
-  if (boardTransitionTimer) {
-    window.clearTimeout(boardTransitionTimer);
-    boardTransitionTimer = null;
-  }
-
-  boardWrapEl.classList.remove("history-board-transition");
-  if (prefersReducedMotion()) {
-    return;
-  }
-
-  void boardWrapEl.offsetWidth;
-  boardWrapEl.classList.add("history-board-transition");
-  boardTransitionTimer = window.setTimeout(() => {
-    boardWrapEl.classList.remove("history-board-transition");
-    boardTransitionTimer = null;
-  }, BOARD_HISTORY_TRANSITION_MS);
-};
 
 const animateHistoryDeselection = async (actionEl) => {
   if (prefersReducedMotion() || !appEl) {
@@ -834,8 +754,6 @@ const mountBoardForGame = (game) => {
     mountedLegalActionsKey = legalActionsKey;
     mountedSelectionActionKey = selectionActionKey;
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
-    playHistoryItemTransitionIfNeeded(game);
-    playBoardTransitionIfNeeded();
     void boardRuntime.loadSnapshot(snapshot, {
       legalActions: effectiveLegalActions,
       resetSelection: true,
@@ -861,7 +779,6 @@ const mountBoardForGame = (game) => {
     mountedSnapshotKey = snapshotKey;
     mountedLegalActionsKey = legalActionsKey;
     mountedSelectionActionKey = selectionActionKey;
-    pendingBoardTransition = false;
     return;
   }
   const shouldReloadSnapshot =
@@ -875,8 +792,6 @@ const mountBoardForGame = (game) => {
   mountedSnapshotKey = snapshotKey;
   mountedLegalActionsKey = legalActionsKey;
   mountedSelectionActionKey = selectionActionKey;
-  playHistoryItemTransitionIfNeeded(game);
-  playBoardTransitionIfNeeded();
   void boardRuntime.loadSnapshot(snapshot, {
     legalActions: effectiveLegalActions,
     resetSelection,
@@ -1214,8 +1129,6 @@ appEl.addEventListener("click", async (event) => {
       const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
       if (!gameId || !Number.isFinite(moveIndex)) return;
       clearHistoryPress();
-      queueHistoryItemTransition({ gameId, moveIndex });
-      queueBoardTransition();
       await animateHistoryDeselection(actionEl);
       await transport.selectHistoryMove({ gameId, moveIndex });
       await syncRouteData();
@@ -1226,7 +1139,6 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
       clearHistoryPress();
-      queueBoardTransition();
       await animateHistoryDeselection(actionEl);
       await transport.returnToLive({ gameId });
       await syncRouteData();
