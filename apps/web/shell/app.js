@@ -479,8 +479,8 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
           ${historyBanner}
           <div class="row section-actions">
             ${
-              game.inHistoryMode && !busy
-                ? `<button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}">Return to live view</button>`
+              game.inHistoryMode
+                ? `<button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Return to live view</button>`
                 : ""
             }
           </div>
@@ -790,16 +790,20 @@ const render = () => {
   }
 };
 
-const withBusy = async (fn) => {
+const withBusy = async (fn, { renderStart = true, renderEnd = true } = {}) => {
   busy = true;
-  render();
+  if (renderStart) {
+    render();
+  }
   try {
     await fn();
   } catch (error) {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
   } finally {
     busy = false;
-    render();
+    if (renderEnd) {
+      render();
+    }
   }
 };
 
@@ -954,6 +958,12 @@ appEl.addEventListener("click", async (event) => {
   }
 
   const action = actionEl.getAttribute("data-action");
+  const shouldRenderBusyState =
+    action !== "copy-invite" &&
+    action !== "jump-history" &&
+    action !== "return-live" &&
+    action !== "tutorial-next" &&
+    action !== "tutorial-skip";
 
   await withBusy(async () => {
     if (action === "create-game") {
@@ -1091,7 +1101,7 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       navigateTo(gameId ? buildGameHash(gameId) : buildHomeHash());
     }
-  });
+  }, { renderStart: shouldRenderBusyState });
 });
 
 const initialRender = async () => {

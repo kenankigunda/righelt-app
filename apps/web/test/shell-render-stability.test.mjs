@@ -41,3 +41,10 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.doesNotMatch(source, /class="history-turn-list"/);
   assert.match(source, /const moveRows = game\.turns\.flatMap/);
 });
+
+test("withBusy only repaints immediately for actions that need visible busy state", () => {
+  assert.match(source, /const withBusy = async \(fn, \{ renderStart = true, renderEnd = true \} = \{\}\) => \{/);
+  assert.match(source, /if \(renderStart\) \{\s*render\(\);\s*\}/s);
+  assert.match(source, /const shouldRenderBusyState =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "return-live"/s);
+  assert.match(source, /\}, \{ renderStart: shouldRenderBusyState \}\);/);
+});
