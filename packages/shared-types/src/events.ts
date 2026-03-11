@@ -1,17 +1,66 @@
-export type EventType =
-  | "state_sync"
-  | "event_appended"
-  | "presence_changed"
-  | "join_request_created"
-  | "join_request_resolved"
-  | "playground_exited"
-  | "test_action_recorded"
-  | "error";
+export type LiveGamePayload = Record<string, unknown>;
 
-export type ServerEvent = {
-  type: EventType;
-  gameId: string | null;
-  at: string;
-  payload?: Record<string, unknown>;
+export type StateSyncEvent = {
+  type: "state_sync";
+  eventSeq: number;
+  reason: string;
+  game: LiveGamePayload;
 };
 
+export type EventAppendedEvent = {
+  type: "event_appended";
+  eventSeq: number;
+  reason: string;
+  game: LiveGamePayload;
+};
+
+export type PresenceChangedEvent = {
+  type: "presence_changed";
+  eventSeq: number;
+  identityId: string;
+  role: "Player 1" | "Player 2" | "Viewer";
+  connected: boolean;
+  game: LiveGamePayload;
+};
+
+export type JoinRequestCreatedEvent = {
+  type: "join_request_created";
+  eventSeq: number;
+  requesterIdentityId: string;
+  requestedSeat: "Player 1" | "Player 2";
+  game: LiveGamePayload;
+};
+
+export type JoinRequestResolvedEvent = {
+  type: "join_request_resolved";
+  eventSeq: number;
+  requesterIdentityId: string;
+  accepted: boolean;
+  seat: "Player 1" | "Player 2" | null;
+  game: LiveGamePayload;
+};
+
+export type ErrorEvent = {
+  type: "error";
+  code: string;
+  message: string;
+};
+
+export type ServerEvent =
+  | StateSyncEvent
+  | EventAppendedEvent
+  | PresenceChangedEvent
+  | JoinRequestCreatedEvent
+  | JoinRequestResolvedEvent
+  | ErrorEvent;
+
+export type ClientSocketMessage =
+  | {
+      type: "heartbeat";
+      identityId: string;
+      lastEventSeq: number;
+    }
+  | {
+      type: "ack";
+      lastEventSeq: number;
+    };

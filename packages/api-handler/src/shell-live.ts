@@ -1,613 +1,33 @@
-import { applyAction } from "../../game-engine/src/apply";
-import { listLegalActions, validateAction } from "../../game-engine/src/legal";
+import { listLegalActions } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
-import { createInitialState } from "../../game-engine/src/state";
-import type { Action, GameState } from "../../game-engine/src/types";
+import {
+  asAction,
+  asGameState,
+  asIdentity,
+  enumeratePieceActionPreviews,
+  enumeratePieceActions,
+  findRoleForIdentity,
+  getSeatIdentity,
+  getSideToMoveSeat,
+  nextGameId,
+  withViewModel,
+} from "./shell-live-core";
+import { loadGameProjection, listVisibleGameProjections, resolveInvite, type D1DatabaseLike } from "./shell-live-db";
 
-const MAX_HISTORY = 200;
-const PRESENCE_STALE_MS = 30_000;
-const BOARD_SIZE = 10;
-const SHELL_LIVE_GAMES_TABLE = "shell_live_games";
-const SHELL_LIVE_INVITES_TABLE = "shell_live_invites";
-
-type D1RunResult = {
-  success: boolean;
-  meta?: {
-    last_row_id?: number;
-  };
+type DurableObjectIdLike = { name?: string; toString?: () => string };
+type DurableObjectStubLike = { fetch: (request: Request) => Promise<Response> };
+type DurableObjectNamespaceLike = {
+  idFromName: (name: string) => DurableObjectIdLike;
+  get: (id: DurableObjectIdLike) => DurableObjectStubLike;
 };
 
-type D1Result<T> = {
-  results?: T[];
-};
-
-type D1Statement = {
-  bind: (...args: unknown[]) => D1Statement;
-  first: <T = Record<string, unknown>>() => Promise<T | null>;
-  all: <T = Record<string, unknown>>() => Promise<D1Result<T>>;
-  run: () => Promise<D1RunResult>;
-};
-
-type D1DatabaseLike = {
-  prepare: (query: string) => D1Statement;
-};
-
-type ShellLiveEnv = {
+export type LiveGameRequestEnv = {
   DB: D1DatabaseLike;
+  GAME_ROOMS: DurableObjectNamespaceLike;
 };
 
-type RemovedPieceNotice = {
-  pieceId: string;
-  position: { row: number; col: number };
-  reason: "loss_of_supply" | "no_retreat";
-  message: string;
-};
-
-type Participant = {
-  identityId: string;
-  connected: boolean;
-  joinedAt: string;
-  lastSeenAt: string;
-};
-
-type Viewer = Participant;
-
-type JoinRequest = {
-  identityId: string;
-  requestedSeat: "Player 1" | "Player 2";
-  requestedAt: string;
-  source: "viewer_invite" | "home_list";
-};
-
-type MoveEntry = {
-  index: number;
-  turnIndex: number;
-  turnMoveIndex: number;
-  actorSide: "P1" | "P2";
-  at: string;
-  notation: string;
-  action: Action;
-  selectionSnapshot: GameState;
-  snapshot: GameState;
-};
-
-type TurnEntry = {
-  index: number;
-  startedAt: string;
-  endedAt: string | null;
-  playerSeat: "Player 1" | "Player 2";
-  status: "active" | "complete";
-  moveIndexes: number[];
-  lastMoveAt: string | null;
-};
-
-type ShellGame = {
-  id: string;
-  createdAt: string;
-  lastMoveAt: string | null;
-  updatedAt: string;
-  playgroundMode: boolean;
-  offlineLocal: boolean;
-  board: {
-    state: GameState;
-  };
-  player1: Participant | null;
-  player2: Participant | null;
-  viewers: Viewer[];
-  pendingJoinRequests: JoinRequest[];
-  turns: TurnEntry[];
-  moves: MoveEntry[];
-  historyIndexByIdentity: Record<string, number>;
-  notifications: string[];
-  inviteTokens: {
-    viewer: string;
-    player1: string;
-    player2: string;
-  };
-};
-
-const games = new Map<string, ShellGame>();
-const inviteIndex = new Map<string, { gameId: string; sharedByRole: "Viewer" | "Player 1" | "Player 2" }>();
-const homeSubscribers = new Set<any>();
-const gameSubscribers = new Map<string, Set<any>>();
-
-export const __resetShellLiveStateForTests = () => {
-  games.clear();
-  inviteIndex.clear();
-  homeSubscribers.clear();
-  gameSubscribers.clear();
-};
-
-const now = () => new Date(Date.now()).toISOString();
-const clone = <T>(value: T): T => structuredClone(value);
-
-const collectRemovedPieceNotices = (
-  before: GameState,
-  afterApply: GameState,
-  afterStability: GameState,
-  action: Action,
-): RemovedPieceNotice[] => {
-  const afterApplyIds = new Set(afterApply.pieces.map((piece) => piece.id));
-  const afterStableIds = new Set(afterStability.pieces.map((piece) => piece.id));
-  const notices: RemovedPieceNotice[] = [];
-
-  for (const piece of before.pieces) {
-    if (!afterApplyIds.has(piece.id)) {
-      const reason =
-        piece.pushed || action.type === "push" || action.type === "retreat"
-          ? "no_retreat"
-          : "loss_of_supply";
-      notices.push({
-        pieceId: piece.id,
-        position: { ...piece.position },
-        reason,
-        message:
-          reason === "no_retreat"
-            ? `Piece at (${piece.position.row}, ${piece.position.col}) destroyed because it could not retreat`
-            : `Piece at (${piece.position.row}, ${piece.position.col}) destroyed due to loss of supply`,
-      });
-    }
-  }
-
-  for (const piece of afterApply.pieces) {
-    if (!afterStableIds.has(piece.id)) {
-      notices.push({
-        pieceId: piece.id,
-        position: { ...piece.position },
-        reason: "loss_of_supply",
-        message: `Piece at (${piece.position.row}, ${piece.position.col}) destroyed due to loss of supply`,
-      });
-    }
-  }
-
-  return notices;
-};
-
-const createInviteToken = () => {
-  const bytes = new Uint8Array(18);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
-};
-
-const nextId = () => `game-${createInviteToken()}`;
-
-const cacheGame = (game: ShellGame) => {
-  games.set(game.id, game);
-  inviteIndex.set(game.inviteTokens.viewer, { gameId: game.id, sharedByRole: "Viewer" });
-  inviteIndex.set(game.inviteTokens.player1, { gameId: game.id, sharedByRole: "Player 1" });
-  inviteIndex.set(game.inviteTokens.player2, { gameId: game.id, sharedByRole: "Player 2" });
-  return game;
-};
-
-const deserializeGame = (stateJson: string): ShellGame | null => {
-  try {
-    const parsed = JSON.parse(stateJson) as ShellGame;
-    if (!parsed || typeof parsed !== "object" || typeof parsed.id !== "string") {
-      return null;
-    }
-    return cacheGame(parsed);
-  } catch {
-    return null;
-  }
-};
-
-const saveGame = async (env: ShellLiveEnv, game: ShellGame) => {
-  cacheGame(game);
-  await env.DB.prepare(
-    `INSERT INTO ${SHELL_LIVE_GAMES_TABLE} (game_id, created_at, updated_at, latest_activity_at, offline_local, state_json)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-     ON CONFLICT(game_id) DO UPDATE SET
-       updated_at = excluded.updated_at,
-       latest_activity_at = excluded.latest_activity_at,
-       offline_local = excluded.offline_local,
-       state_json = excluded.state_json`,
-  )
-    .bind(
-      game.id,
-      game.createdAt,
-      game.updatedAt,
-      game.lastMoveAt || game.updatedAt || game.createdAt,
-      game.offlineLocal ? 1 : 0,
-      JSON.stringify(game),
-    )
-    .run();
-};
-
-const saveInviteTokens = async (env: ShellLiveEnv, game: ShellGame) => {
-  const statements = [
-    env.DB.prepare(
-      `INSERT INTO ${SHELL_LIVE_INVITES_TABLE} (token, game_id, shared_by_role, created_at)
-       VALUES (?1, ?2, ?3, ?4)
-       ON CONFLICT(token) DO UPDATE SET
-         game_id = excluded.game_id,
-         shared_by_role = excluded.shared_by_role,
-         created_at = excluded.created_at`,
-    )
-      .bind(game.inviteTokens.viewer, game.id, "Viewer", game.createdAt)
-      .run(),
-    env.DB.prepare(
-      `INSERT INTO ${SHELL_LIVE_INVITES_TABLE} (token, game_id, shared_by_role, created_at)
-       VALUES (?1, ?2, ?3, ?4)
-       ON CONFLICT(token) DO UPDATE SET
-         game_id = excluded.game_id,
-         shared_by_role = excluded.shared_by_role,
-         created_at = excluded.created_at`,
-    )
-      .bind(game.inviteTokens.player1, game.id, "Player 1", game.createdAt)
-      .run(),
-    env.DB.prepare(
-      `INSERT INTO ${SHELL_LIVE_INVITES_TABLE} (token, game_id, shared_by_role, created_at)
-       VALUES (?1, ?2, ?3, ?4)
-       ON CONFLICT(token) DO UPDATE SET
-         game_id = excluded.game_id,
-         shared_by_role = excluded.shared_by_role,
-         created_at = excluded.created_at`,
-    )
-      .bind(game.inviteTokens.player2, game.id, "Player 2", game.createdAt)
-      .run(),
-  ];
-  await Promise.all(statements);
-};
-
-const loadGame = async (env: ShellLiveEnv, gameId: string): Promise<ShellGame | null> => {
-  const row = await env.DB.prepare(`SELECT state_json FROM ${SHELL_LIVE_GAMES_TABLE} WHERE game_id = ?1`)
-    .bind(gameId)
-    .first<{ state_json: string }>();
-  if (!row?.state_json) {
-    return null;
-  }
-  return deserializeGame(row.state_json);
-};
-
-const loadVisibleGames = async (env: ShellLiveEnv): Promise<ShellGame[]> => {
-  const result = await env.DB.prepare(
-    `SELECT state_json FROM ${SHELL_LIVE_GAMES_TABLE}
-     WHERE offline_local = 0
-     ORDER BY latest_activity_at DESC, created_at DESC`,
-  ).all<{ state_json: string }>();
-  return (result.results ?? [])
-    .map((row) => (typeof row.state_json === "string" ? deserializeGame(row.state_json) : null))
-    .filter((game): game is ShellGame => Boolean(game));
-};
-
-const resolveInvite = async (
-  env: ShellLiveEnv,
-  token: string,
-): Promise<{ gameId: string; sharedByRole: "Viewer" | "Player 1" | "Player 2" } | null> => {
-  const cached = inviteIndex.get(token);
-  if (cached) {
-    return cached;
-  }
-
-  const row = await env.DB.prepare(
-    `SELECT game_id, shared_by_role FROM ${SHELL_LIVE_INVITES_TABLE} WHERE token = ?1`,
-  )
-    .bind(token)
-    .first<{ game_id: string; shared_by_role: "Viewer" | "Player 1" | "Player 2" }>();
-  if (!row?.game_id || !row.shared_by_role) {
-    return null;
-  }
-  const invite = { gameId: row.game_id, sharedByRole: row.shared_by_role };
-  inviteIndex.set(token, invite);
-  return invite;
-};
-
-const createInviteTokens = (gameId: string) => {
-  const tokens = {
-    viewer: createInviteToken(),
-    player1: createInviteToken(),
-    player2: createInviteToken(),
-  };
-  inviteIndex.set(tokens.viewer, { gameId, sharedByRole: "Viewer" });
-  inviteIndex.set(tokens.player1, { gameId, sharedByRole: "Player 1" });
-  inviteIndex.set(tokens.player2, { gameId, sharedByRole: "Player 2" });
-  return tokens;
-};
-
-const toTimestamp = (value: string | null | undefined) => {
-  if (!value) return 0;
-  const ts = Date.parse(value);
-  return Number.isFinite(ts) ? ts : 0;
-};
-
-const isFreshPresence = (participant: Participant | null) => {
-  if (!participant) {
-    return false;
-  }
-  const seenAt = participant.lastSeenAt || participant.joinedAt;
-  return Date.now() - toTimestamp(seenAt) <= PRESENCE_STALE_MS;
-};
-
-const applyPresenceFreshness = (game: ShellGame) => {
-  if (game.player1) {
-    game.player1.connected = isFreshPresence(game.player1);
-  }
-  if (game.player2) {
-    game.player2.connected = isFreshPresence(game.player2);
-  }
-  for (const viewer of game.viewers) {
-    viewer.connected = isFreshPresence(viewer);
-  }
-};
-
-const touchIdentityPresence = (game: ShellGame, identityId: string) => {
-  const touchedAt = now();
-  if (game.player1?.identityId === identityId) {
-    game.player1.connected = true;
-    game.player1.lastSeenAt = touchedAt;
-  }
-  if (game.player2?.identityId === identityId) {
-    game.player2.connected = true;
-    game.player2.lastSeenAt = touchedAt;
-  }
-  for (const viewer of game.viewers) {
-    if (viewer.identityId === identityId) {
-      viewer.connected = true;
-      viewer.lastSeenAt = touchedAt;
-    }
-  }
-};
-
-const touchIdentityAcrossGames = (identityId: string) => {
-  for (const game of games.values()) {
-    touchIdentityPresence(game, identityId);
-    applyPresenceFreshness(game);
-  }
-};
-
-const getGameSubscriberSet = (gameId: string) => {
-  let set = gameSubscribers.get(gameId);
-  if (!set) {
-    set = new Set();
-    gameSubscribers.set(gameId, set);
-  }
-  return set;
-};
-
-const removeSocketFromAll = (socket: any) => {
-  homeSubscribers.delete(socket);
-  for (const [gameId, subscribers] of gameSubscribers.entries()) {
-    subscribers.delete(socket);
-    if (subscribers.size === 0) {
-      gameSubscribers.delete(gameId);
-    }
-  }
-};
-
-const sendSocketEvent = (socket: any, payload: Record<string, unknown>) => {
-  try {
-    socket.send(JSON.stringify(payload));
-  } catch {
-    removeSocketFromAll(socket);
-  }
-};
-
-const broadcastLiveUpdate = (gameId: string, reason: string) => {
-  const payload = {
-    type: "game.updated",
-    gameId,
-    reason,
-    at: now(),
-  };
-  for (const socket of homeSubscribers.values()) {
-    sendSocketEvent(socket, payload);
-  }
-  const subscribers = gameSubscribers.get(gameId);
-  if (!subscribers) {
-    return;
-  }
-  for (const socket of subscribers.values()) {
-    sendSocketEvent(socket, payload);
-  }
-};
-
-const findRoleForIdentity = (game: ShellGame, identityId: string): string => {
-  if (game.player1?.identityId === identityId) return "Player 1";
-  if (game.player2?.identityId === identityId) return "Player 2";
-  if (game.viewers.some((viewer) => viewer.identityId === identityId)) return "Viewer";
-  return "Guest";
-};
-
-const ensureViewer = (game: ShellGame, identityId: string): boolean => {
-  if (game.viewers.some((viewer) => viewer.identityId === identityId)) {
-    touchIdentityPresence(game, identityId);
-    return false;
-  }
-  const touchedAt = now();
-  game.viewers.push({ identityId, connected: true, joinedAt: touchedAt, lastSeenAt: touchedAt });
-  return true;
-};
-
-const removeViewer = (game: ShellGame, identityId: string) => {
-  game.viewers = game.viewers.filter((viewer) => viewer.identityId !== identityId);
-};
-
-const promoteIdentityToSeat = (game: ShellGame, seat: "Player 1" | "Player 2", identityId: string) => {
-  const existingViewer = game.viewers.find((viewer) => viewer.identityId === identityId) ?? null;
-  const joinedAt = existingViewer?.joinedAt ?? now();
-  const lastSeenAt = existingViewer?.lastSeenAt ?? joinedAt;
-  removeViewer(game, identityId);
-  const participant = {
-    identityId,
-    connected: true,
-    joinedAt,
-    lastSeenAt,
-  };
-  if (seat === "Player 1") {
-    game.player1 = participant;
-    return;
-  }
-  game.player2 = participant;
-};
-
-const dismissCompetingJoinRequests = (game: ShellGame, acceptedIdentityId: string) => {
-  game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.identityId === acceptedIdentityId);
-};
-
-const getSeatIdentity = (game: ShellGame, seat: "Player 1" | "Player 2"): string | null => {
-  if (seat === "Player 1") {
-    return game.player1?.identityId ?? null;
-  }
-  return game.player2?.identityId ?? null;
-};
-
-const getApproverIdentityForSeat = (game: ShellGame, seat: "Player 1" | "Player 2"): string | null => {
-  if (seat === "Player 1") {
-    return game.player2?.identityId ?? null;
-  }
-  return game.player1?.identityId ?? null;
-};
-
-const getSideToMoveSeat = (game: ShellGame): "Player 1" | "Player 2" => (game.board.state.sideToMove === "P1" ? "Player 1" : "Player 2");
-const getSeatForSide = (side: GameState["sideToMove"]): "Player 1" | "Player 2" => (side === "P1" ? "Player 1" : "Player 2");
-const getNextSeat = (seat: "Player 1" | "Player 2"): "Player 1" | "Player 2" => (seat === "Player 1" ? "Player 2" : "Player 1");
-const getSideForSeat = (seat: "Player 1" | "Player 2"): GameState["sideToMove"] => (seat === "Player 1" ? "P1" : "P2");
-const getActiveTurn = (game: ShellGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
-const formatCoordinate = (coord: { row: number; col: number } | null | undefined) =>
-  coord ? `(${coord.row},${coord.col})` : "(?,?)";
-const defaultNotationForAction = (action: Action) => {
-  if (action.type === "pass") {
-    return "PASS";
-  }
-  const from = formatCoordinate(action.from);
-  const to = formatCoordinate(action.to);
-  return `${action.type.toUpperCase()} ${from} -> ${to}`;
-};
-const getControlSeatForTurn = (
-  state: GameState,
-  turnOwnerSeat: "Player 1" | "Player 2",
-): "Player 1" | "Player 2" => {
-  const continuation = state.continuation;
-  if (!continuation) {
-    return turnOwnerSeat;
-  }
-  if (continuation.type === "push") {
-    if (continuation.phase === "retreat") {
-      return getNextSeat(turnOwnerSeat);
-    }
-    return turnOwnerSeat;
-  }
-  if (continuation.type === "rush") {
-    return turnOwnerSeat;
-  }
-  return turnOwnerSeat;
-};
-const canOperateOfflinePlaygroundTurn = (game: ShellGame, identityId: string) =>
-  game.offlineLocal &&
-  game.playgroundMode &&
-  game.player1?.identityId === identityId &&
-  game.player2?.identityId === identityId;
-
-const getJoinAsPlayerDisabledReason = (game: ShellGame, identityId: string, offline: boolean, myRole: string) => {
-  if (myRole === "Player 1" || myRole === "Player 2") {
-    return "You are already joined as a player.";
-  }
-  if (offline || game.offlineLocal) {
-    return "Remote joining is unavailable while offline.";
-  }
-  if (game.playgroundMode) {
-    return "Playground mode does not accept remote player joins.";
-  }
-  if (game.player1 && game.player2) {
-    return "Game already has the maximum number of players.";
-  }
-  if (findRoleForIdentity(game, identityId) === "Viewer") {
-    return null;
-  }
-  return null;
-};
-
-const getJoinAsViewerDisabledReason = (game: ShellGame, offline: boolean, myRole: string) => {
-  if (myRole === "Viewer") {
-    return "You are already joined as a viewer.";
-  }
-  if (myRole === "Player 1" || myRole === "Player 2") {
-    return "You are already in this game.";
-  }
-  if (offline || game.offlineLocal) {
-    return "Remote joining is unavailable while offline.";
-  }
-  return null;
-};
-
-const withViewModel = (game: ShellGame, identityId: string, offline = false) => {
-  applyPresenceFreshness(game);
-  const myRole = findRoleForIdentity(game, identityId);
-  const historyIndex = typeof game.historyIndexByIdentity[identityId] === "number" ? game.historyIndexByIdentity[identityId] : null;
-  const inHistoryMode = typeof historyIndex === "number";
-  const currentSnapshot =
-    typeof historyIndex === "number" && game.moves[historyIndex]
-      ? game.moves[historyIndex].selectionSnapshot
-      : game.board.state;
-  const historySelectionAction =
-    typeof historyIndex === "number" && game.moves[historyIndex]
-      ? clone(game.moves[historyIndex].action)
-      : null;
-
-  const activeTurn = getActiveTurn(game);
-  const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(game);
-  const controlSeat = getControlSeatForTurn(game.board.state, turnOwnerSeat);
-  const sideToMoveIdentity = getSeatIdentity(game, controlSeat);
-  const turnOwnerIdentity = getSeatIdentity(game, turnOwnerSeat);
-  const isPlayer = myRole === "Player 1" || myRole === "Player 2";
-  const legalNow = listLegalActions(game.board.state);
-  const offlineTurnControlAllowed = !offline || canOperateOfflinePlaygroundTurn(game, identityId);
-  const approvableRequesterIds = game.pendingJoinRequests
-    .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
-    .map((request) => request.identityId);
-  const myPendingJoinRequest = game.pendingJoinRequests.find((request) => request.identityId === identityId) ?? null;
-  const joinAsPlayerDisabledReason = getJoinAsPlayerDisabledReason(game, identityId, offline, myRole);
-  const joinAsViewerDisabledReason = getJoinAsViewerDisabledReason(game, offline, myRole);
-
-  return {
-    ...clone(game),
-    historyIndexByIdentity: undefined,
-    historyIndex,
-    myRole,
-    inHistoryMode,
-    currentSnapshot,
-    canJoinAsPlayer: !joinAsPlayerDisabledReason,
-    canJoinAsViewer: !joinAsViewerDisabledReason,
-    canPlayAsBothPlayers: myRole === "Player 1" && !game.player2,
-    joinAsPlayerDisabledReason,
-    joinAsViewerDisabledReason,
-    canInvite: !offline && !game.offlineLocal,
-    inviteToken:
-      myRole === "Player 1"
-        ? game.inviteTokens.player1
-        : myRole === "Player 2"
-          ? game.inviteTokens.player2
-          : game.inviteTokens.viewer,
-    showOfflineState: offline || game.offlineLocal,
-    showJoinActions: !offline && !game.offlineLocal,
-    canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
-    legalActions: legalNow,
-    canEndTurn:
-      offlineTurnControlAllowed &&
-      isPlayer &&
-      !inHistoryMode &&
-      turnOwnerIdentity === identityId &&
-      Boolean(activeTurn && activeTurn.moveIndexes.length > 0),
-    currentTurn: activeTurn ? clone(activeTurn) : null,
-    historySelectionAction,
-    turnOwnerSeat,
-    controlSeat,
-    control: controlSeat === turnOwnerSeat ? "turn-owner" : "opponent",
-    pendingPlayerRequestSeat: myPendingJoinRequest?.requestedSeat ?? null,
-    approvableRequesterIds,
-  };
-};
-
-const listVisibleGames = (identityId: string) => {
-  return [...games.values()]
-    .filter((game) => !game.offlineLocal)
-    .sort((left, right) => {
-      const leftTs = left.lastMoveAt || left.createdAt;
-      const rightTs = right.lastMoveAt || right.createdAt;
-      return rightTs.localeCompare(leftTs);
-    })
-    .map((game) => withViewModel(game, identityId));
-};
+const CACHE_NO_STORE = "no-store";
+const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
 
 const parsePath = (pathname: string) => {
   const parts = pathname.split("/").filter(Boolean);
@@ -625,292 +45,60 @@ const parseBody = async (request: Request): Promise<Record<string, unknown>> => 
   }
 };
 
-const asIdentity = (value: unknown) => (typeof value === "string" && value.trim().length > 0 ? value.trim() : null);
-const asGameState = (value: unknown): GameState | null =>
-  value && typeof value === "object" ? (value as GameState) : null;
-const asAction = (value: unknown): Action | null =>
-  value && typeof value === "object" && typeof (value as Action).type === "string" ? (value as Action) : null;
+const roomStubForGame = (env: LiveGameRequestEnv, gameId: string) => env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(gameId));
 
-const addNotification = (game: ShellGame, message: string) => {
-  game.notifications.unshift(message);
-  if (game.notifications.length > 50) {
-    game.notifications = game.notifications.slice(0, 50);
-  }
-};
-
-const pickLegalAction = (state: GameState): Action | null => {
-  const legal = listLegalActions(state);
-  if (legal.length === 0) {
-    return null;
-  }
-  return legal[0] as Action;
-};
-
-type PieceMovePreview = Action & {
-  legal: boolean;
-  blockedReason?: "SUPPLY_DESTINATION_UNSUPPLIED" | "PUSH_STRENGTH_TOO_WEAK";
-};
-
-const compareActions = (left: Action, right: Action): number => {
-  if (left.type !== right.type) {
-    return left.type.localeCompare(right.type);
-  }
-  if (!left.to && !right.to) {
-    return 0;
-  }
-  if (!left.to) {
-    return -1;
-  }
-  if (!right.to) {
-    return 1;
-  }
-  if (left.to.row !== right.to.row) {
-    return left.to.row - right.to.row;
-  }
-  return left.to.col - right.to.col;
-};
-
-const compareActionPreviews = (left: PieceMovePreview, right: PieceMovePreview): number => {
-  const actionOrder = compareActions(left, right);
-  if (actionOrder !== 0) {
-    return actionOrder;
-  }
-  if (left.legal !== right.legal) {
-    return left.legal ? -1 : 1;
-  }
-  return (left.blockedReason ?? "").localeCompare(right.blockedReason ?? "");
-};
-
-const enumeratePieceActions = (state: GameState, pieceId: string): Action[] => {
-  const piece = state.pieces.find((candidate) => candidate.id === pieceId);
-  if (!piece) {
-    return [];
-  }
-
-  const candidates: Action[] = [];
-  const withTargets = ["move", "project", "rush", "push", "follow", "retreat"] as const;
-
-  for (const type of withTargets) {
-    for (let row = 0; row < BOARD_SIZE; row += 1) {
-      for (let col = 0; col < BOARD_SIZE; col += 1) {
-        const action: Action = {
-          type,
-          actorId: piece.id,
-          from: { row: piece.position.row, col: piece.position.col },
-          to: { row, col },
-        };
-        const validation = validateAction(state, action);
-        if (validation.ok) {
-          candidates.push(action);
-        }
-      }
-    }
-  }
-
-  return candidates.sort(compareActions);
-};
-
-const enumeratePieceActionPreviews = (state: GameState, pieceId: string): PieceMovePreview[] => {
-  const piece = state.pieces.find((candidate) => candidate.id === pieceId);
-  if (!piece) {
-    return [];
-  }
-
-  const previews: PieceMovePreview[] = [];
-  const withTargets = ["move", "project", "rush", "push", "follow", "retreat"] as const;
-
-  for (const type of withTargets) {
-    for (let row = 0; row < BOARD_SIZE; row += 1) {
-      for (let col = 0; col < BOARD_SIZE; col += 1) {
-        const action: Action = {
-          type,
-          actorId: piece.id,
-          from: { row: piece.position.row, col: piece.position.col },
-          to: { row, col },
-        };
-        const validation = validateAction(state, action);
-        if (validation.ok) {
-          previews.push({ ...action, legal: true });
-          continue;
-        }
-        if (
-          validation.code === "SUPPLY_DESTINATION_UNSUPPLIED" ||
-          validation.code === "PUSH_STRENGTH_TOO_WEAK"
-        ) {
-          previews.push({
-            ...action,
-            legal: false,
-            blockedReason: validation.code,
-          });
-        }
-      }
-    }
-  }
-
-  return previews.sort(compareActionPreviews);
-};
-
-const renumberHistory = (game: ShellGame) => {
-  game.moves.forEach((move, index) => {
-    move.index = index;
-  });
-  game.turns.forEach((turn) => {
-    turn.moveIndexes = turn.moveIndexes
-      .map((_, turnMoveIndex) =>
-        game.moves.find((move) => move.turnIndex === turn.index && move.turnMoveIndex === turnMoveIndex)?.index ?? -1,
-      )
-      .filter((index) => index >= 0);
-  });
-};
-
-const applyServerAction = (game: ShellGame, action: Action, notation?: string) => {
-  const activeTurn = getActiveTurn(game);
-  if (!activeTurn) {
-    return { ok: false as const, error: "turn_not_initialized" };
-  }
-  const stable = resolveToStability(game.board.state, { artifactMode: "full" });
-  const validation = validateAction(stable, action);
-  if (!validation.ok) {
-    return { ok: false as const, error: validation.code || "invalid_action", validation, state: stable };
-  }
-  const applied = applyAction(stable, action);
-  const next = resolveToStability(applied.state, { artifactMode: "full" });
-  const removedPieces = collectRemovedPieceNotices(stable, applied.state, next, action);
-  next.sideToMove = getSideForSeat(getControlSeatForTurn(next, activeTurn.playerSeat));
-  next.turnIndex = activeTurn.index;
-
-  const move: MoveEntry = {
-    index: game.moves.length,
-    turnIndex: activeTurn.index,
-    turnMoveIndex: activeTurn.moveIndexes.length,
-    actorSide: stable.sideToMove,
-    at: now(),
-    notation: notation || defaultNotationForAction(action),
-    action: clone(action),
-    selectionSnapshot: stable,
-    snapshot: next,
-  };
-  game.moves.push(move);
-  activeTurn.moveIndexes.push(move.index);
-  activeTurn.lastMoveAt = move.at;
-  if (game.moves.length > MAX_HISTORY) {
-    game.moves.shift();
-    renumberHistory(game);
-  }
-  game.board.state = next;
-  game.lastMoveAt = move.at;
-  game.updatedAt = move.at;
-  addNotification(game, `Move recorded in turn ${activeTurn.index + 1}`);
-  return { ok: true as const, move, state: next, removedPieces };
-};
-
-const applyServerMove = (game: ShellGame, notation?: string) => {
-  const stable = resolveToStability(game.board.state, { artifactMode: "full" });
-  const action = pickLegalAction(stable);
-  if (!action) {
-    return { ok: false as const, error: "no_legal_actions" };
-  }
-  return applyServerAction(game, action, notation);
-};
-
-const endServerTurn = (game: ShellGame) => {
-  const activeTurn = getActiveTurn(game);
-  if (!activeTurn) {
-    return { ok: false as const, error: "turn_not_initialized" };
-  }
-  if (activeTurn.moveIndexes.length === 0) {
-    return { ok: false as const, error: "turn_has_no_moves" };
-  }
-
-  const endedAt = now();
-  activeTurn.endedAt = endedAt;
-  activeTurn.status = "complete";
-
-  const nextSeat = getNextSeat(activeTurn.playerSeat);
-  const nextTurn: TurnEntry = {
-    index: activeTurn.index + 1,
-    startedAt: endedAt,
-    endedAt: null,
-    playerSeat: nextSeat,
-    status: "active",
-    moveIndexes: [],
-    lastMoveAt: null,
-  };
-  game.turns.push(nextTurn);
-  game.board.state = resolveToStability(
-    {
-      ...game.board.state,
-      sideToMove: getSideForSeat(nextSeat),
-      turnIndex: nextTurn.index,
-      continuation: null,
-      pieces: game.board.state.pieces.map((piece) => ({
-        ...piece,
-        shifted: false,
-        pushed: false,
-      })),
-    },
-    { artifactMode: "full" },
+const forwardRequestToGameRoom = (
+  env: LiveGameRequestEnv,
+  gameId: string,
+  request: Request,
+  path: string,
+) => {
+  const headers = new Headers(request.headers);
+  headers.set("x-game-id", gameId);
+  return roomStubForGame(env, gameId).fetch(
+    new Request(`https://game-room${path}`, {
+      method: request.method,
+      headers,
+      body: request.body,
+      redirect: request.redirect,
+      duplex: "half",
+    } as RequestInit),
   );
-  game.updatedAt = endedAt;
-  addNotification(game, `Turn ${activeTurn.index + 1} ended. ${nextSeat} to play`);
-  return { ok: true as const, turn: clone(nextTurn) };
 };
 
-export const handleShellLiveWebSocketUpgrade = (request: Request): Response | null => {
+const fetchGameRoom = async (
+  env: LiveGameRequestEnv,
+  gameId: string,
+  path: string,
+  init: RequestInit,
+) => {
+  const headers = new Headers(init.headers || {});
+  headers.set("x-game-id", gameId);
+  return roomStubForGame(env, gameId).fetch(new Request(`https://game-room${path}`, { ...init, headers }));
+};
+
+export const __resetLiveGameStateForTests = () => {
+  // No process-local live state remains in the HTTP routing layer.
+};
+
+export const handleLiveGameWebSocketUpgrade = async (request: Request, env: LiveGameRequestEnv): Promise<Response | null> => {
   const url = new URL(request.url);
   const route = parsePath(url.pathname);
-  if (!route || request.method !== "GET" || route.length !== 1 || route[0] !== "ws") {
+  if (!route || request.method !== "GET") {
     return null;
   }
-
-  const wsCtor = (globalThis as any).WebSocketPair;
-  if (!wsCtor) {
-    return new Response("WebSocket upgrade not supported in this runtime", { status: 426 });
+  if (route.length === 3 && route[0] === "games" && route[2] === "ws") {
+    return forwardRequestToGameRoom(env, route[1], request, `/ws${url.search}`);
   }
-
-  const scope = url.searchParams.get("scope");
-  const identityId = asIdentity(url.searchParams.get("identityId"));
-  const gameId = scope === "game" ? asIdentity(url.searchParams.get("gameId")) : null;
-  const socketPair = new wsCtor();
-  const client = socketPair[0];
-  const server = socketPair[1];
-  server.accept();
-
-  if (scope === "home") {
-    if (identityId) {
-      touchIdentityAcrossGames(identityId);
-    }
-    homeSubscribers.add(server);
-  } else if (scope === "game" && gameId) {
-    const game = games.get(gameId);
-    if (game && identityId) {
-      touchIdentityPresence(game, identityId);
-      applyPresenceFreshness(game);
-    }
-    getGameSubscriberSet(gameId).add(server);
-  } else {
-    return new Response("Invalid websocket scope", { status: 400 });
+  if (route.length === 1 && route[0] === "ws") {
+    return new Response("Legacy websocket route removed", { status: 404 });
   }
-
-  sendSocketEvent(server, { type: "socket.connected", scope, gameId, at: now() });
-
-  server.addEventListener("message", (event: MessageEvent) => {
-    const text = typeof event.data === "string" ? event.data : "";
-    if (text === "ping") {
-      sendSocketEvent(server, { type: "pong", at: now() });
-    }
-  });
-
-  server.addEventListener("close", () => {
-    removeSocketFromAll(server);
-  });
-
-  return new Response(null, { status: 101, webSocket: client } as any);
+  return null;
 };
 
-export const handleShellLiveRequest = async (
+export const handleLiveGameRequest = async (
   request: Request,
-  env: ShellLiveEnv,
+  env: LiveGameRequestEnv,
 ): Promise<{ handled: boolean; status: number; body: Record<string, unknown>; cacheControl: string } | null> => {
   const url = new URL(request.url);
   const route = parsePath(url.pathname);
@@ -936,47 +124,42 @@ export const handleShellLiveRequest = async (
           "Invite participants",
         ],
       },
-      cacheControl: "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
+      cacheControl: CACHE_BOOTSTRAP_SHORT,
     };
   }
 
   if (request.method === "GET" && route.length === 1 && route[0] === "games") {
     const identityId = asIdentity(url.searchParams.get("identityId"));
     if (!identityId) {
-      return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: "no-store" };
+      return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
     }
-
-    const visibleGames = await loadVisibleGames(env);
-    if (!offline) {
-      touchIdentityAcrossGames(identityId);
-    }
-
+    const games = await listVisibleGameProjections(env);
     return {
       handled: true,
       status: 200,
-      body: { ok: true, games: listVisibleGames(identityId) },
-      cacheControl: "no-store",
+      body: { ok: true, games: games.map((game) => withViewModel(game, identityId, offline)) },
+      cacheControl: CACHE_NO_STORE,
     };
   }
 
   if (request.method === "GET" && route.length === 2 && route[0] === "invites") {
     const token = asIdentity(route[1]);
     if (!token) {
-      return { handled: true, status: 400, body: { ok: false, error: "invalid_invite_token" }, cacheControl: "no-store" };
+      return { handled: true, status: 400, body: { ok: false, error: "invalid_invite_token" }, cacheControl: CACHE_NO_STORE };
     }
     const invite = await resolveInvite(env, token);
     if (!invite) {
-      return { handled: true, status: 404, body: { ok: false, error: "invite_not_found" }, cacheControl: "no-store" };
+      return { handled: true, status: 404, body: { ok: false, error: "invite_not_found" }, cacheControl: CACHE_NO_STORE };
     }
-    const game = await loadGame(env, invite.gameId);
-    if (!game) {
-      return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: "no-store" };
+    const gameProjection = await loadGameProjection(env, invite.gameId);
+    if (!gameProjection) {
+      return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: CACHE_NO_STORE };
     }
     return {
       handled: true,
       status: 200,
       body: { ok: true, gameId: invite.gameId, inviteToken: token, inviteFromRole: invite.sharedByRole },
-      cacheControl: "no-store",
+      cacheControl: CACHE_NO_STORE,
     };
   }
 
@@ -984,295 +167,162 @@ export const handleShellLiveRequest = async (
     const body = await parseBody(request);
     const identityId = asIdentity(body.identityId);
     if (!identityId) {
-      return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: "no-store" };
+      return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
     }
-
-    const playgroundMode = body.playgroundMode === true;
-    const offlineLocal = body.offlineLocal === true;
-    const initial = resolveToStability(createInitialState(), { artifactMode: "full" });
-    const createdAt = now();
-
-    const game: ShellGame = {
-      id: nextId(),
-      createdAt,
-      lastMoveAt: null,
-      updatedAt: createdAt,
-      playgroundMode,
-      offlineLocal,
-      board: { state: initial },
-      player1: { identityId, connected: true, joinedAt: createdAt, lastSeenAt: createdAt },
-      player2: playgroundMode ? { identityId, connected: true, joinedAt: createdAt, lastSeenAt: createdAt } : null,
-      viewers: [],
-      pendingJoinRequests: [],
-      turns: [
-        {
-          index: initial.turnIndex ?? 0,
-          startedAt: createdAt,
-          endedAt: null,
-          playerSeat: getSeatForSide(initial.sideToMove),
-          status: "active",
-          moveIndexes: [],
-          lastMoveAt: null,
-        },
-      ],
-      moves: [],
-      historyIndexByIdentity: {},
-      notifications: ["Game created", playgroundMode ? "Playground mode active" : "Invite a second player"],
-      inviteTokens: { viewer: "", player1: "", player2: "" },
-    };
-    game.inviteTokens = createInviteTokens(game.id);
-
-    cacheGame(game);
-    await saveGame(env, game);
-    await saveInviteTokens(env, game);
-    broadcastLiveUpdate(game.id, "game_created");
+    const gameId = nextGameId();
+    const response = await fetchGameRoom(env, gameId, "/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        identityId,
+        gameId,
+        playgroundMode: body.playgroundMode === true,
+        offlineLocal: body.offlineLocal === true,
+      }),
+    });
     return {
       handled: true,
-      status: 200,
-      body: { ok: true, game: withViewModel(game, identityId, offline) },
-      cacheControl: "no-store",
+      status: response.status,
+      body: (await response.json()) as Record<string, unknown>,
+      cacheControl: CACHE_NO_STORE,
     };
   }
 
   if (route.length >= 2 && route[0] === "games") {
     const gameId = route[1];
-    const game = await loadGame(env, gameId);
-    if (!game) {
-      return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: "no-store" };
+    const projection = await loadGameProjection(env, gameId);
+    if (!projection) {
+      return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: CACHE_NO_STORE };
     }
+    const game = projection.game;
 
     if (request.method === "GET" && route.length === 2) {
       const identityId = asIdentity(url.searchParams.get("identityId"));
       if (!identityId) {
-        return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: "no-store" };
+        return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
       }
-
-      if (!offline) {
-        touchIdentityPresence(game, identityId);
-      }
-      if (!offline && url.searchParams.get("openAsViewer") === "1") {
-        const added = ensureViewer(game, identityId);
-        if (added) {
-          game.updatedAt = now();
-          await saveGame(env, game);
-          broadcastLiveUpdate(game.id, "viewer_open");
-        }
-      }
-
       return {
         handled: true,
         status: 200,
-        body: { ok: true, game: withViewModel(game, identityId, offline) },
-        cacheControl: "no-store",
+        body: { ok: true, game: withViewModel(game, identityId, offline), eventSeq: projection.eventSeq },
+        cacheControl: CACHE_NO_STORE,
       };
     }
 
     if (request.method !== "POST") {
-      return { handled: true, status: 404, body: { ok: false, error: "not_found" }, cacheControl: "no-store" };
+      return { handled: true, status: 404, body: { ok: false, error: "not_found" }, cacheControl: CACHE_NO_STORE };
     }
 
     const body = await parseBody(request);
     const identityId = asIdentity(body.identityId);
     if (!identityId) {
-      return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: "no-store" };
+      return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
     }
 
     if (route.length === 3 && route[2] === "join") {
-      const mode = body.mode === "viewer" ? "viewer" : body.mode === "player" ? "player" : null;
-      if (!mode) {
-        return { handled: true, status: 400, body: { ok: false, error: "invalid_mode" }, cacheControl: "no-store" };
-      }
-
       if (offline && !game.offlineLocal) {
-        return { handled: true, status: 409, body: { ok: false, error: "offline_join_blocked" }, cacheControl: "no-store" };
+        return { handled: true, status: 409, body: { ok: false, error: "offline_join_blocked" }, cacheControl: CACHE_NO_STORE };
       }
-
-      if (mode === "viewer") {
-        const added = ensureViewer(game, identityId);
-        game.updatedAt = now();
-        if (added) {
-          addNotification(game, "Viewer joined");
+      let inviteFromRole =
+        body.inviteFromRole === "Player 1" || body.inviteFromRole === "Player 2" || body.inviteFromRole === "Viewer"
+          ? body.inviteFromRole
+          : null;
+      const inviteToken = asIdentity(body.inviteToken);
+      if (inviteToken) {
+        const inviteMeta = await resolveInvite(env, inviteToken);
+        if (inviteMeta?.gameId === gameId) {
+          inviteFromRole = inviteMeta.sharedByRole;
         }
-        await saveGame(env, game);
-        if (added) {
-          broadcastLiveUpdate(game.id, "viewer_joined");
-        }
-        return { handled: true, status: 200, body: { ok: true, pendingApproval: false, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
       }
-
-      if (game.playgroundMode) {
-        return { handled: true, status: 409, body: { ok: false, error: "playground_player_join_disabled" }, cacheControl: "no-store" };
-      }
-
-      if (game.player1?.identityId === identityId || game.player2?.identityId === identityId) {
-        return { handled: true, status: 409, body: { ok: false, error: "identity_already_player" }, cacheControl: "no-store" };
-      }
-
-      const requestedSeat = !game.player1 ? "Player 1" : !game.player2 ? "Player 2" : null;
-      if (!requestedSeat) {
-        return { handled: true, status: 409, body: { ok: false, error: "no_player_seat_available" }, cacheControl: "no-store" };
-      }
-
-      const inviteToken = typeof body.inviteToken === "string" ? body.inviteToken : null;
-      const inviteMeta = inviteToken ? await resolveInvite(env, inviteToken) : null;
-      const inviteFromRole =
-        inviteMeta && inviteMeta.gameId === game.id
-          ? inviteMeta.sharedByRole
-          : typeof body.inviteFromRole === "string"
-            ? body.inviteFromRole
-            : null;
-      const sharedByPlayer = inviteFromRole === "Player 1" || inviteFromRole === "Player 2";
-      if (!sharedByPlayer) {
-        const added = ensureViewer(game, identityId);
-        game.pendingJoinRequests.push({
+      const response = await fetchGameRoom(env, gameId, "/join", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
           identityId,
-          requestedSeat,
-          requestedAt: now(),
-          source: inviteFromRole ? "viewer_invite" : "home_list",
-        });
-        game.updatedAt = now();
-        addNotification(game, "Player seat request pending approval");
-        await saveGame(env, game);
-        broadcastLiveUpdate(game.id, added ? "player_join_requested" : "player_join_requested_existing_viewer");
-        return {
-          handled: true,
-          status: 200,
-          body: { ok: true, pendingApproval: true, game: withViewModel(game, identityId, offline) },
-          cacheControl: "no-store",
-        };
-      }
-
-      if (requestedSeat === "Player 1") {
-        promoteIdentityToSeat(game, "Player 1", identityId);
-      } else {
-        promoteIdentityToSeat(game, "Player 2", identityId);
-      }
-      dismissCompetingJoinRequests(game, identityId);
-      game.updatedAt = now();
-      addNotification(game, "Player joined");
-      await saveGame(env, game);
-      broadcastLiveUpdate(game.id, "player_joined");
-      return { handled: true, status: 200, body: { ok: true, pendingApproval: false, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
+          mode: body.mode,
+          inviteFromRole,
+        }),
+      });
+      return {
+        handled: true,
+        status: response.status,
+        body: (await response.json()) as Record<string, unknown>,
+        cacheControl: CACHE_NO_STORE,
+      };
     }
 
-    if (route.length === 3 && route[2] === "play-as-both") {
-      if (game.player1?.identityId !== identityId) {
-        return { handled: true, status: 409, body: { ok: false, error: "not_player1" }, cacheControl: "no-store" };
+    if (
+      route.length === 3 &&
+      ["approve", "moves", "apply", "end-turn", "history", "live", "play-as-both", "go-online"].includes(route[2])
+    ) {
+      if (
+        offline &&
+        !game.offlineLocal &&
+        (route[2] === "moves" || route[2] === "apply" || route[2] === "end-turn" || route[2] === "play-as-both")
+      ) {
+        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: CACHE_NO_STORE };
       }
-      if (game.player2) {
-        return { handled: true, status: 409, body: { ok: false, error: "player2_already_joined" }, cacheControl: "no-store" };
-      }
-
-      promoteIdentityToSeat(game, "Player 2", identityId);
-      game.playgroundMode = true;
-      game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.requestedSeat !== "Player 2");
-      addNotification(game, "Play as both players enabled");
-      await saveGame(env, game);
-      broadcastLiveUpdate(game.id, "play_as_both_players");
-      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
-    }
-
-    if (route.length === 3 && route[2] === "approve") {
-      const requesterIdentityId = asIdentity(body.requesterIdentityId);
-      if (!requesterIdentityId) {
-        return { handled: true, status: 400, body: { ok: false, error: "invalid_requester" }, cacheControl: "no-store" };
-      }
-
-      const requestIndex = game.pendingJoinRequests.findIndex((item) => item.identityId === requesterIdentityId);
-      if (requestIndex < 0) {
-        return { handled: true, status: 404, body: { ok: false, error: "request_not_found" }, cacheControl: "no-store" };
-      }
-
-      const requestItem = game.pendingJoinRequests[requestIndex];
-      const approverIdentityId = getApproverIdentityForSeat(game, requestItem.requestedSeat);
-      if (!approverIdentityId || approverIdentityId !== identityId) {
-        return { handled: true, status: 403, body: { ok: false, error: "approval_not_allowed" }, cacheControl: "no-store" };
-      }
-      game.pendingJoinRequests.splice(requestIndex, 1);
-
-      if (requestItem.requestedSeat === "Player 1" && !game.player1) {
-        promoteIdentityToSeat(game, "Player 1", requestItem.identityId);
-      }
-      if (requestItem.requestedSeat === "Player 2" && !game.player2) {
-        promoteIdentityToSeat(game, "Player 2", requestItem.identityId);
-      }
-      dismissCompetingJoinRequests(game, requestItem.identityId);
-      game.updatedAt = now();
-      addNotification(game, "Player request approved");
-      await saveGame(env, game);
-      broadcastLiveUpdate(game.id, "player_request_approved");
-
-      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
-    }
-
-    if (route.length === 3 && route[2] === "moves") {
-      if (offline && !game.offlineLocal) {
-        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: "no-store" };
-      }
-      const role = findRoleForIdentity(game, identityId);
-      if (role !== "Player 1" && role !== "Player 2") {
-        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: "no-store" };
-      }
-      const sideToMoveSeat = getSideToMoveSeat(game);
-      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
-      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
-        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: "no-store" };
-      }
-      const notation = typeof body.notation === "string" ? body.notation : undefined;
-      const moved = applyServerMove(game, notation);
-      if (!moved.ok) {
-        return { handled: true, status: 409, body: { ok: false, error: moved.error }, cacheControl: "no-store" };
-      }
-      await saveGame(env, game);
-      broadcastLiveUpdate(game.id, "move_recorded");
-      return { handled: true, status: 200, body: { ok: true, move: moved.move, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
+      const response = await fetchGameRoom(env, gameId, `/${route[2]}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return {
+        handled: true,
+        status: response.status,
+        body: (await response.json()) as Record<string, unknown>,
+        cacheControl: CACHE_NO_STORE,
+      };
     }
 
     if (route.length === 3 && route[2] === "legal") {
       if (offline && !game.offlineLocal) {
-        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: "no-store" };
+        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: CACHE_NO_STORE };
       }
       const role = findRoleForIdentity(game, identityId);
       if (role !== "Player 1" && role !== "Player 2") {
-        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: "no-store" };
+        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: CACHE_NO_STORE };
       }
       const sideToMoveSeat = getSideToMoveSeat(game);
       const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
       if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
-        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: "no-store" };
+        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: CACHE_NO_STORE };
       }
       const stable = resolveToStability(game.board.state, { artifactMode: "full" });
       return {
         handled: true,
         status: 200,
-        body: { ok: true, state: stable, legalActions: listLegalActions(stable), game: withViewModel(game, identityId, offline) },
-        cacheControl: "no-store",
+        body: {
+          ok: true,
+          state: stable,
+          legalActions: listLegalActions(stable),
+          game: withViewModel(game, identityId, offline),
+        },
+        cacheControl: CACHE_NO_STORE,
       };
     }
 
     if (route.length === 3 && route[2] === "piece-moves") {
       if (offline && !game.offlineLocal) {
-        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: "no-store" };
+        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: CACHE_NO_STORE };
       }
       const role = findRoleForIdentity(game, identityId);
       if (role !== "Player 1" && role !== "Player 2") {
-        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: "no-store" };
+        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: CACHE_NO_STORE };
       }
       const sideToMoveSeat = getSideToMoveSeat(game);
       const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
       if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
-        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: "no-store" };
+        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: CACHE_NO_STORE };
       }
-
       const bodyState = asGameState(body.state);
       const pieceId = asIdentity(body.pieceId);
       if (!bodyState) {
-        return { handled: true, status: 400, body: { ok: false, error: "invalid_state" }, cacheControl: "no-store" };
+        return { handled: true, status: 400, body: { ok: false, error: "invalid_state" }, cacheControl: CACHE_NO_STORE };
       }
       if (!pieceId) {
-        return { handled: true, status: 400, body: { ok: false, error: "invalid_piece_id" }, cacheControl: "no-store" };
+        return { handled: true, status: 400, body: { ok: false, error: "invalid_piece_id" }, cacheControl: CACHE_NO_STORE };
       }
-
       const stable = resolveToStability(game.board.state, { artifactMode: "full" });
       return {
         handled: true,
@@ -1285,152 +335,12 @@ export const handleShellLiveRequest = async (
           previewActions: enumeratePieceActionPreviews(stable, pieceId),
           game: withViewModel(game, identityId, offline),
         },
-        cacheControl: "no-store",
+        cacheControl: CACHE_NO_STORE,
       };
     }
 
-    if (route.length === 3 && route[2] === "apply") {
-      if (offline && !game.offlineLocal) {
-        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: "no-store" };
-      }
-      const role = findRoleForIdentity(game, identityId);
-      if (role !== "Player 1" && role !== "Player 2") {
-        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: "no-store" };
-      }
-      const sideToMoveSeat = getSideToMoveSeat(game);
-      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
-      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
-        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: "no-store" };
-      }
-
-      const bodyState = asGameState(body.state);
-      const action = asAction(body.action);
-      if (!bodyState) {
-        return { handled: true, status: 400, body: { ok: false, error: "invalid_state" }, cacheControl: "no-store" };
-      }
-      if (!action) {
-        return { handled: true, status: 400, body: { ok: false, error: "invalid_action" }, cacheControl: "no-store" };
-      }
-
-      const notation = typeof body.notation === "string" ? body.notation : undefined;
-      const moved = applyServerAction(game, action, notation);
-      if (!moved.ok) {
-        if (moved.validation && moved.state) {
-          return {
-            handled: true,
-            status: 200,
-            body: {
-              ok: true,
-              accepted: false,
-              validation: moved.validation,
-              state: moved.state,
-              legalActions: listLegalActions(moved.state),
-              game: withViewModel(game, identityId, offline),
-            },
-            cacheControl: "no-store",
-          };
-        }
-        return { handled: true, status: 409, body: { ok: false, error: moved.error }, cacheControl: "no-store" };
-      }
-      await saveGame(env, game);
-      broadcastLiveUpdate(game.id, "move_recorded");
-      return {
-        handled: true,
-        status: 200,
-        body: {
-          ok: true,
-          accepted: true,
-          move: moved.move,
-          state: moved.state,
-          removedPieces: moved.removedPieces,
-          legalActions: listLegalActions(moved.state),
-          game: withViewModel(game, identityId, offline),
-        },
-        cacheControl: "no-store",
-      };
-    }
-
-    if (route.length === 3 && route[2] === "end-turn") {
-      if (offline && !game.offlineLocal) {
-        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: "no-store" };
-      }
-      const role = findRoleForIdentity(game, identityId);
-      if (role !== "Player 1" && role !== "Player 2") {
-        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: "no-store" };
-      }
-      const activeTurn = getActiveTurn(game);
-      if (!activeTurn) {
-        return { handled: true, status: 409, body: { ok: false, error: "turn_not_initialized" }, cacheControl: "no-store" };
-      }
-      const turnOwnerIdentity = getSeatIdentity(game, activeTurn.playerSeat);
-      if (!turnOwnerIdentity || turnOwnerIdentity !== identityId) {
-        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: "no-store" };
-      }
-      const ended = endServerTurn(game);
-      if (!ended.ok) {
-        return { handled: true, status: 409, body: { ok: false, error: ended.error }, cacheControl: "no-store" };
-      }
-      await saveGame(env, game);
-      broadcastLiveUpdate(game.id, "turn_ended");
-      return { handled: true, status: 200, body: { ok: true, turn: ended.turn, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
-    }
-
-    if (route.length === 3 && route[2] === "history") {
-      const moveIndex = typeof body.moveIndex === "number" ? body.moveIndex : -1;
-      if (moveIndex < 0 || moveIndex >= game.moves.length) {
-        return { handled: true, status: 400, body: { ok: false, error: "invalid_move_index" }, cacheControl: "no-store" };
-      }
-      game.historyIndexByIdentity[identityId] = moveIndex;
-      await saveGame(env, game);
-      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
-    }
-
-    if (route.length === 3 && route[2] === "live") {
-      delete game.historyIndexByIdentity[identityId];
-      await saveGame(env, game);
-      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
-    }
-
-    if (route.length === 3 && route[2] === "presence") {
-      const role =
-        body.role === "Player 1" || body.role === "Player 2" || body.role === "Viewer" ? body.role : null;
-      const connected = body.connected === true;
-      if (!role) {
-        return { handled: true, status: 400, body: { ok: false, error: "invalid_role" }, cacheControl: "no-store" };
-      }
-      const entry =
-        role === "Player 1"
-          ? game.player1
-          : role === "Player 2"
-            ? game.player2
-            : game.viewers.find((viewer) => viewer.identityId === identityId) ?? null;
-      if (!entry) {
-        return { handled: true, status: 404, body: { ok: false, error: "participant_not_found" }, cacheControl: "no-store" };
-      }
-      entry.connected = connected;
-      entry.lastSeenAt = connected ? now() : new Date(0).toISOString();
-      game.updatedAt = now();
-      addNotification(game, `Participant ${connected ? "connected" : "disconnected"}`);
-      await saveGame(env, game);
-      broadcastLiveUpdate(game.id, connected ? "participant_connected" : "participant_disconnected");
-      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
-    }
-
-    if (route.length === 3 && route[2] === "go-online") {
-      const confirmed = body.confirmed === true;
-      if (!confirmed) {
-        return { handled: true, status: 409, body: { ok: false, error: "confirmation_required" }, cacheControl: "no-store" };
-      }
-      game.offlineLocal = false;
-      game.updatedAt = now();
-      addNotification(game, "Game moved online");
-      await saveGame(env, game);
-      broadcastLiveUpdate(game.id, "game_moved_online");
-      return { handled: true, status: 200, body: { ok: true, game: withViewModel(game, identityId, offline) }, cacheControl: "no-store" };
-    }
-
-    return { handled: true, status: 404, body: { ok: false, error: "not_found" }, cacheControl: "no-store" };
+    return { handled: true, status: 404, body: { ok: false, error: "not_found" }, cacheControl: CACHE_NO_STORE };
   }
 
-  return { handled: true, status: 404, body: { ok: false, error: "not_found" }, cacheControl: "no-store" };
+  return { handled: true, status: 404, body: { ok: false, error: "not_found" }, cacheControl: CACHE_NO_STORE };
 };

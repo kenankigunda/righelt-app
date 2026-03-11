@@ -45,10 +45,9 @@ test("game, join/invite, and history use shared section spacing structure", () =
   assert.match(source, /class="history-turn-body"/);
 });
 
-test("offline toggles sync current identity presence", () => {
-  assert.match(source, /await syncCurrentIdentityPresence\(!next\)/);
-  assert.match(source, /void syncCurrentIdentityPresence\(true\)/);
-  assert.match(source, /void syncCurrentIdentityPresence\(false\)/);
+test("app does not call removed presence endpoint helpers", () => {
+  assert.doesNotMatch(source, /syncCurrentIdentityPresence/);
+  assert.doesNotMatch(source, /setParticipantConnected/);
 });
 
 test("invite choice commit suppresses repeat game-route invite gate and join actions commit choice", () => {
@@ -63,6 +62,6 @@ test("invite choice commit suppresses repeat game-route invite gate and join act
 test("game route live sync connection is not gated by participant role", () => {
   assert.match(
     source,
-    /const routeKey =\s*currentRoute\.name === "game"\s*\?\s*`game:\$\{currentRoute\.gameId\}`\s*:\s*currentRoute\.name === "home"\s*\?\s*"home"\s*:\s*"none";/s,
+    /const routeKey = liveGameId \? `game:\$\{liveGameId\}` : "none";/s,
   );
 });

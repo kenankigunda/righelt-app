@@ -1,21 +1,30 @@
 const WS_RECONNECT_BASE_MS = 500;
 const WS_RECONNECT_MAX_MS = 6000;
+const HEARTBEAT_MS = 15_000;
 
-const createWsUrl = ({ scope, identityId, gameId = null }) => {
+const createWsUrl = ({ identityId, gameId, lastEventSeq }) => {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const params = new URLSearchParams({ scope, identityId });
-  if (scope === "game" && gameId) {
-    params.set("gameId", gameId);
-  }
-  return `${protocol}://${window.location.host}/api/shell/ws?${params.toString()}`;
+  const params = new URLSearchParams({
+    identityId,
+    lastEventSeq: String(lastEventSeq ?? 0),
+  });
+  return `${protocol}://${window.location.host}/api/shell/games/${encodeURIComponent(gameId)}/ws?${params.toString()}`;
 };
 
-export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {}, onStatus = () => {} }) => {
+export const createLiveSyncClient = ({
+  identityId,
+  getLastEventSeq = () => 0,
+  onEvent,
+  onError = () => {},
+  onStatus = () => {},
+}) => {
   let socket = null;
   let stopped = false;
   let reconnectAttempts = 0;
   let reconnectTimer = null;
+  let heartbeatTimer = null;
   let mode = null;
+  let lastEventSeq = 0;
 
   const clearReconnect = () => {
     if (reconnectTimer) {
@@ -24,7 +33,15 @@ export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {}, 
     }
   };
 
+  const clearHeartbeat = () => {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+  };
+
   const cleanupSocket = () => {
+    clearHeartbeat();
     if (!socket) {
       return;
     }
@@ -34,6 +51,23 @@ export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {}, 
       // ignore
     }
     socket = null;
+  };
+
+  const sendHeartbeat = () => {
+    if (!socket || socket.readyState !== 1) {
+      return;
+    }
+    try {
+      socket.send(
+        JSON.stringify({
+          type: "heartbeat",
+          identityId,
+          lastEventSeq,
+        }),
+      );
+    } catch {
+      // ignore
+    }
   };
 
   const scheduleReconnect = () => {
@@ -51,7 +85,7 @@ export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {}, 
     }, delay);
   };
 
-  const connect = ({ scope, gameId = null }) => {
+  const connect = ({ gameId }) => {
     if (typeof WebSocket === "undefined") {
       onError(new Error("websocket_unavailable"));
       return;
@@ -59,20 +93,29 @@ export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {}, 
 
     cleanupSocket();
     clearReconnect();
-    mode = { scope, gameId };
-    onStatus({ state: "connecting", scope, gameId, reconnectAttempts });
+    mode = { gameId };
+    lastEventSeq = Math.max(lastEventSeq, Number(getLastEventSeq() || 0));
+    onStatus({ state: "connecting", gameId, reconnectAttempts });
 
-    const ws = new WebSocket(createWsUrl({ scope, identityId, gameId }));
+    const ws = new WebSocket(createWsUrl({ identityId, gameId, lastEventSeq }));
     socket = ws;
 
     ws.addEventListener("open", () => {
       reconnectAttempts = 0;
-      onStatus({ state: "connected", scope, gameId, reconnectAttempts });
+      onStatus({ state: "connected", gameId, reconnectAttempts });
+      sendHeartbeat();
+      heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_MS);
     });
 
     ws.addEventListener("message", (event) => {
       try {
         const payload = JSON.parse(typeof event.data === "string" ? event.data : "{}");
+        if (typeof payload?.eventSeq === "number") {
+          lastEventSeq = Math.max(lastEventSeq, payload.eventSeq);
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: "ack", lastEventSeq }));
+          }
+        }
         onEvent(payload);
       } catch {
         // ignore malformed events
@@ -81,11 +124,12 @@ export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {}, 
 
     ws.addEventListener("error", () => {
       onError(new Error("websocket_error"));
-      onStatus({ state: "error", scope, gameId, reconnectAttempts });
+      onStatus({ state: "error", gameId, reconnectAttempts });
     });
 
     ws.addEventListener("close", () => {
-      onStatus({ state: "closed", scope, gameId, reconnectAttempts });
+      clearHeartbeat();
+      onStatus({ state: "closed", gameId, reconnectAttempts });
       if (!stopped) {
         scheduleReconnect();
       }
@@ -93,14 +137,13 @@ export const createLiveSyncClient = ({ identityId, onEvent, onError = () => {}, 
   };
 
   return {
-    connectHome: () => connect({ scope: "home" }),
-    connectGame: (gameId) => connect({ scope: "game", gameId }),
+    connectGame: (gameId) => connect({ gameId }),
     disconnect: () => {
       stopped = true;
       clearReconnect();
       cleanupSocket();
       mode = null;
-      onStatus({ state: "disconnected", scope: null, gameId: null, reconnectAttempts });
+      onStatus({ state: "disconnected", gameId: null, reconnectAttempts });
     },
     resume: () => {
       stopped = false;

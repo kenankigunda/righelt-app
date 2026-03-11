@@ -1,9 +1,23 @@
 name = "righelt"
+main = "_worker.ts"
 compatibility_date = "2026-02-23"
-pages_build_output_dir = "."
+
+[assets]
+directory = "."
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
 
 [[d1_databases]]
 binding = "DB"
 database_name = "righelt-db-dev"
 database_id = "22435cc4-6655-4bdf-a05d-d100cd8e6cc9"
 migrations_dir = "../../db/migrations"
+
+[[durable_objects.bindings]]
+name = "GAME_ROOMS"
+class_name = "GameRoomDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoomDO"]

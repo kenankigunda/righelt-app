@@ -287,3 +287,84 @@ test("live transport store allows offline end-turn only for dual-seat offline pl
   const vm = store.getGameViewModel(gameId);
   assert.equal(vm.canEndTurn, true);
 });
+
+test("live transport store ignores stale game snapshots once a newer eventSeq is cached", async () => {
+  const gameId = "game-seq-1";
+  const storage = createMemoryStorage();
+  storage.setItem("righelt.identity.id.v1", "id-a");
+
+  const fetcher = async (url, init = {}) => {
+    if (String(url) === `/api/shell/games/${gameId}/piece-moves` && init.method === "POST") {
+      return Response.json({
+        ok: true,
+        eventSeq: 4,
+        state: { sideToMove: "P1", turnIndex: 0, pieces: [] },
+        pieceId: "A1",
+        actions: [],
+        previewActions: [],
+        game: {
+          id: gameId,
+          createdAt: "2026-02-26T00:00:00.000Z",
+          lastMoveAt: "2026-02-26T00:00:10.000Z",
+          updatedAt: "2026-02-26T00:00:10.000Z",
+          offlineLocal: false,
+          player1: { identityId: "id-a", connected: true },
+          player2: { identityId: "id-b", connected: true },
+          viewers: [],
+          pendingJoinRequests: [],
+          turns: [{ index: 0, playerSeat: "Player 1", status: "active", moveIndexes: [0], lastMoveAt: "2026-02-26T00:00:10.000Z" }],
+          moves: [{ index: 0, turnIndex: 0, turnMoveIndex: 0, notation: "M1", at: "2026-02-26T00:00:10.000Z" }],
+          notifications: ["Move recorded in turn 1"],
+          myRole: "Player 1",
+          inHistoryMode: false,
+          currentSnapshot: { sideToMove: "P1", turnIndex: 0, pieces: [] },
+          currentTurn: { index: 0, playerSeat: "Player 1", status: "active", moveIndexes: [0], lastMoveAt: "2026-02-26T00:00:10.000Z" },
+          canRecordMove: true,
+          canEndTurn: true,
+          showJoinActions: true,
+          canInvite: true,
+          showOfflineState: false,
+        },
+      });
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({ storage, fetcher, random: () => 0.12345 });
+  store.applyLiveGameUpdate({
+    eventSeq: 5,
+    game: {
+      id: gameId,
+      createdAt: "2026-02-26T00:00:00.000Z",
+      lastMoveAt: "2026-02-26T00:00:11.000Z",
+      updatedAt: "2026-02-26T00:00:11.000Z",
+      offlineLocal: false,
+      player1: { identityId: "id-a", connected: true },
+      player2: { identityId: "id-b", connected: true },
+      viewers: [],
+      pendingJoinRequests: [],
+      turns: [
+        { index: 0, playerSeat: "Player 1", status: "complete", moveIndexes: [0], lastMoveAt: "2026-02-26T00:00:10.000Z" },
+        { index: 1, playerSeat: "Player 2", status: "active", moveIndexes: [], lastMoveAt: null },
+      ],
+      moves: [{ index: 0, turnIndex: 0, turnMoveIndex: 0, notation: "M1", at: "2026-02-26T00:00:10.000Z" }],
+      notifications: ["Turn 1 ended. Player 2 to play"],
+      myRole: "Player 1",
+      inHistoryMode: false,
+      currentSnapshot: { sideToMove: "P2", turnIndex: 1, pieces: [] },
+      currentTurn: { index: 1, playerSeat: "Player 2", status: "active", moveIndexes: [], lastMoveAt: null },
+      canRecordMove: false,
+      canEndTurn: false,
+      showJoinActions: true,
+      canInvite: true,
+      showOfflineState: false,
+    },
+  });
+
+  await store.loadGamePieceMoves({ gameId, state: { sideToMove: "P2", turnIndex: 1, pieces: [] }, pieceId: "A1" });
+
+  const vm = store.getGameViewModel(gameId);
+  assert.equal(vm.currentSnapshot.sideToMove, "P2");
+  assert.equal(vm.currentTurn.playerSeat, "Player 2");
+  assert.equal(store.getLastEventSeq(gameId), 5);
+});

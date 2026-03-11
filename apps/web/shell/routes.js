@@ -67,10 +67,9 @@ export const buildTutorialHash = (gameId = null) => {
 
 export const buildPlaygroundHash = () => "#/playground";
 
-export const shouldLiveSyncRoute = (route) => route?.name === "home" || route?.name === "game";
+export const shouldLiveSyncRoute = (route) => route?.name === "game" || route?.name === "invite";
 
-export const shouldPassiveRefreshRoute = (route) =>
-  route?.name === "home" || route?.name === "game" || route?.name === "invite";
+export const shouldPassiveRefreshRoute = (route) => route?.name === "home";
 
 export const isShellRootHash = (hash) => {
   return !hash || hash === "#" || hash === "#/" || hash === "";

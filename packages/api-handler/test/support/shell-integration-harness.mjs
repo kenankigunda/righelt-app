@@ -1,14 +1,17 @@
 import { createLiveTransportStore } from "../../../../apps/web/shell/live-transport.js";
 import { buildGameHash, buildInviteHash, parseRouteFromHash } from "../../../../apps/web/shell/routes.js";
 import { handleApiRequest } from "../../src/index.ts";
-import { __resetShellLiveStateForTests } from "../../src/shell-live.ts";
+import { __resetLiveGameStateForTests } from "../../src/shell-live.ts";
 import { createFakeD1 } from "./fake-d1.mjs";
+import { createFakeGameRooms } from "./fake-game-rooms.mjs";
 
 const IDENTITY_KEY = "righelt.identity.id.v1";
 
 const env = {
   DB: createFakeD1(),
+  GAME_ROOMS: null,
 };
+env.GAME_ROOMS = createFakeGameRooms(() => env);
 
 export const createMemoryStorage = () => {
   const map = new Map();
@@ -39,8 +42,9 @@ const createFetcher = () => async (url, init = {}) => {
 };
 
 export const createShellIntegrationHarness = () => {
-  __resetShellLiveStateForTests();
+  __resetLiveGameStateForTests();
   env.DB.reset();
+  env.GAME_ROOMS.reset();
   const fetcher = createFetcher();
 
   const createClient = (identityId) => {

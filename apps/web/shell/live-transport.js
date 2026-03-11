@@ -70,6 +70,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   let offline = false;
   let games = [];
   let gameById = new Map();
+  const lastEventSeqByGameId = new Map();
   const offlinePendingByGameId = new Map();
 
   const withOfflineQuery = (path) => `${path}${path.includes("?") ? "&" : "?"}offline=${offline ? "1" : "0"}`;
@@ -119,6 +120,28 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     });
     games = current;
     return next;
+  };
+
+  const upsertGameSnapshot = ({ game, eventSeq = null }) => {
+    if (!game) {
+      return null;
+    }
+
+    const nextEventSeq = typeof eventSeq === "number" && Number.isFinite(eventSeq) ? eventSeq : null;
+    const currentEventSeq = nextEventSeq !== null ? lastEventSeqByGameId.get(game.id) ?? 0 : null;
+    if (nextEventSeq !== null && currentEventSeq !== null && nextEventSeq < currentEventSeq) {
+      return gameById.get(game.id) ?? null;
+    }
+
+    const next = upsertGame(game);
+    if (nextEventSeq !== null) {
+      lastEventSeqByGameId.set(next.id, nextEventSeq);
+    }
+    return next;
+  };
+
+  const applyLiveGameUpdate = ({ game, eventSeq = null }) => {
+    return upsertGameSnapshot({ game, eventSeq });
   };
 
   const queueOfflineMutation = (gameId, mutation) => {
@@ -278,7 +301,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       },
     );
     const body = await mustOk(response);
-    return upsertGame(body.game);
+    return upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
   };
 
   const createGame = async ({ playgroundMode = false, offlineLocal = false } = {}) => {
@@ -306,7 +329,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId, mode, inviteFromRole, inviteToken }),
     });
     const body = await mustOk(response);
-    return { ...body, game: upsertGame(body.game) };
+    return { ...body, game: upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }) };
   };
 
   const playAsBothPlayers = async ({ gameId }) => {
@@ -316,7 +339,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId }),
     });
     const body = await mustOk(response);
-    return { ...body, game: upsertGame(body.game) };
+    return { ...body, game: upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }) };
   };
 
   const approvePendingRequest = async ({ gameId, requesterIdentityId }) => {
@@ -326,7 +349,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId, requesterIdentityId }),
     });
     const body = await mustOk(response);
-    return { ...body, game: upsertGame(body.game) };
+    return { ...body, game: upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }) };
   };
 
   const addMove = async ({ gameId, notation }) => {
@@ -357,7 +380,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     });
     const body = await mustOk(response);
     if (body.game) {
-      upsertGame(body.game);
+      upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
     }
     return body;
   };
@@ -370,7 +393,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     });
     const body = await mustOk(response);
     if (body.game) {
-      upsertGame(body.game);
+      upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
     }
     return body;
   };
@@ -383,7 +406,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     });
     const body = await mustOk(response);
     if (body.game) {
-      upsertGame(body.game);
+      upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
     }
     return body;
   };
@@ -405,7 +428,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId }),
     });
     const body = await mustOk(response);
-    return { ...body, game: upsertGame(body.game) };
+    return { ...body, game: upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }) };
   };
 
   const selectHistoryMove = async ({ gameId, moveIndex }) => {
@@ -415,7 +438,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId, moveIndex }),
     });
     const body = await mustOk(response);
-    return upsertGame(body.game);
+    return upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
   };
 
   const returnToLive = async ({ gameId }) => {
@@ -425,17 +448,14 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId }),
     });
     const body = await mustOk(response);
-    return upsertGame(body.game);
+    return upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
   };
 
   const setParticipantConnected = async ({ gameId, role, connected }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/presence`), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, role, connected }),
-    });
-    const body = await mustOk(response);
-    return upsertGame(body.game);
+    void gameId;
+    void role;
+    void connected;
+    throw new Error("presence_http_removed");
   };
 
   const goOnlineGame = async ({ gameId, confirmed }) => {
@@ -445,7 +465,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId, confirmed }),
     });
     const body = await mustOk(response);
-    return upsertGame(body.game);
+    return upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
   };
 
   const listGames = () => games.map((game) => applyClientOfflineViewState(game));
@@ -464,6 +484,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const getIdentityId = () => identityId;
+  const getLastEventSeq = (gameId) => lastEventSeqByGameId.get(gameId) ?? 0;
 
   return {
     refreshGames,
@@ -481,6 +502,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     selectHistoryMove,
     returnToLive,
     setParticipantConnected,
+    applyLiveGameUpdate,
+    getLastEventSeq,
     goOnlineGame,
     listGames,
     getGameViewModel,

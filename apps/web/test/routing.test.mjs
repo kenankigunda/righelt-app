@@ -50,14 +50,14 @@ test("routing builds playground path distinctly from shell routes", () => {
 });
 
 test("routing distinguishes live sync routes from passive refresh routes", () => {
-  assert.equal(shouldLiveSyncRoute({ name: "home" }), true);
+  assert.equal(shouldLiveSyncRoute({ name: "home" }), false);
   assert.equal(shouldLiveSyncRoute({ name: "game", gameId: "game-1" }), true);
-  assert.equal(shouldLiveSyncRoute({ name: "invite", inviteToken: "token-123" }), false);
+  assert.equal(shouldLiveSyncRoute({ name: "invite", inviteToken: "token-123" }), true);
   assert.equal(shouldLiveSyncRoute({ name: "tutorial" }), false);
 
   assert.equal(shouldPassiveRefreshRoute({ name: "home" }), true);
-  assert.equal(shouldPassiveRefreshRoute({ name: "game", gameId: "game-1" }), true);
-  assert.equal(shouldPassiveRefreshRoute({ name: "invite", inviteToken: "token-123" }), true);
+  assert.equal(shouldPassiveRefreshRoute({ name: "game", gameId: "game-1" }), false);
+  assert.equal(shouldPassiveRefreshRoute({ name: "invite", inviteToken: "token-123" }), false);
   assert.equal(shouldPassiveRefreshRoute({ name: "not-found" }), false);
 });
 
