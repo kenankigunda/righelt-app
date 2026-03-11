@@ -18,6 +18,15 @@
 - Cycle 2 runnable after `S1` merge: `S2`, `S3`
 - Cycle 3 runnable after `S2` + `S3` merge: `S4`
 
+## Kickoff Execution
+- Integration branch created: `codex/f-032-live-authority-integration`
+- Kickoff commit: `a071e5f` (`Add F-032 orchestration kickoff`)
+- Stream worktrees initialized:
+  - `../righelt-F-032-live-authority-S1` -> `codex/F-032-live-authority-S1`
+  - `../righelt-F-032-live-authority-S2` -> `codex/F-032-live-authority-S2`
+  - `../righelt-F-032-live-authority-S3` -> `codex/F-032-live-authority-S3`
+  - `../righelt-F-032-live-authority-S4` -> `codex/F-032-live-authority-S4`
+
 ## Status Table
 | Stream | Status | Commit | Gate State | Notes |
 |---|---|---|---|---|
@@ -44,7 +53,8 @@
 
 ### S1
 Progress:
-- Orchestration kickoff artifact created in plan; stream brief to define the new DO-backed contracts, persistence schema, and harness updates.
+- Orchestration kickoff artifacts created and committed on the integration branch.
+- S1 worktree and branch initialized and ready for dispatch.
 
 Validation:
 - Manifest rules verified by inspection against `AGENTS.md` and `$orchestrator` schema.
@@ -53,7 +63,7 @@ Blockers:
 - None at kickoff.
 
 Next:
-- Materialize stream brief and initialize worktree/branch before dispatch.
+- Dispatch S1 on its dedicated worktree.
 
 ### S2
 Progress:
