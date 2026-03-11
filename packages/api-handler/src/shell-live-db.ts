@@ -1,11 +1,11 @@
 import type { ServerEvent } from "../../shared-types/src/events";
-import type { JoinRequest, ShellGame } from "./shell-live-core";
+import type { JoinRequest, LiveGame } from "./shell-live-core";
 
-const SHELL_LIVE_GAMES_TABLE = "shell_live_games";
-const SHELL_LIVE_INVITES_TABLE = "shell_live_invites";
-const SHELL_LIVE_EVENTS_TABLE = "shell_live_events";
-const SHELL_LIVE_PARTICIPANTS_TABLE = "shell_live_participants";
-const SHELL_LIVE_JOIN_REQUESTS_TABLE = "shell_live_join_requests";
+const LIVE_GAMES_TABLE = "live_games";
+const LIVE_INVITES_TABLE = "live_invites";
+const LIVE_EVENTS_TABLE = "live_events";
+const LIVE_PARTICIPANTS_TABLE = "live_participants";
+const LIVE_JOIN_REQUESTS_TABLE = "live_join_requests";
 
 type D1RunResult = {
   success: boolean;
@@ -29,13 +29,13 @@ export type D1DatabaseLike = {
   prepare: (query: string) => D1Statement;
 };
 
-export type ShellLiveEnv = {
+export type LiveGameEnv = {
   DB: D1DatabaseLike;
 };
 
-export const loadGameProjection = async (env: ShellLiveEnv, gameId: string): Promise<{ game: ShellGame; eventSeq: number } | null> => {
+export const loadGameProjection = async (env: LiveGameEnv, gameId: string): Promise<{ game: LiveGame; eventSeq: number } | null> => {
   const row = await env.DB.prepare(
-    `SELECT state_json, event_seq FROM ${SHELL_LIVE_GAMES_TABLE} WHERE game_id = ?1`,
+    `SELECT state_json, event_seq FROM ${LIVE_GAMES_TABLE} WHERE game_id = ?1`,
   )
     .bind(gameId)
     .first<{ state_json: string; event_seq: number }>();
@@ -43,27 +43,27 @@ export const loadGameProjection = async (env: ShellLiveEnv, gameId: string): Pro
     return null;
   }
   return {
-    game: JSON.parse(row.state_json) as ShellGame,
+    game: JSON.parse(row.state_json) as LiveGame,
     eventSeq: Number(row.event_seq || 0),
   };
 };
 
-export const listVisibleGameProjections = async (env: ShellLiveEnv): Promise<ShellGame[]> => {
+export const listVisibleGameProjections = async (env: LiveGameEnv): Promise<LiveGame[]> => {
   const result = await env.DB.prepare(
-    `SELECT state_json FROM ${SHELL_LIVE_GAMES_TABLE}
+    `SELECT state_json FROM ${LIVE_GAMES_TABLE}
      WHERE offline_local = 0
      ORDER BY latest_activity_at DESC, created_at DESC`,
   ).all<{ state_json: string }>();
-  return (result.results ?? []).map((row) => JSON.parse(row.state_json) as ShellGame);
+  return (result.results ?? []).map((row) => JSON.parse(row.state_json) as LiveGame);
 };
 
 export const saveProjection = async (
-  env: ShellLiveEnv,
-  game: ShellGame,
+  env: LiveGameEnv,
+  game: LiveGame,
   eventSeq: number,
 ) => {
   await env.DB.prepare(
-    `INSERT INTO ${SHELL_LIVE_GAMES_TABLE} (game_id, created_at, updated_at, latest_activity_at, offline_local, state_json, event_seq)
+    `INSERT INTO ${LIVE_GAMES_TABLE} (game_id, created_at, updated_at, latest_activity_at, offline_local, state_json, event_seq)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
      ON CONFLICT(game_id) DO UPDATE SET
        updated_at = excluded.updated_at,
@@ -84,7 +84,7 @@ export const saveProjection = async (
     .run();
 };
 
-export const saveInviteTokens = async (env: ShellLiveEnv, game: ShellGame) => {
+export const saveInviteTokens = async (env: LiveGameEnv, game: LiveGame) => {
   const entries = [
     [game.inviteTokens.viewer, "Viewer"],
     [game.inviteTokens.player1, "Player 1"],
@@ -93,7 +93,7 @@ export const saveInviteTokens = async (env: ShellLiveEnv, game: ShellGame) => {
   await Promise.all(
     entries.map(([token, sharedByRole]) =>
       env.DB.prepare(
-        `INSERT INTO ${SHELL_LIVE_INVITES_TABLE} (token, game_id, shared_by_role, created_at)
+        `INSERT INTO ${LIVE_INVITES_TABLE} (token, game_id, shared_by_role, created_at)
          VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(token) DO UPDATE SET
            game_id = excluded.game_id,
@@ -107,11 +107,11 @@ export const saveInviteTokens = async (env: ShellLiveEnv, game: ShellGame) => {
 };
 
 export const resolveInvite = async (
-  env: ShellLiveEnv,
+  env: LiveGameEnv,
   token: string,
 ): Promise<{ gameId: string; sharedByRole: "Viewer" | "Player 1" | "Player 2" } | null> => {
   const row = await env.DB.prepare(
-    `SELECT game_id, shared_by_role FROM ${SHELL_LIVE_INVITES_TABLE} WHERE token = ?1`,
+    `SELECT game_id, shared_by_role FROM ${LIVE_INVITES_TABLE} WHERE token = ?1`,
   )
     .bind(token)
     .first<{ game_id: string; shared_by_role: "Viewer" | "Player 1" | "Player 2" }>();
@@ -124,18 +124,18 @@ export const resolveInvite = async (
   };
 };
 
-export const replaceParticipants = async (env: ShellLiveEnv, game: ShellGame) => {
-  await env.DB.prepare(`DELETE FROM ${SHELL_LIVE_PARTICIPANTS_TABLE} WHERE game_id = ?1`).bind(game.id).run();
+export const replaceParticipants = async (env: LiveGameEnv, game: LiveGame) => {
+  await env.DB.prepare(`DELETE FROM ${LIVE_PARTICIPANTS_TABLE} WHERE game_id = ?1`).bind(game.id).run();
   const participants = [
     game.player1 ? { role: "Player 1", participant: game.player1 } : null,
     game.player2 ? { role: "Player 2", participant: game.player2 } : null,
     ...game.viewers.map((participant) => ({ role: "Viewer" as const, participant })),
-  ].filter(Boolean) as Array<{ role: "Player 1" | "Player 2" | "Viewer"; participant: ShellGame["player1"] & { identityId: string } }>;
+  ].filter(Boolean) as Array<{ role: "Player 1" | "Player 2" | "Viewer"; participant: LiveGame["player1"] & { identityId: string } }>;
 
   await Promise.all(
     participants.map(({ role, participant }) =>
       env.DB.prepare(
-        `INSERT INTO ${SHELL_LIVE_PARTICIPANTS_TABLE}
+        `INSERT INTO ${LIVE_PARTICIPANTS_TABLE}
            (game_id, identity_id, role, joined_at, last_heartbeat_at, connected, session_count)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
       )
@@ -153,12 +153,12 @@ export const replaceParticipants = async (env: ShellLiveEnv, game: ShellGame) =>
   );
 };
 
-export const replaceJoinRequests = async (env: ShellLiveEnv, game: ShellGame) => {
-  await env.DB.prepare(`DELETE FROM ${SHELL_LIVE_JOIN_REQUESTS_TABLE} WHERE game_id = ?1`).bind(game.id).run();
+export const replaceJoinRequests = async (env: LiveGameEnv, game: LiveGame) => {
+  await env.DB.prepare(`DELETE FROM ${LIVE_JOIN_REQUESTS_TABLE} WHERE game_id = ?1`).bind(game.id).run();
   await Promise.all(
     game.pendingJoinRequests.map((request: JoinRequest) =>
       env.DB.prepare(
-        `INSERT INTO ${SHELL_LIVE_JOIN_REQUESTS_TABLE}
+        `INSERT INTO ${LIVE_JOIN_REQUESTS_TABLE}
            (game_id, requester_identity_id, requested_seat, source, status, requested_at, resolved_at, resolved_by)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
       )
@@ -177,9 +177,9 @@ export const replaceJoinRequests = async (env: ShellLiveEnv, game: ShellGame) =>
   );
 };
 
-export const appendEvent = async (env: ShellLiveEnv, gameId: string, event: ServerEvent & { eventSeq: number }) => {
+export const appendEvent = async (env: LiveGameEnv, gameId: string, event: ServerEvent & { eventSeq: number }) => {
   await env.DB.prepare(
-    `INSERT INTO ${SHELL_LIVE_EVENTS_TABLE}
+    `INSERT INTO ${LIVE_EVENTS_TABLE}
        (game_id, event_seq, event_type, actor_identity_id, created_at, payload_json)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
   )
@@ -194,9 +194,9 @@ export const appendEvent = async (env: ShellLiveEnv, gameId: string, event: Serv
     .run();
 };
 
-export const loadEventsAfter = async (env: ShellLiveEnv, gameId: string, lastEventSeq: number): Promise<ServerEvent[]> => {
+export const loadEventsAfter = async (env: LiveGameEnv, gameId: string, lastEventSeq: number): Promise<ServerEvent[]> => {
   const result = await env.DB.prepare(
-    `SELECT payload_json FROM ${SHELL_LIVE_EVENTS_TABLE}
+    `SELECT payload_json FROM ${LIVE_EVENTS_TABLE}
      WHERE game_id = ?1 AND event_seq > ?2
      ORDER BY event_seq ASC`,
   )
@@ -206,8 +206,8 @@ export const loadEventsAfter = async (env: ShellLiveEnv, gameId: string, lastEve
 };
 
 export const persistGameState = async (
-  env: ShellLiveEnv,
-  game: ShellGame,
+  env: LiveGameEnv,
+  game: LiveGame,
   eventSeq: number,
   event?: (ServerEvent & { eventSeq: number }) | null,
 ) => {

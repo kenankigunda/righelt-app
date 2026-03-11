@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { handleApiRequest } from "../src/index.ts";
-import { __resetShellLiveStateForTests } from "../src/shell-live.ts";
+import { __resetLiveGameStateForTests } from "../src/shell-live.ts";
 import { createFakeD1 } from "./support/fake-d1.mjs";
 import { createFakeGameRooms } from "./support/fake-game-rooms.mjs";
 
@@ -19,7 +19,7 @@ const req = (path, method = "GET", body = null) =>
   });
 
 test.beforeEach(() => {
-  __resetShellLiveStateForTests();
+  __resetLiveGameStateForTests();
   env.DB.reset();
   env.GAME_ROOMS.reset();
 });
@@ -155,14 +155,14 @@ test("live transport: invite and game resolution survive process-local cache res
   const gameId = createBody.game.id;
   const inviteToken = createBody.game.inviteToken;
 
-  __resetShellLiveStateForTests();
+  __resetLiveGameStateForTests();
 
   const inviteResolve = await handleApiRequest(req(`/api/shell/invites/${inviteToken}`), env);
   const inviteBody = await inviteResolve.json();
   assert.equal(inviteResolve.status, 200);
   assert.equal(inviteBody.gameId, gameId);
 
-  __resetShellLiveStateForTests();
+  __resetLiveGameStateForTests();
 
   const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-b&openAsViewer=1`), env);
   const openBody = await open.json();

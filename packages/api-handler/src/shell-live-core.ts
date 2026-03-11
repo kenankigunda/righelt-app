@@ -49,7 +49,7 @@ export type TurnEntry = {
   lastMoveAt: string | null;
 };
 
-export type ShellGame = {
+export type LiveGame = {
   id: string;
   createdAt: string;
   lastMoveAt: string | null;
@@ -100,9 +100,9 @@ export const nextGameId = () => `game-${createInviteToken()}`;
 export const getSeatForSide = (side: GameState["sideToMove"]): "Player 1" | "Player 2" => (side === "P1" ? "Player 1" : "Player 2");
 export const getNextSeat = (seat: "Player 1" | "Player 2"): "Player 1" | "Player 2" => (seat === "Player 1" ? "Player 2" : "Player 1");
 export const getSideForSeat = (seat: "Player 1" | "Player 2"): GameState["sideToMove"] => (seat === "Player 1" ? "P1" : "P2");
-export const getSideToMoveSeat = (game: ShellGame): "Player 1" | "Player 2" =>
+export const getSideToMoveSeat = (game: LiveGame): "Player 1" | "Player 2" =>
   game.board.state.sideToMove === "P1" ? "Player 1" : "Player 2";
-export const getActiveTurn = (game: ShellGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
+export const getActiveTurn = (game: LiveGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
 
 export const asIdentity = (value: unknown) => (typeof value === "string" && value.trim().length > 0 ? value.trim() : null);
 export const asGameState = (value: unknown): GameState | null =>
@@ -110,7 +110,7 @@ export const asGameState = (value: unknown): GameState | null =>
 export const asAction = (value: unknown): Action | null =>
   value && typeof value === "object" && typeof (value as Action).type === "string" ? (value as Action) : null;
 
-export const addNotification = (game: ShellGame, message: string) => {
+export const addNotification = (game: LiveGame, message: string) => {
   game.notifications.unshift(message);
   if (game.notifications.length > 50) {
     game.notifications = game.notifications.slice(0, 50);
@@ -127,7 +127,7 @@ export const createInitialGame = ({
   identityId: string;
   playgroundMode: boolean;
   offlineLocal: boolean;
-}): ShellGame => {
+}): LiveGame => {
   const initial = resolveToStability(createInitialState(), { artifactMode: "full" });
   const createdAt = now();
   return {
@@ -178,17 +178,17 @@ export const createInitialGame = ({
   };
 };
 
-export const findRoleForIdentity = (game: ShellGame, identityId: string): "Player 1" | "Player 2" | "Viewer" | "Guest" => {
+export const findRoleForIdentity = (game: LiveGame, identityId: string): "Player 1" | "Player 2" | "Viewer" | "Guest" => {
   if (game.player1?.identityId === identityId) return "Player 1";
   if (game.player2?.identityId === identityId) return "Player 2";
   if (game.viewers.some((viewer) => viewer.identityId === identityId)) return "Viewer";
   return "Guest";
 };
 
-export const getSeatIdentity = (game: ShellGame, seat: "Player 1" | "Player 2"): string | null =>
+export const getSeatIdentity = (game: LiveGame, seat: "Player 1" | "Player 2"): string | null =>
   seat === "Player 1" ? game.player1?.identityId ?? null : game.player2?.identityId ?? null;
 
-export const getApproverIdentityForSeat = (game: ShellGame, seat: "Player 1" | "Player 2"): string | null =>
+export const getApproverIdentityForSeat = (game: LiveGame, seat: "Player 1" | "Player 2"): string | null =>
   seat === "Player 1" ? game.player2?.identityId ?? null : game.player1?.identityId ?? null;
 
 export const getControlSeatForTurn = (
@@ -205,7 +205,7 @@ export const getControlSeatForTurn = (
   return turnOwnerSeat;
 };
 
-export const ensureViewer = (game: ShellGame, identityId: string, sessionCount = 0) => {
+export const ensureViewer = (game: LiveGame, identityId: string, sessionCount = 0) => {
   const existing = game.viewers.find((viewer) => viewer.identityId === identityId);
   if (existing) {
     existing.connected = sessionCount > 0 || existing.connected;
@@ -226,12 +226,12 @@ export const ensureViewer = (game: ShellGame, identityId: string, sessionCount =
   return true;
 };
 
-export const removeViewer = (game: ShellGame, identityId: string) => {
+export const removeViewer = (game: LiveGame, identityId: string) => {
   game.viewers = game.viewers.filter((viewer) => viewer.identityId !== identityId);
 };
 
 export const promoteIdentityToSeat = (
-  game: ShellGame,
+  game: LiveGame,
   seat: "Player 1" | "Player 2",
   identityId: string,
   sessionCount = 0,
@@ -254,17 +254,17 @@ export const promoteIdentityToSeat = (
   }
 };
 
-export const dismissCompetingJoinRequests = (game: ShellGame, acceptedIdentityId: string) => {
+export const dismissCompetingJoinRequests = (game: LiveGame, acceptedIdentityId: string) => {
   game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.identityId === acceptedIdentityId);
 };
 
-const canOperateOfflinePlaygroundTurn = (game: ShellGame, identityId: string) =>
+const canOperateOfflinePlaygroundTurn = (game: LiveGame, identityId: string) =>
   game.offlineLocal &&
   game.playgroundMode &&
   game.player1?.identityId === identityId &&
   game.player2?.identityId === identityId;
 
-const getJoinAsPlayerDisabledReason = (game: ShellGame, offline: boolean, myRole: string) => {
+const getJoinAsPlayerDisabledReason = (game: LiveGame, offline: boolean, myRole: string) => {
   if (myRole === "Player 1" || myRole === "Player 2") {
     return "You are already joined as a player.";
   }
@@ -280,7 +280,7 @@ const getJoinAsPlayerDisabledReason = (game: ShellGame, offline: boolean, myRole
   return null;
 };
 
-const getJoinAsViewerDisabledReason = (game: ShellGame, offline: boolean, myRole: string) => {
+const getJoinAsViewerDisabledReason = (game: LiveGame, offline: boolean, myRole: string) => {
   if (myRole === "Viewer") {
     return "You are already joined as a viewer.";
   }
@@ -293,7 +293,7 @@ const getJoinAsViewerDisabledReason = (game: ShellGame, offline: boolean, myRole
   return null;
 };
 
-export const withViewModel = (game: ShellGame, identityId: string, offline = false) => {
+export const withViewModel = (game: LiveGame, identityId: string, offline = false) => {
   const myRole = findRoleForIdentity(game, identityId);
   const historyIndex = typeof game.historyIndexByIdentity[identityId] === "number" ? game.historyIndexByIdentity[identityId] : null;
   const inHistoryMode = typeof historyIndex === "number";
@@ -411,7 +411,7 @@ const collectRemovedPieceNotices = (
   return notices;
 };
 
-const renumberHistory = (game: ShellGame) => {
+const renumberHistory = (game: LiveGame) => {
   game.moves.forEach((move, index) => {
     move.index = index;
   });
@@ -432,7 +432,7 @@ const pickLegalAction = (state: GameState): Action | null => {
   return legal[0] as Action;
 };
 
-export const applyServerAction = (game: ShellGame, action: Action, notation?: string) => {
+export const applyServerAction = (game: LiveGame, action: Action, notation?: string) => {
   const activeTurn = getActiveTurn(game);
   if (!activeTurn) {
     return { ok: false as const, error: "turn_not_initialized" };
@@ -473,7 +473,7 @@ export const applyServerAction = (game: ShellGame, action: Action, notation?: st
   return { ok: true as const, move, state: next, removedPieces };
 };
 
-export const applyServerMove = (game: ShellGame, notation?: string) => {
+export const applyServerMove = (game: LiveGame, notation?: string) => {
   const stable = resolveToStability(game.board.state, { artifactMode: "full" });
   const action = pickLegalAction(stable);
   if (!action) {
@@ -482,7 +482,7 @@ export const applyServerMove = (game: ShellGame, notation?: string) => {
   return applyServerAction(game, action, notation);
 };
 
-export const endServerTurn = (game: ShellGame) => {
+export const endServerTurn = (game: LiveGame) => {
   const activeTurn = getActiveTurn(game);
   if (!activeTurn) {
     return { ok: false as const, error: "turn_not_initialized" };

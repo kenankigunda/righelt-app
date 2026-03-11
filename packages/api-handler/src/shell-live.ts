@@ -21,7 +21,7 @@ type DurableObjectNamespaceLike = {
   get: (id: DurableObjectIdLike) => DurableObjectStubLike;
 };
 
-export type ShellLiveEnv = {
+export type LiveGameRequestEnv = {
   DB: D1DatabaseLike;
   GAME_ROOMS: DurableObjectNamespaceLike;
 };
@@ -45,10 +45,10 @@ const parseBody = async (request: Request): Promise<Record<string, unknown>> => 
   }
 };
 
-const roomStubForGame = (env: ShellLiveEnv, gameId: string) => env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(gameId));
+const roomStubForGame = (env: LiveGameRequestEnv, gameId: string) => env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(gameId));
 
 const fetchGameRoom = async (
-  env: ShellLiveEnv,
+  env: LiveGameRequestEnv,
   gameId: string,
   path: string,
   init: RequestInit,
@@ -58,11 +58,11 @@ const fetchGameRoom = async (
   return roomStubForGame(env, gameId).fetch(new Request(`https://game-room${path}`, { ...init, headers }));
 };
 
-export const __resetShellLiveStateForTests = () => {
+export const __resetLiveGameStateForTests = () => {
   // No process-local live state remains in the HTTP routing layer.
 };
 
-export const handleShellLiveWebSocketUpgrade = async (request: Request, env: ShellLiveEnv): Promise<Response | null> => {
+export const handleLiveGameWebSocketUpgrade = async (request: Request, env: LiveGameRequestEnv): Promise<Response | null> => {
   const url = new URL(request.url);
   const route = parsePath(url.pathname);
   if (!route || request.method !== "GET") {
@@ -77,9 +77,9 @@ export const handleShellLiveWebSocketUpgrade = async (request: Request, env: She
   return null;
 };
 
-export const handleShellLiveRequest = async (
+export const handleLiveGameRequest = async (
   request: Request,
-  env: ShellLiveEnv,
+  env: LiveGameRequestEnv,
 ): Promise<{ handled: boolean; status: number; body: Record<string, unknown>; cacheControl: string } | null> => {
   const url = new URL(request.url);
   const route = parsePath(url.pathname);

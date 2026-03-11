@@ -31,10 +31,10 @@ import {
   promoteIdentityToSeat,
   removeViewer,
   type JoinRequest,
-  type ShellGame,
+  type LiveGame,
   withViewModel,
 } from "./shell-live-core";
-import { loadEventsAfter, loadGameProjection, persistGameState, type ShellLiveEnv } from "./shell-live-db";
+import { loadEventsAfter, loadGameProjection, persistGameState, type LiveGameEnv } from "./shell-live-db";
 
 const HEARTBEAT_TIMEOUT_MS = 35_000;
 
@@ -72,20 +72,20 @@ const eventForSession = (event: ServerEvent, identityId: string) => {
   }
   return {
     ...event,
-    game: withViewModel(event.game as ShellGame, identityId),
+    game: withViewModel(event.game as LiveGame, identityId),
   };
 };
 
 export class GameRoomDO {
   private readonly state: DurableObjectStateLike;
-  private readonly env: ShellLiveEnv;
-  private game: ShellGame | null = null;
+  private readonly env: LiveGameEnv;
+  private game: LiveGame | null = null;
   private requestedGameId: string | null = null;
   private eventSeq = 0;
   private readonly sessions = new Map<WebSocket, SessionRecord>();
   private heartbeatSweepTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(state: DurableObjectStateLike, env: ShellLiveEnv) {
+  constructor(state: DurableObjectStateLike, env: LiveGameEnv) {
     this.state = state;
     this.env = env;
   }
@@ -586,9 +586,9 @@ export class GameRoomDO {
 
   private async commit(
     input:
-      | { type: "event_appended"; reason: string; game: ShellGame }
-      | { type: "join_request_created"; requesterIdentityId: string; requestedSeat: "Player 1" | "Player 2"; game: ShellGame }
-      | { type: "join_request_resolved"; requesterIdentityId: string; accepted: boolean; seat: "Player 1" | "Player 2" | null; game: ShellGame },
+      | { type: "event_appended"; reason: string; game: LiveGame }
+      | { type: "join_request_created"; requesterIdentityId: string; requestedSeat: "Player 1" | "Player 2"; game: LiveGame }
+      | { type: "join_request_resolved"; requesterIdentityId: string; accepted: boolean; seat: "Player 1" | "Player 2" | null; game: LiveGame },
   ) {
     const event =
       input.type === "event_appended"

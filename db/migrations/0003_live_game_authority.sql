@@ -1,6 +1,6 @@
-ALTER TABLE shell_live_games ADD COLUMN event_seq INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE live_games ADD COLUMN event_seq INTEGER NOT NULL DEFAULT 0;
 
-CREATE TABLE IF NOT EXISTS shell_live_events (
+CREATE TABLE IF NOT EXISTS live_events (
   game_id TEXT NOT NULL,
   event_seq INTEGER NOT NULL,
   event_type TEXT NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS shell_live_events (
   PRIMARY KEY (game_id, event_seq)
 );
 
-CREATE TABLE IF NOT EXISTS shell_live_participants (
+CREATE TABLE IF NOT EXISTS live_participants (
   game_id TEXT NOT NULL,
   identity_id TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('Player 1', 'Player 2', 'Viewer')),
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS shell_live_participants (
   PRIMARY KEY (game_id, identity_id)
 );
 
-CREATE TABLE IF NOT EXISTS shell_live_join_requests (
+CREATE TABLE IF NOT EXISTS live_join_requests (
   game_id TEXT NOT NULL,
   requester_identity_id TEXT NOT NULL,
   requested_seat TEXT NOT NULL CHECK (requested_seat IN ('Player 1', 'Player 2')),
@@ -33,11 +33,11 @@ CREATE TABLE IF NOT EXISTS shell_live_join_requests (
   PRIMARY KEY (game_id, requester_identity_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_shell_live_events_game_seq
-  ON shell_live_events(game_id, event_seq);
+CREATE INDEX IF NOT EXISTS idx_live_events_game_seq
+  ON live_events(game_id, event_seq);
 
-CREATE INDEX IF NOT EXISTS idx_shell_live_participants_game
-  ON shell_live_participants(game_id, role);
+CREATE INDEX IF NOT EXISTS idx_live_participants_game
+  ON live_participants(game_id, role);
 
-CREATE INDEX IF NOT EXISTS idx_shell_live_join_requests_game
-  ON shell_live_join_requests(game_id, status);
+CREATE INDEX IF NOT EXISTS idx_live_join_requests_game
+  ON live_join_requests(game_id, status);

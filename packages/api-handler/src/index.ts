@@ -6,7 +6,7 @@ import { listLegalActions, validateAction } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import type { Action, GameState } from "../../game-engine/src/types";
 import { GameRoomDO } from "./game-room-do";
-import { handleShellLiveRequest, handleShellLiveWebSocketUpgrade } from "./shell-live";
+import { handleLiveGameRequest, handleLiveGameWebSocketUpgrade } from "./shell-live";
 
 type D1RunResult = {
   success: boolean;
@@ -256,11 +256,11 @@ const enumeratePieceActionPreviews = (state: GameState, pieceId: string): PieceM
 
 export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<Response> => {
   const url = new URL(request.url);
-  const websocketUpgrade = await handleShellLiveWebSocketUpgrade(request, env);
+  const websocketUpgrade = await handleLiveGameWebSocketUpgrade(request, env);
   if (websocketUpgrade) {
     return websocketUpgrade;
   }
-  const liveResponse = await handleShellLiveRequest(request, env);
+  const liveResponse = await handleLiveGameRequest(request, env);
   if (liveResponse?.handled) {
     return json(liveResponse.body, liveResponse.status, liveResponse.cacheControl);
   }
