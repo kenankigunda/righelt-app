@@ -11,24 +11,24 @@ Notes:
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
+| `codex/client-move-generation` | Yes | `origin/codex/client-move-generation` exists, up to date (`=`) | `-` | No code diff; tip is already merged and branch is 30 commits behind `main` |
+| `codex/investigation-20260311-branch-audit` | Yes | `origin/codex/investigation-20260311-branch-audit` exists, up to date (`=`) | `-` | No code diff; it currently points at the same commit as `main` |
+| `codex/invite-connection-flow-fix-restart` | Yes | `origin/codex/invite-connection-flow-fix-restart` exists, up to date (`=`) | `-` | No code diff; tip is already merged and branch is 22 commits behind `main` |
 | `main` | n/a | `origin/main` exists, up to date (`=`) | `-` | Baseline |
-| `codex/client-move-generation` | Yes | `origin/codex/client-move-generation` exists, up to date (`=`) | `-` | No code diff; tip is already merged and branch is 25 commits behind `main` |
-| `codex/investigation-20260311` | Yes | `origin/codex/investigation-20260311` exists, up to date (`=`) | `-` | No code diff; it currently points at the same commit as `main` |
-| `codex/invite-connection-flow-fix-restart` | Yes | `origin/codex/invite-connection-flow-fix-restart` exists, up to date (`=`) | `-` | No code diff; tip is already merged and branch is 17 commits behind `main` |
 
 ## (b) Already Merged To `main`, But Checked Out On A Worktree
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
-| `codex/engine-validation-ui` | Yes | `origin/codex/engine-validation-ui` exists, up to date (`=`) | `wt-f466` | No code diff; tip is already merged and branch is 194 commits behind `main` |
-| `codex/history-board-ui` | Yes | `origin/codex/history-board-ui` exists, up to date (`=`) | `wt-5b34` | No code diff; tip is already merged and branch is 6 commits behind `main` |
+| `codex/engine-validation-ui` | Yes | `origin/codex/engine-validation-ui` exists, up to date (`=`) | `wt-f466` | No code diff; tip is already merged and branch is 199 commits behind `main` |
+| `codex/history-board-ui` | Yes | `origin/codex/history-board-ui` exists, up to date (`=`) | `wt-5b34` | No code diff; tip is already merged and branch is 11 commits behind `main` |
+| `codex/investigation-20260311` | Yes | `origin/codex/investigation-20260311` exists, up to date (`=`) | `primary` | No code diff; it currently points at the same commit as `main` |
 
 ## (c) Not Merged To `main`, But Checked Out On A Worktree
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
 | `codex/computer-player` | No | `origin/codex/computer-player` exists, up to date (`=`) | `wt-b058` | 1 commit ahead; adds `docs/RIGHELT_COMPUTER_PLAYER_PLAN.md` |
-| `codex/investigation-20260311-branch-audit` | No | `origin/codex/investigation-20260311-branch-audit` exists, up to date (`=`) | `primary` | 1 commit ahead; changes `AGENTS.md` and updates `docs/BRANCH_AUDIT.md` |
 
 ## (d) Not Merged To `main`, And Not Checked Out On A Worktree
 
@@ -47,27 +47,27 @@ Notes:
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
-| `codex/board-runtime-portability` | Unknown locally | Remote-only (`origin/codex/board-runtime-portability`) | `-` | No code diff relative to `main`; remote ref is 53 commits behind `main` |
-| `codex/cloudflare-startup-optimizations` | Unknown locally | Remote-only (`origin/codex/cloudflare-startup-optimizations`) | `-` | No code diff relative to `main`; remote ref is 181 commits behind `main` |
-| `codex/engine-core` | Unknown locally | Remote-only (`origin/codex/engine-core`) | `-` | No code diff relative to `main`; remote ref is 212 commits behind `main` |
-| `codex/engine-resolve` | Unknown locally | Remote-only (`origin/codex/engine-resolve`) | `-` | No code diff relative to `main`; remote ref is 203 commits behind `main` |
-| `codex/f-030-shell-integration` | Unknown locally | Remote-only (`origin/codex/f-030-shell-integration`) | `-` | No code diff relative to `main`; remote ref is 120 commits behind `main` |
-| `codex/f-030-shell-orchestration-plan` | Unknown locally | Remote-only (`origin/codex/f-030-shell-orchestration-plan`) | `-` | No code diff relative to `main`; remote ref is 159 commits behind `main` |
-| `codex/f-031-live-transport-integration` | Unknown locally | Remote-only (`origin/codex/f-031-live-transport-integration`) | `-` | No code diff relative to `main`; remote ref is 139 commits behind `main` |
-| `codex/f-031-turn-move-split` | Unknown locally | Remote-only (`origin/codex/f-031-turn-move-split`) | `-` | No code diff relative to `main`; remote ref is 141 commits behind `main` |
-| `codex/fix-shell-rerender-selection` | Unknown locally | Remote-only (`origin/codex/fix-shell-rerender-selection`) | `-` | No code diff relative to `main`; remote ref is 47 commits behind `main` |
-| `codex/game-engine-20260226` | Unknown locally | Remote-only (`origin/codex/game-engine-20260226`) | `-` | No code diff relative to `main`; remote ref is 73 commits behind `main` |
-| `codex/invite-accept-loop-fix` | Unknown locally | Remote-only (`origin/codex/invite-accept-loop-fix`) | `-` | No code diff relative to `main`; remote ref is 35 commits behind `main` |
-| `codex/live-site-debug` | Unknown locally | Remote-only (`origin/codex/live-site-debug`) | `-` | No code diff relative to `main`; remote ref is 52 commits behind `main` |
-| `codex/milestone-2-integration-base` | Unknown locally | Remote-only (`origin/codex/milestone-2-integration-base`) | `-` | No code diff relative to `main`; remote ref is 193 commits behind `main` |
-| `codex/retreat-shell-fix` | Unknown locally | Remote-only (`origin/codex/retreat-shell-fix`) | `-` | No code diff relative to `main`; remote ref is 38 commits behind `main` |
-| `codex/rush-push-fixes` | Unknown locally | Remote-only (`origin/codex/rush-push-fixes`) | `-` | No code diff relative to `main`; remote ref is 170 commits behind `main` |
-| `codex/rush-push-improvements` | Unknown locally | Remote-only (`origin/codex/rush-push-improvements`) | `-` | No code diff relative to `main`; remote ref is 40 commits behind `main` |
-| `codex/test-gap-coverage-pass` | Unknown locally | Remote-only (`origin/codex/test-gap-coverage-pass`) | `-` | No code diff relative to `main`; remote ref is 166 commits behind `main` |
-| `codex/transport-holistic-fix` | Unknown locally | Remote-only (`origin/codex/transport-holistic-fix`) | `-` | No code diff relative to `main`; remote ref is 31 commits behind `main` |
-| `codex/ui-harness-piece-overlays` | Unknown locally | Remote-only (`origin/codex/ui-harness-piece-overlays`) | `-` | No code diff relative to `main`; remote ref is 188 commits behind `main` |
-| `codex/update-engine-test-matrix-v2` | Unknown locally | Remote-only (`origin/codex/update-engine-test-matrix-v2`) | `-` | No code diff relative to `main`; remote ref is 218 commits behind `main` |
-| `codex/webapp-spec-board-independence` | Unknown locally | Remote-only (`origin/codex/webapp-spec-board-independence`) | `-` | No code diff relative to `main`; remote ref is 163 commits behind `main` |
+| `codex/board-runtime-portability` | Unknown locally | Remote-only (`origin/codex/board-runtime-portability`) | `-` | No code diff relative to `main`; remote ref is 58 commits behind `main` |
+| `codex/cloudflare-startup-optimizations` | Unknown locally | Remote-only (`origin/codex/cloudflare-startup-optimizations`) | `-` | No code diff relative to `main`; remote ref is 186 commits behind `main` |
+| `codex/engine-core` | Unknown locally | Remote-only (`origin/codex/engine-core`) | `-` | No code diff relative to `main`; remote ref is 217 commits behind `main` |
+| `codex/engine-resolve` | Unknown locally | Remote-only (`origin/codex/engine-resolve`) | `-` | No code diff relative to `main`; remote ref is 208 commits behind `main` |
+| `codex/f-030-shell-integration` | Unknown locally | Remote-only (`origin/codex/f-030-shell-integration`) | `-` | No code diff relative to `main`; remote ref is 125 commits behind `main` |
+| `codex/f-030-shell-orchestration-plan` | Unknown locally | Remote-only (`origin/codex/f-030-shell-orchestration-plan`) | `-` | No code diff relative to `main`; remote ref is 164 commits behind `main` |
+| `codex/f-031-live-transport-integration` | Unknown locally | Remote-only (`origin/codex/f-031-live-transport-integration`) | `-` | No code diff relative to `main`; remote ref is 144 commits behind `main` |
+| `codex/f-031-turn-move-split` | Unknown locally | Remote-only (`origin/codex/f-031-turn-move-split`) | `-` | No code diff relative to `main`; remote ref is 146 commits behind `main` |
+| `codex/fix-shell-rerender-selection` | Unknown locally | Remote-only (`origin/codex/fix-shell-rerender-selection`) | `-` | No code diff relative to `main`; remote ref is 52 commits behind `main` |
+| `codex/game-engine-20260226` | Unknown locally | Remote-only (`origin/codex/game-engine-20260226`) | `-` | No code diff relative to `main`; remote ref is 78 commits behind `main` |
+| `codex/invite-accept-loop-fix` | Unknown locally | Remote-only (`origin/codex/invite-accept-loop-fix`) | `-` | No code diff relative to `main`; remote ref is 40 commits behind `main` |
+| `codex/live-site-debug` | Unknown locally | Remote-only (`origin/codex/live-site-debug`) | `-` | No code diff relative to `main`; remote ref is 57 commits behind `main` |
+| `codex/milestone-2-integration-base` | Unknown locally | Remote-only (`origin/codex/milestone-2-integration-base`) | `-` | No code diff relative to `main`; remote ref is 198 commits behind `main` |
+| `codex/retreat-shell-fix` | Unknown locally | Remote-only (`origin/codex/retreat-shell-fix`) | `-` | No code diff relative to `main`; remote ref is 43 commits behind `main` |
+| `codex/rush-push-fixes` | Unknown locally | Remote-only (`origin/codex/rush-push-fixes`) | `-` | No code diff relative to `main`; remote ref is 175 commits behind `main` |
+| `codex/rush-push-improvements` | Unknown locally | Remote-only (`origin/codex/rush-push-improvements`) | `-` | No code diff relative to `main`; remote ref is 45 commits behind `main` |
+| `codex/test-gap-coverage-pass` | Unknown locally | Remote-only (`origin/codex/test-gap-coverage-pass`) | `-` | No code diff relative to `main`; remote ref is 171 commits behind `main` |
+| `codex/transport-holistic-fix` | Unknown locally | Remote-only (`origin/codex/transport-holistic-fix`) | `-` | No code diff relative to `main`; remote ref is 36 commits behind `main` |
+| `codex/ui-harness-piece-overlays` | Unknown locally | Remote-only (`origin/codex/ui-harness-piece-overlays`) | `-` | No code diff relative to `main`; remote ref is 193 commits behind `main` |
+| `codex/update-engine-test-matrix-v2` | Unknown locally | Remote-only (`origin/codex/update-engine-test-matrix-v2`) | `-` | No code diff relative to `main`; remote ref is 223 commits behind `main` |
+| `codex/webapp-spec-board-independence` | Unknown locally | Remote-only (`origin/codex/webapp-spec-board-independence`) | `-` | No code diff relative to `main`; remote ref is 168 commits behind `main` |
 
 ## (f) Branches Which Only Exist On The Remote, With Some Code Diff Relative to `main`
 
