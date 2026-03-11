@@ -18,7 +18,4 @@ migrations_dir = "../../db/migrations"
 [[durable_objects.bindings]]
 name = "GAME_ROOMS"
 class_name = "GameRoomDO"
-
-[[migrations]]
-tag = "v1"
-new_sqlite_classes = ["GameRoomDO"]
+script_name = "righelt-game-rooms"

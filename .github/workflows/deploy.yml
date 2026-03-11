@@ -79,6 +79,13 @@ jobs:
         run: |
           pnpm --dir apps/web exec wrangler d1 migrations apply "${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev}" --config wrangler.toml --remote
 
+      - name: Deploy game room Durable Object worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          pnpm exec wrangler deploy --config apps/game-room-worker/wrangler.toml
+
       - name: Deploy Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

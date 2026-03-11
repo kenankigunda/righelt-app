@@ -20,6 +20,7 @@
     "test:api-handler": "tsx --test $(find packages/api-handler/test -name '*.test.mjs' -type f | sort)",
     "test:web": "node --test $(find apps/web/test -name '*.test.mjs' -type f | sort)",
     "cf:set-db": "node scripts/set-d1-binding.mjs",
+    "deploy:game-room-worker": "pnpm exec wrangler deploy --config apps/game-room-worker/wrangler.toml",
     "db:local": "pnpm --dir apps/web exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --persist-to ../../.wrangler/state/local-dev",
     "d1:migrate:dev": "pnpm --dir apps/web exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --persist-to ../../.wrangler/state/local-dev",
     "deploy:web": "pnpm --dir apps/web exec wrangler deploy",

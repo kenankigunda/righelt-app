@@ -23,7 +23,7 @@ if (!dbName || !dbId) {
   process.exit(1);
 }
 
-const targets = ["apps/web/wrangler.toml"];
+const targets = ["apps/web/wrangler.toml", "apps/game-room-worker/wrangler.toml"];
 
 for (const file of targets) {
   const current = readFileSync(file, "utf8");
