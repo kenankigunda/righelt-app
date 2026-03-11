@@ -16,7 +16,6 @@ import {
   isShellRootHash,
   parseRouteFromHash,
   shouldLiveSyncRoute,
-  shouldPassiveRefreshRoute,
 } from "./routes.js";
 import { createTutorialController } from "./tutorial.js";
 
@@ -78,10 +77,9 @@ let mountedSelectionActionKey = null;
 let boardRuntime = null;
 let busy = false;
 let liveSyncConnectedRoute = "";
-let wsStatus = { state: "disconnected", scope: null, gameId: null, reconnectAttempts: 0 };
+let wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
 let lastWsStatusKey = toStableKey(wsStatus);
 let wsLastEvent = "none";
-const WS_RECONCILE_MS = 2000;
 let inviteFeedback = "";
 let inviteFeedbackTimer = null;
 let routeHydrated = false;
@@ -143,22 +141,6 @@ const getCurrentViewedGameId = () => {
     return resolvedInvite.gameId;
   }
   return null;
-};
-
-const syncCurrentIdentityPresence = async (connected) => {
-  const gameId = getCurrentViewedGameId();
-  if (!gameId) {
-    return;
-  }
-  const game = transport.getGameViewModel(gameId);
-  if (!game) {
-    return;
-  }
-  const role = game.myRole;
-  if (role !== "Player 1" && role !== "Player 2" && role !== "Viewer") {
-    return;
-  }
-  await transport.setParticipantConnected({ gameId, role, connected });
 };
 
 const getApprovalRequestKey = (gameId, requesterId) => `${gameId}:${requesterId}`;
@@ -238,7 +220,7 @@ const renderHeader = () => `
       <h1>Righelt Web Shell</h1>
       <p class="small">Identity <span class="mono">${escapeHtml(transport.getIdentityId())}</span></p>
       <p class="small shell-header-status">Live sync: <span class="mono">${escapeHtml(
-        `${wsStatus.state}${wsStatus.scope ? `:${wsStatus.scope}` : ""}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`,
+        `${wsStatus.state}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`,
       )}</span></p>
       <p class="small shell-header-status">Last event: <span class="mono">${escapeHtml(wsLastEvent)}</span></p>
     </div>
@@ -861,13 +843,23 @@ const syncRouteDataPassive = async () => {
 
 const liveSync = createLiveSyncClient({
   identityId: transport.getIdentityId(),
+  getLastEventSeq: () => {
+    const gameId = getCurrentViewedGameId();
+    return gameId ? transport.getLastEventSeq(gameId) : 0;
+  },
   onEvent: (payload) => {
     wsLastEvent = payload?.type
       ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
       : "unknown";
-    if (payload?.type === "game.updated" || payload?.type === "socket.connected") {
-      void syncRouteDataPassive();
-      return;
+    if (
+      (payload?.type === "state_sync" ||
+        payload?.type === "event_appended" ||
+        payload?.type === "presence_changed" ||
+        payload?.type === "join_request_created" ||
+        payload?.type === "join_request_resolved") &&
+      payload?.game
+    ) {
+      transport.applyLiveGameUpdate({ game: payload.game, eventSeq: payload.eventSeq });
     }
     render();
   },
@@ -881,17 +873,21 @@ const liveSync = createLiveSyncClient({
     }
     lastWsStatusKey = statusKey;
     wsStatus = status;
+    if (status.state === "closed" && status.reconnectAttempts >= 3) {
+      void syncRouteDataPassive();
+    }
     render();
   },
 });
 
 const syncLiveChannel = () => {
-  const routeKey =
+  const liveGameId =
     currentRoute.name === "game"
-      ? `game:${currentRoute.gameId}`
-      : currentRoute.name === "home"
-        ? "home"
-        : "none";
+      ? currentRoute.gameId
+      : currentRoute.name === "invite"
+        ? resolvedInvite?.gameId || null
+        : null;
+  const routeKey = liveGameId ? `game:${liveGameId}` : "none";
 
   if (routeKey === liveSyncConnectedRoute && (wsStatus.state === "connected" || wsStatus.state === "connecting")) {
     return;
@@ -903,15 +899,9 @@ const syncLiveChannel = () => {
   if (!shouldLiveSyncRoute(currentRoute)) {
     return;
   }
-
-  if (currentRoute.name === "home") {
+  if (liveGameId) {
     liveSync.resume();
-    liveSync.connectHome();
-    return;
-  }
-  if (currentRoute.name === "game") {
-    liveSync.resume();
-    liveSync.connectGame(currentRoute.gameId);
+    liveSync.connectGame(liveGameId);
   }
 };
 
@@ -920,7 +910,10 @@ const navigateTo = (hash) => {
     currentRoute = parseRouteFromHash(hash);
     routeHydrated = false;
     syncLiveChannel();
-    void withBusy(syncRouteData);
+    void withBusy(async () => {
+      await syncRouteData();
+      syncLiveChannel();
+    });
     return;
   }
   window.location.hash = hash;
@@ -930,13 +923,15 @@ window.addEventListener("hashchange", () => {
   currentRoute = parseRouteFromHash(window.location.hash);
   routeHydrated = false;
   syncLiveChannel();
-  void withBusy(syncRouteData);
+  void withBusy(async () => {
+    await syncRouteData();
+    syncLiveChannel();
+  });
 });
 
 window.addEventListener("online", () => {
   void withBusy(async () => {
     await transport.setOffline(false);
-    void syncCurrentIdentityPresence(true);
     liveSync.resume();
     syncLiveChannel();
     await syncRouteData();
@@ -946,22 +941,11 @@ window.addEventListener("online", () => {
 window.addEventListener("offline", () => {
   void withBusy(async () => {
     await transport.setOffline(true);
-    void syncCurrentIdentityPresence(false);
     liveSync.disconnect();
     liveSyncConnectedRoute = "";
     await syncRouteData();
   });
 });
-
-setInterval(() => {
-  if (document.visibilityState === "hidden") {
-    return;
-  }
-  if (!shouldPassiveRefreshRoute(currentRoute)) {
-    return;
-  }
-  void syncRouteDataPassive();
-}, WS_RECONCILE_MS);
 
 appEl.addEventListener("click", async (event) => {
   const target = event.target;
@@ -1000,7 +984,6 @@ appEl.addEventListener("click", async (event) => {
           await transport.goOnlineGame({ gameId, confirmed });
         }
       }
-      await syncCurrentIdentityPresence(!next);
       window.__righeltOffline = next;
       await transport.setOffline(next);
       await syncRouteData();
@@ -1123,7 +1106,10 @@ const initialRender = async () => {
 
   routeHydrated = false;
   syncLiveChannel();
-  await withBusy(syncRouteData);
+  await withBusy(async () => {
+    await syncRouteData();
+    syncLiveChannel();
+  });
 };
 
 void initialRender();

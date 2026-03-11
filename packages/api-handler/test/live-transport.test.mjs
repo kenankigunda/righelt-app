@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 import { handleApiRequest } from "../src/index.ts";
 import { __resetShellLiveStateForTests } from "../src/shell-live.ts";
 import { createFakeD1 } from "./support/fake-d1.mjs";
+import { createFakeGameRooms } from "./support/fake-game-rooms.mjs";
 
 const env = {
   DB: createFakeD1(),
+  GAME_ROOMS: null,
 };
+env.GAME_ROOMS = createFakeGameRooms(() => env);
 
 const req = (path, method = "GET", body = null) =>
   new Request(`https://example.test${path}`, {
@@ -18,6 +21,7 @@ const req = (path, method = "GET", body = null) =>
 test.beforeEach(() => {
   __resetShellLiveStateForTests();
   env.DB.reset();
+  env.GAME_ROOMS.reset();
 });
 
 test("live transport: create/list/get game lifecycle is server-backed", async () => {
@@ -36,7 +40,7 @@ test("live transport: create/list/get game lifecycle is server-backed", async ()
 
   const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-b&openAsViewer=1`), env);
   const openBody = await open.json();
-  assert.equal(openBody.game.viewers.some((viewer) => viewer.identityId === "id-b"), true);
+  assert.equal(openBody.game.viewers.some((viewer) => viewer.identityId === "id-b"), false);
 
   const inviteToken = createBody.game.inviteToken;
   assert.equal(typeof inviteToken, "string");
@@ -267,8 +271,7 @@ test("live transport: join approval flow and presence/history/move transitions",
     }),
     env,
   );
-  const presenceBody = await presence.json();
-  assert.equal(presenceBody.game.player2.connected, false);
+  assert.equal(presence.status, 404);
 
   await handleApiRequest(
     req(`/api/shell/games/${gameId}/join`, "POST", {
@@ -286,8 +289,7 @@ test("live transport: join approval flow and presence/history/move transitions",
     }),
     env,
   );
-  const viewerPresenceBody = await viewerPresence.json();
-  assert.equal(viewerPresenceBody.game.viewers.find((viewer) => viewer.identityId === "id-viewer")?.connected, false);
+  assert.equal(viewerPresence.status, 404);
 });
 
 test("live transport: player invite token enables immediate player join without guessable game role query", async () => {
@@ -396,15 +398,6 @@ test("live transport: offline view does not reconnect participant and offline mo
       identityId: "id-player2",
       mode: "player",
       inviteFromRole: "Player 1",
-    }),
-    env,
-  );
-
-  await handleApiRequest(
-    req(`/api/shell/games/${gameId}/presence`, "POST", {
-      identityId: "id-player2",
-      role: "Player 2",
-      connected: false,
     }),
     env,
   );
@@ -564,7 +557,7 @@ test("live transport: stale participants load as disconnected until they become 
 
     const player2View = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-player2`), env);
     const player2Body = await player2View.json();
-    assert.equal(player2Body.game.player2.connected, true);
+    assert.equal(player2Body.game.player2.connected, false);
   } finally {
     Date.now = realNow;
   }

@@ -70,6 +70,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   let offline = false;
   let games = [];
   let gameById = new Map();
+  const lastEventSeqByGameId = new Map();
   const offlinePendingByGameId = new Map();
 
   const withOfflineQuery = (path) => `${path}${path.includes("?") ? "&" : "?"}offline=${offline ? "1" : "0"}`;
@@ -118,6 +119,14 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       return rightTs.localeCompare(leftTs);
     });
     games = current;
+    return next;
+  };
+
+  const applyLiveGameUpdate = ({ game, eventSeq = null }) => {
+    const next = upsertGame(game);
+    if (typeof eventSeq === "number" && Number.isFinite(eventSeq)) {
+      lastEventSeqByGameId.set(next.id, eventSeq);
+    }
     return next;
   };
 
@@ -429,13 +438,10 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const setParticipantConnected = async ({ gameId, role, connected }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/presence`), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, role, connected }),
-    });
-    const body = await mustOk(response);
-    return upsertGame(body.game);
+    void gameId;
+    void role;
+    void connected;
+    throw new Error("presence_http_removed");
   };
 
   const goOnlineGame = async ({ gameId, confirmed }) => {
@@ -464,6 +470,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const getIdentityId = () => identityId;
+  const getLastEventSeq = (gameId) => lastEventSeqByGameId.get(gameId) ?? 0;
 
   return {
     refreshGames,
@@ -481,6 +488,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     selectHistoryMove,
     returnToLive,
     setParticipantConnected,
+    applyLiveGameUpdate,
+    getLastEventSeq,
     goOnlineGame,
     listGames,
     getGameViewModel,

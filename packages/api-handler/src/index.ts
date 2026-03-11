@@ -5,6 +5,7 @@ import { deterministicStateHash } from "../../game-engine/src/hash";
 import { listLegalActions, validateAction } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import type { Action, GameState } from "../../game-engine/src/types";
+import { GameRoomDO } from "./game-room-do";
 import { handleShellLiveRequest, handleShellLiveWebSocketUpgrade } from "./shell-live";
 
 type D1RunResult = {
@@ -27,6 +28,12 @@ export type D1DatabaseLike = {
 
 export type ApiEnv = {
   DB: D1DatabaseLike;
+  GAME_ROOMS: {
+    idFromName: (name: string) => { name?: string; toString?: () => string } | string;
+    get: (id: { name?: string; toString?: () => string } | string) => {
+      fetch: (request: Request) => Promise<Response>;
+    };
+  };
 };
 
 type RemovedPieceNotice = {
@@ -249,7 +256,7 @@ const enumeratePieceActionPreviews = (state: GameState, pieceId: string): PieceM
 
 export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<Response> => {
   const url = new URL(request.url);
-  const websocketUpgrade = handleShellLiveWebSocketUpgrade(request);
+  const websocketUpgrade = await handleShellLiveWebSocketUpgrade(request, env);
   if (websocketUpgrade) {
     return websocketUpgrade;
   }
@@ -429,12 +436,7 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
 
       const actionId = insert.meta?.last_row_id ?? null;
       const createdAt = new Date().toISOString();
-      const event: ServerEvent = {
-        type: "test_action_recorded",
-        gameId: null,
-        at: createdAt,
-        payload: { actionId, message }
-      };
+      const event = { type: "test_action_recorded", actionId, message, createdAt, payload: { actionId, message } };
 
       return jsonNoStore({ ok: true, actionId, createdAt, event });
     } catch {
@@ -455,3 +457,5 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
 
   return jsonNoStore({ ok: false, error: "not_found" }, 404);
 };
+
+export { GameRoomDO };

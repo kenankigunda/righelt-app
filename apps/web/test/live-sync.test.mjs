@@ -46,21 +46,18 @@ test("live sync connects to home and game websocket scopes and forwards events",
   try {
     const client = createLiveSyncClient({
       identityId: "id-a",
+      getLastEventSeq: () => 7,
       onEvent: (payload) => events.push(payload),
     });
 
-    client.connectHome();
-    assert.equal(MockSocket.instances.length, 1);
-    assert.match(MockSocket.instances[0].url, /scope=home/);
-
-    MockSocket.instances[0].emit("message", { data: JSON.stringify({ type: "game.updated", gameId: "g1" }) });
-    assert.equal(events.length, 1);
-    assert.equal(events[0].type, "game.updated");
-
     client.connectGame("g-123");
-    assert.equal(MockSocket.instances.length, 2);
-    assert.match(MockSocket.instances[1].url, /scope=game/);
-    assert.match(MockSocket.instances[1].url, /gameId=g-123/);
+    assert.equal(MockSocket.instances.length, 1);
+    assert.match(MockSocket.instances[0].url, /\/api\/shell\/games\/g-123\/ws/);
+    assert.match(MockSocket.instances[0].url, /lastEventSeq=7/);
+
+    MockSocket.instances[0].emit("message", { data: JSON.stringify({ type: "event_appended", eventSeq: 8, game: { id: "g1" } }) });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, "event_appended");
 
     client.disconnect();
   } finally {

@@ -14,10 +14,10 @@ test("shell render commits markup only when it changes", () => {
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
 });
 
-test("live sync update events defer to passive sync without immediate render", () => {
+test("live sync applies authoritative pushed game payloads before render", () => {
   assert.match(
     source,
-    /if \(payload\?\.type === "game\.updated" \|\| payload\?\.type === "socket\.connected"\) \{\s*void syncRouteDataPassive\(\);\s*return;\s*\}\s*render\(\);/s,
+    /if \(\s*\(payload\?\.type === "state_sync" \|\|\s*payload\?\.type === "event_appended" \|\|\s*payload\?\.type === "presence_changed" \|\|\s*payload\?\.type === "join_request_created" \|\|\s*payload\?\.type === "join_request_resolved"\)\s*&&\s*payload\?\.game\s*\) \{\s*transport\.applyLiveGameUpdate\(\{ game: payload\.game, eventSeq: payload\.eventSeq \}\);\s*\}\s*render\(\);/s,
   );
 });
 
@@ -25,7 +25,7 @@ test("live sync status renders are deduplicated by stable status key", () => {
   assert.match(source, /let lastWsStatusKey = toStableKey\(wsStatus\);/);
   assert.match(source, /const statusKey = toStableKey\(status\);/);
   assert.match(source, /if \(statusKey === lastWsStatusKey\) \{\s*return;\s*\}/s);
-  assert.match(source, /lastWsStatusKey = statusKey;\s*wsStatus = status;\s*render\(\);/s);
+  assert.match(source, /lastWsStatusKey = statusKey;\s*wsStatus = status;\s*if \(status\.state === "closed" && status\.reconnectAttempts >= 3\) \{\s*void syncRouteDataPassive\(\);\s*\}\s*render\(\);/s);
 });
 
 test("syncLiveChannel does not disconnect/reconnect while same route is still connecting", () => {
