@@ -37,6 +37,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let legalActions = [];
   let selectedPieceMoves = [];
   let selectedPieceMovePreviews = [];
+  let selectedPieceMovesLoading = false;
   let removalEffects = [];
   let selectedPieceId = null;
   let selectedSource = null;
@@ -306,6 +307,32 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
   const invalidateSelectedPieceMovesRequests = () => {
     selectedPieceMovesRequestId += 1;
+    selectedPieceMovesLoading = false;
+  };
+
+  const actionMatchesSelectedPiece = (action, piece) => {
+    if (!action || !piece || action.type === "pass") {
+      return false;
+    }
+    if (typeof action.actorId === "string") {
+      return action.actorId === piece.id;
+    }
+    return sameCoordinate(action.from, piece.position);
+  };
+
+  const hydrateSelectedPieceMovesFromLegalActions = () => {
+    const selectedPiece = boardAdapter.getPieceById(state, selectedPieceId);
+    if (!selectedPiece) {
+      selectedPieceMoves = [];
+      selectedPieceMovePreviews = [];
+      return;
+    }
+
+    selectedPieceMoves = legalActions.filter((action) => actionMatchesSelectedPiece(action, selectedPiece));
+    selectedPieceMovePreviews = [...selectedPieceMoves];
+    if (!selectedTarget) {
+      selectedTarget = deriveAutoSelectedTarget(selectedPieceMoves);
+    }
   };
 
   const clearSelection = () => {
@@ -367,6 +394,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!state || !selectedPiece) {
       selectedPieceMoves = [];
       selectedPieceMovePreviews = [];
+      selectedPieceMovesLoading = false;
       renderBoard();
       renderStatus();
       return;
@@ -378,12 +406,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
     const requestId = ++selectedPieceMovesRequestId;
     const requestedPieceId = selectedPiece.id;
+    selectedPieceMovesLoading = true;
     const body = await host.loadPieceMoves(state, selectedPiece.id);
 
     if (requestId !== selectedPieceMovesRequestId || selectedPieceId !== requestedPieceId) {
       return;
     }
 
+    selectedPieceMovesLoading = false;
     state = body.state ?? state;
     selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
     selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
@@ -512,6 +542,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     );
 
     if (!allowFreeSelection && !clickedPiece && !hasPreviewAtClicked) {
+      if (selectedPieceId && selectedPieceMovesLoading) {
+        return;
+      }
       setActionType("pass");
       clearSelection();
       refreshSelectionLabels();
