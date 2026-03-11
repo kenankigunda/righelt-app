@@ -6,7 +6,7 @@ type AssetFetcher = {
 };
 
 type WebEnv = ApiEnv & {
-  ASSETS: AssetFetcher;
+  STATIC_ASSETS: AssetFetcher;
 };
 
 const API_PREFIX = "/api/";
@@ -19,7 +19,7 @@ export default {
     if (shouldHandleApi(url.pathname)) {
       return handleApiRequest(request, env);
     }
-    return env.ASSETS.fetch(request);
+    return env.STATIC_ASSETS.fetch(request);
   },
 };
 

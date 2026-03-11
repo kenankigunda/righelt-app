@@ -5,7 +5,7 @@ pages_build_output_dir = "."
 
 [assets]
 directory = "."
-binding = "ASSETS"
+binding = "STATIC_ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = ["/api/*"]
 

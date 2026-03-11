@@ -121,6 +121,8 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 
 - `Cp` = commit + push + wait before continuing
 - `Cpn` = commit + push + take the next action
+- `Dfix` = diagnose and fix
+- `Ddfix` = do a deep investigation to diagnose and fix holistically
 - `Snb` = switch to a new branch
 - `Sbtb` = switch back to this branch
 - `Rbom` = rebase on latest origin main
