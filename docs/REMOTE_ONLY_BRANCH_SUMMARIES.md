@@ -10,6 +10,7 @@ When a remote-only branch is listed here, `Audit branches` should prefer this cu
 |---|---|
 | `codex/f-030-remove-offline-mode` | Removes offline mode in shell/live transport and related tests |
 | `codex/f-030-shell-presence-fixes` | Stabilizes live participant presence and websocket freshness handling across shell sync, routing, and API handler tests |
+| `codex/game-room-worker-binding-fix` | Adds the game-room worker deployment and binding flow across wrangler config, API handler guards, tests, and setup scripts |
 | `codex/invite-accept-propagation-fix` | Updates `docs/RIGHELT_WEB_APP_SPEC.md` with invite accept propagation guidance |
 | `codex/mobile-overflow-snapshot` | Tightens mobile board and shell width constraints in `apps/web/shell/shell.css` and `apps/web/styles.css` |
 | `codex/overlay-line-centers-20260302` | Aligns overlay lines to piece centers and includes broader playground, fixture, interaction, style, engine, API handler, and docs changes |

@@ -11,21 +11,20 @@ Notes:
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
-| `codex/engine-validation-ui` | Yes | `origin/codex/engine-validation-ui` exists, up to date (`=`) | `-` | No code diff; tip is already merged and branch is 201 commits behind `main` |
-| `codex/history-board-ui` | Yes | `origin/codex/history-board-ui` exists, up to date (`=`) | `-` | No code diff; tip is already merged and branch is 13 commits behind `main` |
 | `main` | n/a | `origin/main` exists, up to date (`=`) | `-` | Baseline |
 
 ## (b) Already Merged To `main`, But Checked Out On A Worktree
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
-| `codex/investigation-20260311` | Yes | `origin/codex/investigation-20260311` exists, up to date (`=`) | `primary` | No code diff; it currently points at the same commit as `main` |
 
 ## (c) Not Merged To `main`, But Checked Out On A Worktree
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
 | `codex/computer-player` | No | `origin/codex/computer-player` exists, up to date (`=`) | `wt-b058` | Adds `docs/RIGHELT_COMPUTER_PLAYER_PLAN.md` with the computer-player implementation plan |
+| `codex/investigation-20260311` | No | `origin/codex/investigation-20260311` exists, up to date (`=`) | `primary` | Guards missing game room binding in the API handler and related tests |
+| `codex/ui-edits-followup` | No | `origin/codex/ui-edits-followup` exists, up to date (`=`) | `wt-5b34` | Stabilizes shell and board UI behavior, including panel persistence, join-panel height animation, history return-live placement, and related UI guards |
 
 ## (d) Not Merged To `main`, And Not Checked Out On A Worktree
 
@@ -44,6 +43,7 @@ Notes:
 | `codex/f-030-remove-offline-mode` | Unknown locally | Remote-only (`origin/codex/f-030-remove-offline-mode`) | `-` | Removes offline mode in shell/live transport and related tests |
 | `codex/f-030-shell-presence-fixes` | Unknown locally | Remote-only (`origin/codex/f-030-shell-presence-fixes`) | `-` | Stabilizes live participant presence and websocket freshness handling across shell sync, routing, and API handler tests |
 | `codex/f-032-live-authority-integration` | Unknown locally | Remote-only (`origin/codex/f-032-live-authority-integration`) | `-` | Adds the F-032 live-authority orchestration kickoff docs: the feature plan, coordination log, and stream briefs under `docs/features/F-032-live-authority/` |
+| `codex/game-room-worker-binding-fix` | Unknown locally | Remote-only (`origin/codex/game-room-worker-binding-fix`) | `-` | Adds the game-room worker deployment and binding flow across wrangler config, API handler guards, tests, and setup scripts |
 | `codex/invite-accept-propagation-fix` | Unknown locally | Remote-only (`origin/codex/invite-accept-propagation-fix`) | `-` | Updates `docs/RIGHELT_WEB_APP_SPEC.md` with invite accept propagation guidance |
 | `codex/mobile-overflow-snapshot` | Unknown locally | Remote-only (`origin/codex/mobile-overflow-snapshot`) | `-` | Tightens mobile board and shell width constraints in `apps/web/shell/shell.css` and `apps/web/styles.css` |
 | `codex/overlay-line-centers-20260302` | Unknown locally | Remote-only (`origin/codex/overlay-line-centers-20260302`) | `-` | Aligns overlay lines to piece centers and includes broader playground, fixture, interaction, style, engine, API handler, and docs changes |
