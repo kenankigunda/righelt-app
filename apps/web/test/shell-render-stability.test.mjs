@@ -49,7 +49,7 @@ test("withBusy only repaints immediately for actions that need visible busy stat
   assert.match(source, /\}, \{ renderStart: shouldRenderBusyState \}\);/);
 });
 
-test("history navigation animates deselection before snapshot swap and queues board transition", () => {
+test("history navigation uses pointer-down press state without post-swap transition animation", () => {
   assert.match(source, /const startHistoryPress = \(actionEl\) => \{/);
   assert.match(source, /const clearHistoryPress = \(\) => \{/);
   assert.match(source, /boardWrapEl\.classList\.add\("history-board-pressing"\);/);
@@ -57,11 +57,10 @@ test("history navigation animates deselection before snapshot swap and queues bo
   assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*action !== "jump-history" && action !== "return-live"[\s\S]*startHistoryPress\(actionEl\);/s);
   assert.match(source, /const animateHistoryDeselection = async \(actionEl\) => \{/);
   assert.match(source, /currentSelected\.classList\.add\("is-deselecting"\);/);
-  assert.match(source, /const queueHistoryItemTransition = \(\{ gameId, moveIndex \}\) => \{/);
-  assert.match(source, /const playHistoryItemTransitionIfNeeded = \(game\) => \{/);
-  assert.match(source, /const playBoardTransitionIfNeeded = \(\) => \{/);
-  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*queueHistoryItemTransition\(\{ gameId, moveIndex \}\);[\s\S]*queueBoardTransition\(\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
-  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*queueBoardTransition\(\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
-  assert.match(source, /playHistoryItemTransitionIfNeeded\(game\);\s*playBoardTransitionIfNeeded\(\);\s*void boardRuntime\.loadSnapshot\(/s);
-  assert.match(source, /playBoardTransitionIfNeeded\(\);\s*void boardRuntime\.loadSnapshot\(/s);
+  assert.doesNotMatch(source, /queueHistoryItemTransition/);
+  assert.doesNotMatch(source, /playHistoryItemTransitionIfNeeded/);
+  assert.doesNotMatch(source, /queueBoardTransition/);
+  assert.doesNotMatch(source, /playBoardTransitionIfNeeded/);
+  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
+  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
 });
