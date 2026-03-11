@@ -83,3 +83,67 @@ test("shell host applyAction preserves removedPieces from the transport response
   assert.equal(result.accepted, true);
   assert.deepEqual(result.removedPieces, removedPieces);
 });
+
+test("shell host derives selected piece moves from cached legal actions without transport piece-move calls", async () => {
+  const transport = {
+    getGameViewModel() {
+      return {
+        currentSnapshot: {
+          sideToMove: "P1",
+          turnIndex: 0,
+          continuation: null,
+          pieces: [
+            {
+              id: "C1",
+              owner: "P1",
+              kind: "commander",
+              position: { row: 3, col: 3 },
+              supplied: true,
+              commanded: true,
+            },
+          ],
+        },
+        legalActions: [
+          { type: "pass" },
+          { type: "move", actorId: "C1", from: { row: 3, col: 3 }, to: { row: 2, col: 3 } },
+          { type: "move", actorId: "C1", from: { row: 3, col: 3 }, to: { row: 3, col: 4 } },
+        ],
+      };
+    },
+    loadGamePieceMoves() {
+      throw new Error("transport piece-move call should not happen");
+    },
+  };
+
+  const host = createShellBoardHost({ transport, gameId: "g-4", canInteract: () => true });
+  const result = await host.loadPieceMoves(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      pieces: [
+        {
+          id: "C1",
+          owner: "P1",
+          kind: "commander",
+          position: { row: 3, col: 3 },
+          supplied: true,
+          commanded: true,
+        },
+      ],
+    },
+    "C1",
+  );
+
+  assert.deepEqual(
+    result.actions.map((action) => action.to),
+    [
+      { row: 2, col: 3 },
+      { row: 3, col: 4 },
+    ],
+  );
+  assert.deepEqual(
+    result.previewActions.map((action) => action.legal),
+    [true, true],
+  );
+});

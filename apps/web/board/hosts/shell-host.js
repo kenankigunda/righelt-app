@@ -1,3 +1,5 @@
+import { buildPieceMoveResponse } from "../client-move-generation.js";
+
 const getControlLabel = ({ state, currentTurn }) => {
   if (!state || !currentTurn) {
     return "turn-owner";
@@ -12,16 +14,25 @@ const getControlLabel = ({ state, currentTurn }) => {
 export const createShellBoardHost = ({ transport, gameId, canInteract }) => ({
   async loadInitialState() {
     const game = transport.getGameViewModel(gameId);
+    const legalActions = Array.isArray(game?.legalActions) ? game.legalActions : [];
     return {
       state: game?.currentSnapshot ?? null,
-      legalActions: Array.isArray(game?.legalActions) ? game.legalActions : [],
+      legalActions,
     };
   },
   async loadLegalActions(state) {
-    return transport.loadGameLegalActions({ gameId, state });
+    const game = transport.getGameViewModel(gameId);
+    return {
+      ok: true,
+      state: game?.currentSnapshot ?? state,
+      legalActions: Array.isArray(game?.legalActions) ? game.legalActions : [],
+    };
   },
   async loadPieceMoves(state, pieceId) {
-    return transport.loadGamePieceMoves({ gameId, state, pieceId });
+    const game = transport.getGameViewModel(gameId);
+    const snapshot = game?.currentSnapshot ?? state;
+    const legalActions = Array.isArray(game?.legalActions) ? game.legalActions : [];
+    return buildPieceMoveResponse({ state: snapshot, legalActions, pieceId });
   },
   async applyAction(state, action) {
     const response = await transport.applyGameAction({ gameId, state, action });
