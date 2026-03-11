@@ -1,0 +1,19 @@
+# Remote-Only Branch Summaries
+
+This document is the curated data source for plain-language summaries used in branch audit section `(f) Branches Which Only Exist On The Remote, With Some Code Diff Relative to main`.
+
+When a remote-only branch is listed here, `Audit branches` should prefer this curated summary over any automatically synthesized fallback.
+
+## Summaries
+
+| Branch | Curated Summary |
+|---|---|
+| `codex/f-030-remove-offline-mode` | Removes offline mode in shell/live transport and related tests |
+| `codex/f-030-shell-presence-fixes` | Stabilizes live participant presence and websocket freshness handling across shell sync, routing, and API handler tests |
+| `codex/invite-accept-propagation-fix` | Updates `docs/RIGHELT_WEB_APP_SPEC.md` with invite accept propagation guidance |
+| `codex/mobile-overflow-snapshot` | Tightens mobile board and shell width constraints in `apps/web/shell/shell.css` and `apps/web/styles.css` |
+| `codex/overlay-line-centers-20260302` | Aligns overlay lines to piece centers and includes broader playground, fixture, interaction, style, engine, API handler, and docs changes |
+| `codex/shell-live-payload-leak-fix` | Reduces shell live payload size and adjusts shell history/press animation behavior |
+| `codex/turn-control-fix-checkpoint` | Applies the turn-control handoff checkpoint changes in shell transport and API handler tests |
+| `codex/turn-handoff-broken-attempt` | Contains a WIP turn-handoff attempt in live transport and integration tests |
+| `codex/f-032-live-authority-integration` | Adds the F-032 live-authority orchestration kickoff docs: the feature plan, coordination log, and stream briefs under `docs/features/F-032-live-authority/` |

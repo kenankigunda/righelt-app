@@ -20,17 +20,19 @@ Produce an up-to-date branch inventory grouped by merge status, worktree usage, 
 4. Enumerate attached worktrees and map checked-out branches to distinct worktree labels such as `primary` or `wt-<id>`.
 5. Enumerate remote branches under `origin`.
 6. Compare each local branch against local `main` to determine whether it is already merged and to summarize how it differs from `main`.
-7. Split local branches into these categories:
-8. Category `(a) Already Merged To main, And Not Checked Out On A Worktree`.
-9. Category `(b) Already Merged To main, But Checked Out On A Worktree`.
-10. Category `(c) Not Merged To main, But Checked Out On A Worktree`.
-11. Category `(d) Not Merged To main, And Not Checked Out On A Worktree`.
-12. Identify remote-only branches by subtracting local branch names from remote branch names.
-13. Compare each remote-only branch against local `main`.
-14. Split remote-only branches into these categories:
-15. Category `(e) Branches Which Only Exist On The Remote, With No Code Diff Relative to main`.
-16. Category `(f) Branches Which Only Exist On The Remote, With Some Code Diff Relative to main`.
-17. Refresh [`docs/BRANCH_AUDIT.md`](./BRANCH_AUDIT.md) so it records the current snapshot, the fetch status caveat, all grouped tables `(a)` through `(f)`, and the worktree label legend.
+7. Whenever a branch differs from `main`, generate a short plain-language description of what changed; do not use commit/file counts alone as the full description.
+8. Split local branches into these categories:
+9. Category `(a) Already Merged To main, And Not Checked Out On A Worktree`.
+10. Category `(b) Already Merged To main, But Checked Out On A Worktree`.
+11. Category `(c) Not Merged To main, But Checked Out On A Worktree`.
+12. Category `(d) Not Merged To main, And Not Checked Out On A Worktree`.
+13. Identify remote-only branches by subtracting local branch names from remote branch names.
+14. Compare each remote-only branch against local `main`.
+15. Split remote-only branches into these categories:
+16. Category `(e) Branches Which Only Exist On The Remote, With No Code Diff Relative to main`.
+17. Category `(f) Branches Which Only Exist On The Remote, With Some Code Diff Relative to main`.
+18. Use a hybrid description strategy for branch summaries when a curated summary source exists: prefer curated branch-specific summaries from [`docs/REMOTE_ONLY_BRANCH_SUMMARIES.md`](./REMOTE_ONLY_BRANCH_SUMMARIES.md) when available; otherwise synthesize a short fallback summary from changed file paths and recent commit subjects.
+19. Refresh [`docs/BRANCH_AUDIT.md`](./BRANCH_AUDIT.md) so it records the current snapshot, the fetch status caveat, all grouped tables `(a)` through `(f)`, and the worktree label legend.
 
 ## Category Rules
 
@@ -40,6 +42,8 @@ Produce an up-to-date branch inventory grouped by merge status, worktree usage, 
 - Category `(d)` includes branches not merged to `main` and not checked out on any worktree.
 - Category `(e)` includes remote-only branches whose tree has no code diff relative to `main`.
 - Category `(f)` includes remote-only branches whose tree still differs from `main`.
+- Any branch that differs from `main` should describe the difference in plain language, not just commit or file counts.
+- When a curated summary source exists for a branch class, prefer the curated summary first and an automatic fallback second.
 - `main` is the comparison baseline and should appear only as the baseline row in the audit output, not as a remote-only branch.
 
 ## Expected Reporting

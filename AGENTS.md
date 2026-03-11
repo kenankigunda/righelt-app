@@ -128,7 +128,7 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 - `Sbtb` = switch back to this branch
 - `Audit branches` = run the detailed branch audit workflow in `docs/BRANCH_AUDIT_WORKFLOW.md` and update `docs/BRANCH_AUDIT.md`
 - `Aubr` = `Audit branches`
-- `Cleanup branches` = rerun `Audit branches` first and stop if the refreshed audit differs from the previous audit, reporting the difference; never modify `main`; otherwise delete `(a)` branches from local and remote, delete `(d)` branches from local only, and delete `(e)` branches from remote only
+- `Cleanup branches` = rerun `Audit branches` first, including updating `docs/BRANCH_AUDIT.md` when the audit changes, and stop if the refreshed audit differs from the previous audit, reporting the difference; never modify `main`; before any local-only branch deletions, update `docs/REMOTE_ONLY_BRANCH_SUMMARIES.md` as needed for branches that will remain remote-only; then delete `(a)` branches from local and remote, delete `(d)` branches from local only, delete `(e)` branches from remote only, and remove summary entries from `docs/REMOTE_ONLY_BRANCH_SUMMARIES.md` after confirming the corresponding remote branches were deleted
 - `Clbr` = `Cleanup branches`
 - `Rbom` = rebase on latest origin main
 - `Fp` = force push (`--force-with-lease`)

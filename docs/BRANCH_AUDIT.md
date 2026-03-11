@@ -22,26 +22,26 @@ Notes:
 |---|---|---|---|---|
 | `codex/engine-validation-ui` | Yes | `origin/codex/engine-validation-ui` exists, up to date (`=`) | `wt-f466` | No code diff; tip is already merged and branch is 199 commits behind `main` |
 | `codex/history-board-ui` | Yes | `origin/codex/history-board-ui` exists, up to date (`=`) | `wt-5b34` | No code diff; tip is already merged and branch is 11 commits behind `main` |
-| `codex/investigation-20260311` | Yes | `origin/codex/investigation-20260311` exists, up to date (`=`) | `primary` | No code diff; it currently points at the same commit as `main` |
 
 ## (c) Not Merged To `main`, But Checked Out On A Worktree
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
-| `codex/computer-player` | No | `origin/codex/computer-player` exists, up to date (`=`) | `wt-b058` | 1 commit ahead; adds `docs/RIGHELT_COMPUTER_PLAYER_PLAN.md` |
+| `codex/computer-player` | No | `origin/codex/computer-player` exists, up to date (`=`) | `wt-b058` | Adds `docs/RIGHELT_COMPUTER_PLAYER_PLAN.md` with the computer-player implementation plan |
+| `codex/investigation-20260311` | No | `origin/codex/investigation-20260311` exists, up to date (`=`) | `primary` | Updates `docs/BRANCH_AUDIT.md` with the refreshed branch audit snapshot |
 
 ## (d) Not Merged To `main`, And Not Checked Out On A Worktree
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
-| `codex/f-030-remove-offline-mode` | No | `origin/codex/f-030-remove-offline-mode` exists, up to date (`=`) | `-` | 1 commit ahead across 8 files; removes offline mode in shell/live transport and related tests |
-| `codex/f-030-shell-presence-fixes` | No | `origin/codex/f-030-shell-presence-fixes` exists, up to date (`=`) | `-` | 2 commits ahead across 8 files; presence/websocket freshness fixes in shell sync, routing, and API handler tests |
-| `codex/invite-accept-propagation-fix` | No | `origin/codex/invite-accept-propagation-fix` exists, up to date (`=`) | `-` | 1 commit ahead; doc-only change in `docs/RIGHELT_WEB_APP_SPEC.md` |
-| `codex/mobile-overflow-snapshot` | No | `origin/codex/mobile-overflow-snapshot` exists, up to date (`=`) | `-` | 1 commit ahead; CSS-only changes in `apps/web/shell/shell.css` and `apps/web/styles.css` |
-| `codex/overlay-line-centers-20260302` | No | `origin/codex/overlay-line-centers-20260302` exists, up to date (`=`) | `-` | 22 commits ahead across 25 files; overlay alignment plus broader playground, fixture, interaction, style, engine, API handler, and docs changes |
-| `codex/shell-live-payload-leak-fix` | No | `origin/codex/shell-live-payload-leak-fix` exists, up to date (`=`) | `-` | 9 commits ahead across 7 files; reduces live payloads and adjusts shell history/press animation behavior |
-| `codex/turn-control-fix-checkpoint` | No | `origin/codex/turn-control-fix-checkpoint` exists, up to date (`=`) | `-` | 1 commit ahead across 7 files; turn-control handoff checkpoint changes in shell transport and API handler tests |
-| `codex/turn-handoff-broken-attempt` | No | `origin/codex/turn-handoff-broken-attempt` exists, up to date (`=`) | `-` | 1 commit ahead across 5 files; WIP turn-handoff attempt in live transport and integration tests |
+| `codex/f-030-remove-offline-mode` | No | `origin/codex/f-030-remove-offline-mode` exists, up to date (`=`) | `-` | Removes offline mode in shell/live transport and related tests |
+| `codex/f-030-shell-presence-fixes` | No | `origin/codex/f-030-shell-presence-fixes` exists, up to date (`=`) | `-` | Stabilizes live participant presence and websocket freshness handling across shell sync, routing, and API handler tests |
+| `codex/invite-accept-propagation-fix` | No | `origin/codex/invite-accept-propagation-fix` exists, up to date (`=`) | `-` | Updates `docs/RIGHELT_WEB_APP_SPEC.md` with invite accept propagation guidance |
+| `codex/mobile-overflow-snapshot` | No | `origin/codex/mobile-overflow-snapshot` exists, up to date (`=`) | `-` | Tightens mobile board and shell width constraints in `apps/web/shell/shell.css` and `apps/web/styles.css` |
+| `codex/overlay-line-centers-20260302` | No | `origin/codex/overlay-line-centers-20260302` exists, up to date (`=`) | `-` | Aligns overlay lines to piece centers and includes broader playground, fixture, interaction, style, engine, API handler, and docs changes |
+| `codex/shell-live-payload-leak-fix` | No | `origin/codex/shell-live-payload-leak-fix` exists, up to date (`=`) | `-` | Reduces shell live payload size and adjusts shell history/press animation behavior |
+| `codex/turn-control-fix-checkpoint` | No | `origin/codex/turn-control-fix-checkpoint` exists, up to date (`=`) | `-` | Applies the turn-control handoff checkpoint changes in shell transport and API handler tests |
+| `codex/turn-handoff-broken-attempt` | No | `origin/codex/turn-handoff-broken-attempt` exists, up to date (`=`) | `-` | Contains a WIP turn-handoff attempt in live transport and integration tests |
 
 ## (e) Branches Which Only Exist On The Remote, With No Code Diff Relative to `main`
 
@@ -73,7 +73,7 @@ Notes:
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
-| `codex/f-032-live-authority-integration` | Unknown locally | Remote-only (`origin/codex/f-032-live-authority-integration`) | `-` | 2 commits ahead across 6 files on the remote-only branch |
+| `codex/f-032-live-authority-integration` | Unknown locally | Remote-only (`origin/codex/f-032-live-authority-integration`) | `-` | Adds the F-032 live-authority orchestration kickoff docs: the feature plan, coordination log, and stream briefs under `docs/features/F-032-live-authority/` |
 
 ## Worktree Labels
 
