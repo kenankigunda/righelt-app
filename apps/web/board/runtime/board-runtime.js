@@ -8,6 +8,7 @@ import {
   shouldResetSelectionOnDocumentClick,
   shouldSubmitOnEnter,
 } from "../../interaction.js";
+import { buildPieceMoveResponse } from "../client-move-generation.js";
 
 const PLAYER_TONE_CLASSES = ["player-tone-p1", "player-tone-p2", "player-tone-neutral"];
 
@@ -342,6 +343,25 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     renderStatus();
   };
 
+  const primeSelectedPieceMovesFromLegalActions = () => {
+    if (!state || !selectedPieceId) {
+      selectedPieceMoves = [];
+      selectedPieceMovePreviews = [];
+      return;
+    }
+
+    const body = buildPieceMoveResponse({
+      state,
+      legalActions,
+      pieceId: selectedPieceId,
+    });
+    selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
+    selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
+    if (!selectedTarget) {
+      selectedTarget = deriveAutoSelectedTarget(selectedPieceMoves);
+    }
+  };
+
   const reloadSelectedPieceMoves = async () => {
     const selectedPiece = boardAdapter.getPieceById(state, selectedPieceId);
     if (!state || !selectedPiece) {
@@ -351,6 +371,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       renderStatus();
       return;
     }
+
+    primeSelectedPieceMovesFromLegalActions();
+    renderBoard();
+    renderStatus();
 
     const requestId = ++selectedPieceMovesRequestId;
     const requestedPieceId = selectedPiece.id;
@@ -527,8 +551,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const pieceChanged = previousSelection.selectedPieceId !== result.selection.selectedPieceId;
     if (pieceChanged) {
       invalidateSelectedPieceMovesRequests();
-      selectedPieceMoves = [];
-      selectedPieceMovePreviews = [];
+      primeSelectedPieceMovesFromLegalActions();
     }
 
     refreshSelectionLabels();

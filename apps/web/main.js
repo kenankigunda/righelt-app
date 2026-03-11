@@ -8,6 +8,7 @@ import {
   shouldResetSelectionOnDocumentClick,
   shouldSubmitOnEnter,
 } from "./interaction.js";
+import { buildPieceMoveResponse } from "./board/client-move-generation.js";
 import { assertGameBoardAdapter } from "./board-adapter-contract.js";
 import { createEnginePlaygroundBoardAdapter } from "./board-adapters/engine-playground-adapter.js";
 import { buildHomeHash, isPlaygroundRouteHash, isShellRouteHash, isShellRootHash } from "./shell/routes.js";
@@ -670,16 +671,11 @@ const reloadSelectedPieceMoves = async () => {
 
   const requestId = ++selectedPieceMovesRequestId;
   const requestedPieceId = selectedPiece.id;
-
-  const response = await fetch("/api/engine/playground/piece-moves", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ state, pieceId: selectedPiece.id }),
+  const body = buildPieceMoveResponse({
+    state,
+    legalActions,
+    pieceId: selectedPiece.id,
   });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch selected piece moves: HTTP ${response.status}`);
-  }
-  const body = await response.json();
   if (requestId !== selectedPieceMovesRequestId || selectedPieceId !== requestedPieceId) {
     return;
   }
