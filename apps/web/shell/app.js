@@ -145,6 +145,9 @@ const renderSectionActions = (actions) => {
   }
   return `<div class="row section-actions">${items.join("")}</div>`;
 };
+const getAnimatedPanels = () => (appEl instanceof HTMLElement ? Array.from(appEl.querySelectorAll(".panel")) : []);
+const capturePanelHeights = () =>
+  getAnimatedPanels().map((panelEl) => (panelEl instanceof HTMLElement ? panelEl.getBoundingClientRect().height : null));
 const animatePanelHeightChange = (panelEl, fromHeight) => {
   if (prefersReducedMotion() || !(panelEl instanceof HTMLElement) || !Number.isFinite(fromHeight)) {
     return;
@@ -167,6 +170,18 @@ const animatePanelHeightChange = (panelEl, fromHeight) => {
     panelEl.removeEventListener("transitionend", clearHeightAnimation);
   };
   panelEl.addEventListener("transitionend", clearHeightAnimation);
+};
+const animatePanelHeightChanges = (previousPanelHeights) => {
+  if (!appEl || !Array.isArray(previousPanelHeights) || previousPanelHeights.length === 0) {
+    return;
+  }
+  getAnimatedPanels().forEach((panelEl, index) => {
+    const fromHeight = previousPanelHeights[index];
+    if (!(panelEl instanceof HTMLElement) || !Number.isFinite(fromHeight)) {
+      return;
+    }
+    animatePanelHeightChange(panelEl, fromHeight);
+  });
 };
 const renderFeedbackReveal = (message) => `
   <div class="feedback-reveal${message ? " is-visible" : ""}" aria-live="polite">
@@ -589,7 +604,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
           </div>
         </section>
 
-        <section class="panel" data-shell-panel="join-invite">
+        <section class="panel">
           <h2>Join / Invite</h2>
           ${pendingSeatNotice}
           ${joinInviteActions}
@@ -606,7 +621,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
       </div>
 
       <div class="stack">
-        <section class="panel">
+        <section class="panel" data-shell-panel="board">
           <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span></h2>
           <p class="board-preview-label" id="shell-board-preview-label">Select a piece to see it supply and command lines + what it can do:</p>
           <div class="board-wrap">
@@ -892,10 +907,11 @@ const mountBoardForGame = (game) => {
 };
 
 const render = () => {
-  const previousJoinInvitePanelHeight =
-    appEl?.querySelector?.('[data-shell-panel="join-invite"]') instanceof HTMLElement
-      ? appEl.querySelector('[data-shell-panel="join-invite"]').getBoundingClientRect().height
+  const previousBoardPanel =
+    appEl?.querySelector?.('[data-shell-panel="board"]') instanceof HTMLElement
+      ? appEl.querySelector('[data-shell-panel="board"]')
       : null;
+  const previousPanelHeights = capturePanelHeights();
   let body = "";
   if (currentRoute.name === "home") {
     body = renderHome();
@@ -917,10 +933,11 @@ const render = () => {
   if (nextMarkup !== lastRenderedMarkup) {
     appEl.innerHTML = nextMarkup;
     lastRenderedMarkup = nextMarkup;
-    const nextJoinInvitePanel = appEl.querySelector('[data-shell-panel="join-invite"]');
-    if (nextJoinInvitePanel instanceof HTMLElement && previousJoinInvitePanelHeight !== null) {
-      animatePanelHeightChange(nextJoinInvitePanel, previousJoinInvitePanelHeight);
+    const nextBoardPanel = appEl.querySelector('[data-shell-panel="board"]');
+    if (previousBoardPanel instanceof HTMLElement && nextBoardPanel instanceof HTMLElement) {
+      nextBoardPanel.replaceWith(previousBoardPanel);
     }
+    animatePanelHeightChanges(previousPanelHeights);
   }
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     mountedBoardGameId = null;

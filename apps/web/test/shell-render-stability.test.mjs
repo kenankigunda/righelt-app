@@ -9,10 +9,16 @@ const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
 
 test("shell render commits markup only when it changes", () => {
   assert.match(source, /let lastRenderedMarkup = "";/);
-  assert.match(source, /const previousJoinInvitePanelHeight =/);
+  assert.match(source, /const previousBoardPanel =/);
+  assert.match(source, /const getAnimatedPanels = \(\) =>/);
+  assert.match(source, /const capturePanelHeights = \(\) =>/);
+  assert.match(source, /const previousPanelHeights = capturePanelHeights\(\);/);
   assert.match(source, /const animatePanelHeightChange = \(panelEl, fromHeight\) => \{/);
+  assert.match(source, /const animatePanelHeightChanges = \(previousPanelHeights\) => \{/);
+  assert.match(source, /querySelectorAll\("\.panel"\)/);
+  assert.match(source, /class="panel" data-shell-panel="board"/);
   assert.match(source, /const nextMarkup = `\$\{renderHeader\(\)\}\$\{body\}`;/);
-  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*animatePanelHeightChange\(nextJoinInvitePanel, previousJoinInvitePanelHeight\);[\s\S]*\}/s);
+  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*nextBoardPanel\.replaceWith\(previousBoardPanel\);[\s\S]*animatePanelHeightChanges\(previousPanelHeights\);\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
 });
 
