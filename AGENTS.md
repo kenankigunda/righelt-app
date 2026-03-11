@@ -121,6 +121,8 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 
 - `Cp` = commit + push + wait before continuing
 - `Cpn` = commit + push + take the next action
+- `Snb` = switch to a new branch
+- `Sbtb` = switch back to this branch
 - `Rbom` = rebase on latest origin main
 - `Fp` = force push (`--force-with-lease`)
 - `Mmp` = merge to main and push
