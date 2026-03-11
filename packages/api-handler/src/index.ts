@@ -45,6 +45,8 @@ type RemovedPieceNotice = {
 
 const CACHE_NO_STORE = "no-store";
 const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
+const hasGameRoomsBinding = (env: Partial<ApiEnv>) =>
+  Boolean(env?.GAME_ROOMS && typeof env.GAME_ROOMS.idFromName === "function" && typeof env.GAME_ROOMS.get === "function");
 
 const json = (body: unknown, status = 200, cacheControl = CACHE_NO_STORE): Response =>
   new Response(JSON.stringify(body), {
@@ -415,7 +417,18 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
   }
 
   if (request.method === "GET" && url.pathname === "/api/health") {
-    return jsonNoStore({ ok: true, service: "righelt" });
+    const gameRooms = hasGameRoomsBinding(env);
+    return jsonNoStore(
+      {
+        ok: gameRooms,
+        service: "righelt",
+        bindings: {
+          db: Boolean(env.DB),
+          gameRooms,
+        },
+      },
+      gameRooms ? 200 : 500,
+    );
   }
 
   if (request.method === "POST" && url.pathname === "/api/test-action") {

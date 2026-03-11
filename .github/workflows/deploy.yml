@@ -98,3 +98,22 @@ jobs:
           }
           EOF
           pnpm --dir apps/web exec wrangler pages deploy . --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch main
+
+      - name: Smoke test deployed API bindings
+        run: |
+          HEALTH_URL="https://head.righelt.pages.dev/api/health"
+          HEALTH_JSON="$(curl -fsS "$HEALTH_URL")"
+          echo "$HEALTH_JSON"
+          printf '%s' "$HEALTH_JSON" | node -e '
+            let payload = "";
+            process.stdin.on("data", (chunk) => {
+              payload += chunk;
+            });
+            process.stdin.on("end", () => {
+              const body = JSON.parse(payload);
+              if (body?.ok !== true || body?.bindings?.db !== true || body?.bindings?.gameRooms !== true) {
+                console.error("Deploy smoke test failed: required bindings are not active on head deployment.");
+                process.exit(1);
+              }
+            });
+          '

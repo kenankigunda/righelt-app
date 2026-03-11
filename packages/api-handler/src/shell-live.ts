@@ -28,6 +28,14 @@ export type LiveGameRequestEnv = {
 
 const CACHE_NO_STORE = "no-store";
 const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
+const GAME_ROOMS_BINDING_ERROR = "server_misconfigured_game_rooms_binding";
+
+const hasGameRoomsBinding = (env: Partial<LiveGameRequestEnv>) =>
+  Boolean(
+    env?.GAME_ROOMS &&
+      typeof env.GAME_ROOMS.idFromName === "function" &&
+      typeof env.GAME_ROOMS.get === "function",
+  );
 
 const parsePath = (pathname: string) => {
   const parts = pathname.split("/").filter(Boolean);
@@ -88,6 +96,9 @@ export const handleLiveGameWebSocketUpgrade = async (request: Request, env: Live
     return null;
   }
   if (route.length === 3 && route[0] === "games" && route[2] === "ws") {
+    if (!hasGameRoomsBinding(env)) {
+      return json({ ok: false, error: GAME_ROOMS_BINDING_ERROR }, 500);
+    }
     return forwardRequestToGameRoom(env, route[1], request, `/ws${url.search}`);
   }
   if (route.length === 1 && route[0] === "ws") {
@@ -164,6 +175,9 @@ export const handleLiveGameRequest = async (
   }
 
   if (request.method === "POST" && route.length === 1 && route[0] === "games") {
+    if (!hasGameRoomsBinding(env)) {
+      return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
+    }
     const body = await parseBody(request);
     const identityId = asIdentity(body.identityId);
     if (!identityId) {
@@ -220,6 +234,9 @@ export const handleLiveGameRequest = async (
     }
 
     if (route.length === 3 && route[2] === "join") {
+      if (!hasGameRoomsBinding(env)) {
+        return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
+      }
       if (offline && !game.offlineLocal) {
         return { handled: true, status: 409, body: { ok: false, error: "offline_join_blocked" }, cacheControl: CACHE_NO_STORE };
       }
@@ -255,6 +272,9 @@ export const handleLiveGameRequest = async (
       route.length === 3 &&
       ["approve", "moves", "apply", "end-turn", "history", "live", "play-as-both", "go-online"].includes(route[2])
     ) {
+      if (!hasGameRoomsBinding(env)) {
+        return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
+      }
       if (
         offline &&
         !game.offlineLocal &&

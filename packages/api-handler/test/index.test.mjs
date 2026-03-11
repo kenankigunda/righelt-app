@@ -20,6 +20,23 @@ function buildEnv() {
         };
       },
     },
+    GAME_ROOMS: {
+      idFromName(name) {
+        return { name };
+      },
+      get() {
+        return {
+          async fetch() {
+            return new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: {
+                "content-type": "application/json; charset=utf-8",
+              },
+            });
+          },
+        };
+      },
+    },
   };
 }
 
@@ -69,6 +86,9 @@ test("non-bootstrap API responses remain non-cacheable", async () => {
   const response = await handleApiRequest(request, env);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), CACHE_NO_STORE);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.bindings.gameRooms, true);
 });
 
 test("startup route keeps a deterministic response body across repeated requests", async () => {
@@ -132,4 +152,22 @@ test("mutable and validation endpoints default to no-store cache policy", async 
     const response = await handleApiRequest(request, env);
     assert.equal(response.headers.get("cache-control"), CACHE_NO_STORE);
   }
+});
+
+test("/api/health reports missing GAME_ROOMS binding as unhealthy", async () => {
+  const env = buildEnv();
+  delete env.GAME_ROOMS;
+
+  const response = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/health", {
+      method: "GET",
+    }),
+    env,
+  );
+
+  assert.equal(response.status, 500);
+  assert.equal(response.headers.get("cache-control"), CACHE_NO_STORE);
+  const body = await response.json();
+  assert.equal(body.ok, false);
+  assert.equal(body.bindings.gameRooms, false);
 });
