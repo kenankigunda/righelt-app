@@ -9,6 +9,7 @@ const watchBackend = args.includes("--watch-backend");
 
 const cwd = process.cwd();
 const touchTarget = path.join(cwd, "apps/web/_worker.js");
+const wranglerPersistPath = path.join(cwd, ".wrangler", "state", "local-dev");
 const fixtureCatalogPath = path.join(cwd, "apps/web/fixtures/m-golden-fixtures.json");
 const watchRoots = [
   path.join(cwd, "packages/api-handler/src"),
@@ -259,7 +260,7 @@ startFixtureWriterServer();
 
 const wrangler = spawn(
   "pnpm",
-  ["--dir", "apps/web", "exec", "wrangler", "dev", "--port", port],
+  ["exec", "wrangler", "dev", "--config", "apps/web/wrangler.toml", "--persist-to", wranglerPersistPath, "--port", port],
   {
     cwd,
     stdio: ["inherit", "pipe", "pipe"],

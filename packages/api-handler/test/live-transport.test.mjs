@@ -442,6 +442,34 @@ test("live transport: offline playground exposes end-turn when one identity cont
   assert.equal(ended.status, 200);
 });
 
+test("live transport: play-as-both persists separate participant rows for the same identity", async () => {
+  const created = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await created.json();
+  const gameId = createdBody.game.id;
+
+  const promoted = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-a" }),
+    env,
+  );
+  const promotedBody = await promoted.json();
+
+  assert.equal(promoted.status, 200);
+  assert.equal(promotedBody.game.player1.identityId, "id-a");
+  assert.equal(promotedBody.game.player2.identityId, "id-a");
+
+  const participants = env.DB.getParticipants(gameId);
+  assert.deepEqual(
+    participants.map((participant) => [participant.identity_id, participant.role]).sort(),
+    [
+      ["id-a", "Player 1"],
+      ["id-a", "Player 2"],
+    ],
+  );
+});
+
 test("live transport: move endpoint rejects non-player and wrong-turn players", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),

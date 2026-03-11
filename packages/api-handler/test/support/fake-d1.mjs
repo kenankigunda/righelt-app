@@ -197,6 +197,9 @@ export const createFakeD1 = () => {
       }
       return JSON.parse(row.state_json);
     },
+    getParticipants(gameId) {
+      return structuredClone(shellParticipants.get(gameId) ?? []);
+    },
     getStats() {
       return {
         selectGameByIdCount,
