@@ -93,7 +93,7 @@ let pendingBoardTransition = false;
 let boardTransitionTimer = null;
 let pendingHistoryItemTransition = null;
 let historyItemTransitionTimer = null;
-const HISTORY_SELECTION_EXIT_MS = 140;
+const HISTORY_SELECTION_EXIT_MS = 56;
 const BOARD_HISTORY_TRANSITION_MS = 220;
 let pressedHistoryActionEl = null;
 
@@ -1280,7 +1280,15 @@ appEl.addEventListener("pointerdown", (event) => {
   startHistoryPress(actionEl);
 });
 
-window.addEventListener("pointerup", () => {
+window.addEventListener("pointerup", (event) => {
+  const target = event.target;
+  if (target instanceof HTMLElement) {
+    const actionEl = target.closest("[data-action]");
+    const action = actionEl?.getAttribute("data-action");
+    if (action === "jump-history" || action === "return-live") {
+      return;
+    }
+  }
   clearHistoryPress();
 });
 
