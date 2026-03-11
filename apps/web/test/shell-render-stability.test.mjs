@@ -40,6 +40,9 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.doesNotMatch(source, /class="history-turn-header"/);
   assert.doesNotMatch(source, /class="history-turn-list"/);
   assert.match(source, /const moveRows = game\.turns\.flatMap/);
+  assert.match(source, /const emptyTurnText = "Waiting on next move\.\.\."/);
+  assert.match(source, /: `<div class="history-empty-line/);
+  assert.match(source, /history-empty-line history-return-live/);
 });
 
 test("withBusy only repaints immediately for actions that need visible busy state", () => {

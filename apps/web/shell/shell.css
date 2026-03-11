@@ -193,7 +193,7 @@ button.secondary:disabled {
   margin: 0;
   padding-left: 0;
   display: grid;
-  gap: var(--section-item-gap);
+  gap: 0;
 }
 
 .participant-list,
@@ -209,6 +209,16 @@ button.secondary:disabled {
   display: grid;
   gap: 0.08rem;
   transform-origin: 50% 50%;
+  position: relative;
+  padding-left: 1rem;
+}
+
+.history-item::before {
+  content: "\2022";
+  position: absolute;
+  left: 0.12rem;
+  top: 0;
+  color: currentColor;
 }
 
 .history-item:active {
@@ -291,6 +301,17 @@ button.secondary:disabled {
   font-weight: 600;
 }
 
+.history-empty-line,
+.history-return-live {
+  display: grid;
+  gap: 0.08rem;
+  margin-top: var(--section-item-gap);
+}
+
+.history-return-live {
+  cursor: pointer;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .history-item.history-item-release {
     animation: none;
@@ -333,10 +354,6 @@ button.secondary:disabled {
 
 .section-actions {
   margin-bottom: var(--section-item-gap);
-}
-
-.section-actions:empty {
-  margin-bottom: 0;
 }
 
 .section-stack {

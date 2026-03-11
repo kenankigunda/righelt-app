@@ -136,6 +136,13 @@ const formatClientDateTime = (value) => {
 };
 
 const renderPlaceholderBadge = () => '<span class="status-chip offline">Not yet implemented</span>';
+const renderSectionActions = (actions) => {
+  const items = actions.filter((value) => typeof value === "string" && value.trim().length > 0);
+  if (items.length === 0) {
+    return "";
+  }
+  return `<div class="row section-actions">${items.join("")}</div>`;
+};
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
 const delay = (ms) =>
   new Promise((resolve) => {
@@ -269,8 +276,8 @@ const renderTurnHistory = (game) => {
       .map((move) => {
         const isSelected = game.inHistoryMode ? game.historyIndex === move.index : selectedMoveIndex === move.index;
         const selectedClass = isSelected ? (game.inHistoryMode ? " is-selected" : " is-live-selected") : "";
-        return `<li class="history-item${selectedClass}" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">
-          <span class="history-move-line ${playerToneClassForSide(move.actorSide || (turn.playerSeat === "Player 1" ? "P1" : "P2"))}">Move ${escapeHtml(
+        return `<li class="history-item ${playerToneClassForSide(move.actorSide || (turn.playerSeat === "Player 1" ? "P1" : "P2"))}${selectedClass}" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">
+          <span class="history-move-line">Move ${escapeHtml(
             String(move.index + 1),
           )}: ${escapeHtml(move.notation)}</span>
           <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
@@ -285,12 +292,12 @@ const renderTurnHistory = (game) => {
 
   const showLiveSelectedEmpty = liveSelectedEmptyTurnIndex === activeTurn.index;
   const emptyTurnItem = game.inHistoryMode
-    ? `<li class="history-item history-return-live" data-action="return-live" data-game-id="${escapeHtml(
+    ? `<div class="history-empty-line history-return-live" data-action="return-live" data-game-id="${escapeHtml(
         game.id,
-      )}"><span class="history-move-line">${escapeHtml(emptyTurnText)}</span></li>`
-    : `<li class="history-empty-line${showLiveSelectedEmpty ? " is-live-selected" : ""}"><span class="history-move-line">${escapeHtml(
+      )}"><span class="history-move-line">${escapeHtml(emptyTurnText)}</span></div>`
+    : `<div class="history-empty-line${showLiveSelectedEmpty ? " is-live-selected" : ""}"><span class="history-move-line">${escapeHtml(
         emptyTurnText,
-      )}</span></li>`;
+      )}</span></div>`;
 
   return `${moveRows.join("")}${emptyTurnItem}`;
 };
@@ -477,6 +484,25 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
     ? `<p class="small">Viewing history snapshot for move ${escapeHtml(historyMoveNumber)}.</p>
        <p class="small">Incoming live moves will appear at bottom.</p>`
     : '<p class="small">You are on the live view.</p><p class="small">Click moves below to see historical state.</p>';
+  const joinInviteActions = renderSectionActions([
+    game.canJoinAsViewer
+      ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${!busy ? "" : "disabled"}>Join as viewer</button>`
+      : "",
+    game.canJoinAsPlayer && game.showJoinActions
+      ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${!busy ? "" : "disabled"}>Join as player</button>`
+      : "",
+    game.canPlayAsBothPlayers
+      ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
+          !game.showOfflineState && !busy ? "" : "disabled"
+        }>Play as both players</button>`
+      : "",
+    `<button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${game.canInvite && !busy ? "" : "disabled"}>Invite someone else</button>`,
+  ]);
+  const historyActions = renderSectionActions([
+    game.inHistoryMode
+      ? `<button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Return to live view</button>`
+      : "",
+  ]);
 
   return `
     ${offlineBanner ? `<section class="panel">${offlineBanner}</section>` : ""}
@@ -503,32 +529,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
         <section class="panel">
           <h2>Join / Invite</h2>
           ${pendingSeatNotice}
-          <div class="row section-actions">
-            ${
-              game.canJoinAsViewer
-                ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
-                    !busy ? "" : "disabled"
-                  }>Join as viewer</button>`
-                : ""
-            }
-            ${
-              game.canJoinAsPlayer && game.showJoinActions
-                ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${
-                    !busy ? "" : "disabled"
-                  }>Join as player</button>`
-                : ""
-            }
-            ${
-              game.canPlayAsBothPlayers
-                ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
-                    !game.showOfflineState && !busy ? "" : "disabled"
-                  }>Play as both players</button>`
-                : ""
-            }
-            <button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${
-              game.canInvite && !busy ? "" : "disabled"
-            }>Invite someone else</button>
-          </div>
+          ${joinInviteActions}
           <div class="section-followup">
             ${inviteFeedback ? `<p class="small">${escapeHtml(inviteFeedback)}</p>` : ""}
             <ul class="participant-list">${pendingRows}</ul>
@@ -563,13 +564,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
         <section class="panel">
           <h2>History</h2>
           ${historyBanner}
-          <div class="row section-actions">
-            ${
-              game.inHistoryMode
-                ? `<button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" ${busy ? "disabled" : ""}>Return to live view</button>`
-                : ""
-            }
-          </div>
+          ${historyActions}
           <div class="section-followup">
             <ol class="history-list">${historyRows}</ol>
           </div>
