@@ -30,6 +30,15 @@ const CACHE_NO_STORE = "no-store";
 const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
 const GAME_ROOMS_BINDING_ERROR = "server_misconfigured_game_rooms_binding";
 
+const json = (body: unknown, status = 200, cacheControl = CACHE_NO_STORE): Response =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": cacheControl,
+    },
+  });
+
 const hasGameRoomsBinding = (env: Partial<LiveGameRequestEnv>) =>
   Boolean(
     env?.GAME_ROOMS &&
