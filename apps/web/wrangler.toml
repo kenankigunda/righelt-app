@@ -1,11 +1,11 @@
 name = "righelt"
+# This app deploys to Pages in advanced mode, so this remains Worker-style config.
 main = "_worker.ts"
 compatibility_date = "2026-02-23"
-pages_build_output_dir = "."
 
 [assets]
 directory = "."
-binding = "STATIC_ASSETS"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
 run_worker_first = ["/api/*"]
 
