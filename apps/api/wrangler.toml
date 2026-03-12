@@ -1,0 +1,17 @@
+name = "righelt-api"
+main = "index.js"
+compatibility_date = "2026-03-12"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "righelt-db-dev"
+database_id = "22435cc4-6655-4bdf-a05d-d100cd8e6cc9"
+migrations_dir = "../../db/migrations"
+
+[[durable_objects.bindings]]
+name = "GAME_ROOMS"
+class_name = "GameRoomDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoomDO"]
