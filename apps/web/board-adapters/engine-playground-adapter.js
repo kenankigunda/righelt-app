@@ -426,7 +426,7 @@ export function createEnginePlaygroundBoardAdapter() {
       path.setAttribute("d", `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${shortenedEnd.x} ${shortenedEnd.y}`);
       path.setAttribute("fill", "none");
       path.setAttribute("stroke", stroke);
-      path.setAttribute("stroke-width", "1.6");
+      path.setAttribute("stroke-width", "3");
       path.setAttribute("stroke-linecap", "round");
       path.setAttribute("stroke-opacity", previewOpacity);
       if (markerId) {
@@ -442,7 +442,7 @@ export function createEnginePlaygroundBoardAdapter() {
     line.setAttribute("x2", String(shortenedEnd.x));
     line.setAttribute("y2", String(shortenedEnd.y));
     line.setAttribute("stroke", stroke);
-    line.setAttribute("stroke-width", "1.6");
+    line.setAttribute("stroke-width", "3");
     line.setAttribute("stroke-linecap", "round");
     line.setAttribute("stroke-opacity", previewOpacity);
     if (markerId) {

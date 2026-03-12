@@ -136,7 +136,8 @@ test("project previews use a plus badge while move-style previews use lightweigh
   assert.match(adapterSource, /const PREVIEW_STROKE_BY_OWNER = \{\s*P1: "var\(--player-p1\)",\s*P2: "var\(--player-p2\)",\s*\};/s);
   assert.match(adapterSource, /const PREVIEW_OPACITY = \{\s*default: "0\.35",\s*selected: "0\.7",\s*\};/s);
   assert.match(adapterSource, /const drawArrowLine = \(from, to, owner, curved = false, selected = false\) => \{/);
-  assert.match(adapterSource, /line\.setAttribute\("stroke-width", "1\.6"\);/);
+  assert.match(adapterSource, /line\.setAttribute\("stroke-width", "3"\);/);
+  assert.match(adapterSource, /path\.setAttribute\("stroke-width", "3"\);/);
   assert.match(adapterSource, /const previewOpacity = selected \? PREVIEW_OPACITY\.selected : PREVIEW_OPACITY\.default;/);
   assert.match(adapterSource, /line\.setAttribute\("stroke-opacity", previewOpacity\);/);
   assert.match(adapterSource, /path\.setAttribute\("stroke-opacity", previewOpacity\);/);
