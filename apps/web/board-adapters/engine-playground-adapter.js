@@ -76,6 +76,21 @@ export const shouldCurveActionPreview = (from, to, referencePaths) => {
   return false;
 };
 
+export const getCurvedArrowAnchor = (start, end, curveDirection) => {
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  const distance = Math.hypot(deltaX, deltaY) || 1;
+  const unitX = deltaX / distance;
+  const unitY = deltaY / distance;
+  const perpendicularX = (-deltaY / distance) * curveDirection;
+  const perpendicularY = (deltaX / distance) * curveDirection;
+
+  return {
+    x: end.x + perpendicularX * 9 - unitX * 4,
+    y: end.y + perpendicularY * 9 - unitY * 4,
+  };
+};
+
 const formatActionPreviewLabel = (actionType, snapshot, destination) => {
   const suffix = destination ? ` (${destination.row},${destination.col})` : "";
   if (snapshot?.continuation?.type === "rush" && actionType === "rush") {
@@ -377,21 +392,25 @@ export function createEnginePlaygroundBoardAdapter() {
     const distance = Math.hypot(deltaX, deltaY);
     const stopBeforeGhost = 12;
     const shortenBy = Math.min(stopBeforeGhost, Math.max(0, distance - 4));
-    const unitX = distance > 0 ? deltaX / distance : 0;
-    const unitY = distance > 0 ? deltaY / distance : 0;
+    const stroke = PREVIEW_STROKE_BY_OWNER[owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
+    const curveDirection = owner === "P2" ? -1 : 1;
+    const arrowTarget = curved ? getCurvedArrowAnchor(start, end, curveDirection) : end;
+    const arrowDeltaX = arrowTarget.x - start.x;
+    const arrowDeltaY = arrowTarget.y - start.y;
+    const arrowDistance = Math.hypot(arrowDeltaX, arrowDeltaY);
+    const arrowUnitX = arrowDistance > 0 ? arrowDeltaX / arrowDistance : 0;
+    const arrowUnitY = arrowDistance > 0 ? arrowDeltaY / arrowDistance : 0;
     const shortenedEnd = {
-      x: end.x - unitX * shortenBy,
-      y: end.y - unitY * shortenBy,
+      x: arrowTarget.x - arrowUnitX * shortenBy,
+      y: arrowTarget.y - arrowUnitY * shortenBy,
     };
 
     const markerId = ensurePreviewArrowMarker(owner);
-    const stroke = PREVIEW_STROKE_BY_OWNER[owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
     if (curved) {
       const midpoint = {
         x: (start.x + shortenedEnd.x) / 2,
         y: (start.y + shortenedEnd.y) / 2,
       };
-      const curveDirection = owner === "P2" ? -1 : 1;
       const perpendicularLength = Math.hypot(deltaX, deltaY) || 1;
       const control = {
         x: midpoint.x + ((-deltaY / perpendicularLength) * 12 * curveDirection),

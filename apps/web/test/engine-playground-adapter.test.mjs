@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   createEnginePlaygroundBoardAdapter,
+  getCurvedArrowAnchor,
   segmentsOverlapOnSameLine,
   shouldCurveActionPreview,
 } from "../board-adapters/engine-playground-adapter.js";
@@ -99,6 +100,14 @@ test("preview arrow curvature detects overlapping supply or command segments onl
       [[{ row: 4, col: 4 }, { row: 4, col: 8 }]],
     ),
     false,
+  );
+  assert.deepEqual(
+    getCurvedArrowAnchor(
+      { x: 50, y: 100 },
+      { x: 50, y: 50 },
+      1,
+    ),
+    { x: 59, y: 54 },
   );
 });
 
