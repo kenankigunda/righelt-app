@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Righelt web app starter scaffold (Cloudflare free-tier).",
   "scripts": {
+    "dev:api": "pnpm --dir apps/api exec wrangler dev --config wrangler.toml --port 8787 --persist-to ../../.wrangler/state/api-local-dev",
     "dev:web": "node scripts/dev-web-auto.mjs 8788",
     "dev:web:a": "node scripts/dev-web-auto.mjs 8789",
     "dev:web:b": "node scripts/dev-web-auto.mjs 8790",
@@ -13,17 +14,19 @@
     "dev:web:b:auto": "node scripts/dev-web-auto.mjs 8790 --watch-backend",
     "dev:web:c:auto": "node scripts/dev-web-auto.mjs 8791 --watch-backend",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "pnpm test:engine && pnpm test:api-handler && pnpm test:web",
+    "test": "pnpm test:engine && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web",
     "test:engine": "tsx --test $(find packages/game-engine/test -name '*.test.mjs' -type f | sort)",
     "test:engine:unit": "tsx --test $(find packages/game-engine/test/unit -name '*.test.mjs' -type f | sort)",
     "test:engine:integration": "tsx --test $(find packages/game-engine/test/integration -name '*.test.mjs' -type f | sort)",
     "test:api-handler": "tsx --test $(find packages/api-handler/test -name '*.test.mjs' -type f | sort)",
+    "test:api-worker": "tsx --test $(find apps/api/test -name '*.test.mjs' -type f | sort)",
     "test:web": "node --test $(find apps/web/test -name '*.test.mjs' -type f | sort)",
     "cf:set-db": "node scripts/set-d1-binding.mjs",
-    "db:local": "pnpm --dir apps/web exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/local-dev",
-    "d1:migrate:dev": "pnpm --dir apps/web exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/local-dev",
-    "deploy:web": "pnpm --dir apps/web exec wrangler deploy",
-    "deploy:prod": "pnpm deploy:web"
+    "db:local": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev",
+    "d1:migrate:dev": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev",
+    "deploy:api": "pnpm --dir apps/api exec wrangler deploy --config wrangler.toml",
+    "deploy:web": "pnpm --dir apps/web exec wrangler pages deploy . --project-name ${CLOUDFLARE_PAGES_PROJECT:-righelt}",
+    "deploy:prod": "pnpm deploy:api && pnpm deploy:web"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260215.0",

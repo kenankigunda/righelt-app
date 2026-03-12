@@ -53,6 +53,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
           CLOUDFLARE_D1_DB_NAME: ${{ vars.CLOUDFLARE_D1_DB_NAME }}
+          CLOUDFLARE_API_BASE_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "Missing required secret: CLOUDFLARE_API_TOKEN"
@@ -66,6 +67,10 @@ jobs:
             echo "Missing required variable: CLOUDFLARE_PAGES_PROJECT"
             exit 1
           fi
+          if [ -z "$CLOUDFLARE_API_BASE_URL" ]; then
+            echo "Missing required variable: CLOUDFLARE_API_BASE_URL"
+            exit 1
+          fi
           echo "Using D1 DB name: ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev}"
 
       - name: Wrangler version
@@ -77,7 +82,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_D1_DB_NAME: ${{ vars.CLOUDFLARE_D1_DB_NAME }}
         run: |
-          pnpm --dir apps/web exec wrangler d1 migrations apply "${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev}" --config wrangler.toml --remote
+          pnpm --dir apps/api exec wrangler d1 migrations apply "${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev}" --config wrangler.toml --remote
+
+      - name: Deploy API worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          pnpm --dir apps/api exec wrangler deploy --config wrangler.toml
 
       - name: Deploy Pages
         env:
@@ -100,10 +112,28 @@ jobs:
           pnpm --dir apps/web exec wrangler pages deploy . --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch main
 
       - name: Smoke test deployed API bindings
+        env:
+          CLOUDFLARE_API_BASE_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
         run: |
+          API_HEALTH_URL="${CLOUDFLARE_API_BASE_URL%/}/api/health"
           HEALTH_URL="https://head.righelt.pages.dev/api/health"
+          API_HEALTH_JSON="$(curl -fsS "$API_HEALTH_URL")"
           HEALTH_JSON="$(curl -fsS "$HEALTH_URL")"
+          echo "$API_HEALTH_JSON"
           echo "$HEALTH_JSON"
+          printf '%s' "$API_HEALTH_JSON" | node -e '
+            let payload = "";
+            process.stdin.on("data", (chunk) => {
+              payload += chunk;
+            });
+            process.stdin.on("end", () => {
+              const body = JSON.parse(payload);
+              if (body?.ok !== true || body?.bindings?.db !== true || body?.bindings?.gameRooms !== true) {
+                console.error("Deploy smoke test failed: API worker bindings are not active.");
+                process.exit(1);
+              }
+            });
+          '
           printf '%s' "$HEALTH_JSON" | node -e '
             let payload = "";
             process.stdin.on("data", (chunk) => {
@@ -112,7 +142,24 @@ jobs:
             process.stdin.on("end", () => {
               const body = JSON.parse(payload);
               if (body?.ok !== true || body?.bindings?.db !== true || body?.bindings?.gameRooms !== true) {
-                console.error("Deploy smoke test failed: required bindings are not active on head deployment.");
+                console.error("Deploy smoke test failed: Pages proxy is not returning the expected API health payload.");
+                process.exit(1);
+              }
+            });
+          '
+          CREATE_JSON="$(curl -fsS -X POST "https://head.righelt.pages.dev/api/shell/games?offline=1" \
+            -H "content-type: application/json" \
+            --data '{"identityId":"deploy-smoke-player","playgroundMode":false,"offlineLocal":false}')"
+          echo "$CREATE_JSON"
+          printf '%s' "$CREATE_JSON" | node -e '
+            let payload = "";
+            process.stdin.on("data", (chunk) => {
+              payload += chunk;
+            });
+            process.stdin.on("end", () => {
+              const body = JSON.parse(payload);
+              if (body?.ok !== true || typeof body?.game?.id !== "string") {
+                console.error("Deploy smoke test failed: Pages proxy create-game flow is not healthy.");
                 process.exit(1);
               }
             });

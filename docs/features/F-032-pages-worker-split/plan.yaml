@@ -1,0 +1,42 @@
+feature_id: F-032-pages-worker-split
+integration_branch: codex/f-032-pages-worker-split-integration
+max_parallel_streams: 1
+shared_acceptance:
+  - pnpm typecheck
+  - pnpm test:engine
+  - pnpm test:api-handler
+  - pnpm test:api-worker
+  - pnpm test:web
+streams:
+  - id: A1
+    goal: Extract the API runtime into apps/api and make it the sole owner of DB and GameRoomDO.
+    worktree: ../righelt-F-032-pages-worker-split-A1
+    branch: codex/F-032-pages-worker-split-A1
+    depends_on: []
+    acceptance_checks:
+      - pnpm test:api-handler
+      - pnpm test:api-worker
+    agent_profile: api-runtime-extraction
+  - id: A2
+    goal: Convert Pages into a same-origin API proxy and remove combined runtime bindings.
+    worktree: ../righelt-F-032-pages-worker-split-A2
+    branch: codex/F-032-pages-worker-split-A2
+    depends_on:
+      - A1
+    acceptance_checks:
+      - pnpm test:web
+      - pnpm test:api-worker
+    agent_profile: pages-proxy
+  - id: A3
+    goal: Update CI/CD, local dev scripts, and operator docs for the split-stack deploy.
+    worktree: ../righelt-F-032-pages-worker-split-A3
+    branch: codex/F-032-pages-worker-split-A3
+    depends_on:
+      - A2
+    acceptance_checks:
+      - pnpm typecheck
+      - pnpm test:engine
+      - pnpm test:api-handler
+      - pnpm test:api-worker
+      - pnpm test:web
+    agent_profile: deploy-and-ops
