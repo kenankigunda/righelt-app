@@ -71,6 +71,8 @@ Run Pages only:
 pnpm dev:web
 ```
 
+This starts the site on `http://localhost:8788` only. API-backed flows will return `local_api_unavailable` until the local API Worker is also running.
+
 Run the API Worker only:
 
 ```bash

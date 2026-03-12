@@ -419,10 +419,6 @@ const startPagesWrangler = () => {
   pagesWrangler = spawn("pnpm", ["exec", "wrangler", "pages", "dev", ".", "--port", port], {
     cwd: webCwd,
     stdio: ["inherit", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      API_ORIGIN: LOCAL_API_ORIGIN,
-    },
   });
   attachChild(pagesWrangler, { openBrowser: true, label: "pages dev" });
   openTimer = setTimeout(() => {
