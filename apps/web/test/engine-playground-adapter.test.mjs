@@ -151,6 +151,10 @@ test("project previews use a plus badge while move-style previews use lightweigh
   assert.match(styleSource, /\.piece-token\.p2\s*\{[\s\S]*background:\s*var\(--player-p2\);[\s\S]*border-color:\s*var\(--player-p2\);/s);
 });
 
+test("illegal move-style previews do not draw arrows", () => {
+  assert.match(adapterSource, /if \(action\.type !== "project" && action\.legal !== false\) \{/);
+});
+
 test("action preview ghosts stay centered instead of using preview offsets", () => {
   assert.doesNotMatch(adapterSource, /getPreviewOffset/);
   assert.doesNotMatch(adapterSource, /ghost\.classList\.add\("offset-move"\)/);

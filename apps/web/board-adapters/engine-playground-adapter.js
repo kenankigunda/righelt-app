@@ -562,7 +562,7 @@ export function createEnginePlaygroundBoardAdapter() {
       if (!action?.to) {
         continue;
       }
-      if (action.type !== "project") {
+      if (action.type !== "project" && action.legal !== false) {
         drawArrowLine(
           piece.position,
           action.to,
