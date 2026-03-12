@@ -65,19 +65,19 @@ Expected signal:
 
 ## Local Development
 
-1. Start the API Worker:
-
-```bash
-pnpm dev:api
-```
-
-2. Start the Pages site:
+Use the site launcher for normal local work:
 
 ```bash
 pnpm dev:web
 ```
 
-`pnpm dev:web` proxies `/api/*` to `http://127.0.0.1:8787` when `API_SERVICE` is not available, so local split-stack development does not depend on deployed Cloudflare bindings.
+`pnpm dev:web` now starts the local `righelt-api` Worker first, waits for `http://127.0.0.1:8787/api/health`, and then starts the Pages site on `http://localhost:8788`. Local `/api/*` requests are proxied to the local API Worker, and local live WebSocket traffic connects directly to `ws://127.0.0.1:8787`.
+
+Use the API Worker by itself only when debugging the Worker in isolation:
+
+```bash
+pnpm dev:api
+```
 
 ## Recovery Rules
 

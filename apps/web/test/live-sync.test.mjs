@@ -30,15 +30,15 @@ class MockSocket {
   }
 }
 
-test("live sync connects to home and game websocket scopes and forwards events", async () => {
+test("live sync routes local dev websocket traffic directly to the API worker", async () => {
   const originalWs = globalThis.WebSocket;
   const originalWindow = globalThis.window;
 
-  const events = [];
   globalThis.WebSocket = MockSocket;
   globalThis.window = {
     location: {
       protocol: "http:",
+      hostname: "localhost",
       host: "localhost:8788",
     },
   };
@@ -47,18 +47,47 @@ test("live sync connects to home and game websocket scopes and forwards events",
     const client = createLiveSyncClient({
       identityId: "id-a",
       getLastEventSeq: () => 7,
-      onEvent: (payload) => events.push(payload),
+      onEvent: () => {},
     });
 
     client.connectGame("g-123");
     assert.equal(MockSocket.instances.length, 1);
+    assert.match(MockSocket.instances[0].url, /^ws:\/\/127\.0\.0\.1:8787\//);
     assert.match(MockSocket.instances[0].url, /\/api\/shell\/games\/g-123\/ws/);
     assert.match(MockSocket.instances[0].url, /lastEventSeq=7/);
+    client.disconnect();
+  } finally {
+    globalThis.WebSocket = originalWs;
+    globalThis.window = originalWindow;
+    MockSocket.instances.length = 0;
+  }
+});
 
-    MockSocket.instances[0].emit("message", { data: JSON.stringify({ type: "event_appended", eventSeq: 8, game: { id: "g1" } }) });
-    assert.equal(events.length, 1);
-    assert.equal(events[0].type, "event_appended");
+test("live sync keeps same-origin websocket host outside local dev", async () => {
+  const originalWs = globalThis.WebSocket;
+  const originalWindow = globalThis.window;
 
+  globalThis.WebSocket = MockSocket;
+  globalThis.window = {
+    location: {
+      protocol: "https:",
+      hostname: "righelt.pages.dev",
+      host: "righelt.pages.dev",
+    },
+  };
+
+  try {
+    const client = createLiveSyncClient({
+      identityId: "id-a",
+      getLastEventSeq: () => 7,
+      onEvent: () => {},
+    });
+
+    client.connectGame("g-456");
+    assert.equal(MockSocket.instances.length, 1);
+    assert.match(MockSocket.instances[0].url, /^wss:\/\/righelt\.pages\.dev\//);
+    assert.match(MockSocket.instances[0].url, /\/api\/shell\/games\/g-456\/ws/);
+    assert.match(MockSocket.instances[0].url, /lastEventSeq=7/);
     client.disconnect();
   } finally {
     globalThis.WebSocket = originalWs;

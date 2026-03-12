@@ -1,6 +1,9 @@
 const WS_RECONNECT_BASE_MS = 500;
 const WS_RECONNECT_MAX_MS = 6000;
 const HEARTBEAT_MS = 15_000;
+const LOCAL_API_WS_HOST = "127.0.0.1:8787";
+
+const isLocalDevHost = (hostname) => hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 
 const createWsUrl = ({ identityId, gameId, lastEventSeq }) => {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
@@ -8,7 +11,8 @@ const createWsUrl = ({ identityId, gameId, lastEventSeq }) => {
     identityId,
     lastEventSeq: String(lastEventSeq ?? 0),
   });
-  return `${protocol}://${window.location.host}/api/shell/games/${encodeURIComponent(gameId)}/ws?${params.toString()}`;
+  const host = isLocalDevHost(window.location.hostname) ? LOCAL_API_WS_HOST : window.location.host;
+  return `${protocol}://${host}/api/shell/games/${encodeURIComponent(gameId)}/ws?${params.toString()}`;
 };
 
 export const createLiveSyncClient = ({
