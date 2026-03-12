@@ -82,9 +82,12 @@ test("preview ghosts do not render inactive state from preview metadata", () => 
   assert.match(adapterSource, /if \(!ghost && \(!renderStatus\.supplied \|\| !renderStatus\.commanded\)\) \{/);
 });
 
-test("action previews render without overlay lines and mark created-piece previews with a plus badge", () => {
-  assert.doesNotMatch(adapterSource, /ensureArrowMarker\(/);
-  assert.doesNotMatch(adapterSource, /drawArrowLine\(/);
+test("project previews use a plus badge while move-style previews use lightweight owner-colored arrows", () => {
+  assert.match(adapterSource, /const PREVIEW_STROKE_BY_OWNER = \{\s*P1: "#c2452f",\s*P2: "#2d67c7",\s*\};/s);
+  assert.match(adapterSource, /const drawArrowLine = \(from, to, owner\) => \{/);
+  assert.match(adapterSource, /line\.setAttribute\("stroke-width", "1\.6"\);/);
+  assert.match(adapterSource, /line\.setAttribute\("stroke-opacity", "0\.42"\);/);
+  assert.match(adapterSource, /if \(action\.type !== "project"\) \{\s*drawArrowLine\(piece\.position, action\.to, piece\.owner\);\s*\}/s);
   assert.doesNotMatch(adapterSource, /drawPath\(\[piece\.position, action\.to\], "#8b5ec0", "5 5"\)/);
   assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*ghost\.classList\.add\("preview-created"\);\s*\}/s);
   assert.match(styleSource, /\.piece-token\.move-ghost\.preview-created::after\s*\{[\s\S]*content:\s*"\+";[\s\S]*top:\s*-7px;[\s\S]*right:\s*-8px;/s);

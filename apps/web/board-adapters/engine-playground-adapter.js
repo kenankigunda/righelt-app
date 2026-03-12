@@ -9,6 +9,10 @@ import {
 const BOARD_SIZE = 10;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const REMOVAL_FLASH_DURATION_MS = 1800;
+const PREVIEW_STROKE_BY_OWNER = {
+  P1: "#c2452f",
+  P2: "#2d67c7",
+};
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
 const isSupplyPoint = (row, col) => (row === 0 && col === 9) || (row === 9 && col === 0);
@@ -273,6 +277,81 @@ export function createEnginePlaygroundBoardAdapter() {
     }
   };
 
+  const ensurePreviewArrowMarker = (owner) => {
+    if (!overlayLinesEl) {
+      return null;
+    }
+
+    const stroke = PREVIEW_STROKE_BY_OWNER[owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
+    let defs = overlayLinesEl.querySelector("defs");
+    if (!defs) {
+      defs = document.createElementNS(SVG_NS, "defs");
+      overlayLinesEl.appendChild(defs);
+    }
+
+    const markerId = `preview-arrow-${String(owner ?? "default").toLowerCase()}`;
+    let marker = defs.querySelector(`#${markerId}`);
+    if (!marker) {
+      marker = document.createElementNS(SVG_NS, "marker");
+      marker.setAttribute("id", markerId);
+      marker.setAttribute("viewBox", "0 0 10 10");
+      marker.setAttribute("refX", "7");
+      marker.setAttribute("refY", "5");
+      marker.setAttribute("markerWidth", "4");
+      marker.setAttribute("markerHeight", "4");
+      marker.setAttribute("orient", "auto-start-reverse");
+      marker.setAttribute("markerUnits", "strokeWidth");
+
+      const arrowPath = document.createElementNS(SVG_NS, "path");
+      arrowPath.setAttribute("d", "M 0 1 L 8 5 L 0 9 z");
+      arrowPath.setAttribute("fill", stroke);
+      arrowPath.setAttribute("fill-opacity", "0.55");
+      marker.appendChild(arrowPath);
+      defs.appendChild(marker);
+    }
+
+    return markerId;
+  };
+
+  const drawArrowLine = (from, to, owner) => {
+    if (!overlayLinesEl) {
+      return;
+    }
+
+    const start = getCellCenter(from);
+    const end = getCellCenter(to);
+    if (!start || !end) {
+      return;
+    }
+
+    const deltaX = end.x - start.x;
+    const deltaY = end.y - start.y;
+    const distance = Math.hypot(deltaX, deltaY);
+    const stopBeforeGhost = 12;
+    const shortenBy = Math.min(stopBeforeGhost, Math.max(0, distance - 4));
+    const unitX = distance > 0 ? deltaX / distance : 0;
+    const unitY = distance > 0 ? deltaY / distance : 0;
+    const shortenedEnd = {
+      x: end.x - unitX * shortenBy,
+      y: end.y - unitY * shortenBy,
+    };
+
+    const markerId = ensurePreviewArrowMarker(owner);
+    const line = document.createElementNS(SVG_NS, "line");
+    line.setAttribute("x1", String(start.x));
+    line.setAttribute("y1", String(start.y));
+    line.setAttribute("x2", String(shortenedEnd.x));
+    line.setAttribute("y2", String(shortenedEnd.y));
+    line.setAttribute("stroke", PREVIEW_STROKE_BY_OWNER[owner] ?? PREVIEW_STROKE_BY_OWNER.P1);
+    line.setAttribute("stroke-width", "1.6");
+    line.setAttribute("stroke-linecap", "round");
+    line.setAttribute("stroke-opacity", "0.42");
+    if (markerId) {
+      line.setAttribute("marker-end", `url(#${markerId})`);
+    }
+    overlayLinesEl.appendChild(line);
+  };
+
   const clearCellDecorations = () => {
     for (const cell of cellByCoordinateKey.values()) {
       cell.classList.remove(
@@ -379,6 +458,9 @@ export function createEnginePlaygroundBoardAdapter() {
       const action = actionsAtTarget.find((candidate) => candidate.type === preferredActionType) ?? actionsAtTarget[0];
       if (!action?.to) {
         continue;
+      }
+      if (action.type !== "project") {
+        drawArrowLine(piece.position, action.to, piece.owner);
       }
       const targetCell = cellByCoordinateKey.get(targetKey);
       if (targetCell) {
