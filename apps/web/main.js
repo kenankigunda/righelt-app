@@ -11,6 +11,7 @@ import {
 import { buildPieceMoveResponse } from "./board/client-move-generation.js";
 import { assertGameBoardAdapter } from "./board-adapter-contract.js";
 import { createEnginePlaygroundBoardAdapter } from "./board-adapters/engine-playground-adapter.js";
+import { applyCommandLegendSwatch } from "./legend.js";
 import { buildHomeHash, isPlaygroundRouteHash, isShellRouteHash, isShellRootHash } from "./shell/routes.js";
 
 if (isShellRootHash(window.location.hash)) {
@@ -63,6 +64,7 @@ const replayFixtureEl = document.getElementById("replay-fixture");
 const saveFixtureEl = document.getElementById("save-fixture");
 const updateFixtureEl = document.getElementById("update-fixture");
 const fixtureResultEl = document.getElementById("fixture-result");
+const commandLegendSwatchEl = document.getElementById("playground-command-legend-swatch");
 
 let state = null;
 let legalActions = [];
@@ -534,6 +536,8 @@ const renderBoard = () => {
 
 const renderStatus = () => {
   if (!state) return;
+
+  applyCommandLegendSwatch(commandLegendSwatchEl, state, selectedPieceId);
 
   sideToMoveEl.textContent = state.sideToMove;
   setPlayerTone(sideToMoveEl, state.sideToMove);

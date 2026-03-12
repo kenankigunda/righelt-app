@@ -452,7 +452,23 @@ button {
 }
 
 .swatch.command {
-  background: #2470c7;
+  position: relative;
+  width: 16px;
+  height: 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--swatch-command-color, var(--player-p1));
+}
+
+.swatch.command::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  border-top: 3px dashed currentColor;
 }
 
 .swatch.move {
