@@ -17,6 +17,7 @@ const PREVIEW_OPACITY = {
   default: "0.35",
   selected: "0.7",
 };
+const OVERLAY_PARALLEL_SPLIT_OFFSET = 2.5;
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
 const isSupplyPoint = (row, col) => (row === 0 && col === 9) || (row === 9 && col === 0);
@@ -92,6 +93,124 @@ export const getCurvedArrowAnchor = (start, end, curveDirection) => {
   return {
     x: end.x + perpendicularX * 9 - unitX * 4,
     y: end.y + perpendicularY * 9 - unitY * 4,
+  };
+};
+
+const compareCoords = (left, right) => {
+  if (!left && !right) {
+    return 0;
+  }
+  if (!left) {
+    return -1;
+  }
+  if (!right) {
+    return 1;
+  }
+  if (left.row !== right.row) {
+    return left.row - right.row;
+  }
+  return left.col - right.col;
+};
+
+export const getCanonicalSegment = (from, to) => (compareCoords(from, to) <= 0 ? [from, to] : [to, from]);
+
+export const getSegmentKey = (from, to) => {
+  if (!from || !to) {
+    return "";
+  }
+  const [start, end] = getCanonicalSegment(from, to);
+  return `${coordKey(start)}>${coordKey(end)}`;
+};
+
+const gcd = (left, right) => {
+  let a = Math.abs(left);
+  let b = Math.abs(right);
+  while (b !== 0) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  return a || 1;
+};
+
+export const normalizeOverlayPath = (path) => {
+  if (!Array.isArray(path) || path.length < 2) {
+    return Array.isArray(path) ? [...path] : [];
+  }
+
+  const normalized = [{ ...path[0] }];
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const from = path[index];
+    const to = path[index + 1];
+    if (!from || !to) {
+      continue;
+    }
+
+    const deltaRow = to.row - from.row;
+    const deltaCol = to.col - from.col;
+    const steps = gcd(deltaRow, deltaCol);
+    const rowStep = deltaRow / steps;
+    const colStep = deltaCol / steps;
+
+    for (let step = 1; step <= steps; step += 1) {
+      normalized.push({
+        row: from.row + rowStep * step,
+        col: from.col + colStep * step,
+      });
+    }
+  }
+
+  return normalized;
+};
+
+const getPathSegmentKeys = (path) => {
+  if (!Array.isArray(path) || path.length < 2) {
+    return [];
+  }
+
+  const keys = [];
+  for (let index = 0; index < path.length - 1; index += 1) {
+    keys.push(getSegmentKey(path[index], path[index + 1]));
+  }
+  return keys.filter(Boolean);
+};
+
+export const buildSharedPathSegmentOffsetMaps = (
+  supplyPath,
+  commandPath,
+  offsetAmount = OVERLAY_PARALLEL_SPLIT_OFFSET,
+) => {
+  const supplyOffsetsBySegmentKey = new Map();
+  const commandOffsetsBySegmentKey = new Map();
+  const supplyKeys = new Set(getPathSegmentKeys(supplyPath));
+
+  for (const key of getPathSegmentKeys(commandPath)) {
+    if (!supplyKeys.has(key)) {
+      continue;
+    }
+    supplyOffsetsBySegmentKey.set(key, -offsetAmount);
+    commandOffsetsBySegmentKey.set(key, offsetAmount);
+  }
+
+  return {
+    supplyOffsetsBySegmentKey,
+    commandOffsetsBySegmentKey,
+  };
+};
+
+export const getPathSegmentOffsetVector = (from, to, offsetAmount = 0) => {
+  if (!from || !to || !offsetAmount) {
+    return { x: 0, y: 0 };
+  }
+
+  const [start, end] = getCanonicalSegment(from, to);
+  const deltaX = end.col - start.col;
+  const deltaY = end.row - start.row;
+  const distance = Math.hypot(deltaX, deltaY) || 1;
+
+  return {
+    x: (-deltaY / distance) * offsetAmount,
+    y: (deltaX / distance) * offsetAmount,
   };
 };
 
@@ -317,23 +436,28 @@ export function createEnginePlaygroundBoardAdapter() {
     };
   };
 
-  const drawPath = (path, stroke, dashPattern = null) => {
+  const drawPath = (path, stroke, dashPattern = null, offsetsBySegmentKey = null) => {
     if (!overlayLinesEl || !path || path.length < 2) {
       return;
     }
 
     for (let i = 0; i < path.length - 1; i += 1) {
-      const start = getCellCenter(path[i]);
-      const end = getCellCenter(path[i + 1]);
+      const pathStart = path[i];
+      const pathEnd = path[i + 1];
+      const start = getCellCenter(pathStart);
+      const end = getCellCenter(pathEnd);
       if (!start || !end) {
         continue;
       }
+      const segmentKey = getSegmentKey(pathStart, pathEnd);
+      const offsetAmount = offsetsBySegmentKey?.get(segmentKey) ?? 0;
+      const offset = getPathSegmentOffsetVector(pathStart, pathEnd, offsetAmount);
 
       const line = document.createElementNS(SVG_NS, "line");
-      line.setAttribute("x1", String(start.x));
-      line.setAttribute("y1", String(start.y));
-      line.setAttribute("x2", String(end.x));
-      line.setAttribute("y2", String(end.y));
+      line.setAttribute("x1", String(start.x + offset.x));
+      line.setAttribute("y1", String(start.y + offset.y));
+      line.setAttribute("x2", String(end.x + offset.x));
+      line.setAttribute("y2", String(end.y + offset.y));
       line.setAttribute("stroke", stroke);
       line.setAttribute("stroke-width", "3");
       line.setAttribute("stroke-linecap", "round");
@@ -537,11 +661,15 @@ export function createEnginePlaygroundBoardAdapter() {
       }
     }
 
-    const supplyPath = getSupplyPathForPiece(snapshot, piece);
-    const commandPath = getCommandPathForPiece(snapshot, piece);
+    const supplyPath = normalizeOverlayPath(getSupplyPathForPiece(snapshot, piece));
+    const commandPath = normalizeOverlayPath(getCommandPathForPiece(snapshot, piece));
     const commandStroke = PREVIEW_STROKE_BY_OWNER[piece.owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
-    drawPath(supplyPath, "#2f8e63", "2 6");
-    drawPath(commandPath, commandStroke, "2 6");
+    const { supplyOffsetsBySegmentKey, commandOffsetsBySegmentKey } = buildSharedPathSegmentOffsetMaps(
+      supplyPath,
+      commandPath,
+    );
+    drawPath(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey);
+    drawPath(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey);
 
     const previews = Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves;
     const previewsByTargetKey = new Map();

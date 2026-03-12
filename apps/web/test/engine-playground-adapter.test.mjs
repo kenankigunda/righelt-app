@@ -5,8 +5,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  buildSharedPathSegmentOffsetMaps,
   createEnginePlaygroundBoardAdapter,
   getCurvedArrowAnchor,
+  normalizeOverlayPath,
+  getPathSegmentOffsetVector,
+  getSegmentKey,
   segmentsOverlapOnSameLine,
   shouldCurveActionPreview,
 } from "../board-adapters/engine-playground-adapter.js";
@@ -111,6 +115,72 @@ test("preview arrow curvature detects overlapping supply or command segments onl
   );
 });
 
+test("shared supply and command segments receive opposite parallel offsets", () => {
+  const sharedKey = getSegmentKey({ row: 4, col: 4 }, { row: 4, col: 5 });
+  const { supplyOffsetsBySegmentKey, commandOffsetsBySegmentKey } = buildSharedPathSegmentOffsetMaps(
+    [
+      { row: 4, col: 4 },
+      { row: 4, col: 5 },
+      { row: 4, col: 6 },
+    ],
+    [
+      { row: 4, col: 5 },
+      { row: 4, col: 4 },
+      { row: 3, col: 4 },
+    ],
+  );
+
+  assert.equal(supplyOffsetsBySegmentKey.get(sharedKey), -2.5);
+  assert.equal(commandOffsetsBySegmentKey.get(sharedKey), 2.5);
+});
+
+test("overlay path normalization expands long straight segments into unit steps", () => {
+  assert.deepEqual(
+    normalizeOverlayPath([
+      { row: 5, col: 6 },
+      { row: 3, col: 6 },
+    ]),
+    [
+      { row: 5, col: 6 },
+      { row: 4, col: 6 },
+      { row: 3, col: 6 },
+    ],
+  );
+});
+
+test("shared offset maps catch overlap when command path spans multiple cells in one segment", () => {
+  const normalizedSupply = normalizeOverlayPath([
+    { row: 3, col: 2 },
+    { row: 3, col: 3 },
+    { row: 3, col: 4 },
+  ]);
+  const normalizedCommand = normalizeOverlayPath([
+    { row: 3, col: 4 },
+    { row: 3, col: 2 },
+  ]);
+
+  const { supplyOffsetsBySegmentKey, commandOffsetsBySegmentKey } = buildSharedPathSegmentOffsetMaps(
+    normalizedSupply,
+    normalizedCommand,
+  );
+
+  assert.equal(supplyOffsetsBySegmentKey.get(getSegmentKey({ row: 3, col: 2 }, { row: 3, col: 3 })), -2.5);
+  assert.equal(supplyOffsetsBySegmentKey.get(getSegmentKey({ row: 3, col: 3 }, { row: 3, col: 4 })), -2.5);
+  assert.equal(commandOffsetsBySegmentKey.get(getSegmentKey({ row: 3, col: 2 }, { row: 3, col: 3 })), 2.5);
+  assert.equal(commandOffsetsBySegmentKey.get(getSegmentKey({ row: 3, col: 3 }, { row: 3, col: 4 })), 2.5);
+});
+
+test("path segment offset vector is stable for reversed segment direction", () => {
+  assert.deepEqual(
+    getPathSegmentOffsetVector({ row: 4, col: 4 }, { row: 4, col: 5 }, 2.5),
+    { x: -0, y: 2.5 },
+  );
+  assert.deepEqual(
+    getPathSegmentOffsetVector({ row: 4, col: 5 }, { row: 4, col: 4 }, 2.5),
+    { x: -0, y: 2.5 },
+  );
+});
+
 test("empty-cell preview markers use a geometry-based centered dot", () => {
   assert.match(adapterSource, /marker\.className = "piece-empty";\s*marker\.setAttribute\("aria-hidden", "true"\);/s);
   assert.doesNotMatch(adapterSource, /marker\.textContent = "\.";/);
@@ -150,9 +220,12 @@ test("project previews use a plus badge while move-style previews use lightweigh
   assert.match(styleSource, /:root\s*\{[\s\S]*--player-p1:\s*#c2452f;[\s\S]*--player-p2:\s*#2d67c7;/s);
   assert.match(styleSource, /\.piece-token\.p1\s*\{[\s\S]*background:\s*var\(--player-p1\);[\s\S]*border-color:\s*var\(--player-p1\);/s);
   assert.match(styleSource, /\.piece-token\.p2\s*\{[\s\S]*background:\s*var\(--player-p2\);[\s\S]*border-color:\s*var\(--player-p2\);/s);
-  assert.match(adapterSource, /drawPath\(supplyPath, "#2f8e63", "2 6"\);/);
+  assert.match(adapterSource, /const supplyPath = normalizeOverlayPath\(getSupplyPathForPiece\(snapshot, piece\)\);/);
+  assert.match(adapterSource, /const commandPath = normalizeOverlayPath\(getCommandPathForPiece\(snapshot, piece\)\);/);
+  assert.match(adapterSource, /buildSharedPathSegmentOffsetMaps\(\s*supplyPath,\s*commandPath,\s*\)/s);
+  assert.match(adapterSource, /drawPath\(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey\);/);
   assert.match(adapterSource, /const commandStroke = PREVIEW_STROKE_BY_OWNER\[piece\.owner\] \?\? PREVIEW_STROKE_BY_OWNER\.P1;/);
-  assert.match(adapterSource, /drawPath\(commandPath, commandStroke, "2 6"\);/);
+  assert.match(adapterSource, /drawPath\(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey\);/);
   assert.doesNotMatch(adapterSource, /drawPath\(commandPath, "#2470c7"\)/);
 });
 
