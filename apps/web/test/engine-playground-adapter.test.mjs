@@ -150,6 +150,7 @@ test("project previews use a plus badge while move-style previews use lightweigh
   assert.match(styleSource, /:root\s*\{[\s\S]*--player-p1:\s*#c2452f;[\s\S]*--player-p2:\s*#2d67c7;/s);
   assert.match(styleSource, /\.piece-token\.p1\s*\{[\s\S]*background:\s*var\(--player-p1\);[\s\S]*border-color:\s*var\(--player-p1\);/s);
   assert.match(styleSource, /\.piece-token\.p2\s*\{[\s\S]*background:\s*var\(--player-p2\);[\s\S]*border-color:\s*var\(--player-p2\);/s);
+  assert.match(adapterSource, /drawPath\(supplyPath, "#2f8e63", "2 6"\);/);
   assert.match(adapterSource, /const commandStroke = PREVIEW_STROKE_BY_OWNER\[piece\.owner\] \?\? PREVIEW_STROKE_BY_OWNER\.P1;/);
   assert.match(adapterSource, /drawPath\(commandPath, commandStroke, "2 6"\);/);
   assert.doesNotMatch(adapterSource, /drawPath\(commandPath, "#2470c7"\)/);

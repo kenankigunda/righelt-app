@@ -540,7 +540,7 @@ export function createEnginePlaygroundBoardAdapter() {
     const supplyPath = getSupplyPathForPiece(snapshot, piece);
     const commandPath = getCommandPathForPiece(snapshot, piece);
     const commandStroke = PREVIEW_STROKE_BY_OWNER[piece.owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
-    drawPath(supplyPath, "#2f8e63");
+    drawPath(supplyPath, "#2f8e63", "2 6");
     drawPath(commandPath, commandStroke, "2 6");
 
     const previews = Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves;

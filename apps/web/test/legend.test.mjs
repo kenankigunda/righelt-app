@@ -61,3 +61,8 @@ test("command legend swatch renders as a dashed line", () => {
   assert.match(stylesSource, /\.swatch\.command\s*\{[\s\S]*color:\s*var\(--swatch-command-color, var\(--player-p1\)\);/s);
   assert.match(stylesSource, /\.swatch\.command::before\s*\{[\s\S]*border-top:\s*3px dashed currentColor;/s);
 });
+
+test("supply legend swatch renders as a dashed green line", () => {
+  assert.match(stylesSource, /\.swatch\.supply\s*\{[\s\S]*color:\s*#2f8e63;/s);
+  assert.match(stylesSource, /\.swatch\.supply::before,\s*\.swatch\.command::before\s*\{[\s\S]*border-top:\s*3px dashed currentColor;/s);
+});

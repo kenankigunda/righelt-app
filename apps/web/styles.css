@@ -447,10 +447,7 @@ button {
   border: 1px solid transparent;
 }
 
-.swatch.supply {
-  background: #2f8e63;
-}
-
+.swatch.supply,
 .swatch.command {
   position: relative;
   width: 16px;
@@ -458,9 +455,17 @@ button {
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+
+.swatch.supply {
+  color: #2f8e63;
+}
+
+.swatch.command {
   color: var(--swatch-command-color, var(--player-p1));
 }
 
+.swatch.supply::before,
 .swatch.command::before {
   content: "";
   position: absolute;
