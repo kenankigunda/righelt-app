@@ -13,6 +13,10 @@ const PREVIEW_STROKE_BY_OWNER = {
   P1: "var(--player-p1)",
   P2: "var(--player-p2)",
 };
+const PREVIEW_OPACITY = {
+  default: "0.35",
+  selected: "0.7",
+};
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
 const isSupplyPoint = (row, col) => (row === 0 && col === 9) || (row === 9 && col === 0);
@@ -340,19 +344,20 @@ export function createEnginePlaygroundBoardAdapter() {
     }
   };
 
-  const ensurePreviewArrowMarker = (owner) => {
+  const ensurePreviewArrowMarker = (owner, opacity) => {
     if (!overlayLinesEl) {
       return null;
     }
 
     const stroke = PREVIEW_STROKE_BY_OWNER[owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
+    const opacityKey = opacity === PREVIEW_OPACITY.selected ? "selected" : "default";
     let defs = overlayLinesEl.querySelector("defs");
     if (!defs) {
       defs = document.createElementNS(SVG_NS, "defs");
       overlayLinesEl.appendChild(defs);
     }
 
-    const markerId = `preview-arrow-${String(owner ?? "default").toLowerCase()}`;
+    const markerId = `preview-arrow-${String(owner ?? "default").toLowerCase()}-${opacityKey}`;
     let marker = defs.querySelector(`#${markerId}`);
     if (!marker) {
       marker = document.createElementNS(SVG_NS, "marker");
@@ -368,7 +373,7 @@ export function createEnginePlaygroundBoardAdapter() {
       const arrowPath = document.createElementNS(SVG_NS, "path");
       arrowPath.setAttribute("d", "M 0 1 L 8 5 L 0 9 z");
       arrowPath.setAttribute("fill", stroke);
-      arrowPath.setAttribute("fill-opacity", "0.55");
+      arrowPath.setAttribute("fill-opacity", opacity);
       marker.appendChild(arrowPath);
       defs.appendChild(marker);
     }
@@ -376,7 +381,7 @@ export function createEnginePlaygroundBoardAdapter() {
     return markerId;
   };
 
-  const drawArrowLine = (from, to, owner, curved = false) => {
+  const drawArrowLine = (from, to, owner, curved = false, selected = false) => {
     if (!overlayLinesEl) {
       return;
     }
@@ -393,6 +398,7 @@ export function createEnginePlaygroundBoardAdapter() {
     const stopBeforeGhost = 12;
     const shortenBy = Math.min(stopBeforeGhost, Math.max(0, distance - 4));
     const stroke = PREVIEW_STROKE_BY_OWNER[owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
+    const previewOpacity = selected ? PREVIEW_OPACITY.selected : PREVIEW_OPACITY.default;
     const curveDirection = owner === "P2" ? -1 : 1;
     const arrowTarget = curved ? getCurvedArrowAnchor(start, end, curveDirection) : end;
     const arrowDeltaX = arrowTarget.x - start.x;
@@ -405,7 +411,7 @@ export function createEnginePlaygroundBoardAdapter() {
       y: arrowTarget.y - arrowUnitY * shortenBy,
     };
 
-    const markerId = ensurePreviewArrowMarker(owner);
+    const markerId = ensurePreviewArrowMarker(owner, previewOpacity);
     if (curved) {
       const midpoint = {
         x: (start.x + shortenedEnd.x) / 2,
@@ -422,7 +428,7 @@ export function createEnginePlaygroundBoardAdapter() {
       path.setAttribute("stroke", stroke);
       path.setAttribute("stroke-width", "1.6");
       path.setAttribute("stroke-linecap", "round");
-      path.setAttribute("stroke-opacity", "0.42");
+      path.setAttribute("stroke-opacity", previewOpacity);
       if (markerId) {
         path.setAttribute("marker-end", `url(#${markerId})`);
       }
@@ -438,7 +444,7 @@ export function createEnginePlaygroundBoardAdapter() {
     line.setAttribute("stroke", stroke);
     line.setAttribute("stroke-width", "1.6");
     line.setAttribute("stroke-linecap", "round");
-    line.setAttribute("stroke-opacity", "0.42");
+    line.setAttribute("stroke-opacity", previewOpacity);
     if (markerId) {
       line.setAttribute("marker-end", `url(#${markerId})`);
     }
@@ -551,6 +557,8 @@ export function createEnginePlaygroundBoardAdapter() {
     for (const [targetKey, actionsAtTarget] of previewsByTargetKey.entries()) {
       const preferredActionType = pickBestActionTypeForTarget(actionsAtTarget, null);
       const action = actionsAtTarget.find((candidate) => candidate.type === preferredActionType) ?? actionsAtTarget[0];
+      const targetCell = cellByCoordinateKey.get(targetKey);
+      const isSelectedTarget = targetCell?.classList.contains("target") ?? false;
       if (!action?.to) {
         continue;
       }
@@ -560,9 +568,9 @@ export function createEnginePlaygroundBoardAdapter() {
           action.to,
           piece.owner,
           shouldCurveActionPreview(piece.position, action.to, [supplyPath, commandPath]),
+          isSelectedTarget,
         );
       }
-      const targetCell = cellByCoordinateKey.get(targetKey);
       if (targetCell) {
         const ghost = buildPieceToken(action.previewPiece ?? piece, true);
         ghost.classList.add("move-ghost");

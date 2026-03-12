@@ -134,9 +134,14 @@ test("preview ghosts do not render inactive state from preview metadata", () => 
 
 test("project previews use a plus badge while move-style previews use lightweight owner-colored arrows", () => {
   assert.match(adapterSource, /const PREVIEW_STROKE_BY_OWNER = \{\s*P1: "var\(--player-p1\)",\s*P2: "var\(--player-p2\)",\s*\};/s);
-  assert.match(adapterSource, /const drawArrowLine = \(from, to, owner, curved = false\) => \{/);
+  assert.match(adapterSource, /const PREVIEW_OPACITY = \{\s*default: "0\.35",\s*selected: "0\.7",\s*\};/s);
+  assert.match(adapterSource, /const drawArrowLine = \(from, to, owner, curved = false, selected = false\) => \{/);
   assert.match(adapterSource, /line\.setAttribute\("stroke-width", "1\.6"\);/);
-  assert.match(adapterSource, /line\.setAttribute\("stroke-opacity", "0\.42"\);/);
+  assert.match(adapterSource, /const previewOpacity = selected \? PREVIEW_OPACITY\.selected : PREVIEW_OPACITY\.default;/);
+  assert.match(adapterSource, /line\.setAttribute\("stroke-opacity", previewOpacity\);/);
+  assert.match(adapterSource, /path\.setAttribute\("stroke-opacity", previewOpacity\);/);
+  assert.match(adapterSource, /arrowPath\.setAttribute\("fill-opacity", opacity\);/);
+  assert.match(adapterSource, /const isSelectedTarget = targetCell\?\.classList\.contains\("target"\) \?\? false;/);
   assert.match(adapterSource, /shouldCurveActionPreview\(piece\.position, action\.to, \[supplyPath, commandPath\]\)/);
   assert.doesNotMatch(adapterSource, /drawPath\(\[piece\.position, action\.to\], "#8b5ec0", "5 5"\)/);
   assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*ghost\.classList\.add\("preview-created"\);\s*\}/s);
