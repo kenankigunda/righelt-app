@@ -246,16 +246,6 @@ export function createEnginePlaygroundBoardAdapter() {
     };
   };
 
-  const getPreviewOffset = (actionType) => {
-    if (actionType === "move") {
-      return { x: -14, y: -14 };
-    }
-    if (actionType === "rush") {
-      return { x: 14, y: 14 };
-    }
-    return { x: 0, y: 0 };
-  };
-
   const drawPath = (path, stroke, dashPattern = null) => {
     if (!overlayLinesEl || !path || path.length < 2) {
       return;
@@ -315,7 +305,7 @@ export function createEnginePlaygroundBoardAdapter() {
     }
   };
 
-  const drawArrowLine = (from, to, stroke, endOffset = { x: 0, y: 0 }) => {
+  const drawArrowLine = (from, to, stroke) => {
     if (!overlayLinesEl) {
       return;
     }
@@ -326,20 +316,16 @@ export function createEnginePlaygroundBoardAdapter() {
       return;
     }
 
-    const rawEnd = {
-      x: end.x + endOffset.x,
-      y: end.y + endOffset.y,
-    };
-    const deltaX = rawEnd.x - start.x;
-    const deltaY = rawEnd.y - start.y;
+    const deltaX = end.x - start.x;
+    const deltaY = end.y - start.y;
     const distance = Math.hypot(deltaX, deltaY);
     const stopBeforeGhost = 16;
     const shortenBy = Math.min(stopBeforeGhost, Math.max(0, distance - 4));
     const unitX = distance > 0 ? deltaX / distance : 0;
     const unitY = distance > 0 ? deltaY / distance : 0;
     const shortenedEnd = {
-      x: rawEnd.x - unitX * shortenBy,
-      y: rawEnd.y - unitY * shortenBy,
+      x: end.x - unitX * shortenBy,
+      y: end.y - unitY * shortenBy,
     };
 
     const line = document.createElementNS(SVG_NS, "line");
@@ -460,7 +446,7 @@ export function createEnginePlaygroundBoardAdapter() {
       seenPreviews.add(previewKey);
 
       if (action.type === "move" || action.type === "rush") {
-        drawArrowLine(piece.position, action.to, "#8b5ec0", getPreviewOffset(action.type));
+        drawArrowLine(piece.position, action.to, "#8b5ec0");
       } else {
         drawPath([piece.position, action.to], "#8b5ec0", "5 5");
       }
@@ -470,11 +456,6 @@ export function createEnginePlaygroundBoardAdapter() {
         ghost.classList.add("move-ghost");
         if (action.legal === false && action.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED") {
           ghost.classList.add("illegal-unsupplied");
-        }
-        if (action.type === "move") {
-          ghost.classList.add("offset-move");
-        } else if (action.type === "rush") {
-          ghost.classList.add("offset-rush");
         }
         targetCell.appendChild(ghost);
       }

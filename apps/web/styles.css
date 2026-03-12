@@ -407,14 +407,6 @@ button {
   z-index: 0;
 }
 
-.move-ghost.offset-move {
-  transform: translate(-14px, -14px);
-}
-
-.move-ghost.offset-rush {
-  transform: translate(14px, 14px);
-}
-
 .overlay-key {
   margin-top: 1rem;
   display: flex;

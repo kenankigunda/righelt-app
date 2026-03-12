@@ -77,3 +77,11 @@ test("overlay lines are constrained to the board box, excluding axis-label paddi
 test("preview ghosts render from projected preview-piece state when available", () => {
   assert.match(adapterSource, /const ghost = buildPieceToken\(action\.previewPiece \?\? piece, true\);/);
 });
+
+test("action preview ghosts stay centered instead of using preview offsets", () => {
+  assert.doesNotMatch(adapterSource, /getPreviewOffset/);
+  assert.doesNotMatch(adapterSource, /ghost\.classList\.add\("offset-move"\)/);
+  assert.doesNotMatch(adapterSource, /ghost\.classList\.add\("offset-rush"\)/);
+  assert.doesNotMatch(styleSource, /\.move-ghost\.offset-move\s*\{/);
+  assert.doesNotMatch(styleSource, /\.move-ghost\.offset-rush\s*\{/);
+});
