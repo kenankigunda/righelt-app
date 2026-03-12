@@ -28,6 +28,54 @@ export const getRemovalAnimationDelayMs = (effect, now = Date.now()) => {
   return Math.max(0, Math.min(now - effect.startedAt, REMOVAL_FLASH_DURATION_MS));
 };
 
+const previewOrientation = (a, b, c) => (b.col - a.col) * (c.row - a.row) - (b.row - a.row) * (c.col - a.col);
+
+export const segmentsOverlapOnSameLine = (leftFrom, leftTo, rightFrom, rightTo) => {
+  if (
+    !leftFrom ||
+    !leftTo ||
+    !rightFrom ||
+    !rightTo ||
+    previewOrientation(leftFrom, leftTo, rightFrom) !== 0 ||
+    previewOrientation(leftFrom, leftTo, rightTo) !== 0
+  ) {
+    return false;
+  }
+
+  const leftDeltaRow = leftTo.row - leftFrom.row;
+  const leftDeltaCol = leftTo.col - leftFrom.col;
+  const project =
+    Math.abs(leftDeltaCol) >= Math.abs(leftDeltaRow)
+      ? (point) => point.col
+      : (point) => point.row;
+
+  const leftStart = Math.min(project(leftFrom), project(leftTo));
+  const leftEnd = Math.max(project(leftFrom), project(leftTo));
+  const rightStart = Math.min(project(rightFrom), project(rightTo));
+  const rightEnd = Math.max(project(rightFrom), project(rightTo));
+
+  return Math.min(leftEnd, rightEnd) - Math.max(leftStart, rightStart) > 0;
+};
+
+export const shouldCurveActionPreview = (from, to, referencePaths) => {
+  if (!from || !to || !Array.isArray(referencePaths)) {
+    return false;
+  }
+
+  for (const path of referencePaths) {
+    if (!Array.isArray(path) || path.length < 2) {
+      continue;
+    }
+    for (let index = 0; index < path.length - 1; index += 1) {
+      if (segmentsOverlapOnSameLine(from, to, path[index], path[index + 1])) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
 const formatActionPreviewLabel = (actionType, snapshot, destination) => {
   const suffix = destination ? ` (${destination.row},${destination.col})` : "";
   if (snapshot?.continuation?.type === "rush" && actionType === "rush") {
@@ -313,7 +361,7 @@ export function createEnginePlaygroundBoardAdapter() {
     return markerId;
   };
 
-  const drawArrowLine = (from, to, owner) => {
+  const drawArrowLine = (from, to, owner, curved = false) => {
     if (!overlayLinesEl) {
       return;
     }
@@ -337,12 +385,38 @@ export function createEnginePlaygroundBoardAdapter() {
     };
 
     const markerId = ensurePreviewArrowMarker(owner);
+    const stroke = PREVIEW_STROKE_BY_OWNER[owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
+    if (curved) {
+      const midpoint = {
+        x: (start.x + shortenedEnd.x) / 2,
+        y: (start.y + shortenedEnd.y) / 2,
+      };
+      const curveDirection = owner === "P2" ? -1 : 1;
+      const perpendicularLength = Math.hypot(deltaX, deltaY) || 1;
+      const control = {
+        x: midpoint.x + ((-deltaY / perpendicularLength) * 12 * curveDirection),
+        y: midpoint.y + ((deltaX / perpendicularLength) * 12 * curveDirection),
+      };
+      const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("d", `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${shortenedEnd.x} ${shortenedEnd.y}`);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", stroke);
+      path.setAttribute("stroke-width", "1.6");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-opacity", "0.42");
+      if (markerId) {
+        path.setAttribute("marker-end", `url(#${markerId})`);
+      }
+      overlayLinesEl.appendChild(path);
+      return;
+    }
+
     const line = document.createElementNS(SVG_NS, "line");
     line.setAttribute("x1", String(start.x));
     line.setAttribute("y1", String(start.y));
     line.setAttribute("x2", String(shortenedEnd.x));
     line.setAttribute("y2", String(shortenedEnd.y));
-    line.setAttribute("stroke", PREVIEW_STROKE_BY_OWNER[owner] ?? PREVIEW_STROKE_BY_OWNER.P1);
+    line.setAttribute("stroke", stroke);
     line.setAttribute("stroke-width", "1.6");
     line.setAttribute("stroke-linecap", "round");
     line.setAttribute("stroke-opacity", "0.42");
@@ -438,8 +512,10 @@ export function createEnginePlaygroundBoardAdapter() {
       }
     }
 
-    drawPath(getSupplyPathForPiece(snapshot, piece), "#2f8e63");
-    drawPath(getCommandPathForPiece(snapshot, piece), "#2470c7");
+    const supplyPath = getSupplyPathForPiece(snapshot, piece);
+    const commandPath = getCommandPathForPiece(snapshot, piece);
+    drawPath(supplyPath, "#2f8e63");
+    drawPath(commandPath, "#2470c7");
 
     const previews = Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves;
     const previewsByTargetKey = new Map();
@@ -460,7 +536,12 @@ export function createEnginePlaygroundBoardAdapter() {
         continue;
       }
       if (action.type !== "project") {
-        drawArrowLine(piece.position, action.to, piece.owner);
+        drawArrowLine(
+          piece.position,
+          action.to,
+          piece.owner,
+          shouldCurveActionPreview(piece.position, action.to, [supplyPath, commandPath]),
+        );
       }
       const targetCell = cellByCoordinateKey.get(targetKey);
       if (targetCell) {

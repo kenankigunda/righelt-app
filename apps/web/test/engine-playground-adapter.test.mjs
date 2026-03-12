@@ -4,7 +4,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createEnginePlaygroundBoardAdapter } from "../board-adapters/engine-playground-adapter.js";
+import {
+  createEnginePlaygroundBoardAdapter,
+  segmentsOverlapOnSameLine,
+  shouldCurveActionPreview,
+} from "../board-adapters/engine-playground-adapter.js";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
 const adapterSource = readFileSync(join(testDir, "..", "board-adapters", "engine-playground-adapter.js"), "utf8");
@@ -61,6 +65,43 @@ test("retreat stack click selects pushed piece as retreat actor", () => {
   });
 });
 
+test("preview arrow curvature detects overlapping supply or command segments only", () => {
+  assert.equal(
+    segmentsOverlapOnSameLine(
+      { row: 4, col: 4 },
+      { row: 4, col: 5 },
+      { row: 4, col: 4 },
+      { row: 4, col: 8 },
+    ),
+    true,
+  );
+  assert.equal(
+    segmentsOverlapOnSameLine(
+      { row: 4, col: 4 },
+      { row: 5, col: 5 },
+      { row: 4, col: 5 },
+      { row: 5, col: 4 },
+    ),
+    false,
+  );
+  assert.equal(
+    shouldCurveActionPreview(
+      { row: 4, col: 4 },
+      { row: 4, col: 5 },
+      [[{ row: 4, col: 4 }, { row: 4, col: 8 }], [{ row: 2, col: 2 }, { row: 2, col: 3 }]],
+    ),
+    true,
+  );
+  assert.equal(
+    shouldCurveActionPreview(
+      { row: 4, col: 4 },
+      { row: 5, col: 5 },
+      [[{ row: 4, col: 4 }, { row: 4, col: 8 }]],
+    ),
+    false,
+  );
+});
+
 test("empty-cell preview markers use a geometry-based centered dot", () => {
   assert.match(adapterSource, /marker\.className = "piece-empty";\s*marker\.setAttribute\("aria-hidden", "true"\);/s);
   assert.doesNotMatch(adapterSource, /marker\.textContent = "\.";/);
@@ -84,10 +125,10 @@ test("preview ghosts do not render inactive state from preview metadata", () => 
 
 test("project previews use a plus badge while move-style previews use lightweight owner-colored arrows", () => {
   assert.match(adapterSource, /const PREVIEW_STROKE_BY_OWNER = \{\s*P1: "#c2452f",\s*P2: "#2d67c7",\s*\};/s);
-  assert.match(adapterSource, /const drawArrowLine = \(from, to, owner\) => \{/);
+  assert.match(adapterSource, /const drawArrowLine = \(from, to, owner, curved = false\) => \{/);
   assert.match(adapterSource, /line\.setAttribute\("stroke-width", "1\.6"\);/);
   assert.match(adapterSource, /line\.setAttribute\("stroke-opacity", "0\.42"\);/);
-  assert.match(adapterSource, /if \(action\.type !== "project"\) \{\s*drawArrowLine\(piece\.position, action\.to, piece\.owner\);\s*\}/s);
+  assert.match(adapterSource, /shouldCurveActionPreview\(piece\.position, action\.to, \[supplyPath, commandPath\]\)/);
   assert.doesNotMatch(adapterSource, /drawPath\(\[piece\.position, action\.to\], "#8b5ec0", "5 5"\)/);
   assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*ghost\.classList\.add\("preview-created"\);\s*\}/s);
   assert.match(styleSource, /\.piece-token\.move-ghost\.preview-created::after\s*\{[\s\S]*content:\s*"\+";[\s\S]*top:\s*-7px;[\s\S]*right:\s*-8px;/s);
