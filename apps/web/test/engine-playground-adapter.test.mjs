@@ -85,3 +85,8 @@ test("action preview ghosts stay centered instead of using preview offsets", () 
   assert.doesNotMatch(styleSource, /\.move-ghost\.offset-move\s*\{/);
   assert.doesNotMatch(styleSource, /\.move-ghost\.offset-rush\s*\{/);
 });
+
+test("same-target previews render only the preferred action type", () => {
+  assert.match(adapterSource, /const preferredActionType = pickBestActionTypeForTarget\(actionsAtTarget, null\);/);
+  assert.match(adapterSource, /const action = actionsAtTarget\.find\(\(candidate\) => candidate\.type === preferredActionType\) \?\? actionsAtTarget\[0\];/);
+});

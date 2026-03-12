@@ -431,20 +431,24 @@ export function createEnginePlaygroundBoardAdapter() {
     drawPath(getSupplyPathForPiece(snapshot, piece), "#2f8e63");
     drawPath(getCommandPathForPiece(snapshot, piece), "#2470c7");
 
-    const seenPreviews = new Set();
     const previews = Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves;
+    const previewsByTargetKey = new Map();
     for (const action of previews) {
-      if (!action.to) {
+      if (!action?.to) {
         continue;
       }
-
       const targetKey = coordKey(action.to);
-      const previewKey = `${action.type}:${targetKey}`;
-      if (seenPreviews.has(previewKey)) {
+      const actionsAtTarget = previewsByTargetKey.get(targetKey) ?? [];
+      actionsAtTarget.push(action);
+      previewsByTargetKey.set(targetKey, actionsAtTarget);
+    }
+
+    for (const [targetKey, actionsAtTarget] of previewsByTargetKey.entries()) {
+      const preferredActionType = pickBestActionTypeForTarget(actionsAtTarget, null);
+      const action = actionsAtTarget.find((candidate) => candidate.type === preferredActionType) ?? actionsAtTarget[0];
+      if (!action?.to) {
         continue;
       }
-      seenPreviews.add(previewKey);
-
       if (action.type === "move" || action.type === "rush") {
         drawArrowLine(piece.position, action.to, "#8b5ec0");
       } else {
