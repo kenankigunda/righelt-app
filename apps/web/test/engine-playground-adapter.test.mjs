@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createEnginePlaygroundBoardAdapter } from "../board-adapters/engine-playground-adapter.js";
+
+const testDir = fileURLToPath(new URL(".", import.meta.url));
+const adapterSource = readFileSync(join(testDir, "..", "board-adapters", "engine-playground-adapter.js"), "utf8");
+const styleSource = readFileSync(join(testDir, "..", "styles.css"), "utf8");
 
 test("retreat stack click selects pushed piece as retreat actor", () => {
   const adapter = createEnginePlaygroundBoardAdapter();
@@ -52,4 +59,11 @@ test("retreat stack click selects pushed piece as retreat actor", () => {
     },
     nextActionType: "pass",
   });
+});
+
+test("empty-cell preview markers use a geometry-based centered dot", () => {
+  assert.match(adapterSource, /marker\.className = "piece-empty";\s*marker\.setAttribute\("aria-hidden", "true"\);/s);
+  assert.doesNotMatch(adapterSource, /marker\.textContent = "\.";/);
+  assert.match(styleSource, /\.piece-empty\s*\{[\s\S]*width:\s*10px;[\s\S]*height:\s*10px;[\s\S]*display:\s*inline-flex;/s);
+  assert.match(styleSource, /\.piece-empty::before\s*\{[\s\S]*width:\s*4px;[\s\S]*height:\s*4px;[\s\S]*border-radius:\s*50%;/s);
 });

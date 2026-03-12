@@ -593,8 +593,20 @@ button {
 .piece-empty {
   position: relative;
   z-index: 1;
-  font-size: 0.8rem;
-  color: #94a0a4;
+  width: 10px;
+  height: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.piece-empty::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #94a0a4;
 }
 
 .axis-label {

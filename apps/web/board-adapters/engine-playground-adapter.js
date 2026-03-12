@@ -718,7 +718,7 @@ export function createEnginePlaygroundBoardAdapter() {
             const marker = cellPiece ? buildPieceToken(cellPiece) : document.createElement("span");
             if (!cellPiece) {
               marker.className = "piece-empty";
-              marker.textContent = ".";
+              marker.setAttribute("aria-hidden", "true");
             }
             cell.appendChild(marker);
           }
