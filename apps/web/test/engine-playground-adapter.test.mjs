@@ -173,3 +173,7 @@ test("selected destination preview ghost is more opaque than other previews", ()
 test("group strength badge sits inset from the square's upper-left corner", () => {
   assert.match(styleSource, /\.group-strength-badge\s*\{[\s\S]*top:\s*-6px;[\s\S]*left:\s*-6px;/s);
 });
+
+test("group strength badge only renders for strengths above one", () => {
+  assert.match(adapterSource, /if \(anchorCell && typeof groupInfo\.strength === "number" && groupInfo\.strength > 1\) \{/);
+});

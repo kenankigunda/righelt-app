@@ -520,7 +520,7 @@ export function createEnginePlaygroundBoardAdapter() {
 
       if (anchor) {
         const anchorCell = cellByCoordinateKey.get(coordKey(anchor));
-        if (anchorCell && typeof groupInfo.strength === "number") {
+        if (anchorCell && typeof groupInfo.strength === "number" && groupInfo.strength > 1) {
           const badge = document.createElement("span");
           badge.className = "group-strength-badge";
           badge.textContent = String(groupInfo.strength);
