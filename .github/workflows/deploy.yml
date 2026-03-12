@@ -114,9 +114,11 @@ jobs:
       - name: Smoke test deployed API bindings
         env:
           CLOUDFLARE_API_BASE_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
         run: |
           API_HEALTH_URL="${CLOUDFLARE_API_BASE_URL%/}/api/health"
-          HEALTH_URL="https://head.righelt.pages.dev/api/health"
+          PAGES_BASE_URL="https://${CLOUDFLARE_PAGES_PROJECT}.pages.dev"
+          HEALTH_URL="${PAGES_BASE_URL}/api/health"
           API_HEALTH_JSON="$(curl -fsS "$API_HEALTH_URL")"
           HEALTH_JSON="$(curl -fsS "$HEALTH_URL")"
           echo "$API_HEALTH_JSON"
@@ -147,7 +149,7 @@ jobs:
               }
             });
           '
-          CREATE_JSON="$(curl -fsS -X POST "https://head.righelt.pages.dev/api/shell/games?offline=1" \
+          CREATE_JSON="$(curl -fsS -X POST "${PAGES_BASE_URL}/api/shell/games?offline=1" \
             -H "content-type: application/json" \
             --data '{"identityId":"deploy-smoke-player","playgroundMode":false,"offlineLocal":false}')"
           echo "$CREATE_JSON"
