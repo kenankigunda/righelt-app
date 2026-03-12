@@ -11,7 +11,7 @@ Notes:
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
-| `main` | n/a | `origin/main` exists, up to date (`=`) | `-` | Baseline |
+| `main` | n/a | `origin/main` exists, up to date (`=`) | `primary` | Baseline |
 
 ## (b) Already Merged To `main`, But Checked Out On A Worktree
 
@@ -23,8 +23,6 @@ Notes:
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
 | `codex/computer-player` | No | `origin/codex/computer-player` exists, up to date (`=`) | `wt-b058` | Adds `docs/RIGHELT_COMPUTER_PLAYER_PLAN.md` with the computer-player implementation plan |
-| `codex/investigation-20260311` | No | `origin/codex/investigation-20260311` exists, up to date (`=`) | `primary` | Guards missing game room binding in the API handler and related tests |
-| `codex/ui-edits-followup` | No | `origin/codex/ui-edits-followup` exists, up to date (`=`) | `wt-5b34` | Stabilizes shell and board UI behavior, including panel persistence, join-panel height animation, history return-live placement, and related UI guards |
 
 ## (d) Not Merged To `main`, And Not Checked Out On A Worktree
 
