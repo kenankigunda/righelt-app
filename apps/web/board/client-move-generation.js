@@ -35,6 +35,12 @@ const compareActionPreviews = (left, right) => {
 const outOfBounds = (coord) =>
   Boolean(coord) && (coord.row < 0 || coord.row >= BOARD_SIZE || coord.col < 0 || coord.col >= BOARD_SIZE);
 
+const PROJECTED_PREVIEW_ID = "__projected_preview__";
+const COMMANDER_ID_BY_OWNER = {
+  P1: "C1",
+  P2: "C2",
+};
+
 const getPieceAt = (state, coord) =>
   state?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null;
 
@@ -109,6 +115,8 @@ const isClearOrthogonalLineForPieces = (a, b, occupied) => {
   return true;
 };
 
+const makeEdgeId = (leftId, rightId) => [leftId, rightId].sort((a, b) => a.localeCompare(b)).join("|");
+
 const buildCommandEdgesForPieces = (pieces) => {
   const occupied = new Map(pieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece.id]));
   const edges = [];
@@ -133,12 +141,176 @@ const buildCommandEdgesForPieces = (pieces) => {
           continue;
         }
 
-        edges.push({ owner, from: { ...a.position }, to: { ...b.position } });
+        edges.push({
+          id: makeEdgeId(a.id, b.id),
+          owner,
+          fromId: a.id,
+          toId: b.id,
+          from: { ...a.position },
+          to: { ...b.position },
+        });
       }
     }
   }
 
   return edges;
+};
+
+const orientation = (a, b, c) => (b.col - a.col) * (c.row - a.row) - (b.row - a.row) * (c.col - a.col);
+
+const samePoint = (left, right) => left.row === right.row && left.col === right.col;
+
+const pointStrictlyInsideSegment = (point, a, b) => {
+  const minRow = Math.min(a.row, b.row);
+  const maxRow = Math.max(a.row, b.row);
+  const minCol = Math.min(a.col, b.col);
+  const maxCol = Math.max(a.col, b.col);
+  return (
+    point.row >= minRow &&
+    point.row <= maxRow &&
+    point.col >= minCol &&
+    point.col <= maxCol &&
+    !samePoint(point, a) &&
+    !samePoint(point, b)
+  );
+};
+
+const collinearSegmentsOverlapInInterior = (edgeA, edgeB) => {
+  const vertical = edgeA.from.col === edgeA.to.col && edgeB.from.col === edgeB.to.col && edgeA.from.col === edgeB.from.col;
+  if (vertical) {
+    const start = Math.max(Math.min(edgeA.from.row, edgeA.to.row), Math.min(edgeB.from.row, edgeB.to.row));
+    const end = Math.min(Math.max(edgeA.from.row, edgeA.to.row), Math.max(edgeB.from.row, edgeB.to.row));
+    return end > start;
+  }
+
+  const horizontal = edgeA.from.row === edgeA.to.row && edgeB.from.row === edgeB.to.row && edgeA.from.row === edgeB.from.row;
+  if (horizontal) {
+    const start = Math.max(Math.min(edgeA.from.col, edgeA.to.col), Math.min(edgeB.from.col, edgeB.to.col));
+    const end = Math.min(Math.max(edgeA.from.col, edgeA.to.col), Math.max(edgeB.from.col, edgeB.to.col));
+    return end > start;
+  }
+
+  const diagonalSlopeA = {
+    row: edgeA.to.row - edgeA.from.row,
+    col: edgeA.to.col - edgeA.from.col,
+  };
+  const diagonalSlopeB = {
+    row: edgeB.to.row - edgeB.from.row,
+    col: edgeB.to.col - edgeB.from.col,
+  };
+
+  if (Math.abs(diagonalSlopeA.row) !== Math.abs(diagonalSlopeA.col) || Math.abs(diagonalSlopeB.row) !== Math.abs(diagonalSlopeB.col)) {
+    return false;
+  }
+
+  const sameSlopeSign =
+    Math.sign(diagonalSlopeA.row) === Math.sign(diagonalSlopeA.col) &&
+    Math.sign(diagonalSlopeB.row) === Math.sign(diagonalSlopeB.col);
+  const oppositeSlopeSign =
+    Math.sign(diagonalSlopeA.row) === -Math.sign(diagonalSlopeA.col) &&
+    Math.sign(diagonalSlopeB.row) === -Math.sign(diagonalSlopeB.col);
+  if (!sameSlopeSign && !oppositeSlopeSign) {
+    return false;
+  }
+
+  const project = sameSlopeSign
+    ? (point) => point.row + point.col
+    : (point) => point.row - point.col;
+  const start = Math.max(Math.min(project(edgeA.from), project(edgeA.to)), Math.min(project(edgeB.from), project(edgeB.to)));
+  const end = Math.min(Math.max(project(edgeA.from), project(edgeA.to)), Math.max(project(edgeB.from), project(edgeB.to)));
+  return end > start;
+};
+
+const segmentIntersectionPoint = (edgeA, edgeB) => {
+  const a = edgeA.from;
+  const b = edgeA.to;
+  const c = edgeB.from;
+  const d = edgeB.to;
+
+  const o1 = orientation(a, b, c);
+  const o2 = orientation(a, b, d);
+  const o3 = orientation(c, d, a);
+  const o4 = orientation(c, d, b);
+
+  if (o1 === 0 && o2 === 0 && o3 === 0 && o4 === 0) {
+    return collinearSegmentsOverlapInInterior(edgeA, edgeB) ? { row: Number.NaN, col: Number.NaN } : null;
+  }
+
+  if ((o1 === 0 && pointStrictlyInsideSegment(c, a, b)) || (o2 === 0 && pointStrictlyInsideSegment(d, a, b))) {
+    return { row: o1 === 0 ? c.row : d.row, col: o1 === 0 ? c.col : d.col };
+  }
+  if ((o3 === 0 && pointStrictlyInsideSegment(a, c, d)) || (o4 === 0 && pointStrictlyInsideSegment(b, c, d))) {
+    return { row: o3 === 0 ? a.row : b.row, col: o3 === 0 ? a.col : b.col };
+  }
+
+  if ((o1 > 0 && o2 < 0 || o1 < 0 && o2 > 0) && (o3 > 0 && o4 < 0 || o3 < 0 && o4 > 0)) {
+    const denominator = (a.row - b.row) * (c.col - d.col) - (a.col - b.col) * (c.row - d.row);
+    if (denominator === 0) {
+      return { row: Number.NaN, col: Number.NaN };
+    }
+    const determinantA = a.row * b.col - a.col * b.row;
+    const determinantB = c.row * d.col - c.col * d.row;
+    return {
+      row: (determinantA * (c.row - d.row) - (a.row - b.row) * determinantB) / denominator,
+      col: (determinantA * (c.col - d.col) - (a.col - b.col) * determinantB) / denominator,
+    };
+  }
+
+  return null;
+};
+
+const getCommandedPieceIds = (pieces, owner) => {
+  const visiblePieces = pieces.filter((piece) => !piece.pushed);
+  const edges = buildCommandEdgesForPieces(visiblePieces);
+  const cutEdges = new Set();
+  const ownEdges = edges.filter((edge) => edge.owner === owner);
+  const enemyEdges = edges.filter((edge) => edge.owner !== owner);
+
+  for (const ownEdge of ownEdges) {
+    for (const enemyEdge of enemyEdges) {
+      if (segmentIntersectionPoint(ownEdge, enemyEdge)) {
+        cutEdges.add(ownEdge.id);
+        cutEdges.add(enemyEdge.id);
+      }
+    }
+  }
+
+  const adjacency = new Map(
+    visiblePieces
+      .filter((piece) => piece.owner === owner)
+      .map((piece) => [piece.id, []]),
+  );
+  for (const edge of ownEdges) {
+    if (cutEdges.has(edge.id)) {
+      continue;
+    }
+    adjacency.get(edge.fromId)?.push(edge.toId);
+    adjacency.get(edge.toId)?.push(edge.fromId);
+  }
+
+  const commanderId = COMMANDER_ID_BY_OWNER[owner];
+  if (!adjacency.has(commanderId)) {
+    return new Set();
+  }
+
+  const visited = new Set([commanderId]);
+  const queue = [commanderId];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      break;
+    }
+    const neighbors = (adjacency.get(current) ?? []).sort((left, right) => left.localeCompare(right));
+    for (const next of neighbors) {
+      if (visited.has(next)) {
+        continue;
+      }
+      visited.add(next);
+      queue.push(next);
+    }
+  }
+
+  return visited;
 };
 
 const SUPPLY_POINTS = {
@@ -236,6 +408,89 @@ const wouldBeSuppliedAfterPush = (state, actorId, defenderId, owner, destination
       position: piece.id === actorId ? { ...destination } : { ...piece.position },
     }));
   return wouldCoordinateBeSuppliedForOwner(hypothetical, owner, destination);
+};
+
+const clonePieceForPreview = (piece) => ({
+  ...piece,
+  position: { ...piece.position },
+});
+
+const buildHypotheticalPiecesForPreview = (state, action, actor) => {
+  if (!action?.to || !actor) {
+    return [];
+  }
+
+  if (action.type === "project") {
+    const hypothetical = state.pieces.map(clonePieceForPreview);
+    hypothetical.push({
+      id: PROJECTED_PREVIEW_ID,
+      owner: actor.owner,
+      kind: "unit",
+      position: { ...action.to },
+      supplied: true,
+      commanded: true,
+      pushed: false,
+      shifted: false,
+    });
+    return hypothetical;
+  }
+
+  if (action.type === "push") {
+    const defender = getPieceAt(state, action.to);
+    return state.pieces
+      .filter((piece) => piece.id !== defender?.id)
+      .map((piece) =>
+        piece.id === actor.id
+          ? {
+              ...clonePieceForPreview(piece),
+              position: { ...action.to },
+              pushed: false,
+            }
+          : clonePieceForPreview(piece),
+      );
+  }
+
+  return state.pieces.map((piece) =>
+    piece.id === actor.id
+      ? {
+          ...clonePieceForPreview(piece),
+          position: { ...action.to },
+          pushed: false,
+        }
+      : clonePieceForPreview(piece),
+  );
+};
+
+const buildPreviewPiece = (state, action) => {
+  if (!state || action?.type === "pass" || !action?.to) {
+    return null;
+  }
+
+  const actor = resolveActor(state, action);
+  if (!actor) {
+    return null;
+  }
+
+  const hypotheticalPieces = buildHypotheticalPiecesForPreview(state, action, actor);
+  if (hypotheticalPieces.length === 0) {
+    return null;
+  }
+
+  const previewPieceId = action.type === "project" ? PROJECTED_PREVIEW_ID : actor.id;
+  const previewPiece = hypotheticalPieces.find((piece) => piece.id === previewPieceId);
+  if (!previewPiece) {
+    return null;
+  }
+
+  const commandedPieceIds = getCommandedPieceIds(hypotheticalPieces, actor.owner);
+
+  return {
+    owner: actor.owner,
+    kind: action.type === "project" ? "unit" : previewPiece.kind,
+    position: { ...previewPiece.position },
+    supplied: isCoordinateSuppliedForOwner(hypotheticalPieces, actor.owner, previewPiece.position),
+    commanded: commandedPieceIds.has(previewPiece.id),
+  };
 };
 
 const localGroupMembers = (state, pieceId) => {
@@ -521,8 +776,8 @@ export const listPieceMovePreviews = ({ state, legalActions, pieceId }) => {
   }
 
   const actions = listPieceMovesFromLegalActions({ state, legalActions, pieceId });
-  const previews = actions.map((action) => ({ ...action, legal: true }));
-  const previewKeys = new Set(previews.map((action) => JSON.stringify(action)));
+  const previews = actions.map((action) => ({ ...action, legal: true, previewPiece: buildPreviewPiece(state, action) }));
+  const previewKeys = new Set(actions.map((action) => JSON.stringify(action)));
 
   for (const action of buildCandidateActions(piece)) {
     const actionKey = JSON.stringify(action);
@@ -539,6 +794,7 @@ export const listPieceMovePreviews = ({ state, legalActions, pieceId }) => {
         ...structuredClone(action),
         legal: false,
         blockedReason: validation.code,
+        previewPiece: buildPreviewPiece(state, action),
       });
     }
   }

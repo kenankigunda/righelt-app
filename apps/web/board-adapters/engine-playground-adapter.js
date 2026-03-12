@@ -466,7 +466,7 @@ export function createEnginePlaygroundBoardAdapter() {
       }
       const targetCell = cellByCoordinateKey.get(targetKey);
       if (targetCell) {
-        const ghost = buildPieceToken(piece, true);
+        const ghost = buildPieceToken(action.previewPiece ?? piece, true);
         ghost.classList.add("move-ghost");
         if (action.legal === false && action.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED") {
           ghost.classList.add("illegal-unsupplied");

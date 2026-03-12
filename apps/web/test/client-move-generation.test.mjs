@@ -87,3 +87,66 @@ test("client move generation includes blocked push previews for inadequate group
     true,
   );
 });
+
+test("client move generation previews a projected commander action as a unit", () => {
+  const state = {
+    boardSize: 10,
+    sideToMove: "P1",
+    turnIndex: 0,
+    continuation: null,
+    outcome: { status: "ongoing" },
+    pieces: [
+      { id: "C1", owner: "P1", kind: "commander", position: { row: 3, col: 3 }, supplied: true, commanded: true },
+      { id: "C2", owner: "P2", kind: "commander", position: { row: 6, col: 3 }, supplied: true, commanded: true },
+    ],
+  };
+
+  const response = buildPieceMoveResponse({
+    state,
+    legalActions: [{ type: "project", actorId: "C1", from: { row: 3, col: 3 }, to: { row: 3, col: 5 } }],
+    pieceId: "C1",
+  });
+
+  const preview = response.previewActions.find((action) => action.type === "project" && action.to?.row === 3 && action.to?.col === 5);
+  assert.equal(preview?.legal, true);
+  assert.deepEqual(preview?.previewPiece, {
+    owner: "P1",
+    kind: "unit",
+    position: { row: 3, col: 5 },
+    supplied: true,
+    commanded: true,
+  });
+});
+
+test("client move generation marks preview pieces uncommanded when the resulting action severs command", () => {
+  const state = {
+    boardSize: 10,
+    sideToMove: "P1",
+    turnIndex: 0,
+    continuation: null,
+    outcome: { status: "ongoing" },
+    pieces: [
+      { id: "C1", owner: "P1", kind: "commander", position: { row: 3, col: 3 }, supplied: true, commanded: true },
+      { id: "C2", owner: "P2", kind: "commander", position: { row: 6, col: 3 }, supplied: true, commanded: true },
+      { id: "U1-1", owner: "P1", kind: "unit", position: { row: 4, col: 3 }, supplied: true, commanded: true },
+      { id: "U2-cut-top", owner: "P2", kind: "unit", position: { row: 2, col: 4 }, supplied: true, commanded: true },
+      { id: "U2-cut-bottom", owner: "P2", kind: "unit", position: { row: 6, col: 4 }, supplied: true, commanded: true },
+    ],
+  };
+
+  const response = buildPieceMoveResponse({
+    state,
+    legalActions: [{ type: "project", actorId: "U1-1", from: { row: 4, col: 3 }, to: { row: 4, col: 5 } }],
+    pieceId: "U1-1",
+  });
+
+  const preview = response.previewActions.find((action) => action.type === "project" && action.to?.row === 4 && action.to?.col === 5);
+  assert.equal(preview?.legal, true);
+  assert.deepEqual(preview?.previewPiece, {
+    owner: "P1",
+    kind: "unit",
+    position: { row: 4, col: 5 },
+    supplied: true,
+    commanded: false,
+  });
+});
