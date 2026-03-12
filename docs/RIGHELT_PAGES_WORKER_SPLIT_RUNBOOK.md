@@ -65,19 +65,25 @@ Expected signal:
 
 ## Local Development
 
-Use the site launcher for normal local work:
+Run Pages only:
 
 ```bash
 pnpm dev:web
 ```
 
-`pnpm dev:web` now starts the local `righelt-api` Worker first, waits for `http://127.0.0.1:8787/api/health`, and then starts the Pages site on `http://localhost:8788`. Local `/api/*` requests are proxied to the local API Worker, and local live WebSocket traffic connects directly to `ws://127.0.0.1:8787`.
-
-Use the API Worker by itself only when debugging the Worker in isolation:
+Run the API Worker only:
 
 ```bash
 pnpm dev:api
 ```
+
+Run the full split stack in one command:
+
+```bash
+pnpm dev:all
+```
+
+`pnpm dev:all` starts the local `righelt-api` Worker first, waits for `http://127.0.0.1:8787/api/health`, and then starts the Pages site on `http://localhost:8788`. Local `/api/*` requests are proxied to the local API Worker, and local live WebSocket traffic connects directly to `ws://127.0.0.1:8787`.
 
 ## Recovery Rules
 

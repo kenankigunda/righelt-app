@@ -6,6 +6,7 @@ import path from "node:path";
 const args = process.argv.slice(2);
 const port = args[0] ?? "8788";
 const watchBackend = args.includes("--watch-backend");
+const withApi = args.includes("--with-api");
 const LOCAL_API_ORIGIN = "http://127.0.0.1:8787";
 const LOCAL_API_HEALTH_URL = `${LOCAL_API_ORIGIN}/api/health`;
 const LOCAL_API_READY_TIMEOUT_MS = 30_000;
@@ -289,8 +290,8 @@ if (watchBackend) {
 
 console.log(
   watchBackend
-    ? `[dev-web] starting on :${port} with backend watcher enabled`
-    : `[dev-web] starting on :${port}`,
+    ? `[dev-web] starting on :${port} with backend watcher enabled${withApi ? " and local api orchestration" : ""}`
+    : `[dev-web] starting on :${port}${withApi ? " with local api orchestration" : ""}`,
 );
 startFixtureWriterServer();
 
@@ -430,9 +431,11 @@ const startPagesWrangler = () => {
 };
 
 try {
-  startApiWrangler();
-  await waitForLocalApiReady();
-  console.log(`[dev-web] local api ready at ${LOCAL_API_ORIGIN}`);
+  if (withApi) {
+    startApiWrangler();
+    await waitForLocalApiReady();
+    console.log(`[dev-web] local api ready at ${LOCAL_API_ORIGIN}`);
+  }
   startPagesWrangler();
 } catch (error) {
   console.error("[dev-web] failed to start split-stack local dev", error);
