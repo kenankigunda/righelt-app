@@ -169,3 +169,7 @@ test("selected destination preview ghost is more opaque than other previews", ()
   assert.match(styleSource, /\.piece-token\.ghost\s*\{[\s\S]*opacity:\s*0\.35;/s);
   assert.match(styleSource, /\.cell\.target \.piece-token\.move-ghost\s*\{[\s\S]*opacity:\s*0\.7;/s);
 });
+
+test("group strength badge sits inset from the square's upper-left corner", () => {
+  assert.match(styleSource, /\.group-strength-badge\s*\{[\s\S]*top:\s*-6px;[\s\S]*left:\s*-6px;/s);
+});

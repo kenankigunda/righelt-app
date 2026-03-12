@@ -385,8 +385,8 @@ button {
 
 .group-strength-badge {
   position: absolute;
-  top: 2px;
-  left: 2px;
+  top: -6px;
+  left: -6px;
   font-size: 0.62rem;
   font-weight: 700;
   line-height: 1;
