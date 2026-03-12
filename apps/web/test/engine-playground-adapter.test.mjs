@@ -82,6 +82,14 @@ test("preview ghosts do not render inactive state from preview metadata", () => 
   assert.match(adapterSource, /if \(!ghost && \(!renderStatus\.supplied \|\| !renderStatus\.commanded\)\) \{/);
 });
 
+test("action previews render without overlay lines and mark created-piece previews with a plus badge", () => {
+  assert.doesNotMatch(adapterSource, /ensureArrowMarker\(/);
+  assert.doesNotMatch(adapterSource, /drawArrowLine\(/);
+  assert.doesNotMatch(adapterSource, /drawPath\(\[piece\.position, action\.to\], "#8b5ec0", "5 5"\)/);
+  assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*ghost\.classList\.add\("preview-created"\);\s*\}/s);
+  assert.match(styleSource, /\.piece-token\.move-ghost\.preview-created::after\s*\{[\s\S]*content:\s*"\+";[\s\S]*top:\s*-7px;[\s\S]*right:\s*-8px;/s);
+});
+
 test("action preview ghosts stay centered instead of using preview offsets", () => {
   assert.doesNotMatch(adapterSource, /getPreviewOffset/);
   assert.doesNotMatch(adapterSource, /ghost\.classList\.add\("offset-move"\)/);
