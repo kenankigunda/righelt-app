@@ -10,6 +10,8 @@
   --line: #d5d1c6;
   --accent: #1f7a5a;
   --accent-2: #c94c33;
+  --player-p1: #c2452f;
+  --player-p2: #2d67c7;
 }
 
 body {
@@ -132,11 +134,11 @@ body {
 }
 
 .player-tone-p1 {
-  color: #c2452f;
+  color: var(--player-p1);
 }
 
 .player-tone-p2 {
-  color: #2d67c7;
+  color: var(--player-p2);
 }
 
 .player-tone-neutral {
@@ -238,9 +240,10 @@ button {
 
 .overlay-lines {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: 0;
+  right: 0;
+  bottom: 1rem;
+  left: 0;
   pointer-events: none;
   overflow: visible;
 }
@@ -406,12 +409,23 @@ button {
   z-index: 0;
 }
 
-.move-ghost.offset-move {
-  transform: translate(-14px, -14px);
-}
-
-.move-ghost.offset-rush {
-  transform: translate(14px, 14px);
+.piece-token.move-ghost.preview-created::after {
+  content: "+";
+  position: absolute;
+  top: -7px;
+  right: -8px;
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #fffdf8;
+  color: #4f6368;
+  border: 1px solid #b9c4cd;
+  font-size: 0.62rem;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .overlay-key {
@@ -525,13 +539,13 @@ button {
 }
 
 .piece-token.p1 {
-  background: #c2452f;
-  border-color: #c2452f;
+  background: var(--player-p1);
+  border-color: var(--player-p1);
 }
 
 .piece-token.p2 {
-  background: #2d67c7;
-  border-color: #2d67c7;
+  background: var(--player-p2);
+  border-color: var(--player-p2);
 }
 
 .piece-token.commander {
@@ -546,6 +560,10 @@ button {
 
 .piece-token.ghost {
   opacity: 0.35;
+}
+
+.cell.target .piece-token.move-ghost {
+  opacity: 0.7;
 }
 
 .piece-token.removal-piece {
@@ -593,8 +611,20 @@ button {
 .piece-empty {
   position: relative;
   z-index: 1;
-  font-size: 0.8rem;
-  color: #94a0a4;
+  width: 10px;
+  height: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.piece-empty::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #94a0a4;
 }
 
 .axis-label {
@@ -749,13 +779,13 @@ pre {
 #move-log li.player-tone-p1,
 #side-to-move.player-tone-p1,
 #board-turn-indicator.player-tone-p1 {
-  color: #c2452f;
+  color: var(--player-p1);
 }
 
 #move-log li.player-tone-p2,
 #side-to-move.player-tone-p2,
 #board-turn-indicator.player-tone-p2 {
-  color: #2d67c7;
+  color: var(--player-p2);
 }
 
 #move-log li.player-tone-neutral {

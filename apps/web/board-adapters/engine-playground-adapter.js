@@ -9,6 +9,14 @@ import {
 const BOARD_SIZE = 10;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const REMOVAL_FLASH_DURATION_MS = 1800;
+const PREVIEW_STROKE_BY_OWNER = {
+  P1: "var(--player-p1)",
+  P2: "var(--player-p2)",
+};
+const PREVIEW_OPACITY = {
+  default: "0.35",
+  selected: "0.7",
+};
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
 const isSupplyPoint = (row, col) => (row === 0 && col === 9) || (row === 9 && col === 0);
@@ -22,6 +30,69 @@ export const getRemovalAnimationDelayMs = (effect, now = Date.now()) => {
     return 0;
   }
   return Math.max(0, Math.min(now - effect.startedAt, REMOVAL_FLASH_DURATION_MS));
+};
+
+const previewOrientation = (a, b, c) => (b.col - a.col) * (c.row - a.row) - (b.row - a.row) * (c.col - a.col);
+
+export const segmentsOverlapOnSameLine = (leftFrom, leftTo, rightFrom, rightTo) => {
+  if (
+    !leftFrom ||
+    !leftTo ||
+    !rightFrom ||
+    !rightTo ||
+    previewOrientation(leftFrom, leftTo, rightFrom) !== 0 ||
+    previewOrientation(leftFrom, leftTo, rightTo) !== 0
+  ) {
+    return false;
+  }
+
+  const leftDeltaRow = leftTo.row - leftFrom.row;
+  const leftDeltaCol = leftTo.col - leftFrom.col;
+  const project =
+    Math.abs(leftDeltaCol) >= Math.abs(leftDeltaRow)
+      ? (point) => point.col
+      : (point) => point.row;
+
+  const leftStart = Math.min(project(leftFrom), project(leftTo));
+  const leftEnd = Math.max(project(leftFrom), project(leftTo));
+  const rightStart = Math.min(project(rightFrom), project(rightTo));
+  const rightEnd = Math.max(project(rightFrom), project(rightTo));
+
+  return Math.min(leftEnd, rightEnd) - Math.max(leftStart, rightStart) > 0;
+};
+
+export const shouldCurveActionPreview = (from, to, referencePaths) => {
+  if (!from || !to || !Array.isArray(referencePaths)) {
+    return false;
+  }
+
+  for (const path of referencePaths) {
+    if (!Array.isArray(path) || path.length < 2) {
+      continue;
+    }
+    for (let index = 0; index < path.length - 1; index += 1) {
+      if (segmentsOverlapOnSameLine(from, to, path[index], path[index + 1])) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
+export const getCurvedArrowAnchor = (start, end, curveDirection) => {
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  const distance = Math.hypot(deltaX, deltaY) || 1;
+  const unitX = deltaX / distance;
+  const unitY = deltaY / distance;
+  const perpendicularX = (-deltaY / distance) * curveDirection;
+  const perpendicularY = (deltaX / distance) * curveDirection;
+
+  return {
+    x: end.x + perpendicularX * 9 - unitX * 4,
+    y: end.y + perpendicularY * 9 - unitY * 4,
+  };
 };
 
 const formatActionPreviewLabel = (actionType, snapshot, destination) => {
@@ -89,7 +160,7 @@ function buildPieceToken(piece, ghost = false) {
   const token = document.createElement("span");
   token.className = `piece-token ${piece.owner === "P1" ? "p1" : "p2"} ${piece.kind}`;
   const renderStatus = getPieceRenderStatus(piece);
-  if (!renderStatus.supplied || !renderStatus.commanded) {
+  if (!ghost && (!renderStatus.supplied || !renderStatus.commanded)) {
     token.classList.add("inactive");
   }
   if (piece.pushed) {
@@ -246,16 +317,6 @@ export function createEnginePlaygroundBoardAdapter() {
     };
   };
 
-  const getPreviewOffset = (actionType) => {
-    if (actionType === "move") {
-      return { x: -14, y: -14 };
-    }
-    if (actionType === "rush") {
-      return { x: 14, y: 14 };
-    }
-    return { x: 0, y: 0 };
-  };
-
   const drawPath = (path, stroke, dashPattern = null) => {
     if (!overlayLinesEl || !path || path.length < 2) {
       return;
@@ -283,39 +344,44 @@ export function createEnginePlaygroundBoardAdapter() {
     }
   };
 
-  const ensureArrowMarker = () => {
+  const ensurePreviewArrowMarker = (owner, opacity) => {
     if (!overlayLinesEl) {
-      return;
+      return null;
     }
 
+    const stroke = PREVIEW_STROKE_BY_OWNER[owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
+    const opacityKey = opacity === PREVIEW_OPACITY.selected ? "selected" : "default";
     let defs = overlayLinesEl.querySelector("defs");
     if (!defs) {
       defs = document.createElementNS(SVG_NS, "defs");
       overlayLinesEl.appendChild(defs);
     }
 
-    let marker = defs.querySelector("#preview-arrow");
+    const markerId = `preview-arrow-${String(owner ?? "default").toLowerCase()}-${opacityKey}`;
+    let marker = defs.querySelector(`#${markerId}`);
     if (!marker) {
       marker = document.createElementNS(SVG_NS, "marker");
-      marker.setAttribute("id", "preview-arrow");
+      marker.setAttribute("id", markerId);
       marker.setAttribute("viewBox", "0 0 10 10");
-      marker.setAttribute("refX", "8");
+      marker.setAttribute("refX", "7");
       marker.setAttribute("refY", "5");
-      marker.setAttribute("markerWidth", "5");
-      marker.setAttribute("markerHeight", "5");
+      marker.setAttribute("markerWidth", "4");
+      marker.setAttribute("markerHeight", "4");
       marker.setAttribute("orient", "auto-start-reverse");
       marker.setAttribute("markerUnits", "strokeWidth");
 
       const arrowPath = document.createElementNS(SVG_NS, "path");
-      arrowPath.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
-      arrowPath.setAttribute("fill", "#8b5ec0");
-      arrowPath.setAttribute("fill-opacity", "0.55");
+      arrowPath.setAttribute("d", "M 0 1 L 8 5 L 0 9 z");
+      arrowPath.setAttribute("fill", stroke);
+      arrowPath.setAttribute("fill-opacity", opacity);
       marker.appendChild(arrowPath);
       defs.appendChild(marker);
     }
+
+    return markerId;
   };
 
-  const drawArrowLine = (from, to, stroke, endOffset = { x: 0, y: 0 }) => {
+  const drawArrowLine = (from, to, owner, curved = false, selected = false) => {
     if (!overlayLinesEl) {
       return;
     }
@@ -326,21 +392,49 @@ export function createEnginePlaygroundBoardAdapter() {
       return;
     }
 
-    const rawEnd = {
-      x: end.x + endOffset.x,
-      y: end.y + endOffset.y,
-    };
-    const deltaX = rawEnd.x - start.x;
-    const deltaY = rawEnd.y - start.y;
+    const deltaX = end.x - start.x;
+    const deltaY = end.y - start.y;
     const distance = Math.hypot(deltaX, deltaY);
-    const stopBeforeGhost = 16;
+    const stopBeforeGhost = 12;
     const shortenBy = Math.min(stopBeforeGhost, Math.max(0, distance - 4));
-    const unitX = distance > 0 ? deltaX / distance : 0;
-    const unitY = distance > 0 ? deltaY / distance : 0;
+    const stroke = PREVIEW_STROKE_BY_OWNER[owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
+    const previewOpacity = selected ? PREVIEW_OPACITY.selected : PREVIEW_OPACITY.default;
+    const curveDirection = owner === "P2" ? -1 : 1;
+    const arrowTarget = curved ? getCurvedArrowAnchor(start, end, curveDirection) : end;
+    const arrowDeltaX = arrowTarget.x - start.x;
+    const arrowDeltaY = arrowTarget.y - start.y;
+    const arrowDistance = Math.hypot(arrowDeltaX, arrowDeltaY);
+    const arrowUnitX = arrowDistance > 0 ? arrowDeltaX / arrowDistance : 0;
+    const arrowUnitY = arrowDistance > 0 ? arrowDeltaY / arrowDistance : 0;
     const shortenedEnd = {
-      x: rawEnd.x - unitX * shortenBy,
-      y: rawEnd.y - unitY * shortenBy,
+      x: arrowTarget.x - arrowUnitX * shortenBy,
+      y: arrowTarget.y - arrowUnitY * shortenBy,
     };
+
+    const markerId = ensurePreviewArrowMarker(owner, previewOpacity);
+    if (curved) {
+      const midpoint = {
+        x: (start.x + shortenedEnd.x) / 2,
+        y: (start.y + shortenedEnd.y) / 2,
+      };
+      const perpendicularLength = Math.hypot(deltaX, deltaY) || 1;
+      const control = {
+        x: midpoint.x + ((-deltaY / perpendicularLength) * 12 * curveDirection),
+        y: midpoint.y + ((deltaX / perpendicularLength) * 12 * curveDirection),
+      };
+      const path = document.createElementNS(SVG_NS, "path");
+      path.setAttribute("d", `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${shortenedEnd.x} ${shortenedEnd.y}`);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", stroke);
+      path.setAttribute("stroke-width", "1.6");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-opacity", previewOpacity);
+      if (markerId) {
+        path.setAttribute("marker-end", `url(#${markerId})`);
+      }
+      overlayLinesEl.appendChild(path);
+      return;
+    }
 
     const line = document.createElementNS(SVG_NS, "line");
     line.setAttribute("x1", String(start.x));
@@ -348,10 +442,12 @@ export function createEnginePlaygroundBoardAdapter() {
     line.setAttribute("x2", String(shortenedEnd.x));
     line.setAttribute("y2", String(shortenedEnd.y));
     line.setAttribute("stroke", stroke);
-    line.setAttribute("stroke-width", "2.5");
+    line.setAttribute("stroke-width", "1.6");
     line.setAttribute("stroke-linecap", "round");
-    line.setAttribute("stroke-opacity", "0.5");
-    line.setAttribute("marker-end", "url(#preview-arrow)");
+    line.setAttribute("stroke-opacity", previewOpacity);
+    if (markerId) {
+      line.setAttribute("marker-end", `url(#${markerId})`);
+    }
     overlayLinesEl.appendChild(line);
   };
 
@@ -379,7 +475,6 @@ export function createEnginePlaygroundBoardAdapter() {
     clearCellDecorations();
     overlayLinesEl.innerHTML = "";
     setOverlayViewBox();
-    ensureArrowMarker();
 
     const piece = findPieceById(snapshot, selectedPieceId);
     if (!piece) {
@@ -442,39 +537,48 @@ export function createEnginePlaygroundBoardAdapter() {
       }
     }
 
-    drawPath(getSupplyPathForPiece(snapshot, piece), "#2f8e63");
-    drawPath(getCommandPathForPiece(snapshot, piece), "#2470c7");
+    const supplyPath = getSupplyPathForPiece(snapshot, piece);
+    const commandPath = getCommandPathForPiece(snapshot, piece);
+    drawPath(supplyPath, "#2f8e63");
+    drawPath(commandPath, "#2470c7");
 
-    const seenPreviews = new Set();
     const previews = Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves;
+    const previewsByTargetKey = new Map();
     for (const action of previews) {
-      if (!action.to) {
+      if (!action?.to) {
         continue;
       }
-
       const targetKey = coordKey(action.to);
-      const previewKey = `${action.type}:${targetKey}`;
-      if (seenPreviews.has(previewKey)) {
+      const actionsAtTarget = previewsByTargetKey.get(targetKey) ?? [];
+      actionsAtTarget.push(action);
+      previewsByTargetKey.set(targetKey, actionsAtTarget);
+    }
+
+    for (const [targetKey, actionsAtTarget] of previewsByTargetKey.entries()) {
+      const preferredActionType = pickBestActionTypeForTarget(actionsAtTarget, null);
+      const action = actionsAtTarget.find((candidate) => candidate.type === preferredActionType) ?? actionsAtTarget[0];
+      const targetCell = cellByCoordinateKey.get(targetKey);
+      const isSelectedTarget = targetCell?.classList.contains("target") ?? false;
+      if (!action?.to) {
         continue;
       }
-      seenPreviews.add(previewKey);
-
-      if (action.type === "move" || action.type === "rush") {
-        drawArrowLine(piece.position, action.to, "#8b5ec0", getPreviewOffset(action.type));
-      } else {
-        drawPath([piece.position, action.to], "#8b5ec0", "5 5");
+      if (action.type !== "project") {
+        drawArrowLine(
+          piece.position,
+          action.to,
+          piece.owner,
+          shouldCurveActionPreview(piece.position, action.to, [supplyPath, commandPath]),
+          isSelectedTarget,
+        );
       }
-      const targetCell = cellByCoordinateKey.get(targetKey);
       if (targetCell) {
-        const ghost = buildPieceToken(piece, true);
+        const ghost = buildPieceToken(action.previewPiece ?? piece, true);
         ghost.classList.add("move-ghost");
+        if (action.type === "project") {
+          ghost.classList.add("preview-created");
+        }
         if (action.legal === false && action.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED") {
           ghost.classList.add("illegal-unsupplied");
-        }
-        if (action.type === "move") {
-          ghost.classList.add("offset-move");
-        } else if (action.type === "rush") {
-          ghost.classList.add("offset-rush");
         }
         targetCell.appendChild(ghost);
       }
@@ -718,7 +822,7 @@ export function createEnginePlaygroundBoardAdapter() {
             const marker = cellPiece ? buildPieceToken(cellPiece) : document.createElement("span");
             if (!cellPiece) {
               marker.className = "piece-empty";
-              marker.textContent = ".";
+              marker.setAttribute("aria-hidden", "true");
             }
             cell.appendChild(marker);
           }

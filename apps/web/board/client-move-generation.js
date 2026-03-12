@@ -35,6 +35,8 @@ const compareActionPreviews = (left, right) => {
 const outOfBounds = (coord) =>
   Boolean(coord) && (coord.row < 0 || coord.row >= BOARD_SIZE || coord.col < 0 || coord.col >= BOARD_SIZE);
 
+const PROJECTED_PREVIEW_ID = "__projected_preview__";
+
 const getPieceAt = (state, coord) =>
   state?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null;
 
@@ -133,7 +135,11 @@ const buildCommandEdgesForPieces = (pieces) => {
           continue;
         }
 
-        edges.push({ owner, from: { ...a.position }, to: { ...b.position } });
+        edges.push({
+          owner,
+          from: { ...a.position },
+          to: { ...b.position },
+        });
       }
     }
   }
@@ -236,6 +242,85 @@ const wouldBeSuppliedAfterPush = (state, actorId, defenderId, owner, destination
       position: piece.id === actorId ? { ...destination } : { ...piece.position },
     }));
   return wouldCoordinateBeSuppliedForOwner(hypothetical, owner, destination);
+};
+
+const clonePieceForPreview = (piece) => ({
+  ...piece,
+  position: { ...piece.position },
+});
+
+const buildHypotheticalPiecesForPreview = (state, action, actor) => {
+  if (!action?.to || !actor) {
+    return [];
+  }
+
+  if (action.type === "project") {
+    const hypothetical = state.pieces.map(clonePieceForPreview);
+    hypothetical.push({
+      id: PROJECTED_PREVIEW_ID,
+      owner: actor.owner,
+      kind: "unit",
+      position: { ...action.to },
+      supplied: true,
+      commanded: true,
+      pushed: false,
+      shifted: false,
+    });
+    return hypothetical;
+  }
+
+  if (action.type === "push") {
+    const defender = getPieceAt(state, action.to);
+    return state.pieces
+      .filter((piece) => piece.id !== defender?.id)
+      .map((piece) =>
+        piece.id === actor.id
+          ? {
+              ...clonePieceForPreview(piece),
+              position: { ...action.to },
+              pushed: false,
+            }
+          : clonePieceForPreview(piece),
+      );
+  }
+
+  return state.pieces.map((piece) =>
+    piece.id === actor.id
+      ? {
+          ...clonePieceForPreview(piece),
+          position: { ...action.to },
+          pushed: false,
+        }
+      : clonePieceForPreview(piece),
+  );
+};
+
+const buildPreviewPiece = (state, action) => {
+  if (!state || action?.type === "pass" || !action?.to) {
+    return null;
+  }
+
+  const actor = resolveActor(state, action);
+  if (!actor) {
+    return null;
+  }
+
+  const hypotheticalPieces = buildHypotheticalPiecesForPreview(state, action, actor);
+  if (hypotheticalPieces.length === 0) {
+    return null;
+  }
+
+  const previewPieceId = action.type === "project" ? PROJECTED_PREVIEW_ID : actor.id;
+  const previewPiece = hypotheticalPieces.find((piece) => piece.id === previewPieceId);
+  if (!previewPiece) {
+    return null;
+  }
+
+  return {
+    owner: actor.owner,
+    kind: action.type === "project" ? "unit" : previewPiece.kind,
+    position: { ...previewPiece.position },
+  };
 };
 
 const localGroupMembers = (state, pieceId) => {
@@ -521,8 +606,8 @@ export const listPieceMovePreviews = ({ state, legalActions, pieceId }) => {
   }
 
   const actions = listPieceMovesFromLegalActions({ state, legalActions, pieceId });
-  const previews = actions.map((action) => ({ ...action, legal: true }));
-  const previewKeys = new Set(previews.map((action) => JSON.stringify(action)));
+  const previews = actions.map((action) => ({ ...action, legal: true, previewPiece: buildPreviewPiece(state, action) }));
+  const previewKeys = new Set(actions.map((action) => JSON.stringify(action)));
 
   for (const action of buildCandidateActions(piece)) {
     const actionKey = JSON.stringify(action);
@@ -539,6 +624,7 @@ export const listPieceMovePreviews = ({ state, legalActions, pieceId }) => {
         ...structuredClone(action),
         legal: false,
         blockedReason: validation.code,
+        previewPiece: buildPreviewPiece(state, action),
       });
     }
   }
