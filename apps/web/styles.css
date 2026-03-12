@@ -261,6 +261,7 @@ button {
 }
 
 .cell {
+  --cell-fill: #fbf8f0;
   position: relative;
   display: grid;
   place-items: center;
@@ -269,7 +270,7 @@ button {
   border-radius: 6px;
   border: 1px solid #cac7bd;
   color: var(--ink);
-  background: #fbf8f0;
+  background: var(--cell-fill);
 }
 
 .cell:not(.unselectable):hover {
@@ -339,7 +340,7 @@ button {
 }
 
 .cell.group-member {
-  background: #eef8f1;
+  --cell-fill: #eef8f1;
 }
 
 .cell.continuation-member {
@@ -347,15 +348,15 @@ button {
 }
 
 .cell.continuation-moved {
-  background: #f5f7ef;
+  --cell-fill: #f5f7ef;
 }
 
 .cell.continuation-pending {
-  background: #e6f2d3;
+  --cell-fill: #e6f2d3;
 }
 
 .cell.retreat-piece {
-  background: #f3e7c5;
+  --cell-fill: #f3e7c5;
   border-color: #d1b06a;
   box-shadow: inset 0 0 0 1px #d1b06a;
 }
@@ -574,7 +575,7 @@ button {
 }
 
 .piece-token.inactive {
-  background: transparent;
+  background: var(--cell-fill, #fbf8f0);
   color: #2f3f4a;
   border-width: 2px;
 }
