@@ -5,6 +5,7 @@ import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
 import { createLiveTransportStore } from "./live-transport.js";
 import { createLiveSyncClient } from "./live-sync.js";
+import { applyCommandLegendSwatch, getCommandLegendSwatchStyle } from "../legend.js";
 import { saveTutorialCompleted } from "./persistence.js";
 import { shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import {
@@ -629,10 +630,12 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
             <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
           </div>
           <div class="overlay-key" aria-label="Overlay color key">
-            <span><i class="swatch supply"></i>Supply line</span>
-            <span><i class="swatch command"></i>Command line</span>
-            <span><i class="swatch group"></i>Group strength</span>
             <span><i class="swatch supply-point"></i>Supply point</span>
+            <span><i class="swatch supply"></i>Supply line</span>
+            <span><i id="shell-command-legend-swatch" class="swatch command" style="${escapeHtml(
+              getCommandLegendSwatchStyle(game.currentSnapshot ?? null),
+            )}"></i>Command line</span>
+            <span><i class="swatch group"></i>Group strength</span>
           </div>
         </section>
       </div>
@@ -851,6 +854,9 @@ const mountBoardForGame = (game) => {
         getAllowFreeSelection: () => false,
         onMoveRecorded: () => {
           render();
+        },
+        onStateUpdated: ({ state, selectedPieceId }) => {
+          applyCommandLegendSwatch(document.getElementById("shell-command-legend-swatch"), state, selectedPieceId);
         },
       },
     });

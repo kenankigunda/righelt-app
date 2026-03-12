@@ -735,7 +735,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   ) => {
     state = structuredClone(snapshot);
     legalActions = Array.isArray(incomingLegalActions) ? incomingLegalActions : [];
-    clearRemovalEffects();
+    const preserveRemovalEffects = resetSelection !== true && !selectionAction && removalEffects.length > 0;
+    if (!preserveRemovalEffects) {
+      clearRemovalEffects();
+    }
     if (resetSelection) {
       clearSelection();
     }

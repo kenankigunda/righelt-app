@@ -38,11 +38,19 @@ export const createShellBoardHost = ({ transport, gameId, canInteract }) => ({
     const response = await transport.applyGameAction({ gameId, state, action });
     if (response?.accepted) {
       const current = response.game ?? transport.getGameViewModel(gameId);
+      const snapshot = current?.currentSnapshot ?? response.state ?? state;
+      const legalActions = Array.isArray(current?.legalActions)
+        ? current.legalActions
+        : Array.isArray(response.legalActions)
+          ? response.legalActions
+          : [];
       return {
         ...response,
+        state: snapshot,
+        legalActions,
         boardMessage: {
           type: "move_sent",
-          control: getControlLabel({ state: response.state, currentTurn: current?.currentTurn }),
+          control: getControlLabel({ state: snapshot, currentTurn: current?.currentTurn }),
         },
       };
     }

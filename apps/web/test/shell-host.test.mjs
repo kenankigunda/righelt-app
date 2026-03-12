@@ -84,6 +84,77 @@ test("shell host applyAction preserves removedPieces from the transport response
   assert.deepEqual(result.removedPieces, removedPieces);
 });
 
+test("shell host applyAction uses canonical legal actions from the updated game view", async () => {
+  const canonicalState = {
+    sideToMove: "P1",
+    turnIndex: 0,
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      rushedPieceIds: ["R1"],
+    },
+    pieces: [
+      {
+        id: "R1",
+        owner: "P1",
+        kind: "unit",
+        position: { row: 4, col: 3 },
+        supplied: true,
+        commanded: true,
+      },
+      {
+        id: "R2",
+        owner: "P1",
+        kind: "unit",
+        position: { row: 5, col: 3 },
+        supplied: true,
+        commanded: true,
+      },
+    ],
+  };
+  const canonicalLegalActions = [
+    { type: "pass" },
+    { type: "rush", actorId: "R2", from: { row: 5, col: 3 }, to: { row: 5, col: 4 } },
+  ];
+  const transport = {
+    getGameViewModel() {
+      return {
+        currentSnapshot: canonicalState,
+        currentTurn: { playerSeat: "Player 1" },
+        legalActions: canonicalLegalActions,
+      };
+    },
+    async applyGameAction() {
+      return {
+        accepted: true,
+        state: {
+          sideToMove: "P1",
+          turnIndex: 0,
+          continuation: { type: "rush", owner: "P1" },
+          pieces: [],
+        },
+        game: {
+          currentSnapshot: canonicalState,
+          currentTurn: { playerSeat: "Player 1" },
+          legalActions: canonicalLegalActions,
+        },
+      };
+    },
+  };
+
+  const host = createShellBoardHost({ transport, gameId: "g-4", canInteract: () => true });
+  const result = await host.applyAction(canonicalState, {
+    type: "rush",
+    actorId: "R1",
+    from: { row: 3, col: 2 },
+    to: { row: 4, col: 3 },
+  });
+
+  assert.equal(result.accepted, true);
+  assert.deepEqual(result.state, canonicalState);
+  assert.deepEqual(result.legalActions, canonicalLegalActions);
+});
+
 test("shell host derives selected piece moves from cached legal actions without transport piece-move calls", async () => {
   const transport = {
     getGameViewModel() {
@@ -115,7 +186,7 @@ test("shell host derives selected piece moves from cached legal actions without 
     },
   };
 
-  const host = createShellBoardHost({ transport, gameId: "g-4", canInteract: () => true });
+  const host = createShellBoardHost({ transport, gameId: "g-5", canInteract: () => true });
   const result = await host.loadPieceMoves(
     {
       sideToMove: "P1",
