@@ -78,6 +78,10 @@ test("preview ghosts render from projected preview-piece state when available", 
   assert.match(adapterSource, /const ghost = buildPieceToken\(action\.previewPiece \?\? piece, true\);/);
 });
 
+test("preview ghosts do not render inactive state from preview metadata", () => {
+  assert.match(adapterSource, /if \(!ghost && \(!renderStatus\.supplied \|\| !renderStatus\.commanded\)\) \{/);
+});
+
 test("action preview ghosts stay centered instead of using preview offsets", () => {
   assert.doesNotMatch(adapterSource, /getPreviewOffset/);
   assert.doesNotMatch(adapterSource, /ghost\.classList\.add\("offset-move"\)/);

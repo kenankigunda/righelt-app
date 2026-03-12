@@ -113,8 +113,6 @@ test("client move generation previews a projected commander action as a unit", (
     owner: "P1",
     kind: "unit",
     position: { row: 3, col: 5 },
-    supplied: true,
-    commanded: true,
   });
 });
 
@@ -146,7 +144,5 @@ test("client move generation marks preview pieces uncommanded when the resulting
     owner: "P1",
     kind: "unit",
     position: { row: 4, col: 5 },
-    supplied: true,
-    commanded: false,
   });
 });

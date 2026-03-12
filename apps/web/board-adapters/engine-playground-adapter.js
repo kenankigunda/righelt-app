@@ -89,7 +89,7 @@ function buildPieceToken(piece, ghost = false) {
   const token = document.createElement("span");
   token.className = `piece-token ${piece.owner === "P1" ? "p1" : "p2"} ${piece.kind}`;
   const renderStatus = getPieceRenderStatus(piece);
-  if (!renderStatus.supplied || !renderStatus.commanded) {
+  if (!ghost && (!renderStatus.supplied || !renderStatus.commanded)) {
     token.classList.add("inactive");
   }
   if (piece.pushed) {
