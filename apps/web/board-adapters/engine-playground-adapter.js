@@ -17,6 +17,8 @@ const PREVIEW_OPACITY = {
   default: "0.35",
   selected: "0.7",
 };
+const PREVIEW_ARROW_HEAD_LENGTH = 8;
+const PREVIEW_ARROW_HEAD_HALF_WIDTH = 4;
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
 const isSupplyPoint = (row, col) => (row === 0 && col === 9) || (row === 9 && col === 0);
@@ -344,41 +346,36 @@ export function createEnginePlaygroundBoardAdapter() {
     }
   };
 
-  const ensurePreviewArrowMarker = (owner, opacity) => {
+  const drawArrowHead = (base, directionX, directionY, stroke, opacity) => {
     if (!overlayLinesEl) {
-      return null;
+      return;
     }
 
-    const stroke = PREVIEW_STROKE_BY_OWNER[owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
-    const opacityKey = opacity === PREVIEW_OPACITY.selected ? "selected" : "default";
-    let defs = overlayLinesEl.querySelector("defs");
-    if (!defs) {
-      defs = document.createElementNS(SVG_NS, "defs");
-      overlayLinesEl.appendChild(defs);
+    const length = Math.hypot(directionX, directionY);
+    if (length === 0) {
+      return;
     }
 
-    const markerId = `preview-arrow-${String(owner ?? "default").toLowerCase()}-${opacityKey}`;
-    let marker = defs.querySelector(`#${markerId}`);
-    if (!marker) {
-      marker = document.createElementNS(SVG_NS, "marker");
-      marker.setAttribute("id", markerId);
-      marker.setAttribute("viewBox", "0 0 10 10");
-      marker.setAttribute("refX", "7");
-      marker.setAttribute("refY", "5");
-      marker.setAttribute("markerWidth", "4");
-      marker.setAttribute("markerHeight", "4");
-      marker.setAttribute("orient", "auto-start-reverse");
-      marker.setAttribute("markerUnits", "strokeWidth");
+    const unitX = directionX / length;
+    const unitY = directionY / length;
+    const tip = {
+      x: base.x + unitX * PREVIEW_ARROW_HEAD_LENGTH,
+      y: base.y + unitY * PREVIEW_ARROW_HEAD_LENGTH,
+    };
+    const left = {
+      x: base.x - unitY * PREVIEW_ARROW_HEAD_HALF_WIDTH,
+      y: base.y + unitX * PREVIEW_ARROW_HEAD_HALF_WIDTH,
+    };
+    const right = {
+      x: base.x + unitY * PREVIEW_ARROW_HEAD_HALF_WIDTH,
+      y: base.y - unitX * PREVIEW_ARROW_HEAD_HALF_WIDTH,
+    };
 
-      const arrowPath = document.createElementNS(SVG_NS, "path");
-      arrowPath.setAttribute("d", "M 0 1 L 8 5 L 0 9 z");
-      arrowPath.setAttribute("fill", stroke);
-      arrowPath.setAttribute("fill-opacity", opacity);
-      marker.appendChild(arrowPath);
-      defs.appendChild(marker);
-    }
-
-    return markerId;
+    const arrowPath = document.createElementNS(SVG_NS, "path");
+    arrowPath.setAttribute("d", `M ${left.x} ${left.y} L ${tip.x} ${tip.y} L ${right.x} ${right.y} Z`);
+    arrowPath.setAttribute("fill", stroke);
+    arrowPath.setAttribute("fill-opacity", opacity);
+    overlayLinesEl.appendChild(arrowPath);
   };
 
   const drawArrowLine = (from, to, owner, curved = false, selected = false) => {
@@ -411,7 +408,6 @@ export function createEnginePlaygroundBoardAdapter() {
       y: arrowTarget.y - arrowUnitY * shortenBy,
     };
 
-    const markerId = ensurePreviewArrowMarker(owner, previewOpacity);
     if (curved) {
       const midpoint = {
         x: (start.x + shortenedEnd.x) / 2,
@@ -429,10 +425,8 @@ export function createEnginePlaygroundBoardAdapter() {
       path.setAttribute("stroke-width", "3");
       path.setAttribute("stroke-linecap", "round");
       path.setAttribute("stroke-opacity", previewOpacity);
-      if (markerId) {
-        path.setAttribute("marker-end", `url(#${markerId})`);
-      }
       overlayLinesEl.appendChild(path);
+      drawArrowHead(shortenedEnd, shortenedEnd.x - control.x, shortenedEnd.y - control.y, stroke, previewOpacity);
       return;
     }
 
@@ -445,10 +439,8 @@ export function createEnginePlaygroundBoardAdapter() {
     line.setAttribute("stroke-width", "3");
     line.setAttribute("stroke-linecap", "round");
     line.setAttribute("stroke-opacity", previewOpacity);
-    if (markerId) {
-      line.setAttribute("marker-end", `url(#${markerId})`);
-    }
     overlayLinesEl.appendChild(line);
+    drawArrowHead(shortenedEnd, arrowDeltaX, arrowDeltaY, stroke, previewOpacity);
   };
 
   const clearCellDecorations = () => {

@@ -135,13 +135,19 @@ test("preview ghosts do not render inactive state from preview metadata", () => 
 test("project previews use a plus badge while move-style previews use lightweight owner-colored arrows", () => {
   assert.match(adapterSource, /const PREVIEW_STROKE_BY_OWNER = \{\s*P1: "var\(--player-p1\)",\s*P2: "var\(--player-p2\)",\s*\};/s);
   assert.match(adapterSource, /const PREVIEW_OPACITY = \{\s*default: "0\.35",\s*selected: "0\.7",\s*\};/s);
+  assert.match(adapterSource, /const PREVIEW_ARROW_HEAD_LENGTH = 8;/);
+  assert.match(adapterSource, /const PREVIEW_ARROW_HEAD_HALF_WIDTH = 4;/);
   assert.match(adapterSource, /const drawArrowLine = \(from, to, owner, curved = false, selected = false\) => \{/);
+  assert.match(adapterSource, /const drawArrowHead = \(base, directionX, directionY, stroke, opacity\) => \{/);
   assert.match(adapterSource, /line\.setAttribute\("stroke-width", "3"\);/);
   assert.match(adapterSource, /path\.setAttribute\("stroke-width", "3"\);/);
   assert.match(adapterSource, /const previewOpacity = selected \? PREVIEW_OPACITY\.selected : PREVIEW_OPACITY\.default;/);
   assert.match(adapterSource, /line\.setAttribute\("stroke-opacity", previewOpacity\);/);
   assert.match(adapterSource, /path\.setAttribute\("stroke-opacity", previewOpacity\);/);
   assert.match(adapterSource, /arrowPath\.setAttribute\("fill-opacity", opacity\);/);
+  assert.match(adapterSource, /overlayLinesEl\.appendChild\(line\);\s*drawArrowHead\(shortenedEnd, arrowDeltaX, arrowDeltaY, stroke, previewOpacity\);/s);
+  assert.match(adapterSource, /overlayLinesEl\.appendChild\(path\);\s*drawArrowHead\(shortenedEnd, shortenedEnd\.x - control\.x, shortenedEnd\.y - control\.y, stroke, previewOpacity\);/s);
+  assert.doesNotMatch(adapterSource, /marker-end/);
   assert.match(adapterSource, /const isSelectedTarget = targetCell\?\.classList\.contains\("target"\) \?\? false;/);
   assert.match(adapterSource, /shouldCurveActionPreview\(piece\.position, action\.to, \[supplyPath, commandPath\]\)/);
   assert.doesNotMatch(adapterSource, /drawPath\(\[piece\.position, action\.to\], "#8b5ec0", "5 5"\)/);
