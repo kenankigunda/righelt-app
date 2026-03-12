@@ -133,7 +133,7 @@ test("preview ghosts do not render inactive state from preview metadata", () => 
 });
 
 test("project previews use a plus badge while move-style previews use lightweight owner-colored arrows", () => {
-  assert.match(adapterSource, /const PREVIEW_STROKE_BY_OWNER = \{\s*P1: "#c2452f",\s*P2: "#2d67c7",\s*\};/s);
+  assert.match(adapterSource, /const PREVIEW_STROKE_BY_OWNER = \{\s*P1: "var\(--player-p1\)",\s*P2: "var\(--player-p2\)",\s*\};/s);
   assert.match(adapterSource, /const drawArrowLine = \(from, to, owner, curved = false\) => \{/);
   assert.match(adapterSource, /line\.setAttribute\("stroke-width", "1\.6"\);/);
   assert.match(adapterSource, /line\.setAttribute\("stroke-opacity", "0\.42"\);/);
@@ -141,6 +141,9 @@ test("project previews use a plus badge while move-style previews use lightweigh
   assert.doesNotMatch(adapterSource, /drawPath\(\[piece\.position, action\.to\], "#8b5ec0", "5 5"\)/);
   assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*ghost\.classList\.add\("preview-created"\);\s*\}/s);
   assert.match(styleSource, /\.piece-token\.move-ghost\.preview-created::after\s*\{[\s\S]*content:\s*"\+";[\s\S]*top:\s*-7px;[\s\S]*right:\s*-8px;/s);
+  assert.match(styleSource, /:root\s*\{[\s\S]*--player-p1:\s*#c2452f;[\s\S]*--player-p2:\s*#2d67c7;/s);
+  assert.match(styleSource, /\.piece-token\.p1\s*\{[\s\S]*background:\s*var\(--player-p1\);[\s\S]*border-color:\s*var\(--player-p1\);/s);
+  assert.match(styleSource, /\.piece-token\.p2\s*\{[\s\S]*background:\s*var\(--player-p2\);[\s\S]*border-color:\s*var\(--player-p2\);/s);
 });
 
 test("action preview ghosts stay centered instead of using preview offsets", () => {

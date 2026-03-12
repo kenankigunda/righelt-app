@@ -10,8 +10,8 @@ const BOARD_SIZE = 10;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const REMOVAL_FLASH_DURATION_MS = 1800;
 const PREVIEW_STROKE_BY_OWNER = {
-  P1: "#c2452f",
-  P2: "#2d67c7",
+  P1: "var(--player-p1)",
+  P2: "var(--player-p2)",
 };
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
