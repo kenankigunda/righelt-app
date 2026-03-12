@@ -541,6 +541,10 @@ button {
   opacity: 0.35;
 }
 
+.cell.target .piece-token.move-ghost {
+  opacity: 0.7;
+}
+
 .piece-token.removal-piece {
   position: absolute;
   left: 50%;
