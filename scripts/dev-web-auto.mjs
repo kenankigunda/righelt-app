@@ -6,8 +6,14 @@ import path from "node:path";
 const args = process.argv.slice(2);
 const port = args[0] ?? "8788";
 const watchBackend = args.includes("--watch-backend");
+const withApi = args.includes("--with-api");
+const LOCAL_API_ORIGIN = "http://127.0.0.1:8787";
+const LOCAL_API_HEALTH_URL = `${LOCAL_API_ORIGIN}/api/health`;
+const LOCAL_API_READY_TIMEOUT_MS = 30_000;
+const LOCAL_API_READY_POLL_MS = 250;
 
 const cwd = process.cwd();
+const webCwd = path.join(cwd, "apps", "web");
 const touchTarget = path.join(cwd, "apps/web/functions/api/[[path]].js");
 const fixtureCatalogPath = path.join(cwd, "apps/web/fixtures/m-golden-fixtures.json");
 const watchRoots = [
@@ -21,6 +27,11 @@ let touchTimer = null;
 let openTimer = null;
 let openedBrowser = false;
 let fixtureServer = null;
+const managedChildren = new Set();
+let apiWrangler = null;
+let pagesWrangler = null;
+let exitCode = 0;
+let shuttingDown = false;
 
 const fixtureWriterPort = (() => {
   const numeric = Number.parseInt(port, 10);
@@ -207,6 +218,33 @@ const openBrowserForUrl = (url) => {
   spawn("xdg-open", [url], { stdio: "ignore", detached: true }).unref();
 };
 
+const delay = (ms) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const waitForLocalApiReady = async () => {
+  const deadline = Date.now() + LOCAL_API_READY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (apiWrangler?.exitCode !== null) {
+      throw new Error(`local api worker exited before becoming ready (exit code ${apiWrangler.exitCode})`);
+    }
+
+    try {
+      const response = await fetch(LOCAL_API_HEALTH_URL);
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // Keep polling until the worker is ready or times out.
+    }
+
+    await delay(LOCAL_API_READY_POLL_MS);
+  }
+
+  throw new Error(`timed out waiting for local api worker at ${LOCAL_API_HEALTH_URL}`);
+};
+
 const touch = async () => {
   const now = new Date();
   try {
@@ -252,19 +290,10 @@ if (watchBackend) {
 
 console.log(
   watchBackend
-    ? `[dev-web] starting on :${port} with backend watcher enabled`
-    : `[dev-web] starting on :${port}`,
+    ? `[dev-web] starting on :${port} with backend watcher enabled${withApi ? " and local api orchestration" : ""}`
+    : `[dev-web] starting on :${port}${withApi ? " with local api orchestration" : ""}`,
 );
 startFixtureWriterServer();
-
-const wrangler = spawn(
-  "pnpm",
-  ["exec", "wrangler", "pages", "dev", "apps/web", "--config", "apps/web/wrangler.toml", "--port", port],
-  {
-    cwd,
-    stdio: ["inherit", "pipe", "pipe"],
-  },
-);
 
 const maybeOpenFromChunk = (chunk) => {
   const text = chunk.toString();
@@ -280,26 +309,16 @@ const maybeOpenFromChunk = (chunk) => {
   }
 };
 
-wrangler.stdout?.on("data", (chunk) => {
-  process.stdout.write(chunk);
-  if (!openedBrowser) {
-    maybeOpenFromChunk(chunk);
+const maybeExit = () => {
+  if (managedChildren.size === 0) {
+    process.exit(exitCode);
   }
-});
+};
 
-wrangler.stderr?.on("data", (chunk) => {
-  process.stderr.write(chunk);
-  if (!openedBrowser) {
-    maybeOpenFromChunk(chunk);
+const shutdown = (nextExitCode = exitCode) => {
+  if (nextExitCode > exitCode) {
+    exitCode = nextExitCode;
   }
-});
-
-openTimer = setTimeout(() => {
-  openBrowserForUrl(`http://localhost:${port}`);
-}, 2000);
-
-let shuttingDown = false;
-const shutdown = () => {
   if (shuttingDown) {
     return;
   }
@@ -319,18 +338,106 @@ const shutdown = () => {
     fixtureServer = null;
   }
 
-  if (!wrangler.killed) {
-    wrangler.kill("SIGTERM");
+  for (const child of managedChildren) {
+    if (!child.killed) {
+      child.kill("SIGTERM");
+    }
   }
+
+  maybeExit();
 };
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
-wrangler.on("exit", (code, signal) => {
-  shutdown();
-  if (signal) {
-    process.exit(1);
+const attachChild = (child, { openBrowser = false, label }) => {
+  managedChildren.add(child);
+
+  child.stdout?.on("data", (chunk) => {
+    process.stdout.write(chunk);
+    if (openBrowser && !openedBrowser) {
+      maybeOpenFromChunk(chunk);
+    }
+  });
+
+  child.stderr?.on("data", (chunk) => {
+    process.stderr.write(chunk);
+    if (openBrowser && !openedBrowser) {
+      maybeOpenFromChunk(chunk);
+    }
+  });
+
+  child.on("exit", (code, signal) => {
+    managedChildren.delete(child);
+    if (shuttingDown) {
+      maybeExit();
+      return;
+    }
+
+    if (signal) {
+      console.error(`[dev-web] ${label} exited via ${signal}`);
+      shutdown(1);
+      return;
+    }
+
+    if ((code ?? 0) !== 0) {
+      console.error(`[dev-web] ${label} exited with code ${code}`);
+      shutdown(code ?? 1);
+      return;
+    }
+
+    console.error(`[dev-web] ${label} exited unexpectedly`);
+    shutdown(1);
+  });
+};
+
+const startApiWrangler = () => {
+  apiWrangler = spawn(
+    "pnpm",
+    [
+      "--dir",
+      "apps/api",
+      "exec",
+      "wrangler",
+      "dev",
+      "--config",
+      "wrangler.toml",
+      "--port",
+      "8787",
+      "--persist-to",
+      "../../.wrangler/state/api-local-dev",
+    ],
+    {
+      cwd,
+      stdio: ["inherit", "pipe", "pipe"],
+    },
+  );
+  attachChild(apiWrangler, { label: "api worker" });
+};
+
+const startPagesWrangler = () => {
+  pagesWrangler = spawn("pnpm", ["exec", "wrangler", "pages", "dev", ".", "--port", port], {
+    cwd: webCwd,
+    stdio: ["inherit", "pipe", "pipe"],
+  });
+  attachChild(pagesWrangler, { openBrowser: true, label: "pages dev" });
+  openTimer = setTimeout(() => {
+    openBrowserForUrl(`http://localhost:${port}`);
+  }, 2000);
+};
+
+try {
+  if (withApi) {
+    startApiWrangler();
+    await waitForLocalApiReady();
+    console.log(`[dev-web] local api ready at ${LOCAL_API_ORIGIN}`);
   }
-  process.exit(code ?? 0);
-});
+  startPagesWrangler();
+} catch (error) {
+  console.error("[dev-web] failed to start split-stack local dev", error);
+  shutdown(1);
+}
+
+if (managedChildren.size === 0) {
+  process.exit(exitCode);
+}
