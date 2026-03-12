@@ -14,6 +14,8 @@ When a remote-only branch is listed here, `Audit branches` should prefer this cu
 | `codex/invite-accept-propagation-fix` | Updates `docs/RIGHELT_WEB_APP_SPEC.md` with invite accept propagation guidance |
 | `codex/mobile-overflow-snapshot` | Tightens mobile board and shell width constraints in `apps/web/shell/shell.css` and `apps/web/styles.css` |
 | `codex/overlay-line-centers-20260302` | Aligns overlay lines to piece centers and includes broader playground, fixture, interaction, style, engine, API handler, and docs changes |
+| `codex/rush-highlighting-arrowhead-layering` | Updates `apps/web/board-adapters/engine-playground-adapter.js` and its test to render preview arrowheads above arrow shafts |
+| `codex/rush-highlighting-preview-arrows` | Updates `apps/web/board-adapters/engine-playground-adapter.js` and its test to hide illegal action preview arrows |
 | `codex/shell-live-payload-leak-fix` | Reduces shell live payload size and adjusts shell history/press animation behavior |
 | `codex/turn-control-fix-checkpoint` | Applies the turn-control handoff checkpoint changes in shell transport and API handler tests |
 | `codex/turn-handoff-broken-attempt` | Contains a WIP turn-handoff attempt in live transport and integration tests |
