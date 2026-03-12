@@ -131,6 +131,125 @@ test("board runtime renders removal effects returned from shell apply actions", 
   }
 });
 
+test("board runtime preserves in-progress removal effects across snapshot reloads", async () => {
+  const renderCalls = [];
+  const scheduledTimers = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalDateNow = Date.now;
+
+  globalThis.setTimeout = (fn, delay) => {
+    const handle = { fn, delay };
+    scheduledTimers.push(handle);
+    return handle;
+  };
+  globalThis.clearTimeout = () => {};
+  Date.now = () => 5000;
+
+  try {
+    const runtime = createBoardRuntime({
+      boardAdapter: {
+        mount: noop,
+        render: (payload) => renderCalls.push(payload),
+        getSelectedPieceSummary: () => null,
+        getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+        getPieceAt: (snapshot, coord) =>
+          snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+        nextSelectionForCell: () => ({
+          selection: { selectedPieceId: null, source: null, target: null },
+          nextActionType: "pass",
+        }),
+      },
+      host: {
+        applyAction: async () => ({
+          accepted: true,
+          state: {
+            sideToMove: "P1",
+            turnIndex: 0,
+            continuation: null,
+            outcome: null,
+            pieces: [],
+          },
+          legalActions: [],
+          removedPieces: [
+            {
+              pieceId: "A1",
+              position: { row: 4, col: 2 },
+              reason: "no_retreat",
+              message: "Piece at (4, 2) destroyed because it could not retreat",
+            },
+          ],
+        }),
+        loadInitialState: async () => ({ state: null, legalActions: [] }),
+        loadLegalActions: async () => ({ state: null, legalActions: [] }),
+        loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+        canInteract: () => true,
+      },
+    });
+
+    runtime.bindElements({
+      boardEl: {},
+      overlayLinesEl: {},
+      boardPreviewLabelEl: null,
+      boardTurnIndicatorEl: null,
+    });
+
+    await runtime.loadSnapshot(
+      {
+        sideToMove: "P1",
+        turnIndex: 0,
+        continuation: null,
+        outcome: null,
+        pieces: [
+          {
+            id: "A1",
+            owner: "P1",
+            kind: "unit",
+            position: { row: 4, col: 2 },
+            supplied: true,
+            commanded: true,
+          },
+        ],
+      },
+      { legalActions: [] },
+    );
+
+    await runtime.submitCurrentAction({
+      type: "push",
+      actorId: "A1",
+      from: { row: 4, col: 1 },
+      to: { row: 4, col: 2 },
+    });
+
+    const renderWithRemoval = renderCalls.find((payload) => Array.isArray(payload.removalEffects) && payload.removalEffects.length === 1);
+    assert.ok(renderWithRemoval);
+    const originalStartedAt = renderWithRemoval.removalEffects[0].startedAt;
+    assert.equal(originalStartedAt, 5000);
+
+    renderCalls.length = 0;
+
+    await runtime.loadSnapshot(
+      {
+        sideToMove: "P1",
+        turnIndex: 0,
+        continuation: null,
+        outcome: null,
+        pieces: [],
+      },
+      { legalActions: [], resetSelection: false },
+    );
+
+    const preservedRender = renderCalls.find((payload) => Array.isArray(payload.removalEffects) && payload.removalEffects.length === 1);
+    assert.ok(preservedRender);
+    assert.equal(preservedRender.removalEffects[0].startedAt, originalStartedAt);
+    assert.equal(scheduledTimers.length, 1);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    Date.now = originalDateNow;
+  }
+});
+
 test("board runtime does not flash no-moves preview text while selected piece moves are loading", async () => {
   let onCellClick = null;
   let resolvePieceMoves = null;
