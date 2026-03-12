@@ -238,9 +238,10 @@ button {
 
 .overlay-lines {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: 0;
+  right: 0;
+  bottom: 1rem;
+  left: 0;
   pointer-events: none;
   overflow: visible;
 }
