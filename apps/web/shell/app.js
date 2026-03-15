@@ -533,9 +533,7 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
       ? `<div class="alert danger">${escapeHtml(game.rollbackNotice)}</div>`
       : game.syncStatus === "desynced"
         ? `<div class="alert warn">Live sync is recovering. The board is showing the last authoritative state.</div>`
-        : game.pendingCommandCount > 0
-          ? `<div class="alert">Applying ${escapeHtml(String(game.pendingCommandCount))} pending move${game.pendingCommandCount === 1 ? "" : "s"} from your predicted live state.</div>`
-          : "";
+        : "";
   const offlineBanner =
     game.showOfflineState || inviteFromRole === "offline"
       ? `<div class="alert warn">Offline mode: invite and remote join actions are disabled.</div>`
