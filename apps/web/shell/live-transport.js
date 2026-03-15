@@ -67,8 +67,29 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const lastEventSeqByGameId = new Map();
   const offlinePendingByGameId = new Map();
   const optimisticStateByGameId = new Map();
+  const listeners = new Set();
 
   const withOfflineQuery = (path) => `${path}${path.includes("?") ? "&" : "?"}offline=${offline ? "1" : "0"}`;
+
+  const emitChange = (change) => {
+    for (const listener of listeners) {
+      listener(change);
+    }
+  };
+
+  const subscribe = (listener) => {
+    if (typeof listener !== "function") {
+      return () => {};
+    }
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  };
+
+  const unsubscribe = (listener) => {
+    listeners.delete(listener);
+  };
 
   const getOptimisticState = (gameId) => {
     if (!optimisticStateByGameId.has(gameId)) {
@@ -125,7 +146,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return { ok: true, game: optimistic.derivedGame };
   };
 
-  const clearOptimisticQueue = (gameId, { notice = "", syncStatus = "ready" } = {}) => {
+  const clearOptimisticQueue = (gameId, { notice = "", syncStatus = "ready", changeType = "optimistic_queue_cleared" } = {}) => {
     const optimistic = getOptimisticState(gameId);
     optimistic.pendingCommands = [];
     optimistic.inflightCommandId = null;
@@ -133,6 +154,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     optimistic.syncStatus = syncStatus;
     optimistic.rollbackNotice = notice;
     recalculateOptimisticGame(gameId);
+    emitChange({ type: changeType, gameId });
   };
 
   const clearRollbackNotice = (gameId) => {
@@ -142,6 +164,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       optimistic.syncStatus = "ready";
     }
     recalculateOptimisticGame(gameId);
+    emitChange({ type: "rollback_notice_cleared", gameId });
   };
 
   const syncCacheFromList = (nextGames) => {
@@ -150,6 +173,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     for (const game of games) {
       recalculateOptimisticGame(game.id);
     }
+    emitChange({ type: "games_refreshed" });
   };
 
   const applyClientOfflineViewState = (game) => {
@@ -195,7 +219,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return next;
   };
 
-  const upsertGameSnapshot = ({ game, eventSeq = null, clientCommandId = null }) => {
+  const upsertGameSnapshot = ({ game, eventSeq = null, clientCommandId = null, changeType = "authoritative_update" }) => {
     if (!game) {
       return null;
     }
@@ -223,17 +247,19 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       clearOptimisticQueue(game.id, {
         notice: "Predicted move no longer matched the authoritative game. The board was restored.",
         syncStatus: "ready",
+        changeType: "optimistic_rollback",
       });
     } else if (optimistic.pendingCommands.length > 0) {
       optimistic.syncStatus = "applying-update";
     }
 
+    emitChange({ type: changeType, gameId: game.id, clientCommandId });
     void sendNextPendingCommand(game.id);
     return authoritative;
   };
 
   const applyLiveGameUpdate = ({ game, eventSeq = null, clientCommandId = null }) =>
-    upsertGameSnapshot({ game, eventSeq, clientCommandId });
+    upsertGameSnapshot({ game, eventSeq, clientCommandId, changeType: "authoritative_update" });
 
   const queueOfflineMutation = (gameId, mutation) => {
     const current = offlinePendingByGameId.get(gameId) ?? [];
@@ -415,6 +441,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
         clearOptimisticQueue(gameId, {
           notice: "A predicted move was rejected by the server. The board was restored.",
           syncStatus: "ready",
+          changeType: "optimistic_rollback",
         });
         if (body.game) {
           upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
@@ -434,11 +461,13 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       optimistic.pendingCommands = optimistic.pendingCommands.filter((entry) => entry.clientCommandId !== command.clientCommandId);
       optimistic.inflightCommandId = null;
       recalculateOptimisticGame(gameId);
+      emitChange({ type: "authoritative_update", gameId, clientCommandId: command.clientCommandId });
       void sendNextPendingCommand(gameId);
     } catch {
       clearOptimisticQueue(gameId, {
         notice: "Move sync failed before confirmation. The board was restored to the last authoritative state.",
         syncStatus: "desynced",
+        changeType: "optimistic_desynced",
       });
     }
   };
@@ -455,6 +484,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       recalculateOptimisticGame(gameId);
       return recalculated;
     }
+    emitChange({ type: "optimistic_enqueue", gameId, clientCommandId: command.clientCommandId });
     void sendNextPendingCommand(gameId);
     return {
       ok: true,
@@ -492,7 +522,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       },
     );
     const body = await mustOk(response);
-    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
     return getGameViewModel(gameId);
   };
 
@@ -674,7 +704,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId, moveIndex }),
     });
     const body = await mustOk(response);
-    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
     return getGameViewModel(gameId);
   };
 
@@ -685,7 +715,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId }),
     });
     const body = await mustOk(response);
-    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
     return getGameViewModel(gameId);
   };
 
@@ -721,6 +751,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const setOffline = (value) => {
     const previous = offline;
     offline = value;
+    emitChange({ type: "offline_changed", offline });
     if (previous && !offline) {
       return flushOfflineQueue();
     }
@@ -753,5 +784,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     getGameViewModel,
     setOffline,
     getIdentityId,
+    subscribe,
+    unsubscribe,
   };
 };

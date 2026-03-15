@@ -528,9 +528,121 @@ test("live transport store applies optimistic moves immediately and clears pendi
   assert.equal(settledView.syncStatus, "ready");
 });
 
+test("live transport store notifies subscribers for optimistic enqueue and authoritative ack", async () => {
+  const baseGame = buildLiveGame();
+  const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
+  const changes = [];
+  let resolveApply = null;
+
+  const fetcher = async (url, init = {}) => {
+    if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+      return new Promise((resolve) => {
+        resolveApply = resolve;
+      });
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
+  store.subscribe((change) => {
+    changes.push(change);
+  });
+
+  await store.loadGame(baseGame.id);
+  changes.length = 0;
+
+  const pending = await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+  assert.equal(changes.some((change) => change.type === "optimistic_enqueue" && change.gameId === baseGame.id), true);
+
+  resolveApply?.(
+    Response.json({
+      ok: true,
+      accepted: true,
+      clientCommandId: pending.clientCommandId,
+      eventSeq: 2,
+      game: buildAcknowledgedGame(baseGame, nextAction),
+    }),
+  );
+  await tick();
+
+  assert.equal(changes.some((change) => change.type === "authoritative_update" && change.gameId === baseGame.id), true);
+});
+
+test("live transport store notifies subscribers when optimistic sync rolls back or desyncs", async () => {
+  const baseGame = buildLiveGame();
+  const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
+
+  {
+    const rollbackChanges = [];
+    let resolveApply = null;
+    const fetcher = async (url, init = {}) => {
+      if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+        return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+      }
+      if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+        return new Promise((resolve) => {
+          resolveApply = resolve;
+        });
+      }
+      return Response.json({ ok: true, games: [] });
+    };
+
+    const rollbackStore = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
+    rollbackStore.subscribe((change) => {
+      rollbackChanges.push(change);
+    });
+    await rollbackStore.loadGame(baseGame.id);
+    rollbackChanges.length = 0;
+
+    await rollbackStore.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+    resolveApply?.(
+      Response.json({
+        ok: true,
+        accepted: false,
+        eventSeq: 2,
+        game: clone(baseGame),
+      }),
+    );
+    await tick();
+
+    assert.equal(rollbackChanges.some((change) => change.type === "optimistic_rollback" && change.gameId === baseGame.id), true);
+  }
+
+  {
+    const desyncChanges = [];
+    const desyncStore = createLiveTransportStore({
+      storage: createMemoryStorage(),
+      fetcher: async (url, init = {}) => {
+        if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+          return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+        }
+        if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+          throw new Error("network_failed");
+        }
+        return Response.json({ ok: true, games: [] });
+      },
+      random: () => 0.12345,
+    });
+    desyncStore.subscribe((change) => {
+      desyncChanges.push(change);
+    });
+    await desyncStore.loadGame(baseGame.id);
+    desyncChanges.length = 0;
+
+    await desyncStore.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+    await tick();
+
+    assert.equal(desyncChanges.some((change) => change.type === "optimistic_desynced" && change.gameId === baseGame.id), true);
+  }
+});
+
 test("live transport store keeps authoritative history selectable while pending moves exist", async () => {
   const baseGame = buildLiveGame();
   const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
+  const changes = [];
 
   const fetcher = async (url, init = {}) => {
     if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
@@ -568,16 +680,23 @@ test("live transport store keeps authoritative history selectable while pending 
   };
 
   const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
+  store.subscribe((change) => {
+    changes.push(change);
+  });
   await store.loadGame(baseGame.id);
   await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+  changes.length = 0;
 
   const historyView = await store.selectHistoryMove({ gameId: baseGame.id, moveIndex: 0 });
   assert.equal(historyView.inHistoryMode, true);
   assert.equal(historyView.pendingMoves.length, 1);
   assert.deepEqual(historyView.currentSnapshot, baseGame.moves[0].selectionSnapshot);
+  assert.equal(changes.some((change) => change.type === "history_mode_changed" && change.gameId === baseGame.id), true);
 
+  changes.length = 0;
   const liveView = await store.returnToLive({ gameId: baseGame.id });
   assert.equal(liveView.inHistoryMode, false);
   assert.equal(liveView.pendingMoves.length, 1);
   assert.notDeepEqual(liveView.currentSnapshot, baseGame.currentSnapshot);
+  assert.equal(changes.some((change) => change.type === "history_mode_changed" && change.gameId === baseGame.id), true);
 });

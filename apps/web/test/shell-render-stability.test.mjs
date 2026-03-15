@@ -7,33 +7,42 @@ import { fileURLToPath } from "node:url";
 const testDir = fileURLToPath(new URL(".", import.meta.url));
 const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
 
-test("shell render commits markup only when it changes", () => {
+test("shell render patches same-route game updates without replacing the board panel", () => {
   assert.match(source, /let lastRenderedMarkup = "";/);
-  assert.match(source, /const previousBoardPanel =/);
+  assert.match(source, /const renderGameShellFrame = \(game\) =>/);
+  assert.match(source, /id="shell-game-alerts"/);
+  assert.match(source, /data-game-shell-root data-game-id=/);
+  assert.match(source, /data-game-panel="history"/);
+  assert.match(source, /const updateMountedGameShell = \(\{ game, inviteFromRole = null, inviteToken = null, includeBoard = true \} = \{\}\) => \{/);
+  assert.match(source, /const mountedGameShell = getMountedGameShellRoot\(\);/);
+  assert.match(source, /shouldUseIncrementalGameShell\(\)/);
+  assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),/s);
+  assert.match(source, /includeBoard: change\?\.type !== "optimistic_enqueue"/);
   assert.match(source, /const getAnimatedPanels = \(\) =>/);
   assert.match(source, /const capturePanelHeights = \(\) =>/);
-  assert.match(source, /const previousPanelHeights = capturePanelHeights\(\);/);
+  assert.match(source, /const previousPanelHeights = animatePanels \? capturePanelHeights\(\) : \[\];/);
   assert.match(source, /const animatePanelHeightChange = \(panelEl, fromHeight\) => \{/);
   assert.match(source, /const animatePanelHeightChanges = \(previousPanelHeights\) => \{/);
   assert.match(source, /querySelectorAll\("\.panel"\)/);
   assert.match(source, /class="panel" data-shell-panel="board"/);
   assert.match(source, /const nextMarkup = `\$\{renderHeader\(\)\}\$\{body\}`;/);
-  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*nextBoardPanel\.replaceWith\(previousBoardPanel\);[\s\S]*animatePanelHeightChanges\(previousPanelHeights\);\s*\}/s);
+  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
+  assert.doesNotMatch(source, /replaceWith\(previousBoardPanel\)/);
 });
 
 test("live sync applies authoritative pushed game payloads before render", () => {
   assert.match(source, /payload\?\.type === "state_sync"/);
   assert.match(source, /payload\?\.type === "event_appended"/);
   assert.match(source, /transport\.applyLiveGameUpdate\(\{ game: payload\.game, eventSeq: payload\.eventSeq, clientCommandId: payload\.clientCommandId \?\? null \}\);/);
-  assert.match(source, /\}\s*render\(\);/s);
+  assert.match(source, /if \(document\.getElementById\("shell-header-last-event"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
 test("live sync status renders are deduplicated by stable status key", () => {
   assert.match(source, /let lastWsStatusKey = toStableKey\(wsStatus\);/);
   assert.match(source, /const statusKey = toStableKey\(status\);/);
   assert.match(source, /if \(statusKey === lastWsStatusKey\) \{\s*return;\s*\}/s);
-  assert.match(source, /lastWsStatusKey = statusKey;\s*wsStatus = status;\s*if \(status\.state === "closed" && status\.reconnectAttempts >= 3\) \{\s*void syncRouteDataPassive\(\);\s*\}\s*render\(\);/s);
+  assert.match(source, /lastWsStatusKey = statusKey;\s*wsStatus = status;\s*if \(status\.state === "closed" && status\.reconnectAttempts >= 3\) \{\s*void syncRouteDataPassive\(\);\s*\}[\s\S]*updateHeaderFields\(\);/s);
 });
 
 test("syncLiveChannel does not disconnect/reconnect while same route is still connecting", () => {
@@ -56,6 +65,12 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
   assert.match(source, /const hasHistoryMoves = Array\.isArray\(game\.moves\) && game\.moves\.length > 0;/);
   assert.match(source, /: hasHistoryMoves\s*\? '<p class="small">You are on the live view\.<\/p><p class="small">Click moves below to see historical state\.<\/p>'\s*: '<p class="small">You are on the live view\.<\/p>'/);
+});
+
+test("transport subscriptions drive immediate game-shell updates", () => {
+  assert.match(source, /transport\.subscribe\(\(change\) => \{\s*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);\s*\}\);/s);
+  assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
+  assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
 });
 
 test("withBusy only repaints immediately for actions that need visible busy state", () => {

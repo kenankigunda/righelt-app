@@ -45,3 +45,18 @@ test("shell board mount reloads when selection reset or snapshot inputs differ",
     false,
   );
 });
+
+test("shell board mount skips reload for matching authoritative ack after an optimistic move", () => {
+  assert.equal(
+    shouldSkipBoardRuntimeReload({
+      runtimeSnapshotKey: "{\"turnIndex\":0,\"sideToMove\":\"P1\",\"pieces\":[{\"id\":\"A1\"}]}",
+      runtimeLegalActionsKey: "[{\"type\":\"rush\",\"actorId\":\"A1\"}]",
+      snapshotKey: "{\"turnIndex\":0,\"sideToMove\":\"P1\",\"pieces\":[{\"id\":\"A1\"}]}",
+      legalActionsKey: "[{\"type\":\"rush\",\"actorId\":\"A1\"}]",
+      mountedSelectionActionKey: "null",
+      selectionActionKey: "null",
+      resetSelection: false,
+    }),
+    true,
+  );
+});
