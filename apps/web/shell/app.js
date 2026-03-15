@@ -413,9 +413,6 @@ const renderTurnHistory = (game) => {
   if (!activeTurn) {
     return `${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
   }
-  if (game.inHistoryMode && activeTurn.moveIndexes.length > 0) {
-    return `${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
-  }
   if (!game.inHistoryMode && !liveStatusItem && activeTurn.moveIndexes.length > 0) {
     return `${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
   }

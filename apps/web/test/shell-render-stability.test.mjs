@@ -69,6 +69,7 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /const liveStatusText = liveContinuationText \?\? liveWaitingText;/);
   assert.match(source, /class="history-item history-item-waiting history-empty-line/);
   assert.match(source, /return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
+  assert.doesNotMatch(source, /if \(game\.inHistoryMode && activeTurn\.moveIndexes\.length > 0\) \{/);
   assert.match(source, /if \(!game\.inHistoryMode && !liveStatusItem && activeTurn\.moveIndexes\.length > 0\) \{\s*return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;\s*\}/s);
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
   assert.match(source, /return `\$\{emptyTurnItem\}\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);

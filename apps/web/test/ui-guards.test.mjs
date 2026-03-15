@@ -51,6 +51,7 @@ test("game, join/invite, and history use shared section spacing structure", () =
 test("history live-return control stays mounted during busy history navigation", () => {
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
   assert.match(source, /data-action="return-live"[^`]*\$\{busy \? "disabled" : ""\}/);
+  assert.doesNotMatch(source, /if \(game\.inHistoryMode && activeTurn\.moveIndexes\.length > 0\) \{/);
 });
 
 test("app does not call removed presence endpoint helpers", () => {
