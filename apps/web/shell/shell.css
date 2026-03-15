@@ -199,6 +199,7 @@ button.secondary:disabled {
 .history-list {
   margin: 0;
   padding-left: 0;
+  list-style: none;
   display: grid;
   gap: var(--section-item-gap);
 }
@@ -264,6 +265,15 @@ button.button-release-bounce,
   max-height: 1.2rem;
   opacity: 0.5;
   transform: translateY(0);
+}
+
+.history-item.history-item-waiting {
+  cursor: default;
+  pointer-events: none;
+}
+
+.history-item.history-item-waiting .history-move-line {
+  font-weight: 500;
 }
 
 .history-move-line {
@@ -338,7 +348,6 @@ button.button-release-bounce,
 .history-return-live {
   display: grid;
   gap: 0.08rem;
-  margin-top: var(--section-item-gap);
 }
 
 .history-return-live {
