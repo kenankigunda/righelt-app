@@ -23,10 +23,10 @@ test("shell render commits markup only when it changes", () => {
 });
 
 test("live sync applies authoritative pushed game payloads before render", () => {
-  assert.match(
-    source,
-    /if \(\s*\(payload\?\.type === "state_sync" \|\|\s*payload\?\.type === "event_appended" \|\|\s*payload\?\.type === "presence_changed" \|\|\s*payload\?\.type === "join_request_created" \|\|\s*payload\?\.type === "join_request_resolved"\)\s*&&\s*payload\?\.game\s*\) \{\s*transport\.applyLiveGameUpdate\(\{ game: payload\.game, eventSeq: payload\.eventSeq \}\);\s*\}\s*render\(\);/s,
-  );
+  assert.match(source, /payload\?\.type === "state_sync"/);
+  assert.match(source, /payload\?\.type === "event_appended"/);
+  assert.match(source, /transport\.applyLiveGameUpdate\(\{ game: payload\.game, eventSeq: payload\.eventSeq, clientCommandId: payload\.clientCommandId \?\? null \}\);/);
+  assert.match(source, /\}\s*render\(\);/s);
 });
 
 test("live sync status renders are deduplicated by stable status key", () => {
@@ -48,6 +48,9 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.doesNotMatch(source, /class="history-turn-header"/);
   assert.doesNotMatch(source, /class="history-turn-list"/);
   assert.match(source, /const moveRows = game\.turns\.flatMap/);
+  assert.match(source, /const pendingRows = \(Array\.isArray\(game\.pendingMoves\) \? game\.pendingMoves : \[\]\)\.map/);
+  assert.match(source, /class="history-item history-item-pending/);
+  assert.match(source, /Pending<\/span>/);
   assert.match(source, /const emptyTurnText = "Waiting on next move\.\.\."/);
   assert.match(source, /: `<div class="history-empty-line/);
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);

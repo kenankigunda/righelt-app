@@ -250,6 +250,22 @@ button.button-release-bounce,
   animation: history-item-release 140ms cubic-bezier(0.18, 0.72, 0.24, 1);
 }
 
+.history-item.history-item-pending {
+  cursor: default;
+  opacity: 0.52;
+  pointer-events: none;
+}
+
+.history-item.history-item-pending .history-move-line {
+  font-weight: 500;
+}
+
+.history-item.history-item-pending .history-move-at {
+  max-height: 1.2rem;
+  opacity: 0.5;
+  transform: translateY(0);
+}
+
 .history-move-line {
   font-weight: 400;
   opacity: 1;

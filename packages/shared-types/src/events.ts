@@ -11,6 +11,7 @@ export type EventAppendedEvent = {
   type: "event_appended";
   eventSeq: number;
   reason: string;
+  clientCommandId?: string | null;
   game: LiveGamePayload;
 };
 

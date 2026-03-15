@@ -295,6 +295,43 @@ test("live transport: join approval flow and presence/history/move transitions",
   assert.equal(viewerPresence.status, 404);
 });
 
+test("live transport: apply and end-turn echo clientCommandId and persist it on appended events", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await create.json();
+  const gameId = createdBody.game.id;
+
+  const apply = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/apply`, "POST", {
+      identityId: "id-owner",
+      clientCommandId: "cmd-apply-1",
+      state: createdBody.game.currentSnapshot,
+      action: { type: "pass" },
+    }),
+    env,
+  );
+  const applyBody = await apply.json();
+  assert.equal(applyBody.accepted, true);
+  assert.equal(applyBody.clientCommandId, "cmd-apply-1");
+
+  const endTurn = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/end-turn`, "POST", {
+      identityId: "id-owner",
+      clientCommandId: "cmd-end-1",
+    }),
+    env,
+  );
+  const endTurnBody = await endTurn.json();
+  assert.equal(endTurnBody.ok, true);
+  assert.equal(endTurnBody.clientCommandId, "cmd-end-1");
+
+  const events = env.DB.getEvents(gameId).map((row) => JSON.parse(row.payload_json));
+  assert.equal(events.some((event) => event.type === "event_appended" && event.clientCommandId === "cmd-apply-1"), true);
+  assert.equal(events.some((event) => event.type === "event_appended" && event.clientCommandId === "cmd-end-1"), true);
+});
+
 test("live transport: player invite token enables immediate player join without guessable game role query", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),

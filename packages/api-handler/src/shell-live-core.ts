@@ -35,6 +35,7 @@ export type MoveEntry = {
   at: string;
   notation: string;
   action: Action;
+  clientCommandId?: string | null;
   selectionSnapshot: GameState;
   snapshot: GameState;
 };
@@ -432,7 +433,7 @@ const pickLegalAction = (state: GameState): Action | null => {
   return legal[0] as Action;
 };
 
-export const applyServerAction = (game: LiveGame, action: Action, notation?: string) => {
+export const applyServerAction = (game: LiveGame, action: Action, notation?: string, clientCommandId?: string | null) => {
   const activeTurn = getActiveTurn(game);
   if (!activeTurn) {
     return { ok: false as const, error: "turn_not_initialized" };
@@ -456,6 +457,7 @@ export const applyServerAction = (game: LiveGame, action: Action, notation?: str
     at: now(),
     notation: notation || defaultNotationForAction(action),
     action: clone(action),
+    clientCommandId: clientCommandId ?? null,
     selectionSnapshot: stable,
     snapshot: next,
   };
@@ -473,13 +475,13 @@ export const applyServerAction = (game: LiveGame, action: Action, notation?: str
   return { ok: true as const, move, state: next, removedPieces };
 };
 
-export const applyServerMove = (game: LiveGame, notation?: string) => {
+export const applyServerMove = (game: LiveGame, notation?: string, clientCommandId?: string | null) => {
   const stable = resolveToStability(game.board.state, { artifactMode: "full" });
   const action = pickLegalAction(stable);
   if (!action) {
     return { ok: false as const, error: "no_legal_actions" };
   }
-  return applyServerAction(game, action, notation);
+  return applyServerAction(game, action, notation, clientCommandId);
 };
 
 export const endServerTurn = (game: LiveGame) => {

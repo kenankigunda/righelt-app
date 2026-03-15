@@ -1,4 +1,5 @@
 import { loadIdentity, saveIdentity } from "./persistence.js";
+import { defaultNotationForAction, projectOptimisticGame } from "./optimistic-live.js";
 
 const clone = (value) => structuredClone(value);
 const MAX_HISTORY = 200;
@@ -11,24 +12,14 @@ const getControlSeatForTurn = (state, turnOwnerSeat) => {
   if (!continuation) {
     return turnOwnerSeat;
   }
-  if (continuation.type === "push") {
-    if (continuation.phase === "retreat") {
-      return getNextSeat(turnOwnerSeat);
-    }
-    return turnOwnerSeat;
-  }
-  if (continuation.type === "rush") {
-    return turnOwnerSeat;
+  if (continuation.type === "push" && continuation.phase === "retreat") {
+    return getNextSeat(turnOwnerSeat);
   }
   return turnOwnerSeat;
 };
+
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "(?,?)");
-const defaultNotationForAction = (action) => {
-  if (action?.type === "pass") {
-    return "PASS";
-  }
-  return `${String(action?.type || "move").toUpperCase()} ${formatCoordinate(action?.from)} -> ${formatCoordinate(action?.to)}`;
-};
+
 const renumberHistory = (game) => {
   game.moves.forEach((move, index) => {
     move.index = index;
@@ -41,6 +32,7 @@ const renumberHistory = (game) => {
 };
 
 const createIdentity = (random = Math.random) => `id-${random().toString(36).slice(2, 10)}`;
+const createClientCommandId = (gameId, counter) => `${gameId}:cmd:${counter}`;
 
 const readJson = async (response) => {
   try {
@@ -55,6 +47,7 @@ const mustOk = async (response) => {
   if (!response.ok || body.ok === false) {
     const error = new Error(body.error || `HTTP_${response.status}`);
     error.code = body.error || `HTTP_${response.status}`;
+    error.body = body;
     throw error;
   }
   return body;
@@ -70,14 +63,93 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   let offline = false;
   let games = [];
   let gameById = new Map();
+  let nextClientCommandCounter = 1;
   const lastEventSeqByGameId = new Map();
   const offlinePendingByGameId = new Map();
+  const optimisticStateByGameId = new Map();
 
   const withOfflineQuery = (path) => `${path}${path.includes("?") ? "&" : "?"}offline=${offline ? "1" : "0"}`;
 
+  const getOptimisticState = (gameId) => {
+    if (!optimisticStateByGameId.has(gameId)) {
+      optimisticStateByGameId.set(gameId, {
+        pendingCommands: [],
+        inflightCommandId: null,
+        syncStatus: "ready",
+        rollbackNotice: "",
+        derivedGame: null,
+        commandResults: new Map(),
+      });
+    }
+    return optimisticStateByGameId.get(gameId);
+  };
+
+  const decorateGameWithSync = (game, gameId) => {
+    const optimistic = getOptimisticState(gameId);
+    const next = clone(game);
+    next.pendingMoves = Array.isArray(next.pendingMoves) ? next.pendingMoves : [];
+    next.pendingCommandCount = optimistic.pendingCommands.length;
+    next.liveCurrentSnapshot = clone(next.liveCurrentSnapshot ?? next.board?.state ?? next.currentSnapshot ?? null);
+    next.syncStatus = optimistic.syncStatus;
+    next.rollbackNotice = optimistic.rollbackNotice;
+    return next;
+  };
+
+  const recalculateOptimisticGame = (gameId) => {
+    const authoritativeGame = gameById.get(gameId);
+    const optimistic = getOptimisticState(gameId);
+    optimistic.commandResults = new Map();
+
+    if (!authoritativeGame) {
+      optimistic.derivedGame = null;
+      return { ok: true, game: null };
+    }
+
+    if (optimistic.pendingCommands.length === 0) {
+      optimistic.derivedGame = decorateGameWithSync(authoritativeGame, gameId);
+      return { ok: true, game: optimistic.derivedGame };
+    }
+
+    const projection = projectOptimisticGame({
+      authoritativeGame,
+      identityId,
+      queue: optimistic.pendingCommands,
+    });
+    if (!projection.ok) {
+      optimistic.derivedGame = decorateGameWithSync(authoritativeGame, gameId);
+      return projection;
+    }
+
+    optimistic.commandResults = projection.commandResults;
+    optimistic.derivedGame = decorateGameWithSync(projection.game, gameId);
+    return { ok: true, game: optimistic.derivedGame };
+  };
+
+  const clearOptimisticQueue = (gameId, { notice = "", syncStatus = "ready" } = {}) => {
+    const optimistic = getOptimisticState(gameId);
+    optimistic.pendingCommands = [];
+    optimistic.inflightCommandId = null;
+    optimistic.commandResults = new Map();
+    optimistic.syncStatus = syncStatus;
+    optimistic.rollbackNotice = notice;
+    recalculateOptimisticGame(gameId);
+  };
+
+  const clearRollbackNotice = (gameId) => {
+    const optimistic = getOptimisticState(gameId);
+    optimistic.rollbackNotice = "";
+    if (optimistic.syncStatus !== "applying-update") {
+      optimistic.syncStatus = "ready";
+    }
+    recalculateOptimisticGame(gameId);
+  };
+
   const syncCacheFromList = (nextGames) => {
     games = clone(nextGames);
-    gameById = new Map(games.map((game) => [game.id, game]));
+    gameById = new Map(games.map((game) => [game.id, clone(game)]));
+    for (const game of games) {
+      recalculateOptimisticGame(game.id);
+    }
   };
 
   const applyClientOfflineViewState = (game) => {
@@ -119,30 +191,49 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       return rightTs.localeCompare(leftTs);
     });
     games = current;
+    recalculateOptimisticGame(next.id);
     return next;
   };
 
-  const upsertGameSnapshot = ({ game, eventSeq = null }) => {
+  const upsertGameSnapshot = ({ game, eventSeq = null, clientCommandId = null }) => {
     if (!game) {
       return null;
     }
 
     const nextEventSeq = typeof eventSeq === "number" && Number.isFinite(eventSeq) ? eventSeq : null;
     const currentEventSeq = nextEventSeq !== null ? lastEventSeqByGameId.get(game.id) ?? 0 : null;
-    if (nextEventSeq !== null && currentEventSeq !== null && nextEventSeq < currentEventSeq) {
-      return gameById.get(game.id) ?? null;
-    }
+    const authoritative = nextEventSeq !== null && currentEventSeq !== null && nextEventSeq < currentEventSeq ? gameById.get(game.id) ?? null : upsertGame(game);
 
-    const next = upsertGame(game);
     if (nextEventSeq !== null) {
-      lastEventSeqByGameId.set(next.id, nextEventSeq);
+      lastEventSeqByGameId.set(game.id, Math.max(currentEventSeq ?? 0, nextEventSeq));
     }
-    return next;
+
+    const optimistic = getOptimisticState(game.id);
+    if (clientCommandId) {
+      optimistic.pendingCommands = optimistic.pendingCommands.filter((command) => command.clientCommandId !== clientCommandId);
+      if (optimistic.inflightCommandId === clientCommandId) {
+        optimistic.inflightCommandId = null;
+      }
+    } else if (optimistic.syncStatus === "desynced") {
+      optimistic.syncStatus = "ready";
+    }
+
+    const recalculated = recalculateOptimisticGame(game.id);
+    if (!recalculated.ok) {
+      clearOptimisticQueue(game.id, {
+        notice: "Predicted move no longer matched the authoritative game. The board was restored.",
+        syncStatus: "ready",
+      });
+    } else if (optimistic.pendingCommands.length > 0) {
+      optimistic.syncStatus = "applying-update";
+    }
+
+    void sendNextPendingCommand(game.id);
+    return authoritative;
   };
 
-  const applyLiveGameUpdate = ({ game, eventSeq = null }) => {
-    return upsertGameSnapshot({ game, eventSeq });
-  };
+  const applyLiveGameUpdate = ({ game, eventSeq = null, clientCommandId = null }) =>
+    upsertGameSnapshot({ game, eventSeq, clientCommandId });
 
   const queueOfflineMutation = (gameId, mutation) => {
     const current = offlinePendingByGameId.get(gameId) ?? [];
@@ -272,6 +363,106 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     }
   };
 
+  const sendNextPendingCommand = async (gameId) => {
+    if (offline) {
+      return;
+    }
+
+    const optimistic = getOptimisticState(gameId);
+    if (optimistic.inflightCommandId) {
+      return;
+    }
+
+    const command = optimistic.pendingCommands[0];
+    if (!command) {
+      if (optimistic.syncStatus !== "desynced") {
+        optimistic.syncStatus = "ready";
+        recalculateOptimisticGame(gameId);
+      }
+      return;
+    }
+
+    optimistic.inflightCommandId = command.clientCommandId;
+    optimistic.syncStatus = "applying-update";
+    recalculateOptimisticGame(gameId);
+
+    try {
+      const response =
+        command.kind === "apply"
+          ? await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/apply`), {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                identityId,
+                state: command.state,
+                action: command.action,
+                clientCommandId: command.clientCommandId,
+              }),
+            })
+          : await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/end-turn`), {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                identityId,
+                clientCommandId: command.clientCommandId,
+              }),
+            });
+
+      const body = await mustOk(response);
+
+      if (command.kind === "apply" && body.accepted === false) {
+        optimistic.inflightCommandId = null;
+        clearOptimisticQueue(gameId, {
+          notice: "A predicted move was rejected by the server. The board was restored.",
+          syncStatus: "ready",
+        });
+        if (body.game) {
+          upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+        }
+        return;
+      }
+
+      if (body.game) {
+        upsertGameSnapshot({
+          game: body.game,
+          eventSeq: body.eventSeq,
+          clientCommandId: body.clientCommandId ?? command.clientCommandId,
+        });
+        return;
+      }
+
+      optimistic.pendingCommands = optimistic.pendingCommands.filter((entry) => entry.clientCommandId !== command.clientCommandId);
+      optimistic.inflightCommandId = null;
+      recalculateOptimisticGame(gameId);
+      void sendNextPendingCommand(gameId);
+    } catch {
+      clearOptimisticQueue(gameId, {
+        notice: "Move sync failed before confirmation. The board was restored to the last authoritative state.",
+        syncStatus: "desynced",
+      });
+    }
+  };
+
+  const enqueueOptimisticCommand = ({ gameId, command }) => {
+    const optimistic = getOptimisticState(gameId);
+    optimistic.rollbackNotice = "";
+    optimistic.syncStatus = "applying-update";
+    optimistic.pendingCommands.push(command);
+    const recalculated = recalculateOptimisticGame(gameId);
+    if (!recalculated.ok) {
+      optimistic.pendingCommands = optimistic.pendingCommands.filter((entry) => entry.clientCommandId !== command.clientCommandId);
+      optimistic.syncStatus = optimistic.pendingCommands.length > 0 ? "applying-update" : "ready";
+      recalculateOptimisticGame(gameId);
+      return recalculated;
+    }
+    void sendNextPendingCommand(gameId);
+    return {
+      ok: true,
+      result: optimistic.commandResults.get(command.clientCommandId),
+      game: optimistic.derivedGame,
+    };
+  };
+
   const refreshGames = async () => {
     if (offline) {
       return listGames();
@@ -301,7 +492,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       },
     );
     const body = await mustOk(response);
-    return upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    return getGameViewModel(gameId);
   };
 
   const createGame = async ({ playgroundMode = false, offlineLocal = false } = {}) => {
@@ -311,6 +503,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId, playgroundMode, offlineLocal }),
     });
     const body = await mustOk(response);
+    clearRollbackNotice(body.game.id);
     return upsertGame(body.game);
   };
 
@@ -399,16 +592,45 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const applyGameAction = async ({ gameId, state, action }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/apply`), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, state, action }),
-    });
-    const body = await mustOk(response);
-    if (body.game) {
-      upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    if (offline) {
+      const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/apply`), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ identityId, state, action }),
+      });
+      const body = await mustOk(response);
+      if (body.game) {
+        upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+      }
+      return body;
     }
-    return body;
+
+    const command = {
+      kind: "apply",
+      clientCommandId: createClientCommandId(gameId, nextClientCommandCounter++),
+      action: clone(action),
+      state: clone(state),
+      notation: defaultNotationForAction(action),
+      queuedAt: new Date().toISOString(),
+    };
+    const optimistic = enqueueOptimisticCommand({ gameId, command });
+    if (!optimistic.ok) {
+      return {
+        ok: true,
+        accepted: false,
+        validation: optimistic.validation ?? { ok: false, code: optimistic.error || "invalid_action" },
+        state,
+        legalActions: getGameViewModel(gameId)?.legalActions ?? [],
+      };
+    }
+
+    return {
+      ok: true,
+      accepted: true,
+      clientCommandId: command.clientCommandId,
+      ...(optimistic.result ?? {}),
+      game: optimistic.game,
+    };
   };
 
   const endTurn = async ({ gameId }) => {
@@ -422,13 +644,27 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       queueOfflineMutation(gameId, { type: "end-turn" });
       return { ok: true, turn, game: upsertGame(next) };
     }
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/end-turn`), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId }),
-    });
-    const body = await mustOk(response);
-    return { ...body, game: upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }) };
+
+    const current = getGameViewModel(gameId);
+    const command = {
+      kind: "end-turn",
+      clientCommandId: createClientCommandId(gameId, nextClientCommandCounter++),
+      queuedAt: new Date().toISOString(),
+    };
+    const optimistic = enqueueOptimisticCommand({ gameId, command });
+    if (!optimistic.ok) {
+      const error = new Error(optimistic.error || "turn_has_no_moves");
+      error.code = optimistic.error || "turn_has_no_moves";
+      throw error;
+    }
+
+    return {
+      ok: true,
+      clientCommandId: command.clientCommandId,
+      turn: optimistic.game?.currentTurn ?? current?.currentTurn ?? null,
+      ...(optimistic.result ?? {}),
+      game: optimistic.game,
+    };
   };
 
   const selectHistoryMove = async ({ gameId, moveIndex }) => {
@@ -438,7 +674,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId, moveIndex }),
     });
     const body = await mustOk(response);
-    return upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    return getGameViewModel(gameId);
   };
 
   const returnToLive = async ({ gameId }) => {
@@ -448,7 +685,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId }),
     });
     const body = await mustOk(response);
-    return upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    return getGameViewModel(gameId);
   };
 
   const setParticipantConnected = async ({ gameId, role, connected }) => {
@@ -465,12 +703,18 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId, confirmed }),
     });
     const body = await mustOk(response);
-    return upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    return getGameViewModel(gameId);
   };
 
-  const listGames = () => games.map((game) => applyClientOfflineViewState(game));
+  const listGames = () => games.map((game) => getGameViewModel(game.id)).filter(Boolean);
+
   const getGameViewModel = (gameId) => {
-    const game = gameById.get(gameId);
+    const optimistic = getOptimisticState(gameId);
+    if (!optimistic.derivedGame) {
+      recalculateOptimisticGame(gameId);
+    }
+    const game = optimistic.derivedGame;
     return game ? applyClientOfflineViewState(game) : null;
   };
 

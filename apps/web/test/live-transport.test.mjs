@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createLiveTransportStore } from "../shell/live-transport.js";
+import {
+  applyAction,
+  createInitialState,
+  listLegalActions,
+  resolveToStability,
+} from "../generated/packages/game-engine/src/index.js";
 
 const createMemoryStorage = () => {
   const map = new Map();
@@ -8,6 +14,111 @@ const createMemoryStorage = () => {
     getItem: (key) => (map.has(key) ? map.get(key) : null),
     setItem: (key, value) => map.set(key, String(value)),
     removeItem: (key) => map.delete(key),
+  };
+};
+
+const clone = (value) => structuredClone(value);
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+const buildLiveGame = () => {
+  const initial = resolveToStability(createInitialState(), { artifactMode: "full" });
+  const firstAction = listLegalActions(initial).find((action) => action.type === "move") ?? listLegalActions(initial)[0];
+  const firstApplied = applyAction(initial, firstAction);
+  const currentState = resolveToStability(firstApplied.state, { artifactMode: "full" });
+  currentState.sideToMove = "P1";
+  currentState.turnIndex = 0;
+  const currentTurn = {
+    index: 0,
+    startedAt: "2026-02-26T00:00:00.000Z",
+    endedAt: null,
+    playerSeat: "Player 1",
+    status: "active",
+    moveIndexes: [0],
+    lastMoveAt: "2026-02-26T00:00:01.000Z",
+  };
+  return {
+    id: "game-live-1",
+    createdAt: "2026-02-26T00:00:00.000Z",
+    lastMoveAt: "2026-02-26T00:00:01.000Z",
+    updatedAt: "2026-02-26T00:00:01.000Z",
+    offlineLocal: false,
+    playgroundMode: false,
+    player1: { identityId: "id-a", connected: true },
+    player2: { identityId: "id-b", connected: true },
+    viewers: [],
+    pendingJoinRequests: [],
+    turns: [clone(currentTurn)],
+    moves: [
+      {
+        index: 0,
+        turnIndex: 0,
+        turnMoveIndex: 0,
+        actorSide: "P1",
+        at: "2026-02-26T00:00:01.000Z",
+        notation: "MOVE 1",
+        action: clone(firstAction),
+        selectionSnapshot: clone(initial),
+        snapshot: clone(currentState),
+      },
+    ],
+    notifications: ["Move recorded in turn 1"],
+    myRole: "Player 1",
+    inHistoryMode: false,
+    historyIndex: null,
+    currentSnapshot: clone(currentState),
+    board: { state: clone(currentState) },
+    currentTurn: clone(currentTurn),
+    legalActions: listLegalActions(currentState),
+    canRecordMove: true,
+    canEndTurn: true,
+    showJoinActions: true,
+    canInvite: true,
+    showOfflineState: false,
+  };
+};
+
+const buildAcknowledgedGame = (baseGame, action) => {
+  const stable = resolveToStability(baseGame.board.state, { artifactMode: "full" });
+  const applied = applyAction(stable, action);
+  const nextState = resolveToStability(applied.state, { artifactMode: "full" });
+  nextState.sideToMove = "P1";
+  nextState.turnIndex = 0;
+
+  return {
+    ...clone(baseGame),
+    lastMoveAt: "2026-02-26T00:00:02.000Z",
+    updatedAt: "2026-02-26T00:00:02.000Z",
+    moves: [
+      ...clone(baseGame.moves),
+      {
+        index: 1,
+        turnIndex: 0,
+        turnMoveIndex: 1,
+        actorSide: stable.sideToMove,
+        at: "2026-02-26T00:00:02.000Z",
+        notation: "MOVE 2",
+        action: clone(action),
+        selectionSnapshot: clone(stable),
+        snapshot: clone(nextState),
+      },
+    ],
+    turns: [
+      {
+        ...clone(baseGame.turns[0]),
+        moveIndexes: [0, 1],
+        lastMoveAt: "2026-02-26T00:00:02.000Z",
+      },
+    ],
+    currentTurn: {
+      ...clone(baseGame.currentTurn),
+      moveIndexes: [0, 1],
+      lastMoveAt: "2026-02-26T00:00:02.000Z",
+    },
+    currentSnapshot: clone(nextState),
+    board: { state: clone(nextState) },
+    legalActions: listLegalActions(nextState),
+    canRecordMove: true,
+    canEndTurn: true,
   };
 };
 
@@ -367,4 +478,106 @@ test("live transport store ignores stale game snapshots once a newer eventSeq is
   assert.equal(vm.currentSnapshot.sideToMove, "P2");
   assert.equal(vm.currentTurn.playerSeat, "Player 2");
   assert.equal(store.getLastEventSeq(gameId), 5);
+});
+
+test("live transport store applies optimistic moves immediately and clears pending state on matching ack", async () => {
+  const baseGame = buildLiveGame();
+  const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
+  let resolveApply = null;
+
+  const fetcher = async (url, init = {}) => {
+    if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+      return new Promise((resolve) => {
+        resolveApply = resolve;
+      });
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
+  await store.loadGame(baseGame.id);
+
+  const pending = await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+  assert.equal(pending.accepted, true);
+  assert.equal(typeof pending.clientCommandId, "string");
+
+  const optimisticView = store.getGameViewModel(baseGame.id);
+  assert.equal(optimisticView.pendingMoves.length, 1);
+  assert.equal(optimisticView.pendingCommandCount, 1);
+  assert.equal(optimisticView.moves.length, 1);
+  assert.notDeepEqual(optimisticView.currentSnapshot, baseGame.currentSnapshot);
+
+  resolveApply?.(
+    Response.json({
+      ok: true,
+      accepted: true,
+      clientCommandId: pending.clientCommandId,
+      eventSeq: 2,
+      game: buildAcknowledgedGame(baseGame, nextAction),
+    }),
+  );
+  await tick();
+
+  const settledView = store.getGameViewModel(baseGame.id);
+  assert.equal(settledView.pendingMoves.length, 0);
+  assert.equal(settledView.pendingCommandCount, 0);
+  assert.equal(settledView.moves.length, 2);
+  assert.equal(settledView.syncStatus, "ready");
+});
+
+test("live transport store keeps authoritative history selectable while pending moves exist", async () => {
+  const baseGame = buildLiveGame();
+  const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
+
+  const fetcher = async (url, init = {}) => {
+    if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+      return new Promise(() => {});
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/history?offline=0` && init.method === "POST") {
+      return Response.json({
+        ok: true,
+        eventSeq: 2,
+        game: {
+          ...clone(baseGame),
+          inHistoryMode: true,
+          historyIndex: 0,
+          historySelectionAction: clone(baseGame.moves[0].action),
+          currentSnapshot: clone(baseGame.moves[0].selectionSnapshot),
+        },
+      });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/live?offline=0` && init.method === "POST") {
+      return Response.json({
+        ok: true,
+        eventSeq: 3,
+        game: {
+          ...clone(baseGame),
+          inHistoryMode: false,
+          historyIndex: null,
+          currentSnapshot: clone(baseGame.board.state),
+        },
+      });
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
+  await store.loadGame(baseGame.id);
+  await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+
+  const historyView = await store.selectHistoryMove({ gameId: baseGame.id, moveIndex: 0 });
+  assert.equal(historyView.inHistoryMode, true);
+  assert.equal(historyView.pendingMoves.length, 1);
+  assert.deepEqual(historyView.currentSnapshot, baseGame.moves[0].selectionSnapshot);
+
+  const liveView = await store.returnToLive({ gameId: baseGame.id });
+  assert.equal(liveView.inHistoryMode, false);
+  assert.equal(liveView.pendingMoves.length, 1);
+  assert.notDeepEqual(liveView.currentSnapshot, baseGame.currentSnapshot);
 });

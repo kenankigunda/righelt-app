@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Righelt web app starter scaffold (Cloudflare free-tier).",
   "scripts": {
+    "build:web-engine": "node scripts/build-web-engine.mjs",
     "dev": "pnpm dev:web",
     "dev:a": "pnpm dev:web:a",
     "dev:b": "pnpm dev:web:b",

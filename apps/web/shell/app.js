@@ -77,6 +77,7 @@ let mountedHistoryMoveIndex = null;
 let mountedSnapshotKey = null;
 let mountedLegalActionsKey = null;
 let mountedSelectionActionKey = null;
+let mountedSyncStatusKey = null;
 let boardRuntime = null;
 let busy = false;
 let liveSyncConnectedRoute = "";
@@ -372,10 +373,18 @@ const renderTurnHistory = (game) => {
         </li>`;
       }),
   );
+  const pendingRows = (Array.isArray(game.pendingMoves) ? game.pendingMoves : []).map(
+    (move) => `<li class="history-item history-item-pending ${playerToneClassForSide(move.actorSide || (move.turnIndex % 2 === 0 ? "P1" : "P2"))}" aria-disabled="true">
+          <span class="history-move-line">Move ${escapeHtml(
+            String(move.index + 1),
+          )}: ${escapeHtml(move.notation)} · Pending</span>
+          <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
+        </li>`,
+  );
 
   const activeTurn = activeTurnIndex !== null ? game.turns.find((turn) => turn.index === activeTurnIndex) : null;
   if (!activeTurn || activeTurn.moveIndexes.length > 0) {
-    return moveRows.join("");
+    return `${moveRows.join("")}${pendingRows.join("")}`;
   }
 
   const showLiveSelectedEmpty = liveSelectedEmptyTurnIndex === activeTurn.index;
@@ -387,7 +396,7 @@ const renderTurnHistory = (game) => {
         emptyTurnText,
       )}</span></div>`;
 
-  return `${moveRows.join("")}${emptyTurnItem}`;
+  return `${moveRows.join("")}${pendingRows.join("")}${emptyTurnItem}`;
 };
 
 const renderHeader = () => `
@@ -561,6 +570,14 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
           .join("");
 
   const latestNote = game.notifications[0] || "Ready";
+  const liveSyncBanner =
+    game.rollbackNotice && game.rollbackNotice.trim().length > 0
+      ? `<div class="alert danger">${escapeHtml(game.rollbackNotice)}</div>`
+      : game.syncStatus === "desynced"
+        ? `<div class="alert warn">Live sync is recovering. The board is showing the last authoritative state.</div>`
+        : game.pendingCommandCount > 0
+          ? `<div class="alert">Applying ${escapeHtml(String(game.pendingCommandCount))} pending move${game.pendingCommandCount === 1 ? "" : "s"} from your predicted live state.</div>`
+          : "";
   const offlineBanner =
     game.showOfflineState || inviteFromRole === "offline"
       ? `<div class="alert warn">Offline mode: invite and remote join actions are disabled.</div>`
@@ -591,6 +608,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
   ]);
   return `
     ${offlineBanner ? `<section class="panel">${offlineBanner}</section>` : ""}
+    ${liveSyncBanner ? `<section class="panel">${liveSyncBanner}</section>` : ""}
     <section class="layout-grid">
       <div class="stack">
         <section class="panel">
@@ -817,6 +835,7 @@ const mountBoardForGame = (game) => {
     mountedSnapshotKey = null;
     mountedLegalActionsKey = null;
     mountedSelectionActionKey = null;
+    mountedSyncStatusKey = null;
     if (boardRuntime) {
       boardRuntime.destroy();
       boardRuntime = null;
@@ -872,6 +891,10 @@ const mountBoardForGame = (game) => {
     mountedSnapshotKey = snapshotKey;
     mountedLegalActionsKey = legalActionsKey;
     mountedSelectionActionKey = selectionActionKey;
+    mountedSyncStatusKey = toStableKey({
+      syncStatus: game.syncStatus ?? "ready",
+      rollbackNotice: game.rollbackNotice ?? "",
+    });
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
     void boardRuntime.loadSnapshot(snapshot, {
       legalActions: effectiveLegalActions,
@@ -881,7 +904,11 @@ const mountBoardForGame = (game) => {
     return;
   }
 
-  const resetSelection = mountedHistoryMoveIndex !== historyMoveIndex;
+  const syncStatusKey = toStableKey({
+    syncStatus: game.syncStatus ?? "ready",
+    rollbackNotice: game.rollbackNotice ?? "",
+  });
+  const resetSelection = mountedHistoryMoveIndex !== historyMoveIndex || (mountedSyncStatusKey !== syncStatusKey && Boolean(game.rollbackNotice));
   mountedHistoryMoveIndex = historyMoveIndex;
   boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
   const runtimeSnapshotKey = toStableKey(boardRuntime.getState());
@@ -898,6 +925,7 @@ const mountBoardForGame = (game) => {
     mountedSnapshotKey = snapshotKey;
     mountedLegalActionsKey = legalActionsKey;
     mountedSelectionActionKey = selectionActionKey;
+    mountedSyncStatusKey = syncStatusKey;
     return;
   }
   const shouldReloadSnapshot =
@@ -911,6 +939,7 @@ const mountBoardForGame = (game) => {
   mountedSnapshotKey = snapshotKey;
   mountedLegalActionsKey = legalActionsKey;
   mountedSelectionActionKey = selectionActionKey;
+  mountedSyncStatusKey = syncStatusKey;
   void boardRuntime.loadSnapshot(snapshot, {
     legalActions: effectiveLegalActions,
     resetSelection,
@@ -1038,7 +1067,7 @@ const liveSync = createLiveSyncClient({
         payload?.type === "join_request_resolved") &&
       payload?.game
     ) {
-      transport.applyLiveGameUpdate({ game: payload.game, eventSeq: payload.eventSeq });
+      transport.applyLiveGameUpdate({ game: payload.game, eventSeq: payload.eventSeq, clientCommandId: payload.clientCommandId ?? null });
     }
     render();
   },
