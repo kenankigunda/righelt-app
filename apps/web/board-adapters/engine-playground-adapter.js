@@ -413,6 +413,8 @@ export function createEnginePlaygroundBoardAdapter() {
   let boardEl = null;
   let overlayLinesEl = null;
   let onCellClick = null;
+  let onCellHoverStart = null;
+  let onCellHoverEnd = null;
   let cellByCoordinateKey = new Map();
 
   const setOverlayViewBox = () => {
@@ -726,6 +728,41 @@ export function createEnginePlaygroundBoardAdapter() {
     });
   };
 
+  const getCellFromEventTarget = (target) => {
+    if (!target || typeof target.closest !== "function") {
+      return null;
+    }
+    return target.closest(".cell");
+  };
+
+  const readCoordFromCell = (cell) => {
+    if (!cell) {
+      return null;
+    }
+    return {
+      row: Number(cell.dataset.row),
+      col: Number(cell.dataset.col),
+    };
+  };
+
+  const onBoardMouseOver = (event) => {
+    const currentCell = getCellFromEventTarget(event.target);
+    const previousCell = getCellFromEventTarget(event.relatedTarget);
+    if (!currentCell || !onCellHoverStart || currentCell === previousCell) {
+      return;
+    }
+    onCellHoverStart(readCoordFromCell(currentCell));
+  };
+
+  const onBoardMouseOut = (event) => {
+    const currentCell = getCellFromEventTarget(event.target);
+    const nextCell = getCellFromEventTarget(event.relatedTarget);
+    if (!currentCell || !onCellHoverEnd || currentCell === nextCell) {
+      return;
+    }
+    onCellHoverEnd(readCoordFromCell(currentCell));
+  };
+
   return {
     id: "engine-playground",
 
@@ -739,19 +776,32 @@ export function createEnginePlaygroundBoardAdapter() {
     },
 
     mount(options) {
+      if (boardEl) {
+        boardEl.removeEventListener("click", onBoardClick);
+        boardEl.removeEventListener("mouseover", onBoardMouseOver);
+        boardEl.removeEventListener("mouseout", onBoardMouseOut);
+      }
       boardEl = options.boardEl;
       overlayLinesEl = options.overlayLinesEl;
       onCellClick = options.onCellClick;
+      onCellHoverStart = options.onCellHoverStart ?? null;
+      onCellHoverEnd = options.onCellHoverEnd ?? null;
       boardEl.addEventListener("click", onBoardClick);
+      boardEl.addEventListener("mouseover", onBoardMouseOver);
+      boardEl.addEventListener("mouseout", onBoardMouseOut);
     },
 
     unmount() {
       if (boardEl) {
         boardEl.removeEventListener("click", onBoardClick);
+        boardEl.removeEventListener("mouseover", onBoardMouseOver);
+        boardEl.removeEventListener("mouseout", onBoardMouseOut);
       }
       boardEl = null;
       overlayLinesEl = null;
       onCellClick = null;
+      onCellHoverStart = null;
+      onCellHoverEnd = null;
       cellByCoordinateKey = new Map();
     },
 

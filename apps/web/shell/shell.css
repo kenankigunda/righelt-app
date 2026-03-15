@@ -272,7 +272,7 @@ button.button-release-bounce,
     transform 160ms ease;
 }
 
-.history-item:hover .history-move-at,
+[data-hover-capability="hover"] .history-item:hover .history-move-at,
 .history-item.is-selected .history-move-at {
   max-height: 1.2rem;
   opacity: 0.6;
@@ -285,7 +285,7 @@ button.button-release-bounce,
 }
 
 .history-item.is-deselecting .history-move-at,
-.history-item.is-deselecting:hover .history-move-at {
+[data-hover-capability="hover"] .history-item.is-deselecting:hover .history-move-at {
   max-height: 0;
   opacity: 0;
   transform: translateY(-0.18rem);
@@ -309,7 +309,7 @@ button.button-release-bounce,
   font-weight: 600;
 }
 
-.history-item:hover .history-move-line {
+[data-hover-capability="hover"] .history-item:hover .history-move-line {
   font-weight: 600;
 }
 

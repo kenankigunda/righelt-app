@@ -11,12 +11,14 @@ import {
 import { buildPieceMoveResponse } from "./board/client-move-generation.js";
 import { assertGameBoardAdapter } from "./board-adapter-contract.js";
 import { createEnginePlaygroundBoardAdapter } from "./board-adapters/engine-playground-adapter.js";
+import { ensureHoverCapabilityController } from "./hover-capability.js";
 import { applyCommandLegendSwatch } from "./legend.js";
 import { buildHomeHash, isPlaygroundRouteHash, isShellRouteHash, isShellRootHash } from "./shell/routes.js";
 
 if (isShellRootHash(window.location.hash)) {
   window.location.replace(`${window.location.pathname}${window.location.search}${buildHomeHash()}`);
 }
+ensureHoverCapabilityController();
 const shouldMountShell = !isPlaygroundRouteHash(window.location.hash) && isShellRouteHash(window.location.hash);
 window.addEventListener("hashchange", () => {
   const nextShouldMountShell = !isPlaygroundRouteHash(window.location.hash) && isShellRouteHash(window.location.hash);

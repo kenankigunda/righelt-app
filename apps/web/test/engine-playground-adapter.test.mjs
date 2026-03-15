@@ -70,6 +70,48 @@ test("retreat stack click selects pushed piece as retreat actor", () => {
   });
 });
 
+test("board adapter delegates hover callbacks only for real cell boundary changes", () => {
+  const listeners = new Map();
+  const boardEl = {
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    removeEventListener(type) {
+      listeners.delete(type);
+    },
+  };
+  const adapter = createEnginePlaygroundBoardAdapter();
+  const hoverStarts = [];
+  const hoverEnds = [];
+
+  adapter.mount({
+    boardEl,
+    overlayLinesEl: {},
+    onCellClick: () => {},
+    onCellHoverStart: (coord) => hoverStarts.push(coord),
+    onCellHoverEnd: (coord) => hoverEnds.push(coord),
+  });
+
+  const cellA = { dataset: { row: "4", col: "2" } };
+  const cellB = { dataset: { row: "4", col: "3" } };
+  const targetFor = (cell) => ({
+    closest(selector) {
+      return selector === ".cell" ? cell : null;
+    },
+  });
+
+  listeners.get("mouseover")?.({ target: targetFor(cellA), relatedTarget: null });
+  listeners.get("mouseover")?.({ target: targetFor(cellA), relatedTarget: targetFor(cellA) });
+  listeners.get("mouseout")?.({ target: targetFor(cellA), relatedTarget: targetFor(cellB) });
+  listeners.get("mouseover")?.({ target: targetFor(cellB), relatedTarget: targetFor(cellA) });
+
+  assert.deepEqual(hoverStarts, [
+    { row: 4, col: 2 },
+    { row: 4, col: 3 },
+  ]);
+  assert.deepEqual(hoverEnds, [{ row: 4, col: 2 }]);
+});
+
 test("preview arrow curvature detects overlapping supply or command segments only", () => {
   assert.equal(
     segmentsOverlapOnSameLine(
