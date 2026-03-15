@@ -46,6 +46,18 @@ export const createShellIntegrationHarness = () => {
   env.DB.reset();
   env.GAME_ROOMS.reset();
   const fetcher = createFetcher();
+  const waitFor = async (predicate, attempts = 20) => {
+    let remaining = attempts;
+    while (remaining > 0) {
+      const result = await predicate();
+      if (result) {
+        return result;
+      }
+      remaining -= 1;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    throw new Error("timed_out_waiting_for_authoritative_game_state");
+  };
 
   const createClient = (identityId) => {
     const storage = createMemoryStorage();
@@ -97,6 +109,11 @@ export const createShellIntegrationHarness = () => {
   };
 
   const refreshGame = (client, gameId) => client.store.loadGame(gameId, { openAsViewer: false });
+  const waitForGame = (client, gameId, predicate, attempts = 20) =>
+    waitFor(async () => {
+      const game = await refreshGame(client, gameId);
+      return predicate(game) ? game : null;
+    }, attempts);
 
   const buildPlayerInviteHash = (game) => buildInviteHash(game.inviteToken);
 
@@ -105,6 +122,7 @@ export const createShellIntegrationHarness = () => {
     acceptInviteAsPlayer,
     acceptInviteAsViewer,
     refreshGame,
+    waitForGame,
     buildPlayerInviteHash,
   };
 };
