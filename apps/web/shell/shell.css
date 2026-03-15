@@ -28,6 +28,7 @@ body {
 
 .app-root {
   width: min(1200px, 96vw);
+  max-width: 100%;
   margin: 1rem auto 2rem;
   display: grid;
   gap: 1rem;
@@ -46,6 +47,7 @@ body {
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-start;
+  max-width: 100%;
 }
 
 .shell-header h1 {
@@ -56,6 +58,7 @@ body {
 .shell-header-main,
 .shell-header-actions {
   min-width: 0;
+  max-width: 100%;
 }
 
 .shell-header-main {
@@ -64,6 +67,9 @@ body {
 
 .shell-header-status {
   margin: 0.2rem 0 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .shell-header-actions {
@@ -78,6 +84,7 @@ body {
   flex-wrap: wrap;
   gap: 0.5rem;
   width: 100%;
+  max-width: 100%;
   justify-content: flex-end;
 }
 
@@ -468,8 +475,31 @@ button.button-release-bounce,
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
+.shell-header .small,
+.shell-header .mono {
+  max-width: 100%;
+}
+
+.shell-header .mono {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 @media (max-width: 900px) {
   .layout-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .shell-header {
+    flex-wrap: wrap;
+  }
+
+  .shell-header-main,
+  .shell-header-actions {
+    flex: 1 1 100%;
+    max-width: 100%;
   }
 }

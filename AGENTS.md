@@ -121,6 +121,7 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 
 - `Cp` = commit + push + wait before continuing
 - `Cpn` = commit + push + take the next action
+- `Opr` = open a PR and give me the link
 - `Dd` = do a deep investigation to understand holistically, give your diagnosis, and propose a change; wait before implementing
 - `Dfix` = diagnose and fix
 - `Ddfix` = do a deep investigation to diagnose and fix holistically

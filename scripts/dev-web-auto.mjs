@@ -2,12 +2,15 @@ import { spawn } from "node:child_process";
 import http from "node:http";
 import { watch, promises as fs } from "node:fs";
 import path from "node:path";
+import { buildLocalApiOrigin, buildLocalApiPersistPath, resolveLocalApiPort } from "../apps/web/local-dev-ports.js";
 
 const args = process.argv.slice(2);
 const port = args[0] ?? "8788";
 const watchBackend = args.includes("--watch-backend");
 const withApi = args.includes("--with-api");
-const LOCAL_API_ORIGIN = "http://127.0.0.1:8787";
+const localApiPort = String(resolveLocalApiPort(port));
+const localApiPersistPath = buildLocalApiPersistPath(port);
+const LOCAL_API_ORIGIN = buildLocalApiOrigin(port);
 const LOCAL_API_HEALTH_URL = `${LOCAL_API_ORIGIN}/api/health`;
 const LOCAL_API_READY_TIMEOUT_MS = 30_000;
 const LOCAL_API_READY_POLL_MS = 250;
@@ -290,8 +293,8 @@ if (watchBackend) {
 
 console.log(
   watchBackend
-    ? `[dev-web] starting on :${port} with backend watcher enabled${withApi ? " and local api orchestration" : ""}`
-    : `[dev-web] starting on :${port}${withApi ? " with local api orchestration" : ""}`,
+    ? `[dev-web] starting on :${port} with backend watcher enabled${withApi ? ` and local api orchestration on :${localApiPort}` : ""}`
+    : `[dev-web] starting on :${port}${withApi ? ` with local api orchestration on :${localApiPort}` : ""}`,
 );
 startFixtureWriterServer();
 
@@ -403,9 +406,9 @@ const startApiWrangler = () => {
       "--config",
       "wrangler.toml",
       "--port",
-      "8787",
+      localApiPort,
       "--persist-to",
-      "../../.wrangler/state/api-local-dev",
+      `../../${localApiPersistPath}`,
     ],
     {
       cwd,

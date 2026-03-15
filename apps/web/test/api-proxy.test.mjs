@@ -66,6 +66,35 @@ test("Pages proxy falls back to local API origin when service binding is absent 
   }
 });
 
+test("Pages proxy maps suffixed local dev pages ports to matching API worker ports", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (request) => {
+    calls.push(request);
+    return new Response(JSON.stringify({ ok: true }), {
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  };
+
+  try {
+    const response = await onRequest({
+      request: new Request("http://localhost:8789/api/shell/games?offline=1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ identityId: "id-b" }),
+      }),
+      env: {},
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "http://127.0.0.1:8792/api/shell/games?offline=1");
+    assert.deepEqual(await calls[0].json(), { identityId: "id-b" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Pages proxy returns a stable 503 when the local API worker is unavailable", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {

@@ -73,11 +73,23 @@ pnpm dev:web
 
 This starts the site on `http://localhost:8788` only. API-backed flows will return `local_api_unavailable` until the local API Worker is also running.
 
+Alternate local Pages ports for concurrent worktrees:
+
+- `pnpm dev:a` or `pnpm dev:web:a` -> `http://localhost:8789`
+- `pnpm dev:b` or `pnpm dev:web:b` -> `http://localhost:8790`
+- `pnpm dev:c` or `pnpm dev:web:c` -> `http://localhost:8791`
+
 Run the API Worker only:
 
 ```bash
 pnpm dev:api
 ```
+
+Alternate local API worker ports for concurrent worktrees:
+
+- `pnpm dev:api:a` -> `http://127.0.0.1:8792`
+- `pnpm dev:api:b` -> `http://127.0.0.1:8793`
+- `pnpm dev:api:c` -> `http://127.0.0.1:8794`
 
 Run the full split stack in one command:
 
@@ -86,6 +98,18 @@ pnpm dev:all
 ```
 
 `pnpm dev:all` starts the local `righelt-api` Worker first, waits for `http://127.0.0.1:8787/api/health`, and then starts the Pages site on `http://localhost:8788`. Local `/api/*` requests are proxied to the local API Worker, and local live WebSocket traffic connects directly to `ws://127.0.0.1:8787`.
+
+Alternate full-stack variants keep the Pages and API worker ports paired:
+
+- `pnpm dev:all:a` -> Pages `8789`, API `8792`
+- `pnpm dev:all:b` -> Pages `8790`, API `8793`
+- `pnpm dev:all:c` -> Pages `8791`, API `8794`
+
+If you need a fresh local D1 state per suffix, run the matching migration command first:
+
+- `pnpm db:local:a` or `pnpm d1:migrate:dev:a`
+- `pnpm db:local:b` or `pnpm d1:migrate:dev:b`
+- `pnpm db:local:c` or `pnpm d1:migrate:dev:c`
 
 ## Recovery Rules
 
