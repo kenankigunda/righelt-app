@@ -40,6 +40,7 @@ test("live sync routes local dev websocket traffic directly to the API worker", 
       protocol: "http:",
       hostname: "localhost",
       host: "localhost:8788",
+      port: "8788",
     },
   };
 
@@ -63,6 +64,40 @@ test("live sync routes local dev websocket traffic directly to the API worker", 
   }
 });
 
+test("live sync routes suffixed local dev websocket traffic to the matching API worker", async () => {
+  const originalWs = globalThis.WebSocket;
+  const originalWindow = globalThis.window;
+
+  globalThis.WebSocket = MockSocket;
+  globalThis.window = {
+    location: {
+      protocol: "http:",
+      hostname: "localhost",
+      host: "localhost:8789",
+      port: "8789",
+    },
+  };
+
+  try {
+    const client = createLiveSyncClient({
+      identityId: "id-b",
+      getLastEventSeq: () => 4,
+      onEvent: () => {},
+    });
+
+    client.connectGame("g-789");
+    assert.equal(MockSocket.instances.length, 1);
+    assert.match(MockSocket.instances[0].url, /^ws:\/\/127\.0\.0\.1:8792\//);
+    assert.match(MockSocket.instances[0].url, /\/api\/shell\/games\/g-789\/ws/);
+    assert.match(MockSocket.instances[0].url, /lastEventSeq=4/);
+    client.disconnect();
+  } finally {
+    globalThis.WebSocket = originalWs;
+    globalThis.window = originalWindow;
+    MockSocket.instances.length = 0;
+  }
+});
+
 test("live sync keeps same-origin websocket host outside local dev", async () => {
   const originalWs = globalThis.WebSocket;
   const originalWindow = globalThis.window;
@@ -73,6 +108,7 @@ test("live sync keeps same-origin websocket host outside local dev", async () =>
       protocol: "https:",
       hostname: "righelt.pages.dev",
       host: "righelt.pages.dev",
+      port: "",
     },
   };
 

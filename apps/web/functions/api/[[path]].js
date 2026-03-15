@@ -1,5 +1,6 @@
+import { buildLocalApiOrigin, isLocalDevHost } from "../../local-dev-ports.js";
+
 const CACHE_NO_STORE = "no-store";
-const LOCAL_API_ORIGIN = "http://127.0.0.1:8787";
 const API_SERVICE_BINDING_ERROR = "server_misconfigured_api_service_binding";
 const LOCAL_API_UNAVAILABLE_ERROR = "local_api_unavailable";
 
@@ -14,15 +15,14 @@ const json = (body, status = 200, cacheControl = CACHE_NO_STORE) =>
 
 const hasApiServiceBinding = (env) => Boolean(env?.API_SERVICE && typeof env.API_SERVICE.fetch === "function");
 
-const isLocalDevHostname = (hostname) => hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 const isLocalDevRequest = (request) => {
   const url = new URL(request.url);
-  return isLocalDevHostname(url.hostname);
+  return isLocalDevHost(url.hostname);
 };
 
 const buildLocalUpstreamRequest = (request) => {
   const url = new URL(request.url);
-  const upstream = new URL(`${url.pathname}${url.search}`, LOCAL_API_ORIGIN);
+  const upstream = new URL(`${url.pathname}${url.search}`, buildLocalApiOrigin(url.port));
   return new Request(upstream.toString(), request);
 };
 
