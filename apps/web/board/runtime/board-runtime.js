@@ -189,14 +189,15 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!elements.boardPreviewLabelEl) {
       return;
     }
+    const clickInstruction = getSupportsHover() ? "Click to" : "Click again to";
     const coordinateMatch = text.match(/\(\d+,\d+\)$/);
     if (!coordinateMatch || !selectedTarget) {
-      elements.boardPreviewLabelEl.innerHTML = `Click again to <strong>${escapeHtml(text)}</strong>`;
+      elements.boardPreviewLabelEl.innerHTML = `${clickInstruction} <strong>${escapeHtml(text)}</strong>`;
       return;
     }
 
     const labelWithoutCoordinate = text.slice(0, coordinateMatch.index).trimEnd();
-    elements.boardPreviewLabelEl.innerHTML = `Click again to <strong>${escapeHtml(labelWithoutCoordinate)} ${renderBoardPreviewCoordinate(selectedTarget)}</strong>`;
+    elements.boardPreviewLabelEl.innerHTML = `${clickInstruction} <strong>${escapeHtml(labelWithoutCoordinate)} ${renderBoardPreviewCoordinate(selectedTarget)}</strong>`;
   };
 
   const setRushContinuationPrompt = (player) => {

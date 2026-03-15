@@ -369,6 +369,147 @@ test("board runtime does not flash no-moves preview text while selected piece mo
   });
 });
 
+test("board runtime uses hover-aware action prompt copy", async () => {
+  const createBoardPreviewLabel = () => {
+    let value = "";
+    return {
+      get textContent() {
+        return value;
+      },
+      set textContent(next) {
+        value = next;
+      },
+      get innerHTML() {
+        return value;
+      },
+      set innerHTML(next) {
+        value = next;
+      },
+      addEventListener: noop,
+      removeEventListener: noop,
+    };
+  };
+
+  const createRuntime = ({ supportsHover }) => {
+    let onCellClick = null;
+    let onCellHoverStart = null;
+    const boardPreviewLabelEl = createBoardPreviewLabel();
+    const runtime = createBoardRuntime({
+      boardAdapter: {
+        mount: ({ onCellClick: nextOnCellClick, onCellHoverStart: nextOnCellHoverStart }) => {
+          onCellClick = nextOnCellClick;
+          onCellHoverStart = nextOnCellHoverStart;
+        },
+        render: noop,
+        getSelectedPieceSummary: ({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) => {
+          const selectedPiece = snapshot?.pieces?.find((piece) => piece.id === selectedPieceId) ?? null;
+          if (!selectedPiece) {
+            return null;
+          }
+          return {
+            details: { owner: selectedPiece.owner },
+            actions: (selectedPieceMovePreviews ?? selectedPieceMoves).map((action) => ({
+              type: action.type,
+              from: action.from ?? null,
+              to: action.to ?? null,
+              legal: action.legal ?? true,
+              blockedReason: action.blockedReason ?? null,
+            })),
+          };
+        },
+        getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+        getPieceAt: (snapshot, coord) =>
+          snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+        nextSelectionForCell: ({ snapshot, clickedCoord, currentActionType }) => {
+          const clickedPiece =
+            snapshot?.pieces?.find((piece) => piece.position.row === clickedCoord.row && piece.position.col === clickedCoord.col) ?? null;
+          if (clickedPiece) {
+            return {
+              selection: {
+                selectedPieceId: clickedPiece.id,
+                source: { ...clickedPiece.position },
+                target: null,
+              },
+              nextActionType: currentActionType,
+            };
+          }
+          return {
+            selection: {
+              selectedPieceId: "A1",
+              source: { row: 4, col: 2 },
+              target: clickedCoord,
+            },
+            nextActionType: "move",
+          };
+        },
+      },
+      host: {
+        applyAction: async () => ({ accepted: false }),
+        loadInitialState: async () => ({ state: null, legalActions: [] }),
+        loadLegalActions: async () => ({ state: null, legalActions: [] }),
+        loadPieceMoves: async () => ({
+          state: null,
+          actions: [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }],
+          previewActions: [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 }, legal: true }],
+        }),
+        canInteract: () => true,
+      },
+      controls: {
+        getSupportsHover: () => supportsHover,
+      },
+    });
+
+    return { runtime, boardPreviewLabelEl, getOnCellClick: () => onCellClick, getOnCellHoverStart: () => onCellHoverStart };
+  };
+
+  const nonHover = createRuntime({ supportsHover: false });
+  nonHover.runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: nonHover.boardPreviewLabelEl,
+    boardTurnIndicatorEl: null,
+  });
+  await nonHover.runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      outcome: null,
+      pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true }],
+    },
+    {
+      legalActions: [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }],
+    },
+  );
+  nonHover.getOnCellClick()?.({ row: 4, col: 2 });
+  nonHover.getOnCellClick()?.({ row: 4, col: 3 });
+  assert.equal(nonHover.boardPreviewLabelEl.textContent.includes("Click again to"), true);
+
+  const hover = createRuntime({ supportsHover: true });
+  hover.runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: hover.boardPreviewLabelEl,
+    boardTurnIndicatorEl: null,
+  });
+  await hover.runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      outcome: null,
+      pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true }],
+    },
+    {
+      legalActions: [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }],
+    },
+  );
+  hover.getOnCellClick()?.({ row: 4, col: 2 });
+  hover.getOnCellHoverStart()?.({ row: 4, col: 3 });
+  assert.equal(hover.boardPreviewLabelEl.textContent.includes("Click to"), true);
+  assert.equal(hover.boardPreviewLabelEl.textContent.includes("Click again to"), false);
+});
+
 test("board runtime can submit a legal target immediately after piece selection", async () => {
   let onCellClick = null;
   const appliedActions = [];
