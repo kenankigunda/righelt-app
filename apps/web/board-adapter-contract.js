@@ -12,6 +12,8 @@
  *   boardEl: HTMLElement,
  *   overlayLinesEl: SVGElement,
  *   onCellClick: (coord: BoardCoord) => void,
+ *   onCellHoverStart?: (coord: BoardCoord) => void,
+ *   onCellHoverEnd?: (coord: BoardCoord) => void,
  * }) => void} mount
  * @property {() => void} unmount
  * @property {(snapshot: unknown, coord: BoardCoord) => unknown | null} getPieceAt

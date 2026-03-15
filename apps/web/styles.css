@@ -129,7 +129,7 @@ body {
   vertical-align: baseline;
 }
 
-.board-preview-inline-button:hover {
+[data-hover-capability="hover"] .board-preview-inline-button:hover {
   border-color: var(--accent);
 }
 
@@ -273,7 +273,7 @@ button {
   background: var(--cell-fill);
 }
 
-.cell:not(.unselectable):hover {
+[data-hover-capability="hover"] .cell:not(.unselectable):hover {
   border-color: var(--accent);
 }
 

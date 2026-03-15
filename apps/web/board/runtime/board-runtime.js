@@ -5,6 +5,7 @@ import {
   deriveAutoSelectedTarget,
   deriveForcedContinuationSelection,
   pickBestActionTypeForTarget,
+  shouldAllowSelectionAtTarget,
   shouldResetSelectionOnDocumentClick,
   shouldSubmitOnEnter,
 } from "../../interaction.js";
@@ -24,6 +25,13 @@ const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "un
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
 
 const defaultActionType = "pass";
+const TARGET_ORIGIN = {
+  AUTO: "auto",
+  FORCED: "forced",
+  HISTORY: "history",
+  HOVER: "hover",
+  MANUAL: "manual",
+};
 
 export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let elements = {
@@ -42,6 +50,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let selectedPieceId = null;
   let selectedSource = null;
   let selectedTarget = null;
+  let selectedTargetOrigin = null;
   let selectedPieceMovesRequestId = 0;
   let mounted = false;
   let removalEffectsTimer = null;
@@ -64,8 +73,29 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const getAllowFreeSelection = () => Boolean(controls.getAllowFreeSelection?.());
+  const getSupportsHover = () => Boolean(controls.getSupportsHover?.());
 
   const getCurrentSelection = () => ({ selectedPieceId, source: selectedSource, target: selectedTarget });
+
+  const setSelectedTarget = (target, origin = null) => {
+    if (!target) {
+      selectedTarget = null;
+      selectedTargetOrigin = null;
+      return;
+    }
+    selectedTarget = { ...target };
+    selectedTargetOrigin = origin;
+  };
+
+  const maybeAutoSelectTarget = (actions, origin = TARGET_ORIGIN.AUTO) => {
+    if (selectedTarget) {
+      return;
+    }
+    const autoSelectedTarget = deriveAutoSelectedTarget(actions);
+    if (autoSelectedTarget) {
+      setSelectedTarget(autoSelectedTarget, origin);
+    }
+  };
 
   const setPlayerTone = (element, player) => {
     if (!element) {
@@ -159,14 +189,15 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!elements.boardPreviewLabelEl) {
       return;
     }
+    const clickInstruction = getSupportsHover() ? "Click to" : "Click again to";
     const coordinateMatch = text.match(/\(\d+,\d+\)$/);
     if (!coordinateMatch || !selectedTarget) {
-      elements.boardPreviewLabelEl.innerHTML = `Click again to <strong>${escapeHtml(text)}</strong>`;
+      elements.boardPreviewLabelEl.innerHTML = `${clickInstruction} <strong>${escapeHtml(text)}</strong>`;
       return;
     }
 
     const labelWithoutCoordinate = text.slice(0, coordinateMatch.index).trimEnd();
-    elements.boardPreviewLabelEl.innerHTML = `Click again to <strong>${escapeHtml(labelWithoutCoordinate)} ${renderBoardPreviewCoordinate(selectedTarget)}</strong>`;
+    elements.boardPreviewLabelEl.innerHTML = `${clickInstruction} <strong>${escapeHtml(labelWithoutCoordinate)} ${renderBoardPreviewCoordinate(selectedTarget)}</strong>`;
   };
 
   const setRushContinuationPrompt = (player) => {
@@ -330,9 +361,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
     selectedPieceMoves = legalActions.filter((action) => actionMatchesSelectedPiece(action, selectedPiece));
     selectedPieceMovePreviews = [...selectedPieceMoves];
-    if (!selectedTarget) {
-      selectedTarget = deriveAutoSelectedTarget(selectedPieceMoves);
-    }
+    maybeAutoSelectTarget(selectedPieceMoves);
   };
 
   const clearSelection = () => {
@@ -340,7 +369,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     selectedPieceMoves = [];
     selectedPieceMovePreviews = [];
     selectedSource = null;
-    selectedTarget = null;
+    setSelectedTarget(null);
     invalidateSelectedPieceMovesRequests();
   };
 
@@ -352,7 +381,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
     selectedPieceId = forcedSelection.selectedPieceId;
     selectedSource = forcedSelection.source;
-    selectedTarget = forcedSelection.target;
+    setSelectedTarget(forcedSelection.target, forcedSelection.target ? TARGET_ORIGIN.FORCED : null);
     setActionType(forcedSelection.actionType);
     refreshSelectionLabels();
     return true;
@@ -384,9 +413,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     });
     selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
     selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
-    if (!selectedTarget) {
-      selectedTarget = deriveAutoSelectedTarget(selectedPieceMoves);
-    }
+    maybeAutoSelectTarget(selectedPieceMoves);
   };
 
   const reloadSelectedPieceMoves = async () => {
@@ -417,9 +444,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     state = body.state ?? state;
     selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
     selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
-    if (!selectedTarget) {
-      selectedTarget = deriveAutoSelectedTarget(selectedPieceMoves);
-    }
+    maybeAutoSelectTarget(selectedPieceMoves);
     renderBoard();
     renderStatus();
   };
@@ -476,7 +501,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
           if (previousState?.sideToMove && state?.sideToMove && previousState.sideToMove !== state.sideToMove) {
             clearSelection();
           } else {
-            selectedTarget = null;
+            setSelectedTarget(null);
           }
         }
 
@@ -540,12 +565,63 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   const actionsAtTarget = (coord) =>
     selectedPieceMoves.filter((action) => action.to && action.to.row === coord.row && action.to.col === coord.col);
 
+  const applyHoveredTarget = (hoveredCoord) => {
+    if (!selectedSource) {
+      return false;
+    }
+    const previewsAtTarget = selectedPieceMovePreviews.filter(
+      (action) => action.to && action.to.row === hoveredCoord.row && action.to.col === hoveredCoord.col,
+    );
+    if (
+      !shouldAllowSelectionAtTarget({
+        allowFreeSelection: getAllowFreeSelection(),
+        hasSelectedSource: Boolean(selectedSource),
+        actionsAtTarget: previewsAtTarget,
+      })
+    ) {
+      return false;
+    }
+
+    const nextActionType = pickBestActionTypeForTarget(previewsAtTarget, getActionType()) ?? getActionType();
+    const targetAlreadySelected = sameCoordinate(selectedTarget, hoveredCoord);
+    const actionTypeChanged = nextActionType !== getActionType();
+    if (targetAlreadySelected && !actionTypeChanged) {
+      return false;
+    }
+
+    if (actionTypeChanged) {
+      setActionType(nextActionType);
+    }
+    if (!targetAlreadySelected) {
+      setSelectedTarget(hoveredCoord, TARGET_ORIGIN.HOVER);
+    }
+    refreshSelectionLabels();
+    renderBoard();
+    renderStatus();
+    return true;
+  };
+
+  const clearHoveredTarget = (hoveredCoord = null) => {
+    if (selectedTargetOrigin !== TARGET_ORIGIN.HOVER) {
+      return false;
+    }
+    if (hoveredCoord && !sameCoordinate(selectedTarget, hoveredCoord)) {
+      return false;
+    }
+    setSelectedTarget(null);
+    refreshSelectionLabels();
+    renderBoard();
+    renderStatus();
+    return true;
+  };
+
   const handleBoardCellClick = (clickedCoord) => {
     if (!state || host.canInteract?.(state) === false) {
       return;
     }
 
     const allowFreeSelection = getAllowFreeSelection();
+    const supportsHover = getSupportsHover();
     const clickedPiece = boardAdapter.getPieceAt(state, clickedCoord);
     const hasPreviewAtClicked = selectedPieceMovePreviews.some(
       (action) => action.to && action.to.row === clickedCoord.row && action.to.col === clickedCoord.col,
@@ -575,6 +651,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       }
     }
 
+    if (supportsHover && selectedSource && hasPreviewAtClicked) {
+      return;
+    }
+
     const result = boardAdapter.nextSelectionForCell({
       snapshot: state,
       selection: getCurrentSelection(),
@@ -588,7 +668,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const previousSelection = getCurrentSelection();
     selectedPieceId = result.selection.selectedPieceId;
     selectedSource = result.selection.source;
-    selectedTarget = result.selection.target;
+    setSelectedTarget(result.selection.target, result.selection.target ? TARGET_ORIGIN.MANUAL : null);
     setActionType(result.nextActionType);
 
     const pieceChanged = previousSelection.selectedPieceId !== result.selection.selectedPieceId;
@@ -603,6 +683,20 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     void reloadSelectedPieceMoves().catch((error) => {
       setResult({ ok: false, error: "piece_moves_load_failed", message: error instanceof Error ? error.message : "Unknown error" });
     });
+  };
+
+  const handleBoardCellHoverStart = (hoveredCoord) => {
+    if (!state || !getSupportsHover() || host.canInteract?.(state) === false) {
+      return;
+    }
+    applyHoveredTarget(hoveredCoord);
+  };
+
+  const handleBoardCellHoverEnd = (hoveredCoord) => {
+    if (!state || !getSupportsHover() || host.canInteract?.(state) === false) {
+      return;
+    }
+    clearHoveredTarget(hoveredCoord);
   };
 
   const handleDocumentClick = (event) => {
@@ -701,6 +795,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         boardEl: elements.boardEl,
         overlayLinesEl: elements.overlayLinesEl,
         onCellClick: handleBoardCellClick,
+        onCellHoverStart: handleBoardCellHoverStart,
+        onCellHoverEnd: handleBoardCellHoverEnd,
       });
       mounted = true;
     } else if (mounted && elements.boardEl && elements.overlayLinesEl) {
@@ -708,6 +804,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         boardEl: elements.boardEl,
         overlayLinesEl: elements.overlayLinesEl,
         onCellClick: handleBoardCellClick,
+        onCellHoverStart: handleBoardCellHoverStart,
+        onCellHoverEnd: handleBoardCellHoverEnd,
       });
     }
 
@@ -725,7 +823,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       boardAdapter.getPieceAt(state, action.from);
     selectedPieceId = selectedPiece?.id ?? null;
     selectedSource = { ...action.from };
-    selectedTarget = { ...action.to };
+    setSelectedTarget(action.to, TARGET_ORIGIN.HISTORY);
     setActionType(action.type);
   };
 
@@ -778,7 +876,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
     selectedPieceId = selectedPiece?.id ?? null;
     selectedSource = { ...action.from };
-    selectedTarget = { ...action.to };
+    setSelectedTarget(action.to, TARGET_ORIGIN.MANUAL);
     setActionType(action.type);
     refreshSelectionLabels();
 
@@ -808,6 +906,13 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     clearRemovalEffects();
   };
 
+  const syncInteractionCapabilities = () => {
+    if (getSupportsHover()) {
+      return false;
+    }
+    return clearHoveredTarget();
+  };
+
   return {
     initialize,
     destroy,
@@ -828,5 +933,6 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     formatCoordinate,
     actionPreviewLabel,
     sameCoordinate,
+    syncInteractionCapabilities,
   };
 }

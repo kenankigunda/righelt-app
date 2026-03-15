@@ -5,6 +5,7 @@ import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
 import { createLiveTransportStore } from "./live-transport.js";
 import { createLiveSyncClient } from "./live-sync.js";
+import { ensureHoverCapabilityController } from "../hover-capability.js";
 import { applyCommandLegendSwatch, getCommandLegendSwatchStyle } from "../legend.js";
 import { saveTutorialCompleted } from "./persistence.js";
 import { shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
@@ -60,6 +61,7 @@ const storage = typeof window.localStorage !== "undefined" ? window.localStorage
 const transport = createLiveTransportStore({ storage });
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 const boardAdapter = createEnginePlaygroundBoardAdapter();
+const hoverCapability = ensureHoverCapabilityController();
 assertGameBoardAdapter(boardAdapter);
 
 const toStableKey = (value) => {
@@ -281,6 +283,10 @@ const playControlReleaseBounce = (controlEl) => {
     controlReleaseTimer = null;
   }, HISTORY_RELEASE_BOUNCE_MS);
 };
+
+hoverCapability.subscribe(() => {
+  boardRuntime?.syncInteractionCapabilities?.();
+});
 
 const startHistoryPress = (actionEl) => {
   if (prefersReducedMotion() || !appEl || !(actionEl instanceof HTMLElement)) {
@@ -852,6 +858,7 @@ const mountBoardForGame = (game) => {
       }),
       controls: {
         getAllowFreeSelection: () => false,
+        getSupportsHover: () => hoverCapability.getSupportsHover(),
         onMoveRecorded: () => {
           render();
         },

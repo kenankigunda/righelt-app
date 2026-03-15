@@ -11,12 +11,14 @@ import {
 import { buildPieceMoveResponse } from "./board/client-move-generation.js";
 import { assertGameBoardAdapter } from "./board-adapter-contract.js";
 import { createEnginePlaygroundBoardAdapter } from "./board-adapters/engine-playground-adapter.js";
+import { ensureHoverCapabilityController } from "./hover-capability.js";
 import { applyCommandLegendSwatch } from "./legend.js";
 import { buildHomeHash, isPlaygroundRouteHash, isShellRouteHash, isShellRootHash } from "./shell/routes.js";
 
 if (isShellRootHash(window.location.hash)) {
   window.location.replace(`${window.location.pathname}${window.location.search}${buildHomeHash()}`);
 }
+const hoverCapability = ensureHoverCapabilityController();
 const shouldMountShell = !isPlaygroundRouteHash(window.location.hash) && isShellRouteHash(window.location.hash);
 window.addEventListener("hashchange", () => {
   const nextShouldMountShell = !isPlaygroundRouteHash(window.location.hash) && isShellRouteHash(window.location.hash);
@@ -210,14 +212,15 @@ const getPushRetreatPrompt = (snapshot, selectedPieceId) => {
 };
 
 const setBoardPreviewAction = (text) => {
+  const clickInstruction = hoverCapability.getSupportsHover() ? "Click to" : "Click again to";
   const coordinateMatch = text.match(/\(\d+,\d+\)$/);
   if (!coordinateMatch || !selectedTarget) {
-    boardPreviewLabelEl.innerHTML = `Click again to <strong>${escapeHtml(text)}</strong>`;
+    boardPreviewLabelEl.innerHTML = `${clickInstruction} <strong>${escapeHtml(text)}</strong>`;
     return;
   }
 
   const labelWithoutCoordinate = text.slice(0, coordinateMatch.index).trimEnd();
-  boardPreviewLabelEl.innerHTML = `Click again to <strong>${escapeHtml(labelWithoutCoordinate)} ${renderBoardPreviewCoordinate(selectedTarget)}</strong>`;
+  boardPreviewLabelEl.innerHTML = `${clickInstruction} <strong>${escapeHtml(labelWithoutCoordinate)} ${renderBoardPreviewCoordinate(selectedTarget)}</strong>`;
 };
 
 const getCurrentSelection = () => ({
