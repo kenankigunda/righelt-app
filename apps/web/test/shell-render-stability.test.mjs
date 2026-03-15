@@ -62,9 +62,11 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /const reverseChronologicalPendingRows = \[\.\.\.pendingRows\]\.reverse\(\);/);
   assert.match(source, /class="history-item history-item-pending/);
   assert.match(source, /Pending<\/span>/);
-  assert.match(source, /const emptyTurnText = "Waiting on next move\.\.\."/);
+  assert.match(source, /const waitingPlayerLabel = activeTurn\.playerSeat \|\| "next player";/);
+  assert.match(source, /Live: Waiting on \$\{waitingPlayerLabel\} to move\.\.\./);
+  assert.match(source, /class="history-item history-item-waiting history-empty-line/);
   assert.match(source, /return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
-  assert.match(source, /: `<div class="history-empty-line/);
+  assert.match(source, /: `<li class="history-item history-item-waiting history-empty-line/);
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
   assert.match(source, /return `\$\{emptyTurnItem\}\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
   assert.match(source, /const hasHistoryMoves = Array\.isArray\(game\.moves\) && game\.moves\.length > 0;/);

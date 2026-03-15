@@ -356,7 +356,6 @@ const renderTurnHistory = (game) => {
         : game.moves.length > 0
           ? game.moves.length - 1
           : null;
-  const emptyTurnText = "Waiting on next move...";
 
   const moveRows = game.turns.flatMap((turn) =>
     turn.moveIndexes
@@ -390,13 +389,14 @@ const renderTurnHistory = (game) => {
   }
 
   const showLiveSelectedEmpty = liveSelectedEmptyTurnIndex === activeTurn.index;
+  const waitingPlayerLabel = activeTurn.playerSeat || "next player";
   const emptyTurnItem = game.inHistoryMode
-    ? `<div class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(
+    ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(
         game.id,
-      )}" ${busy ? "disabled" : ""}>Return to live view</button></div>`
-    : `<div class="history-empty-line${showLiveSelectedEmpty ? " is-live-selected" : ""}"><span class="history-move-line">${escapeHtml(
-        emptyTurnText,
-      )}</span></div>`;
+      )}" ${busy ? "disabled" : ""}>Return to live view</button></li>`
+    : `<li class="history-item history-item-waiting history-empty-line ${playerToneClassForSeat(activeTurn.playerSeat)}${showLiveSelectedEmpty ? " is-live-selected" : ""}" aria-disabled="true"><span class="history-move-line">${escapeHtml(
+        `Live: Waiting on ${waitingPlayerLabel} to move...`,
+      )}</span></li>`;
 
   return `${emptyTurnItem}${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
 };
@@ -658,8 +658,8 @@ const renderHistoryPanel = (game) => {
 
   return `
     <h2>History</h2>
-    ${historyBanner}
     <div class="section-followup">
+      ${historyBanner}
       <ol class="history-list">${historyRows}</ol>
     </div>
   `;
