@@ -381,10 +381,12 @@ const renderTurnHistory = (game) => {
           <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
         </li>`,
   );
+  const reverseChronologicalMoveRows = [...moveRows].reverse();
+  const reverseChronologicalPendingRows = [...pendingRows].reverse();
 
   const activeTurn = activeTurnIndex !== null ? game.turns.find((turn) => turn.index === activeTurnIndex) : null;
   if (!activeTurn || activeTurn.moveIndexes.length > 0) {
-    return `${moveRows.join("")}${pendingRows.join("")}`;
+    return `${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
   }
 
   const showLiveSelectedEmpty = liveSelectedEmptyTurnIndex === activeTurn.index;
@@ -396,7 +398,7 @@ const renderTurnHistory = (game) => {
         emptyTurnText,
       )}</span></div>`;
 
-  return `${moveRows.join("")}${pendingRows.join("")}${emptyTurnItem}`;
+  return `${emptyTurnItem}${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
 };
 
 const renderHeader = () => `
@@ -649,7 +651,7 @@ const renderHistoryPanel = (game) => {
   const hasHistoryMoves = Array.isArray(game.moves) && game.moves.length > 0;
   const historyBanner = game.inHistoryMode
     ? `<p class="small">Viewing history snapshot for move ${escapeHtml(historyMoveNumber)}.</p>
-       <p class="small">Incoming live moves will appear at bottom.</p>`
+       <p class="small">Incoming live moves will appear at top.</p>`
     : hasHistoryMoves
       ? '<p class="small">You are on the live view.</p><p class="small">Click moves below to see historical state.</p>'
       : '<p class="small">You are on the live view.</p>';
