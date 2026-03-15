@@ -108,6 +108,17 @@ const escapeHtml = (value) =>
 
 const formatStatus = (connected) =>
   connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip offline">Disconnected</span>';
+const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
+const getControlSeatForTurn = (state, turnOwnerSeat) => {
+  const continuation = state?.continuation;
+  if (!continuation) {
+    return turnOwnerSeat;
+  }
+  if (continuation.type === "push" && continuation.phase === "retreat") {
+    return getNextSeat(turnOwnerSeat);
+  }
+  return turnOwnerSeat;
+};
 const playerToneClassForSeat = (seat) => (seat === "Player 1" ? "player-tone-p1" : seat === "Player 2" ? "player-tone-p2" : "player-tone-neutral");
 const playerToneClassForSide = (side) => (side === "P1" ? "player-tone-p1" : side === "P2" ? "player-tone-p2" : "player-tone-neutral");
 const renderSeatLabel = (seat) => `<span class="${playerToneClassForSeat(seat)}">${escapeHtml(seat || "Unknown")}</span>`;
@@ -346,12 +357,22 @@ const renderTurnHistory = (game) => {
   }
 
   const activeTurnIndex = typeof game.currentTurn?.index === "number" ? game.currentTurn.index : null;
-  const liveSelectedEmptyTurnIndex =
-    !game.inHistoryMode && activeTurnIndex !== null && game.currentTurn?.moveIndexes?.length === 0 ? activeTurnIndex : null;
+  const activeTurn = activeTurnIndex !== null ? game.turns.find((turn) => turn.index === activeTurnIndex) : null;
+  const liveState = game.currentSnapshot ?? game.board?.state ?? null;
+  const controlSeat = activeTurn ? getControlSeatForTurn(liveState, activeTurn.playerSeat) : null;
+  const liveContinuationText =
+    !game.inHistoryMode && activeTurn && liveState?.continuation
+      ? `Live: Waiting for ${controlSeat || "next player"} to continue...`
+      : null;
+  const liveWaitingText =
+    !game.inHistoryMode && activeTurn && activeTurn.moveIndexes.length === 0
+      ? `Live: Waiting on ${activeTurn.playerSeat || "next player"} to move...`
+      : null;
+  const liveStatusText = liveContinuationText ?? liveWaitingText;
   const selectedMoveIndex =
     typeof game.historyIndex === "number"
       ? game.historyIndex
-      : liveSelectedEmptyTurnIndex !== null
+      : liveStatusText
         ? null
         : game.moves.length > 0
           ? game.moves.length - 1
@@ -383,20 +404,26 @@ const renderTurnHistory = (game) => {
   const reverseChronologicalMoveRows = [...moveRows].reverse();
   const reverseChronologicalPendingRows = [...pendingRows].reverse();
 
-  const activeTurn = activeTurnIndex !== null ? game.turns.find((turn) => turn.index === activeTurnIndex) : null;
-  if (!activeTurn || activeTurn.moveIndexes.length > 0) {
+  const liveStatusItem =
+    liveStatusText && activeTurn
+      ? `<li class="history-item history-item-waiting history-empty-line ${playerToneClassForSeat(
+          liveContinuationText ? controlSeat : activeTurn.playerSeat,
+        )} is-live-selected" aria-disabled="true"><span class="history-move-line">${escapeHtml(liveStatusText)}</span></li>`
+      : "";
+  if (!activeTurn) {
     return `${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
   }
-
-  const showLiveSelectedEmpty = liveSelectedEmptyTurnIndex === activeTurn.index;
-  const waitingPlayerLabel = activeTurn.playerSeat || "next player";
+  if (game.inHistoryMode && activeTurn.moveIndexes.length > 0) {
+    return `${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
+  }
+  if (!game.inHistoryMode && !liveStatusItem && activeTurn.moveIndexes.length > 0) {
+    return `${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
+  }
   const emptyTurnItem = game.inHistoryMode
     ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(
         game.id,
       )}" ${busy ? "disabled" : ""}>Return to live view</button></li>`
-    : `<li class="history-item history-item-waiting history-empty-line ${playerToneClassForSeat(activeTurn.playerSeat)}${showLiveSelectedEmpty ? " is-live-selected" : ""}" aria-disabled="true"><span class="history-move-line">${escapeHtml(
-        `Live: Waiting on ${waitingPlayerLabel} to move...`,
-      )}</span></li>`;
+    : liveStatusItem;
 
   return `${emptyTurnItem}${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
 };
