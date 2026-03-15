@@ -1,6 +1,6 @@
 # Branch Audit
 
-Snapshot taken on 2026-03-12 from the local repository state in `/Users/kenankigunda/Documents/righelt` after `git fetch --prune origin`.
+Snapshot taken on 2026-03-15 from the local repository state in `/Users/kenankigunda/Documents/righelt` after `git fetch --prune origin`.
 
 Notes:
 - Merge status is evaluated against the local `main` branch.
@@ -17,12 +17,14 @@ Notes:
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
+| `codex/client-history-local-nav` | Yes | `origin/main` exists, up to date (`=`) | `wt-5b34` | No remaining code diff; this worktree branch currently points at the same commit as `main` |
 
 ## (c) Not Merged To `main`, But Checked Out On A Worktree
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
 | `codex/computer-player` | No | `origin/codex/computer-player` exists, up to date (`=`) | `wt-b058` | Adds `docs/RIGHELT_COMPUTER_PLAYER_PLAN.md` with the computer-player implementation plan |
+| `codex/tutorial-mode` | No | `origin/codex/tutorial-mode` exists, up to date (`=`) | `wt-f466` | Adds `docs/features/tutorial-mode/EXECUTION_PLAN.md` with the tutorial-mode execution plan |
 
 ## (d) Not Merged To `main`, And Not Checked Out On A Worktree
 
