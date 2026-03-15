@@ -77,6 +77,7 @@ let mountedHistoryMoveIndex = null;
 let mountedSnapshotKey = null;
 let mountedLegalActionsKey = null;
 let mountedSelectionActionKey = null;
+let mountedSyncStatusKey = null;
 let boardRuntime = null;
 let busy = false;
 let liveSyncConnectedRoute = "";
@@ -372,10 +373,18 @@ const renderTurnHistory = (game) => {
         </li>`;
       }),
   );
+  const pendingRows = (Array.isArray(game.pendingMoves) ? game.pendingMoves : []).map(
+    (move) => `<li class="history-item history-item-pending ${playerToneClassForSide(move.actorSide || (move.turnIndex % 2 === 0 ? "P1" : "P2"))}" aria-disabled="true">
+          <span class="history-move-line">Move ${escapeHtml(
+            String(move.index + 1),
+          )}: ${escapeHtml(move.notation)} · Pending</span>
+          <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
+        </li>`,
+  );
 
   const activeTurn = activeTurnIndex !== null ? game.turns.find((turn) => turn.index === activeTurnIndex) : null;
   if (!activeTurn || activeTurn.moveIndexes.length > 0) {
-    return moveRows.join("");
+    return `${moveRows.join("")}${pendingRows.join("")}`;
   }
 
   const showLiveSelectedEmpty = liveSelectedEmptyTurnIndex === activeTurn.index;
@@ -387,18 +396,18 @@ const renderTurnHistory = (game) => {
         emptyTurnText,
       )}</span></div>`;
 
-  return `${moveRows.join("")}${emptyTurnItem}`;
+  return `${moveRows.join("")}${pendingRows.join("")}${emptyTurnItem}`;
 };
 
 const renderHeader = () => `
   <header class="shell-header">
     <div class="shell-header-main">
       <h1>Righelt Web Shell</h1>
-      <p class="small">Identity <span class="mono">${escapeHtml(transport.getIdentityId())}</span></p>
-      <p class="small shell-header-status">Live sync: <span class="mono">${escapeHtml(
+      <p class="small">Identity <span id="shell-header-identity" class="mono">${escapeHtml(transport.getIdentityId())}</span></p>
+      <p class="small shell-header-status">Live sync: <span id="shell-header-live-sync" class="mono">${escapeHtml(
         `${wsStatus.state}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`,
       )}</span></p>
-      <p class="small shell-header-status">Last event: <span class="mono">${escapeHtml(wsLastEvent)}</span></p>
+      <p class="small shell-header-status">Last event: <span id="shell-header-last-event" class="mono">${escapeHtml(wsLastEvent)}</span></p>
     </div>
     <div class="shell-header-actions">
       <div class="nav-row">
@@ -413,6 +422,21 @@ const renderHeader = () => `
     </div>
   </header>
 `;
+
+const updateHeaderFields = () => {
+  const identityEl = document.getElementById("shell-header-identity");
+  const liveSyncEl = document.getElementById("shell-header-live-sync");
+  const lastEventEl = document.getElementById("shell-header-last-event");
+  if (identityEl) {
+    identityEl.textContent = transport.getIdentityId();
+  }
+  if (liveSyncEl) {
+    liveSyncEl.textContent = `${wsStatus.state}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`;
+  }
+  if (lastEventEl) {
+    lastEventEl.textContent = wsLastEvent;
+  }
+};
 
 const setInviteFeedback = (message) => {
   inviteFeedback = message;
@@ -503,17 +527,93 @@ const renderHome = () => {
   `;
 };
 
-const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
-  if (!routeHydrated) {
-    return `<section class="panel"><h2>Loading game...</h2><p class="small">Synchronizing current game state.</p></section>`;
-  }
+const renderGameAlertsHtml = (game, inviteFromRole = null) => {
+  const liveSyncBanner =
+    game.rollbackNotice && game.rollbackNotice.trim().length > 0
+      ? `<div class="alert danger">${escapeHtml(game.rollbackNotice)}</div>`
+      : game.syncStatus === "desynced"
+        ? `<div class="alert warn">Live sync is recovering. The board is showing the last authoritative state.</div>`
+        : "";
+  const offlineBanner =
+    game.showOfflineState || inviteFromRole === "offline"
+      ? `<div class="alert warn">Offline mode: invite and remote join actions are disabled.</div>`
+      : "";
 
-  const game = transport.getGameViewModel(gameId);
-  if (!game) {
-    return `<section class="panel"><h2>Loading game...</h2><p class="small">Fetching latest server state.</p></section>`;
-  }
+  return `
+    ${offlineBanner ? `<section class="panel">${offlineBanner}</section>` : ""}
+    ${liveSyncBanner ? `<section class="panel">${liveSyncBanner}</section>` : ""}
+  `;
+};
 
-  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id)}`;
+const renderGameSummaryPanel = (game) => {
+  const latestNote = game.notifications[0] || "Ready";
+  return `
+    <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
+    <div class="section-stack">
+      <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
+      <p class="small">Role: ${renderRoleLabel(game.myRole)}</p>
+      <div class="section-followup">
+        <p class="small">Active turn: ${
+          game.currentTurn
+            ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderSeatLabel(game.currentTurn.playerSeat)} · ${escapeHtml(
+                String(game.currentTurn.moveIndexes.length),
+              )} move(s)`
+            : "n/a"
+        }</p>
+        <p class="small">Latest: ${colorizePlayerReferences(latestNote)}</p>
+      </div>
+    </div>
+  `;
+};
+
+const renderJoinInvitePanel = (game, inviteLink) => {
+  const pendingSeatNotice = game.pendingPlayerRequestSeat
+    ? `<div class="alert">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
+    : "";
+  const pendingRows =
+    game.pendingJoinRequests.length === 0
+      ? "<li class=\"small\">No pending join requests</li>"
+      : game.pendingJoinRequests
+          .map(
+            (request) => `<li>
+              <span class="mono">${escapeHtml(request.identityId)}</span> requests ${renderSeatLabel(request.requestedSeat)}
+              <button class="secondary" data-action="approve-request" data-game-id="${escapeHtml(
+                game.id,
+              )}" data-requester-id="${escapeHtml(request.identityId)}" ${
+                !busy && Array.isArray(game.approvableRequesterIds) && game.approvableRequesterIds.includes(request.identityId)
+                  ? ""
+                  : "disabled"
+              }>Approve</button>
+            </li>`,
+          )
+          .join("");
+  const joinInviteActions = renderSectionActions([
+    game.canJoinAsViewer
+      ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${!busy ? "" : "disabled"}>Join as viewer</button>`
+      : "",
+    game.canJoinAsPlayer && game.showJoinActions
+      ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${!busy ? "" : "disabled"}>Join as player</button>`
+      : "",
+    game.canPlayAsBothPlayers
+      ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
+          !game.showOfflineState && !busy ? "" : "disabled"
+        }>Play as both players</button>`
+      : "",
+    `<button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${game.canInvite && !busy ? "" : "disabled"}>Invite someone else</button>`,
+  ]);
+
+  return `
+    <h2>Join / Invite</h2>
+    ${pendingSeatNotice}
+    ${joinInviteActions}
+    ${renderFeedbackReveal(inviteFeedback)}
+    <div class="section-followup">
+      <ul class="participant-list">${pendingRows}</ul>
+    </div>
+  `;
+};
+
+const renderParticipantsPanel = (game) => {
   const participants = [
     { label: "Player 1", value: game.player1 },
     { label: "Player 2", value: game.player2 },
@@ -537,37 +637,15 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
               `<li>Viewer: <span class="mono">${escapeHtml(viewer.identityId)}</span> ${formatStatus(viewer.connected)}</li>`,
           )
           .join("");
+  return `
+    <h2>Participants</h2>
+    <ul class="participant-list">${participantRows}${viewerRows}</ul>
+  `;
+};
+
+const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
-  const pendingSeatNotice = game.pendingPlayerRequestSeat
-    ? `<div class="alert">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
-    : "";
-
-  const pendingRows =
-    game.pendingJoinRequests.length === 0
-      ? "<li class=\"small\">No pending join requests</li>"
-      : game.pendingJoinRequests
-          .map(
-            (request) => `<li>
-              <span class="mono">${escapeHtml(request.identityId)}</span> requests ${renderSeatLabel(request.requestedSeat)}
-              <button class="secondary" data-action="approve-request" data-game-id="${escapeHtml(
-                game.id,
-              )}" data-requester-id="${escapeHtml(request.identityId)}" ${
-                !busy && Array.isArray(game.approvableRequesterIds) && game.approvableRequesterIds.includes(request.identityId)
-                  ? ""
-                  : "disabled"
-              }>Approve</button>
-            </li>`,
-          )
-          .join("");
-
-  const latestNote = game.notifications[0] || "Ready";
-  const offlineBanner =
-    game.showOfflineState || inviteFromRole === "offline"
-      ? `<div class="alert warn">Offline mode: invite and remote join actions are disabled.</div>`
-      : "";
-
-  const historyMoveNumber =
-    typeof game.historyIndex === "number" ? String(game.historyIndex + 1) : "?";
+  const historyMoveNumber = typeof game.historyIndex === "number" ? String(game.historyIndex + 1) : "?";
   const hasHistoryMoves = Array.isArray(game.moves) && game.moves.length > 0;
   const historyBanner = game.inHistoryMode
     ? `<p class="small">Viewing history snapshot for move ${escapeHtml(historyMoveNumber)}.</p>
@@ -575,85 +653,130 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
     : hasHistoryMoves
       ? '<p class="small">You are on the live view.</p><p class="small">Click moves below to see historical state.</p>'
       : '<p class="small">You are on the live view.</p>';
-  const joinInviteActions = renderSectionActions([
-    game.canJoinAsViewer
-      ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${!busy ? "" : "disabled"}>Join as viewer</button>`
-      : "",
-    game.canJoinAsPlayer && game.showJoinActions
-      ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${!busy ? "" : "disabled"}>Join as player</button>`
-      : "",
-    game.canPlayAsBothPlayers
-      ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
-          !game.showOfflineState && !busy ? "" : "disabled"
-        }>Play as both players</button>`
-      : "",
-    `<button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${game.canInvite && !busy ? "" : "disabled"}>Invite someone else</button>`,
-  ]);
+
   return `
-    ${offlineBanner ? `<section class="panel">${offlineBanner}</section>` : ""}
+    <h2>History</h2>
+    ${historyBanner}
+    <div class="section-followup">
+      <ol class="history-list">${historyRows}</ol>
+    </div>
+  `;
+};
+
+const renderBoardPanel = (game) => `
+  <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span></h2>
+  <p class="board-preview-label" id="shell-board-preview-label">Select a piece to see it supply and command lines + what it can do:</p>
+  <div class="board-wrap">
+    <div id="shell-board" class="board"></div>
+    <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
+  </div>
+  <div class="overlay-key" aria-label="Overlay color key">
+    <span><i class="swatch supply-point"></i>Supply point</span>
+    <span><i class="swatch supply"></i>Supply line</span>
+    <span><i id="shell-command-legend-swatch" class="swatch command" style="${escapeHtml(
+      getCommandLegendSwatchStyle(game.currentSnapshot ?? null),
+    )}"></i>Command line</span>
+    <span><i class="swatch group"></i>Group strength</span>
+  </div>
+`;
+
+const renderGameShellFrame = (game) => `
+  <div id="shell-game-alerts"></div>
+  <section class="layout-grid" data-game-shell-root data-game-id="${escapeHtml(game.id)}">
+    <div class="stack">
+      <section class="panel" data-game-panel="summary"></section>
+      <section class="panel" data-game-panel="join"></section>
+      <section class="panel" data-game-panel="participants"></section>
+    </div>
+
+    <div class="stack">
+      <section class="panel" data-shell-panel="board">
+        ${renderBoardPanel(game)}
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="panel" data-game-panel="history"></section>
+    </div>
+  </section>
+`;
+
+const getMountedGameShellRoot = () =>
+  appEl?.querySelector?.("[data-game-shell-root]") instanceof HTMLElement ? appEl.querySelector("[data-game-shell-root]") : null;
+
+const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = null, includeBoard = true } = {}) => {
+  const shellRoot = getMountedGameShellRoot();
+  if (!(shellRoot instanceof HTMLElement) || !game) {
+    return false;
+  }
+
+  const alertsEl = document.getElementById("shell-game-alerts");
+  const summaryEl = shellRoot.querySelector('[data-game-panel="summary"]');
+  const joinEl = shellRoot.querySelector('[data-game-panel="join"]');
+  const participantsEl = shellRoot.querySelector('[data-game-panel="participants"]');
+  const historyEl = shellRoot.querySelector('[data-game-panel="history"]');
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id)}`;
+
+  if (alertsEl instanceof HTMLElement) {
+    alertsEl.innerHTML = renderGameAlertsHtml(game, inviteFromRole);
+  }
+  if (summaryEl instanceof HTMLElement) {
+    summaryEl.innerHTML = renderGameSummaryPanel(game);
+  }
+  if (joinEl instanceof HTMLElement) {
+    joinEl.innerHTML = renderJoinInvitePanel(game, inviteLink);
+  }
+  if (participantsEl instanceof HTMLElement) {
+    participantsEl.innerHTML = renderParticipantsPanel(game);
+  }
+  if (historyEl instanceof HTMLElement) {
+    historyEl.innerHTML = renderHistoryPanel(game);
+  }
+  if (includeBoard) {
+    mountBoardForGame(game);
+  }
+  return true;
+};
+
+const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
+  if (currentRoute.name !== "game" || !routeHydrated || !gameId) {
+    return false;
+  }
+  const game = transport.getGameViewModel(gameId);
+  if (!game) {
+    return false;
+  }
+  return !getActiveApprovalRequest(game);
+};
+
+const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
+  if (!routeHydrated) {
+    return `<section class="panel"><h2>Loading game...</h2><p class="small">Synchronizing current game state.</p></section>`;
+  }
+
+  const game = transport.getGameViewModel(gameId);
+  if (!game) {
+    return `<section class="panel"><h2>Loading game...</h2><p class="small">Fetching latest server state.</p></section>`;
+  }
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id)}`;
+
+  return `
+    ${renderGameAlertsHtml(game, inviteFromRole)}
     <section class="layout-grid">
       <div class="stack">
-        <section class="panel">
-          <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
-          <div class="section-stack">
-            <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
-            <p class="small">Role: ${renderRoleLabel(game.myRole)}</p>
-            <div class="section-followup">
-              <p class="small">Active turn: ${
-                game.currentTurn
-                  ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderSeatLabel(game.currentTurn.playerSeat)} · ${escapeHtml(
-                      String(game.currentTurn.moveIndexes.length),
-                    )} move(s)`
-                  : "n/a"
-              }</p>
-              <p class="small">Latest: ${colorizePlayerReferences(latestNote)}</p>
-            </div>
-          </div>
-        </section>
-
-        <section class="panel">
-          <h2>Join / Invite</h2>
-          ${pendingSeatNotice}
-          ${joinInviteActions}
-          ${renderFeedbackReveal(inviteFeedback)}
-          <div class="section-followup">
-            <ul class="participant-list">${pendingRows}</ul>
-          </div>
-        </section>
-
-        <section class="panel">
-          <h2>Participants</h2>
-          <ul class="participant-list">${participantRows}${viewerRows}</ul>
-        </section>
+        <section class="panel">${renderGameSummaryPanel(game)}</section>
+        <section class="panel">${renderJoinInvitePanel(game, inviteLink)}</section>
+        <section class="panel">${renderParticipantsPanel(game)}</section>
       </div>
 
       <div class="stack">
         <section class="panel" data-shell-panel="board">
-          <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span></h2>
-          <p class="board-preview-label" id="shell-board-preview-label">Select a piece to see it supply and command lines + what it can do:</p>
-          <div class="board-wrap">
-            <div id="shell-board" class="board"></div>
-            <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
-          </div>
-          <div class="overlay-key" aria-label="Overlay color key">
-            <span><i class="swatch supply-point"></i>Supply point</span>
-            <span><i class="swatch supply"></i>Supply line</span>
-            <span><i id="shell-command-legend-swatch" class="swatch command" style="${escapeHtml(
-              getCommandLegendSwatchStyle(game.currentSnapshot ?? null),
-            )}"></i>Command line</span>
-            <span><i class="swatch group"></i>Group strength</span>
-          </div>
+          ${renderBoardPanel(game)}
         </section>
       </div>
 
       <div class="stack">
-        <section class="panel">
-          <h2>History</h2>
-          ${historyBanner}
-          <div class="section-followup">
-            <ol class="history-list">${historyRows}</ol>
-          </div>
-        </section>
+        <section class="panel">${renderHistoryPanel(game)}</section>
       </div>
     </section>
   `;
@@ -708,6 +831,9 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   const approvalRequest = getActiveApprovalRequest(game);
   if (approvalRequest) {
     return renderApprovalGate(game, approvalRequest);
+  }
+  if (currentRoute.name === "game") {
+    return renderGameShellFrame(game);
   }
   return renderGameContent(gameId, inviteFromRole, inviteToken);
 };
@@ -817,6 +943,7 @@ const mountBoardForGame = (game) => {
     mountedSnapshotKey = null;
     mountedLegalActionsKey = null;
     mountedSelectionActionKey = null;
+    mountedSyncStatusKey = null;
     if (boardRuntime) {
       boardRuntime.destroy();
       boardRuntime = null;
@@ -859,9 +986,6 @@ const mountBoardForGame = (game) => {
       controls: {
         getAllowFreeSelection: () => false,
         getSupportsHover: () => hoverCapability.getSupportsHover(),
-        onMoveRecorded: () => {
-          render();
-        },
         onStateUpdated: ({ state, selectedPieceId }) => {
           applyCommandLegendSwatch(document.getElementById("shell-command-legend-swatch"), state, selectedPieceId);
         },
@@ -872,6 +996,10 @@ const mountBoardForGame = (game) => {
     mountedSnapshotKey = snapshotKey;
     mountedLegalActionsKey = legalActionsKey;
     mountedSelectionActionKey = selectionActionKey;
+    mountedSyncStatusKey = toStableKey({
+      syncStatus: game.syncStatus ?? "ready",
+      rollbackNotice: game.rollbackNotice ?? "",
+    });
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
     void boardRuntime.loadSnapshot(snapshot, {
       legalActions: effectiveLegalActions,
@@ -881,7 +1009,11 @@ const mountBoardForGame = (game) => {
     return;
   }
 
-  const resetSelection = mountedHistoryMoveIndex !== historyMoveIndex;
+  const syncStatusKey = toStableKey({
+    syncStatus: game.syncStatus ?? "ready",
+    rollbackNotice: game.rollbackNotice ?? "",
+  });
+  const resetSelection = mountedHistoryMoveIndex !== historyMoveIndex || (mountedSyncStatusKey !== syncStatusKey && Boolean(game.rollbackNotice));
   mountedHistoryMoveIndex = historyMoveIndex;
   boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
   const runtimeSnapshotKey = toStableKey(boardRuntime.getState());
@@ -898,6 +1030,7 @@ const mountBoardForGame = (game) => {
     mountedSnapshotKey = snapshotKey;
     mountedLegalActionsKey = legalActionsKey;
     mountedSelectionActionKey = selectionActionKey;
+    mountedSyncStatusKey = syncStatusKey;
     return;
   }
   const shouldReloadSnapshot =
@@ -911,6 +1044,7 @@ const mountBoardForGame = (game) => {
   mountedSnapshotKey = snapshotKey;
   mountedLegalActionsKey = legalActionsKey;
   mountedSelectionActionKey = selectionActionKey;
+  mountedSyncStatusKey = syncStatusKey;
   void boardRuntime.loadSnapshot(snapshot, {
     legalActions: effectiveLegalActions,
     resetSelection,
@@ -918,12 +1052,35 @@ const mountBoardForGame = (game) => {
   });
 };
 
-const render = () => {
-  const previousBoardPanel =
-    appEl?.querySelector?.('[data-shell-panel="board"]') instanceof HTMLElement
-      ? appEl.querySelector('[data-shell-panel="board"]')
-      : null;
-  const previousPanelHeights = capturePanelHeights();
+const destroyMountedBoardRuntime = () => {
+  mountedBoardGameId = null;
+  mountedHistoryMoveIndex = null;
+  mountedSnapshotKey = null;
+  mountedLegalActionsKey = null;
+  mountedSelectionActionKey = null;
+  mountedSyncStatusKey = null;
+  if (boardRuntime) {
+    boardRuntime.destroy();
+    boardRuntime = null;
+  }
+};
+
+const render = ({ animatePanels = true, includeBoard = true } = {}) => {
+  const mountedGameShell = getMountedGameShellRoot();
+  if (
+    shouldUseIncrementalGameShell() &&
+    mountedGameShell?.getAttribute("data-game-id") === currentRoute.gameId
+  ) {
+    updateHeaderFields();
+    updateMountedGameShell({
+      game: transport.getGameViewModel(currentRoute.gameId),
+      inviteFromRole: currentRoute.inviteFromRole,
+      includeBoard,
+    });
+    return;
+  }
+
+  const previousPanelHeights = animatePanels ? capturePanelHeights() : [];
   let body = "";
   if (currentRoute.name === "home") {
     body = renderHome();
@@ -945,24 +1102,24 @@ const render = () => {
   if (nextMarkup !== lastRenderedMarkup) {
     appEl.innerHTML = nextMarkup;
     lastRenderedMarkup = nextMarkup;
-    const nextBoardPanel = appEl.querySelector('[data-shell-panel="board"]');
-    if (previousBoardPanel instanceof HTMLElement && nextBoardPanel instanceof HTMLElement) {
-      nextBoardPanel.replaceWith(previousBoardPanel);
+    if (animatePanels) {
+      animatePanelHeightChanges(previousPanelHeights);
     }
-    animatePanelHeightChanges(previousPanelHeights);
   }
+  updateHeaderFields();
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
-    mountedBoardGameId = null;
-    mountedHistoryMoveIndex = null;
-    mountedSnapshotKey = null;
-    mountedLegalActionsKey = null;
-    mountedSelectionActionKey = null;
-    if (boardRuntime) {
-      boardRuntime.destroy();
-      boardRuntime = null;
-    }
+    destroyMountedBoardRuntime();
+    return;
   }
   if (currentRoute.name === "game") {
+    if (shouldUseIncrementalGameShell()) {
+      updateMountedGameShell({
+        game: transport.getGameViewModel(currentRoute.gameId),
+        inviteFromRole: currentRoute.inviteFromRole,
+        includeBoard,
+      });
+      return;
+    }
     mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
   }
   if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
@@ -1020,6 +1177,13 @@ const syncRouteDataPassive = async () => {
   }
 };
 
+transport.subscribe((change) => {
+  render({
+    animatePanels: false,
+    includeBoard: change?.type !== "optimistic_enqueue",
+  });
+});
+
 const liveSync = createLiveSyncClient({
   identityId: transport.getIdentityId(),
   getLastEventSeq: () => {
@@ -1038,9 +1202,13 @@ const liveSync = createLiveSyncClient({
         payload?.type === "join_request_resolved") &&
       payload?.game
     ) {
-      transport.applyLiveGameUpdate({ game: payload.game, eventSeq: payload.eventSeq });
+      transport.applyLiveGameUpdate({ game: payload.game, eventSeq: payload.eventSeq, clientCommandId: payload.clientCommandId ?? null });
     }
-    render();
+    if (document.getElementById("shell-header-last-event")) {
+      updateHeaderFields();
+    } else {
+      render({ animatePanels: false, includeBoard: false });
+    }
   },
   onError: (error) => {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
@@ -1055,7 +1223,11 @@ const liveSync = createLiveSyncClient({
     if (status.state === "closed" && status.reconnectAttempts >= 3) {
       void syncRouteDataPassive();
     }
-    render();
+    if (document.getElementById("shell-header-live-sync")) {
+      updateHeaderFields();
+    } else {
+      render({ animatePanels: false, includeBoard: false });
+    }
   },
 });
 

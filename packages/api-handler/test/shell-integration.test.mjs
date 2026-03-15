@@ -61,7 +61,11 @@ test("shell integration: ending a turn hands control to the next player after re
   await owner.store.addMove({ gameId: created.id, notation: "M1" });
   await owner.store.endTurn({ gameId: created.id });
 
-  const ownerView = await harness.refreshGame(owner, created.id);
+  const ownerView = await harness.waitForGame(
+    owner,
+    created.id,
+    (game) => game.currentTurn?.index === 1 && game.currentTurn?.playerSeat === "Player 2" && game.pendingCommandCount === 0,
+  );
   const guestView = await harness.refreshGame(guest, created.id);
 
   assert.equal(ownerView.canRecordMove, false);

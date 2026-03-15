@@ -35,6 +35,7 @@ import {
   withViewModel,
 } from "./shell-live-core";
 import { loadEventsAfter, loadGameProjection, persistGameState, type LiveGameEnv } from "./shell-live-db";
+import type { CommandMetadata } from "./shell-command-metadata";
 
 const HEARTBEAT_TIMEOUT_MS = 35_000;
 
@@ -65,6 +66,10 @@ const parseBody = async (request: Request): Promise<Record<string, unknown>> => 
     return {};
   }
 };
+
+const parseCommandMetadata = (body: Record<string, unknown>): CommandMetadata => ({
+  clientCommandId: typeof body.clientCommandId === "string" && body.clientCommandId ? body.clientCommandId : null,
+});
 
 const eventForSession = (event: ServerEvent, identityId: string) => {
   if (!("game" in event)) {
@@ -121,6 +126,7 @@ export class GameRoomDO {
     }
 
     const body = await parseBody(request);
+    const commandMetadata = parseCommandMetadata(body);
     const identityId = asIdentity(body.identityId);
     if (!identityId) {
       return json({ ok: false, error: "invalid_identity" }, 400);
@@ -247,16 +253,23 @@ export class GameRoomDO {
         return json({ ok: false, error: "not_your_turn" }, 409);
       }
       const notation = typeof body.notation === "string" ? body.notation : undefined;
-      const moved = applyServerMove(game, notation);
+      const moved = applyServerMove(game, notation, commandMetadata.clientCommandId);
       if (!moved.ok) {
         return json({ ok: false, error: moved.error }, 409);
       }
       await this.commit({
         type: "event_appended",
         reason: "move_recorded",
+        clientCommandId: commandMetadata.clientCommandId,
         game,
       });
-      return json({ ok: true, move: moved.move, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+      return json({
+        ok: true,
+        move: moved.move,
+        clientCommandId: commandMetadata.clientCommandId,
+        game: withViewModel(game, identityId),
+        eventSeq: this.eventSeq,
+      });
     }
 
     if (request.method === "POST" && path === "/apply") {
@@ -278,12 +291,13 @@ export class GameRoomDO {
         return json({ ok: false, error: "invalid_action" }, 400);
       }
       const notation = typeof body.notation === "string" ? body.notation : undefined;
-      const moved = applyServerAction(game, action, notation);
+      const moved = applyServerAction(game, action, notation, commandMetadata.clientCommandId);
       if (!moved.ok) {
         if (moved.validation && moved.state) {
           return json({
             ok: true,
             accepted: false,
+            clientCommandId: commandMetadata.clientCommandId,
             validation: moved.validation,
             state: moved.state,
             legalActions: listLegalActions(moved.state),
@@ -296,12 +310,14 @@ export class GameRoomDO {
       await this.commit({
         type: "event_appended",
         reason: "move_recorded",
+        clientCommandId: commandMetadata.clientCommandId,
         game,
       });
       return json({
         ok: true,
         accepted: true,
         move: moved.move,
+        clientCommandId: commandMetadata.clientCommandId,
         state: moved.state,
         removedPieces: moved.removedPieces,
         game: withViewModel(game, identityId),
@@ -329,9 +345,16 @@ export class GameRoomDO {
       await this.commit({
         type: "event_appended",
         reason: "turn_ended",
+        clientCommandId: commandMetadata.clientCommandId,
         game,
       });
-      return json({ ok: true, turn: ended.turn, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+      return json({
+        ok: true,
+        turn: ended.turn,
+        clientCommandId: commandMetadata.clientCommandId,
+        game: withViewModel(game, identityId),
+        eventSeq: this.eventSeq,
+      });
     }
 
     if (request.method === "POST" && path === "/history") {
@@ -590,16 +613,17 @@ export class GameRoomDO {
 
   private async commit(
     input:
-      | { type: "event_appended"; reason: string; game: LiveGame }
+      | { type: "event_appended"; reason: string; clientCommandId?: string | null; game: LiveGame }
       | { type: "join_request_created"; requesterIdentityId: string; requestedSeat: "Player 1" | "Player 2"; game: LiveGame }
       | { type: "join_request_resolved"; requesterIdentityId: string; accepted: boolean; seat: "Player 1" | "Player 2" | null; game: LiveGame },
   ) {
     const event =
       input.type === "event_appended"
-        ? ({
+          ? ({
             type: "event_appended",
             eventSeq: this.eventSeq + 1,
             reason: input.reason,
+            clientCommandId: input.clientCommandId ?? null,
             game: clone(input.game),
           } satisfies EventAppendedEvent)
         : input.type === "join_request_created"

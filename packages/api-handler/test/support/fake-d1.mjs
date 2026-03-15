@@ -200,6 +200,9 @@ export const createFakeD1 = () => {
     getParticipants(gameId) {
       return structuredClone(shellParticipants.get(gameId) ?? []);
     },
+    getEvents(gameId) {
+      return structuredClone(shellEvents.get(gameId) ?? []);
+    },
     getStats() {
       return {
         selectGameByIdCount,
