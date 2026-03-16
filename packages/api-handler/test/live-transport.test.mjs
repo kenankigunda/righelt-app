@@ -57,6 +57,10 @@ test("live transport: create/list/get game lifecycle is server-backed", async ()
   assert.equal(directBody.game.viewers.some((viewer) => viewer.identityId === "id-direct"), false);
   assert.equal(directBody.game.canJoinAsViewer, true);
   assert.equal(directBody.game.canJoinAsPlayer, true);
+  assert.equal("moves" in directBody.game, false);
+  assert.equal("turns" in directBody.game, false);
+  assert.equal(typeof directBody.game.validatedMoveCount, "number");
+  assert.equal(typeof directBody.game.validatedTurnCount, "number");
 });
 
 test("live transport: game reads query persistent storage even when process cache is warm", async () => {
@@ -219,7 +223,10 @@ test("live transport: join approval flow and presence/history/move transitions",
     env,
   );
   const moveBody = await move.json();
-  assert.equal(moveBody.game.moves.length, 1);
+  assert.equal(moveBody.game.validatedMoveCount, 1);
+  assert.equal(moveBody.game.validatedTurnCount, 1);
+  assert.equal("moves" in moveBody.game, false);
+  assert.equal("turns" in moveBody.game, false);
   assert.equal(moveBody.game.currentTurn.playerSeat, "Player 1");
   assert.equal(moveBody.game.currentTurn.moveIndexes.length, 1);
   assert.equal(moveBody.game.currentSnapshot.sideToMove, "P1");
@@ -230,7 +237,8 @@ test("live transport: join approval flow and presence/history/move transitions",
     env,
   );
   const secondMoveBody = await secondMove.json();
-  assert.equal(secondMoveBody.game.moves.length, 2);
+  assert.equal(secondMoveBody.game.validatedMoveCount, 2);
+  assert.equal(secondMoveBody.game.validatedTurnCount, 1);
   assert.equal(secondMoveBody.game.currentTurn.moveIndexes.length, 2);
   assert.equal(secondMoveBody.game.currentSnapshot.sideToMove, "P1");
 
@@ -243,28 +251,30 @@ test("live transport: join approval flow and presence/history/move transitions",
   assert.equal(endTurnBody.game.currentTurn.moveIndexes.length, 0);
   assert.equal(endTurnBody.game.currentSnapshot.sideToMove, "P2");
   assert.equal(endTurnBody.game.currentSnapshot.continuation, null);
+  assert.equal(endTurnBody.game.validatedMoveCount, 2);
+  assert.equal(endTurnBody.game.validatedTurnCount, 2);
   assert.equal(typeof endTurnBody.eventSeq, "number");
 
   const history = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-owner", moveIndex: 1 }),
+    req(`/api/shell/games/${gameId}/history?identityId=id-owner`, "GET"),
     env,
   );
   const historyBody = await history.json();
-  assert.equal(historyBody.game.inHistoryMode, true);
-  assert.equal(historyBody.game.historyIndex, 1);
+  assert.equal(Array.isArray(historyBody.moves), true);
+  assert.equal(Array.isArray(historyBody.turns), true);
+  assert.equal(historyBody.validatedMoveCount, 2);
+  assert.equal(historyBody.validatedTurnCount, 2);
+  assert.equal(historyBody.moves.length, 2);
+  assert.equal(historyBody.turns.length, 2);
+  assert.equal(historyBody.moves[1].index, 1);
 
   const joinerViewDuringHistory = await handleApiRequest(
     req(`/api/shell/games/${gameId}?identityId=id-joiner`, "GET"),
     env,
   );
   const joinerHistoryBody = await joinerViewDuringHistory.json();
-  assert.equal(joinerHistoryBody.game.inHistoryMode, false);
-  assert.equal(joinerHistoryBody.game.historyIndex, null);
-
-  const live = await handleApiRequest(req(`/api/shell/games/${gameId}/live`, "POST", { identityId: "id-owner" }), env);
-  const liveBody = await live.json();
-  assert.equal(liveBody.game.inHistoryMode, false);
-  assert.equal(liveBody.game.historyIndex, null);
+  assert.equal("inHistoryMode" in joinerHistoryBody.game, false);
+  assert.equal("historyIndex" in joinerHistoryBody.game, false);
 
   const presence = await handleApiRequest(
     req(`/api/shell/games/${gameId}/presence`, "POST", {

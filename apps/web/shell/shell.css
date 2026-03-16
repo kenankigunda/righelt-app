@@ -252,9 +252,8 @@ button.button-release-bounce,
 }
 
 .history-item.history-item-pending {
-  cursor: default;
+  cursor: pointer;
   opacity: 0.52;
-  pointer-events: none;
 }
 
 .history-item.history-item-pending .history-move-line {

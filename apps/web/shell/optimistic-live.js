@@ -8,9 +8,9 @@ import {
 const clone = (value) => structuredClone(value);
 const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
-const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
-const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
 const getSeatIdentity = (game, seat) => (seat === "Player 1" ? game.player1?.identityId ?? null : game.player2?.identityId ?? null);
+const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
+const getCurrentTurn = (game) => game.currentTurn ?? game.turns?.[game.turns.length - 1] ?? null;
 
 const getControlSeatForTurn = (state, turnOwnerSeat) => {
   const continuation = state?.continuation;
@@ -67,11 +67,11 @@ const collectRemovedPieceNotices = (before, afterApply, afterStability, action) 
 };
 
 const completeTurn = (game, queuedAt) => {
-  const activeTurn = getActiveTurn(game);
+  const activeTurn = getCurrentTurn(game);
   if (!activeTurn) {
     return { ok: false, error: "turn_not_initialized" };
   }
-  if (activeTurn.moveIndexes.length === 0) {
+  if (!Array.isArray(activeTurn.moveIndexes) || activeTurn.moveIndexes.length === 0) {
     return { ok: false, error: "turn_has_no_moves" };
   }
 
@@ -88,7 +88,7 @@ const completeTurn = (game, queuedAt) => {
     moveIndexes: [],
     lastMoveAt: null,
   };
-  game.turns.push(nextTurn);
+  game.currentTurn = nextTurn;
   game.board.state = resolveToStability(
     {
       ...game.board.state,
@@ -103,6 +103,7 @@ const completeTurn = (game, queuedAt) => {
     },
     { artifactMode: "full" },
   );
+  game.currentSnapshot = clone(game.board.state);
   game.updatedAt = endedAt;
   return { ok: true, nextTurn };
 };
@@ -123,7 +124,7 @@ const buildPendingMoveEntry = ({ command, selectionSnapshot, snapshot, activeTur
 
 const finalizeProjectedView = ({ authoritativeGame, workingGame, identityId, queue, pendingMoves }) => {
   const next = clone(workingGame);
-  const activeTurn = getActiveTurn(next);
+  const activeTurn = getCurrentTurn(next);
   const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(next);
   const controlSeat = getControlSeatForTurn(next.board.state, turnOwnerSeat);
   const controlIdentity = getSeatIdentity(next, controlSeat);
@@ -139,25 +140,28 @@ const finalizeProjectedView = ({ authoritativeGame, workingGame, identityId, que
   next.pendingMoves = pendingMoves.map((move) => clone(move));
   next.pendingCommandCount = queue.length;
   next.liveCurrentSnapshot = clone(next.board.state);
-  next.currentSnapshot = next.inHistoryMode ? authoritativeGame.currentSnapshot : clone(next.board.state);
-  next.canRecordMove = isPlayer && !next.inHistoryMode && controlIdentity === identityId && liveLegalActions.length > 0;
-  next.canEndTurn = isPlayer && !next.inHistoryMode && turnOwnerIdentity === identityId && Boolean(activeTurn?.moveIndexes?.length);
+  next.currentSnapshot = clone(next.board.state);
+  next.canRecordMove = isPlayer && controlIdentity === identityId && liveLegalActions.length > 0;
+  next.canEndTurn = isPlayer && turnOwnerIdentity === identityId && Boolean(activeTurn?.moveIndexes?.length);
+  next.validatedMoveCount = authoritativeGame.validatedMoveCount ?? 0;
+  next.validatedTurnCount = authoritativeGame.validatedTurnCount ?? 0;
   return next;
 };
 
-export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) => {
+export const projectOptimisticGame = ({ authoritativeGame, identityId, queue, validatedMoveCount = 0 }) => {
   const workingGame = clone(authoritativeGame);
   workingGame.board = {
     ...(workingGame.board ?? {}),
     state: clone(authoritativeGame.board?.state ?? authoritativeGame.currentSnapshot),
   };
+  workingGame.currentTurn = clone(getCurrentTurn(authoritativeGame));
 
   const pendingMoves = [];
   const commandResults = new Map();
 
   for (const command of queue) {
     if (command.kind === "apply") {
-      const activeTurn = getActiveTurn(workingGame);
+      const activeTurn = getCurrentTurn(workingGame);
       if (!activeTurn) {
         return { ok: false, error: "turn_not_initialized", clientCommandId: command.clientCommandId };
       }
@@ -179,9 +183,11 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
       nextStable.sideToMove = getSideForSeat(getControlSeatForTurn(nextStable, activeTurn.playerSeat));
       nextStable.turnIndex = activeTurn.index;
 
-      activeTurn.moveIndexes.push(workingGame.moves.length + pendingMoves.length);
+      activeTurn.moveIndexes = [...(activeTurn.moveIndexes ?? []), validatedMoveCount + pendingMoves.length];
       activeTurn.lastMoveAt = command.queuedAt;
+      workingGame.currentTurn = activeTurn;
       workingGame.board.state = nextStable;
+      workingGame.currentSnapshot = clone(nextStable);
       workingGame.lastMoveAt = command.queuedAt;
       workingGame.updatedAt = command.queuedAt;
 
@@ -190,7 +196,7 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
         selectionSnapshot: stable,
         snapshot: nextStable,
         activeTurn,
-        index: workingGame.moves.length + pendingMoves.length,
+        index: validatedMoveCount + pendingMoves.length,
       });
       pendingMoves.push(pendingMove);
       commandResults.set(command.clientCommandId, {

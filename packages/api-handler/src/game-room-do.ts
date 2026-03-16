@@ -357,22 +357,6 @@ export class GameRoomDO {
       });
     }
 
-    if (request.method === "POST" && path === "/history") {
-      const moveIndex = typeof body.moveIndex === "number" ? body.moveIndex : -1;
-      if (moveIndex < 0 || moveIndex >= game.moves.length) {
-        return json({ ok: false, error: "invalid_move_index" }, 400);
-      }
-      game.historyIndexByIdentity[identityId] = moveIndex;
-      await persistGameState(this.env, game, this.eventSeq, null);
-      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
-    }
-
-    if (request.method === "POST" && path === "/live") {
-      delete game.historyIndexByIdentity[identityId];
-      await persistGameState(this.env, game, this.eventSeq, null);
-      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
-    }
-
     if (request.method === "POST" && path === "/play-as-both") {
       if (game.player1?.identityId !== identityId) {
         return json({ ok: false, error: "not_player1" }, 409);

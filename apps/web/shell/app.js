@@ -394,12 +394,19 @@ const renderTurnHistory = (game) => {
       }),
   );
   const pendingRows = (Array.isArray(game.pendingMoves) ? game.pendingMoves : []).map(
-    (move) => `<li class="history-item history-item-pending ${playerToneClassForSide(move.actorSide || (move.turnIndex % 2 === 0 ? "P1" : "P2"))}" aria-disabled="true">
+    (move) => {
+      const isSelected = game.selectedPendingClientCommandId === move.clientCommandId;
+      return `<li class="history-item history-item-pending ${playerToneClassForSide(move.actorSide || (move.turnIndex % 2 === 0 ? "P1" : "P2"))}${
+        isSelected ? " is-selected" : ""
+      }" data-action="jump-history-pending" data-game-id="${escapeHtml(game.id)}" data-client-command-id="${escapeHtml(
+        move.clientCommandId || "",
+      )}">
           <span class="history-move-line">Move ${escapeHtml(
             String(move.index + 1),
           )}: ${escapeHtml(move.notation)} · Pending</span>
           <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
-        </li>`,
+        </li>`;
+    },
   );
   const reverseChronologicalMoveRows = [...moveRows].reverse();
   const reverseChronologicalPendingRows = [...pendingRows].reverse();
@@ -672,10 +679,21 @@ const renderParticipantsPanel = (game) => {
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
   const historyMoveNumber = typeof game.historyIndex === "number" ? String(game.historyIndex + 1) : "?";
+  const historyStatusLine =
+    game.historyStatus === "loading"
+      ? '<p class="small">Loading validated history…</p>'
+      : game.historyStatus === "error"
+        ? `<p class="small">Validated history could not be refreshed. <button class="secondary" data-action="retry-history" data-game-id="${escapeHtml(
+            game.id,
+          )}" ${game.canRetryHistoryLoad && !busy ? "" : "disabled"}>Retry</button></p>`
+        : "";
   const hasHistoryMoves = Array.isArray(game.moves) && game.moves.length > 0;
   const historyBanner = game.inHistoryMode
-    ? `<p class="small">Viewing history snapshot for move ${escapeHtml(historyMoveNumber)}.</p>
-       <p class="small">Incoming live moves will appear at top.</p>`
+    ? game.selectedPendingClientCommandId
+      ? `<p class="small">Viewing pending history snapshot.</p>
+         <p class="small">Incoming validated moves will continue syncing in the background.</p>`
+      : `<p class="small">Viewing history snapshot for move ${escapeHtml(historyMoveNumber)}.</p>
+         <p class="small">Incoming live moves will appear at top.</p>`
     : hasHistoryMoves
       ? '<p class="small">You are on the live view.</p><p class="small">Click moves below to see historical state.</p>'
       : '<p class="small">You are on the live view.</p>';
@@ -683,6 +701,7 @@ const renderHistoryPanel = (game) => {
   return `
     <h2>History</h2>
     <div class="section-followup">
+      ${historyStatusLine}
       ${historyBanner}
       <ol class="history-list">${historyRows}</ol>
     </div>
@@ -978,7 +997,7 @@ const mountBoardForGame = (game) => {
   }
 
   const snapshot = game.currentSnapshot ?? null;
-  const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
+  const historySelectionKey = game.inHistoryMode ? game.historySelectionKey ?? "history" : "live";
   const historySelectionAction = game.inHistoryMode ? game.historySelectionAction ?? null : null;
   const effectiveLegalActions = game.inHistoryMode
     ? historySelectionAction
@@ -1018,7 +1037,7 @@ const mountBoardForGame = (game) => {
       },
     });
     mountedBoardGameId = game.id;
-    mountedHistoryMoveIndex = historyMoveIndex;
+    mountedHistoryMoveIndex = historySelectionKey;
     mountedSnapshotKey = snapshotKey;
     mountedLegalActionsKey = legalActionsKey;
     mountedSelectionActionKey = selectionActionKey;
@@ -1039,8 +1058,8 @@ const mountBoardForGame = (game) => {
     syncStatus: game.syncStatus ?? "ready",
     rollbackNotice: game.rollbackNotice ?? "",
   });
-  const resetSelection = mountedHistoryMoveIndex !== historyMoveIndex || (mountedSyncStatusKey !== syncStatusKey && Boolean(game.rollbackNotice));
-  mountedHistoryMoveIndex = historyMoveIndex;
+  const resetSelection = mountedHistoryMoveIndex !== historySelectionKey || (mountedSyncStatusKey !== syncStatusKey && Boolean(game.rollbackNotice));
+  mountedHistoryMoveIndex = historySelectionKey;
   boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
   const runtimeSnapshotKey = toStableKey(boardRuntime.getState());
   const runtimeLegalActionsKey = toStableKey(boardRuntime.getLegalActions());
@@ -1339,7 +1358,9 @@ appEl.addEventListener("click", async (event) => {
   const shouldRenderBusyState =
     action !== "copy-invite" &&
     action !== "jump-history" &&
+    action !== "jump-history-pending" &&
     action !== "return-live" &&
+    action !== "retry-history" &&
     action !== "tutorial-next" &&
     action !== "tutorial-skip";
 
@@ -1460,7 +1481,20 @@ appEl.addEventListener("click", async (event) => {
       playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
       await transport.selectHistoryMove({ gameId, moveIndex });
-      await syncRouteData();
+      render();
+      return;
+    }
+
+    if (action === "jump-history-pending") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      const clientCommandId = actionEl.getAttribute("data-client-command-id");
+      if (!gameId || !clientCommandId) return;
+      clearControlPress();
+      clearHistoryPress();
+      playHistoryReleaseBounce(actionEl);
+      await animateHistoryDeselection(actionEl);
+      await transport.selectPendingHistoryMove({ gameId, clientCommandId });
+      render();
       return;
     }
 
@@ -1471,7 +1505,14 @@ appEl.addEventListener("click", async (event) => {
       playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
       await transport.returnToLive({ gameId });
-      await syncRouteData();
+      render();
+      return;
+    }
+
+    if (action === "retry-history") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      if (!gameId) return;
+      await transport.retryHistoryLoad({ gameId });
       return;
     }
 
@@ -1503,7 +1544,7 @@ appEl.addEventListener("pointerdown", (event) => {
     return;
   }
   const action = actionEl.getAttribute("data-action");
-  if (action !== "jump-history" && action !== "return-live") {
+  if (action !== "jump-history" && action !== "jump-history-pending" && action !== "return-live") {
     return;
   }
   startHistoryPress(actionEl);
@@ -1518,7 +1559,7 @@ window.addEventListener("pointerup", (event) => {
   if (target instanceof HTMLElement) {
     const actionEl = target.closest("[data-action]");
     const action = actionEl?.getAttribute("data-action");
-    if (action === "jump-history" || action === "return-live") {
+    if (action === "jump-history" || action === "jump-history-pending" || action === "return-live") {
       return;
     }
   }

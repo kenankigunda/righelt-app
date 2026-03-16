@@ -67,3 +67,8 @@ test("hover-only styles are gated behind the root hover capability marker", () =
   assert.match(shellStylesSource, /\[data-hover-capability="hover"\]\s+\.history-item:hover\s+\.history-move-at/);
   assert.match(shellStylesSource, /\[data-hover-capability="hover"\]\s+\.history-item:hover\s+\.history-move-line/);
 });
+
+test("pending history rows stay clickable while waiting rows remain inert", () => {
+  assert.match(shellStylesSource, /\.history-item\.history-item-pending\s*\{\s*cursor:\s*pointer;\s*opacity:\s*0\.52;\s*\}/);
+  assert.match(shellStylesSource, /\.history-item\.history-item-waiting\s*\{\s*cursor:\s*default;\s*pointer-events:\s*none;\s*\}/);
+});

@@ -36,18 +36,7 @@ const buildLiveGame = () => {
     moveIndexes: [0],
     lastMoveAt: "2026-02-26T00:00:01.000Z",
   };
-  return {
-    id: "game-live-1",
-    createdAt: "2026-02-26T00:00:00.000Z",
-    lastMoveAt: "2026-02-26T00:00:01.000Z",
-    updatedAt: "2026-02-26T00:00:01.000Z",
-    offlineLocal: false,
-    playgroundMode: false,
-    player1: { identityId: "id-a", connected: true },
-    player2: { identityId: "id-b", connected: true },
-    viewers: [],
-    pendingJoinRequests: [],
-    turns: [clone(currentTurn)],
+  const history = {
     moves: [
       {
         index: 0,
@@ -61,21 +50,39 @@ const buildLiveGame = () => {
         snapshot: clone(currentState),
       },
     ],
+    turns: [clone(currentTurn)],
+    validatedMoveCount: 1,
+    validatedTurnCount: 1,
+  };
+  return {
+    id: "game-live-1",
+    createdAt: "2026-02-26T00:00:00.000Z",
+    lastMoveAt: "2026-02-26T00:00:01.000Z",
+    updatedAt: "2026-02-26T00:00:01.000Z",
+    offlineLocal: false,
+    playgroundMode: false,
+    player1: { identityId: "id-a", connected: true },
+    player2: { identityId: "id-b", connected: true },
+    viewers: [],
+    pendingJoinRequests: [],
     notifications: ["Move recorded in turn 1"],
     myRole: "Player 1",
-    inHistoryMode: false,
-    historyIndex: null,
     currentSnapshot: clone(currentState),
     board: { state: clone(currentState) },
     currentTurn: clone(currentTurn),
+    validatedMoveCount: history.validatedMoveCount,
+    validatedTurnCount: history.validatedTurnCount,
     legalActions: listLegalActions(currentState),
     canRecordMove: true,
     canEndTurn: true,
     showJoinActions: true,
     canInvite: true,
     showOfflineState: false,
+    _history: history,
   };
 };
+
+const buildHistoryPayload = (game) => clone(game._history);
 
 const buildAcknowledgedGame = (baseGame, action) => {
   const stable = resolveToStability(baseGame.board.state, { artifactMode: "full" });
@@ -84,12 +91,9 @@ const buildAcknowledgedGame = (baseGame, action) => {
   nextState.sideToMove = "P1";
   nextState.turnIndex = 0;
 
-  return {
-    ...clone(baseGame),
-    lastMoveAt: "2026-02-26T00:00:02.000Z",
-    updatedAt: "2026-02-26T00:00:02.000Z",
+  const history = {
     moves: [
-      ...clone(baseGame.moves),
+      ...clone(baseGame._history.moves),
       {
         index: 1,
         turnIndex: 0,
@@ -104,11 +108,19 @@ const buildAcknowledgedGame = (baseGame, action) => {
     ],
     turns: [
       {
-        ...clone(baseGame.turns[0]),
+        ...clone(baseGame.currentTurn),
         moveIndexes: [0, 1],
         lastMoveAt: "2026-02-26T00:00:02.000Z",
       },
     ],
+    validatedMoveCount: 2,
+    validatedTurnCount: 1,
+  };
+
+  return {
+    ...clone(baseGame),
+    lastMoveAt: "2026-02-26T00:00:02.000Z",
+    updatedAt: "2026-02-26T00:00:02.000Z",
     currentTurn: {
       ...clone(baseGame.currentTurn),
       moveIndexes: [0, 1],
@@ -116,9 +128,12 @@ const buildAcknowledgedGame = (baseGame, action) => {
     },
     currentSnapshot: clone(nextState),
     board: { state: clone(nextState) },
+    validatedMoveCount: history.validatedMoveCount,
+    validatedTurnCount: history.validatedTurnCount,
     legalActions: listLegalActions(nextState),
     canRecordMove: true,
     canEndTurn: true,
+    _history: history,
   };
 };
 
@@ -477,6 +492,7 @@ test("live transport store ignores stale game snapshots once a newer eventSeq is
   const vm = store.getGameViewModel(gameId);
   assert.equal(vm.currentSnapshot.sideToMove, "P2");
   assert.equal(vm.currentTurn.playerSeat, "Player 2");
+  assert.equal(vm.turns.some((turn) => turn.index === 1 && turn.playerSeat === "Player 2"), true);
   assert.equal(store.getLastEventSeq(gameId), 5);
 });
 
@@ -488,6 +504,9 @@ test("live transport store applies optimistic moves immediately and clears pendi
   const fetcher = async (url, init = {}) => {
     if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
       return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/history?identityId=id-4fzolfdn&offline=0` && (!init.method || init.method === "GET")) {
+      return Response.json({ ok: true, ...buildHistoryPayload(baseGame), eventSeq: 1 });
     }
     if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
       return new Promise((resolve) => {
@@ -507,7 +526,7 @@ test("live transport store applies optimistic moves immediately and clears pendi
   const optimisticView = store.getGameViewModel(baseGame.id);
   assert.equal(optimisticView.pendingMoves.length, 1);
   assert.equal(optimisticView.pendingCommandCount, 1);
-  assert.equal(optimisticView.moves.length, 1);
+  assert.equal(optimisticView.validatedMoveCount, 1);
   assert.notDeepEqual(optimisticView.currentSnapshot, baseGame.currentSnapshot);
 
   resolveApply?.(
@@ -528,6 +547,69 @@ test("live transport store applies optimistic moves immediately and clears pendi
   assert.equal(settledView.syncStatus, "ready");
 });
 
+test("live transport store keeps an acknowledged move in history until validated history reload completes", async () => {
+  const baseGame = buildLiveGame();
+  const acknowledgedGame = buildAcknowledgedGame(
+    baseGame,
+    baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0],
+  );
+  const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
+  let resolveApply = null;
+  let resolveReloadHistory = null;
+  let historyRequestCount = 0;
+
+  const fetcher = async (url, init = {}) => {
+    if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/history?identityId=id-4fzolfdn&offline=0` && (!init.method || init.method === "GET")) {
+      historyRequestCount += 1;
+      if (historyRequestCount === 1) {
+        return Response.json({ ok: true, ...buildHistoryPayload(baseGame), eventSeq: 1 });
+      }
+      return new Promise((resolve) => {
+        resolveReloadHistory = resolve;
+      });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+      return new Promise((resolve) => {
+        resolveApply = resolve;
+      });
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
+  await store.loadGame(baseGame.id);
+  await tick();
+
+  const pending = await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+  resolveApply?.(
+    Response.json({
+      ok: true,
+      accepted: true,
+      clientCommandId: pending.clientCommandId,
+      eventSeq: 2,
+      game: acknowledgedGame,
+    }),
+  );
+  await tick();
+
+  const bridgedView = store.getGameViewModel(baseGame.id);
+  assert.equal(bridgedView.pendingMoves.length, 0);
+  assert.equal(bridgedView.historyStatus, "loading");
+  assert.equal(bridgedView.moves.length, 2);
+  assert.equal(bridgedView.moves.some((move) => move.clientCommandId === pending.clientCommandId), true);
+
+  resolveReloadHistory?.(Response.json({ ok: true, ...buildHistoryPayload(acknowledgedGame), eventSeq: 2 }));
+  await tick();
+
+  const settledView = store.getGameViewModel(baseGame.id);
+  assert.equal(settledView.moves.length, 2);
+  assert.equal(settledView.historyStatus, "ready");
+  assert.equal(settledView.moves.some((move) => move.clientCommandId === pending.clientCommandId), true);
+});
+
 test("live transport store notifies subscribers for optimistic enqueue and authoritative ack", async () => {
   const baseGame = buildLiveGame();
   const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
@@ -537,6 +619,9 @@ test("live transport store notifies subscribers for optimistic enqueue and autho
   const fetcher = async (url, init = {}) => {
     if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
       return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/history?identityId=id-4fzolfdn&offline=0` && (!init.method || init.method === "GET")) {
+      return Response.json({ ok: true, ...buildHistoryPayload(baseGame), eventSeq: 1 });
     }
     if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
       return new Promise((resolve) => {
@@ -582,6 +667,9 @@ test("live transport store notifies subscribers when optimistic sync rolls back 
       if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
         return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
       }
+      if (String(url) === `/api/shell/games/${baseGame.id}/history?identityId=id-4fzolfdn&offline=0` && (!init.method || init.method === "GET")) {
+        return Response.json({ ok: true, ...buildHistoryPayload(baseGame), eventSeq: 1 });
+      }
       if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
         return new Promise((resolve) => {
           resolveApply = resolve;
@@ -619,6 +707,9 @@ test("live transport store notifies subscribers when optimistic sync rolls back 
         if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
           return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
         }
+        if (String(url) === `/api/shell/games/${baseGame.id}/history?identityId=id-4fzolfdn&offline=0` && (!init.method || init.method === "GET")) {
+          return Response.json({ ok: true, ...buildHistoryPayload(baseGame), eventSeq: 1 });
+        }
         if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
           throw new Error("network_failed");
         }
@@ -639,7 +730,7 @@ test("live transport store notifies subscribers when optimistic sync rolls back 
   }
 });
 
-test("live transport store keeps authoritative history selectable while pending moves exist", async () => {
+test("live transport store keeps validated and pending history selectable while pending moves exist", async () => {
   const baseGame = buildLiveGame();
   const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
   const changes = [];
@@ -648,33 +739,11 @@ test("live transport store keeps authoritative history selectable while pending 
     if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
       return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
     }
+    if (String(url).includes(`/api/shell/games/${baseGame.id}/history?`) && (!init.method || init.method === "GET")) {
+      return Response.json({ ok: true, ...buildHistoryPayload(baseGame), eventSeq: 2 });
+    }
     if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
       return new Promise(() => {});
-    }
-    if (String(url) === `/api/shell/games/${baseGame.id}/history?offline=0` && init.method === "POST") {
-      return Response.json({
-        ok: true,
-        eventSeq: 2,
-        game: {
-          ...clone(baseGame),
-          inHistoryMode: true,
-          historyIndex: 0,
-          historySelectionAction: clone(baseGame.moves[0].action),
-          currentSnapshot: clone(baseGame.moves[0].selectionSnapshot),
-        },
-      });
-    }
-    if (String(url) === `/api/shell/games/${baseGame.id}/live?offline=0` && init.method === "POST") {
-      return Response.json({
-        ok: true,
-        eventSeq: 3,
-        game: {
-          ...clone(baseGame),
-          inHistoryMode: false,
-          historyIndex: null,
-          currentSnapshot: clone(baseGame.board.state),
-        },
-      });
     }
     return Response.json({ ok: true, games: [] });
   };
@@ -684,13 +753,24 @@ test("live transport store keeps authoritative history selectable while pending 
     changes.push(change);
   });
   await store.loadGame(baseGame.id);
+  await tick();
   await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
   changes.length = 0;
 
   const historyView = await store.selectHistoryMove({ gameId: baseGame.id, moveIndex: 0 });
   assert.equal(historyView.inHistoryMode, true);
   assert.equal(historyView.pendingMoves.length, 1);
-  assert.deepEqual(historyView.currentSnapshot, baseGame.moves[0].selectionSnapshot);
+  assert.deepEqual(historyView.currentSnapshot, buildHistoryPayload(baseGame).moves[0].selectionSnapshot);
+  assert.equal(changes.some((change) => change.type === "history_mode_changed" && change.gameId === baseGame.id), true);
+
+  changes.length = 0;
+  const pendingView = await store.selectPendingHistoryMove({
+    gameId: baseGame.id,
+    clientCommandId: historyView.pendingMoves[0].clientCommandId,
+  });
+  assert.equal(pendingView.inHistoryMode, true);
+  assert.equal(pendingView.selectedPendingClientCommandId, historyView.pendingMoves[0].clientCommandId);
+  assert.deepEqual(pendingView.currentSnapshot, historyView.pendingMoves[0].selectionSnapshot);
   assert.equal(changes.some((change) => change.type === "history_mode_changed" && change.gameId === baseGame.id), true);
 
   changes.length = 0;

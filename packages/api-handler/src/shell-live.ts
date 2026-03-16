@@ -10,6 +10,7 @@ import {
   getSeatIdentity,
   getSideToMoveSeat,
   nextGameId,
+  withHistoryPayload,
   withViewModel,
 } from "./shell-live-core";
 import { loadGameProjection, listVisibleGameProjections, resolveInvite, type D1DatabaseLike } from "./shell-live-db";
@@ -232,6 +233,19 @@ export const handleLiveGameRequest = async (
       };
     }
 
+    if (request.method === "GET" && route.length === 3 && route[2] === "history") {
+      const identityId = asIdentity(url.searchParams.get("identityId"));
+      if (!identityId) {
+        return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
+      }
+      return {
+        handled: true,
+        status: 200,
+        body: { ok: true, ...withHistoryPayload(game), eventSeq: projection.eventSeq },
+        cacheControl: CACHE_NO_STORE,
+      };
+    }
+
     if (request.method !== "POST") {
       return { handled: true, status: 404, body: { ok: false, error: "not_found" }, cacheControl: CACHE_NO_STORE };
     }
@@ -279,7 +293,7 @@ export const handleLiveGameRequest = async (
 
     if (
       route.length === 3 &&
-      ["approve", "moves", "apply", "end-turn", "history", "live", "play-as-both", "go-online"].includes(route[2])
+      ["approve", "moves", "apply", "end-turn", "play-as-both", "go-online"].includes(route[2])
     ) {
       if (!hasGameRoomsBinding(env)) {
         return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };

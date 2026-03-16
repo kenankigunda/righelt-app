@@ -67,6 +67,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const lastEventSeqByGameId = new Map();
   const offlinePendingByGameId = new Map();
   const optimisticStateByGameId = new Map();
+  const historyStateByGameId = new Map();
   const listeners = new Set();
 
   const withOfflineQuery = (path) => `${path}${path.includes("?") ? "&" : "?"}offline=${offline ? "1" : "0"}`;
@@ -105,6 +106,176 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return optimisticStateByGameId.get(gameId);
   };
 
+  const getHistoryState = (gameId) => {
+    if (!historyStateByGameId.has(gameId)) {
+      historyStateByGameId.set(gameId, {
+        status: "idle",
+        error: null,
+        moves: [],
+        turns: [],
+        validatedMoveCount: 0,
+        validatedTurnCount: 0,
+        selection: { kind: "live" },
+        inflightPromise: null,
+        needsRefresh: false,
+      });
+    }
+    return historyStateByGameId.get(gameId);
+  };
+
+  const normalizeCountsFromGame = (game) => ({
+    validatedMoveCount: Number.isFinite(game?.validatedMoveCount)
+      ? Number(game.validatedMoveCount)
+      : Array.isArray(game?.moves)
+        ? game.moves.length
+        : 0,
+    validatedTurnCount: Number.isFinite(game?.validatedTurnCount)
+      ? Number(game.validatedTurnCount)
+      : Array.isArray(game?.turns)
+        ? game.turns.length
+        : 0,
+  });
+
+  const syncHistorySeedFromGame = (game) => {
+    if (!game?.id) {
+      return null;
+    }
+    const history = getHistoryState(game.id);
+    const counts = normalizeCountsFromGame(game);
+    history.validatedMoveCount = counts.validatedMoveCount;
+    history.validatedTurnCount = counts.validatedTurnCount;
+    if (history.moves.length === 0 && Array.isArray(game.moves) && game.moves.length > 0) {
+      history.moves = clone(game.moves);
+    }
+    if (Array.isArray(game.turns) && game.turns.length > 0) {
+      history.turns = mergeTurnsWithCurrentTurn(game.turns, game.currentTurn);
+    } else if (game.currentTurn) {
+      history.turns = mergeTurnsWithCurrentTurn(history.turns, game.currentTurn);
+    }
+    if ((game.offlineLocal || history.moves.length > 0 || history.turns.length > 0) && history.status === "idle") {
+      history.status = "ready";
+    }
+    return history;
+  };
+
+  const getPendingMoveByClientCommandId = (gameId, clientCommandId) => {
+    const optimistic = getOptimisticState(gameId);
+    const game = optimistic.derivedGame;
+    return Array.isArray(game?.pendingMoves)
+      ? game.pendingMoves.find((move) => move.clientCommandId === clientCommandId) ?? null
+      : null;
+  };
+
+  const mergeTurnsWithCurrentTurn = (turns, currentTurn) => {
+    const nextTurns = Array.isArray(turns) ? clone(turns) : [];
+    if (!currentTurn || typeof currentTurn.index !== "number") {
+      return nextTurns;
+    }
+
+    const current = clone(currentTurn);
+    const existingIndex = nextTurns.findIndex((turn) => turn.index === current.index);
+    if (existingIndex >= 0) {
+      nextTurns[existingIndex] = {
+        ...nextTurns[existingIndex],
+        ...current,
+      };
+      return nextTurns;
+    }
+
+    nextTurns.push(current);
+    nextTurns.sort((left, right) => (left?.index ?? 0) - (right?.index ?? 0));
+    return nextTurns;
+  };
+
+  const bridgeAcknowledgedPendingMoveIntoHistory = ({ gameId, clientCommandId, pendingMove, authoritativeGame }) => {
+    if (!clientCommandId || !pendingMove) {
+      return;
+    }
+
+    const history = getHistoryState(gameId);
+    if (history.status === "idle") {
+      return;
+    }
+
+    const targetMoveCount = Number.isFinite(authoritativeGame?.validatedMoveCount)
+      ? Number(authoritativeGame.validatedMoveCount)
+      : history.validatedMoveCount;
+    const moveIndex = Math.max(0, targetMoveCount - 1);
+
+    if (history.moves.some((move) => move.clientCommandId === clientCommandId)) {
+      return;
+    }
+
+    const bridgedMove = {
+      ...clone(pendingMove),
+      index: moveIndex,
+      pending: false,
+      provisionalValidated: true,
+    };
+    const nextMoves = clone(history.moves);
+    if (moveIndex >= nextMoves.length) {
+      nextMoves.push(bridgedMove);
+    } else {
+      nextMoves.splice(moveIndex, 0, bridgedMove);
+    }
+    nextMoves.forEach((move, index) => {
+      move.index = index;
+    });
+    history.moves = nextMoves;
+
+    const nextTurns = clone(history.turns);
+    let targetTurn = nextTurns.find((turn) => turn.index === bridgedMove.turnIndex) ?? null;
+    if (!targetTurn) {
+      const authoritativeCurrentTurn =
+        authoritativeGame?.currentTurn && authoritativeGame.currentTurn.index === bridgedMove.turnIndex
+          ? clone(authoritativeGame.currentTurn)
+          : null;
+      targetTurn =
+        authoritativeCurrentTurn ?? {
+          index: bridgedMove.turnIndex,
+          startedAt: bridgedMove.at,
+          endedAt: null,
+          playerSeat: bridgedMove.actorSide === "P2" ? "Player 2" : "Player 1",
+          status: "active",
+          moveIndexes: [],
+          lastMoveAt: null,
+        };
+      nextTurns.push(targetTurn);
+      nextTurns.sort((left, right) => left.index - right.index);
+    }
+
+    const turnMoveIndexes = Array.isArray(targetTurn.moveIndexes) ? [...targetTurn.moveIndexes] : [];
+    if (!turnMoveIndexes.includes(moveIndex)) {
+      turnMoveIndexes.push(moveIndex);
+      turnMoveIndexes.sort((left, right) => left - right);
+    }
+    targetTurn.moveIndexes = turnMoveIndexes;
+    targetTurn.lastMoveAt = bridgedMove.at;
+    history.turns = nextTurns;
+
+    if (history.selection?.kind === "pending" && history.selection.clientCommandId === clientCommandId) {
+      history.selection = { kind: "validated", moveIndex };
+    }
+  };
+
+  const reconcileHistorySelection = (gameId) => {
+    const history = getHistoryState(gameId);
+    const selection = history.selection ?? { kind: "live" };
+    if (selection.kind === "validated") {
+      if (selection.moveIndex < 0 || selection.moveIndex >= history.moves.length) {
+        history.selection = { kind: "live" };
+      }
+      return;
+    }
+    if (selection.kind === "pending") {
+      if (getPendingMoveByClientCommandId(gameId, selection.clientCommandId)) {
+        return;
+      }
+      const validatedIndex = history.moves.findIndex((move) => move.clientCommandId === selection.clientCommandId);
+      history.selection = validatedIndex >= 0 ? { kind: "validated", moveIndex: validatedIndex } : { kind: "live" };
+    }
+  };
+
   const decorateGameWithSync = (game, gameId) => {
     const optimistic = getOptimisticState(gameId);
     const next = clone(game);
@@ -119,6 +290,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const recalculateOptimisticGame = (gameId) => {
     const authoritativeGame = gameById.get(gameId);
     const optimistic = getOptimisticState(gameId);
+    const history = getHistoryState(gameId);
     optimistic.commandResults = new Map();
 
     if (!authoritativeGame) {
@@ -135,6 +307,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       authoritativeGame,
       identityId,
       queue: optimistic.pendingCommands,
+      validatedMoveCount: history.validatedMoveCount,
     });
     if (!projection.ok) {
       optimistic.derivedGame = decorateGameWithSync(authoritativeGame, gameId);
@@ -154,6 +327,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     optimistic.syncStatus = syncStatus;
     optimistic.rollbackNotice = notice;
     recalculateOptimisticGame(gameId);
+    reconcileHistorySelection(gameId);
     emitChange({ type: changeType, gameId });
   };
 
@@ -164,6 +338,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       optimistic.syncStatus = "ready";
     }
     recalculateOptimisticGame(gameId);
+    reconcileHistorySelection(gameId);
     emitChange({ type: "rollback_notice_cleared", gameId });
   };
 
@@ -171,6 +346,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     games = clone(nextGames);
     gameById = new Map(games.map((game) => [game.id, clone(game)]));
     for (const game of games) {
+      syncHistorySeedFromGame(game);
       recalculateOptimisticGame(game.id);
     }
     emitChange({ type: "games_refreshed" });
@@ -215,6 +391,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       return rightTs.localeCompare(leftTs);
     });
     games = current;
+    syncHistorySeedFromGame(next);
     recalculateOptimisticGame(next.id);
     return next;
   };
@@ -224,6 +401,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       return null;
     }
 
+    const acknowledgedPendingMove = clientCommandId ? getPendingMoveByClientCommandId(game.id, clientCommandId) : null;
     const nextEventSeq = typeof eventSeq === "number" && Number.isFinite(eventSeq) ? eventSeq : null;
     const currentEventSeq = nextEventSeq !== null ? lastEventSeqByGameId.get(game.id) ?? 0 : null;
     const authoritative = nextEventSeq !== null && currentEventSeq !== null && nextEventSeq < currentEventSeq ? gameById.get(game.id) ?? null : upsertGame(game);
@@ -242,6 +420,13 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       optimistic.syncStatus = "ready";
     }
 
+    bridgeAcknowledgedPendingMoveIntoHistory({
+      gameId: game.id,
+      clientCommandId,
+      pendingMove: acknowledgedPendingMove,
+      authoritativeGame: authoritative ?? gameById.get(game.id) ?? game,
+    });
+
     const recalculated = recalculateOptimisticGame(game.id);
     if (!recalculated.ok) {
       clearOptimisticQueue(game.id, {
@@ -253,6 +438,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       optimistic.syncStatus = "applying-update";
     }
 
+    reconcileHistorySelection(game.id);
+    maybeRefreshHistory(game.id);
     emitChange({ type: changeType, gameId: game.id, clientCommandId });
     void sendNextPendingCommand(game.id);
     return authoritative;
@@ -292,6 +479,55 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       action,
       state: applyBody.state,
     };
+  };
+
+  const buildLocalAuthoritativeGame = (gameId) => {
+    const liveGame = gameById.get(gameId);
+    if (!liveGame) {
+      return null;
+    }
+    const history = getHistoryState(gameId);
+    return {
+      ...clone(liveGame),
+      moves: clone(history.moves),
+      turns: mergeTurnsWithCurrentTurn(
+        history.turns.length > 0
+          ? history.turns
+          : Array.isArray(liveGame.turns) && liveGame.turns.length > 0
+            ? liveGame.turns
+            : [],
+        liveGame.currentTurn,
+      ),
+      board: { state: clone(liveGame.board?.state ?? liveGame.currentSnapshot ?? null) },
+    };
+  };
+
+  const applyOfflineAuthoritativeGame = (gameId, authoritativeGame) => {
+    const liveGame = gameById.get(gameId);
+    if (!liveGame || !authoritativeGame) {
+      return null;
+    }
+    const nextLive = {
+      ...clone(liveGame),
+      board: { state: clone(authoritativeGame.board.state) },
+      currentSnapshot: clone(authoritativeGame.board.state),
+      currentTurn: authoritativeGame.turns[authoritativeGame.turns.length - 1] ?? null,
+      lastMoveAt: authoritativeGame.lastMoveAt,
+      updatedAt: authoritativeGame.updatedAt,
+      validatedMoveCount: authoritativeGame.moves.length,
+      validatedTurnCount: authoritativeGame.turns.length,
+      notifications: clone(authoritativeGame.notifications ?? liveGame.notifications ?? []),
+    };
+    upsertGame(nextLive);
+    const history = getHistoryState(gameId);
+    history.status = "ready";
+    history.error = null;
+    history.moves = clone(authoritativeGame.moves);
+    history.turns = clone(authoritativeGame.turns);
+    history.validatedMoveCount = authoritativeGame.moves.length;
+    history.validatedTurnCount = authoritativeGame.turns.length;
+    reconcileHistorySelection(gameId);
+    return getGameViewModel(gameId);
   };
 
   const applyOfflineMove = async (game, notation) => {
@@ -493,6 +729,159 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     };
   };
 
+  const shouldReloadHistory = (gameId) => {
+    const liveGame = gameById.get(gameId);
+    if (!liveGame) {
+      return false;
+    }
+    const history = getHistoryState(gameId);
+    const counts = normalizeCountsFromGame(liveGame);
+    return counts.validatedMoveCount > history.validatedMoveCount || counts.validatedTurnCount > history.validatedTurnCount;
+  };
+
+  const loadGameHistory = async (gameId, { force = false } = {}) => {
+    const liveGame = gameById.get(gameId);
+    if (!liveGame) {
+      return null;
+    }
+
+    const history = getHistoryState(gameId);
+    if (offline || liveGame.offlineLocal) {
+      history.status = "ready";
+      history.error = null;
+      reconcileHistorySelection(gameId);
+      emitChange({ type: "history_loaded", gameId });
+      return history;
+    }
+
+    if (history.inflightPromise) {
+      if (force) {
+        history.needsRefresh = true;
+      }
+      return history.inflightPromise;
+    }
+
+    history.status = "loading";
+    history.error = null;
+    emitChange({ type: "history_loading", gameId });
+
+    const run = (async () => {
+      try {
+        const response = await fetcher(
+          withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/history?identityId=${encodeURIComponent(identityId)}`),
+          {
+            method: "GET",
+            cache: "no-store",
+          },
+        );
+        const body = await mustOk(response);
+        const latestLive = gameById.get(gameId);
+        const latestCounts = normalizeCountsFromGame(latestLive ?? liveGame);
+        const responseMoveCount = Number.isFinite(body?.validatedMoveCount) ? Number(body.validatedMoveCount) : 0;
+        const responseTurnCount = Number.isFinite(body?.validatedTurnCount) ? Number(body.validatedTurnCount) : 0;
+        if (responseMoveCount < latestCounts.validatedMoveCount || responseTurnCount < latestCounts.validatedTurnCount) {
+          history.needsRefresh = true;
+          return history;
+        }
+
+        history.moves = Array.isArray(body?.moves) ? clone(body.moves) : [];
+        history.turns = mergeTurnsWithCurrentTurn(
+          Array.isArray(body?.turns) ? body.turns : [],
+          latestLive?.currentTurn ?? liveGame.currentTurn ?? null,
+        );
+        history.validatedMoveCount = responseMoveCount;
+        history.validatedTurnCount = responseTurnCount;
+        history.status = "ready";
+        history.error = null;
+        recalculateOptimisticGame(gameId);
+        reconcileHistorySelection(gameId);
+        emitChange({ type: "history_loaded", gameId });
+        return history;
+      } catch (error) {
+        history.status = "error";
+        history.error = error?.code || "history_load_failed";
+        reconcileHistorySelection(gameId);
+        emitChange({ type: "history_error", gameId });
+        return history;
+      } finally {
+        history.inflightPromise = null;
+        if (history.needsRefresh || shouldReloadHistory(gameId)) {
+          history.needsRefresh = false;
+          void loadGameHistory(gameId, { force: true });
+        }
+      }
+    })();
+
+    history.inflightPromise = run;
+    return run;
+  };
+
+  const maybeRefreshHistory = (gameId) => {
+    const history = getHistoryState(gameId);
+    if (history.status === "idle") {
+      return;
+    }
+    if (history.inflightPromise) {
+      if (shouldReloadHistory(gameId)) {
+        history.needsRefresh = true;
+      }
+      return;
+    }
+    if (shouldReloadHistory(gameId)) {
+      void loadGameHistory(gameId, { force: true });
+    }
+  };
+
+  const buildComposedGameViewModel = (gameId) => {
+    const optimistic = getOptimisticState(gameId);
+    if (!optimistic.derivedGame) {
+      recalculateOptimisticGame(gameId);
+    }
+
+    const game = optimistic.derivedGame;
+    if (!game) {
+      return null;
+    }
+
+    const history = getHistoryState(gameId);
+    const selection = history.selection ?? { kind: "live" };
+    const validatedMove =
+      selection.kind === "validated" && selection.moveIndex >= 0 && selection.moveIndex < history.moves.length
+        ? history.moves[selection.moveIndex]
+        : null;
+    const pendingMove =
+      selection.kind === "pending"
+        ? (Array.isArray(game.pendingMoves) ? game.pendingMoves.find((move) => move.clientCommandId === selection.clientCommandId) : null) ?? null
+        : null;
+    const selectedMove = validatedMove ?? pendingMove;
+    const currentSnapshot =
+      selectedMove?.selectionSnapshot ?? game.liveCurrentSnapshot ?? game.currentSnapshot ?? game.board?.state ?? null;
+    const historySelectionAction = selectedMove?.action ?? null;
+
+    return {
+      ...clone(game),
+      moves: clone(history.moves),
+      turns: mergeTurnsWithCurrentTurn(history.turns, game.currentTurn),
+      validatedMoveCount: history.validatedMoveCount,
+      validatedTurnCount: history.validatedTurnCount,
+      historyStatus: history.status,
+      historyError: history.error,
+      historySelection: clone(selection),
+      inHistoryMode: selection.kind !== "live",
+      historyIndex: selection.kind === "validated" ? selection.moveIndex : null,
+      selectedPendingClientCommandId: selection.kind === "pending" ? selection.clientCommandId : null,
+      historySelectionKey:
+        selection.kind === "validated"
+          ? `validated:${selection.moveIndex}`
+          : selection.kind === "pending"
+            ? `pending:${selection.clientCommandId}`
+            : "live",
+      canRetryHistoryLoad: history.status === "error" && !offline && !game.offlineLocal,
+      currentSnapshot: clone(currentSnapshot),
+      historySelectionAction: historySelectionAction ? clone(historySelectionAction) : null,
+    };
+  };
+
   const refreshGames = async () => {
     if (offline) {
       return listGames();
@@ -523,6 +912,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     );
     const body = await mustOk(response);
     upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+    void loadGameHistory(gameId);
     return getGameViewModel(gameId);
   };
 
@@ -552,7 +942,11 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       body: JSON.stringify({ identityId, mode, inviteFromRole, inviteToken }),
     });
     const body = await mustOk(response);
-    return { ...body, game: upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }) };
+    const nextGame = upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    if (nextGame) {
+      void loadGameHistory(nextGame.id);
+    }
+    return { ...body, game: getGameViewModel(gameId) };
   };
 
   const playAsBothPlayers = async ({ gameId }) => {
@@ -577,14 +971,13 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const addMove = async ({ gameId, notation }) => {
     if (offline) {
-      const game = getGameViewModel(gameId);
+      const game = buildLocalAuthoritativeGame(gameId);
       if (!game) {
         throw new Error("game_not_found");
       }
-      const next = clone(game);
-      await applyOfflineMove(next, notation);
+      await applyOfflineMove(game, notation);
       queueOfflineMutation(gameId, { type: "move", notation });
-      return { ok: true, game: upsertGame(next) };
+      return { ok: true, game: applyOfflineAuthoritativeGame(gameId, game) };
     }
     const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/moves`), {
       method: "POST",
@@ -665,14 +1058,13 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const endTurn = async ({ gameId }) => {
     if (offline) {
-      const game = getGameViewModel(gameId);
+      const game = buildLocalAuthoritativeGame(gameId);
       if (!game) {
         throw new Error("game_not_found");
       }
-      const next = clone(game);
-      const turn = applyOfflineEndTurn(next);
+      const turn = applyOfflineEndTurn(game);
       queueOfflineMutation(gameId, { type: "end-turn" });
-      return { ok: true, turn, game: upsertGame(next) };
+      return { ok: true, turn, game: applyOfflineAuthoritativeGame(gameId, game) };
     }
 
     const current = getGameViewModel(gameId);
@@ -698,24 +1090,36 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const selectHistoryMove = async ({ gameId, moveIndex }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/history`), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, moveIndex }),
-    });
-    const body = await mustOk(response);
-    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+    const history = getHistoryState(gameId);
+    if (moveIndex < 0 || moveIndex >= history.moves.length) {
+      return getGameViewModel(gameId);
+    }
+    history.selection = { kind: "validated", moveIndex };
+    reconcileHistorySelection(gameId);
+    emitChange({ type: "history_mode_changed", gameId });
+    return getGameViewModel(gameId);
+  };
+
+  const selectPendingHistoryMove = async ({ gameId, clientCommandId }) => {
+    if (!clientCommandId || !getPendingMoveByClientCommandId(gameId, clientCommandId)) {
+      return getGameViewModel(gameId);
+    }
+    const history = getHistoryState(gameId);
+    history.selection = { kind: "pending", clientCommandId };
+    reconcileHistorySelection(gameId);
+    emitChange({ type: "history_mode_changed", gameId });
     return getGameViewModel(gameId);
   };
 
   const returnToLive = async ({ gameId }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/live`), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId }),
-    });
-    const body = await mustOk(response);
-    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+    const history = getHistoryState(gameId);
+    history.selection = { kind: "live" };
+    emitChange({ type: "history_mode_changed", gameId });
+    return getGameViewModel(gameId);
+  };
+
+  const retryHistoryLoad = async ({ gameId }) => {
+    await loadGameHistory(gameId, { force: true });
     return getGameViewModel(gameId);
   };
 
@@ -740,11 +1144,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const listGames = () => games.map((game) => getGameViewModel(game.id)).filter(Boolean);
 
   const getGameViewModel = (gameId) => {
-    const optimistic = getOptimisticState(gameId);
-    if (!optimistic.derivedGame) {
-      recalculateOptimisticGame(gameId);
-    }
-    const game = optimistic.derivedGame;
+    const game = buildComposedGameViewModel(gameId);
     return game ? applyClientOfflineViewState(game) : null;
   };
 
@@ -774,8 +1174,11 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     loadGamePieceMoves,
     applyGameAction,
     endTurn,
+    loadGameHistory,
     selectHistoryMove,
+    selectPendingHistoryMove,
     returnToLive,
+    retryHistoryLoad,
     setParticipantConnected,
     applyLiveGameUpdate,
     getLastEventSeq,

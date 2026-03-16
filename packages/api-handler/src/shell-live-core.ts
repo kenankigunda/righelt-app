@@ -66,13 +66,44 @@ export type LiveGame = {
   pendingJoinRequests: JoinRequest[];
   turns: TurnEntry[];
   moves: MoveEntry[];
-  historyIndexByIdentity: Record<string, number>;
   notifications: string[];
   inviteTokens: {
     viewer: string;
     player1: string;
     player2: string;
   };
+};
+
+export type LiveGameViewModel = Omit<LiveGame, "moves" | "turns"> & {
+  currentSnapshot: GameState;
+  currentTurn: TurnEntry | null;
+  validatedMoveCount: number;
+  validatedTurnCount: number;
+  myRole: "Player 1" | "Player 2" | "Viewer" | "Guest";
+  canJoinAsPlayer: boolean;
+  canJoinAsViewer: boolean;
+  canPlayAsBothPlayers: boolean;
+  joinAsPlayerDisabledReason: string | null;
+  joinAsViewerDisabledReason: string | null;
+  canInvite: boolean;
+  inviteToken: string;
+  showOfflineState: boolean;
+  showJoinActions: boolean;
+  canRecordMove: boolean;
+  legalActions: Action[];
+  canEndTurn: boolean;
+  turnOwnerSeat: "Player 1" | "Player 2";
+  controlSeat: "Player 1" | "Player 2";
+  control: "turn-owner" | "opponent";
+  pendingPlayerRequestSeat: "Player 1" | "Player 2" | null;
+  approvableRequesterIds: string[];
+};
+
+export type GameHistoryPayload = {
+  moves: MoveEntry[];
+  turns: TurnEntry[];
+  validatedMoveCount: number;
+  validatedTurnCount: number;
 };
 
 export type RemovedPieceNotice = {
@@ -169,7 +200,6 @@ export const createInitialGame = ({
       },
     ],
     moves: [],
-    historyIndexByIdentity: {},
     notifications: ["Game created", playgroundMode ? "Playground mode active" : "Invite a second player"],
     inviteTokens: {
       viewer: createInviteToken(),
@@ -294,18 +324,8 @@ const getJoinAsViewerDisabledReason = (game: LiveGame, offline: boolean, myRole:
   return null;
 };
 
-export const withViewModel = (game: LiveGame, identityId: string, offline = false) => {
+export const withViewModel = (game: LiveGame, identityId: string, offline = false): LiveGameViewModel => {
   const myRole = findRoleForIdentity(game, identityId);
-  const historyIndex = typeof game.historyIndexByIdentity[identityId] === "number" ? game.historyIndexByIdentity[identityId] : null;
-  const inHistoryMode = typeof historyIndex === "number";
-  const currentSnapshot =
-    typeof historyIndex === "number" && game.moves[historyIndex]
-      ? game.moves[historyIndex].selectionSnapshot
-      : game.board.state;
-  const historySelectionAction =
-    typeof historyIndex === "number" && game.moves[historyIndex]
-      ? clone(game.moves[historyIndex].action)
-      : null;
   const activeTurn = getActiveTurn(game);
   const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(game);
   const controlSeat = getControlSeatForTurn(game.board.state, turnOwnerSeat);
@@ -322,12 +342,26 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
   const joinAsViewerDisabledReason = getJoinAsViewerDisabledReason(game, offline, myRole);
 
   return {
-    ...clone(game),
-    historyIndexByIdentity: undefined,
-    historyIndex,
+    ...clone({
+      id: game.id,
+      createdAt: game.createdAt,
+      lastMoveAt: game.lastMoveAt,
+      updatedAt: game.updatedAt,
+      playgroundMode: game.playgroundMode,
+      offlineLocal: game.offlineLocal,
+      board: game.board,
+      player1: game.player1,
+      player2: game.player2,
+      viewers: game.viewers,
+      pendingJoinRequests: game.pendingJoinRequests,
+      notifications: game.notifications,
+      inviteTokens: game.inviteTokens,
+    }),
     myRole,
-    inHistoryMode,
-    currentSnapshot,
+    currentSnapshot: clone(game.board.state),
+    currentTurn: activeTurn ? clone(activeTurn) : null,
+    validatedMoveCount: game.moves.length,
+    validatedTurnCount: game.turns.length,
     canJoinAsPlayer: !joinAsPlayerDisabledReason,
     canJoinAsViewer: !joinAsViewerDisabledReason,
     canPlayAsBothPlayers: myRole === "Player 1" && !game.player2,
@@ -342,16 +376,13 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
           : game.inviteTokens.viewer,
     showOfflineState: offline || game.offlineLocal,
     showJoinActions: !offline && !game.offlineLocal,
-    canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
+    canRecordMove: isPlayer && sideToMoveIdentity === identityId && legalNow.length > 0,
     legalActions: legalNow,
     canEndTurn:
       offlineTurnControlAllowed &&
       isPlayer &&
-      !inHistoryMode &&
       turnOwnerIdentity === identityId &&
       Boolean(activeTurn && activeTurn.moveIndexes.length > 0),
-    currentTurn: activeTurn ? clone(activeTurn) : null,
-    historySelectionAction,
     turnOwnerSeat,
     controlSeat,
     control: controlSeat === turnOwnerSeat ? "turn-owner" : "opponent",
@@ -359,6 +390,13 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     approvableRequesterIds,
   };
 };
+
+export const withHistoryPayload = (game: LiveGame): GameHistoryPayload => ({
+  moves: clone(game.moves),
+  turns: clone(game.turns),
+  validatedMoveCount: game.moves.length,
+  validatedTurnCount: game.turns.length,
+});
 
 const formatCoordinate = (coord: { row: number; col: number } | null | undefined) =>
   coord ? `(${coord.row},${coord.col})` : "(?,?)";
