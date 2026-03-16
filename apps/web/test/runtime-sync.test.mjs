@@ -60,3 +60,18 @@ test("shell board mount skips reload for matching authoritative ack after an opt
     true,
   );
 });
+
+test("shell board mount does not reset selection when a selected history entry keeps the same key across pending-to-validated upgrade", () => {
+  assert.equal(
+    shouldSkipBoardRuntimeReload({
+      runtimeSnapshotKey: "{\"turnIndex\":0,\"sideToMove\":\"P1\",\"pieces\":[{\"id\":\"A1\"}]}",
+      runtimeLegalActionsKey: "[{\"type\":\"move\",\"from\":{\"row\":1,\"col\":1},\"to\":{\"row\":1,\"col\":2}}]",
+      snapshotKey: "{\"turnIndex\":0,\"sideToMove\":\"P1\",\"pieces\":[{\"id\":\"A1\"}]}",
+      legalActionsKey: "[{\"type\":\"move\",\"from\":{\"row\":1,\"col\":1},\"to\":{\"row\":1,\"col\":2}}]",
+      mountedSelectionActionKey: "{\"type\":\"move\",\"from\":{\"row\":1,\"col\":1},\"to\":{\"row\":1,\"col\":2}}",
+      selectionActionKey: "{\"type\":\"move\",\"from\":{\"row\":1,\"col\":1},\"to\":{\"row\":1,\"col\":2}}",
+      resetSelection: false,
+    }),
+    true,
+  );
+});

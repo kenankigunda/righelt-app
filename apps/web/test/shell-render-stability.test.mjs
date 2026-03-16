@@ -58,22 +58,22 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.doesNotMatch(source, /class="history-turn-list"/);
   assert.match(source, /const getControlSeatForTurn = \(state, turnOwnerSeat\) => \{/);
   assert.match(source, /if \(continuation\.type === "push" && continuation\.phase === "retreat"\) \{\s*return getNextSeat\(turnOwnerSeat\);/s);
+  assert.match(source, /const historyEntries = Array\.isArray\(game\.historyEntries\) \? game\.historyEntries : \[\];/);
   assert.match(source, /const moveRows = game\.turns\.flatMap/);
-  assert.match(source, /const pendingRows = \(Array\.isArray\(game\.pendingMoves\) \? game\.pendingMoves : \[\]\)\.map/);
   assert.match(source, /const reverseChronologicalMoveRows = \[\.\.\.moveRows\]\.reverse\(\);/);
-  assert.match(source, /const reverseChronologicalPendingRows = \[\.\.\.pendingRows\]\.reverse\(\);/);
-  assert.match(source, /class="history-item history-item-pending/);
-  assert.match(source, /Pending<\/span>/);
+  assert.match(source, /const pendingClass = move\.status === "pending" \? " history-item-pending" : "";/);
+  assert.match(source, /data-history-entry-key=/);
+  assert.match(source, /const pendingLabel = move\.status === "pending" \? " · Pending" : "";/);
   assert.match(source, /const liveContinuationText =[\s\S]*Live: Waiting for \$\{controlSeat \|\| "next player"\} to continue\.\.\./s);
   assert.match(source, /const liveWaitingText =[\s\S]*Live: Waiting on \$\{activeTurn\.playerSeat \|\| "next player"\} to move\.\.\./s);
   assert.match(source, /const liveStatusText = liveContinuationText \?\? liveWaitingText;/);
   assert.match(source, /class="history-item history-item-waiting history-empty-line/);
-  assert.match(source, /return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
+  assert.match(source, /return `\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
   assert.doesNotMatch(source, /if \(game\.inHistoryMode && activeTurn\.moveIndexes\.length > 0\) \{/);
-  assert.match(source, /if \(!game\.inHistoryMode && !liveStatusItem && activeTurn\.moveIndexes\.length > 0\) \{\s*return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;\s*\}/s);
+  assert.match(source, /if \(!game\.inHistoryMode && !liveStatusItem && activeTurn\.moveIndexes\.length > 0\) \{\s*return `\$\{reverseChronologicalMoveRows\.join\(""\)\}`;\s*\}/s);
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
-  assert.match(source, /return `\$\{emptyTurnItem\}\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
-  assert.match(source, /const hasHistoryMoves = Array\.isArray\(game\.moves\) && game\.moves\.length > 0;/);
+  assert.match(source, /return `\$\{emptyTurnItem\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
+  assert.match(source, /const hasHistoryMoves = Array\.isArray\(game\.historyEntries\) && game\.historyEntries\.length > 0;/);
   assert.match(source, /Incoming live moves will appear at top\./);
   assert.match(source, /: hasHistoryMoves\s*\? '<p class="small">You are on the live view\.<\/p><p class="small">Click moves below to see historical state\.<\/p>'\s*: '<p class="small">You are on the live view\.<\/p>'/);
 });
@@ -106,18 +106,14 @@ test("history navigation uses pointer-down press state with a single mouseup rel
   assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*const controlEl = target\.closest\("button, \.button-link"\);[\s\S]*startControlPress\(controlEl\);/s);
   assert.match(
     source,
-    /window\.addEventListener\("pointerup", \(event\) => \{[\s\S]*action === "jump-history" \|\| action === "jump-history-pending" \|\| action === "return-live"[\s\S]*return;[\s\S]*clearHistoryPress\(\);\s*\}\);/s,
+    /window\.addEventListener\("pointerup", \(event\) => \{[\s\S]*action === "jump-history" \|\| action === "return-live"[\s\S]*return;[\s\S]*clearHistoryPress\(\);\s*\}\);/s,
   );
   assert.match(
     source,
-    /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*action !== "jump-history" && action !== "jump-history-pending" && action !== "return-live"[\s\S]*startHistoryPress\(actionEl\);/s,
+    /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*action !== "jump-history" && action !== "return-live"[\s\S]*startHistoryPress\(actionEl\);/s,
   );
   assert.match(source, /const animateHistoryDeselection = async \(actionEl\) => \{/);
   assert.match(source, /currentSelected\.classList\.add\("is-deselecting"\);/);
   assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearControlPress\(\);[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
-  assert.match(
-    source,
-    /if \(action === "jump-history-pending"\) \{[\s\S]*clearControlPress\(\);[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s,
-  );
   assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);/s);
 });

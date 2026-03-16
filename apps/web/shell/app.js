@@ -369,47 +369,34 @@ const renderTurnHistory = (game) => {
       ? `Live: Waiting on ${activeTurn.playerSeat || "next player"} to move...`
       : null;
   const liveStatusText = liveContinuationText ?? liveWaitingText;
-  const selectedMoveIndex =
-    typeof game.historyIndex === "number"
-      ? game.historyIndex
+  const historyEntries = Array.isArray(game.historyEntries) ? game.historyEntries : [];
+  const selectedEntryKey =
+    game.inHistoryMode
+      ? game.selectedHistoryEntryKey
       : liveStatusText
         ? null
-        : game.moves.length > 0
-          ? game.moves.length - 1
+        : historyEntries.length > 0
+          ? historyEntries[historyEntries.length - 1].entryKey
           : null;
 
   const moveRows = game.turns.flatMap((turn) =>
     turn.moveIndexes
-      .map((moveIndex) => game.moves[moveIndex])
+      .map((moveIndex) => historyEntries[moveIndex])
       .filter(Boolean)
       .map((move) => {
-        const isSelected = game.inHistoryMode ? game.historyIndex === move.index : selectedMoveIndex === move.index;
+        const isSelected = selectedEntryKey === move.entryKey;
         const selectedClass = isSelected ? (game.inHistoryMode ? " is-selected" : " is-live-selected") : "";
-        return `<li class="history-item ${playerToneClassForSide(move.actorSide || (turn.playerSeat === "Player 1" ? "P1" : "P2"))}${selectedClass}" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">
+        const pendingClass = move.status === "pending" ? " history-item-pending" : "";
+        const pendingLabel = move.status === "pending" ? " · Pending" : "";
+        return `<li class="history-item${pendingClass} ${playerToneClassForSide(move.actorSide || (turn.playerSeat === "Player 1" ? "P1" : "P2"))}${selectedClass}" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-history-entry-key="${escapeHtml(move.entryKey)}">
           <span class="history-move-line">Move ${escapeHtml(
             String(move.index + 1),
-          )}: ${escapeHtml(move.notation)}</span>
+          )}: ${escapeHtml(move.notation)}${escapeHtml(pendingLabel)}</span>
           <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
         </li>`;
       }),
   );
-  const pendingRows = (Array.isArray(game.pendingMoves) ? game.pendingMoves : []).map(
-    (move) => {
-      const isSelected = game.selectedPendingClientCommandId === move.clientCommandId;
-      return `<li class="history-item history-item-pending ${playerToneClassForSide(move.actorSide || (move.turnIndex % 2 === 0 ? "P1" : "P2"))}${
-        isSelected ? " is-selected" : ""
-      }" data-action="jump-history-pending" data-game-id="${escapeHtml(game.id)}" data-client-command-id="${escapeHtml(
-        move.clientCommandId || "",
-      )}">
-          <span class="history-move-line">Move ${escapeHtml(
-            String(move.index + 1),
-          )}: ${escapeHtml(move.notation)} · Pending</span>
-          <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
-        </li>`;
-    },
-  );
   const reverseChronologicalMoveRows = [...moveRows].reverse();
-  const reverseChronologicalPendingRows = [...pendingRows].reverse();
 
   const liveStatusItem =
     liveStatusText && activeTurn
@@ -418,10 +405,10 @@ const renderTurnHistory = (game) => {
         )} is-live-selected" aria-disabled="true"><span class="history-move-line">${escapeHtml(liveStatusText)}</span></li>`
       : "";
   if (!activeTurn) {
-    return `${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
+    return `${reverseChronologicalMoveRows.join("")}`;
   }
   if (!game.inHistoryMode && !liveStatusItem && activeTurn.moveIndexes.length > 0) {
-    return `${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
+    return `${reverseChronologicalMoveRows.join("")}`;
   }
   const emptyTurnItem = game.inHistoryMode
     ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(
@@ -429,7 +416,7 @@ const renderTurnHistory = (game) => {
       )}" ${busy ? "disabled" : ""}>Return to live view</button></li>`
     : liveStatusItem;
 
-  return `${emptyTurnItem}${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
+  return `${emptyTurnItem}${reverseChronologicalMoveRows.join("")}`;
 };
 
 const renderHeader = () => `
@@ -678,7 +665,11 @@ const renderParticipantsPanel = (game) => {
 
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
-  const historyMoveNumber = typeof game.historyIndex === "number" ? String(game.historyIndex + 1) : "?";
+  const selectedHistoryEntry =
+    Array.isArray(game.historyEntries) && game.selectedHistoryEntryKey
+      ? game.historyEntries.find((entry) => entry.entryKey === game.selectedHistoryEntryKey) ?? null
+      : null;
+  const historyMoveNumber = selectedHistoryEntry ? String(selectedHistoryEntry.index + 1) : "?";
   const historyStatusLine =
     game.historyStatus === "loading"
       ? '<p class="small">Loading validated history…</p>'
@@ -687,9 +678,9 @@ const renderHistoryPanel = (game) => {
             game.id,
           )}" ${game.canRetryHistoryLoad && !busy ? "" : "disabled"}>Retry</button></p>`
         : "";
-  const hasHistoryMoves = Array.isArray(game.moves) && game.moves.length > 0;
+  const hasHistoryMoves = Array.isArray(game.historyEntries) && game.historyEntries.length > 0;
   const historyBanner = game.inHistoryMode
-    ? game.selectedPendingClientCommandId
+    ? selectedHistoryEntry?.status === "pending"
       ? `<p class="small">Viewing pending history snapshot.</p>
          <p class="small">Incoming validated moves will continue syncing in the background.</p>`
       : `<p class="small">Viewing history snapshot for move ${escapeHtml(historyMoveNumber)}.</p>
@@ -1358,7 +1349,6 @@ appEl.addEventListener("click", async (event) => {
   const shouldRenderBusyState =
     action !== "copy-invite" &&
     action !== "jump-history" &&
-    action !== "jump-history-pending" &&
     action !== "return-live" &&
     action !== "retry-history" &&
     action !== "tutorial-next" &&
@@ -1474,26 +1464,13 @@ appEl.addEventListener("click", async (event) => {
 
     if (action === "jump-history") {
       const gameId = actionEl.getAttribute("data-game-id");
-      const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
-      if (!gameId || !Number.isFinite(moveIndex)) return;
+      const historyEntryKey = actionEl.getAttribute("data-history-entry-key");
+      if (!gameId || !historyEntryKey) return;
       clearControlPress();
       clearHistoryPress();
       playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
-      await transport.selectHistoryMove({ gameId, moveIndex });
-      render();
-      return;
-    }
-
-    if (action === "jump-history-pending") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const clientCommandId = actionEl.getAttribute("data-client-command-id");
-      if (!gameId || !clientCommandId) return;
-      clearControlPress();
-      clearHistoryPress();
-      playHistoryReleaseBounce(actionEl);
-      await animateHistoryDeselection(actionEl);
-      await transport.selectPendingHistoryMove({ gameId, clientCommandId });
+      await transport.selectHistoryEntry({ gameId, entryKey: historyEntryKey });
       render();
       return;
     }
@@ -1544,7 +1521,7 @@ appEl.addEventListener("pointerdown", (event) => {
     return;
   }
   const action = actionEl.getAttribute("data-action");
-  if (action !== "jump-history" && action !== "jump-history-pending" && action !== "return-live") {
+  if (action !== "jump-history" && action !== "return-live") {
     return;
   }
   startHistoryPress(actionEl);
@@ -1559,7 +1536,7 @@ window.addEventListener("pointerup", (event) => {
   if (target instanceof HTMLElement) {
     const actionEl = target.closest("[data-action]");
     const action = actionEl?.getAttribute("data-action");
-    if (action === "jump-history" || action === "jump-history-pending" || action === "return-live") {
+    if (action === "jump-history" || action === "return-live") {
       return;
     }
   }

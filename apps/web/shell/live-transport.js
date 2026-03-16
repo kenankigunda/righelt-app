@@ -19,6 +19,29 @@ const getControlSeatForTurn = (state, turnOwnerSeat) => {
 };
 
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "(?,?)");
+const getHistoryEntryKey = (move, fallbackIndex = 0) =>
+  move?.clientCommandId ? `client:${move.clientCommandId}` : `server:${Number.isFinite(move?.index) ? Number(move.index) : fallbackIndex}`;
+
+const createHistoryEntry = ({ move, index = 0, status = "validated", provenance = "canonical" }) => ({
+  ...clone(move),
+  entryKey: getHistoryEntryKey(move, index),
+  index,
+  status,
+  provenance,
+  pending: status === "pending",
+});
+const compareHistoryEntries = (left, right) => {
+  if ((left?.turnIndex ?? 0) !== (right?.turnIndex ?? 0)) {
+    return (left?.turnIndex ?? 0) - (right?.turnIndex ?? 0);
+  }
+  if ((left?.turnMoveIndex ?? 0) !== (right?.turnMoveIndex ?? 0)) {
+    return (left?.turnMoveIndex ?? 0) - (right?.turnMoveIndex ?? 0);
+  }
+  if ((left?.index ?? 0) !== (right?.index ?? 0)) {
+    return (left?.index ?? 0) - (right?.index ?? 0);
+  }
+  return String(left?.entryKey ?? "").localeCompare(String(right?.entryKey ?? ""));
+};
 
 const renumberHistory = (game) => {
   game.moves.forEach((move, index) => {
@@ -113,6 +136,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
         error: null,
         moves: [],
         turns: [],
+        localEntries: [],
         validatedMoveCount: 0,
         validatedTurnCount: 0,
         selection: { kind: "live" },
@@ -166,6 +190,11 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       : null;
   };
 
+  const shouldHoldHistorySelection = (gameId) => {
+    const history = getHistoryState(gameId);
+    return Boolean(history.inflightPromise) || shouldReloadHistory(gameId);
+  };
+
   const mergeTurnsWithCurrentTurn = (turns, currentTurn) => {
     const nextTurns = Array.isArray(turns) ? clone(turns) : [];
     if (!currentTurn || typeof currentTurn.index !== "number") {
@@ -187,16 +216,88 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return nextTurns;
   };
 
+  const buildHistoryEntries = (gameId) => {
+    const history = getHistoryState(gameId);
+    const optimistic = getOptimisticState(gameId);
+    const canonicalEntries = Array.isArray(history.moves)
+      ? history.moves.map((move, index) =>
+          createHistoryEntry({
+            move,
+            index: Number.isFinite(move?.index) ? Number(move.index) : index,
+            status: "validated",
+            provenance: "canonical",
+          }),
+        )
+      : [];
+    const localEntries = Array.isArray(history.localEntries)
+      ? history.localEntries.map((entry) =>
+          createHistoryEntry({
+            move: entry,
+            index: Number.isFinite(entry?.index) ? Number(entry.index) : canonicalEntries.length,
+            status: entry?.status === "pending" ? "pending" : "validated",
+            provenance: entry?.provenance ?? "ack-shadow",
+          }),
+        )
+      : [];
+    const pendingEntries = Array.isArray(optimistic.derivedGame?.pendingMoves)
+      ? optimistic.derivedGame.pendingMoves.map((move, index) =>
+          createHistoryEntry({
+            move,
+            index: Number.isFinite(move?.index) ? Number(move.index) : history.validatedMoveCount + index,
+            status: "pending",
+            provenance: "local-optimistic",
+          }),
+        )
+      : [];
+    const entryByKey = new Map(canonicalEntries.map((entry) => [entry.entryKey, clone(entry)]));
+    for (const overlayEntry of [...localEntries, ...pendingEntries]) {
+      entryByKey.set(overlayEntry.entryKey, clone(overlayEntry));
+    }
+    const nextEntries = [...entryByKey.values()].sort(compareHistoryEntries);
+    nextEntries.forEach((entry, index) => {
+      entry.index = index;
+      entry.pending = entry.status === "pending";
+    });
+    return nextEntries;
+  };
+
+  const synchronizeTurnsWithMoves = (turns, moves, currentTurn) => {
+    const nextTurns = mergeTurnsWithCurrentTurn(turns, currentTurn);
+    const moveIndexesByTurnIndex = new Map();
+    for (const move of Array.isArray(moves) ? moves : []) {
+      if (!move || typeof move.turnIndex !== "number" || typeof move.index !== "number") {
+        continue;
+      }
+      if (!moveIndexesByTurnIndex.has(move.turnIndex)) {
+        moveIndexesByTurnIndex.set(move.turnIndex, []);
+      }
+      moveIndexesByTurnIndex.get(move.turnIndex).push(move);
+    }
+    return nextTurns.map((turn) => ({
+      ...turn,
+      moveIndexes: (moveIndexesByTurnIndex.get(turn.index) ?? [])
+        .slice()
+        .sort((left, right) => (left.turnMoveIndex ?? left.index) - (right.turnMoveIndex ?? right.index))
+        .map((move) => move.index),
+    }));
+  };
+
+  const upsertLocalHistoryEntry = (gameId, entry) => {
+    const history = getHistoryState(gameId);
+    const entryKey = entry?.entryKey ?? getHistoryEntryKey(entry, entry?.index ?? 0);
+    history.localEntries = history.localEntries.filter((existingEntry) => existingEntry.entryKey !== entryKey);
+    history.localEntries.push({
+      ...clone(entry),
+      entryKey,
+    });
+  };
+
   const bridgeAcknowledgedPendingMoveIntoHistory = ({ gameId, clientCommandId, pendingMove, authoritativeGame }) => {
     if (!clientCommandId || !pendingMove) {
       return;
     }
 
     const history = getHistoryState(gameId);
-    if (history.status === "idle") {
-      return;
-    }
-
     const targetMoveCount = Number.isFinite(authoritativeGame?.validatedMoveCount)
       ? Number(authoritativeGame.validatedMoveCount)
       : history.validatedMoveCount;
@@ -206,74 +307,77 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       return;
     }
 
-    const bridgedMove = {
+    upsertLocalHistoryEntry(gameId, {
       ...clone(pendingMove),
+      entryKey: `client:${clientCommandId}`,
       index: moveIndex,
-      pending: false,
-      provisionalValidated: true,
-    };
-    const nextMoves = clone(history.moves);
-    if (moveIndex >= nextMoves.length) {
-      nextMoves.push(bridgedMove);
-    } else {
-      nextMoves.splice(moveIndex, 0, bridgedMove);
-    }
-    nextMoves.forEach((move, index) => {
-      move.index = index;
+      status: "validated",
+      provenance: "ack-shadow",
     });
-    history.moves = nextMoves;
+  };
 
-    const nextTurns = clone(history.turns);
-    let targetTurn = nextTurns.find((turn) => turn.index === bridgedMove.turnIndex) ?? null;
-    if (!targetTurn) {
-      const authoritativeCurrentTurn =
-        authoritativeGame?.currentTurn && authoritativeGame.currentTurn.index === bridgedMove.turnIndex
-          ? clone(authoritativeGame.currentTurn)
-          : null;
-      targetTurn =
-        authoritativeCurrentTurn ?? {
-          index: bridgedMove.turnIndex,
-          startedAt: bridgedMove.at,
-          endedAt: null,
-          playerSeat: bridgedMove.actorSide === "P2" ? "Player 2" : "Player 1",
-          status: "active",
-          moveIndexes: [],
-          lastMoveAt: null,
-        };
-      nextTurns.push(targetTurn);
-      nextTurns.sort((left, right) => left.index - right.index);
+  const reconcileLocalHistoryEntriesAgainstServer = (gameId) => {
+    const history = getHistoryState(gameId);
+    const canonicalEntries = Array.isArray(history.moves)
+      ? history.moves.map((move, index) =>
+          createHistoryEntry({
+            move,
+            index: Number.isFinite(move?.index) ? Number(move.index) : index,
+            status: "validated",
+            provenance: "canonical",
+          }),
+        )
+      : [];
+
+    for (const localEntry of history.localEntries) {
+      if (localEntry?.provenance !== "ack-shadow" || localEntry?.status !== "validated") {
+        continue;
+      }
+      const canonicalIndex = canonicalEntries.findIndex((entry) => entry.entryKey === localEntry.entryKey);
+      if (canonicalIndex !== Number(localEntry.index)) {
+        return false;
+      }
     }
 
-    const turnMoveIndexes = Array.isArray(targetTurn.moveIndexes) ? [...targetTurn.moveIndexes] : [];
-    if (!turnMoveIndexes.includes(moveIndex)) {
-      turnMoveIndexes.push(moveIndex);
-      turnMoveIndexes.sort((left, right) => left - right);
-    }
-    targetTurn.moveIndexes = turnMoveIndexes;
-    targetTurn.lastMoveAt = bridgedMove.at;
-    history.turns = nextTurns;
+    history.localEntries = history.localEntries.filter(
+      (localEntry) => !canonicalEntries.some((entry) => entry.entryKey === localEntry.entryKey),
+    );
+    return true;
+  };
 
-    if (history.selection?.kind === "pending" && history.selection.clientCommandId === clientCommandId) {
-      history.selection = { kind: "validated", moveIndex };
-    }
+  const resetHistoryLedgerToAuthoritative = (gameId, notice) => {
+    const history = getHistoryState(gameId);
+    const optimistic = getOptimisticState(gameId);
+    history.localEntries = [];
+    history.selection = { kind: "live" };
+    history.needsRefresh = false;
+    optimistic.pendingCommands = [];
+    optimistic.inflightCommandId = null;
+    optimistic.commandResults = new Map();
+    optimistic.syncStatus = "ready";
+    optimistic.rollbackNotice = notice;
+    recalculateOptimisticGame(gameId);
   };
 
   const reconcileHistorySelection = (gameId) => {
     const history = getHistoryState(gameId);
     const selection = history.selection ?? { kind: "live" };
-    if (selection.kind === "validated") {
-      if (selection.moveIndex < 0 || selection.moveIndex >= history.moves.length) {
-        history.selection = { kind: "live" };
-      }
+    if (selection.kind !== "entry") {
       return;
     }
-    if (selection.kind === "pending") {
-      if (getPendingMoveByClientCommandId(gameId, selection.clientCommandId)) {
-        return;
-      }
-      const validatedIndex = history.moves.findIndex((move) => move.clientCommandId === selection.clientCommandId);
-      history.selection = validatedIndex >= 0 ? { kind: "validated", moveIndex: validatedIndex } : { kind: "live" };
+    const historyEntries = buildHistoryEntries(gameId);
+    const selectedEntry = historyEntries.find((entry) => entry.entryKey === selection.entryKey) ?? null;
+    if (selectedEntry) {
+      history.selection = {
+        ...selection,
+        fallbackEntry: clone(selectedEntry),
+      };
+      return;
     }
+    if (shouldHoldHistorySelection(gameId)) {
+      return;
+    }
+    history.selection = { kind: "live" };
   };
 
   const decorateGameWithSync = (game, gameId) => {
@@ -524,6 +628,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     history.error = null;
     history.moves = clone(authoritativeGame.moves);
     history.turns = clone(authoritativeGame.turns);
+    history.localEntries = [];
     history.validatedMoveCount = authoritativeGame.moves.length;
     history.validatedTurnCount = authoritativeGame.turns.length;
     reconcileHistorySelection(gameId);
@@ -736,7 +841,11 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     }
     const history = getHistoryState(gameId);
     const counts = normalizeCountsFromGame(liveGame);
-    return counts.validatedMoveCount > history.validatedMoveCount || counts.validatedTurnCount > history.validatedTurnCount;
+    return (
+      counts.validatedMoveCount > history.validatedMoveCount ||
+      counts.validatedTurnCount > history.validatedTurnCount ||
+      history.localEntries.some((entry) => entry?.provenance === "ack-shadow" && entry?.status === "validated")
+    );
   };
 
   const loadGameHistory = async (gameId, { force = false } = {}) => {
@@ -785,12 +894,15 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
         }
 
         history.moves = Array.isArray(body?.moves) ? clone(body.moves) : [];
-        history.turns = mergeTurnsWithCurrentTurn(
-          Array.isArray(body?.turns) ? body.turns : [],
-          latestLive?.currentTurn ?? liveGame.currentTurn ?? null,
-        );
+        history.turns = mergeTurnsWithCurrentTurn(Array.isArray(body?.turns) ? body.turns : [], latestLive?.currentTurn ?? liveGame.currentTurn ?? null);
         history.validatedMoveCount = responseMoveCount;
         history.validatedTurnCount = responseTurnCount;
+        if (!reconcileLocalHistoryEntriesAgainstServer(gameId)) {
+          resetHistoryLedgerToAuthoritative(
+            gameId,
+            "Client history diverged from the validated server log. The board was reset to the authoritative live state.",
+          );
+        }
         history.status = "ready";
         history.error = null;
         recalculateOptimisticGame(gameId);
@@ -845,37 +957,30 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
     const history = getHistoryState(gameId);
     const selection = history.selection ?? { kind: "live" };
-    const validatedMove =
-      selection.kind === "validated" && selection.moveIndex >= 0 && selection.moveIndex < history.moves.length
-        ? history.moves[selection.moveIndex]
+    const historyEntries = buildHistoryEntries(gameId);
+    const displayTurns = synchronizeTurnsWithMoves(history.turns, historyEntries, game.currentTurn);
+    const selectedMove =
+      selection.kind === "entry"
+        ? historyEntries.find((entry) => entry.entryKey === selection.entryKey) ?? selection.fallbackEntry ?? null
         : null;
-    const pendingMove =
-      selection.kind === "pending"
-        ? (Array.isArray(game.pendingMoves) ? game.pendingMoves.find((move) => move.clientCommandId === selection.clientCommandId) : null) ?? null
-        : null;
-    const selectedMove = validatedMove ?? pendingMove;
     const currentSnapshot =
       selectedMove?.selectionSnapshot ?? game.liveCurrentSnapshot ?? game.currentSnapshot ?? game.board?.state ?? null;
     const historySelectionAction = selectedMove?.action ?? null;
 
     return {
       ...clone(game),
-      moves: clone(history.moves),
-      turns: mergeTurnsWithCurrentTurn(history.turns, game.currentTurn),
+      moves: clone(historyEntries),
+      historyEntries: clone(historyEntries),
+      turns: displayTurns,
       validatedMoveCount: history.validatedMoveCount,
       validatedTurnCount: history.validatedTurnCount,
       historyStatus: history.status,
       historyError: history.error,
       historySelection: clone(selection),
-      inHistoryMode: selection.kind !== "live",
-      historyIndex: selection.kind === "validated" ? selection.moveIndex : null,
-      selectedPendingClientCommandId: selection.kind === "pending" ? selection.clientCommandId : null,
-      historySelectionKey:
-        selection.kind === "validated"
-          ? `validated:${selection.moveIndex}`
-          : selection.kind === "pending"
-            ? `pending:${selection.clientCommandId}`
-            : "live",
+      inHistoryMode: selection.kind === "entry",
+      selectedHistoryEntryKey: selection.kind === "entry" ? selection.entryKey : null,
+      historySelectionKey: selection.kind === "entry" ? selection.entryKey : "live",
+      pendingMoves: historyEntries.filter((entry) => entry.status === "pending").map((entry) => clone(entry)),
       canRetryHistoryLoad: history.status === "error" && !offline && !game.offlineLocal,
       currentSnapshot: clone(currentSnapshot),
       historySelectionAction: historySelectionAction ? clone(historySelectionAction) : null,
@@ -1090,25 +1195,35 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const selectHistoryMove = async ({ gameId, moveIndex }) => {
-    const history = getHistoryState(gameId);
-    if (moveIndex < 0 || moveIndex >= history.moves.length) {
+    const historyEntries = buildHistoryEntries(gameId);
+    if (moveIndex < 0 || moveIndex >= historyEntries.length) {
       return getGameViewModel(gameId);
     }
-    history.selection = { kind: "validated", moveIndex };
+    const history = getHistoryState(gameId);
+    history.selection = { kind: "entry", entryKey: historyEntries[moveIndex].entryKey, fallbackEntry: clone(historyEntries[moveIndex]) };
+    reconcileHistorySelection(gameId);
+    emitChange({ type: "history_mode_changed", gameId });
+    return getGameViewModel(gameId);
+  };
+
+  const selectHistoryEntry = async ({ gameId, entryKey }) => {
+    const historyEntries = buildHistoryEntries(gameId);
+    const entry = historyEntries.find((historyEntry) => historyEntry.entryKey === entryKey) ?? null;
+    if (!entry) {
+      return getGameViewModel(gameId);
+    }
+    const history = getHistoryState(gameId);
+    history.selection = { kind: "entry", entryKey, fallbackEntry: clone(entry) };
     reconcileHistorySelection(gameId);
     emitChange({ type: "history_mode_changed", gameId });
     return getGameViewModel(gameId);
   };
 
   const selectPendingHistoryMove = async ({ gameId, clientCommandId }) => {
-    if (!clientCommandId || !getPendingMoveByClientCommandId(gameId, clientCommandId)) {
+    if (!clientCommandId) {
       return getGameViewModel(gameId);
     }
-    const history = getHistoryState(gameId);
-    history.selection = { kind: "pending", clientCommandId };
-    reconcileHistorySelection(gameId);
-    emitChange({ type: "history_mode_changed", gameId });
-    return getGameViewModel(gameId);
+    return selectHistoryEntry({ gameId, entryKey: `client:${clientCommandId}` });
   };
 
   const returnToLive = async ({ gameId }) => {
@@ -1176,6 +1291,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     endTurn,
     loadGameHistory,
     selectHistoryMove,
+    selectHistoryEntry,
     selectPendingHistoryMove,
     returnToLive,
     retryHistoryLoad,
