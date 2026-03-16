@@ -1,6 +1,7 @@
 /**
  * @typedef {{ row: number, col: number }} BoardCoord
  * @typedef {{ selectedPieceId: string | null, source: BoardCoord | null, target: BoardCoord | null }} BoardSelection
+ * @typedef {{ mode: "interactive" | "recorded-action" | "none", selection?: BoardSelection | null, recordedAction?: unknown | null }} BoardOverlay
  *
  * Runtime contract for pluggable board adapters.
  * The app shell depends only on this surface.
@@ -21,6 +22,7 @@
  * @property {(input: {
  *   snapshot: unknown,
  *   selection: BoardSelection,
+ *   overlay: BoardOverlay,
  *   selectedPieceMoves: unknown[],
  *   selectedPieceMovePreviews?: unknown[],
  *   currentActionType: string,
@@ -30,6 +32,7 @@
  * @property {(input: {
  *   snapshot: unknown,
  *   selection: BoardSelection,
+ *   overlay: BoardOverlay,
  *   legalActions?: unknown[],
  *   selectedPieceMoves: unknown[],
  *   selectedPieceMovePreviews?: unknown[],
@@ -38,6 +41,7 @@
  * @property {(snapshot: unknown) => string} getCommanderSupplySummary
  * @property {(input: {
  *   snapshot: unknown,
+ *   overlay: BoardOverlay,
  *   selectedPieceId: string | null,
  *   selectedPieceMoves: unknown[],
  *   selectedPieceMovePreviews?: unknown[],

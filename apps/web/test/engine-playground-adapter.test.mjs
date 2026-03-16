@@ -19,6 +19,176 @@ const testDir = fileURLToPath(new URL(".", import.meta.url));
 const adapterSource = readFileSync(join(testDir, "..", "board-adapters", "engine-playground-adapter.js"), "utf8");
 const styleSource = readFileSync(join(testDir, "..", "styles.css"), "utf8");
 
+class FakeClassList {
+  constructor() {
+    this.values = new Set();
+  }
+
+  add(...tokens) {
+    for (const token of tokens) {
+      if (token) {
+        this.values.add(token);
+      }
+    }
+  }
+
+  remove(...tokens) {
+    for (const token of tokens) {
+      this.values.delete(token);
+    }
+  }
+
+  contains(token) {
+    return this.values.has(token);
+  }
+}
+
+class FakeElement {
+  constructor(tagName) {
+    this.tagName = tagName.toUpperCase();
+    this.children = [];
+    this.parentNode = null;
+    this.dataset = {};
+    this.attributes = new Map();
+    this.style = {};
+    this.classList = new FakeClassList();
+    this._className = "";
+    this._innerHTML = "";
+    this.textContent = "";
+    this.offsetLeft = 0;
+    this.offsetTop = 0;
+    this.offsetWidth = 10;
+    this.offsetHeight = 10;
+    this.clientWidth = 100;
+    this.clientHeight = 100;
+  }
+
+  set className(value) {
+    this._className = value;
+    this.classList = new FakeClassList();
+    for (const token of String(value).split(/\s+/).filter(Boolean)) {
+      this.classList.add(token);
+    }
+  }
+
+  get className() {
+    return this._className;
+  }
+
+  set innerHTML(value) {
+    this._innerHTML = value;
+    this.children = [];
+  }
+
+  get innerHTML() {
+    return this._innerHTML;
+  }
+
+  appendChild(child) {
+    child.parentNode = this;
+    if (child.dataset?.row && child.dataset?.col && this.tagName === "DIV") {
+      child.offsetTop = Number(child.dataset.row) * 10;
+      child.offsetLeft = Number(child.dataset.col) * 10;
+      child.offsetWidth = 10;
+      child.offsetHeight = 10;
+    }
+    this.children.push(child);
+    return child;
+  }
+
+  remove() {
+    if (!this.parentNode) {
+      return;
+    }
+    this.parentNode.children = this.parentNode.children.filter((child) => child !== this);
+    this.parentNode = null;
+  }
+
+  setAttribute(name, value) {
+    this.attributes.set(name, String(value));
+  }
+
+  getAttribute(name) {
+    return this.attributes.get(name) ?? null;
+  }
+
+  removeAttribute(name) {
+    this.attributes.delete(name);
+  }
+
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+
+  querySelectorAll(selector) {
+    const selectors = selector.split(",").map((value) => value.trim()).filter(Boolean);
+    const results = [];
+    const matches = (element, candidate) => {
+      if (candidate.startsWith("#")) {
+        return element.getAttribute("id") === candidate.slice(1);
+      }
+      if (candidate.startsWith(".")) {
+        return element.classList.contains(candidate.slice(1));
+      }
+      return element.tagName.toLowerCase() === candidate.toLowerCase();
+    };
+    const visit = (element) => {
+      for (const candidate of selectors) {
+        if (matches(element, candidate)) {
+          results.push(element);
+          break;
+        }
+      }
+      for (const child of element.children) {
+        visit(child);
+      }
+    };
+    for (const child of this.children) {
+      visit(child);
+    }
+    return results;
+  }
+
+  addEventListener() {}
+
+  removeEventListener() {}
+
+  closest(selector) {
+    if (selector === ".cell" && this.classList.contains("cell")) {
+      return this;
+    }
+    return this.parentNode?.closest?.(selector) ?? null;
+  }
+}
+
+const withFakeDocument = async (run) => {
+  const originalDocument = globalThis.document;
+  globalThis.document = {
+    createElement: (tagName) => new FakeElement(tagName),
+    createElementNS: (_ns, tagName) => new FakeElement(tagName),
+  };
+  try {
+    await run();
+  } finally {
+    globalThis.document = originalDocument;
+  }
+};
+
+const createMountedAdapter = () => {
+  const adapter = createEnginePlaygroundBoardAdapter();
+  const boardEl = new FakeElement("div");
+  const overlayLinesEl = new FakeElement("svg");
+  adapter.mount({
+    boardEl,
+    overlayLinesEl,
+    onCellClick: () => {},
+  });
+  return { adapter, boardEl, overlayLinesEl };
+};
+
+const getCell = (boardEl, row, col) =>
+  boardEl.children.find((child) => Number(child.dataset.row) === row && Number(child.dataset.col) === col) ?? null;
+
 test("retreat stack click selects pushed piece as retreat actor", () => {
   const adapter = createEnginePlaygroundBoardAdapter();
   const snapshot = {
@@ -221,6 +391,107 @@ test("path segment offset vector is stable for reversed segment direction", () =
     getPathSegmentOffsetVector({ row: 4, col: 5 }, { row: 4, col: 4 }, 2.5),
     { x: -0, y: 2.5 },
   );
+});
+
+test("recorded-action overlay shows move markers without supply, command, or non-push group context", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl, overlayLinesEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P1",
+      continuation: null,
+      pieces: [
+        { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
+        { id: "A2", owner: "P1", kind: "unit", position: { row: 4, col: 4 }, supplied: true, commanded: true },
+      ],
+      artifacts: {
+        supply: [
+          {
+            player: "P1",
+            shortestPathByPieceId: {
+              A1: [
+                { row: 4, col: 2 },
+                { row: 4, col: 1 },
+              ],
+            },
+          },
+        ],
+        command: {
+          shortestPathToCommanderByPieceId: {
+            A1: [
+              { row: 4, col: 2 },
+              { row: 3, col: 2 },
+            ],
+          },
+        },
+        groups: {
+          componentByPieceId: { A1: "G1", A2: "G1" },
+          membersByComponentId: { G1: ["A1", "A2"] },
+          strengthByComponentId: { G1: 2 },
+        },
+      },
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: {
+        mode: "recorded-action",
+        recordedAction: { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } },
+      },
+      legalActions: [],
+      selectedPieceMoves: [],
+      selectedPieceMovePreviews: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "move",
+    });
+
+    assert.equal(getCell(boardEl, 4, 2)?.classList.contains("source"), true);
+    assert.equal(getCell(boardEl, 4, 3)?.classList.contains("target"), true);
+    assert.equal(boardEl.querySelectorAll(".group-member").length, 0);
+    assert.equal(boardEl.querySelectorAll(".group-strength-badge").length, 0);
+    assert.equal(overlayLinesEl.querySelectorAll("line").length, 1);
+    assert.equal(overlayLinesEl.querySelectorAll("path").length, 1);
+  });
+});
+
+test("recorded-action push overlay keeps push group highlight and count", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P1",
+      continuation: null,
+      pieces: [
+        { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
+        { id: "A2", owner: "P1", kind: "unit", position: { row: 4, col: 4 }, supplied: true, commanded: true },
+      ],
+      artifacts: {
+        groups: {
+          componentByPieceId: { A1: "G1", A2: "G1" },
+          membersByComponentId: { G1: ["A1", "A2"] },
+          strengthByComponentId: { G1: 2 },
+        },
+      },
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: {
+        mode: "recorded-action",
+        recordedAction: { type: "push", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } },
+      },
+      legalActions: [],
+      selectedPieceMoves: [],
+      selectedPieceMovePreviews: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "push",
+    });
+
+    assert.equal(boardEl.querySelectorAll(".group-member").length, 2);
+    assert.equal(boardEl.querySelectorAll(".group-strength-badge").length, 1);
+  });
 });
 
 test("empty-cell preview markers use a geometry-based centered dot", () => {

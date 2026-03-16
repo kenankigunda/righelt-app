@@ -255,6 +255,16 @@ function findPieceById(snapshot, pieceId) {
   return snapshot.pieces.find((piece) => piece.id === pieceId) ?? null;
 }
 
+function findActionPiece(snapshot, action) {
+  if (!snapshot || !action) {
+    return null;
+  }
+  return (
+    (typeof action.actorId === "string" ? findPieceById(snapshot, action.actorId) : null) ??
+    (action.from ? findPieceAt(snapshot, action.from.row, action.from.col) : null)
+  );
+}
+
 function findPreferredPieceAt(snapshot, row, col) {
   const pieces = findPiecesAt(snapshot, row, col);
   if (pieces.length === 0) {
@@ -406,6 +416,46 @@ function applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey
       continue;
     }
     cellByCoordinateKey.get(coordKey(piece.position))?.classList.add("continuation-member", "continuation-pending");
+  }
+}
+
+function applyGroupDecorations(snapshot, piece, cellByCoordinateKey, { showBadge = true } = {}) {
+  const groupInfo = getGroupInfoForPiece(snapshot, piece);
+  if (groupInfo.members.length === 0) {
+    return;
+  }
+
+  const memberPieces = groupInfo.members
+    .map((pieceId) => findPieceById(snapshot, pieceId))
+    .filter((candidate) => Boolean(candidate));
+
+  for (const member of memberPieces) {
+    const memberCell = cellByCoordinateKey.get(coordKey(member.position));
+    memberCell?.classList.add("group-member");
+  }
+
+  if (!showBadge) {
+    return;
+  }
+
+  const anchor = memberPieces
+    .map((member) => member.position)
+    .sort((a, b) => {
+      if (a.row !== b.row) {
+        return a.row - b.row;
+      }
+      return a.col - b.col;
+    })[0];
+
+  if (!anchor) {
+    return;
+  }
+  const anchorCell = cellByCoordinateKey.get(coordKey(anchor));
+  if (anchorCell && typeof groupInfo.strength === "number" && groupInfo.strength > 1) {
+    const badge = document.createElement("span");
+    badge.className = "group-strength-badge";
+    badge.textContent = String(groupInfo.strength);
+    anchorCell.appendChild(badge);
   }
 }
 
@@ -593,7 +643,14 @@ export function createEnginePlaygroundBoardAdapter() {
     }
   };
 
-  const renderPieceOverlays = ({ snapshot, legalActions, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) => {
+  const renderPieceOverlays = ({
+    snapshot,
+    overlay,
+    legalActions,
+    selectedPieceId,
+    selectedPieceMoves,
+    selectedPieceMovePreviews,
+  }) => {
     if (!overlayLinesEl) {
       return;
     }
@@ -601,6 +658,34 @@ export function createEnginePlaygroundBoardAdapter() {
     clearCellDecorations();
     overlayLinesEl.innerHTML = "";
     setOverlayViewBox();
+
+    if (overlay?.mode === "recorded-action") {
+      const action = overlay.recordedAction;
+      const piece = findActionPiece(snapshot, action);
+      if (!action || !piece) {
+        return;
+      }
+
+      if (action.type === "push") {
+        applyGroupDecorations(snapshot, piece, cellByCoordinateKey);
+      }
+
+      if (action.to) {
+        if (action.type !== "project") {
+          drawArrowLine(action.from ?? piece.position, action.to, piece.owner, false, true);
+        }
+        const targetCell = cellByCoordinateKey.get(coordKey(action.to));
+        if (targetCell) {
+          const ghost = buildPieceToken(action.previewPiece ?? piece, true);
+          ghost.classList.add("move-ghost");
+          if (action.type === "project") {
+            ghost.classList.add("preview-created");
+          }
+          targetCell.appendChild(ghost);
+        }
+      }
+      return;
+    }
 
     const piece = findPieceById(snapshot, selectedPieceId);
     if (!piece) {
@@ -624,36 +709,7 @@ export function createEnginePlaygroundBoardAdapter() {
       }
     }
 
-    const groupInfo = getGroupInfoForPiece(snapshot, piece);
-    if (groupInfo.members.length > 0) {
-      const memberPieces = groupInfo.members
-        .map((pieceId) => findPieceById(snapshot, pieceId))
-        .filter((candidate) => Boolean(candidate));
-
-      for (const member of memberPieces) {
-        const memberCell = cellByCoordinateKey.get(coordKey(member.position));
-        memberCell?.classList.add("group-member");
-      }
-
-      const anchor = memberPieces
-        .map((member) => member.position)
-        .sort((a, b) => {
-          if (a.row !== b.row) {
-            return a.row - b.row;
-          }
-          return a.col - b.col;
-        })[0];
-
-      if (anchor) {
-        const anchorCell = cellByCoordinateKey.get(coordKey(anchor));
-        if (anchorCell && typeof groupInfo.strength === "number" && groupInfo.strength > 1) {
-          const badge = document.createElement("span");
-          badge.className = "group-strength-badge";
-          badge.textContent = String(groupInfo.strength);
-          anchorCell.appendChild(badge);
-        }
-      }
-    }
+    applyGroupDecorations(snapshot, piece, cellByCoordinateKey);
 
     applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey);
     if (snapshot?.continuation?.type === "push" && snapshot.continuation.phase === "retreat") {
@@ -902,6 +958,7 @@ export function createEnginePlaygroundBoardAdapter() {
     render({
       snapshot,
       selection,
+      overlay,
       legalActions,
       selectedPieceMoves,
       selectedPieceMovePreviews,
@@ -925,12 +982,26 @@ export function createEnginePlaygroundBoardAdapter() {
           cell.type = "button";
           cell.className = "cell";
           const cellPiece = findPieceAt(snapshot, row, col);
-          const hasSource = Boolean(selection.source);
-          const previews = Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves;
+          const effectiveSelection =
+            overlay?.mode === "recorded-action"
+              ? {
+                  selectedPieceId: null,
+                  source: overlay?.recordedAction?.from ?? null,
+                  target: overlay?.recordedAction?.to ?? null,
+                }
+              : selection;
+          const previews =
+            overlay?.mode === "interactive"
+              ? Array.isArray(selectedPieceMovePreviews)
+                ? selectedPieceMovePreviews
+                : selectedPieceMoves
+              : [];
+          const effectiveSelectedPieceMoves = overlay?.mode === "interactive" ? selectedPieceMoves : [];
+          const hasSource = Boolean(effectiveSelection.source);
           const previewsAtCell = previews.filter(
             (action) => action.to && action.to.row === row && action.to.col === col,
           );
-          const legalAtCell = selectedPieceMoves.filter(
+          const legalAtCell = effectiveSelectedPieceMoves.filter(
             (action) => action.to && action.to.row === row && action.to.col === col,
           );
           const hasActionToCell = previewsAtCell.length > 0;
@@ -953,8 +1024,14 @@ export function createEnginePlaygroundBoardAdapter() {
             cell.setAttribute("data-removal-label", removalEffect.message);
           }
 
-          const isSource = selection.source && selection.source.row === row && selection.source.col === col;
-          const isTarget = selection.target && selection.target.row === row && selection.target.col === col;
+          const isSource =
+            effectiveSelection.source &&
+            effectiveSelection.source.row === row &&
+            effectiveSelection.source.col === col;
+          const isTarget =
+            effectiveSelection.target &&
+            effectiveSelection.target.row === row &&
+            effectiveSelection.target.col === col;
           if (isSource) cell.classList.add("source");
           if (isTarget) {
             cell.classList.add("target");
@@ -1026,8 +1103,8 @@ export function createEnginePlaygroundBoardAdapter() {
           if (row === BOARD_SIZE - 1) {
             const colAxis = document.createElement("span");
             colAxis.className = "axis-label col-axis";
-            const source = selection.source;
-            const target = selection.target;
+            const source = effectiveSelection.source;
+            const target = effectiveSelection.target;
             const hasDifferentTarget = Boolean(
               source &&
                 target &&
@@ -1045,8 +1122,8 @@ export function createEnginePlaygroundBoardAdapter() {
           if (col === 0) {
             const rowAxis = document.createElement("span");
             rowAxis.className = "axis-label row-axis";
-            const source = selection.source;
-            const target = selection.target;
+            const source = effectiveSelection.source;
+            const target = effectiveSelection.target;
             const hasDifferentTarget = Boolean(
               source &&
                 target &&
@@ -1068,6 +1145,7 @@ export function createEnginePlaygroundBoardAdapter() {
 
       renderPieceOverlays({
         snapshot,
+        overlay,
         legalActions,
         selectedPieceId: selection.selectedPieceId,
         selectedPieceMoves,
@@ -1081,7 +1159,10 @@ export function createEnginePlaygroundBoardAdapter() {
       return `C1=${getPieceRenderStatus(c1).supplied} | C2=${getPieceRenderStatus(c2).supplied}`;
     },
 
-    getSelectedPieceSummary({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) {
+    getSelectedPieceSummary({ snapshot, overlay, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) {
+      if (overlay?.mode && overlay.mode !== "interactive") {
+        return null;
+      }
       const selectedPiece = findPieceById(snapshot, selectedPieceId);
       if (!selectedPiece) {
         return null;

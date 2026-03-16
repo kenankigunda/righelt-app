@@ -32,6 +32,11 @@ const TARGET_ORIGIN = {
   HOVER: "hover",
   MANUAL: "manual",
 };
+const OVERLAY_MODE = {
+  INTERACTIVE: "interactive",
+  NONE: "none",
+  RECORDED_ACTION: "recorded-action",
+};
 
 export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let elements = {
@@ -55,6 +60,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let mounted = false;
   let removalEffectsTimer = null;
   let internalActionType = defaultActionType;
+  let overlayMode = OVERLAY_MODE.INTERACTIVE;
+  let recordedAction = null;
 
   const getActionType = () => {
     const value = controls.getActionType?.();
@@ -76,6 +83,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   const getSupportsHover = () => Boolean(controls.getSupportsHover?.());
 
   const getCurrentSelection = () => ({ selectedPieceId, source: selectedSource, target: selectedTarget });
+  const getOverlay = () => ({
+    mode: overlayMode,
+    selection: overlayMode === OVERLAY_MODE.INTERACTIVE ? getCurrentSelection() : null,
+    recordedAction: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedAction : null,
+  });
 
   const setSelectedTarget = (target, origin = null) => {
     if (!target) {
@@ -241,6 +253,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     boardAdapter.render({
       snapshot: state,
       selection: getCurrentSelection(),
+      overlay: getOverlay(),
       legalActions,
       selectedPieceMoves,
       selectedPieceMovePreviews,
@@ -260,15 +273,20 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       setPlayerTone(elements.boardTurnIndicatorEl, state.sideToMove);
     }
 
-    const pieceSummary = boardAdapter.getSelectedPieceSummary({
-      snapshot: state,
-      selectedPieceId,
-      selectedPieceMoves,
-      selectedPieceMovePreviews,
-    });
+    const pieceSummary =
+      overlayMode === OVERLAY_MODE.INTERACTIVE
+        ? boardAdapter.getSelectedPieceSummary({
+            snapshot: state,
+            overlay: getOverlay(),
+            selectedPieceId,
+            selectedPieceMoves,
+            selectedPieceMovePreviews,
+          })
+        : null;
 
     controls.onStateUpdated?.({
       state,
+      overlay: getOverlay(),
       legalActions,
       selectedPieceMoves,
       selectedPieceMovePreviews,
@@ -278,6 +296,12 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       pieceSummary,
       formatCoordinate,
     });
+
+    if (overlayMode === OVERLAY_MODE.RECORDED_ACTION) {
+      const recordedActionLabel = recordedAction?.from && recordedAction?.to ? "Showing recorded move." : "Showing history move.";
+      setBoardPreviewPrompt(recordedActionLabel);
+      return;
+    }
 
     if (!pieceSummary) {
       selectedPieceMoves = [];
@@ -827,12 +851,27 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     setActionType(action.type);
   };
 
+  const applySelectionState = (selectionState) => {
+    selectedPieceId = selectionState?.selectedPieceId ?? null;
+    selectedSource = selectionState?.source ? { ...selectionState.source } : null;
+    setSelectedTarget(selectionState?.target ?? null, selectionState?.target ? TARGET_ORIGIN.MANUAL : null);
+  };
+
   const loadSnapshot = async (
     snapshot,
-    { legalActions: incomingLegalActions = null, resetSelection = true, selectionAction = null } = {},
+    {
+      legalActions: incomingLegalActions = null,
+      resetSelection = true,
+      selectionAction = null,
+      selectionState = null,
+      overlayMode: nextOverlayMode = OVERLAY_MODE.INTERACTIVE,
+      recordedAction: nextRecordedAction = null,
+    } = {},
   ) => {
     state = structuredClone(snapshot);
     legalActions = Array.isArray(incomingLegalActions) ? incomingLegalActions : [];
+    overlayMode = nextOverlayMode;
+    recordedAction = nextRecordedAction ? structuredClone(nextRecordedAction) : null;
     const preserveRemovalEffects = resetSelection !== true && !selectionAction && removalEffects.length > 0;
     if (!preserveRemovalEffects) {
       clearRemovalEffects();
@@ -842,8 +881,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
     selectedPieceMoves = [];
     selectedPieceMovePreviews = [];
-    applyForcedContinuationSelection();
-    if (selectionAction) {
+    if (overlayMode === OVERLAY_MODE.INTERACTIVE) {
+      if (selectionState) {
+        applySelectionState(selectionState);
+      } else {
+        applyForcedContinuationSelection();
+      }
+    }
+    if (selectionAction && overlayMode === OVERLAY_MODE.INTERACTIVE) {
       applySelectionPreviewFromAction(selectionAction);
       selectedPieceMoves = [structuredClone(selectionAction)];
       selectedPieceMovePreviews = [structuredClone(selectionAction)];
@@ -926,6 +971,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     getState: () => state,
     getLegalActions: () => legalActions,
     getSelection: () => ({ selectedPieceId, source: selectedSource, target: selectedTarget }),
+    getOverlay: () => getOverlay(),
     setActionType,
     getActionType,
     setResult,

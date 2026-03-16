@@ -77,7 +77,7 @@ let mountedBoardGameId = null;
 let mountedHistoryMoveIndex = null;
 let mountedSnapshotKey = null;
 let mountedLegalActionsKey = null;
-let mountedSelectionActionKey = null;
+let mountedOverlayKey = null;
 let mountedSyncStatusKey = null;
 let boardRuntime = null;
 let busy = false;
@@ -1022,7 +1022,7 @@ const mountBoardForGame = (game) => {
     mountedHistoryMoveIndex = null;
     mountedSnapshotKey = null;
     mountedLegalActionsKey = null;
-    mountedSelectionActionKey = null;
+    mountedOverlayKey = null;
     mountedSyncStatusKey = null;
     if (boardRuntime) {
       boardRuntime.destroy();
@@ -1034,20 +1034,15 @@ const mountBoardForGame = (game) => {
   const snapshot = game.currentSnapshot ?? null;
   const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
   const historySelectionAction = game.inHistoryMode ? game.historySelectionAction ?? null : null;
-  const effectiveLegalActions = game.inHistoryMode
-    ? historySelectionAction
-      ? [historySelectionAction]
-      : []
-    : Array.isArray(game.legalActions)
-      ? game.legalActions
-      : [];
+  const overlayMode = game.inHistoryMode ? "recorded-action" : "interactive";
+  const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode ? game.legalActions : [];
   if (!snapshot) {
     return;
   }
 
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
-  const selectionActionKey = toStableKey(historySelectionAction);
+  const overlayKey = toStableKey({ overlayMode, recordedAction: historySelectionAction });
 
   if (mountedBoardGameId !== game.id || !boardRuntime) {
     if (boardRuntime) {
@@ -1075,7 +1070,7 @@ const mountBoardForGame = (game) => {
     mountedHistoryMoveIndex = historyMoveIndex;
     mountedSnapshotKey = snapshotKey;
     mountedLegalActionsKey = legalActionsKey;
-    mountedSelectionActionKey = selectionActionKey;
+    mountedOverlayKey = overlayKey;
     mountedSyncStatusKey = toStableKey({
       syncStatus: game.syncStatus ?? "ready",
       rollbackNotice: game.rollbackNotice ?? "",
@@ -1084,7 +1079,8 @@ const mountBoardForGame = (game) => {
     void boardRuntime.loadSnapshot(snapshot, {
       legalActions: effectiveLegalActions,
       resetSelection: true,
-      selectionAction: historySelectionAction,
+      overlayMode,
+      recordedAction: historySelectionAction,
     });
     return;
   }
@@ -1103,32 +1099,33 @@ const mountBoardForGame = (game) => {
     runtimeLegalActionsKey,
     snapshotKey,
     legalActionsKey,
-    mountedSelectionActionKey,
-    selectionActionKey,
+    mountedOverlayKey,
+    overlayKey,
     resetSelection,
   })) {
     mountedSnapshotKey = snapshotKey;
     mountedLegalActionsKey = legalActionsKey;
-    mountedSelectionActionKey = selectionActionKey;
+    mountedOverlayKey = overlayKey;
     mountedSyncStatusKey = syncStatusKey;
     return;
   }
   const shouldReloadSnapshot =
     mountedSnapshotKey !== snapshotKey ||
     mountedLegalActionsKey !== legalActionsKey ||
-    mountedSelectionActionKey !== selectionActionKey ||
+    mountedOverlayKey !== overlayKey ||
     resetSelection;
   if (!shouldReloadSnapshot) {
     return;
   }
   mountedSnapshotKey = snapshotKey;
   mountedLegalActionsKey = legalActionsKey;
-  mountedSelectionActionKey = selectionActionKey;
+  mountedOverlayKey = overlayKey;
   mountedSyncStatusKey = syncStatusKey;
   void boardRuntime.loadSnapshot(snapshot, {
     legalActions: effectiveLegalActions,
     resetSelection,
-    selectionAction: historySelectionAction,
+    overlayMode,
+    recordedAction: historySelectionAction,
   });
 };
 
@@ -1137,7 +1134,7 @@ const destroyMountedBoardRuntime = () => {
   mountedHistoryMoveIndex = null;
   mountedSnapshotKey = null;
   mountedLegalActionsKey = null;
-  mountedSelectionActionKey = null;
+  mountedOverlayKey = null;
   mountedSyncStatusKey = null;
   if (boardRuntime) {
     boardRuntime.destroy();
