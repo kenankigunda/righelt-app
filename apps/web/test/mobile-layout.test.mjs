@@ -37,7 +37,7 @@ test("wide-screen shell sticky columns only target the left and board stacks", (
   );
   assert.match(
     shellStylesSource,
-    /@media \(min-width: 901px\)\s*\{[\s\S]*\.layout-grid > \[data-shell-sticky-target\]\[data-sticky-enabled="true"\]\s*\{[\s\S]*position:\s*sticky;[\s\S]*top:\s*0;[\s\S]*align-self:\s*start;/s,
+    /@media \(min-width: 901px\)\s*\{[\s\S]*\.layout-grid > \[data-shell-sticky-target\]\[data-sticky-enabled="true"\]\s*\{[\s\S]*position:\s*sticky;[\s\S]*top:\s*1rem;[\s\S]*align-self:\s*start;/s,
   );
   assert.doesNotMatch(
     shellStylesSource,

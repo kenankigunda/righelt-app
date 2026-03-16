@@ -152,7 +152,7 @@ button.secondary:disabled {
 @media (min-width: 901px) {
   .layout-grid > [data-shell-sticky-target][data-sticky-enabled="true"] {
     position: sticky;
-    top: 0;
+    top: 1rem;
     align-self: start;
   }
 }
