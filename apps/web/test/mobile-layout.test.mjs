@@ -29,3 +29,29 @@ test("shell header stacks cleanly on narrow screens", () => {
     /@media \(max-width: 640px\)\s*\{[\s\S]*\.shell-header\s*\{[\s\S]*flex-wrap:\s*wrap;[\s\S]*\}[\s\S]*\.shell-header-main,\s*\.shell-header-actions\s*\{[\s\S]*flex:\s*1 1 100%;[\s\S]*max-width:\s*100%;/s,
   );
 });
+
+test("wide-screen shell sticky columns only target the left and board stacks", () => {
+  assert.match(
+    shellStylesSource,
+    /\.layout-grid\s*\{[\s\S]*align-items:\s*start;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="wide"\]\s+\.layout-grid > \[data-shell-sticky-target\]\[data-sticky-enabled="true"\]\s*\{[\s\S]*position:\s*sticky;[\s\S]*top:\s*1rem;[\s\S]*align-self:\s*start;/s,
+  );
+  assert.doesNotMatch(
+    shellStylesSource,
+    /\.layout-grid > :last-child[\s\S]*position:\s*sticky|data-game-panel="history"[\s\S]*position:\s*sticky/,
+  );
+});
+
+test("narrow-screen shell layout still collapses to one column without sticky rules in that breakpoint", () => {
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="narrow"\]\s+\.layout-grid\s*\{[\s\S]*grid-template-columns:\s*1fr;/s,
+  );
+  assert.doesNotMatch(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="narrow"\]\s+\.layout-grid > \[data-shell-sticky-target\][\s\S]*position:\s*sticky;/s,
+  );
+});
