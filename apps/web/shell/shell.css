@@ -149,12 +149,14 @@ button.secondary:disabled {
   align-content: start;
 }
 
-@media (min-width: 901px) {
-  .layout-grid > [data-shell-sticky-target][data-sticky-enabled="true"] {
-    position: sticky;
-    top: 1rem;
-    align-self: start;
-  }
+#app[data-shell-layout-mode="wide"] .layout-grid > [data-shell-sticky-target][data-sticky-enabled="true"] {
+  position: sticky;
+  top: 1rem;
+  align-self: start;
+}
+
+#app[data-shell-layout-mode="narrow"] .layout-grid {
+  grid-template-columns: 1fr;
 }
 
 .meta,
@@ -518,12 +520,6 @@ button.button-release-bounce,
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
-}
-
-@media (max-width: 900px) {
-  .layout-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 640px) {

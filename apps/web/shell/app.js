@@ -46,6 +46,7 @@ if (playgroundAppEl) {
 }
 if (appEl) {
   appEl.hidden = false;
+  appEl.setAttribute("data-shell-layout-mode", "narrow");
 }
 
 const createMemoryStorageFallback = () => {
@@ -98,7 +99,7 @@ let historyReleaseTimer = null;
 let pressedControlEl = null;
 let controlReleaseTimer = null;
 let stickyLayoutFrame = 0;
-const SHELL_WIDE_SCREEN_QUERY = "(min-width: 901px)";
+const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;
 
 const escapeHtml = (value) =>
   String(value)
@@ -212,6 +213,14 @@ const delay = (ms) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+const getShellLayoutMode = (viewportWidth = window.innerWidth) => (viewportWidth >= SHELL_WIDE_SCREEN_MIN_WIDTH ? "wide" : "narrow");
+const syncShellLayoutMode = () => {
+  const layoutMode = getShellLayoutMode();
+  if (appEl instanceof HTMLElement) {
+    appEl.setAttribute("data-shell-layout-mode", layoutMode);
+  }
+  return layoutMode;
+};
 
 const animateHistoryDeselection = async (actionEl) => {
   if (prefersReducedMotion() || !appEl) {
@@ -742,12 +751,13 @@ const applyGameShellStickyLayout = () => {
   if (!(appEl instanceof HTMLElement)) {
     return;
   }
+  const layoutMode = syncShellLayoutMode();
   const stickyTargets = Array.from(appEl.querySelectorAll("[data-shell-sticky-target]"));
   if (stickyTargets.length === 0) {
     return;
   }
 
-  const matchesWideScreen = window.matchMedia(SHELL_WIDE_SCREEN_QUERY).matches;
+  const matchesWideScreen = layoutMode === "wide";
   const viewportHeight = window.innerHeight;
   stickyTargets.forEach((targetEl) => {
     if (!(targetEl instanceof HTMLElement)) {

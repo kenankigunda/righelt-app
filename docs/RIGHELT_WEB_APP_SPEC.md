@@ -181,10 +181,20 @@ For the current board implementation:
 - Prefer a single quick overbounce-and-settle on release over a delayed second bounce or a separate follow-up flourish.
 - When a related surface should feel coupled to the same interaction, it may mirror the same press/release timing, but the timing must stay synchronized with the interactive element.
 - Example pattern from shell history:
-  - the clicked move row compresses immediately on pointer-down
-  - the board may mirror that same pressed state at the same time
-  - on click/release, both perform one quick release bounce
-  - the history/state swap happens without adding a second delayed animation after that release bounce
+- the clicked move row compresses immediately on pointer-down
+- the board may mirror that same pressed state at the same time
+- on click/release, both perform one quick release bounce
+- the history/state swap happens without adding a second delayed animation after that release bounce
+
+### 1.1.7 Shared UI Constant Convention
+
+- Any constant consumed by both JavaScript and CSS must come from a single implementation source of truth.
+- Do not duplicate raw values across JS and CSS for shared behavior or styling concerns, including breakpoints, spacing values, colors, timing values, sizing constants, and similar UI tokens.
+- Preferred pattern: one layer owns the token and exposes derived state for the other layer to consume.
+  - Example: JS owns a breakpoint constant and writes a DOM attribute/class that CSS styles against.
+  - Example: CSS owns a color token as a custom property and JS reads it via `getComputedStyle(...)` when runtime logic must use the same color value.
+  - Example: a build-generated shared token source may emit synchronized values for both JS and CSS.
+- When adding or changing a shared constant, update the shared source first and keep tests that prove the consuming CSS and JS stay aligned.
 
 ## 2. Identity and Rejoin
 
