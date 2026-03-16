@@ -33,6 +33,87 @@ test("board runtime keeps internal action type when external controls are absent
   assert.equal(runtime.getActionType(), "move");
 });
 
+test("board runtime uses recorded-action overlay mode without selected piece summary flow", async () => {
+  const renderCalls = [];
+  let summaryCalls = 0;
+  let boardPreviewLabelValue = "";
+  const boardPreviewLabelEl = {
+    get textContent() {
+      return boardPreviewLabelValue;
+    },
+    set textContent(value) {
+      boardPreviewLabelValue = value;
+    },
+    get innerHTML() {
+      return boardPreviewLabelValue;
+    },
+    set innerHTML(value) {
+      boardPreviewLabelValue = value;
+    },
+    addEventListener: noop,
+    removeEventListener: noop,
+  };
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: (payload) => renderCalls.push(payload),
+      getSelectedPieceSummary: () => {
+        summaryCalls += 1;
+        return null;
+      },
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      canInteract: () => false,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl,
+    boardTurnIndicatorEl: null,
+  });
+
+  const recordedAction = {
+    type: "move",
+    actorId: "A1",
+    from: { row: 4, col: 2 },
+    to: { row: 4, col: 3 },
+  };
+
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      outcome: null,
+      pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true }],
+    },
+    {
+      legalActions: [],
+      overlayMode: "recorded-action",
+      recordedAction,
+    },
+  );
+
+  assert.equal(summaryCalls, 0);
+  assert.equal(renderCalls.at(-1)?.overlay?.mode, "recorded-action");
+  assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedAction, recordedAction);
+  assert.equal(boardPreviewLabelEl.textContent, "Showing recorded move.");
+});
+
 test("board runtime renders removal effects returned from shell apply actions", async () => {
   const renderCalls = [];
   const scheduledTimers = [];

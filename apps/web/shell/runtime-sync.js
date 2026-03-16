@@ -3,11 +3,11 @@ export const shouldSkipBoardRuntimeReload = ({
   runtimeLegalActionsKey,
   snapshotKey,
   legalActionsKey,
-  mountedSelectionActionKey,
-  selectionActionKey,
+  mountedOverlayKey,
+  overlayKey,
   resetSelection,
 }) =>
   runtimeSnapshotKey === snapshotKey &&
   runtimeLegalActionsKey === legalActionsKey &&
-  mountedSelectionActionKey === selectionActionKey &&
+  mountedOverlayKey === overlayKey &&
   resetSelection !== true;
