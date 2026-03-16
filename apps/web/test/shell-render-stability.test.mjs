@@ -9,11 +9,23 @@ const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
 
 test("shell render patches same-route game updates without replacing the board panel", () => {
   assert.match(source, /let lastRenderedMarkup = "";/);
+  assert.match(source, /let stickyLayoutFrame = 0;/);
+  assert.match(source, /const SHELL_WIDE_SCREEN_QUERY = "\(min-width: 901px\)";/);
   assert.match(source, /const renderGameShellFrame = \(game\) =>/);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
+  assert.match(source, /data-shell-sticky-target="left" data-sticky-enabled="false"/);
+  assert.match(source, /data-shell-sticky-target="board" data-sticky-enabled="false"/);
   assert.match(source, /data-game-panel="history"/);
   assert.match(source, /const updateMountedGameShell = \(\{ game, inviteFromRole = null, inviteToken = null, includeBoard = true \} = \{\}\) => \{/);
+  assert.match(source, /const shouldEnableStickyShellColumn = \(\{ matchesWideScreen, columnHeight, viewportHeight \}\) =>/);
+  assert.match(source, /const applyGameShellStickyLayout = \(\) => \{/);
+  assert.match(source, /const scheduleGameShellStickyLayout = \(\) => \{/);
+  assert.match(source, /window\.cancelAnimationFrame\(stickyLayoutFrame\);/);
+  assert.match(source, /stickyLayoutFrame = window\.requestAnimationFrame\(\(\) => \{\s*stickyLayoutFrame = 0;\s*applyGameShellStickyLayout\(\);\s*\}\);/s);
+  assert.match(source, /window\.matchMedia\(SHELL_WIDE_SCREEN_QUERY\)\.matches/);
+  assert.match(source, /const columnHeight = Math\.round\(targetEl\.getBoundingClientRect\(\)\.height\);/);
+  assert.match(source, /targetEl\.setAttribute\("data-sticky-enabled", stickyEnabled \? "true" : "false"\);/);
   assert.match(source, /const mountedGameShell = getMountedGameShellRoot\(\);/);
   assert.match(source, /shouldUseIncrementalGameShell\(\)/);
   assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),/s);
@@ -25,6 +37,9 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const animatePanelHeightChanges = \(previousPanelHeights\) => \{/);
   assert.match(source, /querySelectorAll\("\.panel"\)/);
   assert.match(source, /class="panel" data-shell-panel="board"/);
+  assert.match(source, /scheduleGameShellStickyLayout\(\);/);
+  assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
+  assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
   assert.match(source, /const nextMarkup = `\$\{renderHeader\(\)\}\$\{body\}`;/);
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);

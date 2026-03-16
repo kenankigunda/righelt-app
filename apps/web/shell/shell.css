@@ -140,12 +140,21 @@ button.secondary:disabled {
   display: grid;
   gap: 1rem;
   grid-template-columns: 1.05fr 1.9fr 1.05fr;
+  align-items: start;
 }
 
 .stack {
   display: grid;
   gap: 1rem;
   align-content: start;
+}
+
+@media (min-width: 901px) {
+  .layout-grid > [data-shell-sticky-target][data-sticky-enabled="true"] {
+    position: sticky;
+    top: 0;
+    align-self: start;
+  }
 }
 
 .meta,

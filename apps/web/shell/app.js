@@ -97,6 +97,8 @@ let pressedHistoryActionEl = null;
 let historyReleaseTimer = null;
 let pressedControlEl = null;
 let controlReleaseTimer = null;
+let stickyLayoutFrame = 0;
+const SHELL_WIDE_SCREEN_QUERY = "(min-width: 901px)";
 
 const escapeHtml = (value) =>
   String(value)
@@ -706,16 +708,22 @@ const renderBoardPanel = (game) => `
   </div>
 `;
 
+const shouldEnableStickyShellColumn = ({ matchesWideScreen, columnHeight, viewportHeight }) =>
+  matchesWideScreen &&
+  Number.isFinite(columnHeight) &&
+  Number.isFinite(viewportHeight) &&
+  columnHeight <= viewportHeight;
+
 const renderGameShellFrame = (game) => `
   <div id="shell-game-alerts"></div>
   <section class="layout-grid" data-game-shell-root data-game-id="${escapeHtml(game.id)}">
-    <div class="stack">
+    <div class="stack" data-shell-sticky-target="left" data-sticky-enabled="false">
       <section class="panel" data-game-panel="summary"></section>
       <section class="panel" data-game-panel="join"></section>
       <section class="panel" data-game-panel="participants"></section>
     </div>
 
-    <div class="stack">
+    <div class="stack" data-shell-sticky-target="board" data-sticky-enabled="false">
       <section class="panel" data-shell-panel="board">
         ${renderBoardPanel(game)}
       </section>
@@ -729,6 +737,41 @@ const renderGameShellFrame = (game) => `
 
 const getMountedGameShellRoot = () =>
   appEl?.querySelector?.("[data-game-shell-root]") instanceof HTMLElement ? appEl.querySelector("[data-game-shell-root]") : null;
+
+const applyGameShellStickyLayout = () => {
+  if (!(appEl instanceof HTMLElement)) {
+    return;
+  }
+  const stickyTargets = Array.from(appEl.querySelectorAll("[data-shell-sticky-target]"));
+  if (stickyTargets.length === 0) {
+    return;
+  }
+
+  const matchesWideScreen = window.matchMedia(SHELL_WIDE_SCREEN_QUERY).matches;
+  const viewportHeight = window.innerHeight;
+  stickyTargets.forEach((targetEl) => {
+    if (!(targetEl instanceof HTMLElement)) {
+      return;
+    }
+    const columnHeight = Math.round(targetEl.getBoundingClientRect().height);
+    const stickyEnabled = shouldEnableStickyShellColumn({
+      matchesWideScreen,
+      columnHeight,
+      viewportHeight,
+    });
+    targetEl.setAttribute("data-sticky-enabled", stickyEnabled ? "true" : "false");
+  });
+};
+
+const scheduleGameShellStickyLayout = () => {
+  if (stickyLayoutFrame) {
+    window.cancelAnimationFrame(stickyLayoutFrame);
+  }
+  stickyLayoutFrame = window.requestAnimationFrame(() => {
+    stickyLayoutFrame = 0;
+    applyGameShellStickyLayout();
+  });
+};
 
 const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = null, includeBoard = true } = {}) => {
   const shellRoot = getMountedGameShellRoot();
@@ -761,6 +804,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   if (includeBoard) {
     mountBoardForGame(game);
   }
+  scheduleGameShellStickyLayout();
   return true;
 };
 
@@ -789,13 +833,13 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
   return `
     ${renderGameAlertsHtml(game, inviteFromRole)}
     <section class="layout-grid">
-      <div class="stack">
+      <div class="stack" data-shell-sticky-target="left" data-sticky-enabled="false">
         <section class="panel">${renderGameSummaryPanel(game)}</section>
         <section class="panel">${renderJoinInvitePanel(game, inviteLink)}</section>
         <section class="panel">${renderParticipantsPanel(game)}</section>
       </div>
 
-      <div class="stack">
+      <div class="stack" data-shell-sticky-target="board" data-sticky-enabled="false">
         <section class="panel" data-shell-panel="board">
           ${renderBoardPanel(game)}
         </section>
@@ -1134,6 +1178,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   }
   updateHeaderFields();
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
+    scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
     return;
   }
@@ -1147,9 +1192,11 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
       return;
     }
     mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
+    scheduleGameShellStickyLayout();
   }
   if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
     mountBoardForGame(transport.getGameViewModel(resolvedInvite.gameId));
+    scheduleGameShellStickyLayout();
   }
 };
 
@@ -1322,6 +1369,14 @@ window.addEventListener("offline", () => {
     liveSyncConnectedRoute = "";
     await syncRouteData();
   });
+});
+
+window.addEventListener("resize", () => {
+  scheduleGameShellStickyLayout();
+});
+
+window.addEventListener("load", () => {
+  scheduleGameShellStickyLayout();
 });
 
 appEl.addEventListener("click", async (event) => {
