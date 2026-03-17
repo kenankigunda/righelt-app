@@ -503,10 +503,9 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
   const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex + 1 : game?.moves?.length ?? 0;
   const canSaveScenario = Boolean(game);
   const canLoadIntoCurrentGame = Boolean(game && Array.isArray(game.moves) && game.moves.length === 0 && selectedScenario);
-  const titleSuffix = scenarioCatalog.id ? ` (${escapeHtml(scenarioCatalog.id)})` : "";
   return `
     <section class="panel debug-panel">
-      <h2>Scenarios${titleSuffix}</h2>
+      <h2>Scenarios</h2>
       <div class="form-row">
         <label for="scenario-select">Saved scenario</label>
         <select id="scenario-select">
