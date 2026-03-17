@@ -224,6 +224,7 @@ const syncShellLayoutMode = () => {
   const layoutMode = getShellLayoutMode();
   if (appEl instanceof HTMLElement) {
     appEl.setAttribute("data-shell-layout-mode", layoutMode);
+    appEl.setAttribute("data-debug-open", currentRoute.debug ? "true" : "false");
   }
   return layoutMode;
 };
@@ -579,13 +580,21 @@ const renderDebugContent = () => {
   `;
 };
 
-const renderDebugFlyout = () => `
-  <aside class="debug-flyout${currentRoute.debug ? " is-open" : ""}" data-debug-flyout>
+const renderDebugFlyout = () => {
+  if (!currentRoute.debug) {
+    return "";
+  }
+  return `
+  <aside class="debug-flyout is-open" data-debug-flyout>
+    <header class="debug-flyout-header">
+      <h2>Debug mode</h2>
+    </header>
     <div class="debug-flyout-scroll">
       ${renderDebugContent()}
     </div>
   </aside>
 `;
+};
 
 const updateHeaderFields = () => {
   const identityEl = document.getElementById("shell-header-identity");
@@ -656,7 +665,7 @@ const renderHome = () => {
       : `<ol class="game-list">${games
           .map(
             (game) => `<li>
-            <a href="${buildGameHash(game.id)}">${escapeHtml(formatDisplayGameId(game.id))}</a>
+            <a href="${buildGameHash(game.id, null, currentRoute.debug)}">${escapeHtml(formatDisplayGameId(game.id))}</a>
             <span class="small">latest ${escapeHtml(game.lastMoveAt || game.createdAt)}</span>
           </li>`,
           )
@@ -921,7 +930,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   const joinEl = shellRoot.querySelector('[data-game-panel="join"]');
   const participantsEl = shellRoot.querySelector('[data-game-panel="participants"]');
   const historyEl = shellRoot.querySelector('[data-game-panel="history"]');
-  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id)}`;
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id, currentRoute.debug)}`;
 
   if (alertsEl instanceof HTMLElement) {
     alertsEl.innerHTML = renderGameAlertsHtml(game, inviteFromRole);
@@ -973,7 +982,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
   if (!game) {
     return `<section class="panel"><h2>Loading game...</h2><p class="small">Fetching latest server state.</p></section>`;
   }
-  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id)}`;
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id, currentRoute.debug)}`;
 
   return `
     ${renderGameAlertsHtml(game, inviteFromRole)}
@@ -1106,7 +1115,7 @@ const renderInviteLanding = (inviteContext) => {
             <span class="small invite-choice-note">${escapeHtml(viewerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
-            <a class="button-link secondary" href="${buildHomeHash()}">Back home</a>
+            <a class="button-link secondary" href="${buildHomeHash(currentRoute.debug)}">Back home</a>
           </div>
         </div>
         <p class="small">
@@ -1143,7 +1152,7 @@ const renderTutorial = (gameId) => {
 const renderNotFound = () => `
   <section class="panel">
     <h2>Route not found</h2>
-    <a class="button-link" href="${buildHomeHash()}">Return home</a>
+    <a class="button-link" href="${buildHomeHash(currentRoute.debug)}">Return home</a>
   </section>
 `;
 
@@ -1278,6 +1287,7 @@ const destroyMountedBoardRuntime = () => {
 };
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
+  syncShellLayoutMode();
   const mountedGameShell = getMountedGameShellRoot();
   if (
     shouldUseIncrementalGameShell() &&
@@ -1310,7 +1320,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     body = renderNotFound();
   }
 
-  const nextMarkup = `${renderHeader()}<div class="shell-page-shell">${body}${renderDebugFlyout()}</div>`;
+  const nextMarkup = `${renderHeader()}<div class="shell-page-shell"><div class="shell-main-content">${body}</div>${renderDebugFlyout()}</div>`;
   if (nextMarkup !== lastRenderedMarkup) {
     appEl.innerHTML = nextMarkup;
     lastRenderedMarkup = nextMarkup;
@@ -1561,14 +1571,14 @@ appEl.addEventListener("click", async (event) => {
 
     if (action === "create-game") {
       const game = await transport.createGame({ playgroundMode: false, offlineLocal: false });
-      navigateTo(buildGameHash(game.id));
+      navigateTo(buildGameHash(game.id, null, currentRoute.debug));
       return;
     }
 
     if (action === "create-offline-playground") {
       await transport.setOffline(true);
       const game = await transport.createGame({ playgroundMode: true, offlineLocal: true });
-      navigateTo(buildGameHash(game.id, "offline"));
+      navigateTo(buildGameHash(game.id, "offline", currentRoute.debug));
       return;
     }
 
@@ -1599,7 +1609,7 @@ appEl.addEventListener("click", async (event) => {
       });
       markInviteChoiceCommitted(gameId);
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId));
+        navigateTo(buildGameHash(gameId, null, currentRoute.debug));
         return;
       }
       await syncRouteData();
@@ -1620,7 +1630,7 @@ appEl.addEventListener("click", async (event) => {
         setInviteFeedback("Player join request sent. You are now viewing the game while approval is pending.");
       }
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId));
+        navigateTo(buildGameHash(gameId, null, currentRoute.debug));
         return;
       }
       await syncRouteData();
@@ -1699,7 +1709,7 @@ appEl.addEventListener("click", async (event) => {
       saveTutorialCompleted(storage, true);
       tutorial.reset();
       const gameId = actionEl.getAttribute("data-game-id");
-      navigateTo(gameId ? buildGameHash(gameId) : buildHomeHash());
+      navigateTo(gameId ? buildGameHash(gameId, null, currentRoute.debug) : buildHomeHash(currentRoute.debug));
       return;
     }
 

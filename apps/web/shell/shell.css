@@ -13,6 +13,8 @@
   --danger: #b6432f;
   --info: #1a5ca1;
   --section-item-gap: 0.75rem;
+  --shell-main-max-width: 1200px;
+  --shell-debug-wide-width: min(34rem, 36vw);
 }
 
 body {
@@ -27,16 +29,27 @@ body {
 }
 
 .app-root {
-  width: min(1200px, 96vw);
+  width: min(var(--shell-main-max-width), calc(100vw - 2rem));
   max-width: 100%;
   margin: 1rem auto 2rem;
   display: grid;
   gap: 1rem;
+  position: relative;
 }
 
 .shell-page-shell {
   display: grid;
   gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.shell-page-shell > * {
+  min-width: 0;
+}
+
+.shell-main-content {
+  min-width: 0;
 }
 
 .shell-header,
@@ -472,7 +485,7 @@ button.button-release-bounce,
   max-height: calc(100vh - 2rem);
   background: rgba(255, 253, 248, 0.98);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 0;
   box-shadow: 0 24px 60px rgba(29, 45, 53, 0.18);
   transform: translateX(calc(100% + 2rem));
   opacity: 0;
@@ -497,14 +510,51 @@ button.button-release-bounce,
   gap: 1rem;
 }
 
+.debug-flyout-header {
+  padding: 1rem 1rem 0;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 253, 248, 0.98);
+}
+
+.debug-flyout-header h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+}
+
 .debug-panel {
   margin: 0;
+  display: grid;
+  gap: var(--section-item-gap);
 }
 
 .debug-pre {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+#app[data-shell-layout-mode="wide"][data-debug-open="true"] {
+  width: min(calc(var(--shell-main-max-width) + var(--shell-debug-wide-width)), calc(100vw - 1rem));
+  max-width: none;
+  margin: 1rem 0 2rem auto;
+  padding-right: calc(var(--shell-debug-wide-width) + 1rem);
+}
+
+#app[data-shell-layout-mode="wide"][data-debug-open="true"] .debug-flyout {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--shell-debug-wide-width);
+  max-height: none;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  box-shadow: none;
+}
+
+#app[data-shell-layout-mode="wide"][data-debug-open="true"] .debug-flyout-scroll {
+  max-height: calc(100vh - 4.25rem);
 }
 
 @media (prefers-reduced-motion: reduce) {
