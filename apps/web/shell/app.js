@@ -106,6 +106,7 @@ let pressedControlEl = null;
 let controlReleaseTimer = null;
 let stickyLayoutFrame = 0;
 const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;
+const SHELL_VIEWPORT_GUTTER_PX = 16;
 
 const escapeHtml = (value) =>
   String(value)
@@ -224,10 +225,11 @@ const getWideDebugFlyoutWidth = (viewportWidth = window.innerWidth) => {
   return Math.min(rootFontSize * 34, viewportWidth * 0.36);
 };
 const getAvailableShellContentWidth = (viewportWidth = window.innerWidth) => {
+  const totalHorizontalGutter = SHELL_VIEWPORT_GUTTER_PX * 2;
   if (!currentRoute.debug) {
-    return viewportWidth;
+    return Math.max(0, viewportWidth - totalHorizontalGutter);
   }
-  return Math.max(0, viewportWidth - getWideDebugFlyoutWidth(viewportWidth) - 16);
+  return Math.max(0, viewportWidth - getWideDebugFlyoutWidth(viewportWidth) - totalHorizontalGutter);
 };
 const getShellLayoutMode = (viewportWidth = window.innerWidth) =>
   (getAvailableShellContentWidth(viewportWidth) >= SHELL_WIDE_SCREEN_MIN_WIDTH ? "wide" : "narrow");
@@ -1332,7 +1334,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     body = renderNotFound();
   }
 
-  const nextMarkup = `${renderHeader()}<div class="shell-page-shell"><div class="shell-main-content">${body}</div>${renderDebugFlyout()}</div>`;
+  const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderDebugFlyout()}</div>`;
   if (nextMarkup !== lastRenderedMarkup) {
     appEl.innerHTML = nextMarkup;
     lastRenderedMarkup = nextMarkup;

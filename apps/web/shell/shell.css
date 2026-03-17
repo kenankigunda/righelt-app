@@ -49,6 +49,8 @@ body {
 }
 
 .shell-main-content {
+  display: grid;
+  gap: 1rem;
   min-width: 0;
 }
 
@@ -430,6 +432,20 @@ button.button-release-bounce,
   gap: 0.5rem;
 }
 
+.form-row {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+select,
+input,
+textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .section-actions {
   margin-bottom: var(--section-item-gap);
 }
@@ -510,6 +526,12 @@ button.button-release-bounce,
   gap: 1rem;
 }
 
+.debug-flyout-scroll > *,
+.debug-panel > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .debug-flyout-header {
   padding: 1rem 1rem 0;
   border-bottom: 1px solid var(--line);
@@ -534,9 +556,10 @@ button.button-release-bounce,
 }
 
 #app[data-shell-layout-mode="wide"][data-debug-open="true"] {
-  width: min(calc(var(--shell-main-max-width) + var(--shell-debug-wide-width)), calc(100vw - 1rem));
+  width: 100%;
   max-width: none;
-  margin: 1rem 0 2rem auto;
+  margin: 1rem 0 2rem;
+  padding-left: 1rem;
   padding-right: calc(var(--shell-debug-wide-width) + 1rem);
 }
 

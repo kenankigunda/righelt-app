@@ -25,7 +25,10 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const shouldEnableStickyShellColumn = \(\{ matchesWideScreen, columnHeight, viewportHeight \}\) =>/);
   assert.match(source, /const getWideDebugFlyoutWidth = \(viewportWidth = window\.innerWidth\) => \{/);
   assert.match(source, /const getAvailableShellContentWidth = \(viewportWidth = window\.innerWidth\) => \{/);
-  assert.match(source, /return Math\.max\(0, viewportWidth - getWideDebugFlyoutWidth\(viewportWidth\) - 16\);/);
+  assert.match(source, /const SHELL_VIEWPORT_GUTTER_PX = 16;/);
+  assert.match(source, /const totalHorizontalGutter = SHELL_VIEWPORT_GUTTER_PX \* 2;/);
+  assert.match(source, /return Math\.max\(0, viewportWidth - totalHorizontalGutter\);/);
+  assert.match(source, /return Math\.max\(0, viewportWidth - getWideDebugFlyoutWidth\(viewportWidth\) - totalHorizontalGutter\);/);
   assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) =>/);
   assert.match(source, /getAvailableShellContentWidth\(viewportWidth\) >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"/);
   assert.match(source, /const syncShellLayoutMode = \(\) => \{/);
@@ -53,7 +56,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /scheduleGameShellStickyLayout\(\);/);
   assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
   assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
-  assert.match(source, /const nextMarkup = `\$\{renderHeader\(\)\}<div class="shell-page-shell"><div class="shell-main-content">\$\{body\}<\/div>\$\{renderDebugFlyout\(\)\}<\/div>`;/);
+  assert.match(source, /const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">\$\{renderHeader\(\)\}\$\{body\}<\/div>\$\{renderDebugFlyout\(\)\}<\/div>`;/);
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.doesNotMatch(source, /replaceWith\(previousBoardPanel\)/);
