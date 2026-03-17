@@ -7,11 +7,11 @@ import type {
   ServerEvent,
   StateSyncEvent,
 } from "../../shared-types/src/events";
-import { listLegalActions } from "../../game-engine/src/legal";
 import {
   addNotification,
   applyScenarioToGame,
   applyServerAction,
+  applyCanonicalProjection,
   applyServerMove,
   asAction,
   asGameState,
@@ -29,11 +29,11 @@ import {
   getActiveTurn,
   getApproverIdentityForSeat,
   getSeatIdentity,
-  getSideToMoveSeat,
+  righeltAuthorityAdapter,
   now,
   promoteIdentityToSeat,
   removeViewer,
-  type JoinRequest,
+  deriveCanonicalSession,
   type LiveGame,
   withViewModel,
 } from "./shell-live-core";
@@ -78,9 +78,11 @@ const eventForSession = (event: ServerEvent, identityId: string) => {
   if (!("game" in event)) {
     return event;
   }
+  const game = event.game as LiveGame;
+  const canonicalSession = righeltAuthorityAdapter.deriveCanonicalSession(game);
   return {
     ...event,
-    game: withViewModel(event.game as LiveGame, identityId),
+    game: withViewModel(game, identityId, false, canonicalSession),
   };
 };
 
@@ -159,11 +161,12 @@ export class GameRoomDO {
       return json({ ok: false, error: "invalid_identity" }, 400);
     }
 
-    const loaded = await this.ensureLoaded();
-    if (!loaded) {
+    const loadedWithCanonical = await this.ensureLoadedWithCanonical();
+    if (!loadedWithCanonical) {
       return json({ ok: false, error: "game_not_found" }, 404);
     }
-    const game = loaded;
+    const game = loadedWithCanonical.game;
+    const loadedCanonicalSession = loadedWithCanonical.canonicalSession;
 
     if (request.method === "POST" && path === "/join") {
       const mode = body.mode === "viewer" ? "viewer" : body.mode === "player" ? "player" : null;
@@ -181,7 +184,12 @@ export class GameRoomDO {
           reason: added ? "viewer_joined" : "viewer_reconfirmed",
           game,
         });
-        return json({ ok: true, pendingApproval: false, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+        return json({
+          ok: true,
+          pendingApproval: false,
+          game: withViewModel(game, identityId, false, loadedCanonicalSession),
+          eventSeq: this.eventSeq,
+        });
       }
 
       if (game.playgroundMode) {
@@ -219,7 +227,12 @@ export class GameRoomDO {
           requestedSeat,
           game,
         });
-        return json({ ok: true, pendingApproval: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+        return json({
+          ok: true,
+          pendingApproval: true,
+          game: withViewModel(game, identityId, false, loadedCanonicalSession),
+          eventSeq: this.eventSeq,
+        });
       }
 
       promoteIdentityToSeat(game, requestedSeat, identityId, this.getSessionCount(identityId));
@@ -232,7 +245,12 @@ export class GameRoomDO {
         reason: "player_joined",
         game,
       });
-      return json({ ok: true, pendingApproval: false, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+      return json({
+        ok: true,
+        pendingApproval: false,
+        game: withViewModel(game, identityId, false, loadedCanonicalSession),
+        eventSeq: this.eventSeq,
+      });
     }
 
     if (request.method === "POST" && path === "/approve") {
@@ -266,7 +284,7 @@ export class GameRoomDO {
         seat: requestItem.requestedSeat,
         game,
       });
-      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+      return json({ ok: true, game: withViewModel(game, identityId, false, loadedCanonicalSession), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/moves") {
@@ -274,9 +292,9 @@ export class GameRoomDO {
       if (role !== "Player 1" && role !== "Player 2") {
         return json({ ok: false, error: "role_not_allowed" }, 403);
       }
-      const sideToMoveSeat = getSideToMoveSeat(game);
-      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
-      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
+      const controlSeat = righeltAuthorityAdapter.getControlSeat(loadedCanonicalSession);
+      const controlSeatIdentity = getSeatIdentity(game, controlSeat);
+      if (!controlSeatIdentity || controlSeatIdentity !== identityId) {
         return json({ ok: false, error: "not_your_turn" }, 409);
       }
       const notation = typeof body.notation === "string" ? body.notation : undefined;
@@ -294,7 +312,7 @@ export class GameRoomDO {
         ok: true,
         move: moved.move,
         clientCommandId: commandMetadata.clientCommandId,
-        game: withViewModel(game, identityId),
+        game: withViewModel(game, identityId, false, righeltAuthorityAdapter.deriveCanonicalSession(game)),
         eventSeq: this.eventSeq,
       });
     }
@@ -304,9 +322,9 @@ export class GameRoomDO {
       if (role !== "Player 1" && role !== "Player 2") {
         return json({ ok: false, error: "role_not_allowed" }, 403);
       }
-      const sideToMoveSeat = getSideToMoveSeat(game);
-      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
-      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
+      const controlSeat = righeltAuthorityAdapter.getControlSeat(loadedCanonicalSession);
+      const controlSeatIdentity = getSeatIdentity(game, controlSeat);
+      if (!controlSeatIdentity || controlSeatIdentity !== identityId) {
         return json({ ok: false, error: "not_your_turn" }, 409);
       }
       const bodyState = asGameState(body.state);
@@ -327,8 +345,8 @@ export class GameRoomDO {
             clientCommandId: commandMetadata.clientCommandId,
             validation: moved.validation,
             state: moved.state,
-            legalActions: listLegalActions(moved.state),
-            game: withViewModel(game, identityId),
+            legalActions: righeltAuthorityAdapter.listLegalActions(deriveCanonicalSession({ ...game, board: { state: moved.state } })),
+            game: withViewModel(game, identityId, false, loadedCanonicalSession),
             eventSeq: this.eventSeq,
           });
         }
@@ -347,7 +365,7 @@ export class GameRoomDO {
         clientCommandId: commandMetadata.clientCommandId,
         state: moved.state,
         removedPieces: moved.removedPieces,
-        game: withViewModel(game, identityId),
+        game: withViewModel(game, identityId, false, righeltAuthorityAdapter.deriveCanonicalSession(game)),
         eventSeq: this.eventSeq,
       });
     }
@@ -361,7 +379,7 @@ export class GameRoomDO {
       if (!activeTurn) {
         return json({ ok: false, error: "turn_not_initialized" }, 409);
       }
-      const turnOwnerIdentity = getSeatIdentity(game, activeTurn.playerSeat);
+      const turnOwnerIdentity = getSeatIdentity(game, loadedCanonicalSession.turnOwnerSeat);
       if (!turnOwnerIdentity || turnOwnerIdentity !== identityId) {
         return json({ ok: false, error: "not_your_turn" }, 409);
       }
@@ -379,7 +397,7 @@ export class GameRoomDO {
         ok: true,
         turn: ended.turn,
         clientCommandId: commandMetadata.clientCommandId,
-        game: withViewModel(game, identityId),
+        game: withViewModel(game, identityId, false, righeltAuthorityAdapter.deriveCanonicalSession(game)),
         eventSeq: this.eventSeq,
       });
     }
@@ -391,13 +409,13 @@ export class GameRoomDO {
       }
       game.historyIndexByIdentity[identityId] = moveIndex;
       await persistGameState(this.env, game, this.eventSeq, null);
-      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+      return json({ ok: true, game: withViewModel(game, identityId, false, loadedCanonicalSession), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/live") {
       delete game.historyIndexByIdentity[identityId];
       await persistGameState(this.env, game, this.eventSeq, null);
-      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+      return json({ ok: true, game: withViewModel(game, identityId, false, loadedCanonicalSession), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/play-as-both") {
@@ -416,7 +434,7 @@ export class GameRoomDO {
         reason: "play_as_both_players",
         game,
       });
-      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+      return json({ ok: true, game: withViewModel(game, identityId, false, loadedCanonicalSession), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/go-online") {
@@ -431,7 +449,7 @@ export class GameRoomDO {
         reason: "game_moved_online",
         game,
       });
-      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+      return json({ ok: true, game: withViewModel(game, identityId, false, loadedCanonicalSession), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/load-scenario") {
@@ -453,16 +471,24 @@ export class GameRoomDO {
         reason: "scenario_loaded",
         game,
       });
-      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+      return json({ ok: true, game: withViewModel(game, identityId, false, loadedCanonicalSession), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/legal") {
-      const stable = game.board.state;
+      const role = findRoleForIdentity(game, identityId);
+      if (role !== "Player 1" && role !== "Player 2") {
+        return json({ ok: false, error: "role_not_allowed" }, 403);
+      }
+      const controlSeat = righeltAuthorityAdapter.getControlSeat(loadedCanonicalSession);
+      const controlSeatIdentity = getSeatIdentity(game, controlSeat);
+      if (!controlSeatIdentity || controlSeatIdentity !== identityId) {
+        return json({ ok: false, error: "not_your_turn" }, 409);
+      }
       return json({
         ok: true,
-        state: stable,
-        legalActions: listLegalActions(stable),
-        game: withViewModel(game, identityId),
+        state: loadedCanonicalSession.state,
+        legalActions: loadedCanonicalSession.legalActions,
+        game: withViewModel(game, identityId, false, loadedCanonicalSession),
         eventSeq: this.eventSeq,
       });
     }
@@ -472,13 +498,22 @@ export class GameRoomDO {
       if (!pieceId) {
         return json({ ok: false, error: "invalid_piece_id" }, 400);
       }
+      const role = findRoleForIdentity(game, identityId);
+      if (role !== "Player 1" && role !== "Player 2") {
+        return json({ ok: false, error: "role_not_allowed" }, 403);
+      }
+      const controlSeat = righeltAuthorityAdapter.getControlSeat(loadedCanonicalSession);
+      const controlSeatIdentity = getSeatIdentity(game, controlSeat);
+      if (!controlSeatIdentity || controlSeatIdentity !== identityId) {
+        return json({ ok: false, error: "not_your_turn" }, 409);
+      }
       return json({
         ok: true,
-        state: game.board.state,
+        state: loadedCanonicalSession.state,
         pieceId,
-        actions: enumeratePieceActions(game.board.state, pieceId),
-        previewActions: enumeratePieceActionPreviews(game.board.state, pieceId),
-        game: withViewModel(game, identityId),
+        actions: enumeratePieceActions(loadedCanonicalSession.state, pieceId),
+        previewActions: enumeratePieceActionPreviews(loadedCanonicalSession.state, pieceId),
+        game: withViewModel(game, identityId, false, loadedCanonicalSession),
         eventSeq: this.eventSeq,
       });
     }
@@ -495,11 +530,11 @@ export class GameRoomDO {
     if (!identityId) {
       return new Response("Invalid identity", { status: 400 });
     }
-    const loaded = await this.ensureLoaded();
-    if (!loaded) {
+    const loadedWithCanonical = await this.ensureLoadedWithCanonical();
+    if (!loadedWithCanonical) {
       return new Response("Game not found", { status: 404 });
     }
-    const game = loaded;
+    const game = loadedWithCanonical.game;
     const lastEventSeq = Number.parseInt(url.searchParams.get("lastEventSeq") || "0", 10) || 0;
     const socketPair = new wsCtor();
     const client = socketPair[0];
@@ -578,20 +613,31 @@ export class GameRoomDO {
   }
 
   private async ensureLoaded() {
-    if (this.game) {
-      return this.game;
-    }
     const gameId = this.getLoadedGameId();
     if (!gameId) {
       return null;
     }
     const projection = await loadGameProjection(this.env, gameId);
     if (!projection) {
+      this.game = null;
       return null;
     }
     this.game = projection.game;
     this.eventSeq = projection.eventSeq;
     return this.game;
+  }
+
+  private async ensureLoadedWithCanonical() {
+    const game = await this.ensureLoaded();
+    if (!game) {
+      return null;
+    }
+    const canonicalSession = righeltAuthorityAdapter.deriveCanonicalSession(game);
+    if (canonicalSession.repaired) {
+      applyCanonicalProjection(game, canonicalSession);
+      await persistGameState(this.env, game, this.eventSeq, null);
+    }
+    return { game, canonicalSession };
   }
 
   private getLoadedGameId() {
@@ -620,7 +666,8 @@ export class GameRoomDO {
   }
 
   private async setPresenceFromSessions(identityId: string) {
-    const game = await this.ensureLoaded();
+    const loadedWithCanonical = await this.ensureLoadedWithCanonical();
+    const game = loadedWithCanonical?.game;
     if (!game) {
       return;
     }

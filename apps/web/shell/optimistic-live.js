@@ -12,7 +12,10 @@ const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
 const getSeatIdentity = (game, seat) => (seat === "Player 1" ? game.player1?.identityId ?? null : game.player2?.identityId ?? null);
 
-const getControlSeatForTurn = (state, turnOwnerSeat) => {
+const getControlSeatForTurn = (game, state, turnOwnerSeat) => {
+  if (game && typeof game.controlSeat === "string") {
+    return game.controlSeat;
+  }
   const continuation = state?.continuation;
   if (!continuation) {
     return turnOwnerSeat;
@@ -103,6 +106,7 @@ const completeTurn = (game, queuedAt) => {
     },
     { artifactMode: "full" },
   );
+  game.controlSeat = nextSeat;
   game.updatedAt = endedAt;
   return { ok: true, nextTurn };
 };
@@ -125,7 +129,7 @@ const finalizeProjectedView = ({ authoritativeGame, workingGame, identityId, que
   const next = clone(workingGame);
   const activeTurn = getActiveTurn(next);
   const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(next);
-  const controlSeat = getControlSeatForTurn(next.board.state, turnOwnerSeat);
+  const controlSeat = getControlSeatForTurn(next, next.board.state, turnOwnerSeat);
   const controlIdentity = getSeatIdentity(next, controlSeat);
   const turnOwnerIdentity = getSeatIdentity(next, turnOwnerSeat);
   const liveLegalActions = listLegalActions(next.board.state);
@@ -175,8 +179,10 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
 
       const applied = applyAction(stable, command.action);
       const nextStable = resolveToStability(applied.state, { artifactMode: "full" });
+      const controlSeat = getControlSeatForTurn(workingGame, nextStable, activeTurn.playerSeat);
       const removedPieces = collectRemovedPieceNotices(stable, applied.state, nextStable, command.action);
-      nextStable.sideToMove = getSideForSeat(getControlSeatForTurn(nextStable, activeTurn.playerSeat));
+      nextStable.sideToMove = getSideForSeat(controlSeat);
+      workingGame.controlSeat = controlSeat;
       nextStable.turnIndex = activeTurn.index;
 
       activeTurn.moveIndexes.push(workingGame.moves.length + pendingMoves.length);

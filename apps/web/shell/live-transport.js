@@ -7,13 +7,16 @@ const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
-const getControlSeatForTurn = (state, turnOwnerSeat) => {
+const getControlSeatForTurn = (game, state, turnOwnerSeat) => {
+  if (game && typeof game.controlSeat === "string") {
+    return game.controlSeat;
+  }
   const continuation = state?.continuation;
   if (!continuation) {
     return turnOwnerSeat;
   }
   if (continuation.type === "push" && continuation.phase === "retreat") {
-    return getNextSeat(turnOwnerSeat);
+    return turnOwnerSeat === "Player 1" ? "Player 2" : "Player 1";
   }
   return turnOwnerSeat;
 };
@@ -302,7 +305,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     const computed = await computeOfflineMoveState(game.board.state);
     const selectionSnapshot = structuredClone(game.board.state);
     const next = computed.state;
-    next.sideToMove = getSideForSeat(getControlSeatForTurn(next, activeTurn.playerSeat));
+    const controlSeat = getControlSeatForTurn(game, next, activeTurn.playerSeat);
+    next.sideToMove = getSideForSeat(controlSeat);
     next.turnIndex = activeTurn.index;
 
     const at = new Date().toISOString();

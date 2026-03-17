@@ -2,7 +2,8 @@ import { applyAction } from "../../game-engine/src/apply";
 import { listLegalActions, validateAction } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import { createInitialState } from "../../game-engine/src/state";
-import type { Action, GameState } from "../../game-engine/src/types";
+import { normalizeState as normalizeDeterministicState } from "../../game-engine/src/deterministic";
+import type { Action, GameState, ValidationResult } from "../../game-engine/src/types";
 
 export const MAX_HISTORY = 200;
 const BOARD_SIZE = 10;
@@ -95,6 +96,62 @@ export type LiveGame = {
     player2: string;
   };
 };
+
+export type CanonicalSession = {
+  state: GameState;
+  activeTurn: TurnEntry | null;
+  turnOwnerSeat: "Player 1" | "Player 2";
+  controlSeat: "Player 1" | "Player 2";
+  legalActions: Action[];
+  repaired: boolean;
+  repairedProjection: {
+    board: {
+      state: GameState;
+    };
+    turns: TurnEntry[];
+  };
+};
+
+export type CanonicalSessionProjection = {
+  board: {
+    state: GameState;
+  };
+  turns: TurnEntry[];
+};
+
+export interface GameAuthorityAdapter<TProjection, TCanonicalSession extends CanonicalSession> {
+  deriveCanonicalSession: (gameProjection: TProjection) => TCanonicalSession;
+  getControlSeat: (canonicalSession: TCanonicalSession) => "Player 1" | "Player 2";
+  listLegalActions: (canonicalSession: TCanonicalSession) => Action[];
+  validateAction: (
+    canonicalSession: TCanonicalSession,
+    action: Action,
+  ) => {
+    ok: true;
+    state: GameState;
+  } | {
+    ok: false;
+    validation: ValidationResult;
+    state: GameState;
+  };
+  applyAction: (
+    canonicalSession: TCanonicalSession,
+    action: Action,
+    notation?: string,
+    clientCommandId?: string | null,
+  ) => {
+    ok: true;
+    state: GameState;
+    removedPieces?: RemovedPieceNotice[];
+    error?: never;
+  } | {
+    ok: false;
+    error: string;
+    validation?: ValidationResult;
+    state: GameState;
+  };
+  exportProjection: (canonicalSession: TCanonicalSession) => CanonicalSessionProjection;
+}
 
 export type RemovedPieceNotice = {
   pieceId: string;
@@ -413,6 +470,177 @@ export const getControlSeatForTurn = (
   return turnOwnerSeat;
 };
 
+const normalizeStateForStorage = (state: GameState) => normalizeDeterministicState(state);
+const normalizeTurnForComparison = (turn: TurnEntry) => ({
+  index: turn.index,
+  startedAt: turn.startedAt,
+  endedAt: turn.endedAt ?? null,
+  playerSeat: turn.playerSeat,
+  status: turn.status,
+  moveIndexes: [...turn.moveIndexes],
+  lastMoveAt: turn.lastMoveAt ?? null,
+});
+const jsonEquals = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+const getSideSeat = (state: GameState | null | undefined): "Player 1" | "Player 2" =>
+  state?.sideToMove === "P1" ? "Player 1" : "Player 2";
+const actorSeatFromSide = (side: "P1" | "P2") => (side === "P1" ? "Player 1" : "Player 2");
+const sortedMoves = (game: LiveGame) => [...game.moves].sort((left, right) => left.index - right.index);
+
+const buildCanonicalTurns = (game: LiveGame, state: GameState, moves: MoveEntry[]) => {
+  const existingTurns = new Map(game.turns.map((turn) => [turn.index, turn]));
+  const movesByTurn = new Map<number, MoveEntry[]>();
+  for (const move of moves) {
+    const list = movesByTurn.get(move.turnIndex) ?? [];
+    list.push(move);
+    movesByTurn.set(move.turnIndex, list);
+  }
+  for (const list of movesByTurn.values()) {
+    list.sort((left, right) => left.turnMoveIndex - right.turnMoveIndex);
+  }
+  const observedTurnIndexes = new Set<number>();
+  for (const key of movesByTurn.keys()) {
+    observedTurnIndexes.add(key);
+  }
+  for (const key of existingTurns.keys()) {
+    observedTurnIndexes.add(key);
+  }
+  if (observedTurnIndexes.size === 0) {
+    observedTurnIndexes.add(0);
+  }
+  const currentStoredTurnIndex = game.turns[game.turns.length - 1]?.index ?? 0;
+  const activeTurnIndex =
+    moves.length > 0 ? moves[moves.length - 1].turnIndex : Math.max(currentStoredTurnIndex, state.turnIndex ?? currentStoredTurnIndex);
+  const maxTurnIndex = Math.max(activeTurnIndex, ...Array.from(observedTurnIndexes));
+  const activeSideSeat = getSideSeat(state);
+  const inferSeatFromState = (turnIndex: number) => {
+    const distance = activeTurnIndex - turnIndex;
+    if (distance % 2 === 0) {
+      return activeSideSeat;
+    }
+    return getNextSeat(activeSideSeat);
+  };
+  const canonicalTurns: TurnEntry[] = [];
+  for (let turnIndex = 0; turnIndex <= maxTurnIndex; turnIndex += 1) {
+    const existingTurn = existingTurns.get(turnIndex);
+    const turnMoves = movesByTurn.get(turnIndex) ?? [];
+    const firstTurnMove = turnMoves[0];
+    const firstMoveSeat =
+      firstTurnMove?.actorSide === "P1" || firstTurnMove?.actorSide === "P2"
+        ? actorSeatFromSide(firstTurnMove.actorSide)
+        : null;
+    const priorTurn = canonicalTurns[turnIndex - 1] ?? null;
+    const inferredSeat =
+      firstMoveSeat ??
+      existingTurn?.playerSeat ??
+      (priorTurn ? getNextSeat(priorTurn.playerSeat) : inferSeatFromState(turnIndex));
+    const lastMove = turnMoves[turnMoves.length - 1];
+    const moveIndexes = turnMoves.map((move) => move.index).sort((left, right) => left - right);
+    canonicalTurns.push({
+      index: turnIndex,
+      startedAt: existingTurn?.startedAt ?? game.createdAt,
+      endedAt: turnIndex === activeTurnIndex ? null : existingTurn?.endedAt ?? lastMove?.at ?? null,
+      playerSeat: inferredSeat,
+      status: turnIndex === activeTurnIndex ? "active" : "complete",
+      moveIndexes,
+      lastMoveAt: lastMove?.at ?? null,
+    });
+  }
+  return canonicalTurns;
+};
+
+const replayStateFromMoveHistory = (game: LiveGame, moves: MoveEntry[]) => {
+  let state = normalizeStateForStorage(game.board.state);
+  if (moves.length > 0 && moves[0]?.selectionSnapshot) {
+    state = normalizeStateForStorage(moves[0].selectionSnapshot);
+  }
+  for (const move of moves) {
+    const action = asAction(move.action);
+    if (!action) {
+      break;
+    }
+    const stable = normalizeStateForStorage(state);
+    const validation = validateAction(stable, action);
+    if (!validation.ok) {
+      break;
+    }
+    const applied = applyAction(stable, action);
+    state = normalizeStateForStorage(applied.state);
+  }
+  return state;
+};
+
+export const deriveCanonicalSession = (gameProjection: LiveGame): CanonicalSession => {
+  const moves = sortedMoves(gameProjection);
+  const state = replayStateFromMoveHistory(gameProjection, moves);
+  const turns = buildCanonicalTurns(gameProjection, state, moves);
+  const activeTurn = turns.length > 0 ? turns[turns.length - 1] : null;
+  const turnOwnerSeat = activeTurn?.playerSeat ?? getSideSeat(state);
+  const controlSeat = getControlSeatForTurn(state, turnOwnerSeat);
+  if (activeTurn) {
+    state.turnIndex = activeTurn.index;
+  }
+  state.sideToMove = getSideForSeat(controlSeat);
+  const legalActions = listLegalActions(state);
+  const repairedProjection = {
+    board: {
+      state: clone(state),
+    },
+    turns: turns.map((turn) => clone(turn)),
+  };
+  const repaired =
+    !jsonEquals(normalizeStateForStorage(gameProjection.board.state), state) ||
+    !jsonEquals(gameProjection.turns.map(normalizeTurnForComparison), repairedProjection.turns.map(normalizeTurnForComparison));
+  return {
+    state,
+    activeTurn,
+    turnOwnerSeat,
+    controlSeat,
+    legalActions,
+    repaired,
+    repairedProjection,
+  };
+};
+
+export const righeltAuthorityAdapter: GameAuthorityAdapter<LiveGame, CanonicalSession> = {
+  deriveCanonicalSession: (gameProjection) => deriveCanonicalSession(gameProjection),
+  getControlSeat: (canonicalSession) => canonicalSession.controlSeat,
+  listLegalActions: (canonicalSession) => canonicalSession.legalActions,
+  validateAction: (canonicalSession, action) => {
+    const state = normalizeStateForStorage(canonicalSession.state);
+    const validation = validateAction(state, action);
+    if (!validation.ok) {
+      return { ok: false, validation, state };
+    }
+    return { ok: true, state };
+  },
+  applyAction: (canonicalSession, action) => {
+    const state = normalizeStateForStorage(canonicalSession.state);
+    const validation = validateAction(state, action);
+    if (!validation.ok) {
+      return { ok: false, error: validation.code || "invalid_action", validation, state };
+    }
+    const applied = applyAction(state, action);
+    const next = normalizeStateForStorage(applied.state);
+    if (canonicalSession.activeTurn) {
+      next.sideToMove = getSideForSeat(getControlSeatForTurn(next, canonicalSession.turnOwnerSeat));
+      next.turnIndex = canonicalSession.activeTurn.index;
+    }
+    return { ok: true, state: next, removedPieces: collectRemovedPieceNotices(state, applied.state, next, action) };
+  },
+  exportProjection: (canonicalSession) => ({
+    board: {
+      state: clone(canonicalSession.state),
+    },
+    turns: canonicalSession.repairedProjection.turns.map((turn) => clone(turn)),
+  }),
+};
+
+export const applyCanonicalProjection = (game: LiveGame, canonicalSession: CanonicalSession) => {
+  const projection = righeltAuthorityAdapter.exportProjection(canonicalSession);
+  game.board.state = clone(projection.board.state);
+  game.turns = projection.turns.map((turn) => clone(turn));
+};
+
 export const ensureViewer = (game: LiveGame, identityId: string, sessionCount = 0) => {
   const existing = game.viewers.find((viewer) => viewer.identityId === identityId);
   if (existing) {
@@ -501,25 +729,35 @@ const getJoinAsViewerDisabledReason = (game: LiveGame, offline: boolean, myRole:
   return null;
 };
 
-export const withViewModel = (game: LiveGame, identityId: string, offline = false) => {
+export const withViewModel = (
+  game: LiveGame,
+  identityId: string,
+  offline = false,
+  canonicalSession: CanonicalSession | null = null,
+) => {
   const myRole = findRoleForIdentity(game, identityId);
   const historyIndex = typeof game.historyIndexByIdentity[identityId] === "number" ? game.historyIndexByIdentity[identityId] : null;
   const inHistoryMode = typeof historyIndex === "number";
+  const canonicalState = canonicalSession?.state;
+  const canonicalActiveTurn = canonicalSession?.activeTurn;
+  const canonicalTurnOwnerSeat = canonicalSession?.turnOwnerSeat;
+  const canonicalControlSeat = canonicalSession?.controlSeat;
+  const canonicalLegalActions = canonicalSession?.legalActions;
   const currentSnapshot =
     typeof historyIndex === "number" && game.moves[historyIndex]
       ? game.moves[historyIndex].selectionSnapshot
-      : game.board.state;
+      : canonicalState ?? game.board.state;
   const historySelectionAction =
     typeof historyIndex === "number" && game.moves[historyIndex]
       ? clone(game.moves[historyIndex].action)
       : null;
-  const activeTurn = getActiveTurn(game);
-  const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(game);
-  const controlSeat = getControlSeatForTurn(game.board.state, turnOwnerSeat);
+  const activeTurn = canonicalActiveTurn ?? getActiveTurn(game);
+  const turnOwnerSeat = canonicalTurnOwnerSeat ?? activeTurn?.playerSeat ?? getSideSeat(canonicalState) ?? getSideToMoveSeat(game);
+  const controlSeat = canonicalControlSeat ?? getControlSeatForTurn(canonicalState ?? game.board.state, turnOwnerSeat);
   const sideToMoveIdentity = getSeatIdentity(game, controlSeat);
   const turnOwnerIdentity = getSeatIdentity(game, turnOwnerSeat);
   const isPlayer = myRole === "Player 1" || myRole === "Player 2";
-  const legalNow = listLegalActions(game.board.state);
+  const legalNow = canonicalLegalActions ?? listLegalActions(canonicalState ?? game.board.state);
   const offlineTurnControlAllowed = !offline || canOperateOfflinePlaygroundTurn(game, identityId);
   const approvableRequesterIds = game.pendingJoinRequests
     .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)

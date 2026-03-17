@@ -218,3 +218,40 @@ test("shell host derives selected piece moves from cached legal actions without 
     [true, true],
   );
 });
+
+test("shell host derives action result control label from canonical controlSeat", async () => {
+  const transport = {
+    getGameViewModel() {
+      return {
+        controlSeat: "Player 2",
+        currentTurn: { playerSeat: "Player 1" },
+      };
+    },
+    async applyGameAction() {
+      return {
+        accepted: true,
+        state: {
+          sideToMove: "P1",
+          turnIndex: 0,
+          continuation: null,
+          pieces: [],
+        },
+        legalActions: [],
+      };
+    },
+  };
+
+  const host = createShellBoardHost({ transport, gameId: "g-shell-host-canonical", canInteract: () => true });
+  const result = await host.applyAction(
+    {
+      sideToMove: "P2",
+      turnIndex: 0,
+      continuation: null,
+      pieces: [],
+    },
+    { type: "pass" },
+  );
+
+  assert.equal(result.boardMessage?.type, "move_sent");
+  assert.equal(result.boardMessage?.control, "opponent");
+});

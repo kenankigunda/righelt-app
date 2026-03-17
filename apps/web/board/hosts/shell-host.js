@@ -1,14 +1,11 @@
 import { buildPieceMoveResponse } from "../client-move-generation.js";
 
-const getControlLabel = ({ state, currentTurn }) => {
-  if (!state || !currentTurn) {
+const getControlLabel = ({ game }) => {
+  if (!game?.currentTurn) {
     return "turn-owner";
   }
-  const continuation = state.continuation;
-  if (continuation?.type === "push" && continuation.phase === "retreat") {
-    return "opponent";
-  }
-  return "turn-owner";
+  const controlSeat = typeof game.controlSeat === "string" ? game.controlSeat : game.currentTurn.playerSeat;
+  return controlSeat === game.currentTurn.playerSeat ? "turn-owner" : "opponent";
 };
 
 export const createShellBoardHost = ({ transport, gameId, canInteract }) => ({
@@ -50,7 +47,7 @@ export const createShellBoardHost = ({ transport, gameId, canInteract }) => ({
         legalActions,
         boardMessage: {
           type: "move_sent",
-          control: getControlLabel({ state: snapshot, currentTurn: current?.currentTurn }),
+          control: getControlLabel({ game: current }),
         },
       };
     }

@@ -1,19 +1,21 @@
-import { listLegalActions } from "../../game-engine/src/legal";
-import { resolveToStability } from "../../game-engine/src/resolve";
 import {
-  asAction,
   asGameState,
   asIdentity,
   asScenarioRecord,
   enumeratePieceActionPreviews,
   enumeratePieceActions,
-  findRoleForIdentity,
-  getSeatIdentity,
-  getSideToMoveSeat,
+  deriveCanonicalSession,
+  applyCanonicalProjection,
   nextGameId,
   withViewModel,
 } from "./shell-live-core";
-import { loadGameProjection, listVisibleGameProjections, resolveInvite, type D1DatabaseLike } from "./shell-live-db";
+import {
+  loadGameProjection,
+  listVisibleGameProjections,
+  persistGameState,
+  resolveInvite,
+  type D1DatabaseLike,
+} from "./shell-live-db";
 
 type DurableObjectIdLike = { name?: string; toString?: () => string };
 type DurableObjectStubLike = { fetch: (request: Request) => Promise<Response> };
@@ -267,6 +269,11 @@ export const handleLiveGameRequest = async (
       return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: CACHE_NO_STORE };
     }
     const game = projection.game;
+    const canonicalSession = deriveCanonicalSession(game);
+    if (canonicalSession.repaired) {
+      applyCanonicalProjection(game, canonicalSession);
+      await persistGameState(env, game, projection.eventSeq, null);
+    }
 
     if (request.method === "GET" && route.length === 2) {
       const identityId = asIdentity(url.searchParams.get("identityId"));
@@ -276,7 +283,11 @@ export const handleLiveGameRequest = async (
       return {
         handled: true,
         status: 200,
-        body: { ok: true, game: withViewModel(game, identityId, offline), eventSeq: projection.eventSeq },
+        body: {
+          ok: true,
+          game: withViewModel(game, identityId, offline, canonicalSession),
+          eventSeq: projection.eventSeq,
+        },
         cacheControl: CACHE_NO_STORE,
       };
     }
@@ -357,25 +368,18 @@ export const handleLiveGameRequest = async (
       if (offline && !game.offlineLocal) {
         return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: CACHE_NO_STORE };
       }
-      const role = findRoleForIdentity(game, identityId);
-      if (role !== "Player 1" && role !== "Player 2") {
-        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: CACHE_NO_STORE };
+      if (!hasGameRoomsBinding(env)) {
+        return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
       }
-      const sideToMoveSeat = getSideToMoveSeat(game);
-      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
-      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
-        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: CACHE_NO_STORE };
-      }
-      const stable = resolveToStability(game.board.state, { artifactMode: "full" });
+      const response = await fetchGameRoom(env, gameId, "/legal", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
       return {
         handled: true,
-        status: 200,
-        body: {
-          ok: true,
-          state: stable,
-          legalActions: listLegalActions(stable),
-          game: withViewModel(game, identityId, offline),
-        },
+        status: response.status,
+        body: (await response.json()) as Record<string, unknown>,
         cacheControl: CACHE_NO_STORE,
       };
     }
@@ -384,14 +388,8 @@ export const handleLiveGameRequest = async (
       if (offline && !game.offlineLocal) {
         return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: CACHE_NO_STORE };
       }
-      const role = findRoleForIdentity(game, identityId);
-      if (role !== "Player 1" && role !== "Player 2") {
-        return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: CACHE_NO_STORE };
-      }
-      const sideToMoveSeat = getSideToMoveSeat(game);
-      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
-      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
-        return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: CACHE_NO_STORE };
+      if (!hasGameRoomsBinding(env)) {
+        return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
       }
       const bodyState = asGameState(body.state);
       const pieceId = asIdentity(body.pieceId);
@@ -401,18 +399,15 @@ export const handleLiveGameRequest = async (
       if (!pieceId) {
         return { handled: true, status: 400, body: { ok: false, error: "invalid_piece_id" }, cacheControl: CACHE_NO_STORE };
       }
-      const stable = resolveToStability(game.board.state, { artifactMode: "full" });
+      const response = await fetchGameRoom(env, gameId, "/piece-moves", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
       return {
         handled: true,
-        status: 200,
-        body: {
-          ok: true,
-          state: stable,
-          pieceId,
-          actions: enumeratePieceActions(stable, pieceId),
-          previewActions: enumeratePieceActionPreviews(stable, pieceId),
-          game: withViewModel(game, identityId, offline),
-        },
+        status: response.status,
+        body: (await response.json()) as Record<string, unknown>,
         cacheControl: CACHE_NO_STORE,
       };
     }

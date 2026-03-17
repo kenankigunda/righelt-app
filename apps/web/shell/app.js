@@ -118,17 +118,6 @@ const escapeHtml = (value) =>
 
 const formatStatus = (connected) =>
   connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip offline">Disconnected</span>';
-const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
-const getControlSeatForTurn = (state, turnOwnerSeat) => {
-  const continuation = state?.continuation;
-  if (!continuation) {
-    return turnOwnerSeat;
-  }
-  if (continuation.type === "push" && continuation.phase === "retreat") {
-    return getNextSeat(turnOwnerSeat);
-  }
-  return turnOwnerSeat;
-};
 const playerToneClassForSeat = (seat) => (seat === "Player 1" ? "player-tone-p1" : seat === "Player 2" ? "player-tone-p2" : "player-tone-neutral");
 const playerToneClassForSide = (side) => (side === "P1" ? "player-tone-p1" : side === "P2" ? "player-tone-p2" : "player-tone-neutral");
 const renderSeatLabel = (seat) => `<span class="${playerToneClassForSeat(seat)}">${escapeHtml(seat || "Unknown")}</span>`;
@@ -391,7 +380,7 @@ const renderTurnHistory = (game) => {
   const activeTurnIndex = typeof game.currentTurn?.index === "number" ? game.currentTurn.index : null;
   const activeTurn = activeTurnIndex !== null ? game.turns.find((turn) => turn.index === activeTurnIndex) : null;
   const liveState = game.currentSnapshot ?? game.board?.state ?? null;
-  const controlSeat = activeTurn ? getControlSeatForTurn(liveState, activeTurn.playerSeat) : null;
+  const controlSeat = typeof game.controlSeat === "string" ? game.controlSeat : activeTurn ? activeTurn.playerSeat : null;
   const liveContinuationText =
     !game.inHistoryMode && activeTurn && liveState?.continuation
       ? `Live: Waiting for ${controlSeat || "next player"} to continue...`

@@ -589,6 +589,167 @@ test("live transport: offline playground exposes end-turn when one identity cont
   assert.equal(ended.status, 200);
 });
 
+test("live transport: drifted game projection repairs canonical view on GET and persists repair", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-authority-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createBody = await create.json();
+  const gameId = createBody.game.id;
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-authority-owner" }),
+    env,
+  );
+
+  const drifted = env.DB.overwriteGameState(gameId, (state) => ({
+    ...state,
+    board: {
+      ...state.board,
+      state: {
+        ...state.board.state,
+        sideToMove: "P2",
+      },
+    },
+    turns: [
+      {
+        ...state.turns[0],
+        playerSeat: "Player 2",
+      },
+      ...state.turns.slice(1),
+    ],
+  }));
+  assert.equal(drifted, true);
+
+  const repairedResponse = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-authority-owner`), env);
+  const repairedBody = await repairedResponse.json();
+  assert.equal(repairedResponse.status, 200);
+  assert.equal(repairedBody.game.currentTurn?.playerSeat, "Player 1");
+  assert.equal(repairedBody.game.controlSeat, "Player 1");
+  assert.equal(repairedBody.game.currentSnapshot.sideToMove, "P1");
+
+  const persistedAfterRepair = env.DB.getGameState(gameId);
+  assert.equal(persistedAfterRepair?.board?.state?.sideToMove, "P1");
+  assert.equal(persistedAfterRepair?.turns?.[0]?.playerSeat, "Player 1");
+
+  const repairedAgainResponse = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-authority-owner`), env);
+  const repairedAgainBody = await repairedAgainResponse.json();
+  const reparsedAgain = env.DB.getGameState(gameId);
+  assert.equal(repairedAgainResponse.status, 200);
+  assert.equal(reparsedAgain?.board?.state?.sideToMove, persistedAfterRepair?.board?.state?.sideToMove);
+  assert.equal(reparsedAgain?.turns?.[0]?.playerSeat, persistedAfterRepair?.turns?.[0]?.playerSeat);
+  assert.equal(repairedAgainBody.game.currentSnapshot.sideToMove, "P1");
+});
+
+test("live transport: canonical turn authority rejects stale out-of-turn callers across interaction routes", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-guest",
+      mode: "player",
+      inviteFromRole: "Player 1",
+    }),
+    env,
+  );
+
+  const drifted = env.DB.overwriteGameState(gameId, (state) => ({
+    ...state,
+    board: {
+      ...state.board,
+      state: {
+        ...state.board.state,
+        sideToMove: "P2",
+        turnIndex: 1,
+        continuation: null,
+      },
+    },
+  }));
+  assert.equal(drifted, true);
+
+  const moves = await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
+  const movesBody = await moves.json();
+  assert.equal(moves.status, 409);
+  assert.equal(movesBody.error, "not_your_turn");
+
+  const apply = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/apply`, "POST", {
+      identityId: "id-owner",
+      state: {
+        sideToMove: "P1",
+        turnIndex: 0,
+        pieces: [],
+      },
+      action: { type: "pass" },
+    }),
+    env,
+  );
+  assert.equal(apply.status, 409);
+  assert.equal((await apply.json()).error, "not_your_turn");
+
+  const legal = await handleApiRequest(req(`/api/shell/games/${gameId}/legal`, "POST", { identityId: "id-owner" }), env);
+  assert.equal(legal.status, 409);
+  assert.equal((await legal.json()).error, "not_your_turn");
+
+  const pieceMoves = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/piece-moves`, "POST", {
+      identityId: "id-owner",
+      pieceId: "C1",
+      state: {
+        sideToMove: "P2",
+        turnIndex: 1,
+        pieces: [],
+      },
+    }),
+    env,
+  );
+  assert.equal(pieceMoves.status, 409);
+  assert.equal((await pieceMoves.json()).error, "not_your_turn");
+
+  const endTurn = await handleApiRequest(req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: "id-owner" }), env);
+  assert.equal(endTurn.status, 409);
+  assert.equal((await endTurn.json()).error, "not_your_turn");
+});
+
+test("live transport: history mode remains on recorded snapshots even when live projection is repaired", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
+    env,
+  );
+
+  const drifted = env.DB.overwriteGameState(gameId, (state) => ({
+    ...state,
+    board: {
+      ...state.board,
+      state: {
+        ...state.board.state,
+        sideToMove: "P2",
+      },
+    },
+  }));
+  assert.equal(drifted, true);
+
+  await handleApiRequest(req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-owner", moveIndex: 0 }), env);
+  const historyView = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+  const historyBody = await historyView.json();
+
+  const state = env.DB.getGameState(gameId);
+  const liveSnapshot = state?.moves?.[0]?.selectionSnapshot;
+  assert.equal(historyBody.game.inHistoryMode, true);
+  assert.equal(historyBody.game.historyIndex, 0);
+  assert.deepEqual(historyBody.game.currentSnapshot, liveSnapshot);
+});
+
 test("live transport: play-as-both persists separate participant rows for the same identity", async () => {
   const created = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),

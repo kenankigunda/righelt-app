@@ -87,8 +87,8 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.doesNotMatch(source, /class="history-turn"/);
   assert.doesNotMatch(source, /class="history-turn-header"/);
   assert.doesNotMatch(source, /class="history-turn-list"/);
-  assert.match(source, /const getControlSeatForTurn = \(state, turnOwnerSeat\) => \{/);
-  assert.match(source, /if \(continuation\.type === "push" && continuation\.phase === "retreat"\) \{\s*return getNextSeat\(turnOwnerSeat\);/s);
+  assert.match(source, /const renderTurnHistory = \(game\) => \{/);
+  assert.match(source, /const controlSeat = typeof game\.controlSeat === "string" \? game\.controlSeat : activeTurn \? activeTurn\.playerSeat : null;/);
   assert.match(source, /const moveRows = game\.turns\.flatMap/);
   assert.match(source, /const pendingRows = \(Array\.isArray\(game\.pendingMoves\) \? game\.pendingMoves : \[\]\)\.map/);
   assert.match(source, /const reverseChronologicalMoveRows = \[\.\.\.moveRows\]\.reverse\(\);/);
