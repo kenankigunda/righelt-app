@@ -219,12 +219,24 @@ const delay = (ms) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
-const getShellLayoutMode = (viewportWidth = window.innerWidth) => (viewportWidth >= SHELL_WIDE_SCREEN_MIN_WIDTH ? "wide" : "narrow");
+const getWideDebugFlyoutWidth = (viewportWidth = window.innerWidth) => {
+  const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize || "16") || 16;
+  return Math.min(rootFontSize * 34, viewportWidth * 0.36);
+};
+const getAvailableShellContentWidth = (viewportWidth = window.innerWidth) => {
+  if (!currentRoute.debug) {
+    return viewportWidth;
+  }
+  return Math.max(0, viewportWidth - getWideDebugFlyoutWidth(viewportWidth) - 16);
+};
+const getShellLayoutMode = (viewportWidth = window.innerWidth) =>
+  (getAvailableShellContentWidth(viewportWidth) >= SHELL_WIDE_SCREEN_MIN_WIDTH ? "wide" : "narrow");
 const syncShellLayoutMode = () => {
   const layoutMode = getShellLayoutMode();
   if (appEl instanceof HTMLElement) {
     appEl.setAttribute("data-shell-layout-mode", layoutMode);
     appEl.setAttribute("data-debug-open", currentRoute.debug ? "true" : "false");
+    appEl.setAttribute("data-shell-content-width", String(Math.round(getAvailableShellContentWidth())));
   }
   return layoutMode;
 };

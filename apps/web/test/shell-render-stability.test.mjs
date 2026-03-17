@@ -23,9 +23,14 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /data-game-panel="history"/);
   assert.match(source, /const updateMountedGameShell = \(\{ game, inviteFromRole = null, inviteToken = null, includeBoard = true \} = \{\}\) => \{/);
   assert.match(source, /const shouldEnableStickyShellColumn = \(\{ matchesWideScreen, columnHeight, viewportHeight \}\) =>/);
-  assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) => \(viewportWidth >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"\);/);
+  assert.match(source, /const getWideDebugFlyoutWidth = \(viewportWidth = window\.innerWidth\) => \{/);
+  assert.match(source, /const getAvailableShellContentWidth = \(viewportWidth = window\.innerWidth\) => \{/);
+  assert.match(source, /return Math\.max\(0, viewportWidth - getWideDebugFlyoutWidth\(viewportWidth\) - 16\);/);
+  assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) =>/);
+  assert.match(source, /getAvailableShellContentWidth\(viewportWidth\) >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"/);
   assert.match(source, /const syncShellLayoutMode = \(\) => \{/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", layoutMode\);/);
+  assert.match(source, /appEl\.setAttribute\("data-shell-content-width", String\(Math\.round\(getAvailableShellContentWidth\(\)\)\)\);/);
   assert.match(source, /const applyGameShellStickyLayout = \(\) => \{/);
   assert.match(source, /const scheduleGameShellStickyLayout = \(\) => \{/);
   assert.match(source, /window\.cancelAnimationFrame\(stickyLayoutFrame\);/);

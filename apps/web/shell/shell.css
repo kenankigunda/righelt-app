@@ -540,6 +540,12 @@ button.button-release-bounce,
   padding-right: calc(var(--shell-debug-wide-width) + 1rem);
 }
 
+#app[data-shell-layout-mode="wide"][data-debug-open="true"] .shell-main-content {
+  width: min(var(--shell-main-max-width), calc(100vw - var(--shell-debug-wide-width) - 2rem));
+  max-width: 100%;
+  margin: 0 auto;
+}
+
 #app[data-shell-layout-mode="wide"][data-debug-open="true"] .debug-flyout {
   position: fixed;
   top: 0;
