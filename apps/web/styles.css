@@ -273,11 +273,15 @@ button {
   background: var(--cell-fill);
 }
 
-[data-hover-capability="hover"] .cell:not(.unselectable):hover {
+[data-hover-capability="hover"] .board[data-interaction-mode="interactive"] .cell:not(.unselectable):hover {
   border-color: var(--accent);
 }
 
 .cell.unselectable {
+  cursor: default;
+}
+
+.board[data-interaction-mode="static"] .cell {
   cursor: default;
 }
 

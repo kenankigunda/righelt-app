@@ -282,6 +282,65 @@ test("board adapter delegates hover callbacks only for real cell boundary change
   assert.deepEqual(hoverEnds, [{ row: 4, col: 2 }]);
 });
 
+test("board adapter static mount skips interactive listeners", () => {
+  const listeners = new Map();
+  const boardEl = {
+    setAttribute() {},
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    removeEventListener(type) {
+      listeners.delete(type);
+    },
+  };
+  const adapter = createEnginePlaygroundBoardAdapter();
+
+  adapter.mount({
+    boardEl,
+    overlayLinesEl: {},
+    interactionMode: "static",
+    onCellClick: () => {},
+  });
+
+  assert.equal(listeners.size, 0);
+});
+
+test("board adapter static render uses non-focusable cells", async () => {
+  await withFakeDocument(async () => {
+    const adapter = createEnginePlaygroundBoardAdapter();
+    const boardEl = new FakeElement("div");
+    const overlayLinesEl = new FakeElement("svg");
+    adapter.mount({
+      boardEl,
+      overlayLinesEl,
+      interactionMode: "static",
+      onCellClick: () => {},
+    });
+
+    adapter.render({
+      snapshot: {
+        sideToMove: "P1",
+        continuation: null,
+        pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 4 }, supplied: true, commanded: true }],
+      },
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: { mode: "none" },
+      legalActions: [],
+      selectedPieceMoves: [],
+      selectedPieceMovePreviews: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "pass",
+      interactionMode: "static",
+    });
+
+    const firstCell = getCell(boardEl, 0, 0);
+    assert.equal(boardEl.getAttribute("data-interaction-mode"), "static");
+    assert.equal(firstCell?.tagName, "DIV");
+    assert.equal(firstCell?.getAttribute("aria-hidden"), "true");
+  });
+});
+
 test("preview arrow curvature detects overlapping supply or command segments only", () => {
   assert.equal(
     segmentsOverlapOnSameLine(

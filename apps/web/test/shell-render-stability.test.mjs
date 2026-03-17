@@ -115,6 +115,19 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
 });
 
+test("shell renders and reconciles mini board previews for home and debug surfaces", () => {
+  assert.match(source, /const miniBoardPreviewRegistry = new Map\(\);/);
+  assert.match(source, /const renderedMiniBoardPreviewPayloads = new Map\(\);/);
+  assert.match(source, /const renderMiniBoardPreviewRoot = \(\{ previewId, snapshot, previewKey, sizeVariant = "compact" \}\) => \{/);
+  assert.match(source, /data-mini-board-preview data-preview-id=/);
+  assert.match(source, /const reconcileMiniBoardPreviews = \(\) => \{/);
+  assert.match(source, /syncMiniBoardPreviews\(\{/);
+  assert.match(source, /previewId: `home:\$\{game\.id\}`/);
+  assert.match(source, /previewId: `scenario:\$\{selectedScenario\.id\}`/);
+  assert.match(source, /class="mini-board-card"/);
+  assert.match(source, /reconcileMiniBoardPreviews\(\);\s*scheduleGameShellStickyLayout\(\);/);
+});
+
 test("withBusy only repaints immediately for actions that need visible busy state", () => {
   assert.match(source, /const withBusy = async \(fn, \{ renderStart = true, renderEnd = true \} = \{\}\) => \{/);
   assert.match(source, /if \(renderStart\) \{\s*render\(\);\s*\}/s);

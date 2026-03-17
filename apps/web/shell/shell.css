@@ -426,6 +426,100 @@ button.button-release-bounce,
   color: var(--muted);
 }
 
+.mini-board-card-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.mini-board-card {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  border: 1px solid #ddd5c4;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fffefb 0%, #f8f3e8 100%);
+}
+
+.mini-board-card-header,
+.mini-board-card-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.mini-board-card-link {
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.mini-board-card-subtitle {
+  margin: 0.18rem 0 0;
+}
+
+.mini-board-card-scenario {
+  padding: 0.75rem;
+}
+
+.mini-board-preview-surface {
+  min-width: 0;
+}
+
+.mini-board-preview-wrap {
+  padding-bottom: 0.65rem;
+}
+
+.mini-board-preview-board {
+  grid-template-columns: repeat(10, minmax(18px, 1fr));
+  gap: 3px;
+}
+
+.mini-board-preview-board .cell {
+  min-height: 28px;
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.mini-board-preview-board .piece-token {
+  width: 12px;
+  height: 12px;
+  border-width: 1.5px;
+  font-size: 0.45rem;
+}
+
+.mini-board-preview-board .piece-stack {
+  width: 18px;
+  height: 18px;
+}
+
+.mini-board-preview-board .piece-empty {
+  width: 6px;
+  height: 6px;
+}
+
+.mini-board-preview-board .piece-empty::before {
+  width: 3px;
+  height: 3px;
+}
+
+.mini-board-preview-board .axis-label {
+  font-size: 0.52rem;
+}
+
+.mini-board-preview-board .axis-label.col-axis {
+  bottom: -9px;
+}
+
+.mini-board-preview-board .axis-label.row-axis {
+  left: -9px;
+}
+
+.mini-board-preview-status {
+  margin: 0;
+}
+
 .row {
   display: flex;
   flex-wrap: wrap;

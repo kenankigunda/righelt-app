@@ -1,5 +1,6 @@
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEnginePlaygroundBoardAdapter } from "../board-adapters/engine-playground-adapter.js";
+import { syncMiniBoardPreviews } from "../board/mini-board-preview.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
@@ -107,6 +108,8 @@ let controlReleaseTimer = null;
 let stickyLayoutFrame = 0;
 const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;
 const SHELL_VIEWPORT_GUTTER_PX = 16;
+const miniBoardPreviewRegistry = new Map();
+const renderedMiniBoardPreviewPayloads = new Map();
 
 const escapeHtml = (value) =>
   String(value)
@@ -161,6 +164,48 @@ const formatClientDateTime = (value) => {
     timeStyle: "short",
   }).format(new Date(timestamp));
 };
+
+const registerMiniBoardPreview = ({ previewId, snapshot, previewKey, sizeVariant = "compact" }) => {
+  renderedMiniBoardPreviewPayloads.set(previewId, {
+    snapshot: snapshot ?? null,
+    previewKey,
+    sizeVariant,
+  });
+  return previewId;
+};
+
+const renderMiniBoardPreviewRoot = ({ previewId, snapshot, previewKey, sizeVariant = "compact" }) => {
+  const stablePreviewId = registerMiniBoardPreview({
+    previewId,
+    snapshot,
+    previewKey,
+    sizeVariant,
+  });
+  return `<div class="mini-board-preview-surface" data-mini-board-preview data-preview-id="${escapeHtml(stablePreviewId)}"></div>`;
+};
+
+const formatOutcomeStatus = (outcome) => {
+  if (typeof outcome === "string" && outcome.trim().length > 0) {
+    return outcome;
+  }
+  if (outcome && typeof outcome === "object" && typeof outcome.status === "string" && outcome.status.trim().length > 0) {
+    return outcome.status;
+  }
+  return "unknown";
+};
+
+const formatSideToMoveLabel = (snapshot) => {
+  if (snapshot?.sideToMove === "P1") {
+    return "Player 1 to play";
+  }
+  if (snapshot?.sideToMove === "P2") {
+    return "Player 2 to play";
+  }
+  return "Turn unknown";
+};
+
+const getGamePreviewSnapshot = (game) => game?.currentSnapshot ?? game?.board?.state ?? null;
+const getScenarioPreviewSnapshot = (scenario) => scenario?.resultingState ?? scenario?.initialState ?? null;
 
 const renderPlaceholderBadge = () => '<span class="status-chip offline">Not yet implemented</span>';
 const renderSectionActions = (actions) => {
@@ -500,6 +545,8 @@ const renderScenarioOptionList = () =>
 
 const renderScenarioPanel = ({ route, game = null } = {}) => {
   const selectedScenario = getSelectedScenario();
+  const scenarioSnapshot = getScenarioPreviewSnapshot(selectedScenario);
+  const scenarioPreviewKey = toStableKey(scenarioSnapshot);
   const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex + 1 : game?.moves?.length ?? 0;
   const canSaveScenario = Boolean(game);
   const canLoadIntoCurrentGame = Boolean(game && Array.isArray(game.moves) && game.moves.length === 0 && selectedScenario);
@@ -513,6 +560,25 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
         </select>
       </div>
       <p class="small">${escapeHtml(selectedScenario?.description || "Scenarios replay canonical shell history into a game.")}</p>
+      ${
+        selectedScenario
+          ? `<div class="mini-board-card mini-board-card-scenario">
+              ${renderMiniBoardPreviewRoot({
+                previewId: `scenario:${selectedScenario.id}`,
+                snapshot: scenarioSnapshot,
+                previewKey: scenarioPreviewKey,
+                sizeVariant: "compact",
+              })}
+              <div class="mini-board-card-meta">
+                <span class="small">${escapeHtml(`${selectedScenario.moves.length} move(s)`)}</span>
+                <span class="small">${escapeHtml(`Expected ${formatOutcomeStatus(selectedScenario.expectedOutcome)}`)}</span>
+              </div>
+              <p class="small mini-board-preview-status">${escapeHtml(
+                scenarioSnapshot ? formatSideToMoveLabel(scenarioSnapshot) : "Snapshot unavailable",
+              )}</p>
+            </div>`
+          : ""
+      }
       <div class="row">
         <button data-action="load-scenario" ${selectedScenario ? "" : "disabled"}>${route.name === "home" ? "Open Scenario" : canLoadIntoCurrentGame ? "Load into This Game" : "Open in New Tab"}</button>
         ${
@@ -675,14 +741,39 @@ const renderHome = () => {
   const listHtml =
     games.length === 0
       ? "<p class=\"small\">No games yet.</p>"
-      : `<ol class="game-list">${games
-          .map(
-            (game) => `<li>
-            <a href="${buildGameHash(game.id, null, currentRoute.debug)}">${escapeHtml(formatDisplayGameId(game.id))}</a>
-            <span class="small">latest ${escapeHtml(game.lastMoveAt || game.createdAt)}</span>
-          </li>`,
-          )
-          .join("")}</ol>`;
+      : `<div class="mini-board-card-list">${games
+          .map((game) => {
+            const snapshot = getGamePreviewSnapshot(game);
+            const previewKey = toStableKey(snapshot);
+            const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
+            const liveStateLabel = game.inHistoryMode ? "History view" : "Live view";
+            const turnLabel =
+              game.currentTurn && typeof game.currentTurn.index === "number"
+                ? `Turn ${game.currentTurn.index + 1}`
+                : "Turn pending";
+            return `<article class="mini-board-card">
+              <div class="mini-board-card-header">
+                <div>
+                  <a class="mini-board-card-link" href="${buildGameHash(game.id, null, currentRoute.debug)}">${escapeHtml(
+                    formatDisplayGameId(game.id),
+                  )}</a>
+                  <p class="small mini-board-card-subtitle">Latest ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
+                </div>
+                <span class="status-chip">${escapeHtml(game.syncStatus === "desynced" ? "Recovering" : liveStateLabel)}</span>
+              </div>
+              <div class="mini-board-card-meta">
+                <span>${renderRoleLabel(game.myRole)}</span>
+                <span class="small">${escapeHtml(turnLabel)}</span>
+              </div>
+              ${renderMiniBoardPreviewRoot({
+                previewId: `home:${game.id}`,
+                snapshot,
+                previewKey,
+              })}
+              <p class="small mini-board-preview-status">${escapeHtml(statusText)}</p>
+            </article>`;
+          })
+          .join("")}</div>`;
 
   return `
     <section class="layout-grid">
@@ -896,6 +987,40 @@ const renderGameShellFrame = (game) => `
 const getMountedGameShellRoot = () =>
   appEl?.querySelector?.("[data-game-shell-root]") instanceof HTMLElement ? appEl.querySelector("[data-game-shell-root]") : null;
 
+const reconcileMiniBoardPreviews = () => {
+  if (!(appEl instanceof HTMLElement)) {
+    return;
+  }
+  const previews = Array.from(appEl.querySelectorAll("[data-mini-board-preview]"))
+    .map((rootEl) => {
+      if (!(rootEl instanceof HTMLElement)) {
+        return null;
+      }
+      const previewId = rootEl.getAttribute("data-preview-id");
+      const payload = previewId ? renderedMiniBoardPreviewPayloads.get(previewId) : null;
+      if (!payload) {
+        return null;
+      }
+      return {
+        rootEl,
+        snapshot: payload.snapshot,
+        previewKey: payload.previewKey,
+        sizeVariant: payload.sizeVariant,
+      };
+    })
+    .filter(Boolean);
+
+  syncMiniBoardPreviews({
+    previews,
+    registry: miniBoardPreviewRegistry,
+    createAdapter: () => {
+      const adapter = createEnginePlaygroundBoardAdapter();
+      assertGameBoardAdapter(adapter);
+      return adapter;
+    },
+  });
+};
+
 const applyGameShellStickyLayout = () => {
   if (!(appEl instanceof HTMLElement)) {
     return;
@@ -971,6 +1096,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
       scrollEl.innerHTML = renderDebugContent();
     }
   }
+  reconcileMiniBoardPreviews();
   scheduleGameShellStickyLayout();
   return true;
 };
@@ -1342,6 +1468,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     }
   }
   updateHeaderFields();
+  reconcileMiniBoardPreviews();
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
