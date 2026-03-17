@@ -40,6 +40,27 @@ export type MoveEntry = {
   snapshot: GameState;
 };
 
+export type ScenarioMoveEntry = {
+  turnIndex: number;
+  turnMoveIndex: number;
+  actorSide: "P1" | "P2";
+  notation: string;
+  action: Action;
+};
+
+export type ScenarioRecord = {
+  formatVersion: 2;
+  id: string;
+  title: string;
+  description: string;
+  incorrect: boolean;
+  initialState: GameState;
+  moves: ScenarioMoveEntry[];
+  resultingState: GameState;
+  expectedFinalStateHash: string;
+  expectedOutcome: "ongoing" | "p1_win" | "p2_win" | "draw";
+};
+
 export type TurnEntry = {
   index: number;
   startedAt: string;
@@ -110,6 +131,75 @@ export const asGameState = (value: unknown): GameState | null =>
   value && typeof value === "object" ? (value as GameState) : null;
 export const asAction = (value: unknown): Action | null =>
   value && typeof value === "object" && typeof (value as Action).type === "string" ? (value as Action) : null;
+export const asScenarioRecord = (value: unknown): ScenarioRecord | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  if (candidate.formatVersion !== 2 || typeof candidate.id !== "string" || typeof candidate.title !== "string") {
+    return null;
+  }
+  if (!asGameState(candidate.initialState) || !asGameState(candidate.resultingState)) {
+    return null;
+  }
+  if (!Array.isArray(candidate.moves)) {
+    return null;
+  }
+  const moves = candidate.moves.map((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return null;
+    }
+    const move = entry as Record<string, unknown>;
+    const action = asAction(move.action);
+    if (
+      !action ||
+      typeof move.turnIndex !== "number" ||
+      typeof move.turnMoveIndex !== "number" ||
+      (move.actorSide !== "P1" && move.actorSide !== "P2") ||
+      typeof move.notation !== "string"
+    ) {
+      return null;
+    }
+    return {
+      turnIndex: move.turnIndex,
+      turnMoveIndex: move.turnMoveIndex,
+      actorSide: move.actorSide,
+      notation: move.notation,
+      action,
+    } satisfies ScenarioMoveEntry;
+  });
+  if (moves.some((move) => move === null)) {
+    return null;
+  }
+  return {
+    formatVersion: 2,
+    id: candidate.id,
+    title: candidate.title,
+    description: typeof candidate.description === "string" ? candidate.description : candidate.title,
+    incorrect: candidate.incorrect === true,
+    initialState: candidate.initialState as GameState,
+    moves: moves as ScenarioMoveEntry[],
+    resultingState: candidate.resultingState as GameState,
+    expectedFinalStateHash:
+      typeof candidate.expectedFinalStateHash === "string"
+        ? candidate.expectedFinalStateHash
+        : typeof candidate.expected_final_state_hash === "string"
+          ? candidate.expected_final_state_hash
+          : "",
+    expectedOutcome:
+      candidate.expectedOutcome === "ongoing" ||
+      candidate.expectedOutcome === "p1_win" ||
+      candidate.expectedOutcome === "p2_win" ||
+      candidate.expectedOutcome === "draw"
+        ? candidate.expectedOutcome
+        : candidate.expected_outcome === "ongoing" ||
+            candidate.expected_outcome === "p1_win" ||
+            candidate.expected_outcome === "p2_win" ||
+            candidate.expected_outcome === "draw"
+          ? candidate.expected_outcome
+          : "ongoing",
+  };
+};
 
 export const addNotification = (game: LiveGame, message: string) => {
   game.notifications.unshift(message);
@@ -177,6 +267,123 @@ export const createInitialGame = ({
       player2: createInviteToken(),
     },
   };
+};
+
+const cloneParticipant = (participant: Participant | null): Participant | null =>
+  participant
+    ? {
+        identityId: participant.identityId,
+        connected: participant.connected,
+        joinedAt: participant.joinedAt,
+        lastHeartbeatAt: participant.lastHeartbeatAt,
+        sessionCount: participant.sessionCount,
+      }
+    : null;
+
+const renumberImportedHistory = (game: LiveGame) => {
+  game.moves.forEach((move, index) => {
+    move.index = index;
+  });
+  game.turns.forEach((turn) => {
+    turn.moveIndexes = game.moves.filter((move) => move.turnIndex === turn.index).map((move) => move.index);
+    turn.lastMoveAt = turn.moveIndexes.length > 0 ? game.moves[turn.moveIndexes[turn.moveIndexes.length - 1]]?.at ?? null : null;
+    turn.status = turn === game.turns[game.turns.length - 1] ? "active" : "complete";
+    turn.endedAt = turn.status === "complete" ? turn.lastMoveAt : null;
+  });
+};
+
+export const exportScenarioFromGame = (
+  game: LiveGame,
+  {
+    scenarioId,
+    title,
+    description,
+    incorrect = false,
+    moveLimit = game.moves.length,
+  }: {
+    scenarioId: string;
+    title: string;
+    description?: string;
+    incorrect?: boolean;
+    moveLimit?: number;
+  },
+): ScenarioRecord => {
+  const boundedMoveLimit = Math.max(0, Math.min(moveLimit, game.moves.length));
+  const exportedMoves = game.moves.slice(0, boundedMoveLimit);
+  const initialState = exportedMoves[0]?.selectionSnapshot ?? game.board.state;
+  const resultingState = exportedMoves[exportedMoves.length - 1]?.snapshot ?? game.board.state;
+  return {
+    formatVersion: 2,
+    id: scenarioId,
+    title,
+    description: description || title,
+    incorrect,
+    initialState: clone(initialState),
+    moves: exportedMoves.map((move) => ({
+      turnIndex: move.turnIndex,
+      turnMoveIndex: move.turnMoveIndex,
+      actorSide: move.actorSide,
+      notation: move.notation,
+      action: clone(move.action),
+    })),
+    resultingState: clone(resultingState),
+    expectedFinalStateHash: "",
+    expectedOutcome: resultingState?.outcome?.status ?? "ongoing",
+  };
+};
+
+export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) => {
+  const initial = resolveToStability(clone(scenario.initialState), { artifactMode: "full" });
+  game.board.state = initial;
+  game.moves = [];
+  game.turns = [
+    {
+      index: initial.turnIndex ?? 0,
+      startedAt: game.createdAt,
+      endedAt: null,
+      playerSeat: getSeatForSide(initial.sideToMove),
+      status: "active",
+      moveIndexes: [],
+      lastMoveAt: null,
+    },
+  ];
+  game.historyIndexByIdentity = {};
+  game.lastMoveAt = null;
+
+  const moveTimes: string[] = [];
+  for (const scenarioMove of scenario.moves) {
+    while ((getActiveTurn(game)?.index ?? 0) < scenarioMove.turnIndex) {
+      const ended = endServerTurn(game);
+      if (!ended.ok) {
+        throw new Error(ended.error);
+      }
+    }
+    const moved = applyServerAction(game, scenarioMove.action, scenarioMove.notation, null);
+    if (!moved.ok) {
+      throw new Error(moved.error || "scenario_apply_failed");
+    }
+    const shouldAutoEndTurn = moved.state.continuation == null;
+    if (shouldAutoEndTurn) {
+      const ended = endServerTurn(game);
+      if (!ended.ok) {
+        throw new Error(ended.error);
+      }
+    }
+    moveTimes.push(moved.move.at);
+  }
+
+  renumberImportedHistory(game);
+  game.updatedAt = moveTimes[moveTimes.length - 1] ?? game.updatedAt;
+  game.lastMoveAt = moveTimes[moveTimes.length - 1] ?? null;
+  addNotification(game, `Scenario loaded: ${scenario.title}`);
+};
+
+export const copyParticipantsBetweenGames = (source: LiveGame, target: LiveGame) => {
+  target.playgroundMode = source.playgroundMode;
+  target.player1 = cloneParticipant(source.player1);
+  target.player2 = cloneParticipant(source.player2);
+  target.viewers = source.viewers.map((viewer) => cloneParticipant(viewer)).filter(Boolean) as Viewer[];
+  target.pendingJoinRequests = [];
 };
 
 export const findRoleForIdentity = (game: LiveGame, identityId: string): "Player 1" | "Player 2" | "Viewer" | "Guest" => {

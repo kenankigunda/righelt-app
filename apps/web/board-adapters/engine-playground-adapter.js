@@ -462,6 +462,7 @@ function applyGroupDecorations(snapshot, piece, cellByCoordinateKey, { showBadge
 export function createEnginePlaygroundBoardAdapter() {
   let boardEl = null;
   let overlayLinesEl = null;
+  let interactionMode = "interactive";
   let onCellClick = null;
   let onCellHoverStart = null;
   let onCellHoverEnd = null;
@@ -839,12 +840,18 @@ export function createEnginePlaygroundBoardAdapter() {
       }
       boardEl = options.boardEl;
       overlayLinesEl = options.overlayLinesEl;
+      interactionMode = options.interactionMode === "static" ? "static" : "interactive";
       onCellClick = options.onCellClick;
       onCellHoverStart = options.onCellHoverStart ?? null;
       onCellHoverEnd = options.onCellHoverEnd ?? null;
-      boardEl.addEventListener("click", onBoardClick);
-      boardEl.addEventListener("mouseover", onBoardMouseOver);
-      boardEl.addEventListener("mouseout", onBoardMouseOut);
+      if (boardEl?.setAttribute) {
+        boardEl.setAttribute("data-interaction-mode", interactionMode);
+      }
+      if (interactionMode === "interactive") {
+        boardEl.addEventListener("click", onBoardClick);
+        boardEl.addEventListener("mouseover", onBoardMouseOver);
+        boardEl.addEventListener("mouseout", onBoardMouseOut);
+      }
     },
 
     unmount() {
@@ -855,6 +862,7 @@ export function createEnginePlaygroundBoardAdapter() {
       }
       boardEl = null;
       overlayLinesEl = null;
+      interactionMode = "interactive";
       onCellClick = null;
       onCellHoverStart = null;
       onCellHoverEnd = null;
@@ -965,12 +973,17 @@ export function createEnginePlaygroundBoardAdapter() {
       removalEffects,
       allowFreeSelection,
       currentActionType,
+      interactionMode: renderInteractionMode,
     }) {
       if (!boardEl) {
         throw new Error("Adapter not mounted");
       }
 
+      const effectiveInteractionMode = renderInteractionMode === "static" ? "static" : interactionMode;
       boardEl.innerHTML = "";
+      if (boardEl?.setAttribute) {
+        boardEl.setAttribute("data-interaction-mode", effectiveInteractionMode);
+      }
       cellByCoordinateKey = new Map();
       const removalByCoordinateKey = new Map(
         (Array.isArray(removalEffects) ? removalEffects : []).map((effect) => [coordKey(effect.position), effect]),
@@ -978,8 +991,12 @@ export function createEnginePlaygroundBoardAdapter() {
 
       for (let row = 0; row < BOARD_SIZE; row += 1) {
         for (let col = 0; col < BOARD_SIZE; col += 1) {
-          const cell = document.createElement("button");
-          cell.type = "button";
+          const cell = document.createElement(effectiveInteractionMode === "static" ? "div" : "button");
+          if (effectiveInteractionMode === "interactive") {
+            cell.type = "button";
+          } else {
+            cell.setAttribute("aria-hidden", "true");
+          }
           cell.className = "cell";
           const cellPiece = findPieceAt(snapshot, row, col);
           const effectiveSelection =

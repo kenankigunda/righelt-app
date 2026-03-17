@@ -63,7 +63,7 @@ test("hover capability controller updates the root marker when capability change
 
 test("hover-only styles are gated behind the root hover capability marker", () => {
   assert.match(stylesSource, /\[data-hover-capability="hover"\]\s+\.board-preview-inline-button:hover/);
-  assert.match(stylesSource, /\[data-hover-capability="hover"\]\s+\.cell:not\(.unselectable\):hover/);
+  assert.match(stylesSource, /\[data-hover-capability="hover"\]\s+\.board\[data-interaction-mode="interactive"\]\s+\.cell:not\(.unselectable\):hover/);
   assert.match(shellStylesSource, /\[data-hover-capability="hover"\]\s+\.history-item:hover\s+\.history-move-at/);
   assert.match(shellStylesSource, /\[data-hover-capability="hover"\]\s+\.history-item:hover\s+\.history-move-line/);
 });

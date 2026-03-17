@@ -43,6 +43,42 @@ test("wide-screen shell sticky columns only target the left and board stacks", (
     shellStylesSource,
     /\.layout-grid > :last-child[\s\S]*position:\s*sticky|data-game-panel="history"[\s\S]*position:\s*sticky/,
   );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\]\s*\{[\s\S]*width:\s*100%;[\s\S]*margin:\s*1rem\s+0\s+2rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\]\s*\{[\s\S]*padding-left:\s*1rem;[\s\S]*padding-right:\s*calc\(var\(--shell-debug-wide-width\)\s*\+\s*1rem\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\]\s+\.shell-main-content\s*\{[\s\S]*width:\s*min\(var\(--shell-main-max-width\),\s*calc\(100vw\s*-\s*var\(--shell-debug-wide-width\)\s*-\s*2rem\)\);[\s\S]*margin:\s*0\s+auto;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.form-row\s*\{[\s\S]*display:\s*grid;[\s\S]*min-width:\s*0;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /select,\s*input,\s*textarea\s*\{[\s\S]*width:\s*100%;[\s\S]*max-width:\s*100%;[\s\S]*min-width:\s*0;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.debug-flyout-scroll > \*,\s*\.debug-panel > \*\s*\{[\s\S]*min-width:\s*0;[\s\S]*max-width:\s*100%;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.debug-flyout\s*\{[\s\S]*border-radius:\s*0;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.debug-flyout-header\s*\{[\s\S]*border-bottom:\s*1px solid var\(--line\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\]\s+\.debug-flyout\s*\{[\s\S]*position:\s*fixed;[\s\S]*top:\s*0;[\s\S]*right:\s*0;[\s\S]*bottom:\s*0;[\s\S]*width:\s*var\(--shell-debug-wide-width\);[\s\S]*border-top:\s*0;[\s\S]*border-right:\s*0;[\s\S]*border-bottom:\s*0;[\s\S]*box-shadow:\s*none;/s,
+  );
 });
 
 test("narrow-screen shell layout still collapses to one column without sticky rules in that breakpoint", () => {

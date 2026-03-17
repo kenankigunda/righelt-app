@@ -13,6 +13,9 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", "narrow"\);/);
   assert.match(source, /const renderGameShellFrame = \(game\) =>/);
+  assert.match(source, /const renderDebugFlyout = \(\) =>/);
+  assert.match(source, /data-debug-flyout/);
+  assert.match(source, /Debug mode/);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
   assert.match(source, /data-shell-sticky-target="left" data-sticky-enabled="false"/);
@@ -20,9 +23,17 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /data-game-panel="history"/);
   assert.match(source, /const updateMountedGameShell = \(\{ game, inviteFromRole = null, inviteToken = null, includeBoard = true \} = \{\}\) => \{/);
   assert.match(source, /const shouldEnableStickyShellColumn = \(\{ matchesWideScreen, columnHeight, viewportHeight \}\) =>/);
-  assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) => \(viewportWidth >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"\);/);
+  assert.match(source, /const getWideDebugFlyoutWidth = \(viewportWidth = window\.innerWidth\) => \{/);
+  assert.match(source, /const getAvailableShellContentWidth = \(viewportWidth = window\.innerWidth\) => \{/);
+  assert.match(source, /const SHELL_VIEWPORT_GUTTER_PX = 16;/);
+  assert.match(source, /const totalHorizontalGutter = SHELL_VIEWPORT_GUTTER_PX \* 2;/);
+  assert.match(source, /return Math\.max\(0, viewportWidth - totalHorizontalGutter\);/);
+  assert.match(source, /return Math\.max\(0, viewportWidth - getWideDebugFlyoutWidth\(viewportWidth\) - totalHorizontalGutter\);/);
+  assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) =>/);
+  assert.match(source, /getAvailableShellContentWidth\(viewportWidth\) >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"/);
   assert.match(source, /const syncShellLayoutMode = \(\) => \{/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", layoutMode\);/);
+  assert.match(source, /appEl\.setAttribute\("data-shell-content-width", String\(Math\.round\(getAvailableShellContentWidth\(\)\)\)\);/);
   assert.match(source, /const applyGameShellStickyLayout = \(\) => \{/);
   assert.match(source, /const scheduleGameShellStickyLayout = \(\) => \{/);
   assert.match(source, /window\.cancelAnimationFrame\(stickyLayoutFrame\);/);
@@ -45,7 +56,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /scheduleGameShellStickyLayout\(\);/);
   assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
   assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
-  assert.match(source, /const nextMarkup = `\$\{renderHeader\(\)\}\$\{body\}`;/);
+  assert.match(source, /const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">\$\{renderHeader\(\)\}\$\{body\}<\/div>\$\{renderDebugFlyout\(\)\}<\/div>`;/);
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.doesNotMatch(source, /replaceWith\(previousBoardPanel\)/);
@@ -102,6 +113,19 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /transport\.subscribe\(\(change\) => \{\s*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);\s*\}\);/s);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
+});
+
+test("shell renders and reconciles mini board previews for home and debug surfaces", () => {
+  assert.match(source, /const miniBoardPreviewRegistry = new Map\(\);/);
+  assert.match(source, /const renderedMiniBoardPreviewPayloads = new Map\(\);/);
+  assert.match(source, /const renderMiniBoardPreviewRoot = \(\{ previewId, snapshot, previewKey, sizeVariant = "compact" \}\) => \{/);
+  assert.match(source, /data-mini-board-preview data-preview-id=/);
+  assert.match(source, /const reconcileMiniBoardPreviews = \(\) => \{/);
+  assert.match(source, /syncMiniBoardPreviews\(\{/);
+  assert.match(source, /previewId: `home:\$\{game\.id\}`/);
+  assert.match(source, /previewId: `scenario:\$\{selectedScenario\.id\}`/);
+  assert.match(source, /class="mini-board-card"/);
+  assert.match(source, /reconcileMiniBoardPreviews\(\);\s*scheduleGameShellStickyLayout\(\);/);
 });
 
 test("withBusy only repaints immediately for actions that need visible busy state", () => {

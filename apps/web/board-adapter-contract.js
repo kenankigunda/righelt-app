@@ -12,6 +12,7 @@
  * @property {(options: {
  *   boardEl: HTMLElement,
  *   overlayLinesEl: SVGElement,
+ *   interactionMode?: "interactive" | "static",
  *   onCellClick: (coord: BoardCoord) => void,
  *   onCellHoverStart?: (coord: BoardCoord) => void,
  *   onCellHoverEnd?: (coord: BoardCoord) => void,
@@ -37,6 +38,7 @@
  *   selectedPieceMoves: unknown[],
  *   selectedPieceMovePreviews?: unknown[],
  *   removalEffects?: unknown[],
+ *   interactionMode?: "interactive" | "static",
  * }) => void} render
  * @property {(snapshot: unknown) => string} getCommanderSupplySummary
  * @property {(input: {

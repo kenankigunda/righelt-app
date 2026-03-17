@@ -1,5 +1,6 @@
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEnginePlaygroundBoardAdapter } from "../board-adapters/engine-playground-adapter.js";
+import { syncMiniBoardPreviews } from "../board/mini-board-preview.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
@@ -8,21 +9,27 @@ import { createLiveSyncClient } from "./live-sync.js";
 import { ensureHoverCapabilityController } from "../hover-capability.js";
 import { applyCommandLegendSwatch, getCommandLegendSwatchStyle } from "../legend.js";
 import { saveTutorialCompleted } from "./persistence.js";
+import {
+  buildScenarioFromGame,
+  downloadScenarioCatalog,
+  getNextScenarioId,
+  loadScenarioCatalog,
+  tryLocalScenarioWrite,
+} from "./scenarios.js";
 import { shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import {
   buildGameHash,
   buildHomeHash,
   buildInviteHash,
-  buildPlaygroundHash,
   buildTutorialHash,
   isShellRootHash,
   parseRouteFromHash,
   shouldLiveSyncRoute,
+  toggleDebugHash,
 } from "./routes.js";
 import { createTutorialController } from "./tutorial.js";
 
 const appEl = document.getElementById("app");
-const playgroundAppEl = document.getElementById("playground-app");
 const bootstrap = getBootstrapPayload();
 
 if (isShellRootHash(window.location.hash)) {
@@ -41,9 +48,6 @@ const ensureShellStylesheet = () => {
 };
 
 ensureShellStylesheet();
-if (playgroundAppEl) {
-  playgroundAppEl.hidden = true;
-}
 if (appEl) {
   appEl.hidden = false;
   appEl.setAttribute("data-shell-layout-mode", "narrow");
@@ -89,6 +93,9 @@ let inviteFeedback = "";
 let inviteFeedbackTimer = null;
 let routeHydrated = false;
 let resolvedInvite = null;
+let scenarioCatalog = { id: "S", title: "Saved Scenarios", scenarios: [] };
+let selectedScenarioId = null;
+let scenarioFeedback = "";
 const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
 let lastRenderedMarkup = "";
@@ -100,6 +107,9 @@ let pressedControlEl = null;
 let controlReleaseTimer = null;
 let stickyLayoutFrame = 0;
 const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;
+const SHELL_VIEWPORT_GUTTER_PX = 16;
+const miniBoardPreviewRegistry = new Map();
+const renderedMiniBoardPreviewPayloads = new Map();
 
 const escapeHtml = (value) =>
   String(value)
@@ -154,6 +164,48 @@ const formatClientDateTime = (value) => {
     timeStyle: "short",
   }).format(new Date(timestamp));
 };
+
+const registerMiniBoardPreview = ({ previewId, snapshot, previewKey, sizeVariant = "compact" }) => {
+  renderedMiniBoardPreviewPayloads.set(previewId, {
+    snapshot: snapshot ?? null,
+    previewKey,
+    sizeVariant,
+  });
+  return previewId;
+};
+
+const renderMiniBoardPreviewRoot = ({ previewId, snapshot, previewKey, sizeVariant = "compact" }) => {
+  const stablePreviewId = registerMiniBoardPreview({
+    previewId,
+    snapshot,
+    previewKey,
+    sizeVariant,
+  });
+  return `<div class="mini-board-preview-surface" data-mini-board-preview data-preview-id="${escapeHtml(stablePreviewId)}"></div>`;
+};
+
+const formatOutcomeStatus = (outcome) => {
+  if (typeof outcome === "string" && outcome.trim().length > 0) {
+    return outcome;
+  }
+  if (outcome && typeof outcome === "object" && typeof outcome.status === "string" && outcome.status.trim().length > 0) {
+    return outcome.status;
+  }
+  return "unknown";
+};
+
+const formatSideToMoveLabel = (snapshot) => {
+  if (snapshot?.sideToMove === "P1") {
+    return "Player 1 to play";
+  }
+  if (snapshot?.sideToMove === "P2") {
+    return "Player 2 to play";
+  }
+  return "Turn unknown";
+};
+
+const getGamePreviewSnapshot = (game) => game?.currentSnapshot ?? game?.board?.state ?? null;
+const getScenarioPreviewSnapshot = (scenario) => scenario?.resultingState ?? scenario?.initialState ?? null;
 
 const renderPlaceholderBadge = () => '<span class="status-chip offline">Not yet implemented</span>';
 const renderSectionActions = (actions) => {
@@ -213,11 +265,25 @@ const delay = (ms) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
-const getShellLayoutMode = (viewportWidth = window.innerWidth) => (viewportWidth >= SHELL_WIDE_SCREEN_MIN_WIDTH ? "wide" : "narrow");
+const getWideDebugFlyoutWidth = (viewportWidth = window.innerWidth) => {
+  const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize || "16") || 16;
+  return Math.min(rootFontSize * 34, viewportWidth * 0.36);
+};
+const getAvailableShellContentWidth = (viewportWidth = window.innerWidth) => {
+  const totalHorizontalGutter = SHELL_VIEWPORT_GUTTER_PX * 2;
+  if (!currentRoute.debug) {
+    return Math.max(0, viewportWidth - totalHorizontalGutter);
+  }
+  return Math.max(0, viewportWidth - getWideDebugFlyoutWidth(viewportWidth) - totalHorizontalGutter);
+};
+const getShellLayoutMode = (viewportWidth = window.innerWidth) =>
+  (getAvailableShellContentWidth(viewportWidth) >= SHELL_WIDE_SCREEN_MIN_WIDTH ? "wide" : "narrow");
 const syncShellLayoutMode = () => {
   const layoutMode = getShellLayoutMode();
   if (appEl instanceof HTMLElement) {
     appEl.setAttribute("data-shell-layout-mode", layoutMode);
+    appEl.setAttribute("data-debug-open", currentRoute.debug ? "true" : "false");
+    appEl.setAttribute("data-shell-content-width", String(Math.round(getAvailableShellContentWidth())));
   }
   return layoutMode;
 };
@@ -450,15 +516,164 @@ const renderHeader = () => `
       <div class="nav-row">
         ${
           currentRoute.name !== "home"
-            ? `<a class="button-link secondary" href="${buildHomeHash()}">Home</a>`
+            ? `<a class="button-link secondary" href="${buildHomeHash(currentRoute.debug)}">Home</a>`
             : ""
         }
-        <a class="button-link secondary" href="${buildPlaygroundHash()}">Playground</a>
-        <a class="button-link secondary" href="${buildTutorialHash()}">Tutorial</a>
+        <button class="secondary" data-action="toggle-debug">${currentRoute.debug ? "Hide Debug" : "Show Debug"}</button>
+        <a class="button-link secondary" href="${buildTutorialHash(null, currentRoute.debug)}">Tutorial</a>
       </div>
     </div>
   </header>
 `;
+
+const setScenarioFeedback = (message) => {
+  scenarioFeedback = message;
+};
+
+const getSelectedScenario = () =>
+  scenarioCatalog.scenarios.find((scenario) => scenario.id === selectedScenarioId) ?? scenarioCatalog.scenarios[0] ?? null;
+
+const renderScenarioOptionList = () =>
+  scenarioCatalog.scenarios
+    .map(
+      (scenario) =>
+        `<option value="${escapeHtml(scenario.id)}"${scenario.id === selectedScenarioId ? " selected" : ""}>${escapeHtml(
+          `${scenario.id} - ${scenario.title}${scenario.incorrect ? " [incorrect]" : ""}`,
+        )}</option>`,
+    )
+    .join("");
+
+const renderScenarioPanel = ({ route, game = null } = {}) => {
+  const selectedScenario = getSelectedScenario();
+  const scenarioSnapshot = getScenarioPreviewSnapshot(selectedScenario);
+  const scenarioPreviewKey = toStableKey(scenarioSnapshot);
+  const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex + 1 : game?.moves?.length ?? 0;
+  const canSaveScenario = Boolean(game);
+  const canLoadIntoCurrentGame = Boolean(game && Array.isArray(game.moves) && game.moves.length === 0 && selectedScenario);
+  return `
+    <section class="panel debug-panel">
+      <h2>Scenarios</h2>
+      <div class="form-row">
+        <label for="scenario-select">Saved scenario</label>
+        <select id="scenario-select">
+          ${scenarioCatalog.scenarios.length > 0 ? renderScenarioOptionList() : '<option value="">No scenarios saved yet</option>'}
+        </select>
+      </div>
+      <p class="small">${escapeHtml(selectedScenario?.description || "Scenarios replay canonical shell history into a game.")}</p>
+      ${
+        selectedScenario
+          ? `<div class="mini-board-card mini-board-card-scenario">
+              ${renderMiniBoardPreviewRoot({
+                previewId: `scenario:${selectedScenario.id}`,
+                snapshot: scenarioSnapshot,
+                previewKey: scenarioPreviewKey,
+                sizeVariant: "compact",
+              })}
+              <div class="mini-board-card-meta">
+                <span class="small">${escapeHtml(`${selectedScenario.moves.length} move(s)`)}</span>
+                <span class="small">${escapeHtml(`Expected ${formatOutcomeStatus(selectedScenario.expectedOutcome)}`)}</span>
+              </div>
+              <p class="small mini-board-preview-status">${escapeHtml(
+                scenarioSnapshot ? formatSideToMoveLabel(scenarioSnapshot) : "Snapshot unavailable",
+              )}</p>
+            </div>`
+          : ""
+      }
+      <div class="row">
+        <button data-action="load-scenario" ${selectedScenario ? "" : "disabled"}>${route.name === "home" ? "Open Scenario" : canLoadIntoCurrentGame ? "Load into This Game" : "Open in New Tab"}</button>
+        ${
+          canSaveScenario
+            ? `<button class="secondary" data-action="save-scenario"${busy ? " disabled" : ""}>Save Scenario${moveLimit < (game?.moves?.length ?? 0) ? " from Here" : ""}</button>`
+            : ""
+        }
+      </div>
+      <pre class="debug-pre" aria-live="polite">${escapeHtml(
+        scenarioFeedback ||
+          (selectedScenario
+            ? JSON.stringify(
+                {
+                  id: selectedScenario.id,
+                  moves: selectedScenario.moves.length,
+                  outcome: selectedScenario.expectedOutcome,
+                },
+                null,
+                2,
+              )
+            : "No scenarios available."),
+      )}</pre>
+    </section>
+  `;
+};
+
+const renderDebugContent = () => {
+  const route = currentRoute;
+  const gameId = route.name === "game" ? route.gameId : route.name === "invite" ? resolvedInvite?.gameId || null : null;
+  const game = gameId ? transport.getGameViewModel(gameId) : null;
+  const selection = boardRuntime?.getSelection?.() ?? null;
+  const legalActions = boardRuntime?.getLegalActions?.() ?? (game?.legalActions ?? []);
+  const currentSnapshot = game?.currentSnapshot ?? null;
+  const routeDiagnostics =
+    route.name === "home"
+      ? {
+          identityId: transport.getIdentityId(),
+          offline: window.__righeltOffline || false,
+          loadedGames: transport.listGames().map((entry) => ({ id: entry.id, moves: entry.moves.length, role: entry.myRole })),
+        }
+      : route.name === "tutorial"
+        ? {
+            tutorial: tutorial.current(),
+            completed: bootstrap.tutorialCompleted ?? false,
+          }
+        : {
+            route: route.name,
+            gameId,
+          };
+  return `
+    ${renderScenarioPanel({ route, game })}
+    <section class="panel debug-panel">
+      <h2>Engine Status</h2>
+      <pre class="debug-pre">${escapeHtml(
+        JSON.stringify(
+          game
+            ? {
+                gameId: game.id,
+                moves: game.moves.length,
+                inHistoryMode: game.inHistoryMode,
+                historyIndex: game.historyIndex ?? null,
+                sideToMove: currentSnapshot?.sideToMove ?? null,
+                turnIndex: currentSnapshot?.turnIndex ?? null,
+                continuation: currentSnapshot?.continuation ?? null,
+                legalActions: legalActions.length,
+                selection,
+              }
+            : routeDiagnostics,
+          null,
+          2,
+        ),
+      )}</pre>
+    </section>
+    <section class="panel debug-panel">
+      <h2>Actions Diagnostics</h2>
+      <pre class="debug-pre">${escapeHtml(JSON.stringify(legalActions.slice(0, 20), null, 2))}</pre>
+    </section>
+  `;
+};
+
+const renderDebugFlyout = () => {
+  if (!currentRoute.debug) {
+    return "";
+  }
+  return `
+  <aside class="debug-flyout is-open" data-debug-flyout>
+    <header class="debug-flyout-header">
+      <h2>Debug mode</h2>
+    </header>
+    <div class="debug-flyout-scroll">
+      ${renderDebugContent()}
+    </div>
+  </aside>
+`;
+};
 
 const updateHeaderFields = () => {
   const identityEl = document.getElementById("shell-header-identity");
@@ -526,14 +741,39 @@ const renderHome = () => {
   const listHtml =
     games.length === 0
       ? "<p class=\"small\">No games yet.</p>"
-      : `<ol class="game-list">${games
-          .map(
-            (game) => `<li>
-            <a href="${buildGameHash(game.id)}">${escapeHtml(formatDisplayGameId(game.id))}</a>
-            <span class="small">latest ${escapeHtml(game.lastMoveAt || game.createdAt)}</span>
-          </li>`,
-          )
-          .join("")}</ol>`;
+      : `<div class="mini-board-card-list">${games
+          .map((game) => {
+            const snapshot = getGamePreviewSnapshot(game);
+            const previewKey = toStableKey(snapshot);
+            const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
+            const liveStateLabel = game.inHistoryMode ? "History view" : "Live view";
+            const turnLabel =
+              game.currentTurn && typeof game.currentTurn.index === "number"
+                ? `Turn ${game.currentTurn.index + 1}`
+                : "Turn pending";
+            return `<article class="mini-board-card">
+              <div class="mini-board-card-header">
+                <div>
+                  <a class="mini-board-card-link" href="${buildGameHash(game.id, null, currentRoute.debug)}">${escapeHtml(
+                    formatDisplayGameId(game.id),
+                  )}</a>
+                  <p class="small mini-board-card-subtitle">Latest ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
+                </div>
+                <span class="status-chip">${escapeHtml(game.syncStatus === "desynced" ? "Recovering" : liveStateLabel)}</span>
+              </div>
+              <div class="mini-board-card-meta">
+                <span>${renderRoleLabel(game.myRole)}</span>
+                <span class="small">${escapeHtml(turnLabel)}</span>
+              </div>
+              ${renderMiniBoardPreviewRoot({
+                previewId: `home:${game.id}`,
+                snapshot,
+                previewKey,
+              })}
+              <p class="small mini-board-preview-status">${escapeHtml(statusText)}</p>
+            </article>`;
+          })
+          .join("")}</div>`;
 
   return `
     <section class="layout-grid">
@@ -747,6 +987,40 @@ const renderGameShellFrame = (game) => `
 const getMountedGameShellRoot = () =>
   appEl?.querySelector?.("[data-game-shell-root]") instanceof HTMLElement ? appEl.querySelector("[data-game-shell-root]") : null;
 
+const reconcileMiniBoardPreviews = () => {
+  if (!(appEl instanceof HTMLElement)) {
+    return;
+  }
+  const previews = Array.from(appEl.querySelectorAll("[data-mini-board-preview]"))
+    .map((rootEl) => {
+      if (!(rootEl instanceof HTMLElement)) {
+        return null;
+      }
+      const previewId = rootEl.getAttribute("data-preview-id");
+      const payload = previewId ? renderedMiniBoardPreviewPayloads.get(previewId) : null;
+      if (!payload) {
+        return null;
+      }
+      return {
+        rootEl,
+        snapshot: payload.snapshot,
+        previewKey: payload.previewKey,
+        sizeVariant: payload.sizeVariant,
+      };
+    })
+    .filter(Boolean);
+
+  syncMiniBoardPreviews({
+    previews,
+    registry: miniBoardPreviewRegistry,
+    createAdapter: () => {
+      const adapter = createEnginePlaygroundBoardAdapter();
+      assertGameBoardAdapter(adapter);
+      return adapter;
+    },
+  });
+};
+
 const applyGameShellStickyLayout = () => {
   if (!(appEl instanceof HTMLElement)) {
     return;
@@ -794,7 +1068,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   const joinEl = shellRoot.querySelector('[data-game-panel="join"]');
   const participantsEl = shellRoot.querySelector('[data-game-panel="participants"]');
   const historyEl = shellRoot.querySelector('[data-game-panel="history"]');
-  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id)}`;
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id, currentRoute.debug)}`;
 
   if (alertsEl instanceof HTMLElement) {
     alertsEl.innerHTML = renderGameAlertsHtml(game, inviteFromRole);
@@ -814,6 +1088,15 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   if (includeBoard) {
     mountBoardForGame(game);
   }
+  const debugFlyoutEl = appEl?.querySelector?.("[data-debug-flyout]");
+  if (debugFlyoutEl instanceof HTMLElement) {
+    debugFlyoutEl.classList.toggle("is-open", currentRoute.debug === true);
+    const scrollEl = debugFlyoutEl.querySelector(".debug-flyout-scroll");
+    if (scrollEl instanceof HTMLElement) {
+      scrollEl.innerHTML = renderDebugContent();
+    }
+  }
+  reconcileMiniBoardPreviews();
   scheduleGameShellStickyLayout();
   return true;
 };
@@ -838,7 +1121,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
   if (!game) {
     return `<section class="panel"><h2>Loading game...</h2><p class="small">Fetching latest server state.</p></section>`;
   }
-  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id)}`;
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id, currentRoute.debug)}`;
 
   return `
     ${renderGameAlertsHtml(game, inviteFromRole)}
@@ -971,7 +1254,7 @@ const renderInviteLanding = (inviteContext) => {
             <span class="small invite-choice-note">${escapeHtml(viewerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
-            <a class="button-link secondary" href="${buildHomeHash()}">Back home</a>
+            <a class="button-link secondary" href="${buildHomeHash(currentRoute.debug)}">Back home</a>
           </div>
         </div>
         <p class="small">
@@ -1008,7 +1291,7 @@ const renderTutorial = (gameId) => {
 const renderNotFound = () => `
   <section class="panel">
     <h2>Route not found</h2>
-    <a class="button-link" href="${buildHomeHash()}">Return home</a>
+    <a class="button-link" href="${buildHomeHash(currentRoute.debug)}">Return home</a>
   </section>
 `;
 
@@ -1143,6 +1426,7 @@ const destroyMountedBoardRuntime = () => {
 };
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
+  syncShellLayoutMode();
   const mountedGameShell = getMountedGameShellRoot();
   if (
     shouldUseIncrementalGameShell() &&
@@ -1175,7 +1459,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     body = renderNotFound();
   }
 
-  const nextMarkup = `${renderHeader()}${body}`;
+  const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderDebugFlyout()}</div>`;
   if (nextMarkup !== lastRenderedMarkup) {
     appEl.innerHTML = nextMarkup;
     lastRenderedMarkup = nextMarkup;
@@ -1184,6 +1468,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     }
   }
   updateHeaderFields();
+  reconcileMiniBoardPreviews();
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
@@ -1254,6 +1539,19 @@ const syncRouteDataPassive = async () => {
     render();
   } catch (error) {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
+  }
+};
+
+const syncScenarioCatalog = async () => {
+  try {
+    scenarioCatalog = await loadScenarioCatalog();
+    selectedScenarioId = selectedScenarioId && scenarioCatalog.scenarios.some((scenario) => scenario.id === selectedScenarioId)
+      ? selectedScenarioId
+      : scenarioCatalog.scenarios[0]?.id ?? null;
+  } catch (error) {
+    scenarioCatalog = { id: "S", title: "Saved Scenarios", scenarios: [] };
+    selectedScenarioId = null;
+    scenarioFeedback = error instanceof Error ? error.message : "Failed to load scenarios";
   }
 };
 
@@ -1406,16 +1704,21 @@ appEl.addEventListener("click", async (event) => {
     action !== "tutorial-skip";
 
   await withBusy(async () => {
+    if (action === "toggle-debug") {
+      navigateTo(toggleDebugHash(window.location.hash));
+      return;
+    }
+
     if (action === "create-game") {
       const game = await transport.createGame({ playgroundMode: false, offlineLocal: false });
-      navigateTo(buildGameHash(game.id));
+      navigateTo(buildGameHash(game.id, null, currentRoute.debug));
       return;
     }
 
     if (action === "create-offline-playground") {
       await transport.setOffline(true);
       const game = await transport.createGame({ playgroundMode: true, offlineLocal: true });
-      navigateTo(buildGameHash(game.id, "offline"));
+      navigateTo(buildGameHash(game.id, "offline", currentRoute.debug));
       return;
     }
 
@@ -1446,7 +1749,7 @@ appEl.addEventListener("click", async (event) => {
       });
       markInviteChoiceCommitted(gameId);
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId));
+        navigateTo(buildGameHash(gameId, null, currentRoute.debug));
         return;
       }
       await syncRouteData();
@@ -1467,7 +1770,7 @@ appEl.addEventListener("click", async (event) => {
         setInviteFeedback("Player join request sent. You are now viewing the game while approval is pending.");
       }
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId));
+        navigateTo(buildGameHash(gameId, null, currentRoute.debug));
         return;
       }
       await syncRouteData();
@@ -1546,9 +1849,83 @@ appEl.addEventListener("click", async (event) => {
       saveTutorialCompleted(storage, true);
       tutorial.reset();
       const gameId = actionEl.getAttribute("data-game-id");
-      navigateTo(gameId ? buildGameHash(gameId) : buildHomeHash());
+      navigateTo(gameId ? buildGameHash(gameId, null, currentRoute.debug) : buildHomeHash(currentRoute.debug));
+      return;
+    }
+
+    if (action === "load-scenario") {
+      const selectedScenario = getSelectedScenario();
+      if (!selectedScenario) {
+        setScenarioFeedback("No scenario selected.");
+        render({ animatePanels: false, includeBoard: false });
+        return;
+      }
+      const activeGameId =
+        currentRoute.name === "game" ? currentRoute.gameId : currentRoute.name === "invite" ? resolvedInvite?.gameId || null : null;
+      const activeGame = activeGameId ? transport.getGameViewModel(activeGameId) : null;
+      const shouldApplyInPlace = Boolean(activeGame && activeGame.moves.length === 0);
+      const result = await transport.importScenario({
+        scenario: selectedScenario,
+        targetGameId: shouldApplyInPlace ? activeGameId : null,
+        sourceGameId: activeGame && !shouldApplyInPlace ? activeGame.id : null,
+      });
+      setScenarioFeedback(`Scenario ${selectedScenario.id} loaded.`);
+      if (!result?.game?.id) {
+        render({ animatePanels: false, includeBoard: false });
+        return;
+      }
+      const nextHash = buildGameHash(result.game.id, null, currentRoute.debug);
+      if (activeGame && !shouldApplyInPlace) {
+        window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
+        render({ animatePanels: false, includeBoard: false });
+        return;
+      }
+      navigateTo(nextHash);
+      return;
+    }
+
+    if (action === "save-scenario") {
+      const activeGameId =
+        currentRoute.name === "game" ? currentRoute.gameId : currentRoute.name === "invite" ? resolvedInvite?.gameId || null : null;
+      const activeGame = activeGameId ? transport.getGameViewModel(activeGameId) : null;
+      if (!activeGame) {
+        setScenarioFeedback("Open a game to save a scenario.");
+        render({ animatePanels: false, includeBoard: false });
+        return;
+      }
+      const scenarioId = getNextScenarioId(scenarioCatalog);
+      const title = window.prompt("Scenario title:", `Saved scenario ${scenarioId}`);
+      if (!title) {
+        return;
+      }
+      const moveLimit = activeGame.inHistoryMode && typeof activeGame.historyIndex === "number" ? activeGame.historyIndex + 1 : activeGame.moves.length;
+      const scenario = await buildScenarioFromGame(activeGame, { scenarioId, title, moveLimit });
+      const nextCatalog = {
+        ...scenarioCatalog,
+        scenarios: [...scenarioCatalog.scenarios, scenario],
+      };
+      const localWrite = await tryLocalScenarioWrite("/scenarios/save", { scenario });
+      scenarioCatalog = nextCatalog;
+      selectedScenarioId = scenario.id;
+      if (!localWrite.ok) {
+        downloadScenarioCatalog(nextCatalog, "scenarios.catalog.updated.json");
+      }
+      setScenarioFeedback(localWrite.ok ? `Scenario ${scenario.id} saved.` : `Scenario ${scenario.id} saved via download fallback.`);
+      render({ animatePanels: false, includeBoard: false });
     }
   }, { renderStart: shouldRenderBusyState });
+});
+
+appEl.addEventListener("change", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement)) {
+    return;
+  }
+  if (target.id === "scenario-select") {
+    selectedScenarioId = target.value || null;
+    scenarioFeedback = "";
+    render({ animatePanels: false, includeBoard: false });
+  }
 });
 
 appEl.addEventListener("pointerdown", (event) => {
@@ -1599,6 +1976,7 @@ const initialRender = async () => {
   routeHydrated = false;
   syncLiveChannel();
   await withBusy(async () => {
+    await syncScenarioCatalog();
     await syncRouteData();
     syncLiveChannel();
   });

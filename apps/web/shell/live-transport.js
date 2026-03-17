@@ -537,6 +537,19 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return upsertGame(body.game);
   };
 
+  const importScenario = async ({ scenario, targetGameId = null, sourceGameId = null } = {}) => {
+    const response = await fetcher(withOfflineQuery("/api/shell/scenarios/import"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId, scenario, targetGameId, sourceGameId }),
+    });
+    const body = await mustOk(response);
+    if (body.game) {
+      upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    }
+    return body;
+  };
+
   const resolveInvite = async (inviteToken) => {
     const response = await fetcher(withOfflineQuery(`/api/shell/invites/${encodeURIComponent(inviteToken)}`), {
       method: "GET",
@@ -766,6 +779,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     loadGame,
     resolveInvite,
     createGame,
+    importScenario,
     joinGame,
     playAsBothPlayers,
     approvePendingRequest,

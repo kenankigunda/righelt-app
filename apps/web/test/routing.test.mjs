@@ -4,49 +4,45 @@ import {
   buildGameHash,
   buildHomeHash,
   buildInviteHash,
-  buildPlaygroundHash,
   buildTutorialHash,
-  isPlaygroundRouteHash,
   isShellRootHash,
   isShellRouteHash,
   parseRouteFromHash,
   shouldLiveSyncRoute,
   shouldPassiveRefreshRoute,
+  toggleDebugHash,
 } from "../shell/routes.js";
 
-test("routing resolves home hash variants", () => {
-  assert.deepEqual(parseRouteFromHash(""), { name: "home" });
-  assert.deepEqual(parseRouteFromHash("#/"), { name: "home" });
+test("routing resolves home hash variants with debug state", () => {
+  assert.deepEqual(parseRouteFromHash(""), { name: "home", debug: false });
+  assert.deepEqual(parseRouteFromHash("#/"), { name: "home", debug: false });
+  assert.deepEqual(parseRouteFromHash("#/?debug=1"), { name: "home", debug: true });
   assert.equal(buildHomeHash(), "#/");
 });
 
-test("routing resolves game path with inviter role", () => {
-  const parsed = parseRouteFromHash("#/game/game-1?from=Player%201");
+test("routing resolves game path with inviter role and debug flag", () => {
+  const parsed = parseRouteFromHash("#/game/game-1?from=Player%201&debug=1");
   assert.equal(parsed.name, "game");
   assert.equal(parsed.gameId, "game-1");
   assert.equal(parsed.inviteFromRole, "Player 1");
+  assert.equal(parsed.debug, true);
 
-  assert.equal(buildGameHash("game-1", "Player 2"), "#/game/game-1?from=Player%202");
+  assert.equal(buildGameHash("game-1", "Player 2", true), "#/game/game-1?from=Player%202&debug=1");
 });
 
 test("routing resolves tutorial path and unknown routes", () => {
-  assert.deepEqual(parseRouteFromHash("#/tutorial"), { name: "tutorial", gameId: null });
-  assert.equal(buildTutorialHash("abc"), "#/tutorial/abc");
-  assert.deepEqual(parseRouteFromHash("#/nope"), { name: "not-found" });
+  assert.deepEqual(parseRouteFromHash("#/tutorial"), { name: "tutorial", gameId: null, debug: false });
+  assert.equal(buildTutorialHash("abc", true), "#/tutorial/abc?debug=1");
+  assert.deepEqual(parseRouteFromHash("#/nope"), { name: "not-found", debug: false });
 });
 
 test("routing resolves opaque invite path", () => {
   assert.deepEqual(parseRouteFromHash("#/invite/token-123"), {
     name: "invite",
     inviteToken: "token-123",
+    debug: false,
   });
-  assert.equal(buildInviteHash("abc123"), "#/invite/abc123");
-});
-
-test("routing builds playground path distinctly from shell routes", () => {
-  assert.equal(buildPlaygroundHash(), "#/playground");
-  assert.equal(isPlaygroundRouteHash("#/playground"), true);
-  assert.equal(isShellRouteHash("#/playground"), false);
+  assert.equal(buildInviteHash("abc123", true), "#/invite/abc123?debug=1");
 });
 
 test("routing distinguishes live sync routes from passive refresh routes", () => {
@@ -61,26 +57,25 @@ test("routing distinguishes live sync routes from passive refresh routes", () =>
   assert.equal(shouldPassiveRefreshRoute({ name: "not-found" }), false);
 });
 
-test("routing identifies shell hashes distinctly from playground default", () => {
+test("routing identifies shell hashes and toggles debug state without changing routes", () => {
   assert.equal(isShellRootHash(""), true);
   assert.equal(isShellRootHash("#/"), true);
   assert.equal(isShellRouteHash(""), true);
   assert.equal(isShellRouteHash("#/"), true);
   assert.equal(isShellRouteHash("#/game/game-1"), true);
+  assert.equal(isShellRouteHash("#/game/game-1?debug=1"), true);
   assert.equal(isShellRouteHash("#/invite/token-1"), true);
   assert.equal(isShellRouteHash("#/tutorial"), true);
   assert.equal(isShellRouteHash("#/home"), false);
-  assert.equal(isShellRouteHash("#/shell/home"), false);
-  assert.equal(isShellRouteHash("#/shell/game/game-1"), false);
-  assert.equal(isShellRouteHash("#/shell/invite/token-1"), false);
-  assert.equal(isShellRouteHash("#/shell/tutorial"), false);
-  assert.equal(isShellRootHash("#/shell"), false);
+  assert.equal(toggleDebugHash("#/game/game-1"), "#/game/game-1?debug=1");
+  assert.equal(toggleDebugHash("#/game/game-1?debug=1"), "#/game/game-1");
+  assert.equal(toggleDebugHash("#/"), "#/?debug=1");
 });
 
 test("routing rejects removed legacy aliases", () => {
-  assert.deepEqual(parseRouteFromHash("#/home"), { name: "not-found" });
-  assert.deepEqual(parseRouteFromHash("#/shell/home"), { name: "not-found" });
-  assert.deepEqual(parseRouteFromHash("#/shell/game/game-1"), { name: "not-found" });
-  assert.deepEqual(parseRouteFromHash("#/shell/invite/token-1"), { name: "not-found" });
-  assert.deepEqual(parseRouteFromHash("#/shell/tutorial"), { name: "not-found" });
+  assert.deepEqual(parseRouteFromHash("#/home"), { name: "not-found", debug: false });
+  assert.deepEqual(parseRouteFromHash("#/shell/home"), { name: "not-found", debug: false });
+  assert.deepEqual(parseRouteFromHash("#/shell/game/game-1"), { name: "not-found", debug: false });
+  assert.deepEqual(parseRouteFromHash("#/shell/invite/token-1"), { name: "not-found", debug: false });
+  assert.deepEqual(parseRouteFromHash("#/shell/tutorial"), { name: "not-found", debug: false });
 });

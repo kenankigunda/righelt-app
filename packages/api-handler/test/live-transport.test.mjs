@@ -59,6 +59,116 @@ test("live transport: create/list/get game lifecycle is server-backed", async ()
   assert.equal(directBody.game.canJoinAsPlayer, true);
 });
 
+test("live transport: scenario import creates a canonical new game", async () => {
+  const scenarioImport = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-a",
+      scenario: {
+        formatVersion: 2,
+        id: "S-001",
+        title: "Imported Scenario",
+        description: "Minimal scenario",
+        incorrect: false,
+        initialState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [
+            { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+            { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+          ],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        moves: [],
+        resultingState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [
+            { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+            { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+          ],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        expectedFinalStateHash: "hash-placeholder",
+        expectedOutcome: "ongoing",
+      },
+    }),
+    env,
+  );
+  const body = await scenarioImport.json();
+  assert.equal(scenarioImport.status, 200);
+  assert.equal(body.game.player1.identityId, "id-a");
+  assert.equal(body.game.moves.length, 0);
+  assert.equal(body.game.notifications[0], "Scenario loaded: Imported Scenario");
+});
+
+test("live transport: scenario import auto-advances the turn after a project-ended history", async () => {
+  const scenarioImport = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-a",
+      scenario: {
+        formatVersion: 2,
+        id: "S-002",
+        title: "Project ends turn",
+        description: "Regression for imported pre-end-turn snapshots",
+        incorrect: false,
+        initialState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [
+            { id: "C1", owner: "P1", kind: "commander", position: { row: 3, col: 6 }, supplied: true, commanded: true },
+            { id: "C2", owner: "P2", kind: "commander", position: { row: 6, col: 3 }, supplied: true, commanded: true },
+          ],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        moves: [
+          {
+            turnIndex: 0,
+            turnMoveIndex: 0,
+            actorSide: "P1",
+            notation: "PROJECT (3,6) -> (5,6)",
+            action: {
+              type: "project",
+              actorId: "C1",
+              from: { row: 3, col: 6 },
+              to: { row: 5, col: 6 },
+            },
+          },
+        ],
+        resultingState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [
+            { id: "C1", owner: "P1", kind: "commander", position: { row: 3, col: 6 }, supplied: true, commanded: true },
+            { id: "C2", owner: "P2", kind: "commander", position: { row: 6, col: 3 }, supplied: true, commanded: true },
+            { id: "U1-1", owner: "P1", kind: "unit", position: { row: 5, col: 6 }, supplied: true, commanded: true },
+          ],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        expectedFinalStateHash: "hash-placeholder",
+        expectedOutcome: "ongoing",
+      },
+    }),
+    env,
+  );
+
+  const body = await scenarioImport.json();
+  assert.equal(scenarioImport.status, 200);
+  assert.equal(body.game.currentTurn.index, 1);
+  assert.equal(body.game.currentTurn.playerSeat, "Player 2");
+  assert.equal(body.game.currentSnapshot.turnIndex, 1);
+  assert.equal(body.game.currentSnapshot.sideToMove, "P2");
+  assert.equal(body.game.moves.length, 1);
+  assert.equal(body.game.moves[0].turnIndex, 0);
+});
+
 test("live transport: game reads query persistent storage even when process cache is warm", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
