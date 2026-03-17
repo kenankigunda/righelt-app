@@ -120,7 +120,11 @@ export const buildScenarioFromGame = async (game, { scenarioId, title, descripti
   const safeMoveLimit = Number.isFinite(moveLimit) ? Math.max(0, Math.min(moveLimit, game.moves.length)) : game.moves.length;
   const selectedMoves = game.moves.slice(0, safeMoveLimit);
   const initialState = structuredClone(selectedMoves[0]?.selectionSnapshot ?? game.board?.state ?? game.currentSnapshot);
-  const resultingState = structuredClone(selectedMoves[selectedMoves.length - 1]?.snapshot ?? game.board?.state ?? game.currentSnapshot);
+  const resultingStateSource =
+    safeMoveLimit === game.moves.length
+      ? game.board?.state ?? game.currentSnapshot ?? selectedMoves[selectedMoves.length - 1]?.snapshot
+      : selectedMoves[selectedMoves.length - 1]?.snapshot ?? game.board?.state ?? game.currentSnapshot;
+  const resultingState = structuredClone(resultingStateSource);
   const expectedFinalStateHash = await computeStateHash(resultingState);
   return normalizeScenario({
     formatVersion: 2,

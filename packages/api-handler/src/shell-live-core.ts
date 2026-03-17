@@ -362,10 +362,16 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
     if (!moved.ok) {
       throw new Error(moved.error || "scenario_apply_failed");
     }
+    const shouldAutoEndTurn = moved.state.continuation == null;
+    if (shouldAutoEndTurn) {
+      const ended = endServerTurn(game);
+      if (!ended.ok) {
+        throw new Error(ended.error);
+      }
+    }
     moveTimes.push(moved.move.at);
   }
 
-  game.board.state = resolveToStability(clone(scenario.resultingState), { artifactMode: "full" });
   renumberImportedHistory(game);
   game.updatedAt = moveTimes[moveTimes.length - 1] ?? game.updatedAt;
   game.lastMoveAt = moveTimes[moveTimes.length - 1] ?? null;
