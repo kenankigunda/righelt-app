@@ -1,11 +1,14 @@
 const HOME_ROUTE = { name: "home" };
-const PLAYGROUND_PREFIX = "/playground";
 
 const trimSlash = (value) => value.replace(/^\/+|\/+$/g, "");
+const withDebugState = (route, query) => ({
+  ...route,
+  debug: query.get("debug") === "1",
+});
 
 export const parseRouteFromHash = (hash) => {
   if (!hash || hash === "#" || hash === "#/" || hash === "") {
-    return HOME_ROUTE;
+    return { ...HOME_ROUTE, debug: false };
   }
 
   const raw = hash.startsWith("#") ? hash.slice(1) : hash;
@@ -18,54 +21,59 @@ export const parseRouteFromHash = (hash) => {
   const query = new URLSearchParams(queryText);
 
   if (parts.length === 0) {
-    return HOME_ROUTE;
+    return { ...HOME_ROUTE, debug: query.get("debug") === "1" };
   }
 
   if (parts[0] === "game" && parts[1]) {
-    return {
+    return withDebugState({
       name: "game",
       gameId: decodeURIComponent(parts[1]),
       inviteFromRole: query.get("from") || null,
-    };
+    }, query);
   }
 
   if (parts[0] === "invite" && parts[1]) {
-    return {
+    return withDebugState({
       name: "invite",
       inviteToken: decodeURIComponent(parts[1]),
-    };
+    }, query);
   }
 
   if (parts[0] === "tutorial") {
-    return {
+    return withDebugState({
       name: "tutorial",
       gameId: parts[1] ? decodeURIComponent(parts[1]) : null,
-    };
+    }, query);
   }
 
-  return { name: "not-found" };
+  return withDebugState({ name: "not-found" }, query);
 };
 
-export const buildHomeHash = () => "#/";
+export const buildHomeHash = (debug = false) => appendDebugQuery("#/", debug);
 
-export const buildGameHash = (gameId, inviteFromRole = null) => {
+const appendDebugQuery = (hash, debug = false) => {
+  if (!debug) {
+    return hash;
+  }
+  return `${hash}${hash.includes("?") ? "&" : "?"}debug=1`;
+};
+
+export const buildGameHash = (gameId, inviteFromRole = null, debug = false) => {
   const safe = encodeURIComponent(gameId);
   if (!inviteFromRole) {
-    return `#/game/${safe}`;
+    return appendDebugQuery(`#/game/${safe}`, debug);
   }
-  return `#/game/${safe}?from=${encodeURIComponent(inviteFromRole)}`;
+  return appendDebugQuery(`#/game/${safe}?from=${encodeURIComponent(inviteFromRole)}`, debug);
 };
 
-export const buildInviteHash = (inviteToken) => `#/invite/${encodeURIComponent(inviteToken)}`;
+export const buildInviteHash = (inviteToken, debug = false) => appendDebugQuery(`#/invite/${encodeURIComponent(inviteToken)}`, debug);
 
-export const buildTutorialHash = (gameId = null) => {
+export const buildTutorialHash = (gameId = null, debug = false) => {
   if (!gameId) {
-    return "#/tutorial";
+    return appendDebugQuery("#/tutorial", debug);
   }
-  return `#/tutorial/${encodeURIComponent(gameId)}`;
+  return appendDebugQuery(`#/tutorial/${encodeURIComponent(gameId)}`, debug);
 };
-
-export const buildPlaygroundHash = () => "#/playground";
 
 export const shouldLiveSyncRoute = (route) => route?.name === "game" || route?.name === "invite";
 
@@ -80,23 +88,30 @@ export const isShellRouteHash = (hash) => {
     return true;
   }
   const raw = hash.startsWith("#") ? hash.slice(1) : hash;
-  if (raw === PLAYGROUND_PREFIX || raw.startsWith(`${PLAYGROUND_PREFIX}/`)) {
-    return false;
-  }
+  const pathOnly = raw.includes("?") ? raw.slice(0, raw.indexOf("?")) : raw;
   return (
-    raw === "/game" ||
-    raw.startsWith("/game/") ||
-    raw === "/invite" ||
-    raw.startsWith("/invite/") ||
-    raw === "/tutorial" ||
-    raw.startsWith("/tutorial/")
+    pathOnly === "/game" ||
+    pathOnly.startsWith("/game/") ||
+    pathOnly === "/invite" ||
+    pathOnly.startsWith("/invite/") ||
+    pathOnly === "/tutorial" ||
+    pathOnly.startsWith("/tutorial/")
   );
 };
 
-export const isPlaygroundRouteHash = (hash) => {
-  if (!hash) {
-    return false;
+export const toggleDebugHash = (hash) => {
+  const raw = hash && hash !== "#" ? hash : "#/";
+  const parsed = parseRouteFromHash(raw);
+  switch (parsed.name) {
+    case "game":
+      return buildGameHash(parsed.gameId, parsed.inviteFromRole, !parsed.debug);
+    case "invite":
+      return buildInviteHash(parsed.inviteToken, !parsed.debug);
+    case "tutorial":
+      return buildTutorialHash(parsed.gameId, !parsed.debug);
+    case "home":
+      return parsed.debug ? "#/" : "#/?debug=1";
+    default:
+      return parsed.debug ? "#/" : "#/?debug=1";
   }
-  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
-  return raw === PLAYGROUND_PREFIX || raw.startsWith(`${PLAYGROUND_PREFIX}/`);
 };

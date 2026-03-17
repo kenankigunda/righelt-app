@@ -10,12 +10,15 @@ import type {
 import { listLegalActions } from "../../game-engine/src/legal";
 import {
   addNotification,
+  applyScenarioToGame,
   applyServerAction,
   applyServerMove,
   asAction,
   asGameState,
   asIdentity,
+  asScenarioRecord,
   clone,
+  copyParticipantsBetweenGames,
   createInitialGame,
   dismissCompetingJoinRequests,
   endServerTurn,
@@ -120,6 +123,30 @@ export class GameRoomDO {
         playgroundMode: body.playgroundMode === true,
         offlineLocal: body.offlineLocal === true,
       });
+      this.eventSeq = 1;
+      await persistGameState(this.env, this.game, this.eventSeq, null);
+      return json({ ok: true, game: withViewModel(this.game, identityId), eventSeq: this.eventSeq });
+    }
+
+    if (request.method === "POST" && path === "/create-from-scenario") {
+      const body = await parseBody(request);
+      const identityId = asIdentity(body.identityId);
+      const gameId = asIdentity(body.gameId);
+      const scenario = asScenarioRecord(body.scenario);
+      if (!identityId || !gameId || !scenario) {
+        return json({ ok: false, error: "invalid_scenario_payload" }, 400);
+      }
+      this.game = createInitialGame({
+        gameId,
+        identityId,
+        playgroundMode: body.playgroundMode === true,
+        offlineLocal: body.offlineLocal === true,
+      });
+      const sourceGame = body.sourceGame && typeof body.sourceGame === "object" ? (body.sourceGame as LiveGame) : null;
+      if (sourceGame) {
+        copyParticipantsBetweenGames(sourceGame, this.game);
+      }
+      applyScenarioToGame(this.game, scenario);
       this.eventSeq = 1;
       await persistGameState(this.env, this.game, this.eventSeq, null);
       return json({ ok: true, game: withViewModel(this.game, identityId), eventSeq: this.eventSeq });
@@ -402,6 +429,28 @@ export class GameRoomDO {
       await this.commit({
         type: "event_appended",
         reason: "game_moved_online",
+        game,
+      });
+      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+    }
+
+    if (request.method === "POST" && path === "/load-scenario") {
+      const scenario = asScenarioRecord(body.scenario);
+      if (!scenario) {
+        return json({ ok: false, error: "invalid_scenario_payload" }, 400);
+      }
+      if (game.moves.length > 0) {
+        return json({ ok: false, error: "scenario_target_not_empty" }, 409);
+      }
+      const role = findRoleForIdentity(game, identityId);
+      if (role !== "Player 1" && role !== "Player 2") {
+        return json({ ok: false, error: "role_not_allowed" }, 403);
+      }
+      applyScenarioToGame(game, scenario);
+      game.updatedAt = now();
+      await this.commit({
+        type: "event_appended",
+        reason: "scenario_loaded",
         game,
       });
       return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });

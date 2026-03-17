@@ -59,6 +59,52 @@ test("live transport: create/list/get game lifecycle is server-backed", async ()
   assert.equal(directBody.game.canJoinAsPlayer, true);
 });
 
+test("live transport: scenario import creates a canonical new game", async () => {
+  const scenarioImport = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-a",
+      scenario: {
+        formatVersion: 2,
+        id: "S-001",
+        title: "Imported Scenario",
+        description: "Minimal scenario",
+        incorrect: false,
+        initialState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [
+            { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+            { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+          ],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        moves: [],
+        resultingState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [
+            { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+            { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+          ],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        expectedFinalStateHash: "hash-placeholder",
+        expectedOutcome: "ongoing",
+      },
+    }),
+    env,
+  );
+  const body = await scenarioImport.json();
+  assert.equal(scenarioImport.status, 200);
+  assert.equal(body.game.player1.identityId, "id-a");
+  assert.equal(body.game.moves.length, 0);
+  assert.equal(body.game.notifications[0], "Scenario loaded: Imported Scenario");
+});
+
 test("live transport: game reads query persistent storage even when process cache is warm", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),

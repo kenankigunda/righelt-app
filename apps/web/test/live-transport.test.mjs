@@ -197,6 +197,61 @@ test("live transport store uses backend responses for create/load/join flows", a
   assert.equal(calls.some((entry) => String(entry.url).includes("/join")), true);
 });
 
+test("live transport store posts scenario imports through the shell scenarios endpoint", async () => {
+  const storage = createMemoryStorage();
+  storage.setItem("righelt.identity.id.v1", "id-scenario");
+  const fetcher = async (url, init = {}) => {
+    if (String(url) === "/api/shell/scenarios/import?offline=0") {
+      const body = JSON.parse(String(init.body || "{}"));
+      assert.equal(body.identityId, "id-scenario");
+      assert.equal(body.scenario.id, "S-001");
+      assert.equal(body.targetGameId, "game-apply-here");
+      return Response.json({
+        ok: true,
+        game: {
+          id: "game-apply-here",
+          createdAt: "2026-02-26T00:00:00.000Z",
+          lastMoveAt: "2026-02-26T00:00:01.000Z",
+          updatedAt: "2026-02-26T00:00:01.000Z",
+          offlineLocal: false,
+          playgroundMode: false,
+          player1: { identityId: "id-scenario", connected: true },
+          player2: null,
+          viewers: [],
+          pendingJoinRequests: [],
+          moves: [],
+          notifications: ["Scenario loaded"],
+          myRole: "Player 1",
+          inHistoryMode: false,
+          currentSnapshot: { sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+          board: { state: { sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } } },
+          showJoinActions: true,
+          canInvite: true,
+          showOfflineState: false,
+        },
+      });
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({ storage, fetcher, random: () => 0.1 });
+  const result = await store.importScenario({
+    scenario: {
+      formatVersion: 2,
+      id: "S-001",
+      title: "Saved Scenario",
+      initialState: { sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+      resultingState: { sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+      moves: [],
+      expectedFinalStateHash: "abc",
+      expectedOutcome: "ongoing",
+    },
+    targetGameId: "game-apply-here",
+  });
+
+  assert.equal(result.game.id, "game-apply-here");
+});
+
 test("live transport store can promote player 1 to both seats when player 2 is open", async () => {
   const calls = [];
   const fetcher = async (url, init = {}) => {

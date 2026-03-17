@@ -4,6 +4,7 @@ import {
   asAction,
   asGameState,
   asIdentity,
+  asScenarioRecord,
   enumeratePieceActionPreviews,
   enumeratePieceActions,
   findRoleForIdentity,
@@ -201,6 +202,54 @@ export const handleLiveGameRequest = async (
         gameId,
         playgroundMode: body.playgroundMode === true,
         offlineLocal: body.offlineLocal === true,
+      }),
+    });
+    return {
+      handled: true,
+      status: response.status,
+      body: (await response.json()) as Record<string, unknown>,
+      cacheControl: CACHE_NO_STORE,
+    };
+  }
+
+  if (request.method === "POST" && route.length === 2 && route[0] === "scenarios" && route[1] === "import") {
+    if (!hasGameRoomsBinding(env)) {
+      return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
+    }
+    const body = await parseBody(request);
+    const identityId = asIdentity(body.identityId);
+    const scenario = asScenarioRecord(body.scenario);
+    const targetGameId = asIdentity(body.targetGameId);
+    const sourceGameId = asIdentity(body.sourceGameId);
+    if (!identityId || !scenario) {
+      return { handled: true, status: 400, body: { ok: false, error: "invalid_scenario_payload" }, cacheControl: CACHE_NO_STORE };
+    }
+    if (targetGameId) {
+      const response = await fetchGameRoom(env, targetGameId, "/load-scenario", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ identityId, scenario }),
+      });
+      return {
+        handled: true,
+        status: response.status,
+        body: (await response.json()) as Record<string, unknown>,
+        cacheControl: CACHE_NO_STORE,
+      };
+    }
+
+    const sourceProjection = sourceGameId ? await loadGameProjection(env, sourceGameId) : null;
+    const newGameId = nextGameId();
+    const response = await fetchGameRoom(env, newGameId, "/create-from-scenario", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        identityId,
+        gameId: newGameId,
+        scenario,
+        playgroundMode: sourceProjection?.game.playgroundMode === true,
+        offlineLocal: sourceProjection?.game.offlineLocal === true,
+        sourceGame: sourceProjection?.game ?? null,
       }),
     });
     return {

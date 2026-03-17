@@ -13,6 +13,8 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", "narrow"\);/);
   assert.match(source, /const renderGameShellFrame = \(game\) =>/);
+  assert.match(source, /const renderDebugFlyout = \(\) =>/);
+  assert.match(source, /data-debug-flyout/);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
   assert.match(source, /data-shell-sticky-target="left" data-sticky-enabled="false"/);
@@ -45,7 +47,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /scheduleGameShellStickyLayout\(\);/);
   assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
   assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
-  assert.match(source, /const nextMarkup = `\$\{renderHeader\(\)\}\$\{body\}`;/);
+  assert.match(source, /const nextMarkup = `\$\{renderHeader\(\)\}<div class="shell-page-shell">\$\{body\}\$\{renderDebugFlyout\(\)\}<\/div>`;/);
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.doesNotMatch(source, /replaceWith\(previousBoardPanel\)/);

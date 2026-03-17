@@ -7,10 +7,8 @@ import { fileURLToPath } from "node:url";
 import { getCommandLegendColor, getCommandLegendSwatchStyle } from "../legend.js";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
-const mainSource = readFileSync(join(testDir, "..", "main.js"), "utf8");
 const shellAppSource = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
 const stylesSource = readFileSync(join(testDir, "..", "styles.css"), "utf8");
-const indexSource = readFileSync(join(testDir, "..", "index.html"), "utf8");
 
 test("command legend uses current side-to-move color when no piece is selected", () => {
   assert.equal(
@@ -44,11 +42,6 @@ test("command legend swatch style exposes the CSS variable", () => {
     getCommandLegendSwatchStyle({ sideToMove: "P2", pieces: [] }),
     "--swatch-command-color: var(--player-p2);",
   );
-});
-
-test("playground command legend swatch is state-driven", () => {
-  assert.match(indexSource, /id="playground-command-legend-swatch"/);
-  assert.match(mainSource, /applyCommandLegendSwatch\(commandLegendSwatchEl, state, selectedPieceId\);/);
 });
 
 test("shell command legend swatch is state-driven", () => {

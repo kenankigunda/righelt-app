@@ -34,6 +34,11 @@ body {
   gap: 1rem;
 }
 
+.shell-page-shell {
+  display: grid;
+  gap: 1rem;
+}
+
 .shell-header,
 .panel {
   background: var(--paper);
@@ -459,8 +464,55 @@ button.button-release-bounce,
   margin: 0;
 }
 
+.debug-flyout {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  width: min(26rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  background: rgba(255, 253, 248, 0.98);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(29, 45, 53, 0.18);
+  transform: translateX(calc(100% + 2rem));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 180ms ease,
+    opacity 180ms ease;
+  z-index: 10;
+}
+
+.debug-flyout.is-open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.debug-flyout-scroll {
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.debug-panel {
+  margin: 0;
+}
+
+.debug-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .feedback-reveal {
+    transition: none;
+  }
+
+  .debug-flyout {
     transition: none;
   }
 }
@@ -531,5 +583,19 @@ button.button-release-bounce,
   .shell-header-actions {
     flex: 1 1 100%;
     max-width: 100%;
+  }
+
+  .debug-flyout {
+    top: auto;
+    bottom: 0.75rem;
+    right: 0.75rem;
+    left: 0.75rem;
+    width: auto;
+    max-height: min(22rem, calc(100vh - 1.5rem));
+    transform: translateY(calc(100% + 1rem));
+  }
+
+  .debug-flyout.is-open {
+    transform: translateY(0);
   }
 }
