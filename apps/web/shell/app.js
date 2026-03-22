@@ -150,6 +150,22 @@ const renderRoleLabel = (role, game = null) => {
 };
 const renderConnectionStatusIcon = (connected, label) =>
   `<span class="connection-status-icon${connected ? " is-connected" : " is-disconnected"}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
+const getMyConnectionLabel = (game) => {
+  const roles = Array.isArray(game?.myRoles) ? game.myRoles : game?.myRole ? [game.myRole] : [];
+  if (roles.includes("Player 1") && roles.includes("Player 2")) {
+    return `Both players ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
+  }
+  if (roles.includes("Player 1")) {
+    return `Player 1 ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
+  }
+  if (roles.includes("Player 2")) {
+    return `Player 2 ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
+  }
+  if (roles.includes("Viewer")) {
+    return `Viewer ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
+  }
+  return "Disconnected";
+};
 const renderPlayerSlotStatus = (seat, participant) => {
   if (!participant) {
     return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)} open</span>`;
@@ -159,17 +175,13 @@ const renderPlayerSlotStatus = (seat, participant) => {
 };
 const renderHomeRoleLine = (game) => {
   if (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) {
-    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(true, "Both players connected")}`;
+    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game?.myConnectionConnected), getMyConnectionLabel(game))}`;
   }
   if (game?.myRole === "Player 1") {
-    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game.player1?.connected), `Player 1 ${
-      game.player1?.connected ? "connected" : "disconnected"
-    }`)}`;
+    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game?.myConnectionConnected), getMyConnectionLabel(game))}`;
   }
   if (game?.myRole === "Player 2") {
-    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game.player2?.connected), `Player 2 ${
-      game.player2?.connected ? "connected" : "disconnected"
-    }`)}`;
+    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game?.myConnectionConnected), getMyConnectionLabel(game))}`;
   }
   if (game?.myRole === "Guest") {
     return "";

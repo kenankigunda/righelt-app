@@ -763,6 +763,10 @@ test("live transport: play-as-both persists separate participant rows for the sa
   assert.equal(promoted.status, 200);
   assert.equal(promotedBody.game.player1.identityId, "id-a");
   assert.equal(promotedBody.game.player2.identityId, "id-a");
+  assert.equal(promotedBody.game.player1.connected, promotedBody.game.player2.connected);
+  assert.equal(promotedBody.game.player1.sessionCount, promotedBody.game.player2.sessionCount);
+  assert.deepEqual(promotedBody.game.myRoles, ["Player 1", "Player 2"]);
+  assert.equal(promotedBody.game.myConnectionConnected, true);
 
   const participants = env.DB.getParticipants(gameId);
   assert.deepEqual(
@@ -772,6 +776,31 @@ test("live transport: play-as-both persists separate participant rows for the sa
       ["id-a", "Player 2"],
     ],
   );
+});
+
+test("live transport: dual-seat view models expose combined role and connection metadata", async () => {
+  const created = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await created.json()).game.id;
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-a" }),
+    env,
+  );
+
+  env.DB.overwriteGameState(gameId, (game) => ({
+    ...game,
+    player1: { ...game.player1, connected: false, sessionCount: 0 },
+    player2: { ...game.player2, connected: false, sessionCount: 0 },
+  }));
+
+  const view = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-a`), env);
+  const body = await view.json();
+
+  assert.deepEqual(body.game.myRoles, ["Player 1", "Player 2"]);
+  assert.equal(body.game.myConnectionConnected, false);
 });
 
 test("live transport: move endpoint rejects non-player and wrong-turn players", async () => {

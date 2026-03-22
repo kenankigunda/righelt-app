@@ -16,6 +16,7 @@ export type Participant = {
 };
 
 export type Viewer = Participant;
+export type IdentityRole = "Player 1" | "Player 2" | "Viewer";
 
 export type JoinRequest = {
   identityId: string;
@@ -387,10 +388,34 @@ export const copyParticipantsBetweenGames = (source: LiveGame, target: LiveGame)
 };
 
 export const findRoleForIdentity = (game: LiveGame, identityId: string): "Player 1" | "Player 2" | "Viewer" | "Guest" => {
-  if (game.player1?.identityId === identityId) return "Player 1";
-  if (game.player2?.identityId === identityId) return "Player 2";
-  if (game.viewers.some((viewer) => viewer.identityId === identityId)) return "Viewer";
-  return "Guest";
+  return getRolesForIdentity(game, identityId)[0] ?? "Guest";
+};
+
+export const getRolesForIdentity = (game: LiveGame, identityId: string): IdentityRole[] => {
+  const roles: IdentityRole[] = [];
+  if (game.player1?.identityId === identityId) roles.push("Player 1");
+  if (game.player2?.identityId === identityId) roles.push("Player 2");
+  if (game.viewers.some((viewer) => viewer.identityId === identityId)) roles.push("Viewer");
+  return roles;
+};
+
+export const getParticipantsForIdentity = (
+  game: LiveGame,
+  identityId: string,
+): Array<{ role: IdentityRole; participant: Participant }> => {
+  const matches: Array<{ role: IdentityRole; participant: Participant }> = [];
+  if (game.player1?.identityId === identityId) {
+    matches.push({ role: "Player 1", participant: game.player1 });
+  }
+  if (game.player2?.identityId === identityId) {
+    matches.push({ role: "Player 2", participant: game.player2 });
+  }
+  for (const viewer of game.viewers) {
+    if (viewer.identityId === identityId) {
+      matches.push({ role: "Viewer", participant: viewer });
+    }
+  }
+  return matches;
 };
 
 export const getSeatIdentity = (game: LiveGame, seat: "Player 1" | "Player 2"): string | null =>
@@ -444,16 +469,16 @@ export const promoteIdentityToSeat = (
   identityId: string,
   sessionCount = 0,
 ) => {
-  const existingViewer = game.viewers.find((viewer) => viewer.identityId === identityId) ?? null;
-  const joinedAt = existingViewer?.joinedAt ?? now();
-  const lastHeartbeatAt = existingViewer?.lastHeartbeatAt ?? joinedAt;
+  const existingParticipant = getParticipantsForIdentity(game, identityId)[0]?.participant ?? null;
+  const joinedAt = existingParticipant?.joinedAt ?? now();
+  const lastHeartbeatAt = existingParticipant?.lastHeartbeatAt ?? joinedAt;
   removeViewer(game, identityId);
   const participant: Participant = {
     identityId,
-    connected: sessionCount > 0,
+    connected: existingParticipant?.connected ?? sessionCount > 0,
     joinedAt,
     lastHeartbeatAt,
-    sessionCount,
+    sessionCount: existingParticipant?.sessionCount ?? sessionCount,
   };
   if (seat === "Player 1") {
     game.player1 = participant;
@@ -511,13 +536,21 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     player1: "",
     player2: "",
   };
-  const myRole = findRoleForIdentity(
+  const myRoles = getRolesForIdentity(
     {
       ...game,
       viewers: Array.isArray(game.viewers) ? game.viewers : [],
     },
     identityId,
   );
+  const myRole = myRoles[0] ?? "Guest";
+  const myConnectionConnected = myRoles.length > 0
+    ? myRoles.every((role) => {
+        if (role === "Player 1") return Boolean(game.player1?.connected);
+        if (role === "Player 2") return Boolean(game.player2?.connected);
+        return game.viewers.some((viewer) => viewer.identityId === identityId && viewer.connected);
+      })
+    : false;
   const historyIndex = typeof historyIndexByIdentity[identityId] === "number" ? historyIndexByIdentity[identityId] : null;
   const inHistoryMode = typeof historyIndex === "number";
   const currentSnapshot =
@@ -548,6 +581,8 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     historyIndexByIdentity: undefined,
     historyIndex,
     myRole,
+    myRoles,
+    myConnectionConnected,
     inHistoryMode,
     currentSnapshot,
     canJoinAsPlayer: !joinAsPlayerDisabledReason,
