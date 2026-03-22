@@ -91,3 +91,18 @@ test("narrow-screen shell layout still collapses to one column without sticky ru
     /#app\[data-shell-layout-mode="narrow"\]\s+\.layout-grid > \[data-shell-sticky-target\][\s\S]*position:\s*sticky;/s,
   );
 });
+
+test("home mini-board cards wrap across the full panel width in flex rows", () => {
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-list\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-wrap:\s*wrap;[\s\S]*align-items:\s*stretch;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card\s*\{[\s\S]*flex:\s*1 1 18rem;[\s\S]*min-width:\s*min\(100%, 18rem\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-games-section-header\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;[\s\S]*flex-wrap:\s*wrap;/s,
+  );
+});

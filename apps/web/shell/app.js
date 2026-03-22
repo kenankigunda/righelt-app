@@ -110,6 +110,7 @@ const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;
 const SHELL_VIEWPORT_GUTTER_PX = 16;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
+const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
 
 const escapeHtml = (value) =>
   String(value)
@@ -206,6 +207,18 @@ const formatSideToMoveLabel = (snapshot) => {
 
 const getGamePreviewSnapshot = (game) => game?.currentSnapshot ?? game?.board?.state ?? null;
 const getScenarioPreviewSnapshot = (scenario) => scenario?.resultingState ?? scenario?.initialState ?? null;
+const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
+const gameIncludesIdentity = (game, identityId) => {
+  if (!game || !identityId) {
+    return false;
+  }
+  return (
+    game.player1?.identityId === identityId ||
+    game.player2?.identityId === identityId ||
+    (Array.isArray(game.viewers) && game.viewers.some((viewer) => viewer?.identityId === identityId)) ||
+    (Array.isArray(game.pendingJoinRequests) && game.pendingJoinRequests.some((request) => request?.identityId === identityId))
+  );
+};
 
 const renderPlaceholderBadge = () => '<span class="status-chip offline">Not yet implemented</span>';
 const renderSectionActions = (actions) => {
@@ -736,70 +749,77 @@ const getInviteContextForGame = (game, routeName = currentRoute.name) => {
   };
 };
 
+const renderHomeGameCard = (game) => {
+  const snapshot = getGamePreviewSnapshot(game);
+  const previewKey = toStableKey(snapshot);
+  const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
+  const liveStateLabel = game.inHistoryMode ? "History view" : "Live view";
+  const turnLabel =
+    game.currentTurn && typeof game.currentTurn.index === "number" ? `Turn ${game.currentTurn.index + 1}` : "Turn pending";
+  return `<article class="mini-board-card">
+    <div class="mini-board-card-header">
+      <div>
+        <a class="mini-board-card-link" href="${buildGameHash(game.id, null, currentRoute.debug)}">${escapeHtml(
+          formatDisplayGameId(game.id),
+        )}</a>
+        <p class="small mini-board-card-subtitle">Latest ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
+      </div>
+      <span class="status-chip">${escapeHtml(game.syncStatus === "desynced" ? "Recovering" : liveStateLabel)}</span>
+    </div>
+    <div class="mini-board-card-meta">
+      <span>${renderRoleLabel(game.myRole)}</span>
+      <span class="small">${escapeHtml(turnLabel)}</span>
+    </div>
+    ${renderMiniBoardPreviewRoot({
+      previewId: `home:${game.id}`,
+      snapshot,
+      previewKey,
+    })}
+    <p class="small mini-board-preview-status">${escapeHtml(statusText)}</p>
+  </article>`;
+};
+
+const renderHomeGameSection = (title, games) => {
+  if (!Array.isArray(games) || games.length === 0) {
+    return "";
+  }
+  return `<section class="home-games-section">
+    <div class="home-games-section-header">
+      <h3>${escapeHtml(title)}</h3>
+      <p class="small">${games.length === 1 ? "1 game" : `${games.length} games`}</p>
+    </div>
+    <div class="mini-board-card-list">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
+  </section>`;
+};
+
 const renderHome = () => {
   const games = transport.listGames();
+  const smokeGames = games.filter((game) => gameIncludesIdentity(game, DEPLOY_SMOKE_PLAYER_ID));
+  const visibleGames = currentRoute.debug ? games.filter((game) => !gameIncludesIdentity(game, DEPLOY_SMOKE_PLAYER_ID)) : games;
+  const myGames = visibleGames.filter((game) => isPlayerRole(game.myRole));
+  const otherGames = visibleGames.filter((game) => !isPlayerRole(game.myRole));
   const listHtml =
-    games.length === 0
+    myGames.length === 0 && otherGames.length === 0 && (!currentRoute.debug || smokeGames.length === 0)
       ? "<p class=\"small\">No games yet.</p>"
-      : `<div class="mini-board-card-list">${games
-          .map((game) => {
-            const snapshot = getGamePreviewSnapshot(game);
-            const previewKey = toStableKey(snapshot);
-            const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
-            const liveStateLabel = game.inHistoryMode ? "History view" : "Live view";
-            const turnLabel =
-              game.currentTurn && typeof game.currentTurn.index === "number"
-                ? `Turn ${game.currentTurn.index + 1}`
-                : "Turn pending";
-            return `<article class="mini-board-card">
-              <div class="mini-board-card-header">
-                <div>
-                  <a class="mini-board-card-link" href="${buildGameHash(game.id, null, currentRoute.debug)}">${escapeHtml(
-                    formatDisplayGameId(game.id),
-                  )}</a>
-                  <p class="small mini-board-card-subtitle">Latest ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
-                </div>
-                <span class="status-chip">${escapeHtml(game.syncStatus === "desynced" ? "Recovering" : liveStateLabel)}</span>
-              </div>
-              <div class="mini-board-card-meta">
-                <span>${renderRoleLabel(game.myRole)}</span>
-                <span class="small">${escapeHtml(turnLabel)}</span>
-              </div>
-              ${renderMiniBoardPreviewRoot({
-                previewId: `home:${game.id}`,
-                snapshot,
-                previewKey,
-              })}
-              <p class="small mini-board-preview-status">${escapeHtml(statusText)}</p>
-            </article>`;
-          })
-          .join("")}</div>`;
+      : `${renderHomeGameSection("My games", myGames)}${renderHomeGameSection("Other games", otherGames)}${
+          currentRoute.debug ? renderHomeGameSection("Deploy smoke player", smokeGames) : ""
+        }`;
 
   return `
-    <section class="layout-grid">
-      <div class="stack">
-        <section class="panel">
-          <h2>Start</h2>
-          <div class="row">
-            <button data-action="create-game" ${busy ? "disabled" : ""}>Play with friends</button>
-            <button data-action="create-offline-playground" class="warn" ${busy ? "disabled" : ""}>Play locally</button>
-          </div>
-          <p class="small">Server-backed game sessions with live state transitions.</p>
-        </section>
+    <section class="stack">
+      <section class="panel">
+        <h2>Start</h2>
+        <div class="row">
+          <button data-action="create-game" ${busy ? "disabled" : ""}>Play with friends</button>
+          <button data-action="create-offline-playground" class="warn" ${busy ? "disabled" : ""}>Play locally</button>
+        </div>
+        <p class="small">Server-backed game sessions with live state transitions.</p>
+      </section>
 
-        <section class="panel">
-          <h2>Active Games</h2>
-          ${listHtml}
-        </section>
-      </div>
-
-      <div class="stack">
-        <section class="panel">
-          <h2>Preview Board ${renderPlaceholderBadge()}</h2>
-          <p class="small">Non-authoritative preview sequence.</p>
-          <div class="preview">Preview replay surface</div>
-        </section>
-      </div>
+      <section class="panel">
+        <h2>Active Games</h2>
+        ${listHtml}
+      </section>
     </section>
   `;
 };

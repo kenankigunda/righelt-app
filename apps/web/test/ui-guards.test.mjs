@@ -74,3 +74,17 @@ test("game route live sync connection is not gated by participant role", () => {
     /const routeKey = liveGameId \? `game:\$\{liveGameId\}` : "none";/s,
   );
 });
+
+test("home groups active games by player role and isolates smoke-player games in debug mode", () => {
+  assert.match(source, /const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";/);
+  assert.match(source, /const isPlayerRole = \(role\) => role === "Player 1" \|\| role === "Player 2";/);
+  assert.match(source, /const gameIncludesIdentity = \(game, identityId\) => \{/);
+  assert.match(source, /const smokeGames = games\.filter\(\(game\) => gameIncludesIdentity\(game, DEPLOY_SMOKE_PLAYER_ID\)\);/);
+  assert.match(source, /const visibleGames = currentRoute\.debug \? games\.filter\(\(game\) => !gameIncludesIdentity\(game, DEPLOY_SMOKE_PLAYER_ID\)\) : games;/);
+  assert.match(source, /const myGames = visibleGames\.filter\(\(game\) => isPlayerRole\(game\.myRole\)\);/);
+  assert.match(source, /const otherGames = visibleGames\.filter\(\(game\) => !isPlayerRole\(game\.myRole\)\);/);
+  assert.match(source, /renderHomeGameSection\("My games", myGames\)/);
+  assert.match(source, /renderHomeGameSection\("Other games", otherGames\)/);
+  assert.match(source, /currentRoute\.debug \? renderHomeGameSection\("Deploy smoke player", smokeGames\) : ""/);
+  assert.doesNotMatch(source, /<h2>Preview Board/);
+});
