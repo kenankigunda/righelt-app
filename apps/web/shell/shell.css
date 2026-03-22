@@ -55,20 +55,14 @@ body {
   min-width: 0;
 }
 
-.shell-header,
-.panel {
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 0.9rem 1rem;
-}
-
 .shell-header {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-start;
   max-width: 100%;
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
 }
 
 .shell-header h1 {
@@ -484,6 +478,8 @@ button.button-release-bounce,
   display: grid;
   place-items: center;
   min-height: 7.5rem;
+  background: transparent;
+  border: 0;
 }
 
 .home-start-button {

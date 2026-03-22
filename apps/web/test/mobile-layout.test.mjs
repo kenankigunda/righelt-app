@@ -30,6 +30,21 @@ test("shell header stacks cleanly on narrow screens", () => {
   );
 });
 
+test("shell header separates layout spacing from panel chrome and home start panel stays chromeless", () => {
+  assert.doesNotMatch(
+    shellStylesSource,
+    /\.panel\s*\{/,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-header\s*\{[\s\S]*display:\s*flex;[\s\S]*border-radius:\s*14px;[\s\S]*padding:\s*0\.9rem 1rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-start-panel\s*\{[\s\S]*background:\s*transparent;[\s\S]*border:\s*0;/s,
+  );
+});
+
 test("wide-screen shell sticky columns only target the left and board stacks", () => {
   assert.match(
     shellStylesSource,
