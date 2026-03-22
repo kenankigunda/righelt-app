@@ -164,7 +164,11 @@ const getMyConnectionMessage = (game) =>
 const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => {
   if (!verbose) {
     if (!participant) {
-      return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)} open</span>`;
+      const statusLabel = `${seat} is open for someone to join`;
+      return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)}${renderConnectionStatusIcon(
+        "open",
+        statusLabel,
+      )}</span>`;
     }
     const statusLabel = `${seat} ${participant.connected ? "connected" : "disconnected"}`;
     return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)}${renderConnectionStatusIcon(
