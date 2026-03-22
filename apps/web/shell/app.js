@@ -109,6 +109,7 @@ let controlReleaseTimer = null;
 let stickyLayoutFrame = 0;
 const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;
 const SHELL_VIEWPORT_GUTTER_PX = 16;
+const FLYOUT_MOTION_MS = 180;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
 const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
@@ -293,6 +294,80 @@ const renderSectionActions = (actions) => {
   return `<div class="row section-actions">${items.join("")}</div>`;
 };
 const getAnimatedPanels = () => (appEl instanceof HTMLElement ? Array.from(appEl.querySelectorAll(".panel")) : []);
+const getAnimatedFlyoutEls = () => {
+  if (!(appEl instanceof HTMLElement)) {
+    return [];
+  }
+  const mainContentEl = appEl.querySelector(".shell-main-content");
+  const flyoutEls = Array.from(appEl.querySelectorAll("[data-flyout]"));
+  return [mainContentEl, ...flyoutEls].filter((element) => element instanceof HTMLElement);
+};
+const getAnimatedFlyoutKey = (element) => {
+  if (!(element instanceof HTMLElement)) {
+    return "";
+  }
+  if (element.classList.contains("shell-main-content")) {
+    return "main";
+  }
+  const flyoutKey = element.getAttribute("data-flyout");
+  return flyoutKey ? `flyout:${flyoutKey}` : "";
+};
+const captureFlyoutRects = () =>
+  new Map(
+    getAnimatedFlyoutEls().map((element) => [
+      getAnimatedFlyoutKey(element),
+      element instanceof HTMLElement ? element.getBoundingClientRect() : null,
+    ]),
+  );
+const animateFlyoutShift = (element, { deltaX = 0, deltaY = 0, fromOpacity = 1 } = {}) => {
+  if (prefersReducedMotion() || !(element instanceof HTMLElement)) {
+    return;
+  }
+  if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1 && Math.abs(fromOpacity - 1) < 0.01) {
+    return;
+  }
+  element.style.transition = "none";
+  element.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+  element.style.opacity = String(fromOpacity);
+  void element.offsetHeight;
+  element.style.transition = `transform ${FLYOUT_MOTION_MS}ms ease, opacity ${FLYOUT_MOTION_MS}ms ease`;
+  element.style.transform = "";
+  element.style.opacity = "";
+
+  const clearMotion = () => {
+    element.style.transition = "";
+    element.style.transform = "";
+    element.style.opacity = "";
+    element.removeEventListener("transitionend", clearMotion);
+  };
+  element.addEventListener("transitionend", clearMotion);
+};
+const animateFlyoutPositionChanges = (previousRects) => {
+  if (prefersReducedMotion() || !(previousRects instanceof Map) || previousRects.size === 0) {
+    return;
+  }
+  const layoutMode = getShellLayoutMode();
+  getAnimatedFlyoutEls().forEach((element) => {
+    const key = getAnimatedFlyoutKey(element);
+    if (!key) {
+      return;
+    }
+    const previousRect = previousRects.get(key);
+    const nextRect = element.getBoundingClientRect();
+    if (previousRect) {
+      animateFlyoutShift(element, {
+        deltaX: previousRect.left - nextRect.left,
+        deltaY: previousRect.top - nextRect.top,
+      });
+      return;
+    }
+    animateFlyoutShift(element, {
+      deltaX: layoutMode === "wide" ? nextRect.width : 0,
+      deltaY: layoutMode === "wide" ? 0 : nextRect.height,
+      fromOpacity: 0,
+    });
+  });
+};
 const capturePanelHeights = () =>
   getAnimatedPanels().map((panelEl) => (panelEl instanceof HTMLElement ? panelEl.getBoundingClientRect().height : null));
 const animatePanelHeightChange = (panelEl, fromHeight) => {
@@ -1604,6 +1679,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   }
 
   const previousPanelHeights = animatePanels ? capturePanelHeights() : [];
+  const previousFlyoutRects = animatePanels ? captureFlyoutRects() : new Map();
   let body = "";
   if (currentRoute.name === "home") {
     body = renderHome();
@@ -1627,6 +1703,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     lastRenderedMarkup = nextMarkup;
     if (animatePanels) {
       animatePanelHeightChanges(previousPanelHeights);
+      animateFlyoutPositionChanges(previousFlyoutRects);
     }
   }
   updateHeaderFields();
@@ -1867,6 +1944,16 @@ appEl.addEventListener("click", async (event) => {
     action !== "tutorial-next" &&
     action !== "tutorial-skip";
 
+  const animateFlyoutClose = async (flyoutKey, toggleHashBuilder) => {
+    const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
+    if (flyoutEl instanceof HTMLElement && !prefersReducedMotion()) {
+      flyoutEl.classList.add("is-closing");
+      await delay(FLYOUT_MOTION_MS);
+    }
+    setFlyoutOpenState(flyoutKey, false);
+    navigateTo(toggleHashBuilder(window.location.hash));
+  };
+
   await withBusy(async () => {
     if (action === "open-debug") {
       if (!currentRoute.debug) {
@@ -1884,15 +1971,13 @@ appEl.addEventListener("click", async (event) => {
     }
     if (action === "close-debug") {
       if (currentRoute.debug) {
-        setFlyoutOpenState("debug", false);
-        navigateTo(toggleDebugHash(window.location.hash));
+        await animateFlyoutClose("debug", toggleDebugHash);
       }
       return;
     }
     if (action === "close-scenarios") {
       if (currentRoute.scenarios) {
-        setFlyoutOpenState("scenarios", false);
-        navigateTo(toggleScenariosHash(window.location.hash));
+        await animateFlyoutClose("scenarios", toggleScenariosHash);
       }
       return;
     }

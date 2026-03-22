@@ -724,12 +724,19 @@ textarea {
   z-index: 11;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  will-change: transform, opacity;
 }
 
 .shell-flyout.is-open {
   transform: translateX(0);
   opacity: 1;
   pointer-events: auto;
+}
+
+.shell-flyout.is-closing {
+  transform: translateX(100%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .shell-flyout-scroll {
@@ -934,5 +941,9 @@ textarea {
 
   .shell-flyout.is-open {
     transform: translateY(0);
+  }
+
+  .shell-flyout.is-closing {
+    transform: translateY(100%);
   }
 }

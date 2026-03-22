@@ -11,6 +11,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /let lastRenderedMarkup = "";/);
   assert.match(source, /let stickyLayoutFrame = 0;/);
   assert.match(source, /const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;/);
+  assert.match(source, /const FLYOUT_MOTION_MS = 180;/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", "narrow"\);/);
   assert.match(source, /const renderGameShellFrame = \(game\) =>/);
   assert.match(source, /const renderScenarioFlyout = \(\) =>/);
@@ -65,8 +66,14 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),/s);
   assert.match(source, /includeBoard: change\?\.type !== "optimistic_enqueue"/);
   assert.match(source, /const getAnimatedPanels = \(\) =>/);
+  assert.match(source, /const getAnimatedFlyoutEls = \(\) => \{/);
+  assert.match(source, /const getAnimatedFlyoutKey = \(element\) => \{/);
+  assert.match(source, /const captureFlyoutRects = \(\) =>/);
+  assert.match(source, /const animateFlyoutShift = \(element, \{ deltaX = 0, deltaY = 0, fromOpacity = 1 \} = \{\}\) => \{/);
+  assert.match(source, /const animateFlyoutPositionChanges = \(previousRects\) => \{/);
   assert.match(source, /const capturePanelHeights = \(\) =>/);
   assert.match(source, /const previousPanelHeights = animatePanels \? capturePanelHeights\(\) : \[\];/);
+  assert.match(source, /const previousFlyoutRects = animatePanels \? captureFlyoutRects\(\) : new Map\(\);/);
   assert.match(source, /const animatePanelHeightChange = \(panelEl, fromHeight\) => \{/);
   assert.match(source, /const animatePanelHeightChanges = \(previousPanelHeights\) => \{/);
   assert.match(source, /querySelectorAll\("\.panel"\)/);
@@ -77,8 +84,11 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /syncFlyoutRenderOrder\(currentRoute\);/);
   assert.match(source, /setFlyoutOpenState\("debug", true\);/);
   assert.match(source, /setFlyoutOpenState\("scenarios", true\);/);
+  assert.match(source, /const animateFlyoutClose = async \(flyoutKey, toggleHashBuilder\) => \{/);
+  assert.match(source, /flyoutEl\.classList\.add\("is-closing"\);/);
+  assert.match(source, /await delay\(FLYOUT_MOTION_MS\);/);
   assert.match(source, /const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">\$\{renderHeader\(\)\}\$\{body\}<\/div>\$\{renderFlyouts\(\)\}<\/div>`;/);
-  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*\}\s*\}/s);
+  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.doesNotMatch(source, /replaceWith\(previousBoardPanel\)/);
 });
