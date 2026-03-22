@@ -294,11 +294,11 @@ const renderSectionActions = (actions) => {
   return `<div class="row section-actions">${items.join("")}</div>`;
 };
 const getAnimatedPanels = () => (appEl instanceof HTMLElement ? Array.from(appEl.querySelectorAll(".panel")) : []);
-const getAnimatedFlyoutEls = () => {
+const getAnimatedFlyoutEls = (layoutMode = getShellLayoutMode()) => {
   if (!(appEl instanceof HTMLElement)) {
     return [];
   }
-  const mainContentEl = appEl.querySelector(".shell-main-content");
+  const mainContentEl = layoutMode === "wide" ? appEl.querySelector(".shell-main-content") : null;
   const flyoutEls = Array.from(appEl.querySelectorAll("[data-flyout]"));
   return [mainContentEl, ...flyoutEls].filter((element) => element instanceof HTMLElement);
 };
@@ -330,9 +330,9 @@ const getWideMainContentWidthPx = (openFlyoutCount, viewportWidth = window.inner
   const rightReserved = openFlyoutCount > 0 ? getWideShellPaddingRightPx(openFlyoutCount, viewportWidth) : SHELL_VIEWPORT_GUTTER_PX;
   return Math.max(0, Math.min(getShellMainMaxWidthPx(), viewportWidth - SHELL_VIEWPORT_GUTTER_PX - rightReserved));
 };
-const captureFlyoutRects = () =>
+const captureFlyoutRects = (layoutMode = getShellLayoutMode()) =>
   new Map(
-    getAnimatedFlyoutEls().map((element) => [
+    getAnimatedFlyoutEls(layoutMode).map((element) => [
       getAnimatedFlyoutKey(element),
       element instanceof HTMLElement ? element.getBoundingClientRect() : null,
     ]),
@@ -376,7 +376,7 @@ const animateFlyoutPositionChanges = (previousRects) => {
     return;
   }
   const layoutMode = getShellLayoutMode();
-  getAnimatedFlyoutEls().forEach((element) => {
+  getAnimatedFlyoutEls(layoutMode).forEach((element) => {
     const key = getAnimatedFlyoutKey(element);
     if (!key) {
       return;

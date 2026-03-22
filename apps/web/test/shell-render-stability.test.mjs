@@ -69,14 +69,15 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),/s);
   assert.match(source, /includeBoard: change\?\.type !== "optimistic_enqueue"/);
   assert.match(source, /const getAnimatedPanels = \(\) =>/);
-  assert.match(source, /const getAnimatedFlyoutEls = \(\) => \{/);
+  assert.match(source, /const getAnimatedFlyoutEls = \(layoutMode = getShellLayoutMode\(\)\) => \{/);
+  assert.match(source, /const mainContentEl = layoutMode === "wide" \? appEl\.querySelector\("\.shell-main-content"\) : null;/);
   assert.match(source, /const getAnimatedFlyoutKey = \(element\) => \{/);
   assert.match(source, /const getCssPixelValue = \(value, fallback = 0\) => \{/);
   assert.match(source, /const getFlyoutContentGapPx = \(\) =>/);
   assert.match(source, /const getShellMainMaxWidthPx = \(\) =>/);
   assert.match(source, /const getWideShellPaddingRightPx = \(openFlyoutCount, viewportWidth = window\.innerWidth\) => \{/);
   assert.match(source, /const getWideMainContentWidthPx = \(openFlyoutCount, viewportWidth = window\.innerWidth\) => \{/);
-  assert.match(source, /const captureFlyoutRects = \(\) =>/);
+  assert.match(source, /const captureFlyoutRects = \(layoutMode = getShellLayoutMode\(\)\) =>/);
   assert.match(source, /const animateFlyoutShift = \(element, \{ deltaX = 0, deltaY = 0, fromOpacity = 1, fromWidth = null, toWidth = null \} = \{\}\) => \{/);
   assert.match(source, /const animateFlyoutPositionChanges = \(previousRects\) => \{/);
   assert.match(source, /const clearCoordinatedFlyoutMotionStyles = \(\) => \{/);
@@ -93,6 +94,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const animatePanelHeightChanges = \(previousPanelHeights\) => \{/);
   assert.match(source, /fromWidth: previousRect\.width,/);
   assert.match(source, /toWidth: nextRect\.width,/);
+  assert.match(source, /getAnimatedFlyoutEls\(layoutMode\)\.forEach\(\(element\) => \{/);
   assert.match(source, /querySelectorAll\("\.panel"\)/);
   assert.match(source, /class="panel" data-shell-panel="board"/);
   assert.match(source, /scheduleGameShellStickyLayout\(\);/);
