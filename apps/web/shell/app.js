@@ -157,17 +157,35 @@ const renderRoleLabel = (role, game = null) => {
   }
   return `<strong>${escapeHtml(role || "Unknown")}</strong>`;
 };
-const renderConnectionStatusIcon = (connected, label) =>
-  `<span class="connection-status-icon${connected ? " is-connected" : " is-disconnected"}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
+const renderConnectionStatusIcon = (status, label) =>
+  `<span class="connection-status-icon is-${escapeHtml(status)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
 const getMyConnectionMessage = (game) =>
   game?.myConnectionConnected ? "You have played recently" : "You have not played here recently";
-const renderPlayerSlotStatus = (seat, participant) => {
-  if (!participant) {
-    return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)} open</span>`;
+const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => {
+  if (!verbose) {
+    if (!participant) {
+      return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)} open</span>`;
+    }
+    const statusLabel = `${seat} ${participant.connected ? "connected" : "disconnected"}`;
+    return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)}${renderConnectionStatusIcon(
+      participant.connected ? "connected" : "disconnected",
+      statusLabel,
+    )}</span>`;
   }
-  const statusLabel = `${seat} ${participant.connected ? "connected" : "disconnected"}`;
-  return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)}${renderConnectionStatusIcon(participant.connected, statusLabel)}</span>`;
+  if (!participant) {
+    const statusLabel = `${seat} is open for someone to join`;
+    return `<span class="mini-board-card-connection-item">${renderConnectionStatusIcon("open", statusLabel)}<span>${renderSeatLabel(
+      seat,
+    )} is open for someone to join</span></span>`;
+  }
+  const statusLabel = `${seat} has ${participant.connected ? "played recently" : "not played here recently"}`;
+  return `<span class="mini-board-card-connection-item">${renderConnectionStatusIcon(
+    participant.connected ? "connected" : "disconnected",
+    statusLabel,
+    )}<span>${renderSeatLabel(seat)} has ${participant.connected ? "played recently" : "not played here recently"}</span></span>`;
 };
+const shouldUseVerboseHomeConnectionCopy = (game) =>
+  (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) || game?.myRole === "Player 1" || game?.myRole === "Player 2";
 const renderHomeRoleLine = (game) => {
   if (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) {
     return `You are ${renderRoleLabel(game.myRole, game)}`;
@@ -184,13 +202,9 @@ const renderHomeRoleLine = (game) => {
   return renderRoleLabel(game?.myRole, game);
 };
 const renderHomeClientConnectionLine = (game) => {
-  if (
-    (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) ||
-    game?.myRole === "Player 1" ||
-    game?.myRole === "Player 2"
-  ) {
+  if (shouldUseVerboseHomeConnectionCopy(game)) {
     return `<p class="small mini-board-card-connection-line">${renderConnectionStatusIcon(
-      Boolean(game?.myConnectionConnected),
+      Boolean(game?.myConnectionConnected) ? "connected" : "disconnected",
       getMyConnectionMessage(game),
     )}<span>${escapeHtml(getMyConnectionMessage(game))}</span></p>`;
   }
@@ -211,18 +225,16 @@ const renderHomeConnectionSummary = (game) => {
   if (filteredSlots.length === 0) {
     return "";
   }
-  return filteredSlots.map((entry) => renderPlayerSlotStatus(entry.seat, entry.participant)).join('<span class="mini-board-card-connection-separator">·</span>');
+  return filteredSlots
+    .map((entry) => renderPlayerSlotStatus(entry.seat, entry.participant, { verbose: shouldUseVerboseHomeConnectionCopy(game) }))
+    .join('<span class="mini-board-card-connection-separator">·</span>');
 };
 const renderHomeSeatConnectionLine = (game) => {
   const connectionSummary = renderHomeConnectionSummary(game);
   if (connectionSummary) {
     return `<p class="small mini-board-card-connection-line">${connectionSummary}</p>`;
   }
-  if (
-    (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) ||
-    game?.myRole === "Player 1" ||
-    game?.myRole === "Player 2"
-  ) {
+  if (shouldUseVerboseHomeConnectionCopy(game)) {
     return '<p class="small mini-board-card-connection-line is-placeholder" aria-hidden="true"><span>&nbsp;</span></p>';
   }
   return "";

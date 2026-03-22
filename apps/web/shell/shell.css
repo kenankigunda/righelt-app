@@ -595,6 +595,11 @@ button.button-release-bounce,
   box-shadow: inset 0 0 0 1px rgba(84, 92, 96, 0.18);
 }
 
+.connection-status-icon.is-open {
+  background: #ddd9d0;
+  box-shadow: inset 0 0 0 1px rgba(108, 116, 120, 0.14);
+}
+
 .connection-status-icon.is-disconnected::after {
   content: "";
   position: absolute;
