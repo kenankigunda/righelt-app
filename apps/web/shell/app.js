@@ -160,7 +160,7 @@ const renderRoleLabel = (role, game = null) => {
 const renderConnectionStatusIcon = (status, label) =>
   `<span class="connection-status-icon is-${escapeHtml(status)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
 const getMyConnectionMessage = (game) =>
-  game?.myConnectionConnected ? "You have played recently" : "You have not played here recently";
+  game?.myConnectionConnected ? "You are connected here" : "You are not connected here";
 const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => {
   if (!verbose) {
     if (!participant) {
@@ -178,11 +178,11 @@ const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => 
       seat,
     )} is open for someone to join</span></span>`;
   }
-  const statusLabel = `${seat} has ${participant.connected ? "played recently" : "not played here recently"}`;
+  const statusLabel = `${seat} is ${participant.connected ? "connected" : "not connected"}`;
   return `<span class="mini-board-card-connection-item">${renderConnectionStatusIcon(
     participant.connected ? "connected" : "disconnected",
     statusLabel,
-    )}<span>${renderSeatLabel(seat)} has ${participant.connected ? "played recently" : "not played here recently"}</span></span>`;
+    )}<span>${renderSeatLabel(seat)} is ${participant.connected ? "connected" : "not connected"}</span></span>`;
 };
 const shouldUseVerboseHomeConnectionCopy = (game) =>
   (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) || game?.myRole === "Player 1" || game?.myRole === "Player 2";

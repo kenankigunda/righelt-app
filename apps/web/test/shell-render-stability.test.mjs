@@ -226,7 +226,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /return '<strong class="player-tone-both">both players<\/strong>';/);
   assert.match(source, /const renderConnectionStatusIcon = \(status, label\) =>/);
   assert.match(source, /const getMyConnectionMessage = \(game\) =>/);
-  assert.match(source, /game\?\.myConnectionConnected \? "You have played recently" : "You have not played here recently"/);
+  assert.match(source, /game\?\.myConnectionConnected \? "You are connected here" : "You are not connected here"/);
   assert.match(source, /const renderPlayerSlotStatus = \(seat, participant, \{ verbose = false \} = \{\}\) =>/);
   assert.match(source, /return `<span class="mini-board-card-connection-item">\$\{renderSeatLabel\(seat\)\} open<\/span>`;/);
   assert.match(source, /const shouldUseVerboseHomeConnectionCopy = \(game\) =>/);
