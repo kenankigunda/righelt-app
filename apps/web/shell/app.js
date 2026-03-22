@@ -783,9 +783,9 @@ const renderHomeGameSection = (title, games) => {
   if (!Array.isArray(games) || games.length === 0) {
     return "";
   }
-  return `<section class="home-games-section">
+  return `<section class="panel home-games-section">
     <div class="home-games-section-header">
-      <h3>${escapeHtml(title)}</h3>
+      <h2>${escapeHtml(title)}</h2>
       <p class="small">${games.length === 1 ? "1 game" : `${games.length} games`}</p>
     </div>
     <div class="mini-board-card-list">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
@@ -798,12 +798,10 @@ const renderHome = () => {
   const visibleGames = currentRoute.debug ? games.filter((game) => !gameIncludesIdentity(game, DEPLOY_SMOKE_PLAYER_ID)) : games;
   const myGames = visibleGames.filter((game) => isPlayerRole(game.myRole));
   const otherGames = visibleGames.filter((game) => !isPlayerRole(game.myRole));
-  const listHtml =
-    myGames.length === 0 && otherGames.length === 0 && (!currentRoute.debug || smokeGames.length === 0)
-      ? "<p class=\"small\">No games yet.</p>"
-      : `${renderHomeGameSection("My games", myGames)}${renderHomeGameSection("Other games", otherGames)}${
-          currentRoute.debug ? renderHomeGameSection("Deploy smoke player", smokeGames) : ""
-        }`;
+  const sectionHtml = `${renderHomeGameSection("My games", myGames)}${renderHomeGameSection("Other games", otherGames)}${
+    currentRoute.debug ? renderHomeGameSection("Deploy smoke player", smokeGames) : ""
+  }`;
+  const listHtml = sectionHtml || `<section class="panel"><p class="small">No games yet.</p></section>`;
 
   return `
     <section class="stack">
@@ -815,11 +813,7 @@ const renderHome = () => {
         </div>
         <p class="small">Server-backed game sessions with live state transitions.</p>
       </section>
-
-      <section class="panel">
-        <h2>Active Games</h2>
-        ${listHtml}
-      </section>
+      ${listHtml}
     </section>
   `;
 };
