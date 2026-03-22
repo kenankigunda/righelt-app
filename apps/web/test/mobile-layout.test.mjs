@@ -53,6 +53,17 @@ test("shell header separates layout spacing from panel chrome and home start pan
   );
 });
 
+test("shell main layout transitions width when docked flyouts open or close", () => {
+  assert.match(
+    shellStylesSource,
+    /\.app-root\s*\{[\s\S]*transition:\s*padding-right 180ms ease;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-main-content\s*\{[\s\S]*transition:[\s\S]*width 180ms ease,[\s\S]*max-width 180ms ease;/s,
+  );
+});
+
 test("wide-screen shell sticky columns only target the left and board stacks", () => {
   assert.match(
     shellStylesSource,

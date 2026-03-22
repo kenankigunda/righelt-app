@@ -27,6 +27,7 @@ body {
   display: grid;
   gap: 1rem;
   position: relative;
+  transition: padding-right 180ms ease;
 }
 
 .shell-page-shell {
@@ -44,6 +45,9 @@ body {
   display: grid;
   gap: 1rem;
   min-width: 0;
+  transition:
+    width 180ms ease,
+    max-width 180ms ease;
 }
 
 .shell-header {
@@ -844,6 +848,8 @@ textarea {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .app-root,
+  .shell-main-content,
   .feedback-reveal {
     transition: none;
   }

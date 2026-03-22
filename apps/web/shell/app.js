@@ -319,23 +319,34 @@ const captureFlyoutRects = () =>
       element instanceof HTMLElement ? element.getBoundingClientRect() : null,
     ]),
   );
-const animateFlyoutShift = (element, { deltaX = 0, deltaY = 0, fromOpacity = 1 } = {}) => {
+const animateFlyoutShift = (element, { deltaX = 0, deltaY = 0, fromOpacity = 1, fromWidth = null, toWidth = null } = {}) => {
   if (prefersReducedMotion() || !(element instanceof HTMLElement)) {
     return;
   }
-  if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1 && Math.abs(fromOpacity - 1) < 0.01) {
+  const hasWidthChange = Number.isFinite(fromWidth) && Number.isFinite(toWidth) && Math.abs(toWidth - fromWidth) >= 1;
+  if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1 && Math.abs(fromOpacity - 1) < 0.01 && !hasWidthChange) {
     return;
   }
   element.style.transition = "none";
+  if (hasWidthChange) {
+    element.style.width = `${fromWidth}px`;
+    element.style.maxWidth = `${fromWidth}px`;
+  }
   element.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
   element.style.opacity = String(fromOpacity);
   void element.offsetHeight;
-  element.style.transition = `transform ${FLYOUT_MOTION_MS}ms ease, opacity ${FLYOUT_MOTION_MS}ms ease`;
+  element.style.transition = `transform ${FLYOUT_MOTION_MS}ms ease, opacity ${FLYOUT_MOTION_MS}ms ease, width ${FLYOUT_MOTION_MS}ms ease, max-width ${FLYOUT_MOTION_MS}ms ease`;
+  if (hasWidthChange) {
+    element.style.width = `${toWidth}px`;
+    element.style.maxWidth = `${toWidth}px`;
+  }
   element.style.transform = "";
   element.style.opacity = "";
 
   const clearMotion = () => {
     element.style.transition = "";
+    element.style.width = "";
+    element.style.maxWidth = "";
     element.style.transform = "";
     element.style.opacity = "";
     element.removeEventListener("transitionend", clearMotion);
@@ -358,6 +369,8 @@ const animateFlyoutPositionChanges = (previousRects) => {
       animateFlyoutShift(element, {
         deltaX: previousRect.left - nextRect.left,
         deltaY: previousRect.top - nextRect.top,
+        fromWidth: previousRect.width,
+        toWidth: nextRect.width,
       });
       return;
     }
@@ -1335,6 +1348,15 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   return true;
 };
 
+const doesMountedFlyoutStateMatchRoute = () => {
+  if (!(appEl instanceof HTMLElement)) {
+    return false;
+  }
+  const debugFlyoutPresent = appEl.querySelector('[data-flyout="debug"]') instanceof HTMLElement;
+  const scenariosFlyoutPresent = appEl.querySelector('[data-flyout="scenarios"]') instanceof HTMLElement;
+  return debugFlyoutPresent === (currentRoute.debug === true) && scenariosFlyoutPresent === (currentRoute.scenarios === true);
+};
+
 const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
   if (currentRoute.name !== "game" || !routeHydrated || !gameId) {
     return false;
@@ -1343,7 +1365,7 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
   if (!game) {
     return false;
   }
-  return !getActiveApprovalRequest(game);
+  return !getActiveApprovalRequest(game) && doesMountedFlyoutStateMatchRoute();
 };
 
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {

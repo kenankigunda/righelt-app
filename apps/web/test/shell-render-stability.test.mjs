@@ -32,6 +32,9 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /data-shell-sticky-target="board" data-sticky-enabled="false"/);
   assert.match(source, /data-game-panel="history"/);
   assert.match(source, /const updateMountedGameShell = \(\{ game, inviteFromRole = null, inviteToken = null, includeBoard = true \} = \{\}\) => \{/);
+  assert.match(source, /const doesMountedFlyoutStateMatchRoute = \(\) => \{/);
+  assert.match(source, /const debugFlyoutPresent = appEl\.querySelector\('\[data-flyout="debug"\]'\) instanceof HTMLElement;/);
+  assert.match(source, /const scenariosFlyoutPresent = appEl\.querySelector\('\[data-flyout="scenarios"\]'\) instanceof HTMLElement;/);
   assert.match(source, /const shouldEnableStickyShellColumn = \(\{ matchesWideScreen, columnHeight, viewportHeight \}\) =>/);
   assert.match(source, /const getCurrentFlyoutState = \(\) => \(\{/);
   assert.match(source, /const FLYOUT_KEYS = \["scenarios", "debug"\];/);
@@ -69,13 +72,21 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const getAnimatedFlyoutEls = \(\) => \{/);
   assert.match(source, /const getAnimatedFlyoutKey = \(element\) => \{/);
   assert.match(source, /const captureFlyoutRects = \(\) =>/);
-  assert.match(source, /const animateFlyoutShift = \(element, \{ deltaX = 0, deltaY = 0, fromOpacity = 1 \} = \{\}\) => \{/);
+  assert.match(source, /const animateFlyoutShift = \(element, \{ deltaX = 0, deltaY = 0, fromOpacity = 1, fromWidth = null, toWidth = null \} = \{\}\) => \{/);
   assert.match(source, /const animateFlyoutPositionChanges = \(previousRects\) => \{/);
+  assert.match(source, /const hasWidthChange = Number\.isFinite\(fromWidth\) && Number\.isFinite\(toWidth\) && Math\.abs\(toWidth - fromWidth\) >= 1;/);
+  assert.match(source, /element\.style\.width = `\$\{fromWidth\}px`;/);
+  assert.match(source, /element\.style\.maxWidth = `\$\{fromWidth\}px`;/);
+  assert.match(source, /element\.style\.transition = `transform \$\{FLYOUT_MOTION_MS\}ms ease, opacity \$\{FLYOUT_MOTION_MS\}ms ease, width \$\{FLYOUT_MOTION_MS\}ms ease, max-width \$\{FLYOUT_MOTION_MS\}ms ease`;/);
+  assert.match(source, /element\.style\.width = `\$\{toWidth\}px`;/);
+  assert.match(source, /element\.style\.maxWidth = `\$\{toWidth\}px`;/);
   assert.match(source, /const capturePanelHeights = \(\) =>/);
   assert.match(source, /const previousPanelHeights = animatePanels \? capturePanelHeights\(\) : \[\];/);
   assert.match(source, /const previousFlyoutRects = animatePanels \? captureFlyoutRects\(\) : new Map\(\);/);
   assert.match(source, /const animatePanelHeightChange = \(panelEl, fromHeight\) => \{/);
   assert.match(source, /const animatePanelHeightChanges = \(previousPanelHeights\) => \{/);
+  assert.match(source, /fromWidth: previousRect\.width,/);
+  assert.match(source, /toWidth: nextRect\.width,/);
   assert.match(source, /querySelectorAll\("\.panel"\)/);
   assert.match(source, /class="panel" data-shell-panel="board"/);
   assert.match(source, /scheduleGameShellStickyLayout\(\);/);
@@ -143,6 +154,7 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
 test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /transport\.subscribe\(\(change\) => \{\s*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);\s*\}\);/s);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
+  assert.match(source, /return !getActiveApprovalRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
 });
 
