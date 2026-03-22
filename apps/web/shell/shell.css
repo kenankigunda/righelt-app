@@ -438,6 +438,19 @@ button.button-release-bounce,
   margin-top: 1.25rem;
 }
 
+.home-start-panel {
+  display: grid;
+  place-items: center;
+  min-height: 7.5rem;
+}
+
+.home-start-button {
+  width: min(100%, 24rem);
+  min-height: 3.5rem;
+  font-size: 1.05rem;
+  padding-inline: 1.5rem;
+}
+
 .home-games-section-header {
   display: flex;
   justify-content: space-between;

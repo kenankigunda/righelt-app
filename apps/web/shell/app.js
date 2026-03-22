@@ -805,13 +805,8 @@ const renderHome = () => {
 
   return `
     <section class="stack">
-      <section class="panel">
-        <h2>Start</h2>
-        <div class="row">
-          <button data-action="create-game" ${busy ? "disabled" : ""}>Play with friends</button>
-          <button data-action="create-offline-playground" class="warn" ${busy ? "disabled" : ""}>Play locally</button>
-        </div>
-        <p class="small">Server-backed game sessions with live state transitions.</p>
+      <section class="panel home-start-panel">
+        <button class="home-start-button" data-action="create-game" ${busy ? "disabled" : ""}>Start new game</button>
       </section>
       ${listHtml}
     </section>
