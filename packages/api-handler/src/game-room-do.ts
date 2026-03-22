@@ -586,7 +586,7 @@ export class GameRoomDO {
       return null;
     }
     const projection = await loadGameProjection(this.env, gameId);
-    if (!projection) {
+    if (!projection || projection.kind === "invalid") {
       return null;
     }
     this.game = projection.game;
@@ -602,7 +602,7 @@ export class GameRoomDO {
     this.requestedGameId = gameId;
     if (!this.game) {
       const projection = await loadGameProjection(this.env, gameId);
-      if (projection) {
+      if (projection?.kind === "ok") {
         this.game = projection.game;
         this.eventSeq = projection.eventSeq;
       }

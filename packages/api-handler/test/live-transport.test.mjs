@@ -18,6 +18,27 @@ const req = (path, method = "GET", body = null) =>
     body: body ? JSON.stringify(body) : undefined,
   });
 
+const captureConsoleEvents = () => {
+  const warnings = [];
+  const errors = [];
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  console.warn = (message, ...rest) => {
+    warnings.push([message, ...rest].join(" "));
+  };
+  console.error = (message, ...rest) => {
+    errors.push([message, ...rest].join(" "));
+  };
+  return {
+    warnings,
+    errors,
+    restore() {
+      console.warn = originalWarn;
+      console.error = originalError;
+    },
+  };
+};
+
 test.beforeEach(() => {
   __resetLiveGameStateForTests();
   env.DB.reset();
@@ -255,6 +276,142 @@ test("live transport: stale read during GET must not overwrite newer persisted g
   const persistedAfterRead = env.DB.getGameState(gameId);
   assert.equal(persistedAfterRead?.player2?.identityId, "id-player2");
   assert.equal(persistedAfterRead?.notifications?.[0], "Player joined");
+});
+
+test("live transport: persisted shape repairs missing history index and logs the exact mismatch", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createBody = await create.json();
+  const gameId = createBody.game.id;
+  const overwritten = env.DB.overwriteGameState(gameId, (state) => {
+    const next = { ...state };
+    delete next.historyIndexByIdentity;
+    return next;
+  });
+  assert.equal(overwritten, true);
+
+  const consoleCapture = captureConsoleEvents();
+  try {
+    const list = await handleApiRequest(req("/api/shell/games?identityId=id-owner"), env);
+    const listBody = await list.json();
+    assert.equal(list.status, 200);
+    assert.equal(listBody.games.some((entry) => entry.id === gameId), true);
+    const listedGame = listBody.games.find((entry) => entry.id === gameId);
+    assert.equal(listedGame.historyIndex, null);
+
+    const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+    const openBody = await open.json();
+    assert.equal(open.status, 200);
+    assert.equal(openBody.game.historyIndex, null);
+
+    const repairEvents = consoleCapture.warnings.map((entry) => JSON.parse(entry));
+    assert.equal(repairEvents.some((entry) => entry.event === "live_game_shape_repaired"), true);
+    const historyMismatch = repairEvents.flatMap((entry) => entry.mismatches).find((entry) => entry.field === "historyIndexByIdentity");
+    assert.deepEqual(historyMismatch, {
+      field: "historyIndexByIdentity",
+      expected: "record<string, number>",
+      actualType: "undefined",
+      actualSummary: "undefined",
+      repair: "defaulted_to_empty_object",
+    });
+  } finally {
+    consoleCapture.restore();
+  }
+});
+
+test("live transport: persisted shape repairs legacy participants and malformed arrays with structured logs", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createBody = await create.json();
+  const gameId = createBody.game.id;
+  const overwritten = env.DB.overwriteGameState(gameId, (state) => ({
+    ...state,
+    player2: {
+      identityId: "id-player2",
+      connected: "sometimes",
+      joinedAt: "2026-03-10T03:00:00.000Z",
+      lastSeenAt: "2026-03-10T03:05:00.000Z",
+    },
+    viewers: "not-an-array",
+    pendingJoinRequests: [{ nope: true }],
+    notifications: ["Player joined", 4],
+    inviteTokens: { viewer: "viewer-token" },
+  }));
+  assert.equal(overwritten, true);
+
+  const consoleCapture = captureConsoleEvents();
+  try {
+    const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+    const body = await open.json();
+    assert.equal(open.status, 200);
+    assert.equal(body.game.player2.identityId, "id-player2");
+    assert.equal(body.game.player2.lastHeartbeatAt, "2026-03-10T03:05:00.000Z");
+    assert.equal(body.game.player2.sessionCount, 0);
+    assert.deepEqual(body.game.viewers, []);
+    assert.deepEqual(body.game.pendingJoinRequests, []);
+    assert.deepEqual(body.game.notifications, ["Player joined"]);
+    assert.equal(typeof body.game.inviteToken, "string");
+    assert.equal(body.game.inviteToken.length > 0, true);
+
+    const repairEvent = consoleCapture.warnings.map((entry) => JSON.parse(entry)).find((entry) => entry.event === "live_game_shape_repaired");
+    assert.equal(Boolean(repairEvent), true);
+    const mismatchFields = repairEvent.mismatches.map((entry) => entry.field);
+    assert.equal(mismatchFields.includes("player2.lastHeartbeatAt"), true);
+    assert.equal(mismatchFields.includes("player2.sessionCount"), true);
+    assert.equal(mismatchFields.includes("viewers"), true);
+    assert.equal(mismatchFields.includes("pendingJoinRequests[0]"), true);
+    assert.equal(mismatchFields.includes("inviteTokens.player1"), true);
+    assert.equal(mismatchFields.includes("inviteTokens.player2"), true);
+  } finally {
+    consoleCapture.restore();
+  }
+});
+
+test("live transport: invalid persisted board state returns controlled error and is skipped from list", async () => {
+  const validCreate = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-valid", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const validBody = await validCreate.json();
+  const validGameId = validBody.game.id;
+
+  const invalidCreate = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-bad", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const invalidBody = await invalidCreate.json();
+  const invalidGameId = invalidBody.game.id;
+
+  const overwritten = env.DB.overwriteGameState(invalidGameId, (state) => ({
+    ...state,
+    board: {},
+  }));
+  assert.equal(overwritten, true);
+
+  const consoleCapture = captureConsoleEvents();
+  try {
+    const open = await handleApiRequest(req(`/api/shell/games/${invalidGameId}?identityId=id-bad`), env);
+    const openBody = await open.json();
+    assert.equal(open.status, 500);
+    assert.equal(openBody.error, "invalid_persisted_game");
+
+    const list = await handleApiRequest(req("/api/shell/games?identityId=id-valid"), env);
+    const listBody = await list.json();
+    assert.equal(list.status, 200);
+    assert.equal(listBody.games.some((entry) => entry.id === validGameId), true);
+    assert.equal(listBody.games.some((entry) => entry.id === invalidGameId), false);
+
+    const invalidEvent = consoleCapture.errors.map((entry) => JSON.parse(entry)).find((entry) => entry.event === "live_game_shape_invalid");
+    assert.equal(Boolean(invalidEvent), true);
+    assert.equal(invalidEvent.gameId, invalidGameId);
+    assert.equal(invalidEvent.mismatches.some((entry) => entry.field === "board.state"), true);
+  } finally {
+    consoleCapture.restore();
+  }
 });
 
 test("live transport: invite and game resolution survive process-local cache reset", async () => {

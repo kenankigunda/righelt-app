@@ -502,18 +502,33 @@ const getJoinAsViewerDisabledReason = (game: LiveGame, offline: boolean, myRole:
 };
 
 export const withViewModel = (game: LiveGame, identityId: string, offline = false) => {
-  const myRole = findRoleForIdentity(game, identityId);
-  const historyIndex = typeof game.historyIndexByIdentity[identityId] === "number" ? game.historyIndexByIdentity[identityId] : null;
+  const historyIndexByIdentity = game.historyIndexByIdentity ?? {};
+  const moves = Array.isArray(game.moves) ? game.moves : [];
+  const turns = Array.isArray(game.turns) ? game.turns : [];
+  const pendingJoinRequests = Array.isArray(game.pendingJoinRequests) ? game.pendingJoinRequests : [];
+  const inviteTokens = game.inviteTokens ?? {
+    viewer: "",
+    player1: "",
+    player2: "",
+  };
+  const myRole = findRoleForIdentity(
+    {
+      ...game,
+      viewers: Array.isArray(game.viewers) ? game.viewers : [],
+    },
+    identityId,
+  );
+  const historyIndex = typeof historyIndexByIdentity[identityId] === "number" ? historyIndexByIdentity[identityId] : null;
   const inHistoryMode = typeof historyIndex === "number";
   const currentSnapshot =
-    typeof historyIndex === "number" && game.moves[historyIndex]
-      ? game.moves[historyIndex].selectionSnapshot
+    typeof historyIndex === "number" && moves[historyIndex]
+      ? moves[historyIndex].selectionSnapshot
       : game.board.state;
   const historySelectionAction =
-    typeof historyIndex === "number" && game.moves[historyIndex]
-      ? clone(game.moves[historyIndex].action)
+    typeof historyIndex === "number" && moves[historyIndex]
+      ? clone(moves[historyIndex].action)
       : null;
-  const activeTurn = getActiveTurn(game);
+  const activeTurn = turns[turns.length - 1] ?? null;
   const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(game);
   const controlSeat = getControlSeatForTurn(game.board.state, turnOwnerSeat);
   const sideToMoveIdentity = getSeatIdentity(game, controlSeat);
@@ -521,10 +536,10 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
   const isPlayer = myRole === "Player 1" || myRole === "Player 2";
   const legalNow = listLegalActions(game.board.state);
   const offlineTurnControlAllowed = !offline || canOperateOfflinePlaygroundTurn(game, identityId);
-  const approvableRequesterIds = game.pendingJoinRequests
+  const approvableRequesterIds = pendingJoinRequests
     .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
     .map((request) => request.identityId);
-  const myPendingJoinRequest = game.pendingJoinRequests.find((request) => request.identityId === identityId) ?? null;
+  const myPendingJoinRequest = pendingJoinRequests.find((request) => request.identityId === identityId) ?? null;
   const joinAsPlayerDisabledReason = getJoinAsPlayerDisabledReason(game, offline, myRole);
   const joinAsViewerDisabledReason = getJoinAsViewerDisabledReason(game, offline, myRole);
 
@@ -543,10 +558,10 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     canInvite: !offline && !game.offlineLocal,
     inviteToken:
       myRole === "Player 1"
-        ? game.inviteTokens.player1
+        ? inviteTokens.player1
         : myRole === "Player 2"
-          ? game.inviteTokens.player2
-          : game.inviteTokens.viewer,
+          ? inviteTokens.player2
+          : inviteTokens.viewer,
     showOfflineState: offline || game.offlineLocal,
     showJoinActions: !offline && !game.offlineLocal,
     canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,

@@ -30,6 +30,7 @@ export type LiveGameRequestEnv = {
 const CACHE_NO_STORE = "no-store";
 const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
 const GAME_ROOMS_BINDING_ERROR = "server_misconfigured_game_rooms_binding";
+const INVALID_PERSISTED_GAME_ERROR = "invalid_persisted_game";
 
 const json = (body: unknown, status = 200, cacheControl = CACHE_NO_STORE): Response =>
   new Response(JSON.stringify(body), {
@@ -176,6 +177,14 @@ export const handleLiveGameRequest = async (
     if (!gameProjection) {
       return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: CACHE_NO_STORE };
     }
+    if (gameProjection.kind === "invalid") {
+      return {
+        handled: true,
+        status: 500,
+        body: { ok: false, error: INVALID_PERSISTED_GAME_ERROR },
+        cacheControl: CACHE_NO_STORE,
+      };
+    }
     return {
       handled: true,
       status: 200,
@@ -239,6 +248,14 @@ export const handleLiveGameRequest = async (
     }
 
     const sourceProjection = sourceGameId ? await loadGameProjection(env, sourceGameId) : null;
+    if (sourceProjection?.kind === "invalid") {
+      return {
+        handled: true,
+        status: 500,
+        body: { ok: false, error: INVALID_PERSISTED_GAME_ERROR },
+        cacheControl: CACHE_NO_STORE,
+      };
+    }
     const newGameId = nextGameId();
     const response = await fetchGameRoom(env, newGameId, "/create-from-scenario", {
       method: "POST",
@@ -265,6 +282,14 @@ export const handleLiveGameRequest = async (
     const projection = await loadGameProjection(env, gameId);
     if (!projection) {
       return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: CACHE_NO_STORE };
+    }
+    if (projection.kind === "invalid") {
+      return {
+        handled: true,
+        status: 500,
+        body: { ok: false, error: INVALID_PERSISTED_GAME_ERROR },
+        cacheControl: CACHE_NO_STORE,
+      };
     }
     const game = projection.game;
 

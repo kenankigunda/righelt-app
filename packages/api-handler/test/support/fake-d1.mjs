@@ -110,16 +110,36 @@ export const createFakeD1 = () => {
         throw new Error(`Unsupported run query: ${normalized}`);
       },
       async first() {
-        if (normalized.includes("SELECT state_json, event_seq FROM live_games WHERE game_id = ?1")) {
+        if (
+          normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq FROM live_games WHERE game_id = ?1") ||
+          normalized.includes("SELECT state_json, event_seq FROM live_games WHERE game_id = ?1")
+        ) {
           selectGameByIdCount += 1;
           const gameId = params[0];
           const override = nextGameReadOverrideById.get(gameId);
           if (override) {
             nextGameReadOverrideById.delete(gameId);
-            return { state_json: JSON.stringify(override), event_seq: shellGames.get(gameId)?.event_seq ?? 0 };
+            const row = shellGames.get(gameId);
+            return row
+              ? {
+                  game_id: row.game_id,
+                  created_at: row.created_at,
+                  updated_at: row.updated_at,
+                  state_json: JSON.stringify(override),
+                  event_seq: row.event_seq ?? 0,
+                }
+              : null;
           }
           const row = shellGames.get(gameId);
-          return row ? { state_json: row.state_json, event_seq: row.event_seq ?? 0 } : null;
+          return row
+            ? {
+                game_id: row.game_id,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                state_json: row.state_json,
+                event_seq: row.event_seq ?? 0,
+              }
+            : null;
         }
 
         if (normalized.includes("SELECT game_id, shared_by_role FROM live_invites WHERE token = ?1")) {
@@ -131,7 +151,8 @@ export const createFakeD1 = () => {
       },
       async all() {
         if (
-          normalized.includes("SELECT state_json FROM live_games") &&
+          (normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq FROM live_games") ||
+            normalized.includes("SELECT state_json FROM live_games")) &&
           normalized.includes("WHERE offline_local = 0")
         ) {
           const results = [...shellGames.values()]
@@ -142,7 +163,13 @@ export const createFakeD1 = () => {
               }
               return right.created_at.localeCompare(left.created_at);
             })
-            .map((row) => ({ state_json: row.state_json }));
+            .map((row) => ({
+              game_id: row.game_id,
+              created_at: row.created_at,
+              updated_at: row.updated_at,
+              state_json: row.state_json,
+              event_seq: row.event_seq ?? 0,
+            }));
           return { results };
         }
 
