@@ -137,7 +137,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /return `<span class="mini-board-card-connection-item">\$\{renderSeatLabel\(seat\)\}\$\{renderConnectionStatusIcon\(participant\.connected, statusLabel\)\}<\/span>`;/);
   assert.match(source, /const renderHomeRoleLine = \(game\) =>/);
   assert.match(source, /renderConnectionStatusIcon\(Boolean\(game\?\.myConnectionConnected\), getMyConnectionLabel\(game\)\)/);
-  assert.match(source, /if \(game\?\.myRole === "Guest"\) \{\s*return "";\s*\}/);
+  assert.match(source, /if \(game\?\.myRole === "Guest"\) \{\s*return game\?\.canJoinAsPlayer \? "Open to join as player" : "Open to view";\s*\}/);
   assert.match(source, /const renderHomeConnectionSummary = \(game\) =>/);
   assert.match(source, /const filteredSlots = isDualSeatIdentity\(game\) && isPlayerRole\(game\?\.myRole\)/);
   assert.match(source, /const connectionSummary = renderHomeConnectionSummary\(game\);/);

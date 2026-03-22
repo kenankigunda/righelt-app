@@ -184,7 +184,7 @@ const renderHomeRoleLine = (game) => {
     return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game?.myConnectionConnected), getMyConnectionLabel(game))}`;
   }
   if (game?.myRole === "Guest") {
-    return "";
+    return game?.canJoinAsPlayer ? "Open to join as player" : "Open to view";
   }
   return renderRoleLabel(game?.myRole, game);
 };
