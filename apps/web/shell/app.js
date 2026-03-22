@@ -159,22 +159,8 @@ const renderRoleLabel = (role, game = null) => {
 };
 const renderConnectionStatusIcon = (connected, label) =>
   `<span class="connection-status-icon${connected ? " is-connected" : " is-disconnected"}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
-const getMyConnectionLabel = (game) => {
-  const roles = Array.isArray(game?.myRoles) ? game.myRoles : game?.myRole ? [game.myRole] : [];
-  if (roles.includes("Player 1") && roles.includes("Player 2")) {
-    return `Both players ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
-  }
-  if (roles.includes("Player 1")) {
-    return `Player 1 ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
-  }
-  if (roles.includes("Player 2")) {
-    return `Player 2 ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
-  }
-  if (roles.includes("Viewer")) {
-    return `Viewer ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
-  }
-  return "Disconnected";
-};
+const getMyConnectionMessage = (game) =>
+  game?.myConnectionConnected ? "You have played recently" : "You have not played here recently";
 const renderPlayerSlotStatus = (seat, participant) => {
   if (!participant) {
     return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)} open</span>`;
@@ -184,18 +170,31 @@ const renderPlayerSlotStatus = (seat, participant) => {
 };
 const renderHomeRoleLine = (game) => {
   if (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) {
-    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game?.myConnectionConnected), getMyConnectionLabel(game))}`;
+    return `You are ${renderRoleLabel(game.myRole, game)}`;
   }
   if (game?.myRole === "Player 1") {
-    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game?.myConnectionConnected), getMyConnectionLabel(game))}`;
+    return `You are ${renderRoleLabel(game.myRole, game)}`;
   }
   if (game?.myRole === "Player 2") {
-    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game?.myConnectionConnected), getMyConnectionLabel(game))}`;
+    return `You are ${renderRoleLabel(game.myRole, game)}`;
   }
   if (game?.myRole === "Guest") {
     return game?.canJoinAsPlayer ? "Open to join as player" : "Open to view";
   }
   return renderRoleLabel(game?.myRole, game);
+};
+const renderHomeClientConnectionLine = (game) => {
+  if (
+    (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) ||
+    game?.myRole === "Player 1" ||
+    game?.myRole === "Player 2"
+  ) {
+    return `<p class="small mini-board-card-connection-line">${renderConnectionStatusIcon(
+      Boolean(game?.myConnectionConnected),
+      getMyConnectionMessage(game),
+    )}<span>${escapeHtml(getMyConnectionMessage(game))}</span></p>`;
+  }
+  return "";
 };
 const renderHomeConnectionSummary = (game) => {
   const slots = [
@@ -213,6 +212,20 @@ const renderHomeConnectionSummary = (game) => {
     return "";
   }
   return filteredSlots.map((entry) => renderPlayerSlotStatus(entry.seat, entry.participant)).join('<span class="mini-board-card-connection-separator">·</span>');
+};
+const renderHomeSeatConnectionLine = (game) => {
+  const connectionSummary = renderHomeConnectionSummary(game);
+  if (connectionSummary) {
+    return `<p class="small mini-board-card-connection-line">${connectionSummary}</p>`;
+  }
+  if (
+    (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) ||
+    game?.myRole === "Player 1" ||
+    game?.myRole === "Player 2"
+  ) {
+    return '<p class="small mini-board-card-connection-line is-placeholder" aria-hidden="true"><span>&nbsp;</span></p>';
+  }
+  return "";
 };
 const colorizePlayerReferences = (text) =>
   escapeHtml(text || "")
@@ -1069,7 +1082,11 @@ const renderHomeGameCard = (game) => {
   const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
   const moveLabel = Array.isArray(game.moves) ? `Move ${game.moves.length + 1}` : "Move pending";
   const recoveryChip = game.syncStatus === "desynced" ? '<span class="status-chip">Recovering</span>' : "";
-  const connectionSummary = renderHomeConnectionSummary(game);
+  const myConnectionLine = renderHomeClientConnectionLine(game);
+  const seatConnectionLine = renderHomeSeatConnectionLine(game);
+  const cardInfoLines = [myConnectionLine, seatConnectionLine]
+    .filter(Boolean)
+    .join("");
   return `<article class="mini-board-card">
     <a class="mini-board-card-link-surface" href="${buildGameHash(game.id, null, currentRoute.debug)}">
       <div class="mini-board-card-header">
@@ -1079,11 +1096,13 @@ const renderHomeGameCard = (game) => {
         </div>
         ${recoveryChip}
       </div>
-      <div class="mini-board-card-meta mini-board-card-meta-primary">
-        <span>${renderHomeRoleLine(game)}</span>
-        <span class="small">${escapeHtml(moveLabel)}</span>
+      <div class="mini-board-card-copy">
+        <div class="mini-board-card-meta mini-board-card-meta-primary">
+          <span>${renderHomeRoleLine(game)}</span>
+          <span class="small">${escapeHtml(moveLabel)}</span>
+        </div>
+        ${cardInfoLines}
       </div>
-      ${connectionSummary ? `<p class="small mini-board-card-connection-line">${connectionSummary}</p>` : ""}
       ${renderMiniBoardPreviewRoot({
         previewId: `home:${game.id}`,
         snapshot,

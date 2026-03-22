@@ -532,8 +532,19 @@ button.button-release-bounce,
   flex-wrap: wrap;
 }
 
+.mini-board-card-copy {
+  display: grid;
+  gap: 0.24rem;
+}
+
 .mini-board-card-meta-primary {
-  margin-bottom: -0.2rem;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.mini-board-card-meta-primary strong,
+.mini-board-card-meta-primary .small {
+  line-height: inherit;
 }
 
 .mini-board-card-link {
@@ -548,6 +559,11 @@ button.button-release-bounce,
   flex-wrap: wrap;
   align-items: center;
   gap: 0.45rem;
+  line-height: 1.2;
+}
+
+.mini-board-card-connection-line.is-placeholder {
+  visibility: hidden;
 }
 
 .mini-board-card-connection-item {
