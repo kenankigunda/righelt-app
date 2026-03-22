@@ -95,7 +95,7 @@ test("narrow-screen shell layout still collapses to one column without sticky ru
 test("home mini-board cards use uniform grid widths across wrapped rows", () => {
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-list\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(min\(100%, 18rem\), 24rem\)\);[\s\S]*justify-content:\s*start;[\s\S]*align-items:\s*stretch;/s,
+    /\.mini-board-card-list\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%, 22rem\), 1fr\)\);[\s\S]*align-items:\s*stretch;/s,
   );
   assert.match(
     shellStylesSource,
