@@ -18,6 +18,7 @@ import {
 } from "./scenarios.js";
 import { shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import {
+  FLYOUT_KEYS,
   buildGameHash,
   buildHomeHash,
   buildInviteHash,
@@ -100,6 +101,10 @@ let scenarioFeedback = "";
 const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
 let lastRenderedMarkup = "";
+let lastRenderedMainMarkup = "";
+let lastRenderedFlyoutMarkup = "";
+let lastRenderedRouteKey = "";
+let lastRenderedBaseRouteKey = "";
 const HISTORY_SELECTION_EXIT_MS = 56;
 const HISTORY_RELEASE_BOUNCE_MS = 140;
 let pressedHistoryActionEl = null;
@@ -461,10 +466,25 @@ const delay = (ms) =>
     window.setTimeout(resolve, ms);
   });
 const getCurrentFlyoutState = () => ({
-  debug: currentRoute.debug === true,
-  scenarios: currentRoute.scenarios === true,
+  ...Object.fromEntries(FLYOUT_KEYS.map((key) => [key, currentRoute[key] === true])),
 });
-const FLYOUT_KEYS = ["scenarios", "debug"];
+const getBaseRouteRenderKey = (route = currentRoute) => {
+  if (!route || typeof route !== "object") {
+    return "unknown";
+  }
+  if (route.name === "game") {
+    return `game:${route.gameId || ""}:${route.inviteFromRole || ""}`;
+  }
+  if (route.name === "invite") {
+    return `invite:${route.inviteToken || ""}`;
+  }
+  if (route.name === "tutorial") {
+    return `tutorial:${route.gameId || ""}`;
+  }
+  return String(route.name || "unknown");
+};
+const getRouteRenderKey = (route = currentRoute) =>
+  `${getBaseRouteRenderKey(route)}|${FLYOUT_KEYS.map((key) => `${key}:${route?.[key] === true}`).join("|")}`;
 let flyoutRenderOrder = FLYOUT_KEYS.filter((key) => currentRoute[key] === true);
 const syncFlyoutRenderOrder = (route = currentRoute) => {
   const openKeys = FLYOUT_KEYS.filter((key) => route[key] === true);
@@ -484,7 +504,7 @@ const setFlyoutOpenState = (key, isOpen) => {
     flyoutRenderOrder.push(key);
   }
 };
-const getOpenFlyoutCount = () => Number(currentRoute.debug === true) + Number(currentRoute.scenarios === true);
+const getOpenFlyoutCount = () => FLYOUT_KEYS.reduce((count, key) => count + Number(currentRoute[key] === true), 0);
 const getWideFlyoutWidth = (viewportWidth = window.innerWidth) => {
   const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize || "16") || 16;
   return Math.min(rootFontSize * 34, viewportWidth * 0.36);
@@ -503,8 +523,9 @@ const syncShellLayoutMode = () => {
   const layoutMode = getShellLayoutMode();
   if (appEl instanceof HTMLElement) {
     appEl.setAttribute("data-shell-layout-mode", layoutMode);
-    appEl.setAttribute("data-debug-open", currentRoute.debug ? "true" : "false");
-    appEl.setAttribute("data-scenarios-open", currentRoute.scenarios ? "true" : "false");
+    FLYOUT_KEYS.forEach((key) => {
+      appEl.setAttribute(`data-${key}-open`, currentRoute[key] ? "true" : "false");
+    });
     appEl.setAttribute("data-flyout-count", String(getOpenFlyoutCount()));
     appEl.setAttribute("data-shell-content-width", String(Math.round(getAvailableShellContentWidth())));
   }
@@ -739,12 +760,12 @@ const renderHeader = () => `
       <div class="nav-row">
         ${
           currentRoute.name !== "home"
-            ? `<a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}">Home</a>`
+            ? `<a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Home</a>`
             : ""
         }
         <button class="secondary" data-action="open-scenarios">Scenarios</button>
         <button class="secondary" data-action="open-debug">Debug mode</button>
-        <a class="button-link secondary" href="${buildTutorialHash(null, getCurrentFlyoutState())}">Tutorial</a>
+        <a class="button-link secondary" href="${buildTutorialHash(null, getCurrentFlyoutState())}" data-flyout-link="tutorial">Tutorial</a>
       </div>
     </div>
   </header>
@@ -920,17 +941,28 @@ const renderDebugFlyout = () => {
     body: renderDebugContent(),
   });
 };
+const FLYOUT_RENDERERS = {
+  scenarios: () => renderScenarioFlyout(),
+  debug: () => renderDebugFlyout(),
+};
+const renderFlyoutBodyByKey = (flyoutKey) => {
+  if (flyoutKey === "scenarios") {
+    const route = currentRoute;
+    const scenarioGameId = route.name === "game" ? route.gameId : route.name === "invite" ? resolvedInvite?.gameId || null : null;
+    const scenarioGame = scenarioGameId ? transport.getGameViewModel(scenarioGameId) : null;
+    return renderScenarioPanel({ route, game: scenarioGame });
+  }
+  if (flyoutKey === "debug") {
+    return renderDebugContent();
+  }
+  return "";
+};
 
 const renderFlyouts = () => {
   const flyouts = flyoutRenderOrder
     .map((key) => {
-      if (key === "scenarios") {
-        return renderScenarioFlyout();
-      }
-      if (key === "debug") {
-        return renderDebugFlyout();
-      }
-      return "";
+      const renderFlyoutByKey = FLYOUT_RENDERERS[key];
+      return typeof renderFlyoutByKey === "function" ? renderFlyoutByKey() : "";
     })
     .filter(Boolean);
   if (flyouts.length === 0) {
@@ -1139,7 +1171,9 @@ const renderJoinInvitePanel = (game, inviteLink) => {
           !game.showOfflineState && !busy ? "" : "disabled"
         }>Play as both players</button>`
       : "",
-    `<button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${game.canInvite && !busy ? "" : "disabled"}>Invite someone else</button>`,
+    `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-link="${escapeHtml(inviteLink)}" ${
+      game.canInvite && !busy ? "" : "disabled"
+    }>Invite someone else</button>`,
   ]);
 
   return `
@@ -1249,6 +1283,101 @@ const renderGameShellFrame = (game) => `
 
 const getMountedGameShellRoot = () =>
   appEl?.querySelector?.("[data-game-shell-root]") instanceof HTMLElement ? appEl.querySelector("[data-game-shell-root]") : null;
+const getMountedShellPageEl = () =>
+  appEl?.querySelector?.(".shell-page-shell") instanceof HTMLElement ? appEl.querySelector(".shell-page-shell") : null;
+const createMarkupRoot = (markup) => {
+  if (typeof markup !== "string" || markup.trim().length === 0) {
+    return null;
+  }
+  const template = document.createElement("template");
+  template.innerHTML = markup.trim();
+  return template.content.firstElementChild instanceof HTMLElement ? template.content.firstElementChild : null;
+};
+const getFlyoutAwareHref = (element) => {
+  if (!(element instanceof HTMLElement)) {
+    return "";
+  }
+  const target = element.getAttribute("data-flyout-link");
+  if (target === "home") {
+    return buildHomeHash(getCurrentFlyoutState());
+  }
+  if (target === "tutorial") {
+    return buildTutorialHash(null, getCurrentFlyoutState());
+  }
+  if (target === "game") {
+    const gameId = element.getAttribute("data-game-id");
+    return gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : "";
+  }
+  return "";
+};
+const syncFlyoutAwareLinks = () => {
+  if (!(appEl instanceof HTMLElement)) {
+    return;
+  }
+  Array.from(appEl.querySelectorAll("[data-flyout-link]")).forEach((linkEl) => {
+    if (!(linkEl instanceof HTMLAnchorElement)) {
+      return;
+    }
+    const href = getFlyoutAwareHref(linkEl);
+    if (href) {
+      linkEl.setAttribute("href", href);
+    }
+  });
+};
+const syncCopyInviteLinks = () => {
+  if (!(appEl instanceof HTMLElement)) {
+    return;
+  }
+  Array.from(appEl.querySelectorAll('[data-action="copy-invite"][data-game-id]')).forEach((buttonEl) => {
+    if (!(buttonEl instanceof HTMLElement)) {
+      return;
+    }
+    const gameId = buttonEl.getAttribute("data-game-id");
+    if (!gameId) {
+      return;
+    }
+    const game = transport.getGameViewModel(gameId);
+    const inviteToken = game?.inviteToken || resolvedInvite?.inviteToken || gameId;
+    const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(inviteToken, getCurrentFlyoutState())}`;
+    buttonEl.setAttribute("data-link", inviteLink);
+  });
+};
+const updateMountedFlyouts = () => {
+  const shellPageEl = getMountedShellPageEl();
+  if (!(shellPageEl instanceof HTMLElement)) {
+    return false;
+  }
+  const currentFlyoutStack = shellPageEl.querySelector("[data-shell-flyouts]");
+  const nextFlyoutMarkup = renderFlyouts();
+  if (!nextFlyoutMarkup) {
+    currentFlyoutStack?.remove();
+    return true;
+  }
+  const nextFlyoutStack = createMarkupRoot(nextFlyoutMarkup);
+  if (!(nextFlyoutStack instanceof HTMLElement)) {
+    return false;
+  }
+  if (currentFlyoutStack instanceof HTMLElement) {
+    currentFlyoutStack.replaceWith(nextFlyoutStack);
+  } else {
+    shellPageEl.append(nextFlyoutStack);
+  }
+  return true;
+};
+const shouldPatchMountedFlyouts = (routeKey = getRouteRenderKey(), baseRouteKey = getBaseRouteRenderKey()) =>
+  routeKey !== lastRenderedRouteKey &&
+  baseRouteKey === lastRenderedBaseRouteKey &&
+  appEl instanceof HTMLElement &&
+  appEl.querySelector(".shell-main-content") instanceof HTMLElement &&
+  getMountedShellPageEl() instanceof HTMLElement;
+const syncRenderedMarkupSnapshot = () => {
+  const mainContentEl = appEl?.querySelector?.(".shell-main-content");
+  lastRenderedMainMarkup = mainContentEl instanceof HTMLElement ? mainContentEl.outerHTML : "";
+  lastRenderedFlyoutMarkup = renderFlyouts();
+  lastRenderedMarkup = `<div class="shell-page-shell">${lastRenderedMainMarkup}${lastRenderedFlyoutMarkup}</div>`;
+  lastRenderedRouteKey = getRouteRenderKey();
+  lastRenderedBaseRouteKey = getBaseRouteRenderKey();
+};
 
 const reconcileMiniBoardPreviews = () => {
   if (!(appEl instanceof HTMLElement)) {
@@ -1354,25 +1483,20 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   if (includeBoard) {
     mountBoardForGame(game);
   }
-  const scenariosFlyoutEl = appEl?.querySelector?.('[data-flyout="scenarios"]');
-  if (scenariosFlyoutEl instanceof HTMLElement) {
-    scenariosFlyoutEl.classList.toggle("is-open", currentRoute.scenarios === true);
-    const scrollEl = scenariosFlyoutEl.querySelector(".shell-flyout-scroll");
-    if (scrollEl instanceof HTMLElement) {
-      const route = currentRoute;
-      const scenarioGameId = route.name === "game" ? route.gameId : route.name === "invite" ? resolvedInvite?.gameId || null : null;
-      const scenarioGame = scenarioGameId ? transport.getGameViewModel(scenarioGameId) : null;
-      scrollEl.innerHTML = renderScenarioPanel({ route, game: scenarioGame });
+  FLYOUT_KEYS.forEach((flyoutKey) => {
+    const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
+    if (!(flyoutEl instanceof HTMLElement)) {
+      return;
     }
-  }
-  const debugFlyoutEl = appEl?.querySelector?.('[data-flyout="debug"]');
-  if (debugFlyoutEl instanceof HTMLElement) {
-    debugFlyoutEl.classList.toggle("is-open", currentRoute.debug === true);
-    const scrollEl = debugFlyoutEl.querySelector(".shell-flyout-scroll");
+    flyoutEl.classList.toggle("is-open", currentRoute[flyoutKey] === true);
+    const scrollEl = flyoutEl.querySelector(".shell-flyout-scroll");
     if (scrollEl instanceof HTMLElement) {
-      scrollEl.innerHTML = renderDebugContent();
+      const body = renderFlyoutBodyByKey(flyoutKey);
+      if (body) {
+        scrollEl.innerHTML = body;
+      }
     }
-  }
+  });
   reconcileMiniBoardPreviews();
   scheduleGameShellStickyLayout();
   return true;
@@ -1382,9 +1506,10 @@ const doesMountedFlyoutStateMatchRoute = () => {
   if (!(appEl instanceof HTMLElement)) {
     return false;
   }
-  const debugFlyoutPresent = appEl.querySelector('[data-flyout="debug"]') instanceof HTMLElement;
-  const scenariosFlyoutPresent = appEl.querySelector('[data-flyout="scenarios"]') instanceof HTMLElement;
-  return debugFlyoutPresent === (currentRoute.debug === true) && scenariosFlyoutPresent === (currentRoute.scenarios === true);
+  return FLYOUT_KEYS.every((flyoutKey) => {
+    const flyoutPresent = appEl.querySelector(`[data-flyout="${flyoutKey}"]`) instanceof HTMLElement;
+    return flyoutPresent === (currentRoute[flyoutKey] === true);
+  });
 };
 
 const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
@@ -1543,7 +1668,7 @@ const renderInviteLanding = (inviteContext) => {
             <span class="small invite-choice-note">${escapeHtml(viewerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
-            <a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}">Back home</a>
+            <a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Back home</a>
           </div>
         </div>
         <p class="small">
@@ -1580,7 +1705,7 @@ const renderTutorial = (gameId) => {
 const renderNotFound = () => `
   <section class="panel">
     <h2>Route not found</h2>
-    <a class="button-link" href="${buildHomeHash(getCurrentFlyoutState())}">Return home</a>
+    <a class="button-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Return home</a>
   </section>
 `;
 
@@ -1715,7 +1840,38 @@ const destroyMountedBoardRuntime = () => {
 };
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
+  const routeKey = getRouteRenderKey();
+  const baseRouteKey = getBaseRouteRenderKey();
+  const shouldPatchFlyoutsOnly = shouldPatchMountedFlyouts(routeKey, baseRouteKey);
+  const previousPanelHeights = animatePanels && !shouldPatchFlyoutsOnly ? capturePanelHeights() : [];
+  const previousFlyoutRects = animatePanels ? captureFlyoutRects() : new Map();
   syncShellLayoutMode();
+  if (shouldPatchFlyoutsOnly) {
+    const currentGame =
+      currentRoute.name === "game"
+        ? transport.getGameViewModel(currentRoute.gameId)
+        : currentRoute.name === "invite" && resolvedInvite?.gameId
+          ? transport.getGameViewModel(resolvedInvite.gameId)
+          : null;
+    if (currentRoute.name === "game" && currentGame && shouldUseIncrementalGameShell() && getMountedGameShellRoot()?.getAttribute("data-game-id") === currentRoute.gameId) {
+      updateMountedGameShell({
+        game: currentGame,
+        inviteFromRole: currentRoute.inviteFromRole,
+        includeBoard,
+      });
+    }
+    updateMountedFlyouts();
+    syncFlyoutAwareLinks();
+    syncCopyInviteLinks();
+    updateHeaderFields();
+    reconcileMiniBoardPreviews();
+    if (animatePanels) {
+      animateFlyoutPositionChanges(previousFlyoutRects);
+    }
+    scheduleGameShellStickyLayout();
+    syncRenderedMarkupSnapshot();
+    return;
+  }
   const mountedGameShell = getMountedGameShellRoot();
   if (
     shouldUseIncrementalGameShell() &&
@@ -1730,8 +1886,6 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     return;
   }
 
-  const previousPanelHeights = animatePanels ? capturePanelHeights() : [];
-  const previousFlyoutRects = animatePanels ? captureFlyoutRects() : new Map();
   let body = "";
   if (currentRoute.name === "home") {
     body = renderHome();
@@ -1753,11 +1907,21 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (nextMarkup !== lastRenderedMarkup) {
     appEl.innerHTML = nextMarkup;
     lastRenderedMarkup = nextMarkup;
+    lastRenderedMainMarkup = `<div class="shell-main-content">${renderHeader()}${body}</div>`;
+    lastRenderedFlyoutMarkup = renderFlyouts();
+    lastRenderedRouteKey = routeKey;
+    lastRenderedBaseRouteKey = baseRouteKey;
     if (animatePanels) {
       animatePanelHeightChanges(previousPanelHeights);
       animateFlyoutPositionChanges(previousFlyoutRects);
     }
   }
+  if (nextMarkup === lastRenderedMarkup) {
+    lastRenderedRouteKey = routeKey;
+    lastRenderedBaseRouteKey = baseRouteKey;
+  }
+  syncFlyoutAwareLinks();
+  syncCopyInviteLinks();
   updateHeaderFields();
   reconcileMiniBoardPreviews();
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {

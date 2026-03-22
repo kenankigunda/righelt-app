@@ -1,10 +1,9 @@
 const HOME_ROUTE = { name: "home" };
+export const FLYOUT_KEYS = ["debug", "scenarios"];
 
 const trimSlash = (value) => value.replace(/^\/+|\/+$/g, "");
-const getFlyoutState = (query) => ({
-  debug: query.get("debug") === "1",
-  scenarios: query.get("scenarios") === "1",
-});
+const getFlyoutState = (query) =>
+  Object.fromEntries(FLYOUT_KEYS.map((key) => [key, query.get(key) === "1"]));
 const withFlyoutState = (route, query) => ({
   ...route,
   ...getFlyoutState(query),
@@ -55,26 +54,22 @@ export const parseRouteFromHash = (hash) => {
 
 const normalizeFlyoutState = (flyouts = {}) => {
   if (typeof flyouts === "boolean") {
-    return { debug: flyouts, scenarios: false };
+    return Object.fromEntries(FLYOUT_KEYS.map((key, index) => [key, index === 0 ? flyouts : false]));
   }
-  return {
-    debug: flyouts.debug === true,
-    scenarios: flyouts.scenarios === true,
-  };
+  return Object.fromEntries(FLYOUT_KEYS.map((key) => [key, flyouts[key] === true]));
 };
 
 const appendFlyoutQuery = (hash, flyouts = {}) => {
-  const { debug, scenarios } = normalizeFlyoutState(flyouts);
-  if (!debug && !scenarios) {
+  const normalizedFlyouts = normalizeFlyoutState(flyouts);
+  if (!FLYOUT_KEYS.some((key) => normalizedFlyouts[key] === true)) {
     return hash;
   }
   const query = new URLSearchParams();
-  if (debug) {
-    query.set("debug", "1");
-  }
-  if (scenarios) {
-    query.set("scenarios", "1");
-  }
+  FLYOUT_KEYS.forEach((key) => {
+    if (normalizedFlyouts[key] === true) {
+      query.set(key, "1");
+    }
+  });
   return `${hash}${hash.includes("?") ? "&" : "?"}${query.toString()}`;
 };
 
@@ -139,8 +134,7 @@ const toggleFlyoutHash = (hash, flyoutKey) => {
   const raw = hash && hash !== "#" ? hash : "#/";
   const parsed = parseRouteFromHash(raw);
   return buildHashForParsedRoute(parsed, {
-    debug: parsed.debug,
-    scenarios: parsed.scenarios,
+    ...normalizeFlyoutState(parsed),
     [flyoutKey]: !parsed[flyoutKey],
   });
 };
