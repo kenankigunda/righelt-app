@@ -26,6 +26,14 @@ const findRoleForIdentity = (game, identityId) => {
   return "Guest";
 };
 
+const getRolesForIdentity = (game, identityId) => {
+  const roles = [];
+  if (game.player1?.identityId === identityId) roles.push("Player 1");
+  if (game.player2?.identityId === identityId) roles.push("Player 2");
+  if (game.viewers.some((viewer) => viewer.identityId === identityId)) roles.push("Viewer");
+  return roles;
+};
+
 const ensureViewer = (game, identityId) => {
   if (game.viewers.some((viewer) => viewer.identityId === identityId)) {
     return;
@@ -367,10 +375,20 @@ export const createShellStore = ({
     const game = getGame(gameId);
     if (!game) return null;
 
-    const role = findRoleForIdentity(game, identityId);
+    const myRoles = getRolesForIdentity(game, identityId);
+    const role = myRoles[0] ?? "Guest";
+    const myConnectionConnected =
+      myRoles.length > 0 &&
+      myRoles.every((entry) => {
+        if (entry === "Player 1") return Boolean(game.player1?.connected);
+        if (entry === "Player 2") return Boolean(game.player2?.connected);
+        return game.viewers.some((viewer) => viewer.identityId === identityId && viewer.connected);
+      });
     return {
       ...clone(game),
       myRole: role,
+      myRoles,
+      myConnectionConnected,
       inHistoryMode: typeof game.historyIndex === "number",
       currentSnapshot:
         typeof game.historyIndex === "number" && game.moves[game.historyIndex]

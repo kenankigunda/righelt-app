@@ -12,6 +12,7 @@
   --accent-2: #c94c33;
   --player-p1: #c2452f;
   --player-p2: #2d67c7;
+  --player-both: #7b53ab;
 }
 
 body {
@@ -139,6 +140,10 @@ body {
 
 .player-tone-p2 {
   color: var(--player-p2);
+}
+
+.player-tone-both {
+  color: var(--player-both);
 }
 
 .player-tone-neutral {
@@ -812,6 +817,12 @@ pre {
 #side-to-move.player-tone-p2,
 #board-turn-indicator.player-tone-p2 {
   color: var(--player-p2);
+}
+
+#move-log li.player-tone-both,
+#side-to-move.player-tone-both,
+#board-turn-indicator.player-tone-both {
+  color: var(--player-both);
 }
 
 #move-log li.player-tone-neutral {

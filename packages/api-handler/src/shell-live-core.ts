@@ -16,6 +16,7 @@ export type Participant = {
 };
 
 export type Viewer = Participant;
+export type IdentityRole = "Player 1" | "Player 2" | "Viewer";
 
 export type JoinRequest = {
   identityId: string;
@@ -387,10 +388,34 @@ export const copyParticipantsBetweenGames = (source: LiveGame, target: LiveGame)
 };
 
 export const findRoleForIdentity = (game: LiveGame, identityId: string): "Player 1" | "Player 2" | "Viewer" | "Guest" => {
-  if (game.player1?.identityId === identityId) return "Player 1";
-  if (game.player2?.identityId === identityId) return "Player 2";
-  if (game.viewers.some((viewer) => viewer.identityId === identityId)) return "Viewer";
-  return "Guest";
+  return getRolesForIdentity(game, identityId)[0] ?? "Guest";
+};
+
+export const getRolesForIdentity = (game: LiveGame, identityId: string): IdentityRole[] => {
+  const roles: IdentityRole[] = [];
+  if (game.player1?.identityId === identityId) roles.push("Player 1");
+  if (game.player2?.identityId === identityId) roles.push("Player 2");
+  if (game.viewers.some((viewer) => viewer.identityId === identityId)) roles.push("Viewer");
+  return roles;
+};
+
+export const getParticipantsForIdentity = (
+  game: LiveGame,
+  identityId: string,
+): Array<{ role: IdentityRole; participant: Participant }> => {
+  const matches: Array<{ role: IdentityRole; participant: Participant }> = [];
+  if (game.player1?.identityId === identityId) {
+    matches.push({ role: "Player 1", participant: game.player1 });
+  }
+  if (game.player2?.identityId === identityId) {
+    matches.push({ role: "Player 2", participant: game.player2 });
+  }
+  for (const viewer of game.viewers) {
+    if (viewer.identityId === identityId) {
+      matches.push({ role: "Viewer", participant: viewer });
+    }
+  }
+  return matches;
 };
 
 export const getSeatIdentity = (game: LiveGame, seat: "Player 1" | "Player 2"): string | null =>
@@ -444,16 +469,16 @@ export const promoteIdentityToSeat = (
   identityId: string,
   sessionCount = 0,
 ) => {
-  const existingViewer = game.viewers.find((viewer) => viewer.identityId === identityId) ?? null;
-  const joinedAt = existingViewer?.joinedAt ?? now();
-  const lastHeartbeatAt = existingViewer?.lastHeartbeatAt ?? joinedAt;
+  const existingParticipant = getParticipantsForIdentity(game, identityId)[0]?.participant ?? null;
+  const joinedAt = existingParticipant?.joinedAt ?? now();
+  const lastHeartbeatAt = existingParticipant?.lastHeartbeatAt ?? joinedAt;
   removeViewer(game, identityId);
   const participant: Participant = {
     identityId,
-    connected: sessionCount > 0,
+    connected: existingParticipant?.connected ?? sessionCount > 0,
     joinedAt,
     lastHeartbeatAt,
-    sessionCount,
+    sessionCount: existingParticipant?.sessionCount ?? sessionCount,
   };
   if (seat === "Player 1") {
     game.player1 = participant;
@@ -502,18 +527,41 @@ const getJoinAsViewerDisabledReason = (game: LiveGame, offline: boolean, myRole:
 };
 
 export const withViewModel = (game: LiveGame, identityId: string, offline = false) => {
-  const myRole = findRoleForIdentity(game, identityId);
-  const historyIndex = typeof game.historyIndexByIdentity[identityId] === "number" ? game.historyIndexByIdentity[identityId] : null;
+  const historyIndexByIdentity = game.historyIndexByIdentity ?? {};
+  const moves = Array.isArray(game.moves) ? game.moves : [];
+  const turns = Array.isArray(game.turns) ? game.turns : [];
+  const pendingJoinRequests = Array.isArray(game.pendingJoinRequests) ? game.pendingJoinRequests : [];
+  const inviteTokens = game.inviteTokens ?? {
+    viewer: "",
+    player1: "",
+    player2: "",
+  };
+  const myRoles = getRolesForIdentity(
+    {
+      ...game,
+      viewers: Array.isArray(game.viewers) ? game.viewers : [],
+    },
+    identityId,
+  );
+  const myRole = myRoles[0] ?? "Guest";
+  const myConnectionConnected = myRoles.length > 0
+    ? myRoles.every((role) => {
+        if (role === "Player 1") return Boolean(game.player1?.connected);
+        if (role === "Player 2") return Boolean(game.player2?.connected);
+        return game.viewers.some((viewer) => viewer.identityId === identityId && viewer.connected);
+      })
+    : false;
+  const historyIndex = typeof historyIndexByIdentity[identityId] === "number" ? historyIndexByIdentity[identityId] : null;
   const inHistoryMode = typeof historyIndex === "number";
   const currentSnapshot =
-    typeof historyIndex === "number" && game.moves[historyIndex]
-      ? game.moves[historyIndex].selectionSnapshot
+    typeof historyIndex === "number" && moves[historyIndex]
+      ? moves[historyIndex].selectionSnapshot
       : game.board.state;
   const historySelectionAction =
-    typeof historyIndex === "number" && game.moves[historyIndex]
-      ? clone(game.moves[historyIndex].action)
+    typeof historyIndex === "number" && moves[historyIndex]
+      ? clone(moves[historyIndex].action)
       : null;
-  const activeTurn = getActiveTurn(game);
+  const activeTurn = turns[turns.length - 1] ?? null;
   const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(game);
   const controlSeat = getControlSeatForTurn(game.board.state, turnOwnerSeat);
   const sideToMoveIdentity = getSeatIdentity(game, controlSeat);
@@ -521,10 +569,10 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
   const isPlayer = myRole === "Player 1" || myRole === "Player 2";
   const legalNow = listLegalActions(game.board.state);
   const offlineTurnControlAllowed = !offline || canOperateOfflinePlaygroundTurn(game, identityId);
-  const approvableRequesterIds = game.pendingJoinRequests
+  const approvableRequesterIds = pendingJoinRequests
     .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
     .map((request) => request.identityId);
-  const myPendingJoinRequest = game.pendingJoinRequests.find((request) => request.identityId === identityId) ?? null;
+  const myPendingJoinRequest = pendingJoinRequests.find((request) => request.identityId === identityId) ?? null;
   const joinAsPlayerDisabledReason = getJoinAsPlayerDisabledReason(game, offline, myRole);
   const joinAsViewerDisabledReason = getJoinAsViewerDisabledReason(game, offline, myRole);
 
@@ -533,6 +581,8 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     historyIndexByIdentity: undefined,
     historyIndex,
     myRole,
+    myRoles,
+    myConnectionConnected,
     inHistoryMode,
     currentSnapshot,
     canJoinAsPlayer: !joinAsPlayerDisabledReason,
@@ -543,10 +593,10 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     canInvite: !offline && !game.offlineLocal,
     inviteToken:
       myRole === "Player 1"
-        ? game.inviteTokens.player1
+        ? inviteTokens.player1
         : myRole === "Player 2"
-          ? game.inviteTokens.player2
-          : game.inviteTokens.viewer,
+          ? inviteTokens.player2
+          : inviteTokens.viewer,
     showOfflineState: offline || game.offlineLocal,
     showJoinActions: !offline && !game.offlineLocal,
     canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,

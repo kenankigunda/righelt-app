@@ -20,6 +20,7 @@ export type PresenceChangedEvent = {
   eventSeq: number;
   identityId: string;
   role: "Player 1" | "Player 2" | "Viewer";
+  roles?: Array<"Player 1" | "Player 2" | "Viewer">;
   connected: boolean;
   game: LiveGamePayload;
 };

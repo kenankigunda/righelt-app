@@ -30,6 +30,29 @@ test("shell header stacks cleanly on narrow screens", () => {
   );
 });
 
+test("shell header separates layout spacing from panel chrome and home start panel stays chromeless", () => {
+  assert.doesNotMatch(
+    shellStylesSource,
+    /^\*\s*\{/m,
+  );
+  assert.doesNotMatch(
+    shellStylesSource,
+    /\.panel\s*\{/,
+  );
+  assert.doesNotMatch(
+    shellStylesSource,
+    /\.meta,\s*$/m,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-header\s*\{[\s\S]*display:\s*flex;[\s\S]*border-radius:\s*14px;[\s\S]*padding:\s*0\.9rem 1rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-start-panel\s*\{[\s\S]*background:\s*transparent;[\s\S]*border:\s*0;/s,
+  );
+});
+
 test("wide-screen shell sticky columns only target the left and board stacks", () => {
   assert.match(
     shellStylesSource,
@@ -89,5 +112,24 @@ test("narrow-screen shell layout still collapses to one column without sticky ru
   assert.doesNotMatch(
     shellStylesSource,
     /#app\[data-shell-layout-mode="narrow"\]\s+\.layout-grid > \[data-shell-sticky-target\][\s\S]*position:\s*sticky;/s,
+  );
+});
+
+test("home mini-board cards use uniform grid widths across wrapped rows", () => {
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-list\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%, 22rem\), 1fr\)\);[\s\S]*align-items:\s*stretch;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card\s*\{[\s\S]*display:\s*grid;[\s\S]*width:\s*100%;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-link-surface\s*\{[\s\S]*display:\s*grid;[\s\S]*width:\s*100%;[\s\S]*padding:\s*0\.85rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-games-section-header\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;[\s\S]*flex-wrap:\s*wrap;/s,
   );
 });

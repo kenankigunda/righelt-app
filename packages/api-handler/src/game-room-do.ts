@@ -26,6 +26,8 @@ import {
   enumeratePieceActionPreviews,
   enumeratePieceActions,
   findRoleForIdentity,
+  getParticipantsForIdentity,
+  getRolesForIdentity,
   getActiveTurn,
   getApproverIdentityForSeat,
   getSeatIdentity,
@@ -586,7 +588,7 @@ export class GameRoomDO {
       return null;
     }
     const projection = await loadGameProjection(this.env, gameId);
-    if (!projection) {
+    if (!projection || projection.kind === "invalid") {
       return null;
     }
     this.game = projection.game;
@@ -602,7 +604,7 @@ export class GameRoomDO {
     this.requestedGameId = gameId;
     if (!this.game) {
       const projection = await loadGameProjection(this.env, gameId);
-      if (projection) {
+      if (projection?.kind === "ok") {
         this.game = projection.game;
         this.eventSeq = projection.eventSeq;
       }
@@ -625,24 +627,21 @@ export class GameRoomDO {
       return;
     }
     const sessionCount = this.getSessionCount(identityId);
-    const role = findRoleForIdentity(game, identityId);
-    if (role === "Guest") {
+    const participants = getParticipantsForIdentity(game, identityId);
+    if (participants.length === 0) {
       return;
     }
-    const participant =
-      role === "Player 1"
-        ? game.player1
-        : role === "Player 2"
-          ? game.player2
-          : game.viewers.find((viewer) => viewer.identityId === identityId) ?? null;
-    if (!participant) {
-      return;
-    }
+    const roles = getRolesForIdentity(game, identityId);
     const connected = sessionCount > 0;
-    const changed = participant.connected !== connected || participant.sessionCount !== sessionCount;
-    participant.connected = connected;
-    participant.sessionCount = sessionCount;
-    participant.lastHeartbeatAt = now();
+    const lastHeartbeatAt = now();
+    const changed = participants.some(
+      ({ participant }) => participant.connected !== connected || participant.sessionCount !== sessionCount,
+    );
+    for (const { participant } of participants) {
+      participant.connected = connected;
+      participant.sessionCount = sessionCount;
+      participant.lastHeartbeatAt = lastHeartbeatAt;
+    }
     if (!changed) {
       await persistGameState(this.env, game, this.eventSeq, null);
       return;
@@ -651,7 +650,8 @@ export class GameRoomDO {
       type: "presence_changed",
       eventSeq: this.eventSeq + 1,
       identityId,
-      role,
+      role: roles[0] ?? "Viewer",
+      roles,
       connected,
       game: clone(game),
     };

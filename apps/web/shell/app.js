@@ -110,6 +110,7 @@ const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;
 const SHELL_VIEWPORT_GUTTER_PX = 16;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
+const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
 
 const escapeHtml = (value) =>
   String(value)
@@ -132,14 +133,77 @@ const getControlSeatForTurn = (state, turnOwnerSeat) => {
   }
   return turnOwnerSeat;
 };
-const playerToneClassForSeat = (seat) => (seat === "Player 1" ? "player-tone-p1" : seat === "Player 2" ? "player-tone-p2" : "player-tone-neutral");
+const playerToneClassForSeat = (seat) =>
+  seat === "Player 1" ? "player-tone-p1" : seat === "Player 2" ? "player-tone-p2" : seat === "Both Players" ? "player-tone-both" : "player-tone-neutral";
 const playerToneClassForSide = (side) => (side === "P1" ? "player-tone-p1" : side === "P2" ? "player-tone-p2" : "player-tone-neutral");
 const renderSeatLabel = (seat) => `<span class="${playerToneClassForSeat(seat)}">${escapeHtml(seat || "Unknown")}</span>`;
-const renderRoleLabel = (role) => {
+const isDualSeatIdentity = (game) =>
+  Boolean(game?.player1?.identityId) && Boolean(game?.player2?.identityId) && game.player1.identityId === game.player2.identityId;
+const renderRoleLabel = (role, game = null) => {
+  if (isDualSeatIdentity(game) && isPlayerRole(role)) {
+    return '<strong class="player-tone-both">both players</strong>';
+  }
   if (role === "Player 1" || role === "Player 2") {
     return `<strong class="${playerToneClassForSeat(role)}">${escapeHtml(role)}</strong>`;
   }
   return `<strong>${escapeHtml(role || "Unknown")}</strong>`;
+};
+const renderConnectionStatusIcon = (connected, label) =>
+  `<span class="connection-status-icon${connected ? " is-connected" : " is-disconnected"}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
+const getMyConnectionLabel = (game) => {
+  const roles = Array.isArray(game?.myRoles) ? game.myRoles : game?.myRole ? [game.myRole] : [];
+  if (roles.includes("Player 1") && roles.includes("Player 2")) {
+    return `Both players ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
+  }
+  if (roles.includes("Player 1")) {
+    return `Player 1 ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
+  }
+  if (roles.includes("Player 2")) {
+    return `Player 2 ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
+  }
+  if (roles.includes("Viewer")) {
+    return `Viewer ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
+  }
+  return "Disconnected";
+};
+const renderPlayerSlotStatus = (seat, participant) => {
+  if (!participant) {
+    return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)} open</span>`;
+  }
+  const statusLabel = `${seat} ${participant.connected ? "connected" : "disconnected"}`;
+  return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)}${renderConnectionStatusIcon(participant.connected, statusLabel)}</span>`;
+};
+const renderHomeRoleLine = (game) => {
+  if (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) {
+    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game?.myConnectionConnected), getMyConnectionLabel(game))}`;
+  }
+  if (game?.myRole === "Player 1") {
+    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game?.myConnectionConnected), getMyConnectionLabel(game))}`;
+  }
+  if (game?.myRole === "Player 2") {
+    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game?.myConnectionConnected), getMyConnectionLabel(game))}`;
+  }
+  if (game?.myRole === "Guest") {
+    return game?.canJoinAsPlayer ? "Open to join as player" : "Open to view";
+  }
+  return renderRoleLabel(game?.myRole, game);
+};
+const renderHomeConnectionSummary = (game) => {
+  const slots = [
+    { seat: "Player 1", participant: game?.player1 ?? null },
+    { seat: "Player 2", participant: game?.player2 ?? null },
+  ];
+  const filteredSlots = isDualSeatIdentity(game) && isPlayerRole(game?.myRole)
+    ? []
+    : slots.filter((entry) => {
+        if (game?.myRole === "Player 1") return entry.seat !== "Player 1";
+        if (game?.myRole === "Player 2") return entry.seat !== "Player 2";
+        return true;
+      });
+  if (filteredSlots.length === 0) {
+    return "";
+  }
+  return filteredSlots.map((entry) => renderPlayerSlotStatus(entry.seat, entry.participant)).join('<span class="mini-board-card-connection-separator">·</span>');
 };
 const colorizePlayerReferences = (text) =>
   escapeHtml(text || "")
@@ -204,8 +268,20 @@ const formatSideToMoveLabel = (snapshot) => {
   return "Turn unknown";
 };
 
-const getGamePreviewSnapshot = (game) => game?.currentSnapshot ?? game?.board?.state ?? null;
+const getGamePreviewSnapshot = (game) => game?.liveCurrentSnapshot ?? game?.board?.state ?? game?.currentSnapshot ?? null;
 const getScenarioPreviewSnapshot = (scenario) => scenario?.resultingState ?? scenario?.initialState ?? null;
+const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
+const gameIncludesIdentity = (game, identityId) => {
+  if (!game || !identityId) {
+    return false;
+  }
+  return (
+    game.player1?.identityId === identityId ||
+    game.player2?.identityId === identityId ||
+    (Array.isArray(game.viewers) && game.viewers.some((viewer) => viewer?.identityId === identityId)) ||
+    (Array.isArray(game.pendingJoinRequests) && game.pendingJoinRequests.some((request) => request?.identityId === identityId))
+  );
+};
 
 const renderPlaceholderBadge = () => '<span class="status-chip offline">Not yet implemented</span>';
 const renderSectionActions = (actions) => {
@@ -736,70 +812,67 @@ const getInviteContextForGame = (game, routeName = currentRoute.name) => {
   };
 };
 
+const renderHomeGameCard = (game) => {
+  const snapshot = getGamePreviewSnapshot(game);
+  const previewKey = toStableKey(snapshot);
+  const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
+  const moveLabel = Array.isArray(game.moves) ? `Move ${game.moves.length + 1}` : "Move pending";
+  const recoveryChip = game.syncStatus === "desynced" ? '<span class="status-chip">Recovering</span>' : "";
+  const connectionSummary = renderHomeConnectionSummary(game);
+  return `<article class="mini-board-card">
+    <a class="mini-board-card-link-surface" href="${buildGameHash(game.id, null, currentRoute.debug)}">
+      <div class="mini-board-card-header">
+        <div>
+          <span class="mini-board-card-link">${escapeHtml(formatDisplayGameId(game.id))}</span>
+          <p class="small mini-board-card-subtitle">As of ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
+        </div>
+        ${recoveryChip}
+      </div>
+      <div class="mini-board-card-meta mini-board-card-meta-primary">
+        <span>${renderHomeRoleLine(game)}</span>
+        <span class="small">${escapeHtml(moveLabel)}</span>
+      </div>
+      ${connectionSummary ? `<p class="small mini-board-card-connection-line">${connectionSummary}</p>` : ""}
+      ${renderMiniBoardPreviewRoot({
+        previewId: `home:${game.id}`,
+        snapshot,
+        previewKey,
+      })}
+      <p class="small mini-board-preview-status">${escapeHtml(statusText)}</p>
+    </a>
+  </article>`;
+};
+
+const renderHomeGameSection = (title, games) => {
+  if (!Array.isArray(games) || games.length === 0) {
+    return "";
+  }
+  return `<section class="panel home-games-section">
+    <div class="home-games-section-header">
+      <h2>${escapeHtml(title)}</h2>
+      <p class="small">${games.length === 1 ? "1 game" : `${games.length} games`}</p>
+    </div>
+    <div class="mini-board-card-list">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
+  </section>`;
+};
+
 const renderHome = () => {
   const games = transport.listGames();
-  const listHtml =
-    games.length === 0
-      ? "<p class=\"small\">No games yet.</p>"
-      : `<div class="mini-board-card-list">${games
-          .map((game) => {
-            const snapshot = getGamePreviewSnapshot(game);
-            const previewKey = toStableKey(snapshot);
-            const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
-            const liveStateLabel = game.inHistoryMode ? "History view" : "Live view";
-            const turnLabel =
-              game.currentTurn && typeof game.currentTurn.index === "number"
-                ? `Turn ${game.currentTurn.index + 1}`
-                : "Turn pending";
-            return `<article class="mini-board-card">
-              <div class="mini-board-card-header">
-                <div>
-                  <a class="mini-board-card-link" href="${buildGameHash(game.id, null, currentRoute.debug)}">${escapeHtml(
-                    formatDisplayGameId(game.id),
-                  )}</a>
-                  <p class="small mini-board-card-subtitle">Latest ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
-                </div>
-                <span class="status-chip">${escapeHtml(game.syncStatus === "desynced" ? "Recovering" : liveStateLabel)}</span>
-              </div>
-              <div class="mini-board-card-meta">
-                <span>${renderRoleLabel(game.myRole)}</span>
-                <span class="small">${escapeHtml(turnLabel)}</span>
-              </div>
-              ${renderMiniBoardPreviewRoot({
-                previewId: `home:${game.id}`,
-                snapshot,
-                previewKey,
-              })}
-              <p class="small mini-board-preview-status">${escapeHtml(statusText)}</p>
-            </article>`;
-          })
-          .join("")}</div>`;
+  const smokeGames = games.filter((game) => gameIncludesIdentity(game, DEPLOY_SMOKE_PLAYER_ID));
+  const visibleGames = currentRoute.debug ? games.filter((game) => !gameIncludesIdentity(game, DEPLOY_SMOKE_PLAYER_ID)) : games;
+  const myGames = visibleGames.filter((game) => isPlayerRole(game.myRole));
+  const otherGames = visibleGames.filter((game) => !isPlayerRole(game.myRole));
+  const sectionHtml = `${renderHomeGameSection("My games", myGames)}${renderHomeGameSection("Other games", otherGames)}${
+    currentRoute.debug ? renderHomeGameSection("Deploy smoke player", smokeGames) : ""
+  }`;
+  const listHtml = sectionHtml || `<section class="panel"><p class="small">No games yet.</p></section>`;
 
   return `
-    <section class="layout-grid">
-      <div class="stack">
-        <section class="panel">
-          <h2>Start</h2>
-          <div class="row">
-            <button data-action="create-game" ${busy ? "disabled" : ""}>Play with friends</button>
-            <button data-action="create-offline-playground" class="warn" ${busy ? "disabled" : ""}>Play locally</button>
-          </div>
-          <p class="small">Server-backed game sessions with live state transitions.</p>
-        </section>
-
-        <section class="panel">
-          <h2>Active Games</h2>
-          ${listHtml}
-        </section>
-      </div>
-
-      <div class="stack">
-        <section class="panel">
-          <h2>Preview Board ${renderPlaceholderBadge()}</h2>
-          <p class="small">Non-authoritative preview sequence.</p>
-          <div class="preview">Preview replay surface</div>
-        </section>
-      </div>
+    <section class="stack">
+      <section class="panel home-start-panel">
+        <button class="home-start-button" data-action="create-game" ${busy ? "disabled" : ""}>Start new game</button>
+      </section>
+      ${listHtml}
     </section>
   `;
 };
@@ -828,7 +901,7 @@ const renderGameSummaryPanel = (game) => {
     <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
     <div class="section-stack">
       <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
-      <p class="small">Role: ${renderRoleLabel(game.myRole)}</p>
+      <p class="small">Role: ${renderRoleLabel(game.myRole, game)}</p>
       <div class="section-followup">
         <p class="small">Active turn: ${
           game.currentTurn
@@ -1933,7 +2006,7 @@ appEl.addEventListener("pointerdown", (event) => {
   if (!(target instanceof HTMLElement)) {
     return;
   }
-  const controlEl = target.closest("button, .button-link");
+  const controlEl = target.closest("button, .button-link, .mini-board-card-link-surface");
   if (controlEl instanceof HTMLElement) {
     startControlPress(controlEl);
   }

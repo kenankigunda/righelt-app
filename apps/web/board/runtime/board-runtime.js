@@ -11,7 +11,7 @@ import {
 } from "../../interaction.js";
 import { buildPieceMoveResponse } from "../client-move-generation.js";
 
-const PLAYER_TONE_CLASSES = ["player-tone-p1", "player-tone-p2", "player-tone-neutral"];
+const PLAYER_TONE_CLASSES = ["player-tone-p1", "player-tone-p2", "player-tone-both", "player-tone-neutral"];
 
 const escapeHtml = (value) =>
   String(value)
