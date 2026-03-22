@@ -312,6 +312,24 @@ const getAnimatedFlyoutKey = (element) => {
   const flyoutKey = element.getAttribute("data-flyout");
   return flyoutKey ? `flyout:${flyoutKey}` : "";
 };
+const getCssPixelValue = (value, fallback = 0) => {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+const getFlyoutContentGapPx = () =>
+  getCssPixelValue(window.getComputedStyle(document.documentElement).getPropertyValue("--shell-flyout-content-gap"), 0);
+const getShellMainMaxWidthPx = () =>
+  getCssPixelValue(window.getComputedStyle(document.documentElement).getPropertyValue("--shell-main-max-width"), 1200);
+const getWideShellPaddingRightPx = (openFlyoutCount, viewportWidth = window.innerWidth) => {
+  if (openFlyoutCount <= 0) {
+    return 0;
+  }
+  return (getWideFlyoutWidth(viewportWidth) * openFlyoutCount) + getFlyoutContentGapPx();
+};
+const getWideMainContentWidthPx = (openFlyoutCount, viewportWidth = window.innerWidth) => {
+  const rightReserved = openFlyoutCount > 0 ? getWideShellPaddingRightPx(openFlyoutCount, viewportWidth) : SHELL_VIEWPORT_GUTTER_PX;
+  return Math.max(0, Math.min(getShellMainMaxWidthPx(), viewportWidth - SHELL_VIEWPORT_GUTTER_PX - rightReserved));
+};
 const captureFlyoutRects = () =>
   new Map(
     getAnimatedFlyoutEls().map((element) => [
@@ -380,6 +398,18 @@ const animateFlyoutPositionChanges = (previousRects) => {
       fromOpacity: 0,
     });
   });
+};
+const clearCoordinatedFlyoutMotionStyles = () => {
+  if (appEl instanceof HTMLElement) {
+    appEl.style.transition = "";
+    appEl.style.paddingRight = "";
+  }
+  const mainContentEl = appEl?.querySelector?.(".shell-main-content");
+  if (mainContentEl instanceof HTMLElement) {
+    mainContentEl.style.transition = "";
+    mainContentEl.style.width = "";
+    mainContentEl.style.maxWidth = "";
+  }
 };
 const capturePanelHeights = () =>
   getAnimatedPanels().map((panelEl) => (panelEl instanceof HTMLElement ? panelEl.getBoundingClientRect().height : null));
@@ -1968,12 +1998,58 @@ appEl.addEventListener("click", async (event) => {
 
   const animateFlyoutClose = async (flyoutKey, toggleHashBuilder) => {
     const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
+    const mainContentEl = appEl?.querySelector?.(".shell-main-content");
+    const layoutMode = getShellLayoutMode();
     if (flyoutEl instanceof HTMLElement && !prefersReducedMotion()) {
-      flyoutEl.classList.add("is-closing");
+      if (layoutMode === "wide") {
+        const nextFlyoutCount = Math.max(0, getOpenFlyoutCount() - 1);
+        const currentAppPaddingRight = window.getComputedStyle(appEl).paddingRight;
+        const nextAppPaddingRight = getWideShellPaddingRightPx(nextFlyoutCount);
+        if (appEl instanceof HTMLElement) {
+          appEl.style.transition = "none";
+          appEl.style.paddingRight = currentAppPaddingRight;
+        }
+        if (mainContentEl instanceof HTMLElement) {
+          const currentMainWidth = mainContentEl.getBoundingClientRect().width;
+          mainContentEl.style.transition = "none";
+          mainContentEl.style.width = `${currentMainWidth}px`;
+          mainContentEl.style.maxWidth = `${currentMainWidth}px`;
+        }
+        flyoutEl.style.transition = "none";
+        flyoutEl.style.width = `${flyoutEl.getBoundingClientRect().width}px`;
+        flyoutEl.style.maxWidth = `${flyoutEl.getBoundingClientRect().width}px`;
+        void flyoutEl.offsetHeight;
+        if (appEl instanceof HTMLElement) {
+          appEl.style.transition = `padding-right ${FLYOUT_MOTION_MS}ms ease`;
+          appEl.style.paddingRight = nextAppPaddingRight > 0 ? `${nextAppPaddingRight}px` : "0px";
+        }
+        if (mainContentEl instanceof HTMLElement) {
+          const nextMainWidth = getWideMainContentWidthPx(nextFlyoutCount);
+          mainContentEl.style.transition = `width ${FLYOUT_MOTION_MS}ms ease, max-width ${FLYOUT_MOTION_MS}ms ease`;
+          mainContentEl.style.width = `${nextMainWidth}px`;
+          mainContentEl.style.maxWidth = `${nextMainWidth}px`;
+        }
+        flyoutEl.style.transition = `transform ${FLYOUT_MOTION_MS}ms ease, opacity ${FLYOUT_MOTION_MS}ms ease, width ${FLYOUT_MOTION_MS}ms ease, max-width ${FLYOUT_MOTION_MS}ms ease`;
+        flyoutEl.classList.add("is-closing");
+        flyoutEl.style.width = "0px";
+        flyoutEl.style.maxWidth = "0px";
+      } else {
+        flyoutEl.style.transition = "none";
+        flyoutEl.style.height = `${flyoutEl.getBoundingClientRect().height}px`;
+        flyoutEl.style.maxHeight = `${flyoutEl.getBoundingClientRect().height}px`;
+        void flyoutEl.offsetHeight;
+        flyoutEl.style.transition = `transform ${FLYOUT_MOTION_MS}ms ease, opacity ${FLYOUT_MOTION_MS}ms ease, height ${FLYOUT_MOTION_MS}ms ease, max-height ${FLYOUT_MOTION_MS}ms ease`;
+        flyoutEl.classList.add("is-closing");
+        flyoutEl.style.height = "0px";
+        flyoutEl.style.maxHeight = "0px";
+      }
       await delay(FLYOUT_MOTION_MS);
     }
     setFlyoutOpenState(flyoutKey, false);
     navigateTo(toggleHashBuilder(window.location.hash));
+    window.setTimeout(() => {
+      clearCoordinatedFlyoutMotionStyles();
+    }, 0);
   };
 
   await withBusy(async () => {
