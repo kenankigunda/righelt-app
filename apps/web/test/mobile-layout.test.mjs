@@ -169,6 +169,14 @@ test("home mini-board cards use uniform grid widths across wrapped rows", () => 
   );
   assert.match(
     shellStylesSource,
+    /\.mini-board-card-list\[data-game-count="1"\]\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);[\s\S]*justify-items:\s*start;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-list\[data-game-count="1"\]\s*>\s*\.mini-board-card\s*\{[\s\S]*width:\s*min\(100%,\s*26rem\);/s,
+  );
+  assert.match(
+    shellStylesSource,
     /\.mini-board-card\s*\{[\s\S]*display:\s*grid;[\s\S]*width:\s*100%;/s,
   );
   assert.match(

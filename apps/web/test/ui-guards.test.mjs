@@ -88,6 +88,7 @@ test("home groups active games by player role and isolates smoke-player games in
   assert.match(source, /currentRoute\.debug \? renderHomeGameSection\("Deploy smoke player", smokeGames\) : ""/);
   assert.match(source, /<section class="panel home-games-section">/);
   assert.match(source, /<h2>\$\{escapeHtml\(title\)\}<\/h2>/);
+  assert.match(source, /<div class="mini-board-card-list" data-game-count="\$\{games\.length\}">/);
   assert.doesNotMatch(source, /<h2>Active Games<\/h2>/);
   assert.doesNotMatch(source, /<h2>Preview Board/);
 });

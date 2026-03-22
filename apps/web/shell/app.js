@@ -1134,7 +1134,7 @@ const renderHomeGameSection = (title, games) => {
       <h2>${escapeHtml(title)}</h2>
       <p class="small">${games.length === 1 ? "1 game" : `${games.length} games`}</p>
     </div>
-    <div class="mini-board-card-list">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
+    <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
   </section>`;
 };
 

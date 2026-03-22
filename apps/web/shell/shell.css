@@ -449,6 +449,15 @@ button.button-release-bounce,
   align-items: stretch;
 }
 
+.mini-board-card-list[data-game-count="1"] {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+}
+
+.mini-board-card-list[data-game-count="1"] > .mini-board-card {
+  width: min(100%, 26rem);
+}
+
 .mini-board-card {
   display: grid;
   width: 100%;
