@@ -129,7 +129,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, currentRoute\)\) \{\s*render\(\);\s*return;\s*\}/s);
   assert.match(source, /setFlyoutOpenState\("debug", true\);/);
   assert.match(source, /setFlyoutOpenState\("scenarios", true\);/);
-  assert.match(source, /const animateFlyoutClose = async \(flyoutKey, toggleHashBuilder\) => \{/);
+  assert.match(source, /const animateFlyoutClose = async \(flyoutKey, closeFlyout\) => \{/);
   assert.match(source, /const mainContentEl = appEl\?\.querySelector\?\.\("\.shell-main-content"\);/);
   assert.match(source, /const layoutMode = getShellLayoutMode\(\);/);
   assert.match(source, /if \(layoutMode === "wide"\) \{/);
@@ -206,6 +206,18 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
   assert.match(source, /return !getActiveApprovalRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
+});
+
+test("debug flyout persists locally while scenario-created games close the scenarios flyout", () => {
+  assert.match(source, /import \{ loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted \} from "\.\/persistence\.js";/);
+  assert.match(source, /const getPersistedDebugFlyoutOpen = \(\) => loadDebugFlyoutOpen\(storage\);/);
+  assert.match(source, /const routeWithPersistedPreferences = \{\s*\.\.\.route,\s*debug: getPersistedDebugFlyoutOpen\(\),\s*\};/s);
+  assert.match(source, /return \{\s*\.\.\.routeWithPersistedPreferences,\s*\.\.\.resolveFlyoutState\(routeWithPersistedPreferences,/s);
+  assert.doesNotMatch(source, /toggleDebugHash/);
+  assert.match(source, /if \(action === "open-debug"\) \{[\s\S]*saveDebugFlyoutOpen\(storage, true\);[\s\S]*currentRoute = normalizeRouteFlyoutState\(\{ \.\.\.currentRoute, debug: true \}, \{ preferredFlyoutKey: "debug" \}\);[\s\S]*render\(\);/s);
+  assert.match(source, /if \(action === "close-debug"\) \{[\s\S]*saveDebugFlyoutOpen\(storage, false\);[\s\S]*currentRoute = normalizeRouteFlyoutState\(\{ \.\.\.currentRoute, debug: false \}\);[\s\S]*render\(\);/s);
+  assert.match(source, /if \(action === "close-scenarios"\) \{[\s\S]*navigateTo\(toggleScenariosHash\(window\.location\.hash\)\);[\s\S]*\}/s);
+  assert.match(source, /const nextHash = buildGameHash\(result\.game\.id, null, \{\s*\.\.\.getCurrentFlyoutState\(\),\s*scenarios: false,\s*\}\);/s);
 });
 
 test("shell renders and reconciles mini board previews for home and debug surfaces", () => {

@@ -1,9 +1,16 @@
 const HOME_ROUTE = { name: "home" };
 export const FLYOUT_KEYS = ["debug", "scenarios"];
+const URL_FLYOUT_KEYS = ["scenarios"];
 
 const trimSlash = (value) => value.replace(/^\/+|\/+$/g, "");
 const getFlyoutState = (query) =>
-  Object.fromEntries(FLYOUT_KEYS.map((key) => [key, query.get(key) === "1"]));
+  {
+    const urlFlyouts = Object.fromEntries(URL_FLYOUT_KEYS.map((key) => [key, query.get(key) === "1"]));
+    return {
+      debug: false,
+      ...urlFlyouts,
+    };
+  };
 const withFlyoutState = (route, query) => ({
   ...route,
   ...getFlyoutState(query),
@@ -77,11 +84,11 @@ export const resolveFlyoutState = (
 
 const appendFlyoutQuery = (hash, flyouts = {}) => {
   const normalizedFlyouts = normalizeFlyoutState(flyouts);
-  if (!FLYOUT_KEYS.some((key) => normalizedFlyouts[key] === true)) {
+  if (!URL_FLYOUT_KEYS.some((key) => normalizedFlyouts[key] === true)) {
     return hash;
   }
   const query = new URLSearchParams();
-  FLYOUT_KEYS.forEach((key) => {
+  URL_FLYOUT_KEYS.forEach((key) => {
     if (normalizedFlyouts[key] === true) {
       query.set(key, "1");
     }
@@ -149,6 +156,9 @@ const buildHashForParsedRoute = (parsed, flyouts) => {
 export const buildHashForRoute = (route) => buildHashForParsedRoute(route, route);
 
 const toggleFlyoutHash = (hash, flyoutKey) => {
+  if (!URL_FLYOUT_KEYS.includes(flyoutKey)) {
+    return hash && hash !== "#" ? hash : "#/";
+  }
   const raw = hash && hash !== "#" ? hash : "#/";
   const parsed = parseRouteFromHash(raw);
   return buildHashForParsedRoute(parsed, {
@@ -156,7 +166,5 @@ const toggleFlyoutHash = (hash, flyoutKey) => {
     [flyoutKey]: !parsed[flyoutKey],
   });
 };
-
-export const toggleDebugHash = (hash) => toggleFlyoutHash(hash, "debug");
 
 export const toggleScenariosHash = (hash) => toggleFlyoutHash(hash, "scenarios");

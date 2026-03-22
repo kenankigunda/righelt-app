@@ -8,7 +8,7 @@ import { createLiveTransportStore } from "./live-transport.js";
 import { createLiveSyncClient } from "./live-sync.js";
 import { ensureHoverCapabilityController } from "../hover-capability.js";
 import { applyCommandLegendSwatch, getCommandLegendSwatchStyle } from "../legend.js";
-import { saveTutorialCompleted } from "./persistence.js";
+import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from "./persistence.js";
 import {
   buildScenarioFromGame,
   downloadScenarioCatalog,
@@ -28,7 +28,6 @@ import {
   parseRouteFromHash,
   resolveFlyoutState,
   shouldLiveSyncRoute,
-  toggleDebugHash,
   toggleScenariosHash,
 } from "./routes.js";
 import { createTutorialController } from "./tutorial.js";
@@ -120,6 +119,7 @@ const FLYOUT_MOTION_MS = 180;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
 const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
+const getPersistedDebugFlyoutOpen = () => loadDebugFlyoutOpen(storage);
 
 const escapeHtml = (value) =>
   String(value)
@@ -557,10 +557,14 @@ const normalizeRouteFlyoutState = (route, { preferredFlyoutKey = null } = {}) =>
   if (!route || typeof route !== "object") {
     return route;
   }
-  return {
+  const routeWithPersistedPreferences = {
     ...route,
-    ...resolveFlyoutState(route, {
-      allowStacking: getShellLayoutModeForRoute(route) === "wide",
+    debug: getPersistedDebugFlyoutOpen(),
+  };
+  return {
+    ...routeWithPersistedPreferences,
+    ...resolveFlyoutState(routeWithPersistedPreferences, {
+      allowStacking: getShellLayoutModeForRoute(routeWithPersistedPreferences) === "wide",
       preferredKey: preferredFlyoutKey,
     }),
   };
@@ -2256,7 +2260,7 @@ appEl.addEventListener("click", async (event) => {
     action !== "close-debug" &&
     action !== "close-scenarios";
 
-  const animateFlyoutClose = async (flyoutKey, toggleHashBuilder) => {
+  const animateFlyoutClose = async (flyoutKey, closeFlyout) => {
     const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
     const mainContentEl = appEl?.querySelector?.(".shell-main-content");
     const layoutMode = getShellLayoutMode();
@@ -2306,7 +2310,7 @@ appEl.addEventListener("click", async (event) => {
       await delay(FLYOUT_MOTION_MS);
     }
     setFlyoutOpenState(flyoutKey, false);
-    navigateTo(toggleHashBuilder(window.location.hash));
+    closeFlyout();
     window.setTimeout(() => {
       clearCoordinatedFlyoutMotionStyles();
     }, 0);
@@ -2315,8 +2319,10 @@ appEl.addEventListener("click", async (event) => {
   await withBusy(async () => {
     if (action === "open-debug") {
       if (!currentRoute.debug) {
+        saveDebugFlyoutOpen(storage, true);
         setFlyoutOpenState("debug", true);
-        navigateTo(toggleDebugHash(window.location.hash));
+        currentRoute = normalizeRouteFlyoutState({ ...currentRoute, debug: true }, { preferredFlyoutKey: "debug" });
+        render();
       }
       return;
     }
@@ -2329,13 +2335,19 @@ appEl.addEventListener("click", async (event) => {
     }
     if (action === "close-debug") {
       if (currentRoute.debug) {
-        await animateFlyoutClose("debug", toggleDebugHash);
+        await animateFlyoutClose("debug", () => {
+          saveDebugFlyoutOpen(storage, false);
+          currentRoute = normalizeRouteFlyoutState({ ...currentRoute, debug: false });
+          render();
+        });
       }
       return;
     }
     if (action === "close-scenarios") {
       if (currentRoute.scenarios) {
-        await animateFlyoutClose("scenarios", toggleScenariosHash);
+        await animateFlyoutClose("scenarios", () => {
+          navigateTo(toggleScenariosHash(window.location.hash));
+        });
       }
       return;
     }
@@ -2505,7 +2517,10 @@ appEl.addEventListener("click", async (event) => {
         render({ animatePanels: false, includeBoard: false });
         return;
       }
-      const nextHash = buildGameHash(result.game.id, null, getCurrentFlyoutState());
+      const nextHash = buildGameHash(result.game.id, null, {
+        ...getCurrentFlyoutState(),
+        scenarios: false,
+      });
       if (activeGame && !shouldApplyInPlace) {
         window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
         render({ animatePanels: false, includeBoard: false });
