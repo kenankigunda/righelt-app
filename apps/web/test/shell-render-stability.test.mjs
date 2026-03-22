@@ -138,6 +138,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /return `You are \$\{renderRoleLabel\(game\.myRole, game\)\} \$\{renderConnectionStatusIcon\(true, "Both players connected"\)\}`;/);
   assert.match(source, /if \(game\?\.myRole === "Guest"\) \{\s*return "";\s*\}/);
   assert.match(source, /const renderHomeConnectionSummary = \(game\) =>/);
+  assert.match(source, /const filteredSlots = isDualSeatIdentity\(game\) && isPlayerRole\(game\?\.myRole\)/);
   assert.match(source, /const connectionSummary = renderHomeConnectionSummary\(game\);/);
   assert.match(source, /<div class="mini-board-card-meta mini-board-card-meta-primary">/);
   assert.match(source, /<span>\$\{renderHomeRoleLine\(game\)\}<\/span>/);

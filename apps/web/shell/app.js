@@ -181,7 +181,7 @@ const renderHomeConnectionSummary = (game) => {
     { seat: "Player 1", participant: game?.player1 ?? null },
     { seat: "Player 2", participant: game?.player2 ?? null },
   ];
-  const filteredSlots = isDualSeatIdentity(game)
+  const filteredSlots = isDualSeatIdentity(game) && isPlayerRole(game?.myRole)
     ? []
     : slots.filter((entry) => {
         if (game?.myRole === "Player 1") return entry.seat !== "Player 1";
