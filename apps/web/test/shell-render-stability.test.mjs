@@ -122,9 +122,15 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /data-mini-board-preview data-preview-id=/);
   assert.match(source, /const reconcileMiniBoardPreviews = \(\) => \{/);
   assert.match(source, /syncMiniBoardPreviews\(\{/);
+  assert.match(source, /const getGamePreviewSnapshot = \(game\) => game\?\.liveCurrentSnapshot \?\? game\?\.board\?\.state \?\? game\?\.currentSnapshot \?\? null;/);
   assert.match(source, /previewId: `home:\$\{game\.id\}`/);
   assert.match(source, /previewId: `scenario:\$\{selectedScenario\.id\}`/);
   assert.match(source, /class="mini-board-card"/);
+  assert.match(source, /class="mini-board-card-link-surface" href=/);
+  assert.match(source, /As of \$\{escapeHtml\(formatClientDateTime\(game\.lastMoveAt \|\| game\.createdAt\)\)\}/);
+  assert.match(source, /const recoveryChip = game\.syncStatus === "desynced" \? '<span class="status-chip">Recovering<\/span>' : "";/);
+  assert.match(source, /isPlayerRole\(game\.myRole\) \? `You are \$\{renderRoleLabel\(game\.myRole\)\}` : renderRoleLabel\(game\.myRole\)/);
+  assert.match(source, /const moveLabel = Array\.isArray\(game\.moves\) \? `Move \$\{game\.moves\.length \+ 1\}` : "Move pending";/);
   assert.match(source, /reconcileMiniBoardPreviews\(\);\s*scheduleGameShellStickyLayout\(\);/);
 });
 
@@ -147,7 +153,7 @@ test("history navigation uses pointer-down press state with a single mouseup rel
   assert.match(source, /boardWrapEl\.classList\.add\("history-board-pressing"\);/);
   assert.match(source, /boardWrapEl\.classList\.add\("history-board-release"\);/);
   assert.match(source, /actionEl\.classList\.add\("history-item-release"\);/);
-  assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*const controlEl = target\.closest\("button, \.button-link"\);[\s\S]*startControlPress\(controlEl\);/s);
+  assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*const controlEl = target\.closest\("button, \.button-link, \.mini-board-card-link-surface"\);[\s\S]*startControlPress\(controlEl\);/s);
   assert.match(source, /window\.addEventListener\("pointerup", \(event\) => \{[\s\S]*action === "jump-history" \|\| action === "return-live"[\s\S]*return;[\s\S]*clearHistoryPress\(\);\s*\}\);/s);
   assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*action !== "jump-history" && action !== "return-live"[\s\S]*startHistoryPress\(actionEl\);/s);
   assert.match(source, /const animateHistoryDeselection = async \(actionEl\) => \{/);

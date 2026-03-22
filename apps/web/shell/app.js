@@ -205,7 +205,7 @@ const formatSideToMoveLabel = (snapshot) => {
   return "Turn unknown";
 };
 
-const getGamePreviewSnapshot = (game) => game?.currentSnapshot ?? game?.board?.state ?? null;
+const getGamePreviewSnapshot = (game) => game?.liveCurrentSnapshot ?? game?.board?.state ?? game?.currentSnapshot ?? null;
 const getScenarioPreviewSnapshot = (scenario) => scenario?.resultingState ?? scenario?.initialState ?? null;
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
 const gameIncludesIdentity = (game, identityId) => {
@@ -753,29 +753,28 @@ const renderHomeGameCard = (game) => {
   const snapshot = getGamePreviewSnapshot(game);
   const previewKey = toStableKey(snapshot);
   const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
-  const liveStateLabel = game.inHistoryMode ? "History view" : "Live view";
-  const turnLabel =
-    game.currentTurn && typeof game.currentTurn.index === "number" ? `Turn ${game.currentTurn.index + 1}` : "Turn pending";
+  const moveLabel = Array.isArray(game.moves) ? `Move ${game.moves.length + 1}` : "Move pending";
+  const recoveryChip = game.syncStatus === "desynced" ? '<span class="status-chip">Recovering</span>' : "";
   return `<article class="mini-board-card">
-    <div class="mini-board-card-header">
-      <div>
-        <a class="mini-board-card-link" href="${buildGameHash(game.id, null, currentRoute.debug)}">${escapeHtml(
-          formatDisplayGameId(game.id),
-        )}</a>
-        <p class="small mini-board-card-subtitle">Latest ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
+    <a class="mini-board-card-link-surface" href="${buildGameHash(game.id, null, currentRoute.debug)}">
+      <div class="mini-board-card-header">
+        <div>
+          <span class="mini-board-card-link">${escapeHtml(formatDisplayGameId(game.id))}</span>
+          <p class="small mini-board-card-subtitle">As of ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
+        </div>
+        ${recoveryChip}
       </div>
-      <span class="status-chip">${escapeHtml(game.syncStatus === "desynced" ? "Recovering" : liveStateLabel)}</span>
-    </div>
-    <div class="mini-board-card-meta">
-      <span>${renderRoleLabel(game.myRole)}</span>
-      <span class="small">${escapeHtml(turnLabel)}</span>
-    </div>
-    ${renderMiniBoardPreviewRoot({
-      previewId: `home:${game.id}`,
-      snapshot,
-      previewKey,
-    })}
-    <p class="small mini-board-preview-status">${escapeHtml(statusText)}</p>
+      <div class="mini-board-card-meta">
+        <span>${isPlayerRole(game.myRole) ? `You are ${renderRoleLabel(game.myRole)}` : renderRoleLabel(game.myRole)}</span>
+        <span class="small">${escapeHtml(moveLabel)}</span>
+      </div>
+      ${renderMiniBoardPreviewRoot({
+        previewId: `home:${game.id}`,
+        snapshot,
+        previewKey,
+      })}
+      <p class="small mini-board-preview-status">${escapeHtml(statusText)}</p>
+    </a>
   </article>`;
 };
 
@@ -1942,7 +1941,7 @@ appEl.addEventListener("pointerdown", (event) => {
   if (!(target instanceof HTMLElement)) {
     return;
   }
-  const controlEl = target.closest("button, .button-link");
+  const controlEl = target.closest("button, .button-link, .mini-board-card-link-surface");
   if (controlEl instanceof HTMLElement) {
     startControlPress(controlEl);
   }
