@@ -219,7 +219,8 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /previewId: `home:\$\{game\.id\}`/);
   assert.match(source, /previewId: `scenario:\$\{selectedScenario\.id\}`/);
   assert.match(source, /class="mini-board-card"/);
-  assert.match(source, /class="mini-board-card-link-surface" href=/);
+  assert.match(source, /class="mini-board-card-link-surface"[\s\S]*href=/);
+  assert.match(source, /data-game-id="\$\{escapeHtml\(game\.id\)\}"/);
   assert.match(source, /As of \$\{escapeHtml\(formatClientDateTime\(game\.lastMoveAt \|\| game\.createdAt\)\)\}/);
   assert.match(source, /const recoveryChip = game\.syncStatus === "desynced" \? '<span class="status-chip">Recovering<\/span>' : "";/);
   assert.match(source, /const isDualSeatIdentity = \(game\) =>/);

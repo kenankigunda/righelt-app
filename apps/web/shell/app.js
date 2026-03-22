@@ -1104,7 +1104,12 @@ const renderHomeGameCard = (game) => {
     .filter(Boolean)
     .join("");
   return `<article class="mini-board-card">
-    <a class="mini-board-card-link-surface" href="${buildGameHash(game.id, null, currentRoute.debug)}">
+    <a
+      class="mini-board-card-link-surface"
+      href="${buildGameHash(game.id, null, getCurrentFlyoutState())}"
+      data-flyout-link="game"
+      data-game-id="${escapeHtml(game.id)}"
+    >
       <div class="mini-board-card-header">
         <div>
           <span class="mini-board-card-link">${escapeHtml(formatDisplayGameId(game.id))}</span>
