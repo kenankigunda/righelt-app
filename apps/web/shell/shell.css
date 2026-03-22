@@ -9,7 +9,7 @@
   --info: #1a5ca1;
   --section-item-gap: 0.75rem;
   --shell-main-max-width: 1200px;
-  --shell-debug-wide-width: min(34rem, 36vw);
+  --shell-flyout-wide-width: min(34rem, 36vw);
 }
 
 body {
@@ -693,12 +693,24 @@ textarea {
   margin: 0;
 }
 
-.debug-flyout {
+.shell-flyout-stack {
   position: fixed;
-  top: 1rem;
-  right: 1rem;
-  width: min(26rem, calc(100vw - 2rem));
-  max-height: calc(100vh - 2rem);
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.shell-flyout {
+  position: static;
+  width: min(26rem, 100vw);
+  height: 100vh;
+  max-height: none;
   background: rgba(255, 253, 248, 0.98);
   border: 1px solid var(--line);
   border-radius: 0;
@@ -709,38 +721,69 @@ textarea {
   transition:
     transform 180ms ease,
     opacity 180ms ease;
-  z-index: 10;
+  z-index: 11;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
-.debug-flyout.is-open {
+.shell-flyout.is-open {
   transform: translateX(0);
   opacity: 1;
   pointer-events: auto;
 }
 
-.debug-flyout-scroll {
-  max-height: calc(100vh - 2rem);
+.shell-flyout-scroll {
+  min-height: 0;
   overflow: auto;
   padding: 1rem;
   display: grid;
   gap: 1rem;
 }
 
-.debug-flyout-scroll > *,
+.shell-flyout-scroll-scenarios {
+  align-content: start;
+}
+
+.shell-flyout-scroll > *,
 .debug-panel > * {
   min-width: 0;
   max-width: 100%;
 }
 
-.debug-flyout-header {
+.scenario-panel {
+  align-self: start;
+}
+
+.shell-flyout-header {
   padding: 1rem 1rem 0;
   border-bottom: 1px solid var(--line);
   background: rgba(255, 253, 248, 0.98);
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
 }
 
-.debug-flyout-header h2 {
+.shell-flyout-header h2 {
   margin: 0 0 1rem;
   font-size: 1.1rem;
+}
+
+.flyout-close-button {
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+  line-height: 1;
+  font-size: 1rem;
+}
+
+.flyout-close-button:hover,
+.flyout-close-button:focus-visible {
+  background: rgba(29, 45, 53, 0.08);
 }
 
 .debug-panel {
@@ -755,35 +798,42 @@ textarea {
   overflow-wrap: anywhere;
 }
 
-#app[data-shell-layout-mode="wide"][data-debug-open="true"] {
+#app[data-shell-layout-mode="wide"][data-debug-open="true"],
+#app[data-shell-layout-mode="wide"][data-scenarios-open="true"] {
   width: 100%;
   max-width: none;
   margin: 1rem 0 2rem;
   padding-left: 1rem;
-  padding-right: calc(var(--shell-debug-wide-width) + 1rem);
+  padding-right: var(--shell-flyout-wide-width);
 }
 
-#app[data-shell-layout-mode="wide"][data-debug-open="true"] .shell-main-content {
-  width: min(var(--shell-main-max-width), calc(100vw - var(--shell-debug-wide-width) - 2rem));
+#app[data-shell-layout-mode="wide"][data-debug-open="true"][data-scenarios-open="true"] {
+  padding-right: calc(var(--shell-flyout-wide-width) * 2);
+}
+
+#app[data-shell-layout-mode="wide"][data-debug-open="true"] .shell-main-content,
+#app[data-shell-layout-mode="wide"][data-scenarios-open="true"] .shell-main-content {
+  width: min(var(--shell-main-max-width), calc(100vw - var(--shell-flyout-wide-width) - 1rem));
   max-width: 100%;
   margin: 0 auto;
 }
 
-#app[data-shell-layout-mode="wide"][data-debug-open="true"] .debug-flyout {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: var(--shell-debug-wide-width);
-  max-height: none;
+#app[data-shell-layout-mode="wide"][data-debug-open="true"][data-scenarios-open="true"] .shell-main-content {
+  width: min(var(--shell-main-max-width), calc(100vw - (var(--shell-flyout-wide-width) * 2) - 1rem));
+}
+
+#app[data-shell-layout-mode="wide"][data-flyout-count="1"] .shell-flyout,
+#app[data-shell-layout-mode="wide"][data-flyout-count="2"] .shell-flyout {
+  width: var(--shell-flyout-wide-width);
   border-top: 0;
   border-right: 0;
   border-bottom: 0;
   box-shadow: none;
 }
 
-#app[data-shell-layout-mode="wide"][data-debug-open="true"] .debug-flyout-scroll {
-  max-height: calc(100vh - 4.25rem);
+#app[data-shell-layout-mode="wide"][data-flyout-count="1"] .shell-flyout-scroll,
+#app[data-shell-layout-mode="wide"][data-flyout-count="2"] .shell-flyout-scroll {
+  max-height: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -791,7 +841,7 @@ textarea {
     transition: none;
   }
 
-  .debug-flyout {
+  .shell-flyout {
     transition: none;
   }
 }
@@ -864,17 +914,25 @@ textarea {
     max-width: 100%;
   }
 
-  .debug-flyout {
-    top: auto;
-    bottom: 0.75rem;
-    right: 0.75rem;
-    left: 0.75rem;
-    width: auto;
-    max-height: min(22rem, calc(100vh - 1.5rem));
-    transform: translateY(calc(100% + 1rem));
+  .shell-flyout-stack {
+    left: 0;
+    flex-direction: column;
+    justify-content: flex-end;
   }
 
-  .debug-flyout.is-open {
+  .shell-flyout {
+    width: 100%;
+    height: auto;
+    flex: 1 1 0;
+    min-height: 0;
+    transform: translateY(calc(100% + 1rem));
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 0;
+    box-shadow: none;
+  }
+
+  .shell-flyout.is-open {
     transform: translateY(0);
   }
 }

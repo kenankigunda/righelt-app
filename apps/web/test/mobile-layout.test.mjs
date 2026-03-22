@@ -68,15 +68,15 @@ test("wide-screen shell sticky columns only target the left and board stacks", (
   );
   assert.match(
     shellStylesSource,
-    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\]\s*\{[\s\S]*width:\s*100%;[\s\S]*margin:\s*1rem\s+0\s+2rem;/s,
+    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\],\s*#app\[data-shell-layout-mode="wide"\]\[data-scenarios-open="true"\]\s*\{[\s\S]*width:\s*100%;[\s\S]*margin:\s*1rem\s+0\s+2rem;/s,
   );
   assert.match(
     shellStylesSource,
-    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\]\s*\{[\s\S]*padding-left:\s*1rem;[\s\S]*padding-right:\s*calc\(var\(--shell-debug-wide-width\)\s*\+\s*1rem\);/s,
+    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\],\s*#app\[data-shell-layout-mode="wide"\]\[data-scenarios-open="true"\]\s*\{[\s\S]*padding-left:\s*1rem;[\s\S]*padding-right:\s*var\(--shell-flyout-wide-width\);/s,
   );
   assert.match(
     shellStylesSource,
-    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\]\s+\.shell-main-content\s*\{[\s\S]*width:\s*min\(var\(--shell-main-max-width\),\s*calc\(100vw\s*-\s*var\(--shell-debug-wide-width\)\s*-\s*2rem\)\);[\s\S]*margin:\s*0\s+auto;/s,
+    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\]\s+\.shell-main-content,\s*#app\[data-shell-layout-mode="wide"\]\[data-scenarios-open="true"\]\s+\.shell-main-content\s*\{[\s\S]*width:\s*min\(var\(--shell-main-max-width\),\s*calc\(100vw\s*-\s*var\(--shell-flyout-wide-width\)\s*-\s*1rem\)\);[\s\S]*margin:\s*0\s+auto;/s,
   );
   assert.match(
     shellStylesSource,
@@ -88,19 +88,31 @@ test("wide-screen shell sticky columns only target the left and board stacks", (
   );
   assert.match(
     shellStylesSource,
-    /\.debug-flyout-scroll > \*,\s*\.debug-panel > \*\s*\{[\s\S]*min-width:\s*0;[\s\S]*max-width:\s*100%;/s,
+    /\.shell-flyout-scroll > \*,\s*\.debug-panel > \*\s*\{[\s\S]*min-width:\s*0;[\s\S]*max-width:\s*100%;/s,
   );
   assert.match(
     shellStylesSource,
-    /\.debug-flyout\s*\{[\s\S]*border-radius:\s*0;/s,
+    /\.shell-flyout\s*\{[\s\S]*border-radius:\s*0;/s,
   );
   assert.match(
     shellStylesSource,
-    /\.debug-flyout-header\s*\{[\s\S]*border-bottom:\s*1px solid var\(--line\);/s,
+    /\.shell-flyout-header\s*\{[\s\S]*border-bottom:\s*1px solid var\(--line\);/s,
   );
   assert.match(
     shellStylesSource,
-    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\]\s+\.debug-flyout\s*\{[\s\S]*position:\s*fixed;[\s\S]*top:\s*0;[\s\S]*right:\s*0;[\s\S]*bottom:\s*0;[\s\S]*width:\s*var\(--shell-debug-wide-width\);[\s\S]*border-top:\s*0;[\s\S]*border-right:\s*0;[\s\S]*border-bottom:\s*0;[\s\S]*box-shadow:\s*none;/s,
+    /\.shell-flyout-stack\s*\{[\s\S]*top:\s*0;[\s\S]*right:\s*0;[\s\S]*bottom:\s*0;[\s\S]*gap:\s*0;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="wide"\]\[data-flyout-count="1"\]\s+\.shell-flyout,\s*#app\[data-shell-layout-mode="wide"\]\[data-flyout-count="2"\]\s+\.shell-flyout\s*\{[\s\S]*width:\s*var\(--shell-flyout-wide-width\);[\s\S]*border-top:\s*0;[\s\S]*border-right:\s*0;[\s\S]*border-bottom:\s*0;[\s\S]*box-shadow:\s*none;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 640px\)\s*\{[\s\S]*\.shell-flyout-stack\s*\{[\s\S]*left:\s*0;[\s\S]*flex-direction:\s*column;[\s\S]*justify-content:\s*flex-end;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 640px\)\s*\{[\s\S]*\.shell-flyout\s*\{[\s\S]*width:\s*100%;[\s\S]*flex:\s*1 1 0;[\s\S]*border-left:\s*0;[\s\S]*border-right:\s*0;[\s\S]*border-bottom:\s*0;/s,
   );
 });
 

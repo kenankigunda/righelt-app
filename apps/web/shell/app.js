@@ -26,6 +26,7 @@ import {
   parseRouteFromHash,
   shouldLiveSyncRoute,
   toggleDebugHash,
+  toggleScenariosHash,
 } from "./routes.js";
 import { createTutorialController } from "./tutorial.js";
 
@@ -341,16 +342,42 @@ const delay = (ms) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
-const getWideDebugFlyoutWidth = (viewportWidth = window.innerWidth) => {
+const getCurrentFlyoutState = () => ({
+  debug: currentRoute.debug === true,
+  scenarios: currentRoute.scenarios === true,
+});
+const FLYOUT_KEYS = ["scenarios", "debug"];
+let flyoutRenderOrder = FLYOUT_KEYS.filter((key) => currentRoute[key] === true);
+const syncFlyoutRenderOrder = (route = currentRoute) => {
+  const openKeys = FLYOUT_KEYS.filter((key) => route[key] === true);
+  flyoutRenderOrder = flyoutRenderOrder.filter((key) => openKeys.includes(key));
+  openKeys.forEach((key) => {
+    if (!flyoutRenderOrder.includes(key)) {
+      flyoutRenderOrder.push(key);
+    }
+  });
+};
+const setFlyoutOpenState = (key, isOpen) => {
+  if (!FLYOUT_KEYS.includes(key)) {
+    return;
+  }
+  flyoutRenderOrder = flyoutRenderOrder.filter((entry) => entry !== key);
+  if (isOpen) {
+    flyoutRenderOrder.push(key);
+  }
+};
+const getOpenFlyoutCount = () => Number(currentRoute.debug === true) + Number(currentRoute.scenarios === true);
+const getWideFlyoutWidth = (viewportWidth = window.innerWidth) => {
   const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize || "16") || 16;
   return Math.min(rootFontSize * 34, viewportWidth * 0.36);
 };
 const getAvailableShellContentWidth = (viewportWidth = window.innerWidth) => {
   const totalHorizontalGutter = SHELL_VIEWPORT_GUTTER_PX * 2;
-  if (!currentRoute.debug) {
+  const openFlyoutCount = getOpenFlyoutCount();
+  if (openFlyoutCount === 0) {
     return Math.max(0, viewportWidth - totalHorizontalGutter);
   }
-  return Math.max(0, viewportWidth - getWideDebugFlyoutWidth(viewportWidth) - totalHorizontalGutter);
+  return Math.max(0, viewportWidth - (getWideFlyoutWidth(viewportWidth) * openFlyoutCount) - totalHorizontalGutter);
 };
 const getShellLayoutMode = (viewportWidth = window.innerWidth) =>
   (getAvailableShellContentWidth(viewportWidth) >= SHELL_WIDE_SCREEN_MIN_WIDTH ? "wide" : "narrow");
@@ -359,6 +386,8 @@ const syncShellLayoutMode = () => {
   if (appEl instanceof HTMLElement) {
     appEl.setAttribute("data-shell-layout-mode", layoutMode);
     appEl.setAttribute("data-debug-open", currentRoute.debug ? "true" : "false");
+    appEl.setAttribute("data-scenarios-open", currentRoute.scenarios ? "true" : "false");
+    appEl.setAttribute("data-flyout-count", String(getOpenFlyoutCount()));
     appEl.setAttribute("data-shell-content-width", String(Math.round(getAvailableShellContentWidth())));
   }
   return layoutMode;
@@ -592,11 +621,12 @@ const renderHeader = () => `
       <div class="nav-row">
         ${
           currentRoute.name !== "home"
-            ? `<a class="button-link secondary" href="${buildHomeHash(currentRoute.debug)}">Home</a>`
+            ? `<a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}">Home</a>`
             : ""
         }
-        <button class="secondary" data-action="toggle-debug">${currentRoute.debug ? "Hide Debug" : "Show Debug"}</button>
-        <a class="button-link secondary" href="${buildTutorialHash(null, currentRoute.debug)}">Tutorial</a>
+        <button class="secondary" data-action="open-scenarios">Scenarios</button>
+        <button class="secondary" data-action="open-debug">Debug mode</button>
+        <a class="button-link secondary" href="${buildTutorialHash(null, getCurrentFlyoutState())}">Tutorial</a>
       </div>
     </div>
   </header>
@@ -627,7 +657,7 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
   const canSaveScenario = Boolean(game);
   const canLoadIntoCurrentGame = Boolean(game && Array.isArray(game.moves) && game.moves.length === 0 && selectedScenario);
   return `
-    <section class="panel debug-panel">
+    <section class="panel debug-panel scenario-panel">
       <h2>Scenarios</h2>
       <div class="form-row">
         <label for="scenario-select">Saved scenario</label>
@@ -705,7 +735,6 @@ const renderDebugContent = () => {
             gameId,
           };
   return `
-    ${renderScenarioPanel({ route, game })}
     <section class="panel debug-panel">
       <h2>Engine Status</h2>
       <pre class="debug-pre">${escapeHtml(
@@ -735,20 +764,63 @@ const renderDebugContent = () => {
   `;
 };
 
+const renderFlyout = ({ title, variant, closeAction, body }) => `
+  <aside class="shell-flyout shell-flyout-${variant} is-open" data-flyout="${variant}">
+    <header class="shell-flyout-header">
+      <h2>${title}</h2>
+      <button class="flyout-close-button" type="button" aria-label="Close ${title}" data-action="${closeAction}">x</button>
+    </header>
+    <div class="shell-flyout-scroll shell-flyout-scroll-${variant}">
+      ${body}
+    </div>
+  </aside>
+`;
+
+const renderScenarioFlyout = () => {
+  if (!currentRoute.scenarios) {
+    return "";
+  }
+  const route = currentRoute;
+  const gameId = route.name === "game" ? route.gameId : route.name === "invite" ? resolvedInvite?.gameId || null : null;
+  const game = gameId ? transport.getGameViewModel(gameId) : null;
+  return renderFlyout({
+    title: "Scenarios",
+    variant: "scenarios",
+    closeAction: "close-scenarios",
+    body: renderScenarioPanel({ route, game }),
+  });
+};
+
 const renderDebugFlyout = () => {
   if (!currentRoute.debug) {
     return "";
   }
+  return renderFlyout({
+    title: "Debug mode",
+    variant: "debug",
+    closeAction: "close-debug",
+    body: renderDebugContent(),
+  });
+};
+
+const renderFlyouts = () => {
+  const flyouts = flyoutRenderOrder
+    .map((key) => {
+      if (key === "scenarios") {
+        return renderScenarioFlyout();
+      }
+      if (key === "debug") {
+        return renderDebugFlyout();
+      }
+      return "";
+    })
+    .filter(Boolean);
+  if (flyouts.length === 0) {
+    return "";
+  }
   return `
-  <aside class="debug-flyout is-open" data-debug-flyout>
-    <header class="debug-flyout-header">
-      <h2>Debug mode</h2>
-    </header>
-    <div class="debug-flyout-scroll">
-      ${renderDebugContent()}
-    </div>
-  </aside>
-`;
+    <div class="shell-flyout-stack" data-shell-flyouts>${flyouts.join("")}</div>
+  `;
 };
 
 const updateHeaderFields = () => {
@@ -1141,7 +1213,10 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   const joinEl = shellRoot.querySelector('[data-game-panel="join"]');
   const participantsEl = shellRoot.querySelector('[data-game-panel="participants"]');
   const historyEl = shellRoot.querySelector('[data-game-panel="history"]');
-  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id, currentRoute.debug)}`;
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(
+    game.inviteToken || inviteToken || game.id,
+    getCurrentFlyoutState(),
+  )}`;
 
   if (alertsEl instanceof HTMLElement) {
     alertsEl.innerHTML = renderGameAlertsHtml(game, inviteFromRole);
@@ -1161,10 +1236,21 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   if (includeBoard) {
     mountBoardForGame(game);
   }
-  const debugFlyoutEl = appEl?.querySelector?.("[data-debug-flyout]");
+  const scenariosFlyoutEl = appEl?.querySelector?.('[data-flyout="scenarios"]');
+  if (scenariosFlyoutEl instanceof HTMLElement) {
+    scenariosFlyoutEl.classList.toggle("is-open", currentRoute.scenarios === true);
+    const scrollEl = scenariosFlyoutEl.querySelector(".shell-flyout-scroll");
+    if (scrollEl instanceof HTMLElement) {
+      const route = currentRoute;
+      const scenarioGameId = route.name === "game" ? route.gameId : route.name === "invite" ? resolvedInvite?.gameId || null : null;
+      const scenarioGame = scenarioGameId ? transport.getGameViewModel(scenarioGameId) : null;
+      scrollEl.innerHTML = renderScenarioPanel({ route, game: scenarioGame });
+    }
+  }
+  const debugFlyoutEl = appEl?.querySelector?.('[data-flyout="debug"]');
   if (debugFlyoutEl instanceof HTMLElement) {
     debugFlyoutEl.classList.toggle("is-open", currentRoute.debug === true);
-    const scrollEl = debugFlyoutEl.querySelector(".debug-flyout-scroll");
+    const scrollEl = debugFlyoutEl.querySelector(".shell-flyout-scroll");
     if (scrollEl instanceof HTMLElement) {
       scrollEl.innerHTML = renderDebugContent();
     }
@@ -1194,7 +1280,10 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
   if (!game) {
     return `<section class="panel"><h2>Loading game...</h2><p class="small">Fetching latest server state.</p></section>`;
   }
-  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id, currentRoute.debug)}`;
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(
+    game.inviteToken || inviteToken || game.id,
+    getCurrentFlyoutState(),
+  )}`;
 
   return `
     ${renderGameAlertsHtml(game, inviteFromRole)}
@@ -1327,7 +1416,7 @@ const renderInviteLanding = (inviteContext) => {
             <span class="small invite-choice-note">${escapeHtml(viewerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
-            <a class="button-link secondary" href="${buildHomeHash(currentRoute.debug)}">Back home</a>
+            <a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}">Back home</a>
           </div>
         </div>
         <p class="small">
@@ -1364,7 +1453,7 @@ const renderTutorial = (gameId) => {
 const renderNotFound = () => `
   <section class="panel">
     <h2>Route not found</h2>
-    <a class="button-link" href="${buildHomeHash(currentRoute.debug)}">Return home</a>
+    <a class="button-link" href="${buildHomeHash(getCurrentFlyoutState())}">Return home</a>
   </section>
 `;
 
@@ -1532,7 +1621,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     body = renderNotFound();
   }
 
-  const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderDebugFlyout()}</div>`;
+  const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderFlyouts()}</div>`;
   if (nextMarkup !== lastRenderedMarkup) {
     appEl.innerHTML = nextMarkup;
     lastRenderedMarkup = nextMarkup;
@@ -1710,6 +1799,7 @@ const syncLiveChannel = () => {
 const navigateTo = (hash) => {
   if (window.location.hash === hash) {
     currentRoute = parseRouteFromHash(hash);
+    syncFlyoutRenderOrder(currentRoute);
     routeHydrated = false;
     syncLiveChannel();
     void withBusy(async () => {
@@ -1723,6 +1813,7 @@ const navigateTo = (hash) => {
 
 window.addEventListener("hashchange", () => {
   currentRoute = parseRouteFromHash(window.location.hash);
+  syncFlyoutRenderOrder(currentRoute);
   routeHydrated = false;
   syncLiveChannel();
   void withBusy(async () => {
@@ -1777,21 +1868,45 @@ appEl.addEventListener("click", async (event) => {
     action !== "tutorial-skip";
 
   await withBusy(async () => {
-    if (action === "toggle-debug") {
-      navigateTo(toggleDebugHash(window.location.hash));
+    if (action === "open-debug") {
+      if (!currentRoute.debug) {
+        setFlyoutOpenState("debug", true);
+        navigateTo(toggleDebugHash(window.location.hash));
+      }
+      return;
+    }
+    if (action === "open-scenarios") {
+      if (!currentRoute.scenarios) {
+        setFlyoutOpenState("scenarios", true);
+        navigateTo(toggleScenariosHash(window.location.hash));
+      }
+      return;
+    }
+    if (action === "close-debug") {
+      if (currentRoute.debug) {
+        setFlyoutOpenState("debug", false);
+        navigateTo(toggleDebugHash(window.location.hash));
+      }
+      return;
+    }
+    if (action === "close-scenarios") {
+      if (currentRoute.scenarios) {
+        setFlyoutOpenState("scenarios", false);
+        navigateTo(toggleScenariosHash(window.location.hash));
+      }
       return;
     }
 
     if (action === "create-game") {
       const game = await transport.createGame({ playgroundMode: false, offlineLocal: false });
-      navigateTo(buildGameHash(game.id, null, currentRoute.debug));
+      navigateTo(buildGameHash(game.id, null, getCurrentFlyoutState()));
       return;
     }
 
     if (action === "create-offline-playground") {
       await transport.setOffline(true);
       const game = await transport.createGame({ playgroundMode: true, offlineLocal: true });
-      navigateTo(buildGameHash(game.id, "offline", currentRoute.debug));
+      navigateTo(buildGameHash(game.id, "offline", getCurrentFlyoutState()));
       return;
     }
 
@@ -1822,7 +1937,7 @@ appEl.addEventListener("click", async (event) => {
       });
       markInviteChoiceCommitted(gameId);
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId, null, currentRoute.debug));
+        navigateTo(buildGameHash(gameId, null, getCurrentFlyoutState()));
         return;
       }
       await syncRouteData();
@@ -1843,7 +1958,7 @@ appEl.addEventListener("click", async (event) => {
         setInviteFeedback("Player join request sent. You are now viewing the game while approval is pending.");
       }
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId, null, currentRoute.debug));
+        navigateTo(buildGameHash(gameId, null, getCurrentFlyoutState()));
         return;
       }
       await syncRouteData();
@@ -1922,7 +2037,7 @@ appEl.addEventListener("click", async (event) => {
       saveTutorialCompleted(storage, true);
       tutorial.reset();
       const gameId = actionEl.getAttribute("data-game-id");
-      navigateTo(gameId ? buildGameHash(gameId, null, currentRoute.debug) : buildHomeHash(currentRoute.debug));
+      navigateTo(gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : buildHomeHash(getCurrentFlyoutState()));
       return;
     }
 
@@ -1947,7 +2062,7 @@ appEl.addEventListener("click", async (event) => {
         render({ animatePanels: false, includeBoard: false });
         return;
       }
-      const nextHash = buildGameHash(result.game.id, null, currentRoute.debug);
+      const nextHash = buildGameHash(result.game.id, null, getCurrentFlyoutState());
       if (activeGame && !shouldApplyInPlace) {
         window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
         render({ animatePanels: false, includeBoard: false });
