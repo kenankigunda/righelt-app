@@ -2,12 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildGameHash,
+  buildHashForRoute,
   buildHomeHash,
   buildInviteHash,
   buildTutorialHash,
   isShellRootHash,
   isShellRouteHash,
   parseRouteFromHash,
+  resolveFlyoutState,
   shouldLiveSyncRoute,
   shouldPassiveRefreshRoute,
   toggleDebugHash,
@@ -79,6 +81,21 @@ test("routing identifies shell hashes and toggles debug state without changing r
   assert.equal(toggleScenariosHash("#/game/game-1?debug=1"), "#/game/game-1?debug=1&scenarios=1");
   assert.equal(toggleScenariosHash("#/game/game-1?debug=1&scenarios=1"), "#/game/game-1?debug=1");
   assert.equal(toggleDebugHash("#/"), "#/?debug=1");
+});
+
+test("routing can collapse flyouts when stacking is disabled", () => {
+  assert.deepEqual(
+    resolveFlyoutState({ debug: true, scenarios: true }, { allowStacking: false }),
+    { debug: false, scenarios: true },
+  );
+  assert.deepEqual(
+    resolveFlyoutState({ debug: true, scenarios: true }, { allowStacking: false, preferredKey: "debug" }),
+    { debug: true, scenarios: false },
+  );
+  assert.equal(
+    buildHashForRoute({ name: "game", gameId: "game-1", inviteFromRole: null, debug: false, scenarios: true }),
+    "#/game/game-1?scenarios=1",
+  );
 });
 
 test("routing rejects removed legacy aliases", () => {

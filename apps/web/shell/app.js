@@ -19,12 +19,14 @@ import {
 import { shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import {
   FLYOUT_KEYS,
+  buildHashForRoute,
   buildGameHash,
   buildHomeHash,
   buildInviteHash,
   buildTutorialHash,
   isShellRootHash,
   parseRouteFromHash,
+  resolveFlyoutState,
   shouldLiveSyncRoute,
   toggleDebugHash,
   toggleScenariosHash,
@@ -507,21 +509,35 @@ const setFlyoutOpenState = (key, isOpen) => {
     flyoutRenderOrder.push(key);
   }
 };
-const getOpenFlyoutCount = () => FLYOUT_KEYS.reduce((count, key) => count + Number(currentRoute[key] === true), 0);
+const getOpenFlyoutCount = (route = currentRoute) => FLYOUT_KEYS.reduce((count, key) => count + Number(route?.[key] === true), 0);
 const getWideFlyoutWidth = (viewportWidth = window.innerWidth) => {
   const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize || "16") || 16;
   return Math.min(rootFontSize * 34, viewportWidth * 0.36);
 };
-const getAvailableShellContentWidth = (viewportWidth = window.innerWidth) => {
+const getAvailableShellContentWidth = (viewportWidth = window.innerWidth, route = currentRoute) => {
   const totalHorizontalGutter = SHELL_VIEWPORT_GUTTER_PX * 2;
-  const openFlyoutCount = getOpenFlyoutCount();
+  const openFlyoutCount = getOpenFlyoutCount(route);
   if (openFlyoutCount === 0) {
     return Math.max(0, viewportWidth - totalHorizontalGutter);
   }
   return Math.max(0, viewportWidth - (getWideFlyoutWidth(viewportWidth) * openFlyoutCount) - totalHorizontalGutter);
 };
-const getShellLayoutMode = (viewportWidth = window.innerWidth) =>
-  (getAvailableShellContentWidth(viewportWidth) >= SHELL_WIDE_SCREEN_MIN_WIDTH ? "wide" : "narrow");
+const getShellLayoutModeForRoute = (route = currentRoute, viewportWidth = window.innerWidth) =>
+  (getAvailableShellContentWidth(viewportWidth, route) >= SHELL_WIDE_SCREEN_MIN_WIDTH ? "wide" : "narrow");
+const normalizeRouteFlyoutState = (route, { preferredFlyoutKey = null } = {}) => {
+  if (!route || typeof route !== "object") {
+    return route;
+  }
+  return {
+    ...route,
+    ...resolveFlyoutState(route, {
+      allowStacking: getShellLayoutModeForRoute(route) === "wide",
+      preferredKey: preferredFlyoutKey,
+    }),
+  };
+};
+currentRoute = normalizeRouteFlyoutState(currentRoute);
+const getShellLayoutMode = (viewportWidth = window.innerWidth) => getShellLayoutModeForRoute(currentRoute, viewportWidth);
 const syncShellLayoutMode = () => {
   const layoutMode = getShellLayoutMode();
   if (appEl instanceof HTMLElement) {
@@ -2080,9 +2096,12 @@ const syncLiveChannel = () => {
 };
 
 const navigateTo = (hash) => {
-  const nextRoute = parseRouteFromHash(hash);
+  const parsedRoute = parseRouteFromHash(hash);
+  const preferredFlyoutKey = FLYOUT_KEYS.find((key) => parsedRoute[key] && !currentRoute[key]) ?? null;
+  const nextRoute = normalizeRouteFlyoutState(parsedRoute, { preferredFlyoutKey });
+  const nextHash = buildHashForRoute(nextRoute);
   const previousRoute = currentRoute;
-  if (window.location.hash === hash) {
+  if (window.location.hash === nextHash) {
     currentRoute = nextRoute;
     syncFlyoutRenderOrder(currentRoute);
     if (isFlyoutOnlyRouteChange(previousRoute, nextRoute)) {
@@ -2097,12 +2116,18 @@ const navigateTo = (hash) => {
     });
     return;
   }
-  window.location.hash = hash;
+  window.location.hash = nextHash;
 };
 
 window.addEventListener("hashchange", () => {
   const previousRoute = currentRoute;
-  currentRoute = parseRouteFromHash(window.location.hash);
+  const parsedRoute = parseRouteFromHash(window.location.hash);
+  currentRoute = normalizeRouteFlyoutState(parsedRoute);
+  const normalizedHash = buildHashForRoute(currentRoute);
+  if (window.location.hash !== normalizedHash) {
+    window.location.hash = normalizedHash;
+    return;
+  }
   syncFlyoutRenderOrder(currentRoute);
   if (isFlyoutOnlyRouteChange(previousRoute, currentRoute)) {
     render();

@@ -59,6 +59,22 @@ const normalizeFlyoutState = (flyouts = {}) => {
   return Object.fromEntries(FLYOUT_KEYS.map((key) => [key, flyouts[key] === true]));
 };
 
+export const resolveFlyoutState = (
+  flyouts = {},
+  { allowStacking = true, preferredKey = null } = {},
+) => {
+  const normalizedFlyouts = normalizeFlyoutState(flyouts);
+  if (allowStacking) {
+    return normalizedFlyouts;
+  }
+  const openKeys = FLYOUT_KEYS.filter((key) => normalizedFlyouts[key] === true);
+  if (openKeys.length <= 1) {
+    return normalizedFlyouts;
+  }
+  const preservedKey = preferredKey && normalizedFlyouts[preferredKey] === true ? preferredKey : openKeys.at(-1);
+  return Object.fromEntries(FLYOUT_KEYS.map((key) => [key, key === preservedKey]));
+};
+
 const appendFlyoutQuery = (hash, flyouts = {}) => {
   const normalizedFlyouts = normalizeFlyoutState(flyouts);
   if (!FLYOUT_KEYS.some((key) => normalizedFlyouts[key] === true)) {
@@ -129,6 +145,8 @@ const buildHashForParsedRoute = (parsed, flyouts) => {
       return buildHomeHash(flyouts);
   }
 };
+
+export const buildHashForRoute = (route) => buildHashForParsedRoute(route, route);
 
 const toggleFlyoutHash = (hash, flyoutKey) => {
   const raw = hash && hash !== "#" ? hash : "#/";
