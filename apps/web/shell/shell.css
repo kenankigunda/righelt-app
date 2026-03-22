@@ -445,7 +445,8 @@ button.button-release-bounce,
 .mini-board-card-list {
   display: grid;
   gap: 0.85rem;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 26rem));
+  justify-content: start;
   align-items: stretch;
 }
 
