@@ -1847,19 +1847,6 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   const previousFlyoutRects = animatePanels ? captureFlyoutRects() : new Map();
   syncShellLayoutMode();
   if (shouldPatchFlyoutsOnly) {
-    const currentGame =
-      currentRoute.name === "game"
-        ? transport.getGameViewModel(currentRoute.gameId)
-        : currentRoute.name === "invite" && resolvedInvite?.gameId
-          ? transport.getGameViewModel(resolvedInvite.gameId)
-          : null;
-    if (currentRoute.name === "game" && currentGame && shouldUseIncrementalGameShell() && getMountedGameShellRoot()?.getAttribute("data-game-id") === currentRoute.gameId) {
-      updateMountedGameShell({
-        game: currentGame,
-        inviteFromRole: currentRoute.inviteFromRole,
-        includeBoard,
-      });
-    }
     updateMountedFlyouts();
     syncFlyoutAwareLinks();
     syncCopyInviteLinks();

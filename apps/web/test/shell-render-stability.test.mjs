@@ -127,7 +127,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /await delay\(FLYOUT_MOTION_MS\);/);
   assert.match(source, /clearCoordinatedFlyoutMotionStyles\(\);/);
   assert.match(source, /const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">\$\{renderHeader\(\)\}\$\{body\}<\/div>\$\{renderFlyouts\(\)\}<\/div>`;/);
-  assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{[\s\S]*updateMountedFlyouts\(\);[\s\S]*syncFlyoutAwareLinks\(\);[\s\S]*syncCopyInviteLinks\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);[\s\S]*return;\s*\}/s);
+  assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedFlyouts\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.match(source, /data-flyout-link="home"/);
