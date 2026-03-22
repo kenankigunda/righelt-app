@@ -37,6 +37,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const getCurrentFlyoutState = \(\) => \(\{\s*\.\.\.Object\.fromEntries\(FLYOUT_KEYS\.map\(\(key\) => \[key, currentRoute\[key\] === true\]\)\),\s*\}\);/s);
   assert.match(source, /const getBaseRouteRenderKey = \(route = currentRoute\) => \{/);
   assert.match(source, /const getRouteRenderKey = \(route = currentRoute\) =>/);
+  assert.match(source, /const isFlyoutOnlyRouteChange = \(previousRoute, nextRoute\) =>/);
   assert.match(source, /let flyoutRenderOrder = FLYOUT_KEYS\.filter\(\(key\) => currentRoute\[key\] === true\);/);
   assert.match(source, /const syncFlyoutRenderOrder = \(route = currentRoute\) => \{/);
   assert.match(source, /const setFlyoutOpenState = \(key, isOpen\) => \{/);
@@ -111,6 +112,8 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
   assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
   assert.match(source, /syncFlyoutRenderOrder\(currentRoute\);/);
+  assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, nextRoute\)\) \{\s*render\(\);\s*return;\s*\}/s);
+  assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, currentRoute\)\) \{\s*render\(\);\s*return;\s*\}/s);
   assert.match(source, /setFlyoutOpenState\("debug", true\);/);
   assert.match(source, /setFlyoutOpenState\("scenarios", true\);/);
   assert.match(source, /const animateFlyoutClose = async \(flyoutKey, toggleHashBuilder\) => \{/);
@@ -227,8 +230,8 @@ test("shell renders and reconciles mini board previews for home and debug surfac
 test("withBusy only repaints immediately for actions that need visible busy state", () => {
   assert.match(source, /const withBusy = async \(fn, \{ renderStart = true, renderEnd = true \} = \{\}\) => \{/);
   assert.match(source, /if \(renderStart\) \{\s*render\(\);\s*\}/s);
-  assert.match(source, /const shouldRenderBusyState =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "return-live"/s);
-  assert.match(source, /\}, \{ renderStart: shouldRenderBusyState \}\);/);
+  assert.match(source, /const shouldRenderBusyState =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "return-live" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(source, /\}, \{ renderStart: shouldRenderBusyState, renderEnd: shouldRenderBusyState \}\);/);
   assert.match(source, /const renderFeedbackReveal = \(message\) =>/);
   assert.match(source, /feedback-reveal\$\{message \? " is-visible" : ""\}/);
 });

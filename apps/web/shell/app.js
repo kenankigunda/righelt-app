@@ -485,6 +485,9 @@ const getBaseRouteRenderKey = (route = currentRoute) => {
 };
 const getRouteRenderKey = (route = currentRoute) =>
   `${getBaseRouteRenderKey(route)}|${FLYOUT_KEYS.map((key) => `${key}:${route?.[key] === true}`).join("|")}`;
+const isFlyoutOnlyRouteChange = (previousRoute, nextRoute) =>
+  getBaseRouteRenderKey(previousRoute) === getBaseRouteRenderKey(nextRoute) &&
+  getRouteRenderKey(previousRoute) !== getRouteRenderKey(nextRoute);
 let flyoutRenderOrder = FLYOUT_KEYS.filter((key) => currentRoute[key] === true);
 const syncFlyoutRenderOrder = (route = currentRoute) => {
   const openKeys = FLYOUT_KEYS.filter((key) => route[key] === true);
@@ -2077,9 +2080,15 @@ const syncLiveChannel = () => {
 };
 
 const navigateTo = (hash) => {
+  const nextRoute = parseRouteFromHash(hash);
+  const previousRoute = currentRoute;
   if (window.location.hash === hash) {
-    currentRoute = parseRouteFromHash(hash);
+    currentRoute = nextRoute;
     syncFlyoutRenderOrder(currentRoute);
+    if (isFlyoutOnlyRouteChange(previousRoute, nextRoute)) {
+      render();
+      return;
+    }
     routeHydrated = false;
     syncLiveChannel();
     void withBusy(async () => {
@@ -2092,8 +2101,13 @@ const navigateTo = (hash) => {
 };
 
 window.addEventListener("hashchange", () => {
+  const previousRoute = currentRoute;
   currentRoute = parseRouteFromHash(window.location.hash);
   syncFlyoutRenderOrder(currentRoute);
+  if (isFlyoutOnlyRouteChange(previousRoute, currentRoute)) {
+    render();
+    return;
+  }
   routeHydrated = false;
   syncLiveChannel();
   void withBusy(async () => {
@@ -2145,7 +2159,11 @@ appEl.addEventListener("click", async (event) => {
     action !== "jump-history" &&
     action !== "return-live" &&
     action !== "tutorial-next" &&
-    action !== "tutorial-skip";
+    action !== "tutorial-skip" &&
+    action !== "open-debug" &&
+    action !== "open-scenarios" &&
+    action !== "close-debug" &&
+    action !== "close-scenarios";
 
   const animateFlyoutClose = async (flyoutKey, toggleHashBuilder) => {
     const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
@@ -2435,7 +2453,7 @@ appEl.addEventListener("click", async (event) => {
       setScenarioFeedback(localWrite.ok ? `Scenario ${scenario.id} saved.` : `Scenario ${scenario.id} saved via download fallback.`);
       render({ animatePanels: false, includeBoard: false });
     }
-  }, { renderStart: shouldRenderBusyState });
+  }, { renderStart: shouldRenderBusyState, renderEnd: shouldRenderBusyState });
 });
 
 appEl.addEventListener("change", (event) => {
