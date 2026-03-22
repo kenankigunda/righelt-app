@@ -934,8 +934,8 @@ textarea {
   .shell-flyout {
     width: 100%;
     height: auto;
-    max-height: 33vh;
-    flex: 0 1 33vh;
+    max-height: 50vh;
+    flex: 0 1 50vh;
     min-height: 0;
     transform: translateY(calc(100% + 1rem));
     border-left: 0;
