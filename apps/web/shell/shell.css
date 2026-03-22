@@ -10,6 +10,7 @@
   --section-item-gap: 0.75rem;
   --shell-main-max-width: 1200px;
   --shell-flyout-wide-width: min(34rem, 36vw);
+  --shell-flyout-content-gap: 1rem;
 }
 
 body {
@@ -809,22 +810,25 @@ textarea {
   max-width: none;
   margin: 1rem 0 2rem;
   padding-left: 1rem;
-  padding-right: var(--shell-flyout-wide-width);
+  padding-right: calc(var(--shell-flyout-wide-width) + var(--shell-flyout-content-gap));
 }
 
 #app[data-shell-layout-mode="wide"][data-debug-open="true"][data-scenarios-open="true"] {
-  padding-right: calc(var(--shell-flyout-wide-width) * 2);
+  padding-right: calc((var(--shell-flyout-wide-width) * 2) + var(--shell-flyout-content-gap));
 }
 
 #app[data-shell-layout-mode="wide"][data-debug-open="true"] .shell-main-content,
 #app[data-shell-layout-mode="wide"][data-scenarios-open="true"] .shell-main-content {
-  width: min(var(--shell-main-max-width), calc(100vw - var(--shell-flyout-wide-width) - 1rem));
+  width: min(var(--shell-main-max-width), calc(100vw - var(--shell-flyout-wide-width) - var(--shell-flyout-content-gap) - 1rem));
   max-width: 100%;
   margin: 0 auto;
 }
 
 #app[data-shell-layout-mode="wide"][data-debug-open="true"][data-scenarios-open="true"] .shell-main-content {
-  width: min(var(--shell-main-max-width), calc(100vw - (var(--shell-flyout-wide-width) * 2) - 1rem));
+  width: min(
+    var(--shell-main-max-width),
+    calc(100vw - (var(--shell-flyout-wide-width) * 2) - var(--shell-flyout-content-gap) - 1rem)
+  );
 }
 
 #app[data-shell-layout-mode="wide"][data-flyout-count="1"] .shell-flyout,

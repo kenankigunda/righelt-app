@@ -83,11 +83,11 @@ test("wide-screen shell sticky columns only target the left and board stacks", (
   );
   assert.match(
     shellStylesSource,
-    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\],\s*#app\[data-shell-layout-mode="wide"\]\[data-scenarios-open="true"\]\s*\{[\s\S]*padding-left:\s*1rem;[\s\S]*padding-right:\s*var\(--shell-flyout-wide-width\);/s,
+    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\],\s*#app\[data-shell-layout-mode="wide"\]\[data-scenarios-open="true"\]\s*\{[\s\S]*padding-left:\s*1rem;[\s\S]*padding-right:\s*calc\(var\(--shell-flyout-wide-width\)\s*\+\s*var\(--shell-flyout-content-gap\)\);/s,
   );
   assert.match(
     shellStylesSource,
-    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\]\s+\.shell-main-content,\s*#app\[data-shell-layout-mode="wide"\]\[data-scenarios-open="true"\]\s+\.shell-main-content\s*\{[\s\S]*width:\s*min\(var\(--shell-main-max-width\),\s*calc\(100vw\s*-\s*var\(--shell-flyout-wide-width\)\s*-\s*1rem\)\);[\s\S]*margin:\s*0\s+auto;/s,
+    /#app\[data-shell-layout-mode="wide"\]\[data-debug-open="true"\]\s+\.shell-main-content,\s*#app\[data-shell-layout-mode="wide"\]\[data-scenarios-open="true"\]\s+\.shell-main-content\s*\{[\s\S]*width:\s*min\(var\(--shell-main-max-width\),\s*calc\(100vw\s*-\s*var\(--shell-flyout-wide-width\)\s*-\s*var\(--shell-flyout-content-gap\)\s*-\s*1rem\)\);[\s\S]*margin:\s*0\s+auto;/s,
   );
   assert.match(
     shellStylesSource,
