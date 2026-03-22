@@ -33,7 +33,15 @@ test("shell header stacks cleanly on narrow screens", () => {
 test("shell header separates layout spacing from panel chrome and home start panel stays chromeless", () => {
   assert.doesNotMatch(
     shellStylesSource,
+    /^\*\s*\{/m,
+  );
+  assert.doesNotMatch(
+    shellStylesSource,
     /\.panel\s*\{/,
+  );
+  assert.doesNotMatch(
+    shellStylesSource,
+    /\.meta,\s*$/m,
   );
   assert.match(
     shellStylesSource,

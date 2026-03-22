@@ -1,10 +1,5 @@
-* {
-  box-sizing: border-box;
-}
-
 :root {
   --bg: #f4f1e8;
-  --paper: #fffdf8;
   --ink: #1d2d35;
   --line: #d2ccb9;
   --muted: #5b6a6f;
@@ -12,16 +7,12 @@
   --warning: #a5630f;
   --danger: #b6432f;
   --info: #1a5ca1;
-  --player-both: #7b53ab;
   --section-item-gap: 0.75rem;
   --shell-main-max-width: 1200px;
   --shell-debug-wide-width: min(34rem, 36vw);
 }
 
 body {
-  margin: 0;
-  min-height: 100vh;
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
   background:
     radial-gradient(circle at 12% 8%, #fdf6e5 0%, transparent 30%),
     radial-gradient(circle at 88% 92%, #e8eef9 0%, transparent 36%),
@@ -174,7 +165,6 @@ button.secondary:disabled {
   grid-template-columns: 1fr;
 }
 
-.meta,
 .small {
   color: var(--muted);
   font-size: 0.9rem;
