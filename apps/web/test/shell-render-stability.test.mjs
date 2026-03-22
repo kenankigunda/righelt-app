@@ -22,7 +22,12 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /class="shell-flyout-scroll shell-flyout-scroll-\$\{variant\}"/);
   assert.match(source, /closeAction:\s*"close-debug"/);
   assert.match(source, /closeAction:\s*"close-scenarios"/);
-  assert.match(source, /data-action="open-debug">Debug</);
+  assert.match(source, /class="secondary\$\{currentRoute\.scenarios \? " is-active" : ""\}"/);
+  assert.match(source, /data-action="\$\{currentRoute\.scenarios \? "close-scenarios" : "open-scenarios"\}"/);
+  assert.match(source, /aria-pressed="\$\{currentRoute\.scenarios \? "true" : "false"\}"/);
+  assert.match(source, /class="secondary\$\{currentRoute\.debug \? " is-active" : ""\}"/);
+  assert.match(source, /data-action="\$\{currentRoute\.debug \? "close-debug" : "open-debug"\}"/);
+  assert.match(source, /aria-pressed="\$\{currentRoute\.debug \? "true" : "false"\}"/);
   assert.match(source, /title: "Debug mode"/);
   assert.match(source, /Scenarios/);
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
@@ -32,6 +37,9 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /data-shell-sticky-target="board" data-sticky-enabled="false"/);
   assert.match(source, /data-game-panel="history"/);
   assert.match(source, /const updateMountedGameShell = \(\{ game, inviteFromRole = null, inviteToken = null, includeBoard = true \} = \{\}\) => \{/);
+  assert.match(source, /const getMountedHeaderEl = \(\) =>/);
+  assert.match(source, /const updateMountedHeader = \(\) => \{/);
+  assert.match(source, /currentHeaderEl\.replaceWith\(nextHeaderEl\);/);
   assert.match(source, /const doesMountedFlyoutStateMatchRoute = \(\) => \{/);
   assert.match(source, /return FLYOUT_KEYS\.every\(\(flyoutKey\) => \{/);
   assert.match(source, /const shouldEnableStickyShellColumn = \(\{ matchesWideScreen, columnHeight, viewportHeight \}\) =>/);
@@ -135,7 +143,8 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /await delay\(FLYOUT_MOTION_MS\);/);
   assert.match(source, /clearCoordinatedFlyoutMotionStyles\(\);/);
   assert.match(source, /const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">\$\{renderHeader\(\)\}\$\{body\}<\/div>\$\{renderFlyouts\(\)\}<\/div>`;/);
-  assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedFlyouts\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
+  assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
+  assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*updateMountedGameShell\(/s);
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.match(source, /data-flyout-link="home"/);

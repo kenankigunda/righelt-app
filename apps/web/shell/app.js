@@ -782,8 +782,18 @@ const renderHeader = () => `
             ? `<a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Home</a>`
             : ""
         }
-        <button class="secondary" data-action="open-scenarios">Scenarios</button>
-        <button class="secondary" data-action="open-debug">Debug</button>
+        <button
+          class="secondary${currentRoute.scenarios ? " is-active" : ""}"
+          type="button"
+          data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
+          aria-pressed="${currentRoute.scenarios ? "true" : "false"}"
+        >Scenarios</button>
+        <button
+          class="secondary${currentRoute.debug ? " is-active" : ""}"
+          type="button"
+          data-action="${currentRoute.debug ? "close-debug" : "open-debug"}"
+          aria-pressed="${currentRoute.debug ? "true" : "false"}"
+        >Debug</button>
         <a class="button-link secondary" href="${buildTutorialHash(null, getCurrentFlyoutState())}" data-flyout-link="tutorial">Tutorial</a>
       </div>
     </div>
@@ -1304,6 +1314,8 @@ const getMountedGameShellRoot = () =>
   appEl?.querySelector?.("[data-game-shell-root]") instanceof HTMLElement ? appEl.querySelector("[data-game-shell-root]") : null;
 const getMountedShellPageEl = () =>
   appEl?.querySelector?.(".shell-page-shell") instanceof HTMLElement ? appEl.querySelector(".shell-page-shell") : null;
+const getMountedHeaderEl = () =>
+  appEl?.querySelector?.(".shell-header") instanceof HTMLElement ? appEl.querySelector(".shell-header") : null;
 const createMarkupRoot = (markup) => {
   if (typeof markup !== "string" || markup.trim().length === 0) {
     return null;
@@ -1311,6 +1323,18 @@ const createMarkupRoot = (markup) => {
   const template = document.createElement("template");
   template.innerHTML = markup.trim();
   return template.content.firstElementChild instanceof HTMLElement ? template.content.firstElementChild : null;
+};
+const updateMountedHeader = () => {
+  const currentHeaderEl = getMountedHeaderEl();
+  if (!(currentHeaderEl instanceof HTMLElement)) {
+    return false;
+  }
+  const nextHeaderEl = createMarkupRoot(renderHeader());
+  if (!(nextHeaderEl instanceof HTMLElement)) {
+    return false;
+  }
+  currentHeaderEl.replaceWith(nextHeaderEl);
+  return true;
 };
 const getFlyoutAwareHref = (element) => {
   if (!(element instanceof HTMLElement)) {
@@ -1866,6 +1890,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   const previousFlyoutRects = animatePanels ? captureFlyoutRects() : new Map();
   syncShellLayoutMode();
   if (shouldPatchFlyoutsOnly) {
+    updateMountedHeader();
     updateMountedFlyouts();
     syncFlyoutAwareLinks();
     syncCopyInviteLinks();
@@ -1883,6 +1908,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     shouldUseIncrementalGameShell() &&
     mountedGameShell?.getAttribute("data-game-id") === currentRoute.gameId
   ) {
+    updateMountedHeader();
     updateHeaderFields();
     updateMountedGameShell({
       game: transport.getGameViewModel(currentRoute.gameId),
