@@ -379,7 +379,7 @@ const animateFlyoutShift = (element, { deltaX = 0, deltaY = 0, fromOpacity = 1, 
   element.addEventListener("transitionend", clearMotion);
 };
 const animateFlyoutPositionChanges = (previousRects) => {
-  if (prefersReducedMotion() || !(previousRects instanceof Map) || previousRects.size === 0) {
+  if (prefersReducedMotion() || !(previousRects instanceof Map)) {
     return;
   }
   const layoutMode = getShellLayoutMode();

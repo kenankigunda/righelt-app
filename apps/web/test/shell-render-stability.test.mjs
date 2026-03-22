@@ -41,15 +41,16 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /let flyoutRenderOrder = FLYOUT_KEYS\.filter\(\(key\) => currentRoute\[key\] === true\);/);
   assert.match(source, /const syncFlyoutRenderOrder = \(route = currentRoute\) => \{/);
   assert.match(source, /const setFlyoutOpenState = \(key, isOpen\) => \{/);
-  assert.match(source, /const getOpenFlyoutCount = \(\) => FLYOUT_KEYS\.reduce\(\(count, key\) => count \+ Number\(currentRoute\[key\] === true\), 0\);/);
+  assert.match(source, /const getOpenFlyoutCount = \(route = currentRoute\) => FLYOUT_KEYS\.reduce\(\(count, key\) => count \+ Number\(route\?\.\[key\] === true\), 0\);/);
   assert.match(source, /const getWideFlyoutWidth = \(viewportWidth = window\.innerWidth\) => \{/);
-  assert.match(source, /const getAvailableShellContentWidth = \(viewportWidth = window\.innerWidth\) => \{/);
+  assert.match(source, /const getAvailableShellContentWidth = \(viewportWidth = window\.innerWidth, route = currentRoute\) => \{/);
   assert.match(source, /const SHELL_VIEWPORT_GUTTER_PX = 16;/);
   assert.match(source, /const totalHorizontalGutter = SHELL_VIEWPORT_GUTTER_PX \* 2;/);
   assert.match(source, /return Math\.max\(0, viewportWidth - totalHorizontalGutter\);/);
   assert.match(source, /return Math\.max\(0, viewportWidth - \(getWideFlyoutWidth\(viewportWidth\) \* openFlyoutCount\) - totalHorizontalGutter\);/);
-  assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) =>/);
-  assert.match(source, /getAvailableShellContentWidth\(viewportWidth\) >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"/);
+  assert.match(source, /const getShellLayoutModeForRoute = \(route = currentRoute, viewportWidth = window\.innerWidth\) =>/);
+  assert.match(source, /getAvailableShellContentWidth\(viewportWidth, route\) >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"/);
+  assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) => getShellLayoutModeForRoute\(currentRoute, viewportWidth\);/);
   assert.match(source, /const syncShellLayoutMode = \(\) => \{/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", layoutMode\);/);
   assert.match(source, /FLYOUT_KEYS\.forEach\(\(key\) => \{\s*appEl\.setAttribute\(`data-\$\{key\}-open`, currentRoute\[key\] \? "true" : "false"\);\s*\}\);/s);
@@ -79,6 +80,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const captureFlyoutRects = \(layoutMode = getShellLayoutMode\(\)\) =>/);
   assert.match(source, /const animateFlyoutShift = \(element, \{ deltaX = 0, deltaY = 0, fromOpacity = 1, fromWidth = null, toWidth = null \} = \{\}\) => \{/);
   assert.match(source, /const animateFlyoutPositionChanges = \(previousRects\) => \{/);
+  assert.doesNotMatch(source, /previousRects\.size === 0/);
   assert.match(source, /const clearCoordinatedFlyoutMotionStyles = \(\) => \{/);
   assert.match(source, /const hasWidthChange = Number\.isFinite\(fromWidth\) && Number\.isFinite\(toWidth\) && Math\.abs\(toWidth - fromWidth\) >= 1;/);
   assert.match(source, /element\.style\.width = `\$\{fromWidth\}px`;/);
@@ -106,6 +108,8 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /fromWidth: previousRect\.width,/);
   assert.match(source, /toWidth: nextRect\.width,/);
   assert.match(source, /getAnimatedFlyoutEls\(layoutMode\)\.forEach\(\(element\) => \{/);
+  assert.match(source, /deltaX: layoutMode === "wide" \? nextRect\.width : 0,/);
+  assert.match(source, /deltaY: layoutMode === "wide" \? 0 : nextRect\.height,/);
   assert.match(source, /querySelectorAll\("\.panel"\)/);
   assert.match(source, /class="panel" data-shell-panel="board"/);
   assert.match(source, /scheduleGameShellStickyLayout\(\);/);
