@@ -92,14 +92,14 @@ test("narrow-screen shell layout still collapses to one column without sticky ru
   );
 });
 
-test("home mini-board cards wrap across the full panel width in flex rows", () => {
+test("home mini-board cards use uniform grid widths across wrapped rows", () => {
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-list\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-wrap:\s*wrap;[\s\S]*align-items:\s*stretch;/s,
+    /\.mini-board-card-list\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(min\(100%, 18rem\), 24rem\)\);[\s\S]*justify-content:\s*start;[\s\S]*align-items:\s*stretch;/s,
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card\s*\{[\s\S]*flex:\s*1 1 18rem;[\s\S]*min-width:\s*min\(100%, 18rem\);[\s\S]*max-width:\s*24rem;/s,
+    /\.mini-board-card\s*\{[\s\S]*display:\s*grid;[\s\S]*width:\s*100%;/s,
   );
   assert.match(
     shellStylesSource,
