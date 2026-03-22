@@ -428,6 +428,7 @@ button.button-release-bounce,
   display: grid;
   flex: 1 1 18rem;
   min-width: min(100%, 18rem);
+  max-width: 24rem;
   gap: 0.65rem;
   padding: 0.85rem;
   border: 1px solid #ddd5c4;

@@ -99,7 +99,7 @@ test("home mini-board cards wrap across the full panel width in flex rows", () =
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card\s*\{[\s\S]*flex:\s*1 1 18rem;[\s\S]*min-width:\s*min\(100%, 18rem\);/s,
+    /\.mini-board-card\s*\{[\s\S]*flex:\s*1 1 18rem;[\s\S]*min-width:\s*min\(100%, 18rem\);[\s\S]*max-width:\s*24rem;/s,
   );
   assert.match(
     shellStylesSource,
