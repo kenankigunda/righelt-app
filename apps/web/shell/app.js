@@ -783,7 +783,7 @@ const renderHeader = () => `
             : ""
         }
         <button class="secondary" data-action="open-scenarios">Scenarios</button>
-        <button class="secondary" data-action="open-debug">Debug mode</button>
+        <button class="secondary" data-action="open-debug">Debug</button>
         <a class="button-link secondary" href="${buildTutorialHash(null, getCurrentFlyoutState())}" data-flyout-link="tutorial">Tutorial</a>
       </div>
     </div>

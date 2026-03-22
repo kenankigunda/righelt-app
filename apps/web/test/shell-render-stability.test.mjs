@@ -22,7 +22,8 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /class="shell-flyout-scroll shell-flyout-scroll-\$\{variant\}"/);
   assert.match(source, /closeAction:\s*"close-debug"/);
   assert.match(source, /closeAction:\s*"close-scenarios"/);
-  assert.match(source, /Debug mode/);
+  assert.match(source, /data-action="open-debug">Debug</);
+  assert.match(source, /title: "Debug mode"/);
   assert.match(source, /Scenarios/);
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
   assert.match(source, /id="shell-game-alerts"/);
