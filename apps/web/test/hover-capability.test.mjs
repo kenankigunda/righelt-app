@@ -67,4 +67,5 @@ test("hover-only styles are gated behind the root hover capability marker", () =
   assert.match(shellStylesSource, /\[data-hover-capability="hover"\]\s+\.history-item:hover\s+\.history-move-at/);
   assert.match(shellStylesSource, /\[data-hover-capability="hover"\]\s+\.history-item:hover\s+\.history-move-line/);
   assert.match(shellStylesSource, /\[data-hover-capability="hover"\]\s+\.mini-board-card:hover\s+\.mini-board-card-link-surface/);
+  assert.match(shellStylesSource, /\.player-tone-both\s*\{/);
 });

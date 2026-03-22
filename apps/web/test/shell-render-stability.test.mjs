@@ -129,7 +129,9 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /class="mini-board-card-link-surface" href=/);
   assert.match(source, /As of \$\{escapeHtml\(formatClientDateTime\(game\.lastMoveAt \|\| game\.createdAt\)\)\}/);
   assert.match(source, /const recoveryChip = game\.syncStatus === "desynced" \? '<span class="status-chip">Recovering<\/span>' : "";/);
-  assert.match(source, /isPlayerRole\(game\.myRole\) \? `You are \$\{renderRoleLabel\(game\.myRole\)\}` : renderRoleLabel\(game\.myRole\)/);
+  assert.match(source, /const isDualSeatIdentity = \(game\) =>/);
+  assert.match(source, /return '<strong class="player-tone-both">both players<\/strong>';/);
+  assert.match(source, /isPlayerRole\(game\.myRole\) \? `You are \$\{renderRoleLabel\(game\.myRole, game\)\}` : renderRoleLabel\(game\.myRole, game\)/);
   assert.match(source, /const moveLabel = Array\.isArray\(game\.moves\) \? `Move \$\{game\.moves\.length \+ 1\}` : "Move pending";/);
   assert.match(source, /reconcileMiniBoardPreviews\(\);\s*scheduleGameShellStickyLayout\(\);/);
 });

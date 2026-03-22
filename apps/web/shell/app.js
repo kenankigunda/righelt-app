@@ -133,10 +133,16 @@ const getControlSeatForTurn = (state, turnOwnerSeat) => {
   }
   return turnOwnerSeat;
 };
-const playerToneClassForSeat = (seat) => (seat === "Player 1" ? "player-tone-p1" : seat === "Player 2" ? "player-tone-p2" : "player-tone-neutral");
+const playerToneClassForSeat = (seat) =>
+  seat === "Player 1" ? "player-tone-p1" : seat === "Player 2" ? "player-tone-p2" : seat === "Both Players" ? "player-tone-both" : "player-tone-neutral";
 const playerToneClassForSide = (side) => (side === "P1" ? "player-tone-p1" : side === "P2" ? "player-tone-p2" : "player-tone-neutral");
 const renderSeatLabel = (seat) => `<span class="${playerToneClassForSeat(seat)}">${escapeHtml(seat || "Unknown")}</span>`;
-const renderRoleLabel = (role) => {
+const isDualSeatIdentity = (game) =>
+  Boolean(game?.player1?.identityId) && Boolean(game?.player2?.identityId) && game.player1.identityId === game.player2.identityId;
+const renderRoleLabel = (role, game = null) => {
+  if (isDualSeatIdentity(game) && isPlayerRole(role)) {
+    return '<strong class="player-tone-both">both players</strong>';
+  }
   if (role === "Player 1" || role === "Player 2") {
     return `<strong class="${playerToneClassForSeat(role)}">${escapeHtml(role)}</strong>`;
   }
@@ -765,7 +771,7 @@ const renderHomeGameCard = (game) => {
         ${recoveryChip}
       </div>
       <div class="mini-board-card-meta">
-        <span>${isPlayerRole(game.myRole) ? `You are ${renderRoleLabel(game.myRole)}` : renderRoleLabel(game.myRole)}</span>
+        <span>${isPlayerRole(game.myRole) ? `You are ${renderRoleLabel(game.myRole, game)}` : renderRoleLabel(game.myRole, game)}</span>
         <span class="small">${escapeHtml(moveLabel)}</span>
       </div>
       ${renderMiniBoardPreviewRoot({
@@ -836,7 +842,7 @@ const renderGameSummaryPanel = (game) => {
     <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
     <div class="section-stack">
       <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
-      <p class="small">Role: ${renderRoleLabel(game.myRole)}</p>
+      <p class="small">Role: ${renderRoleLabel(game.myRole, game)}</p>
       <div class="section-followup">
         <p class="small">Active turn: ${
           game.currentTurn

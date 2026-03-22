@@ -12,6 +12,7 @@
   --warning: #a5630f;
   --danger: #b6432f;
   --info: #1a5ca1;
+  --player-both: #7b53ab;
   --section-item-gap: 0.75rem;
   --shell-main-max-width: 1200px;
   --shell-debug-wide-width: min(34rem, 36vw);
@@ -421,6 +422,10 @@ button.button-release-bounce,
 
 .player-tone-p2 {
   color: #2d67c7;
+}
+
+.player-tone-both {
+  color: var(--player-both);
 }
 
 .mini-board-card-list {
