@@ -105,14 +105,21 @@ body {
 
 button,
 .button-link {
+  appearance: none;
+  -webkit-appearance: none;
   border: 1px solid transparent;
   background: var(--accent);
   color: #fff;
   border-radius: 8px;
   padding: 0.55rem 0.8rem;
   font-weight: 650;
+  font: inherit;
+  line-height: 1.2;
   cursor: pointer;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 button.secondary,
