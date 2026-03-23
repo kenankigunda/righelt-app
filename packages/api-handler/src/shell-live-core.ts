@@ -18,6 +18,7 @@ export type Participant = {
 
 export type Viewer = Participant;
 export type IdentityRole = "Player 1" | "Player 2" | "Viewer";
+export type LaunchParticipantCopyMode = "copy_source_participants" | "viewer_as_player1";
 
 export type JoinRequest = {
   identityId: string;
@@ -100,6 +101,7 @@ export type LiveGame = {
   historyIndexByIdentity: Record<string, number>;
   pendingScenarioSelection: ScenarioSavedSelection | null;
   notifications: string[];
+  initialSelectionAction?: Action | null;
   inviteTokens: {
     viewer: string;
     player1: string;
@@ -486,6 +488,40 @@ export const assignIdentityToScenarioSeat = (
   }
 };
 
+export const resolveLaunchParticipantCopyMode = (
+  source: LiveGame,
+  identityId: string,
+): LaunchParticipantCopyMode => {
+  const roles = getRolesForIdentity(source, identityId);
+  return roles.includes("Player 1") || roles.includes("Player 2")
+    ? "copy_source_participants"
+    : "viewer_as_player1";
+};
+
+export const applyLaunchParticipantCopyMode = (
+  source: LiveGame,
+  target: LiveGame,
+  identityId: string,
+  mode: LaunchParticipantCopyMode,
+) => {
+  if (mode === "copy_source_participants") {
+    copyParticipantsBetweenGames(source, target);
+    return;
+  }
+
+  target.playgroundMode = false;
+  target.player1 = cloneParticipant(source.player1?.identityId === identityId ? source.player1 : null) ?? {
+    identityId,
+    connected: true,
+    joinedAt: target.createdAt,
+    lastHeartbeatAt: target.createdAt,
+    sessionCount: 0,
+  };
+  target.player2 = null;
+  target.viewers = [];
+  target.pendingJoinRequests = [];
+};
+
 export const findRoleForIdentity = (game: LiveGame, identityId: string): "Player 1" | "Player 2" | "Viewer" | "Guest" => {
   return getRolesForIdentity(game, identityId)[0] ?? "Guest";
 };
@@ -666,6 +702,7 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     typeof historyIndex === "number" && moves[historyIndex]
       ? clone(moves[historyIndex].action)
       : null;
+  const initialSelectionAction = !inHistoryMode && moves.length === 0 ? clone(game.initialSelectionAction ?? null) : null;
   const activeTurn = turns[turns.length - 1] ?? null;
   const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(game);
   const controlSeat = getControlSeatForTurn(game.board.state, turnOwnerSeat);
@@ -715,6 +752,7 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
       Boolean(activeTurn && activeTurn.moveIndexes.length > 0),
     currentTurn: activeTurn ? clone(activeTurn) : null,
     historySelectionAction,
+    initialSelectionAction,
     turnOwnerSeat,
     controlSeat,
     control: controlSeat === turnOwnerSeat ? "turn-owner" : "opponent",

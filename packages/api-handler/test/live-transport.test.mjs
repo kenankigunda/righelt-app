@@ -396,6 +396,139 @@ test("live transport: create-from-scenario seats the importer as the scenario si
   assert.equal(imported.game.myRole, "Player 2");
 });
 
+test("live transport: scenario launch from an existing game applies shared participant copy policy", async () => {
+  const created = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await created.json();
+  const gameId = createdBody.game.id;
+
+  const playerJoin = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-player2",
+      mode: "player",
+      inviteFromRole: "Player 1",
+    }),
+    env,
+  );
+  assert.equal((await playerJoin.json()).game.player2.identityId, "id-player2");
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-viewer",
+      mode: "viewer",
+    }),
+    env,
+  );
+
+  const scenario = {
+    formatVersion: 2,
+    id: "537db3b4-a2c5-44b2-8d5a-82065e54c0fd",
+    title: "Source launch scenario",
+    description: "Participant copy policy regression",
+    incorrect: false,
+    initialState: {
+      boardSize: 10,
+      sideToMove: "P1",
+      turnIndex: 0,
+      pieces: [
+        { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+        { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+      ],
+      continuation: null,
+      outcome: { status: "ongoing" },
+    },
+    moves: [],
+    resultingState: {
+      boardSize: 10,
+      sideToMove: "P1",
+      turnIndex: 0,
+      pieces: [
+        { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+        { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+      ],
+      continuation: null,
+      outcome: { status: "ongoing" },
+    },
+    expectedFinalStateHash: "hash-placeholder",
+    expectedOutcome: "ongoing",
+  };
+
+  const playerLaunch = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-owner",
+      sourceGameId: gameId,
+      scenario,
+    }),
+    env,
+  );
+  const playerLaunchBody = await playerLaunch.json();
+  assert.equal(playerLaunch.status, 200);
+  assert.equal(playerLaunchBody.game.player1.identityId, "id-owner");
+  assert.equal(playerLaunchBody.game.player2.identityId, "id-player2");
+  assert.equal(playerLaunchBody.game.viewers.some((viewer) => viewer.identityId === "id-viewer"), true);
+
+  const viewerLaunch = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-viewer",
+      sourceGameId: gameId,
+      scenario,
+    }),
+    env,
+  );
+  const viewerLaunchBody = await viewerLaunch.json();
+  assert.equal(viewerLaunch.status, 200);
+  assert.equal(viewerLaunchBody.game.player1.identityId, "id-viewer");
+  assert.equal(viewerLaunchBody.game.player2, null);
+  assert.deepEqual(viewerLaunchBody.game.viewers, []);
+});
+
+test("live transport: history branch launch creates a fresh game with interactive preselection and viewer-only participant override", async () => {
+  const created = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await created.json();
+  const gameId = createdBody.game.id;
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-viewer",
+      mode: "viewer",
+    }),
+    env,
+  );
+
+  const move = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
+    env,
+  );
+  const moveBody = await move.json();
+  const moveEntry = moveBody.game.moves[0];
+
+  const branch = await handleApiRequest(
+    req("/api/shell/history/branch", "POST", {
+      identityId: "id-viewer",
+      sourceGameId: gameId,
+      sourceMoveIndex: 0,
+      initialState: moveEntry.selectionSnapshot,
+      initialSelectionAction: moveEntry.action,
+      participantCopyMode: "viewer_as_player1",
+    }),
+    env,
+  );
+  const branchBody = await branch.json();
+  assert.equal(branch.status, 200);
+  assert.equal(branchBody.game.player1.identityId, "id-viewer");
+  assert.equal(branchBody.game.player2, null);
+  assert.deepEqual(branchBody.game.viewers, []);
+  assert.equal(branchBody.game.inHistoryMode, false);
+  assert.deepEqual(branchBody.game.initialSelectionAction, moveEntry.action);
+  assert.deepEqual(branchBody.game.currentSnapshot, moveEntry.selectionSnapshot);
+  assert.equal(branchBody.game.moves.length, 0);
+});
+
 test("live transport: scenario import rejects non-UUID scenario ids", async () => {
   const scenarioImport = await handleApiRequest(
     req("/api/shell/scenarios/import", "POST", {
@@ -433,7 +566,6 @@ test("live transport: scenario import rejects non-UUID scenario ids", async () =
   assert.equal(scenarioImport.status, 400);
   await assert.deepEqual(await scenarioImport.json(), { ok: false, error: "invalid_scenario_payload" });
 });
-
 test("live transport: game reads query persistent storage even when process cache is warm", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),

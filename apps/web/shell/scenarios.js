@@ -53,6 +53,13 @@ const normalizeScenario = (scenario) => ({
   savedSelection: normalizeSavedSelection(scenario?.savedSelection ?? scenario?.saved_selection ?? null),
 });
 
+export const getLaunchParticipantCopyMode = (game) => {
+  const roles = Array.isArray(game?.myRoles) ? game.myRoles : typeof game?.myRole === "string" ? [game.myRole] : [];
+  return roles.includes("Player 1") || roles.includes("Player 2")
+    ? "copy_source_participants"
+    : "viewer_as_player1";
+};
+
 export const loadScenarioCatalog = async () => {
   const response = await fetch("/scenarios/catalog.json", { cache: "no-store" });
   if (!response.ok) {
@@ -165,4 +172,18 @@ export const buildScenarioFromGame = async (
     expectedOutcome: resultingState?.outcome?.status ?? "ongoing",
     savedSelection: normalizeSavedSelection(savedSelection),
   });
+};
+
+export const buildHistoryBranchSeedFromGame = (game, moveIndex) => {
+  const move = Array.isArray(game?.moves) ? game.moves[moveIndex] : null;
+  if (!move?.selectionSnapshot || !move?.action) {
+    throw new Error("invalid_history_branch_move");
+  }
+  const sourceLabel = String(game?.id || "").startsWith("game-") ? String(game.id).slice(0, 11) : String(game?.id || "game");
+  return {
+    title: `Branch from ${sourceLabel} move ${move.index + 1}`,
+    initialState: structuredClone(move.selectionSnapshot),
+    initialSelectionAction: structuredClone(move.action),
+    participantCopyMode: getLaunchParticipantCopyMode(game),
+  };
 };

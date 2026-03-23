@@ -254,6 +254,69 @@ test("live transport store posts scenario imports through the shell scenarios en
   assert.equal(result.game.id, "game-apply-here");
 });
 
+test("live transport store posts history branch launches through the shell history endpoint", async () => {
+  const storage = createMemoryStorage();
+  storage.setItem("righelt.identity.id.v1", "id-branch");
+  const fetcher = async (url, init = {}) => {
+    if (String(url) === "/api/shell/history/branch?offline=0") {
+      const body = JSON.parse(String(init.body || "{}"));
+      assert.equal(body.identityId, "id-branch");
+      assert.equal(body.sourceGameId, "game-source");
+      assert.equal(body.sourceMoveIndex, 2);
+      assert.equal(body.participantCopyMode, "viewer_as_player1");
+      assert.deepEqual(body.initialSelectionAction.from, { row: 1, col: 1 });
+      return Response.json({
+        ok: true,
+        game: {
+          id: "game-branch",
+          createdAt: "2026-02-26T00:00:00.000Z",
+          lastMoveAt: null,
+          updatedAt: "2026-02-26T00:00:00.000Z",
+          offlineLocal: false,
+          playgroundMode: false,
+          player1: { identityId: "id-branch", connected: true },
+          player2: null,
+          viewers: [],
+          pendingJoinRequests: [],
+          moves: [],
+          notifications: ["History branch launched"],
+          myRole: "Player 1",
+          inHistoryMode: false,
+          initialSelectionAction: {
+            type: "move",
+            actorId: "U1",
+            from: { row: 1, col: 1 },
+            to: { row: 2, col: 1 },
+          },
+          currentSnapshot: { sideToMove: "P1", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+          board: { state: { sideToMove: "P1", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } } },
+          showJoinActions: true,
+          canInvite: true,
+          showOfflineState: false,
+        },
+      });
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({ storage, fetcher, random: () => 0.2 });
+  const result = await store.launchHistoryBranch({
+    sourceGameId: "game-source",
+    sourceMoveIndex: 2,
+    initialState: { sideToMove: "P1", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+    initialSelectionAction: {
+      type: "move",
+      actorId: "U1",
+      from: { row: 1, col: 1 },
+      to: { row: 2, col: 1 },
+    },
+    participantCopyMode: "viewer_as_player1",
+  });
+
+  assert.equal(result.game.id, "game-branch");
+  assert.equal(store.getGameViewModel("game-branch").initialSelectionAction.to.row, 2);
+});
+
 test("live transport store loads paged home sections through section-aware query params", async () => {
   const storage = createMemoryStorage();
   storage.setItem("righelt.identity.id.v1", "id-page");

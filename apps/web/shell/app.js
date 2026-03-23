@@ -10,6 +10,7 @@ import { ensureHoverCapabilityController } from "../hover-capability.js";
 import { applyCommandLegendSwatch, getCommandLegendSwatchStyle } from "../legend.js";
 import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from "./persistence.js";
 import {
+  buildHistoryBranchSeedFromGame,
   buildScenarioFromGame,
   canAuthorScenariosLocally,
   loadScenarioCatalog,
@@ -973,11 +974,17 @@ const renderTurnHistory = (game) => {
       .map((move) => {
         const isSelected = game.inHistoryMode ? game.historyIndex === move.index : selectedMoveIndex === move.index;
         const selectedClass = isSelected ? (game.inHistoryMode ? " is-selected" : " is-live-selected") : "";
+        const branchButton = game.inHistoryMode && game.historyIndex === move.index
+          ? `<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${escapeHtml(
+              String(move.index),
+            )}" ${busy ? "disabled" : ""}>Create new game at this move</button>`
+          : "";
         return `<li class="history-item ${playerToneClassForSide(move.actorSide || (turn.playerSeat === "Player 1" ? "P1" : "P2"))}${selectedClass}" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">
           <span class="history-move-line">Move ${escapeHtml(
             String(move.index + 1),
           )}: ${escapeHtml(move.notation)}</span>
           <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
+          ${branchButton}
         </li>`;
       }),
   );
@@ -2121,6 +2128,7 @@ const mountBoardForGame = (game) => {
   const snapshot = game.currentSnapshot ?? null;
   const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
   const historySelectionAction = game.inHistoryMode ? game.historySelectionAction ?? null : null;
+  const initialSelectionAction = !game.inHistoryMode ? game.initialSelectionAction ?? null : null;
   const overlayMode = game.inHistoryMode ? "recorded-action" : "interactive";
   const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode ? game.legalActions : [];
   const scenarioSelectionHydration = resolvePendingScenarioHydration({
@@ -2135,10 +2143,11 @@ const mountBoardForGame = (game) => {
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
   const forceClickTargetSelection = currentRoute.scenarios;
+  const hydratedSelectionAction = scenarioSelectionHydration.selectionAction ?? initialSelectionAction;
   const overlayKey = toStableKey({
     overlayMode,
     recordedAction: historySelectionAction,
-    selectionAction: scenarioSelectionHydration.selectionAction,
+    selectionAction: hydratedSelectionAction,
     selectionState: scenarioSelectionHydration.selectionState,
     forceClickTargetSelection,
   });
@@ -2180,7 +2189,7 @@ const mountBoardForGame = (game) => {
     void boardRuntime.loadSnapshot(snapshot, {
       legalActions: effectiveLegalActions,
       resetSelection: true,
-      selectionAction: scenarioSelectionHydration.selectionAction,
+      selectionAction: hydratedSelectionAction,
       selectionState: scenarioSelectionHydration.selectionState,
       overlayMode,
       recordedAction: historySelectionAction,
@@ -2228,7 +2237,7 @@ const mountBoardForGame = (game) => {
   void boardRuntime.loadSnapshot(snapshot, {
     legalActions: effectiveLegalActions,
     resetSelection,
-    selectionAction: scenarioSelectionHydration.selectionAction,
+    selectionAction: hydratedSelectionAction,
     selectionState: scenarioSelectionHydration.selectionState,
     overlayMode,
     recordedAction: historySelectionAction,
@@ -2676,6 +2685,7 @@ appEl.addEventListener("click", async (event) => {
   const shouldRenderBusyState =
     action !== "copy-invite" &&
     action !== "jump-history" &&
+    action !== "launch-history-branch" &&
     action !== "return-live" &&
     action !== "tutorial-next" &&
     action !== "tutorial-skip" &&
@@ -2930,6 +2940,33 @@ appEl.addEventListener("click", async (event) => {
       await animateHistoryDeselection(actionEl);
       await transport.returnToLive({ gameId });
       await syncRouteDataAndLiveChannels();
+      return;
+    }
+
+    if (action === "launch-history-branch") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
+      const activeGame = gameId ? transport.getGameViewModel(gameId) : null;
+      if (!activeGame || !Number.isFinite(moveIndex)) {
+        return;
+      }
+      const branchSeed = buildHistoryBranchSeedFromGame(activeGame, moveIndex);
+      const result = await transport.launchHistoryBranch({
+        sourceGameId: activeGame.id,
+        sourceMoveIndex: moveIndex,
+        initialState: branchSeed.initialState,
+        initialSelectionAction: branchSeed.initialSelectionAction,
+        participantCopyMode: branchSeed.participantCopyMode,
+      });
+      if (!result?.game?.id) {
+        return;
+      }
+      const nextHash = buildGameHash(result.game.id, null, {
+        ...getCurrentFlyoutState(),
+        scenarios: false,
+      });
+      window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
+      render({ animatePanels: false, includeBoard: false });
       return;
     }
 

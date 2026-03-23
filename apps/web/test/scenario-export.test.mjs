@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildScenarioFromGame } from "../shell/scenarios.js";
+import { buildHistoryBranchSeedFromGame, buildScenarioFromGame } from "../shell/scenarios.js";
 
 const SCENARIO_UUIDS = {
   exportUsesCanonicalTurn: "0066b0ed-c5ba-4a89-a81a-1811d08d2d9d",
@@ -223,4 +223,40 @@ test("buildScenarioFromGame rejects non-UUID scenario ids", async () => {
       /UUID v4/,
     );
   });
+});
+
+test("buildHistoryBranchSeedFromGame uses the selected move pre-state and launch participant mode", () => {
+  const seed = buildHistoryBranchSeedFromGame(
+    {
+      id: "game-branch-1",
+      myRole: "Viewer",
+      myRoles: ["Viewer"],
+      moves: [
+        {
+          index: 0,
+          action: {
+            type: "move",
+            actorId: "U1",
+            from: { row: 2, col: 2 },
+            to: { row: 3, col: 2 },
+          },
+          selectionSnapshot: {
+            boardSize: 10,
+            sideToMove: "P1",
+            turnIndex: 4,
+            pieces: [{ id: "U1", owner: "P1", kind: "unit", position: { row: 2, col: 2 } }],
+            continuation: null,
+            outcome: { status: "ongoing" },
+          },
+        },
+      ],
+    },
+    0,
+  );
+
+  assert.equal(seed.title, "Branch from game-branch move 1");
+  assert.equal(seed.participantCopyMode, "viewer_as_player1");
+  assert.deepEqual(seed.initialSelectionAction.from, { row: 2, col: 2 });
+  assert.deepEqual(seed.initialSelectionAction.to, { row: 3, col: 2 });
+  assert.equal(seed.initialState.turnIndex, 4);
 });

@@ -191,6 +191,7 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /const pendingRows = \(Array\.isArray\(game\.pendingMoves\) \? game\.pendingMoves : \[\]\)\.map/);
   assert.match(source, /const reverseChronologicalMoveRows = \[\.\.\.moveRows\]\.reverse\(\);/);
   assert.match(source, /const reverseChronologicalPendingRows = \[\.\.\.pendingRows\]\.reverse\(\);/);
+  assert.match(source, /const branchButton = game\.inHistoryMode && game\.historyIndex === move\.index/);
   assert.match(source, /class="history-item history-item-pending/);
   assert.match(source, /Pending<\/span>/);
   assert.match(source, /const liveContinuationText =[\s\S]*Live: Waiting for \$\{controlSeat \|\| "next player"\} to continue\.\.\./s);
@@ -203,6 +204,8 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
   assert.match(source, /return `\$\{emptyTurnItem\}\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
   assert.match(source, /const hasHistoryMoves = Array\.isArray\(game\.moves\) && game\.moves\.length > 0;/);
+  assert.match(source, /data-action="launch-history-branch"/);
+  assert.match(source, /Create new game at this move/);
   assert.match(source, /Incoming live moves will appear at top\./);
   assert.match(source, /: hasHistoryMoves\s*\? '<p class="small">You are on the live view\.<\/p><p class="small">Click moves below to see historical state\.<\/p>'\s*: '<p class="small">You are on the live view\.<\/p>'/);
 });
@@ -252,6 +255,15 @@ test("debug flyout persists locally while scenario-created games close the scena
   assert.match(source, /if \(action === "close-debug"\) \{[\s\S]*saveDebugFlyoutOpen\(storage, false\);[\s\S]*currentRoute = normalizeRouteFlyoutState\(\{ \.\.\.currentRoute, debug: false \}\);[\s\S]*render\(\);/s);
   assert.match(source, /if \(action === "close-scenarios"\) \{[\s\S]*navigateTo\(toggleScenariosHash\(window\.location\.hash\)\);[\s\S]*\}/s);
   assert.match(source, /const nextHash = buildGameHash\(result\.game\.id, null, \{\s*\.\.\.getCurrentFlyoutState\(\),\s*scenarios: false,\s*\}\);/s);
+});
+
+test("history branch launch keeps the source tab stable while opening a new tab", () => {
+  assert.match(source, /action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "return-live"/s);
+  assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*buildHistoryBranchSeedFromGame\(activeGame, moveIndex\);[\s\S]*transport\.launchHistoryBranch\(/s);
+  assert.match(source, /window\.open\(`\$\{window\.location\.pathname\}\$\{window\.location\.search\}\$\{nextHash\}`,\s*"_blank",\s*"noopener"\);/);
+  assert.match(source, /const initialSelectionAction = !game\.inHistoryMode \? game\.initialSelectionAction \?\? null : null;/);
+  assert.match(source, /const hydratedSelectionAction = scenarioSelectionHydration\.selectionAction \?\? initialSelectionAction;/);
+  assert.match(source, /selectionAction: hydratedSelectionAction,/);
 });
 
 test("shell renders and reconciles mini board previews for home and debug surfaces", () => {

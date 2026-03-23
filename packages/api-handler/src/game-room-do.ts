@@ -18,8 +18,8 @@ import {
   asGameState,
   asIdentity,
   asScenarioRecord,
+  applyLaunchParticipantCopyMode,
   clone,
-  copyParticipantsBetweenGames,
   createInitialGame,
   dismissCompetingJoinRequests,
   endServerTurn,
@@ -31,6 +31,7 @@ import {
   getRolesForIdentity,
   getActiveTurn,
   getApproverIdentityForSeat,
+  resolveLaunchParticipantCopyMode,
   getSeatIdentity,
   getSeatForSide,
   getSideToMoveSeat,
@@ -38,6 +39,7 @@ import {
   promoteIdentityToSeat,
   removeViewer,
   type JoinRequest,
+  type LaunchParticipantCopyMode,
   type LiveGame,
   withViewModel,
 } from "./shell-live-core";
@@ -77,6 +79,9 @@ const parseBody = async (request: Request): Promise<Record<string, unknown>> => 
 const parseCommandMetadata = (body: Record<string, unknown>): CommandMetadata => ({
   clientCommandId: typeof body.clientCommandId === "string" && body.clientCommandId ? body.clientCommandId : null,
 });
+
+const parseLaunchParticipantCopyMode = (value: unknown): LaunchParticipantCopyMode | null =>
+  value === "copy_source_participants" || value === "viewer_as_player1" ? value : null;
 
 const eventForSession = (event: ServerEvent, identityId: string) => {
   if (!("game" in event)) {
@@ -148,10 +153,56 @@ export class GameRoomDO {
       });
       const sourceGame = body.sourceGame && typeof body.sourceGame === "object" ? (body.sourceGame as LiveGame) : null;
       if (sourceGame) {
-        copyParticipantsBetweenGames(sourceGame, this.game);
+        const participantCopyMode =
+          parseLaunchParticipantCopyMode(body.participantCopyMode) ?? resolveLaunchParticipantCopyMode(sourceGame, identityId);
+        applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
       }
       applyScenarioToGame(this.game, scenario);
       assignIdentityToScenarioSeat(this.game, identityId, getSeatForSide(this.game.board.state.sideToMove));
+      this.eventSeq = 1;
+      await persistGameState(this.env, this.game, this.eventSeq, null);
+      return json({ ok: true, game: withViewModel(this.game, identityId), eventSeq: this.eventSeq });
+    }
+
+    if (request.method === "POST" && path === "/create-from-history-branch") {
+      const body = await parseBody(request);
+      const identityId = asIdentity(body.identityId);
+      const gameId = asIdentity(body.gameId);
+      const initialState = asGameState(body.initialState);
+      const initialSelectionAction = asAction(body.initialSelectionAction);
+      if (!identityId || !gameId || !initialState || !initialSelectionAction) {
+        return json({ ok: false, error: "invalid_history_branch_payload" }, 400);
+      }
+      this.game = createInitialGame({
+        gameId,
+        identityId,
+        playgroundMode: body.playgroundMode === true,
+        offlineLocal: body.offlineLocal === true,
+      });
+      const sourceGame = body.sourceGame && typeof body.sourceGame === "object" ? (body.sourceGame as LiveGame) : null;
+      if (sourceGame) {
+        const participantCopyMode =
+          parseLaunchParticipantCopyMode(body.participantCopyMode) ?? resolveLaunchParticipantCopyMode(sourceGame, identityId);
+        applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
+      }
+      this.game.board.state = clone(initialState);
+      this.game.initialSelectionAction = clone(initialSelectionAction);
+      this.game.turns = [
+        {
+          index: this.game.board.state.turnIndex ?? 0,
+          startedAt: this.game.createdAt,
+          endedAt: null,
+          playerSeat: getSideToMoveSeat(this.game),
+          status: "active",
+          moveIndexes: [],
+          lastMoveAt: null,
+        },
+      ];
+      this.game.moves = [];
+      this.game.historyIndexByIdentity = {};
+      this.game.lastMoveAt = null;
+      this.game.updatedAt = this.game.createdAt;
+      this.game.notifications = ["History branch launched", "Game created"];
       this.eventSeq = 1;
       await persistGameState(this.env, this.game, this.eventSeq, null);
       return json({ ok: true, game: withViewModel(this.game, identityId), eventSeq: this.eventSeq });
