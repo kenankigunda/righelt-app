@@ -1378,7 +1378,7 @@ const renderHomeGameCard = (game) => {
       <div class="mini-board-card-header">
         <div>
           <span class="mini-board-card-link">${escapeHtml(formatDisplayGameId(game.id))}</span>
-          <p class="small mini-board-card-subtitle">As of ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
+          <p class="small mini-board-card-subtitle">Last move on ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
         </div>
         ${recoveryChip}
       </div>
