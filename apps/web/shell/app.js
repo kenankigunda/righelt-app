@@ -196,15 +196,15 @@ const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => 
   }
   if (!participant) {
     const statusLabel = `${seat} is open for someone to join`;
-    return `<span class="mini-board-card-connection-item">${renderConnectionStatusIcon("open", statusLabel)}<span>${renderSeatLabel(
-      seat,
-    )} is open for someone to join</span></span>`;
+    return `<span class="mini-board-card-connection-item"><span>${renderSeatLabel(seat)} is open for someone to join</span>${renderConnectionStatusIcon(
+      "open",
+      statusLabel,
+    )}</span>`;
   }
   const statusLabel = `${seat} is ${participant.connected ? "connected" : "not connected"}`;
-  return `<span class="mini-board-card-connection-item">${renderConnectionStatusIcon(
-    participant.connected ? "connected" : "disconnected",
-    statusLabel,
-    )}<span>${renderSeatLabel(seat)} is ${participant.connected ? "connected" : "not connected"}</span></span>`;
+  return `<span class="mini-board-card-connection-item"><span>${renderSeatLabel(seat)} is ${
+    participant.connected ? "connected" : "not connected"
+  }</span>${renderConnectionStatusIcon(participant.connected ? "connected" : "disconnected", statusLabel)}</span>`;
 };
 const shouldUseVerboseHomeConnectionCopy = (game) =>
   (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) || game?.myRole === "Player 1" || game?.myRole === "Player 2";
