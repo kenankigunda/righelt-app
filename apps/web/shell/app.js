@@ -96,7 +96,8 @@ let routeHydrated = false;
 let resolvedInvite = null;
 let scenarioCatalog = { id: "S", title: "Saved Scenarios", scenarios: [] };
 let selectedScenarioId = null;
-let scenarioFeedback = "";
+let selectedScenarioFeedback = "";
+let saveScenarioFeedback = "";
 let saveScenarioDraftTitle = "";
 let saveScenarioDraftDescription = "";
 const inviteChoiceCommittedByGameId = new Set();
@@ -981,9 +982,27 @@ const renderHeader = () => `
   </header>
 `;
 
-const setScenarioFeedback = (message) => {
-  scenarioFeedback = message;
+const setSelectedScenarioFeedback = (message) => {
+  selectedScenarioFeedback = message;
 };
+
+const setSaveScenarioFeedback = (message) => {
+  saveScenarioFeedback = message;
+};
+
+const formatScenarioInfo = (scenario, fallback = "No scenarios available.") =>
+  scenario
+    ? JSON.stringify(
+        {
+          id: scenario.id,
+          title: scenario.title,
+          moves: scenario.moves.length,
+          outcome: scenario.expectedOutcome,
+        },
+        null,
+        2,
+      )
+    : fallback;
 
 const getSelectedScenario = () =>
   scenarioCatalog.scenarios.find((scenario) => scenario.id === selectedScenarioId) ?? scenarioCatalog.scenarios[0] ?? null;
@@ -1066,6 +1085,7 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
             : ""
         }
       </div>
+      <pre class="debug-pre" aria-live="polite">${escapeHtml(selectedScenarioFeedback || formatScenarioInfo(selectedScenario))}</pre>
       ${
         canAuthorScenarios
           ? `<section class="scenario-save-panel">
@@ -1081,23 +1101,10 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
               <div class="row">
                 <button class="secondary" data-action="save-scenario"${busy || !canSaveScenario ? " disabled" : ""}>Save current board as new scenario</button>
               </div>
+              <pre class="debug-pre" aria-live="polite">${escapeHtml(saveScenarioFeedback || "No new scenario saved yet.")}</pre>
             </section>`
           : ""
       }
-      <pre class="debug-pre" aria-live="polite">${escapeHtml(
-        scenarioFeedback ||
-          (selectedScenario
-            ? JSON.stringify(
-                {
-                  id: selectedScenario.id,
-                  moves: selectedScenario.moves.length,
-                  outcome: selectedScenario.expectedOutcome,
-                },
-                null,
-                2,
-              )
-            : "No scenarios available."),
-      )}</pre>
     </section>
   `;
 };
@@ -2412,7 +2419,7 @@ const syncScenarioCatalog = async () => {
   } catch (error) {
     scenarioCatalog = { id: "S", title: "Saved Scenarios", scenarios: [] };
     selectedScenarioId = null;
-    scenarioFeedback = error instanceof Error ? error.message : "Failed to load scenarios";
+    selectedScenarioFeedback = error instanceof Error ? error.message : "Failed to load scenarios";
   }
 };
 
@@ -2875,7 +2882,7 @@ appEl.addEventListener("click", async (event) => {
     if (action === "load-scenario") {
       const selectedScenario = getSelectedScenario();
       if (!selectedScenario) {
-        setScenarioFeedback("No scenario selected.");
+        setSelectedScenarioFeedback("No scenario selected.");
         render({ animatePanels: false, includeBoard: false });
         return;
       }
@@ -2888,7 +2895,7 @@ appEl.addEventListener("click", async (event) => {
         targetGameId: shouldApplyInPlace ? activeGameId : null,
         sourceGameId: activeGame && !shouldApplyInPlace ? activeGame.id : null,
       });
-      setScenarioFeedback(`Scenario ${selectedScenario.id} loaded.`);
+      setSelectedScenarioFeedback(`Scenario ${selectedScenario.id} loaded.`);
       if (!result?.game?.id) {
         render({ animatePanels: false, includeBoard: false });
         return;
@@ -2911,12 +2918,20 @@ appEl.addEventListener("click", async (event) => {
         currentRoute.name === "game" ? currentRoute.gameId : currentRoute.name === "invite" ? resolvedInvite?.gameId || null : null;
       const activeGame = activeGameId ? transport.getGameViewModel(activeGameId) : null;
       if (!activeGame) {
-        setScenarioFeedback(`Open a game to ${action === "update-scenario" ? "update" : "save"} a scenario.`);
+        if (action === "update-scenario") {
+          setSelectedScenarioFeedback("Open a game to update the selected scenario.");
+        } else {
+          setSaveScenarioFeedback("Open a game to save a new scenario.");
+        }
         render({ animatePanels: false, includeBoard: false });
         return;
       }
       if (!canAuthorScenariosLocally()) {
-        setScenarioFeedback("Scenario authoring is only available on localhost.");
+        if (action === "update-scenario") {
+          setSelectedScenarioFeedback("Scenario authoring is only available on localhost.");
+        } else {
+          setSaveScenarioFeedback("Scenario authoring is only available on localhost.");
+        }
         render({ animatePanels: false, includeBoard: false });
         return;
       }
@@ -2924,14 +2939,14 @@ appEl.addEventListener("click", async (event) => {
       if (action === "update-scenario") {
         const selectedScenario = getSelectedScenario();
         if (!selectedScenario) {
-          setScenarioFeedback("No scenario selected.");
+          setSelectedScenarioFeedback("No scenario selected.");
           render({ animatePanels: false, includeBoard: false });
           return;
         }
         const title = getScenarioEditableFieldText("title");
         const description = getScenarioEditableFieldText("description");
         if (!title || !description) {
-          setScenarioFeedback("Scenario title and description are required.");
+          setSelectedScenarioFeedback("Scenario title and description are required.");
           syncScenarioAuthoringControls();
           return;
         }
@@ -2946,7 +2961,7 @@ appEl.addEventListener("click", async (event) => {
         scenario.incorrect = selectedScenario.incorrect === true;
         const localWrite = await tryLocalScenarioWrite("/scenarios/update", { scenario });
         if (!localWrite.ok) {
-          setScenarioFeedback("Failed to update scenario locally.");
+          setSelectedScenarioFeedback("Failed to update scenario locally.");
           render({ animatePanels: false, includeBoard: false });
           return;
         }
@@ -2955,13 +2970,13 @@ appEl.addEventListener("click", async (event) => {
           scenarios: scenarioCatalog.scenarios.map((entry) => (entry.id === scenario.id ? scenario : entry)),
         };
         selectedScenarioId = scenario.id;
-        setScenarioFeedback(`Scenario ${scenario.id} updated.`);
+        setSelectedScenarioFeedback(`Scenario ${scenario.id} updated.`);
         render({ animatePanels: false, includeBoard: false });
         return;
       }
       const draft = getSaveScenarioDraft();
       if (!draft.title || !draft.description) {
-        setScenarioFeedback("Scenario title and description are required.");
+        setSaveScenarioFeedback("Scenario title and description are required.");
         syncScenarioAuthoringControls();
         return;
       }
@@ -2975,7 +2990,7 @@ appEl.addEventListener("click", async (event) => {
       });
       const localWrite = await tryLocalScenarioWrite("/scenarios/save", { scenario });
       if (!localWrite.ok) {
-        setScenarioFeedback("Failed to save scenario locally.");
+        setSaveScenarioFeedback("Failed to save scenario locally.");
         render({ animatePanels: false, includeBoard: false });
         return;
       }
@@ -2986,7 +3001,8 @@ appEl.addEventListener("click", async (event) => {
       selectedScenarioId = scenario.id;
       saveScenarioDraftTitle = "";
       saveScenarioDraftDescription = "";
-      setScenarioFeedback(`Scenario ${scenario.id} saved.`);
+      setSaveScenarioFeedback(formatScenarioInfo(scenario, "No new scenario saved yet."));
+      setSelectedScenarioFeedback("");
       render({ animatePanels: false, includeBoard: false });
     }
   }, { renderStart: shouldRenderBusyState, renderEnd: shouldRenderBusyState });
@@ -2999,7 +3015,7 @@ appEl.addEventListener("change", (event) => {
   }
   if (target.id === "scenario-select") {
     selectedScenarioId = target.value || null;
-    scenarioFeedback = "";
+    selectedScenarioFeedback = "";
     render({ animatePanels: false, includeBoard: false });
   }
 });

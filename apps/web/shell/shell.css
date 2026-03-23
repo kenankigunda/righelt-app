@@ -757,6 +757,110 @@ textarea {
   min-width: 0;
 }
 
+input,
+textarea {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffefa;
+  color: var(--ink);
+  padding: 0.7rem 0.8rem;
+  font: inherit;
+  line-height: 1.45;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 2px rgba(29, 45, 53, 0.04);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 6.5rem;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--muted) 78%, white);
+}
+
+input:hover,
+textarea:hover {
+  border-color: color-mix(in srgb, var(--line) 55%, var(--accent));
+}
+
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  background: #ffffff;
+  box-shadow:
+    0 0 0 3px rgba(13, 122, 90, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.scenario-save-panel,
+.scenario-selected-summary {
+  display: grid;
+  gap: var(--section-item-gap);
+}
+
+.scenario-save-panel {
+  padding-top: var(--section-item-gap);
+  border-top: 1px solid rgba(210, 204, 185, 0.8);
+}
+
+.scenario-save-panel h3 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.scenario-save-panel .row {
+  margin-top: 0;
+}
+
+.scenario-selected-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.scenario-selected-title[contenteditable="plaintext-only"],
+.scenario-selected-summary [data-scenario-editable="description"][contenteditable="plaintext-only"] {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  padding: 0.45rem 0.55rem;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.scenario-selected-title[contenteditable="plaintext-only"]:hover,
+.scenario-selected-summary [data-scenario-editable="description"][contenteditable="plaintext-only"]:hover {
+  border-color: rgba(210, 204, 185, 0.95);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.scenario-selected-title[contenteditable="plaintext-only"]:focus-visible,
+.scenario-selected-summary [data-scenario-editable="description"][contenteditable="plaintext-only"]:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  background: #fffefa;
+  box-shadow: 0 0 0 3px rgba(13, 122, 90, 0.12);
+}
+
+.scenario-selected-summary [data-scenario-editable="description"] {
+  margin: 0;
+  line-height: 1.5;
+}
+
 .section-actions {
   margin-bottom: var(--section-item-gap);
 }
