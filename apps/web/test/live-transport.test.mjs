@@ -252,6 +252,32 @@ test("live transport store posts scenario imports through the shell scenarios en
   assert.equal(result.game.id, "game-apply-here");
 });
 
+test("live transport store loads paged home sections through section-aware query params", async () => {
+  const storage = createMemoryStorage();
+  storage.setItem("righelt.identity.id.v1", "id-page");
+  const calls = [];
+  const fetcher = async (url) => {
+    calls.push(String(url));
+    return Response.json({
+      ok: true,
+      section: "my",
+      page: 1,
+      pageSize: 6,
+      totalGames: 6,
+      totalPages: 2,
+      games: [{ ...buildLiveGame(), id: "game-000006", player1: { identityId: "id-page", connected: true }, myRole: "Player 1" }],
+    });
+  };
+
+  const store = createLiveTransportStore({ storage, fetcher, random: () => 0.7 });
+  const page = await store.loadGamesPage({ section: "my", page: 1, pageSize: 6, debug: true });
+
+  assert.equal(calls[0], "/api/shell/games?identityId=id-page&section=my&page=1&pageSize=6&debug=1&offline=0");
+  assert.equal(page.totalPages, 2);
+  assert.equal(page.games.length, 1);
+  assert.equal(page.games[0].id, "game-000006");
+});
+
 test("live transport store can promote player 1 to both seats when player 2 is open", async () => {
   const calls = [];
   const fetcher = async (url, init = {}) => {

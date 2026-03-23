@@ -31,6 +31,9 @@ const CACHE_NO_STORE = "no-store";
 const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
 const GAME_ROOMS_BINDING_ERROR = "server_misconfigured_game_rooms_binding";
 const INVALID_PERSISTED_GAME_ERROR = "invalid_persisted_game";
+const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
+
+type HomeSectionKey = "my" | "other" | "smoke";
 
 const json = (body: unknown, status = 200, cacheControl = CACHE_NO_STORE): Response =>
   new Response(JSON.stringify(body), {
@@ -96,6 +99,34 @@ const fetchGameRoom = async (
   return roomStubForGame(env, gameId).fetch(new Request(`https://game-room${path}`, { ...init, headers }));
 };
 
+const isPlayerRole = (role: string | null | undefined) => role === "Player 1" || role === "Player 2";
+
+const gameIncludesIdentity = (game: Record<string, unknown>, identityId: string) => {
+  const player1 = game.player1 as { identityId?: string } | null | undefined;
+  const player2 = game.player2 as { identityId?: string } | null | undefined;
+  const viewers = Array.isArray(game.viewers) ? game.viewers : [];
+  const pendingJoinRequests = Array.isArray(game.pendingJoinRequests) ? game.pendingJoinRequests : [];
+  return (
+    player1?.identityId === identityId ||
+    player2?.identityId === identityId ||
+    viewers.some((viewer) => Boolean(viewer) && typeof viewer === "object" && (viewer as { identityId?: string }).identityId === identityId) ||
+    pendingJoinRequests.some(
+      (request) => Boolean(request) && typeof request === "object" && (request as { identityId?: string }).identityId === identityId,
+    )
+  );
+};
+
+const parseHomeSectionKey = (value: string | null): HomeSectionKey | null =>
+  value === "my" || value === "other" || value === "smoke" ? value : null;
+
+const parseNonNegativeInt = (value: string | null) => {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+};
+
 export const __resetLiveGameStateForTests = () => {
   // No process-local live state remains in the HTTP routing layer.
 };
@@ -155,11 +186,57 @@ export const handleLiveGameRequest = async (
     if (!identityId) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
     }
+    const section = parseHomeSectionKey(url.searchParams.get("section"));
+    const pageParam = url.searchParams.get("page");
+    const pageSizeParam = url.searchParams.get("pageSize");
+    const paginationRequested = section !== null || pageParam !== null || pageSizeParam !== null;
     const games = await listVisibleGameProjections(env);
+    if (!paginationRequested) {
+      return {
+        handled: true,
+        status: 200,
+        body: { ok: true, games: games.map((game) => withViewModel(game, identityId, offline)) },
+        cacheControl: CACHE_NO_STORE,
+      };
+    }
+    const page = parseNonNegativeInt(pageParam);
+    const pageSize = parseNonNegativeInt(pageSizeParam);
+    if (!section || page === null || pageSize === null || pageSize <= 0) {
+      return { handled: true, status: 400, body: { ok: false, error: "invalid_pagination" }, cacheControl: CACHE_NO_STORE };
+    }
+    const debug = url.searchParams.get("debug") === "1";
+    const visibleGames = games
+      .map((game) => withViewModel(game, identityId, offline))
+      .filter((game) => {
+        const isSmokeGame = gameIncludesIdentity(game, DEPLOY_SMOKE_PLAYER_ID);
+        if (section === "smoke") {
+          return debug && isSmokeGame;
+        }
+        if (debug && isSmokeGame) {
+          return false;
+        }
+        if (section === "my") {
+          return isPlayerRole(game.myRole);
+        }
+        return !isPlayerRole(game.myRole);
+      });
+    const totalGames = visibleGames.length;
+    const totalPages = totalGames === 0 ? 0 : Math.ceil(totalGames / pageSize);
+    const safePage = totalPages === 0 ? 0 : Math.min(page, totalPages - 1);
+    const start = safePage * pageSize;
+    const pagedGames = totalPages === 0 ? [] : visibleGames.slice(start, start + pageSize);
     return {
       handled: true,
       status: 200,
-      body: { ok: true, games: games.map((game) => withViewModel(game, identityId, offline)) },
+      body: {
+        ok: true,
+        section,
+        page: safePage,
+        pageSize,
+        totalGames,
+        totalPages,
+        games: pagedGames,
+      },
       cacheControl: CACHE_NO_STORE,
     };
   }

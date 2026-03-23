@@ -506,6 +506,40 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return listGames();
   };
 
+  const loadGamesPage = async ({ section, page = 0, pageSize = 6, debug = false } = {}) => {
+    if (offline) {
+      return {
+        ok: true,
+        section,
+        page: 0,
+        pageSize,
+        totalGames: 0,
+        totalPages: 0,
+        games: [],
+      };
+    }
+    const params = new URLSearchParams({
+      identityId,
+      section: String(section || ""),
+      page: String(page),
+      pageSize: String(pageSize),
+      debug: debug ? "1" : "0",
+    });
+    const response = await fetcher(withOfflineQuery(`/api/shell/games?${params.toString()}`), {
+      method: "GET",
+      cache: "no-store",
+    });
+    const body = await mustOk(response);
+    const gamesPage = Array.isArray(body.games) ? body.games : [];
+    for (const game of gamesPage) {
+      upsertGame(game);
+    }
+    return {
+      ...body,
+      games: gamesPage.map((game) => getGameViewModel(game.id) ?? game),
+    };
+  };
+
   const loadGame = async (gameId, { openAsViewer = false } = {}) => {
     if (offline) {
       return getGameViewModel(gameId);
@@ -776,6 +810,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   return {
     refreshGames,
+    loadGamesPage,
     loadGame,
     resolveInvite,
     createGame,

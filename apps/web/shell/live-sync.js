@@ -21,45 +21,55 @@ export const createLiveSyncClient = ({
   onError = () => {},
   onStatus = () => {},
 }) => {
-  let socket = null;
-  let stopped = false;
-  let reconnectAttempts = 0;
-  let reconnectTimer = null;
-  let heartbeatTimer = null;
-  let mode = null;
-  let lastEventSeq = 0;
+  const sockets = new Map();
+  const reconnectTimers = new Map();
+  const heartbeatTimers = new Map();
+  const reconnectAttemptsByGameId = new Map();
+  const lastEventSeqByGameId = new Map();
+  const desiredGameIds = new Set();
 
-  const clearReconnect = () => {
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
+  const clearReconnect = (gameId) => {
+    const timer = reconnectTimers.get(gameId) ?? null;
+    if (timer) {
+      clearTimeout(timer);
+      reconnectTimers.delete(gameId);
     }
   };
 
-  const clearHeartbeat = () => {
-    if (heartbeatTimer) {
-      clearInterval(heartbeatTimer);
-      heartbeatTimer = null;
+  const clearHeartbeat = (gameId) => {
+    const timer = heartbeatTimers.get(gameId) ?? null;
+    if (timer) {
+      clearInterval(timer);
+      heartbeatTimers.delete(gameId);
     }
   };
 
-  const cleanupSocket = () => {
-    clearHeartbeat();
+  const cleanupSocket = (gameId, { emitDisconnected = false } = {}) => {
+    clearHeartbeat(gameId);
+    const socket = sockets.get(gameId) ?? null;
     if (!socket) {
+      if (emitDisconnected) {
+        onStatus({ state: "disconnected", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
+      }
       return;
     }
+    sockets.delete(gameId);
     try {
       socket.close();
     } catch {
       // ignore
     }
-    socket = null;
+    if (emitDisconnected) {
+      onStatus({ state: "disconnected", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
+    }
   };
 
-  const sendHeartbeat = () => {
+  const sendHeartbeat = (gameId) => {
+    const socket = sockets.get(gameId) ?? null;
     if (!socket || socket.readyState !== 1) {
       return;
     }
+    const lastEventSeq = lastEventSeqByGameId.get(gameId) ?? 0;
     try {
       socket.send(
         JSON.stringify({
@@ -73,53 +83,68 @@ export const createLiveSyncClient = ({
     }
   };
 
-  const scheduleReconnect = () => {
-    if (stopped || !mode) {
+  const scheduleReconnect = (gameId) => {
+    if (!desiredGameIds.has(gameId)) {
       return;
     }
-    clearReconnect();
+    clearReconnect(gameId);
+    const reconnectAttempts = reconnectAttemptsByGameId.get(gameId) ?? 0;
     const delay = Math.min(WS_RECONNECT_MAX_MS, WS_RECONNECT_BASE_MS * 2 ** reconnectAttempts);
-    reconnectAttempts += 1;
-    reconnectTimer = setTimeout(() => {
-      if (!mode || stopped) {
-        return;
-      }
-      connect(mode);
-    }, delay);
+    reconnectAttemptsByGameId.set(gameId, reconnectAttempts + 1);
+    reconnectTimers.set(
+      gameId,
+      setTimeout(() => {
+        if (!desiredGameIds.has(gameId)) {
+          return;
+        }
+        connect(gameId);
+      }, delay),
+    );
   };
 
-  const connect = ({ gameId }) => {
+  const connect = (gameId) => {
+    if (!gameId) {
+      return;
+    }
+    desiredGameIds.add(gameId);
+    const existing = sockets.get(gameId) ?? null;
+    if (existing && (existing.readyState === 0 || existing.readyState === 1)) {
+      return;
+    }
+
     if (typeof WebSocket === "undefined") {
       onError(new Error("websocket_unavailable"));
       return;
     }
 
-    cleanupSocket();
-    clearReconnect();
-    mode = { gameId };
-    lastEventSeq = Math.max(lastEventSeq, Number(getLastEventSeq() || 0));
+    cleanupSocket(gameId);
+    clearReconnect(gameId);
+    const reconnectAttempts = reconnectAttemptsByGameId.get(gameId) ?? 0;
+    const lastEventSeq = Math.max(lastEventSeqByGameId.get(gameId) ?? 0, Number(getLastEventSeq(gameId) || 0));
+    lastEventSeqByGameId.set(gameId, lastEventSeq);
     onStatus({ state: "connecting", gameId, reconnectAttempts });
 
     const ws = new WebSocket(createWsUrl({ identityId, gameId, lastEventSeq }));
-    socket = ws;
+    sockets.set(gameId, ws);
 
     ws.addEventListener("open", () => {
-      reconnectAttempts = 0;
-      onStatus({ state: "connected", gameId, reconnectAttempts });
-      sendHeartbeat();
-      heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_MS);
+      reconnectAttemptsByGameId.set(gameId, 0);
+      onStatus({ state: "connected", gameId, reconnectAttempts: 0 });
+      sendHeartbeat(gameId);
+      heartbeatTimers.set(gameId, setInterval(() => sendHeartbeat(gameId), HEARTBEAT_MS));
     });
 
     ws.addEventListener("message", (event) => {
       try {
         const payload = JSON.parse(typeof event.data === "string" ? event.data : "{}");
         if (typeof payload?.eventSeq === "number") {
-          lastEventSeq = Math.max(lastEventSeq, payload.eventSeq);
+          const nextLastEventSeq = Math.max(lastEventSeqByGameId.get(gameId) ?? 0, payload.eventSeq);
+          lastEventSeqByGameId.set(gameId, nextLastEventSeq);
           if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: "ack", lastEventSeq }));
+            ws.send(JSON.stringify({ type: "ack", lastEventSeq: nextLastEventSeq }));
           }
         }
-        onEvent(payload);
+        onEvent(payload, { gameId });
       } catch {
         // ignore malformed events
       }
@@ -127,32 +152,43 @@ export const createLiveSyncClient = ({
 
     ws.addEventListener("error", () => {
       onError(new Error("websocket_error"));
-      onStatus({ state: "error", gameId, reconnectAttempts });
+      onStatus({ state: "error", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
     });
 
     ws.addEventListener("close", () => {
-      clearHeartbeat();
-      onStatus({ state: "closed", gameId, reconnectAttempts });
-      if (!stopped) {
-        scheduleReconnect();
+      clearHeartbeat(gameId);
+      if (sockets.get(gameId) === ws) {
+        sockets.delete(gameId);
+      }
+      onStatus({ state: "closed", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
+      if (desiredGameIds.has(gameId)) {
+        scheduleReconnect(gameId);
       }
     });
   };
 
-  return {
-    connectGame: (gameId) => connect({ gameId }),
-    disconnect: () => {
-      stopped = true;
-      clearReconnect();
-      cleanupSocket();
-      mode = null;
-      onStatus({ state: "disconnected", gameId: null, reconnectAttempts });
-    },
-    resume: () => {
-      stopped = false;
-      if (mode) {
-        connect(mode);
+  const disconnectGame = (gameId) => {
+    if (!gameId) {
+        return;
       }
-    },
+    desiredGameIds.delete(gameId);
+    clearReconnect(gameId);
+    cleanupSocket(gameId, { emitDisconnected: true });
+  };
+
+  const disconnectAll = () => {
+    const gameIds = new Set([...desiredGameIds, ...sockets.keys()]);
+    desiredGameIds.clear();
+    for (const gameId of gameIds) {
+      clearReconnect(gameId);
+      cleanupSocket(gameId, { emitDisconnected: true });
+    }
+  };
+
+  return {
+    connectGame: (gameId) => connect(gameId),
+    disconnectGame,
+    disconnectAll,
+    disconnect: () => disconnectAll(),
   };
 };

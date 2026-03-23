@@ -88,7 +88,6 @@ let mountedOverlayKey = null;
 let mountedSyncStatusKey = null;
 let boardRuntime = null;
 let busy = false;
-let liveSyncConnectedRoute = "";
 let wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
 let lastWsStatusKey = toStableKey(wsStatus);
 let wsLastEvent = "none";
@@ -108,6 +107,8 @@ let lastRenderedRouteKey = "";
 let lastRenderedBaseRouteKey = "";
 const HISTORY_SELECTION_EXIT_MS = 56;
 const HISTORY_RELEASE_BOUNCE_MS = 140;
+const HOME_SECTION_PAGE_SIZE = 6;
+const HOME_CAROUSEL_MOTION_MS = 220;
 let pressedHistoryActionEl = null;
 let historyReleaseTimer = null;
 let pressedControlEl = null;
@@ -119,6 +120,22 @@ const FLYOUT_MOTION_MS = 180;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
 const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
+const lastAnimatedHomeSectionTokenByKey = new Map();
+const activeLiveGameIds = new Set();
+const createHomeSectionState = (title) => ({
+  title,
+  page: 0,
+  totalPages: 0,
+  totalGames: 0,
+  gameIds: [],
+  slideDirection: "none",
+  animationToken: 0,
+});
+let homeSections = {
+  my: createHomeSectionState("My games"),
+  other: createHomeSectionState("Other games"),
+  smoke: createHomeSectionState("Deploy smoke player"),
+};
 const getPersistedDebugFlyoutOpen = () => loadDebugFlyoutOpen(storage);
 
 const escapeHtml = (value) =>
@@ -319,6 +336,23 @@ const gameIncludesIdentity = (game, identityId) => {
     (Array.isArray(game.viewers) && game.viewers.some((viewer) => viewer?.identityId === identityId)) ||
     (Array.isArray(game.pendingJoinRequests) && game.pendingJoinRequests.some((request) => request?.identityId === identityId))
   );
+};
+const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "other", "smoke"] : ["my", "other"]);
+const getHomeSection = (sectionKey) => homeSections[sectionKey] ?? createHomeSectionState(sectionKey);
+const setHomeSection = (sectionKey, nextState) => {
+  homeSections = {
+    ...homeSections,
+    [sectionKey]: nextState,
+  };
+};
+const getHomeActiveGameIds = () =>
+  currentRoute.name === "home" && routeHydrated
+    ? getVisibleHomeSectionKeys().flatMap((sectionKey) => getHomeSection(sectionKey).gameIds)
+    : [];
+const shouldDisableLiveSync = () => window.__righeltOffline === true || navigator.onLine === false;
+const resetRouteWsStatus = () => {
+  wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
+  lastWsStatusKey = toStableKey(wsStatus);
 };
 
 const renderPlaceholderBadge = () => '<span class="status-chip offline">Not yet implemented</span>';
@@ -1138,28 +1172,66 @@ const renderHomeGameCard = (game) => {
   </article>`;
 };
 
-const renderHomeGameSection = (title, games) => {
-  if (!Array.isArray(games) || games.length === 0) {
+const renderHomeSectionControls = (sectionKey, section, { placement } = { placement: "header" }) => `<div
+  class="home-games-section-controls home-games-section-controls-${escapeHtml(placement)}"
+>
+  <button
+    class="secondary"
+    data-action="home-page-prev"
+    data-home-section="${escapeHtml(sectionKey)}"
+    ${busy ? "disabled" : ""}
+    aria-label="Previous ${escapeHtml(section.title)} page"
+  >&larr;</button>
+  <p class="small home-games-section-page-label">Page ${section.page + 1} of ${section.totalPages}</p>
+  <button
+    class="secondary"
+    data-action="home-page-next"
+    data-home-section="${escapeHtml(sectionKey)}"
+    ${busy ? "disabled" : ""}
+    aria-label="Next ${escapeHtml(section.title)} page"
+  >&rarr;</button>
+</div>`;
+
+const renderHomeGameSection = (sectionKey) => {
+  const section = getHomeSection(sectionKey);
+  const games = section.gameIds.map((gameId) => transport.getGameViewModel(gameId)).filter(Boolean);
+  if (!Array.isArray(games) || games.length === 0 || section.totalGames === 0) {
     return "";
   }
-  return `<section class="panel home-games-section">
+  const showPaging = section.totalPages > 1;
+  return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}">
     <div class="home-games-section-header">
-      <h2>${escapeHtml(title)}</h2>
-      <p class="small">${games.length === 1 ? "1 game" : `${games.length} games`}</p>
+      <div class="home-games-section-heading">
+        <h2>${escapeHtml(section.title)}</h2>
+        <p class="small">${section.totalGames === 1 ? "1 game" : `${section.totalGames} games`}</p>
+      </div>
+      ${showPaging ? renderHomeSectionControls(sectionKey, section, { placement: "header" }) : ""}
     </div>
-    <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
+    <div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
+      <div class="home-games-carousel-track" data-home-carousel-track="${escapeHtml(sectionKey)}">
+        <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
+      </div>
+    </div>
+    ${showPaging ? renderHomeSectionControls(sectionKey, section, { placement: "footer" }) : ""}
   </section>`;
 };
 
+const scrollHomeSectionToTop = (sectionKey) => {
+  if (getShellLayoutMode() !== "narrow" || !(appEl instanceof HTMLElement)) {
+    return;
+  }
+  const sectionEl = appEl.querySelector(`[data-home-section-root="${sectionKey}"]`);
+  if (!(sectionEl instanceof HTMLElement)) {
+    return;
+  }
+  sectionEl.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+};
+
 const renderHome = () => {
-  const games = transport.listGames();
-  const smokeGames = games.filter((game) => gameIncludesIdentity(game, DEPLOY_SMOKE_PLAYER_ID));
-  const visibleGames = currentRoute.debug ? games.filter((game) => !gameIncludesIdentity(game, DEPLOY_SMOKE_PLAYER_ID)) : games;
-  const myGames = visibleGames.filter((game) => isPlayerRole(game.myRole));
-  const otherGames = visibleGames.filter((game) => !isPlayerRole(game.myRole));
-  const sectionHtml = `${renderHomeGameSection("My games", myGames)}${renderHomeGameSection("Other games", otherGames)}${
-    currentRoute.debug ? renderHomeGameSection("Deploy smoke player", smokeGames) : ""
-  }`;
+  const sectionHtml = getVisibleHomeSectionKeys().map((sectionKey) => renderHomeGameSection(sectionKey)).join("");
   const listHtml = sectionHtml || `<section class="panel"><p class="small">No games yet.</p></section>`;
 
   return `
@@ -1926,6 +1998,78 @@ const destroyMountedBoardRuntime = () => {
   }
 };
 
+const animateHomeSectionTransitions = () => {
+  if (!(appEl instanceof HTMLElement) || prefersReducedMotion()) {
+    return;
+  }
+  for (const sectionKey of getVisibleHomeSectionKeys()) {
+    const section = getHomeSection(sectionKey);
+    if (!section.animationToken || lastAnimatedHomeSectionTokenByKey.get(sectionKey) === section.animationToken) {
+      continue;
+    }
+    const trackEl = appEl.querySelector(`[data-home-carousel-track="${sectionKey}"]`);
+    if (!(trackEl instanceof HTMLElement)) {
+      continue;
+    }
+    lastAnimatedHomeSectionTokenByKey.set(sectionKey, section.animationToken);
+    const offsetPx = section.slideDirection === "prev" ? -56 : 56;
+    trackEl.animate(
+      [
+        { transform: `translateX(${offsetPx}px)`, opacity: 0.35 },
+        { transform: "translateX(0px)", opacity: 1 },
+      ],
+      {
+        duration: HOME_CAROUSEL_MOTION_MS,
+        easing: "cubic-bezier(0.2, 0.72, 0.2, 1)",
+      },
+    );
+  }
+};
+
+const loadHomeSectionPage = async (sectionKey, { page = getHomeSection(sectionKey).page, direction = "none" } = {}) => {
+  const previous = getHomeSection(sectionKey);
+  const response = await transport.loadGamesPage({
+    section: sectionKey,
+    page,
+    pageSize: HOME_SECTION_PAGE_SIZE,
+    debug: currentRoute.debug === true,
+  });
+  const normalizedPage = typeof response.page === "number" ? response.page : 0;
+  const normalizedTotalPages = typeof response.totalPages === "number" ? response.totalPages : 0;
+  const nextDirection = normalizedTotalPages > 1 && normalizedPage !== previous.page ? direction : "none";
+  setHomeSection(sectionKey, {
+    ...previous,
+    page: normalizedPage,
+    totalPages: normalizedTotalPages,
+    totalGames: typeof response.totalGames === "number" ? response.totalGames : 0,
+    gameIds: Array.isArray(response.games) ? response.games.map((game) => game.id) : [],
+    slideDirection: nextDirection,
+    animationToken: nextDirection === "none" ? previous.animationToken : previous.animationToken + 1,
+  });
+};
+
+const syncHomeSections = async () => {
+  const visibleSectionKeys = getVisibleHomeSectionKeys();
+  await Promise.all(
+    visibleSectionKeys.map(async (sectionKey) => {
+      const section = getHomeSection(sectionKey);
+      await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
+    }),
+  );
+  const hiddenSectionKeys = ["my", "other", "smoke"].filter((sectionKey) => !visibleSectionKeys.includes(sectionKey));
+  hiddenSectionKeys.forEach((sectionKey) => {
+    const section = getHomeSection(sectionKey);
+    setHomeSection(sectionKey, {
+      ...section,
+      page: 0,
+      totalPages: 0,
+      totalGames: 0,
+      gameIds: [],
+      slideDirection: "none",
+    });
+  });
+};
+
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   const routeKey = getRouteRenderKey();
   const baseRouteKey = getBaseRouteRenderKey();
@@ -1940,6 +2084,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     syncCopyInviteLinks();
     updateHeaderFields();
     reconcileMiniBoardPreviews();
+    animateHomeSectionTransitions();
     if (animatePanels) {
       animateFlyoutPositionChanges(previousFlyoutRects);
     }
@@ -2000,6 +2145,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   syncCopyInviteLinks();
   updateHeaderFields();
   reconcileMiniBoardPreviews();
+  animateHomeSectionTransitions();
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
@@ -2042,7 +2188,7 @@ const withBusy = async (fn, { renderStart = true, renderEnd = true } = {}) => {
 
 const syncRouteData = async () => {
   if (currentRoute.name === "home") {
-    await transport.refreshGames();
+    await syncHomeSections();
     routeHydrated = true;
     return;
   }
@@ -2061,12 +2207,17 @@ const syncRouteData = async () => {
   routeHydrated = true;
 };
 
+const syncRouteDataAndLiveChannels = async () => {
+  await syncRouteData();
+  syncLiveChannels();
+};
+
 const syncRouteDataPassive = async () => {
   if (busy) {
     return;
   }
   try {
-    await syncRouteData();
+    await syncRouteDataAndLiveChannels();
     render();
   } catch (error) {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
@@ -2093,12 +2244,41 @@ transport.subscribe((change) => {
   });
 });
 
+const syncLiveChannels = () => {
+  if (shouldDisableLiveSync()) {
+    liveSync.disconnectAll();
+    activeLiveGameIds.clear();
+    resetRouteWsStatus();
+    return;
+  }
+  const routeGameId =
+    shouldLiveSyncRoute(currentRoute) &&
+    (currentRoute.name === "game"
+      ? currentRoute.gameId
+      : currentRoute.name === "invite"
+        ? resolvedInvite?.gameId || null
+        : null);
+  const desiredGameIds = new Set(routeGameId ? [routeGameId] : getHomeActiveGameIds());
+  for (const gameId of [...activeLiveGameIds]) {
+    if (!desiredGameIds.has(gameId)) {
+      liveSync.disconnectGame(gameId);
+      activeLiveGameIds.delete(gameId);
+    }
+  }
+  for (const gameId of desiredGameIds) {
+    if (!activeLiveGameIds.has(gameId)) {
+      liveSync.connectGame(gameId);
+      activeLiveGameIds.add(gameId);
+    }
+  }
+  if (!routeGameId) {
+    resetRouteWsStatus();
+  }
+};
+
 const liveSync = createLiveSyncClient({
   identityId: transport.getIdentityId(),
-  getLastEventSeq: () => {
-    const gameId = getCurrentViewedGameId();
-    return gameId ? transport.getLastEventSeq(gameId) : 0;
-  },
+  getLastEventSeq: (gameId) => (gameId ? transport.getLastEventSeq(gameId) : 0),
   onEvent: (payload) => {
     wsLastEvent = payload?.type
       ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
@@ -2123,6 +2303,10 @@ const liveSync = createLiveSyncClient({
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
   },
   onStatus: (status) => {
+    const routeGameId = getCurrentViewedGameId();
+    if (!routeGameId || status.gameId !== routeGameId || !shouldLiveSyncRoute(currentRoute)) {
+      return;
+    }
     const statusKey = toStableKey(status);
     if (statusKey === lastWsStatusKey) {
       return;
@@ -2140,31 +2324,6 @@ const liveSync = createLiveSyncClient({
   },
 });
 
-const syncLiveChannel = () => {
-  const liveGameId =
-    currentRoute.name === "game"
-      ? currentRoute.gameId
-      : currentRoute.name === "invite"
-        ? resolvedInvite?.gameId || null
-        : null;
-  const routeKey = liveGameId ? `game:${liveGameId}` : "none";
-
-  if (routeKey === liveSyncConnectedRoute && (wsStatus.state === "connected" || wsStatus.state === "connecting")) {
-    return;
-  }
-  liveSyncConnectedRoute = routeKey;
-
-  liveSync.disconnect();
-
-  if (!shouldLiveSyncRoute(currentRoute)) {
-    return;
-  }
-  if (liveGameId) {
-    liveSync.resume();
-    liveSync.connectGame(liveGameId);
-  }
-};
-
 const navigateTo = (hash) => {
   const parsedRoute = parseRouteFromHash(hash);
   const preferredFlyoutKey = FLYOUT_KEYS.find((key) => parsedRoute[key] && !currentRoute[key]) ?? null;
@@ -2175,14 +2334,20 @@ const navigateTo = (hash) => {
     currentRoute = nextRoute;
     syncFlyoutRenderOrder(currentRoute);
     if (isFlyoutOnlyRouteChange(previousRoute, nextRoute)) {
+      if (currentRoute.name === "home" && previousRoute.debug !== currentRoute.debug) {
+        routeHydrated = false;
+        void withBusy(async () => {
+          await syncRouteDataAndLiveChannels();
+        }, { renderStart: false, renderEnd: true });
+        return;
+      }
       render();
       return;
     }
     routeHydrated = false;
-    syncLiveChannel();
+    syncLiveChannels();
     void withBusy(async () => {
-      await syncRouteData();
-      syncLiveChannel();
+      await syncRouteDataAndLiveChannels();
     });
     return;
   }
@@ -2200,32 +2365,38 @@ window.addEventListener("hashchange", () => {
   }
   syncFlyoutRenderOrder(currentRoute);
   if (isFlyoutOnlyRouteChange(previousRoute, currentRoute)) {
+    if (currentRoute.name === "home" && previousRoute.debug !== currentRoute.debug) {
+      routeHydrated = false;
+      void withBusy(async () => {
+        await syncRouteDataAndLiveChannels();
+      }, { renderStart: false, renderEnd: true });
+      return;
+    }
     render();
     return;
   }
   routeHydrated = false;
-  syncLiveChannel();
+  syncLiveChannels();
   void withBusy(async () => {
-    await syncRouteData();
-    syncLiveChannel();
+    await syncRouteDataAndLiveChannels();
   });
 });
 
 window.addEventListener("online", () => {
   void withBusy(async () => {
     await transport.setOffline(false);
-    liveSync.resume();
-    syncLiveChannel();
-    await syncRouteData();
+    syncLiveChannels();
+    await syncRouteDataAndLiveChannels();
   });
 });
 
 window.addEventListener("offline", () => {
   void withBusy(async () => {
     await transport.setOffline(true);
-    liveSync.disconnect();
-    liveSyncConnectedRoute = "";
-    await syncRouteData();
+    liveSync.disconnectAll();
+    activeLiveGameIds.clear();
+    resetRouteWsStatus();
+    await syncRouteDataAndLiveChannels();
   });
 });
 
@@ -2322,6 +2493,9 @@ appEl.addEventListener("click", async (event) => {
         saveDebugFlyoutOpen(storage, true);
         setFlyoutOpenState("debug", true);
         currentRoute = normalizeRouteFlyoutState({ ...currentRoute, debug: true }, { preferredFlyoutKey: "debug" });
+        if (currentRoute.name === "home") {
+          await syncRouteDataAndLiveChannels();
+        }
         render();
       }
       return;
@@ -2338,8 +2512,11 @@ appEl.addEventListener("click", async (event) => {
         await animateFlyoutClose("debug", () => {
           saveDebugFlyoutOpen(storage, false);
           currentRoute = normalizeRouteFlyoutState({ ...currentRoute, debug: false });
-          render();
         });
+        if (currentRoute.name === "home") {
+          await syncRouteDataAndLiveChannels();
+        }
+        render();
       }
       return;
     }
@@ -2355,6 +2532,26 @@ appEl.addEventListener("click", async (event) => {
     if (action === "create-game") {
       const game = await transport.createGame({ playgroundMode: false, offlineLocal: false });
       navigateTo(buildGameHash(game.id, null, getCurrentFlyoutState()));
+      return;
+    }
+
+    if (action === "home-page-prev" || action === "home-page-next") {
+      const sectionKey = actionEl.getAttribute("data-home-section");
+      const section = getHomeSection(sectionKey);
+      if (!sectionKey || section.totalPages <= 1) {
+        return;
+      }
+      const delta = action === "home-page-prev" ? -1 : 1;
+      const nextPage = (section.page + delta + section.totalPages) % section.totalPages;
+      await loadHomeSectionPage(sectionKey, {
+        page: nextPage,
+        direction: action === "home-page-prev" ? "prev" : "next",
+      });
+      syncLiveChannels();
+      render({ animatePanels: false, includeBoard: false });
+      window.requestAnimationFrame(() => {
+        scrollHomeSectionToTop(sectionKey);
+      });
       return;
     }
 
@@ -2377,7 +2574,7 @@ appEl.addEventListener("click", async (event) => {
       }
       window.__righeltOffline = next;
       await transport.setOffline(next);
-      await syncRouteData();
+      await syncRouteDataAndLiveChannels();
       return;
     }
 
@@ -2395,7 +2592,7 @@ appEl.addEventListener("click", async (event) => {
         navigateTo(buildGameHash(gameId, null, getCurrentFlyoutState()));
         return;
       }
-      await syncRouteData();
+      await syncRouteDataAndLiveChannels();
       return;
     }
 
@@ -2416,7 +2613,7 @@ appEl.addEventListener("click", async (event) => {
         navigateTo(buildGameHash(gameId, null, getCurrentFlyoutState()));
         return;
       }
-      await syncRouteData();
+      await syncRouteDataAndLiveChannels();
       return;
     }
 
@@ -2424,7 +2621,7 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
       await transport.playAsBothPlayers({ gameId });
-      await syncRouteData();
+      await syncRouteDataAndLiveChannels();
       return;
     }
 
@@ -2434,7 +2631,7 @@ appEl.addEventListener("click", async (event) => {
       if (!gameId || !requester) return;
       ignoredApprovalRequests.delete(getApprovalRequestKey(gameId, requester));
       await transport.approvePendingRequest({ gameId, requesterIdentityId: requester });
-      await syncRouteData();
+      await syncRouteDataAndLiveChannels();
       return;
     }
 
@@ -2468,7 +2665,7 @@ appEl.addEventListener("click", async (event) => {
       playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
       await transport.selectHistoryMove({ gameId, moveIndex });
-      await syncRouteData();
+      await syncRouteDataAndLiveChannels();
       return;
     }
 
@@ -2479,7 +2676,7 @@ appEl.addEventListener("click", async (event) => {
       playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
       await transport.returnToLive({ gameId });
-      await syncRouteData();
+      await syncRouteDataAndLiveChannels();
       return;
     }
 
@@ -2620,11 +2817,10 @@ const initialRender = async () => {
   }
 
   routeHydrated = false;
-  syncLiveChannel();
+  syncLiveChannels();
   await withBusy(async () => {
     await syncScenarioCatalog();
-    await syncRouteData();
-    syncLiveChannel();
+    await syncRouteDataAndLiveChannels();
   });
 };
 

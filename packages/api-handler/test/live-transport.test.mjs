@@ -80,6 +80,64 @@ test("live transport: create/list/get game lifecycle is server-backed", async ()
   assert.equal(directBody.game.canJoinAsPlayer, true);
 });
 
+test("live transport: paged home sections return latest-activity slices", async () => {
+  const createdGameIds = [];
+  for (let index = 0; index < 6; index += 1) {
+    const create = await handleApiRequest(
+      req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+      env,
+    );
+    const body = await create.json();
+    createdGameIds.push(body.game.id);
+    env.DB.overwriteGameState(body.game.id, (game) => ({
+      ...game,
+      lastMoveAt: `2026-02-26T00:00:0${index}.000Z`,
+      updatedAt: `2026-02-26T00:00:0${index}.000Z`,
+    }));
+  }
+
+  const firstPage = await handleApiRequest(req("/api/shell/games?identityId=id-owner&section=my&page=0&pageSize=6&debug=0"), env);
+  const firstBody = await firstPage.json();
+  assert.equal(firstBody.totalGames, 6);
+  assert.equal(firstBody.totalPages, 1);
+  assert.equal(firstBody.page, 0);
+  assert.equal(firstBody.games.length, 6);
+  assert.deepEqual(
+    firstBody.games.map((game) => game.id),
+    [...createdGameIds].reverse().slice(0, 6),
+  );
+});
+
+test("live transport: paged home sections isolate smoke games only in debug mode", async () => {
+  const mine = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const mineBody = await mine.json();
+  const other = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-b", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const otherBody = await other.json();
+  const smoke = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "smoke-player", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const smokeBody = await smoke.json();
+
+  const myPage = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=my&page=0&pageSize=6&debug=1"), env);
+  const myBody = await myPage.json();
+  assert.deepEqual(myBody.games.map((game) => game.id), [mineBody.game.id]);
+
+  const otherPage = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=other&page=0&pageSize=6&debug=1"), env);
+  const otherPageBody = await otherPage.json();
+  assert.deepEqual(otherPageBody.games.map((game) => game.id), [otherBody.game.id]);
+
+  const smokePage = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=smoke&page=0&pageSize=6&debug=1"), env);
+  const smokePageBody = await smokePage.json();
+  assert.deepEqual(smokePageBody.games.map((game) => game.id), [smokeBody.game.id]);
+});
+
 test("live transport: scenario import creates a canonical new game", async () => {
   const scenarioImport = await handleApiRequest(
     req("/api/shell/scenarios/import", "POST", {
