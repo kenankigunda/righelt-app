@@ -73,6 +73,7 @@ test("game route live sync connection is not gated by participant role", () => {
     source,
     /const routeGameId =\s*shouldLiveSyncRoute\(currentRoute\)\s*&&/s,
   );
+  assert.match(source, /const desiredGameIds = new Set\(routeGameId \? \[routeGameId\] : \[\]\);/);
 });
 
 test("home uses per-section pagination and isolates smoke-player games in debug mode", () => {

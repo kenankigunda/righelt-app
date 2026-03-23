@@ -179,8 +179,6 @@ const renderRoleLabel = (role, game = null) => {
 };
 const renderConnectionStatusIcon = (status, label) =>
   `<span class="connection-status-icon is-${escapeHtml(status)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
-const getMyConnectionMessage = (game) =>
-  game?.myConnectionConnected ? "You are connected here" : "You are not connected here";
 const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => {
   if (!verbose) {
     if (!participant) {
@@ -198,15 +196,15 @@ const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => 
   }
   if (!participant) {
     const statusLabel = `${seat} is open for someone to join`;
-    return `<span class="mini-board-card-connection-item">${renderConnectionStatusIcon("open", statusLabel)}<span>${renderSeatLabel(
-      seat,
-    )} is open for someone to join</span></span>`;
+    return `<span class="mini-board-card-connection-item"><span>${renderSeatLabel(seat)} is open for someone to join</span>${renderConnectionStatusIcon(
+      "open",
+      statusLabel,
+    )}</span>`;
   }
   const statusLabel = `${seat} is ${participant.connected ? "connected" : "not connected"}`;
-  return `<span class="mini-board-card-connection-item">${renderConnectionStatusIcon(
-    participant.connected ? "connected" : "disconnected",
-    statusLabel,
-    )}<span>${renderSeatLabel(seat)} is ${participant.connected ? "connected" : "not connected"}</span></span>`;
+  return `<span class="mini-board-card-connection-item"><span>${renderSeatLabel(seat)} is ${
+    participant.connected ? "connected" : "not connected"
+  }</span>${renderConnectionStatusIcon(participant.connected ? "connected" : "disconnected", statusLabel)}</span>`;
 };
 const shouldUseVerboseHomeConnectionCopy = (game) =>
   (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) || game?.myRole === "Player 1" || game?.myRole === "Player 2";
@@ -224,15 +222,6 @@ const renderHomeRoleLine = (game) => {
     return game?.canJoinAsPlayer ? "Open to join as player" : "Open to view";
   }
   return renderRoleLabel(game?.myRole, game);
-};
-const renderHomeClientConnectionLine = (game) => {
-  if (shouldUseVerboseHomeConnectionCopy(game)) {
-    return `<p class="small mini-board-card-connection-line">${renderConnectionStatusIcon(
-      Boolean(game?.myConnectionConnected) ? "connected" : "disconnected",
-      getMyConnectionMessage(game),
-    )}<span>${escapeHtml(getMyConnectionMessage(game))}</span></p>`;
-  }
-  return "";
 };
 const renderHomeConnectionSummary = (game) => {
   const slots = [
@@ -535,10 +524,6 @@ const setHomeSection = (sectionKey, nextState) => {
     [sectionKey]: nextState,
   };
 };
-const getHomeActiveGameIds = () =>
-  currentRoute.name === "home" && routeHydrated
-    ? getVisibleHomeSectionKeys().flatMap((sectionKey) => getHomeSection(sectionKey).gameIds)
-    : [];
 const shouldDisableLiveSync = () => window.__righeltOffline === true || navigator.onLine === false;
 const resetRouteWsStatus = () => {
   wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
@@ -1382,11 +1367,7 @@ const renderHomeGameCard = (game) => {
   const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
   const moveLabel = Array.isArray(game.moves) ? `Move ${game.moves.length + 1}` : "Move pending";
   const recoveryChip = game.syncStatus === "desynced" ? '<span class="status-chip">Recovering</span>' : "";
-  const myConnectionLine = renderHomeClientConnectionLine(game);
   const seatConnectionLine = renderHomeSeatConnectionLine(game);
-  const cardInfoLines = [myConnectionLine, seatConnectionLine]
-    .filter(Boolean)
-    .join("");
   return `<article class="mini-board-card">
     <a
       class="mini-board-card-link-surface"
@@ -1397,7 +1378,7 @@ const renderHomeGameCard = (game) => {
       <div class="mini-board-card-header">
         <div>
           <span class="mini-board-card-link">${escapeHtml(formatDisplayGameId(game.id))}</span>
-          <p class="small mini-board-card-subtitle">As of ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
+          <p class="small mini-board-card-subtitle">Last move on ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
         </div>
         ${recoveryChip}
       </div>
@@ -1406,7 +1387,7 @@ const renderHomeGameCard = (game) => {
           <span>${renderHomeRoleLine(game)}</span>
           <span class="small">${escapeHtml(moveLabel)}</span>
         </div>
-        ${cardInfoLines}
+        ${seatConnectionLine}
       </div>
       ${renderMiniBoardPreviewRoot({
         previewId: `home:${game.id}`,
@@ -2530,7 +2511,7 @@ const syncLiveChannels = () => {
       : currentRoute.name === "invite"
         ? resolvedInvite?.gameId || null
         : null);
-  const desiredGameIds = new Set(routeGameId ? [routeGameId] : getHomeActiveGameIds());
+  const desiredGameIds = new Set(routeGameId ? [routeGameId] : []);
   for (const gameId of [...activeLiveGameIds]) {
     if (!desiredGameIds.has(gameId)) {
       liveSync.disconnectGame(gameId);
@@ -2547,6 +2528,9 @@ const syncLiveChannels = () => {
     resetRouteWsStatus();
   }
 };
+
+const liveSyncMetricCounts = Object.create(null);
+window.__righeltLiveSyncMetrics = liveSyncMetricCounts;
 
 const liveSync = createLiveSyncClient({
   identityId: transport.getIdentityId(),
@@ -2573,6 +2557,13 @@ const liveSync = createLiveSyncClient({
   },
   onError: (error) => {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
+  },
+  onMetric: (metric) => {
+    const key = metric?.type || "unknown";
+    liveSyncMetricCounts[key] = (liveSyncMetricCounts[key] ?? 0) + 1;
+    liveSyncMetricCounts.last = metric;
+    liveSyncMetricCounts.activeSocketCount = metric?.activeSocketCount ?? 0;
+    liveSyncMetricCounts.desiredSocketCount = metric?.desiredSocketCount ?? 0;
   },
   onStatus: (status) => {
     const routeGameId = getCurrentViewedGameId();

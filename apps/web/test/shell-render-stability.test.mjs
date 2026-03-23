@@ -180,7 +180,7 @@ test("syncLiveChannels manages subscriptions through the shared active game set"
     source,
     /const activeLiveGameIds = new Set\(\);/,
   );
-  assert.match(source, /const desiredGameIds = new Set\(routeGameId \? \[routeGameId\] : getHomeActiveGameIds\(\)\);/);
+  assert.match(source, /const desiredGameIds = new Set\(routeGameId \? \[routeGameId\] : \[\]\);/);
   assert.match(source, /liveSync\.disconnectGame\(gameId\);/);
   assert.match(source, /liveSync\.connectGame\(gameId\);/);
 });
@@ -289,35 +289,29 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /class="mini-board-card"/);
   assert.match(source, /class="mini-board-card-link-surface"[\s\S]*href=/);
   assert.match(source, /data-game-id="\$\{escapeHtml\(game\.id\)\}"/);
-  assert.match(source, /As of \$\{escapeHtml\(formatClientDateTime\(game\.lastMoveAt \|\| game\.createdAt\)\)\}/);
+  assert.match(source, /Last move on \$\{escapeHtml\(formatClientDateTime\(game\.lastMoveAt \|\| game\.createdAt\)\)\}/);
   assert.match(source, /const recoveryChip = game\.syncStatus === "desynced" \? '<span class="status-chip">Recovering<\/span>' : "";/);
   assert.match(source, /const isDualSeatIdentity = \(game\) =>/);
   assert.match(source, /return '<strong class="player-tone-both">both players<\/strong>';/);
   assert.match(source, /const renderConnectionStatusIcon = \(status, label\) =>/);
-  assert.match(source, /const getMyConnectionMessage = \(game\) =>/);
-  assert.match(source, /game\?\.myConnectionConnected \? "You are connected here" : "You are not connected here"/);
   assert.match(source, /const renderPlayerSlotStatus = \(seat, participant, \{ verbose = false \} = \{\}\) =>/);
   assert.match(source, /return `<span class="mini-board-card-connection-item">\$\{renderSeatLabel\(seat\)\}\$\{renderConnectionStatusIcon\(\s*"open",\s*statusLabel,\s*\)\}<\/span>`;/s);
   assert.match(source, /const shouldUseVerboseHomeConnectionCopy = \(game\) =>/);
   assert.match(source, /const renderHomeRoleLine = \(game\) =>/);
   assert.doesNotMatch(source, /renderConnectionStatusIcon\(Boolean\(game\?\.myConnectionConnected\),/);
   assert.match(source, /if \(game\?\.myRole === "Guest"\) \{\s*return game\?\.canJoinAsPlayer \? "Open to join as player" : "Open to view";\s*\}/);
-  assert.match(source, /const renderHomeClientConnectionLine = \(game\) =>/);
-  assert.match(source, /renderConnectionStatusIcon\(\s*Boolean\(game\?\.myConnectionConnected\) \? "connected" : "disconnected",\s*getMyConnectionMessage\(game\),\s*\)/s);
-  assert.match(source, /<span>\$\{escapeHtml\(getMyConnectionMessage\(game\)\)\}<\/span>/);
-  assert.match(source, /const myConnectionLine = renderHomeClientConnectionLine\(game\);/);
   assert.match(source, /const renderHomeSeatConnectionLine = \(game\) =>/);
   assert.match(source, /return `<p class="small mini-board-card-connection-line">\$\{connectionSummary\}<\/p>`;/);
   assert.match(source, /return '<p class="small mini-board-card-connection-line is-placeholder" aria-hidden="true"><span>&nbsp;<\/span><\/p>';/);
+  assert.doesNotMatch(source, /You are connected here|You are not connected here/);
   assert.match(source, /const seatConnectionLine = renderHomeSeatConnectionLine\(game\);/);
-  assert.match(source, /const cardInfoLines = \[myConnectionLine, seatConnectionLine\]/);
   assert.match(source, /const renderHomeConnectionSummary = \(game\) =>/);
   assert.match(source, /const filteredSlots = isDualSeatIdentity\(game\) && isPlayerRole\(game\?\.myRole\)/);
   assert.match(source, /renderPlayerSlotStatus\(entry\.seat, entry\.participant, \{ verbose: shouldUseVerboseHomeConnectionCopy\(game\) \}\)/);
   assert.match(source, /<div class="mini-board-card-copy">/);
   assert.match(source, /<div class="mini-board-card-meta mini-board-card-meta-primary">/);
   assert.match(source, /<span>\$\{renderHomeRoleLine\(game\)\}<\/span>/);
-  assert.match(source, /\$\{cardInfoLines\}/);
+  assert.match(source, /\$\{seatConnectionLine\}/);
   assert.match(source, /const moveLabel = Array\.isArray\(game\.moves\) \? `Move \$\{game\.moves\.length \+ 1\}` : "Move pending";/);
   assert.match(source, /reconcileMiniBoardPreviews\(\);\s*scheduleGameShellStickyLayout\(\);/);
 });
