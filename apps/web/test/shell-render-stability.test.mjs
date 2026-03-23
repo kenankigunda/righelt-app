@@ -234,7 +234,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /class="mini-board-card-link-surface"[\s\S]*href=/);
   assert.match(source, /data-game-id="\$\{escapeHtml\(game\.id\)\}"/);
   assert.match(source, /As of \$\{escapeHtml\(formatClientDateTime\(game\.lastMoveAt \|\| game\.createdAt\)\)\}/);
-  assert.match(source, /const recoveryChip = game\.syncStatus === "desynced" \? '<span class="status-chip">Recovering<\/span>' : "";/);
+  assert.match(source, /const recoveryChip =[\s\S]*game\.syncStatus === "desynced"[\s\S]*Recovering[\s\S]*game\.syncStatus === "confirming"[\s\S]*Confirming[\s\S]*game\.syncStatus === "retrying"[\s\S]*Retrying/s);
   assert.match(source, /const isDualSeatIdentity = \(game\) =>/);
   assert.match(source, /return '<strong class="player-tone-both">both players<\/strong>';/);
   assert.match(source, /const renderConnectionStatusIcon = \(status, label\) =>/);

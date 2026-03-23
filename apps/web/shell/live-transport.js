@@ -3,6 +3,8 @@ import { defaultNotationForAction, projectOptimisticGame } from "./optimistic-li
 
 const clone = (value) => structuredClone(value);
 const MAX_HISTORY = 200;
+const RETRY_DELAYS_MS = [1000, 2000, 5000, 10000];
+const MAX_CONFIRMATION_WINDOW_MS = 30_000;
 const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
@@ -48,6 +50,7 @@ const mustOk = async (response) => {
     const error = new Error(body.error || `HTTP_${response.status}`);
     error.code = body.error || `HTTP_${response.status}`;
     error.body = body;
+    error.status = response.status;
     throw error;
   }
   return body;
@@ -100,9 +103,18 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
         rollbackNotice: "",
         derivedGame: null,
         commandResults: new Map(),
+        retryTimer: null,
       });
     }
     return optimisticStateByGameId.get(gameId);
+  };
+
+  const clearRetryTimer = (gameId) => {
+    const optimistic = getOptimisticState(gameId);
+    if (optimistic.retryTimer) {
+      clearTimeout(optimistic.retryTimer);
+      optimistic.retryTimer = null;
+    }
   };
 
   const decorateGameWithSync = (game, gameId) => {
@@ -148,6 +160,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const clearOptimisticQueue = (gameId, { notice = "", syncStatus = "ready", changeType = "optimistic_queue_cleared" } = {}) => {
     const optimistic = getOptimisticState(gameId);
+    clearRetryTimer(gameId);
     optimistic.pendingCommands = [];
     optimistic.inflightCommandId = null;
     optimistic.commandResults = new Map();
@@ -234,12 +247,16 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
     const optimistic = getOptimisticState(game.id);
     if (clientCommandId) {
+      clearRetryTimer(game.id);
       optimistic.pendingCommands = optimistic.pendingCommands.filter((command) => command.clientCommandId !== clientCommandId);
       if (optimistic.inflightCommandId === clientCommandId) {
         optimistic.inflightCommandId = null;
       }
+      optimistic.rollbackNotice = "";
+      optimistic.syncStatus = optimistic.pendingCommands.length > 0 ? "applying-update" : "ready";
     } else if (optimistic.syncStatus === "desynced") {
       optimistic.syncStatus = "ready";
+      optimistic.rollbackNotice = "";
     }
 
     const recalculated = recalculateOptimisticGame(game.id);
@@ -251,6 +268,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       });
     } else if (optimistic.pendingCommands.length > 0) {
       optimistic.syncStatus = "applying-update";
+    } else {
+      optimistic.rollbackNotice = "";
     }
 
     emitChange({ type: changeType, gameId: game.id, clientCommandId });
@@ -389,6 +408,37 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     }
   };
 
+  const isRetryableCommandError = (error) => {
+    const category = error?.body?.errorCategory ?? null;
+    if (category === "authorization" || category === "conflict" || category === "validation") {
+      return false;
+    }
+    if (typeof error?.status === "number" && error.status >= 500) {
+      return true;
+    }
+    if (String(error?.code || "").startsWith("HTTP_4")) {
+      return false;
+    }
+    return true;
+  };
+
+  const scheduleCommandRetry = (gameId, command, delayMs) => {
+    const optimistic = getOptimisticState(gameId);
+    clearRetryTimer(gameId);
+    optimistic.retryTimer = setTimeout(() => {
+      optimistic.retryTimer = null;
+      void sendNextPendingCommand(gameId);
+    }, delayMs);
+    optimistic.retryTimer?.unref?.();
+    optimistic.syncStatus = command.attemptCount === 1 ? "confirming" : "retrying";
+    optimistic.rollbackNotice =
+      command.attemptCount === 1
+        ? "Waiting for server confirmation after a connection interruption."
+        : `Retrying move sync after a connection interruption (attempt ${command.attemptCount + 1}).`;
+    recalculateOptimisticGame(gameId);
+    emitChange({ type: "optimistic_confirming", gameId, clientCommandId: command.clientCommandId });
+  };
+
   const sendNextPendingCommand = async (gameId) => {
     if (offline) {
       return;
@@ -401,6 +451,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
     const command = optimistic.pendingCommands[0];
     if (!command) {
+      clearRetryTimer(gameId);
       if (optimistic.syncStatus !== "desynced") {
         optimistic.syncStatus = "ready";
         recalculateOptimisticGame(gameId);
@@ -410,26 +461,33 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
     optimistic.inflightCommandId = command.clientCommandId;
     optimistic.syncStatus = "applying-update";
+    optimistic.rollbackNotice = "";
+    command.attemptCount = (command.attemptCount ?? 0) + 1;
+    command.firstAttemptAt = command.firstAttemptAt ?? Date.now();
+    command.lastAttemptAt = Date.now();
     recalculateOptimisticGame(gameId);
 
     try {
       const response =
         command.kind === "apply"
-          ? await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/apply`), {
+          ? await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/commands`), {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 identityId,
+                type: "apply",
                 state: command.state,
                 action: command.action,
+                autoEndTurn: command.autoEndTurn === true,
                 clientCommandId: command.clientCommandId,
               }),
             })
-          : await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/end-turn`), {
+          : await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/commands`), {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({
                 identityId,
+                type: "end-turn",
                 clientCommandId: command.clientCommandId,
               }),
             });
@@ -460,15 +518,40 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
       optimistic.pendingCommands = optimistic.pendingCommands.filter((entry) => entry.clientCommandId !== command.clientCommandId);
       optimistic.inflightCommandId = null;
+      clearRetryTimer(gameId);
+      optimistic.rollbackNotice = "";
       recalculateOptimisticGame(gameId);
       emitChange({ type: "authoritative_update", gameId, clientCommandId: command.clientCommandId });
       void sendNextPendingCommand(gameId);
-    } catch {
-      clearOptimisticQueue(gameId, {
-        notice: "Move sync failed before confirmation. The board was restored to the last authoritative state.",
-        syncStatus: "desynced",
-        changeType: "optimistic_desynced",
-      });
+    } catch (error) {
+      optimistic.inflightCommandId = null;
+      if (!isRetryableCommandError(error)) {
+        clearOptimisticQueue(gameId, {
+          notice: "The server rejected the command. The board was restored to the last authoritative state.",
+          syncStatus: "ready",
+          changeType: "optimistic_rollback",
+        });
+        if (error?.body?.game) {
+          upsertGameSnapshot({
+            game: error.body.game,
+            eventSeq: error.body.eventSeq,
+            clientCommandId: error.body.clientCommandId ?? command.clientCommandId,
+          });
+        }
+        return;
+      }
+
+      const elapsedMs = Date.now() - (command.firstAttemptAt ?? Date.now());
+      if (elapsedMs >= MAX_CONFIRMATION_WINDOW_MS || (command.attemptCount ?? 0) > RETRY_DELAYS_MS.length + 1) {
+        clearOptimisticQueue(gameId, {
+          notice: "Move sync could not be confirmed after repeated retries. The board was restored to the last authoritative state.",
+          syncStatus: "desynced",
+          changeType: "optimistic_desynced",
+        });
+        return;
+      }
+      const delayMs = command.attemptCount === 1 ? 3000 : RETRY_DELAYS_MS[Math.min(command.attemptCount - 2, RETRY_DELAYS_MS.length - 1)];
+      scheduleCommandRetry(gameId, command, delayMs);
     }
   };
 
@@ -655,6 +738,10 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       state: clone(state),
       notation: defaultNotationForAction(action),
       queuedAt: new Date().toISOString(),
+      autoEndTurn: true,
+      attemptCount: 0,
+      firstAttemptAt: null,
+      lastAttemptAt: null,
     };
     const optimistic = enqueueOptimisticCommand({ gameId, command });
     if (!optimistic.ok) {
@@ -693,6 +780,9 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       kind: "end-turn",
       clientCommandId: createClientCommandId(gameId, nextClientCommandCounter++),
       queuedAt: new Date().toISOString(),
+      attemptCount: 0,
+      firstAttemptAt: null,
+      lastAttemptAt: null,
     };
     const optimistic = enqueueOptimisticCommand({ gameId, command });
     if (!optimistic.ok) {
@@ -761,6 +851,28 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return game ? applyClientOfflineViewState(game) : null;
   };
 
+  const getCommandDiagnostics = (gameId) => {
+    const game = getGameViewModel(gameId);
+    const optimistic = getOptimisticState(gameId);
+    return {
+      syncStatus: optimistic.syncStatus,
+      rollbackNotice: optimistic.rollbackNotice,
+      inflightCommandId: optimistic.inflightCommandId,
+      pendingCommands: optimistic.pendingCommands.map((command) => ({
+        clientCommandId: command.clientCommandId,
+        kind: command.kind,
+        queuedAt: command.queuedAt,
+        attemptCount: command.attemptCount ?? 0,
+        firstAttemptAt: command.firstAttemptAt ?? null,
+        lastAttemptAt: command.lastAttemptAt ?? null,
+        autoEndTurn: command.autoEndTurn === true,
+      })),
+      recentCommandOrder: Array.isArray(game?.recentCommandOrder) ? game.recentCommandOrder.slice(0, 10) : [],
+      commandTimeline: Array.isArray(game?.commandTimeline) ? game.commandTimeline.slice(0, 10) : [],
+      recentCommandReceipts: game?.recentCommandReceipts ?? {},
+    };
+  };
+
   const setOffline = (value) => {
     const previous = offline;
     offline = value;
@@ -796,6 +908,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     goOnlineGame,
     listGames,
     getGameViewModel,
+    getCommandDiagnostics,
     setOffline,
     getIdentityId,
     subscribe,

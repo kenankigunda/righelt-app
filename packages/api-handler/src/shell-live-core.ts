@@ -41,6 +41,53 @@ export type MoveEntry = {
   snapshot: GameState;
 };
 
+export type LiveCommandReceiptStatus =
+  | "applied"
+  | "rejected"
+  | "invalid_request"
+  | "not_authorized"
+  | "conflict"
+  | "server_error";
+
+export type LiveCommandReceiptBody = {
+  ok: boolean;
+  accepted?: boolean;
+  error?: string;
+  errorCategory?: "validation" | "authorization" | "conflict" | "transport" | "server";
+  validation?: Record<string, unknown> | null;
+  move?: MoveEntry | null;
+  turn?: TurnEntry | null;
+  state?: GameState | null;
+  legalActions?: Action[] | null;
+  removedPieces?: RemovedPieceNotice[] | null;
+  game?: Record<string, unknown> | null;
+  eventSeq?: number;
+};
+
+export type LiveCommandReceipt = {
+  clientCommandId: string;
+  commandType: "apply" | "end-turn";
+  requestId: string;
+  httpStatus: number;
+  delivery: "new" | "replayed";
+  status: LiveCommandReceiptStatus;
+  eventSeq: number;
+  resolvedAt: string;
+  response: LiveCommandReceiptBody;
+};
+
+export type LiveCommandTimelineEntry = {
+  clientCommandId: string;
+  commandType: "apply" | "end-turn";
+  requestId: string;
+  event: string;
+  outcome: string;
+  reason: string | null;
+  validationCode: string | null;
+  eventSeq: number;
+  at: string;
+};
+
 export type ScenarioMoveEntry = {
   turnIndex: number;
   turnMoveIndex: number;
@@ -95,6 +142,9 @@ export type LiveGame = {
     player1: string;
     player2: string;
   };
+  recentCommandReceipts: Record<string, LiveCommandReceipt>;
+  recentCommandOrder: string[];
+  commandTimeline: LiveCommandTimelineEntry[];
 };
 
 export type RemovedPieceNotice = {
@@ -267,6 +317,9 @@ export const createInitialGame = ({
       player1: createInviteToken(),
       player2: createInviteToken(),
     },
+    recentCommandReceipts: {},
+    recentCommandOrder: [],
+    commandTimeline: [],
   };
 };
 

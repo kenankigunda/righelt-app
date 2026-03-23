@@ -1,3 +1,4 @@
 export type CommandMetadata = {
-  clientCommandId?: string | null;
+  clientCommandId: string | null;
+  requestId: string;
 };

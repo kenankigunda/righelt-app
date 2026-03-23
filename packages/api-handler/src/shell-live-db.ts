@@ -1,5 +1,16 @@
+import type { Action } from "../../game-engine/src/types";
 import type { ServerEvent } from "../../shared-types/src/events";
-import { asGameState, createInviteToken, now, type JoinRequest, type LiveGame, type Participant, type Viewer } from "./shell-live-core";
+import {
+  asGameState,
+  createInviteToken,
+  now,
+  type JoinRequest,
+  type LiveCommandReceipt,
+  type LiveCommandTimelineEntry,
+  type LiveGame,
+  type Participant,
+  type Viewer,
+} from "./shell-live-core";
 
 const LIVE_GAMES_TABLE = "live_games";
 const LIVE_INVITES_TABLE = "live_invites";
@@ -252,6 +263,128 @@ const normalizeHistoryIndexByIdentity = (value: unknown, mismatches: PersistedGa
   );
 };
 
+const normalizeRecentCommandReceipts = (value: unknown, mismatches: PersistedGameMismatch[]) => {
+  if (!isRecord(value)) {
+    if (typeof value !== "undefined") {
+      recordMismatch(mismatches, "recentCommandReceipts", "record<string, receipt>", value, "defaulted_to_empty_object");
+    }
+    return {} as Record<string, LiveCommandReceipt>;
+  }
+  const entries: Array<[string, LiveCommandReceipt]> = [];
+  for (const [clientCommandId, entry] of Object.entries(value)) {
+    if (!isRecord(entry)) {
+      recordMismatch(mismatches, `recentCommandReceipts.${clientCommandId}`, "receipt", entry, "dropped_invalid_record");
+      continue;
+    }
+    const commandType = entry.commandType === "apply" || entry.commandType === "end-turn" ? entry.commandType : null;
+    const delivery = entry.delivery === "new" || entry.delivery === "replayed" ? entry.delivery : "new";
+    const status =
+      entry.status === "applied" ||
+      entry.status === "rejected" ||
+      entry.status === "invalid_request" ||
+      entry.status === "not_authorized" ||
+      entry.status === "conflict" ||
+      entry.status === "server_error"
+        ? entry.status
+        : null;
+    if (!commandType || !status || typeof entry.requestId !== "string" || !entry.requestId || typeof entry.resolvedAt !== "string") {
+      recordMismatch(mismatches, `recentCommandReceipts.${clientCommandId}`, "valid receipt", entry, "dropped_invalid_record");
+      continue;
+    }
+    const response = isRecord(entry.response) ? entry.response : { ok: false, error: "invalid_receipt_response" };
+    entries.push([
+      clientCommandId,
+      {
+        clientCommandId,
+        commandType,
+        requestId: entry.requestId,
+        httpStatus: typeof entry.httpStatus === "number" && Number.isFinite(entry.httpStatus) ? entry.httpStatus : 200,
+        delivery,
+        status,
+        eventSeq: typeof entry.eventSeq === "number" && Number.isFinite(entry.eventSeq) ? entry.eventSeq : 0,
+        resolvedAt: entry.resolvedAt,
+        response: {
+          ok: response.ok === true,
+          accepted: typeof response.accepted === "boolean" ? response.accepted : undefined,
+          error: typeof response.error === "string" ? response.error : undefined,
+          errorCategory:
+            response.errorCategory === "validation" ||
+            response.errorCategory === "authorization" ||
+            response.errorCategory === "conflict" ||
+            response.errorCategory === "transport" ||
+            response.errorCategory === "server"
+              ? response.errorCategory
+              : undefined,
+          validation: isRecord(response.validation) ? response.validation : null,
+          move: isRecord(response.move) ? (response.move as LiveCommandReceipt["response"]["move"]) : null,
+          turn: isRecord(response.turn) ? (response.turn as LiveCommandReceipt["response"]["turn"]) : null,
+          state: asGameState(response.state),
+          legalActions: Array.isArray(response.legalActions) ? (response.legalActions as Action[]) : null,
+          removedPieces: Array.isArray(response.removedPieces)
+            ? (response.removedPieces as LiveCommandReceipt["response"]["removedPieces"])
+            : null,
+          game: isRecord(response.game) ? response.game : null,
+          eventSeq: typeof response.eventSeq === "number" && Number.isFinite(response.eventSeq) ? response.eventSeq : undefined,
+        },
+      },
+    ]);
+  }
+  return Object.fromEntries(entries);
+};
+
+const normalizeRecentCommandOrder = (
+  value: unknown,
+  receipts: Record<string, LiveCommandReceipt>,
+  mismatches: PersistedGameMismatch[],
+) => {
+  if (!Array.isArray(value)) {
+    if (typeof value !== "undefined") {
+      recordMismatch(mismatches, "recentCommandOrder", "string[]", value, "defaulted_from_receipts");
+    }
+    return Object.keys(receipts);
+  }
+  const order = value.filter((entry) => typeof entry === "string" && receipts[entry]);
+  if (order.length !== value.length) {
+    recordMismatch(mismatches, "recentCommandOrder", "string[]", value, "dropped_invalid_entries");
+  }
+  const missing = Object.keys(receipts).filter((clientCommandId) => !order.includes(clientCommandId));
+  return [...order, ...missing];
+};
+
+const normalizeCommandTimeline = (value: unknown, mismatches: PersistedGameMismatch[]) => {
+  if (!Array.isArray(value)) {
+    if (typeof value !== "undefined") {
+      recordMismatch(mismatches, "commandTimeline", "timeline_entry[]", value, "defaulted_to_empty_array");
+    }
+    return [] as LiveCommandTimelineEntry[];
+  }
+  return value.flatMap((entry, index) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.clientCommandId !== "string" ||
+      typeof entry.commandType !== "string" ||
+      typeof entry.requestId !== "string" ||
+      typeof entry.event !== "string" ||
+      typeof entry.outcome !== "string" ||
+      typeof entry.at !== "string"
+    ) {
+      recordMismatch(mismatches, `commandTimeline.${index}`, "timeline_entry", entry, "dropped_invalid_record");
+      return [];
+    }
+    return [{
+      clientCommandId: entry.clientCommandId,
+      commandType: entry.commandType === "end-turn" ? "end-turn" : "apply",
+      requestId: entry.requestId,
+      event: entry.event,
+      outcome: entry.outcome,
+      reason: typeof entry.reason === "string" ? entry.reason : null,
+      validationCode: typeof entry.validationCode === "string" ? entry.validationCode : null,
+      eventSeq: typeof entry.eventSeq === "number" && Number.isFinite(entry.eventSeq) ? entry.eventSeq : 0,
+      at: entry.at,
+    } satisfies LiveCommandTimelineEntry];
+  });
+};
+
 const normalizePersistedGame = (
   row: PersistedGameRow,
   context: PersistedGameLoadContext,
@@ -316,6 +449,9 @@ const normalizePersistedGame = (
   if (Array.isArray(parsed.notifications) && notifications.length !== parsed.notifications.length) {
     recordMismatch(mismatches, "notifications", "string[]", parsed.notifications, "dropped_non_string_entries");
   }
+  const recentCommandReceipts = normalizeRecentCommandReceipts(parsed.recentCommandReceipts, mismatches);
+  const recentCommandOrder = normalizeRecentCommandOrder(parsed.recentCommandOrder, recentCommandReceipts, mismatches);
+  const commandTimeline = normalizeCommandTimeline(parsed.commandTimeline, mismatches);
 
   const game: LiveGame = {
     id: typeof parsed.id === "string" && parsed.id ? parsed.id : row.game_id,
@@ -334,6 +470,9 @@ const normalizePersistedGame = (
     historyIndexByIdentity: normalizeHistoryIndexByIdentity(parsed.historyIndexByIdentity, mismatches),
     notifications,
     inviteTokens: normalizeInviteTokens(parsed.inviteTokens, mismatches),
+    recentCommandReceipts,
+    recentCommandOrder,
+    commandTimeline,
   };
 
   if (typeof parsed.id !== "string" || !parsed.id) {

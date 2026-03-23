@@ -11,10 +11,10 @@ const env = {
 };
 env.GAME_ROOMS = createFakeGameRooms(() => env);
 
-const req = (path, method = "GET", body = null) =>
+const req = (path, method = "GET", body = null, headers = {}) =>
   new Request(`https://example.test${path}`, {
     method,
-    headers: body ? { "content-type": "application/json" } : undefined,
+    headers: body ? { "content-type": "application/json", ...headers } : Object.keys(headers).length > 0 ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -597,6 +597,81 @@ test("live transport: apply and end-turn echo clientCommandId and persist it on 
   const events = env.DB.getEvents(gameId).map((row) => JSON.parse(row.payload_json));
   assert.equal(events.some((event) => event.type === "event_appended" && event.clientCommandId === "cmd-apply-1"), true);
   assert.equal(events.some((event) => event.type === "event_appended" && event.clientCommandId === "cmd-end-1"), true);
+});
+
+test("live transport: commands route replays duplicate apply commands idempotently", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await create.json();
+  const gameId = createdBody.game.id;
+
+  const first = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/commands`, "POST", {
+      identityId: "id-owner",
+      type: "apply",
+      clientCommandId: "cmd-dup-1",
+      state: createdBody.game.currentSnapshot,
+      action: { type: "pass" },
+      autoEndTurn: true,
+    }, { "x-request-id": "req-first" }),
+    env,
+  );
+  const firstBody = await first.json();
+  assert.equal(first.status, 200);
+  assert.equal(firstBody.delivery, "new");
+  assert.equal(firstBody.requestId, "req-first");
+
+  const second = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/commands`, "POST", {
+      identityId: "id-owner",
+      type: "apply",
+      clientCommandId: "cmd-dup-1",
+      state: createdBody.game.currentSnapshot,
+      action: { type: "pass" },
+      autoEndTurn: true,
+    }, { "x-request-id": "req-second" }),
+    env,
+  );
+  const secondBody = await second.json();
+  assert.equal(second.status, 200);
+  assert.equal(secondBody.delivery, "replayed");
+  assert.equal(secondBody.requestId, "req-second");
+
+  const events = env.DB.getEvents(gameId).map((row) => JSON.parse(row.payload_json));
+  assert.equal(events.filter((event) => event.type === "event_appended" && event.clientCommandId === "cmd-dup-1").length, 1);
+});
+
+test("live transport: rejected commands log request metadata and return requestId", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await create.json();
+  const gameId = createdBody.game.id;
+  const consoleCapture = captureConsoleEvents();
+  try {
+    const rejected = await handleApiRequest(
+      req(`/api/shell/games/${gameId}/commands`, "POST", {
+        identityId: "id-owner",
+        type: "apply",
+        clientCommandId: "cmd-invalid-1",
+        state: createdBody.game.currentSnapshot,
+        action: { nope: true },
+      }, { "x-request-id": "req-invalid" }),
+      env,
+    );
+    const rejectedBody = await rejected.json();
+    assert.equal(rejected.status, 400);
+    assert.equal(rejectedBody.requestId, "req-invalid");
+    assert.equal(rejectedBody.errorCategory, "validation");
+
+    const liveCommandLogs = consoleCapture.warnings.map((entry) => JSON.parse(entry)).filter((entry) => entry.event.startsWith("live_command_"));
+    assert.equal(liveCommandLogs.some((entry) => entry.event === "live_command_invalid_request" && entry.requestId === "req-invalid"), true);
+  } finally {
+    consoleCapture.restore();
+  }
 });
 
 test("live transport: player invite token enables immediate player join without guessable game role query", async () => {

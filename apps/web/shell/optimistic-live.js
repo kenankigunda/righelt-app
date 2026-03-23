@@ -200,6 +200,19 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
         removedPieces,
         outcome: nextStable.outcome ?? null,
       });
+      if (command.autoEndTurn === true && nextStable.continuation == null) {
+        const ended = completeTurn(workingGame, command.queuedAt);
+        if (!ended.ok) {
+          return { ok: false, error: ended.error, clientCommandId: command.clientCommandId };
+        }
+        commandResults.set(command.clientCommandId, {
+          accepted: true,
+          state: clone(workingGame.board.state),
+          legalActions: listLegalActions(workingGame.board.state),
+          removedPieces,
+          outcome: workingGame.board.state.outcome ?? null,
+        });
+      }
       continue;
     }
 

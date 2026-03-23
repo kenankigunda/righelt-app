@@ -544,7 +544,7 @@ test("live transport store applies optimistic moves immediately and clears pendi
     if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
       return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
     }
-    if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+    if (String(url) === `/api/shell/games/${baseGame.id}/commands?offline=0` && init.method === "POST") {
       return new Promise((resolve) => {
         resolveApply = resolve;
       });
@@ -593,7 +593,7 @@ test("live transport store notifies subscribers for optimistic enqueue and autho
     if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
       return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
     }
-    if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+    if (String(url) === `/api/shell/games/${baseGame.id}/commands?offline=0` && init.method === "POST") {
       return new Promise((resolve) => {
         resolveApply = resolve;
       });
@@ -637,7 +637,7 @@ test("live transport store notifies subscribers when optimistic sync rolls back 
       if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
         return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
       }
-      if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+      if (String(url) === `/api/shell/games/${baseGame.id}/commands?offline=0` && init.method === "POST") {
         return new Promise((resolve) => {
           resolveApply = resolve;
         });
@@ -674,7 +674,7 @@ test("live transport store notifies subscribers when optimistic sync rolls back 
         if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
           return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
         }
-        if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+        if (String(url) === `/api/shell/games/${baseGame.id}/commands?offline=0` && init.method === "POST") {
           throw new Error("network_failed");
         }
         return Response.json({ ok: true, games: [] });
@@ -690,7 +690,10 @@ test("live transport store notifies subscribers when optimistic sync rolls back 
     await desyncStore.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
     await tick();
 
-    assert.equal(desyncChanges.some((change) => change.type === "optimistic_desynced" && change.gameId === baseGame.id), true);
+    assert.equal(desyncChanges.some((change) => change.type === "optimistic_confirming" && change.gameId === baseGame.id), true);
+    const confirmingView = desyncStore.getGameViewModel(baseGame.id);
+    assert.equal(confirmingView.syncStatus, "confirming");
+    assert.equal(confirmingView.pendingMoves.length, 1);
   }
 });
 
@@ -703,7 +706,7 @@ test("live transport store keeps authoritative history selectable while pending 
     if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
       return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
     }
-    if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+    if (String(url) === `/api/shell/games/${baseGame.id}/commands?offline=0` && init.method === "POST") {
       return new Promise(() => {});
     }
     if (String(url) === `/api/shell/games/${baseGame.id}/history?offline=0` && init.method === "POST") {

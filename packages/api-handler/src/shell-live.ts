@@ -31,6 +31,9 @@ const CACHE_NO_STORE = "no-store";
 const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
 const GAME_ROOMS_BINDING_ERROR = "server_misconfigured_game_rooms_binding";
 const INVALID_PERSISTED_GAME_ERROR = "invalid_persisted_game";
+const REQUEST_ID_HEADER = "x-request-id";
+
+const createRequestId = () => (typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
 
 const json = (body: unknown, status = 200, cacheControl = CACHE_NO_STORE): Response =>
   new Response(JSON.stringify(body), {
@@ -64,6 +67,8 @@ const parseBody = async (request: Request): Promise<Record<string, unknown>> => 
   }
 };
 
+const requestIdFor = (request: Request) => request.headers.get(REQUEST_ID_HEADER) || createRequestId();
+
 const roomStubForGame = (env: LiveGameRequestEnv, gameId: string) => env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(gameId));
 
 const forwardRequestToGameRoom = (
@@ -74,6 +79,7 @@ const forwardRequestToGameRoom = (
 ) => {
   const headers = new Headers(request.headers);
   headers.set("x-game-id", gameId);
+  headers.set(REQUEST_ID_HEADER, request.headers.get(REQUEST_ID_HEADER) || createRequestId());
   return roomStubForGame(env, gameId).fetch(
     new Request(`https://game-room${path}`, {
       method: request.method,
@@ -93,6 +99,7 @@ const fetchGameRoom = async (
 ) => {
   const headers = new Headers(init.headers || {});
   headers.set("x-game-id", gameId);
+  headers.set(REQUEST_ID_HEADER, headers.get(REQUEST_ID_HEADER) || createRequestId());
   return roomStubForGame(env, gameId).fetch(new Request(`https://game-room${path}`, { ...init, headers }));
 };
 
@@ -205,7 +212,7 @@ export const handleLiveGameRequest = async (
     const gameId = nextGameId();
     const response = await fetchGameRoom(env, gameId, "/create", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", [REQUEST_ID_HEADER]: requestIdFor(request) },
       body: JSON.stringify({
         identityId,
         gameId,
@@ -236,7 +243,7 @@ export const handleLiveGameRequest = async (
     if (targetGameId) {
       const response = await fetchGameRoom(env, targetGameId, "/load-scenario", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", [REQUEST_ID_HEADER]: requestIdFor(request) },
         body: JSON.stringify({ identityId, scenario }),
       });
       return {
@@ -259,7 +266,7 @@ export const handleLiveGameRequest = async (
     const newGameId = nextGameId();
     const response = await fetchGameRoom(env, newGameId, "/create-from-scenario", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", [REQUEST_ID_HEADER]: requestIdFor(request) },
       body: JSON.stringify({
         identityId,
         gameId: newGameId,
@@ -336,7 +343,7 @@ export const handleLiveGameRequest = async (
       }
       const response = await fetchGameRoom(env, gameId, "/join", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", [REQUEST_ID_HEADER]: requestIdFor(request) },
         body: JSON.stringify({
           identityId,
           mode: body.mode,
@@ -353,7 +360,7 @@ export const handleLiveGameRequest = async (
 
     if (
       route.length === 3 &&
-      ["approve", "moves", "apply", "end-turn", "history", "live", "play-as-both", "go-online"].includes(route[2])
+      ["approve", "moves", "apply", "commands", "end-turn", "history", "live", "play-as-both", "go-online"].includes(route[2])
     ) {
       if (!hasGameRoomsBinding(env)) {
         return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
@@ -367,7 +374,7 @@ export const handleLiveGameRequest = async (
       }
       const response = await fetchGameRoom(env, gameId, `/${route[2]}`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", [REQUEST_ID_HEADER]: requestIdFor(request) },
         body: JSON.stringify(body),
       });
       return {

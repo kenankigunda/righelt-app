@@ -36,6 +36,9 @@ import {
   promoteIdentityToSeat,
   removeViewer,
   type JoinRequest,
+  type LiveCommandReceipt,
+  type LiveCommandReceiptBody,
+  type LiveCommandReceiptStatus,
   type LiveGame,
   withViewModel,
 } from "./shell-live-core";
@@ -43,6 +46,8 @@ import { loadEventsAfter, loadGameProjection, persistGameState, type LiveGameEnv
 import type { CommandMetadata } from "./shell-command-metadata";
 
 const HEARTBEAT_TIMEOUT_MS = 35_000;
+const MAX_COMMAND_RECEIPTS = 200;
+const MAX_COMMAND_TIMELINE = 50;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -74,7 +79,46 @@ const parseBody = async (request: Request): Promise<Record<string, unknown>> => 
 
 const parseCommandMetadata = (body: Record<string, unknown>): CommandMetadata => ({
   clientCommandId: typeof body.clientCommandId === "string" && body.clientCommandId ? body.clientCommandId : null,
+  requestId: "",
 });
+
+const createRequestId = () => (typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+
+const parseCommandMetadataFromRequest = async (request: Request) => {
+  const body = await parseBody(request);
+  return {
+    body,
+    metadata: {
+      clientCommandId: typeof body.clientCommandId === "string" && body.clientCommandId ? body.clientCommandId : null,
+      requestId: request.headers.get("x-request-id") || createRequestId(),
+    } satisfies CommandMetadata,
+  };
+};
+
+const buildCommandBody = (
+  body: LiveCommandReceiptBody,
+  {
+    clientCommandId,
+    delivery,
+    requestId,
+  }: {
+    clientCommandId: string;
+    delivery: "new" | "replayed";
+    requestId: string;
+  },
+) => ({
+  ...body,
+  clientCommandId,
+  delivery,
+  requestId,
+});
+
+const commandStatusForError = (errorCategory: LiveCommandReceiptBody["errorCategory"]): LiveCommandReceiptStatus => {
+  if (errorCategory === "validation") return "rejected";
+  if (errorCategory === "authorization") return "not_authorized";
+  if (errorCategory === "conflict") return "conflict";
+  return "server_error";
+};
 
 const eventForSession = (event: ServerEvent, identityId: string) => {
   if (!("game" in event)) {
@@ -98,6 +142,99 @@ export class GameRoomDO {
   constructor(state: DurableObjectStateLike, env: LiveGameEnv) {
     this.state = state;
     this.env = env;
+  }
+
+  private logLiveCommand(
+    event: string,
+    details: Record<string, unknown>,
+    level: "warn" | "error" = "warn",
+  ) {
+    const payload = JSON.stringify({ event, ...details });
+    if (level === "error") {
+      console.error(payload);
+      return;
+    }
+    console.warn(payload);
+  }
+
+  private appendCommandTimeline(
+    game: LiveGame,
+    entry: {
+      clientCommandId: string;
+      commandType: "apply" | "end-turn";
+      requestId: string;
+      event: string;
+      outcome: string;
+      reason?: string | null;
+      validationCode?: string | null;
+      eventSeq: number;
+    },
+  ) {
+    game.commandTimeline = [
+      {
+        clientCommandId: entry.clientCommandId,
+        commandType: entry.commandType,
+        requestId: entry.requestId,
+        event: entry.event,
+        outcome: entry.outcome,
+        reason: entry.reason ?? null,
+        validationCode: entry.validationCode ?? null,
+        eventSeq: entry.eventSeq,
+        at: now(),
+      },
+      ...(game.commandTimeline ?? []),
+    ].slice(0, MAX_COMMAND_TIMELINE);
+  }
+
+  private recordCommandReceipt(game: LiveGame, receipt: LiveCommandReceipt) {
+    const nextReceipts = { ...(game.recentCommandReceipts ?? {}) };
+    const nextOrder = Array.isArray(game.recentCommandOrder) ? [...game.recentCommandOrder] : [];
+    nextReceipts[receipt.clientCommandId] = receipt;
+    const existingIndex = nextOrder.indexOf(receipt.clientCommandId);
+    if (existingIndex >= 0) {
+      nextOrder.splice(existingIndex, 1);
+    }
+    nextOrder.unshift(receipt.clientCommandId);
+    while (nextOrder.length > MAX_COMMAND_RECEIPTS) {
+      const removed = nextOrder.pop();
+      if (removed) {
+        delete nextReceipts[removed];
+      }
+    }
+    game.recentCommandReceipts = nextReceipts;
+    game.recentCommandOrder = nextOrder;
+  }
+
+  private findCommandReceipt(game: LiveGame, clientCommandId: string | null, commandType: "apply" | "end-turn") {
+    if (!clientCommandId) {
+      return null;
+    }
+    const receipt = game.recentCommandReceipts?.[clientCommandId] ?? null;
+    return receipt?.commandType === commandType ? receipt : null;
+  }
+
+  private async persistReceipt(game: LiveGame, receipt: LiveCommandReceipt) {
+    this.recordCommandReceipt(game, receipt);
+    await persistGameState(this.env, game, this.eventSeq, null);
+  }
+
+  private replayReceipt(receipt: LiveCommandReceipt, requestId: string) {
+    return json(
+      buildCommandBody(receipt.response, {
+        clientCommandId: receipt.clientCommandId,
+        delivery: "replayed",
+        requestId,
+      }),
+      receipt.httpStatus,
+    );
+  }
+
+  private getValidationContext(game: LiveGame, identityId: string) {
+    return {
+      requesterRole: findRoleForIdentity(game, identityId),
+      sideToMoveSeat: getSideToMoveSeat(game),
+      continuationType: game.board.state?.continuation?.type ?? null,
+    };
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -155,7 +292,10 @@ export class GameRoomDO {
     }
 
     const body = await parseBody(request);
-    const commandMetadata = parseCommandMetadata(body);
+    const commandMetadata: CommandMetadata = {
+      clientCommandId: typeof body.clientCommandId === "string" && body.clientCommandId ? body.clientCommandId : null,
+      requestId: request.headers.get("x-request-id") || createRequestId(),
+    };
     const identityId = asIdentity(body.identityId);
     if (!identityId) {
       return json({ ok: false, error: "invalid_identity" }, 400);
@@ -301,89 +441,724 @@ export class GameRoomDO {
       });
     }
 
-    if (request.method === "POST" && path === "/apply") {
+    if (request.method === "POST" && (path === "/apply" || path === "/commands" || path === "/end-turn")) {
+      const commandType = path === "/end-turn" || (path === "/commands" && body.type === "end-turn") ? "end-turn" : "apply";
+      if (commandType === "end-turn") {
+        const existing = this.findCommandReceipt(game, commandMetadata.clientCommandId, "end-turn");
+        if (existing) {
+          this.appendCommandTimeline(game, {
+            clientCommandId: existing.clientCommandId,
+            commandType: "end-turn",
+            requestId: commandMetadata.requestId,
+            event: "live_command_replayed",
+            outcome: existing.status,
+            reason: "duplicate_client_command_id",
+            validationCode: typeof existing.response.validation?.code === "string" ? String(existing.response.validation.code) : null,
+            eventSeq: existing.eventSeq,
+          });
+          this.logLiveCommand("live_command_replayed", {
+            gameId: game.id,
+            identityId,
+            clientCommandId: existing.clientCommandId,
+            commandType: "end-turn",
+            requestId: commandMetadata.requestId,
+            replayOfRequestId: existing.requestId,
+            eventSeqBefore: this.eventSeq,
+            eventSeqAfter: existing.eventSeq,
+            outcome: existing.status,
+            reason: "duplicate_client_command_id",
+            httpStatus: existing.httpStatus,
+          });
+          return this.replayReceipt(existing, commandMetadata.requestId);
+        }
+      } else {
+        const existing = this.findCommandReceipt(game, commandMetadata.clientCommandId, "apply");
+        if (existing) {
+          this.appendCommandTimeline(game, {
+            clientCommandId: existing.clientCommandId,
+            commandType: "apply",
+            requestId: commandMetadata.requestId,
+            event: "live_command_replayed",
+            outcome: existing.status,
+            reason: "duplicate_client_command_id",
+            validationCode: typeof existing.response.validation?.code === "string" ? String(existing.response.validation.code) : null,
+            eventSeq: existing.eventSeq,
+          });
+          this.logLiveCommand("live_command_replayed", {
+            gameId: game.id,
+            identityId,
+            clientCommandId: existing.clientCommandId,
+            commandType: "apply",
+            requestId: commandMetadata.requestId,
+            replayOfRequestId: existing.requestId,
+            eventSeqBefore: this.eventSeq,
+            eventSeqAfter: existing.eventSeq,
+            outcome: existing.status,
+            reason: "duplicate_client_command_id",
+            httpStatus: existing.httpStatus,
+          });
+          return this.replayReceipt(existing, commandMetadata.requestId);
+        }
+      }
+
+      this.logLiveCommand("live_command_received", {
+        gameId: game.id,
+        identityId,
+        clientCommandId: commandMetadata.clientCommandId,
+        commandType,
+        attempt: 1,
+        requestId: commandMetadata.requestId,
+        eventSeqBefore: this.eventSeq,
+      });
+
+      if (commandType === "end-turn") {
+        const role = findRoleForIdentity(game, identityId);
+        if (role !== "Player 1" && role !== "Player 2") {
+          const responseBody = buildCommandBody(
+            { ok: false, error: "role_not_allowed", errorCategory: "authorization", eventSeq: this.eventSeq },
+            {
+              clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+              delivery: "new",
+              requestId: commandMetadata.requestId,
+            },
+          );
+          if (commandMetadata.clientCommandId) {
+            await this.persistReceipt(game, {
+              clientCommandId: commandMetadata.clientCommandId,
+              commandType: "end-turn",
+              requestId: commandMetadata.requestId,
+              httpStatus: 403,
+              delivery: "new",
+              status: "not_authorized",
+              eventSeq: this.eventSeq,
+              resolvedAt: now(),
+              response: { ok: false, error: "role_not_allowed", errorCategory: "authorization", eventSeq: this.eventSeq },
+            });
+          }
+          this.appendCommandTimeline(game, {
+            clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+            commandType: "end-turn",
+            requestId: commandMetadata.requestId,
+            event: "live_command_not_authorized",
+            outcome: "not_authorized",
+            reason: "role_not_allowed",
+            eventSeq: this.eventSeq,
+          });
+          this.logLiveCommand("live_command_not_authorized", {
+            gameId: game.id,
+            identityId,
+            clientCommandId: commandMetadata.clientCommandId,
+            commandType: "end-turn",
+            attempt: 1,
+            requestId: commandMetadata.requestId,
+            eventSeqBefore: this.eventSeq,
+            eventSeqAfter: this.eventSeq,
+            outcome: "not_authorized",
+            reason: "role_not_allowed",
+            httpStatus: 403,
+          });
+          return json(responseBody, 403);
+        }
+        const activeTurn = getActiveTurn(game);
+        if (!activeTurn) {
+          const responseBody = buildCommandBody(
+            { ok: false, error: "turn_not_initialized", errorCategory: "conflict", eventSeq: this.eventSeq },
+            {
+              clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+              delivery: "new",
+              requestId: commandMetadata.requestId,
+            },
+          );
+          if (commandMetadata.clientCommandId) {
+            await this.persistReceipt(game, {
+              clientCommandId: commandMetadata.clientCommandId,
+              commandType: "end-turn",
+              requestId: commandMetadata.requestId,
+              httpStatus: 409,
+              delivery: "new",
+              status: "conflict",
+              eventSeq: this.eventSeq,
+              resolvedAt: now(),
+              response: { ok: false, error: "turn_not_initialized", errorCategory: "conflict", eventSeq: this.eventSeq },
+            });
+          }
+          this.appendCommandTimeline(game, {
+            clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+            commandType: "end-turn",
+            requestId: commandMetadata.requestId,
+            event: "live_command_conflict",
+            outcome: "conflict",
+            reason: "turn_not_initialized",
+            eventSeq: this.eventSeq,
+          });
+          this.logLiveCommand("live_command_conflict", {
+            gameId: game.id,
+            identityId,
+            clientCommandId: commandMetadata.clientCommandId,
+            commandType: "end-turn",
+            attempt: 1,
+            requestId: commandMetadata.requestId,
+            eventSeqBefore: this.eventSeq,
+            eventSeqAfter: this.eventSeq,
+            outcome: "conflict",
+            reason: "turn_not_initialized",
+            httpStatus: 409,
+          });
+          return json(responseBody, 409);
+        }
+        const turnOwnerIdentity = getSeatIdentity(game, activeTurn.playerSeat);
+        if (!turnOwnerIdentity || turnOwnerIdentity !== identityId) {
+          const responseBody = buildCommandBody(
+            { ok: false, error: "not_your_turn", errorCategory: "conflict", eventSeq: this.eventSeq },
+            {
+              clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+              delivery: "new",
+              requestId: commandMetadata.requestId,
+            },
+          );
+          if (commandMetadata.clientCommandId) {
+            await this.persistReceipt(game, {
+              clientCommandId: commandMetadata.clientCommandId,
+              commandType: "end-turn",
+              requestId: commandMetadata.requestId,
+              httpStatus: 409,
+              delivery: "new",
+              status: "conflict",
+              eventSeq: this.eventSeq,
+              resolvedAt: now(),
+              response: { ok: false, error: "not_your_turn", errorCategory: "conflict", eventSeq: this.eventSeq },
+            });
+          }
+          this.appendCommandTimeline(game, {
+            clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+            commandType: "end-turn",
+            requestId: commandMetadata.requestId,
+            event: "live_command_conflict",
+            outcome: "conflict",
+            reason: "not_your_turn",
+            eventSeq: this.eventSeq,
+          });
+          this.logLiveCommand("live_command_conflict", {
+            gameId: game.id,
+            identityId,
+            clientCommandId: commandMetadata.clientCommandId,
+            commandType: "end-turn",
+            attempt: 1,
+            requestId: commandMetadata.requestId,
+            eventSeqBefore: this.eventSeq,
+            eventSeqAfter: this.eventSeq,
+            outcome: "conflict",
+            reason: "not_your_turn",
+            httpStatus: 409,
+          });
+          return json(responseBody, 409);
+        }
+        const ended = endServerTurn(game);
+        if (!ended.ok) {
+          const responseBody = buildCommandBody(
+            { ok: false, error: ended.error, errorCategory: "conflict", eventSeq: this.eventSeq },
+            {
+              clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+              delivery: "new",
+              requestId: commandMetadata.requestId,
+            },
+          );
+          if (commandMetadata.clientCommandId) {
+            await this.persistReceipt(game, {
+              clientCommandId: commandMetadata.clientCommandId,
+              commandType: "end-turn",
+              requestId: commandMetadata.requestId,
+              httpStatus: 409,
+              delivery: "new",
+              status: "conflict",
+              eventSeq: this.eventSeq,
+              resolvedAt: now(),
+              response: { ok: false, error: ended.error, errorCategory: "conflict", eventSeq: this.eventSeq },
+            });
+          }
+          this.appendCommandTimeline(game, {
+            clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+            commandType: "end-turn",
+            requestId: commandMetadata.requestId,
+            event: "live_command_conflict",
+            outcome: "conflict",
+            reason: ended.error,
+            eventSeq: this.eventSeq,
+          });
+          this.logLiveCommand("live_command_conflict", {
+            gameId: game.id,
+            identityId,
+            clientCommandId: commandMetadata.clientCommandId,
+            commandType: "end-turn",
+            attempt: 1,
+            requestId: commandMetadata.requestId,
+            eventSeqBefore: this.eventSeq,
+            eventSeqAfter: this.eventSeq,
+            outcome: "conflict",
+            reason: ended.error,
+            httpStatus: 409,
+          });
+          return json(responseBody, 409);
+        }
+        await this.commit({
+          type: "event_appended",
+          reason: "turn_ended",
+          clientCommandId: commandMetadata.clientCommandId,
+          game,
+        });
+        const response = {
+          ok: true,
+          turn: ended.turn,
+          game: withViewModel(game, identityId),
+          eventSeq: this.eventSeq,
+        } satisfies LiveCommandReceiptBody;
+        if (commandMetadata.clientCommandId) {
+          await this.persistReceipt(game, {
+            clientCommandId: commandMetadata.clientCommandId,
+            commandType: "end-turn",
+            requestId: commandMetadata.requestId,
+            httpStatus: 200,
+            delivery: "new",
+            status: "applied",
+            eventSeq: this.eventSeq,
+            resolvedAt: now(),
+            response,
+          });
+        }
+        this.appendCommandTimeline(game, {
+          clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+          commandType: "end-turn",
+          requestId: commandMetadata.requestId,
+          event: "live_command_applied",
+          outcome: "applied",
+          reason: "turn_ended",
+          eventSeq: this.eventSeq,
+        });
+        this.logLiveCommand("live_command_applied", {
+          gameId: game.id,
+          identityId,
+          clientCommandId: commandMetadata.clientCommandId,
+          commandType: "end-turn",
+          attempt: 1,
+          requestId: commandMetadata.requestId,
+          eventSeqBefore: this.eventSeq - 1,
+          eventSeqAfter: this.eventSeq,
+          outcome: "applied",
+          reason: "turn_ended",
+          httpStatus: 200,
+        });
+        return json(
+          buildCommandBody(response, {
+            clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+            delivery: "new",
+            requestId: commandMetadata.requestId,
+          }),
+          200,
+        );
+      }
+
       const role = findRoleForIdentity(game, identityId);
       if (role !== "Player 1" && role !== "Player 2") {
-        return json({ ok: false, error: "role_not_allowed" }, 403);
+        const response = buildCommandBody(
+          { ok: false, error: "role_not_allowed", errorCategory: "authorization", eventSeq: this.eventSeq },
+          {
+            clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+            delivery: "new",
+            requestId: commandMetadata.requestId,
+          },
+        );
+        if (commandMetadata.clientCommandId) {
+          await this.persistReceipt(game, {
+            clientCommandId: commandMetadata.clientCommandId,
+            commandType: "apply",
+            requestId: commandMetadata.requestId,
+            httpStatus: 403,
+            delivery: "new",
+            status: "not_authorized",
+            eventSeq: this.eventSeq,
+            resolvedAt: now(),
+            response: { ok: false, error: "role_not_allowed", errorCategory: "authorization", eventSeq: this.eventSeq },
+          });
+        }
+        this.appendCommandTimeline(game, {
+          clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+          commandType: "apply",
+          requestId: commandMetadata.requestId,
+          event: "live_command_not_authorized",
+          outcome: "not_authorized",
+          reason: "role_not_allowed",
+          eventSeq: this.eventSeq,
+        });
+        this.logLiveCommand("live_command_not_authorized", {
+          gameId: game.id,
+          identityId,
+          clientCommandId: commandMetadata.clientCommandId,
+          commandType: "apply",
+          attempt: 1,
+          requestId: commandMetadata.requestId,
+          eventSeqBefore: this.eventSeq,
+          eventSeqAfter: this.eventSeq,
+          outcome: "not_authorized",
+          reason: "role_not_allowed",
+          httpStatus: 403,
+        });
+        return json(response, 403);
       }
       const sideToMoveSeat = getSideToMoveSeat(game);
       const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
       if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
-        return json({ ok: false, error: "not_your_turn" }, 409);
+        const response = buildCommandBody(
+          { ok: false, error: "not_your_turn", errorCategory: "conflict", eventSeq: this.eventSeq },
+          {
+            clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+            delivery: "new",
+            requestId: commandMetadata.requestId,
+          },
+        );
+        if (commandMetadata.clientCommandId) {
+          await this.persistReceipt(game, {
+            clientCommandId: commandMetadata.clientCommandId,
+            commandType: "apply",
+            requestId: commandMetadata.requestId,
+            httpStatus: 409,
+            delivery: "new",
+            status: "conflict",
+            eventSeq: this.eventSeq,
+            resolvedAt: now(),
+            response: { ok: false, error: "not_your_turn", errorCategory: "conflict", eventSeq: this.eventSeq },
+          });
+        }
+        this.appendCommandTimeline(game, {
+          clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+          commandType: "apply",
+          requestId: commandMetadata.requestId,
+          event: "live_command_conflict",
+          outcome: "conflict",
+          reason: "not_your_turn",
+          eventSeq: this.eventSeq,
+        });
+        this.logLiveCommand("live_command_conflict", {
+          gameId: game.id,
+          identityId,
+          clientCommandId: commandMetadata.clientCommandId,
+          commandType: "apply",
+          attempt: 1,
+          requestId: commandMetadata.requestId,
+          eventSeqBefore: this.eventSeq,
+          eventSeqAfter: this.eventSeq,
+          outcome: "conflict",
+          reason: "not_your_turn",
+          httpStatus: 409,
+        });
+        return json(response, 409);
       }
       const bodyState = asGameState(body.state);
       const action = asAction(body.action);
       if (!bodyState) {
-        return json({ ok: false, error: "invalid_state" }, 400);
+        const response = buildCommandBody(
+          { ok: false, error: "invalid_state", errorCategory: "validation", eventSeq: this.eventSeq },
+          {
+            clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+            delivery: "new",
+            requestId: commandMetadata.requestId,
+          },
+        );
+        if (commandMetadata.clientCommandId) {
+          await this.persistReceipt(game, {
+            clientCommandId: commandMetadata.clientCommandId,
+            commandType: "apply",
+            requestId: commandMetadata.requestId,
+            httpStatus: 400,
+            delivery: "new",
+            status: "rejected",
+            eventSeq: this.eventSeq,
+            resolvedAt: now(),
+            response: { ok: false, error: "invalid_state", errorCategory: "validation", eventSeq: this.eventSeq },
+          });
+        }
+        this.appendCommandTimeline(game, {
+          clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+          commandType: "apply",
+          requestId: commandMetadata.requestId,
+          event: "live_command_invalid_request",
+          outcome: "rejected",
+          reason: "invalid_state",
+          eventSeq: this.eventSeq,
+        });
+        this.logLiveCommand("live_command_invalid_request", {
+          gameId: game.id,
+          identityId,
+          clientCommandId: commandMetadata.clientCommandId,
+          commandType: "apply",
+          attempt: 1,
+          requestId: commandMetadata.requestId,
+          eventSeqBefore: this.eventSeq,
+          eventSeqAfter: this.eventSeq,
+          outcome: "rejected",
+          reason: "invalid_state",
+          httpStatus: 400,
+        });
+        return json(response, 400);
       }
       if (!action) {
-        return json({ ok: false, error: "invalid_action" }, 400);
+        const response = buildCommandBody(
+          { ok: false, error: "invalid_action", errorCategory: "validation", eventSeq: this.eventSeq },
+          {
+            clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+            delivery: "new",
+            requestId: commandMetadata.requestId,
+          },
+        );
+        if (commandMetadata.clientCommandId) {
+          await this.persistReceipt(game, {
+            clientCommandId: commandMetadata.clientCommandId,
+            commandType: "apply",
+            requestId: commandMetadata.requestId,
+            httpStatus: 400,
+            delivery: "new",
+            status: "rejected",
+            eventSeq: this.eventSeq,
+            resolvedAt: now(),
+            response: { ok: false, error: "invalid_action", errorCategory: "validation", eventSeq: this.eventSeq },
+          });
+        }
+        this.appendCommandTimeline(game, {
+          clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+          commandType: "apply",
+          requestId: commandMetadata.requestId,
+          event: "live_command_invalid_request",
+          outcome: "rejected",
+          reason: "invalid_action",
+          eventSeq: this.eventSeq,
+        });
+        this.logLiveCommand("live_command_invalid_request", {
+          gameId: game.id,
+          identityId,
+          clientCommandId: commandMetadata.clientCommandId,
+          commandType: "apply",
+          attempt: 1,
+          requestId: commandMetadata.requestId,
+          eventSeqBefore: this.eventSeq,
+          eventSeqAfter: this.eventSeq,
+          outcome: "rejected",
+          reason: "invalid_action",
+          httpStatus: 400,
+        });
+        return json(response, 400);
       }
       const notation = typeof body.notation === "string" ? body.notation : undefined;
       const moved = applyServerAction(game, action, notation, commandMetadata.clientCommandId);
       if (!moved.ok) {
         if (moved.validation && moved.state) {
-          return json({
+          const validationCode = typeof moved.validation.code === "string" ? moved.validation.code : moved.error ?? "invalid_action";
+          const responseBody: LiveCommandReceiptBody = {
             ok: true,
             accepted: false,
-            clientCommandId: commandMetadata.clientCommandId,
             validation: moved.validation,
             state: moved.state,
             legalActions: listLegalActions(moved.state),
             game: withViewModel(game, identityId),
             eventSeq: this.eventSeq,
+            errorCategory: "validation",
+          };
+          if (commandMetadata.clientCommandId) {
+            await this.persistReceipt(game, {
+              clientCommandId: commandMetadata.clientCommandId,
+              commandType: "apply",
+              requestId: commandMetadata.requestId,
+              httpStatus: 200,
+              delivery: "new",
+              status: "rejected",
+              eventSeq: this.eventSeq,
+              resolvedAt: now(),
+              response: responseBody,
+            });
+          }
+          this.appendCommandTimeline(game, {
+            clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+            commandType: "apply",
+            requestId: commandMetadata.requestId,
+            event: "live_command_rejected",
+            outcome: "rejected",
+            reason: moved.error ?? "validation_failed",
+            validationCode,
+            eventSeq: this.eventSeq,
+          });
+          this.logLiveCommand("live_command_rejected", {
+            gameId: game.id,
+            identityId,
+            clientCommandId: commandMetadata.clientCommandId,
+            commandType: "apply",
+            attempt: 1,
+            requestId: commandMetadata.requestId,
+            eventSeqBefore: this.eventSeq,
+            eventSeqAfter: this.eventSeq,
+            outcome: "rejected",
+            reason: moved.error ?? "validation_failed",
+            validationCode,
+            softRejected: true,
+            httpStatus: 200,
+            ...this.getValidationContext(game, identityId),
+          });
+          return json(
+            buildCommandBody(responseBody, {
+              clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+              delivery: "new",
+              requestId: commandMetadata.requestId,
+            }),
+          );
+        }
+        const response = buildCommandBody(
+          { ok: false, error: moved.error, errorCategory: "conflict", eventSeq: this.eventSeq },
+          {
+            clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+            delivery: "new",
+            requestId: commandMetadata.requestId,
+          },
+        );
+        if (commandMetadata.clientCommandId) {
+          await this.persistReceipt(game, {
+            clientCommandId: commandMetadata.clientCommandId,
+            commandType: "apply",
+            requestId: commandMetadata.requestId,
+            httpStatus: 409,
+            delivery: "new",
+            status: "conflict",
+            eventSeq: this.eventSeq,
+            resolvedAt: now(),
+            response: { ok: false, error: moved.error, errorCategory: "conflict", eventSeq: this.eventSeq },
           });
         }
-        return json({ ok: false, error: moved.error }, 409);
+        this.appendCommandTimeline(game, {
+          clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+          commandType: "apply",
+          requestId: commandMetadata.requestId,
+          event: "live_command_conflict",
+          outcome: "conflict",
+          reason: moved.error ?? "apply_failed",
+          eventSeq: this.eventSeq,
+        });
+        this.logLiveCommand("live_command_conflict", {
+          gameId: game.id,
+          identityId,
+          clientCommandId: commandMetadata.clientCommandId,
+          commandType: "apply",
+          attempt: 1,
+          requestId: commandMetadata.requestId,
+          eventSeqBefore: this.eventSeq,
+          eventSeqAfter: this.eventSeq,
+          outcome: "conflict",
+          reason: moved.error ?? "apply_failed",
+          httpStatus: 409,
+        });
+        return json(response, 409);
+      }
+      if (path === "/commands" && body.autoEndTurn === true && moved.state.continuation == null) {
+        const ended = endServerTurn(game);
+        if (!ended.ok) {
+          const response = buildCommandBody(
+            { ok: false, error: ended.error, errorCategory: "conflict", eventSeq: this.eventSeq },
+            {
+              clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+              delivery: "new",
+              requestId: commandMetadata.requestId,
+            },
+          );
+          if (commandMetadata.clientCommandId) {
+            await this.persistReceipt(game, {
+              clientCommandId: commandMetadata.clientCommandId,
+              commandType: "apply",
+              requestId: commandMetadata.requestId,
+              httpStatus: 409,
+              delivery: "new",
+              status: "conflict",
+              eventSeq: this.eventSeq,
+              resolvedAt: now(),
+              response: { ok: false, error: ended.error, errorCategory: "conflict", eventSeq: this.eventSeq },
+            });
+          }
+          this.appendCommandTimeline(game, {
+            clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+            commandType: "apply",
+            requestId: commandMetadata.requestId,
+            event: "live_command_conflict",
+            outcome: "conflict",
+            reason: ended.error,
+            eventSeq: this.eventSeq,
+          });
+          this.logLiveCommand("live_command_conflict", {
+            gameId: game.id,
+            identityId,
+            clientCommandId: commandMetadata.clientCommandId,
+            commandType: "apply",
+            attempt: 1,
+            requestId: commandMetadata.requestId,
+            eventSeqBefore: this.eventSeq,
+            eventSeqAfter: this.eventSeq,
+            outcome: "conflict",
+            reason: ended.error,
+            httpStatus: 409,
+          });
+          return json(response, 409);
+        }
       }
       await this.commit({
         type: "event_appended",
-        reason: "move_recorded",
+        reason: path === "/commands" && body.autoEndTurn === true && moved.state.continuation == null ? "move_recorded_turn_ended" : "move_recorded",
         clientCommandId: commandMetadata.clientCommandId,
         game,
       });
-      return json({
+      const responseBody: LiveCommandReceiptBody = {
         ok: true,
         accepted: true,
         move: moved.move,
-        clientCommandId: commandMetadata.clientCommandId,
         state: moved.state,
         removedPieces: moved.removedPieces,
         game: withViewModel(game, identityId),
         eventSeq: this.eventSeq,
-      });
-    }
-
-    if (request.method === "POST" && path === "/end-turn") {
-      const role = findRoleForIdentity(game, identityId);
-      if (role !== "Player 1" && role !== "Player 2") {
-        return json({ ok: false, error: "role_not_allowed" }, 403);
+      };
+      if (commandMetadata.clientCommandId) {
+        await this.persistReceipt(game, {
+          clientCommandId: commandMetadata.clientCommandId,
+          commandType: "apply",
+          requestId: commandMetadata.requestId,
+          httpStatus: 200,
+          delivery: "new",
+          status: "applied",
+          eventSeq: this.eventSeq,
+          resolvedAt: now(),
+          response: responseBody,
+        });
       }
-      const activeTurn = getActiveTurn(game);
-      if (!activeTurn) {
-        return json({ ok: false, error: "turn_not_initialized" }, 409);
-      }
-      const turnOwnerIdentity = getSeatIdentity(game, activeTurn.playerSeat);
-      if (!turnOwnerIdentity || turnOwnerIdentity !== identityId) {
-        return json({ ok: false, error: "not_your_turn" }, 409);
-      }
-      const ended = endServerTurn(game);
-      if (!ended.ok) {
-        return json({ ok: false, error: ended.error }, 409);
-      }
-      await this.commit({
-        type: "event_appended",
-        reason: "turn_ended",
-        clientCommandId: commandMetadata.clientCommandId,
-        game,
-      });
-      return json({
-        ok: true,
-        turn: ended.turn,
-        clientCommandId: commandMetadata.clientCommandId,
-        game: withViewModel(game, identityId),
+      this.appendCommandTimeline(game, {
+        clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+        commandType: "apply",
+        requestId: commandMetadata.requestId,
+        event: "live_command_applied",
+        outcome: "applied",
+        reason: path === "/commands" && body.autoEndTurn === true && moved.state.continuation == null ? "move_recorded_turn_ended" : "move_recorded",
         eventSeq: this.eventSeq,
       });
+      this.logLiveCommand("live_command_applied", {
+        gameId: game.id,
+        identityId,
+        clientCommandId: commandMetadata.clientCommandId,
+        commandType: "apply",
+        attempt: 1,
+        requestId: commandMetadata.requestId,
+        eventSeqBefore: this.eventSeq - 1,
+        eventSeqAfter: this.eventSeq,
+        outcome: "applied",
+        reason: path === "/commands" && body.autoEndTurn === true && moved.state.continuation == null ? "move_recorded_turn_ended" : "move_recorded",
+        httpStatus: 200,
+      });
+      return json(
+        buildCommandBody(responseBody, {
+          clientCommandId: commandMetadata.clientCommandId ?? `missing:${commandMetadata.requestId}`,
+          delivery: "new",
+          requestId: commandMetadata.requestId,
+        }),
+      );
     }
 
     if (request.method === "POST" && path === "/history") {
@@ -526,6 +1301,22 @@ export class GameRoomDO {
       (replayEvents[replayEvents.length - 1] as { eventSeq: number }).eventSeq === this.eventSeq
     ) {
       for (const event of replayEvents) {
+        if (event.type === "event_appended" && event.clientCommandId) {
+          const receipt = this.findCommandReceipt(game, event.clientCommandId, event.reason === "turn_ended" ? "end-turn" : "apply");
+          if (receipt) {
+            this.logLiveCommand("live_command_confirmed_via_replay", {
+              gameId: game.id,
+              identityId,
+              clientCommandId: event.clientCommandId,
+              commandType: receipt.commandType,
+              requestId: receipt.requestId,
+              eventSeqBefore: lastEventSeq,
+              eventSeqAfter: event.eventSeq,
+              outcome: receipt.status,
+              reason: event.reason,
+            });
+          }
+        }
         this.send(server, eventForSession(event, identityId));
       }
     } else {
@@ -693,7 +1484,21 @@ export class GameRoomDO {
             } satisfies JoinRequestResolvedEvent);
 
     this.eventSeq += 1;
-    await persistGameState(this.env, input.game, this.eventSeq, event);
+    try {
+      await persistGameState(this.env, input.game, this.eventSeq, event);
+    } catch (error) {
+      this.logLiveCommand("live_command_commit_failed", {
+        gameId: input.game.id,
+        clientCommandId: input.type === "event_appended" ? input.clientCommandId ?? null : null,
+        commandType: input.type === "event_appended" && input.reason === "turn_ended" ? "end-turn" : "apply",
+        eventSeqBefore: this.eventSeq - 1,
+        eventSeqAfter: this.eventSeq,
+        outcome: "server_error",
+        reason: input.type === "event_appended" ? input.reason : input.type,
+        message: error instanceof Error ? error.message : String(error),
+      }, "error");
+      throw error;
+    }
     this.broadcast(event);
   }
 

@@ -919,6 +919,7 @@ const renderDebugContent = () => {
   const selection = boardRuntime?.getSelection?.() ?? null;
   const legalActions = boardRuntime?.getLegalActions?.() ?? (game?.legalActions ?? []);
   const currentSnapshot = game?.currentSnapshot ?? null;
+  const commandDiagnostics = gameId ? transport.getCommandDiagnostics(gameId) : null;
   const routeDiagnostics =
     route.name === "home"
       ? {
@@ -960,7 +961,18 @@ const renderDebugContent = () => {
     </section>
     <section class="panel debug-panel">
       <h2>Actions Diagnostics</h2>
-      <pre class="debug-pre">${escapeHtml(JSON.stringify(legalActions.slice(0, 20), null, 2))}</pre>
+      <pre class="debug-pre">${escapeHtml(
+        JSON.stringify(
+          game
+            ? {
+                legalActions: legalActions.slice(0, 20),
+                commandDiagnostics,
+              }
+            : legalActions.slice(0, 20),
+          null,
+          2,
+        ),
+      )}</pre>
     </section>
   `;
 };
@@ -1101,7 +1113,14 @@ const renderHomeGameCard = (game) => {
   const previewKey = toStableKey(snapshot);
   const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
   const moveLabel = Array.isArray(game.moves) ? `Move ${game.moves.length + 1}` : "Move pending";
-  const recoveryChip = game.syncStatus === "desynced" ? '<span class="status-chip">Recovering</span>' : "";
+  const recoveryChip =
+    game.syncStatus === "desynced"
+      ? '<span class="status-chip">Recovering</span>'
+      : game.syncStatus === "confirming"
+        ? '<span class="status-chip">Confirming</span>'
+        : game.syncStatus === "retrying"
+          ? '<span class="status-chip">Retrying</span>'
+          : "";
   const myConnectionLine = renderHomeClientConnectionLine(game);
   const seatConnectionLine = renderHomeSeatConnectionLine(game);
   const cardInfoLines = [myConnectionLine, seatConnectionLine]
@@ -1175,9 +1194,13 @@ const renderHome = () => {
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
   const liveSyncBanner =
     game.rollbackNotice && game.rollbackNotice.trim().length > 0
-      ? `<div class="alert danger">${escapeHtml(game.rollbackNotice)}</div>`
+      ? `<div class="alert ${game.syncStatus === "desynced" ? "danger" : "warn"}">${escapeHtml(game.rollbackNotice)}</div>`
       : game.syncStatus === "desynced"
         ? `<div class="alert warn">Live sync is recovering. The board is showing the last authoritative state.</div>`
+        : game.syncStatus === "confirming"
+          ? `<div class="alert warn">Waiting for server confirmation after a connection interruption.</div>`
+          : game.syncStatus === "retrying"
+            ? `<div class="alert warn">Retrying move sync after a connection interruption.</div>`
         : "";
   const offlineBanner =
     game.showOfflineState || inviteFromRole === "offline"
