@@ -1031,8 +1031,8 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
   const selectedScenarioDescription = selectedScenario?.description ?? "Scenarios replay canonical shell history into a game.";
   const canUpdateScenario = canAuthorScenarios && Boolean(selectedScenario);
   return `
-    <section class="panel debug-panel scenario-panel">
-      <h2>Scenarios</h2>
+    <section class="panel debug-panel scenario-panel scenario-panel-load">
+      <h2>Load a scenario</h2>
       <div class="form-row">
         <label for="scenario-select">Saved scenario</label>
         <select id="scenario-select">
@@ -1086,26 +1086,26 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
         }
       </div>
       <pre class="debug-pre" aria-live="polite">${escapeHtml(selectedScenarioFeedback || formatScenarioInfo(selectedScenario))}</pre>
-      ${
-        canAuthorScenarios
-          ? `<section class="scenario-save-panel">
-              <h3>Save current board as new scenario</h3>
-              <div class="form-row">
-                <label for="save-scenario-title">Title</label>
-                <input id="save-scenario-title" data-scenario-save-field="title" value="${escapeHtml(saveDraft.title)}" />
-              </div>
-              <div class="form-row">
-                <label for="save-scenario-description">Description</label>
-                <textarea id="save-scenario-description" data-scenario-save-field="description" rows="4">${escapeHtml(saveDraft.description)}</textarea>
-              </div>
-              <div class="row">
-                <button class="secondary" data-action="save-scenario"${busy || !canSaveScenario ? " disabled" : ""}>Save current board as new scenario</button>
-              </div>
-              <pre class="debug-pre" aria-live="polite">${escapeHtml(saveScenarioFeedback || "No new scenario saved yet.")}</pre>
-            </section>`
-          : ""
-      }
     </section>
+    ${
+      canAuthorScenarios
+        ? `<section class="panel debug-panel scenario-panel scenario-panel-create">
+            <h2>Create a scenario</h2>
+            <div class="form-row">
+              <label for="save-scenario-title">Title</label>
+              <input id="save-scenario-title" data-scenario-save-field="title" value="${escapeHtml(saveDraft.title)}" />
+            </div>
+            <div class="form-row">
+              <label for="save-scenario-description">Description</label>
+              <textarea id="save-scenario-description" data-scenario-save-field="description" rows="4">${escapeHtml(saveDraft.description)}</textarea>
+            </div>
+            <div class="row">
+              <button class="secondary" data-action="save-scenario"${busy || !canSaveScenario ? " disabled" : ""}>Save current board as new scenario</button>
+            </div>
+            <pre class="debug-pre" aria-live="polite">${escapeHtml(saveScenarioFeedback || "No new scenario saved yet.")}</pre>
+          </section>`
+        : ""
+    }
   `;
 };
 

@@ -17,7 +17,8 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const renderGameShellFrame = \(game\) =>/);
   assert.match(source, /const renderScenarioFlyout = \(\) =>/);
   assert.match(source, /const renderDebugFlyout = \(\) =>/);
-  assert.match(source, /<section class="panel debug-panel scenario-panel">/);
+  assert.match(source, /<section class="panel debug-panel scenario-panel scenario-panel-load">/);
+  assert.match(source, /<section class="panel debug-panel scenario-panel scenario-panel-create">/);
   assert.match(source, /const renderFlyout = \(\{ title, variant, closeAction, body \}\) =>/);
   assert.match(source, /class="shell-flyout-scroll shell-flyout-scroll-\$\{variant\}"/);
   assert.match(source, /closeAction:\s*"close-debug"/);
@@ -225,6 +226,8 @@ test("scenario selector labels use titles without visible ids", () => {
   assert.match(source, /data-action="update-scenario"/);
   assert.match(source, /data-scenario-save-field="title"/);
   assert.match(source, /data-scenario-save-field="description"/);
+  assert.match(source, /Load a scenario/);
+  assert.match(source, /Create a scenario/);
   assert.match(source, /Update to match current board/);
   assert.match(source, /Save current board as new scenario/);
   assert.match(source, /canAuthorScenariosLocally\(\)/);
