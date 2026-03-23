@@ -1062,14 +1062,14 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
         <button data-action="load-scenario" ${selectedScenario ? "" : "disabled"}>${route.name === "home" ? "Open Scenario" : canLoadIntoCurrentGame ? "Load into This Game" : "Open in New Tab"}</button>
         ${
           canUpdateScenario
-            ? `<button class="secondary" data-action="update-scenario"${busy || !selectedScenarioTitle.trim() || !selectedScenarioDescription.trim() ? " disabled" : ""}>Update${moveLimit < (game?.moves?.length ?? 0) ? " from Here" : ""}</button>`
+            ? `<button class="secondary" data-action="update-scenario"${busy || !selectedScenarioTitle.trim() || !selectedScenarioDescription.trim() ? " disabled" : ""}>Update to match current board</button>`
             : ""
         }
       </div>
       ${
         canAuthorScenarios
           ? `<section class="scenario-save-panel">
-              <h3>Save as scenario</h3>
+              <h3>Save current board as new scenario</h3>
               <div class="form-row">
                 <label for="save-scenario-title">Title</label>
                 <input id="save-scenario-title" data-scenario-save-field="title" value="${escapeHtml(saveDraft.title)}" />
@@ -1079,7 +1079,7 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
                 <textarea id="save-scenario-description" data-scenario-save-field="description" rows="4">${escapeHtml(saveDraft.description)}</textarea>
               </div>
               <div class="row">
-                <button class="secondary" data-action="save-scenario"${busy || !canSaveScenario ? " disabled" : ""}>Save as scenario</button>
+                <button class="secondary" data-action="save-scenario"${busy || !canSaveScenario ? " disabled" : ""}>Save current board as new scenario</button>
               </div>
             </section>`
           : ""

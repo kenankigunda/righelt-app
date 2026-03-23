@@ -225,7 +225,8 @@ test("scenario selector labels use titles without visible ids", () => {
   assert.match(source, /data-action="update-scenario"/);
   assert.match(source, /data-scenario-save-field="title"/);
   assert.match(source, /data-scenario-save-field="description"/);
-  assert.match(source, /Save as scenario/);
+  assert.match(source, /Update to match current board/);
+  assert.match(source, /Save current board as new scenario/);
   assert.match(source, /canAuthorScenariosLocally\(\)/);
   assert.match(source, /const canSaveScenario = canAuthorScenarios && Boolean\(saveDraft\.title && saveDraft\.description\);/);
   assert.match(source, /const title = getScenarioEditableFieldText\("title"\);/);
