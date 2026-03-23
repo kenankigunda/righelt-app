@@ -1315,6 +1315,7 @@ const updateHeaderFields = () => {
 
 const setInviteFeedback = (message) => {
   inviteFeedback = message;
+  render({ animatePanels: false, includeBoard: false });
   if (inviteFeedbackTimer) {
     clearTimeout(inviteFeedbackTimer);
     inviteFeedbackTimer = null;

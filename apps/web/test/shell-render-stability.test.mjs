@@ -307,6 +307,7 @@ test("withBusy only repaints immediately for actions that need visible busy stat
   assert.match(source, /\}, \{ renderStart: shouldRenderBusyState, renderEnd: shouldRenderBusyState \}\);/);
   assert.match(source, /const renderFeedbackReveal = \(message\) =>/);
   assert.match(source, /feedback-reveal\$\{message \? " is-visible" : ""\}/);
+  assert.match(source, /const setInviteFeedback = \(message\) => \{\s*inviteFeedback = message;\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
 });
 
 test("scenario flyout alone forces click target selection on hover-capable boards", () => {
