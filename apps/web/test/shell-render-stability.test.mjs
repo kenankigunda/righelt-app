@@ -180,7 +180,7 @@ test("syncLiveChannels manages subscriptions through the shared active game set"
     source,
     /const activeLiveGameIds = new Set\(\);/,
   );
-  assert.match(source, /const desiredGameIds = new Set\(routeGameId \? \[routeGameId\] : getHomeActiveGameIds\(\)\);/);
+  assert.match(source, /const desiredGameIds = new Set\(routeGameId \? \[routeGameId\] : \[\]\);/);
   assert.match(source, /liveSync\.disconnectGame\(gameId\);/);
   assert.match(source, /liveSync\.connectGame\(gameId\);/);
 });

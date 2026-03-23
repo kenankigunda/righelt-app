@@ -161,3 +161,58 @@ test("/api/shell/games/:id/ws syncs both seats for a dual-seat identity", async 
     Date.now = realNow;
   }
 });
+
+test("/api/shell/games/:id/ws heartbeat does not persist or append events when presence is unchanged", async () => {
+  const realWebSocketPair = globalThis.WebSocketPair;
+  const RealResponse = globalThis.Response;
+  globalThis.WebSocketPair = FakeWebSocketPair;
+  globalThis.Response = function ResponseShim(body, init = {}) {
+    if (init?.status === 101) {
+      return {
+        status: 101,
+        headers: new Headers(init.headers ?? {}),
+        webSocket: init.webSocket,
+      };
+    }
+    return new RealResponse(body, init);
+  };
+
+  try {
+    const create = await handleApiRequest(
+      new Request("https://example.test/api/shell/games", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ identityId: "id-heartbeat" }),
+      }),
+      env,
+    );
+    const createdBody = await create.json();
+    const gameId = createdBody.game.id;
+
+    const response = await handleApiRequest(
+      new Request(`https://example.test/api/shell/games/${gameId}/ws?identityId=id-heartbeat&lastEventSeq=0`),
+      env,
+    );
+
+    const client = response.webSocket;
+    assert.ok(client);
+
+    const persistedBeforeHeartbeat = env.DB.getGameState(gameId);
+    const eventCountBeforeHeartbeat = env.DB.getEvents(gameId).length;
+
+    client.send(JSON.stringify({ type: "heartbeat", identityId: "id-heartbeat", lastEventSeq: 0 }));
+    await flushAsync();
+
+    const persistedAfterHeartbeat = env.DB.getGameState(gameId);
+    const eventCountAfterHeartbeat = env.DB.getEvents(gameId).length;
+
+    assert.equal(eventCountAfterHeartbeat, eventCountBeforeHeartbeat);
+    assert.equal(persistedAfterHeartbeat.player1.lastHeartbeatAt, persistedBeforeHeartbeat.player1.lastHeartbeatAt);
+
+    client.close();
+    await flushAsync();
+  } finally {
+    globalThis.WebSocketPair = realWebSocketPair;
+    globalThis.Response = RealResponse;
+  }
+});

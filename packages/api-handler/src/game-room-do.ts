@@ -48,7 +48,8 @@ import {
 import { loadEventsAfter, loadGameProjection, persistGameState, type LiveGameEnv } from "./shell-live-db";
 import type { CommandMetadata } from "./shell-command-metadata";
 
-const HEARTBEAT_TIMEOUT_MS = 35_000;
+const HEARTBEAT_TIMEOUT_MS = 95_000;
+const HEARTBEAT_SWEEP_MS = 15_000;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -672,7 +673,6 @@ export class GameRoomDO {
       participant.lastHeartbeatAt = lastHeartbeatAt;
     }
     if (!changed) {
-      await persistGameState(this.env, game, this.eventSeq, null);
       return;
     }
     const presenceEvent: PresenceChangedEvent = {
@@ -765,11 +765,11 @@ export class GameRoomDO {
       if (this.sessions.size > 0) {
         this.heartbeatSweepTimer = setTimeout(() => {
           void tick();
-        }, 5_000);
+        }, HEARTBEAT_SWEEP_MS);
       }
     };
     this.heartbeatSweepTimer = setTimeout(() => {
       void tick();
-    }, 5_000);
+    }, HEARTBEAT_SWEEP_MS);
   }
 }
