@@ -2060,12 +2060,13 @@ const mountBoardForGame = (game) => {
 
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
+  const forceClickTargetSelection = currentRoute.scenarios;
   const overlayKey = toStableKey({
     overlayMode,
     recordedAction: historySelectionAction,
     selectionAction: scenarioSelectionHydration.selectionAction,
     selectionState: scenarioSelectionHydration.selectionState,
-    forceClickTargetSelection: currentRoute.debug,
+    forceClickTargetSelection,
   });
 
   if (mountedBoardGameId !== game.id || !boardRuntime) {
@@ -2085,7 +2086,7 @@ const mountBoardForGame = (game) => {
       controls: {
         getAllowFreeSelection: () => false,
         getSupportsHover: () => hoverCapability.getSupportsHover(),
-        getForceClickTargetSelection: () => currentRoute.debug,
+        getForceClickTargetSelection: () => forceClickTargetSelection,
         onStateUpdated: ({ state, selectedPieceId }) => {
           applyCommandLegendSwatch(document.getElementById("shell-command-legend-swatch"), state, selectedPieceId);
         },

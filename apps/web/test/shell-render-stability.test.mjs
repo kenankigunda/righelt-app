@@ -300,6 +300,12 @@ test("withBusy only repaints immediately for actions that need visible busy stat
   assert.match(source, /feedback-reveal\$\{message \? " is-visible" : ""\}/);
 });
 
+test("scenario flyout alone forces click target selection on hover-capable boards", () => {
+  assert.match(source, /const forceClickTargetSelection = currentRoute\.scenarios;/);
+  assert.match(source, /selectionState: scenarioSelectionHydration\.selectionState,[\s\S]*forceClickTargetSelection,[\s\S]*\}\);/s);
+  assert.match(source, /getForceClickTargetSelection: \(\) => forceClickTargetSelection,/);
+});
+
 test("history navigation uses pointer-down press state with a single mouseup release bounce", () => {
   assert.match(source, /const startHistoryPress = \(actionEl\) => \{/);
   assert.match(source, /const startControlPress = \(controlEl\) => \{/);
