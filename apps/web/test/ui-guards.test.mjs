@@ -79,7 +79,7 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";/);
   assert.match(source, /const isPlayerRole = \(role\) => role === "Player 1" \|\| role === "Player 2";/);
   assert.match(source, /const gameIncludesIdentity = \(game, identityId\) => \{/);
-  assert.match(source, /const HOME_SECTION_PAGE_SIZE = 5;/);
+  assert.match(source, /const HOME_SECTION_PAGE_SIZE = 6;/);
   assert.match(source, /let homeSections = \{/);
   assert.match(source, /my: createHomeSectionState\("My games"\),/);
   assert.match(source, /other: createHomeSectionState\("Other games"\),/);

@@ -506,7 +506,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return listGames();
   };
 
-  const loadGamesPage = async ({ section, page = 0, pageSize = 5, debug = false } = {}) => {
+  const loadGamesPage = async ({ section, page = 0, pageSize = 6, debug = false } = {}) => {
     if (offline) {
       return {
         ok: true,

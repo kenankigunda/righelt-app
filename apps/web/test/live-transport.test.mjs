@@ -262,7 +262,7 @@ test("live transport store loads paged home sections through section-aware query
       ok: true,
       section: "my",
       page: 1,
-      pageSize: 5,
+      pageSize: 6,
       totalGames: 6,
       totalPages: 2,
       games: [{ ...buildLiveGame(), id: "game-000006", player1: { identityId: "id-page", connected: true }, myRole: "Player 1" }],
@@ -270,9 +270,9 @@ test("live transport store loads paged home sections through section-aware query
   };
 
   const store = createLiveTransportStore({ storage, fetcher, random: () => 0.7 });
-  const page = await store.loadGamesPage({ section: "my", page: 1, pageSize: 5, debug: true });
+  const page = await store.loadGamesPage({ section: "my", page: 1, pageSize: 6, debug: true });
 
-  assert.equal(calls[0], "/api/shell/games?identityId=id-page&section=my&page=1&pageSize=5&debug=1&offline=0");
+  assert.equal(calls[0], "/api/shell/games?identityId=id-page&section=my&page=1&pageSize=6&debug=1&offline=0");
   assert.equal(page.totalPages, 2);
   assert.equal(page.games.length, 1);
   assert.equal(page.games[0].id, "game-000006");

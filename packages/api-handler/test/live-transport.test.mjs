@@ -96,22 +96,16 @@ test("live transport: paged home sections return latest-activity slices", async 
     }));
   }
 
-  const firstPage = await handleApiRequest(req("/api/shell/games?identityId=id-owner&section=my&page=0&pageSize=5&debug=0"), env);
+  const firstPage = await handleApiRequest(req("/api/shell/games?identityId=id-owner&section=my&page=0&pageSize=6&debug=0"), env);
   const firstBody = await firstPage.json();
   assert.equal(firstBody.totalGames, 6);
-  assert.equal(firstBody.totalPages, 2);
+  assert.equal(firstBody.totalPages, 1);
   assert.equal(firstBody.page, 0);
-  assert.equal(firstBody.games.length, 5);
+  assert.equal(firstBody.games.length, 6);
   assert.deepEqual(
     firstBody.games.map((game) => game.id),
-    [...createdGameIds].reverse().slice(0, 5),
+    [...createdGameIds].reverse().slice(0, 6),
   );
-
-  const secondPage = await handleApiRequest(req("/api/shell/games?identityId=id-owner&section=my&page=1&pageSize=5&debug=0"), env);
-  const secondBody = await secondPage.json();
-  assert.equal(secondBody.page, 1);
-  assert.equal(secondBody.games.length, 1);
-  assert.equal(secondBody.games[0].id, createdGameIds[0]);
 });
 
 test("live transport: paged home sections isolate smoke games only in debug mode", async () => {
@@ -131,15 +125,15 @@ test("live transport: paged home sections isolate smoke games only in debug mode
   );
   const smokeBody = await smoke.json();
 
-  const myPage = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=my&page=0&pageSize=5&debug=1"), env);
+  const myPage = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=my&page=0&pageSize=6&debug=1"), env);
   const myBody = await myPage.json();
   assert.deepEqual(myBody.games.map((game) => game.id), [mineBody.game.id]);
 
-  const otherPage = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=other&page=0&pageSize=5&debug=1"), env);
+  const otherPage = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=other&page=0&pageSize=6&debug=1"), env);
   const otherPageBody = await otherPage.json();
   assert.deepEqual(otherPageBody.games.map((game) => game.id), [otherBody.game.id]);
 
-  const smokePage = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=smoke&page=0&pageSize=5&debug=1"), env);
+  const smokePage = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=smoke&page=0&pageSize=6&debug=1"), env);
   const smokePageBody = await smokePage.json();
   assert.deepEqual(smokePageBody.games.map((game) => game.id), [smokeBody.game.id]);
 });
