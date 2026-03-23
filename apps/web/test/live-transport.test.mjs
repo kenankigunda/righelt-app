@@ -8,6 +8,8 @@ import {
   resolveToStability,
 } from "../generated/packages/game-engine/src/index.js";
 
+const IMPORT_SCENARIO_UUID = "e5e48740-f8e2-4b32-bfbf-c46ec98b5962";
+
 const createMemoryStorage = () => {
   const map = new Map();
   return {
@@ -204,7 +206,7 @@ test("live transport store posts scenario imports through the shell scenarios en
     if (String(url) === "/api/shell/scenarios/import?offline=0") {
       const body = JSON.parse(String(init.body || "{}"));
       assert.equal(body.identityId, "id-scenario");
-      assert.equal(body.scenario.id, "S-001");
+      assert.equal(body.scenario.id, IMPORT_SCENARIO_UUID);
       assert.equal(body.targetGameId, "game-apply-here");
       return Response.json({
         ok: true,
@@ -238,7 +240,7 @@ test("live transport store posts scenario imports through the shell scenarios en
   const result = await store.importScenario({
     scenario: {
       formatVersion: 2,
-      id: "S-001",
+      id: IMPORT_SCENARIO_UUID,
       title: "Saved Scenario",
       initialState: { sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
       resultingState: { sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },

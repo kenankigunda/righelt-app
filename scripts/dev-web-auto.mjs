@@ -35,6 +35,7 @@ let apiWrangler = null;
 let pagesWrangler = null;
 let exitCode = 0;
 let shuttingDown = false;
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const fixtureWriterPort = (() => {
   const numeric = Number.parseInt(port, 10);
@@ -62,6 +63,18 @@ const readScenarioCatalog = async () => {
 
 const writeScenarioCatalog = async (catalog) => {
   await fs.writeFile(scenarioCatalogPath, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
+};
+
+const isValidScenarioShape = (scenario) => {
+  if (!scenario || typeof scenario !== "object") {
+    return false;
+  }
+  const scenarioId = typeof scenario.id === "string" ? scenario.id : "";
+  const title = typeof scenario.title === "string" ? scenario.title.trim() : "";
+  const description = typeof scenario.description === "string" ? scenario.description.trim() : "";
+  const expectedHash = typeof scenario.expectedFinalStateHash === "string" ? scenario.expectedFinalStateHash : "";
+  const expectedOutcome = typeof scenario.expectedOutcome === "string" ? scenario.expectedOutcome : "";
+  return Boolean(scenarioId && UUID_V4_PATTERN.test(scenarioId) && title && description && expectedHash && expectedOutcome);
 };
 
 const readJsonBody = (request) =>
@@ -113,38 +126,22 @@ const startFixtureWriterServer = () => {
     if (request.method === "POST" && request.url === "/scenarios/update") {
       try {
         const body = await readJsonBody(request);
-        const scenarioId = typeof body.scenarioId === "string" ? body.scenarioId : "";
-        const expectedHash = typeof body.expectedFinalStateHash === "string" ? body.expectedFinalStateHash : "";
-        const expectedOutcome = typeof body.expectedOutcome === "string" ? body.expectedOutcome : "";
-        const description = typeof body.description === "string" ? body.description : null;
-        const incorrect = typeof body.incorrect === "boolean" ? body.incorrect : null;
-
-        if (!scenarioId || (!expectedHash && !expectedOutcome && description === null && incorrect === null)) {
-          jsonResponse(response, 400, { ok: false, error: "invalid_payload" });
+        const scenario = body.scenario;
+        if (!isValidScenarioShape(scenario)) {
+          jsonResponse(response, 400, { ok: false, error: "invalid_scenario_shape" });
           return;
         }
 
         const catalog = await readScenarioCatalog();
-        const scenario = catalog.scenarios.find((entry) => entry.id === scenarioId);
-        if (!scenario) {
+        const scenarioIndex = catalog.scenarios.findIndex((entry) => entry.id === scenario.id);
+        if (scenarioIndex === -1) {
           jsonResponse(response, 404, { ok: false, error: "scenario_not_found" });
           return;
         }
 
-        if (expectedHash) {
-          scenario.expectedFinalStateHash = expectedHash;
-        }
-        if (expectedOutcome) {
-          scenario.expectedOutcome = expectedOutcome;
-        }
-        if (description !== null) {
-          scenario.description = description;
-        }
-        if (incorrect !== null) {
-          scenario.incorrect = incorrect;
-        }
+        catalog.scenarios.splice(scenarioIndex, 1, scenario);
         await writeScenarioCatalog(catalog);
-        jsonResponse(response, 200, { ok: true, scenarioId, catalog });
+        jsonResponse(response, 200, { ok: true, scenarioId: scenario.id, catalog });
       } catch (error) {
         jsonResponse(response, 500, {
           ok: false,
@@ -159,30 +156,20 @@ const startFixtureWriterServer = () => {
       try {
         const body = await readJsonBody(request);
         const scenario = body.scenario;
-        if (!scenario || typeof scenario !== "object") {
-          jsonResponse(response, 400, { ok: false, error: "invalid_payload" });
-          return;
-        }
-
-        const scenarioId = typeof scenario.id === "string" ? scenario.id : "";
-        const title = typeof scenario.title === "string" ? scenario.title : "";
-        const expectedHash = typeof scenario.expectedFinalStateHash === "string" ? scenario.expectedFinalStateHash : "";
-        const expectedOutcome = typeof scenario.expectedOutcome === "string" ? scenario.expectedOutcome : "";
-
-        if (!scenarioId || !title || !expectedHash || !expectedOutcome) {
+        if (!isValidScenarioShape(scenario)) {
           jsonResponse(response, 400, { ok: false, error: "invalid_scenario_shape" });
           return;
         }
 
         const catalog = await readScenarioCatalog();
-        if (catalog.scenarios.some((entry) => entry.id === scenarioId)) {
+        if (catalog.scenarios.some((entry) => entry.id === scenario.id)) {
           jsonResponse(response, 409, { ok: false, error: "scenario_exists" });
           return;
         }
 
         catalog.scenarios.push(scenario);
         await writeScenarioCatalog(catalog);
-        jsonResponse(response, 200, { ok: true, scenarioId, catalog });
+        jsonResponse(response, 200, { ok: true, scenarioId: scenario.id, catalog });
       } catch (error) {
         jsonResponse(response, 500, {
           ok: false,

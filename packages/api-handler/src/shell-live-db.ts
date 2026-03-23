@@ -1,5 +1,14 @@
 import type { ServerEvent } from "../../shared-types/src/events";
-import { asGameState, createInviteToken, now, type JoinRequest, type LiveGame, type Participant, type Viewer } from "./shell-live-core";
+import {
+  asGameState,
+  createInviteToken,
+  now,
+  type JoinRequest,
+  type LiveGame,
+  type Participant,
+  type ScenarioSavedSelection,
+  type Viewer,
+} from "./shell-live-core";
 
 const LIVE_GAMES_TABLE = "live_games";
 const LIVE_INVITES_TABLE = "live_invites";
@@ -102,6 +111,43 @@ const recordMismatch = (
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const normalizeScenarioSavedSelection = (
+  value: unknown,
+  mismatches: PersistedGameMismatch[],
+): ScenarioSavedSelection | null => {
+  if (value == null) {
+    return null;
+  }
+  if (!isRecord(value)) {
+    recordMismatch(mismatches, "pendingScenarioSelection", "scenario saved selection", value, "defaulted_to_null");
+    return null;
+  }
+  const source = isRecord(value.source) && typeof value.source.row === "number" && typeof value.source.col === "number"
+    ? { row: value.source.row, col: value.source.col }
+    : null;
+  const target =
+    value.target == null
+      ? null
+      : isRecord(value.target) && typeof value.target.row === "number" && typeof value.target.col === "number"
+        ? { row: value.target.row, col: value.target.col }
+        : null;
+  if (
+    !source ||
+    (value.target != null && !target) ||
+    (value.actorSide !== "P1" && value.actorSide !== "P2") ||
+    typeof value.turnIndex !== "number"
+  ) {
+    recordMismatch(mismatches, "pendingScenarioSelection", "scenario saved selection", value, "defaulted_to_null");
+    return null;
+  }
+  return {
+    source,
+    target,
+    actorSide: value.actorSide,
+    turnIndex: value.turnIndex,
+  };
+};
 
 const normalizeParticipant = (
   value: unknown,
@@ -332,6 +378,7 @@ const normalizePersistedGame = (
     turns,
     moves,
     historyIndexByIdentity: normalizeHistoryIndexByIdentity(parsed.historyIndexByIdentity, mismatches),
+    pendingScenarioSelection: normalizeScenarioSavedSelection(parsed.pendingScenarioSelection, mismatches),
     notifications,
     inviteTokens: normalizeInviteTokens(parsed.inviteTokens, mismatches),
   };

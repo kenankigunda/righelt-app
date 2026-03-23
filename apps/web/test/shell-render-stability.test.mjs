@@ -17,7 +17,8 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const renderGameShellFrame = \(game\) =>/);
   assert.match(source, /const renderScenarioFlyout = \(\) =>/);
   assert.match(source, /const renderDebugFlyout = \(\) =>/);
-  assert.match(source, /<section class="panel debug-panel scenario-panel">/);
+  assert.match(source, /<section class="panel debug-panel scenario-panel scenario-panel-load">/);
+  assert.match(source, /<section class="panel debug-panel scenario-panel scenario-panel-create">/);
   assert.match(source, /const renderFlyout = \(\{ title, variant, closeAction, body \}\) =>/);
   assert.match(source, /class="shell-flyout-scroll shell-flyout-scroll-\$\{variant\}"/);
   assert.match(source, /closeAction:\s*"close-debug"/);
@@ -146,7 +147,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /clearCoordinatedFlyoutMotionStyles\(\);/);
   assert.match(source, /const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">\$\{renderHeader\(\)\}\$\{body\}<\/div>\$\{renderFlyouts\(\)\}<\/div>`;/);
   assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
-  assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*updateMountedGameShell\(/s);
+  assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*syncScenarioAuthoringControls\(\);\s*updateMountedGameShell\(/s);
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.match(source, /data-flyout-link="home"/);
@@ -213,6 +214,34 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
 });
 
+test("scenario selector labels use titles without visible ids", () => {
+  assert.match(source, /`\$\{scenario\.title\}\$\{scenario\.incorrect \? " \[incorrect\]" : ""\}`/);
+  assert.doesNotMatch(source, /`\$\{scenario\.id\} - \$\{scenario\.title\}/);
+  assert.match(source, /scenarioId:\s*crypto\.randomUUID\(\),/);
+  assert.doesNotMatch(source, /window\.prompt\("Scenario title:", "Saved scenario"\)/);
+  assert.match(source, /data-scenario-editable="title"/);
+  assert.match(source, /data-scenario-editable="description"/);
+  assert.match(source, /contenteditable="plaintext-only" role="textbox" aria-label="Scenario title"/);
+  assert.match(source, /contenteditable="plaintext-only" role="textbox" aria-label="Scenario description"/);
+  assert.match(source, /data-action="update-scenario"/);
+  assert.match(source, /data-scenario-save-field="title"/);
+  assert.match(source, /data-scenario-save-field="description"/);
+  assert.match(source, /Load a scenario/);
+  assert.match(source, /Create a scenario/);
+  assert.match(source, /Update to match current board/);
+  assert.match(source, /Save current board as new scenario/);
+  assert.match(source, /canAuthorScenariosLocally\(\)/);
+  assert.match(source, /const canSaveScenario = canAuthorScenarios && Boolean\(saveDraft\.title && saveDraft\.description\);/);
+  assert.match(source, /const title = getScenarioEditableFieldText\("title"\);/);
+  assert.match(source, /const description = getScenarioEditableFieldText\("description"\);/);
+  assert.match(source, /appEl\.addEventListener\("focusout", \(event\) => \{/);
+  assert.match(source, /target\.hasAttribute\("data-scenario-editable"\)/);
+  assert.match(source, /window\.setTimeout\(async \(\) => \{/);
+  assert.match(source, /includeCurrentBoard:\s*false,/);
+  assert.match(source, /Scenario \$\{scenario\.id\} details saved\./);
+  assert.doesNotMatch(source, /downloadScenarioCatalog/);
+});
+
 test("debug flyout persists locally while scenario-created games close the scenarios flyout", () => {
   assert.match(source, /import \{ loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted \} from "\.\/persistence\.js";/);
   assert.match(source, /const getPersistedDebugFlyoutOpen = \(\) => loadDebugFlyoutOpen\(storage\);/);
@@ -228,7 +257,7 @@ test("debug flyout persists locally while scenario-created games close the scena
 test("shell renders and reconciles mini board previews for home and debug surfaces", () => {
   assert.match(source, /const miniBoardPreviewRegistry = new Map\(\);/);
   assert.match(source, /const renderedMiniBoardPreviewPayloads = new Map\(\);/);
-  assert.match(source, /const renderMiniBoardPreviewRoot = \(\{ previewId, snapshot, previewKey, sizeVariant = "compact" \}\) => \{/);
+  assert.match(source, /const renderMiniBoardPreviewRoot = \(\{ previewId, snapshot, selection = null, previewKey, sizeVariant = "compact" \}\) => \{/);
   assert.match(source, /data-mini-board-preview data-preview-id=/);
   assert.match(source, /const reconcileMiniBoardPreviews = \(\) => \{/);
   assert.match(source, /syncMiniBoardPreviews\(\{/);
@@ -278,6 +307,13 @@ test("withBusy only repaints immediately for actions that need visible busy stat
   assert.match(source, /\}, \{ renderStart: shouldRenderBusyState, renderEnd: shouldRenderBusyState \}\);/);
   assert.match(source, /const renderFeedbackReveal = \(message\) =>/);
   assert.match(source, /feedback-reveal\$\{message \? " is-visible" : ""\}/);
+  assert.match(source, /const setInviteFeedback = \(message\) => \{\s*inviteFeedback = message;\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
+});
+
+test("scenario flyout alone forces click target selection on hover-capable boards", () => {
+  assert.match(source, /const forceClickTargetSelection = currentRoute\.scenarios;/);
+  assert.match(source, /selectionState: scenarioSelectionHydration\.selectionState,[\s\S]*forceClickTargetSelection,[\s\S]*\}\);/s);
+  assert.match(source, /getForceClickTargetSelection: \(\) => forceClickTargetSelection,/);
 });
 
 test("history navigation uses pointer-down press state with a single mouseup release bounce", () => {

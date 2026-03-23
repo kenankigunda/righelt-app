@@ -11,8 +11,7 @@ import { applyCommandLegendSwatch, getCommandLegendSwatchStyle } from "../legend
 import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from "./persistence.js";
 import {
   buildScenarioFromGame,
-  downloadScenarioCatalog,
-  getNextScenarioId,
+  canAuthorScenariosLocally,
   loadScenarioCatalog,
   tryLocalScenarioWrite,
 } from "./scenarios.js";
@@ -97,7 +96,10 @@ let routeHydrated = false;
 let resolvedInvite = null;
 let scenarioCatalog = { id: "S", title: "Saved Scenarios", scenarios: [] };
 let selectedScenarioId = null;
-let scenarioFeedback = "";
+let selectedScenarioFeedback = "";
+let saveScenarioFeedback = "";
+let saveScenarioDraftTitle = "";
+let saveScenarioDraftDescription = "";
 const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
 let lastRenderedMarkup = "";
@@ -284,19 +286,21 @@ const formatClientDateTime = (value) => {
   }).format(new Date(timestamp));
 };
 
-const registerMiniBoardPreview = ({ previewId, snapshot, previewKey, sizeVariant = "compact" }) => {
+const registerMiniBoardPreview = ({ previewId, snapshot, selection = null, previewKey, sizeVariant = "compact" }) => {
   renderedMiniBoardPreviewPayloads.set(previewId, {
     snapshot: snapshot ?? null,
+    selection: selection ?? null,
     previewKey,
     sizeVariant,
   });
   return previewId;
 };
 
-const renderMiniBoardPreviewRoot = ({ previewId, snapshot, previewKey, sizeVariant = "compact" }) => {
+const renderMiniBoardPreviewRoot = ({ previewId, snapshot, selection = null, previewKey, sizeVariant = "compact" }) => {
   const stablePreviewId = registerMiniBoardPreview({
     previewId,
     snapshot,
+    selection,
     previewKey,
     sizeVariant,
   });
@@ -325,6 +329,183 @@ const formatSideToMoveLabel = (snapshot) => {
 
 const getGamePreviewSnapshot = (game) => game?.liveCurrentSnapshot ?? game?.board?.state ?? game?.currentSnapshot ?? null;
 const getScenarioPreviewSnapshot = (scenario) => scenario?.resultingState ?? scenario?.initialState ?? null;
+const getScenarioPreviewSelection = (scenario) =>
+  scenario?.savedSelection?.source
+    ? {
+        selectedPieceId: null,
+        source: scenario.savedSelection.source,
+        target: scenario.savedSelection.target ?? null,
+      }
+    : null;
+const buildSavedSelectionFromAction = (action, snapshot) => {
+  if (!action?.from) {
+    return null;
+  }
+  return {
+    source: { ...action.from },
+    target: action.to ? { ...action.to } : null,
+    actorSide: snapshot?.sideToMove === "P2" ? "P2" : "P1",
+    turnIndex: Number(snapshot?.turnIndex ?? 0),
+  };
+};
+const buildSavedSelectionFromRuntimeSelection = (selection, snapshot) => {
+  if (!selection?.source) {
+    return null;
+  }
+  return {
+    source: { ...selection.source },
+    target: selection.target ? { ...selection.target } : null,
+    actorSide: snapshot?.sideToMove === "P2" ? "P2" : "P1",
+    turnIndex: Number(snapshot?.turnIndex ?? 0),
+  };
+};
+const getScenarioEditableFieldText = (field) => {
+  const editableEl = appEl?.querySelector?.(`[data-scenario-editable="${field}"]`);
+  return editableEl instanceof HTMLElement ? editableEl.textContent?.trim() ?? "" : "";
+};
+const getSaveScenarioDraft = () => ({
+  title: saveScenarioDraftTitle.trim(),
+  description: saveScenarioDraftDescription.trim(),
+});
+const canSubmitSaveScenarioDraft = () => {
+  const draft = getSaveScenarioDraft();
+  return Boolean(draft.title && draft.description);
+};
+const canSubmitScenarioUpdate = () => {
+  const title = getScenarioEditableFieldText("title");
+  const description = getScenarioEditableFieldText("description");
+  return Boolean(title && description);
+};
+const syncScenarioAuthoringControls = () => {
+  const updateButtonEl = appEl?.querySelector?.('[data-action="update-scenario"]');
+  if (updateButtonEl instanceof HTMLButtonElement) {
+    updateButtonEl.disabled = busy || !canSubmitScenarioUpdate();
+  }
+  const saveButtonEl = appEl?.querySelector?.('[data-action="save-scenario"]');
+  if (saveButtonEl instanceof HTMLButtonElement) {
+    saveButtonEl.disabled = busy || !canSubmitSaveScenarioDraft();
+  }
+};
+const getScenarioExportContext = (game) => {
+  const currentSnapshot = game?.currentSnapshot ?? game?.board?.state ?? null;
+  const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex : game?.moves?.length ?? 0;
+  const savedSelection = game?.inHistoryMode
+    ? buildSavedSelectionFromAction(game.historySelectionAction ?? null, currentSnapshot)
+    : buildSavedSelectionFromRuntimeSelection(boardRuntime?.getSelection?.() ?? null, currentSnapshot);
+  return {
+    currentSnapshot,
+    moveLimit,
+    savedSelection,
+  };
+};
+const getActiveScenarioGame = () => {
+  const activeGameId =
+    currentRoute.name === "game" ? currentRoute.gameId : currentRoute.name === "invite" ? resolvedInvite?.gameId || null : null;
+  return activeGameId ? transport.getGameViewModel(activeGameId) : null;
+};
+const replaceScenarioInCatalog = (scenario) => {
+  scenarioCatalog = {
+    ...scenarioCatalog,
+    scenarios: scenarioCatalog.scenarios.map((entry) => (entry.id === scenario.id ? scenario : entry)),
+  };
+  selectedScenarioId = scenario.id;
+};
+const updateSelectedScenarioRecord = async ({
+  activeGame,
+  title,
+  description,
+  includeCurrentBoard = false,
+  feedbackMessage = null,
+} = {}) => {
+  const selectedScenario = getSelectedScenario();
+  if (!selectedScenario) {
+    return { ok: false, reason: "no_selected_scenario" };
+  }
+  const nextTitle = String(title ?? "").trim();
+  const nextDescription = String(description ?? "").trim();
+  if (!nextTitle || !nextDescription) {
+    return { ok: false, reason: "missing_metadata" };
+  }
+
+  const metadataChanged = nextTitle !== selectedScenario.title || nextDescription !== selectedScenario.description;
+  const exportContext = includeCurrentBoard ? getScenarioExportContext(activeGame) : null;
+  const scenario = includeCurrentBoard
+    ? await buildScenarioFromGame(activeGame, {
+        scenarioId: selectedScenario.id,
+        title: nextTitle,
+        description: nextDescription,
+        moveLimit: exportContext.moveLimit,
+        resultingStateOverride: exportContext.currentSnapshot,
+        savedSelection: exportContext.savedSelection,
+      })
+    : {
+        ...selectedScenario,
+        title: nextTitle,
+        description: nextDescription,
+      };
+  scenario.incorrect = selectedScenario.incorrect === true;
+
+  if (!includeCurrentBoard && !metadataChanged) {
+    return { ok: true, reason: "no_changes", scenario };
+  }
+
+  const localWrite = await tryLocalScenarioWrite("/scenarios/update", { scenario });
+  if (!localWrite.ok) {
+    return { ok: false, reason: "local_update_failed" };
+  }
+  if (localWrite.body?.catalog?.scenarios) {
+    scenarioCatalog = localWrite.body.catalog;
+    selectedScenarioId = scenario.id;
+  } else {
+    replaceScenarioInCatalog(scenario);
+  }
+  if (feedbackMessage) {
+    setSelectedScenarioFeedback(feedbackMessage(scenario));
+  }
+  return { ok: true, reason: metadataChanged ? "updated" : "state_updated", scenario };
+};
+const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
+  const pendingSelection = game?.pendingScenarioSelection ?? null;
+  if (
+    !pendingSelection ||
+    game?.inHistoryMode ||
+    !(game?.canRecordMove || game?.canEndTurn) ||
+    pendingSelection.actorSide !== snapshot?.sideToMove ||
+    pendingSelection.turnIndex !== snapshot?.turnIndex
+  ) {
+    return { selectionAction: null, selectionState: null };
+  }
+
+  const sourcePiece = snapshot?.pieces?.find(
+    (piece) => piece.position?.row === pendingSelection.source.row && piece.position?.col === pendingSelection.source.col,
+  );
+  if (!sourcePiece) {
+    return { selectionAction: null, selectionState: null };
+  }
+
+  if (!pendingSelection.target) {
+    return {
+      selectionAction: null,
+      selectionState: {
+        selectedPieceId: sourcePiece.id,
+        source: pendingSelection.source,
+        target: null,
+      },
+    };
+  }
+
+  const matchingAction = (Array.isArray(legalActions) ? legalActions : []).find(
+    (action) =>
+      action?.from?.row === pendingSelection.source.row &&
+      action?.from?.col === pendingSelection.source.col &&
+      action?.to?.row === pendingSelection.target.row &&
+      action?.to?.col === pendingSelection.target.col,
+  );
+  if (!matchingAction) {
+    return { selectionAction: null, selectionState: null };
+  }
+  return { selectionAction: matchingAction, selectionState: null };
+};
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
 const gameIncludesIdentity = (game, identityId) => {
   if (!game || !identityId) {
@@ -867,9 +1048,27 @@ const renderHeader = () => `
   </header>
 `;
 
-const setScenarioFeedback = (message) => {
-  scenarioFeedback = message;
+const setSelectedScenarioFeedback = (message) => {
+  selectedScenarioFeedback = message;
 };
+
+const setSaveScenarioFeedback = (message) => {
+  saveScenarioFeedback = message;
+};
+
+const formatScenarioInfo = (scenario, fallback = "No scenarios available.") =>
+  scenario
+    ? JSON.stringify(
+        {
+          id: scenario.id,
+          title: scenario.title,
+          moves: scenario.moves.length,
+          outcome: scenario.expectedOutcome,
+        },
+        null,
+        2,
+      )
+    : fallback;
 
 const getSelectedScenario = () =>
   scenarioCatalog.scenarios.find((scenario) => scenario.id === selectedScenarioId) ?? scenarioCatalog.scenarios[0] ?? null;
@@ -879,7 +1078,7 @@ const renderScenarioOptionList = () =>
     .map(
       (scenario) =>
         `<option value="${escapeHtml(scenario.id)}"${scenario.id === selectedScenarioId ? " selected" : ""}>${escapeHtml(
-          `${scenario.id} - ${scenario.title}${scenario.incorrect ? " [incorrect]" : ""}`,
+          `${scenario.title}${scenario.incorrect ? " [incorrect]" : ""}`,
         )}</option>`,
     )
     .join("");
@@ -887,26 +1086,50 @@ const renderScenarioOptionList = () =>
 const renderScenarioPanel = ({ route, game = null } = {}) => {
   const selectedScenario = getSelectedScenario();
   const scenarioSnapshot = getScenarioPreviewSnapshot(selectedScenario);
-  const scenarioPreviewKey = toStableKey(scenarioSnapshot);
-  const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex + 1 : game?.moves?.length ?? 0;
-  const canSaveScenario = Boolean(game);
+  const scenarioPreviewSelection = getScenarioPreviewSelection(selectedScenario);
+  const scenarioPreviewKey = toStableKey({ snapshot: scenarioSnapshot, selection: scenarioPreviewSelection });
+  const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex : game?.moves?.length ?? 0;
+  const canAuthorScenarios = Boolean(game) && canAuthorScenariosLocally();
   const canLoadIntoCurrentGame = Boolean(game && Array.isArray(game.moves) && game.moves.length === 0 && selectedScenario);
+  const saveDraft = getSaveScenarioDraft();
+  const canSaveScenario = canAuthorScenarios && Boolean(saveDraft.title && saveDraft.description);
+  const selectedScenarioTitle = selectedScenario?.title ?? "";
+  const selectedScenarioDescription = selectedScenario?.description ?? "Scenarios replay canonical shell history into a game.";
+  const canUpdateScenario = canAuthorScenarios && Boolean(selectedScenario);
   return `
-    <section class="panel debug-panel scenario-panel">
-      <h2>Scenarios</h2>
+    <section class="panel debug-panel scenario-panel scenario-panel-load">
+      <h2>Load a scenario</h2>
       <div class="form-row">
         <label for="scenario-select">Saved scenario</label>
         <select id="scenario-select">
           ${scenarioCatalog.scenarios.length > 0 ? renderScenarioOptionList() : '<option value="">No scenarios saved yet</option>'}
         </select>
       </div>
-      <p class="small">${escapeHtml(selectedScenario?.description || "Scenarios replay canonical shell history into a game.")}</p>
+      ${
+        selectedScenario
+          ? `<div class="scenario-selected-summary">
+              <div
+                class="scenario-selected-title"
+                data-scenario-editable="title"
+                ${canAuthorScenarios ? 'contenteditable="plaintext-only" role="textbox" aria-label="Scenario title"' : ""}
+                ${canAuthorScenarios ? "" : 'tabindex="0"'}
+              >${escapeHtml(selectedScenarioTitle)}</div>
+              <p
+                class="small"
+                data-scenario-editable="description"
+                ${canAuthorScenarios ? 'contenteditable="plaintext-only" role="textbox" aria-label="Scenario description"' : ""}
+                ${canAuthorScenarios ? "" : 'tabindex="0"'}
+              >${escapeHtml(selectedScenarioDescription)}</p>
+            </div>`
+          : `<p class="small">${escapeHtml(selectedScenarioDescription)}</p>`
+      }
       ${
         selectedScenario
           ? `<div class="mini-board-card mini-board-card-scenario">
               ${renderMiniBoardPreviewRoot({
                 previewId: `scenario:${selectedScenario.id}`,
                 snapshot: scenarioSnapshot,
+                selection: scenarioPreviewSelection,
                 previewKey: scenarioPreviewKey,
                 sizeVariant: "compact",
               })}
@@ -923,26 +1146,32 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
       <div class="row">
         <button data-action="load-scenario" ${selectedScenario ? "" : "disabled"}>${route.name === "home" ? "Open Scenario" : canLoadIntoCurrentGame ? "Load into This Game" : "Open in New Tab"}</button>
         ${
-          canSaveScenario
-            ? `<button class="secondary" data-action="save-scenario"${busy ? " disabled" : ""}>Save Scenario${moveLimit < (game?.moves?.length ?? 0) ? " from Here" : ""}</button>`
+          canUpdateScenario
+            ? `<button class="secondary" data-action="update-scenario"${busy || !selectedScenarioTitle.trim() || !selectedScenarioDescription.trim() ? " disabled" : ""}>Update to match current board</button>`
             : ""
         }
       </div>
-      <pre class="debug-pre" aria-live="polite">${escapeHtml(
-        scenarioFeedback ||
-          (selectedScenario
-            ? JSON.stringify(
-                {
-                  id: selectedScenario.id,
-                  moves: selectedScenario.moves.length,
-                  outcome: selectedScenario.expectedOutcome,
-                },
-                null,
-                2,
-              )
-            : "No scenarios available."),
-      )}</pre>
+      <pre class="debug-pre" aria-live="polite">${escapeHtml(selectedScenarioFeedback || formatScenarioInfo(selectedScenario))}</pre>
     </section>
+    ${
+      canAuthorScenarios
+        ? `<section class="panel debug-panel scenario-panel scenario-panel-create">
+            <h2>Create a scenario</h2>
+            <div class="form-row">
+              <label for="save-scenario-title">Title</label>
+              <input id="save-scenario-title" data-scenario-save-field="title" value="${escapeHtml(saveDraft.title)}" />
+            </div>
+            <div class="form-row">
+              <label for="save-scenario-description">Description</label>
+              <textarea id="save-scenario-description" data-scenario-save-field="description" rows="4">${escapeHtml(saveDraft.description)}</textarea>
+            </div>
+            <div class="row">
+              <button class="secondary" data-action="save-scenario"${busy || !canSaveScenario ? " disabled" : ""}>Save current board as new scenario</button>
+            </div>
+            <pre class="debug-pre" aria-live="polite">${escapeHtml(saveScenarioFeedback || "No new scenario saved yet.")}</pre>
+          </section>`
+        : ""
+    }
   `;
 };
 
@@ -1086,6 +1315,7 @@ const updateHeaderFields = () => {
 
 const setInviteFeedback = (message) => {
   inviteFeedback = message;
+  render({ animatePanels: false, includeBoard: false });
   if (inviteFeedbackTimer) {
     clearTimeout(inviteFeedbackTimer);
     inviteFeedbackTimer = null;
@@ -1555,6 +1785,7 @@ const reconcileMiniBoardPreviews = () => {
       return {
         rootEl,
         snapshot: payload.snapshot,
+        selection: payload.selection,
         previewKey: payload.previewKey,
         sizeVariant: payload.sizeVariant,
       };
@@ -1892,13 +2123,25 @@ const mountBoardForGame = (game) => {
   const historySelectionAction = game.inHistoryMode ? game.historySelectionAction ?? null : null;
   const overlayMode = game.inHistoryMode ? "recorded-action" : "interactive";
   const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode ? game.legalActions : [];
+  const scenarioSelectionHydration = resolvePendingScenarioHydration({
+    game,
+    snapshot,
+    legalActions: effectiveLegalActions,
+  });
   if (!snapshot) {
     return;
   }
 
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
-  const overlayKey = toStableKey({ overlayMode, recordedAction: historySelectionAction });
+  const forceClickTargetSelection = currentRoute.scenarios;
+  const overlayKey = toStableKey({
+    overlayMode,
+    recordedAction: historySelectionAction,
+    selectionAction: scenarioSelectionHydration.selectionAction,
+    selectionState: scenarioSelectionHydration.selectionState,
+    forceClickTargetSelection,
+  });
 
   if (mountedBoardGameId !== game.id || !boardRuntime) {
     if (boardRuntime) {
@@ -1917,6 +2160,7 @@ const mountBoardForGame = (game) => {
       controls: {
         getAllowFreeSelection: () => false,
         getSupportsHover: () => hoverCapability.getSupportsHover(),
+        getForceClickTargetSelection: () => forceClickTargetSelection,
         onStateUpdated: ({ state, selectedPieceId }) => {
           applyCommandLegendSwatch(document.getElementById("shell-command-legend-swatch"), state, selectedPieceId);
         },
@@ -1932,9 +2176,12 @@ const mountBoardForGame = (game) => {
       rollbackNotice: game.rollbackNotice ?? "",
     });
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
+    boardRuntime.syncInteractionCapabilities?.();
     void boardRuntime.loadSnapshot(snapshot, {
       legalActions: effectiveLegalActions,
       resetSelection: true,
+      selectionAction: scenarioSelectionHydration.selectionAction,
+      selectionState: scenarioSelectionHydration.selectionState,
       overlayMode,
       recordedAction: historySelectionAction,
     });
@@ -1948,6 +2195,7 @@ const mountBoardForGame = (game) => {
   const resetSelection = mountedHistoryMoveIndex !== historyMoveIndex || (mountedSyncStatusKey !== syncStatusKey && Boolean(game.rollbackNotice));
   mountedHistoryMoveIndex = historyMoveIndex;
   boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
+  boardRuntime.syncInteractionCapabilities?.();
   const runtimeSnapshotKey = toStableKey(boardRuntime.getState());
   const runtimeLegalActionsKey = toStableKey(boardRuntime.getLegalActions());
   if (shouldSkipBoardRuntimeReload({
@@ -1980,6 +2228,8 @@ const mountBoardForGame = (game) => {
   void boardRuntime.loadSnapshot(snapshot, {
     legalActions: effectiveLegalActions,
     resetSelection,
+    selectionAction: scenarioSelectionHydration.selectionAction,
+    selectionState: scenarioSelectionHydration.selectionState,
     overlayMode,
     recordedAction: historySelectionAction,
   });
@@ -2085,6 +2335,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     updateHeaderFields();
     reconcileMiniBoardPreviews();
     animateHomeSectionTransitions();
+    syncScenarioAuthoringControls();
     if (animatePanels) {
       animateFlyoutPositionChanges(previousFlyoutRects);
     }
@@ -2099,6 +2350,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   ) {
     updateMountedHeader();
     updateHeaderFields();
+    syncScenarioAuthoringControls();
     updateMountedGameShell({
       game: transport.getGameViewModel(currentRoute.gameId),
       inviteFromRole: currentRoute.inviteFromRole,
@@ -2146,6 +2398,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   updateHeaderFields();
   reconcileMiniBoardPreviews();
   animateHomeSectionTransitions();
+  syncScenarioAuthoringControls();
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
@@ -2233,7 +2486,7 @@ const syncScenarioCatalog = async () => {
   } catch (error) {
     scenarioCatalog = { id: "S", title: "Saved Scenarios", scenarios: [] };
     selectedScenarioId = null;
-    scenarioFeedback = error instanceof Error ? error.message : "Failed to load scenarios";
+    selectedScenarioFeedback = error instanceof Error ? error.message : "Failed to load scenarios";
   }
 };
 
@@ -2696,7 +2949,7 @@ appEl.addEventListener("click", async (event) => {
     if (action === "load-scenario") {
       const selectedScenario = getSelectedScenario();
       if (!selectedScenario) {
-        setScenarioFeedback("No scenario selected.");
+        setSelectedScenarioFeedback("No scenario selected.");
         render({ animatePanels: false, includeBoard: false });
         return;
       }
@@ -2709,7 +2962,7 @@ appEl.addEventListener("click", async (event) => {
         targetGameId: shouldApplyInPlace ? activeGameId : null,
         sourceGameId: activeGame && !shouldApplyInPlace ? activeGame.id : null,
       });
-      setScenarioFeedback(`Scenario ${selectedScenario.id} loaded.`);
+      setSelectedScenarioFeedback(`Scenario ${selectedScenario.id} loaded.`);
       if (!result?.game?.id) {
         render({ animatePanels: false, includeBoard: false });
         return;
@@ -2727,33 +2980,84 @@ appEl.addEventListener("click", async (event) => {
       return;
     }
 
-    if (action === "save-scenario") {
-      const activeGameId =
-        currentRoute.name === "game" ? currentRoute.gameId : currentRoute.name === "invite" ? resolvedInvite?.gameId || null : null;
-      const activeGame = activeGameId ? transport.getGameViewModel(activeGameId) : null;
+    if (action === "update-scenario" || action === "save-scenario") {
+      const activeGame = getActiveScenarioGame();
       if (!activeGame) {
-        setScenarioFeedback("Open a game to save a scenario.");
+        if (action === "update-scenario") {
+          setSelectedScenarioFeedback("Open a game to update the selected scenario.");
+        } else {
+          setSaveScenarioFeedback("Open a game to save a new scenario.");
+        }
         render({ animatePanels: false, includeBoard: false });
         return;
       }
-      const scenarioId = getNextScenarioId(scenarioCatalog);
-      const title = window.prompt("Scenario title:", `Saved scenario ${scenarioId}`);
-      if (!title) {
+      if (!canAuthorScenariosLocally()) {
+        if (action === "update-scenario") {
+          setSelectedScenarioFeedback("Scenario authoring is only available on localhost.");
+        } else {
+          setSaveScenarioFeedback("Scenario authoring is only available on localhost.");
+        }
+        render({ animatePanels: false, includeBoard: false });
         return;
       }
-      const moveLimit = activeGame.inHistoryMode && typeof activeGame.historyIndex === "number" ? activeGame.historyIndex + 1 : activeGame.moves.length;
-      const scenario = await buildScenarioFromGame(activeGame, { scenarioId, title, moveLimit });
-      const nextCatalog = {
+      if (action === "update-scenario") {
+        if (!getSelectedScenario()) {
+          setSelectedScenarioFeedback("No scenario selected.");
+          render({ animatePanels: false, includeBoard: false });
+          return;
+        }
+        const title = getScenarioEditableFieldText("title");
+        const description = getScenarioEditableFieldText("description");
+        if (!title || !description) {
+          setSelectedScenarioFeedback("Scenario title and description are required.");
+          syncScenarioAuthoringControls();
+          return;
+        }
+        const updated = await updateSelectedScenarioRecord({
+          activeGame,
+          title,
+          description,
+          includeCurrentBoard: true,
+          feedbackMessage: (scenario) => `Scenario ${scenario.id} updated.`,
+        });
+        if (!updated.ok) {
+          setSelectedScenarioFeedback("Failed to update scenario locally.");
+          render({ animatePanels: false, includeBoard: false });
+          return;
+        }
+        render({ animatePanels: false, includeBoard: false });
+        return;
+      }
+      const draft = getSaveScenarioDraft();
+      if (!draft.title || !draft.description) {
+        setSaveScenarioFeedback("Scenario title and description are required.");
+        syncScenarioAuthoringControls();
+        return;
+      }
+      const exportContext = getScenarioExportContext(activeGame);
+      const scenario = await buildScenarioFromGame(activeGame, {
+        scenarioId: crypto.randomUUID(),
+        title: draft.title,
+        description: draft.description,
+        moveLimit: exportContext.moveLimit,
+        resultingStateOverride: exportContext.currentSnapshot,
+        savedSelection: exportContext.savedSelection,
+      });
+      const localWrite = await tryLocalScenarioWrite("/scenarios/save", { scenario });
+      if (!localWrite.ok) {
+        setSaveScenarioFeedback("Failed to save scenario locally.");
+        render({ animatePanels: false, includeBoard: false });
+        return;
+      }
+      scenarioCatalog = localWrite.body?.catalog ?? {
         ...scenarioCatalog,
         scenarios: [...scenarioCatalog.scenarios, scenario],
       };
-      const localWrite = await tryLocalScenarioWrite("/scenarios/save", { scenario });
-      scenarioCatalog = nextCatalog;
       selectedScenarioId = scenario.id;
-      if (!localWrite.ok) {
-        downloadScenarioCatalog(nextCatalog, "scenarios.catalog.updated.json");
-      }
-      setScenarioFeedback(localWrite.ok ? `Scenario ${scenario.id} saved.` : `Scenario ${scenario.id} saved via download fallback.`);
+      saveScenarioDraftTitle = "";
+      saveScenarioDraftDescription = "";
+      setSaveScenarioFeedback(formatScenarioInfo(scenario, "No new scenario saved yet."));
+      setSelectedScenarioFeedback("");
       render({ animatePanels: false, includeBoard: false });
     }
   }, { renderStart: shouldRenderBusyState, renderEnd: shouldRenderBusyState });
@@ -2766,9 +3070,57 @@ appEl.addEventListener("change", (event) => {
   }
   if (target.id === "scenario-select") {
     selectedScenarioId = target.value || null;
-    scenarioFeedback = "";
+    selectedScenarioFeedback = "";
     render({ animatePanels: false, includeBoard: false });
   }
+});
+
+appEl.addEventListener("input", (event) => {
+  const target = event.target;
+  if (target instanceof HTMLInputElement && target.getAttribute("data-scenario-save-field") === "title") {
+    saveScenarioDraftTitle = target.value;
+    syncScenarioAuthoringControls();
+    return;
+  }
+  if (target instanceof HTMLTextAreaElement && target.getAttribute("data-scenario-save-field") === "description") {
+    saveScenarioDraftDescription = target.value;
+    syncScenarioAuthoringControls();
+    return;
+  }
+  if (target instanceof HTMLElement && target.hasAttribute("data-scenario-editable")) {
+    syncScenarioAuthoringControls();
+  }
+});
+
+appEl.addEventListener("focusout", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || !target.hasAttribute("data-scenario-editable")) {
+    return;
+  }
+  window.setTimeout(async () => {
+    if (busy || !canAuthorScenariosLocally()) {
+      return;
+    }
+    const activeGame = getActiveScenarioGame();
+    if (!activeGame || !getSelectedScenario()) {
+      return;
+    }
+    const title = getScenarioEditableFieldText("title");
+    const description = getScenarioEditableFieldText("description");
+    if (!title || !description) {
+      return;
+    }
+    const updated = await updateSelectedScenarioRecord({
+      activeGame,
+      title,
+      description,
+      includeCurrentBoard: false,
+      feedbackMessage: (scenario) => `Scenario ${scenario.id} details saved.`,
+    });
+    if (updated.ok && updated.reason === "updated") {
+      render({ animatePanels: false, includeBoard: false });
+    }
+  }, 0);
 });
 
 appEl.addEventListener("pointerdown", (event) => {

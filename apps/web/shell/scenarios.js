@@ -1,3 +1,36 @@
+const normalizeCoord = (coord) => {
+  if (!coord || typeof coord !== "object") {
+    return null;
+  }
+  const row = Number(coord.row);
+  const col = Number(coord.col);
+  if (!Number.isFinite(row) || !Number.isFinite(col)) {
+    return null;
+  }
+  return { row, col };
+};
+
+const normalizeSavedSelection = (savedSelection) => {
+  if (!savedSelection || typeof savedSelection !== "object") {
+    return null;
+  }
+  const source = normalizeCoord(savedSelection.source);
+  const target = savedSelection.target == null ? null : normalizeCoord(savedSelection.target);
+  const actorSide = savedSelection.actorSide === "P2" ? "P2" : savedSelection.actorSide === "P1" ? "P1" : null;
+  const turnIndex = Number(savedSelection.turnIndex);
+  if (!source || (savedSelection.target != null && !target) || !actorSide || !Number.isFinite(turnIndex)) {
+    return null;
+  }
+  return {
+    source,
+    target,
+    actorSide,
+    turnIndex,
+  };
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const normalizeScenario = (scenario) => ({
   formatVersion: 2,
   id: String(scenario?.id || ""),
@@ -17,6 +50,7 @@ const normalizeScenario = (scenario) => ({
   resultingState: structuredClone(scenario?.resultingState ?? scenario?.resulting_state ?? null),
   expectedFinalStateHash: String(scenario?.expectedFinalStateHash ?? scenario?.expected_final_state_hash ?? ""),
   expectedOutcome: String(scenario?.expectedOutcome ?? scenario?.expected_outcome ?? "ongoing"),
+  savedSelection: normalizeSavedSelection(scenario?.savedSelection ?? scenario?.saved_selection ?? null),
 });
 
 export const loadScenarioCatalog = async () => {
@@ -43,6 +77,8 @@ export const getScenarioWriterBaseUrl = () => {
   }
   return `http://${host}:${browserPort + 1000}`;
 };
+
+export const canAuthorScenariosLocally = () => Boolean(getScenarioWriterBaseUrl());
 
 export const tryLocalScenarioWrite = async (pathSuffix, payload) => {
   const base = getScenarioWriterBaseUrl();
@@ -95,35 +131,19 @@ export const computeStateHash = async (candidateState) => {
   return body.hash;
 };
 
-export const getNextScenarioId = (catalog) => {
-  const prefix = String(catalog?.id || "S").toUpperCase();
-  let maxNumeric = 0;
-  let maxDigits = 3;
-  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
-  for (const scenario of Array.isArray(catalog?.scenarios) ? catalog.scenarios : []) {
-    const match = pattern.exec(String(scenario?.id || ""));
-    if (!match) {
-      continue;
-    }
-    const digits = match[1];
-    const numeric = Number.parseInt(digits, 10);
-    if (!Number.isFinite(numeric)) {
-      continue;
-    }
-    maxNumeric = Math.max(maxNumeric, numeric);
-    maxDigits = Math.max(maxDigits, digits.length);
+export const buildScenarioFromGame = async (
+  game,
+  { scenarioId, title, description, moveLimit = null, resultingStateOverride = null, savedSelection = null } = {},
+) => {
+  if (!UUID_PATTERN.test(String(scenarioId || ""))) {
+    throw new Error("Scenario IDs must be UUID v4 values.");
   }
-  return `${prefix}-${String(maxNumeric + 1).padStart(maxDigits, "0")}`;
-};
-
-export const buildScenarioFromGame = async (game, { scenarioId, title, description, moveLimit = null } = {}) => {
   const safeMoveLimit = Number.isFinite(moveLimit) ? Math.max(0, Math.min(moveLimit, game.moves.length)) : game.moves.length;
   const selectedMoves = game.moves.slice(0, safeMoveLimit);
-  const initialState = structuredClone(selectedMoves[0]?.selectionSnapshot ?? game.board?.state ?? game.currentSnapshot);
-  const resultingStateSource =
-    safeMoveLimit === game.moves.length
-      ? game.board?.state ?? game.currentSnapshot ?? selectedMoves[selectedMoves.length - 1]?.snapshot
-      : selectedMoves[selectedMoves.length - 1]?.snapshot ?? game.board?.state ?? game.currentSnapshot;
+  const resolvedResultingState =
+    resultingStateOverride ?? game.board?.state ?? game.currentSnapshot ?? selectedMoves[selectedMoves.length - 1]?.snapshot ?? null;
+  const initialState = structuredClone(selectedMoves[0]?.selectionSnapshot ?? resolvedResultingState);
+  const resultingStateSource = resolvedResultingState;
   const resultingState = structuredClone(resultingStateSource);
   const expectedFinalStateHash = await computeStateHash(resultingState);
   return normalizeScenario({
@@ -143,5 +163,6 @@ export const buildScenarioFromGame = async (game, { scenarioId, title, descripti
     resultingState,
     expectedFinalStateHash,
     expectedOutcome: resultingState?.outcome?.status ?? "ongoing",
+    savedSelection: normalizeSavedSelection(savedSelection),
   });
 };

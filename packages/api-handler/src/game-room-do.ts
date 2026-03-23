@@ -10,6 +10,7 @@ import type {
 import { listLegalActions } from "../../game-engine/src/legal";
 import {
   addNotification,
+  assignIdentityToScenarioSeat,
   applyScenarioToGame,
   applyServerAction,
   applyServerMove,
@@ -31,6 +32,7 @@ import {
   getActiveTurn,
   getApproverIdentityForSeat,
   getSeatIdentity,
+  getSeatForSide,
   getSideToMoveSeat,
   now,
   promoteIdentityToSeat,
@@ -149,6 +151,7 @@ export class GameRoomDO {
         copyParticipantsBetweenGames(sourceGame, this.game);
       }
       applyScenarioToGame(this.game, scenario);
+      assignIdentityToScenarioSeat(this.game, identityId, getSeatForSide(this.game.board.state.sideToMove));
       this.eventSeq = 1;
       await persistGameState(this.env, this.game, this.eventSeq, null);
       return json({ ok: true, game: withViewModel(this.game, identityId), eventSeq: this.eventSeq });

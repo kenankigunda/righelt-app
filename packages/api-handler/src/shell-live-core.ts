@@ -6,6 +6,7 @@ import type { Action, GameState } from "../../game-engine/src/types";
 
 export const MAX_HISTORY = 200;
 const BOARD_SIZE = 10;
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type Participant = {
   identityId: string;
@@ -49,6 +50,13 @@ export type ScenarioMoveEntry = {
   action: Action;
 };
 
+export type ScenarioSavedSelection = {
+  source: { row: number; col: number };
+  target: { row: number; col: number } | null;
+  actorSide: "P1" | "P2";
+  turnIndex: number;
+};
+
 export type ScenarioRecord = {
   formatVersion: 2;
   id: string;
@@ -60,6 +68,7 @@ export type ScenarioRecord = {
   resultingState: GameState;
   expectedFinalStateHash: string;
   expectedOutcome: "ongoing" | "p1_win" | "p2_win" | "draw";
+  savedSelection: ScenarioSavedSelection | null;
 };
 
 export type TurnEntry = {
@@ -89,6 +98,7 @@ export type LiveGame = {
   turns: TurnEntry[];
   moves: MoveEntry[];
   historyIndexByIdentity: Record<string, number>;
+  pendingScenarioSelection: ScenarioSavedSelection | null;
   notifications: string[];
   inviteTokens: {
     viewer: string;
@@ -132,12 +142,49 @@ export const asGameState = (value: unknown): GameState | null =>
   value && typeof value === "object" ? (value as GameState) : null;
 export const asAction = (value: unknown): Action | null =>
   value && typeof value === "object" && typeof (value as Action).type === "string" ? (value as Action) : null;
+const asCoordinate = (value: unknown): { row: number; col: number } | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as { row?: unknown; col?: unknown };
+  if (typeof candidate.row !== "number" || typeof candidate.col !== "number") {
+    return null;
+  }
+  return { row: candidate.row, col: candidate.col };
+};
+const asScenarioSavedSelection = (value: unknown): ScenarioSavedSelection | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  const source = asCoordinate(candidate.source);
+  const target = candidate.target == null ? null : asCoordinate(candidate.target);
+  if (
+    !source ||
+    (candidate.target != null && !target) ||
+    (candidate.actorSide !== "P1" && candidate.actorSide !== "P2") ||
+    typeof candidate.turnIndex !== "number"
+  ) {
+    return null;
+  }
+  return {
+    source,
+    target,
+    actorSide: candidate.actorSide,
+    turnIndex: candidate.turnIndex,
+  };
+};
 export const asScenarioRecord = (value: unknown): ScenarioRecord | null => {
   if (!value || typeof value !== "object") {
     return null;
   }
   const candidate = value as Record<string, unknown>;
-  if (candidate.formatVersion !== 2 || typeof candidate.id !== "string" || typeof candidate.title !== "string") {
+  if (
+    candidate.formatVersion !== 2 ||
+    typeof candidate.id !== "string" ||
+    !UUID_V4_PATTERN.test(candidate.id) ||
+    typeof candidate.title !== "string"
+  ) {
     return null;
   }
   if (!asGameState(candidate.initialState) || !asGameState(candidate.resultingState)) {
@@ -199,6 +246,10 @@ export const asScenarioRecord = (value: unknown): ScenarioRecord | null => {
             candidate.expected_outcome === "draw"
           ? candidate.expected_outcome
           : "ongoing",
+    savedSelection:
+      asScenarioSavedSelection(candidate.savedSelection) ??
+      asScenarioSavedSelection(candidate.saved_selection) ??
+      null,
   };
 };
 
@@ -261,6 +312,7 @@ export const createInitialGame = ({
     ],
     moves: [],
     historyIndexByIdentity: {},
+    pendingScenarioSelection: null,
     notifications: ["Game created", playgroundMode ? "Playground mode active" : "Invite a second player"],
     inviteTokens: {
       viewer: createInviteToken(),
@@ -330,6 +382,7 @@ export const exportScenarioFromGame = (
     resultingState: clone(resultingState),
     expectedFinalStateHash: "",
     expectedOutcome: resultingState?.outcome?.status ?? "ongoing",
+    savedSelection: null,
   };
 };
 
@@ -349,6 +402,7 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
     },
   ];
   game.historyIndexByIdentity = {};
+  game.pendingScenarioSelection = clone(scenario.savedSelection);
   game.lastMoveAt = null;
 
   const moveTimes: string[] = [];
@@ -385,6 +439,51 @@ export const copyParticipantsBetweenGames = (source: LiveGame, target: LiveGame)
   target.player2 = cloneParticipant(source.player2);
   target.viewers = source.viewers.map((viewer) => cloneParticipant(viewer)).filter(Boolean) as Viewer[];
   target.pendingJoinRequests = [];
+};
+
+const setParticipantForSeat = (game: LiveGame, seat: "Player 1" | "Player 2", participant: Participant | null) => {
+  if (seat === "Player 1") {
+    game.player1 = participant;
+    return;
+  }
+  game.player2 = participant;
+};
+
+export const assignIdentityToScenarioSeat = (
+  game: LiveGame,
+  identityId: string,
+  targetSeat: "Player 1" | "Player 2",
+  sessionCount = 0,
+) => {
+  if (getSeatIdentity(game, targetSeat) === identityId) {
+    return;
+  }
+
+  const otherSeat = getNextSeat(targetSeat);
+  const importerSeat = getRolesForIdentity(game, identityId).find((role) => role === "Player 1" || role === "Player 2") ?? null;
+  const targetParticipant = cloneParticipant(targetSeat === "Player 1" ? game.player1 : game.player2);
+  const otherParticipant = cloneParticipant(otherSeat === "Player 1" ? game.player1 : game.player2);
+
+  if (importerSeat === otherSeat) {
+    setParticipantForSeat(game, targetSeat, otherParticipant);
+    setParticipantForSeat(game, otherSeat, targetParticipant);
+    return;
+  }
+
+  const existingParticipant = getParticipantsForIdentity(game, identityId)[0]?.participant ?? null;
+  const joinedAt = existingParticipant?.joinedAt ?? now();
+  const lastHeartbeatAt = existingParticipant?.lastHeartbeatAt ?? joinedAt;
+  removeViewer(game, identityId);
+  setParticipantForSeat(game, targetSeat, {
+    identityId,
+    connected: existingParticipant?.connected ?? sessionCount > 0,
+    joinedAt,
+    lastHeartbeatAt,
+    sessionCount: existingParticipant?.sessionCount ?? sessionCount,
+  });
+  if (!otherParticipant && targetParticipant) {
+    setParticipantForSeat(game, otherSeat, targetParticipant);
+  }
 };
 
 export const findRoleForIdentity = (game: LiveGame, identityId: string): "Player 1" | "Player 2" | "Viewer" | "Guest" => {
@@ -557,6 +656,12 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     typeof historyIndex === "number" && moves[historyIndex]
       ? moves[historyIndex].selectionSnapshot
       : game.board.state;
+  const pendingScenarioSelection =
+    game.pendingScenarioSelection &&
+    game.pendingScenarioSelection.actorSide === currentSnapshot?.sideToMove &&
+    game.pendingScenarioSelection.turnIndex === currentSnapshot?.turnIndex
+      ? clone(game.pendingScenarioSelection)
+      : null;
   const historySelectionAction =
     typeof historyIndex === "number" && moves[historyIndex]
       ? clone(moves[historyIndex].action)
@@ -585,6 +690,7 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     myConnectionConnected,
     inHistoryMode,
     currentSnapshot,
+    pendingScenarioSelection,
     canJoinAsPlayer: !joinAsPlayerDisabledReason,
     canJoinAsViewer: !joinAsViewerDisabledReason,
     canPlayAsBothPlayers: myRole === "Player 1" && !game.player2,
@@ -721,6 +827,7 @@ export const applyServerAction = (game: LiveGame, action: Action, notation?: str
   game.moves.push(move);
   activeTurn.moveIndexes.push(move.index);
   activeTurn.lastMoveAt = move.at;
+  game.pendingScenarioSelection = null;
   if (game.moves.length > MAX_HISTORY) {
     game.moves.shift();
     renumberHistory(game);
