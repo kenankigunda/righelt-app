@@ -284,19 +284,21 @@ const formatClientDateTime = (value) => {
   }).format(new Date(timestamp));
 };
 
-const registerMiniBoardPreview = ({ previewId, snapshot, previewKey, sizeVariant = "compact" }) => {
+const registerMiniBoardPreview = ({ previewId, snapshot, selection = null, previewKey, sizeVariant = "compact" }) => {
   renderedMiniBoardPreviewPayloads.set(previewId, {
     snapshot: snapshot ?? null,
+    selection: selection ?? null,
     previewKey,
     sizeVariant,
   });
   return previewId;
 };
 
-const renderMiniBoardPreviewRoot = ({ previewId, snapshot, previewKey, sizeVariant = "compact" }) => {
+const renderMiniBoardPreviewRoot = ({ previewId, snapshot, selection = null, previewKey, sizeVariant = "compact" }) => {
   const stablePreviewId = registerMiniBoardPreview({
     previewId,
     snapshot,
+    selection,
     previewKey,
     sizeVariant,
   });
@@ -325,6 +327,78 @@ const formatSideToMoveLabel = (snapshot) => {
 
 const getGamePreviewSnapshot = (game) => game?.liveCurrentSnapshot ?? game?.board?.state ?? game?.currentSnapshot ?? null;
 const getScenarioPreviewSnapshot = (scenario) => scenario?.resultingState ?? scenario?.initialState ?? null;
+const getScenarioPreviewSelection = (scenario) =>
+  scenario?.savedSelection?.source
+    ? {
+        selectedPieceId: null,
+        source: scenario.savedSelection.source,
+        target: scenario.savedSelection.target ?? null,
+      }
+    : null;
+const buildSavedSelectionFromAction = (action, snapshot) => {
+  if (!action?.from) {
+    return null;
+  }
+  return {
+    source: { ...action.from },
+    target: action.to ? { ...action.to } : null,
+    actorSide: snapshot?.sideToMove === "P2" ? "P2" : "P1",
+    turnIndex: Number(snapshot?.turnIndex ?? 0),
+  };
+};
+const buildSavedSelectionFromRuntimeSelection = (selection, snapshot) => {
+  if (!selection?.source) {
+    return null;
+  }
+  return {
+    source: { ...selection.source },
+    target: selection.target ? { ...selection.target } : null,
+    actorSide: snapshot?.sideToMove === "P2" ? "P2" : "P1",
+    turnIndex: Number(snapshot?.turnIndex ?? 0),
+  };
+};
+const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
+  const pendingSelection = game?.pendingScenarioSelection ?? null;
+  if (
+    !pendingSelection ||
+    game?.inHistoryMode ||
+    !(game?.canRecordMove || game?.canEndTurn) ||
+    pendingSelection.actorSide !== snapshot?.sideToMove ||
+    pendingSelection.turnIndex !== snapshot?.turnIndex
+  ) {
+    return { selectionAction: null, selectionState: null };
+  }
+
+  const sourcePiece = snapshot?.pieces?.find(
+    (piece) => piece.position?.row === pendingSelection.source.row && piece.position?.col === pendingSelection.source.col,
+  );
+  if (!sourcePiece) {
+    return { selectionAction: null, selectionState: null };
+  }
+
+  if (!pendingSelection.target) {
+    return {
+      selectionAction: null,
+      selectionState: {
+        selectedPieceId: sourcePiece.id,
+        source: pendingSelection.source,
+        target: null,
+      },
+    };
+  }
+
+  const matchingAction = (Array.isArray(legalActions) ? legalActions : []).find(
+    (action) =>
+      action?.from?.row === pendingSelection.source.row &&
+      action?.from?.col === pendingSelection.source.col &&
+      action?.to?.row === pendingSelection.target.row &&
+      action?.to?.col === pendingSelection.target.col,
+  );
+  if (!matchingAction) {
+    return { selectionAction: null, selectionState: null };
+  }
+  return { selectionAction: matchingAction, selectionState: null };
+};
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
 const gameIncludesIdentity = (game, identityId) => {
   if (!game || !identityId) {
@@ -887,8 +961,9 @@ const renderScenarioOptionList = () =>
 const renderScenarioPanel = ({ route, game = null } = {}) => {
   const selectedScenario = getSelectedScenario();
   const scenarioSnapshot = getScenarioPreviewSnapshot(selectedScenario);
-  const scenarioPreviewKey = toStableKey(scenarioSnapshot);
-  const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex + 1 : game?.moves?.length ?? 0;
+  const scenarioPreviewSelection = getScenarioPreviewSelection(selectedScenario);
+  const scenarioPreviewKey = toStableKey({ snapshot: scenarioSnapshot, selection: scenarioPreviewSelection });
+  const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex : game?.moves?.length ?? 0;
   const canSaveScenario = Boolean(game);
   const canLoadIntoCurrentGame = Boolean(game && Array.isArray(game.moves) && game.moves.length === 0 && selectedScenario);
   return `
@@ -907,6 +982,7 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
               ${renderMiniBoardPreviewRoot({
                 previewId: `scenario:${selectedScenario.id}`,
                 snapshot: scenarioSnapshot,
+                selection: scenarioPreviewSelection,
                 previewKey: scenarioPreviewKey,
                 sizeVariant: "compact",
               })}
@@ -1555,6 +1631,7 @@ const reconcileMiniBoardPreviews = () => {
       return {
         rootEl,
         snapshot: payload.snapshot,
+        selection: payload.selection,
         previewKey: payload.previewKey,
         sizeVariant: payload.sizeVariant,
       };
@@ -1892,13 +1969,24 @@ const mountBoardForGame = (game) => {
   const historySelectionAction = game.inHistoryMode ? game.historySelectionAction ?? null : null;
   const overlayMode = game.inHistoryMode ? "recorded-action" : "interactive";
   const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode ? game.legalActions : [];
+  const scenarioSelectionHydration = resolvePendingScenarioHydration({
+    game,
+    snapshot,
+    legalActions: effectiveLegalActions,
+  });
   if (!snapshot) {
     return;
   }
 
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
-  const overlayKey = toStableKey({ overlayMode, recordedAction: historySelectionAction });
+  const overlayKey = toStableKey({
+    overlayMode,
+    recordedAction: historySelectionAction,
+    selectionAction: scenarioSelectionHydration.selectionAction,
+    selectionState: scenarioSelectionHydration.selectionState,
+    forceClickTargetSelection: currentRoute.debug,
+  });
 
   if (mountedBoardGameId !== game.id || !boardRuntime) {
     if (boardRuntime) {
@@ -1917,6 +2005,7 @@ const mountBoardForGame = (game) => {
       controls: {
         getAllowFreeSelection: () => false,
         getSupportsHover: () => hoverCapability.getSupportsHover(),
+        getForceClickTargetSelection: () => currentRoute.debug,
         onStateUpdated: ({ state, selectedPieceId }) => {
           applyCommandLegendSwatch(document.getElementById("shell-command-legend-swatch"), state, selectedPieceId);
         },
@@ -1932,9 +2021,12 @@ const mountBoardForGame = (game) => {
       rollbackNotice: game.rollbackNotice ?? "",
     });
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
+    boardRuntime.syncInteractionCapabilities?.();
     void boardRuntime.loadSnapshot(snapshot, {
       legalActions: effectiveLegalActions,
       resetSelection: true,
+      selectionAction: scenarioSelectionHydration.selectionAction,
+      selectionState: scenarioSelectionHydration.selectionState,
       overlayMode,
       recordedAction: historySelectionAction,
     });
@@ -1948,6 +2040,7 @@ const mountBoardForGame = (game) => {
   const resetSelection = mountedHistoryMoveIndex !== historyMoveIndex || (mountedSyncStatusKey !== syncStatusKey && Boolean(game.rollbackNotice));
   mountedHistoryMoveIndex = historyMoveIndex;
   boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
+  boardRuntime.syncInteractionCapabilities?.();
   const runtimeSnapshotKey = toStableKey(boardRuntime.getState());
   const runtimeLegalActionsKey = toStableKey(boardRuntime.getLegalActions());
   if (shouldSkipBoardRuntimeReload({
@@ -1980,6 +2073,8 @@ const mountBoardForGame = (game) => {
   void boardRuntime.loadSnapshot(snapshot, {
     legalActions: effectiveLegalActions,
     resetSelection,
+    selectionAction: scenarioSelectionHydration.selectionAction,
+    selectionState: scenarioSelectionHydration.selectionState,
     overlayMode,
     recordedAction: historySelectionAction,
   });
@@ -2741,8 +2836,18 @@ appEl.addEventListener("click", async (event) => {
       if (!title) {
         return;
       }
-      const moveLimit = activeGame.inHistoryMode && typeof activeGame.historyIndex === "number" ? activeGame.historyIndex + 1 : activeGame.moves.length;
-      const scenario = await buildScenarioFromGame(activeGame, { scenarioId, title, moveLimit });
+      const currentSnapshot = activeGame.currentSnapshot ?? activeGame.board?.state ?? null;
+      const moveLimit = activeGame.inHistoryMode && typeof activeGame.historyIndex === "number" ? activeGame.historyIndex : activeGame.moves.length;
+      const savedSelection = activeGame.inHistoryMode
+        ? buildSavedSelectionFromAction(activeGame.historySelectionAction ?? null, currentSnapshot)
+        : buildSavedSelectionFromRuntimeSelection(boardRuntime?.getSelection?.() ?? null, currentSnapshot);
+      const scenario = await buildScenarioFromGame(activeGame, {
+        scenarioId,
+        title,
+        moveLimit,
+        resultingStateOverride: currentSnapshot,
+        savedSelection,
+      });
       const nextCatalog = {
         ...scenarioCatalog,
         scenarios: [...scenarioCatalog.scenarios, scenario],

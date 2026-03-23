@@ -228,7 +228,7 @@ test("debug flyout persists locally while scenario-created games close the scena
 test("shell renders and reconciles mini board previews for home and debug surfaces", () => {
   assert.match(source, /const miniBoardPreviewRegistry = new Map\(\);/);
   assert.match(source, /const renderedMiniBoardPreviewPayloads = new Map\(\);/);
-  assert.match(source, /const renderMiniBoardPreviewRoot = \(\{ previewId, snapshot, previewKey, sizeVariant = "compact" \}\) => \{/);
+  assert.match(source, /const renderMiniBoardPreviewRoot = \(\{ previewId, snapshot, selection = null, previewKey, sizeVariant = "compact" \}\) => \{/);
   assert.match(source, /data-mini-board-preview data-preview-id=/);
   assert.match(source, /const reconcileMiniBoardPreviews = \(\) => \{/);
   assert.match(source, /syncMiniBoardPreviews\(\{/);

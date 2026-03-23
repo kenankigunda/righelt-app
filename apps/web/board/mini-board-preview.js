@@ -21,7 +21,7 @@ const createPreviewElements = ({ rootEl, sizeVariant = "compact" }) => {
   return { boardEl, overlayLinesEl };
 };
 
-export const createMiniBoardPreview = ({ rootEl, snapshot, previewKey, createAdapter, sizeVariant = "compact" }) => {
+export const createMiniBoardPreview = ({ rootEl, snapshot, selection = null, previewKey, createAdapter, sizeVariant = "compact" }) => {
   if (!(rootEl instanceof HTMLElement)) {
     throw new Error("Mini board preview root must be an element");
   }
@@ -40,7 +40,7 @@ export const createMiniBoardPreview = ({ rootEl, snapshot, previewKey, createAda
     onCellClick: () => {},
   });
 
-  const renderPreview = (nextSnapshot, nextPreviewKey) => {
+  const renderPreview = (nextSnapshot, nextSelection, nextPreviewKey) => {
     if (!nextSnapshot) {
       elements.boardEl.replaceChildren();
       elements.overlayLinesEl.replaceChildren();
@@ -49,7 +49,7 @@ export const createMiniBoardPreview = ({ rootEl, snapshot, previewKey, createAda
     }
     adapter.render({
       snapshot: nextSnapshot,
-      selection: { selectedPieceId: null, source: null, target: null },
+      selection: nextSelection ?? { selectedPieceId: null, source: null, target: null },
       overlay: { mode: "none" },
       legalActions: [],
       selectedPieceMoves: [],
@@ -62,14 +62,14 @@ export const createMiniBoardPreview = ({ rootEl, snapshot, previewKey, createAda
     lastPreviewKey = nextPreviewKey;
   };
 
-  renderPreview(snapshot, previewKey);
+  renderPreview(snapshot, selection, previewKey);
 
   return {
-    update(nextSnapshot, nextPreviewKey) {
+    update(nextSnapshot, nextSelection, nextPreviewKey) {
       if (nextPreviewKey === lastPreviewKey) {
         return;
       }
-      renderPreview(nextSnapshot, nextPreviewKey);
+      renderPreview(nextSnapshot, nextSelection, nextPreviewKey);
     },
     destroy() {
       adapter.unmount();
@@ -91,7 +91,7 @@ export const syncMiniBoardPreviews = ({ previews, registry, createAdapter }) => 
 
     const existing = registry.get(preview.rootEl);
     if (existing) {
-      existing.update(preview.snapshot ?? null, preview.previewKey ?? "null");
+      existing.update(preview.snapshot ?? null, preview.selection ?? null, preview.previewKey ?? "null");
       continue;
     }
 
@@ -100,6 +100,7 @@ export const syncMiniBoardPreviews = ({ previews, registry, createAdapter }) => 
       createMiniBoardPreview({
         rootEl: preview.rootEl,
         snapshot: preview.snapshot ?? null,
+        selection: preview.selection ?? null,
         previewKey: preview.previewKey ?? "null",
         createAdapter,
         sizeVariant: preview.sizeVariant ?? "compact",

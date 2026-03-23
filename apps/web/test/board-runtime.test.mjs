@@ -591,6 +591,122 @@ test("board runtime uses hover-aware action prompt copy", async () => {
   assert.equal(hover.boardPreviewLabelEl.textContent.includes("Click again to"), false);
 });
 
+test("board runtime can force click target selection even on hover-capable devices", async () => {
+  let onCellClick = null;
+  let onCellHoverStart = null;
+  const boardPreviewLabelEl = {
+    textContent: "",
+    innerHTML: "",
+    addEventListener: noop,
+    removeEventListener: noop,
+  };
+  const appliedActions = [];
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: ({ onCellClick: nextOnCellClick, onCellHoverStart: nextOnCellHoverStart }) => {
+        onCellClick = nextOnCellClick;
+        onCellHoverStart = nextOnCellHoverStart;
+      },
+      render: noop,
+      getSelectedPieceSummary: ({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) => {
+        const selectedPiece = snapshot?.pieces?.find((piece) => piece.id === selectedPieceId) ?? null;
+        if (!selectedPiece) {
+          return null;
+        }
+        return { details: { owner: selectedPiece.owner }, actions: selectedPieceMovePreviews ?? selectedPieceMoves };
+      },
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: ({ snapshot, clickedCoord, currentActionType, selection, selectedPieceMoves }) => {
+        const clickedPiece = snapshot?.pieces?.find((piece) => piece.position.row === clickedCoord.row && piece.position.col === clickedCoord.col) ?? null;
+        if (clickedPiece) {
+          return {
+            selection: { selectedPieceId: clickedPiece.id, source: { ...clickedPiece.position }, target: null },
+            nextActionType: currentActionType,
+          };
+        }
+        const actionAtTarget = selectedPieceMoves.find((action) => action.to?.row === clickedCoord.row && action.to?.col === clickedCoord.col);
+        if (actionAtTarget) {
+          return {
+            selection: { ...selection, target: clickedCoord },
+            nextActionType: actionAtTarget.type,
+          };
+        }
+        return { selection, nextActionType: currentActionType };
+      },
+    },
+    host: {
+      applyAction: async (_state, action) => {
+        appliedActions.push(action);
+        return { accepted: true, state: { sideToMove: "P2", turnIndex: 1, continuation: null, outcome: null, pieces: [] }, legalActions: [] };
+      },
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({
+        state: null,
+        actions: [
+          { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } },
+          { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 5, col: 2 } },
+        ],
+        previewActions: [
+          { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 }, legal: true },
+          { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 5, col: 2 }, legal: true },
+        ],
+      }),
+      endTurn: async (state) => ({ accepted: true, state, legalActions: [], outcome: state?.outcome ?? null }),
+      canInteract: () => true,
+    },
+    controls: {
+      getSupportsHover: () => true,
+      getForceClickTargetSelection: () => true,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl,
+    boardTurnIndicatorEl: null,
+  });
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      outcome: null,
+      pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true }],
+    },
+    {
+      legalActions: [
+        { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } },
+        { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 5, col: 2 } },
+      ],
+    },
+  );
+
+  onCellClick({ row: 4, col: 2 });
+  onCellHoverStart({ row: 4, col: 3 });
+  assert.deepEqual(runtime.getSelection(), {
+    selectedPieceId: "A1",
+    source: { row: 4, col: 2 },
+    target: null,
+  });
+
+  onCellClick({ row: 4, col: 3 });
+  assert.deepEqual(runtime.getSelection(), {
+    selectedPieceId: "A1",
+    source: { row: 4, col: 2 },
+    target: { row: 4, col: 3 },
+  });
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Click again to"), true);
+
+  onCellClick({ row: 4, col: 3 });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(appliedActions.length, 1);
+});
+
 test("board runtime can submit a legal target immediately after piece selection", async () => {
   let onCellClick = null;
   const appliedActions = [];
@@ -1167,6 +1283,128 @@ test("board runtime clears transient hover targets when hover support turns off"
     selectedPieceId: "A1",
     source: { row: 4, col: 2 },
     target: null,
+  });
+});
+
+test("board runtime hydrates a source-only selection state and loads piece moves", async () => {
+  const renderCalls = [];
+  let pieceMoveLoads = 0;
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: (payload) => renderCalls.push(payload),
+      getSelectedPieceSummary: ({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) => {
+        const selectedPiece = snapshot?.pieces?.find((piece) => piece.id === selectedPieceId) ?? null;
+        if (!selectedPiece) {
+          return null;
+        }
+        return { details: { owner: selectedPiece.owner }, actions: selectedPieceMovePreviews ?? selectedPieceMoves };
+      },
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => {
+        pieceMoveLoads += 1;
+        return {
+          state: null,
+          actions: [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }],
+          previewActions: [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 }, legal: true }],
+        };
+      },
+      canInteract: () => true,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: null,
+    boardTurnIndicatorEl: null,
+  });
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 2,
+      continuation: null,
+      outcome: null,
+      pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true }],
+    },
+    {
+      legalActions: [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }],
+      selectionState: {
+        selectedPieceId: "A1",
+        source: { row: 4, col: 2 },
+        target: null,
+      },
+    },
+  );
+
+  assert.deepEqual(runtime.getSelection(), {
+    selectedPieceId: "A1",
+    source: { row: 4, col: 2 },
+    target: null,
+  });
+  assert.equal(pieceMoveLoads, 1);
+  assert.equal(renderCalls.at(-1)?.selection?.selectedPieceId, "A1");
+});
+
+test("board runtime hydrates a source and target from a selection action", async () => {
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: noop,
+      getSelectedPieceSummary: () => null,
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      canInteract: () => true,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: null,
+    boardTurnIndicatorEl: null,
+  });
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P2",
+      turnIndex: 3,
+      continuation: null,
+      outcome: null,
+      pieces: [{ id: "B1", owner: "P2", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true }],
+    },
+    {
+      legalActions: [{ type: "move", actorId: "B1", from: { row: 5, col: 5 }, to: { row: 5, col: 6 } }],
+      selectionAction: { type: "move", actorId: "B1", from: { row: 5, col: 5 }, to: { row: 5, col: 6 } },
+    },
+  );
+
+  assert.deepEqual(runtime.getSelection(), {
+    selectedPieceId: "B1",
+    source: { row: 5, col: 5 },
+    target: { row: 5, col: 6 },
   });
 });
 

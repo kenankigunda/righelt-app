@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { listLegalActions } from "../../game-engine/src/legal";
 import { handleApiRequest } from "../src/index.ts";
 import { __resetLiveGameStateForTests } from "../src/shell-live.ts";
+import { applyServerAction, createInitialGame } from "../src/shell-live-core.ts";
 import { createFakeD1 } from "./support/fake-d1.mjs";
 import { createFakeGameRooms } from "./support/fake-game-rooms.mjs";
 
@@ -153,8 +155,9 @@ test("live transport: scenario import creates a canonical new game", async () =>
           sideToMove: "P1",
           turnIndex: 0,
           pieces: [
-            { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
-            { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+            { id: "P1-C", owner: "P1", kind: "commander", position: { row: 3, col: 6 }, supplied: true, commanded: true },
+            { id: "P2-C", owner: "P2", kind: "commander", position: { row: 6, col: 3 }, supplied: true, commanded: true },
+            { id: "U1-1", owner: "P1", kind: "unit", position: { row: 5, col: 6 }, supplied: true, commanded: true },
           ],
           continuation: null,
           outcome: { status: "ongoing" },
@@ -165,8 +168,9 @@ test("live transport: scenario import creates a canonical new game", async () =>
           sideToMove: "P1",
           turnIndex: 0,
           pieces: [
-            { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
-            { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+            { id: "P1-C", owner: "P1", kind: "commander", position: { row: 3, col: 6 }, supplied: true, commanded: true },
+            { id: "P2-C", owner: "P2", kind: "commander", position: { row: 6, col: 3 }, supplied: true, commanded: true },
+            { id: "U1-1", owner: "P1", kind: "unit", position: { row: 5, col: 6 }, supplied: true, commanded: true },
           ],
           continuation: null,
           outcome: { status: "ongoing" },
@@ -246,6 +250,143 @@ test("live transport: scenario import auto-advances the turn after a project-end
   assert.equal(body.game.currentSnapshot.sideToMove, "P2");
   assert.equal(body.game.moves.length, 1);
   assert.equal(body.game.moves[0].turnIndex, 0);
+});
+
+test("live transport: scenario import exposes pending saved selection and accepted moves clear it", async () => {
+  const scenarioImport = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-a",
+      scenario: {
+        formatVersion: 2,
+        id: "S-003",
+        title: "Saved selection",
+        description: "Includes a pending selected move",
+        incorrect: false,
+        initialState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [
+            { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+            { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+          ],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        moves: [],
+        resultingState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [
+            { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+            { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+          ],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        expectedFinalStateHash: "hash-placeholder",
+        expectedOutcome: "ongoing",
+        savedSelection: {
+          source: { row: 3, col: 6 },
+          target: { row: 3, col: 7 },
+          actorSide: "P1",
+          turnIndex: 0,
+        },
+      },
+    }),
+    env,
+  );
+  const imported = await scenarioImport.json();
+  assert.equal(scenarioImport.status, 200);
+  assert.deepEqual(imported.game.pendingScenarioSelection, {
+    source: { row: 3, col: 6 },
+    target: { row: 3, col: 7 },
+    actorSide: "P1",
+    turnIndex: 0,
+  });
+
+  const localGame = createInitialGame({
+    gameId: "game-local-scenario-selection",
+    identityId: "id-a",
+    playgroundMode: false,
+    offlineLocal: false,
+  });
+  localGame.pendingScenarioSelection = {
+    source: { row: 3, col: 6 },
+    target: { row: 3, col: 7 },
+    actorSide: "P1",
+    turnIndex: 0,
+  };
+  const acceptedAction = listLegalActions(localGame.board.state).find((action) => action.type !== "pass");
+  assert.equal(Boolean(acceptedAction), true);
+  const applied = applyServerAction(localGame, acceptedAction, undefined, null);
+  assert.equal(applied.ok, true);
+  assert.equal(localGame.pendingScenarioSelection, null);
+});
+
+test("live transport: create-from-scenario seats the importer as the scenario side to move and swaps copied seats", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createBody = await create.json();
+  const sourceGameId = createBody.game.id;
+
+  const join = await handleApiRequest(
+    req(`/api/shell/games/${sourceGameId}/join`, "POST", {
+      identityId: "id-b",
+      mode: "player",
+      inviteFromRole: "Player 1",
+    }),
+    env,
+  );
+  assert.equal(join.status, 200);
+
+  const scenarioImport = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-a",
+      sourceGameId,
+      scenario: {
+        formatVersion: 2,
+        id: "S-004",
+        title: "Importer becomes player 2",
+        description: "Import should swap copied seats",
+        incorrect: false,
+        initialState: {
+          boardSize: 10,
+          sideToMove: "P2",
+          turnIndex: 3,
+          pieces: [
+            { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+            { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+          ],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        moves: [],
+        resultingState: {
+          boardSize: 10,
+          sideToMove: "P2",
+          turnIndex: 3,
+          pieces: [
+            { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+            { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+          ],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        expectedFinalStateHash: "hash-placeholder",
+        expectedOutcome: "ongoing",
+      },
+    }),
+    env,
+  );
+  const imported = await scenarioImport.json();
+  assert.equal(scenarioImport.status, 200);
+  assert.equal(imported.game.player1?.identityId, "id-b");
+  assert.equal(imported.game.player2?.identityId, "id-a");
+  assert.equal(imported.game.myRole, "Player 2");
 });
 
 test("live transport: game reads query persistent storage even when process cache is warm", async () => {

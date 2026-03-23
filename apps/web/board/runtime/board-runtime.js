@@ -56,6 +56,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let selectedSource = null;
   let selectedTarget = null;
   let selectedTargetOrigin = null;
+  let autoTargetSuppressed = false;
   let selectedPieceMovesRequestId = 0;
   let mounted = false;
   let removalEffectsTimer = null;
@@ -81,6 +82,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
   const getAllowFreeSelection = () => Boolean(controls.getAllowFreeSelection?.());
   const getSupportsHover = () => Boolean(controls.getSupportsHover?.());
+  const getUsesHoverTargetSelection = () => getSupportsHover() && !Boolean(controls.getForceClickTargetSelection?.());
 
   const getCurrentSelection = () => ({ selectedPieceId, source: selectedSource, target: selectedTarget });
   const getOverlay = () => ({
@@ -100,7 +102,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const maybeAutoSelectTarget = (actions, origin = TARGET_ORIGIN.AUTO) => {
-    if (selectedTarget) {
+    if (selectedTarget || autoTargetSuppressed) {
       return;
     }
     const autoSelectedTarget = deriveAutoSelectedTarget(actions);
@@ -201,7 +203,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!elements.boardPreviewLabelEl) {
       return;
     }
-    const clickInstruction = getSupportsHover() ? "Click to" : "Click again to";
+    const clickInstruction = getUsesHoverTargetSelection() ? "Click to" : "Click again to";
     const coordinateMatch = text.match(/\(\d+,\d+\)$/);
     if (!coordinateMatch || !selectedTarget) {
       elements.boardPreviewLabelEl.innerHTML = `${clickInstruction} <strong>${escapeHtml(text)}</strong>`;
@@ -394,6 +396,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     selectedPieceMovePreviews = [];
     selectedSource = null;
     setSelectedTarget(null);
+    autoTargetSuppressed = false;
     invalidateSelectedPieceMovesRequests();
   };
 
@@ -406,6 +409,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     selectedPieceId = forcedSelection.selectedPieceId;
     selectedSource = forcedSelection.source;
     setSelectedTarget(forcedSelection.target, forcedSelection.target ? TARGET_ORIGIN.FORCED : null);
+    autoTargetSuppressed = false;
     setActionType(forcedSelection.actionType);
     refreshSelectionLabels();
     return true;
@@ -645,7 +649,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
 
     const allowFreeSelection = getAllowFreeSelection();
-    const supportsHover = getSupportsHover();
+    const usesHoverTargetSelection = getUsesHoverTargetSelection();
     const clickedPiece = boardAdapter.getPieceAt(state, clickedCoord);
     const hasPreviewAtClicked = selectedPieceMovePreviews.some(
       (action) => action.to && action.to.row === clickedCoord.row && action.to.col === clickedCoord.col,
@@ -675,7 +679,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       }
     }
 
-    if (supportsHover && selectedSource && hasPreviewAtClicked) {
+    if (usesHoverTargetSelection && selectedSource && hasPreviewAtClicked) {
       return;
     }
 
@@ -693,6 +697,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     selectedPieceId = result.selection.selectedPieceId;
     selectedSource = result.selection.source;
     setSelectedTarget(result.selection.target, result.selection.target ? TARGET_ORIGIN.MANUAL : null);
+    autoTargetSuppressed = false;
     setActionType(result.nextActionType);
 
     const pieceChanged = previousSelection.selectedPieceId !== result.selection.selectedPieceId;
@@ -710,14 +715,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const handleBoardCellHoverStart = (hoveredCoord) => {
-    if (!state || !getSupportsHover() || host.canInteract?.(state) === false) {
+    if (!state || !getUsesHoverTargetSelection() || host.canInteract?.(state) === false) {
       return;
     }
     applyHoveredTarget(hoveredCoord);
   };
 
   const handleBoardCellHoverEnd = (hoveredCoord) => {
-    if (!state || !getSupportsHover() || host.canInteract?.(state) === false) {
+    if (!state || !getUsesHoverTargetSelection() || host.canInteract?.(state) === false) {
       return;
     }
     clearHoveredTarget(hoveredCoord);
@@ -839,6 +844,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
   const applySelectionPreviewFromAction = (action) => {
     if (!action || !action.from || !action.to) {
+      autoTargetSuppressed = false;
       setActionType(action?.type ?? defaultActionType);
       return;
     }
@@ -848,6 +854,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     selectedPieceId = selectedPiece?.id ?? null;
     selectedSource = { ...action.from };
     setSelectedTarget(action.to, TARGET_ORIGIN.HISTORY);
+    autoTargetSuppressed = false;
     setActionType(action.type);
   };
 
@@ -855,6 +862,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     selectedPieceId = selectionState?.selectedPieceId ?? null;
     selectedSource = selectionState?.source ? { ...selectionState.source } : null;
     setSelectedTarget(selectionState?.target ?? null, selectionState?.target ? TARGET_ORIGIN.MANUAL : null);
+    autoTargetSuppressed = Boolean(selectionState?.source && !selectionState?.target);
   };
 
   const loadSnapshot = async (
@@ -892,7 +900,6 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       applySelectionPreviewFromAction(selectionAction);
       selectedPieceMoves = [structuredClone(selectionAction)];
       selectedPieceMovePreviews = [structuredClone(selectionAction)];
-      legalActions = [structuredClone(selectionAction)];
     }
     refreshSelectionLabels();
     renderBoard();
@@ -903,6 +910,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
 
     renderStatus();
+    if (selectionState?.selectedPieceId && overlayMode === OVERLAY_MODE.INTERACTIVE && !selectionAction) {
+      await reloadSelectedPieceMoves();
+    }
   };
 
   const setSelectionFromAction = async (action) => {
@@ -952,7 +962,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const syncInteractionCapabilities = () => {
-    if (getSupportsHover()) {
+    if (getUsesHoverTargetSelection()) {
       return false;
     }
     return clearHoveredTarget();

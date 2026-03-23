@@ -133,3 +133,39 @@ test("mini board preview registry mounts, updates, and destroys previews by root
     assert.equal(adapterEvents.filter((event) => event.type === "unmount").length, 1);
   });
 });
+
+test("mini board preview forwards selection overlays to the adapter", async () => {
+  await withFakeDom(async () => {
+    const registry = new Map();
+    const renderCalls = [];
+
+    syncMiniBoardPreviews({
+      previews: [
+        {
+          rootEl: new FakeElement("div"),
+          snapshot: { sideToMove: "P1", pieces: [] },
+          selection: {
+            selectedPieceId: null,
+            source: { row: 4, col: 2 },
+            target: { row: 4, col: 3 },
+          },
+          previewKey: "sel:1",
+        },
+      ],
+      registry,
+      createAdapter: () => ({
+        mount() {},
+        render(options) {
+          renderCalls.push(options);
+        },
+        unmount() {},
+      }),
+    });
+
+    assert.deepEqual(renderCalls[0]?.selection, {
+      selectedPieceId: null,
+      source: { row: 4, col: 2 },
+      target: { row: 4, col: 3 },
+    });
+  });
+});
