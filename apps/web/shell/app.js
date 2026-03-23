@@ -179,8 +179,6 @@ const renderRoleLabel = (role, game = null) => {
 };
 const renderConnectionStatusIcon = (status, label) =>
   `<span class="connection-status-icon is-${escapeHtml(status)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
-const getMyConnectionMessage = (game) =>
-  game?.myConnectionConnected ? "You are connected here" : "You are not connected here";
 const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => {
   if (!verbose) {
     if (!participant) {
@@ -224,15 +222,6 @@ const renderHomeRoleLine = (game) => {
     return game?.canJoinAsPlayer ? "Open to join as player" : "Open to view";
   }
   return renderRoleLabel(game?.myRole, game);
-};
-const renderHomeClientConnectionLine = (game) => {
-  if (shouldUseVerboseHomeConnectionCopy(game)) {
-    return `<p class="small mini-board-card-connection-line">${renderConnectionStatusIcon(
-      Boolean(game?.myConnectionConnected) ? "connected" : "disconnected",
-      getMyConnectionMessage(game),
-    )}<span>${escapeHtml(getMyConnectionMessage(game))}</span></p>`;
-  }
-  return "";
 };
 const renderHomeConnectionSummary = (game) => {
   const slots = [
@@ -1378,11 +1367,7 @@ const renderHomeGameCard = (game) => {
   const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
   const moveLabel = Array.isArray(game.moves) ? `Move ${game.moves.length + 1}` : "Move pending";
   const recoveryChip = game.syncStatus === "desynced" ? '<span class="status-chip">Recovering</span>' : "";
-  const myConnectionLine = renderHomeClientConnectionLine(game);
   const seatConnectionLine = renderHomeSeatConnectionLine(game);
-  const cardInfoLines = [myConnectionLine, seatConnectionLine]
-    .filter(Boolean)
-    .join("");
   return `<article class="mini-board-card">
     <a
       class="mini-board-card-link-surface"
@@ -1402,7 +1387,7 @@ const renderHomeGameCard = (game) => {
           <span>${renderHomeRoleLine(game)}</span>
           <span class="small">${escapeHtml(moveLabel)}</span>
         </div>
-        ${cardInfoLines}
+        ${seatConnectionLine}
       </div>
       ${renderMiniBoardPreviewRoot({
         previewId: `home:${game.id}`,
