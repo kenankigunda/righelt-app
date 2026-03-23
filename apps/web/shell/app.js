@@ -276,6 +276,14 @@ const formatDisplayGameId = (gameId) => {
   return `game-${value.slice(5, 11)}`;
 };
 
+const getDocumentTitle = () => {
+  const gameId = getCurrentViewedGameId();
+  if (gameId) {
+    return `${formatDisplayGameId(gameId)} | Righelt`;
+  }
+  return "Righelt";
+};
+
 const formatClientDateTime = (value) => {
   const timestamp = Date.parse(String(value || ""));
   if (!Number.isFinite(timestamp)) {
@@ -1023,7 +1031,7 @@ const renderTurnHistory = (game) => {
 const renderHeader = () => `
   <header class="shell-header">
     <div class="shell-header-main">
-      <h1>Righelt Web Shell</h1>
+      <h1>Righelt</h1>
     </div>
     <div class="shell-header-actions">
       <div class="nav-row">
@@ -2331,6 +2339,7 @@ const syncHomeSections = async () => {
 };
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
+  document.title = getDocumentTitle();
   const routeKey = getRouteRenderKey();
   const baseRouteKey = getBaseRouteRenderKey();
   const shouldPatchFlyoutsOnly = shouldPatchMountedFlyouts(routeKey, baseRouteKey);

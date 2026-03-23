@@ -31,7 +31,9 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /aria-pressed="\$\{currentRoute\.debug \? "true" : "false"\}"/);
   assert.match(source, /title: "Debug mode"/);
   assert.match(source, /Scenarios/);
+  assert.match(source, /<h1>Righelt<\/h1>/);
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Live Sync<\/h2>[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
+  assert.match(source, /const getDocumentTitle = \(\) => \{\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;\s*\}\s*return "Righelt";\s*\};/s);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
   assert.match(source, /data-shell-sticky-target="left" data-sticky-enabled="false"/);
@@ -146,6 +148,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /await delay\(FLYOUT_MOTION_MS\);/);
   assert.match(source, /clearCoordinatedFlyoutMotionStyles\(\);/);
   assert.match(source, /const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">\$\{renderHeader\(\)\}\$\{body\}<\/div>\$\{renderFlyouts\(\)\}<\/div>`;/);
+  assert.match(source, /document\.title = getDocumentTitle\(\);/);
   assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
   assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*syncScenarioAuthoringControls\(\);\s*updateMountedGameShell\(/s);
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);

@@ -49,6 +49,10 @@ test("shell header separates layout spacing from panel chrome and home start pan
   );
   assert.match(
     shellStylesSource,
+    /\.shell-header h1\s*\{[\s\S]*font-size:\s*2rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
     /\.home-start-panel\s*\{[\s\S]*background:\s*transparent;[\s\S]*border:\s*0;/s,
   );
 });
