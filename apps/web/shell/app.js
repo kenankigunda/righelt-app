@@ -8,7 +8,7 @@ import { createLiveTransportStore } from "./live-transport.js";
 import { createLiveSyncClient } from "./live-sync.js";
 import { ensureHoverCapabilityController } from "../hover-capability.js";
 import { applyCommandLegendSwatch, getCommandLegendSwatchStyle } from "../legend.js";
-import { saveTutorialCompleted } from "./persistence.js";
+import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from "./persistence.js";
 import {
   buildScenarioFromGame,
   downloadScenarioCatalog,
@@ -18,14 +18,17 @@ import {
 } from "./scenarios.js";
 import { shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import {
+  FLYOUT_KEYS,
+  buildHashForRoute,
   buildGameHash,
   buildHomeHash,
   buildInviteHash,
   buildTutorialHash,
   isShellRootHash,
   parseRouteFromHash,
+  resolveFlyoutState,
   shouldLiveSyncRoute,
-  toggleDebugHash,
+  toggleScenariosHash,
 } from "./routes.js";
 import { createTutorialController } from "./tutorial.js";
 
@@ -99,6 +102,10 @@ let scenarioFeedback = "";
 const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
 let lastRenderedMarkup = "";
+let lastRenderedMainMarkup = "";
+let lastRenderedFlyoutMarkup = "";
+let lastRenderedRouteKey = "";
+let lastRenderedBaseRouteKey = "";
 const HISTORY_SELECTION_EXIT_MS = 56;
 const HISTORY_RELEASE_BOUNCE_MS = 140;
 let pressedHistoryActionEl = null;
@@ -108,9 +115,11 @@ let controlReleaseTimer = null;
 let stickyLayoutFrame = 0;
 const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;
 const SHELL_VIEWPORT_GUTTER_PX = 16;
+const FLYOUT_MOTION_MS = 180;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
 const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
+const getPersistedDebugFlyoutOpen = () => loadDebugFlyoutOpen(storage);
 
 const escapeHtml = (value) =>
   String(value)
@@ -148,45 +157,62 @@ const renderRoleLabel = (role, game = null) => {
   }
   return `<strong>${escapeHtml(role || "Unknown")}</strong>`;
 };
-const renderConnectionStatusIcon = (connected, label) =>
-  `<span class="connection-status-icon${connected ? " is-connected" : " is-disconnected"}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
-const getMyConnectionLabel = (game) => {
-  const roles = Array.isArray(game?.myRoles) ? game.myRoles : game?.myRole ? [game.myRole] : [];
-  if (roles.includes("Player 1") && roles.includes("Player 2")) {
-    return `Both players ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
+const renderConnectionStatusIcon = (status, label) =>
+  `<span class="connection-status-icon is-${escapeHtml(status)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
+const getMyConnectionMessage = (game) =>
+  game?.myConnectionConnected ? "You are connected here" : "You are not connected here";
+const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => {
+  if (!verbose) {
+    if (!participant) {
+      const statusLabel = `${seat} is open for someone to join`;
+      return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)}${renderConnectionStatusIcon(
+        "open",
+        statusLabel,
+      )}</span>`;
+    }
+    const statusLabel = `${seat} ${participant.connected ? "connected" : "disconnected"}`;
+    return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)}${renderConnectionStatusIcon(
+      participant.connected ? "connected" : "disconnected",
+      statusLabel,
+    )}</span>`;
   }
-  if (roles.includes("Player 1")) {
-    return `Player 1 ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
-  }
-  if (roles.includes("Player 2")) {
-    return `Player 2 ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
-  }
-  if (roles.includes("Viewer")) {
-    return `Viewer ${game?.myConnectionConnected ? "connected" : "disconnected"}`;
-  }
-  return "Disconnected";
-};
-const renderPlayerSlotStatus = (seat, participant) => {
   if (!participant) {
-    return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)} open</span>`;
+    const statusLabel = `${seat} is open for someone to join`;
+    return `<span class="mini-board-card-connection-item">${renderConnectionStatusIcon("open", statusLabel)}<span>${renderSeatLabel(
+      seat,
+    )} is open for someone to join</span></span>`;
   }
-  const statusLabel = `${seat} ${participant.connected ? "connected" : "disconnected"}`;
-  return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)}${renderConnectionStatusIcon(participant.connected, statusLabel)}</span>`;
+  const statusLabel = `${seat} is ${participant.connected ? "connected" : "not connected"}`;
+  return `<span class="mini-board-card-connection-item">${renderConnectionStatusIcon(
+    participant.connected ? "connected" : "disconnected",
+    statusLabel,
+    )}<span>${renderSeatLabel(seat)} is ${participant.connected ? "connected" : "not connected"}</span></span>`;
 };
+const shouldUseVerboseHomeConnectionCopy = (game) =>
+  (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) || game?.myRole === "Player 1" || game?.myRole === "Player 2";
 const renderHomeRoleLine = (game) => {
   if (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) {
-    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game?.myConnectionConnected), getMyConnectionLabel(game))}`;
+    return `You are ${renderRoleLabel(game.myRole, game)}`;
   }
   if (game?.myRole === "Player 1") {
-    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game?.myConnectionConnected), getMyConnectionLabel(game))}`;
+    return `You are ${renderRoleLabel(game.myRole, game)}`;
   }
   if (game?.myRole === "Player 2") {
-    return `You are ${renderRoleLabel(game.myRole, game)} ${renderConnectionStatusIcon(Boolean(game?.myConnectionConnected), getMyConnectionLabel(game))}`;
+    return `You are ${renderRoleLabel(game.myRole, game)}`;
   }
   if (game?.myRole === "Guest") {
     return game?.canJoinAsPlayer ? "Open to join as player" : "Open to view";
   }
   return renderRoleLabel(game?.myRole, game);
+};
+const renderHomeClientConnectionLine = (game) => {
+  if (shouldUseVerboseHomeConnectionCopy(game)) {
+    return `<p class="small mini-board-card-connection-line">${renderConnectionStatusIcon(
+      Boolean(game?.myConnectionConnected) ? "connected" : "disconnected",
+      getMyConnectionMessage(game),
+    )}<span>${escapeHtml(getMyConnectionMessage(game))}</span></p>`;
+  }
+  return "";
 };
 const renderHomeConnectionSummary = (game) => {
   const slots = [
@@ -203,7 +229,19 @@ const renderHomeConnectionSummary = (game) => {
   if (filteredSlots.length === 0) {
     return "";
   }
-  return filteredSlots.map((entry) => renderPlayerSlotStatus(entry.seat, entry.participant)).join('<span class="mini-board-card-connection-separator">·</span>');
+  return filteredSlots
+    .map((entry) => renderPlayerSlotStatus(entry.seat, entry.participant, { verbose: shouldUseVerboseHomeConnectionCopy(game) }))
+    .join('<span class="mini-board-card-connection-separator">·</span>');
+};
+const renderHomeSeatConnectionLine = (game) => {
+  const connectionSummary = renderHomeConnectionSummary(game);
+  if (connectionSummary) {
+    return `<p class="small mini-board-card-connection-line">${connectionSummary}</p>`;
+  }
+  if (shouldUseVerboseHomeConnectionCopy(game)) {
+    return '<p class="small mini-board-card-connection-line is-placeholder" aria-hidden="true"><span>&nbsp;</span></p>';
+  }
+  return "";
 };
 const colorizePlayerReferences = (text) =>
   escapeHtml(text || "")
@@ -292,6 +330,123 @@ const renderSectionActions = (actions) => {
   return `<div class="row section-actions">${items.join("")}</div>`;
 };
 const getAnimatedPanels = () => (appEl instanceof HTMLElement ? Array.from(appEl.querySelectorAll(".panel")) : []);
+const getAnimatedFlyoutEls = (layoutMode = getShellLayoutMode()) => {
+  if (!(appEl instanceof HTMLElement)) {
+    return [];
+  }
+  const mainContentEl = layoutMode === "wide" ? appEl.querySelector(".shell-main-content") : null;
+  const flyoutEls = Array.from(appEl.querySelectorAll("[data-flyout]"));
+  return [mainContentEl, ...flyoutEls].filter((element) => element instanceof HTMLElement);
+};
+const getAnimatedFlyoutKey = (element) => {
+  if (!(element instanceof HTMLElement)) {
+    return "";
+  }
+  if (element.classList.contains("shell-main-content")) {
+    return "main";
+  }
+  const flyoutKey = element.getAttribute("data-flyout");
+  return flyoutKey ? `flyout:${flyoutKey}` : "";
+};
+const getCssPixelValue = (value, fallback = 0) => {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+const getFlyoutContentGapPx = () =>
+  getCssPixelValue(window.getComputedStyle(document.documentElement).getPropertyValue("--shell-flyout-content-gap"), 0);
+const getShellMainMaxWidthPx = () =>
+  getCssPixelValue(window.getComputedStyle(document.documentElement).getPropertyValue("--shell-main-max-width"), 1200);
+const getWideShellPaddingRightPx = (openFlyoutCount, viewportWidth = window.innerWidth) => {
+  if (openFlyoutCount <= 0) {
+    return 0;
+  }
+  return (getWideFlyoutWidth(viewportWidth) * openFlyoutCount) + getFlyoutContentGapPx();
+};
+const getWideMainContentWidthPx = (openFlyoutCount, viewportWidth = window.innerWidth) => {
+  const rightReserved = openFlyoutCount > 0 ? getWideShellPaddingRightPx(openFlyoutCount, viewportWidth) : SHELL_VIEWPORT_GUTTER_PX;
+  return Math.max(0, Math.min(getShellMainMaxWidthPx(), viewportWidth - SHELL_VIEWPORT_GUTTER_PX - rightReserved));
+};
+const captureFlyoutRects = (layoutMode = getShellLayoutMode()) =>
+  new Map(
+    getAnimatedFlyoutEls(layoutMode).map((element) => [
+      getAnimatedFlyoutKey(element),
+      element instanceof HTMLElement ? element.getBoundingClientRect() : null,
+    ]),
+  );
+const animateFlyoutShift = (element, { deltaX = 0, deltaY = 0, fromOpacity = 1, fromWidth = null, toWidth = null } = {}) => {
+  if (prefersReducedMotion() || !(element instanceof HTMLElement)) {
+    return;
+  }
+  const hasWidthChange = Number.isFinite(fromWidth) && Number.isFinite(toWidth) && Math.abs(toWidth - fromWidth) >= 1;
+  if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1 && Math.abs(fromOpacity - 1) < 0.01 && !hasWidthChange) {
+    return;
+  }
+  element.style.transition = "none";
+  if (hasWidthChange) {
+    element.style.width = `${fromWidth}px`;
+    element.style.maxWidth = `${fromWidth}px`;
+  }
+  element.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+  element.style.opacity = String(fromOpacity);
+  void element.offsetHeight;
+  element.style.transition = `transform ${FLYOUT_MOTION_MS}ms ease, opacity ${FLYOUT_MOTION_MS}ms ease, width ${FLYOUT_MOTION_MS}ms ease, max-width ${FLYOUT_MOTION_MS}ms ease`;
+  if (hasWidthChange) {
+    element.style.width = `${toWidth}px`;
+    element.style.maxWidth = `${toWidth}px`;
+  }
+  element.style.transform = "";
+  element.style.opacity = "";
+
+  const clearMotion = () => {
+    element.style.transition = "";
+    element.style.width = "";
+    element.style.maxWidth = "";
+    element.style.transform = "";
+    element.style.opacity = "";
+    element.removeEventListener("transitionend", clearMotion);
+  };
+  element.addEventListener("transitionend", clearMotion);
+};
+const animateFlyoutPositionChanges = (previousRects) => {
+  if (prefersReducedMotion() || !(previousRects instanceof Map)) {
+    return;
+  }
+  const layoutMode = getShellLayoutMode();
+  getAnimatedFlyoutEls(layoutMode).forEach((element) => {
+    const key = getAnimatedFlyoutKey(element);
+    if (!key) {
+      return;
+    }
+    const previousRect = previousRects.get(key);
+    const nextRect = element.getBoundingClientRect();
+    if (previousRect) {
+      animateFlyoutShift(element, {
+        deltaX: previousRect.left - nextRect.left,
+        deltaY: previousRect.top - nextRect.top,
+        fromWidth: previousRect.width,
+        toWidth: nextRect.width,
+      });
+      return;
+    }
+    animateFlyoutShift(element, {
+      deltaX: layoutMode === "wide" ? nextRect.width : 0,
+      deltaY: layoutMode === "wide" ? 0 : nextRect.height,
+      fromOpacity: 0,
+    });
+  });
+};
+const clearCoordinatedFlyoutMotionStyles = () => {
+  if (appEl instanceof HTMLElement) {
+    appEl.style.transition = "";
+    appEl.style.paddingRight = "";
+  }
+  const mainContentEl = appEl?.querySelector?.(".shell-main-content");
+  if (mainContentEl instanceof HTMLElement) {
+    mainContentEl.style.transition = "";
+    mainContentEl.style.width = "";
+    mainContentEl.style.maxWidth = "";
+  }
+};
 const capturePanelHeights = () =>
   getAnimatedPanels().map((panelEl) => (panelEl instanceof HTMLElement ? panelEl.getBoundingClientRect().height : null));
 const animatePanelHeightChange = (panelEl, fromHeight) => {
@@ -341,24 +496,89 @@ const delay = (ms) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
-const getWideDebugFlyoutWidth = (viewportWidth = window.innerWidth) => {
+const getCurrentFlyoutState = () => ({
+  ...Object.fromEntries(FLYOUT_KEYS.map((key) => [key, currentRoute[key] === true])),
+});
+const getBaseRouteRenderKey = (route = currentRoute) => {
+  if (!route || typeof route !== "object") {
+    return "unknown";
+  }
+  if (route.name === "game") {
+    return `game:${route.gameId || ""}:${route.inviteFromRole || ""}`;
+  }
+  if (route.name === "invite") {
+    return `invite:${route.inviteToken || ""}`;
+  }
+  if (route.name === "tutorial") {
+    return `tutorial:${route.gameId || ""}`;
+  }
+  return String(route.name || "unknown");
+};
+const getRouteRenderKey = (route = currentRoute) =>
+  `${getBaseRouteRenderKey(route)}|${FLYOUT_KEYS.map((key) => `${key}:${route?.[key] === true}`).join("|")}`;
+const isFlyoutOnlyRouteChange = (previousRoute, nextRoute) =>
+  getBaseRouteRenderKey(previousRoute) === getBaseRouteRenderKey(nextRoute) &&
+  getRouteRenderKey(previousRoute) !== getRouteRenderKey(nextRoute);
+let flyoutRenderOrder = FLYOUT_KEYS.filter((key) => currentRoute[key] === true);
+const syncFlyoutRenderOrder = (route = currentRoute) => {
+  const openKeys = FLYOUT_KEYS.filter((key) => route[key] === true);
+  flyoutRenderOrder = flyoutRenderOrder.filter((key) => openKeys.includes(key));
+  openKeys.forEach((key) => {
+    if (!flyoutRenderOrder.includes(key)) {
+      flyoutRenderOrder.push(key);
+    }
+  });
+};
+const setFlyoutOpenState = (key, isOpen) => {
+  if (!FLYOUT_KEYS.includes(key)) {
+    return;
+  }
+  flyoutRenderOrder = flyoutRenderOrder.filter((entry) => entry !== key);
+  if (isOpen) {
+    flyoutRenderOrder.push(key);
+  }
+};
+const getOpenFlyoutCount = (route = currentRoute) => FLYOUT_KEYS.reduce((count, key) => count + Number(route?.[key] === true), 0);
+const getWideFlyoutWidth = (viewportWidth = window.innerWidth) => {
   const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize || "16") || 16;
   return Math.min(rootFontSize * 34, viewportWidth * 0.36);
 };
-const getAvailableShellContentWidth = (viewportWidth = window.innerWidth) => {
+const getAvailableShellContentWidth = (viewportWidth = window.innerWidth, route = currentRoute) => {
   const totalHorizontalGutter = SHELL_VIEWPORT_GUTTER_PX * 2;
-  if (!currentRoute.debug) {
+  const openFlyoutCount = getOpenFlyoutCount(route);
+  if (openFlyoutCount === 0) {
     return Math.max(0, viewportWidth - totalHorizontalGutter);
   }
-  return Math.max(0, viewportWidth - getWideDebugFlyoutWidth(viewportWidth) - totalHorizontalGutter);
+  return Math.max(0, viewportWidth - (getWideFlyoutWidth(viewportWidth) * openFlyoutCount) - totalHorizontalGutter);
 };
-const getShellLayoutMode = (viewportWidth = window.innerWidth) =>
-  (getAvailableShellContentWidth(viewportWidth) >= SHELL_WIDE_SCREEN_MIN_WIDTH ? "wide" : "narrow");
+const getShellLayoutModeForRoute = (route = currentRoute, viewportWidth = window.innerWidth) =>
+  (getAvailableShellContentWidth(viewportWidth, route) >= SHELL_WIDE_SCREEN_MIN_WIDTH ? "wide" : "narrow");
+const normalizeRouteFlyoutState = (route, { preferredFlyoutKey = null } = {}) => {
+  if (!route || typeof route !== "object") {
+    return route;
+  }
+  const routeWithPersistedPreferences = {
+    ...route,
+    debug: getPersistedDebugFlyoutOpen(),
+  };
+  return {
+    ...routeWithPersistedPreferences,
+    ...resolveFlyoutState(routeWithPersistedPreferences, {
+      allowStacking: getShellLayoutModeForRoute(routeWithPersistedPreferences) === "wide",
+      preferredKey: preferredFlyoutKey,
+    }),
+  };
+};
+currentRoute = normalizeRouteFlyoutState(currentRoute);
+const getShellLayoutMode = (viewportWidth = window.innerWidth) => getShellLayoutModeForRoute(currentRoute, viewportWidth);
 const syncShellLayoutMode = () => {
   const layoutMode = getShellLayoutMode();
   if (appEl instanceof HTMLElement) {
     appEl.setAttribute("data-shell-layout-mode", layoutMode);
-    appEl.setAttribute("data-debug-open", currentRoute.debug ? "true" : "false");
+    FLYOUT_KEYS.forEach((key) => {
+      appEl.setAttribute(`data-${key}-open`, currentRoute[key] ? "true" : "false");
+    });
+    appEl.setAttribute("data-flyout-count", String(getOpenFlyoutCount()));
     appEl.setAttribute("data-shell-content-width", String(Math.round(getAvailableShellContentWidth())));
   }
   return layoutMode;
@@ -592,11 +812,22 @@ const renderHeader = () => `
       <div class="nav-row">
         ${
           currentRoute.name !== "home"
-            ? `<a class="button-link secondary" href="${buildHomeHash(currentRoute.debug)}">Home</a>`
+            ? `<a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Home</a>`
             : ""
         }
-        <button class="secondary" data-action="toggle-debug">${currentRoute.debug ? "Hide Debug" : "Show Debug"}</button>
-        <a class="button-link secondary" href="${buildTutorialHash(null, currentRoute.debug)}">Tutorial</a>
+        <button
+          class="secondary${currentRoute.scenarios ? " is-active" : ""}"
+          type="button"
+          data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
+          aria-pressed="${currentRoute.scenarios ? "true" : "false"}"
+        >Scenarios</button>
+        <button
+          class="secondary${currentRoute.debug ? " is-active" : ""}"
+          type="button"
+          data-action="${currentRoute.debug ? "close-debug" : "open-debug"}"
+          aria-pressed="${currentRoute.debug ? "true" : "false"}"
+        >Debug</button>
+        <a class="button-link secondary" href="${buildTutorialHash(null, getCurrentFlyoutState())}" data-flyout-link="tutorial">Tutorial</a>
       </div>
     </div>
   </header>
@@ -627,7 +858,7 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
   const canSaveScenario = Boolean(game);
   const canLoadIntoCurrentGame = Boolean(game && Array.isArray(game.moves) && game.moves.length === 0 && selectedScenario);
   return `
-    <section class="panel debug-panel">
+    <section class="panel debug-panel scenario-panel">
       <h2>Scenarios</h2>
       <div class="form-row">
         <label for="scenario-select">Saved scenario</label>
@@ -705,7 +936,6 @@ const renderDebugContent = () => {
             gameId,
           };
   return `
-    ${renderScenarioPanel({ route, game })}
     <section class="panel debug-panel">
       <h2>Engine Status</h2>
       <pre class="debug-pre">${escapeHtml(
@@ -735,20 +965,74 @@ const renderDebugContent = () => {
   `;
 };
 
+const renderFlyout = ({ title, variant, closeAction, body }) => `
+  <aside class="shell-flyout shell-flyout-${variant} is-open" data-flyout="${variant}">
+    <header class="shell-flyout-header">
+      <h2>${title}</h2>
+      <button class="flyout-close-button" type="button" aria-label="Close ${title}" data-action="${closeAction}">x</button>
+    </header>
+    <div class="shell-flyout-scroll shell-flyout-scroll-${variant}">
+      ${body}
+    </div>
+  </aside>
+`;
+
+const renderScenarioFlyout = () => {
+  if (!currentRoute.scenarios) {
+    return "";
+  }
+  const route = currentRoute;
+  const gameId = route.name === "game" ? route.gameId : route.name === "invite" ? resolvedInvite?.gameId || null : null;
+  const game = gameId ? transport.getGameViewModel(gameId) : null;
+  return renderFlyout({
+    title: "Scenarios",
+    variant: "scenarios",
+    closeAction: "close-scenarios",
+    body: renderScenarioPanel({ route, game }),
+  });
+};
+
 const renderDebugFlyout = () => {
   if (!currentRoute.debug) {
     return "";
   }
+  return renderFlyout({
+    title: "Debug mode",
+    variant: "debug",
+    closeAction: "close-debug",
+    body: renderDebugContent(),
+  });
+};
+const FLYOUT_RENDERERS = {
+  scenarios: () => renderScenarioFlyout(),
+  debug: () => renderDebugFlyout(),
+};
+const renderFlyoutBodyByKey = (flyoutKey) => {
+  if (flyoutKey === "scenarios") {
+    const route = currentRoute;
+    const scenarioGameId = route.name === "game" ? route.gameId : route.name === "invite" ? resolvedInvite?.gameId || null : null;
+    const scenarioGame = scenarioGameId ? transport.getGameViewModel(scenarioGameId) : null;
+    return renderScenarioPanel({ route, game: scenarioGame });
+  }
+  if (flyoutKey === "debug") {
+    return renderDebugContent();
+  }
+  return "";
+};
+
+const renderFlyouts = () => {
+  const flyouts = flyoutRenderOrder
+    .map((key) => {
+      const renderFlyoutByKey = FLYOUT_RENDERERS[key];
+      return typeof renderFlyoutByKey === "function" ? renderFlyoutByKey() : "";
+    })
+    .filter(Boolean);
+  if (flyouts.length === 0) {
+    return "";
+  }
   return `
-  <aside class="debug-flyout is-open" data-debug-flyout>
-    <header class="debug-flyout-header">
-      <h2>Debug mode</h2>
-    </header>
-    <div class="debug-flyout-scroll">
-      ${renderDebugContent()}
-    </div>
-  </aside>
-`;
+    <div class="shell-flyout-stack" data-shell-flyouts>${flyouts.join("")}</div>
+  `;
 };
 
 const updateHeaderFields = () => {
@@ -818,9 +1102,18 @@ const renderHomeGameCard = (game) => {
   const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
   const moveLabel = Array.isArray(game.moves) ? `Move ${game.moves.length + 1}` : "Move pending";
   const recoveryChip = game.syncStatus === "desynced" ? '<span class="status-chip">Recovering</span>' : "";
-  const connectionSummary = renderHomeConnectionSummary(game);
+  const myConnectionLine = renderHomeClientConnectionLine(game);
+  const seatConnectionLine = renderHomeSeatConnectionLine(game);
+  const cardInfoLines = [myConnectionLine, seatConnectionLine]
+    .filter(Boolean)
+    .join("");
   return `<article class="mini-board-card">
-    <a class="mini-board-card-link-surface" href="${buildGameHash(game.id, null, currentRoute.debug)}">
+    <a
+      class="mini-board-card-link-surface"
+      href="${buildGameHash(game.id, null, getCurrentFlyoutState())}"
+      data-flyout-link="game"
+      data-game-id="${escapeHtml(game.id)}"
+    >
       <div class="mini-board-card-header">
         <div>
           <span class="mini-board-card-link">${escapeHtml(formatDisplayGameId(game.id))}</span>
@@ -828,11 +1121,13 @@ const renderHomeGameCard = (game) => {
         </div>
         ${recoveryChip}
       </div>
-      <div class="mini-board-card-meta mini-board-card-meta-primary">
-        <span>${renderHomeRoleLine(game)}</span>
-        <span class="small">${escapeHtml(moveLabel)}</span>
+      <div class="mini-board-card-copy">
+        <div class="mini-board-card-meta mini-board-card-meta-primary">
+          <span>${renderHomeRoleLine(game)}</span>
+          <span class="small">${escapeHtml(moveLabel)}</span>
+        </div>
+        ${cardInfoLines}
       </div>
-      ${connectionSummary ? `<p class="small mini-board-card-connection-line">${connectionSummary}</p>` : ""}
       ${renderMiniBoardPreviewRoot({
         previewId: `home:${game.id}`,
         snapshot,
@@ -852,7 +1147,7 @@ const renderHomeGameSection = (title, games) => {
       <h2>${escapeHtml(title)}</h2>
       <p class="small">${games.length === 1 ? "1 game" : `${games.length} games`}</p>
     </div>
-    <div class="mini-board-card-list">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
+    <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
   </section>`;
 };
 
@@ -949,7 +1244,9 @@ const renderJoinInvitePanel = (game, inviteLink) => {
           !game.showOfflineState && !busy ? "" : "disabled"
         }>Play as both players</button>`
       : "",
-    `<button data-action="copy-invite" data-link="${escapeHtml(inviteLink)}" ${game.canInvite && !busy ? "" : "disabled"}>Invite someone else</button>`,
+    `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-link="${escapeHtml(inviteLink)}" ${
+      game.canInvite && !busy ? "" : "disabled"
+    }>Invite someone else</button>`,
   ]);
 
   return `
@@ -1059,6 +1356,115 @@ const renderGameShellFrame = (game) => `
 
 const getMountedGameShellRoot = () =>
   appEl?.querySelector?.("[data-game-shell-root]") instanceof HTMLElement ? appEl.querySelector("[data-game-shell-root]") : null;
+const getMountedShellPageEl = () =>
+  appEl?.querySelector?.(".shell-page-shell") instanceof HTMLElement ? appEl.querySelector(".shell-page-shell") : null;
+const getMountedHeaderEl = () =>
+  appEl?.querySelector?.(".shell-header") instanceof HTMLElement ? appEl.querySelector(".shell-header") : null;
+const createMarkupRoot = (markup) => {
+  if (typeof markup !== "string" || markup.trim().length === 0) {
+    return null;
+  }
+  const template = document.createElement("template");
+  template.innerHTML = markup.trim();
+  return template.content.firstElementChild instanceof HTMLElement ? template.content.firstElementChild : null;
+};
+const updateMountedHeader = () => {
+  const currentHeaderEl = getMountedHeaderEl();
+  if (!(currentHeaderEl instanceof HTMLElement)) {
+    return false;
+  }
+  const nextHeaderEl = createMarkupRoot(renderHeader());
+  if (!(nextHeaderEl instanceof HTMLElement)) {
+    return false;
+  }
+  currentHeaderEl.replaceWith(nextHeaderEl);
+  return true;
+};
+const getFlyoutAwareHref = (element) => {
+  if (!(element instanceof HTMLElement)) {
+    return "";
+  }
+  const target = element.getAttribute("data-flyout-link");
+  if (target === "home") {
+    return buildHomeHash(getCurrentFlyoutState());
+  }
+  if (target === "tutorial") {
+    return buildTutorialHash(null, getCurrentFlyoutState());
+  }
+  if (target === "game") {
+    const gameId = element.getAttribute("data-game-id");
+    return gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : "";
+  }
+  return "";
+};
+const syncFlyoutAwareLinks = () => {
+  if (!(appEl instanceof HTMLElement)) {
+    return;
+  }
+  Array.from(appEl.querySelectorAll("[data-flyout-link]")).forEach((linkEl) => {
+    if (!(linkEl instanceof HTMLAnchorElement)) {
+      return;
+    }
+    const href = getFlyoutAwareHref(linkEl);
+    if (href) {
+      linkEl.setAttribute("href", href);
+    }
+  });
+};
+const syncCopyInviteLinks = () => {
+  if (!(appEl instanceof HTMLElement)) {
+    return;
+  }
+  Array.from(appEl.querySelectorAll('[data-action="copy-invite"][data-game-id]')).forEach((buttonEl) => {
+    if (!(buttonEl instanceof HTMLElement)) {
+      return;
+    }
+    const gameId = buttonEl.getAttribute("data-game-id");
+    if (!gameId) {
+      return;
+    }
+    const game = transport.getGameViewModel(gameId);
+    const inviteToken = game?.inviteToken || resolvedInvite?.inviteToken || gameId;
+    const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(inviteToken, getCurrentFlyoutState())}`;
+    buttonEl.setAttribute("data-link", inviteLink);
+  });
+};
+const updateMountedFlyouts = () => {
+  const shellPageEl = getMountedShellPageEl();
+  if (!(shellPageEl instanceof HTMLElement)) {
+    return false;
+  }
+  const currentFlyoutStack = shellPageEl.querySelector("[data-shell-flyouts]");
+  const nextFlyoutMarkup = renderFlyouts();
+  if (!nextFlyoutMarkup) {
+    currentFlyoutStack?.remove();
+    return true;
+  }
+  const nextFlyoutStack = createMarkupRoot(nextFlyoutMarkup);
+  if (!(nextFlyoutStack instanceof HTMLElement)) {
+    return false;
+  }
+  if (currentFlyoutStack instanceof HTMLElement) {
+    currentFlyoutStack.replaceWith(nextFlyoutStack);
+  } else {
+    shellPageEl.append(nextFlyoutStack);
+  }
+  return true;
+};
+const shouldPatchMountedFlyouts = (routeKey = getRouteRenderKey(), baseRouteKey = getBaseRouteRenderKey()) =>
+  routeKey !== lastRenderedRouteKey &&
+  baseRouteKey === lastRenderedBaseRouteKey &&
+  appEl instanceof HTMLElement &&
+  appEl.querySelector(".shell-main-content") instanceof HTMLElement &&
+  getMountedShellPageEl() instanceof HTMLElement;
+const syncRenderedMarkupSnapshot = () => {
+  const mainContentEl = appEl?.querySelector?.(".shell-main-content");
+  lastRenderedMainMarkup = mainContentEl instanceof HTMLElement ? mainContentEl.outerHTML : "";
+  lastRenderedFlyoutMarkup = renderFlyouts();
+  lastRenderedMarkup = `<div class="shell-page-shell">${lastRenderedMainMarkup}${lastRenderedFlyoutMarkup}</div>`;
+  lastRenderedRouteKey = getRouteRenderKey();
+  lastRenderedBaseRouteKey = getBaseRouteRenderKey();
+};
 
 const reconcileMiniBoardPreviews = () => {
   if (!(appEl instanceof HTMLElement)) {
@@ -1141,7 +1547,10 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   const joinEl = shellRoot.querySelector('[data-game-panel="join"]');
   const participantsEl = shellRoot.querySelector('[data-game-panel="participants"]');
   const historyEl = shellRoot.querySelector('[data-game-panel="history"]');
-  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id, currentRoute.debug)}`;
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(
+    game.inviteToken || inviteToken || game.id,
+    getCurrentFlyoutState(),
+  )}`;
 
   if (alertsEl instanceof HTMLElement) {
     alertsEl.innerHTML = renderGameAlertsHtml(game, inviteFromRole);
@@ -1161,17 +1570,33 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   if (includeBoard) {
     mountBoardForGame(game);
   }
-  const debugFlyoutEl = appEl?.querySelector?.("[data-debug-flyout]");
-  if (debugFlyoutEl instanceof HTMLElement) {
-    debugFlyoutEl.classList.toggle("is-open", currentRoute.debug === true);
-    const scrollEl = debugFlyoutEl.querySelector(".debug-flyout-scroll");
-    if (scrollEl instanceof HTMLElement) {
-      scrollEl.innerHTML = renderDebugContent();
+  FLYOUT_KEYS.forEach((flyoutKey) => {
+    const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
+    if (!(flyoutEl instanceof HTMLElement)) {
+      return;
     }
-  }
+    flyoutEl.classList.toggle("is-open", currentRoute[flyoutKey] === true);
+    const scrollEl = flyoutEl.querySelector(".shell-flyout-scroll");
+    if (scrollEl instanceof HTMLElement) {
+      const body = renderFlyoutBodyByKey(flyoutKey);
+      if (body) {
+        scrollEl.innerHTML = body;
+      }
+    }
+  });
   reconcileMiniBoardPreviews();
   scheduleGameShellStickyLayout();
   return true;
+};
+
+const doesMountedFlyoutStateMatchRoute = () => {
+  if (!(appEl instanceof HTMLElement)) {
+    return false;
+  }
+  return FLYOUT_KEYS.every((flyoutKey) => {
+    const flyoutPresent = appEl.querySelector(`[data-flyout="${flyoutKey}"]`) instanceof HTMLElement;
+    return flyoutPresent === (currentRoute[flyoutKey] === true);
+  });
 };
 
 const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
@@ -1182,7 +1607,7 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
   if (!game) {
     return false;
   }
-  return !getActiveApprovalRequest(game);
+  return !getActiveApprovalRequest(game) && doesMountedFlyoutStateMatchRoute();
 };
 
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
@@ -1194,7 +1619,10 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
   if (!game) {
     return `<section class="panel"><h2>Loading game...</h2><p class="small">Fetching latest server state.</p></section>`;
   }
-  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(game.inviteToken || inviteToken || game.id, currentRoute.debug)}`;
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(
+    game.inviteToken || inviteToken || game.id,
+    getCurrentFlyoutState(),
+  )}`;
 
   return `
     ${renderGameAlertsHtml(game, inviteFromRole)}
@@ -1327,7 +1755,7 @@ const renderInviteLanding = (inviteContext) => {
             <span class="small invite-choice-note">${escapeHtml(viewerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
-            <a class="button-link secondary" href="${buildHomeHash(currentRoute.debug)}">Back home</a>
+            <a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Back home</a>
           </div>
         </div>
         <p class="small">
@@ -1364,7 +1792,7 @@ const renderTutorial = (gameId) => {
 const renderNotFound = () => `
   <section class="panel">
     <h2>Route not found</h2>
-    <a class="button-link" href="${buildHomeHash(currentRoute.debug)}">Return home</a>
+    <a class="button-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Return home</a>
   </section>
 `;
 
@@ -1499,12 +1927,32 @@ const destroyMountedBoardRuntime = () => {
 };
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
+  const routeKey = getRouteRenderKey();
+  const baseRouteKey = getBaseRouteRenderKey();
+  const shouldPatchFlyoutsOnly = shouldPatchMountedFlyouts(routeKey, baseRouteKey);
+  const previousPanelHeights = animatePanels && !shouldPatchFlyoutsOnly ? capturePanelHeights() : [];
+  const previousFlyoutRects = animatePanels ? captureFlyoutRects() : new Map();
   syncShellLayoutMode();
+  if (shouldPatchFlyoutsOnly) {
+    updateMountedHeader();
+    updateMountedFlyouts();
+    syncFlyoutAwareLinks();
+    syncCopyInviteLinks();
+    updateHeaderFields();
+    reconcileMiniBoardPreviews();
+    if (animatePanels) {
+      animateFlyoutPositionChanges(previousFlyoutRects);
+    }
+    scheduleGameShellStickyLayout();
+    syncRenderedMarkupSnapshot();
+    return;
+  }
   const mountedGameShell = getMountedGameShellRoot();
   if (
     shouldUseIncrementalGameShell() &&
     mountedGameShell?.getAttribute("data-game-id") === currentRoute.gameId
   ) {
+    updateMountedHeader();
     updateHeaderFields();
     updateMountedGameShell({
       game: transport.getGameViewModel(currentRoute.gameId),
@@ -1514,7 +1962,6 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     return;
   }
 
-  const previousPanelHeights = animatePanels ? capturePanelHeights() : [];
   let body = "";
   if (currentRoute.name === "home") {
     body = renderHome();
@@ -1532,14 +1979,25 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     body = renderNotFound();
   }
 
-  const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderDebugFlyout()}</div>`;
+  const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderFlyouts()}</div>`;
   if (nextMarkup !== lastRenderedMarkup) {
     appEl.innerHTML = nextMarkup;
     lastRenderedMarkup = nextMarkup;
+    lastRenderedMainMarkup = `<div class="shell-main-content">${renderHeader()}${body}</div>`;
+    lastRenderedFlyoutMarkup = renderFlyouts();
+    lastRenderedRouteKey = routeKey;
+    lastRenderedBaseRouteKey = baseRouteKey;
     if (animatePanels) {
       animatePanelHeightChanges(previousPanelHeights);
+      animateFlyoutPositionChanges(previousFlyoutRects);
     }
   }
+  if (nextMarkup === lastRenderedMarkup) {
+    lastRenderedRouteKey = routeKey;
+    lastRenderedBaseRouteKey = baseRouteKey;
+  }
+  syncFlyoutAwareLinks();
+  syncCopyInviteLinks();
   updateHeaderFields();
   reconcileMiniBoardPreviews();
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
@@ -1708,8 +2166,18 @@ const syncLiveChannel = () => {
 };
 
 const navigateTo = (hash) => {
-  if (window.location.hash === hash) {
-    currentRoute = parseRouteFromHash(hash);
+  const parsedRoute = parseRouteFromHash(hash);
+  const preferredFlyoutKey = FLYOUT_KEYS.find((key) => parsedRoute[key] && !currentRoute[key]) ?? null;
+  const nextRoute = normalizeRouteFlyoutState(parsedRoute, { preferredFlyoutKey });
+  const nextHash = buildHashForRoute(nextRoute);
+  const previousRoute = currentRoute;
+  if (window.location.hash === nextHash) {
+    currentRoute = nextRoute;
+    syncFlyoutRenderOrder(currentRoute);
+    if (isFlyoutOnlyRouteChange(previousRoute, nextRoute)) {
+      render();
+      return;
+    }
     routeHydrated = false;
     syncLiveChannel();
     void withBusy(async () => {
@@ -1718,11 +2186,23 @@ const navigateTo = (hash) => {
     });
     return;
   }
-  window.location.hash = hash;
+  window.location.hash = nextHash;
 };
 
 window.addEventListener("hashchange", () => {
-  currentRoute = parseRouteFromHash(window.location.hash);
+  const previousRoute = currentRoute;
+  const parsedRoute = parseRouteFromHash(window.location.hash);
+  currentRoute = normalizeRouteFlyoutState(parsedRoute);
+  const normalizedHash = buildHashForRoute(currentRoute);
+  if (window.location.hash !== normalizedHash) {
+    window.location.hash = normalizedHash;
+    return;
+  }
+  syncFlyoutRenderOrder(currentRoute);
+  if (isFlyoutOnlyRouteChange(previousRoute, currentRoute)) {
+    render();
+    return;
+  }
   routeHydrated = false;
   syncLiveChannel();
   void withBusy(async () => {
@@ -1774,24 +2254,114 @@ appEl.addEventListener("click", async (event) => {
     action !== "jump-history" &&
     action !== "return-live" &&
     action !== "tutorial-next" &&
-    action !== "tutorial-skip";
+    action !== "tutorial-skip" &&
+    action !== "open-debug" &&
+    action !== "open-scenarios" &&
+    action !== "close-debug" &&
+    action !== "close-scenarios";
+
+  const animateFlyoutClose = async (flyoutKey, closeFlyout) => {
+    const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
+    const mainContentEl = appEl?.querySelector?.(".shell-main-content");
+    const layoutMode = getShellLayoutMode();
+    if (flyoutEl instanceof HTMLElement && !prefersReducedMotion()) {
+      if (layoutMode === "wide") {
+        const nextFlyoutCount = Math.max(0, getOpenFlyoutCount() - 1);
+        const currentAppPaddingRight = window.getComputedStyle(appEl).paddingRight;
+        const nextAppPaddingRight = getWideShellPaddingRightPx(nextFlyoutCount);
+        if (appEl instanceof HTMLElement) {
+          appEl.style.transition = "none";
+          appEl.style.paddingRight = currentAppPaddingRight;
+        }
+        if (mainContentEl instanceof HTMLElement) {
+          const currentMainWidth = mainContentEl.getBoundingClientRect().width;
+          mainContentEl.style.transition = "none";
+          mainContentEl.style.width = `${currentMainWidth}px`;
+          mainContentEl.style.maxWidth = `${currentMainWidth}px`;
+        }
+        flyoutEl.style.transition = "none";
+        flyoutEl.style.width = `${flyoutEl.getBoundingClientRect().width}px`;
+        flyoutEl.style.maxWidth = `${flyoutEl.getBoundingClientRect().width}px`;
+        void flyoutEl.offsetHeight;
+        if (appEl instanceof HTMLElement) {
+          appEl.style.transition = `padding-right ${FLYOUT_MOTION_MS}ms ease`;
+          appEl.style.paddingRight = nextAppPaddingRight > 0 ? `${nextAppPaddingRight}px` : "0px";
+        }
+        if (mainContentEl instanceof HTMLElement) {
+          const nextMainWidth = getWideMainContentWidthPx(nextFlyoutCount);
+          mainContentEl.style.transition = `width ${FLYOUT_MOTION_MS}ms ease, max-width ${FLYOUT_MOTION_MS}ms ease`;
+          mainContentEl.style.width = `${nextMainWidth}px`;
+          mainContentEl.style.maxWidth = `${nextMainWidth}px`;
+        }
+        flyoutEl.style.transition = `transform ${FLYOUT_MOTION_MS}ms ease, opacity ${FLYOUT_MOTION_MS}ms ease, width ${FLYOUT_MOTION_MS}ms ease, max-width ${FLYOUT_MOTION_MS}ms ease`;
+        flyoutEl.classList.add("is-closing");
+        flyoutEl.style.width = "0px";
+        flyoutEl.style.maxWidth = "0px";
+      } else {
+        flyoutEl.style.transition = "none";
+        flyoutEl.style.height = `${flyoutEl.getBoundingClientRect().height}px`;
+        flyoutEl.style.maxHeight = `${flyoutEl.getBoundingClientRect().height}px`;
+        void flyoutEl.offsetHeight;
+        flyoutEl.style.transition = `transform ${FLYOUT_MOTION_MS}ms ease, opacity ${FLYOUT_MOTION_MS}ms ease, height ${FLYOUT_MOTION_MS}ms ease, max-height ${FLYOUT_MOTION_MS}ms ease`;
+        flyoutEl.classList.add("is-closing");
+        flyoutEl.style.height = "0px";
+        flyoutEl.style.maxHeight = "0px";
+      }
+      await delay(FLYOUT_MOTION_MS);
+    }
+    setFlyoutOpenState(flyoutKey, false);
+    closeFlyout();
+    window.setTimeout(() => {
+      clearCoordinatedFlyoutMotionStyles();
+    }, 0);
+  };
 
   await withBusy(async () => {
-    if (action === "toggle-debug") {
-      navigateTo(toggleDebugHash(window.location.hash));
+    if (action === "open-debug") {
+      if (!currentRoute.debug) {
+        saveDebugFlyoutOpen(storage, true);
+        setFlyoutOpenState("debug", true);
+        currentRoute = normalizeRouteFlyoutState({ ...currentRoute, debug: true }, { preferredFlyoutKey: "debug" });
+        render();
+      }
+      return;
+    }
+    if (action === "open-scenarios") {
+      if (!currentRoute.scenarios) {
+        setFlyoutOpenState("scenarios", true);
+        navigateTo(toggleScenariosHash(window.location.hash));
+      }
+      return;
+    }
+    if (action === "close-debug") {
+      if (currentRoute.debug) {
+        await animateFlyoutClose("debug", () => {
+          saveDebugFlyoutOpen(storage, false);
+          currentRoute = normalizeRouteFlyoutState({ ...currentRoute, debug: false });
+          render();
+        });
+      }
+      return;
+    }
+    if (action === "close-scenarios") {
+      if (currentRoute.scenarios) {
+        await animateFlyoutClose("scenarios", () => {
+          navigateTo(toggleScenariosHash(window.location.hash));
+        });
+      }
       return;
     }
 
     if (action === "create-game") {
       const game = await transport.createGame({ playgroundMode: false, offlineLocal: false });
-      navigateTo(buildGameHash(game.id, null, currentRoute.debug));
+      navigateTo(buildGameHash(game.id, null, getCurrentFlyoutState()));
       return;
     }
 
     if (action === "create-offline-playground") {
       await transport.setOffline(true);
       const game = await transport.createGame({ playgroundMode: true, offlineLocal: true });
-      navigateTo(buildGameHash(game.id, "offline", currentRoute.debug));
+      navigateTo(buildGameHash(game.id, "offline", getCurrentFlyoutState()));
       return;
     }
 
@@ -1822,7 +2392,7 @@ appEl.addEventListener("click", async (event) => {
       });
       markInviteChoiceCommitted(gameId);
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId, null, currentRoute.debug));
+        navigateTo(buildGameHash(gameId, null, getCurrentFlyoutState()));
         return;
       }
       await syncRouteData();
@@ -1843,7 +2413,7 @@ appEl.addEventListener("click", async (event) => {
         setInviteFeedback("Player join request sent. You are now viewing the game while approval is pending.");
       }
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId, null, currentRoute.debug));
+        navigateTo(buildGameHash(gameId, null, getCurrentFlyoutState()));
         return;
       }
       await syncRouteData();
@@ -1922,7 +2492,7 @@ appEl.addEventListener("click", async (event) => {
       saveTutorialCompleted(storage, true);
       tutorial.reset();
       const gameId = actionEl.getAttribute("data-game-id");
-      navigateTo(gameId ? buildGameHash(gameId, null, currentRoute.debug) : buildHomeHash(currentRoute.debug));
+      navigateTo(gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : buildHomeHash(getCurrentFlyoutState()));
       return;
     }
 
@@ -1947,7 +2517,10 @@ appEl.addEventListener("click", async (event) => {
         render({ animatePanels: false, includeBoard: false });
         return;
       }
-      const nextHash = buildGameHash(result.game.id, null, currentRoute.debug);
+      const nextHash = buildGameHash(result.game.id, null, {
+        ...getCurrentFlyoutState(),
+        scenarios: false,
+      });
       if (activeGame && !shouldApplyInPlace) {
         window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
         render({ animatePanels: false, includeBoard: false });
@@ -1986,7 +2559,7 @@ appEl.addEventListener("click", async (event) => {
       setScenarioFeedback(localWrite.ok ? `Scenario ${scenario.id} saved.` : `Scenario ${scenario.id} saved via download fallback.`);
       render({ animatePanels: false, includeBoard: false });
     }
-  }, { renderStart: shouldRenderBusyState });
+  }, { renderStart: shouldRenderBusyState, renderEnd: shouldRenderBusyState });
 });
 
 appEl.addEventListener("change", (event) => {

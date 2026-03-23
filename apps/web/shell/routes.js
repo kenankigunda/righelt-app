@@ -1,14 +1,24 @@
 const HOME_ROUTE = { name: "home" };
+export const FLYOUT_KEYS = ["debug", "scenarios"];
+const URL_FLYOUT_KEYS = ["scenarios"];
 
 const trimSlash = (value) => value.replace(/^\/+|\/+$/g, "");
-const withDebugState = (route, query) => ({
+const getFlyoutState = (query) =>
+  {
+    const urlFlyouts = Object.fromEntries(URL_FLYOUT_KEYS.map((key) => [key, query.get(key) === "1"]));
+    return {
+      debug: false,
+      ...urlFlyouts,
+    };
+  };
+const withFlyoutState = (route, query) => ({
   ...route,
-  debug: query.get("debug") === "1",
+  ...getFlyoutState(query),
 });
 
 export const parseRouteFromHash = (hash) => {
   if (!hash || hash === "#" || hash === "#/" || hash === "") {
-    return { ...HOME_ROUTE, debug: false };
+    return { ...HOME_ROUTE, debug: false, scenarios: false };
   }
 
   const raw = hash.startsWith("#") ? hash.slice(1) : hash;
@@ -21,11 +31,11 @@ export const parseRouteFromHash = (hash) => {
   const query = new URLSearchParams(queryText);
 
   if (parts.length === 0) {
-    return { ...HOME_ROUTE, debug: query.get("debug") === "1" };
+    return { ...HOME_ROUTE, ...getFlyoutState(query) };
   }
 
   if (parts[0] === "game" && parts[1]) {
-    return withDebugState({
+    return withFlyoutState({
       name: "game",
       gameId: decodeURIComponent(parts[1]),
       inviteFromRole: query.get("from") || null,
@@ -33,46 +43,76 @@ export const parseRouteFromHash = (hash) => {
   }
 
   if (parts[0] === "invite" && parts[1]) {
-    return withDebugState({
+    return withFlyoutState({
       name: "invite",
       inviteToken: decodeURIComponent(parts[1]),
     }, query);
   }
 
   if (parts[0] === "tutorial") {
-    return withDebugState({
+    return withFlyoutState({
       name: "tutorial",
       gameId: parts[1] ? decodeURIComponent(parts[1]) : null,
     }, query);
   }
 
-  return withDebugState({ name: "not-found" }, query);
+  return withFlyoutState({ name: "not-found" }, query);
 };
 
-export const buildHomeHash = (debug = false) => appendDebugQuery("#/", debug);
+const normalizeFlyoutState = (flyouts = {}) => {
+  if (typeof flyouts === "boolean") {
+    return Object.fromEntries(FLYOUT_KEYS.map((key, index) => [key, index === 0 ? flyouts : false]));
+  }
+  return Object.fromEntries(FLYOUT_KEYS.map((key) => [key, flyouts[key] === true]));
+};
 
-const appendDebugQuery = (hash, debug = false) => {
-  if (!debug) {
+export const resolveFlyoutState = (
+  flyouts = {},
+  { allowStacking = true, preferredKey = null } = {},
+) => {
+  const normalizedFlyouts = normalizeFlyoutState(flyouts);
+  if (allowStacking) {
+    return normalizedFlyouts;
+  }
+  const openKeys = FLYOUT_KEYS.filter((key) => normalizedFlyouts[key] === true);
+  if (openKeys.length <= 1) {
+    return normalizedFlyouts;
+  }
+  const preservedKey = preferredKey && normalizedFlyouts[preferredKey] === true ? preferredKey : openKeys.at(-1);
+  return Object.fromEntries(FLYOUT_KEYS.map((key) => [key, key === preservedKey]));
+};
+
+const appendFlyoutQuery = (hash, flyouts = {}) => {
+  const normalizedFlyouts = normalizeFlyoutState(flyouts);
+  if (!URL_FLYOUT_KEYS.some((key) => normalizedFlyouts[key] === true)) {
     return hash;
   }
-  return `${hash}${hash.includes("?") ? "&" : "?"}debug=1`;
+  const query = new URLSearchParams();
+  URL_FLYOUT_KEYS.forEach((key) => {
+    if (normalizedFlyouts[key] === true) {
+      query.set(key, "1");
+    }
+  });
+  return `${hash}${hash.includes("?") ? "&" : "?"}${query.toString()}`;
 };
 
-export const buildGameHash = (gameId, inviteFromRole = null, debug = false) => {
+export const buildHomeHash = (flyouts = {}) => appendFlyoutQuery("#/", flyouts);
+
+export const buildGameHash = (gameId, inviteFromRole = null, flyouts = {}) => {
   const safe = encodeURIComponent(gameId);
   if (!inviteFromRole) {
-    return appendDebugQuery(`#/game/${safe}`, debug);
+    return appendFlyoutQuery(`#/game/${safe}`, flyouts);
   }
-  return appendDebugQuery(`#/game/${safe}?from=${encodeURIComponent(inviteFromRole)}`, debug);
+  return appendFlyoutQuery(`#/game/${safe}?from=${encodeURIComponent(inviteFromRole)}`, flyouts);
 };
 
-export const buildInviteHash = (inviteToken, debug = false) => appendDebugQuery(`#/invite/${encodeURIComponent(inviteToken)}`, debug);
+export const buildInviteHash = (inviteToken, flyouts = {}) => appendFlyoutQuery(`#/invite/${encodeURIComponent(inviteToken)}`, flyouts);
 
-export const buildTutorialHash = (gameId = null, debug = false) => {
+export const buildTutorialHash = (gameId = null, flyouts = {}) => {
   if (!gameId) {
-    return appendDebugQuery("#/tutorial", debug);
+    return appendFlyoutQuery("#/tutorial", flyouts);
   }
-  return appendDebugQuery(`#/tutorial/${encodeURIComponent(gameId)}`, debug);
+  return appendFlyoutQuery(`#/tutorial/${encodeURIComponent(gameId)}`, flyouts);
 };
 
 export const shouldLiveSyncRoute = (route) => route?.name === "game" || route?.name === "invite";
@@ -99,19 +139,32 @@ export const isShellRouteHash = (hash) => {
   );
 };
 
-export const toggleDebugHash = (hash) => {
-  const raw = hash && hash !== "#" ? hash : "#/";
-  const parsed = parseRouteFromHash(raw);
+const buildHashForParsedRoute = (parsed, flyouts) => {
   switch (parsed.name) {
     case "game":
-      return buildGameHash(parsed.gameId, parsed.inviteFromRole, !parsed.debug);
+      return buildGameHash(parsed.gameId, parsed.inviteFromRole, flyouts);
     case "invite":
-      return buildInviteHash(parsed.inviteToken, !parsed.debug);
+      return buildInviteHash(parsed.inviteToken, flyouts);
     case "tutorial":
-      return buildTutorialHash(parsed.gameId, !parsed.debug);
+      return buildTutorialHash(parsed.gameId, flyouts);
     case "home":
-      return parsed.debug ? "#/" : "#/?debug=1";
     default:
-      return parsed.debug ? "#/" : "#/?debug=1";
+      return buildHomeHash(flyouts);
   }
 };
+
+export const buildHashForRoute = (route) => buildHashForParsedRoute(route, route);
+
+const toggleFlyoutHash = (hash, flyoutKey) => {
+  if (!URL_FLYOUT_KEYS.includes(flyoutKey)) {
+    return hash && hash !== "#" ? hash : "#/";
+  }
+  const raw = hash && hash !== "#" ? hash : "#/";
+  const parsed = parseRouteFromHash(raw);
+  return buildHashForParsedRoute(parsed, {
+    ...normalizeFlyoutState(parsed),
+    [flyoutKey]: !parsed[flyoutKey],
+  });
+};
+
+export const toggleScenariosHash = (hash) => toggleFlyoutHash(hash, "scenarios");
