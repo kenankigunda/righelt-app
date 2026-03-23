@@ -707,7 +707,7 @@ test("board runtime can force click target selection even on hover-capable devic
   assert.equal(appliedActions.length, 1);
 });
 
-test("board runtime does not auto-select a lone target while forced click target selection is active", async () => {
+test("board runtime keeps lone-target auto-selection while forced click target selection is active", async () => {
   let onCellClick = null;
 
   const runtime = createBoardRuntime({
@@ -788,7 +788,7 @@ test("board runtime does not auto-select a lone target while forced click target
   assert.deepEqual(runtime.getSelection(), {
     selectedPieceId: "A1",
     source: { row: 4, col: 2 },
-    target: null,
+    target: { row: 4, col: 3 },
   });
 });
 

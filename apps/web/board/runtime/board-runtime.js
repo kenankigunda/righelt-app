@@ -102,7 +102,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const maybeAutoSelectTarget = (actions, origin = TARGET_ORIGIN.AUTO) => {
-    if (selectedTarget || autoTargetSuppressed || (origin === TARGET_ORIGIN.AUTO && Boolean(controls.getForceClickTargetSelection?.()))) {
+    if (selectedTarget || autoTargetSuppressed) {
       return;
     }
     const autoSelectedTarget = deriveAutoSelectedTarget(actions);
