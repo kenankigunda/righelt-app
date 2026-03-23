@@ -430,7 +430,7 @@ test("live transport: scenario launch from an existing game applies shared parti
     incorrect: false,
     initialState: {
       boardSize: 10,
-      sideToMove: "P1",
+      sideToMove: "P2",
       turnIndex: 0,
       pieces: [
         { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
@@ -442,7 +442,7 @@ test("live transport: scenario launch from an existing game applies shared parti
     moves: [],
     resultingState: {
       boardSize: 10,
-      sideToMove: "P1",
+      sideToMove: "P2",
       turnIndex: 0,
       pieces: [
         { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
@@ -479,8 +479,9 @@ test("live transport: scenario launch from an existing game applies shared parti
   );
   const viewerLaunchBody = await viewerLaunch.json();
   assert.equal(viewerLaunch.status, 200);
-  assert.equal(viewerLaunchBody.game.player1.identityId, "id-viewer");
-  assert.equal(viewerLaunchBody.game.player2, null);
+  assert.equal(viewerLaunchBody.game.player1, null);
+  assert.equal(viewerLaunchBody.game.player2.identityId, "id-viewer");
+  assert.equal(viewerLaunchBody.game.myRole, "Player 2");
   assert.deepEqual(viewerLaunchBody.game.viewers, []);
 });
 
@@ -540,7 +541,7 @@ test("live transport: history branch launch replays prior history and preserves 
         expectedOutcome: secondMoveEntry.selectionSnapshot.outcome?.status ?? "ongoing",
       },
       initialSelectionAction: secondMoveEntry.action,
-      participantCopyMode: "viewer_as_player1",
+      participantCopyMode: "viewer_as_side_to_move",
     }),
     env,
   );

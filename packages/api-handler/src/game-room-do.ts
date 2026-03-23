@@ -82,7 +82,7 @@ const parseCommandMetadata = (body: Record<string, unknown>): CommandMetadata =>
 });
 
 const parseLaunchParticipantCopyMode = (value: unknown): LaunchParticipantCopyMode | null =>
-  value === "copy_source_participants" || value === "viewer_as_player1" ? value : null;
+  value === "copy_source_participants" || value === "viewer_as_side_to_move" ? value : null;
 
 const eventForSession = (event: ServerEvent, identityId: string) => {
   if (!("game" in event)) {
@@ -155,16 +155,28 @@ export class GameRoomDO {
         offlineLocal: body.offlineLocal === true,
       });
       const sourceGame = body.sourceGame && typeof body.sourceGame === "object" ? (body.sourceGame as LiveGame) : null;
+      const participantCopyMode = sourceGame
+        ? parseLaunchParticipantCopyMode(body.participantCopyMode) ?? resolveLaunchParticipantCopyMode(sourceGame, identityId)
+        : null;
       if (sourceGame) {
-        const participantCopyMode =
-          parseLaunchParticipantCopyMode(body.participantCopyMode) ?? resolveLaunchParticipantCopyMode(sourceGame, identityId);
-        applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
+        if (participantCopyMode === "copy_source_participants") {
+          applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
+        } else {
+          this.game.player1 = null;
+          this.game.player2 = null;
+          this.game.viewers = [];
+          this.game.pendingJoinRequests = [];
+        }
+        this.game.playgroundMode = body.playgroundMode === true;
       }
       applyScenarioToGame(this.game, scenario);
       if (body.preserveResultingState === true) {
         reconcileGameToScenarioResultingState(this.game, scenario);
       } else {
         assignIdentityToScenarioSeat(this.game, identityId, getSeatForSide(this.game.board.state.sideToMove));
+      }
+      if (sourceGame && participantCopyMode && participantCopyMode !== "copy_source_participants") {
+        applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
       }
       this.game.initialSelectionAction = initialSelectionAction ? clone(initialSelectionAction) : null;
       this.eventSeq = 1;

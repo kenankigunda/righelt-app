@@ -18,7 +18,7 @@ export type Participant = {
 
 export type Viewer = Participant;
 export type IdentityRole = "Player 1" | "Player 2" | "Viewer";
-export type LaunchParticipantCopyMode = "copy_source_participants" | "viewer_as_player1";
+export type LaunchParticipantCopyMode = "copy_source_participants" | "viewer_as_side_to_move";
 
 export type JoinRequest = {
   identityId: string;
@@ -534,7 +534,7 @@ export const resolveLaunchParticipantCopyMode = (
   const roles = getRolesForIdentity(source, identityId);
   return roles.includes("Player 1") || roles.includes("Player 2")
     ? "copy_source_participants"
-    : "viewer_as_player1";
+    : "viewer_as_side_to_move";
 };
 
 export const applyLaunchParticipantCopyMode = (
@@ -549,14 +549,16 @@ export const applyLaunchParticipantCopyMode = (
   }
 
   target.playgroundMode = false;
-  target.player1 = cloneParticipant(source.player1?.identityId === identityId ? source.player1 : null) ?? {
+  const sideToMoveSeat = getSideToMoveSeat(target);
+  const viewerParticipant = {
     identityId,
     connected: true,
     joinedAt: target.createdAt,
     lastHeartbeatAt: target.createdAt,
     sessionCount: 0,
   };
-  target.player2 = null;
+  target.player1 = sideToMoveSeat === "Player 1" ? viewerParticipant : null;
+  target.player2 = sideToMoveSeat === "Player 2" ? viewerParticipant : null;
   target.viewers = [];
   target.pendingJoinRequests = [];
 };

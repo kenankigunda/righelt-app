@@ -263,7 +263,7 @@ test("live transport store posts history branch launches through the shell histo
       assert.equal(body.identityId, "id-branch");
       assert.equal(body.sourceGameId, "game-source");
       assert.equal(body.sourceMoveIndex, 2);
-      assert.equal(body.participantCopyMode, "viewer_as_player1");
+      assert.equal(body.participantCopyMode, "viewer_as_side_to_move");
       assert.equal(body.scenario.id, "history-branch:game-source:2");
       assert.equal(body.scenario.moves.length, 2);
       assert.deepEqual(body.initialSelectionAction.from, { row: 1, col: 1 });
@@ -276,13 +276,13 @@ test("live transport store posts history branch launches through the shell histo
           updatedAt: "2026-02-26T00:00:00.000Z",
           offlineLocal: false,
           playgroundMode: false,
-          player1: { identityId: "id-branch", connected: true },
-          player2: null,
+          player1: null,
+          player2: { identityId: "id-branch", connected: true },
           viewers: [],
           pendingJoinRequests: [],
           moves: [],
           notifications: ["History branch launched"],
-          myRole: "Player 1",
+          myRole: "Player 2",
           inHistoryMode: false,
           initialSelectionAction: {
             type: "move",
@@ -290,8 +290,8 @@ test("live transport store posts history branch launches through the shell histo
             from: { row: 1, col: 1 },
             to: { row: 2, col: 1 },
           },
-          currentSnapshot: { sideToMove: "P1", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } },
-          board: { state: { sideToMove: "P1", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } } },
+          currentSnapshot: { sideToMove: "P2", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+          board: { state: { sideToMove: "P2", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } } },
           showJoinActions: true,
           canInvite: true,
           showOfflineState: false,
@@ -326,7 +326,7 @@ test("live transport store posts history branch launches through the shell histo
       from: { row: 1, col: 1 },
       to: { row: 2, col: 1 },
     },
-    participantCopyMode: "viewer_as_player1",
+    participantCopyMode: "viewer_as_side_to_move",
   });
 
   assert.equal(result.game.id, "game-branch");

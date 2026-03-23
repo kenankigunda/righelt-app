@@ -57,7 +57,7 @@ export const getLaunchParticipantCopyMode = (game) => {
   const roles = Array.isArray(game?.myRoles) ? game.myRoles : typeof game?.myRole === "string" ? [game.myRole] : [];
   return roles.includes("Player 1") || roles.includes("Player 2")
     ? "copy_source_participants"
-    : "viewer_as_player1";
+    : "viewer_as_side_to_move";
 };
 
 export const loadScenarioCatalog = async () => {

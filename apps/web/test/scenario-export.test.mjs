@@ -306,7 +306,7 @@ test("buildHistoryBranchSeedFromGame builds replayable history up to the selecte
   );
 
   assert.equal(seed.title, "Branch from game-branch move 2");
-  assert.equal(seed.participantCopyMode, "viewer_as_player1");
+  assert.equal(seed.participantCopyMode, "viewer_as_side_to_move");
   assert.equal(seed.scenario.moves.length, 1);
   assert.equal(seed.scenario.moves[0].notation, "M1");
   assert.equal(seed.scenario.initialState.turnIndex, 0);
