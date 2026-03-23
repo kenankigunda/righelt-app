@@ -597,6 +597,16 @@ export const getParticipantsForIdentity = (
 export const getSeatIdentity = (game: LiveGame, seat: "Player 1" | "Player 2"): string | null =>
   seat === "Player 1" ? game.player1?.identityId ?? null : game.player2?.identityId ?? null;
 
+export const getClaimableDualSeat = (game: LiveGame, identityId: string): "Player 1" | "Player 2" | null => {
+  if (game.player1?.identityId === identityId && !game.player2) {
+    return "Player 2";
+  }
+  if (game.player2?.identityId === identityId && !game.player1) {
+    return "Player 1";
+  }
+  return null;
+};
+
 export const getApproverIdentityForSeat = (game: LiveGame, seat: "Player 1" | "Player 2"): string | null =>
   seat === "Player 1" ? game.player2?.identityId ?? null : game.player1?.identityId ?? null;
 
@@ -771,7 +781,7 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     pendingScenarioSelection,
     canJoinAsPlayer: !joinAsPlayerDisabledReason,
     canJoinAsViewer: !joinAsViewerDisabledReason,
-    canPlayAsBothPlayers: myRole === "Player 1" && !game.player2,
+    canPlayAsBothPlayers: Boolean(getClaimableDualSeat(game, identityId)),
     joinAsPlayerDisabledReason,
     joinAsViewerDisabledReason,
     canInvite: !offline && !game.offlineLocal,

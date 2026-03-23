@@ -1183,6 +1183,45 @@ test("live transport: play-as-both persists separate participant rows for the sa
   );
 });
 
+test("live transport: player 2 can claim an open player 1 seat via play-as-both", async () => {
+  const created = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await created.json()).game.id;
+  env.DB.overwriteGameState(gameId, (game) => ({
+    ...game,
+    player1: null,
+    player2: {
+      ...game.player1,
+      identityId: "id-a",
+    },
+    pendingJoinRequests: [{ identityId: "id-other", requestedSeat: "Player 1", requestedAt: "2026-02-26T00:00:00.000Z", source: "home_list" }],
+  }));
+
+  const promoted = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-a" }),
+    env,
+  );
+  const body = await promoted.json();
+
+  assert.equal(promoted.status, 200);
+  assert.equal(body.game.myRole, "Player 1");
+  assert.deepEqual(body.game.myRoles, ["Player 1", "Player 2"]);
+  assert.equal(body.game.player1.identityId, "id-a");
+  assert.equal(body.game.player2.identityId, "id-a");
+  assert.equal(body.game.pendingJoinRequests.length, 0);
+
+  const participants = env.DB.getParticipants(gameId);
+  assert.deepEqual(
+    participants.map((participant) => [participant.identity_id, participant.role]).sort(),
+    [
+      ["id-a", "Player 1"],
+      ["id-a", "Player 2"],
+    ],
+  );
+});
+
 test("live transport: dual-seat view models expose combined role and connection metadata", async () => {
   const created = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),

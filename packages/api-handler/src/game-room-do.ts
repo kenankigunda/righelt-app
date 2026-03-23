@@ -31,6 +31,7 @@ import {
   getRolesForIdentity,
   getActiveTurn,
   getApproverIdentityForSeat,
+  getClaimableDualSeat,
   resolveLaunchParticipantCopyMode,
   reconcileGameToScenarioResultingState,
   getSeatIdentity,
@@ -433,15 +434,13 @@ export class GameRoomDO {
     }
 
     if (request.method === "POST" && path === "/play-as-both") {
-      if (game.player1?.identityId !== identityId) {
-        return json({ ok: false, error: "not_player1" }, 409);
+      const targetSeat = getClaimableDualSeat(game, identityId);
+      if (!targetSeat) {
+        return json({ ok: false, error: "play_as_both_unavailable" }, 409);
       }
-      if (game.player2) {
-        return json({ ok: false, error: "player2_already_joined" }, 409);
-      }
-      promoteIdentityToSeat(game, "Player 2", identityId, this.getSessionCount(identityId));
+      promoteIdentityToSeat(game, targetSeat, identityId, this.getSessionCount(identityId));
       game.playgroundMode = true;
-      game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.requestedSeat !== "Player 2");
+      game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.requestedSeat !== targetSeat);
       addNotification(game, "Play as both players enabled");
       await this.commit({
         type: "event_appended",

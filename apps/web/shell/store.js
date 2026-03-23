@@ -41,6 +41,16 @@ const ensureViewer = (game, identityId) => {
   game.viewers.push({ identityId, connected: true, joinedAt: new Date().toISOString() });
 };
 
+const getClaimableDualSeat = (game, identityId) => {
+  if (game.player1?.identityId === identityId && !game.player2) {
+    return "Player 2";
+  }
+  if (game.player2?.identityId === identityId && !game.player1) {
+    return "Player 1";
+  }
+  return null;
+};
+
 const isSeatRequestEligible = (game, seat) => {
   if (seat === "Player 2" && !game.player2) {
     return true;
@@ -202,16 +212,17 @@ export const createShellStore = ({
     if (!game) {
       return { ok: false, error: "game_not_found" };
     }
-    if (game.player1?.identityId !== identityId) {
-      return { ok: false, error: "not_player1" };
+    const targetSeat = getClaimableDualSeat(game, identityId);
+    if (!targetSeat) {
+      return { ok: false, error: "play_as_both_unavailable" };
     }
-    if (game.player2) {
-      return { ok: false, error: "player2_already_joined" };
+    if (targetSeat === "Player 1") {
+      game.player1 = { identityId, connected: true, joinedAt: now() };
+    } else {
+      game.player2 = { identityId, connected: true, joinedAt: now() };
     }
-
-    game.player2 = { identityId, connected: true, joinedAt: now() };
     game.playgroundMode = true;
-    game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.requestedSeat !== "Player 2");
+    game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.requestedSeat !== targetSeat);
     game.notifications.unshift("Play as both players enabled");
     game.updatedAt = now();
     persist();
@@ -401,7 +412,7 @@ export const createShellStore = ({
       currentTurn: clone(getActiveTurn(game)),
       canJoinAsPlayer:
         role !== "Player 1" && role !== "Player 2" && !game.playgroundMode && (!game.player1 || !game.player2),
-      canPlayAsBothPlayers: role === "Player 1" && !game.player2,
+      canPlayAsBothPlayers: Boolean(getClaimableDualSeat(game, identityId)),
       canInvite: !offline && !game.offlineLocal,
       showOfflineState: offline || game.offlineLocal,
       showJoinActions: !offline && !game.offlineLocal,
