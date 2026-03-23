@@ -71,23 +71,27 @@ test("invite choice commit suppresses repeat game-route invite gate and join act
 test("game route live sync connection is not gated by participant role", () => {
   assert.match(
     source,
-    /const routeKey = liveGameId \? `game:\$\{liveGameId\}` : "none";/s,
+    /const routeGameId =\s*shouldLiveSyncRoute\(currentRoute\)\s*&&/s,
   );
 });
 
-test("home groups active games by player role and isolates smoke-player games in debug mode", () => {
+test("home uses per-section pagination and isolates smoke-player games in debug mode", () => {
   assert.match(source, /const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";/);
   assert.match(source, /const isPlayerRole = \(role\) => role === "Player 1" \|\| role === "Player 2";/);
   assert.match(source, /const gameIncludesIdentity = \(game, identityId\) => \{/);
-  assert.match(source, /const smokeGames = games\.filter\(\(game\) => gameIncludesIdentity\(game, DEPLOY_SMOKE_PLAYER_ID\)\);/);
-  assert.match(source, /const visibleGames = currentRoute\.debug \? games\.filter\(\(game\) => !gameIncludesIdentity\(game, DEPLOY_SMOKE_PLAYER_ID\)\) : games;/);
-  assert.match(source, /const myGames = visibleGames\.filter\(\(game\) => isPlayerRole\(game\.myRole\)\);/);
-  assert.match(source, /const otherGames = visibleGames\.filter\(\(game\) => !isPlayerRole\(game\.myRole\)\);/);
-  assert.match(source, /renderHomeGameSection\("My games", myGames\)/);
-  assert.match(source, /renderHomeGameSection\("Other games", otherGames\)/);
-  assert.match(source, /currentRoute\.debug \? renderHomeGameSection\("Deploy smoke player", smokeGames\) : ""/);
+  assert.match(source, /const HOME_SECTION_PAGE_SIZE = 5;/);
+  assert.match(source, /let homeSections = \{/);
+  assert.match(source, /my: createHomeSectionState\("My games"\),/);
+  assert.match(source, /other: createHomeSectionState\("Other games"\),/);
+  assert.match(source, /smoke: createHomeSectionState\("Deploy smoke player"\),/);
+  assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \(route\?\.debug \? \["my", "other", "smoke"\] : \["my", "other"\]\);/);
+  assert.match(source, /data-action="home-page-prev"/);
+  assert.match(source, /data-action="home-page-next"/);
+  assert.match(source, /data-home-section="\$\{escapeHtml\(sectionKey\)\}"/);
+  assert.match(source, /<div class="home-games-carousel" data-home-carousel="\$\{escapeHtml\(sectionKey\)\}">/);
+  assert.match(source, /getVisibleHomeSectionKeys\(\)\.map\(\(sectionKey\) => renderHomeGameSection\(sectionKey\)\)\.join\(""\)/);
   assert.match(source, /<section class="panel home-games-section">/);
-  assert.match(source, /<h2>\$\{escapeHtml\(title\)\}<\/h2>/);
+  assert.match(source, /<h2>\$\{escapeHtml\(section\.title\)\}<\/h2>/);
   assert.match(source, /<div class="mini-board-card-list" data-game-count="\$\{games\.length\}">/);
   assert.doesNotMatch(source, /<h2>Active Games<\/h2>/);
   assert.doesNotMatch(source, /<h2>Preview Board/);

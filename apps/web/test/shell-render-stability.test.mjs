@@ -125,8 +125,8 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
   assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
   assert.match(source, /syncFlyoutRenderOrder\(currentRoute\);/);
-  assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, nextRoute\)\) \{\s*render\(\);\s*return;\s*\}/s);
-  assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, currentRoute\)\) \{\s*render\(\);\s*return;\s*\}/s);
+  assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, nextRoute\)\) \{[\s\S]*render\(\);\s*return;\s*\}/s);
+  assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, currentRoute\)\) \{[\s\S]*render\(\);\s*return;\s*\}/s);
   assert.match(source, /setFlyoutOpenState\("debug", true\);/);
   assert.match(source, /setFlyoutOpenState\("scenarios", true\);/);
   assert.match(source, /const animateFlyoutClose = async \(flyoutKey, closeFlyout\) => \{/);
@@ -168,11 +168,14 @@ test("live sync status renders are deduplicated by stable status key", () => {
   assert.match(source, /lastWsStatusKey = statusKey;\s*wsStatus = status;\s*if \(status\.state === "closed" && status\.reconnectAttempts >= 3\) \{\s*void syncRouteDataPassive\(\);\s*\}[\s\S]*updateHeaderFields\(\);/s);
 });
 
-test("syncLiveChannel does not disconnect/reconnect while same route is still connecting", () => {
+test("syncLiveChannels manages subscriptions through the shared active game set", () => {
   assert.match(
     source,
-    /if \(routeKey === liveSyncConnectedRoute && \(wsStatus\.state === "connected" \|\| wsStatus\.state === "connecting"\)\) \{\s*return;\s*\}/s,
+    /const activeLiveGameIds = new Set\(\);/,
   );
+  assert.match(source, /const desiredGameIds = new Set\(routeGameId \? \[routeGameId\] : getHomeActiveGameIds\(\)\);/);
+  assert.match(source, /liveSync\.disconnectGame\(gameId\);/);
+  assert.match(source, /liveSync\.connectGame\(gameId\);/);
 });
 
 test("history renderer emits move-only rows without visible turn wrappers", () => {

@@ -131,3 +131,46 @@ test("live sync keeps same-origin websocket host outside local dev", async () =>
     MockSocket.instances.length = 0;
   }
 });
+
+test("live sync can maintain separate sockets per game and disconnect only one subscription", async () => {
+  const originalWs = globalThis.WebSocket;
+  const originalWindow = globalThis.window;
+
+  globalThis.WebSocket = MockSocket;
+  globalThis.window = {
+    location: {
+      protocol: "https:",
+      hostname: "righelt.pages.dev",
+      host: "righelt.pages.dev",
+      port: "",
+    },
+  };
+
+  try {
+    const events = [];
+    const client = createLiveSyncClient({
+      identityId: "id-multi",
+      getLastEventSeq: (gameId) => (gameId === "g-1" ? 2 : 5),
+      onEvent: (_payload, meta) => {
+        events.push(meta?.gameId ?? null);
+      },
+    });
+
+    client.connectGame("g-1");
+    client.connectGame("g-2");
+    assert.equal(MockSocket.instances.length, 2);
+    assert.match(MockSocket.instances[0].url, /g-1\/ws/);
+    assert.match(MockSocket.instances[1].url, /g-2\/ws/);
+
+    MockSocket.instances[1].emit("message", { data: JSON.stringify({ type: "state_sync", eventSeq: 8 }) });
+    assert.deepEqual(events, ["g-2"]);
+
+    client.disconnectGame("g-1");
+    assert.equal(MockSocket.instances.length, 2);
+    client.disconnectAll();
+  } finally {
+    globalThis.WebSocket = originalWs;
+    globalThis.window = originalWindow;
+    MockSocket.instances.length = 0;
+  }
+});
