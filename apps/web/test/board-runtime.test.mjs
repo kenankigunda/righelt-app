@@ -707,6 +707,91 @@ test("board runtime can force click target selection even on hover-capable devic
   assert.equal(appliedActions.length, 1);
 });
 
+test("board runtime does not auto-select a lone target while forced click target selection is active", async () => {
+  let onCellClick = null;
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: ({ onCellClick: nextOnCellClick }) => {
+        onCellClick = nextOnCellClick;
+      },
+      render: noop,
+      getSelectedPieceSummary: ({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) => {
+        const selectedPiece = snapshot?.pieces?.find((piece) => piece.id === selectedPieceId) ?? null;
+        if (!selectedPiece) {
+          return null;
+        }
+        return { details: { owner: selectedPiece.owner }, actions: selectedPieceMovePreviews ?? selectedPieceMoves };
+      },
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: ({ snapshot, clickedCoord, currentActionType }) => {
+        const clickedPiece = snapshot?.pieces?.find((piece) => piece.position.row === clickedCoord.row && piece.position.col === clickedCoord.col) ?? null;
+        if (!clickedPiece) {
+          return {
+            selection: {
+              selectedPieceId: "A1",
+              source: { row: 4, col: 2 },
+              target: null,
+            },
+            nextActionType: currentActionType,
+          };
+        }
+        return {
+          selection: {
+            selectedPieceId: clickedPiece.id,
+            source: { ...clickedPiece.position },
+            target: null,
+          },
+          nextActionType: currentActionType,
+        };
+      },
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({
+        state: null,
+        actions: [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }],
+        previewActions: [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 }, legal: true }],
+      }),
+      canInteract: () => true,
+    },
+    controls: {
+      getSupportsHover: () => true,
+      getForceClickTargetSelection: () => true,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: null,
+    boardTurnIndicatorEl: null,
+  });
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      outcome: null,
+      pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true }],
+    },
+    {
+      legalActions: [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }],
+    },
+  );
+
+  onCellClick({ row: 4, col: 2 });
+  assert.deepEqual(runtime.getSelection(), {
+    selectedPieceId: "A1",
+    source: { row: 4, col: 2 },
+    target: null,
+  });
+});
+
 test("board runtime can submit a legal target immediately after piece selection", async () => {
   let onCellClick = null;
   const appliedActions = [];

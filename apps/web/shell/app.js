@@ -11,7 +11,7 @@ import { applyCommandLegendSwatch, getCommandLegendSwatchStyle } from "../legend
 import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from "./persistence.js";
 import {
   buildScenarioFromGame,
-  downloadScenarioCatalog,
+  canAuthorScenariosLocally,
   loadScenarioCatalog,
   tryLocalScenarioWrite,
 } from "./scenarios.js";
@@ -97,6 +97,8 @@ let resolvedInvite = null;
 let scenarioCatalog = { id: "S", title: "Saved Scenarios", scenarios: [] };
 let selectedScenarioId = null;
 let scenarioFeedback = "";
+let saveScenarioDraftTitle = "";
+let saveScenarioDraftDescription = "";
 const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
 let lastRenderedMarkup = "";
@@ -354,6 +356,45 @@ const buildSavedSelectionFromRuntimeSelection = (selection, snapshot) => {
     target: selection.target ? { ...selection.target } : null,
     actorSide: snapshot?.sideToMove === "P2" ? "P2" : "P1",
     turnIndex: Number(snapshot?.turnIndex ?? 0),
+  };
+};
+const getScenarioEditableFieldText = (field) => {
+  const editableEl = appEl?.querySelector?.(`[data-scenario-editable="${field}"]`);
+  return editableEl instanceof HTMLElement ? editableEl.textContent?.trim() ?? "" : "";
+};
+const getSaveScenarioDraft = () => ({
+  title: saveScenarioDraftTitle.trim(),
+  description: saveScenarioDraftDescription.trim(),
+});
+const canSubmitSaveScenarioDraft = () => {
+  const draft = getSaveScenarioDraft();
+  return Boolean(draft.title && draft.description);
+};
+const canSubmitScenarioUpdate = () => {
+  const title = getScenarioEditableFieldText("title");
+  const description = getScenarioEditableFieldText("description");
+  return Boolean(title && description);
+};
+const syncScenarioAuthoringControls = () => {
+  const updateButtonEl = appEl?.querySelector?.('[data-action="update-scenario"]');
+  if (updateButtonEl instanceof HTMLButtonElement) {
+    updateButtonEl.disabled = busy || !canSubmitScenarioUpdate();
+  }
+  const saveButtonEl = appEl?.querySelector?.('[data-action="save-scenario"]');
+  if (saveButtonEl instanceof HTMLButtonElement) {
+    saveButtonEl.disabled = busy || !canSubmitSaveScenarioDraft();
+  }
+};
+const getScenarioExportContext = (game) => {
+  const currentSnapshot = game?.currentSnapshot ?? game?.board?.state ?? null;
+  const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex : game?.moves?.length ?? 0;
+  const savedSelection = game?.inHistoryMode
+    ? buildSavedSelectionFromAction(game.historySelectionAction ?? null, currentSnapshot)
+    : buildSavedSelectionFromRuntimeSelection(boardRuntime?.getSelection?.() ?? null, currentSnapshot);
+  return {
+    currentSnapshot,
+    moveLimit,
+    savedSelection,
   };
 };
 const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
@@ -963,8 +1004,13 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
   const scenarioPreviewSelection = getScenarioPreviewSelection(selectedScenario);
   const scenarioPreviewKey = toStableKey({ snapshot: scenarioSnapshot, selection: scenarioPreviewSelection });
   const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex : game?.moves?.length ?? 0;
-  const canSaveScenario = Boolean(game);
+  const canAuthorScenarios = Boolean(game) && canAuthorScenariosLocally();
   const canLoadIntoCurrentGame = Boolean(game && Array.isArray(game.moves) && game.moves.length === 0 && selectedScenario);
+  const saveDraft = getSaveScenarioDraft();
+  const canSaveScenario = canAuthorScenarios && Boolean(saveDraft.title && saveDraft.description);
+  const selectedScenarioTitle = selectedScenario?.title ?? "";
+  const selectedScenarioDescription = selectedScenario?.description ?? "Scenarios replay canonical shell history into a game.";
+  const canUpdateScenario = canAuthorScenarios && Boolean(selectedScenario);
   return `
     <section class="panel debug-panel scenario-panel">
       <h2>Scenarios</h2>
@@ -974,7 +1020,24 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
           ${scenarioCatalog.scenarios.length > 0 ? renderScenarioOptionList() : '<option value="">No scenarios saved yet</option>'}
         </select>
       </div>
-      <p class="small">${escapeHtml(selectedScenario?.description || "Scenarios replay canonical shell history into a game.")}</p>
+      ${
+        selectedScenario
+          ? `<div class="scenario-selected-summary">
+              <div
+                class="scenario-selected-title"
+                data-scenario-editable="title"
+                ${canAuthorScenarios ? 'contenteditable="plaintext-only" role="textbox" aria-label="Scenario title"' : ""}
+                ${canAuthorScenarios ? "" : 'tabindex="0"'}
+              >${escapeHtml(selectedScenarioTitle)}</div>
+              <p
+                class="small"
+                data-scenario-editable="description"
+                ${canAuthorScenarios ? 'contenteditable="plaintext-only" role="textbox" aria-label="Scenario description"' : ""}
+                ${canAuthorScenarios ? "" : 'tabindex="0"'}
+              >${escapeHtml(selectedScenarioDescription)}</p>
+            </div>`
+          : `<p class="small">${escapeHtml(selectedScenarioDescription)}</p>`
+      }
       ${
         selectedScenario
           ? `<div class="mini-board-card mini-board-card-scenario">
@@ -998,11 +1061,29 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
       <div class="row">
         <button data-action="load-scenario" ${selectedScenario ? "" : "disabled"}>${route.name === "home" ? "Open Scenario" : canLoadIntoCurrentGame ? "Load into This Game" : "Open in New Tab"}</button>
         ${
-          canSaveScenario
-            ? `<button class="secondary" data-action="save-scenario"${busy ? " disabled" : ""}>Save Scenario${moveLimit < (game?.moves?.length ?? 0) ? " from Here" : ""}</button>`
+          canUpdateScenario
+            ? `<button class="secondary" data-action="update-scenario"${busy || !selectedScenarioTitle.trim() || !selectedScenarioDescription.trim() ? " disabled" : ""}>Update${moveLimit < (game?.moves?.length ?? 0) ? " from Here" : ""}</button>`
             : ""
         }
       </div>
+      ${
+        canAuthorScenarios
+          ? `<section class="scenario-save-panel">
+              <h3>Save as scenario</h3>
+              <div class="form-row">
+                <label for="save-scenario-title">Title</label>
+                <input id="save-scenario-title" data-scenario-save-field="title" value="${escapeHtml(saveDraft.title)}" />
+              </div>
+              <div class="form-row">
+                <label for="save-scenario-description">Description</label>
+                <textarea id="save-scenario-description" data-scenario-save-field="description" rows="4">${escapeHtml(saveDraft.description)}</textarea>
+              </div>
+              <div class="row">
+                <button class="secondary" data-action="save-scenario"${busy || !canSaveScenario ? " disabled" : ""}>Save as scenario</button>
+              </div>
+            </section>`
+          : ""
+      }
       <pre class="debug-pre" aria-live="polite">${escapeHtml(
         scenarioFeedback ||
           (selectedScenario
@@ -2179,6 +2260,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     updateHeaderFields();
     reconcileMiniBoardPreviews();
     animateHomeSectionTransitions();
+    syncScenarioAuthoringControls();
     if (animatePanels) {
       animateFlyoutPositionChanges(previousFlyoutRects);
     }
@@ -2193,6 +2275,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   ) {
     updateMountedHeader();
     updateHeaderFields();
+    syncScenarioAuthoringControls();
     updateMountedGameShell({
       game: transport.getGameViewModel(currentRoute.gameId),
       inviteFromRole: currentRoute.inviteFromRole,
@@ -2240,6 +2323,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   updateHeaderFields();
   reconcileMiniBoardPreviews();
   animateHomeSectionTransitions();
+  syncScenarioAuthoringControls();
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
@@ -2821,43 +2905,87 @@ appEl.addEventListener("click", async (event) => {
       return;
     }
 
-    if (action === "save-scenario") {
+    if (action === "update-scenario" || action === "save-scenario") {
       const activeGameId =
         currentRoute.name === "game" ? currentRoute.gameId : currentRoute.name === "invite" ? resolvedInvite?.gameId || null : null;
       const activeGame = activeGameId ? transport.getGameViewModel(activeGameId) : null;
       if (!activeGame) {
-        setScenarioFeedback("Open a game to save a scenario.");
+        setScenarioFeedback(`Open a game to ${action === "update-scenario" ? "update" : "save"} a scenario.`);
         render({ animatePanels: false, includeBoard: false });
         return;
       }
-      const scenarioId = crypto.randomUUID();
-      const title = window.prompt("Scenario title:", "Saved scenario");
-      if (!title) {
+      if (!canAuthorScenariosLocally()) {
+        setScenarioFeedback("Scenario authoring is only available on localhost.");
+        render({ animatePanels: false, includeBoard: false });
         return;
       }
-      const currentSnapshot = activeGame.currentSnapshot ?? activeGame.board?.state ?? null;
-      const moveLimit = activeGame.inHistoryMode && typeof activeGame.historyIndex === "number" ? activeGame.historyIndex : activeGame.moves.length;
-      const savedSelection = activeGame.inHistoryMode
-        ? buildSavedSelectionFromAction(activeGame.historySelectionAction ?? null, currentSnapshot)
-        : buildSavedSelectionFromRuntimeSelection(boardRuntime?.getSelection?.() ?? null, currentSnapshot);
+      const exportContext = getScenarioExportContext(activeGame);
+      if (action === "update-scenario") {
+        const selectedScenario = getSelectedScenario();
+        if (!selectedScenario) {
+          setScenarioFeedback("No scenario selected.");
+          render({ animatePanels: false, includeBoard: false });
+          return;
+        }
+        const title = getScenarioEditableFieldText("title");
+        const description = getScenarioEditableFieldText("description");
+        if (!title || !description) {
+          setScenarioFeedback("Scenario title and description are required.");
+          syncScenarioAuthoringControls();
+          return;
+        }
+        const scenario = await buildScenarioFromGame(activeGame, {
+          scenarioId: selectedScenario.id,
+          title,
+          description,
+          moveLimit: exportContext.moveLimit,
+          resultingStateOverride: exportContext.currentSnapshot,
+          savedSelection: exportContext.savedSelection,
+        });
+        scenario.incorrect = selectedScenario.incorrect === true;
+        const localWrite = await tryLocalScenarioWrite("/scenarios/update", { scenario });
+        if (!localWrite.ok) {
+          setScenarioFeedback("Failed to update scenario locally.");
+          render({ animatePanels: false, includeBoard: false });
+          return;
+        }
+        scenarioCatalog = localWrite.body?.catalog ?? {
+          ...scenarioCatalog,
+          scenarios: scenarioCatalog.scenarios.map((entry) => (entry.id === scenario.id ? scenario : entry)),
+        };
+        selectedScenarioId = scenario.id;
+        setScenarioFeedback(`Scenario ${scenario.id} updated.`);
+        render({ animatePanels: false, includeBoard: false });
+        return;
+      }
+      const draft = getSaveScenarioDraft();
+      if (!draft.title || !draft.description) {
+        setScenarioFeedback("Scenario title and description are required.");
+        syncScenarioAuthoringControls();
+        return;
+      }
       const scenario = await buildScenarioFromGame(activeGame, {
-        scenarioId,
-        title,
-        moveLimit,
-        resultingStateOverride: currentSnapshot,
-        savedSelection,
+        scenarioId: crypto.randomUUID(),
+        title: draft.title,
+        description: draft.description,
+        moveLimit: exportContext.moveLimit,
+        resultingStateOverride: exportContext.currentSnapshot,
+        savedSelection: exportContext.savedSelection,
       });
-      const nextCatalog = {
+      const localWrite = await tryLocalScenarioWrite("/scenarios/save", { scenario });
+      if (!localWrite.ok) {
+        setScenarioFeedback("Failed to save scenario locally.");
+        render({ animatePanels: false, includeBoard: false });
+        return;
+      }
+      scenarioCatalog = localWrite.body?.catalog ?? {
         ...scenarioCatalog,
         scenarios: [...scenarioCatalog.scenarios, scenario],
       };
-      const localWrite = await tryLocalScenarioWrite("/scenarios/save", { scenario });
-      scenarioCatalog = nextCatalog;
       selectedScenarioId = scenario.id;
-      if (!localWrite.ok) {
-        downloadScenarioCatalog(nextCatalog, "scenarios.catalog.updated.json");
-      }
-      setScenarioFeedback(localWrite.ok ? `Scenario ${scenario.id} saved.` : `Scenario ${scenario.id} saved via download fallback.`);
+      saveScenarioDraftTitle = "";
+      saveScenarioDraftDescription = "";
+      setScenarioFeedback(`Scenario ${scenario.id} saved.`);
       render({ animatePanels: false, includeBoard: false });
     }
   }, { renderStart: shouldRenderBusyState, renderEnd: shouldRenderBusyState });
@@ -2872,6 +3000,23 @@ appEl.addEventListener("change", (event) => {
     selectedScenarioId = target.value || null;
     scenarioFeedback = "";
     render({ animatePanels: false, includeBoard: false });
+  }
+});
+
+appEl.addEventListener("input", (event) => {
+  const target = event.target;
+  if (target instanceof HTMLInputElement && target.getAttribute("data-scenario-save-field") === "title") {
+    saveScenarioDraftTitle = target.value;
+    syncScenarioAuthoringControls();
+    return;
+  }
+  if (target instanceof HTMLTextAreaElement && target.getAttribute("data-scenario-save-field") === "description") {
+    saveScenarioDraftDescription = target.value;
+    syncScenarioAuthoringControls();
+    return;
+  }
+  if (target instanceof HTMLElement && target.hasAttribute("data-scenario-editable")) {
+    syncScenarioAuthoringControls();
   }
 });
 

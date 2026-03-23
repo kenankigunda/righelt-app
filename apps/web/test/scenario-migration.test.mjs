@@ -21,6 +21,6 @@ test("runtime scenario catalog is versioned for history-based scenarios only", (
 
 test("shell debug UI uses scenario terminology", () => {
   assert.match(shellAppSource, /Scenarios/);
-  assert.match(shellAppSource, /Save Scenario/);
+  assert.match(shellAppSource, /Save Scenario|Save as scenario/);
   assert.doesNotMatch(shellAppSource, />Load Fixture</);
 });

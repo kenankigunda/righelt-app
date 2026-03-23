@@ -146,7 +146,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /clearCoordinatedFlyoutMotionStyles\(\);/);
   assert.match(source, /const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">\$\{renderHeader\(\)\}\$\{body\}<\/div>\$\{renderFlyouts\(\)\}<\/div>`;/);
   assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
-  assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*updateMountedGameShell\(/s);
+  assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*syncScenarioAuthoringControls\(\);\s*updateMountedGameShell\(/s);
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.match(source, /data-flyout-link="home"/);
@@ -216,8 +216,21 @@ test("transport subscriptions drive immediate game-shell updates", () => {
 test("scenario selector labels use titles without visible ids", () => {
   assert.match(source, /`\$\{scenario\.title\}\$\{scenario\.incorrect \? " \[incorrect\]" : ""\}`/);
   assert.doesNotMatch(source, /`\$\{scenario\.id\} - \$\{scenario\.title\}/);
-  assert.match(source, /const title = window\.prompt\("Scenario title:", "Saved scenario"\);/);
-  assert.match(source, /const scenarioId = crypto\.randomUUID\(\);/);
+  assert.match(source, /scenarioId:\s*crypto\.randomUUID\(\),/);
+  assert.doesNotMatch(source, /window\.prompt\("Scenario title:", "Saved scenario"\)/);
+  assert.match(source, /data-scenario-editable="title"/);
+  assert.match(source, /data-scenario-editable="description"/);
+  assert.match(source, /contenteditable="plaintext-only" role="textbox" aria-label="Scenario title"/);
+  assert.match(source, /contenteditable="plaintext-only" role="textbox" aria-label="Scenario description"/);
+  assert.match(source, /data-action="update-scenario"/);
+  assert.match(source, /data-scenario-save-field="title"/);
+  assert.match(source, /data-scenario-save-field="description"/);
+  assert.match(source, /Save as scenario/);
+  assert.match(source, /canAuthorScenariosLocally\(\)/);
+  assert.match(source, /const canSaveScenario = canAuthorScenarios && Boolean\(saveDraft\.title && saveDraft\.description\);/);
+  assert.match(source, /const title = getScenarioEditableFieldText\("title"\);/);
+  assert.match(source, /const description = getScenarioEditableFieldText\("description"\);/);
+  assert.doesNotMatch(source, /downloadScenarioCatalog/);
 });
 
 test("debug flyout persists locally while scenario-created games close the scenarios flyout", () => {

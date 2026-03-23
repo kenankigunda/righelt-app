@@ -82,6 +82,24 @@ test("buildScenarioFromGame uses the provided resulting state for live exports",
     assert.equal(scenario.resultingState.sideToMove, "P2");
     assert.equal(scenario.resultingState.turnIndex, 1);
     assert.equal(scenario.expectedFinalStateHash, "hash-live-state");
+    assert.equal(scenario.description, "Export uses canonical turn");
+  });
+});
+
+test("buildScenarioFromGame preserves caller-supplied description for authoring flows", async () => {
+  await withMockedHash(async () => {
+    const scenario = await buildScenarioFromGame(
+      { moves: [], board: { state: { sideToMove: "P1", turnIndex: 2, pieces: [], continuation: null, outcome: { status: "ongoing" } } } },
+      {
+        scenarioId: SCENARIO_UUIDS.exportUsesCanonicalTurn,
+        title: "Updated title",
+        description: "Updated description from the inline editor",
+      },
+    );
+
+    assert.equal(scenario.id, SCENARIO_UUIDS.exportUsesCanonicalTurn);
+    assert.equal(scenario.title, "Updated title");
+    assert.equal(scenario.description, "Updated description from the inline editor");
   });
 });
 

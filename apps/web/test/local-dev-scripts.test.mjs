@@ -7,6 +7,7 @@ const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 const packageJsonPath = path.join(repoRoot, "package.json");
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 const { scripts } = packageJson;
+const devWebAutoSource = readFileSync(path.join(repoRoot, "scripts", "dev-web-auto.mjs"), "utf8");
 
 test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.equal(scripts.dev, "pnpm dev:web");
@@ -56,4 +57,13 @@ test("root package scripts expose suffixed local D1 migration commands", () => {
     scripts["d1:migrate:dev:c"],
     "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-c",
   );
+});
+
+test("local scenario writer replaces full scenario records during update", () => {
+  assert.match(devWebAutoSource, /const isValidScenarioShape = \(scenario\) => \{/);
+  assert.match(devWebAutoSource, /const description = typeof scenario\.description === "string" \? scenario\.description\.trim\(\) : "";/);
+  assert.match(devWebAutoSource, /if \(!isValidScenarioShape\(scenario\)\) \{\s*jsonResponse\(response, 400, \{ ok: false, error: "invalid_scenario_shape" \}\);/s);
+  assert.match(devWebAutoSource, /const scenarioIndex = catalog\.scenarios\.findIndex\(\(entry\) => entry\.id === scenario\.id\);/);
+  assert.match(devWebAutoSource, /catalog\.scenarios\.splice\(scenarioIndex, 1, scenario\);/);
+  assert.doesNotMatch(devWebAutoSource, /const expectedHash = typeof body\.expectedFinalStateHash === "string"/);
 });

@@ -78,6 +78,8 @@ export const getScenarioWriterBaseUrl = () => {
   return `http://${host}:${browserPort + 1000}`;
 };
 
+export const canAuthorScenariosLocally = () => Boolean(getScenarioWriterBaseUrl());
+
 export const tryLocalScenarioWrite = async (pathSuffix, payload) => {
   const base = getScenarioWriterBaseUrl();
   if (!base) {
