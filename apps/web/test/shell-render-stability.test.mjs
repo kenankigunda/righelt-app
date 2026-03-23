@@ -213,6 +213,13 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
 });
 
+test("scenario selector labels use titles without visible ids", () => {
+  assert.match(source, /`\$\{scenario\.title\}\$\{scenario\.incorrect \? " \[incorrect\]" : ""\}`/);
+  assert.doesNotMatch(source, /`\$\{scenario\.id\} - \$\{scenario\.title\}/);
+  assert.match(source, /const title = window\.prompt\("Scenario title:", "Saved scenario"\);/);
+  assert.match(source, /const scenarioId = crypto\.randomUUID\(\);/);
+});
+
 test("debug flyout persists locally while scenario-created games close the scenarios flyout", () => {
   assert.match(source, /import \{ loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted \} from "\.\/persistence\.js";/);
   assert.match(source, /const getPersistedDebugFlyoutOpen = \(\) => loadDebugFlyoutOpen\(storage\);/);

@@ -29,6 +29,8 @@ const normalizeSavedSelection = (savedSelection) => {
   };
 };
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const normalizeScenario = (scenario) => ({
   formatVersion: 2,
   id: String(scenario?.id || ""),
@@ -127,31 +129,13 @@ export const computeStateHash = async (candidateState) => {
   return body.hash;
 };
 
-export const getNextScenarioId = (catalog) => {
-  const prefix = String(catalog?.id || "S").toUpperCase();
-  let maxNumeric = 0;
-  let maxDigits = 3;
-  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
-  for (const scenario of Array.isArray(catalog?.scenarios) ? catalog.scenarios : []) {
-    const match = pattern.exec(String(scenario?.id || ""));
-    if (!match) {
-      continue;
-    }
-    const digits = match[1];
-    const numeric = Number.parseInt(digits, 10);
-    if (!Number.isFinite(numeric)) {
-      continue;
-    }
-    maxNumeric = Math.max(maxNumeric, numeric);
-    maxDigits = Math.max(maxDigits, digits.length);
-  }
-  return `${prefix}-${String(maxNumeric + 1).padStart(maxDigits, "0")}`;
-};
-
 export const buildScenarioFromGame = async (
   game,
   { scenarioId, title, description, moveLimit = null, resultingStateOverride = null, savedSelection = null } = {},
 ) => {
+  if (!UUID_PATTERN.test(String(scenarioId || ""))) {
+    throw new Error("Scenario IDs must be UUID v4 values.");
+  }
   const safeMoveLimit = Number.isFinite(moveLimit) ? Math.max(0, Math.min(moveLimit, game.moves.length)) : game.moves.length;
   const selectedMoves = game.moves.slice(0, safeMoveLimit);
   const resolvedResultingState =

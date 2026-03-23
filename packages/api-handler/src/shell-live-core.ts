@@ -6,6 +6,7 @@ import type { Action, GameState } from "../../game-engine/src/types";
 
 export const MAX_HISTORY = 200;
 const BOARD_SIZE = 10;
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type Participant = {
   identityId: string;
@@ -178,7 +179,12 @@ export const asScenarioRecord = (value: unknown): ScenarioRecord | null => {
     return null;
   }
   const candidate = value as Record<string, unknown>;
-  if (candidate.formatVersion !== 2 || typeof candidate.id !== "string" || typeof candidate.title !== "string") {
+  if (
+    candidate.formatVersion !== 2 ||
+    typeof candidate.id !== "string" ||
+    !UUID_V4_PATTERN.test(candidate.id) ||
+    typeof candidate.title !== "string"
+  ) {
     return null;
   }
   if (!asGameState(candidate.initialState) || !asGameState(candidate.resultingState)) {

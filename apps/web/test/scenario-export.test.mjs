@@ -2,6 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildScenarioFromGame } from "../shell/scenarios.js";
 
+const SCENARIO_UUIDS = {
+  exportUsesCanonicalTurn: "0066b0ed-c5ba-4a89-a81a-1811d08d2d9d",
+  sourceOnly: "0687afa0-a91c-480f-ac75-bd3c6d302168",
+  sourceAndTarget: "a3a4664d-56d1-4c47-8498-1781686abd1a",
+  historyPreMove: "6df1e170-b639-45ec-a5fe-e05fd3a27ba4",
+};
+
 const withMockedHash = async (run) => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => Response.json({ hash: "hash-live-state" });
@@ -58,7 +65,7 @@ test("buildScenarioFromGame uses the provided resulting state for live exports",
         },
       },
       {
-        scenarioId: "S-900",
+        scenarioId: SCENARIO_UUIDS.exportUsesCanonicalTurn,
         title: "Export uses canonical turn",
         resultingStateOverride: {
           boardSize: 10,
@@ -71,6 +78,7 @@ test("buildScenarioFromGame uses the provided resulting state for live exports",
       },
     );
 
+    assert.equal(scenario.id, SCENARIO_UUIDS.exportUsesCanonicalTurn);
     assert.equal(scenario.resultingState.sideToMove, "P2");
     assert.equal(scenario.resultingState.turnIndex, 1);
     assert.equal(scenario.expectedFinalStateHash, "hash-live-state");
@@ -82,7 +90,7 @@ test("buildScenarioFromGame persists a source-only saved selection", async () =>
     const scenario = await buildScenarioFromGame(
       { moves: [], board: { state: { sideToMove: "P1", turnIndex: 4, pieces: [], continuation: null, outcome: { status: "ongoing" } } } },
       {
-        scenarioId: "S-901",
+        scenarioId: SCENARIO_UUIDS.sourceOnly,
         title: "Source only",
         savedSelection: {
           source: { row: 4, col: 2 },
@@ -107,7 +115,7 @@ test("buildScenarioFromGame persists a source and destination saved selection", 
     const scenario = await buildScenarioFromGame(
       { moves: [], board: { state: { sideToMove: "P2", turnIndex: 7, pieces: [], continuation: null, outcome: { status: "ongoing" } } } },
       {
-        scenarioId: "S-902",
+        scenarioId: SCENARIO_UUIDS.sourceAndTarget,
         title: "Source and target",
         savedSelection: {
           source: { row: 5, col: 5 },
@@ -158,7 +166,7 @@ test("buildScenarioFromGame can export a pre-move history snapshot with no prior
         ],
       },
       {
-        scenarioId: "S-903",
+        scenarioId: SCENARIO_UUIDS.historyPreMove,
         title: "History pre-move",
         moveLimit: 0,
         resultingStateOverride: historySnapshot,
@@ -180,5 +188,21 @@ test("buildScenarioFromGame can export a pre-move history snapshot with no prior
       actorSide: "P1",
       turnIndex: 0,
     });
+  });
+});
+
+test("buildScenarioFromGame rejects non-UUID scenario ids", async () => {
+  await withMockedHash(async () => {
+    await assert.rejects(
+      () =>
+        buildScenarioFromGame(
+          { moves: [], board: { state: { sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } } } },
+          {
+            scenarioId: "S-999",
+            title: "Invalid id",
+          },
+        ),
+      /UUID v4/,
+    );
   });
 });

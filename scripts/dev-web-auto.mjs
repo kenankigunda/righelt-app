@@ -35,6 +35,7 @@ let apiWrangler = null;
 let pagesWrangler = null;
 let exitCode = 0;
 let shuttingDown = false;
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const fixtureWriterPort = (() => {
   const numeric = Number.parseInt(port, 10);
@@ -119,7 +120,7 @@ const startFixtureWriterServer = () => {
         const description = typeof body.description === "string" ? body.description : null;
         const incorrect = typeof body.incorrect === "boolean" ? body.incorrect : null;
 
-        if (!scenarioId || (!expectedHash && !expectedOutcome && description === null && incorrect === null)) {
+        if (!scenarioId || !UUID_V4_PATTERN.test(scenarioId) || (!expectedHash && !expectedOutcome && description === null && incorrect === null)) {
           jsonResponse(response, 400, { ok: false, error: "invalid_payload" });
           return;
         }
@@ -169,7 +170,7 @@ const startFixtureWriterServer = () => {
         const expectedHash = typeof scenario.expectedFinalStateHash === "string" ? scenario.expectedFinalStateHash : "";
         const expectedOutcome = typeof scenario.expectedOutcome === "string" ? scenario.expectedOutcome : "";
 
-        if (!scenarioId || !title || !expectedHash || !expectedOutcome) {
+        if (!scenarioId || !UUID_V4_PATTERN.test(scenarioId) || !title || !expectedHash || !expectedOutcome) {
           jsonResponse(response, 400, { ok: false, error: "invalid_scenario_shape" });
           return;
         }

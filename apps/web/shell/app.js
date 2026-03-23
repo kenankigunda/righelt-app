@@ -12,7 +12,6 @@ import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from 
 import {
   buildScenarioFromGame,
   downloadScenarioCatalog,
-  getNextScenarioId,
   loadScenarioCatalog,
   tryLocalScenarioWrite,
 } from "./scenarios.js";
@@ -953,7 +952,7 @@ const renderScenarioOptionList = () =>
     .map(
       (scenario) =>
         `<option value="${escapeHtml(scenario.id)}"${scenario.id === selectedScenarioId ? " selected" : ""}>${escapeHtml(
-          `${scenario.id} - ${scenario.title}${scenario.incorrect ? " [incorrect]" : ""}`,
+          `${scenario.title}${scenario.incorrect ? " [incorrect]" : ""}`,
         )}</option>`,
     )
     .join("");
@@ -2831,8 +2830,8 @@ appEl.addEventListener("click", async (event) => {
         render({ animatePanels: false, includeBoard: false });
         return;
       }
-      const scenarioId = getNextScenarioId(scenarioCatalog);
-      const title = window.prompt("Scenario title:", `Saved scenario ${scenarioId}`);
+      const scenarioId = crypto.randomUUID();
+      const title = window.prompt("Scenario title:", "Saved scenario");
       if (!title) {
         return;
       }

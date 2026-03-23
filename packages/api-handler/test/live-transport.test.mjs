@@ -7,6 +7,13 @@ import { applyServerAction, createInitialGame } from "../src/shell-live-core.ts"
 import { createFakeD1 } from "./support/fake-d1.mjs";
 import { createFakeGameRooms } from "./support/fake-game-rooms.mjs";
 
+const SCENARIO_UUIDS = {
+  importedScenario: "e5e48740-f8e2-4b32-bfbf-c46ec98b5962",
+  projectEndsTurn: "7cf5de75-0500-4f33-ac8d-8036935ab445",
+  savedSelection: "c01a536c-4eff-47f4-b4ad-2c6fd2ecc40e",
+  importerBecomesPlayer2: "9eb170a3-0372-4f17-a651-43d0262a51f7",
+};
+
 const env = {
   DB: createFakeD1(),
   GAME_ROOMS: null,
@@ -146,7 +153,7 @@ test("live transport: scenario import creates a canonical new game", async () =>
       identityId: "id-a",
       scenario: {
         formatVersion: 2,
-        id: "S-001",
+        id: SCENARIO_UUIDS.importedScenario,
         title: "Imported Scenario",
         description: "Minimal scenario",
         incorrect: false,
@@ -194,7 +201,7 @@ test("live transport: scenario import auto-advances the turn after a project-end
       identityId: "id-a",
       scenario: {
         formatVersion: 2,
-        id: "S-002",
+        id: SCENARIO_UUIDS.projectEndsTurn,
         title: "Project ends turn",
         description: "Regression for imported pre-end-turn snapshots",
         incorrect: false,
@@ -258,7 +265,7 @@ test("live transport: scenario import exposes pending saved selection and accept
       identityId: "id-a",
       scenario: {
         formatVersion: 2,
-        id: "S-003",
+        id: SCENARIO_UUIDS.savedSelection,
         title: "Saved selection",
         description: "Includes a pending selected move",
         incorrect: false,
@@ -349,7 +356,7 @@ test("live transport: create-from-scenario seats the importer as the scenario si
       sourceGameId,
       scenario: {
         formatVersion: 2,
-        id: "S-004",
+        id: SCENARIO_UUIDS.importerBecomesPlayer2,
         title: "Importer becomes player 2",
         description: "Import should swap copied seats",
         incorrect: false,
@@ -387,6 +394,44 @@ test("live transport: create-from-scenario seats the importer as the scenario si
   assert.equal(imported.game.player1?.identityId, "id-b");
   assert.equal(imported.game.player2?.identityId, "id-a");
   assert.equal(imported.game.myRole, "Player 2");
+});
+
+test("live transport: scenario import rejects non-UUID scenario ids", async () => {
+  const scenarioImport = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-a",
+      scenario: {
+        formatVersion: 2,
+        id: "S-001",
+        title: "Invalid Scenario Id",
+        description: "Should be rejected",
+        incorrect: false,
+        initialState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        moves: [],
+        resultingState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        expectedFinalStateHash: "hash-placeholder",
+        expectedOutcome: "ongoing",
+      },
+    }),
+    env,
+  );
+
+  assert.equal(scenarioImport.status, 400);
+  await assert.deepEqual(await scenarioImport.json(), { ok: false, error: "invalid_scenario_payload" });
 });
 
 test("live transport: game reads query persistent storage even when process cache is warm", async () => {

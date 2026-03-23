@@ -4,7 +4,7 @@
   "scenarios": [
     {
       "formatVersion": 2,
-      "id": "S-001",
+      "id": "e5e48740-f8e2-4b32-bfbf-c46ec98b5962",
       "title": "Cannot project into unsupplied area",
       "description": "Cannot project into unsupplied area",
       "incorrect": false,
@@ -805,7 +805,7 @@
     },
     {
       "formatVersion": 2,
-      "id": "S-002",
+      "id": "7cf5de75-0500-4f33-ac8d-8036935ab445",
       "title": "Cannot rush into unsupplied area",
       "description": "Cannot rush into unsupplied area",
       "incorrect": false,
@@ -1764,7 +1764,7 @@
     },
     {
       "formatVersion": 2,
-      "id": "S-003",
+      "id": "c01a536c-4eff-47f4-b4ad-2c6fd2ecc40e",
       "title": "Uncommanded pieces are inactive",
       "description": "Uncommanded pieces are inactive",
       "incorrect": false,
@@ -2789,7 +2789,7 @@
     },
     {
       "formatVersion": 2,
-      "id": "S-004",
+      "id": "9eb170a3-0372-4f17-a651-43d0262a51f7",
       "title": "Rush continuation only includes pieces commanded at start of rush",
       "description": "Rush continuation only includes pieces commanded at start of rush",
       "incorrect": false,
@@ -3852,7 +3852,7 @@
     },
     {
       "formatVersion": 2,
-      "id": "S-005",
+      "id": "82696977-2fc8-4a3c-bb25-c4b1acb98bbe",
       "title": "Commander surrounded loss of supply",
       "description": "Commander surrounded loss of supply",
       "incorrect": false,
@@ -4929,7 +4929,7 @@
     },
     {
       "formatVersion": 2,
-      "id": "S-006",
+      "id": "ee7b9165-2b3c-4a84-8a8c-adfdc1bd8893",
       "title": "Retreat after push",
       "description": "Retreat after push",
       "incorrect": false,
@@ -5617,7 +5617,7 @@
     },
     {
       "formatVersion": 2,
-      "id": "S-007",
+      "id": "6f93dbca-5fbe-4d8c-ab27-c098fd820ed0",
       "title": "Follow after push + retreat",
       "description": "Follow after push + retreat",
       "incorrect": false,
