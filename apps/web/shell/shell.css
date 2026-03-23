@@ -550,6 +550,10 @@ button.button-release-bounce,
   gap: 0.5rem;
 }
 
+.home-games-section-controls-footer {
+  display: none;
+}
+
 .home-games-section-controls > button {
   min-width: 2.5rem;
   padding-inline: 0.75rem;
@@ -566,6 +570,17 @@ button.button-release-bounce,
 
 .home-games-carousel-track {
   will-change: transform, opacity;
+}
+
+#app[data-shell-layout-mode="narrow"] .home-games-section-controls-header {
+  display: none;
+}
+
+#app[data-shell-layout-mode="narrow"] .home-games-section-controls-footer {
+  display: inline-flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 0.9rem;
 }
 
 .mini-board-card-header,

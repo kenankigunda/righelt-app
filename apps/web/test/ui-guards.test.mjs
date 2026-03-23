@@ -88,9 +88,17 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /data-action="home-page-prev"/);
   assert.match(source, /data-action="home-page-next"/);
   assert.match(source, /data-home-section="\$\{escapeHtml\(sectionKey\)\}"/);
+  assert.match(source, /data-home-section-root="\$\{escapeHtml\(sectionKey\)\}"/);
+  assert.match(source, /const renderHomeSectionControls = \(sectionKey, section, \{ placement \} = \{ placement: "header" \}\) =>/);
+  assert.match(source, /home-games-section-controls home-games-section-controls-\$\{escapeHtml\(placement\)\}/);
+  assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\)/);
+  assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "footer" \}\)/);
+  assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
+  assert.match(source, /if \(getShellLayoutMode\(\) !== "narrow" \|\| !\(appEl instanceof HTMLElement\)\) \{\s*return;\s*\}/s);
+  assert.match(source, /sectionEl\.scrollIntoView\(\{\s*behavior: "smooth",\s*block: "start",\s*\}\);/s);
   assert.match(source, /<div class="home-games-carousel" data-home-carousel="\$\{escapeHtml\(sectionKey\)\}">/);
   assert.match(source, /getVisibleHomeSectionKeys\(\)\.map\(\(sectionKey\) => renderHomeGameSection\(sectionKey\)\)\.join\(""\)/);
-  assert.match(source, /<section class="panel home-games-section">/);
+  assert.match(source, /<section class="panel home-games-section" data-home-section-root="\$\{escapeHtml\(sectionKey\)\}">/);
   assert.match(source, /<h2>\$\{escapeHtml\(section\.title\)\}<\/h2>/);
   assert.match(source, /<div class="mini-board-card-list" data-game-count="\$\{games\.length\}">/);
   assert.doesNotMatch(source, /<h2>Active Games<\/h2>/);

@@ -1172,6 +1172,26 @@ const renderHomeGameCard = (game) => {
   </article>`;
 };
 
+const renderHomeSectionControls = (sectionKey, section, { placement } = { placement: "header" }) => `<div
+  class="home-games-section-controls home-games-section-controls-${escapeHtml(placement)}"
+>
+  <button
+    class="secondary"
+    data-action="home-page-prev"
+    data-home-section="${escapeHtml(sectionKey)}"
+    ${busy ? "disabled" : ""}
+    aria-label="Previous ${escapeHtml(section.title)} page"
+  >&larr;</button>
+  <p class="small home-games-section-page-label">Page ${section.page + 1} of ${section.totalPages}</p>
+  <button
+    class="secondary"
+    data-action="home-page-next"
+    data-home-section="${escapeHtml(sectionKey)}"
+    ${busy ? "disabled" : ""}
+    aria-label="Next ${escapeHtml(section.title)} page"
+  >&rarr;</button>
+</div>`;
+
 const renderHomeGameSection = (sectionKey) => {
   const section = getHomeSection(sectionKey);
   const games = section.gameIds.map((gameId) => transport.getGameViewModel(gameId)).filter(Boolean);
@@ -1179,40 +1199,35 @@ const renderHomeGameSection = (sectionKey) => {
     return "";
   }
   const showPaging = section.totalPages > 1;
-  return `<section class="panel home-games-section">
+  return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}">
     <div class="home-games-section-header">
       <div class="home-games-section-heading">
         <h2>${escapeHtml(section.title)}</h2>
         <p class="small">${section.totalGames === 1 ? "1 game" : `${section.totalGames} games`}</p>
       </div>
-      ${
-        showPaging
-          ? `<div class="home-games-section-controls">
-              <button
-                class="secondary"
-                data-action="home-page-prev"
-                data-home-section="${escapeHtml(sectionKey)}"
-                ${busy ? "disabled" : ""}
-                aria-label="Previous ${escapeHtml(section.title)} page"
-              >&larr;</button>
-              <p class="small home-games-section-page-label">Page ${section.page + 1} of ${section.totalPages}</p>
-              <button
-                class="secondary"
-                data-action="home-page-next"
-                data-home-section="${escapeHtml(sectionKey)}"
-                ${busy ? "disabled" : ""}
-                aria-label="Next ${escapeHtml(section.title)} page"
-              >&rarr;</button>
-            </div>`
-          : ""
-      }
+      ${showPaging ? renderHomeSectionControls(sectionKey, section, { placement: "header" }) : ""}
     </div>
     <div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
       <div class="home-games-carousel-track" data-home-carousel-track="${escapeHtml(sectionKey)}">
         <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
       </div>
     </div>
+    ${showPaging ? renderHomeSectionControls(sectionKey, section, { placement: "footer" }) : ""}
   </section>`;
+};
+
+const scrollHomeSectionToTop = (sectionKey) => {
+  if (getShellLayoutMode() !== "narrow" || !(appEl instanceof HTMLElement)) {
+    return;
+  }
+  const sectionEl = appEl.querySelector(`[data-home-section-root="${sectionKey}"]`);
+  if (!(sectionEl instanceof HTMLElement)) {
+    return;
+  }
+  sectionEl.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
 };
 
 const renderHome = () => {
@@ -2534,6 +2549,9 @@ appEl.addEventListener("click", async (event) => {
       });
       syncLiveChannels();
       render({ animatePanels: false, includeBoard: false });
+      window.requestAnimationFrame(() => {
+        scrollHomeSectionToTop(sectionKey);
+      });
       return;
     }
 

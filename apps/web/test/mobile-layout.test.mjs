@@ -187,4 +187,16 @@ test("home mini-board cards use uniform grid widths across wrapped rows", () => 
     shellStylesSource,
     /\.home-games-section-header\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;[\s\S]*flex-wrap:\s*wrap;/s,
   );
+  assert.match(
+    shellStylesSource,
+    /\.home-games-section-controls-footer\s*\{\s*display:\s*none;\s*\}/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="narrow"\]\s+\.home-games-section-controls-header\s*\{\s*display:\s*none;\s*\}/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="narrow"\]\s+\.home-games-section-controls-footer\s*\{[\s\S]*display:\s*inline-flex;[\s\S]*justify-content:\s*center;[\s\S]*width:\s*100%;/s,
+  );
 });

@@ -60,6 +60,8 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const getShellLayoutModeForRoute = \(route = currentRoute, viewportWidth = window\.innerWidth\) =>/);
   assert.match(source, /getAvailableShellContentWidth\(viewportWidth, route\) >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"/);
   assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) => getShellLayoutModeForRoute\(currentRoute, viewportWidth\);/);
+  assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
+  assert.match(source, /window\.requestAnimationFrame\(\(\) => \{\s*scrollHomeSectionToTop\(sectionKey\);\s*\}\);/s);
   assert.match(source, /const syncShellLayoutMode = \(\) => \{/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", layoutMode\);/);
   assert.match(source, /FLYOUT_KEYS\.forEach\(\(key\) => \{\s*appEl\.setAttribute\(`data-\$\{key\}-open`, currentRoute\[key\] \? "true" : "false"\);\s*\}\);/s);
