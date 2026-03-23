@@ -308,6 +308,7 @@ export const handleLiveGameRequest = async (
     const scenario = asScenarioRecord(body.scenario);
     const targetGameId = asIdentity(body.targetGameId);
     const sourceGameId = asIdentity(body.sourceGameId);
+    const initialSelectionAction = asAction(body.initialSelectionAction);
     if (!identityId || !scenario) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_scenario_payload" }, cacheControl: CACHE_NO_STORE };
     }
@@ -349,6 +350,7 @@ export const handleLiveGameRequest = async (
         offlineLocal: sourceProjection?.game.offlineLocal === true,
         sourceGame: sourceProjection?.game ?? null,
         participantCopyMode,
+        initialSelectionAction,
       }),
     });
     return {
@@ -366,10 +368,10 @@ export const handleLiveGameRequest = async (
     const body = await parseBody(request);
     const identityId = asIdentity(body.identityId);
     const sourceGameId = asIdentity(body.sourceGameId);
-    const initialState = asGameState(body.initialState);
+    const scenario = asScenarioRecord(body.scenario);
     const initialSelectionAction = asAction(body.initialSelectionAction);
     const sourceMoveIndex = typeof body.sourceMoveIndex === "number" && Number.isInteger(body.sourceMoveIndex) ? body.sourceMoveIndex : null;
-    if (!identityId || !sourceGameId || sourceMoveIndex === null || !initialState || !initialSelectionAction) {
+    if (!identityId || !sourceGameId || sourceMoveIndex === null || !scenario || !initialSelectionAction) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_history_branch_payload" }, cacheControl: CACHE_NO_STORE };
     }
     const sourceProjection = await loadGameProjection(env, sourceGameId);
@@ -386,20 +388,19 @@ export const handleLiveGameRequest = async (
     }
     const participantCopyMode = resolveLaunchParticipantCopyMode(sourceProjection.game, identityId);
     const newGameId = nextGameId();
-    const response = await fetchGameRoom(env, newGameId, "/create-from-history-branch", {
+    const response = await fetchGameRoom(env, newGameId, "/create-from-scenario", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         identityId,
         gameId: newGameId,
-        sourceGameId,
-        sourceMoveIndex,
-        initialState,
+        scenario,
         initialSelectionAction,
         playgroundMode: sourceProjection.game.playgroundMode === true,
         offlineLocal: sourceProjection.game.offlineLocal === true,
         sourceGame: sourceProjection.game,
         participantCopyMode,
+        preserveResultingState: true,
       }),
     });
     return {

@@ -2954,7 +2954,7 @@ appEl.addEventListener("click", async (event) => {
       const result = await transport.launchHistoryBranch({
         sourceGameId: activeGame.id,
         sourceMoveIndex: moveIndex,
-        initialState: branchSeed.initialState,
+        scenario: branchSeed.scenario,
         initialSelectionAction: branchSeed.initialSelectionAction,
         participantCopyMode: branchSeed.participantCopyMode,
       });

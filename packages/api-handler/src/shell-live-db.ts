@@ -360,7 +360,7 @@ const normalizePersistedGame = (
     parsed.notifications,
     "defaulted_to_empty_array",
   ), []);
-  const initialSelectionAction = typeof parsed.initialSelectionAction === "undefined"
+  const initialSelectionAction = typeof parsed.initialSelectionAction === "undefined" || parsed.initialSelectionAction === null
     ? null
     : asAction(parsed.initialSelectionAction) ?? (recordMismatch(
       mismatches,

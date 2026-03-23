@@ -484,7 +484,7 @@ test("live transport: scenario launch from an existing game applies shared parti
   assert.deepEqual(viewerLaunchBody.game.viewers, []);
 });
 
-test("live transport: history branch launch creates a fresh game with interactive preselection and viewer-only participant override", async () => {
+test("live transport: history branch launch replays prior history and preserves next-action preselection with viewer-only participant override", async () => {
   const created = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
     env,
@@ -507,13 +507,39 @@ test("live transport: history branch launch creates a fresh game with interactiv
   const moveBody = await move.json();
   const moveEntry = moveBody.game.moves[0];
 
+  const secondMove = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
+    env,
+  );
+  const secondMoveBody = await secondMove.json();
+  const secondMoveEntry = secondMoveBody.game.moves[1];
+
   const branch = await handleApiRequest(
     req("/api/shell/history/branch", "POST", {
       identityId: "id-viewer",
       sourceGameId: gameId,
-      sourceMoveIndex: 0,
-      initialState: moveEntry.selectionSnapshot,
-      initialSelectionAction: moveEntry.action,
+      sourceMoveIndex: 1,
+      scenario: {
+        formatVersion: 2,
+        id: "7c7140bf-ec49-485e-a272-560e46cb19dc",
+        title: "Branch from history",
+        description: "Replay through prior history",
+        incorrect: false,
+        initialState: moveEntry.selectionSnapshot,
+        moves: [
+          {
+            turnIndex: moveEntry.turnIndex,
+            turnMoveIndex: moveEntry.turnMoveIndex,
+            actorSide: moveEntry.actorSide,
+            notation: moveEntry.notation,
+            action: moveEntry.action,
+          },
+        ],
+        resultingState: secondMoveEntry.selectionSnapshot,
+        expectedFinalStateHash: "",
+        expectedOutcome: secondMoveEntry.selectionSnapshot.outcome?.status ?? "ongoing",
+      },
+      initialSelectionAction: secondMoveEntry.action,
       participantCopyMode: "viewer_as_player1",
     }),
     env,
@@ -524,9 +550,11 @@ test("live transport: history branch launch creates a fresh game with interactiv
   assert.equal(branchBody.game.player2, null);
   assert.deepEqual(branchBody.game.viewers, []);
   assert.equal(branchBody.game.inHistoryMode, false);
-  assert.deepEqual(branchBody.game.initialSelectionAction, moveEntry.action);
-  assert.deepEqual(branchBody.game.currentSnapshot, moveEntry.selectionSnapshot);
-  assert.equal(branchBody.game.moves.length, 0);
+  assert.deepEqual(branchBody.game.initialSelectionAction, secondMoveEntry.action);
+  assert.deepEqual(branchBody.game.currentSnapshot, secondMoveEntry.selectionSnapshot);
+  assert.equal(branchBody.game.moves.length, 1);
+  assert.equal(branchBody.game.moves[0].notation, moveEntry.notation);
+  assert.equal(branchBody.game.moves[0].turnIndex, moveEntry.turnIndex);
 });
 
 test("live transport: scenario import rejects non-UUID scenario ids", async () => {

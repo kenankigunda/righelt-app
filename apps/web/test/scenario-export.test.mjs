@@ -225,7 +225,7 @@ test("buildScenarioFromGame rejects non-UUID scenario ids", async () => {
   });
 });
 
-test("buildHistoryBranchSeedFromGame uses the selected move pre-state and launch participant mode", () => {
+test("buildHistoryBranchSeedFromGame builds replayable history up to the selected move and preserves next-action selection", () => {
   const seed = buildHistoryBranchSeedFromGame(
     {
       id: "game-branch-1",
@@ -234,6 +234,39 @@ test("buildHistoryBranchSeedFromGame uses the selected move pre-state and launch
       moves: [
         {
           index: 0,
+          turnIndex: 0,
+          turnMoveIndex: 0,
+          actorSide: "P1",
+          notation: "M1",
+          action: {
+            type: "move",
+            actorId: "U0",
+            from: { row: 1, col: 1 },
+            to: { row: 1, col: 2 },
+          },
+          selectionSnapshot: {
+            boardSize: 10,
+            sideToMove: "P1",
+            turnIndex: 0,
+            pieces: [{ id: "U0", owner: "P1", kind: "unit", position: { row: 1, col: 1 } }],
+            continuation: null,
+            outcome: { status: "ongoing" },
+          },
+          snapshot: {
+            boardSize: 10,
+            sideToMove: "P1",
+            turnIndex: 0,
+            pieces: [{ id: "U0", owner: "P1", kind: "unit", position: { row: 1, col: 2 } }],
+            continuation: null,
+            outcome: { status: "ongoing" },
+          },
+        },
+        {
+          index: 1,
+          turnIndex: 0,
+          turnMoveIndex: 1,
+          actorSide: "P1",
+          notation: "M2",
           action: {
             type: "move",
             actorId: "U1",
@@ -248,15 +281,94 @@ test("buildHistoryBranchSeedFromGame uses the selected move pre-state and launch
             continuation: null,
             outcome: { status: "ongoing" },
           },
+          snapshot: {
+            boardSize: 10,
+            sideToMove: "P2",
+            turnIndex: 4,
+            pieces: [{ id: "U1", owner: "P1", kind: "unit", position: { row: 3, col: 2 } }],
+            continuation: null,
+            outcome: { status: "ongoing" },
+          },
         },
       ],
+      board: {
+        state: {
+          boardSize: 10,
+          sideToMove: "P2",
+          turnIndex: 4,
+          pieces: [{ id: "U1", owner: "P1", kind: "unit", position: { row: 3, col: 2 } }],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+      },
+    },
+    1,
+  );
+
+  assert.equal(seed.title, "Branch from game-branch move 2");
+  assert.equal(seed.participantCopyMode, "viewer_as_player1");
+  assert.equal(seed.scenario.moves.length, 1);
+  assert.equal(seed.scenario.moves[0].notation, "M1");
+  assert.equal(seed.scenario.initialState.turnIndex, 0);
+  assert.equal(seed.scenario.resultingState.turnIndex, 4);
+  assert.deepEqual(seed.initialSelectionAction.from, { row: 2, col: 2 });
+  assert.deepEqual(seed.initialSelectionAction.to, { row: 3, col: 2 });
+  assert.equal(seed.scenario.resultingState.sideToMove, "P1");
+});
+
+test("buildHistoryBranchSeedFromGame uses canonical initial state when branching from the first move", () => {
+  const seed = buildHistoryBranchSeedFromGame(
+    {
+      id: "game-branch-2",
+      myRole: "Player 1",
+      myRoles: ["Player 1"],
+      moves: [
+        {
+          index: 0,
+          turnIndex: 0,
+          turnMoveIndex: 0,
+          actorSide: "P1",
+          notation: "M1",
+          action: {
+            type: "move",
+            actorId: "U1",
+            from: { row: 2, col: 2 },
+            to: { row: 3, col: 2 },
+          },
+          selectionSnapshot: {
+            boardSize: 10,
+            sideToMove: "P1",
+            turnIndex: 0,
+            pieces: [{ id: "U1", owner: "P1", kind: "unit", position: { row: 2, col: 2 } }],
+            continuation: null,
+            outcome: { status: "ongoing" },
+          },
+          snapshot: {
+            boardSize: 10,
+            sideToMove: "P1",
+            turnIndex: 0,
+            pieces: [{ id: "U1", owner: "P1", kind: "unit", position: { row: 3, col: 2 } }],
+            continuation: null,
+            outcome: { status: "ongoing" },
+          },
+        },
+      ],
+      board: {
+        state: {
+          boardSize: 10,
+          sideToMove: "P2",
+          turnIndex: 1,
+          pieces: [{ id: "U1", owner: "P1", kind: "unit", position: { row: 3, col: 2 } }],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+      },
     },
     0,
   );
 
-  assert.equal(seed.title, "Branch from game-branch move 1");
-  assert.equal(seed.participantCopyMode, "viewer_as_player1");
-  assert.deepEqual(seed.initialSelectionAction.from, { row: 2, col: 2 });
-  assert.deepEqual(seed.initialSelectionAction.to, { row: 3, col: 2 });
-  assert.equal(seed.initialState.turnIndex, 4);
+  assert.equal(seed.participantCopyMode, "copy_source_participants");
+  assert.equal(seed.scenario.moves.length, 0);
+  assert.deepEqual(seed.scenario.initialState, seed.scenario.resultingState);
+  assert.equal(seed.scenario.initialState.turnIndex, 0);
 });

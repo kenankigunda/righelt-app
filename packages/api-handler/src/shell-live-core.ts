@@ -406,6 +406,7 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
   game.historyIndexByIdentity = {};
   game.pendingScenarioSelection = clone(scenario.savedSelection);
   game.lastMoveAt = null;
+  game.initialSelectionAction = null;
 
   const moveTimes: string[] = [];
   for (const scenarioMove of scenario.moves) {
@@ -433,6 +434,44 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
   game.updatedAt = moveTimes[moveTimes.length - 1] ?? game.updatedAt;
   game.lastMoveAt = moveTimes[moveTimes.length - 1] ?? null;
   addNotification(game, `Scenario loaded: ${scenario.title}`);
+};
+
+export const reconcileGameToScenarioResultingState = (game: LiveGame, scenario: ScenarioRecord) => {
+  const reconciled = resolveToStability(clone(scenario.resultingState), { artifactMode: "full" });
+  reconciled.sideToMove = scenario.resultingState.sideToMove;
+  reconciled.turnIndex = scenario.resultingState.turnIndex;
+  game.board.state = reconciled;
+
+  const targetTurnIndex = reconciled.turnIndex ?? 0;
+  const existingTurns = Array.isArray(game.turns) ? game.turns.filter((turn) => turn.index <= targetTurnIndex) : [];
+  let targetTurn = existingTurns.find((turn) => turn.index === targetTurnIndex) ?? null;
+  if (!targetTurn) {
+    targetTurn = {
+      index: targetTurnIndex,
+      startedAt: game.createdAt,
+      endedAt: null,
+      playerSeat: getSeatForSide(reconciled.sideToMove),
+      status: "active",
+      moveIndexes: [],
+      lastMoveAt: null,
+    };
+    existingTurns.push(targetTurn);
+    existingTurns.sort((left, right) => left.index - right.index);
+  }
+
+  for (const turn of existingTurns) {
+    if (turn.index < targetTurnIndex) {
+      turn.status = "complete";
+      turn.endedAt = turn.lastMoveAt ?? turn.endedAt ?? game.createdAt;
+      continue;
+    }
+    turn.playerSeat = getSeatForSide(reconciled.sideToMove);
+    turn.status = "active";
+    turn.endedAt = null;
+    turn.lastMoveAt = turn.moveIndexes.length > 0 ? game.moves[turn.moveIndexes[turn.moveIndexes.length - 1]]?.at ?? null : null;
+  }
+
+  game.turns = existingTurns;
 };
 
 export const copyParticipantsBetweenGames = (source: LiveGame, target: LiveGame) => {
@@ -702,7 +741,7 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     typeof historyIndex === "number" && moves[historyIndex]
       ? clone(moves[historyIndex].action)
       : null;
-  const initialSelectionAction = !inHistoryMode && moves.length === 0 ? clone(game.initialSelectionAction ?? null) : null;
+  const initialSelectionAction = !inHistoryMode ? clone(game.initialSelectionAction ?? null) : null;
   const activeTurn = turns[turns.length - 1] ?? null;
   const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(game);
   const controlSeat = getControlSeatForTurn(game.board.state, turnOwnerSeat);
@@ -871,6 +910,7 @@ export const applyServerAction = (game: LiveGame, action: Action, notation?: str
     renumberHistory(game);
   }
   game.board.state = next;
+  game.initialSelectionAction = null;
   game.lastMoveAt = move.at;
   game.updatedAt = move.at;
   addNotification(game, `Move recorded in turn ${activeTurn.index + 1}`);

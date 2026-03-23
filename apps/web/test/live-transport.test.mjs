@@ -264,6 +264,8 @@ test("live transport store posts history branch launches through the shell histo
       assert.equal(body.sourceGameId, "game-source");
       assert.equal(body.sourceMoveIndex, 2);
       assert.equal(body.participantCopyMode, "viewer_as_player1");
+      assert.equal(body.scenario.id, "history-branch:game-source:2");
+      assert.equal(body.scenario.moves.length, 2);
       assert.deepEqual(body.initialSelectionAction.from, { row: 1, col: 1 });
       return Response.json({
         ok: true,
@@ -303,7 +305,21 @@ test("live transport store posts history branch launches through the shell histo
   const result = await store.launchHistoryBranch({
     sourceGameId: "game-source",
     sourceMoveIndex: 2,
-    initialState: { sideToMove: "P1", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+    scenario: {
+      formatVersion: 2,
+      id: "history-branch:game-source:2",
+      title: "Branch from game-source move 3",
+      description: "Replay branch",
+      incorrect: false,
+      initialState: { sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+      moves: [
+        { turnIndex: 0, turnMoveIndex: 0, actorSide: "P1", notation: "M1", action: { type: "move", from: { row: 0, col: 0 }, to: { row: 0, col: 1 } } },
+        { turnIndex: 0, turnMoveIndex: 1, actorSide: "P1", notation: "M2", action: { type: "move", from: { row: 0, col: 1 }, to: { row: 0, col: 2 } } },
+      ],
+      resultingState: { sideToMove: "P1", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+      expectedFinalStateHash: "",
+      expectedOutcome: "ongoing",
+    },
     initialSelectionAction: {
       type: "move",
       actorId: "U1",

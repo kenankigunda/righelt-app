@@ -32,6 +32,7 @@ import {
   getActiveTurn,
   getApproverIdentityForSeat,
   resolveLaunchParticipantCopyMode,
+  reconcileGameToScenarioResultingState,
   getSeatIdentity,
   getSeatForSide,
   getSideToMoveSeat,
@@ -142,7 +143,9 @@ export class GameRoomDO {
       const identityId = asIdentity(body.identityId);
       const gameId = asIdentity(body.gameId);
       const scenario = asScenarioRecord(body.scenario);
-      if (!identityId || !gameId || !scenario) {
+      const hasInitialSelectionAction = typeof body.initialSelectionAction !== "undefined" && body.initialSelectionAction !== null;
+      const initialSelectionAction = typeof body.initialSelectionAction === "undefined" ? null : asAction(body.initialSelectionAction);
+      if (!identityId || !gameId || !scenario || (hasInitialSelectionAction && !initialSelectionAction)) {
         return json({ ok: false, error: "invalid_scenario_payload" }, 400);
       }
       this.game = createInitialGame({
@@ -158,51 +161,12 @@ export class GameRoomDO {
         applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
       }
       applyScenarioToGame(this.game, scenario);
-      assignIdentityToScenarioSeat(this.game, identityId, getSeatForSide(this.game.board.state.sideToMove));
-      this.eventSeq = 1;
-      await persistGameState(this.env, this.game, this.eventSeq, null);
-      return json({ ok: true, game: withViewModel(this.game, identityId), eventSeq: this.eventSeq });
-    }
-
-    if (request.method === "POST" && path === "/create-from-history-branch") {
-      const body = await parseBody(request);
-      const identityId = asIdentity(body.identityId);
-      const gameId = asIdentity(body.gameId);
-      const initialState = asGameState(body.initialState);
-      const initialSelectionAction = asAction(body.initialSelectionAction);
-      if (!identityId || !gameId || !initialState || !initialSelectionAction) {
-        return json({ ok: false, error: "invalid_history_branch_payload" }, 400);
+      if (body.preserveResultingState === true) {
+        reconcileGameToScenarioResultingState(this.game, scenario);
+      } else {
+        assignIdentityToScenarioSeat(this.game, identityId, getSeatForSide(this.game.board.state.sideToMove));
       }
-      this.game = createInitialGame({
-        gameId,
-        identityId,
-        playgroundMode: body.playgroundMode === true,
-        offlineLocal: body.offlineLocal === true,
-      });
-      const sourceGame = body.sourceGame && typeof body.sourceGame === "object" ? (body.sourceGame as LiveGame) : null;
-      if (sourceGame) {
-        const participantCopyMode =
-          parseLaunchParticipantCopyMode(body.participantCopyMode) ?? resolveLaunchParticipantCopyMode(sourceGame, identityId);
-        applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
-      }
-      this.game.board.state = clone(initialState);
-      this.game.initialSelectionAction = clone(initialSelectionAction);
-      this.game.turns = [
-        {
-          index: this.game.board.state.turnIndex ?? 0,
-          startedAt: this.game.createdAt,
-          endedAt: null,
-          playerSeat: getSideToMoveSeat(this.game),
-          status: "active",
-          moveIndexes: [],
-          lastMoveAt: null,
-        },
-      ];
-      this.game.moves = [];
-      this.game.historyIndexByIdentity = {};
-      this.game.lastMoveAt = null;
-      this.game.updatedAt = this.game.createdAt;
-      this.game.notifications = ["History branch launched", "Game created"];
+      this.game.initialSelectionAction = initialSelectionAction ? clone(initialSelectionAction) : null;
       this.eventSeq = 1;
       await persistGameState(this.env, this.game, this.eventSeq, null);
       return json({ ok: true, game: withViewModel(this.game, identityId), eventSeq: this.eventSeq });

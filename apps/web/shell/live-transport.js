@@ -587,7 +587,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const launchHistoryBranch = async ({
     sourceGameId,
     sourceMoveIndex,
-    initialState,
+    scenario,
     initialSelectionAction,
     participantCopyMode,
   } = {}) => {
@@ -598,7 +598,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
         identityId,
         sourceGameId,
         sourceMoveIndex,
-        initialState,
+        scenario,
         initialSelectionAction,
         participantCopyMode,
       }),

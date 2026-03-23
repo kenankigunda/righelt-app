@@ -179,10 +179,30 @@ export const buildHistoryBranchSeedFromGame = (game, moveIndex) => {
   if (!move?.selectionSnapshot || !move?.action) {
     throw new Error("invalid_history_branch_move");
   }
+  const selectedMoves = game.moves.slice(0, moveIndex);
+  const initialState = structuredClone(selectedMoves[0]?.selectionSnapshot ?? game.moves?.[0]?.selectionSnapshot ?? game.board?.state ?? game.currentSnapshot);
+  const resultingState = structuredClone(move.selectionSnapshot);
   const sourceLabel = String(game?.id || "").startsWith("game-") ? String(game.id).slice(0, 11) : String(game?.id || "game");
   return {
     title: `Branch from ${sourceLabel} move ${move.index + 1}`,
-    initialState: structuredClone(move.selectionSnapshot),
+    scenario: normalizeScenario({
+      formatVersion: 2,
+      id: `history-branch:${game?.id || "game"}:${move.index}`,
+      title: `Branch from ${sourceLabel} move ${move.index + 1}`,
+      description: `Replay through move ${move.index} and open before move ${move.index + 1}.`,
+      incorrect: false,
+      initialState,
+      moves: selectedMoves.map((selectedMove) => ({
+        turnIndex: selectedMove.turnIndex,
+        turnMoveIndex: selectedMove.turnMoveIndex,
+        actorSide: selectedMove.actorSide,
+        notation: selectedMove.notation,
+        action: structuredClone(selectedMove.action),
+      })),
+      resultingState,
+      expectedFinalStateHash: "",
+      expectedOutcome: resultingState?.outcome?.status ?? "ongoing",
+    }),
     initialSelectionAction: structuredClone(move.action),
     participantCopyMode: getLaunchParticipantCopyMode(game),
   };
