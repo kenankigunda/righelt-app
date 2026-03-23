@@ -1024,11 +1024,6 @@ const renderHeader = () => `
   <header class="shell-header">
     <div class="shell-header-main">
       <h1>Righelt Web Shell</h1>
-      <p class="small">Identity <span id="shell-header-identity" class="mono">${escapeHtml(transport.getIdentityId())}</span></p>
-      <p class="small shell-header-status">Live sync: <span id="shell-header-live-sync" class="mono">${escapeHtml(
-        `${wsStatus.state}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`,
-      )}</span></p>
-      <p class="small shell-header-status">Last event: <span id="shell-header-last-event" class="mono">${escapeHtml(wsLastEvent)}</span></p>
     </div>
     <div class="shell-header-actions">
       <div class="nav-row">
@@ -1207,6 +1202,12 @@ const renderDebugContent = () => {
           };
   return `
     <section class="panel debug-panel">
+      <h2>Live Sync</h2>
+      <pre class="debug-pre">Identity <span id="shell-debug-identity" class="mono">${escapeHtml(transport.getIdentityId())}</span>
+Live sync: <span id="shell-debug-live-sync" class="mono">${escapeHtml(`${wsStatus.state}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`)}</span>
+Last event: <span id="shell-debug-last-event" class="mono">${escapeHtml(wsLastEvent)}</span></pre>
+    </section>
+    <section class="panel debug-panel">
       <h2>Engine Status</h2>
       <pre class="debug-pre">${escapeHtml(
         JSON.stringify(
@@ -1306,9 +1307,9 @@ const renderFlyouts = () => {
 };
 
 const updateHeaderFields = () => {
-  const identityEl = document.getElementById("shell-header-identity");
-  const liveSyncEl = document.getElementById("shell-header-live-sync");
-  const lastEventEl = document.getElementById("shell-header-last-event");
+  const identityEl = document.getElementById("shell-debug-identity");
+  const liveSyncEl = document.getElementById("shell-debug-live-sync");
+  const lastEventEl = document.getElementById("shell-debug-last-event");
   if (identityEl) {
     identityEl.textContent = transport.getIdentityId();
   }
@@ -2555,7 +2556,7 @@ const liveSync = createLiveSyncClient({
     ) {
       transport.applyLiveGameUpdate({ game: payload.game, eventSeq: payload.eventSeq, clientCommandId: payload.clientCommandId ?? null });
     }
-    if (document.getElementById("shell-header-last-event")) {
+    if (document.getElementById("shell-debug-last-event")) {
       updateHeaderFields();
     } else {
       render({ animatePanels: false, includeBoard: false });
@@ -2578,7 +2579,7 @@ const liveSync = createLiveSyncClient({
     if (status.state === "closed" && status.reconnectAttempts >= 3) {
       void syncRouteDataPassive();
     }
-    if (document.getElementById("shell-header-live-sync")) {
+    if (document.getElementById("shell-debug-live-sync")) {
       updateHeaderFields();
     } else {
       render({ animatePanels: false, includeBoard: false });

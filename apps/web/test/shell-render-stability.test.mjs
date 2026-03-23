@@ -31,7 +31,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /aria-pressed="\$\{currentRoute\.debug \? "true" : "false"\}"/);
   assert.match(source, /title: "Debug mode"/);
   assert.match(source, /Scenarios/);
-  assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
+  assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Live Sync<\/h2>[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
   assert.match(source, /data-shell-sticky-target="left" data-sticky-enabled="false"/);
@@ -161,7 +161,7 @@ test("live sync applies authoritative pushed game payloads before render", () =>
   assert.match(source, /payload\?\.type === "state_sync"/);
   assert.match(source, /payload\?\.type === "event_appended"/);
   assert.match(source, /transport\.applyLiveGameUpdate\(\{ game: payload\.game, eventSeq: payload\.eventSeq, clientCommandId: payload\.clientCommandId \?\? null \}\);/);
-  assert.match(source, /if \(document\.getElementById\("shell-header-last-event"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
+  assert.match(source, /if \(document\.getElementById\("shell-debug-last-event"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
 test("live sync status renders are deduplicated by stable status key", () => {
@@ -169,6 +169,7 @@ test("live sync status renders are deduplicated by stable status key", () => {
   assert.match(source, /const statusKey = toStableKey\(status\);/);
   assert.match(source, /if \(statusKey === lastWsStatusKey\) \{\s*return;\s*\}/s);
   assert.match(source, /lastWsStatusKey = statusKey;\s*wsStatus = status;\s*if \(status\.state === "closed" && status\.reconnectAttempts >= 3\) \{\s*void syncRouteDataPassive\(\);\s*\}[\s\S]*updateHeaderFields\(\);/s);
+  assert.match(source, /if \(document\.getElementById\("shell-debug-live-sync"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
 test("syncLiveChannels manages subscriptions through the shared active game set", () => {
