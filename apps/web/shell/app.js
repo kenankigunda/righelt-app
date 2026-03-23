@@ -2682,11 +2682,19 @@ appEl.addEventListener("click", async (event) => {
   }
 
   const action = actionEl.getAttribute("data-action");
-  const shouldRenderBusyState =
+  const shouldRenderBusyStateStart =
     action !== "copy-invite" &&
     action !== "jump-history" &&
     action !== "launch-history-branch" &&
     action !== "return-live" &&
+    action !== "tutorial-next" &&
+    action !== "tutorial-skip" &&
+    action !== "open-debug" &&
+    action !== "open-scenarios" &&
+    action !== "close-debug" &&
+    action !== "close-scenarios";
+  const shouldRenderBusyStateEnd =
+    action !== "copy-invite" &&
     action !== "tutorial-next" &&
     action !== "tutorial-skip" &&
     action !== "open-debug" &&
@@ -3097,7 +3105,7 @@ appEl.addEventListener("click", async (event) => {
       setSelectedScenarioFeedback("");
       render({ animatePanels: false, includeBoard: false });
     }
-  }, { renderStart: shouldRenderBusyState, renderEnd: shouldRenderBusyState });
+  }, { renderStart: shouldRenderBusyStateStart, renderEnd: shouldRenderBusyStateEnd });
 });
 
 appEl.addEventListener("change", (event) => {
