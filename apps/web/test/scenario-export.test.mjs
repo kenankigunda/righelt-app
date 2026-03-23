@@ -8,6 +8,7 @@ const SCENARIO_UUIDS = {
   sourceAndTarget: "a3a4664d-56d1-4c47-8498-1781686abd1a",
   historyPreMove: "6df1e170-b639-45ec-a5fe-e05fd3a27ba4",
 };
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const withMockedHash = async (run) => {
   const originalFetch = globalThis.fetch;
@@ -307,6 +308,7 @@ test("buildHistoryBranchSeedFromGame builds replayable history up to the selecte
 
   assert.equal(seed.title, "Branch from game-branch move 2");
   assert.equal(seed.participantCopyMode, "viewer_as_side_to_move");
+  assert.match(seed.scenario.id, UUID_V4_PATTERN);
   assert.equal(seed.scenario.moves.length, 1);
   assert.equal(seed.scenario.moves[0].notation, "M1");
   assert.equal(seed.scenario.initialState.turnIndex, 0);
@@ -368,6 +370,7 @@ test("buildHistoryBranchSeedFromGame uses canonical initial state when branching
   );
 
   assert.equal(seed.participantCopyMode, "copy_source_participants");
+  assert.match(seed.scenario.id, UUID_V4_PATTERN);
   assert.equal(seed.scenario.moves.length, 0);
   assert.deepEqual(seed.scenario.initialState, seed.scenario.resultingState);
   assert.equal(seed.scenario.initialState.turnIndex, 0);

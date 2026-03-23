@@ -332,7 +332,7 @@ test("live transport: scenario import exposes pending saved selection and accept
   assert.equal(localGame.pendingScenarioSelection, null);
 });
 
-test("live transport: create-from-scenario seats the importer as the scenario side to move and swaps copied seats", async () => {
+test("live transport: create-from-scenario preserves copied player seats when the importer is already a player", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
     env,
@@ -391,9 +391,9 @@ test("live transport: create-from-scenario seats the importer as the scenario si
   );
   const imported = await scenarioImport.json();
   assert.equal(scenarioImport.status, 200);
-  assert.equal(imported.game.player1?.identityId, "id-b");
-  assert.equal(imported.game.player2?.identityId, "id-a");
-  assert.equal(imported.game.myRole, "Player 2");
+  assert.equal(imported.game.player1?.identityId, "id-a");
+  assert.equal(imported.game.player2?.identityId, "id-b");
+  assert.equal(imported.game.myRole, "Player 1");
 });
 
 test("live transport: scenario launch from an existing game applies shared participant copy policy", async () => {

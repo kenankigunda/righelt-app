@@ -9,6 +9,7 @@ import {
 } from "../generated/packages/game-engine/src/index.js";
 
 const IMPORT_SCENARIO_UUID = "e5e48740-f8e2-4b32-bfbf-c46ec98b5962";
+const HISTORY_BRANCH_UUID = "32bfe814-d353-4492-af25-4cb9f9a9dd75";
 
 const createMemoryStorage = () => {
   const map = new Map();
@@ -264,7 +265,7 @@ test("live transport store posts history branch launches through the shell histo
       assert.equal(body.sourceGameId, "game-source");
       assert.equal(body.sourceMoveIndex, 2);
       assert.equal(body.participantCopyMode, "viewer_as_side_to_move");
-      assert.equal(body.scenario.id, "history-branch:game-source:2");
+      assert.equal(body.scenario.id, HISTORY_BRANCH_UUID);
       assert.equal(body.scenario.moves.length, 2);
       assert.deepEqual(body.initialSelectionAction.from, { row: 1, col: 1 });
       return Response.json({
@@ -307,7 +308,7 @@ test("live transport store posts history branch launches through the shell histo
     sourceMoveIndex: 2,
     scenario: {
       formatVersion: 2,
-      id: "history-branch:game-source:2",
+      id: HISTORY_BRANCH_UUID,
       title: "Branch from game-source move 3",
       description: "Replay branch",
       incorrect: false,

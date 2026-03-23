@@ -173,7 +173,7 @@ export class GameRoomDO {
       applyScenarioToGame(this.game, scenario);
       if (body.preserveResultingState === true) {
         reconcileGameToScenarioResultingState(this.game, scenario);
-      } else {
+      } else if (participantCopyMode !== "copy_source_participants") {
         assignIdentityToScenarioSeat(this.game, identityId, getSeatForSide(this.game.board.state.sideToMove));
       }
       if (sourceGame && participantCopyMode && participantCopyMode !== "copy_source_participants") {
