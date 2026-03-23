@@ -835,7 +835,7 @@ textarea:focus-visible {
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
-  padding: 0.45rem 0.55rem;
+  padding: 0.18rem 0.28rem;
   transition:
     border-color 160ms ease,
     background-color 160ms ease,
@@ -1006,6 +1006,10 @@ textarea:focus-visible {
   margin: 0;
   display: grid;
   gap: var(--section-item-gap);
+}
+
+.debug-panel > h2 {
+  margin: 0;
 }
 
 .debug-pre {
