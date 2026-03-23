@@ -398,6 +398,72 @@ const getScenarioExportContext = (game) => {
     savedSelection,
   };
 };
+const getActiveScenarioGame = () => {
+  const activeGameId =
+    currentRoute.name === "game" ? currentRoute.gameId : currentRoute.name === "invite" ? resolvedInvite?.gameId || null : null;
+  return activeGameId ? transport.getGameViewModel(activeGameId) : null;
+};
+const replaceScenarioInCatalog = (scenario) => {
+  scenarioCatalog = {
+    ...scenarioCatalog,
+    scenarios: scenarioCatalog.scenarios.map((entry) => (entry.id === scenario.id ? scenario : entry)),
+  };
+  selectedScenarioId = scenario.id;
+};
+const updateSelectedScenarioRecord = async ({
+  activeGame,
+  title,
+  description,
+  includeCurrentBoard = false,
+  feedbackMessage = null,
+} = {}) => {
+  const selectedScenario = getSelectedScenario();
+  if (!selectedScenario) {
+    return { ok: false, reason: "no_selected_scenario" };
+  }
+  const nextTitle = String(title ?? "").trim();
+  const nextDescription = String(description ?? "").trim();
+  if (!nextTitle || !nextDescription) {
+    return { ok: false, reason: "missing_metadata" };
+  }
+
+  const metadataChanged = nextTitle !== selectedScenario.title || nextDescription !== selectedScenario.description;
+  const exportContext = includeCurrentBoard ? getScenarioExportContext(activeGame) : null;
+  const scenario = includeCurrentBoard
+    ? await buildScenarioFromGame(activeGame, {
+        scenarioId: selectedScenario.id,
+        title: nextTitle,
+        description: nextDescription,
+        moveLimit: exportContext.moveLimit,
+        resultingStateOverride: exportContext.currentSnapshot,
+        savedSelection: exportContext.savedSelection,
+      })
+    : {
+        ...selectedScenario,
+        title: nextTitle,
+        description: nextDescription,
+      };
+  scenario.incorrect = selectedScenario.incorrect === true;
+
+  if (!includeCurrentBoard && !metadataChanged) {
+    return { ok: true, reason: "no_changes", scenario };
+  }
+
+  const localWrite = await tryLocalScenarioWrite("/scenarios/update", { scenario });
+  if (!localWrite.ok) {
+    return { ok: false, reason: "local_update_failed" };
+  }
+  if (localWrite.body?.catalog?.scenarios) {
+    scenarioCatalog = localWrite.body.catalog;
+    selectedScenarioId = scenario.id;
+  } else {
+    replaceScenarioInCatalog(scenario);
+  }
+  if (feedbackMessage) {
+    setSelectedScenarioFeedback(feedbackMessage(scenario));
+  }
+  return { ok: true, reason: metadataChanged ? "updated" : "state_updated", scenario };
+};
 const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
   const pendingSelection = game?.pendingScenarioSelection ?? null;
   if (
@@ -2914,9 +2980,7 @@ appEl.addEventListener("click", async (event) => {
     }
 
     if (action === "update-scenario" || action === "save-scenario") {
-      const activeGameId =
-        currentRoute.name === "game" ? currentRoute.gameId : currentRoute.name === "invite" ? resolvedInvite?.gameId || null : null;
-      const activeGame = activeGameId ? transport.getGameViewModel(activeGameId) : null;
+      const activeGame = getActiveScenarioGame();
       if (!activeGame) {
         if (action === "update-scenario") {
           setSelectedScenarioFeedback("Open a game to update the selected scenario.");
@@ -2935,10 +2999,8 @@ appEl.addEventListener("click", async (event) => {
         render({ animatePanels: false, includeBoard: false });
         return;
       }
-      const exportContext = getScenarioExportContext(activeGame);
       if (action === "update-scenario") {
-        const selectedScenario = getSelectedScenario();
-        if (!selectedScenario) {
+        if (!getSelectedScenario()) {
           setSelectedScenarioFeedback("No scenario selected.");
           render({ animatePanels: false, includeBoard: false });
           return;
@@ -2950,27 +3012,18 @@ appEl.addEventListener("click", async (event) => {
           syncScenarioAuthoringControls();
           return;
         }
-        const scenario = await buildScenarioFromGame(activeGame, {
-          scenarioId: selectedScenario.id,
+        const updated = await updateSelectedScenarioRecord({
+          activeGame,
           title,
           description,
-          moveLimit: exportContext.moveLimit,
-          resultingStateOverride: exportContext.currentSnapshot,
-          savedSelection: exportContext.savedSelection,
+          includeCurrentBoard: true,
+          feedbackMessage: (scenario) => `Scenario ${scenario.id} updated.`,
         });
-        scenario.incorrect = selectedScenario.incorrect === true;
-        const localWrite = await tryLocalScenarioWrite("/scenarios/update", { scenario });
-        if (!localWrite.ok) {
+        if (!updated.ok) {
           setSelectedScenarioFeedback("Failed to update scenario locally.");
           render({ animatePanels: false, includeBoard: false });
           return;
         }
-        scenarioCatalog = localWrite.body?.catalog ?? {
-          ...scenarioCatalog,
-          scenarios: scenarioCatalog.scenarios.map((entry) => (entry.id === scenario.id ? scenario : entry)),
-        };
-        selectedScenarioId = scenario.id;
-        setSelectedScenarioFeedback(`Scenario ${scenario.id} updated.`);
         render({ animatePanels: false, includeBoard: false });
         return;
       }
@@ -2980,6 +3033,7 @@ appEl.addEventListener("click", async (event) => {
         syncScenarioAuthoringControls();
         return;
       }
+      const exportContext = getScenarioExportContext(activeGame);
       const scenario = await buildScenarioFromGame(activeGame, {
         scenarioId: crypto.randomUUID(),
         title: draft.title,
@@ -3035,6 +3089,37 @@ appEl.addEventListener("input", (event) => {
   if (target instanceof HTMLElement && target.hasAttribute("data-scenario-editable")) {
     syncScenarioAuthoringControls();
   }
+});
+
+appEl.addEventListener("focusout", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || !target.hasAttribute("data-scenario-editable")) {
+    return;
+  }
+  window.setTimeout(async () => {
+    if (busy || !canAuthorScenariosLocally()) {
+      return;
+    }
+    const activeGame = getActiveScenarioGame();
+    if (!activeGame || !getSelectedScenario()) {
+      return;
+    }
+    const title = getScenarioEditableFieldText("title");
+    const description = getScenarioEditableFieldText("description");
+    if (!title || !description) {
+      return;
+    }
+    const updated = await updateSelectedScenarioRecord({
+      activeGame,
+      title,
+      description,
+      includeCurrentBoard: false,
+      feedbackMessage: (scenario) => `Scenario ${scenario.id} details saved.`,
+    });
+    if (updated.ok && updated.reason === "updated") {
+      render({ animatePanels: false, includeBoard: false });
+    }
+  }, 0);
 });
 
 appEl.addEventListener("pointerdown", (event) => {

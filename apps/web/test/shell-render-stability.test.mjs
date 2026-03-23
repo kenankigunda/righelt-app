@@ -234,6 +234,11 @@ test("scenario selector labels use titles without visible ids", () => {
   assert.match(source, /const canSaveScenario = canAuthorScenarios && Boolean\(saveDraft\.title && saveDraft\.description\);/);
   assert.match(source, /const title = getScenarioEditableFieldText\("title"\);/);
   assert.match(source, /const description = getScenarioEditableFieldText\("description"\);/);
+  assert.match(source, /appEl\.addEventListener\("focusout", \(event\) => \{/);
+  assert.match(source, /target\.hasAttribute\("data-scenario-editable"\)/);
+  assert.match(source, /window\.setTimeout\(async \(\) => \{/);
+  assert.match(source, /includeCurrentBoard:\s*false,/);
+  assert.match(source, /Scenario \$\{scenario\.id\} details saved\./);
   assert.doesNotMatch(source, /downloadScenarioCatalog/);
 });
 
