@@ -779,7 +779,7 @@ test("live transport store notifies subscribers for optimistic enqueue and autho
   assert.equal(changes.some((change) => change.type === "authoritative_update" && change.gameId === baseGame.id), true);
 });
 
-test("live transport store notifies subscribers when optimistic sync rolls back or desyncs", async () => {
+test("live transport store notifies subscribers when optimistic sync rolls back or enters confirming", async () => {
   const baseGame = buildLiveGame();
   const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
 
@@ -820,7 +820,7 @@ test("live transport store notifies subscribers when optimistic sync rolls back 
   }
 
   {
-    const desyncChanges = [];
+    const confirmingChanges = [];
     const desyncStore = createLiveTransportStore({
       storage: createMemoryStorage(),
       fetcher: async (url, init = {}) => {
@@ -835,16 +835,62 @@ test("live transport store notifies subscribers when optimistic sync rolls back 
       random: () => 0.12345,
     });
     desyncStore.subscribe((change) => {
-      desyncChanges.push(change);
+      confirmingChanges.push(change);
     });
     await desyncStore.loadGame(baseGame.id);
-    desyncChanges.length = 0;
+    confirmingChanges.length = 0;
 
-    await desyncStore.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+    const pending = await desyncStore.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
     await tick();
 
-    assert.equal(desyncChanges.some((change) => change.type === "optimistic_desynced" && change.gameId === baseGame.id), true);
+    assert.equal(confirmingChanges.some((change) => change.type === "optimistic_confirming" && change.gameId === baseGame.id), true);
+    assert.equal(desyncStore.getGameViewModel(baseGame.id)?.syncStatus, "confirming");
+    assert.equal(desyncStore.getSyncMetrics().httpConfirmFailed > 0, true);
+    desyncStore.applyLiveGameUpdate({
+      game: buildAcknowledgedGame(baseGame, nextAction),
+      eventSeq: 2,
+      clientCommandId: pending.clientCommandId,
+    });
   }
+});
+
+test("live transport store clears pending command when ws confirms after transport failure", async () => {
+  const baseGame = buildLiveGame();
+  const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
+  let applyAttempts = 0;
+
+  const store = createLiveTransportStore({
+    storage: createMemoryStorage(),
+    fetcher: async (url, init = {}) => {
+      if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+        return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+      }
+      if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+        applyAttempts += 1;
+        throw new Error("network_failed");
+      }
+      return Response.json({ ok: true, games: [] });
+    },
+    random: () => 0.12345,
+  });
+  await store.loadGame(baseGame.id);
+
+  const pending = await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+  await tick();
+  assert.equal(store.getGameViewModel(baseGame.id)?.syncStatus, "confirming");
+
+  store.applyLiveGameUpdate({
+    game: buildAcknowledgedGame(baseGame, nextAction),
+    eventSeq: 2,
+    clientCommandId: pending.clientCommandId,
+  });
+  await tick();
+
+  const settled = store.getGameViewModel(baseGame.id);
+  assert.equal(settled.pendingCommandCount, 0);
+  assert.equal(settled.syncStatus, "ready");
+  assert.equal(store.getSyncMetrics().wsConfirmedAfterHttpFail, 1);
+  assert.equal(applyAttempts >= 1, true);
 });
 
 test("live transport store keeps authoritative history selectable while pending moves exist", async () => {
