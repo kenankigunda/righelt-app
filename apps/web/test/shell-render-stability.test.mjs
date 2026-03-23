@@ -31,7 +31,9 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /aria-pressed="\$\{currentRoute\.debug \? "true" : "false"\}"/);
   assert.match(source, /title: "Debug mode"/);
   assert.match(source, /Scenarios/);
-  assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
+  assert.match(source, /<h1>Righelt<\/h1>/);
+  assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Live Sync<\/h2>[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
+  assert.match(source, /const getDocumentTitle = \(\) => \{\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;\s*\}\s*return "Righelt";\s*\};/s);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
   assert.match(source, /data-shell-sticky-target="left" data-sticky-enabled="false"/);
@@ -146,6 +148,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /await delay\(FLYOUT_MOTION_MS\);/);
   assert.match(source, /clearCoordinatedFlyoutMotionStyles\(\);/);
   assert.match(source, /const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">\$\{renderHeader\(\)\}\$\{body\}<\/div>\$\{renderFlyouts\(\)\}<\/div>`;/);
+  assert.match(source, /document\.title = getDocumentTitle\(\);/);
   assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
   assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*syncScenarioAuthoringControls\(\);\s*updateMountedGameShell\(/s);
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
@@ -161,7 +164,7 @@ test("live sync applies authoritative pushed game payloads before render", () =>
   assert.match(source, /payload\?\.type === "state_sync"/);
   assert.match(source, /payload\?\.type === "event_appended"/);
   assert.match(source, /transport\.applyLiveGameUpdate\(\{ game: payload\.game, eventSeq: payload\.eventSeq, clientCommandId: payload\.clientCommandId \?\? null \}\);/);
-  assert.match(source, /if \(document\.getElementById\("shell-header-last-event"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
+  assert.match(source, /if \(document\.getElementById\("shell-debug-last-event"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
 test("live sync status renders are deduplicated by stable status key", () => {
@@ -169,6 +172,7 @@ test("live sync status renders are deduplicated by stable status key", () => {
   assert.match(source, /const statusKey = toStableKey\(status\);/);
   assert.match(source, /if \(statusKey === lastWsStatusKey\) \{\s*return;\s*\}/s);
   assert.match(source, /lastWsStatusKey = statusKey;\s*wsStatus = status;\s*if \(status\.state === "closed" && status\.reconnectAttempts >= 3\) \{\s*void syncRouteDataPassive\(\);\s*\}[\s\S]*updateHeaderFields\(\);/s);
+  assert.match(source, /if \(document\.getElementById\("shell-debug-live-sync"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
 test("syncLiveChannels manages subscriptions through the shared active game set", () => {
@@ -191,6 +195,7 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /const pendingRows = \(Array\.isArray\(game\.pendingMoves\) \? game\.pendingMoves : \[\]\)\.map/);
   assert.match(source, /const reverseChronologicalMoveRows = \[\.\.\.moveRows\]\.reverse\(\);/);
   assert.match(source, /const reverseChronologicalPendingRows = \[\.\.\.pendingRows\]\.reverse\(\);/);
+  assert.match(source, /const branchButton = game\.inHistoryMode && game\.historyIndex === move\.index/);
   assert.match(source, /class="history-item history-item-pending/);
   assert.match(source, /Pending<\/span>/);
   assert.match(source, /const liveContinuationText =[\s\S]*Live: Waiting for \$\{controlSeat \|\| "next player"\} to continue\.\.\./s);
@@ -203,6 +208,8 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
   assert.match(source, /return `\$\{emptyTurnItem\}\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
   assert.match(source, /const hasHistoryMoves = Array\.isArray\(game\.moves\) && game\.moves\.length > 0;/);
+  assert.match(source, /data-action="launch-history-branch"/);
+  assert.match(source, /Create new game at this move/);
   assert.match(source, /Incoming live moves will appear at top\./);
   assert.match(source, /: hasHistoryMoves\s*\? '<p class="small">You are on the live view\.<\/p><p class="small">Click moves below to see historical state\.<\/p>'\s*: '<p class="small">You are on the live view\.<\/p>'/);
 });
@@ -254,6 +261,21 @@ test("debug flyout persists locally while scenario-created games close the scena
   assert.match(source, /const nextHash = buildGameHash\(result\.game\.id, null, \{\s*\.\.\.getCurrentFlyoutState\(\),\s*scenarios: false,\s*\}\);/s);
 });
 
+test("history branch launch keeps the source tab stable while opening a new tab", () => {
+  assert.match(source, /action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "return-live"/s);
+  assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*buildHistoryBranchSeedFromGame\(activeGame, moveIndex\);[\s\S]*transport\.launchHistoryBranch\(/s);
+  assert.match(source, /window\.open\(`\$\{window\.location\.pathname\}\$\{window\.location\.search\}\$\{nextHash\}`,\s*"_blank",\s*"noopener"\);/);
+  assert.match(source, /const initialSelectionAction = !game\.inHistoryMode \? game\.initialSelectionAction \?\? null : null;/);
+  assert.match(source, /const hydratedSelectionAction = scenarioSelectionHydration\.selectionAction \?\? initialSelectionAction;/);
+  assert.match(source, /selectionAction: hydratedSelectionAction,/);
+});
+
+test("history navigation skips the busy pre-render but still clears disabled state after completion", () => {
+  assert.match(source, /const shouldRenderBusyStateStart =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "return-live"/s);
+  assert.match(source, /const shouldRenderBusyStateEnd =\s*action !== "copy-invite" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(source, /\}, \{ renderStart: shouldRenderBusyStateStart, renderEnd: shouldRenderBusyStateEnd \}\);/);
+});
+
 test("shell renders and reconciles mini board previews for home and debug surfaces", () => {
   assert.match(source, /const miniBoardPreviewRegistry = new Map\(\);/);
   assert.match(source, /const renderedMiniBoardPreviewPayloads = new Map\(\);/);
@@ -303,8 +325,9 @@ test("shell renders and reconciles mini board previews for home and debug surfac
 test("withBusy only repaints immediately for actions that need visible busy state", () => {
   assert.match(source, /const withBusy = async \(fn, \{ renderStart = true, renderEnd = true \} = \{\}\) => \{/);
   assert.match(source, /if \(renderStart\) \{\s*render\(\);\s*\}/s);
-  assert.match(source, /const shouldRenderBusyState =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "return-live" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
-  assert.match(source, /\}, \{ renderStart: shouldRenderBusyState, renderEnd: shouldRenderBusyState \}\);/);
+  assert.match(source, /const shouldRenderBusyStateStart =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "return-live" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(source, /const shouldRenderBusyStateEnd =\s*action !== "copy-invite" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(source, /\}, \{ renderStart: shouldRenderBusyStateStart, renderEnd: shouldRenderBusyStateEnd \}\);/);
   assert.match(source, /const renderFeedbackReveal = \(message\) =>/);
   assert.match(source, /feedback-reveal\$\{message \? " is-visible" : ""\}/);
   assert.match(source, /const setInviteFeedback = \(message\) => \{\s*inviteFeedback = message;\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);

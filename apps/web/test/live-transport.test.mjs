@@ -9,6 +9,7 @@ import {
 } from "../generated/packages/game-engine/src/index.js";
 
 const IMPORT_SCENARIO_UUID = "e5e48740-f8e2-4b32-bfbf-c46ec98b5962";
+const HISTORY_BRANCH_UUID = "32bfe814-d353-4492-af25-4cb9f9a9dd75";
 
 const createMemoryStorage = () => {
   const map = new Map();
@@ -254,6 +255,85 @@ test("live transport store posts scenario imports through the shell scenarios en
   assert.equal(result.game.id, "game-apply-here");
 });
 
+test("live transport store posts history branch launches through the shell history endpoint", async () => {
+  const storage = createMemoryStorage();
+  storage.setItem("righelt.identity.id.v1", "id-branch");
+  const fetcher = async (url, init = {}) => {
+    if (String(url) === "/api/shell/history/branch?offline=0") {
+      const body = JSON.parse(String(init.body || "{}"));
+      assert.equal(body.identityId, "id-branch");
+      assert.equal(body.sourceGameId, "game-source");
+      assert.equal(body.sourceMoveIndex, 2);
+      assert.equal(body.participantCopyMode, "viewer_as_side_to_move");
+      assert.equal(body.scenario.id, HISTORY_BRANCH_UUID);
+      assert.equal(body.scenario.moves.length, 2);
+      assert.deepEqual(body.initialSelectionAction.from, { row: 1, col: 1 });
+      return Response.json({
+        ok: true,
+        game: {
+          id: "game-branch",
+          createdAt: "2026-02-26T00:00:00.000Z",
+          lastMoveAt: null,
+          updatedAt: "2026-02-26T00:00:00.000Z",
+          offlineLocal: false,
+          playgroundMode: false,
+          player1: null,
+          player2: { identityId: "id-branch", connected: true },
+          viewers: [],
+          pendingJoinRequests: [],
+          moves: [],
+          notifications: ["History branch launched"],
+          myRole: "Player 2",
+          inHistoryMode: false,
+          initialSelectionAction: {
+            type: "move",
+            actorId: "U1",
+            from: { row: 1, col: 1 },
+            to: { row: 2, col: 1 },
+          },
+          currentSnapshot: { sideToMove: "P2", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+          board: { state: { sideToMove: "P2", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } } },
+          showJoinActions: true,
+          canInvite: true,
+          showOfflineState: false,
+        },
+      });
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({ storage, fetcher, random: () => 0.2 });
+  const result = await store.launchHistoryBranch({
+    sourceGameId: "game-source",
+    sourceMoveIndex: 2,
+    scenario: {
+      formatVersion: 2,
+      id: HISTORY_BRANCH_UUID,
+      title: "Branch from game-source move 3",
+      description: "Replay branch",
+      incorrect: false,
+      initialState: { sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+      moves: [
+        { turnIndex: 0, turnMoveIndex: 0, actorSide: "P1", notation: "M1", action: { type: "move", from: { row: 0, col: 0 }, to: { row: 0, col: 1 } } },
+        { turnIndex: 0, turnMoveIndex: 1, actorSide: "P1", notation: "M2", action: { type: "move", from: { row: 0, col: 1 }, to: { row: 0, col: 2 } } },
+      ],
+      resultingState: { sideToMove: "P1", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+      expectedFinalStateHash: "",
+      expectedOutcome: "ongoing",
+    },
+    initialSelectionAction: {
+      type: "move",
+      actorId: "U1",
+      from: { row: 1, col: 1 },
+      to: { row: 2, col: 1 },
+    },
+    participantCopyMode: "viewer_as_side_to_move",
+  });
+
+  assert.equal(result.game.id, "game-branch");
+  assert.equal(store.getGameViewModel("game-branch").initialSelectionAction.to.row, 2);
+});
+
 test("live transport store loads paged home sections through section-aware query params", async () => {
   const storage = createMemoryStorage();
   storage.setItem("righelt.identity.id.v1", "id-page");
@@ -320,6 +400,51 @@ test("live transport store can promote player 1 to both seats when player 2 is o
 
   assert.equal(result.game.playgroundMode, true);
   assert.equal(result.game.player2?.identityId, "id-a");
+  assert.equal(calls.some((entry) => entry.url.startsWith("/api/shell/games/game-000001/play-as-both")), true);
+});
+
+test("live transport store can promote player 2 to both seats when player 1 is open", async () => {
+  const calls = [];
+  const fetcher = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || "GET" });
+
+    if (String(url).startsWith("/api/shell/games/game-000001/play-as-both") && init.method === "POST") {
+      return Response.json({
+        ok: true,
+        game: {
+          id: "game-000001",
+          createdAt: "2026-02-26T00:00:00.000Z",
+          lastMoveAt: null,
+          updatedAt: "2026-02-26T00:00:00.000Z",
+          offlineLocal: false,
+          playgroundMode: true,
+          player1: { identityId: "id-a", connected: true },
+          player2: { identityId: "id-a", connected: true },
+          viewers: [],
+          pendingJoinRequests: [],
+          moves: [],
+          notifications: ["Play as both players enabled"],
+          myRole: "Player 2",
+          inHistoryMode: false,
+          currentSnapshot: { sideToMove: "P2", turnIndex: 0, pieces: [] },
+          canPlayAsBothPlayers: false,
+          showJoinActions: true,
+          canInvite: true,
+          showOfflineState: false,
+        },
+      });
+    }
+
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const storage = createMemoryStorage();
+  storage.setItem("righelt.identity.id.v1", "id-a");
+  const store = createLiveTransportStore({ storage, fetcher, random: () => 0.12345 });
+  const result = await store.playAsBothPlayers({ gameId: "game-000001" });
+
+  assert.equal(result.game.playgroundMode, true);
+  assert.equal(result.game.player1?.identityId, "id-a");
   assert.equal(calls.some((entry) => entry.url.startsWith("/api/shell/games/game-000001/play-as-both")), true);
 });
 

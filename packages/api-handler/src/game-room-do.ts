@@ -18,8 +18,8 @@ import {
   asGameState,
   asIdentity,
   asScenarioRecord,
+  applyLaunchParticipantCopyMode,
   clone,
-  copyParticipantsBetweenGames,
   createInitialGame,
   dismissCompetingJoinRequests,
   endServerTurn,
@@ -31,6 +31,9 @@ import {
   getRolesForIdentity,
   getActiveTurn,
   getApproverIdentityForSeat,
+  getClaimableDualSeat,
+  resolveLaunchParticipantCopyMode,
+  reconcileGameToScenarioResultingState,
   getSeatIdentity,
   getSeatForSide,
   getSideToMoveSeat,
@@ -38,6 +41,7 @@ import {
   promoteIdentityToSeat,
   removeViewer,
   type JoinRequest,
+  type LaunchParticipantCopyMode,
   type LiveGame,
   withViewModel,
 } from "./shell-live-core";
@@ -77,6 +81,9 @@ const parseBody = async (request: Request): Promise<Record<string, unknown>> => 
 const parseCommandMetadata = (body: Record<string, unknown>): CommandMetadata => ({
   clientCommandId: typeof body.clientCommandId === "string" && body.clientCommandId ? body.clientCommandId : null,
 });
+
+const parseLaunchParticipantCopyMode = (value: unknown): LaunchParticipantCopyMode | null =>
+  value === "copy_source_participants" || value === "viewer_as_side_to_move" ? value : null;
 
 const eventForSession = (event: ServerEvent, identityId: string) => {
   if (!("game" in event)) {
@@ -137,7 +144,9 @@ export class GameRoomDO {
       const identityId = asIdentity(body.identityId);
       const gameId = asIdentity(body.gameId);
       const scenario = asScenarioRecord(body.scenario);
-      if (!identityId || !gameId || !scenario) {
+      const hasInitialSelectionAction = typeof body.initialSelectionAction !== "undefined" && body.initialSelectionAction !== null;
+      const initialSelectionAction = typeof body.initialSelectionAction === "undefined" ? null : asAction(body.initialSelectionAction);
+      if (!identityId || !gameId || !scenario || (hasInitialSelectionAction && !initialSelectionAction)) {
         return json({ ok: false, error: "invalid_scenario_payload" }, 400);
       }
       this.game = createInitialGame({
@@ -147,11 +156,30 @@ export class GameRoomDO {
         offlineLocal: body.offlineLocal === true,
       });
       const sourceGame = body.sourceGame && typeof body.sourceGame === "object" ? (body.sourceGame as LiveGame) : null;
+      const participantCopyMode = sourceGame
+        ? parseLaunchParticipantCopyMode(body.participantCopyMode) ?? resolveLaunchParticipantCopyMode(sourceGame, identityId)
+        : null;
       if (sourceGame) {
-        copyParticipantsBetweenGames(sourceGame, this.game);
+        if (participantCopyMode === "copy_source_participants") {
+          applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
+        } else {
+          this.game.player1 = null;
+          this.game.player2 = null;
+          this.game.viewers = [];
+          this.game.pendingJoinRequests = [];
+        }
+        this.game.playgroundMode = body.playgroundMode === true;
       }
       applyScenarioToGame(this.game, scenario);
-      assignIdentityToScenarioSeat(this.game, identityId, getSeatForSide(this.game.board.state.sideToMove));
+      if (body.preserveResultingState === true) {
+        reconcileGameToScenarioResultingState(this.game, scenario);
+      } else if (participantCopyMode !== "copy_source_participants") {
+        assignIdentityToScenarioSeat(this.game, identityId, getSeatForSide(this.game.board.state.sideToMove));
+      }
+      if (sourceGame && participantCopyMode && participantCopyMode !== "copy_source_participants") {
+        applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
+      }
+      this.game.initialSelectionAction = initialSelectionAction ? clone(initialSelectionAction) : null;
       this.eventSeq = 1;
       await persistGameState(this.env, this.game, this.eventSeq, null);
       return json({ ok: true, game: withViewModel(this.game, identityId), eventSeq: this.eventSeq });
@@ -406,15 +434,13 @@ export class GameRoomDO {
     }
 
     if (request.method === "POST" && path === "/play-as-both") {
-      if (game.player1?.identityId !== identityId) {
-        return json({ ok: false, error: "not_player1" }, 409);
+      const targetSeat = getClaimableDualSeat(game, identityId);
+      if (!targetSeat) {
+        return json({ ok: false, error: "play_as_both_unavailable" }, 409);
       }
-      if (game.player2) {
-        return json({ ok: false, error: "player2_already_joined" }, 409);
-      }
-      promoteIdentityToSeat(game, "Player 2", identityId, this.getSessionCount(identityId));
+      promoteIdentityToSeat(game, targetSeat, identityId, this.getSessionCount(identityId));
       game.playgroundMode = true;
-      game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.requestedSeat !== "Player 2");
+      game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.requestedSeat !== targetSeat);
       addNotification(game, "Play as both players enabled");
       await this.commit({
         type: "event_appended",

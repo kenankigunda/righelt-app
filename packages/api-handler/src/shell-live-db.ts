@@ -1,5 +1,6 @@
 import type { ServerEvent } from "../../shared-types/src/events";
 import {
+  asAction,
   asGameState,
   createInviteToken,
   now,
@@ -359,6 +360,15 @@ const normalizePersistedGame = (
     parsed.notifications,
     "defaulted_to_empty_array",
   ), []);
+  const initialSelectionAction = typeof parsed.initialSelectionAction === "undefined" || parsed.initialSelectionAction === null
+    ? null
+    : asAction(parsed.initialSelectionAction) ?? (recordMismatch(
+      mismatches,
+      "initialSelectionAction",
+      "Action",
+      parsed.initialSelectionAction,
+      "defaulted_to_null",
+    ), null);
   if (Array.isArray(parsed.notifications) && notifications.length !== parsed.notifications.length) {
     recordMismatch(mismatches, "notifications", "string[]", parsed.notifications, "dropped_non_string_entries");
   }
@@ -380,6 +390,7 @@ const normalizePersistedGame = (
     historyIndexByIdentity: normalizeHistoryIndexByIdentity(parsed.historyIndexByIdentity, mismatches),
     pendingScenarioSelection: normalizeScenarioSavedSelection(parsed.pendingScenarioSelection, mismatches),
     notifications,
+    initialSelectionAction,
     inviteTokens: normalizeInviteTokens(parsed.inviteTokens, mismatches),
   };
 

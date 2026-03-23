@@ -11,6 +11,7 @@ import {
   getSeatIdentity,
   getSideToMoveSeat,
   nextGameId,
+  resolveLaunchParticipantCopyMode,
   withViewModel,
 } from "./shell-live-core";
 import { loadGameProjection, listVisibleGameProjections, resolveInvite, type D1DatabaseLike } from "./shell-live-db";
@@ -307,6 +308,7 @@ export const handleLiveGameRequest = async (
     const scenario = asScenarioRecord(body.scenario);
     const targetGameId = asIdentity(body.targetGameId);
     const sourceGameId = asIdentity(body.sourceGameId);
+    const initialSelectionAction = asAction(body.initialSelectionAction);
     if (!identityId || !scenario) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_scenario_payload" }, cacheControl: CACHE_NO_STORE };
     }
@@ -334,6 +336,9 @@ export const handleLiveGameRequest = async (
       };
     }
     const newGameId = nextGameId();
+    const participantCopyMode = sourceProjection?.game
+      ? resolveLaunchParticipantCopyMode(sourceProjection.game, identityId)
+      : null;
     const response = await fetchGameRoom(env, newGameId, "/create-from-scenario", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -344,6 +349,58 @@ export const handleLiveGameRequest = async (
         playgroundMode: sourceProjection?.game.playgroundMode === true,
         offlineLocal: sourceProjection?.game.offlineLocal === true,
         sourceGame: sourceProjection?.game ?? null,
+        participantCopyMode,
+        initialSelectionAction,
+      }),
+    });
+    return {
+      handled: true,
+      status: response.status,
+      body: (await response.json()) as Record<string, unknown>,
+      cacheControl: CACHE_NO_STORE,
+    };
+  }
+
+  if (request.method === "POST" && route.length === 2 && route[0] === "history" && route[1] === "branch") {
+    if (!hasGameRoomsBinding(env)) {
+      return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
+    }
+    const body = await parseBody(request);
+    const identityId = asIdentity(body.identityId);
+    const sourceGameId = asIdentity(body.sourceGameId);
+    const scenario = asScenarioRecord(body.scenario);
+    const initialSelectionAction = asAction(body.initialSelectionAction);
+    const sourceMoveIndex = typeof body.sourceMoveIndex === "number" && Number.isInteger(body.sourceMoveIndex) ? body.sourceMoveIndex : null;
+    if (!identityId || !sourceGameId || sourceMoveIndex === null || !scenario || !initialSelectionAction) {
+      return { handled: true, status: 400, body: { ok: false, error: "invalid_history_branch_payload" }, cacheControl: CACHE_NO_STORE };
+    }
+    const sourceProjection = await loadGameProjection(env, sourceGameId);
+    if (!sourceProjection) {
+      return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: CACHE_NO_STORE };
+    }
+    if (sourceProjection.kind === "invalid") {
+      return {
+        handled: true,
+        status: 500,
+        body: { ok: false, error: INVALID_PERSISTED_GAME_ERROR },
+        cacheControl: CACHE_NO_STORE,
+      };
+    }
+    const participantCopyMode = resolveLaunchParticipantCopyMode(sourceProjection.game, identityId);
+    const newGameId = nextGameId();
+    const response = await fetchGameRoom(env, newGameId, "/create-from-scenario", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        identityId,
+        gameId: newGameId,
+        scenario,
+        initialSelectionAction,
+        playgroundMode: sourceProjection.game.playgroundMode === true,
+        offlineLocal: sourceProjection.game.offlineLocal === true,
+        sourceGame: sourceProjection.game,
+        participantCopyMode,
+        preserveResultingState: true,
       }),
     });
     return {

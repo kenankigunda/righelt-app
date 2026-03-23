@@ -332,7 +332,7 @@ test("live transport: scenario import exposes pending saved selection and accept
   assert.equal(localGame.pendingScenarioSelection, null);
 });
 
-test("live transport: create-from-scenario seats the importer as the scenario side to move and swaps copied seats", async () => {
+test("live transport: create-from-scenario preserves copied player seats when the importer is already a player", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
     env,
@@ -391,9 +391,171 @@ test("live transport: create-from-scenario seats the importer as the scenario si
   );
   const imported = await scenarioImport.json();
   assert.equal(scenarioImport.status, 200);
-  assert.equal(imported.game.player1?.identityId, "id-b");
-  assert.equal(imported.game.player2?.identityId, "id-a");
-  assert.equal(imported.game.myRole, "Player 2");
+  assert.equal(imported.game.player1?.identityId, "id-a");
+  assert.equal(imported.game.player2?.identityId, "id-b");
+  assert.equal(imported.game.myRole, "Player 1");
+});
+
+test("live transport: scenario launch from an existing game applies shared participant copy policy", async () => {
+  const created = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await created.json();
+  const gameId = createdBody.game.id;
+
+  const playerJoin = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-player2",
+      mode: "player",
+      inviteFromRole: "Player 1",
+    }),
+    env,
+  );
+  assert.equal((await playerJoin.json()).game.player2.identityId, "id-player2");
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-viewer",
+      mode: "viewer",
+    }),
+    env,
+  );
+
+  const scenario = {
+    formatVersion: 2,
+    id: "537db3b4-a2c5-44b2-8d5a-82065e54c0fd",
+    title: "Source launch scenario",
+    description: "Participant copy policy regression",
+    incorrect: false,
+    initialState: {
+      boardSize: 10,
+      sideToMove: "P2",
+      turnIndex: 0,
+      pieces: [
+        { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+        { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+      ],
+      continuation: null,
+      outcome: { status: "ongoing" },
+    },
+    moves: [],
+    resultingState: {
+      boardSize: 10,
+      sideToMove: "P2",
+      turnIndex: 0,
+      pieces: [
+        { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+        { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+      ],
+      continuation: null,
+      outcome: { status: "ongoing" },
+    },
+    expectedFinalStateHash: "hash-placeholder",
+    expectedOutcome: "ongoing",
+  };
+
+  const playerLaunch = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-owner",
+      sourceGameId: gameId,
+      scenario,
+    }),
+    env,
+  );
+  const playerLaunchBody = await playerLaunch.json();
+  assert.equal(playerLaunch.status, 200);
+  assert.equal(playerLaunchBody.game.player1.identityId, "id-owner");
+  assert.equal(playerLaunchBody.game.player2.identityId, "id-player2");
+  assert.equal(playerLaunchBody.game.viewers.some((viewer) => viewer.identityId === "id-viewer"), true);
+
+  const viewerLaunch = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-viewer",
+      sourceGameId: gameId,
+      scenario,
+    }),
+    env,
+  );
+  const viewerLaunchBody = await viewerLaunch.json();
+  assert.equal(viewerLaunch.status, 200);
+  assert.equal(viewerLaunchBody.game.player1, null);
+  assert.equal(viewerLaunchBody.game.player2.identityId, "id-viewer");
+  assert.equal(viewerLaunchBody.game.myRole, "Player 2");
+  assert.deepEqual(viewerLaunchBody.game.viewers, []);
+});
+
+test("live transport: history branch launch replays prior history and preserves next-action preselection with viewer-only participant override", async () => {
+  const created = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await created.json();
+  const gameId = createdBody.game.id;
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-viewer",
+      mode: "viewer",
+    }),
+    env,
+  );
+
+  const move = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
+    env,
+  );
+  const moveBody = await move.json();
+  const moveEntry = moveBody.game.moves[0];
+
+  const secondMove = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
+    env,
+  );
+  const secondMoveBody = await secondMove.json();
+  const secondMoveEntry = secondMoveBody.game.moves[1];
+
+  const branch = await handleApiRequest(
+    req("/api/shell/history/branch", "POST", {
+      identityId: "id-viewer",
+      sourceGameId: gameId,
+      sourceMoveIndex: 1,
+      scenario: {
+        formatVersion: 2,
+        id: "7c7140bf-ec49-485e-a272-560e46cb19dc",
+        title: "Branch from history",
+        description: "Replay through prior history",
+        incorrect: false,
+        initialState: moveEntry.selectionSnapshot,
+        moves: [
+          {
+            turnIndex: moveEntry.turnIndex,
+            turnMoveIndex: moveEntry.turnMoveIndex,
+            actorSide: moveEntry.actorSide,
+            notation: moveEntry.notation,
+            action: moveEntry.action,
+          },
+        ],
+        resultingState: secondMoveEntry.selectionSnapshot,
+        expectedFinalStateHash: "",
+        expectedOutcome: secondMoveEntry.selectionSnapshot.outcome?.status ?? "ongoing",
+      },
+      initialSelectionAction: secondMoveEntry.action,
+      participantCopyMode: "viewer_as_side_to_move",
+    }),
+    env,
+  );
+  const branchBody = await branch.json();
+  assert.equal(branch.status, 200);
+  assert.equal(branchBody.game.player1.identityId, "id-viewer");
+  assert.equal(branchBody.game.player2, null);
+  assert.deepEqual(branchBody.game.viewers, []);
+  assert.equal(branchBody.game.inHistoryMode, false);
+  assert.deepEqual(branchBody.game.initialSelectionAction, secondMoveEntry.action);
+  assert.deepEqual(branchBody.game.currentSnapshot, secondMoveEntry.selectionSnapshot);
+  assert.equal(branchBody.game.moves.length, 1);
+  assert.equal(branchBody.game.moves[0].notation, moveEntry.notation);
+  assert.equal(branchBody.game.moves[0].turnIndex, moveEntry.turnIndex);
 });
 
 test("live transport: scenario import rejects non-UUID scenario ids", async () => {
@@ -433,7 +595,6 @@ test("live transport: scenario import rejects non-UUID scenario ids", async () =
   assert.equal(scenarioImport.status, 400);
   await assert.deepEqual(await scenarioImport.json(), { ok: false, error: "invalid_scenario_payload" });
 });
-
 test("live transport: game reads query persistent storage even when process cache is warm", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
@@ -1011,6 +1172,45 @@ test("live transport: play-as-both persists separate participant rows for the sa
   assert.equal(promotedBody.game.player1.sessionCount, promotedBody.game.player2.sessionCount);
   assert.deepEqual(promotedBody.game.myRoles, ["Player 1", "Player 2"]);
   assert.equal(promotedBody.game.myConnectionConnected, true);
+
+  const participants = env.DB.getParticipants(gameId);
+  assert.deepEqual(
+    participants.map((participant) => [participant.identity_id, participant.role]).sort(),
+    [
+      ["id-a", "Player 1"],
+      ["id-a", "Player 2"],
+    ],
+  );
+});
+
+test("live transport: player 2 can claim an open player 1 seat via play-as-both", async () => {
+  const created = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await created.json()).game.id;
+  env.DB.overwriteGameState(gameId, (game) => ({
+    ...game,
+    player1: null,
+    player2: {
+      ...game.player1,
+      identityId: "id-a",
+    },
+    pendingJoinRequests: [{ identityId: "id-other", requestedSeat: "Player 1", requestedAt: "2026-02-26T00:00:00.000Z", source: "home_list" }],
+  }));
+
+  const promoted = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-a" }),
+    env,
+  );
+  const body = await promoted.json();
+
+  assert.equal(promoted.status, 200);
+  assert.equal(body.game.myRole, "Player 1");
+  assert.deepEqual(body.game.myRoles, ["Player 1", "Player 2"]);
+  assert.equal(body.game.player1.identityId, "id-a");
+  assert.equal(body.game.player2.identityId, "id-a");
+  assert.equal(body.game.pendingJoinRequests.length, 0);
 
   const participants = env.DB.getParticipants(gameId);
   assert.deepEqual(

@@ -10,6 +10,7 @@ import { ensureHoverCapabilityController } from "../hover-capability.js";
 import { applyCommandLegendSwatch, getCommandLegendSwatchStyle } from "../legend.js";
 import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from "./persistence.js";
 import {
+  buildHistoryBranchSeedFromGame,
   buildScenarioFromGame,
   canAuthorScenariosLocally,
   loadScenarioCatalog,
@@ -273,6 +274,14 @@ const formatDisplayGameId = (gameId) => {
     return value.slice(0, 6);
   }
   return `game-${value.slice(5, 11)}`;
+};
+
+const getDocumentTitle = () => {
+  const gameId = getCurrentViewedGameId();
+  if (gameId) {
+    return `${formatDisplayGameId(gameId)} | Righelt`;
+  }
+  return "Righelt";
 };
 
 const formatClientDateTime = (value) => {
@@ -973,11 +982,17 @@ const renderTurnHistory = (game) => {
       .map((move) => {
         const isSelected = game.inHistoryMode ? game.historyIndex === move.index : selectedMoveIndex === move.index;
         const selectedClass = isSelected ? (game.inHistoryMode ? " is-selected" : " is-live-selected") : "";
+        const branchButton = game.inHistoryMode && game.historyIndex === move.index
+          ? `<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${escapeHtml(
+              String(move.index),
+            )}" ${busy ? "disabled" : ""}>Create new game at this move</button>`
+          : "";
         return `<li class="history-item ${playerToneClassForSide(move.actorSide || (turn.playerSeat === "Player 1" ? "P1" : "P2"))}${selectedClass}" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">
           <span class="history-move-line">Move ${escapeHtml(
             String(move.index + 1),
           )}: ${escapeHtml(move.notation)}</span>
           <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
+          ${branchButton}
         </li>`;
       }),
   );
@@ -1016,12 +1031,7 @@ const renderTurnHistory = (game) => {
 const renderHeader = () => `
   <header class="shell-header">
     <div class="shell-header-main">
-      <h1>Righelt Web Shell</h1>
-      <p class="small">Identity <span id="shell-header-identity" class="mono">${escapeHtml(transport.getIdentityId())}</span></p>
-      <p class="small shell-header-status">Live sync: <span id="shell-header-live-sync" class="mono">${escapeHtml(
-        `${wsStatus.state}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`,
-      )}</span></p>
-      <p class="small shell-header-status">Last event: <span id="shell-header-last-event" class="mono">${escapeHtml(wsLastEvent)}</span></p>
+      <h1>Righelt</h1>
     </div>
     <div class="shell-header-actions">
       <div class="nav-row">
@@ -1200,6 +1210,12 @@ const renderDebugContent = () => {
           };
   return `
     <section class="panel debug-panel">
+      <h2>Live Sync</h2>
+      <pre class="debug-pre">Identity <span id="shell-debug-identity" class="mono">${escapeHtml(transport.getIdentityId())}</span>
+Live sync: <span id="shell-debug-live-sync" class="mono">${escapeHtml(`${wsStatus.state}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`)}</span>
+Last event: <span id="shell-debug-last-event" class="mono">${escapeHtml(wsLastEvent)}</span></pre>
+    </section>
+    <section class="panel debug-panel">
       <h2>Engine Status</h2>
       <pre class="debug-pre">${escapeHtml(
         JSON.stringify(
@@ -1299,9 +1315,9 @@ const renderFlyouts = () => {
 };
 
 const updateHeaderFields = () => {
-  const identityEl = document.getElementById("shell-header-identity");
-  const liveSyncEl = document.getElementById("shell-header-live-sync");
-  const lastEventEl = document.getElementById("shell-header-last-event");
+  const identityEl = document.getElementById("shell-debug-identity");
+  const liveSyncEl = document.getElementById("shell-debug-live-sync");
+  const lastEventEl = document.getElementById("shell-debug-last-event");
   if (identityEl) {
     identityEl.textContent = transport.getIdentityId();
   }
@@ -2121,6 +2137,7 @@ const mountBoardForGame = (game) => {
   const snapshot = game.currentSnapshot ?? null;
   const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
   const historySelectionAction = game.inHistoryMode ? game.historySelectionAction ?? null : null;
+  const initialSelectionAction = !game.inHistoryMode ? game.initialSelectionAction ?? null : null;
   const overlayMode = game.inHistoryMode ? "recorded-action" : "interactive";
   const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode ? game.legalActions : [];
   const scenarioSelectionHydration = resolvePendingScenarioHydration({
@@ -2135,10 +2152,11 @@ const mountBoardForGame = (game) => {
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
   const forceClickTargetSelection = currentRoute.scenarios;
+  const hydratedSelectionAction = scenarioSelectionHydration.selectionAction ?? initialSelectionAction;
   const overlayKey = toStableKey({
     overlayMode,
     recordedAction: historySelectionAction,
-    selectionAction: scenarioSelectionHydration.selectionAction,
+    selectionAction: hydratedSelectionAction,
     selectionState: scenarioSelectionHydration.selectionState,
     forceClickTargetSelection,
   });
@@ -2180,7 +2198,7 @@ const mountBoardForGame = (game) => {
     void boardRuntime.loadSnapshot(snapshot, {
       legalActions: effectiveLegalActions,
       resetSelection: true,
-      selectionAction: scenarioSelectionHydration.selectionAction,
+      selectionAction: hydratedSelectionAction,
       selectionState: scenarioSelectionHydration.selectionState,
       overlayMode,
       recordedAction: historySelectionAction,
@@ -2228,7 +2246,7 @@ const mountBoardForGame = (game) => {
   void boardRuntime.loadSnapshot(snapshot, {
     legalActions: effectiveLegalActions,
     resetSelection,
-    selectionAction: scenarioSelectionHydration.selectionAction,
+    selectionAction: hydratedSelectionAction,
     selectionState: scenarioSelectionHydration.selectionState,
     overlayMode,
     recordedAction: historySelectionAction,
@@ -2321,6 +2339,7 @@ const syncHomeSections = async () => {
 };
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
+  document.title = getDocumentTitle();
   const routeKey = getRouteRenderKey();
   const baseRouteKey = getBaseRouteRenderKey();
   const shouldPatchFlyoutsOnly = shouldPatchMountedFlyouts(routeKey, baseRouteKey);
@@ -2546,7 +2565,7 @@ const liveSync = createLiveSyncClient({
     ) {
       transport.applyLiveGameUpdate({ game: payload.game, eventSeq: payload.eventSeq, clientCommandId: payload.clientCommandId ?? null });
     }
-    if (document.getElementById("shell-header-last-event")) {
+    if (document.getElementById("shell-debug-last-event")) {
       updateHeaderFields();
     } else {
       render({ animatePanels: false, includeBoard: false });
@@ -2569,7 +2588,7 @@ const liveSync = createLiveSyncClient({
     if (status.state === "closed" && status.reconnectAttempts >= 3) {
       void syncRouteDataPassive();
     }
-    if (document.getElementById("shell-header-live-sync")) {
+    if (document.getElementById("shell-debug-live-sync")) {
       updateHeaderFields();
     } else {
       render({ animatePanels: false, includeBoard: false });
@@ -2673,10 +2692,19 @@ appEl.addEventListener("click", async (event) => {
   }
 
   const action = actionEl.getAttribute("data-action");
-  const shouldRenderBusyState =
+  const shouldRenderBusyStateStart =
     action !== "copy-invite" &&
     action !== "jump-history" &&
+    action !== "launch-history-branch" &&
     action !== "return-live" &&
+    action !== "tutorial-next" &&
+    action !== "tutorial-skip" &&
+    action !== "open-debug" &&
+    action !== "open-scenarios" &&
+    action !== "close-debug" &&
+    action !== "close-scenarios";
+  const shouldRenderBusyStateEnd =
+    action !== "copy-invite" &&
     action !== "tutorial-next" &&
     action !== "tutorial-skip" &&
     action !== "open-debug" &&
@@ -2933,6 +2961,33 @@ appEl.addEventListener("click", async (event) => {
       return;
     }
 
+    if (action === "launch-history-branch") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
+      const activeGame = gameId ? transport.getGameViewModel(gameId) : null;
+      if (!activeGame || !Number.isFinite(moveIndex)) {
+        return;
+      }
+      const branchSeed = buildHistoryBranchSeedFromGame(activeGame, moveIndex);
+      const result = await transport.launchHistoryBranch({
+        sourceGameId: activeGame.id,
+        sourceMoveIndex: moveIndex,
+        scenario: branchSeed.scenario,
+        initialSelectionAction: branchSeed.initialSelectionAction,
+        participantCopyMode: branchSeed.participantCopyMode,
+      });
+      if (!result?.game?.id) {
+        return;
+      }
+      const nextHash = buildGameHash(result.game.id, null, {
+        ...getCurrentFlyoutState(),
+        scenarios: false,
+      });
+      window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
+      render({ animatePanels: false, includeBoard: false });
+      return;
+    }
+
     if (action === "tutorial-next" || action === "tutorial-skip") {
       tutorial.next();
       return;
@@ -3060,7 +3115,7 @@ appEl.addEventListener("click", async (event) => {
       setSelectedScenarioFeedback("");
       render({ animatePanels: false, includeBoard: false });
     }
-  }, { renderStart: shouldRenderBusyState, renderEnd: shouldRenderBusyState });
+  }, { renderStart: shouldRenderBusyStateStart, renderEnd: shouldRenderBusyStateEnd });
 });
 
 appEl.addEventListener("change", (event) => {
