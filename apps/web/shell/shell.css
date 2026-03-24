@@ -132,6 +132,10 @@ button,
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease;
 }
 
 button.secondary,
@@ -139,6 +143,27 @@ button.secondary,
   background: #fff;
   color: var(--ink);
   border-color: var(--line);
+}
+
+[data-hover-capability="hover"] button:not(:disabled):hover,
+[data-hover-capability="hover"] .button-link:not([aria-disabled="true"]):hover {
+  border-color: rgba(31, 59, 53, 0.38);
+  box-shadow: 0 1px 0 rgba(17, 45, 39, 0.1);
+}
+
+[data-hover-capability="hover"] button:not(.secondary):not(.warn):not(.danger):not(:disabled):hover,
+[data-hover-capability="hover"] .button-link:not(.secondary):not([aria-disabled="true"]):hover {
+  background: #1b8b69;
+  border-color: rgba(255, 255, 255, 0.72);
+  box-shadow:
+    0 1px 0 rgba(9, 55, 41, 0.26),
+    0 2px 7px rgba(9, 55, 41, 0.14);
+}
+
+[data-hover-capability="hover"] button.secondary:not(:disabled):hover,
+[data-hover-capability="hover"] .button-link.secondary:not([aria-disabled="true"]):hover {
+  border-color: #b8ae9d;
+  background: #fcf8ee;
 }
 
 button.secondary.is-active,
