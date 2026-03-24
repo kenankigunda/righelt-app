@@ -18,6 +18,11 @@ This repository is the foundation for the Righelt web app.
 - Use the documents in `docs/` as the authoritative rules and validation basis for the rewrite.
 - Keep `archive/` intact for historical reference only.
 
+## UI Button Hover Addendum
+
+- Button and button-link hover styling follows the existing hover-capability rule and is gated by `data-hover-capability="hover"`.
+- Apply button hover effects only as progressive enhancement; do not change required behavior on non-hover/touch devices.
+
 ## AI Workflow (Agents + Skills)
 
 - Repo-level agent rules live in `AGENTS.md`.
