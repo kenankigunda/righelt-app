@@ -331,6 +331,78 @@ test("board runtime preserves in-progress removal effects across snapshot reload
   }
 });
 
+test("board runtime does not submit retreat continuation while interaction is locked to the other player", async () => {
+  let applyCount = 0;
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: noop,
+      getSelectedPieceSummary: () => null,
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => {
+        applyCount += 1;
+        return { accepted: true, state: null, legalActions: [] };
+      },
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      canInteract: () => false,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: null,
+    boardTurnIndicatorEl: null,
+  });
+
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P2",
+      turnIndex: 0,
+      continuation: {
+        type: "push",
+        phase: "retreat",
+        pushedPieceId: "D1",
+      },
+      outcome: null,
+      pieces: [
+        {
+          id: "D1",
+          owner: "P2",
+          kind: "unit",
+          position: { row: 4, col: 2 },
+          supplied: true,
+          commanded: true,
+          pushed: true,
+        },
+      ],
+    },
+    {
+      legalActions: [
+        {
+          type: "retreat",
+          actorId: "D1",
+          from: { row: 4, col: 2 },
+          to: { row: 4, col: 3 },
+        },
+      ],
+    },
+  );
+
+  await runtime.submitCurrentAction();
+  assert.equal(applyCount, 0);
+});
+
 test("board runtime does not flash no-moves preview text while selected piece moves are loading", async () => {
   let onCellClick = null;
   let resolvePieceMoves = null;

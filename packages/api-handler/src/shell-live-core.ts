@@ -799,6 +799,7 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
       offlineTurnControlAllowed &&
       isPlayer &&
       !inHistoryMode &&
+      controlSeat === turnOwnerSeat &&
       turnOwnerIdentity === identityId &&
       Boolean(activeTurn && activeTurn.moveIndexes.length > 0),
     currentTurn: activeTurn ? clone(activeTurn) : null,

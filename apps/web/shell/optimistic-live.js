@@ -141,7 +141,12 @@ const finalizeProjectedView = ({ authoritativeGame, workingGame, identityId, que
   next.liveCurrentSnapshot = clone(next.board.state);
   next.currentSnapshot = next.inHistoryMode ? authoritativeGame.currentSnapshot : clone(next.board.state);
   next.canRecordMove = isPlayer && !next.inHistoryMode && controlIdentity === identityId && liveLegalActions.length > 0;
-  next.canEndTurn = isPlayer && !next.inHistoryMode && turnOwnerIdentity === identityId && Boolean(activeTurn?.moveIndexes?.length);
+  next.canEndTurn =
+    isPlayer &&
+    !next.inHistoryMode &&
+    controlSeat === turnOwnerSeat &&
+    turnOwnerIdentity === identityId &&
+    Boolean(activeTurn?.moveIndexes?.length);
   return next;
 };
 
