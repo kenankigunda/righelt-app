@@ -121,7 +121,6 @@ const HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT = 3;
 const HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE = 4;
 const HOME_SECTION_CARD_MIN_WIDTH_REM = 22;
 const HOME_SECTION_CARD_GAP_REM = 0.85;
-const HOME_SECTION_WIDE_CARD_COUNT = 4;
 const HOME_CAROUSEL_MOTION_MS = 220;
 let pressedHistoryActionEl = null;
 let historyReleaseTimer = null;
@@ -148,6 +147,7 @@ const createHomeSectionState = (title) => ({
   serverPageGameIds: [],
   serverPageGameIdsByPage: {},
   visiblePageSize: HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
+  visibleColumnCount: 1,
   slideDirection: "none",
   animationToken: 0,
 });
@@ -832,6 +832,8 @@ const getWideFlyoutWidth = (viewportWidth = window.innerWidth) => {
   return Math.min(rootFontSize * 34, viewportWidth * 0.36);
 };
 const getRootFontSizePx = () => Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize || "16") || 16;
+const getHomeSectionCardMinWidthPx = () => getRootFontSizePx() * HOME_SECTION_CARD_MIN_WIDTH_REM;
+const getHomeSectionCardGapPx = () => getRootFontSizePx() * HOME_SECTION_CARD_GAP_REM;
 const getAvailableShellContentWidth = (viewportWidth = window.innerWidth, route = currentRoute) => {
   const totalHorizontalGutter = SHELL_VIEWPORT_GUTTER_PX * 2;
   const openFlyoutCount = getOpenFlyoutCount(route);
@@ -860,8 +862,6 @@ const normalizeRouteFlyoutState = (route, { preferredFlyoutKey = null } = {}) =>
 };
 currentRoute = normalizeRouteFlyoutState(currentRoute);
 const getShellLayoutMode = (viewportWidth = window.innerWidth) => getShellLayoutModeForRoute(currentRoute, viewportWidth);
-const getHomeSectionMinWidePageWidthPx = () =>
-  getRootFontSizePx() * ((HOME_SECTION_CARD_MIN_WIDTH_REM * HOME_SECTION_WIDE_CARD_COUNT) + (HOME_SECTION_CARD_GAP_REM * (HOME_SECTION_WIDE_CARD_COUNT - 1)));
 const getHomeSectionWidthPx = (sectionKey) => {
   const sectionEl = appEl?.querySelector?.(`[data-home-section-root="${sectionKey}"]`);
   if (sectionEl instanceof HTMLElement) {
@@ -869,10 +869,18 @@ const getHomeSectionWidthPx = (sectionKey) => {
   }
   return getAvailableShellContentWidth();
 };
-const getHomeSectionVisiblePageSize = (sectionKey) =>
-  (getHomeSectionWidthPx(sectionKey) >= getHomeSectionMinWidePageWidthPx()
-    ? HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE
-    : HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT);
+const getHomeSectionColumnCount = (sectionKey) => {
+  const sectionWidth = getHomeSectionWidthPx(sectionKey);
+  const cardWidth = getHomeSectionCardMinWidthPx();
+  const gapWidth = getHomeSectionCardGapPx();
+  if (sectionWidth <= 0 || cardWidth <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.floor((sectionWidth + gapWidth) / (cardWidth + gapWidth)));
+};
+const getHomeSectionVisiblePageSize = (sectionKey) => (getHomeSectionColumnCount(sectionKey) >= 3
+  ? HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT
+  : HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE);
 const syncShellLayoutMode = () => {
   const layoutMode = getShellLayoutMode();
   if (appEl instanceof HTMLElement) {
@@ -1634,6 +1642,8 @@ const renderHomeGameSection = (sectionKey) => {
   }
   const showEmptyState = section.totalGames === 0;
   const showPaging = section.totalPages > 1;
+  const showHeaderPaging = showPaging && section.visibleColumnCount > 1;
+  const showFooterPaging = showPaging && section.visibleColumnCount === 1;
   const hasHeaderAction = sectionKey === "my";
   return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}">
       <div class="home-games-section-header" data-home-header-has-action="${hasHeaderAction ? "true" : "false"}">
@@ -1642,7 +1652,7 @@ const renderHomeGameSection = (sectionKey) => {
         <p class="small">${section.totalGames === 1 ? "1 game" : `${section.totalGames} games`}</p>
       </div>
       <div class="home-games-section-header-center">
-        ${showPaging ? renderHomeSectionControls(sectionKey, section, { placement: "header" }) : ""}
+        ${showHeaderPaging ? renderHomeSectionControls(sectionKey, section, { placement: "header" }) : ""}
       </div>
       <div class="home-games-section-header-actions">
         ${hasHeaderAction ? renderHomeStartButton() : ""}
@@ -1655,7 +1665,7 @@ const renderHomeGameSection = (sectionKey) => {
         <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
       </div>
     </div>`}
-    ${showPaging ? renderHomeSectionControls(sectionKey, section, { placement: "footer" }) : ""}
+    ${showFooterPaging ? renderHomeSectionControls(sectionKey, section, { placement: "footer" }) : ""}
   </section>`;
 };
 
@@ -2576,7 +2586,14 @@ const animateHomeSectionTransitions = () => {
   }
 };
 
-const loadHomeSectionServerPage = async (sectionKey, serverPage, { visiblePageSize = getHomeSectionVisiblePageSize(sectionKey) } = {}) => {
+const loadHomeSectionServerPage = async (
+  sectionKey,
+  serverPage,
+  {
+    visiblePageSize = getHomeSectionVisiblePageSize(sectionKey),
+    visibleColumnCount = getHomeSectionColumnCount(sectionKey),
+  } = {},
+) => {
   const previous = getHomeSection(sectionKey);
   const response = await transport.loadGamesPage({
     section: sectionKey,
@@ -2597,6 +2614,7 @@ const loadHomeSectionServerPage = async (sectionKey, serverPage, { visiblePageSi
       [normalizedServerPage]: serverPageGameIds,
     },
     visiblePageSize,
+    visibleColumnCount,
   };
   setHomeSection(sectionKey, nextSection);
   return nextSection;
@@ -2604,17 +2622,23 @@ const loadHomeSectionServerPage = async (sectionKey, serverPage, { visiblePageSi
 
 const loadHomeSectionPage = async (
   sectionKey,
-  { page = getHomeSection(sectionKey).page, direction = "none", visiblePageSize = getHomeSectionVisiblePageSize(sectionKey) } = {},
+  {
+    page = getHomeSection(sectionKey).page,
+    direction = "none",
+    visiblePageSize = getHomeSectionVisiblePageSize(sectionKey),
+    visibleColumnCount = getHomeSectionColumnCount(sectionKey),
+  } = {},
 ) => {
   const previous = getHomeSection(sectionKey);
   let nextSection = {
     ...previous,
     visiblePageSize,
+    visibleColumnCount,
   };
   const initialServerPage = Math.floor((Math.max(0, page) * visiblePageSize) / HOME_SECTION_SERVER_PAGE_SIZE);
   const shouldPrimeCache = Object.keys(nextSection.serverPageGameIdsByPage ?? {}).length === 0;
   if (shouldPrimeCache) {
-    nextSection = await loadHomeSectionServerPage(sectionKey, initialServerPage, { visiblePageSize });
+    nextSection = await loadHomeSectionServerPage(sectionKey, initialServerPage, { visiblePageSize, visibleColumnCount });
   }
   const requiredServerPages = getHomeSectionRequiredServerPages({
     totalGames: nextSection.totalGames,
@@ -2623,7 +2647,7 @@ const loadHomeSectionPage = async (
   });
   for (const serverPage of requiredServerPages) {
     if (!hasHomeSectionServerPages(nextSection, [serverPage])) {
-      nextSection = await loadHomeSectionServerPage(sectionKey, serverPage, { visiblePageSize });
+      nextSection = await loadHomeSectionServerPage(sectionKey, serverPage, { visiblePageSize, visibleColumnCount });
     }
   }
   const normalizedPage = getHomeSectionSafePage(nextSection.totalGames, visiblePageSize, page);
@@ -2648,18 +2672,34 @@ const syncResponsiveHomeSectionPageSizes = async () => {
   let updated = false;
   for (const sectionKey of visibleSectionKeys) {
     const section = getHomeSection(sectionKey);
+    const nextVisibleColumnCount = getHomeSectionColumnCount(sectionKey);
     const nextVisiblePageSize = getHomeSectionVisiblePageSize(sectionKey);
-    if (section.visiblePageSize === nextVisiblePageSize) {
+    if (section.visiblePageSize === nextVisiblePageSize && section.visibleColumnCount === nextVisibleColumnCount) {
       continue;
     }
     const anchorGameId = section.gameIds[0] ?? null;
     const anchorIndex = getHomeSectionCachedGameIndex(section, anchorGameId);
     const nextPage = anchorIndex === null ? section.page : Math.floor(anchorIndex / nextVisiblePageSize);
-    await loadHomeSectionPage(sectionKey, {
-      page: nextPage,
-      direction: "none",
-      visiblePageSize: nextVisiblePageSize,
-    });
+    if (section.visiblePageSize === nextVisiblePageSize) {
+      const visibleGameIds = getHomeSectionVisibleGameIdsFromCache(section, {
+        page: nextPage,
+        visiblePageSize: nextVisiblePageSize,
+      }) ?? section.gameIds;
+      setHomeSection(sectionKey, {
+        ...section,
+        page: nextPage,
+        totalPages: getHomeSectionVisibleTotalPages(section.totalGames, nextVisiblePageSize),
+        gameIds: visibleGameIds,
+        visibleColumnCount: nextVisibleColumnCount,
+      });
+    } else {
+      await loadHomeSectionPage(sectionKey, {
+        page: nextPage,
+        direction: "none",
+        visiblePageSize: nextVisiblePageSize,
+        visibleColumnCount: nextVisibleColumnCount,
+      });
+    }
     updated = true;
   }
   return updated;
@@ -2680,6 +2720,7 @@ const syncHomeSections = async () => {
         serverPageGameIds: [],
         serverPageGameIdsByPage: {},
         visiblePageSize: getHomeSectionVisiblePageSize(sectionKey),
+        visibleColumnCount: getHomeSectionColumnCount(sectionKey),
         slideDirection: "none",
       });
       await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
@@ -2699,6 +2740,7 @@ const syncHomeSections = async () => {
       serverPageGameIds: [],
       serverPageGameIdsByPage: {},
       visiblePageSize: HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
+      visibleColumnCount: 1,
       slideDirection: "none",
     });
   });

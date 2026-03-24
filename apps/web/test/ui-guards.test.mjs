@@ -85,7 +85,6 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /const HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE = 4;/);
   assert.match(source, /const HOME_SECTION_CARD_MIN_WIDTH_REM = 22;/);
   assert.match(source, /const HOME_SECTION_CARD_GAP_REM = 0\.85;/);
-  assert.match(source, /const HOME_SECTION_WIDE_CARD_COUNT = 4;/);
   assert.match(source, /let homeSections = \{/);
   assert.match(source, /my: createHomeSectionState\("My games"\),/);
   assert.match(source, /other: createHomeSectionState\("Other games"\),/);
@@ -95,12 +94,14 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /serverPageGameIds:\s*\[\],/);
   assert.match(source, /serverPageGameIdsByPage:\s*\{\},/);
   assert.match(source, /visiblePageSize:\s*HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,/);
+  assert.match(source, /visibleColumnCount:\s*1,/);
   assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \(route\?\.debug \? \["my", "other", "smoke"\] : \["my", "other"\]\);/);
-  assert.match(
-    source,
-    /const getHomeSectionMinWidePageWidthPx = \(\) =>\s*getRootFontSizePx\(\) \* \(\(HOME_SECTION_CARD_MIN_WIDTH_REM \* HOME_SECTION_WIDE_CARD_COUNT\) \+ \(HOME_SECTION_CARD_GAP_REM \* \(HOME_SECTION_WIDE_CARD_COUNT - 1\)\)\);/s,
-  );
+  assert.match(source, /const getHomeSectionCardMinWidthPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_MIN_WIDTH_REM;/);
+  assert.match(source, /const getHomeSectionCardGapPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_GAP_REM;/);
+  assert.match(source, /const getHomeSectionColumnCount = \(sectionKey\) => \{/);
+  assert.match(source, /Math\.max\(1, Math\.floor\(\(sectionWidth \+ gapWidth\) \/ \(cardWidth \+ gapWidth\)\)\)/);
   assert.match(source, /const getHomeSectionVisiblePageSize = \(sectionKey\) =>/);
+  assert.match(source, /getHomeSectionColumnCount\(sectionKey\) >= 3/);
   assert.match(source, /HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE/);
   assert.match(source, /HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT/);
   assert.match(source, /const getHomeSectionRequiredServerPages = \(\{ totalGames, visiblePageSize, page \}\) => \{/);
@@ -116,6 +117,8 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /home-games-section-controls home-games-section-controls-\$\{escapeHtml\(placement\)\}/);
   assert.match(source, /const shouldAlwaysRender = sectionKey === "my";/);
   assert.match(source, /const showEmptyState = section\.totalGames === 0;/);
+  assert.match(source, /const showHeaderPaging = showPaging && section\.visibleColumnCount > 1;/);
+  assert.match(source, /const showFooterPaging = showPaging && section\.visibleColumnCount === 1;/);
   assert.match(source, /const hasHeaderAction = sectionKey === "my";/);
   assert.match(source, /data-home-header-has-action="\$\{hasHeaderAction \? "true" : "false"\}"/);
   assert.match(source, /<div class="home-games-section-header-center">/);
@@ -123,7 +126,7 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /<div class="home-games-section-heading">/);
   assert.match(
     source,
-    /<div class="home-games-section-header-center">\s*\$\{showPaging \? renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\) : ""\}\s*<\/div>/s,
+    /<div class="home-games-section-header-center">\s*\$\{showHeaderPaging \? renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\) : ""\}\s*<\/div>/s,
   );
   assert.match(
     source,
@@ -136,14 +139,21 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
   assert.match(source, /if \(getShellLayoutMode\(\) !== "narrow" \|\| !\(appEl instanceof HTMLElement\)\) \{\s*return;\s*\}/s);
   assert.match(source, /sectionEl\.scrollIntoView\(\{\s*behavior: "smooth",\s*block: "start",\s*\}\);/s);
-  assert.match(source, /const loadHomeSectionServerPage = async \(sectionKey, serverPage, \{ visiblePageSize = getHomeSectionVisiblePageSize\(sectionKey\) \} = \{\}\) => \{/);
+  assert.match(
+    source,
+    /const loadHomeSectionServerPage = async \(\s*sectionKey,\s*serverPage,\s*\{\s*visiblePageSize = getHomeSectionVisiblePageSize\(sectionKey\),\s*visibleColumnCount = getHomeSectionColumnCount\(sectionKey\),\s*\} = \{\},\s*\) => \{/s,
+  );
   assert.match(source, /pageSize:\s*HOME_SECTION_SERVER_PAGE_SIZE,/);
   assert.match(source, /serverPageGameIdsByPage:\s*\{\s*\.\.\.previous\.serverPageGameIdsByPage,\s*\[normalizedServerPage\]: serverPageGameIds,/s);
   assert.match(source, /const syncResponsiveHomeSectionPageSizes = async \(\) => \{/);
+  assert.match(source, /const nextVisibleColumnCount = getHomeSectionColumnCount\(sectionKey\);/);
+  assert.match(source, /section\.visiblePageSize === nextVisiblePageSize && section\.visibleColumnCount === nextVisibleColumnCount/);
+  assert.match(source, /visibleColumnCount:\s*nextVisibleColumnCount,/);
   assert.match(source, /const anchorGameId = section\.gameIds\[0\] \?\? null;/);
   assert.match(source, /const anchorIndex = getHomeSectionCachedGameIndex\(section, anchorGameId\);/);
   assert.match(source, /const nextPage = anchorIndex === null \? section\.page : Math\.floor\(anchorIndex \/ nextVisiblePageSize\);/);
   assert.match(source, /visiblePageSize:\s*getHomeSectionVisiblePageSize\(sectionKey\),/);
+  assert.match(source, /visibleColumnCount:\s*getHomeSectionColumnCount\(sectionKey\),/);
   assert.match(source, /<div class="home-games-carousel" data-home-carousel="\$\{escapeHtml\(sectionKey\)\}">/);
   assert.match(source, /getVisibleHomeSectionKeys\(\)\.map\(\(sectionKey\) => renderHomeGameSection\(sectionKey\)\)\.join\(""\)/);
   assert.match(source, /<section class="panel home-games-section" data-home-section-root="\$\{escapeHtml\(sectionKey\)\}">/);

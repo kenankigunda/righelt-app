@@ -686,7 +686,10 @@ button.button-release-bounce,
 }
 
 .home-games-section-controls-footer {
-  display: none;
+  display: inline-flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 0.9rem;
 }
 
 .home-games-section-controls > button {
@@ -711,16 +714,6 @@ button.button-release-bounce,
   margin: 0;
 }
 
-#app[data-shell-layout-mode="narrow"] .home-games-section-controls-header {
-  display: none;
-}
-
-#app[data-shell-layout-mode="narrow"] .home-games-section-controls-footer {
-  display: inline-flex;
-  justify-content: center;
-  width: 100%;
-  margin-top: 0.9rem;
-}
 
 .mini-board-card-header,
 .mini-board-card-meta {
