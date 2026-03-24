@@ -1,35 +1,58 @@
 # Branch Audit
 
-Snapshot taken on 2026-03-15 from the local repository state in `/Users/kenankigunda/Documents/righelt` after `git fetch --prune origin`.
+Snapshot taken on 2026-03-24 from the local repository state in `/Users/kenankigunda/.codex/worktrees/5b34/righelt` after `git fetch --prune origin`.
 
 Notes:
 - Merge status is evaluated against the local `main` branch.
 - Remote status is based on the refreshed upstream refs and tracking state from the fetch above.
 - `Worktree` uses short labels so checked-out branches can be distinguished across attached worktrees.
+- `wt-b058` is currently attached in a detached `HEAD` state, so no named branch is counted as checked out there.
 
 ## (a) Already Merged To `main`, And Not Checked Out On A Worktree
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
 | `main` | n/a | `origin/main` exists, up to date (`=`) | `primary` | Baseline |
+| `codex/durable-objects-efficiency` | Yes | `origin/codex/durable-objects-efficiency` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/durable-objects-efficiency-next` | Yes | `origin/codex/durable-objects-efficiency-next` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/game-load-pagination` | Yes | `origin/codex/game-load-pagination` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/history-game-branching` | Yes | `origin/codex/history-game-branching` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/history-scroll-positioning` | Yes | `origin/codex/history-scroll-positioning` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/history-view-selected-piece-styling` | Yes | `origin/codex/history-view-selected-piece-styling` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/home-page-size-3` | Yes | `origin/codex/home-page-size-3` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/loading-states-fix` | Yes | `origin/main` exists; branch is behind upstream (`<`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/mini-board-previews` | Yes | `origin/codex/mini-board-previews` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/playground-workflow` | Yes | `origin/codex/playground-workflow` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/retreat-actions-fix` | Yes | `origin/codex/retreat-actions-fix` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/scenario-capture-improvements` | Yes | `origin/codex/scenario-capture-improvements` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/scenario-management-improvements` | Yes | `origin/codex/scenario-management-improvements` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/scenarios-previews-cleanup` | Yes | `origin/main` exists; branch is behind upstream (`<`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `codex/ui-improvements` | Yes | `origin/codex/ui-improvements` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `cursor/live-sync-resiliency` | Yes | `origin/cursor/live-sync-resiliency` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
+| `cursor/undo-option` | Yes | `origin/cursor/undo-option` exists, up to date (`=`) | `-` | No remaining code diff; this branch's changes are already in `main` |
 
 ## (b) Already Merged To `main`, But Checked Out On A Worktree
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
-| `codex/client-history-local-nav` | Yes | `origin/main` exists, up to date (`=`) | `wt-5b34` | No remaining code diff; this worktree branch currently points at the same commit as `main` |
 
 ## (c) Not Merged To `main`, But Checked Out On A Worktree
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
-| `codex/computer-player` | No | `origin/codex/computer-player` exists, up to date (`=`) | `wt-b058` | Adds `docs/RIGHELT_COMPUTER_PLAYER_PLAN.md` with the computer-player implementation plan |
+| `codex/home-page-paging-animation` | No | `origin/codex/home-page-paging-animation` exists, up to date (`=`) | `wt-5b34` | Smooths home page carousel transitions across shell layout styling and mobile/UI guard tests |
 | `codex/tutorial-mode` | No | `origin/codex/tutorial-mode` exists, up to date (`=`) | `wt-f466` | Adds `docs/features/tutorial-mode/EXECUTION_PLAN.md` with the tutorial-mode execution plan |
 
 ## (d) Not Merged To `main`, And Not Checked Out On A Worktree
 
 | Branch | Merged to `main` | Remote exists / up to date | Worktree | Difference vs `main` |
 |---|---|---|---|---|
+| `codex/action-transmission-fixes` | No | `origin/codex/action-transmission-fixes` exists, up to date (`=`) | `-` | Hardens shell action-transmission recovery across live transport, durable-object live state, and related tests |
+| `codex/client-history-local-nav` | No | `origin/codex/client-history-local-nav` exists, up to date (`=`) | `-` | Refactors client history reconciliation across shell transport, optimistic live state, durable-object live state, and related tests |
+| `codex/computer-player` | No | `origin/codex/computer-player` exists, up to date (`=`) | `-` | Adds `docs/RIGHELT_COMPUTER_PLAYER_PLAN.md` with the computer-player implementation plan |
+| `codex/durable-objects-efficiency--additional-wins--client-only-history` | No | No upstream configured | `-` | Adds client-only history and live-transport efficiency changes across shell and API handler code; the latest commit message marks the implementation as broken |
+| `codex/playground-workflow-game-authority-adapter` | No | `origin/codex/playground-workflow-game-authority-adapter` exists, up to date (`=`) | `-` | Experiments with player-turn correction across shell host/transport, durable-object live state, and authority-adapter tests |
+| `codex/scenario-management-improvements-home-card-width-cap` | No | `origin/codex/scenario-management-improvements-home-card-width-cap` exists, up to date (`=`) | `-` | Caps home game card width in shell CSS and the mobile layout test |
 
 ## (e) Branches Which Only Exist On The Remote, With No Code Diff Relative to `main`
 

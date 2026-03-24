@@ -20,3 +20,8 @@ When a remote-only branch is listed here, `Audit branches` should prefer this cu
 | `codex/turn-control-fix-checkpoint` | Applies the turn-control handoff checkpoint changes in shell transport and API handler tests |
 | `codex/turn-handoff-broken-attempt` | Contains a WIP turn-handoff attempt in live transport and integration tests |
 | `codex/f-032-live-authority-integration` | Adds the F-032 live-authority orchestration kickoff docs: the feature plan, coordination log, and stream briefs under `docs/features/F-032-live-authority/` |
+| `codex/action-transmission-fixes` | Hardens shell action-transmission recovery across live transport, durable-object live state, and related tests |
+| `codex/client-history-local-nav` | Refactors client history reconciliation across shell transport, optimistic live state, durable-object live state, and related tests |
+| `codex/computer-player` | Adds `docs/RIGHELT_COMPUTER_PLAYER_PLAN.md` with the computer-player implementation plan |
+| `codex/playground-workflow-game-authority-adapter` | Experiments with player-turn correction across shell host/transport, durable-object live state, and authority-adapter tests |
+| `codex/scenario-management-improvements-home-card-width-cap` | Caps home game card width in shell CSS and the mobile layout test |
