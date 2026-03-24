@@ -997,7 +997,7 @@ const renderTurnHistory = (game) => {
     const revertButton = game.inHistoryMode && game.historyIndex === move.index && move.undone !== true
       ? `<button class="secondary mini-button history-branch-button" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(
           move.moveId || "",
-        )}" ${busy ? "disabled" : ""}>Revert game to this move</button>`
+        )}" ${busy ? "disabled" : ""}>Undo back to this move</button>`
       : "";
     return {
       undone: move.undone === true,
@@ -1009,8 +1009,8 @@ const renderTurnHistory = (game) => {
             String(move.displayMoveNumber ?? move.index + 1),
           )}: ${escapeHtml(move.notation)}</span>
           <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
-          ${branchButton}
           ${revertButton}
+          ${branchButton}
         </li>`,
     };
   });
