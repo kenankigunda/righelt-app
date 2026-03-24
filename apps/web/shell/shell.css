@@ -640,7 +640,7 @@ button.button-release-bounce,
   margin-bottom: 0.7rem;
 }
 
-#app[data-shell-layout-mode="wide"] .home-games-section-header {
+#app[data-shell-layout-mode="wide"] .home-games-section-header[data-home-header-has-action="true"] {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
 }
 
@@ -653,7 +653,8 @@ button.button-release-bounce,
 .home-games-section-header-center {
   display: none;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
+  justify-self: end;
 }
 
 .home-games-section-header h2,
@@ -671,6 +672,11 @@ button.button-release-bounce,
 
 #app[data-shell-layout-mode="wide"] .home-games-section-header-center {
   display: inline-flex;
+}
+
+#app[data-shell-layout-mode="wide"] .home-games-section-header[data-home-header-has-action="true"] .home-games-section-header-center {
+  justify-content: center;
+  justify-self: stretch;
 }
 
 .home-games-section-controls {

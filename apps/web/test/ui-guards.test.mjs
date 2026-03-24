@@ -96,6 +96,8 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /home-games-section-controls home-games-section-controls-\$\{escapeHtml\(placement\)\}/);
   assert.match(source, /const shouldAlwaysRender = sectionKey === "my";/);
   assert.match(source, /const showEmptyState = section\.totalGames === 0;/);
+  assert.match(source, /const hasHeaderAction = sectionKey === "my";/);
+  assert.match(source, /data-home-header-has-action="\$\{hasHeaderAction \? "true" : "false"\}"/);
   assert.match(source, /<div class="home-games-section-header-center">/);
   assert.match(source, /<div class="home-games-section-header-actions">/);
   assert.match(source, /<div class="home-games-section-heading">/);
@@ -105,11 +107,11 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   );
   assert.match(
     source,
-    /<div class="home-games-section-header-actions">\s*\$\{sectionKey === "my" \? renderHomeStartButton\(\) : ""\}\s*<\/div>/s,
+    /<div class="home-games-section-header-actions">\s*\$\{hasHeaderAction \? renderHomeStartButton\(\) : ""\}\s*<\/div>/s,
   );
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\)/);
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "footer" \}\)/);
-  assert.match(source, /sectionKey === "my" \? renderHomeStartButton\(\) : ""/);
+  assert.match(source, /hasHeaderAction \? renderHomeStartButton\(\) : ""/);
   assert.match(source, /<p class="small home-games-empty">No games yet\.<\/p>/);
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
   assert.match(source, /if \(getShellLayoutMode\(\) !== "narrow" \|\| !\(appEl instanceof HTMLElement\)\) \{\s*return;\s*\}/s);
