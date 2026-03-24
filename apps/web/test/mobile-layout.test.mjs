@@ -30,7 +30,7 @@ test("shell header stacks cleanly on narrow screens", () => {
   );
 });
 
-test("shell header separates layout spacing from panel chrome and home start panel stays chromeless", () => {
+test("shell header separates layout spacing from panel chrome", () => {
   assert.doesNotMatch(
     shellStylesSource,
     /^\*\s*\{/m,
@@ -50,10 +50,6 @@ test("shell header separates layout spacing from panel chrome and home start pan
   assert.match(
     shellStylesSource,
     /\.shell-header h1\s*\{[\s\S]*font-size:\s*2rem;/s,
-  );
-  assert.match(
-    shellStylesSource,
-    /\.home-start-panel\s*\{[\s\S]*background:\s*transparent;[\s\S]*border:\s*0;/s,
   );
 });
 
@@ -189,18 +185,34 @@ test("home mini-board cards use uniform grid widths across wrapped rows", () => 
   );
   assert.match(
     shellStylesSource,
-    /\.home-games-section-header\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;[\s\S]*flex-wrap:\s*wrap;/s,
+    /\.home-games-section-header\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/s,
   );
   assert.match(
     shellStylesSource,
-    /\.home-games-section-controls-footer\s*\{\s*display:\s*none;\s*\}/s,
+    /#app\[data-shell-layout-mode="wide"\]\s+\.home-games-section-header\[data-home-header-has-action="true"\]\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\);/s,
   );
   assert.match(
     shellStylesSource,
-    /#app\[data-shell-layout-mode="narrow"\]\s+\.home-games-section-controls-header\s*\{\s*display:\s*none;\s*\}/s,
+    /\.home-games-section-header-center\s*\{[\s\S]*display:\s*none;[\s\S]*justify-content:\s*flex-end;[\s\S]*justify-self:\s*end;/s,
   );
   assert.match(
     shellStylesSource,
-    /#app\[data-shell-layout-mode="narrow"\]\s+\.home-games-section-controls-footer\s*\{[\s\S]*display:\s*inline-flex;[\s\S]*justify-content:\s*center;[\s\S]*width:\s*100%;/s,
+    /\.home-games-section-header-actions\s*\{[\s\S]*display:\s*inline-flex;[\s\S]*justify-content:\s*flex-end;[\s\S]*justify-self:\s*end;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="wide"\]\s+\.home-games-section-header-center\s*\{\s*display:\s*inline-flex;\s*\}/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="wide"\]\s+\.home-games-section-header\[data-home-header-has-action="true"\]\s+\.home-games-section-header-center\s*\{[\s\S]*justify-content:\s*center;[\s\S]*justify-self:\s*stretch;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-games-section-controls\s*\{[\s\S]*display:\s*inline-flex;[\s\S]*gap:\s*0\.175rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-games-section-controls-footer\s*\{[\s\S]*display:\s*inline-flex;[\s\S]*justify-content:\s*center;[\s\S]*width:\s*100%;/s,
   );
 });

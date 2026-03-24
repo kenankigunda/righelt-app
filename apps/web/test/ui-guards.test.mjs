@@ -80,28 +80,90 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";/);
   assert.match(source, /const isPlayerRole = \(role\) => role === "Player 1" \|\| role === "Player 2";/);
   assert.match(source, /const gameIncludesIdentity = \(game, identityId\) => \{/);
-  assert.match(source, /const HOME_SECTION_PAGE_SIZE = 6;/);
+  assert.match(source, /const HOME_SECTION_SERVER_PAGE_SIZE = 4;/);
+  assert.match(source, /const HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT = 3;/);
+  assert.match(source, /const HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE = 4;/);
+  assert.match(source, /const HOME_SECTION_CARD_MIN_WIDTH_REM = 22;/);
+  assert.match(source, /const HOME_SECTION_CARD_GAP_REM = 0\.85;/);
   assert.match(source, /let homeSections = \{/);
   assert.match(source, /my: createHomeSectionState\("My games"\),/);
   assert.match(source, /other: createHomeSectionState\("Other games"\),/);
   assert.match(source, /smoke: createHomeSectionState\("Deploy smoke player"\),/);
+  assert.match(source, /serverPage:\s*0,/);
+  assert.match(source, /serverTotalPages:\s*0,/);
+  assert.match(source, /serverPageGameIds:\s*\[\],/);
+  assert.match(source, /serverPageGameIdsByPage:\s*\{\},/);
+  assert.match(source, /visiblePageSize:\s*HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,/);
+  assert.match(source, /visibleColumnCount:\s*1,/);
   assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \(route\?\.debug \? \["my", "other", "smoke"\] : \["my", "other"\]\);/);
+  assert.match(source, /const getHomeSectionCardMinWidthPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_MIN_WIDTH_REM;/);
+  assert.match(source, /const getHomeSectionCardGapPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_GAP_REM;/);
+  assert.match(source, /const carouselEl = appEl\?\.querySelector\?\.\(`\[data-home-carousel="\$\{sectionKey\}"\]`\);/);
+  assert.match(source, /return carouselEl\.getBoundingClientRect\(\)\.width;/);
+  assert.match(source, /const styles = window\.getComputedStyle\(sectionEl\);/);
+  assert.match(source, /return Math\.max\(0, sectionEl\.clientWidth - paddingLeft - paddingRight\);/);
+  assert.match(source, /const getHomeSectionColumnCount = \(sectionKey\) => \{/);
+  assert.match(source, /Math\.max\(1, Math\.floor\(\(sectionWidth \+ gapWidth\) \/ \(cardWidth \+ gapWidth\)\)\)/);
+  assert.match(source, /const getHomeSectionVisiblePageSize = \(sectionKey\) =>/);
+  assert.match(source, /getHomeSectionColumnCount\(sectionKey\) >= 3/);
+  assert.match(source, /HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE/);
+  assert.match(source, /HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT/);
+  assert.match(source, /const getHomeSectionRequiredServerPages = \(\{ totalGames, visiblePageSize, page \}\) => \{/);
+  assert.match(source, /const getHomeSectionVisibleGameIdsFromCache = \(section, \{ page = section\.page, visiblePageSize = section\.visiblePageSize \} = \{\}\) => \{/);
+  assert.match(source, /const getHomeSectionCachedGameIndex = \(section, gameId\) => \{/);
   assert.match(source, /data-action="home-page-prev"/);
   assert.match(source, /data-action="home-page-next"/);
   assert.match(source, /data-home-section="\$\{escapeHtml\(sectionKey\)\}"/);
   assert.match(source, /data-home-section-root="\$\{escapeHtml\(sectionKey\)\}"/);
   assert.match(source, /const renderHomeSectionControls = \(sectionKey, section, \{ placement \} = \{ placement: "header" \}\) =>/);
+  assert.match(source, /const renderHomeStartButton = \(\) =>/);
+  assert.match(source, /data-action="create-game"/);
   assert.match(source, /home-games-section-controls home-games-section-controls-\$\{escapeHtml\(placement\)\}/);
+  assert.match(source, /const shouldAlwaysRender = sectionKey === "my";/);
+  assert.match(source, /const showEmptyState = section\.totalGames === 0;/);
+  assert.match(source, /const showHeaderPaging = showPaging && section\.visibleColumnCount > 1;/);
+  assert.match(source, /const showFooterPaging = showPaging && section\.visibleColumnCount === 1;/);
+  assert.match(source, /const hasHeaderAction = sectionKey === "my";/);
+  assert.match(source, /data-home-header-has-action="\$\{hasHeaderAction \? "true" : "false"\}"/);
+  assert.match(source, /<div class="home-games-section-header-center">/);
+  assert.match(source, /<div class="home-games-section-header-actions">/);
+  assert.match(source, /<div class="home-games-section-heading">/);
+  assert.match(
+    source,
+    /<div class="home-games-section-header-center">\s*\$\{showHeaderPaging \? renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\) : ""\}\s*<\/div>/s,
+  );
+  assert.match(
+    source,
+    /<div class="home-games-section-header-actions">\s*\$\{hasHeaderAction \? renderHomeStartButton\(\) : ""\}\s*<\/div>/s,
+  );
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\)/);
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "footer" \}\)/);
+  assert.match(source, /hasHeaderAction \? renderHomeStartButton\(\) : ""/);
+  assert.match(source, /<p class="small home-games-empty">No games yet\.<\/p>/);
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
   assert.match(source, /if \(getShellLayoutMode\(\) !== "narrow" \|\| !\(appEl instanceof HTMLElement\)\) \{\s*return;\s*\}/s);
   assert.match(source, /sectionEl\.scrollIntoView\(\{\s*behavior: "smooth",\s*block: "start",\s*\}\);/s);
+  assert.match(
+    source,
+    /const loadHomeSectionServerPage = async \(\s*sectionKey,\s*serverPage,\s*\{\s*visiblePageSize = getHomeSectionVisiblePageSize\(sectionKey\),\s*visibleColumnCount = getHomeSectionColumnCount\(sectionKey\),\s*\} = \{\},\s*\) => \{/s,
+  );
+  assert.match(source, /pageSize:\s*HOME_SECTION_SERVER_PAGE_SIZE,/);
+  assert.match(source, /serverPageGameIdsByPage:\s*\{\s*\.\.\.previous\.serverPageGameIdsByPage,\s*\[normalizedServerPage\]: serverPageGameIds,/s);
+  assert.match(source, /const syncResponsiveHomeSectionPageSizes = async \(\) => \{/);
+  assert.match(source, /const nextVisibleColumnCount = getHomeSectionColumnCount\(sectionKey\);/);
+  assert.match(source, /section\.visiblePageSize === nextVisiblePageSize && section\.visibleColumnCount === nextVisibleColumnCount/);
+  assert.match(source, /visibleColumnCount:\s*nextVisibleColumnCount,/);
+  assert.match(source, /const anchorGameId = section\.gameIds\[0\] \?\? null;/);
+  assert.match(source, /const anchorIndex = getHomeSectionCachedGameIndex\(section, anchorGameId\);/);
+  assert.match(source, /const nextPage = anchorIndex === null \? section\.page : Math\.floor\(anchorIndex \/ nextVisiblePageSize\);/);
+  assert.match(source, /visiblePageSize:\s*getHomeSectionVisiblePageSize\(sectionKey\),/);
+  assert.match(source, /visibleColumnCount:\s*getHomeSectionColumnCount\(sectionKey\),/);
   assert.match(source, /<div class="home-games-carousel" data-home-carousel="\$\{escapeHtml\(sectionKey\)\}">/);
   assert.match(source, /getVisibleHomeSectionKeys\(\)\.map\(\(sectionKey\) => renderHomeGameSection\(sectionKey\)\)\.join\(""\)/);
   assert.match(source, /<section class="panel home-games-section" data-home-section-root="\$\{escapeHtml\(sectionKey\)\}">/);
   assert.match(source, /<h2>\$\{escapeHtml\(section\.title\)\}<\/h2>/);
   assert.match(source, /<div class="mini-board-card-list" data-game-count="\$\{games\.length\}">/);
+  assert.doesNotMatch(source, /class="panel home-start-panel"/);
   assert.doesNotMatch(source, /<h2>Active Games<\/h2>/);
   assert.doesNotMatch(source, /<h2>Preview Board/);
 });
