@@ -1555,9 +1555,11 @@ const renderHomeGameSection = (sectionKey) => {
         <h2>${escapeHtml(section.title)}</h2>
         <p class="small">${section.totalGames === 1 ? "1 game" : `${section.totalGames} games`}</p>
       </div>
+      <div class="home-games-section-header-center">
+        ${showPaging ? renderHomeSectionControls(sectionKey, section, { placement: "header" }) : ""}
+      </div>
       <div class="home-games-section-header-actions">
         ${sectionKey === "my" ? renderHomeStartButton() : ""}
-        ${showPaging ? renderHomeSectionControls(sectionKey, section, { placement: "header" }) : ""}
       </div>
     </div>
     ${showEmptyState

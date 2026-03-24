@@ -633,17 +633,27 @@ button.button-release-bounce,
 }
 
 .home-games-section-header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.75rem;
   margin-bottom: 0.7rem;
-  flex-wrap: wrap;
+}
+
+#app[data-shell-layout-mode="wide"] .home-games-section-header {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
 }
 
 .home-games-section-heading {
   display: grid;
   gap: 0.18rem;
+  min-width: 0;
+}
+
+.home-games-section-header-center {
+  display: none;
+  align-items: center;
+  justify-content: center;
 }
 
 .home-games-section-header h2,
@@ -655,12 +665,12 @@ button.button-release-bounce,
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.65rem;
-  flex-wrap: wrap;
+  gap: 0;
+  justify-self: end;
 }
 
-#app[data-shell-layout-mode="wide"] .home-games-section-header-actions {
-  gap: 1.8rem;
+#app[data-shell-layout-mode="wide"] .home-games-section-header-center {
+  display: inline-flex;
 }
 
 .home-games-section-controls {
