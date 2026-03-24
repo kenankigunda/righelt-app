@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createShellIntegrationHarness } from "./support/shell-integration-harness.mjs";
 import { parseRouteFromHash } from "../../../apps/web/shell/routes.js";
+import { createInitialState, resolveToStability } from "../../../apps/web/generated/packages/game-engine/src/index.js";
 
 test("shell integration: opaque invite token resolves and joins into canonical game route", async () => {
   const harness = createShellIntegrationHarness();
@@ -78,6 +79,91 @@ test("shell integration: ending a turn hands control to the next player after re
   const move = await guest.store.addMove({ gameId: created.id, notation: "P2-M1" });
   assert.equal(move.move.turnIndex, 1);
   assert.equal(move.move.turnMoveIndex, 0);
+});
+
+test("shell integration: push retreat hands control to the defending player", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-shell-int-retreat-1");
+  const guest = harness.createClient("id-guest-shell-int-retreat-1");
+
+  const created = await owner.store.createGame({ playgroundMode: false, offlineLocal: false });
+  await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
+
+  const base = createInitialState();
+  const retreatScenario = {
+    formatVersion: 2,
+    id: "0f3d7108-3da3-43e7-aa54-406a5689fcfd",
+    title: "Retreat control handoff",
+    description: "Push enters retreat and hands control to the defender.",
+    incorrect: false,
+    initialState: resolveToStability(
+      {
+        ...base,
+        pieces: [
+          ...base.pieces,
+          { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 1 }, supplied: true, commanded: true },
+          { id: "A2", owner: "P1", kind: "unit", position: { row: 3, col: 1 }, supplied: true, commanded: true },
+          { id: "D1", owner: "P2", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
+        ],
+      },
+      { artifactMode: "full" },
+    ),
+    moves: [],
+    resultingState: resolveToStability(
+      {
+        ...base,
+        pieces: [
+          ...base.pieces,
+          { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 1 }, supplied: true, commanded: true },
+          { id: "A2", owner: "P1", kind: "unit", position: { row: 3, col: 1 }, supplied: true, commanded: true },
+          { id: "D1", owner: "P2", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
+        ],
+      },
+      { artifactMode: "full" },
+    ),
+    expectedFinalStateHash: "hash-placeholder",
+    expectedOutcome: "ongoing",
+  };
+
+  await owner.store.importScenario({ scenario: retreatScenario, targetGameId: created.id });
+
+  const pushed = await owner.store.applyGameAction({
+    gameId: created.id,
+    state: retreatScenario.resultingState,
+    action: {
+      type: "push",
+      actorId: "A1",
+      from: { row: 4, col: 1 },
+      to: { row: 4, col: 2 },
+    },
+  });
+  assert.equal(pushed.accepted, true);
+
+  const ownerView = await harness.waitForGame(
+    owner,
+    created.id,
+    (game) =>
+      game.controlSeat === "Player 2" &&
+      game.currentSnapshot?.continuation?.type === "push" &&
+      game.currentSnapshot?.continuation?.phase === "retreat" &&
+      game.pendingCommandCount === 0,
+  );
+  const guestView = await harness.waitForGame(
+    guest,
+    created.id,
+    (game) =>
+      game.controlSeat === "Player 2" &&
+      game.currentSnapshot?.continuation?.type === "push" &&
+      game.currentSnapshot?.continuation?.phase === "retreat" &&
+      game.pendingCommandCount === 0,
+  );
+
+  assert.equal(ownerView.canRecordMove, false);
+  assert.equal(ownerView.canEndTurn, false);
+  assert.equal(ownerView.control, "opponent");
+  assert.equal(guestView.canRecordMove, true);
+  assert.equal(guestView.canEndTurn, false);
+  assert.equal(guestView.control, "opponent");
 });
 
 test("shell integration: invite availability reflects backend-driven remaining join options", async () => {

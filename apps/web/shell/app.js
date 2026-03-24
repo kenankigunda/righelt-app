@@ -464,10 +464,11 @@ const updateSelectedScenarioRecord = async ({
 };
 const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
   const pendingSelection = game?.pendingScenarioSelection ?? null;
+  const canControlBoard = Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
   if (
     !pendingSelection ||
     game?.inHistoryMode ||
-    !(game?.canRecordMove || game?.canEndTurn) ||
+    !canControlBoard ||
     pendingSelection.actorSide !== snapshot?.sideToMove ||
     pendingSelection.turnIndex !== snapshot?.turnIndex
   ) {
@@ -505,6 +506,7 @@ const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
   return { selectionAction: matchingAction, selectionState: null };
 };
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
+const canControlLiveBoard = (game) => Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
 const gameIncludesIdentity = (game, identityId) => {
   if (!game || !identityId) {
     return false;
@@ -2161,7 +2163,7 @@ const mountBoardForGame = (game) => {
         gameId: game.id,
         canInteract: () => {
           const view = transport.getGameViewModel(game.id);
-          return Boolean(view?.canRecordMove || view?.canEndTurn);
+          return canControlLiveBoard(view);
         },
       }),
       controls: {

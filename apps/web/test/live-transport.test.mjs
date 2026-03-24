@@ -22,6 +22,14 @@ const createMemoryStorage = () => {
 
 const clone = (value) => structuredClone(value);
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
+const getControlSeatForTurn = (state, turnOwnerSeat) => {
+  const continuation = state?.continuation;
+  if (continuation?.type === "push" && continuation.phase === "retreat") {
+    return getNextSeat(turnOwnerSeat);
+  }
+  return turnOwnerSeat;
+};
 
 const buildLiveGame = () => {
   const initial = resolveToStability(createInitialState(), { artifactMode: "full" });
@@ -122,6 +130,77 @@ const buildAcknowledgedGame = (baseGame, action) => {
     legalActions: listLegalActions(nextState),
     canRecordMove: true,
     canEndTurn: true,
+  };
+};
+
+const buildPushRetreatScenario = () => {
+  const base = createInitialState();
+  const initial = resolveToStability(
+    {
+      ...base,
+      pieces: [
+        ...base.pieces,
+        { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 1 }, supplied: true, commanded: true },
+        { id: "A2", owner: "P1", kind: "unit", position: { row: 3, col: 1 }, supplied: true, commanded: true },
+        { id: "D1", owner: "P2", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
+      ],
+    },
+    { artifactMode: "full" },
+  );
+  const pushAction = {
+    type: "push",
+    actorId: "A1",
+    from: { row: 4, col: 1 },
+    to: { row: 4, col: 2 },
+  };
+  const pushed = resolveToStability(applyAction(initial, pushAction).state, { artifactMode: "full" });
+  pushed.sideToMove = "P2";
+  pushed.turnIndex = 0;
+  return { initial, pushAction, pushed };
+};
+
+const buildGameForIdentity = ({ gameId, identityId, myRole, state, currentTurn, moves = [] }) => {
+  const turnOwnerSeat = currentTurn.playerSeat;
+  const controlSeat = getControlSeatForTurn(state, turnOwnerSeat);
+  const controlIdentity = controlSeat === "Player 1" ? "id-a" : "id-b";
+  const turnOwnerIdentity = turnOwnerSeat === "Player 1" ? "id-a" : "id-b";
+  const legalActions = listLegalActions(state);
+
+  return {
+    id: gameId,
+    createdAt: "2026-02-26T00:00:00.000Z",
+    lastMoveAt: moves.at(-1)?.at ?? "2026-02-26T00:00:01.000Z",
+    updatedAt: moves.at(-1)?.at ?? "2026-02-26T00:00:01.000Z",
+    offlineLocal: false,
+    playgroundMode: false,
+    player1: { identityId: "id-a", connected: true },
+    player2: { identityId: "id-b", connected: true },
+    viewers: [],
+    pendingJoinRequests: [],
+    turns: [clone(currentTurn)],
+    moves: clone(moves),
+    notifications: ["Move recorded in turn 1"],
+    myRole,
+    inHistoryMode: false,
+    historyIndex: null,
+    currentSnapshot: clone(state),
+    board: { state: clone(state) },
+    currentTurn: clone(currentTurn),
+    controlSeat,
+    control: controlSeat === turnOwnerSeat ? "turn-owner" : "opponent",
+    legalActions,
+    canRecordMove:
+      (myRole === "Player 1" || myRole === "Player 2") &&
+      controlIdentity === identityId &&
+      legalActions.length > 0,
+    canEndTurn:
+      (myRole === "Player 1" || myRole === "Player 2") &&
+      controlSeat === turnOwnerSeat &&
+      turnOwnerIdentity === identityId &&
+      Boolean(currentTurn.moveIndexes.length),
+    showJoinActions: true,
+    canInvite: true,
+    showOfflineState: false,
   };
 };
 
@@ -734,6 +813,123 @@ test("live transport store applies optimistic moves immediately and clears pendi
   assert.equal(settledView.pendingCommandCount, 0);
   assert.equal(settledView.moves.length, 2);
   assert.equal(settledView.syncStatus, "ready");
+});
+
+test("live transport store hands retreat control to the defending player", async () => {
+  const scenario = buildPushRetreatScenario();
+  const gameId = "game-retreat-control";
+  const currentTurn = {
+    index: 0,
+    startedAt: "2026-02-26T00:00:00.000Z",
+    endedAt: null,
+    playerSeat: "Player 1",
+    status: "active",
+    moveIndexes: [0],
+    lastMoveAt: "2026-02-26T00:00:01.000Z",
+  };
+  const moves = [
+    {
+      index: 0,
+      turnIndex: 0,
+      turnMoveIndex: 0,
+      actorSide: "P1",
+      at: "2026-02-26T00:00:01.000Z",
+      notation: "SETUP MOVE",
+      action: { type: "move", actorId: "U1-1", from: { row: 6, col: 5 }, to: { row: 6, col: 4 } },
+      selectionSnapshot: clone(scenario.initial),
+      snapshot: clone(scenario.initial),
+    },
+  ];
+  const ownerGame = buildGameForIdentity({
+    gameId,
+    identityId: "id-a",
+    myRole: "Player 1",
+    state: scenario.initial,
+    currentTurn,
+    moves,
+  });
+  const defenderGame = buildGameForIdentity({
+    gameId,
+    identityId: "id-b",
+    myRole: "Player 2",
+    state: scenario.pushed,
+    currentTurn,
+    moves,
+  });
+  const attackerRetreatView = buildGameForIdentity({
+    gameId,
+    identityId: "id-a",
+    myRole: "Player 1",
+    state: scenario.pushed,
+    currentTurn,
+    moves,
+  });
+  let resolveApply = null;
+
+  const ownerStore = createLiveTransportStore({
+    storage: (() => {
+      const storage = createMemoryStorage();
+      storage.setItem("righelt.identity.id.v1", "id-a");
+      return storage;
+    })(),
+    fetcher: async (url, init = {}) => {
+      if (String(url).startsWith(`/api/shell/games/${gameId}?`) && (!init.method || init.method === "GET")) {
+        return Response.json({ ok: true, game: ownerGame, eventSeq: 1 });
+      }
+      if (String(url) === `/api/shell/games/${gameId}/apply?offline=0` && init.method === "POST") {
+        return new Promise((resolve) => {
+          resolveApply = resolve;
+        });
+      }
+      return Response.json({ ok: true, games: [] });
+    },
+    random: () => 0.12345,
+  });
+  await ownerStore.loadGame(gameId);
+
+  const pending = await ownerStore.applyGameAction({
+    gameId,
+    state: ownerGame.currentSnapshot,
+    action: scenario.pushAction,
+  });
+  assert.equal(pending.accepted, true);
+
+  const optimisticOwner = ownerStore.getGameViewModel(gameId);
+  assert.equal(optimisticOwner.controlSeat, "Player 2");
+  assert.equal(optimisticOwner.canRecordMove, false);
+  assert.equal(optimisticOwner.canEndTurn, false);
+
+  resolveApply?.(
+    Response.json({
+      ok: true,
+      accepted: true,
+      clientCommandId: pending.clientCommandId,
+      eventSeq: 2,
+      game: attackerRetreatView,
+    }),
+  );
+  await tick();
+
+  const defenderStore = createLiveTransportStore({
+    storage: (() => {
+      const storage = createMemoryStorage();
+      storage.setItem("righelt.identity.id.v1", "id-b");
+      return storage;
+    })(),
+    fetcher: async (url, init = {}) => {
+      if (String(url).startsWith(`/api/shell/games/${gameId}?`) && (!init.method || init.method === "GET")) {
+        return Response.json({ ok: true, game: defenderGame, eventSeq: 2 });
+      }
+      return Response.json({ ok: true, games: [] });
+    },
+    random: () => 0.12345,
+  });
+  await defenderStore.loadGame(gameId);
+
+  const defenderView = defenderStore.getGameViewModel(gameId);
+  assert.equal(defenderView.controlSeat, "Player 2");
+  assert.equal(defenderView.canRecordMove, true);
+  assert.equal(defenderView.canEndTurn, false);
 });
 
 test("live transport store notifies subscribers for optimistic enqueue and authoritative ack", async () => {
