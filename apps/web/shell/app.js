@@ -863,9 +863,16 @@ const normalizeRouteFlyoutState = (route, { preferredFlyoutKey = null } = {}) =>
 currentRoute = normalizeRouteFlyoutState(currentRoute);
 const getShellLayoutMode = (viewportWidth = window.innerWidth) => getShellLayoutModeForRoute(currentRoute, viewportWidth);
 const getHomeSectionWidthPx = (sectionKey) => {
+  const carouselEl = appEl?.querySelector?.(`[data-home-carousel="${sectionKey}"]`);
+  if (carouselEl instanceof HTMLElement) {
+    return carouselEl.getBoundingClientRect().width;
+  }
   const sectionEl = appEl?.querySelector?.(`[data-home-section-root="${sectionKey}"]`);
   if (sectionEl instanceof HTMLElement) {
-    return sectionEl.getBoundingClientRect().width;
+    const styles = window.getComputedStyle(sectionEl);
+    const paddingLeft = Number.parseFloat(styles.paddingLeft || "0") || 0;
+    const paddingRight = Number.parseFloat(styles.paddingRight || "0") || 0;
+    return Math.max(0, sectionEl.clientWidth - paddingLeft - paddingRight);
   }
   return getAvailableShellContentWidth();
 };

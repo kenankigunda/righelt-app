@@ -98,6 +98,10 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \(route\?\.debug \? \["my", "other", "smoke"\] : \["my", "other"\]\);/);
   assert.match(source, /const getHomeSectionCardMinWidthPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_MIN_WIDTH_REM;/);
   assert.match(source, /const getHomeSectionCardGapPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_GAP_REM;/);
+  assert.match(source, /const carouselEl = appEl\?\.querySelector\?\.\(`\[data-home-carousel="\$\{sectionKey\}"\]`\);/);
+  assert.match(source, /return carouselEl\.getBoundingClientRect\(\)\.width;/);
+  assert.match(source, /const styles = window\.getComputedStyle\(sectionEl\);/);
+  assert.match(source, /return Math\.max\(0, sectionEl\.clientWidth - paddingLeft - paddingRight\);/);
   assert.match(source, /const getHomeSectionColumnCount = \(sectionKey\) => \{/);
   assert.match(source, /Math\.max\(1, Math\.floor\(\(sectionWidth \+ gapWidth\) \/ \(cardWidth \+ gapWidth\)\)\)/);
   assert.match(source, /const getHomeSectionVisiblePageSize = \(sectionKey\) =>/);
