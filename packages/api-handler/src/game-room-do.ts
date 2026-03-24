@@ -118,14 +118,22 @@ const parseCommandMetadata = (body: Record<string, unknown>): CommandMetadata =>
 const parseLaunchParticipantCopyMode = (value: unknown): LaunchParticipantCopyMode | null =>
   value === "copy_source_participants" || value === "viewer_as_side_to_move" ? value : null;
 
+const getProcessEnvFlag = (key: string) => {
+  const processLike = (globalThis as { process?: { env?: Record<string, unknown> } }).process;
+  const raw = processLike?.env?.[key];
+  return raw == null ? "" : String(raw).toLowerCase();
+};
+
 const isVerboseServerLoggingEnabled = () => {
-  const processEnvFlag =
-    typeof process !== "undefined" && process?.env?.RIGHELT_VERBOSE_SERVER_LOGS
-      ? String(process.env.RIGHELT_VERBOSE_SERVER_LOGS).toLowerCase()
-      : "";
+  const processEnvFlag = getProcessEnvFlag("RIGHELT_VERBOSE_SERVER_LOGS");
   const globalFlag =
-    typeof globalThis !== "undefined" && (globalThis.__RIGHELT_VERBOSE_SERVER_LOGS || globalThis.__RIGHELT_VERBOSE_GAME_ROOM_LOGS)
-      ? String(globalThis.__RIGHELT_VERBOSE_SERVER_LOGS || globalThis.__RIGHELT_VERBOSE_GAME_ROOM_LOGS).toLowerCase()
+    typeof globalThis !== "undefined" &&
+      ((globalThis as { __RIGHELT_VERBOSE_SERVER_LOGS?: unknown }).__RIGHELT_VERBOSE_SERVER_LOGS ||
+        (globalThis as { __RIGHELT_VERBOSE_GAME_ROOM_LOGS?: unknown }).__RIGHELT_VERBOSE_GAME_ROOM_LOGS)
+      ? String(
+          (globalThis as { __RIGHELT_VERBOSE_SERVER_LOGS?: unknown }).__RIGHELT_VERBOSE_SERVER_LOGS ||
+            (globalThis as { __RIGHELT_VERBOSE_GAME_ROOM_LOGS?: unknown }).__RIGHELT_VERBOSE_GAME_ROOM_LOGS,
+        ).toLowerCase()
       : "";
   const value = processEnvFlag || globalFlag;
   return value === "1" || value === "true" || value === "yes" || value === "on" || value === "verbose";

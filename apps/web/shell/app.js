@@ -2103,7 +2103,6 @@ const renderApprovalGate = (game, request) => {
             <span class="small invite-choice-note">Dismiss this prompt for now. The request remains visible in Join / Invite.</span>
           </div>
         </div>
-        <p class="small">The game is shown below, but it stays locked until you accept or ignore this request.</p>
       </section>
       <div class="invite-gate-content" aria-hidden="true">
         ${background}
@@ -2171,11 +2170,10 @@ const renderRevertWaitingGate = (game, request) => {
               data-game-id="${escapeHtml(game.id)}"
               data-request-id="${escapeHtml(request.requestId)}"
               ${busy ? "disabled" : ""}
-            >Rescind request</button>
+            >Rescind</button>
             <span class="small invite-choice-note">Cancel this request and unlock both players to continue without undoing.</span>
           </div>
         </div>
-        <p class="small">The game is shown below, but it stays locked until this request is resolved.</p>
       </section>
       <div class="invite-gate-content" aria-hidden="true">
         ${background}

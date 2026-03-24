@@ -129,11 +129,14 @@ const recordMismatch = (
   });
 };
 
+const getProcessEnvFlag = (key: string) => {
+  const processLike = (globalThis as { process?: { env?: Record<string, unknown> } }).process;
+  const raw = processLike?.env?.[key];
+  return raw == null ? "" : String(raw).toLowerCase();
+};
+
 const isVerboseRepairLoggingEnabled = () => {
-  const processEnvFlag =
-    typeof process !== "undefined" && process?.env?.RIGHELT_VERBOSE_REPAIR_LOGS
-      ? String(process.env.RIGHELT_VERBOSE_REPAIR_LOGS).toLowerCase()
-      : "";
+  const processEnvFlag = getProcessEnvFlag("RIGHELT_VERBOSE_REPAIR_LOGS");
   const globalFlag =
     typeof globalThis !== "undefined" && (globalThis as { __RIGHELT_VERBOSE_REPAIR_LOGS?: unknown }).__RIGHELT_VERBOSE_REPAIR_LOGS
       ? String((globalThis as { __RIGHELT_VERBOSE_REPAIR_LOGS?: unknown }).__RIGHELT_VERBOSE_REPAIR_LOGS).toLowerCase()
@@ -199,20 +202,20 @@ const buildShapeLogPayload = ({
 }): RepairLogPayload | InvalidLogPayload => {
   const verbose = isVerboseRepairLoggingEnabled();
   const loggedMismatches = verbose ? mismatches : condenseRepairMismatches(mismatches);
-  const payload =
+  const payload: RepairLogPayload | InvalidLogPayload =
     event === "live_game_shape_repaired"
-      ? ({
+      ? {
           event,
           gameId,
           context,
           mismatches: loggedMismatches,
-        } satisfies RepairLogPayload)
-      : ({
+        }
+      : {
           event,
           gameId,
           context,
           mismatches: loggedMismatches,
-        } satisfies InvalidLogPayload);
+        };
   if (!verbose && loggedMismatches.length !== mismatches.length) {
     payload.condensed = true;
     payload.mismatchCount = mismatches.length;
