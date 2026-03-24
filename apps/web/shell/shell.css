@@ -659,10 +659,14 @@ button.button-release-bounce,
   flex-wrap: wrap;
 }
 
+#app[data-shell-layout-mode="wide"] .home-games-section-header-actions {
+  gap: 1.8rem;
+}
+
 .home-games-section-controls {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.175rem;
 }
 
 .home-games-section-controls-footer {
