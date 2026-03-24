@@ -56,3 +56,15 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 ## License
 
 This project is closed-source and proprietary. See `LICENSE`.
+
+## Live Game Repair Logging
+
+When legacy persisted game data is loaded, the API may emit a `live_game_shape_repaired` warning if it backfills missing fields (for example legacy move metadata).
+
+- Default behavior is **condensed logging** for large repetitive move backfills.
+- Full per-field/per-move mismatch logs are available in **verbose mode**.
+
+Enable verbose repair logs with either option:
+
+- Environment variable: `RIGHELT_VERBOSE_REPAIR_LOGS=1`
+- Runtime flag: `globalThis.__RIGHELT_VERBOSE_REPAIR_LOGS = "1"`

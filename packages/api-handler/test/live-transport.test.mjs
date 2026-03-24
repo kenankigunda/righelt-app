@@ -1194,6 +1194,76 @@ test("live transport: dual-seat identity auto-approves revert requests", async (
   assert.equal(requestBody.game.moves[0].undone, true);
 });
 
+test("live transport: persisted legacy moves get moveId backfilled for revert actions", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+  await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
+
+  env.DB.overwriteGameState(gameId, (state) => ({
+    ...state,
+    moves: state.moves.map((move) => {
+      const next = { ...move };
+      delete next.moveId;
+      delete next.displayMoveNumber;
+      return next;
+    }),
+  }));
+
+  const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+  const openBody = await open.json();
+  assert.equal(open.status, 200);
+  assert.equal(typeof openBody.game.moves[0].moveId, "string");
+  assert.equal(openBody.game.moves[0].moveId.length > 0, true);
+  assert.equal(typeof openBody.game.moves[0].displayMoveNumber, "number");
+});
+
+test("live transport: condensed repair logs summarize large move backfills unless verbose is enabled", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+  for (let index = 0; index < 5; index += 1) {
+    await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
+  }
+
+  env.DB.overwriteGameState(gameId, (state) => ({
+    ...state,
+    moves: state.moves.map((move) => {
+      const next = { ...move };
+      delete next.moveId;
+      delete next.displayMoveNumber;
+      return next;
+    }),
+  }));
+
+  const capture = captureConsoleEvents();
+  try {
+    const currentVerboseFlag = (globalThis).__RIGHELT_VERBOSE_REPAIR_LOGS;
+    (globalThis).__RIGHELT_VERBOSE_REPAIR_LOGS = "";
+    await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+    const condensedEvent = capture.warnings.map((entry) => JSON.parse(entry)).find((entry) => entry.event === "live_game_shape_repaired");
+    assert.equal(condensedEvent.condensed, true);
+    assert.equal(condensedEvent.mismatchCount >= 10, true);
+    assert.equal(condensedEvent.mismatches.some((entry) => entry.field === "moves[*].moveId"), true);
+    assert.equal(condensedEvent.mismatches.some((entry) => entry.field === "moves[*].displayMoveNumber"), true);
+
+    capture.warnings.length = 0;
+    (globalThis).__RIGHELT_VERBOSE_REPAIR_LOGS = "1";
+    await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+    const verboseEvent = capture.warnings.map((entry) => JSON.parse(entry)).find((entry) => entry.event === "live_game_shape_repaired");
+    assert.equal(verboseEvent.condensed ?? false, false);
+    assert.equal(verboseEvent.mismatches.some((entry) => entry.field === "moves[0].moveId"), true);
+    assert.equal(verboseEvent.mismatches.some((entry) => entry.field === "moves[0].displayMoveNumber"), true);
+    (globalThis).__RIGHELT_VERBOSE_REPAIR_LOGS = currentVerboseFlag;
+  } finally {
+    capture.restore();
+  }
+});
+
 test("live transport: player invite token enables immediate player join without guessable game role query", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
