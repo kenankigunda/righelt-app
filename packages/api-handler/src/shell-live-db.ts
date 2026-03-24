@@ -60,6 +60,14 @@ type RepairLogPayload = {
   mismatchCount?: number;
   condensed?: boolean;
 };
+type InvalidLogPayload = {
+  event: "live_game_shape_invalid";
+  gameId: string;
+  context: PersistedGameLoadContext;
+  mismatches: PersistedGameMismatch[];
+  mismatchCount?: number;
+  condensed?: boolean;
+};
 
 export type PersistedGameLoadContext = "single" | "list";
 
@@ -176,6 +184,40 @@ const condenseRepairMismatches = (mismatches: PersistedGameMismatch[]): Persiste
     });
   }
   return condensed;
+};
+
+const buildShapeLogPayload = ({
+  event,
+  gameId,
+  context,
+  mismatches,
+}: {
+  event: "live_game_shape_repaired" | "live_game_shape_invalid";
+  gameId: string;
+  context: PersistedGameLoadContext;
+  mismatches: PersistedGameMismatch[];
+}): RepairLogPayload | InvalidLogPayload => {
+  const verbose = isVerboseRepairLoggingEnabled();
+  const loggedMismatches = verbose ? mismatches : condenseRepairMismatches(mismatches);
+  const payload =
+    event === "live_game_shape_repaired"
+      ? ({
+          event,
+          gameId,
+          context,
+          mismatches: loggedMismatches,
+        } satisfies RepairLogPayload)
+      : ({
+          event,
+          gameId,
+          context,
+          mismatches: loggedMismatches,
+        } satisfies InvalidLogPayload);
+  if (!verbose && loggedMismatches.length !== mismatches.length) {
+    payload.condensed = true;
+    payload.mismatchCount = mismatches.length;
+  }
+  return payload;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -421,14 +463,18 @@ const normalizePersistedGame = (
       error instanceof Error ? error.message : error,
       "rejected_invalid_projection",
     );
-    console.error(JSON.stringify({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches }));
+    console.error(
+      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches })),
+    );
     return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
   }
 
   const mismatches: PersistedGameMismatch[] = [];
   if (!isRecord(parsed)) {
     recordMismatch(mismatches, "game", "object", parsed, "rejected_invalid_projection");
-    console.error(JSON.stringify({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches }));
+    console.error(
+      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches })),
+    );
     return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
   }
 
@@ -441,7 +487,9 @@ const normalizePersistedGame = (
     recordMismatch(mismatches, "board.state", "GameState", board?.state, "rejected_invalid_projection");
   }
   if (!board || !boardState) {
-    console.error(JSON.stringify({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches }));
+    console.error(
+      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches })),
+    );
     return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
   }
 
@@ -515,19 +563,9 @@ const normalizePersistedGame = (
   }
 
   if (mismatches.length > 0) {
-    const verbose = isVerboseRepairLoggingEnabled();
-    const loggedMismatches = verbose ? mismatches : condenseRepairMismatches(mismatches);
-    const payload: RepairLogPayload = {
-      event: "live_game_shape_repaired",
-      gameId: game.id,
-      context,
-      mismatches: loggedMismatches,
-    };
-    if (!verbose && loggedMismatches.length !== mismatches.length) {
-      payload.condensed = true;
-      payload.mismatchCount = mismatches.length;
-    }
-    console.warn(JSON.stringify(payload));
+    console.warn(
+      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_repaired", gameId: game.id, context, mismatches })),
+    );
   }
   return { kind: "ok", game, eventSeq: Number(row.event_seq || 0) };
 };

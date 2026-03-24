@@ -68,3 +68,17 @@ Enable verbose repair logs with either option:
 
 - Environment variable: `RIGHELT_VERBOSE_REPAIR_LOGS=1`
 - Runtime flag: `globalThis.__RIGHELT_VERBOSE_REPAIR_LOGS = "1"`
+
+## Client Live Transport Diagnostics
+
+The web live transport emits compact diagnostic logs for important sync failures (for example confirm/retry transitions, timeout rollbacks, and true desync states).
+
+- Default behavior logs only high-signal warnings/errors.
+- Verbose mode adds detailed informational traces (for example stale snapshot suppression, history-mode change events, and revert request/approval traces).
+
+Enable verbose client diagnostics with any of:
+
+- Environment variable: `RIGHELT_VERBOSE_CLIENT_LOGS=1`
+- Runtime flag: `globalThis.__RIGHELT_VERBOSE_CLIENT_LOGS = "1"`
+- Runtime alias: `globalThis.__RIGHELT_VERBOSE_LIVE_TRANSPORT_LOGS = "1"`
+- Browser storage: `localStorage.setItem("righelt.verboseClientLogs", "1")`
