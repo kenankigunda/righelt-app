@@ -1018,6 +1018,7 @@ export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requeste
   game.pendingScenarioSelection = toSavedSelectionFromMove(targetMove);
   game.initialSelectionAction = clone(targetMove.action);
   game.pendingRevertRequest = null;
+  game.historyIndexByIdentity = {};
   renumberHistory(game);
   rebuildTurnsFromActiveMoves(game, game.board.state);
   game.lastMoveAt = getActiveMoves(game).at(-1)?.at ?? null;

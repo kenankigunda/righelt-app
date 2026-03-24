@@ -1127,6 +1127,8 @@ test("live transport: revert request requires approval and marks moves undone on
   await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
   await handleApiRequest(req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: "id-owner" }), env);
   await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-player2" }), env);
+  await handleApiRequest(req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-owner", moveIndex: 0 }), env);
+  await handleApiRequest(req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-player2", moveIndex: 2 }), env);
 
   const requestRevert = await handleApiRequest(
     req(`/api/shell/games/${gameId}/revert-request`, "POST", { identityId: "id-owner", targetMoveId }),
@@ -1159,6 +1161,14 @@ test("live transport: revert request requires approval and marks moves undone on
   assert.equal(approveBody.game.pendingRevertRequest, null);
   assert.equal(approveBody.game.moves.filter((move) => move.undone === true).length >= 1, true);
   assert.equal(approveBody.game.moves.find((move) => move.moveId === targetMoveId)?.undone, true);
+  assert.equal(approveBody.game.inHistoryMode, false);
+  assert.equal(approveBody.game.historyIndex, null);
+
+  const ownerAfterApprove = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+  const ownerAfterApproveBody = await ownerAfterApprove.json();
+  assert.equal(ownerAfterApprove.status, 200);
+  assert.equal(ownerAfterApproveBody.game.inHistoryMode, false);
+  assert.equal(ownerAfterApproveBody.game.historyIndex, null);
 
   const postRevertMove = await handleApiRequest(
     req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
