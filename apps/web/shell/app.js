@@ -1035,11 +1035,6 @@ const renderTurnHistory = (game) => {
       end += 1;
     }
     const count = end - index;
-    if (count === 1) {
-      reverseChronologicalMoveRows.push(reversedChronological[index].html);
-      index = end;
-      continue;
-    }
     const groupKey = `${game.id}:${index}:${end}`;
     const expanded = expandedUndoneGroups.has(groupKey);
     const actorSides = new Set(
