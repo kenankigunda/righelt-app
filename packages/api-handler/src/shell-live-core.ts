@@ -812,11 +812,11 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
       : null;
   const activeMoves = moves.filter((move) => !isMoveUndone(move));
   const latestActiveMove = activeMoves[activeMoves.length - 1] ?? null;
+  const latestActiveMoveSeat = latestActiveMove ? getSeatForSide(latestActiveMove.actorSide) : null;
   const canUndoLastMove = Boolean(
     latestActiveMove &&
-      myPlayerRole &&
-      ((latestActiveMove.actorSide === "P1" && myPlayerRole === "Player 1") ||
-        (latestActiveMove.actorSide === "P2" && myPlayerRole === "Player 2")),
+      latestActiveMoveSeat &&
+      getSeatIdentity(game, latestActiveMoveSeat) === identityId,
   );
   const joinAsPlayerDisabledReason = getJoinAsPlayerDisabledReason(game, offline, myRole);
   const joinAsViewerDisabledReason = getJoinAsViewerDisabledReason(game, offline, myRole);

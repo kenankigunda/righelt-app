@@ -1593,6 +1593,34 @@ test("live transport: dual-seat view models expose combined role and connection 
   assert.equal(body.game.myConnectionConnected, false);
 });
 
+test("live transport: dual-seat identity can undo latest move regardless of acting seat", async () => {
+  const created = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await created.json()).game.id;
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-a" }),
+    env,
+  );
+
+  const firstMove = await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-a" }), env);
+  assert.equal(firstMove.status, 200);
+  const firstMoveBody = await firstMove.json();
+  assert.equal(firstMoveBody.game.canUndoLastMove, true);
+
+  const endTurn = await handleApiRequest(req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: "id-a" }), env);
+  assert.equal(endTurn.status, 200);
+
+  const secondMove = await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-a" }), env);
+  assert.equal(secondMove.status, 200);
+  const secondMoveBody = await secondMove.json();
+  assert.equal(secondMoveBody.game.canUndoLastMove, true);
+  assert.equal(typeof secondMoveBody.game.latestActiveMoveId, "string");
+  assert.equal(secondMoveBody.game.latestActiveMoveId.length > 0, true);
+});
+
 test("live transport: move endpoint rejects non-player and wrong-turn players", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
