@@ -118,6 +118,19 @@ const parseCommandMetadata = (body: Record<string, unknown>): CommandMetadata =>
 const parseLaunchParticipantCopyMode = (value: unknown): LaunchParticipantCopyMode | null =>
   value === "copy_source_participants" || value === "viewer_as_side_to_move" ? value : null;
 
+const isVerboseServerLoggingEnabled = () => {
+  const processEnvFlag =
+    typeof process !== "undefined" && process?.env?.RIGHELT_VERBOSE_SERVER_LOGS
+      ? String(process.env.RIGHELT_VERBOSE_SERVER_LOGS).toLowerCase()
+      : "";
+  const globalFlag =
+    typeof globalThis !== "undefined" && (globalThis.__RIGHELT_VERBOSE_SERVER_LOGS || globalThis.__RIGHELT_VERBOSE_GAME_ROOM_LOGS)
+      ? String(globalThis.__RIGHELT_VERBOSE_SERVER_LOGS || globalThis.__RIGHELT_VERBOSE_GAME_ROOM_LOGS).toLowerCase()
+      : "";
+  const value = processEnvFlag || globalFlag;
+  return value === "1" || value === "true" || value === "yes" || value === "on" || value === "verbose";
+};
+
 const eventForSession = (event: ServerEvent, identityId: string) => {
   if (!("game" in event)) {
     return event;
@@ -135,6 +148,22 @@ export class GameRoomDO {
   private requestedGameId: string | null = null;
   private eventSeq = 0;
   private readonly sessions = new Map<WebSocket, SessionRecord>();
+
+  private logDiagnostic(level: "info" | "warn" | "error", event: string, payload: Record<string, unknown>, verboseOnly = false) {
+    if (verboseOnly && !isVerboseServerLoggingEnabled()) {
+      return;
+    }
+    const logger = level === "warn" ? console.warn : level === "error" ? console.error : console.info;
+    logger(
+      JSON.stringify({
+        event,
+        at: new Date().toISOString(),
+        gameId: this.getLoadedGameId(),
+        eventSeq: this.eventSeq,
+        ...payload,
+      }),
+    );
+  }
 
   constructor(state: DurableObjectStateLike, env: LiveGameEnv) {
     this.state = state;
@@ -356,17 +385,21 @@ export class GameRoomDO {
     if (request.method === "POST" && path === "/revert-request") {
       const targetMoveId = asIdentity(body.targetMoveId);
       if (!targetMoveId) {
+        this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, error: "invalid_target_move" });
         return json({ ok: false, error: "invalid_target_move" }, 400);
       }
       const role = findRoleForIdentity(game, identityId);
       if (role !== "Player 1" && role !== "Player 2") {
+        this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, error: "role_not_allowed" });
         return json({ ok: false, error: "role_not_allowed" }, 403);
       }
       const targetMove = game.moves.find((move) => move.moveId === targetMoveId);
       if (!targetMove) {
+        this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, targetMoveId, error: "move_not_found" });
         return json({ ok: false, error: "move_not_found" }, 404);
       }
       if (targetMove.undone === true) {
+        this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, targetMoveId, error: "move_already_undone" });
         return json({ ok: false, error: "move_already_undone" }, 409);
       }
       const requesterSeat = role;
@@ -375,8 +408,10 @@ export class GameRoomDO {
       if (autoApprove) {
         const reverted = applyRevertToMove(game, targetMoveId, identityId);
         if (!reverted.ok) {
+          this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, targetMoveId, error: reverted.error });
           return json({ ok: false, error: reverted.error }, 409);
         }
+        this.logDiagnostic("info", "live_server_revert_auto_approved", { identityId, targetMoveId }, true);
         await this.commit({
           type: "event_appended",
           reason: "moves_reverted",
@@ -392,6 +427,12 @@ export class GameRoomDO {
         requestedAt: now(),
         status: "pending",
       };
+      this.logDiagnostic(
+        "info",
+        "live_server_revert_request_created",
+        { requesterIdentityId: identityId, approverIdentityId, targetMoveId, requestId: game.pendingRevertRequest.requestId },
+        true,
+      );
       game.updatedAt = now();
       addNotification(game, "Move revert request pending approval");
       await this.commit({
@@ -405,24 +446,34 @@ export class GameRoomDO {
     if (request.method === "POST" && path === "/revert-approve") {
       const requestId = asIdentity(body.requestId);
       if (!requestId) {
+        this.logDiagnostic("warn", "live_server_revert_approve_rejected", { identityId, error: "invalid_request_id" });
         return json({ ok: false, error: "invalid_request_id" }, 400);
       }
       const pendingRevertRequest = game.pendingRevertRequest;
       if (!pendingRevertRequest || pendingRevertRequest.requestId !== requestId || pendingRevertRequest.status !== "pending") {
+        this.logDiagnostic("warn", "live_server_revert_approve_rejected", { identityId, requestId, error: "request_not_found" });
         return json({ ok: false, error: "request_not_found" }, 404);
       }
       const requesterRole = findRoleForIdentity(game, pendingRevertRequest.requesterIdentityId);
       if (requesterRole !== "Player 1" && requesterRole !== "Player 2") {
+        this.logDiagnostic("warn", "live_server_revert_approve_rejected", { identityId, requestId, error: "requester_not_player" });
         return json({ ok: false, error: "requester_not_player" }, 409);
       }
       const approverIdentityId = getApproverIdentityForSeat(game, requesterRole);
       if (approverIdentityId && approverIdentityId !== identityId) {
+        this.logDiagnostic(
+          "warn",
+          "live_server_revert_approve_rejected",
+          { identityId, requestId, approverIdentityId, error: "approval_not_allowed" },
+        );
         return json({ ok: false, error: "approval_not_allowed" }, 403);
       }
       const reverted = applyRevertToMove(game, pendingRevertRequest.targetMoveId, pendingRevertRequest.requesterIdentityId);
       if (!reverted.ok) {
+        this.logDiagnostic("warn", "live_server_revert_approve_rejected", { identityId, requestId, error: reverted.error });
         return json({ ok: false, error: reverted.error }, 409);
       }
+      this.logDiagnostic("info", "live_server_revert_approved", { identityId, requestId }, true);
       await this.commit({
         type: "event_appended",
         reason: "moves_reverted",
@@ -738,6 +789,12 @@ export class GameRoomDO {
       (replayEvents[0] as { eventSeq: number }).eventSeq === lastEventSeq + 1 &&
       (replayEvents[replayEvents.length - 1] as { eventSeq: number }).eventSeq === this.eventSeq
     ) {
+      this.logDiagnostic(
+        "info",
+        "live_server_ws_replay_sent",
+        { identityId, lastEventSeq, replayCount: replayEvents.length },
+        true,
+      );
       for (const event of replayEvents) {
         this.send(server, eventForSession(event, identityId));
       }
@@ -749,6 +806,12 @@ export class GameRoomDO {
         game: clone(game),
       };
       this.send(server, eventForSession(syncEvent, identityId));
+      this.logDiagnostic(
+        "info",
+        "live_server_ws_state_sync_sent",
+        { identityId, lastEventSeq, reason: syncEvent.reason, replayCount: replayEvents.length },
+        true,
+      );
     }
 
     return new Response(null, { status: 101, webSocket: client } as any);
@@ -902,6 +965,7 @@ export class GameRoomDO {
     if (!changed) {
       return;
     }
+    this.logDiagnostic("info", "live_server_presence_changed", { identityId, connected, sessionCount, roles }, true);
     const presenceEvent: PresenceChangedEvent = {
       type: "presence_changed",
       eventSeq: this.eventSeq + 1,
@@ -950,6 +1014,7 @@ export class GameRoomDO {
 
     this.eventSeq += 1;
     await persistGameState(this.env, input.game, this.eventSeq, event);
+    this.logDiagnostic("info", "live_server_commit_event", { type: event.type }, true);
     this.broadcast(event);
   }
 
@@ -969,6 +1034,7 @@ export class GameRoomDO {
         void this.setPresenceFromSessions(session.identityId);
         void this.syncSessionAlarm();
       }
+      this.logDiagnostic("warn", "live_server_socket_send_failed", { payloadType: payload.type });
     }
   }
 

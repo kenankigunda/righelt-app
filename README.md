@@ -82,3 +82,15 @@ Enable verbose client diagnostics with any of:
 - Runtime flag: `globalThis.__RIGHELT_VERBOSE_CLIENT_LOGS = "1"`
 - Runtime alias: `globalThis.__RIGHELT_VERBOSE_LIVE_TRANSPORT_LOGS = "1"`
 - Browser storage: `localStorage.setItem("righelt.verboseClientLogs", "1")`
+
+## Server Live Room Diagnostics
+
+The live game Durable Object emits compact server diagnostics for high-impact runtime issues in request/approval flows and websocket delivery.
+
+- Default behavior logs high-signal warnings (for example revert request/approval rejections, websocket send failures, and heartbeat-expired sessions).
+- Verbose mode adds event-flow traces (for example commit events, websocket replay vs state-sync behavior, and presence transition details).
+
+Enable verbose server diagnostics with either option:
+
+- Environment variable: `RIGHELT_VERBOSE_SERVER_LOGS=1`
+- Runtime alias: `globalThis.__RIGHELT_VERBOSE_SERVER_LOGS = "1"` or `globalThis.__RIGHELT_VERBOSE_GAME_ROOM_LOGS = "1"`
