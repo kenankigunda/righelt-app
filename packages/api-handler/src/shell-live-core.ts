@@ -31,16 +31,32 @@ export type JoinRequest = {
 };
 
 export type MoveEntry = {
+  moveId: string;
   index: number;
   turnIndex: number;
   turnMoveIndex: number;
+  displayMoveNumber: number;
   actorSide: "P1" | "P2";
   at: string;
   notation: string;
   action: Action;
   clientCommandId?: string | null;
+  undone?: boolean;
+  undoneAt?: string | null;
+  undoneByIdentityId?: string | null;
   selectionSnapshot: GameState;
   snapshot: GameState;
+};
+
+export type RevertRequest = {
+  requestId: string;
+  requesterIdentityId: string;
+  targetMoveId: string;
+  targetMoveIndex: number;
+  requestedAt: string;
+  status: "pending" | "approved" | "rejected";
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
 };
 
 export type ScenarioMoveEntry = {
@@ -96,6 +112,7 @@ export type LiveGame = {
   player2: Participant | null;
   viewers: Viewer[];
   pendingJoinRequests: JoinRequest[];
+  pendingRevertRequest: RevertRequest | null;
   turns: TurnEntry[];
   moves: MoveEntry[];
   historyIndexByIdentity: Record<string, number>;
@@ -131,6 +148,7 @@ export const createInviteToken = () => {
 };
 
 export const nextGameId = () => `game-${createInviteToken()}`;
+export const nextMoveId = () => `move-${createInviteToken()}`;
 
 export const getSeatForSide = (side: GameState["sideToMove"]): "Player 1" | "Player 2" => (side === "P1" ? "Player 1" : "Player 2");
 export const getNextSeat = (seat: "Player 1" | "Player 2"): "Player 1" | "Player 2" => (seat === "Player 1" ? "Player 2" : "Player 1");
@@ -138,6 +156,8 @@ export const getSideForSeat = (seat: "Player 1" | "Player 2"): GameState["sideTo
 export const getSideToMoveSeat = (game: LiveGame): "Player 1" | "Player 2" =>
   game.board.state.sideToMove === "P1" ? "Player 1" : "Player 2";
 export const getActiveTurn = (game: LiveGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
+const isMoveUndone = (move: MoveEntry | null | undefined) => move?.undone === true;
+const getActiveMoves = (game: LiveGame) => game.moves.filter((move) => !isMoveUndone(move));
 
 export const asIdentity = (value: unknown) => (typeof value === "string" && value.trim().length > 0 ? value.trim() : null);
 export const asGameState = (value: unknown): GameState | null =>
@@ -301,6 +321,7 @@ export const createInitialGame = ({
       : null,
     viewers: [],
     pendingJoinRequests: [],
+    pendingRevertRequest: null,
     turns: [
       {
         index: initial.turnIndex ?? 0,
@@ -336,11 +357,21 @@ const cloneParticipant = (participant: Participant | null): Participant | null =
     : null;
 
 const renumberImportedHistory = (game: LiveGame) => {
+  let activeMoveCounter = 0;
   game.moves.forEach((move, index) => {
     move.index = index;
+    if (!move.moveId) {
+      move.moveId = nextMoveId();
+    }
+    if (!isMoveUndone(move)) {
+      activeMoveCounter += 1;
+      move.displayMoveNumber = activeMoveCounter;
+    } else if (typeof move.displayMoveNumber !== "number" || !Number.isFinite(move.displayMoveNumber)) {
+      move.displayMoveNumber = activeMoveCounter;
+    }
   });
   game.turns.forEach((turn) => {
-    turn.moveIndexes = game.moves.filter((move) => move.turnIndex === turn.index).map((move) => move.index);
+    turn.moveIndexes = game.moves.filter((move) => !isMoveUndone(move) && move.turnIndex === turn.index).map((move) => move.index);
     turn.lastMoveAt = turn.moveIndexes.length > 0 ? game.moves[turn.moveIndexes[turn.moveIndexes.length - 1]]?.at ?? null : null;
     turn.status = turn === game.turns[game.turns.length - 1] ? "active" : "complete";
     turn.endedAt = turn.status === "complete" ? turn.lastMoveAt : null;
@@ -364,7 +395,7 @@ export const exportScenarioFromGame = (
   },
 ): ScenarioRecord => {
   const boundedMoveLimit = Math.max(0, Math.min(moveLimit, game.moves.length));
-  const exportedMoves = game.moves.slice(0, boundedMoveLimit);
+  const exportedMoves = game.moves.slice(0, boundedMoveLimit).filter((move) => !isMoveUndone(move));
   const initialState = exportedMoves[0]?.selectionSnapshot ?? game.board.state;
   const resultingState = exportedMoves[exportedMoves.length - 1]?.snapshot ?? game.board.state;
   return {
@@ -405,6 +436,7 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
   ];
   game.historyIndexByIdentity = {};
   game.pendingScenarioSelection = clone(scenario.savedSelection);
+  game.pendingRevertRequest = null;
   game.lastMoveAt = null;
   game.initialSelectionAction = null;
 
@@ -766,6 +798,26 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
     .map((request) => request.identityId);
   const myPendingJoinRequest = pendingJoinRequests.find((request) => request.identityId === identityId) ?? null;
+  const pendingRevertRequest = game.pendingRevertRequest?.status === "pending" ? game.pendingRevertRequest : null;
+  const myPendingRevertRequest = pendingRevertRequest?.requesterIdentityId === identityId ? pendingRevertRequest : null;
+  const myPlayerRole = myRoles.find((role) => role === "Player 1" || role === "Player 2") ?? null;
+  const pendingRevertRequesterRole = pendingRevertRequest
+    ? getRolesForIdentity(game, pendingRevertRequest.requesterIdentityId).find((role) => role === "Player 1" || role === "Player 2") ?? null
+    : null;
+  const approvableRevertRequest =
+    pendingRevertRequest && pendingRevertRequesterRole
+      ? getApproverIdentityForSeat(game, pendingRevertRequesterRole) === identityId
+        ? pendingRevertRequest
+        : null
+      : null;
+  const activeMoves = moves.filter((move) => !isMoveUndone(move));
+  const latestActiveMove = activeMoves[activeMoves.length - 1] ?? null;
+  const latestActiveMoveSeat = latestActiveMove ? getSeatForSide(latestActiveMove.actorSide) : null;
+  const canUndoLastMove = Boolean(
+    latestActiveMove &&
+      latestActiveMoveSeat &&
+      getSeatIdentity(game, latestActiveMoveSeat) === identityId,
+  );
   const joinAsPlayerDisabledReason = getJoinAsPlayerDisabledReason(game, offline, myRole);
   const joinAsViewerDisabledReason = getJoinAsViewerDisabledReason(game, offline, myRole);
 
@@ -810,6 +862,11 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     control: controlSeat === turnOwnerSeat ? "turn-owner" : "opponent",
     pendingPlayerRequestSeat: myPendingJoinRequest?.requestedSeat ?? null,
     approvableRequesterIds,
+    pendingRevertRequest,
+    myPendingRevertRequest,
+    approvableRevertRequest,
+    canUndoLastMove,
+    latestActiveMoveId: latestActiveMove?.moveId ?? null,
   };
 };
 
@@ -866,16 +923,108 @@ const collectRemovedPieceNotices = (
 };
 
 const renumberHistory = (game: LiveGame) => {
+  let activeMoveCounter = 0;
   game.moves.forEach((move, index) => {
     move.index = index;
+    if (!move.moveId) {
+      move.moveId = nextMoveId();
+    }
+    if (!isMoveUndone(move)) {
+      activeMoveCounter += 1;
+      move.displayMoveNumber = activeMoveCounter;
+    } else if (typeof move.displayMoveNumber !== "number" || !Number.isFinite(move.displayMoveNumber)) {
+      move.displayMoveNumber = activeMoveCounter;
+    }
   });
   game.turns.forEach((turn) => {
     turn.moveIndexes = turn.moveIndexes
       .map((_, turnMoveIndex) =>
-        game.moves.find((move) => move.turnIndex === turn.index && move.turnMoveIndex === turnMoveIndex)?.index ?? -1,
+        game.moves.find((move) => !isMoveUndone(move) && move.turnIndex === turn.index && move.turnMoveIndex === turnMoveIndex)?.index ?? -1,
       )
       .filter((index) => index >= 0);
   });
+};
+
+const rebuildTurnsFromActiveMoves = (game: LiveGame, referenceState: GameState) => {
+  const activeMoves = getActiveMoves(game);
+  const turnsByIndex = new Map<number, TurnEntry>();
+  for (const move of activeMoves) {
+    const turn = turnsByIndex.get(move.turnIndex) ?? {
+      index: move.turnIndex,
+      startedAt: move.at,
+      endedAt: null,
+      playerSeat: getSeatForSide(move.actorSide),
+      status: "complete",
+      moveIndexes: [],
+      lastMoveAt: null,
+    };
+    turn.moveIndexes.push(move.index);
+    turn.lastMoveAt = move.at;
+    turnsByIndex.set(move.turnIndex, turn);
+  }
+  const activeTurnIndex = referenceState.turnIndex ?? 0;
+  const activeTurn = turnsByIndex.get(activeTurnIndex) ?? {
+    index: activeTurnIndex,
+    startedAt: now(),
+    endedAt: null,
+    playerSeat: getSeatForSide(referenceState.sideToMove),
+    status: "active",
+    moveIndexes: [],
+    lastMoveAt: null,
+  };
+  activeTurn.playerSeat = getSeatForSide(referenceState.sideToMove);
+  activeTurn.status = "active";
+  activeTurn.endedAt = null;
+  turnsByIndex.set(activeTurnIndex, activeTurn);
+  game.turns = [...turnsByIndex.values()].sort((left, right) => left.index - right.index);
+  for (const turn of game.turns) {
+    if (turn.index < activeTurnIndex) {
+      turn.status = "complete";
+      turn.endedAt = turn.lastMoveAt ?? turn.endedAt ?? now();
+    } else if (turn.index > activeTurnIndex) {
+      turn.status = "complete";
+      turn.endedAt = turn.lastMoveAt ?? turn.endedAt ?? now();
+    }
+  }
+};
+
+const toSavedSelectionFromMove = (move: MoveEntry) => {
+  const source = move.action?.from ?? null;
+  const target = move.action?.to ?? null;
+  if (!source || typeof source.row !== "number" || typeof source.col !== "number") {
+    return null;
+  }
+  return {
+    source: { row: source.row, col: source.col },
+    target: target && typeof target.row === "number" && typeof target.col === "number" ? { row: target.row, col: target.col } : null,
+    actorSide: move.actorSide,
+    turnIndex: move.turnIndex,
+  } satisfies ScenarioSavedSelection;
+};
+
+export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requesterIdentityId: string) => {
+  const targetIndex = game.moves.findIndex((move) => move.moveId === targetMoveId);
+  if (targetIndex < 0) {
+    return { ok: false as const, error: "move_not_found" };
+  }
+  const targetMove = game.moves[targetIndex];
+  const revertedAt = now();
+  for (let index = targetIndex; index < game.moves.length; index += 1) {
+    game.moves[index].undone = true;
+    game.moves[index].undoneAt = revertedAt;
+    game.moves[index].undoneByIdentityId = requesterIdentityId;
+  }
+  game.board.state = clone(targetMove.selectionSnapshot);
+  game.pendingScenarioSelection = toSavedSelectionFromMove(targetMove);
+  game.initialSelectionAction = clone(targetMove.action);
+  game.pendingRevertRequest = null;
+  game.historyIndexByIdentity = {};
+  renumberHistory(game);
+  rebuildTurnsFromActiveMoves(game, game.board.state);
+  game.lastMoveAt = getActiveMoves(game).at(-1)?.at ?? null;
+  game.updatedAt = revertedAt;
+  addNotification(game, "Undo applied");
+  return { ok: true as const, targetMove };
 };
 
 const pickLegalAction = (state: GameState): Action | null => {
@@ -888,7 +1037,7 @@ const pickLegalAction = (state: GameState): Action | null => {
 
 export const applyServerAction = (game: LiveGame, action: Action, notation?: string, clientCommandId?: string | null) => {
   if (clientCommandId) {
-    const existingMove = game.moves.find((entry) => entry.clientCommandId === clientCommandId);
+    const existingMove = game.moves.find((entry) => !isMoveUndone(entry) && entry.clientCommandId === clientCommandId);
     if (existingMove) {
       return {
         ok: true as const,
@@ -915,9 +1064,11 @@ export const applyServerAction = (game: LiveGame, action: Action, notation?: str
   next.turnIndex = activeTurn.index;
 
   const move: MoveEntry = {
+    moveId: nextMoveId(),
     index: game.moves.length,
     turnIndex: activeTurn.index,
     turnMoveIndex: activeTurn.moveIndexes.length,
+    displayMoveNumber: getActiveMoves(game).length + 1,
     actorSide: stable.sideToMove,
     at: now(),
     notation: notation || defaultNotationForAction(action),

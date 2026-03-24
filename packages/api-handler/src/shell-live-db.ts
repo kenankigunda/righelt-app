@@ -3,6 +3,7 @@ import {
   asAction,
   asGameState,
   createInviteToken,
+  nextMoveId,
   now,
   type JoinRequest,
   type LiveGame,
@@ -49,6 +50,23 @@ export type PersistedGameMismatch = {
   actualType: string;
   actualSummary: string;
   repair: string;
+};
+
+type RepairLogPayload = {
+  event: "live_game_shape_repaired";
+  gameId: string;
+  context: PersistedGameLoadContext;
+  mismatches: PersistedGameMismatch[];
+  mismatchCount?: number;
+  condensed?: boolean;
+};
+type InvalidLogPayload = {
+  event: "live_game_shape_invalid";
+  gameId: string;
+  context: PersistedGameLoadContext;
+  mismatches: PersistedGameMismatch[];
+  mismatchCount?: number;
+  condensed?: boolean;
 };
 
 export type PersistedGameLoadContext = "single" | "list";
@@ -109,6 +127,100 @@ const recordMismatch = (
     actualSummary: getActualSummary(actual),
     repair,
   });
+};
+
+const getProcessEnvFlag = (key: string) => {
+  const processLike = (globalThis as { process?: { env?: Record<string, unknown> } }).process;
+  const raw = processLike?.env?.[key];
+  return raw == null ? "" : String(raw).toLowerCase();
+};
+
+const isVerboseRepairLoggingEnabled = () => {
+  const processEnvFlag = getProcessEnvFlag("RIGHELT_VERBOSE_REPAIR_LOGS");
+  const globalFlag =
+    typeof globalThis !== "undefined" && (globalThis as { __RIGHELT_VERBOSE_REPAIR_LOGS?: unknown }).__RIGHELT_VERBOSE_REPAIR_LOGS
+      ? String((globalThis as { __RIGHELT_VERBOSE_REPAIR_LOGS?: unknown }).__RIGHELT_VERBOSE_REPAIR_LOGS).toLowerCase()
+      : "";
+  const value = processEnvFlag || globalFlag;
+  return value === "1" || value === "true" || value === "yes" || value === "on" || value === "verbose";
+};
+
+const condenseRepairMismatches = (mismatches: PersistedGameMismatch[]): PersistedGameMismatch[] => {
+  const generatedMoveIdCount = mismatches.filter(
+    (entry) => entry.field.startsWith("moves[") && entry.field.endsWith("].moveId") && entry.repair === "generated_move_id",
+  ).length;
+  const derivedDisplayMoveNumberCount = mismatches.filter(
+    (entry) =>
+      entry.field.startsWith("moves[") &&
+      entry.field.endsWith("].displayMoveNumber") &&
+      entry.repair === "derived_from_active_history",
+  ).length;
+  const shouldCondense = generatedMoveIdCount + derivedDisplayMoveNumberCount >= 8;
+  if (!shouldCondense) {
+    return mismatches;
+  }
+  const condensed = mismatches.filter(
+    (entry) =>
+      !(
+        (entry.field.startsWith("moves[") && entry.field.endsWith("].moveId") && entry.repair === "generated_move_id") ||
+        (entry.field.startsWith("moves[") &&
+          entry.field.endsWith("].displayMoveNumber") &&
+          entry.repair === "derived_from_active_history")
+      ),
+  );
+  if (generatedMoveIdCount > 0) {
+    condensed.push({
+      field: "moves[*].moveId",
+      expected: "non-empty string",
+      actualType: "summary",
+      actualSummary: `${generatedMoveIdCount} move entries missing moveId`,
+      repair: "generated_move_id",
+    });
+  }
+  if (derivedDisplayMoveNumberCount > 0) {
+    condensed.push({
+      field: "moves[*].displayMoveNumber",
+      expected: "finite number",
+      actualType: "summary",
+      actualSummary: `${derivedDisplayMoveNumberCount} move entries missing displayMoveNumber`,
+      repair: "derived_from_active_history",
+    });
+  }
+  return condensed;
+};
+
+const buildShapeLogPayload = ({
+  event,
+  gameId,
+  context,
+  mismatches,
+}: {
+  event: "live_game_shape_repaired" | "live_game_shape_invalid";
+  gameId: string;
+  context: PersistedGameLoadContext;
+  mismatches: PersistedGameMismatch[];
+}): RepairLogPayload | InvalidLogPayload => {
+  const verbose = isVerboseRepairLoggingEnabled();
+  const loggedMismatches = verbose ? mismatches : condenseRepairMismatches(mismatches);
+  const payload: RepairLogPayload | InvalidLogPayload =
+    event === "live_game_shape_repaired"
+      ? {
+          event,
+          gameId,
+          context,
+          mismatches: loggedMismatches,
+        }
+      : {
+          event,
+          gameId,
+          context,
+          mismatches: loggedMismatches,
+        };
+  if (!verbose && loggedMismatches.length !== mismatches.length) {
+    payload.condensed = true;
+    payload.mismatchCount = mismatches.length;
+  }
+  return payload;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -299,6 +411,45 @@ const normalizeHistoryIndexByIdentity = (value: unknown, mismatches: PersistedGa
   );
 };
 
+const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): LiveGame["moves"] => {
+  if (!Array.isArray(value)) {
+    recordMismatch(mismatches, "moves", "move[]", value, "defaulted_to_empty_array");
+    return [];
+  }
+  let activeMoveCounter = 0;
+  return value
+    .filter((entry) => Boolean(entry) && typeof entry === "object")
+    .map((entry, index) => {
+      const move = entry as Record<string, unknown>;
+      const undone = move.undone === true;
+      if (!undone) {
+        activeMoveCounter += 1;
+      }
+      const next = {
+        ...(entry as LiveGame["moves"][number]),
+        moveId: typeof move.moveId === "string" && move.moveId.length > 0 ? move.moveId : nextMoveId(),
+        index: typeof move.index === "number" && Number.isFinite(move.index) ? move.index : index,
+        displayMoveNumber:
+          typeof move.displayMoveNumber === "number" && Number.isFinite(move.displayMoveNumber)
+            ? move.displayMoveNumber
+            : activeMoveCounter,
+      } satisfies LiveGame["moves"][number];
+      if (typeof move.moveId !== "string" || move.moveId.length === 0) {
+        recordMismatch(mismatches, `moves[${index}].moveId`, "non-empty string", move.moveId, "generated_move_id");
+      }
+      if (typeof move.displayMoveNumber !== "number" || !Number.isFinite(move.displayMoveNumber)) {
+        recordMismatch(
+          mismatches,
+          `moves[${index}].displayMoveNumber`,
+          "finite number",
+          move.displayMoveNumber,
+          "derived_from_active_history",
+        );
+      }
+      return next;
+    });
+};
+
 const normalizePersistedGame = (
   row: PersistedGameRow,
   context: PersistedGameLoadContext,
@@ -315,14 +466,18 @@ const normalizePersistedGame = (
       error instanceof Error ? error.message : error,
       "rejected_invalid_projection",
     );
-    console.error(JSON.stringify({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches }));
+    console.error(
+      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches })),
+    );
     return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
   }
 
   const mismatches: PersistedGameMismatch[] = [];
   if (!isRecord(parsed)) {
     recordMismatch(mismatches, "game", "object", parsed, "rejected_invalid_projection");
-    console.error(JSON.stringify({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches }));
+    console.error(
+      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches })),
+    );
     return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
   }
 
@@ -335,17 +490,13 @@ const normalizePersistedGame = (
     recordMismatch(mismatches, "board.state", "GameState", board?.state, "rejected_invalid_projection");
   }
   if (!board || !boardState) {
-    console.error(JSON.stringify({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches }));
+    console.error(
+      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches })),
+    );
     return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
   }
 
-  const moves = Array.isArray(parsed.moves) ? (parsed.moves as LiveGame["moves"]) : (recordMismatch(
-    mismatches,
-    "moves",
-    "move[]",
-    parsed.moves,
-    "defaulted_to_empty_array",
-  ), []);
+  const moves = normalizeMoves(parsed.moves, mismatches);
   const turns = Array.isArray(parsed.turns) ? (parsed.turns as LiveGame["turns"]) : (recordMismatch(
     mismatches,
     "turns",
@@ -385,6 +536,10 @@ const normalizePersistedGame = (
     player2: normalizeParticipant(parsed.player2, "player2", mismatches),
     viewers: normalizeViewerList(parsed.viewers, mismatches),
     pendingJoinRequests: normalizeJoinRequests(parsed.pendingJoinRequests, mismatches),
+    pendingRevertRequest:
+      parsed.pendingRevertRequest && typeof parsed.pendingRevertRequest === "object"
+        ? (parsed.pendingRevertRequest as LiveGame["pendingRevertRequest"])
+        : null,
     turns,
     moves,
     historyIndexByIdentity: normalizeHistoryIndexByIdentity(parsed.historyIndexByIdentity, mismatches),
@@ -411,7 +566,9 @@ const normalizePersistedGame = (
   }
 
   if (mismatches.length > 0) {
-    console.warn(JSON.stringify({ event: "live_game_shape_repaired", gameId: game.id, context, mismatches }));
+    console.warn(
+      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_repaired", gameId: game.id, context, mismatches })),
+    );
   }
   return { kind: "ok", game, eventSeq: Number(row.event_seq || 0) };
 };

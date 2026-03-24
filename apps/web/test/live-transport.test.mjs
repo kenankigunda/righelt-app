@@ -1216,3 +1216,144 @@ test("live transport store generates unique command ids across store instances",
   assert.equal(typeof second.clientCommandId, "string");
   assert.notEqual(first.clientCommandId, second.clientCommandId);
 });
+
+test("live transport store posts revert lifecycle endpoints", async () => {
+  const storage = createMemoryStorage();
+  storage.setItem("righelt.identity.id.v1", "id-revert");
+  const calls = [];
+  const fetcher = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || "GET", body: init.body ? JSON.parse(String(init.body)) : null });
+    if (String(url) === "/api/shell/games/game-revert/revert-request?offline=0") {
+      return Response.json({
+        ok: true,
+        eventSeq: 8,
+        game: {
+          id: "game-revert",
+          createdAt: "2026-02-26T00:00:00.000Z",
+          lastMoveAt: "2026-02-26T00:00:01.000Z",
+          updatedAt: "2026-02-26T00:00:01.000Z",
+          offlineLocal: false,
+          player1: { identityId: "id-revert", connected: true },
+          player2: { identityId: "id-peer", connected: true },
+          viewers: [],
+          pendingJoinRequests: [],
+          pendingRevertRequest: { requestId: "req-1", requesterIdentityId: "id-revert", targetMoveId: "move-1", targetMoveIndex: 0, status: "pending" },
+          moves: [{ index: 0, moveId: "move-1", displayMoveNumber: 1, turnIndex: 0, turnMoveIndex: 0, actorSide: "P1", notation: "M1", at: "2026-02-26T00:00:01.000Z" }],
+          notifications: ["Move revert request pending approval"],
+          myRole: "Player 1",
+          inHistoryMode: false,
+          currentSnapshot: { sideToMove: "P1", turnIndex: 0, pieces: [] },
+          board: { state: { sideToMove: "P1", turnIndex: 0, pieces: [] } },
+          showJoinActions: true,
+          canInvite: true,
+          showOfflineState: false,
+        },
+      });
+    }
+    if (String(url) === "/api/shell/games/game-revert/revert-approve?offline=0") {
+      return Response.json({
+        ok: true,
+        eventSeq: 9,
+        game: {
+          id: "game-revert",
+          createdAt: "2026-02-26T00:00:00.000Z",
+          lastMoveAt: null,
+          updatedAt: "2026-02-26T00:00:02.000Z",
+          offlineLocal: false,
+          player1: { identityId: "id-revert", connected: true },
+          player2: { identityId: "id-peer", connected: true },
+          viewers: [],
+          pendingJoinRequests: [],
+          pendingRevertRequest: null,
+          moves: [{ index: 0, moveId: "move-1", displayMoveNumber: 1, undone: true, turnIndex: 0, turnMoveIndex: 0, actorSide: "P1", notation: "M1", at: "2026-02-26T00:00:01.000Z" }],
+          notifications: ["Move history reverted"],
+          myRole: "Player 2",
+          inHistoryMode: false,
+          currentSnapshot: { sideToMove: "P1", turnIndex: 0, pieces: [] },
+          board: { state: { sideToMove: "P1", turnIndex: 0, pieces: [] } },
+          showJoinActions: true,
+          canInvite: true,
+          showOfflineState: false,
+        },
+      });
+    }
+    if (String(url) === "/api/shell/games/game-revert/revert-reject?offline=0") {
+      return Response.json({
+        ok: true,
+        eventSeq: 10,
+        game: {
+          id: "game-revert",
+          createdAt: "2026-02-26T00:00:00.000Z",
+          lastMoveAt: "2026-02-26T00:00:02.000Z",
+          updatedAt: "2026-02-26T00:00:02.000Z",
+          offlineLocal: false,
+          player1: { identityId: "id-revert", connected: true },
+          player2: { identityId: "id-peer", connected: true },
+          viewers: [],
+          pendingJoinRequests: [],
+          pendingRevertRequest: null,
+          moves: [{ index: 0, moveId: "move-1", displayMoveNumber: 1, turnIndex: 0, turnMoveIndex: 0, actorSide: "P1", notation: "M1", at: "2026-02-26T00:00:01.000Z" }],
+          notifications: ["Move revert request rejected"],
+          myRole: "Player 2",
+          inHistoryMode: false,
+          currentSnapshot: { sideToMove: "P1", turnIndex: 0, pieces: [] },
+          board: { state: { sideToMove: "P1", turnIndex: 0, pieces: [] } },
+          showJoinActions: true,
+          canInvite: true,
+          showOfflineState: false,
+        },
+      });
+    }
+    if (String(url) === "/api/shell/games/game-revert/revert-rescind?offline=0") {
+      return Response.json({
+        ok: true,
+        eventSeq: 11,
+        game: {
+          id: "game-revert",
+          createdAt: "2026-02-26T00:00:00.000Z",
+          lastMoveAt: "2026-02-26T00:00:02.000Z",
+          updatedAt: "2026-02-26T00:00:02.000Z",
+          offlineLocal: false,
+          player1: { identityId: "id-revert", connected: true },
+          player2: { identityId: "id-peer", connected: true },
+          viewers: [],
+          pendingJoinRequests: [],
+          pendingRevertRequest: null,
+          moves: [{ index: 0, moveId: "move-1", displayMoveNumber: 1, turnIndex: 0, turnMoveIndex: 0, actorSide: "P1", notation: "M1", at: "2026-02-26T00:00:01.000Z" }],
+          notifications: ["Move revert request rescinded"],
+          myRole: "Player 1",
+          inHistoryMode: false,
+          currentSnapshot: { sideToMove: "P1", turnIndex: 0, pieces: [] },
+          board: { state: { sideToMove: "P1", turnIndex: 0, pieces: [] } },
+          showJoinActions: true,
+          canInvite: true,
+          showOfflineState: false,
+        },
+      });
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({ storage, fetcher, random: () => 0.1 });
+  await store.requestRevertToMove({ gameId: "game-revert", targetMoveId: "move-1" });
+  await store.approveRevertRequest({ gameId: "game-revert", requestId: "req-1" });
+  await store.rejectRevertRequest({ gameId: "game-revert", requestId: "req-1" });
+  await store.rescindRevertRequest({ gameId: "game-revert", requestId: "req-1" });
+
+  assert.equal(calls.some((entry) => entry.url === "/api/shell/games/game-revert/revert-request?offline=0"), true);
+  assert.equal(calls.some((entry) => entry.url === "/api/shell/games/game-revert/revert-approve?offline=0"), true);
+  assert.equal(calls.some((entry) => entry.url === "/api/shell/games/game-revert/revert-reject?offline=0"), true);
+  assert.equal(calls.some((entry) => entry.url === "/api/shell/games/game-revert/revert-rescind?offline=0"), true);
+  const requestCall = calls.find((entry) => entry.url === "/api/shell/games/game-revert/revert-request?offline=0");
+  const approveCall = calls.find((entry) => entry.url === "/api/shell/games/game-revert/revert-approve?offline=0");
+  const rejectCall = calls.find((entry) => entry.url === "/api/shell/games/game-revert/revert-reject?offline=0");
+  const rescindCall = calls.find((entry) => entry.url === "/api/shell/games/game-revert/revert-rescind?offline=0");
+  assert.equal(requestCall.body.identityId, "id-revert");
+  assert.equal(requestCall.body.targetMoveId, "move-1");
+  assert.equal(approveCall.body.identityId, "id-revert");
+  assert.equal(approveCall.body.requestId, "req-1");
+  assert.equal(rejectCall.body.identityId, "id-revert");
+  assert.equal(rejectCall.body.requestId, "req-1");
+  assert.equal(rescindCall.body.identityId, "id-revert");
+  assert.equal(rescindCall.body.requestId, "req-1");
+});

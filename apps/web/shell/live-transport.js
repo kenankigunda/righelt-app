@@ -64,6 +64,20 @@ const mustOk = async (response) => {
   return body;
 };
 
+const isVerboseClientLoggingEnabled = (storage) => {
+  const processEnvFlag =
+    typeof process !== "undefined" && process?.env?.RIGHELT_VERBOSE_CLIENT_LOGS
+      ? String(process.env.RIGHELT_VERBOSE_CLIENT_LOGS).toLowerCase()
+      : "";
+  const globalFlag =
+    typeof globalThis !== "undefined" && (globalThis.__RIGHELT_VERBOSE_CLIENT_LOGS || globalThis.__RIGHELT_VERBOSE_LIVE_TRANSPORT_LOGS)
+      ? String(globalThis.__RIGHELT_VERBOSE_CLIENT_LOGS || globalThis.__RIGHELT_VERBOSE_LIVE_TRANSPORT_LOGS).toLowerCase()
+      : "";
+  const storageFlag = storage?.getItem?.("righelt.verboseClientLogs");
+  const value = processEnvFlag || globalFlag || (typeof storageFlag === "string" ? storageFlag.toLowerCase() : "");
+  return value === "1" || value === "true" || value === "yes" || value === "on" || value === "verbose";
+};
+
 export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Math.random }) => {
   let identityId = loadIdentity(storage);
   if (!identityId) {
@@ -83,6 +97,19 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     wsConfirmedAfterHttpFail: 0,
     confirmTimeoutRefresh: 0,
     trueDesync: 0,
+  };
+  const logDiagnostic = (level, event, payload = {}, { verboseOnly = false } = {}) => {
+    if (verboseOnly && !isVerboseClientLoggingEnabled(storage)) {
+      return;
+    }
+    const entry = {
+      event,
+      at: new Date().toISOString(),
+      identityId,
+      ...payload,
+    };
+    const logger = level === "warn" ? console.warn : level === "error" ? console.error : console.info;
+    logger(JSON.stringify(entry));
   };
 
   const withOfflineQuery = (path) => `${path}${path.includes("?") ? "&" : "?"}offline=${offline ? "1" : "0"}`;
@@ -265,7 +292,16 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
     const nextEventSeq = typeof eventSeq === "number" && Number.isFinite(eventSeq) ? eventSeq : null;
     const currentEventSeq = nextEventSeq !== null ? lastEventSeqByGameId.get(game.id) ?? 0 : null;
-    const authoritative = nextEventSeq !== null && currentEventSeq !== null && nextEventSeq < currentEventSeq ? gameById.get(game.id) ?? null : upsertGame(game);
+    const staleSnapshotIgnored = nextEventSeq !== null && currentEventSeq !== null && nextEventSeq < currentEventSeq;
+    const authoritative = staleSnapshotIgnored ? gameById.get(game.id) ?? null : upsertGame(game);
+    if (staleSnapshotIgnored) {
+      logDiagnostic(
+        "info",
+        "live_transport_stale_snapshot_ignored",
+        { gameId: game.id, incomingEventSeq: nextEventSeq, currentEventSeq, changeType },
+        { verboseOnly: true },
+      );
+    }
 
     if (nextEventSeq !== null) {
       lastEventSeqByGameId.set(game.id, Math.max(currentEventSeq ?? 0, nextEventSeq));
@@ -314,6 +350,9 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       });
     } else if (optimistic.pendingCommands.length > 0 && optimistic.syncStatus !== "confirming") {
       optimistic.syncStatus = "applying-update";
+    }
+    if (changeType === "history_mode_changed") {
+      logDiagnostic("info", "live_transport_history_mode_changed", { gameId: game.id }, { verboseOnly: true });
     }
 
     emitChange({ type: changeType, gameId: game.id, clientCommandId });
@@ -571,6 +610,17 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       recalculateOptimisticGame(gameId);
       emitChange({ type: "optimistic_confirming", gameId, clientCommandId: command.clientCommandId });
       incrementSyncMetric("httpConfirmFailed", gameId);
+      logDiagnostic(
+        "info",
+        "live_transport_command_confirming",
+        {
+          gameId,
+          commandKind: command.kind,
+          clientCommandId: command.clientCommandId,
+          retryAttempt,
+        },
+        { verboseOnly: true },
+      );
 
       const hasTimeRemaining = optimistic.confirmDeadlineAt > Date.now();
       if (retryAttempt < MAX_CONFIRM_RETRIES && hasTimeRemaining) {
@@ -590,6 +640,11 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
             syncStatus: "ready",
             changeType: "optimistic_rollback",
           });
+          logDiagnostic("warn", "live_transport_confirmation_timeout_rollback", {
+            gameId,
+            commandKind: command.kind,
+            clientCommandId: command.clientCommandId,
+          });
         }
       } catch {
         incrementSyncMetric("trueDesync", gameId);
@@ -597,6 +652,11 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
           notice: "Move sync failed before confirmation. The board was restored to the last authoritative state.",
           syncStatus: "desynced",
           changeType: "optimistic_desynced",
+        });
+        logDiagnostic("error", "live_transport_desynced", {
+          gameId,
+          commandKind: command.kind,
+          clientCommandId: command.clientCommandId,
         });
       }
     }
@@ -922,6 +982,54 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return getGameViewModel(gameId);
   };
 
+  const requestRevertToMove = async ({ gameId, targetMoveId }) => {
+    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/revert-request`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId, targetMoveId }),
+    });
+    const body = await mustOk(response);
+    logDiagnostic("info", "live_transport_revert_requested", { gameId, targetMoveId }, { verboseOnly: true });
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+    return getGameViewModel(gameId);
+  };
+
+  const approveRevertRequest = async ({ gameId, requestId }) => {
+    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/revert-approve`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId, requestId }),
+    });
+    const body = await mustOk(response);
+    logDiagnostic("info", "live_transport_revert_approved", { gameId, requestId }, { verboseOnly: true });
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+    return getGameViewModel(gameId);
+  };
+
+  const rejectRevertRequest = async ({ gameId, requestId }) => {
+    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/revert-reject`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId, requestId }),
+    });
+    const body = await mustOk(response);
+    logDiagnostic("info", "live_transport_revert_rejected", { gameId, requestId }, { verboseOnly: true });
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+    return getGameViewModel(gameId);
+  };
+
+  const rescindRevertRequest = async ({ gameId, requestId }) => {
+    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/revert-rescind`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId, requestId }),
+    });
+    const body = await mustOk(response);
+    logDiagnostic("info", "live_transport_revert_rescinded", { gameId, requestId }, { verboseOnly: true });
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+    return getGameViewModel(gameId);
+  };
+
   const setParticipantConnected = async ({ gameId, role, connected }) => {
     void gameId;
     void role;
@@ -983,6 +1091,10 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     endTurn,
     selectHistoryMove,
     returnToLive,
+    requestRevertToMove,
+    approveRevertRequest,
+    rejectRevertRequest,
+    rescindRevertRequest,
     setParticipantConnected,
     applyLiveGameUpdate,
     getLastEventSeq,
