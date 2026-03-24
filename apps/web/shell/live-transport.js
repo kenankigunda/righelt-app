@@ -1006,6 +1006,30 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return getGameViewModel(gameId);
   };
 
+  const rejectRevertRequest = async ({ gameId, requestId }) => {
+    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/revert-reject`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId, requestId }),
+    });
+    const body = await mustOk(response);
+    logDiagnostic("info", "live_transport_revert_rejected", { gameId, requestId }, { verboseOnly: true });
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+    return getGameViewModel(gameId);
+  };
+
+  const rescindRevertRequest = async ({ gameId, requestId }) => {
+    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/revert-rescind`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId, requestId }),
+    });
+    const body = await mustOk(response);
+    logDiagnostic("info", "live_transport_revert_rescinded", { gameId, requestId }, { verboseOnly: true });
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+    return getGameViewModel(gameId);
+  };
+
   const setParticipantConnected = async ({ gameId, role, connected }) => {
     void gameId;
     void role;
@@ -1069,6 +1093,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     returnToLive,
     requestRevertToMove,
     approveRevertRequest,
+    rejectRevertRequest,
+    rescindRevertRequest,
     setParticipantConnected,
     applyLiveGameUpdate,
     getLastEventSeq,

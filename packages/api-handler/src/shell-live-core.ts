@@ -1022,7 +1022,7 @@ export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requeste
   rebuildTurnsFromActiveMoves(game, game.board.state);
   game.lastMoveAt = getActiveMoves(game).at(-1)?.at ?? null;
   game.updatedAt = revertedAt;
-  addNotification(game, "Move history reverted");
+  addNotification(game, "Undo applied");
   return { ok: true as const, targetMove };
 };
 

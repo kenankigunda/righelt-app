@@ -411,6 +411,7 @@ export class GameRoomDO {
           this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, targetMoveId, error: reverted.error });
           return json({ ok: false, error: reverted.error }, 409);
         }
+        addNotification(game, `Player ${identityId} accepted the undo request`);
         this.logDiagnostic("info", "live_server_revert_auto_approved", { identityId, targetMoveId }, true);
         await this.commit({
           type: "event_appended",
@@ -434,7 +435,7 @@ export class GameRoomDO {
         true,
       );
       game.updatedAt = now();
-      addNotification(game, "Move revert request pending approval");
+      addNotification(game, "Undo request pending approval");
       await this.commit({
         type: "event_appended",
         reason: "revert_requested",
@@ -473,10 +474,75 @@ export class GameRoomDO {
         this.logDiagnostic("warn", "live_server_revert_approve_rejected", { identityId, requestId, error: reverted.error });
         return json({ ok: false, error: reverted.error }, 409);
       }
+      addNotification(game, `Player ${identityId} accepted the undo request`);
       this.logDiagnostic("info", "live_server_revert_approved", { identityId, requestId }, true);
       await this.commit({
         type: "event_appended",
         reason: "moves_reverted",
+        game,
+      });
+      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+    }
+
+    if (request.method === "POST" && path === "/revert-reject") {
+      const requestId = asIdentity(body.requestId);
+      if (!requestId) {
+        this.logDiagnostic("warn", "live_server_revert_reject_rejected", { identityId, error: "invalid_request_id" });
+        return json({ ok: false, error: "invalid_request_id" }, 400);
+      }
+      const pendingRevertRequest = game.pendingRevertRequest;
+      if (!pendingRevertRequest || pendingRevertRequest.requestId !== requestId || pendingRevertRequest.status !== "pending") {
+        this.logDiagnostic("warn", "live_server_revert_reject_rejected", { identityId, requestId, error: "request_not_found" });
+        return json({ ok: false, error: "request_not_found" }, 404);
+      }
+      const requesterRole = findRoleForIdentity(game, pendingRevertRequest.requesterIdentityId);
+      if (requesterRole !== "Player 1" && requesterRole !== "Player 2") {
+        this.logDiagnostic("warn", "live_server_revert_reject_rejected", { identityId, requestId, error: "requester_not_player" });
+        return json({ ok: false, error: "requester_not_player" }, 409);
+      }
+      const approverIdentityId = getApproverIdentityForSeat(game, requesterRole);
+      if (approverIdentityId && approverIdentityId !== identityId) {
+        this.logDiagnostic(
+          "warn",
+          "live_server_revert_reject_rejected",
+          { identityId, requestId, approverIdentityId, error: "approval_not_allowed" },
+        );
+        return json({ ok: false, error: "approval_not_allowed" }, 403);
+      }
+      game.pendingRevertRequest = null;
+      game.updatedAt = now();
+      addNotification(game, `Player ${identityId} rejected the undo request`);
+      this.logDiagnostic("info", "live_server_revert_rejected", { identityId, requestId }, true);
+      await this.commit({
+        type: "event_appended",
+        reason: "revert_rejected",
+        game,
+      });
+      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+    }
+
+    if (request.method === "POST" && path === "/revert-rescind") {
+      const requestId = asIdentity(body.requestId);
+      if (!requestId) {
+        this.logDiagnostic("warn", "live_server_revert_rescind_rejected", { identityId, error: "invalid_request_id" });
+        return json({ ok: false, error: "invalid_request_id" }, 400);
+      }
+      const pendingRevertRequest = game.pendingRevertRequest;
+      if (!pendingRevertRequest || pendingRevertRequest.requestId !== requestId || pendingRevertRequest.status !== "pending") {
+        this.logDiagnostic("warn", "live_server_revert_rescind_rejected", { identityId, requestId, error: "request_not_found" });
+        return json({ ok: false, error: "request_not_found" }, 404);
+      }
+      if (pendingRevertRequest.requesterIdentityId !== identityId) {
+        this.logDiagnostic("warn", "live_server_revert_rescind_rejected", { identityId, requestId, error: "requester_mismatch" });
+        return json({ ok: false, error: "requester_mismatch" }, 403);
+      }
+      game.pendingRevertRequest = null;
+      game.updatedAt = now();
+      addNotification(game, `Player ${identityId} rescinded the undo request`);
+      this.logDiagnostic("info", "live_server_revert_rescinded", { identityId, requestId }, true);
+      await this.commit({
+        type: "event_appended",
+        reason: "revert_rescinded",
         game,
       });
       return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });

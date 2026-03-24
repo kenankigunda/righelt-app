@@ -1194,6 +1194,82 @@ test("live transport: dual-seat identity auto-approves revert requests", async (
   assert.equal(requestBody.game.moves[0].undone, true);
 });
 
+test("live transport: revert request can be rejected by approver", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-player2",
+      mode: "player",
+      inviteFromRole: "Player 1",
+    }),
+    env,
+  );
+  const moved = await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
+  const movedBody = await moved.json();
+  const targetMoveId = movedBody.game.moves[0].moveId;
+
+  const requestRevert = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/revert-request`, "POST", { identityId: "id-owner", targetMoveId }),
+    env,
+  );
+  const requestBody = await requestRevert.json();
+  const requestId = requestBody.game.pendingRevertRequest.requestId;
+
+  const reject = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/revert-reject`, "POST", { identityId: "id-player2", requestId }),
+    env,
+  );
+  const rejectBody = await reject.json();
+  assert.equal(reject.status, 200);
+  assert.equal(rejectBody.game.pendingRevertRequest, null);
+  assert.equal(rejectBody.game.moves.some((move) => move.undone === true), false);
+});
+
+test("live transport: requester can rescind pending revert request", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-player2",
+      mode: "player",
+      inviteFromRole: "Player 1",
+    }),
+    env,
+  );
+  const moved = await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
+  const movedBody = await moved.json();
+  const targetMoveId = movedBody.game.moves[0].moveId;
+
+  const requestRevert = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/revert-request`, "POST", { identityId: "id-owner", targetMoveId }),
+    env,
+  );
+  const requestBody = await requestRevert.json();
+  const requestId = requestBody.game.pendingRevertRequest.requestId;
+
+  const unauthorizedRescind = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/revert-rescind`, "POST", { identityId: "id-player2", requestId }),
+    env,
+  );
+  assert.equal(unauthorizedRescind.status, 403);
+
+  const rescind = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/revert-rescind`, "POST", { identityId: "id-owner", requestId }),
+    env,
+  );
+  const rescindBody = await rescind.json();
+  assert.equal(rescind.status, 200);
+  assert.equal(rescindBody.game.pendingRevertRequest, null);
+  assert.equal(rescindBody.game.moves.some((move) => move.undone === true), false);
+});
+
 test("live transport: persisted legacy moves get moveId backfilled for revert actions", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
