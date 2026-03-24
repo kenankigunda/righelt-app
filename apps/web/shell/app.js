@@ -116,13 +116,19 @@ let lastRenderedRouteKey = "";
 let lastRenderedBaseRouteKey = "";
 const HISTORY_SELECTION_EXIT_MS = 56;
 const HISTORY_RELEASE_BOUNCE_MS = 140;
-const HOME_SECTION_PAGE_SIZE = 3;
+const HOME_SECTION_SERVER_PAGE_SIZE = 4;
+const HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT = 3;
+const HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE = 4;
+const HOME_SECTION_CARD_MIN_WIDTH_REM = 22;
+const HOME_SECTION_CARD_GAP_REM = 0.85;
+const HOME_SECTION_WIDE_CARD_COUNT = 4;
 const HOME_CAROUSEL_MOTION_MS = 220;
 let pressedHistoryActionEl = null;
 let historyReleaseTimer = null;
 let pressedControlEl = null;
 let controlReleaseTimer = null;
 let stickyLayoutFrame = 0;
+let homeSectionResizeFrame = 0;
 const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;
 const SHELL_VIEWPORT_GUTTER_PX = 16;
 const FLYOUT_MOTION_MS = 180;
@@ -137,6 +143,11 @@ const createHomeSectionState = (title) => ({
   totalPages: 0,
   totalGames: 0,
   gameIds: [],
+  serverPage: 0,
+  serverTotalPages: 0,
+  serverPageGameIds: [],
+  serverPageGameIdsByPage: {},
+  visiblePageSize: HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
   slideDirection: "none",
   animationToken: 0,
 });
@@ -532,6 +543,66 @@ const setHomeSection = (sectionKey, nextState) => {
     [sectionKey]: nextState,
   };
 };
+const getHomeSectionVisibleTotalPages = (totalGames, visiblePageSize) =>
+  totalGames <= 0 ? 0 : Math.ceil(totalGames / visiblePageSize);
+const getHomeSectionSafePage = (totalGames, visiblePageSize, page) => {
+  const totalPages = getHomeSectionVisibleTotalPages(totalGames, visiblePageSize);
+  return totalPages === 0 ? 0 : Math.min(Math.max(0, page), totalPages - 1);
+};
+const getHomeSectionVisibleRange = ({ totalGames, visiblePageSize, page }) => {
+  const safePage = getHomeSectionSafePage(totalGames, visiblePageSize, page);
+  const start = safePage * visiblePageSize;
+  const end = Math.min(totalGames, start + visiblePageSize);
+  return { safePage, start, end };
+};
+const getHomeSectionRequiredServerPages = ({ totalGames, visiblePageSize, page }) => {
+  if (totalGames <= 0) {
+    return [];
+  }
+  const { start, end } = getHomeSectionVisibleRange({ totalGames, visiblePageSize, page });
+  if (end <= start) {
+    return [];
+  }
+  const firstServerPage = Math.floor(start / HOME_SECTION_SERVER_PAGE_SIZE);
+  const lastServerPage = Math.floor((end - 1) / HOME_SECTION_SERVER_PAGE_SIZE);
+  return Array.from({ length: lastServerPage - firstServerPage + 1 }, (_, index) => firstServerPage + index);
+};
+const getHomeSectionServerPageGameIds = (section, serverPage) =>
+  Array.isArray(section.serverPageGameIdsByPage?.[serverPage]) ? section.serverPageGameIdsByPage[serverPage] : [];
+const hasHomeSectionServerPages = (section, serverPages) =>
+  serverPages.every((serverPage) => Array.isArray(section.serverPageGameIdsByPage?.[serverPage]));
+const getHomeSectionVisibleGameIdsFromCache = (section, { page = section.page, visiblePageSize = section.visiblePageSize } = {}) => {
+  const { totalGames } = section;
+  if (totalGames <= 0) {
+    return [];
+  }
+  const requiredServerPages = getHomeSectionRequiredServerPages({ totalGames, visiblePageSize, page });
+  if (!hasHomeSectionServerPages(section, requiredServerPages)) {
+    return null;
+  }
+  const { start, end } = getHomeSectionVisibleRange({ totalGames, visiblePageSize, page });
+  const visibleCount = Math.max(0, end - start);
+  if (visibleCount === 0) {
+    return [];
+  }
+  const serverStart = requiredServerPages[0] * HOME_SECTION_SERVER_PAGE_SIZE;
+  const flattened = requiredServerPages.flatMap((serverPage) => getHomeSectionServerPageGameIds(section, serverPage));
+  const offset = Math.max(0, start - serverStart);
+  return flattened.slice(offset, offset + visibleCount);
+};
+const getHomeSectionCachedGameIndex = (section, gameId) => {
+  if (!gameId) {
+    return null;
+  }
+  const pageEntries = Object.entries(section.serverPageGameIdsByPage ?? {}).sort(([left], [right]) => Number(left) - Number(right));
+  for (const [pageKey, ids] of pageEntries) {
+    const offset = Array.isArray(ids) ? ids.indexOf(gameId) : -1;
+    if (offset >= 0) {
+      return (Number(pageKey) * HOME_SECTION_SERVER_PAGE_SIZE) + offset;
+    }
+  }
+  return null;
+};
 const shouldDisableLiveSync = () => window.__righeltOffline === true || navigator.onLine === false;
 const resetRouteWsStatus = () => {
   wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
@@ -760,6 +831,7 @@ const getWideFlyoutWidth = (viewportWidth = window.innerWidth) => {
   const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize || "16") || 16;
   return Math.min(rootFontSize * 34, viewportWidth * 0.36);
 };
+const getRootFontSizePx = () => Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize || "16") || 16;
 const getAvailableShellContentWidth = (viewportWidth = window.innerWidth, route = currentRoute) => {
   const totalHorizontalGutter = SHELL_VIEWPORT_GUTTER_PX * 2;
   const openFlyoutCount = getOpenFlyoutCount(route);
@@ -788,6 +860,19 @@ const normalizeRouteFlyoutState = (route, { preferredFlyoutKey = null } = {}) =>
 };
 currentRoute = normalizeRouteFlyoutState(currentRoute);
 const getShellLayoutMode = (viewportWidth = window.innerWidth) => getShellLayoutModeForRoute(currentRoute, viewportWidth);
+const getHomeSectionMinWidePageWidthPx = () =>
+  getRootFontSizePx() * ((HOME_SECTION_CARD_MIN_WIDTH_REM * HOME_SECTION_WIDE_CARD_COUNT) + (HOME_SECTION_CARD_GAP_REM * (HOME_SECTION_WIDE_CARD_COUNT - 1)));
+const getHomeSectionWidthPx = (sectionKey) => {
+  const sectionEl = appEl?.querySelector?.(`[data-home-section-root="${sectionKey}"]`);
+  if (sectionEl instanceof HTMLElement) {
+    return sectionEl.getBoundingClientRect().width;
+  }
+  return getAvailableShellContentWidth();
+};
+const getHomeSectionVisiblePageSize = (sectionKey) =>
+  (getHomeSectionWidthPx(sectionKey) >= getHomeSectionMinWidePageWidthPx()
+    ? HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE
+    : HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT);
 const syncShellLayoutMode = () => {
   const layoutMode = getShellLayoutMode();
   if (appEl instanceof HTMLElement) {
@@ -2491,26 +2576,93 @@ const animateHomeSectionTransitions = () => {
   }
 };
 
-const loadHomeSectionPage = async (sectionKey, { page = getHomeSection(sectionKey).page, direction = "none" } = {}) => {
+const loadHomeSectionServerPage = async (sectionKey, serverPage, { visiblePageSize = getHomeSectionVisiblePageSize(sectionKey) } = {}) => {
   const previous = getHomeSection(sectionKey);
   const response = await transport.loadGamesPage({
     section: sectionKey,
-    page,
-    pageSize: HOME_SECTION_PAGE_SIZE,
+    page: serverPage,
+    pageSize: HOME_SECTION_SERVER_PAGE_SIZE,
     debug: currentRoute.debug === true,
   });
-  const normalizedPage = typeof response.page === "number" ? response.page : 0;
-  const normalizedTotalPages = typeof response.totalPages === "number" ? response.totalPages : 0;
+  const normalizedServerPage = typeof response.page === "number" ? response.page : 0;
+  const serverPageGameIds = Array.isArray(response.games) ? response.games.map((game) => game.id) : [];
+  const nextSection = {
+    ...previous,
+    totalGames: typeof response.totalGames === "number" ? response.totalGames : 0,
+    serverPage: normalizedServerPage,
+    serverTotalPages: typeof response.totalPages === "number" ? response.totalPages : 0,
+    serverPageGameIds,
+    serverPageGameIdsByPage: {
+      ...previous.serverPageGameIdsByPage,
+      [normalizedServerPage]: serverPageGameIds,
+    },
+    visiblePageSize,
+  };
+  setHomeSection(sectionKey, nextSection);
+  return nextSection;
+};
+
+const loadHomeSectionPage = async (
+  sectionKey,
+  { page = getHomeSection(sectionKey).page, direction = "none", visiblePageSize = getHomeSectionVisiblePageSize(sectionKey) } = {},
+) => {
+  const previous = getHomeSection(sectionKey);
+  let nextSection = {
+    ...previous,
+    visiblePageSize,
+  };
+  const initialServerPage = Math.floor((Math.max(0, page) * visiblePageSize) / HOME_SECTION_SERVER_PAGE_SIZE);
+  const shouldPrimeCache = Object.keys(nextSection.serverPageGameIdsByPage ?? {}).length === 0;
+  if (shouldPrimeCache) {
+    nextSection = await loadHomeSectionServerPage(sectionKey, initialServerPage, { visiblePageSize });
+  }
+  const requiredServerPages = getHomeSectionRequiredServerPages({
+    totalGames: nextSection.totalGames,
+    visiblePageSize,
+    page,
+  });
+  for (const serverPage of requiredServerPages) {
+    if (!hasHomeSectionServerPages(nextSection, [serverPage])) {
+      nextSection = await loadHomeSectionServerPage(sectionKey, serverPage, { visiblePageSize });
+    }
+  }
+  const normalizedPage = getHomeSectionSafePage(nextSection.totalGames, visiblePageSize, page);
+  const normalizedTotalPages = getHomeSectionVisibleTotalPages(nextSection.totalGames, visiblePageSize);
+  const visibleGameIds = getHomeSectionVisibleGameIdsFromCache(nextSection, {
+    page: normalizedPage,
+    visiblePageSize,
+  }) ?? [];
   const nextDirection = normalizedTotalPages > 1 && normalizedPage !== previous.page ? direction : "none";
   setHomeSection(sectionKey, {
-    ...previous,
+    ...nextSection,
     page: normalizedPage,
     totalPages: normalizedTotalPages,
-    totalGames: typeof response.totalGames === "number" ? response.totalGames : 0,
-    gameIds: Array.isArray(response.games) ? response.games.map((game) => game.id) : [],
+    gameIds: visibleGameIds,
     slideDirection: nextDirection,
     animationToken: nextDirection === "none" ? previous.animationToken : previous.animationToken + 1,
   });
+};
+
+const syncResponsiveHomeSectionPageSizes = async () => {
+  const visibleSectionKeys = getVisibleHomeSectionKeys();
+  let updated = false;
+  for (const sectionKey of visibleSectionKeys) {
+    const section = getHomeSection(sectionKey);
+    const nextVisiblePageSize = getHomeSectionVisiblePageSize(sectionKey);
+    if (section.visiblePageSize === nextVisiblePageSize) {
+      continue;
+    }
+    const anchorGameId = section.gameIds[0] ?? null;
+    const anchorIndex = getHomeSectionCachedGameIndex(section, anchorGameId);
+    const nextPage = anchorIndex === null ? section.page : Math.floor(anchorIndex / nextVisiblePageSize);
+    await loadHomeSectionPage(sectionKey, {
+      page: nextPage,
+      direction: "none",
+      visiblePageSize: nextVisiblePageSize,
+    });
+    updated = true;
+  }
+  return updated;
 };
 
 const syncHomeSections = async () => {
@@ -2518,6 +2670,18 @@ const syncHomeSections = async () => {
   await Promise.all(
     visibleSectionKeys.map(async (sectionKey) => {
       const section = getHomeSection(sectionKey);
+      setHomeSection(sectionKey, {
+        ...section,
+        totalGames: 0,
+        totalPages: 0,
+        gameIds: [],
+        serverPage: 0,
+        serverTotalPages: 0,
+        serverPageGameIds: [],
+        serverPageGameIdsByPage: {},
+        visiblePageSize: getHomeSectionVisiblePageSize(sectionKey),
+        slideDirection: "none",
+      });
       await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
     }),
   );
@@ -2530,8 +2694,31 @@ const syncHomeSections = async () => {
       totalPages: 0,
       totalGames: 0,
       gameIds: [],
+      serverPage: 0,
+      serverTotalPages: 0,
+      serverPageGameIds: [],
+      serverPageGameIdsByPage: {},
+      visiblePageSize: HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
       slideDirection: "none",
     });
+  });
+};
+
+const scheduleResponsiveHomeSectionPageSizes = () => {
+  window.cancelAnimationFrame(homeSectionResizeFrame);
+  homeSectionResizeFrame = window.requestAnimationFrame(() => {
+    homeSectionResizeFrame = 0;
+    void (async () => {
+      if (currentRoute.name !== "home") {
+        return;
+      }
+      const didUpdate = await syncResponsiveHomeSectionPageSizes();
+      if (!didUpdate) {
+        return;
+      }
+      syncLiveChannels();
+      render({ animatePanels: false, includeBoard: false });
+    })();
   });
 };
 
@@ -2881,10 +3068,12 @@ window.addEventListener("offline", () => {
 
 window.addEventListener("resize", () => {
   scheduleGameShellStickyLayout();
+  scheduleResponsiveHomeSectionPageSizes();
 });
 
 window.addEventListener("load", () => {
   scheduleGameShellStickyLayout();
+  scheduleResponsiveHomeSectionPageSizes();
 });
 
 appEl.addEventListener("click", async (event) => {

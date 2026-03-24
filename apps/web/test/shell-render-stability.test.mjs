@@ -127,8 +127,13 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /querySelectorAll\("\.panel"\)/);
   assert.match(source, /class="panel" data-shell-panel="board"/);
   assert.match(source, /scheduleGameShellStickyLayout\(\);/);
-  assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
-  assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*\}\);/s);
+  assert.match(source, /const scheduleResponsiveHomeSectionPageSizes = \(\) => \{/);
+  assert.match(source, /window\.cancelAnimationFrame\(homeSectionResizeFrame\);/);
+  assert.match(source, /homeSectionResizeFrame = window\.requestAnimationFrame\(\(\) => \{/);
+  assert.match(source, /const didUpdate = await syncResponsiveHomeSectionPageSizes\(\);/);
+  assert.match(source, /render\(\{ animatePanels: false, includeBoard: false \}\);/);
+  assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
+  assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
   assert.match(source, /syncFlyoutRenderOrder\(currentRoute\);/);
   assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, nextRoute\)\) \{[\s\S]*render\(\);\s*return;\s*\}/s);
   assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, currentRoute\)\) \{[\s\S]*render\(\);\s*return;\s*\}/s);
