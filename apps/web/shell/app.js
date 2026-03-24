@@ -1198,7 +1198,8 @@ const renderDebugContent = () => {
       <h2>Live Sync</h2>
       <pre class="debug-pre">Identity <span id="shell-debug-identity" class="mono">${escapeHtml(transport.getIdentityId())}</span>
 Live sync: <span id="shell-debug-live-sync" class="mono">${escapeHtml(`${wsStatus.state}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`)}</span>
-Last event: <span id="shell-debug-last-event" class="mono">${escapeHtml(wsLastEvent)}</span></pre>
+Last event: <span id="shell-debug-last-event" class="mono">${escapeHtml(wsLastEvent)}</span>
+Sync metrics: <span id="shell-debug-sync-metrics" class="mono">${escapeHtml(JSON.stringify(transport.getSyncMetrics()))}</span></pre>
     </section>
     <section class="panel debug-panel">
       <h2>Engine Status</h2>
@@ -1303,6 +1304,7 @@ const updateHeaderFields = () => {
   const identityEl = document.getElementById("shell-debug-identity");
   const liveSyncEl = document.getElementById("shell-debug-live-sync");
   const lastEventEl = document.getElementById("shell-debug-last-event");
+  const syncMetricsEl = document.getElementById("shell-debug-sync-metrics");
   if (identityEl) {
     identityEl.textContent = transport.getIdentityId();
   }
@@ -1311,6 +1313,9 @@ const updateHeaderFields = () => {
   }
   if (lastEventEl) {
     lastEventEl.textContent = wsLastEvent;
+  }
+  if (syncMetricsEl) {
+    syncMetricsEl.textContent = JSON.stringify(transport.getSyncMetrics());
   }
 };
 
@@ -1366,7 +1371,8 @@ const renderHomeGameCard = (game) => {
   const previewKey = toStableKey(snapshot);
   const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
   const moveLabel = Array.isArray(game.moves) ? `Move ${game.moves.length + 1}` : "Move pending";
-  const recoveryChip = game.syncStatus === "desynced" ? '<span class="status-chip">Recovering</span>' : "";
+  const recoveryChip =
+    game.syncStatus === "desynced" || game.syncStatus === "confirming" ? '<span class="status-chip">Recovering</span>' : "";
   const seatConnectionLine = renderHomeSeatConnectionLine(game);
   return `<article class="mini-board-card">
     <a
@@ -1475,6 +1481,8 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
   const liveSyncBanner =
     game.rollbackNotice && game.rollbackNotice.trim().length > 0
       ? `<div class="alert danger">${escapeHtml(game.rollbackNotice)}</div>`
+      : game.syncStatus === "confirming"
+        ? `<div class="alert warn">Move confirmation is retrying. The board stays optimistic until the server confirms.</div>`
       : game.syncStatus === "desynced"
         ? `<div class="alert warn">Live sync is recovering. The board is showing the last authoritative state.</div>`
         : "";

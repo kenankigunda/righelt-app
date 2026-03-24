@@ -886,6 +886,18 @@ const pickLegalAction = (state: GameState): Action | null => {
 };
 
 export const applyServerAction = (game: LiveGame, action: Action, notation?: string, clientCommandId?: string | null) => {
+  if (clientCommandId) {
+    const existingMove = game.moves.find((entry) => entry.clientCommandId === clientCommandId);
+    if (existingMove) {
+      return {
+        ok: true as const,
+        duplicate: true as const,
+        move: clone(existingMove),
+        state: clone(existingMove.snapshot ?? game.board.state),
+        removedPieces: [],
+      };
+    }
+  }
   const activeTurn = getActiveTurn(game);
   if (!activeTurn) {
     return { ok: false as const, error: "turn_not_initialized" };

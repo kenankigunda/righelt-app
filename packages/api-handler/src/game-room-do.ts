@@ -318,6 +318,16 @@ export class GameRoomDO {
       if (!moved.ok) {
         return json({ ok: false, error: moved.error }, 409);
       }
+      if (moved.duplicate) {
+        return json({
+          ok: true,
+          move: moved.move,
+          clientCommandId: commandMetadata.clientCommandId,
+          game: withViewModel(game, identityId),
+          eventSeq: this.eventSeq,
+          duplicate: true,
+        });
+      }
       await this.commit({
         type: "event_appended",
         reason: "move_recorded",
@@ -368,6 +378,19 @@ export class GameRoomDO {
         }
         return json({ ok: false, error: moved.error }, 409);
       }
+      if (moved.duplicate) {
+        return json({
+          ok: true,
+          accepted: true,
+          move: moved.move,
+          clientCommandId: commandMetadata.clientCommandId,
+          state: moved.state,
+          removedPieces: moved.removedPieces,
+          game: withViewModel(game, identityId),
+          eventSeq: this.eventSeq,
+          duplicate: true,
+        });
+      }
       await this.commit({
         type: "event_appended",
         reason: "move_recorded",
@@ -394,6 +417,26 @@ export class GameRoomDO {
       const activeTurn = getActiveTurn(game);
       if (!activeTurn) {
         return json({ ok: false, error: "turn_not_initialized" }, 409);
+      }
+      if (commandMetadata.clientCommandId) {
+        const duplicateEvents = await loadEventsAfter(this.env, game.id, 0);
+        const duplicateTurnEnd = duplicateEvents.find(
+          (event) =>
+            event.type === "event_appended" &&
+            event.reason === "turn_ended" &&
+            event.clientCommandId === commandMetadata.clientCommandId,
+        );
+        if (duplicateTurnEnd) {
+          const completedTurn = game.turns.length > 1 ? clone(game.turns[game.turns.length - 2]) : null;
+          return json({
+            ok: true,
+            turn: completedTurn,
+            clientCommandId: commandMetadata.clientCommandId,
+            game: withViewModel(game, identityId),
+            eventSeq: this.eventSeq,
+            duplicate: true,
+          });
+        }
       }
       const turnOwnerIdentity = getSeatIdentity(game, activeTurn.playerSeat);
       if (!turnOwnerIdentity || turnOwnerIdentity !== identityId) {

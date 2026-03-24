@@ -1004,6 +1004,102 @@ test("live transport: apply and end-turn echo clientCommandId and persist it on 
   assert.equal(events.some((event) => event.type === "event_appended" && event.clientCommandId === "cmd-end-1"), true);
 });
 
+test("live transport: duplicate clientCommandId retries are idempotent for apply and end-turn", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await create.json();
+  const gameId = createdBody.game.id;
+
+  const applyOne = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/apply`, "POST", {
+      identityId: "id-owner",
+      clientCommandId: "cmd-apply-dup",
+      state: createdBody.game.currentSnapshot,
+      action: { type: "pass" },
+    }),
+    env,
+  );
+  assert.equal(applyOne.status, 200);
+
+  const applyRetry = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/apply`, "POST", {
+      identityId: "id-owner",
+      clientCommandId: "cmd-apply-dup",
+      state: createdBody.game.currentSnapshot,
+      action: { type: "pass" },
+    }),
+    env,
+  );
+  const applyRetryBody = await applyRetry.json();
+  assert.equal(applyRetryBody.ok, true);
+  assert.equal(applyRetryBody.duplicate, true);
+
+  const endOne = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/end-turn`, "POST", {
+      identityId: "id-owner",
+      clientCommandId: "cmd-end-dup",
+    }),
+    env,
+  );
+  assert.equal(endOne.status, 200);
+
+  const endRetry = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/end-turn`, "POST", {
+      identityId: "id-owner",
+      clientCommandId: "cmd-end-dup",
+    }),
+    env,
+  );
+  const endRetryBody = await endRetry.json();
+  assert.equal(endRetryBody.ok, true);
+  assert.equal(endRetryBody.duplicate, true);
+
+  const events = env.DB
+    .getEvents(gameId)
+    .map((row) => JSON.parse(row.payload_json))
+    .filter((event) => event.type === "event_appended");
+  assert.equal(events.filter((event) => event.clientCommandId === "cmd-apply-dup").length, 1);
+  assert.equal(events.filter((event) => event.clientCommandId === "cmd-end-dup").length, 1);
+});
+
+test("live transport: apply and end-turn idempotency are scoped by command kind", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await create.json();
+  const gameId = createdBody.game.id;
+
+  const apply = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/apply`, "POST", {
+      identityId: "id-owner",
+      clientCommandId: "cmd-shared",
+      state: createdBody.game.currentSnapshot,
+      action: { type: "pass" },
+    }),
+    env,
+  );
+  assert.equal(apply.status, 200);
+
+  const endTurn = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/end-turn`, "POST", {
+      identityId: "id-owner",
+      clientCommandId: "cmd-shared",
+    }),
+    env,
+  );
+  const endTurnBody = await endTurn.json();
+  assert.equal(endTurn.status, 200);
+  assert.equal(endTurnBody.duplicate, undefined);
+
+  // Same clientCommandId as the prior /apply must not make /end-turn look like a duplicate
+  // turn-end (events are scoped by reason === turn_ended in the handler).
+  // A second /apply with that id is not asserted here: after end-turn it is often not the
+  // same player's turn, so the response would be not_your_turn rather than duplicate.
+});
+
 test("live transport: player invite token enables immediate player join without guessable game role query", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
