@@ -195,6 +195,7 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /const pendingRows = \(Array\.isArray\(game\.pendingMoves\) \? game\.pendingMoves : \[\]\)\.map/);
   assert.match(source, /const reverseChronologicalMoveRows = \[\];/);
   assert.match(source, /data-action="toggle-undone-group"/);
+  assert.match(source, /history-item history-item-undone-group is-undone/);
   assert.match(source, /const reverseChronologicalPendingRows = \[\.\.\.pendingRows\]\.reverse\(\);/);
   assert.match(source, /const branchButton = game\.inHistoryMode && game\.historyIndex === move\.index && move\.undone !== true/);
   assert.match(source, /const revertButton = game\.inHistoryMode && game\.historyIndex === move\.index && move\.undone !== true/);
@@ -275,8 +276,8 @@ test("history branch launch keeps the source tab stable while opening a new tab"
 });
 
 test("history navigation skips the busy pre-render but still clears disabled state after completion", () => {
-  assert.match(source, /const shouldRenderBusyStateStart =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "return-live"/s);
-  assert.match(source, /const shouldRenderBusyStateEnd =\s*action !== "copy-invite" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(source, /const shouldRenderBusyStateStart =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "return-live"/s);
+  assert.match(source, /const shouldRenderBusyStateEnd =\s*action !== "copy-invite" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
   assert.match(source, /\}, \{ renderStart: shouldRenderBusyStateStart, renderEnd: shouldRenderBusyStateEnd \}\);/);
 });
 
@@ -326,8 +327,8 @@ test("shell renders and reconciles mini board previews for home and debug surfac
 test("withBusy only repaints immediately for actions that need visible busy state", () => {
   assert.match(source, /const withBusy = async \(fn, \{ renderStart = true, renderEnd = true \} = \{\}\) => \{/);
   assert.match(source, /if \(renderStart\) \{\s*render\(\);\s*\}/s);
-  assert.match(source, /const shouldRenderBusyStateStart =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "return-live" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
-  assert.match(source, /const shouldRenderBusyStateEnd =\s*action !== "copy-invite" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(source, /const shouldRenderBusyStateStart =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "return-live" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(source, /const shouldRenderBusyStateEnd =\s*action !== "copy-invite" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
   assert.match(source, /\}, \{ renderStart: shouldRenderBusyStateStart, renderEnd: shouldRenderBusyStateEnd \}\);/);
   assert.match(source, /const renderFeedbackReveal = \(message\) =>/);
   assert.match(source, /feedback-reveal\$\{message \? " is-visible" : ""\}/);

@@ -1001,6 +1001,7 @@ const renderTurnHistory = (game) => {
       : "";
     return {
       undone: move.undone === true,
+      actorSide: move.actorSide || null,
       html: `<li class="history-item ${playerToneClassForSide(move.actorSide || "P1")}${selectedClass}${undoneClass}" data-action="jump-history" data-game-id="${escapeHtml(
         game.id,
       )}" data-move-index="${move.index}">
@@ -1034,19 +1035,36 @@ const renderTurnHistory = (game) => {
       end += 1;
     }
     const count = end - index;
+    if (count === 1) {
+      reverseChronologicalMoveRows.push(reversedChronological[index].html);
+      index = end;
+      continue;
+    }
     const groupKey = `${game.id}:${index}:${end}`;
     const expanded = expandedUndoneGroups.has(groupKey);
-    reverseChronologicalMoveRows.push(
-      `<li class="history-empty-line">
-        <button class="secondary mini-button" data-action="toggle-undone-group" data-group-key="${escapeHtml(groupKey)}" ${
-          busy ? "disabled" : ""
-        }>${expanded ? "Hide" : "Show"} ${count} move${count === 1 ? "" : "s"} undone</button>
-      </li>`,
+    const actorSides = new Set(
+      reversedChronological.slice(index, end).map((entry) => (entry.actorSide === "P1" || entry.actorSide === "P2" ? entry.actorSide : null)).filter(Boolean),
     );
+    const toneClass =
+      actorSides.size > 1
+        ? "player-tone-both"
+        : actorSides.has("P1")
+          ? "player-tone-p1"
+          : actorSides.has("P2")
+            ? "player-tone-p2"
+            : "player-tone-neutral";
+    reverseChronologicalMoveRows.push(`
+      <li class="history-item history-item-undone-group is-undone ${toneClass}${expanded ? " is-expanded" : ""}" data-action="toggle-undone-group" data-group-key="${escapeHtml(
+        groupKey,
+      )}" aria-expanded="${expanded ? "true" : "false"}" ${busy ? 'aria-disabled="true"' : ""}>
+        <span class="history-move-line">${count} move${count === 1 ? "" : "s"} undone</span>
+      </li>`);
     if (expanded) {
+      reverseChronologicalMoveRows.push('<li class="history-undone-group-content"><ul class="history-list history-list-nested">');
       for (let undoIndex = index; undoIndex < end; undoIndex += 1) {
         reverseChronologicalMoveRows.push(reversedChronological[undoIndex].html);
       }
+      reverseChronologicalMoveRows.push("</ul></li>");
     }
     index = end;
   }
@@ -2882,6 +2900,7 @@ appEl.addEventListener("click", async (event) => {
     action !== "copy-invite" &&
     action !== "jump-history" &&
     action !== "launch-history-branch" &&
+    action !== "toggle-undone-group" &&
     action !== "return-live" &&
     action !== "tutorial-next" &&
     action !== "tutorial-skip" &&
@@ -2891,6 +2910,7 @@ appEl.addEventListener("click", async (event) => {
     action !== "close-scenarios";
   const shouldRenderBusyStateEnd =
     action !== "copy-invite" &&
+    action !== "toggle-undone-group" &&
     action !== "tutorial-next" &&
     action !== "tutorial-skip" &&
     action !== "open-debug" &&
