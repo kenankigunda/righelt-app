@@ -65,6 +65,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) => getShellLayoutModeForRoute\(currentRoute, viewportWidth\);/);
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
   assert.match(source, /window\.requestAnimationFrame\(\(\) => \{\s*scrollHomeSectionToTop\(sectionKey\);\s*\}\);/s);
+  assert.match(source, /const homeSectionTransitionCleanupTimersByKey = new Map\(\);/);
   assert.match(source, /const syncShellLayoutMode = \(\) => \{/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", layoutMode\);/);
   assert.match(source, /FLYOUT_KEYS\.forEach\(\(key\) => \{\s*appEl\.setAttribute\(`data-\$\{key\}-open`, currentRoute\[key\] \? "true" : "false"\);\s*\}\);/s);
@@ -103,6 +104,12 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /element\.style\.width = `\$\{toWidth\}px`;/);
   assert.match(source, /element\.style\.maxWidth = `\$\{toWidth\}px`;/);
   assert.match(source, /const capturePanelHeights = \(\) =>/);
+  assert.match(source, /const clearHomeSectionTransitionState = \(sectionKey, token = null\) => \{/);
+  assert.match(source, /const scheduleHomeSectionTransitionCleanup = \(sectionKey, token\) => \{/);
+  assert.match(source, /viewportEl\.style\.transition = `height \$\{HOME_CAROUSEL_MOTION_MS\}ms cubic-bezier\(0\.2, 0\.72, 0\.2, 1\)`;/);
+  assert.match(source, /const activeFromX = section\.slideDirection === "prev" \? -offsetPx : offsetPx;/);
+  assert.match(source, /const exitToX = section\.slideDirection === "prev" \? offsetPx : -offsetPx;/);
+  assert.match(source, /data-home-carousel-track-exit=/);
   assert.match(source, /const shouldPatchFlyoutsOnly = shouldPatchMountedFlyouts\(routeKey, baseRouteKey\);/);
   assert.match(source, /const previousPanelHeights = animatePanels && !shouldPatchFlyoutsOnly \? capturePanelHeights\(\) : \[\];/);
   assert.match(source, /const previousFlyoutRects = animatePanels \? captureFlyoutRects\(\) : new Map\(\);/);

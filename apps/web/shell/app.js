@@ -135,6 +135,7 @@ const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
 const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
 const lastAnimatedHomeSectionTokenByKey = new Map();
+const homeSectionTransitionCleanupTimersByKey = new Map();
 const activeLiveGameIds = new Set();
 const createHomeSectionState = (title) => ({
   title,
@@ -148,6 +149,7 @@ const createHomeSectionState = (title) => ({
   serverPageGameIdsByPage: {},
   visiblePageSize: HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
   visibleColumnCount: 1,
+  transitionGameIds: [],
   slideDirection: "none",
   animationToken: 0,
 });
@@ -1640,9 +1642,13 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
 const renderHomeStartButton = () =>
   `<button class="home-start-button" data-action="create-game" ${busy ? "disabled" : ""}>Start new game</button>`;
 
+const renderHomeGameCardList = (games) =>
+  `<div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>`;
+
 const renderHomeGameSection = (sectionKey) => {
   const section = getHomeSection(sectionKey);
   const games = section.gameIds.map((gameId) => transport.getGameViewModel(gameId)).filter(Boolean);
+  const transitionGames = section.transitionGameIds.map((gameId) => transport.getGameViewModel(gameId)).filter(Boolean);
   const shouldAlwaysRender = sectionKey === "my";
   if (!Array.isArray(games) || (!shouldAlwaysRender && (games.length === 0 || section.totalGames === 0))) {
     return "";
@@ -1652,6 +1658,12 @@ const renderHomeGameSection = (sectionKey) => {
   const showHeaderPaging = showPaging && section.visibleColumnCount > 1;
   const showFooterPaging = showPaging && section.visibleColumnCount === 1;
   const hasHeaderAction = sectionKey === "my";
+  const showTransition =
+    !showEmptyState &&
+    !prefersReducedMotion() &&
+    section.slideDirection !== "none" &&
+    section.transitionGameIds.length > 0 &&
+    transitionGames.length > 0;
   return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}">
       <div class="home-games-section-header" data-home-header-has-action="${hasHeaderAction ? "true" : "false"}">
       <div class="home-games-section-heading">
@@ -1668,8 +1680,19 @@ const renderHomeGameSection = (sectionKey) => {
     ${showEmptyState
       ? `<p class="small home-games-empty">No games yet.</p>`
       : `<div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
-      <div class="home-games-carousel-track" data-home-carousel-track="${escapeHtml(sectionKey)}">
-        <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
+      <div
+        class="home-games-carousel-viewport"
+        data-home-carousel-viewport="${escapeHtml(sectionKey)}"
+        data-home-carousel-direction="${escapeHtml(section.slideDirection)}"
+      >
+        <div class="home-games-carousel-track home-games-carousel-track-active" data-home-carousel-track="${escapeHtml(sectionKey)}">
+          ${renderHomeGameCardList(games)}
+        </div>
+        ${showTransition
+          ? `<div class="home-games-carousel-track home-games-carousel-track-exit" data-home-carousel-track-exit="${escapeHtml(sectionKey)}">
+          ${renderHomeGameCardList(transitionGames)}
+        </div>`
+          : ""}
       </div>
     </div>`}
     ${showFooterPaging ? renderHomeSectionControls(sectionKey, section, { placement: "footer" }) : ""}
@@ -2565,6 +2588,42 @@ const destroyMountedBoardRuntime = () => {
   }
 };
 
+const clearHomeSectionTransitionCleanupTimer = (sectionKey) => {
+  const timer = homeSectionTransitionCleanupTimersByKey.get(sectionKey);
+  if (timer) {
+    window.clearTimeout(timer);
+    homeSectionTransitionCleanupTimersByKey.delete(sectionKey);
+  }
+};
+
+const clearHomeSectionTransitionState = (sectionKey, token = null) => {
+  clearHomeSectionTransitionCleanupTimer(sectionKey);
+  const section = getHomeSection(sectionKey);
+  if (!section || (token !== null && section.animationToken !== token)) {
+    return;
+  }
+  if (section.transitionGameIds.length === 0 && section.slideDirection === "none") {
+    return;
+  }
+  setHomeSection(sectionKey, {
+    ...section,
+    transitionGameIds: [],
+    slideDirection: "none",
+  });
+  if (currentRoute.name === "home") {
+    render({ animatePanels: false, includeBoard: false });
+  }
+};
+
+const scheduleHomeSectionTransitionCleanup = (sectionKey, token) => {
+  clearHomeSectionTransitionCleanupTimer(sectionKey);
+  const timer = window.setTimeout(() => {
+    homeSectionTransitionCleanupTimersByKey.delete(sectionKey);
+    clearHomeSectionTransitionState(sectionKey, token);
+  }, HOME_CAROUSEL_MOTION_MS);
+  homeSectionTransitionCleanupTimersByKey.set(sectionKey, timer);
+};
+
 const animateHomeSectionTransitions = () => {
   if (!(appEl instanceof HTMLElement) || prefersReducedMotion()) {
     return;
@@ -2574,15 +2633,41 @@ const animateHomeSectionTransitions = () => {
     if (!section.animationToken || lastAnimatedHomeSectionTokenByKey.get(sectionKey) === section.animationToken) {
       continue;
     }
-    const trackEl = appEl.querySelector(`[data-home-carousel-track="${sectionKey}"]`);
-    if (!(trackEl instanceof HTMLElement)) {
+    const viewportEl = appEl.querySelector(`[data-home-carousel-viewport="${sectionKey}"]`);
+    const activeTrackEl = appEl.querySelector(`[data-home-carousel-track="${sectionKey}"]`);
+    const exitTrackEl = appEl.querySelector(`[data-home-carousel-track-exit="${sectionKey}"]`);
+    if (!(viewportEl instanceof HTMLElement) || !(activeTrackEl instanceof HTMLElement) || !(exitTrackEl instanceof HTMLElement)) {
       continue;
     }
     lastAnimatedHomeSectionTokenByKey.set(sectionKey, section.animationToken);
-    const offsetPx = section.slideDirection === "prev" ? -56 : 56;
-    trackEl.animate(
+    const viewportWidth = viewportEl.getBoundingClientRect().width;
+    const offsetPx = Math.max(40, Math.min(96, Math.round(viewportWidth * 0.12) || 56));
+    const fromHeight = exitTrackEl.getBoundingClientRect().height;
+    const toHeight = activeTrackEl.getBoundingClientRect().height;
+    if (Math.abs(toHeight - fromHeight) >= 1) {
+      viewportEl.style.overflow = "clip";
+      viewportEl.style.height = `${fromHeight}px`;
+      void viewportEl.offsetHeight;
+      viewportEl.style.transition = `height ${HOME_CAROUSEL_MOTION_MS}ms cubic-bezier(0.2, 0.72, 0.2, 1)`;
+      viewportEl.style.height = `${toHeight}px`;
+      const clearHeightAnimation = () => {
+        viewportEl.style.transition = "";
+        viewportEl.style.height = "";
+        viewportEl.style.overflow = "";
+        viewportEl.removeEventListener("transitionend", clearHeightAnimation);
+      };
+      viewportEl.addEventListener("transitionend", clearHeightAnimation);
+    } else if (getShellLayoutMode() === "wide") {
+      viewportEl.style.height = `${toHeight}px`;
+      window.requestAnimationFrame(() => {
+        viewportEl.style.height = "";
+      });
+    }
+    const activeFromX = section.slideDirection === "prev" ? -offsetPx : offsetPx;
+    const exitToX = section.slideDirection === "prev" ? offsetPx : -offsetPx;
+    activeTrackEl.animate(
       [
-        { transform: `translateX(${offsetPx}px)`, opacity: 0.35 },
+        { transform: `translateX(${activeFromX}px)`, opacity: 0.35 },
         { transform: "translateX(0px)", opacity: 1 },
       ],
       {
@@ -2590,6 +2675,18 @@ const animateHomeSectionTransitions = () => {
         easing: "cubic-bezier(0.2, 0.72, 0.2, 1)",
       },
     );
+    exitTrackEl.animate(
+      [
+        { transform: "translateX(0px)", opacity: 1 },
+        { transform: `translateX(${exitToX}px)`, opacity: 0.2 },
+      ],
+      {
+        duration: HOME_CAROUSEL_MOTION_MS,
+        easing: "cubic-bezier(0.2, 0.72, 0.2, 1)",
+        fill: "forwards",
+      },
+    );
+    scheduleHomeSectionTransitionCleanup(sectionKey, section.animationToken);
   }
 };
 
@@ -2669,6 +2766,7 @@ const loadHomeSectionPage = async (
     page: normalizedPage,
     totalPages: normalizedTotalPages,
     gameIds: visibleGameIds,
+    transitionGameIds: nextDirection === "none" || prefersReducedMotion() ? [] : previous.gameIds,
     slideDirection: nextDirection,
     animationToken: nextDirection === "none" ? previous.animationToken : previous.animationToken + 1,
   });
@@ -2698,6 +2796,8 @@ const syncResponsiveHomeSectionPageSizes = async () => {
         totalPages: getHomeSectionVisibleTotalPages(section.totalGames, nextVisiblePageSize),
         gameIds: visibleGameIds,
         visibleColumnCount: nextVisibleColumnCount,
+        transitionGameIds: [],
+        slideDirection: "none",
       });
     } else {
       await loadHomeSectionPage(sectionKey, {
@@ -2728,6 +2828,7 @@ const syncHomeSections = async () => {
         serverPageGameIdsByPage: {},
         visiblePageSize: getHomeSectionVisiblePageSize(sectionKey),
         visibleColumnCount: getHomeSectionColumnCount(sectionKey),
+        transitionGameIds: [],
         slideDirection: "none",
       });
       await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
@@ -2748,6 +2849,7 @@ const syncHomeSections = async () => {
       serverPageGameIdsByPage: {},
       visiblePageSize: HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
       visibleColumnCount: 1,
+      transitionGameIds: [],
       slideDirection: "none",
     });
   });

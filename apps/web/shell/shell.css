@@ -706,8 +706,19 @@ button.button-release-bounce,
   overflow: clip;
 }
 
+.home-games-carousel-viewport {
+  position: relative;
+  overflow: clip;
+}
+
 .home-games-carousel-track {
   will-change: transform, opacity;
+}
+
+.home-games-carousel-track-exit {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 .home-games-empty {

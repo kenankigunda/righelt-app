@@ -95,6 +95,7 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /serverPageGameIdsByPage:\s*\{\},/);
   assert.match(source, /visiblePageSize:\s*HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,/);
   assert.match(source, /visibleColumnCount:\s*1,/);
+  assert.match(source, /transitionGameIds:\s*\[\],/);
   assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \(route\?\.debug \? \["my", "other", "smoke"\] : \["my", "other"\]\);/);
   assert.match(source, /const getHomeSectionCardMinWidthPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_MIN_WIDTH_REM;/);
   assert.match(source, /const getHomeSectionCardGapPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_GAP_REM;/);
@@ -117,6 +118,7 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /data-home-section-root="\$\{escapeHtml\(sectionKey\)\}"/);
   assert.match(source, /const renderHomeSectionControls = \(sectionKey, section, \{ placement \} = \{ placement: "header" \}\) =>/);
   assert.match(source, /const renderHomeStartButton = \(\) =>/);
+  assert.match(source, /const renderHomeGameCardList = \(games\) =>/);
   assert.match(source, /data-action="create-game"/);
   assert.match(source, /home-games-section-controls home-games-section-controls-\$\{escapeHtml\(placement\)\}/);
   assert.match(source, /const shouldAlwaysRender = sectionKey === "my";/);
@@ -124,6 +126,9 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /const showHeaderPaging = showPaging && section\.visibleColumnCount > 1;/);
   assert.match(source, /const showFooterPaging = showPaging && section\.visibleColumnCount === 1;/);
   assert.match(source, /const hasHeaderAction = sectionKey === "my";/);
+  assert.match(source, /const showTransition =/);
+  assert.match(source, /section\.slideDirection !== "none"/);
+  assert.match(source, /section\.transitionGameIds\.length > 0/);
   assert.match(source, /data-home-header-has-action="\$\{hasHeaderAction \? "true" : "false"\}"/);
   assert.match(source, /<div class="home-games-section-header-center">/);
   assert.match(source, /<div class="home-games-section-header-actions">/);
@@ -159,6 +164,12 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /visiblePageSize:\s*getHomeSectionVisiblePageSize\(sectionKey\),/);
   assert.match(source, /visibleColumnCount:\s*getHomeSectionColumnCount\(sectionKey\),/);
   assert.match(source, /<div class="home-games-carousel" data-home-carousel="\$\{escapeHtml\(sectionKey\)\}">/);
+  assert.match(source, /data-home-carousel-viewport="\$\{escapeHtml\(sectionKey\)\}"/);
+  assert.match(source, /data-home-carousel-direction="\$\{escapeHtml\(section\.slideDirection\)\}"/);
+  assert.match(source, /home-games-carousel-track home-games-carousel-track-active/);
+  assert.match(source, /data-home-carousel-track-exit="\$\{escapeHtml\(sectionKey\)\}"/);
+  assert.match(source, /transitionGameIds: nextDirection === "none" \|\| prefersReducedMotion\(\) \? \[\] : previous\.gameIds,/);
+  assert.match(source, /transitionGameIds: \[\],\s*slideDirection: "none"/s);
   assert.match(source, /getVisibleHomeSectionKeys\(\)\.map\(\(sectionKey\) => renderHomeGameSection\(sectionKey\)\)\.join\(""\)/);
   assert.match(source, /<section class="panel home-games-section" data-home-section-root="\$\{escapeHtml\(sectionKey\)\}">/);
   assert.match(source, /<h2>\$\{escapeHtml\(section\.title\)\}<\/h2>/);
