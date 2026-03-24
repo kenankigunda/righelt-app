@@ -30,7 +30,7 @@ test("shell header stacks cleanly on narrow screens", () => {
   );
 });
 
-test("shell header separates layout spacing from panel chrome and home start panel stays chromeless", () => {
+test("shell header separates layout spacing from panel chrome", () => {
   assert.doesNotMatch(
     shellStylesSource,
     /^\*\s*\{/m,
@@ -50,10 +50,6 @@ test("shell header separates layout spacing from panel chrome and home start pan
   assert.match(
     shellStylesSource,
     /\.shell-header h1\s*\{[\s\S]*font-size:\s*2rem;/s,
-  );
-  assert.match(
-    shellStylesSource,
-    /\.home-start-panel\s*\{[\s\S]*background:\s*transparent;[\s\S]*border:\s*0;/s,
   );
 });
 
@@ -190,6 +186,10 @@ test("home mini-board cards use uniform grid widths across wrapped rows", () => 
   assert.match(
     shellStylesSource,
     /\.home-games-section-header\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*space-between;[\s\S]*flex-wrap:\s*wrap;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-games-section-header-actions\s*\{[\s\S]*display:\s*inline-flex;[\s\S]*justify-content:\s*flex-end;[\s\S]*flex-wrap:\s*wrap;/s,
   );
   assert.match(
     shellStylesSource,

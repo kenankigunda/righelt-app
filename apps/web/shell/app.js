@@ -1537,12 +1537,17 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
   >&rarr;</button>
 </div>`;
 
+const renderHomeStartButton = () =>
+  `<button class="home-start-button" data-action="create-game" ${busy ? "disabled" : ""}>Start new game</button>`;
+
 const renderHomeGameSection = (sectionKey) => {
   const section = getHomeSection(sectionKey);
   const games = section.gameIds.map((gameId) => transport.getGameViewModel(gameId)).filter(Boolean);
-  if (!Array.isArray(games) || games.length === 0 || section.totalGames === 0) {
+  const shouldAlwaysRender = sectionKey === "my";
+  if (!Array.isArray(games) || (!shouldAlwaysRender && (games.length === 0 || section.totalGames === 0))) {
     return "";
   }
+  const showEmptyState = section.totalGames === 0;
   const showPaging = section.totalPages > 1;
   return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}">
     <div class="home-games-section-header">
@@ -1550,13 +1555,18 @@ const renderHomeGameSection = (sectionKey) => {
         <h2>${escapeHtml(section.title)}</h2>
         <p class="small">${section.totalGames === 1 ? "1 game" : `${section.totalGames} games`}</p>
       </div>
-      ${showPaging ? renderHomeSectionControls(sectionKey, section, { placement: "header" }) : ""}
+      <div class="home-games-section-header-actions">
+        ${showPaging ? renderHomeSectionControls(sectionKey, section, { placement: "header" }) : ""}
+        ${sectionKey === "my" ? renderHomeStartButton() : ""}
+      </div>
     </div>
-    <div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
+    ${showEmptyState
+      ? `<p class="small home-games-empty">No games yet.</p>`
+      : `<div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
       <div class="home-games-carousel-track" data-home-carousel-track="${escapeHtml(sectionKey)}">
         <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
       </div>
-    </div>
+    </div>`}
     ${showPaging ? renderHomeSectionControls(sectionKey, section, { placement: "footer" }) : ""}
   </section>`;
 };
@@ -1581,9 +1591,6 @@ const renderHome = () => {
 
   return `
     <section class="stack">
-      <section class="panel home-start-panel">
-        <button class="home-start-button" data-action="create-game" ${busy ? "disabled" : ""}>Start new game</button>
-      </section>
       ${listHtml}
     </section>
   `;

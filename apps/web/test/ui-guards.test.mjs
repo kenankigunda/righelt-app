@@ -91,9 +91,16 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /data-home-section="\$\{escapeHtml\(sectionKey\)\}"/);
   assert.match(source, /data-home-section-root="\$\{escapeHtml\(sectionKey\)\}"/);
   assert.match(source, /const renderHomeSectionControls = \(sectionKey, section, \{ placement \} = \{ placement: "header" \}\) =>/);
+  assert.match(source, /const renderHomeStartButton = \(\) =>/);
+  assert.match(source, /data-action="create-game"/);
   assert.match(source, /home-games-section-controls home-games-section-controls-\$\{escapeHtml\(placement\)\}/);
+  assert.match(source, /const shouldAlwaysRender = sectionKey === "my";/);
+  assert.match(source, /const showEmptyState = section\.totalGames === 0;/);
+  assert.match(source, /<div class="home-games-section-header-actions">/);
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\)/);
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "footer" \}\)/);
+  assert.match(source, /sectionKey === "my" \? renderHomeStartButton\(\) : ""/);
+  assert.match(source, /<p class="small home-games-empty">No games yet\.<\/p>/);
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
   assert.match(source, /if \(getShellLayoutMode\(\) !== "narrow" \|\| !\(appEl instanceof HTMLElement\)\) \{\s*return;\s*\}/s);
   assert.match(source, /sectionEl\.scrollIntoView\(\{\s*behavior: "smooth",\s*block: "start",\s*\}\);/s);
@@ -102,6 +109,7 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /<section class="panel home-games-section" data-home-section-root="\$\{escapeHtml\(sectionKey\)\}">/);
   assert.match(source, /<h2>\$\{escapeHtml\(section\.title\)\}<\/h2>/);
   assert.match(source, /<div class="mini-board-card-list" data-game-count="\$\{games\.length\}">/);
+  assert.doesNotMatch(source, /class="panel home-start-panel"/);
   assert.doesNotMatch(source, /<h2>Active Games<\/h2>/);
   assert.doesNotMatch(source, /<h2>Preview Board/);
 });
