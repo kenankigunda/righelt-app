@@ -226,6 +226,46 @@ test("buildScenarioFromGame rejects non-UUID scenario ids", async () => {
   });
 });
 
+test("buildScenarioFromGame excludes undone moves from exported scenario payload", async () => {
+  await withMockedHash(async () => {
+    const scenario = await buildScenarioFromGame(
+      {
+        moves: [
+          {
+            index: 0,
+            turnIndex: 0,
+            turnMoveIndex: 0,
+            actorSide: "P1",
+            notation: "M1",
+            action: { type: "move", actorId: "U0", from: { row: 1, col: 1 }, to: { row: 1, col: 2 } },
+            selectionSnapshot: { boardSize: 10, sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+            snapshot: { boardSize: 10, sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+          },
+          {
+            index: 1,
+            turnIndex: 0,
+            turnMoveIndex: 1,
+            actorSide: "P1",
+            notation: "M2",
+            undone: true,
+            action: { type: "move", actorId: "U1", from: { row: 2, col: 2 }, to: { row: 2, col: 3 } },
+            selectionSnapshot: { boardSize: 10, sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+            snapshot: { boardSize: 10, sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+          },
+        ],
+        board: { state: { boardSize: 10, sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } } },
+      },
+      {
+        scenarioId: SCENARIO_UUIDS.exportUsesCanonicalTurn,
+        title: "Filter undone",
+      },
+    );
+
+    assert.equal(scenario.moves.length, 1);
+    assert.equal(scenario.moves[0].notation, "M1");
+  });
+});
+
 test("buildHistoryBranchSeedFromGame builds replayable history up to the selected move and preserves next-action selection", () => {
   const seed = buildHistoryBranchSeedFromGame(
     {
@@ -374,4 +414,47 @@ test("buildHistoryBranchSeedFromGame uses canonical initial state when branching
   assert.equal(seed.scenario.moves.length, 0);
   assert.deepEqual(seed.scenario.initialState, seed.scenario.resultingState);
   assert.equal(seed.scenario.initialState.turnIndex, 0);
+});
+
+test("buildHistoryBranchSeedFromGame excludes undone moves before selected move", () => {
+  const seed = buildHistoryBranchSeedFromGame(
+    {
+      id: "game-branch-3",
+      myRole: "Player 1",
+      myRoles: ["Player 1"],
+      moves: [
+        {
+          index: 0,
+          displayMoveNumber: 1,
+          turnIndex: 0,
+          turnMoveIndex: 0,
+          actorSide: "P1",
+          notation: "M1",
+          action: { type: "move", actorId: "U1", from: { row: 1, col: 1 }, to: { row: 1, col: 2 } },
+          selectionSnapshot: { boardSize: 10, sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+          snapshot: { boardSize: 10, sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+        },
+        {
+          index: 1,
+          displayMoveNumber: 2,
+          turnIndex: 0,
+          turnMoveIndex: 1,
+          actorSide: "P1",
+          notation: "M2",
+          undone: true,
+          action: { type: "move", actorId: "U2", from: { row: 2, col: 2 }, to: { row: 2, col: 3 } },
+          selectionSnapshot: { boardSize: 10, sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+          snapshot: { boardSize: 10, sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+        },
+      ],
+      board: {
+        state: { boardSize: 10, sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+      },
+    },
+    1,
+  );
+
+  assert.equal(seed.scenario.moves.length, 1);
+  assert.equal(seed.scenario.moves[0].notation, "M1");
+  assert.match(seed.title, /move 2/);
 });

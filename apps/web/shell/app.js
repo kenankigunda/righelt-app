@@ -103,6 +103,8 @@ let saveScenarioDraftTitle = "";
 let saveScenarioDraftDescription = "";
 const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
+const ignoredRevertRequests = new Set();
+const expandedUndoneGroups = new Set();
 let lastRenderedMarkup = "";
 let lastRenderedMainMarkup = "";
 let lastRenderedFlyoutMarkup = "";
@@ -921,6 +923,7 @@ const getCurrentViewedGameId = () => {
 };
 
 const getApprovalRequestKey = (gameId, requesterId) => `${gameId}:${requesterId}`;
+const getRevertRequestKey = (gameId, requestId) => `${gameId}:${requestId}`;
 
 const getActiveApprovalRequest = (game) => {
   if (!game || !Array.isArray(game.pendingJoinRequests) || !Array.isArray(game.approvableRequesterIds)) {
@@ -933,6 +936,14 @@ const getActiveApprovalRequest = (game) => {
         !ignoredApprovalRequests.has(getApprovalRequestKey(game.id, request.identityId)),
     ) ?? null
   );
+};
+
+const getActiveRevertRequest = (game) => {
+  const request = game?.approvableRevertRequest ?? null;
+  if (!request || !request.requestId) {
+    return null;
+  }
+  return ignoredRevertRequests.has(getRevertRequestKey(game.id, request.requestId)) ? null : request;
 };
 
 const renderTurnHistory = (game) => {
@@ -962,27 +973,34 @@ const renderTurnHistory = (game) => {
           ? game.moves.length - 1
           : null;
 
-  const moveRows = game.turns.flatMap((turn) =>
-    turn.moveIndexes
-      .map((moveIndex) => game.moves[moveIndex])
-      .filter(Boolean)
-      .map((move) => {
-        const isSelected = game.inHistoryMode ? game.historyIndex === move.index : selectedMoveIndex === move.index;
-        const selectedClass = isSelected ? (game.inHistoryMode ? " is-selected" : " is-live-selected") : "";
-        const branchButton = game.inHistoryMode && game.historyIndex === move.index
-          ? `<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${escapeHtml(
-              String(move.index),
-            )}" ${busy ? "disabled" : ""}>Create new game at this move</button>`
-          : "";
-        return `<li class="history-item ${playerToneClassForSide(move.actorSide || (turn.playerSeat === "Player 1" ? "P1" : "P2"))}${selectedClass}" data-action="jump-history" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">
+  const moveRowsChronological = (Array.isArray(game.moves) ? game.moves : []).map((move) => {
+    const isSelected = game.inHistoryMode ? game.historyIndex === move.index : selectedMoveIndex === move.index;
+    const selectedClass = isSelected ? (game.inHistoryMode ? " is-selected" : " is-live-selected") : "";
+    const undoneClass = move.undone === true ? " is-undone" : "";
+    const branchButton = game.inHistoryMode && game.historyIndex === move.index && move.undone !== true
+      ? `<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${escapeHtml(
+          String(move.index),
+        )}" ${busy ? "disabled" : ""}>Create new game at this move</button>`
+      : "";
+    const revertButton = game.inHistoryMode && game.historyIndex === move.index && move.undone !== true
+      ? `<button class="secondary mini-button history-branch-button" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(
+          move.moveId || "",
+        )}" ${busy ? "disabled" : ""}>Revert game to this move</button>`
+      : "";
+    return {
+      undone: move.undone === true,
+      html: `<li class="history-item ${playerToneClassForSide(move.actorSide || "P1")}${selectedClass}${undoneClass}" data-action="jump-history" data-game-id="${escapeHtml(
+        game.id,
+      )}" data-move-index="${move.index}">
           <span class="history-move-line">Move ${escapeHtml(
-            String(move.index + 1),
+            String(move.displayMoveNumber ?? move.index + 1),
           )}: ${escapeHtml(move.notation)}</span>
           <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
           ${branchButton}
-        </li>`;
-      }),
-  );
+          ${revertButton}
+        </li>`,
+    };
+  });
   const pendingRows = (Array.isArray(game.pendingMoves) ? game.pendingMoves : []).map(
     (move) => `<li class="history-item history-item-pending ${playerToneClassForSide(move.actorSide || (move.turnIndex % 2 === 0 ? "P1" : "P2"))}" aria-disabled="true">
           <span class="history-move-line">Move ${escapeHtml(
@@ -991,7 +1009,35 @@ const renderTurnHistory = (game) => {
           <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
         </li>`,
   );
-  const reverseChronologicalMoveRows = [...moveRows].reverse();
+  const reverseChronologicalMoveRows = [];
+  const reversedChronological = [...moveRowsChronological].reverse();
+  for (let index = 0; index < reversedChronological.length; ) {
+    if (!reversedChronological[index].undone) {
+      reverseChronologicalMoveRows.push(reversedChronological[index].html);
+      index += 1;
+      continue;
+    }
+    let end = index;
+    while (end < reversedChronological.length && reversedChronological[end].undone) {
+      end += 1;
+    }
+    const count = end - index;
+    const groupKey = `${game.id}:${index}:${end}`;
+    const expanded = expandedUndoneGroups.has(groupKey);
+    reverseChronologicalMoveRows.push(
+      `<li class="history-empty-line">
+        <button class="secondary mini-button" data-action="toggle-undone-group" data-group-key="${escapeHtml(groupKey)}" ${
+          busy ? "disabled" : ""
+        }>${expanded ? "Hide" : "Show"} ${count} move${count === 1 ? "" : "s"} undone</button>
+      </li>`,
+    );
+    if (expanded) {
+      for (let undoIndex = index; undoIndex < end; undoIndex += 1) {
+        reverseChronologicalMoveRows.push(reversedChronological[undoIndex].html);
+      }
+    }
+    index = end;
+  }
   const reverseChronologicalPendingRows = [...pendingRows].reverse();
 
   const liveStatusItem =
@@ -1011,8 +1057,14 @@ const renderTurnHistory = (game) => {
         game.id,
       )}" ${busy ? "disabled" : ""}>Return to live view</button></li>`
     : liveStatusItem;
+  const undoLastMoveItem =
+    !game.inHistoryMode && game.canUndoLastMove && game.latestActiveMoveId
+      ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="undo-last-move" data-game-id="${escapeHtml(
+          game.id,
+        )}" data-move-id="${escapeHtml(game.latestActiveMoveId)}" ${busy ? "disabled" : ""}>Undo last move</button></li>`
+      : "";
 
-  return `${emptyTurnItem}${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
+  return `${emptyTurnItem}${undoLastMoveItem}${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
 };
 
 const renderHeader = () => `
@@ -1601,7 +1653,8 @@ const renderParticipantsPanel = (game) => {
 
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
-  const historyMoveNumber = typeof game.historyIndex === "number" ? String(game.historyIndex + 1) : "?";
+  const selectedMove = typeof game.historyIndex === "number" && Array.isArray(game.moves) ? game.moves[game.historyIndex] ?? null : null;
+  const historyMoveNumber = typeof selectedMove?.displayMoveNumber === "number" ? String(selectedMove.displayMoveNumber) : "?";
   const hasHistoryMoves = Array.isArray(game.moves) && game.moves.length > 0;
   const historyBanner = game.inHistoryMode
     ? `<p class="small">Viewing history snapshot for move ${escapeHtml(historyMoveNumber)}.</p>
@@ -1917,7 +1970,7 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
   if (!game) {
     return false;
   }
-  return !getActiveApprovalRequest(game) && doesMountedFlyoutStateMatchRoute();
+  return !getActiveApprovalRequest(game) && !getActiveRevertRequest(game) && doesMountedFlyoutStateMatchRoute();
 };
 
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
@@ -1994,6 +2047,46 @@ const renderApprovalGate = (game, request) => {
   `;
 };
 
+const renderRevertApprovalGate = (game, request) => {
+  const background = renderGameContent(game.id);
+  const move = Array.isArray(game.moves) ? game.moves.find((entry) => entry.moveId === request.targetMoveId) : null;
+  return `
+    <section class="invite-gate">
+      <section class="panel invite-gate-modal">
+        <p class="small invite-gate-kicker">Approval required</p>
+        <h2>Respond to move revert request</h2>
+        <p><span class="mono">${escapeHtml(request.requesterIdentityId)}</span> wants to revert this game to Move ${escapeHtml(
+          String(move?.displayMoveNumber ?? "?"),
+        )}: ${escapeHtml(move?.notation ?? "Unknown move")}.</p>
+        <div class="invite-choice-list">
+          <div class="invite-choice-row">
+            <button
+              data-action="accept-revert-request"
+              data-game-id="${escapeHtml(game.id)}"
+              data-request-id="${escapeHtml(request.requestId)}"
+              ${busy ? "disabled" : ""}
+            >Accept</button>
+            <span class="small invite-choice-note">Approve and mark selected/future moves undone.</span>
+          </div>
+          <div class="invite-choice-row">
+            <button
+              class="secondary"
+              data-action="ignore-revert-request"
+              data-game-id="${escapeHtml(game.id)}"
+              data-request-id="${escapeHtml(request.requestId)}"
+              ${busy ? "disabled" : ""}
+            >Ignore</button>
+            <span class="small invite-choice-note">Dismiss this prompt for now.</span>
+          </div>
+        </div>
+      </section>
+      <div class="invite-gate-content" aria-hidden="true">
+        ${background}
+      </div>
+    </section>
+  `;
+};
+
 const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   if (!routeHydrated) {
     return renderGameContent(gameId, inviteFromRole, inviteToken);
@@ -2005,6 +2098,10 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   const approvalRequest = getActiveApprovalRequest(game);
   if (approvalRequest) {
     return renderApprovalGate(game, approvalRequest);
+  }
+  const revertRequest = getActiveRevertRequest(game);
+  if (revertRequest) {
+    return renderRevertApprovalGate(game, revertRequest);
   }
   if (currentRoute.name === "game") {
     return renderGameShellFrame(game);
@@ -2926,6 +3023,37 @@ appEl.addEventListener("click", async (event) => {
       return;
     }
 
+    if (action === "accept-revert-request") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      const requestId = actionEl.getAttribute("data-request-id");
+      if (!gameId || !requestId) return;
+      ignoredRevertRequests.delete(getRevertRequestKey(gameId, requestId));
+      await transport.approveRevertRequest({ gameId, requestId });
+      await syncRouteDataAndLiveChannels();
+      return;
+    }
+
+    if (action === "ignore-revert-request") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      const requestId = actionEl.getAttribute("data-request-id");
+      if (!gameId || !requestId) return;
+      ignoredRevertRequests.add(getRevertRequestKey(gameId, requestId));
+      render();
+      return;
+    }
+
+    if (action === "toggle-undone-group") {
+      const groupKey = actionEl.getAttribute("data-group-key");
+      if (!groupKey) return;
+      if (expandedUndoneGroups.has(groupKey)) {
+        expandedUndoneGroups.delete(groupKey);
+      } else {
+        expandedUndoneGroups.add(groupKey);
+      }
+      render({ animatePanels: false, includeBoard: false });
+      return;
+    }
+
     if (action === "copy-invite") {
       const link = actionEl.getAttribute("data-link") || "";
       let copied = false;
@@ -2986,6 +3114,17 @@ appEl.addEventListener("click", async (event) => {
       });
       window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
       render({ animatePanels: false, includeBoard: false });
+      return;
+    }
+
+    if (action === "revert-to-move" || action === "undo-last-move") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      const moveId = actionEl.getAttribute("data-move-id");
+      if (!gameId || !moveId) {
+        return;
+      }
+      await transport.requestRevertToMove({ gameId, targetMoveId: moveId });
+      await syncRouteDataAndLiveChannels();
       return;
     }
 

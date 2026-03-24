@@ -332,6 +332,15 @@ button.button-release-bounce,
   transform: translateY(0);
 }
 
+.history-item.is-undone .history-move-line {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+
+.history-item.is-undone .history-move-at {
+  opacity: 0.45;
+}
+
 .history-item.history-item-waiting {
   cursor: default;
   pointer-events: none;

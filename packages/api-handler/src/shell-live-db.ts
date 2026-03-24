@@ -385,6 +385,10 @@ const normalizePersistedGame = (
     player2: normalizeParticipant(parsed.player2, "player2", mismatches),
     viewers: normalizeViewerList(parsed.viewers, mismatches),
     pendingJoinRequests: normalizeJoinRequests(parsed.pendingJoinRequests, mismatches),
+    pendingRevertRequest:
+      parsed.pendingRevertRequest && typeof parsed.pendingRevertRequest === "object"
+        ? (parsed.pendingRevertRequest as LiveGame["pendingRevertRequest"])
+        : null,
     turns,
     moves,
     historyIndexByIdentity: normalizeHistoryIndexByIdentity(parsed.historyIndexByIdentity, mismatches),

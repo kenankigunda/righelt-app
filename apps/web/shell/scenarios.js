@@ -164,7 +164,7 @@ export const buildScenarioFromGame = async (
     throw new Error("Scenario IDs must be UUID v4 values.");
   }
   const safeMoveLimit = Number.isFinite(moveLimit) ? Math.max(0, Math.min(moveLimit, game.moves.length)) : game.moves.length;
-  const selectedMoves = game.moves.slice(0, safeMoveLimit);
+  const selectedMoves = game.moves.slice(0, safeMoveLimit).filter((move) => move?.undone !== true);
   const resolvedResultingState =
     resultingStateOverride ?? game.board?.state ?? game.currentSnapshot ?? selectedMoves[selectedMoves.length - 1]?.snapshot ?? null;
   const initialState = structuredClone(selectedMoves[0]?.selectionSnapshot ?? resolvedResultingState);
@@ -197,18 +197,18 @@ export const buildHistoryBranchSeedFromGame = (game, moveIndex) => {
   if (!move?.selectionSnapshot || !move?.action) {
     throw new Error("invalid_history_branch_move");
   }
-  const selectedMoves = game.moves.slice(0, moveIndex);
+  const selectedMoves = game.moves.slice(0, moveIndex).filter((selectedMove) => selectedMove?.undone !== true);
   const initialState = structuredClone(selectedMoves[0]?.selectionSnapshot ?? game.moves?.[0]?.selectionSnapshot ?? game.board?.state ?? game.currentSnapshot);
   const resultingState = structuredClone(move.selectionSnapshot);
   const sourceLabel = String(game?.id || "").startsWith("game-") ? String(game.id).slice(0, 11) : String(game?.id || "game");
   const scenarioId = createUuidV4();
   return {
-    title: `Branch from ${sourceLabel} move ${move.index + 1}`,
+    title: `Branch from ${sourceLabel} move ${move.displayMoveNumber ?? move.index + 1}`,
     scenario: normalizeScenario({
       formatVersion: 2,
       id: scenarioId,
-      title: `Branch from ${sourceLabel} move ${move.index + 1}`,
-      description: `Replay through move ${move.index} and open before move ${move.index + 1}.`,
+      title: `Branch from ${sourceLabel} move ${move.displayMoveNumber ?? move.index + 1}`,
+      description: `Replay through move ${move.displayMoveNumber ?? move.index} and open before move ${move.displayMoveNumber ?? move.index + 1}.`,
       incorrect: false,
       initialState,
       moves: selectedMoves.map((selectedMove) => ({

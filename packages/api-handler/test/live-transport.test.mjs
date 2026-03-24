@@ -1100,6 +1100,100 @@ test("live transport: apply and end-turn idempotency are scoped by command kind"
   // same player's turn, so the response would be not_your_turn rather than duplicate.
 });
 
+test("live transport: revert request requires approval and marks moves undone on approval", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await create.json();
+  const gameId = createdBody.game.id;
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", {
+      identityId: "id-player2",
+      mode: "player",
+      inviteFromRole: "Player 1",
+    }),
+    env,
+  );
+
+  const firstMove = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
+    env,
+  );
+  const firstMoveBody = await firstMove.json();
+  const targetMoveId = firstMoveBody.game.moves[0].moveId;
+
+  await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
+  await handleApiRequest(req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: "id-owner" }), env);
+  await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-player2" }), env);
+
+  const requestRevert = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/revert-request`, "POST", { identityId: "id-owner", targetMoveId }),
+    env,
+  );
+  const requestBody = await requestRevert.json();
+  assert.equal(requestRevert.status, 200);
+  assert.equal(requestBody.pendingApproval, true);
+  assert.equal(requestBody.game.pendingRevertRequest?.targetMoveId, targetMoveId);
+  assert.equal(typeof requestBody.game.pendingRevertRequest?.requestId, "string");
+
+  const unauthorizedApprove = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/revert-approve`, "POST", {
+      identityId: "id-owner",
+      requestId: requestBody.game.pendingRevertRequest.requestId,
+    }),
+    env,
+  );
+  assert.equal(unauthorizedApprove.status, 403);
+
+  const approve = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/revert-approve`, "POST", {
+      identityId: "id-player2",
+      requestId: requestBody.game.pendingRevertRequest.requestId,
+    }),
+    env,
+  );
+  const approveBody = await approve.json();
+  assert.equal(approve.status, 200);
+  assert.equal(approveBody.game.pendingRevertRequest, null);
+  assert.equal(approveBody.game.moves.filter((move) => move.undone === true).length >= 1, true);
+  assert.equal(approveBody.game.moves.find((move) => move.moveId === targetMoveId)?.undone, true);
+
+  const postRevertMove = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
+    env,
+  );
+  const postRevertBody = await postRevertMove.json();
+  const displayNumbers = postRevertBody.game.moves.map((move) => move.displayMoveNumber);
+  const oneCount = displayNumbers.filter((value) => value === 1).length;
+  assert.equal(oneCount >= 2, true);
+});
+
+test("live transport: dual-seat identity auto-approves revert requests", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+
+  await handleApiRequest(req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-owner" }), env);
+  const moved = await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
+  const movedBody = await moved.json();
+  const targetMoveId = movedBody.game.moves[0].moveId;
+
+  const requestRevert = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/revert-request`, "POST", { identityId: "id-owner", targetMoveId }),
+    env,
+  );
+  const requestBody = await requestRevert.json();
+  assert.equal(requestRevert.status, 200);
+  assert.equal(requestBody.autoApproved, true);
+  assert.equal(requestBody.pendingApproval, undefined);
+  assert.equal(requestBody.game.pendingRevertRequest, null);
+  assert.equal(requestBody.game.moves[0].undone, true);
+});
+
 test("live transport: player invite token enables immediate player join without guessable game role query", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),

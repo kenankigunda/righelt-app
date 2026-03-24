@@ -14,6 +14,7 @@ import {
   applyScenarioToGame,
   applyServerAction,
   applyServerMove,
+  applyRevertToMove,
   asAction,
   asGameState,
   asIdentity,
@@ -36,6 +37,7 @@ import {
   reconcileGameToScenarioResultingState,
   getSeatIdentity,
   getSeatForSide,
+  nextMoveId,
   getSideToMoveSeat,
   now,
   promoteIdentityToSeat,
@@ -346,6 +348,84 @@ export class GameRoomDO {
         requesterIdentityId,
         accepted: true,
         seat: requestItem.requestedSeat,
+        game,
+      });
+      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+    }
+
+    if (request.method === "POST" && path === "/revert-request") {
+      const targetMoveId = asIdentity(body.targetMoveId);
+      if (!targetMoveId) {
+        return json({ ok: false, error: "invalid_target_move" }, 400);
+      }
+      const role = findRoleForIdentity(game, identityId);
+      if (role !== "Player 1" && role !== "Player 2") {
+        return json({ ok: false, error: "role_not_allowed" }, 403);
+      }
+      const targetMove = game.moves.find((move) => move.moveId === targetMoveId);
+      if (!targetMove) {
+        return json({ ok: false, error: "move_not_found" }, 404);
+      }
+      if (targetMove.undone === true) {
+        return json({ ok: false, error: "move_already_undone" }, 409);
+      }
+      const requesterSeat = role;
+      const approverIdentityId = getApproverIdentityForSeat(game, requesterSeat);
+      const autoApprove = !approverIdentityId || approverIdentityId === identityId;
+      if (autoApprove) {
+        const reverted = applyRevertToMove(game, targetMoveId, identityId);
+        if (!reverted.ok) {
+          return json({ ok: false, error: reverted.error }, 409);
+        }
+        await this.commit({
+          type: "event_appended",
+          reason: "moves_reverted",
+          game,
+        });
+        return json({ ok: true, autoApproved: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+      }
+      game.pendingRevertRequest = {
+        requestId: nextMoveId(),
+        requesterIdentityId: identityId,
+        targetMoveId,
+        targetMoveIndex: targetMove.index,
+        requestedAt: now(),
+        status: "pending",
+      };
+      game.updatedAt = now();
+      addNotification(game, "Move revert request pending approval");
+      await this.commit({
+        type: "event_appended",
+        reason: "revert_requested",
+        game,
+      });
+      return json({ ok: true, pendingApproval: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+    }
+
+    if (request.method === "POST" && path === "/revert-approve") {
+      const requestId = asIdentity(body.requestId);
+      if (!requestId) {
+        return json({ ok: false, error: "invalid_request_id" }, 400);
+      }
+      const pendingRevertRequest = game.pendingRevertRequest;
+      if (!pendingRevertRequest || pendingRevertRequest.requestId !== requestId || pendingRevertRequest.status !== "pending") {
+        return json({ ok: false, error: "request_not_found" }, 404);
+      }
+      const requesterRole = findRoleForIdentity(game, pendingRevertRequest.requesterIdentityId);
+      if (requesterRole !== "Player 1" && requesterRole !== "Player 2") {
+        return json({ ok: false, error: "requester_not_player" }, 409);
+      }
+      const approverIdentityId = getApproverIdentityForSeat(game, requesterRole);
+      if (approverIdentityId && approverIdentityId !== identityId) {
+        return json({ ok: false, error: "approval_not_allowed" }, 403);
+      }
+      const reverted = applyRevertToMove(game, pendingRevertRequest.targetMoveId, pendingRevertRequest.requesterIdentityId);
+      if (!reverted.ok) {
+        return json({ ok: false, error: reverted.error }, 409);
+      }
+      await this.commit({
+        type: "event_appended",
+        reason: "moves_reverted",
         game,
       });
       return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });

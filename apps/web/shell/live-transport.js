@@ -922,6 +922,28 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return getGameViewModel(gameId);
   };
 
+  const requestRevertToMove = async ({ gameId, targetMoveId }) => {
+    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/revert-request`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId, targetMoveId }),
+    });
+    const body = await mustOk(response);
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+    return getGameViewModel(gameId);
+  };
+
+  const approveRevertRequest = async ({ gameId, requestId }) => {
+    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/revert-approve`), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId, requestId }),
+    });
+    const body = await mustOk(response);
+    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+    return getGameViewModel(gameId);
+  };
+
   const setParticipantConnected = async ({ gameId, role, connected }) => {
     void gameId;
     void role;
@@ -983,6 +1005,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     endTurn,
     selectHistoryMove,
     returnToLive,
+    requestRevertToMove,
+    approveRevertRequest,
     setParticipantConnected,
     applyLiveGameUpdate,
     getLastEventSeq,

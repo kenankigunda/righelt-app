@@ -487,7 +487,21 @@ export const handleLiveGameRequest = async (
 
     if (
       route.length === 3 &&
-      ["approve", "moves", "apply", "end-turn", "history", "live", "play-as-both", "go-online", "presence"].includes(route[2])
+      [
+        "approve",
+        "moves",
+        "apply",
+        "end-turn",
+        "history",
+        "live",
+        "play-as-both",
+        "go-online",
+        "presence",
+        "revert-request",
+        "revert-approve",
+        "revert-reject",
+        "revert-rescind",
+      ].includes(route[2])
     ) {
       if (!hasGameRoomsBinding(env)) {
         return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
