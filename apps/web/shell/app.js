@@ -1550,14 +1550,14 @@ const renderHomeGameSection = (sectionKey) => {
   const showEmptyState = section.totalGames === 0;
   const showPaging = section.totalPages > 1;
   return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}">
-    <div class="home-games-section-header">
+      <div class="home-games-section-header">
       <div class="home-games-section-heading">
         <h2>${escapeHtml(section.title)}</h2>
         <p class="small">${section.totalGames === 1 ? "1 game" : `${section.totalGames} games`}</p>
       </div>
       <div class="home-games-section-header-actions">
-        ${showPaging ? renderHomeSectionControls(sectionKey, section, { placement: "header" }) : ""}
         ${sectionKey === "my" ? renderHomeStartButton() : ""}
+        ${showPaging ? renderHomeSectionControls(sectionKey, section, { placement: "header" }) : ""}
       </div>
     </div>
     ${showEmptyState

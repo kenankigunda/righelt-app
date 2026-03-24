@@ -97,6 +97,10 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /const shouldAlwaysRender = sectionKey === "my";/);
   assert.match(source, /const showEmptyState = section\.totalGames === 0;/);
   assert.match(source, /<div class="home-games-section-header-actions">/);
+  assert.match(
+    source,
+    /<div class="home-games-section-header-actions">\s*\$\{sectionKey === "my" \? renderHomeStartButton\(\) : ""\}\s*\$\{showPaging \? renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\) : ""\}/s,
+  );
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\)/);
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "footer" \}\)/);
   assert.match(source, /sectionKey === "my" \? renderHomeStartButton\(\) : ""/);
