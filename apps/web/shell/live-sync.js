@@ -1,18 +1,33 @@
-import { buildLocalApiWsHost, isLocalDevHost } from "../local-dev-ports.js";
+import { buildLocalApiOrigin, buildLocalApiWsHost, isLocalDevHost } from "../local-dev-ports.js";
 
 const WS_RECONNECT_BASE_MS = 1_000;
 const WS_RECONNECT_MAX_MS = 30_000;
 const HEARTBEAT_MS = 45_000;
 const VISIBILITY_SUSPEND_GRACE_MS = 5_000;
 
-const createWsUrl = ({ identityId, gameId, lastEventSeq }) => {
+const createSessionId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `session-${Math.random().toString(16).slice(2)}-${Date.now()}`;
+};
+
+const createWsUrl = ({ identityId, gameId, sessionId, lastEventSeq }) => {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
   const params = new URLSearchParams({
     identityId,
+    sessionId,
     lastEventSeq: String(lastEventSeq ?? 0),
   });
   const host = isLocalDevHost(window.location.hostname) ? buildLocalApiWsHost(window.location.port) : window.location.host;
   return `${protocol}://${host}/api/shell/games/${encodeURIComponent(gameId)}/ws?${params.toString()}`;
+};
+
+const createPresenceUrl = (gameId) => {
+  const origin = isLocalDevHost(window.location.hostname)
+    ? buildLocalApiOrigin(window.location.port)
+    : window.location.origin ?? `${window.location.protocol}//${window.location.host}`;
+  return `${origin}/api/shell/games/${encodeURIComponent(gameId)}/presence`;
 };
 
 export const createLiveSyncClient = ({
@@ -32,6 +47,7 @@ export const createLiveSyncClient = ({
   const heartbeatTimers = new Map();
   const reconnectAttemptsByGameId = new Map();
   const lastEventSeqByGameId = new Map();
+  const sessionIdByGameId = new Map();
   const desiredGameIds = new Set();
   const closeReasonBySocket = new Map();
   let visibilitySuspendTimer = null;
@@ -50,7 +66,9 @@ export const createLiveSyncClient = ({
   const isDocumentHidden = () =>
     typeof document !== "undefined" && (document.hidden === true || document.visibilityState === "hidden");
 
-  const shouldKeepConnectionsActive = () => !isDocumentHidden();
+  const isOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
+
+  const shouldKeepConnectionsActive = () => !isDocumentHidden() && isOnline();
 
   const clearReconnect = (gameId) => {
     const timer = reconnectTimers.get(gameId) ?? null;
@@ -68,6 +86,51 @@ export const createLiveSyncClient = ({
     }
   };
 
+  const sendPresenceHint = (gameId, type, { preferBeacon = false } = {}) => {
+    if (!gameId) {
+      return;
+    }
+    const lastEventSeq = lastEventSeqByGameId.get(gameId) ?? 0;
+    const payload = JSON.stringify({
+      identityId,
+      sessionId: sessionIdByGameId.get(gameId) ?? "",
+      status: type,
+      lastEventSeq,
+    });
+    const socket = sockets.get(gameId) ?? null;
+    if (socket && socket.readyState === 1) {
+      try {
+        socket.send(JSON.stringify({ type, identityId, sessionId: sessionIdByGameId.get(gameId) ?? "", lastEventSeq }));
+        recordMetric("presence_signal_sent", { gameId, signal: type, transport: "websocket" });
+      } catch {
+        // ignore
+      }
+    }
+    if (!preferBeacon && socket?.readyState === 1) {
+      return;
+    }
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+        const sent = navigator.sendBeacon(createPresenceUrl(gameId), new Blob([payload], { type: "application/json" }));
+        recordMetric("presence_signal_sent", { gameId, signal: type, transport: sent ? "beacon" : "beacon_failed" });
+        if (sent) {
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    if (typeof fetch === "function") {
+      void fetch(createPresenceUrl(gameId), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {});
+      recordMetric("presence_signal_sent", { gameId, signal: type, transport: "fetch_keepalive" });
+    }
+  };
+
   const cleanupSocket = (gameId, { closeReason = "intentional_disconnect", emitDisconnected = false } = {}) => {
     clearHeartbeat(gameId);
     const socket = sockets.get(gameId) ?? null;
@@ -76,6 +139,13 @@ export const createLiveSyncClient = ({
         onStatus({ state: "disconnected", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
       }
       return;
+    }
+    if (closeReason.startsWith("intentional_suspend:")) {
+      sendPresenceHint(gameId, "inactive");
+    } else if (closeReason === "intentional_disconnect") {
+      sendPresenceHint(gameId, "disconnecting");
+    } else if (closeReason === "network_offline" || closeReason === "pagehide") {
+      sendPresenceHint(gameId, "disconnecting", { preferBeacon: true });
     }
     sockets.delete(gameId);
     closeReasonBySocket.set(socket, closeReason);
@@ -91,7 +161,7 @@ export const createLiveSyncClient = ({
 
   const sendHeartbeat = (gameId) => {
     const socket = sockets.get(gameId) ?? null;
-    if (!socket || socket.readyState !== 1) {
+    if (!socket || socket.readyState !== 1 || !shouldKeepConnectionsActive()) {
       return;
     }
     const lastEventSeq = lastEventSeqByGameId.get(gameId) ?? 0;
@@ -100,6 +170,7 @@ export const createLiveSyncClient = ({
         JSON.stringify({
           type: "heartbeat",
           identityId,
+          sessionId: sessionIdByGameId.get(gameId) ?? "",
           lastEventSeq,
         }),
       );
@@ -148,6 +219,16 @@ export const createLiveSyncClient = ({
         suspendConnections("hidden_tab");
       }
     }, visibilitySuspendGraceMs);
+  };
+
+  const refreshHeartbeatLoop = (gameId) => {
+    clearHeartbeat(gameId);
+    const socket = sockets.get(gameId) ?? null;
+    if (!socket || socket.readyState !== 1 || !shouldKeepConnectionsActive()) {
+      return;
+    }
+    sendHeartbeat(gameId);
+    heartbeatTimers.set(gameId, setInterval(() => sendHeartbeat(gameId), heartbeatMs));
   };
 
   const scheduleReconnect = (gameId) => {
@@ -200,18 +281,19 @@ export const createLiveSyncClient = ({
     clearReconnect(gameId);
     const reconnectAttempts = reconnectAttemptsByGameId.get(gameId) ?? 0;
     const lastEventSeq = Math.max(lastEventSeqByGameId.get(gameId) ?? 0, Number(getLastEventSeq(gameId) || 0));
+    const sessionId = createSessionId();
+    sessionIdByGameId.set(gameId, sessionId);
     lastEventSeqByGameId.set(gameId, lastEventSeq);
     onStatus({ state: "connecting", gameId, reconnectAttempts });
 
-    const ws = new WebSocket(createWsUrl({ identityId, gameId, lastEventSeq }));
+    const ws = new WebSocket(createWsUrl({ identityId, gameId, sessionId, lastEventSeq }));
     sockets.set(gameId, ws);
     recordMetric("socket_opened", { gameId, reconnectAttempts });
 
     ws.addEventListener("open", () => {
       reconnectAttemptsByGameId.set(gameId, 0);
       onStatus({ state: "connected", gameId, reconnectAttempts: 0 });
-      sendHeartbeat(gameId);
-      heartbeatTimers.set(gameId, setInterval(() => sendHeartbeat(gameId), heartbeatMs));
+      refreshHeartbeatLoop(gameId);
     });
 
     ws.addEventListener("message", (event) => {
@@ -220,9 +302,6 @@ export const createLiveSyncClient = ({
         if (typeof payload?.eventSeq === "number") {
           const nextLastEventSeq = Math.max(lastEventSeqByGameId.get(gameId) ?? 0, payload.eventSeq);
           lastEventSeqByGameId.set(gameId, nextLastEventSeq);
-          if (ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: "ack", lastEventSeq: nextLastEventSeq }));
-          }
         }
         onEvent(payload, { gameId });
       } catch {
@@ -249,6 +328,11 @@ export const createLiveSyncClient = ({
         return;
       }
       if (closeReason === "intentional_disconnect") {
+        onStatus({ state: "disconnected", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
+        recordMetric("socket_closed_by_client", { gameId, reason: closeReason });
+        return;
+      }
+      if (closeReason === "pagehide") {
         onStatus({ state: "disconnected", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
         recordMetric("socket_closed_by_client", { gameId, reason: closeReason });
         return;
@@ -288,7 +372,37 @@ export const createLiveSyncClient = ({
         return;
       }
       clearVisibilitySuspend();
+      for (const gameId of sockets.keys()) {
+        refreshHeartbeatLoop(gameId);
+      }
       resumeDesiredConnections();
+    });
+  }
+
+  if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+    window.addEventListener("online", () => {
+      for (const gameId of sockets.keys()) {
+        refreshHeartbeatLoop(gameId);
+      }
+      resumeDesiredConnections();
+    });
+
+    window.addEventListener("offline", () => {
+      for (const gameId of [...sockets.keys()]) {
+        cleanupSocket(gameId, { closeReason: "network_offline" });
+      }
+    });
+
+    window.addEventListener("pagehide", () => {
+      for (const gameId of [...sockets.keys()]) {
+        cleanupSocket(gameId, { closeReason: "pagehide" });
+      }
+    });
+
+    window.addEventListener("beforeunload", () => {
+      for (const gameId of [...sockets.keys()]) {
+        sendPresenceHint(gameId, "disconnecting", { preferBeacon: true });
+      }
     });
   }
 

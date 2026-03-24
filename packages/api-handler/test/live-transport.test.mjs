@@ -946,7 +946,7 @@ test("live transport: join approval flow and presence/history/move transitions",
     }),
     env,
   );
-  assert.equal(presence.status, 404);
+  assert.equal(presence.status, 400);
 
   await handleApiRequest(
     req(`/api/shell/games/${gameId}/join`, "POST", {
@@ -964,7 +964,7 @@ test("live transport: join approval flow and presence/history/move transitions",
     }),
     env,
   );
-  assert.equal(viewerPresence.status, 404);
+  assert.equal(viewerPresence.status, 400);
 });
 
 test("live transport: apply and end-turn echo clientCommandId and persist it on appended events", async () => {

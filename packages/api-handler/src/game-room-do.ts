@@ -49,7 +49,6 @@ import { loadEventsAfter, loadGameProjection, persistGameState, type LiveGameEnv
 import type { CommandMetadata } from "./shell-command-metadata";
 
 const HEARTBEAT_TIMEOUT_MS = 95_000;
-const HEARTBEAT_SWEEP_MS = 15_000;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -62,18 +61,49 @@ const json = (body: unknown, status = 200) =>
 
 type DurableObjectStateLike = {
   blockConcurrencyWhile?: <T>(callback: () => Promise<T>) => Promise<T>;
+  acceptWebSocket?: (socket: WebSocket) => void;
+  getWebSockets?: () => WebSocket[];
+  setWebSocketAutoResponse?: (pair: unknown) => void;
+  id?: { toString?: () => string; name?: string };
+  storage?: {
+    setAlarm?: (scheduledTime: number | Date) => Promise<void> | void;
+    deleteAlarm?: () => Promise<void> | void;
+  };
+};
+
+type SessionStatus = "active" | "inactive" | "disconnecting";
+
+type SessionAttachment = {
+  gameId: string;
+  sessionId: string;
+  identityId: string;
+  lastEventSeq: number;
+  lastSeenAt: number;
+  status: SessionStatus;
 };
 
 type SessionRecord = {
   socket: WebSocket;
+  gameId: string;
+  sessionId: string;
   identityId: string;
   lastEventSeq: number;
-  lastHeartbeatAt: number;
+  lastSeenAt: number;
+  status: SessionStatus;
+};
+
+type HibernationWebSocket = WebSocket & {
+  serializeAttachment?: (value: SessionAttachment) => void;
+  deserializeAttachment?: () => unknown;
 };
 
 const parseBody = async (request: Request): Promise<Record<string, unknown>> => {
   try {
-    return (await request.json()) as Record<string, unknown>;
+    const text = await request.text();
+    if (!text) {
+      return {};
+    }
+    return JSON.parse(text) as Record<string, unknown>;
   } catch {
     return {};
   }
@@ -103,11 +133,16 @@ export class GameRoomDO {
   private requestedGameId: string | null = null;
   private eventSeq = 0;
   private readonly sessions = new Map<WebSocket, SessionRecord>();
-  private heartbeatSweepTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(state: DurableObjectStateLike, env: LiveGameEnv) {
     this.state = state;
     this.env = env;
+    this.restoreSessionsFromState();
+    this.configureWebSocketAutoResponse();
+    void this.state.blockConcurrencyWhile?.(async () => {
+      await this.reconcileAllPresenceFromSessions();
+      await this.syncSessionAlarm();
+    });
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -198,6 +233,19 @@ export class GameRoomDO {
       return json({ ok: false, error: "game_not_found" }, 404);
     }
     const game = loaded;
+
+    if (request.method === "POST" && path === "/presence") {
+      const sessionId = asIdentity(body.sessionId);
+      const status = body.status === "inactive" || body.status === "disconnecting" ? body.status : null;
+      if (!sessionId) {
+        return json({ ok: false, error: "invalid_session" }, 400);
+      }
+      if (!status) {
+        return json({ ok: false, error: "invalid_presence_status" }, 400);
+      }
+      await this.applyPresenceSignal(identityId, sessionId, status, typeof body.lastEventSeq === "number" ? body.lastEventSeq : 0);
+      return json({ ok: true, eventSeq: this.eventSeq });
+    }
 
     if (request.method === "POST" && path === "/join") {
       const mode = body.mode === "viewer" ? "viewer" : body.mode === "player" ? "player" : null;
@@ -567,29 +615,41 @@ export class GameRoomDO {
       return new Response("WebSocket upgrade not supported in this runtime", { status: 426 });
     }
     const identityId = asIdentity(url.searchParams.get("identityId"));
+    const sessionId = asIdentity(url.searchParams.get("sessionId"));
     if (!identityId) {
       return new Response("Invalid identity", { status: 400 });
+    }
+    if (!sessionId) {
+      return new Response("Invalid session", { status: 400 });
     }
     const loaded = await this.ensureLoaded();
     if (!loaded) {
       return new Response("Game not found", { status: 404 });
     }
     const game = loaded;
+    this.requestedGameId = game.id;
     const lastEventSeq = Number.parseInt(url.searchParams.get("lastEventSeq") || "0", 10) || 0;
     const socketPair = new wsCtor();
     const client = socketPair[0];
-    const server = socketPair[1];
-    server.accept();
+    const server = socketPair[1] as HibernationWebSocket;
+    if (typeof this.state.acceptWebSocket !== "function") {
+      return new Response("WebSocket hibernation not supported in this runtime", { status: 426 });
+    }
+    this.state.acceptWebSocket(server);
 
     const session: SessionRecord = {
       socket: server,
+      gameId: game.id,
+      sessionId,
       identityId,
       lastEventSeq,
-      lastHeartbeatAt: Date.now(),
+      lastSeenAt: Date.now(),
+      status: "active",
     };
     this.sessions.set(server, session);
-    this.startHeartbeatSweep();
+    this.persistSessionAttachment(server, session);
     await this.setPresenceFromSessions(identityId);
+    await this.syncSessionAlarm();
 
     const replayEvents = lastEventSeq > 0 ? await loadEventsAfter(this.env, game.id, lastEventSeq) : [];
     if (
@@ -611,45 +671,89 @@ export class GameRoomDO {
       this.send(server, eventForSession(syncEvent, identityId));
     }
 
-    server.addEventListener("message", async (event: MessageEvent) => {
-      const text = typeof event.data === "string" ? event.data : "";
-      let payload: ClientSocketMessage | null = null;
-      try {
-        payload = JSON.parse(text) as ClientSocketMessage;
-      } catch {
-        payload = null;
-      }
-      if (!payload) {
-        return;
-      }
-      if (payload.type === "heartbeat") {
-        const current = this.sessions.get(server);
-        if (!current) {
-          return;
-        }
-        current.lastHeartbeatAt = Date.now();
-        current.lastEventSeq = payload.lastEventSeq;
-        await this.setPresenceFromSessions(payload.identityId);
-      }
-      if (payload.type === "ack") {
-        const current = this.sessions.get(server);
-        if (!current) {
-          return;
-        }
-        current.lastEventSeq = payload.lastEventSeq;
-      }
-    });
-
-    server.addEventListener("close", async () => {
-      this.sessions.delete(server);
-      await this.setPresenceFromSessions(identityId);
-      if (this.sessions.size === 0 && this.heartbeatSweepTimer) {
-        clearTimeout(this.heartbeatSweepTimer);
-        this.heartbeatSweepTimer = null;
-      }
-    });
-
     return new Response(null, { status: 101, webSocket: client } as any);
+  }
+
+  async webSocketMessage(socket: WebSocket, message: ArrayBuffer | string) {
+    const text = typeof message === "string" ? message : "";
+    let payload: ClientSocketMessage | null = null;
+    try {
+      payload = JSON.parse(text) as ClientSocketMessage;
+    } catch {
+      payload = null;
+    }
+    if (!payload) {
+      return;
+    }
+    const current = this.sessions.get(socket);
+    if (!current || current.identityId !== payload.identityId || current.sessionId !== payload.sessionId) {
+      return;
+    }
+    current.lastEventSeq = payload.lastEventSeq;
+    current.lastSeenAt = Date.now();
+    if (payload.type === "heartbeat") {
+      current.status = "active";
+    } else {
+      current.status = payload.type;
+    }
+    this.persistSessionAttachment(socket as HibernationWebSocket, current);
+    await this.setPresenceFromSessions(payload.identityId);
+    await this.syncSessionAlarm();
+  }
+
+  async webSocketClose(socket: WebSocket) {
+    const current = this.sessions.get(socket);
+    if (!current) {
+      return;
+    }
+    this.sessions.delete(socket);
+    await this.setPresenceFromSessions(current.identityId);
+    await this.syncSessionAlarm();
+  }
+
+  private async applyPresenceSignal(
+    identityId: string,
+    sessionId: string,
+    status: Exclude<SessionStatus, "active">,
+    lastEventSeq: number,
+  ) {
+    let changed = false;
+    for (const [socket, session] of this.sessions.entries()) {
+      if (session.identityId !== identityId || session.sessionId !== sessionId) {
+        continue;
+      }
+      session.status = status;
+      session.lastEventSeq = lastEventSeq;
+      session.lastSeenAt = Date.now();
+      this.persistSessionAttachment(socket as HibernationWebSocket, session);
+      changed = true;
+    }
+    if (!changed) {
+      return;
+    }
+    await this.setPresenceFromSessions(identityId);
+    await this.syncSessionAlarm();
+  }
+
+  async alarm() {
+    const cutoff = Date.now() - HEARTBEAT_TIMEOUT_MS;
+    const expiredIdentityIds = new Set<string>();
+    for (const [socket, session] of [...this.sessions.entries()]) {
+      if (session.status !== "active" || session.lastSeenAt >= cutoff) {
+        continue;
+      }
+      expiredIdentityIds.add(session.identityId);
+      this.sessions.delete(socket);
+      try {
+        socket.close();
+      } catch {
+        // ignore
+      }
+    }
+    for (const identityId of expiredIdentityIds) {
+      await this.setPresenceFromSessions(identityId);
+    }
+    await this.syncSessionAlarm();
   }
 
   private async ensureLoaded() {
@@ -670,7 +774,7 @@ export class GameRoomDO {
   }
 
   private getLoadedGameId() {
-    return this.game?.id ?? this.requestedGameId;
+    return this.game?.id ?? this.requestedGameId ?? this.state.id?.name ?? null;
   }
 
   async setGameId(gameId: string) {
@@ -687,7 +791,7 @@ export class GameRoomDO {
   private getSessionCount(identityId: string) {
     let count = 0;
     for (const session of this.sessions.values()) {
-      if (session.identityId === identityId) {
+      if (session.identityId === identityId && session.status === "active") {
         count += 1;
       }
     }
@@ -779,40 +883,106 @@ export class GameRoomDO {
     try {
       socket.send(JSON.stringify(payload));
     } catch {
+      const session = this.sessions.get(socket);
       this.sessions.delete(socket);
+      if (session) {
+        void this.setPresenceFromSessions(session.identityId);
+        void this.syncSessionAlarm();
+      }
     }
   }
 
-  private startHeartbeatSweep() {
-    if (this.heartbeatSweepTimer) {
+  private restoreSessionsFromState() {
+    const sockets = this.state.getWebSockets?.() ?? [];
+    for (const socket of sockets) {
+      const session = this.readSessionAttachment(socket as HibernationWebSocket);
+      if (!session) {
+        continue;
+      }
+      this.sessions.set(socket, session);
+      this.requestedGameId ??= session.gameId;
+    }
+  }
+
+  private configureWebSocketAutoResponse() {
+    const pairCtor = (globalThis as any).WebSocketRequestResponsePair;
+    if (!pairCtor || typeof this.state.setWebSocketAutoResponse !== "function") {
       return;
     }
-    const tick = async () => {
-      this.heartbeatSweepTimer = null;
-      const cutoff = Date.now() - HEARTBEAT_TIMEOUT_MS;
-      const expired: string[] = [];
-      for (const [socket, session] of this.sessions.entries()) {
-        if (session.lastHeartbeatAt < cutoff) {
-          expired.push(session.identityId);
-          this.sessions.delete(socket);
-          try {
-            socket.close();
-          } catch {
-            // ignore
-          }
-        }
-      }
-      for (const identityId of new Set(expired)) {
-        await this.setPresenceFromSessions(identityId);
-      }
-      if (this.sessions.size > 0) {
-        this.heartbeatSweepTimer = setTimeout(() => {
-          void tick();
-        }, HEARTBEAT_SWEEP_MS);
-      }
+    try {
+      this.state.setWebSocketAutoResponse(new pairCtor("ping", "pong"));
+    } catch {
+      // ignore runtimes that expose a partial API surface
+    }
+  }
+
+  private readSessionAttachment(socket: HibernationWebSocket): SessionRecord | null {
+    const attachment = socket.deserializeAttachment?.();
+    if (!attachment || typeof attachment !== "object") {
+      return null;
+    }
+    const candidate = attachment as Partial<SessionAttachment>;
+    if (
+      typeof candidate.gameId !== "string" ||
+      typeof candidate.sessionId !== "string" ||
+      typeof candidate.identityId !== "string" ||
+      typeof candidate.lastEventSeq !== "number" ||
+      typeof candidate.lastSeenAt !== "number" ||
+      (candidate.status !== "active" && candidate.status !== "inactive" && candidate.status !== "disconnecting")
+    ) {
+      return null;
+    }
+    return {
+      socket,
+      gameId: candidate.gameId,
+      sessionId: candidate.sessionId,
+      identityId: candidate.identityId,
+      lastEventSeq: candidate.lastEventSeq,
+      lastSeenAt: candidate.lastSeenAt,
+      status: candidate.status,
     };
-    this.heartbeatSweepTimer = setTimeout(() => {
-      void tick();
-    }, HEARTBEAT_SWEEP_MS);
+  }
+
+  private persistSessionAttachment(socket: HibernationWebSocket, session: SessionRecord) {
+    socket.serializeAttachment?.({
+      gameId: session.gameId,
+      sessionId: session.sessionId,
+      identityId: session.identityId,
+      lastEventSeq: session.lastEventSeq,
+      lastSeenAt: session.lastSeenAt,
+      status: session.status,
+    });
+  }
+
+  private async reconcileAllPresenceFromSessions() {
+    const identities = new Set<string>();
+    for (const session of this.sessions.values()) {
+      identities.add(session.identityId);
+    }
+    for (const identityId of identities) {
+      await this.setPresenceFromSessions(identityId);
+    }
+  }
+
+  private async syncSessionAlarm() {
+    const storage = this.state.storage;
+    if (!storage?.setAlarm || !storage.deleteAlarm) {
+      return;
+    }
+    let nextExpiryAt: number | null = null;
+    for (const session of this.sessions.values()) {
+      if (session.status !== "active") {
+        continue;
+      }
+      const candidate = session.lastSeenAt + HEARTBEAT_TIMEOUT_MS;
+      if (nextExpiryAt === null || candidate < nextExpiryAt) {
+        nextExpiryAt = candidate;
+      }
+    }
+    if (nextExpiryAt === null) {
+      await storage.deleteAlarm();
+      return;
+    }
+    await storage.setAlarm(nextExpiryAt);
   }
 }

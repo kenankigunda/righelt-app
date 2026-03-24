@@ -60,9 +60,12 @@ export type ClientSocketMessage =
   | {
       type: "heartbeat";
       identityId: string;
+      sessionId: string;
       lastEventSeq: number;
     }
   | {
-      type: "ack";
+      type: "inactive" | "disconnecting";
+      identityId: string;
+      sessionId: string;
       lastEventSeq: number;
     };
