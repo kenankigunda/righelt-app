@@ -36,7 +36,14 @@ const renumberHistory = (game) => {
 };
 
 const createIdentity = (random = Math.random) => `id-${random().toString(36).slice(2, 10)}`;
-const createClientCommandId = (gameId, counter) => `${gameId}:cmd:${counter}`;
+const createClientCommandId = ({ gameId, identityId, random = Math.random }) => {
+  const now = Date.now().toString(36);
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${gameId}:${identityId}:${now}:${crypto.randomUUID()}`;
+  }
+  const rand = Math.floor(random() * Number.MAX_SAFE_INTEGER).toString(36);
+  return `${gameId}:${identityId}:${now}:${rand}`;
+};
 
 const readJson = async (response) => {
   try {
@@ -67,7 +74,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   let offline = false;
   let games = [];
   let gameById = new Map();
-  let nextClientCommandCounter = 1;
   const lastEventSeqByGameId = new Map();
   const offlinePendingByGameId = new Map();
   const optimisticStateByGameId = new Map();
@@ -273,9 +279,14 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
         .filter(Boolean),
     );
     if (moveClientCommandIds.size > 0) {
-      optimistic.pendingCommands = optimistic.pendingCommands.filter((command) => !moveClientCommandIds.has(command.clientCommandId));
+      optimistic.pendingCommands = optimistic.pendingCommands.filter(
+        (command) => command.kind !== "apply" || !moveClientCommandIds.has(command.clientCommandId),
+      );
       if (optimistic.inflightCommandId && moveClientCommandIds.has(optimistic.inflightCommandId)) {
-        optimistic.inflightCommandId = null;
+        const inflight = optimistic.pendingCommands.find((command) => command.clientCommandId === optimistic.inflightCommandId);
+        if (!inflight || inflight.kind === "apply") {
+          optimistic.inflightCommandId = null;
+        }
       }
     }
     if (clientCommandId) {
@@ -829,7 +840,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
     const command = {
       kind: "apply",
-      clientCommandId: createClientCommandId(gameId, nextClientCommandCounter++),
+      clientCommandId: createClientCommandId({ gameId, identityId, random }),
       action: clone(action),
       state: clone(state),
       notation: defaultNotationForAction(action),
@@ -870,7 +881,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     const current = getGameViewModel(gameId);
     const command = {
       kind: "end-turn",
-      clientCommandId: createClientCommandId(gameId, nextClientCommandCounter++),
+      clientCommandId: createClientCommandId({ gameId, identityId, random }),
       queuedAt: new Date().toISOString(),
     };
     const optimistic = enqueueOptimisticCommand({ gameId, command });

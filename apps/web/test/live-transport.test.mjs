@@ -893,6 +893,46 @@ test("live transport store clears pending command when ws confirms after transpo
   assert.equal(applyAttempts >= 1, true);
 });
 
+test("live transport store does not infer end-turn confirmation from move history command ids", async () => {
+  const baseGame = buildLiveGame();
+  const store = createLiveTransportStore({
+    storage: createMemoryStorage(),
+    fetcher: async (url, init = {}) => {
+      if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+        return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+      }
+      if (String(url) === `/api/shell/games/${baseGame.id}/end-turn?offline=0` && init.method === "POST") {
+        return new Promise(() => {});
+      }
+      return Response.json({ ok: true, games: [] });
+    },
+    random: () => 0.12345,
+  });
+  await store.loadGame(baseGame.id);
+
+  const pendingEnd = await store.endTurn({ gameId: baseGame.id });
+  await tick();
+  assert.equal(store.getGameViewModel(baseGame.id)?.pendingCommandCount, 1);
+
+  const collidedAuthoritative = clone(baseGame);
+  collidedAuthoritative.moves = [
+    ...clone(baseGame.moves),
+    {
+      ...clone(baseGame.moves[0]),
+      index: 1,
+      clientCommandId: pendingEnd.clientCommandId,
+    },
+  ];
+  store.applyLiveGameUpdate({
+    game: collidedAuthoritative,
+    eventSeq: 2,
+    clientCommandId: null,
+  });
+  await tick();
+
+  assert.equal(store.getGameViewModel(baseGame.id)?.pendingCommandCount, 1);
+});
+
 test("live transport store keeps authoritative history selectable while pending moves exist", async () => {
   const baseGame = buildLiveGame();
   const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
@@ -953,4 +993,30 @@ test("live transport store keeps authoritative history selectable while pending 
   assert.equal(liveView.pendingMoves.length, 1);
   assert.notDeepEqual(liveView.currentSnapshot, baseGame.currentSnapshot);
   assert.equal(changes.some((change) => change.type === "history_mode_changed" && change.gameId === baseGame.id), true);
+});
+
+test("live transport store generates unique command ids across store instances", async () => {
+  const baseGame = buildLiveGame();
+  const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
+  const fetcher = async (url, init = {}) => {
+    if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+      return new Promise(() => {});
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const storeOne = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
+  const storeTwo = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
+  await storeOne.loadGame(baseGame.id);
+  await storeTwo.loadGame(baseGame.id);
+
+  const first = await storeOne.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+  const second = await storeTwo.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+
+  assert.equal(typeof first.clientCommandId, "string");
+  assert.equal(typeof second.clientCommandId, "string");
+  assert.notEqual(first.clientCommandId, second.clientCommandId);
 });
