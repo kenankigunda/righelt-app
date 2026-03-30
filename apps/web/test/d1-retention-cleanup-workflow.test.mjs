@@ -16,10 +16,10 @@ test("D1 retention cleanup workflow is manual and requires an explicit retention
 });
 
 test("D1 retention cleanup workflow validates retention hours before execution", () => {
-  assert.match(workflow, /if \[ -z "\$D1_RETENTION_HOURS" \]; then/);
-  assert.match(workflow, /grep -Eq '\^\[1-9\]\[0-9\]\*\$'/);
-  assert.match(workflow, /Running D1 retention cleanup for data older than \$\{D1_RETENTION_HOURS\} hours/);
-  assert.match(workflow, /Target D1 database: \$\{CLOUDFLARE_D1_DB_NAME:-righelt-db-dev\}/);
+  assert.match(workflow, /name: Prepare retention cleanup inputs/);
+  assert.match(workflow, /node scripts\/d1-retention-cleanup-github\.mjs/);
+  assert.match(workflow, /REPORT_SQL_PATH/);
+  assert.match(workflow, /CLEANUP_SQL_PATH/);
 });
 
 test("cleanup SQL deletes stale live data by latest activity in dependency-safe order", () => {
