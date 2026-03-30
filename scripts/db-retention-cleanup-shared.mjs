@@ -63,9 +63,9 @@ export const createCleanupSqlFiles = ({
   tempDir,
 }) => {
   const cleanupSqlTemplate = readFileSync(path.join(repoRoot, "db", "ops", "cleanup-live-data.sql"), "utf8");
-  const workingDir = tempDir || mkdtempSync(path.join(os.tmpdir(), "righelt-d1-retention-"));
-  const reportSqlPath = path.join(workingDir, "d1-retention-report.sql");
-  const cleanupSqlPath = path.join(workingDir, "d1-retention-cleanup.sql");
+  const workingDir = tempDir || mkdtempSync(path.join(os.tmpdir(), "righelt-db-retention-"));
+  const reportSqlPath = path.join(workingDir, "db-retention-report.sql");
+  const cleanupSqlPath = path.join(workingDir, "db-retention-cleanup.sql");
 
   writeFileSync(reportSqlPath, buildReportSql(retentionHours));
   writeFileSync(cleanupSqlPath, buildCleanupSql(cleanupSqlTemplate, retentionHours));

@@ -1,5 +1,5 @@
-name: D1 Retention Cleanup
-run-name: D1 retention cleanup (${{ inputs.retention_hours }}h)
+name: DB Retention Cleanup
+run-name: DB retention cleanup (${{ inputs.retention_hours }}h)
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_D1_DB_NAME: ${{ vars.CLOUDFLARE_D1_DB_NAME }}
-      D1_RETENTION_HOURS: ${{ inputs.retention_hours }}
+      DB_RETENTION_HOURS: ${{ inputs.retention_hours }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,7 +39,7 @@ jobs:
 
       - name: Prepare retention cleanup inputs
         run: |
-          node scripts/d1-retention-cleanup-github.mjs
+          node scripts/db-retention-cleanup-github.mjs
 
       - name: Report stale row counts before cleanup
         run: |

@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
-const workflowPath = path.join(repoRoot, ".github", "workflows", "d1-retention-cleanup.yml");
+const workflowPath = path.join(repoRoot, ".github", "workflows", "db-retention-cleanup.yml");
 const workflow = readFileSync(workflowPath, "utf8");
 const cleanupSqlPath = path.join(repoRoot, "db", "ops", "cleanup-live-data.sql");
 const cleanupSql = readFileSync(cleanupSqlPath, "utf8");
@@ -12,12 +12,13 @@ const cleanupSql = readFileSync(cleanupSqlPath, "utf8");
 test("D1 retention cleanup workflow is manual and requires an explicit retention input", () => {
   assert.match(workflow, /^on:\n  workflow_dispatch:\n    inputs:\n      retention_hours:\n[\s\S]*required: true/m);
   assert.doesNotMatch(workflow, /^\s+workflow_run:/m);
-  assert.match(workflow, /D1_RETENTION_HOURS: \${{ inputs\.retention_hours }}/);
+  assert.match(workflow, /DB_RETENTION_HOURS: \${{ inputs\.retention_hours }}/);
 });
 
 test("D1 retention cleanup workflow validates retention hours before execution", () => {
   assert.match(workflow, /name: Prepare retention cleanup inputs/);
-  assert.match(workflow, /node scripts\/d1-retention-cleanup-github\.mjs/);
+  assert.match(workflow, /name: DB Retention Cleanup/);
+  assert.match(workflow, /node scripts\/db-retention-cleanup-github\.mjs/);
   assert.match(workflow, /REPORT_SQL_PATH/);
   assert.match(workflow, /CLEANUP_SQL_PATH/);
 });

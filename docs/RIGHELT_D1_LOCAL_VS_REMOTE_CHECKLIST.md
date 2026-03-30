@@ -120,22 +120,22 @@ pnpm --dir apps/api exec wrangler d1 migrations list righelt-db-dev --config wra
 
 ## Emergency Retention Cleanup Workflow
 
-Use the GitHub Actions workflow `D1 Retention Cleanup` when you need to purge stale live-game data from the remote D1 database to recover space quickly.
+Use the GitHub Actions workflow `DB Retention Cleanup` when you need to purge stale live-game data from the remote D1 database to recover space quickly.
 
 Important behavior:
 
 - This is an emergency, on-demand cleanup only. It is not part of normal deploys.
 - Staleness is defined by `live_games.latest_activity_at`, not `created_at`.
 - The cleanup deletes whole stale games and their dependent live rows in D1.
-- `D1_RETENTION_HOURS` is required on every run. There is intentionally no default.
+- `DB_RETENTION_HOURS` is required on every run. There is intentionally no default.
 
-How to set `D1_RETENTION_HOURS` for a run:
+How to set `DB_RETENTION_HOURS` for a run:
 
 1. Open GitHub Actions for this repo.
-2. Select the `D1 Retention Cleanup` workflow.
+2. Select the `DB Retention Cleanup` workflow.
 3. Choose `Run workflow`.
 4. Enter the retention window in the `retention_hours` field. Example: `48`.
-5. Start the workflow. The job maps that input into the `D1_RETENTION_HOURS` env var and validates it before any deletion runs.
+5. Start the workflow. The job maps that input into the `DB_RETENTION_HOURS` env var and validates it before any deletion runs.
 
 What to expect in the workflow logs:
 
@@ -159,7 +159,7 @@ pnpm db:local
 Run the local helper:
 
 ```bash
-pnpm d1:cleanup:local -- --hours 48
+pnpm db:cleanup:local -- --hours 48
 ```
 
 What the local helper does:
@@ -174,7 +174,7 @@ What the local helper does:
 Optional overrides:
 
 ```bash
-pnpm d1:cleanup:local -- --hours 48 --db righelt-db-dev --persist-to /absolute/path/to/local-d1-state
+pnpm db:cleanup:local -- --hours 48 --db righelt-db-dev --persist-to /absolute/path/to/local-d1-state
 ```
 
 Defaults used by the local helper when overrides are omitted:

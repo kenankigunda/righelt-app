@@ -1,12 +1,12 @@
 import { appendFileSync } from "node:fs";
 import path from "node:path";
-import { createCleanupSqlFiles, validateRetentionHours } from "./d1-retention-cleanup-shared.mjs";
+import { createCleanupSqlFiles, validateRetentionHours } from "./db-retention-cleanup-shared.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const githubEnvPath = process.env.GITHUB_ENV;
 const runnerTemp = process.env.RUNNER_TEMP;
 const dbName = process.env.CLOUDFLARE_D1_DB_NAME || "righelt-db-dev";
-const retentionHours = process.env.D1_RETENTION_HOURS;
+const retentionHours = process.env.DB_RETENTION_HOURS;
 
 if (!process.env.CLOUDFLARE_API_TOKEN) {
   console.error("Missing required secret: CLOUDFLARE_API_TOKEN");
@@ -29,7 +29,7 @@ if (!runnerTemp) {
 }
 
 try {
-  validateRetentionHours(retentionHours, "env var: D1_RETENTION_HOURS");
+  validateRetentionHours(retentionHours, "env var: DB_RETENTION_HOURS");
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
@@ -41,7 +41,7 @@ const { reportSqlPath, cleanupSqlPath } = createCleanupSqlFiles({
   tempDir: runnerTemp,
 });
 
-console.log(`Running D1 retention cleanup for data older than ${retentionHours} hours`);
+console.log(`Running DB retention cleanup for data older than ${retentionHours} hours`);
 console.log(`Target D1 database: ${dbName}`);
 
 appendFileSync(githubEnvPath, `REPORT_SQL_PATH=${reportSqlPath}\n`);

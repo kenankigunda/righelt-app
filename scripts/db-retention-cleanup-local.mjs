@@ -1,7 +1,7 @@
 import { rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { createCleanupSqlFiles, validateRetentionHours } from "./d1-retention-cleanup-shared.mjs";
+import { createCleanupSqlFiles, validateRetentionHours } from "./db-retention-cleanup-shared.mjs";
 
 const args = process.argv.slice(2);
 

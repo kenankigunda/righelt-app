@@ -16,7 +16,7 @@ on:
       - "tsconfig.base.json"
       - ".github/workflows/ci.yml"
       - ".github/workflows/deploy.yml"
-      - ".github/workflows/d1-retention-cleanup.yml"
+      - ".github/workflows/db-retention-cleanup.yml"
   push:
     branches: [main]
     paths:
@@ -33,7 +33,7 @@ on:
       - "tsconfig.base.json"
       - ".github/workflows/ci.yml"
       - ".github/workflows/deploy.yml"
-      - ".github/workflows/d1-retention-cleanup.yml"
+      - ".github/workflows/db-retention-cleanup.yml"
 
 jobs:
   checks:
