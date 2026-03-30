@@ -46,6 +46,7 @@
     "d1:migrate:dev:a": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-a",
     "d1:migrate:dev:b": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-b",
     "d1:migrate:dev:c": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-c",
+    "d1:cleanup:local": "node scripts/d1-retention-cleanup-local.mjs",
     "deploy:api": "pnpm --dir apps/api exec wrangler deploy --config wrangler.toml",
     "deploy:web": "pnpm --dir apps/web exec wrangler pages deploy . --project-name ${CLOUDFLARE_PAGES_PROJECT:-righelt}",
     "deploy:prod": "pnpm deploy:api && pnpm deploy:web"

@@ -8,6 +8,7 @@ const packageJsonPath = path.join(repoRoot, "package.json");
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 const { scripts } = packageJson;
 const devWebAutoSource = readFileSync(path.join(repoRoot, "scripts", "dev-web-auto.mjs"), "utf8");
+const d1CleanupLocalSource = readFileSync(path.join(repoRoot, "scripts", "d1-retention-cleanup-local.mjs"), "utf8");
 
 test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.equal(scripts.dev, "pnpm dev:web");
@@ -57,6 +58,21 @@ test("root package scripts expose suffixed local D1 migration commands", () => {
     scripts["d1:migrate:dev:c"],
     "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev-c",
   );
+  assert.equal(scripts["d1:cleanup:local"], "node scripts/d1-retention-cleanup-local.mjs");
+});
+
+test("local D1 retention cleanup helper requires explicit hours and mirrors workflow steps", () => {
+  assert.match(d1CleanupLocalSource, /const retentionHours = getArg\("--hours"\);/);
+  assert.match(d1CleanupLocalSource, /Missing required flag: --hours/);
+  assert.match(d1CleanupLocalSource, /--hours must be a positive integer/);
+  assert.match(d1CleanupLocalSource, /Running local D1 retention cleanup for data older than \$\{retentionHours\} hours/);
+  assert.match(d1CleanupLocalSource, /Target D1 database: \$\{dbName\}/);
+  assert.match(d1CleanupLocalSource, /Local D1 persist path: \$\{persistTo\}/);
+  assert.match(d1CleanupLocalSource, /latest_activity_at < datetime\('now', '-\$\{retentionHours\} hours'\)/);
+  assert.match(d1CleanupLocalSource, /Delete stale live-game data/);
+  assert.match(d1CleanupLocalSource, /"wrangler",\s*"d1",\s*"execute"/s);
+  assert.match(d1CleanupLocalSource, /"--local"/);
+  assert.match(d1CleanupLocalSource, /"--persist-to"/);
 });
 
 test("local scenario writer replaces full scenario records during update", () => {

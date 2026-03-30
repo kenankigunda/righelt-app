@@ -143,3 +143,43 @@ What to expect in the workflow logs:
 - A pre-cleanup report listing stale row counts for `live_games`, `live_events`, `live_participants`, `live_join_requests`, and `live_invites`.
 - The delete step executing against the remote D1 database.
 - A post-cleanup report showing the remaining stale row counts after deletion.
+
+## Local Retention Cleanup Verification
+
+Use the local helper when you want to verify the exact cleanup flow against Wrangler's local D1 state before running the remote workflow.
+
+Prerequisite:
+
+1. Apply the current schema locally:
+
+```bash
+pnpm db:local
+```
+
+Run the local helper:
+
+```bash
+pnpm d1:cleanup:local -- --hours 48
+```
+
+What the local helper does:
+
+- Requires `--hours` on every run. There is intentionally no default retention window.
+- Validates `--hours` as a positive integer before touching the database.
+- Prints the chosen retention window, target local D1 database name, and local persist path.
+- Reports stale row counts before cleanup.
+- Runs the same checked-in cleanup SQL used by the GitHub workflow.
+- Reports stale row counts again after cleanup.
+
+Optional overrides:
+
+```bash
+pnpm d1:cleanup:local -- --hours 48 --db righelt-db-dev --persist-to /absolute/path/to/local-d1-state
+```
+
+Defaults used by the local helper when overrides are omitted:
+
+- DB name: `${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev}`
+- Persist path: `.wrangler/state/api-local-dev`
+
+The local helper targets local Wrangler D1 state only. The GitHub workflow targets the remote Cloudflare D1 database.
