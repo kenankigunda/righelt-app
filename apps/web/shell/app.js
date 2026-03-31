@@ -132,6 +132,7 @@ let stickyLayoutFrame = 0;
 let homeSectionResizeFrame = 0;
 let activePanelSwipe = null;
 let panelTransitionResetTimer = null;
+let headerMenuOpen = false;
 const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;
 const SHELL_VIEWPORT_GUTTER_PX = 16;
 const FLYOUT_MOTION_MS = 180;
@@ -907,8 +908,70 @@ const getHomeSectionColumnCount = (sectionKey) => {
 const getHomeSectionVisiblePageSize = (sectionKey) => (getHomeSectionColumnCount(sectionKey) >= 3
   ? HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT
   : HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE);
+const isNarrowHeaderMode = () => getShellLayoutMode() === "narrow";
+const closeHeaderMenu = () => {
+  headerMenuOpen = false;
+};
+const renderHeaderWideActions = () => `
+  <button
+    class="secondary${currentRoute.scenarios ? " is-active" : ""}"
+    type="button"
+    data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
+    aria-pressed="${currentRoute.scenarios ? "true" : "false"}"
+  >Scenarios</button>
+  <button
+    class="secondary${currentRoute.debug ? " is-active" : ""}"
+    type="button"
+    data-action="${currentRoute.debug ? "close-debug" : "open-debug"}"
+    aria-pressed="${currentRoute.debug ? "true" : "false"}"
+  >Debug</button>
+`;
+const renderHeaderNarrowMenu = () => {
+  const menuId = "shell-header-menu";
+  return `
+    <div class="shell-header-menu-root" data-header-menu-root>
+      <button
+        class="secondary shell-header-menu-button"
+        type="button"
+        data-action="toggle-header-menu"
+        aria-expanded="${headerMenuOpen ? "true" : "false"}"
+        aria-controls="${menuId}"
+        aria-label="${headerMenuOpen ? "Close navigation menu" : "Open navigation menu"}"
+      >
+        <span class="shell-header-menu-icon" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </span>
+      </button>
+      ${
+        headerMenuOpen
+          ? `<div class="shell-header-menu-panel" id="${menuId}" data-header-menu-panel>
+              <button
+                class="secondary shell-header-menu-item${currentRoute.scenarios ? " is-active" : ""}"
+                type="button"
+                data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
+                data-header-menu-close="true"
+                aria-pressed="${currentRoute.scenarios ? "true" : "false"}"
+              >Scenarios</button>
+              <button
+                class="secondary shell-header-menu-item${currentRoute.debug ? " is-active" : ""}"
+                type="button"
+                data-action="${currentRoute.debug ? "close-debug" : "open-debug"}"
+                data-header-menu-close="true"
+                aria-pressed="${currentRoute.debug ? "true" : "false"}"
+              >Debug</button>
+            </div>`
+          : ""
+      }
+    </div>
+  `;
+};
 const syncShellLayoutMode = () => {
   const layoutMode = getShellLayoutMode();
+  if (layoutMode === "wide" && headerMenuOpen) {
+    closeHeaderMenu();
+  }
   if (appEl instanceof HTMLElement) {
     appEl.setAttribute("data-shell-layout-mode", layoutMode);
     appEl.setAttribute("data-shell-route", currentRoute?.name || "unknown");
@@ -1229,28 +1292,11 @@ const renderTurnHistory = (game) => {
 const renderHeader = () => `
   <header class="shell-header">
     <div class="shell-header-main">
-      <h1>Righelt</h1>
+      <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Righelt</a></h1>
     </div>
     <div class="shell-header-actions">
-      <div class="nav-row">
-        ${
-          currentRoute.name !== "home"
-            ? `<a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Home</a>`
-            : ""
-        }
-        <button
-          class="secondary${currentRoute.scenarios ? " is-active" : ""}"
-          type="button"
-          data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
-          aria-pressed="${currentRoute.scenarios ? "true" : "false"}"
-        >Scenarios</button>
-        <button
-          class="secondary${currentRoute.debug ? " is-active" : ""}"
-          type="button"
-          data-action="${currentRoute.debug ? "close-debug" : "open-debug"}"
-          aria-pressed="${currentRoute.debug ? "true" : "false"}"
-        >Debug</button>
-        <a class="button-link secondary" href="${buildTutorialHash(null, getCurrentFlyoutState())}" data-flyout-link="tutorial">Tutorial</a>
+      <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
+        ${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
       </div>
     </div>
   </header>
@@ -3142,6 +3188,7 @@ const navigateTo = (hash) => {
   const nextRoute = normalizeRouteFlyoutState(parsedRoute, { preferredFlyoutKey });
   const nextHash = buildHashForRoute(nextRoute);
   const previousRoute = currentRoute;
+  closeHeaderMenu();
   if (window.location.hash === nextHash) {
     currentRoute = nextRoute;
     syncFlyoutRenderOrder(currentRoute);
@@ -3168,6 +3215,7 @@ const navigateTo = (hash) => {
 
 window.addEventListener("hashchange", () => {
   const previousRoute = currentRoute;
+  closeHeaderMenu();
   const parsedRoute = parseRouteFromHash(window.location.hash);
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
   const normalizedHash = buildHashForRoute(currentRoute);
@@ -3228,6 +3276,10 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (target.closest("[data-header-menu-close='true']")) {
+    closeHeaderMenu();
+  }
+
   const actionEl = target.closest("[data-action]");
   if (!actionEl) {
     return;
@@ -3242,6 +3294,7 @@ appEl.addEventListener("click", async (event) => {
     action !== "return-live" &&
     action !== "tutorial-next" &&
     action !== "tutorial-skip" &&
+    action !== "toggle-header-menu" &&
     action !== "open-debug" &&
     action !== "open-scenarios" &&
     action !== "close-debug" &&
@@ -3251,6 +3304,7 @@ appEl.addEventListener("click", async (event) => {
     action !== "toggle-undone-group" &&
     action !== "tutorial-next" &&
     action !== "tutorial-skip" &&
+    action !== "toggle-header-menu" &&
     action !== "open-debug" &&
     action !== "open-scenarios" &&
     action !== "close-debug" &&
@@ -3313,6 +3367,11 @@ appEl.addEventListener("click", async (event) => {
   };
 
   await withBusy(async () => {
+    if (action === "toggle-header-menu") {
+      headerMenuOpen = !headerMenuOpen;
+      render({ animatePanels: false, includeBoard: false });
+      return;
+    }
     if (action === "open-debug") {
       if (!currentRoute.debug) {
         saveDebugFlyoutOpen(storage, true);
@@ -3824,6 +3883,26 @@ window.addEventListener("pointerup", (event) => {
 
 window.addEventListener("pointercancel", () => {
   clearHistoryPress();
+});
+
+window.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!headerMenuOpen || !(target instanceof HTMLElement)) {
+    return;
+  }
+  if (target.closest("[data-header-menu-root]")) {
+    return;
+  }
+  closeHeaderMenu();
+  render({ animatePanels: false, includeBoard: false });
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !headerMenuOpen) {
+    return;
+  }
+  closeHeaderMenu();
+  render({ animatePanels: false, includeBoard: false });
 });
 
 appEl.addEventListener("touchstart", (event) => {

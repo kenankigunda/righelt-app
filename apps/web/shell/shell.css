@@ -75,6 +75,21 @@ body {
   font-size: 2rem;
 }
 
+.shell-header-title-link {
+  color: inherit;
+  text-decoration: none;
+  border-radius: 8px;
+  transition:
+    color 140ms ease,
+    opacity 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.shell-header-title-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(13, 122, 90, 0.18);
+}
+
 .shell-header-main,
 .shell-header-actions {
   min-width: 0;
@@ -85,18 +100,12 @@ body {
   flex: 1 1 28rem;
 }
 
-.shell-header-status {
-  margin: 0.2rem 0 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
 .shell-header-actions {
   flex: 1 1 24rem;
   display: grid;
   gap: 0.5rem;
   justify-items: end;
+  align-self: start;
 }
 
 .nav-row {
@@ -115,6 +124,61 @@ body {
 */
 .nav-row-single {
   justify-content: flex-end;
+  align-items: flex-start;
+}
+
+.shell-header-menu-root {
+  position: relative;
+}
+
+.shell-header-menu-button {
+  min-width: 3rem;
+  min-height: 3rem;
+  padding: 0.55rem;
+}
+
+.shell-header-menu-icon {
+  display: grid;
+  gap: 0.26rem;
+  width: 1.2rem;
+}
+
+.shell-header-menu-icon > span {
+  display: block;
+  width: 100%;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.shell-header-menu-panel {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  z-index: 5;
+  width: min(17rem, calc(100vw - 3.5rem));
+  display: grid;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 250, 241, 0.98);
+  box-shadow: 0 10px 24px rgba(30, 34, 28, 0.14);
+}
+
+.shell-header-menu-item {
+  width: 100%;
+  min-height: 5.25rem;
+  border-radius: 0;
+  border-width: 0;
+  border-top: 1px solid var(--line);
+  justify-content: flex-start;
+  padding: 1.7rem 1rem;
+}
+
+.shell-header-menu-panel > :first-child {
+  border-top: 0;
 }
 
 button,
@@ -166,6 +230,12 @@ button.secondary,
 [data-hover-capability="hover"] :is(.shell-header, .shell-flyout, .panel:not([data-shell-panel="board"])) .button-link.secondary:not([aria-disabled="true"]):hover {
   border-color: #b8ae9d;
   background: #fcf8ee;
+}
+
+[data-hover-capability="hover"] .shell-header-title-link:hover {
+  color: var(--accent);
+  opacity: 0.92;
+  cursor: pointer;
 }
 
 button.secondary.is-active,
@@ -1338,13 +1408,20 @@ textarea:focus-visible {
 
 @media (max-width: 900px) {
   .shell-header {
-    flex-wrap: wrap;
+    align-items: flex-start;
   }
 
   .shell-header-main,
   .shell-header-actions {
-    flex: 1 1 100%;
-    max-width: 100%;
+    flex: 0 1 auto;
+  }
+
+  .shell-header-main {
+    flex: 1 1 auto;
+  }
+
+  .shell-header-actions {
+    justify-self: end;
   }
 
   .shell-flyout-stack {
@@ -1372,5 +1449,14 @@ textarea:focus-visible {
 
   .shell-flyout.is-closing {
     transform: translateY(100%);
+  }
+
+  .shell-header-menu-root {
+    display: block;
+  }
+
+  .shell-header-menu-panel {
+    width: calc(100vw - 3.5rem);
+    max-width: calc(100vw - 3.5rem);
   }
 }

@@ -31,7 +31,15 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /aria-pressed="\$\{currentRoute\.debug \? "true" : "false"\}"/);
   assert.match(source, /title: "Debug mode"/);
   assert.match(source, /Scenarios/);
-  assert.match(source, /<h1>Righelt<\/h1>/);
+  assert.match(source, /<h1><a class="shell-header-title-link" href="\$\{buildHomeHash\(getCurrentFlyoutState\(\)\)\}" data-flyout-link="home">Righelt<\/a><\/h1>/);
+  assert.match(source, /const renderHeaderWideActions = \(\) =>/);
+  assert.match(source, /const renderHeaderNarrowMenu = \(\) =>/);
+  assert.match(source, /data-action="toggle-header-menu"/);
+  assert.match(source, /const menuId = "shell-header-menu";/);
+  assert.match(source, /aria-controls="\$\{menuId\}"/);
+  assert.match(source, /data-header-menu-close="true"/);
+  assert.doesNotMatch(source, /renderHeaderHomeAction/);
+  assert.doesNotMatch(source, />Home<\/(?:a|span)>/);
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Live Sync<\/h2>[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
   assert.match(source, /const getDocumentTitle = \(\) => \{\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;\s*\}\s*return "Righelt";\s*\};/s);
   assert.match(source, /id="shell-game-alerts"/);
@@ -167,8 +175,8 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.match(source, /data-flyout-link="home"/);
-  assert.match(source, /data-flyout-link="tutorial"/);
   assert.match(source, /data-flyout-link="game"/);
+  assert.doesNotMatch(source, /data-flyout-link="tutorial"/);
   assert.match(source, /data-action="copy-invite" data-game-id=/);
   assert.doesNotMatch(source, /replaceWith\(previousBoardPanel\)/);
 });
@@ -340,8 +348,12 @@ test("shell renders and reconciles mini board previews for home and debug surfac
 test("withBusy only repaints immediately for actions that need visible busy state", () => {
   assert.match(source, /const withBusy = async \(fn, \{ renderStart = true, renderEnd = true \} = \{\}\) => \{/);
   assert.match(source, /if \(renderStart\) \{\s*render\(\);\s*\}/s);
-  assert.match(source, /const shouldRenderBusyStateStart =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "return-live" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
-  assert.match(source, /const shouldRenderBusyStateEnd =\s*action !== "copy-invite" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(source, /const shouldRenderBusyStateStart =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "return-live" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "toggle-header-menu" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(source, /const shouldRenderBusyStateEnd =\s*action !== "copy-invite" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "toggle-header-menu" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(source, /if \(target\.closest\("\[data-header-menu-close='true'\]"\)\) \{\s*closeHeaderMenu\(\);\s*\}/s);
+  assert.match(source, /if \(action === "toggle-header-menu"\) \{\s*headerMenuOpen = !headerMenuOpen;\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*return;\s*\}/s);
+  assert.match(source, /window\.addEventListener\("click", \(event\) => \{[\s\S]*if \(target\.closest\("\[data-header-menu-root\]"\)\) \{\s*return;\s*\}[\s\S]*closeHeaderMenu\(\);[\s\S]*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
+  assert.match(source, /window\.addEventListener\("keydown", \(event\) => \{[\s\S]*event\.key !== "Escape"[\s\S]*closeHeaderMenu\(\);[\s\S]*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
   assert.match(source, /\}, \{ renderStart: shouldRenderBusyStateStart, renderEnd: shouldRenderBusyStateEnd \}\);/);
   assert.match(source, /const renderFeedbackReveal = \(message\) =>/);
   assert.match(source, /feedback-reveal\$\{message \? " is-visible" : ""\}/);

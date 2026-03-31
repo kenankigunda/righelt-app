@@ -16,10 +16,6 @@ test("web app keeps the standard mobile viewport meta tag", () => {
 test("shell header wraps long mobile status and identity tokens instead of widening the page", () => {
   assert.match(
     shellStylesSource,
-    /\.shell-header-status\s*\{[\s\S]*max-width:\s*100%;[\s\S]*overflow-wrap:\s*anywhere;[\s\S]*word-break:\s*break-word;/s,
-  );
-  assert.match(
-    shellStylesSource,
     /\.shell-header \.mono\s*\{[\s\S]*white-space:\s*normal;[\s\S]*overflow-wrap:\s*anywhere;[\s\S]*word-break:\s*break-word;/s,
   );
 });
@@ -27,7 +23,19 @@ test("shell header wraps long mobile status and identity tokens instead of widen
 test("shell header stacks cleanly on narrow screens", () => {
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header\s*\{[\s\S]*flex-wrap:\s*wrap;[\s\S]*\}[\s\S]*\.shell-header-main,\s*\.shell-header-actions\s*\{[\s\S]*flex:\s*1 1 100%;[\s\S]*max-width:\s*100%;/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header\s*\{[\s\S]*align-items:\s*flex-start;[\s\S]*\}[\s\S]*\.shell-header-main,\s*\.shell-header-actions\s*\{[\s\S]*flex:\s*0 1 auto;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-main\s*\{[\s\S]*flex:\s*1 1 auto;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-actions\s*\{[\s\S]*justify-self:\s*end;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-menu-root\s*\{[\s\S]*display:\s*block;/s,
   );
 });
 
@@ -51,6 +59,26 @@ test("shell header separates layout spacing from panel chrome", () => {
   assert.match(
     shellStylesSource,
     /\.shell-header h1\s*\{[\s\S]*font-size:\s*2rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-header-title-link\s*\{[\s\S]*color:\s*inherit;[\s\S]*text-decoration:\s*none;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-header-menu-panel\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*calc\(100%\s*\+\s*0\.45rem\);[\s\S]*right:\s*0;[\s\S]*width:\s*min\(17rem,\s*calc\(100vw\s*-\s*3\.5rem\)\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-header-menu-panel\s*\{[\s\S]*gap:\s*0;[\s\S]*padding:\s*0;[\s\S]*overflow:\s*hidden;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-header-menu-item\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*5\.25rem;[\s\S]*border-radius:\s*0;[\s\S]*border-width:\s*0;[\s\S]*border-top:\s*1px solid var\(--line\);[\s\S]*padding:\s*1\.7rem 1rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-menu-panel\s*\{[\s\S]*width:\s*calc\(100vw\s*-\s*3\.5rem\);[\s\S]*max-width:\s*calc\(100vw\s*-\s*3\.5rem\);/s,
   );
 });
 
