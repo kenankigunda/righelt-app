@@ -472,6 +472,131 @@ test("board runtime uses retreat chip styling for push retreat actor coordinate 
   assert.equal(previewHtml.includes("board-preview-coordinate-chip-continuation-pending"), false);
 });
 
+test("board preview source coordinate chip uses selected-piece styling", async () => {
+  let previewHtml = "";
+  let onCellClick = null;
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: ({ onCellClick: nextOnCellClick }) => {
+        onCellClick = nextOnCellClick;
+      },
+      render: noop,
+      getSelectedPieceSummary: ({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) => {
+        const selectedPiece = snapshot?.pieces?.find((piece) => piece.id === selectedPieceId) ?? null;
+        if (!selectedPiece) {
+          return null;
+        }
+        return {
+          details: { owner: selectedPiece.owner },
+          actions: (selectedPieceMovePreviews ?? selectedPieceMoves).map((action) => ({
+            type: action.type,
+            from: action.from ?? null,
+            to: action.to ?? null,
+            legal: action.legal ?? true,
+            blockedReason: action.blockedReason ?? null,
+          })),
+        };
+      },
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ??
+        null,
+      nextSelectionForCell: ({ snapshot, clickedCoord, currentActionType }) => {
+        const clickedPiece =
+          snapshot?.pieces?.find(
+            (piece) => piece.position.row === clickedCoord.row && piece.position.col === clickedCoord.col,
+          ) ?? null;
+        if (clickedPiece) {
+          return {
+            selection: {
+              selectedPieceId: clickedPiece.id,
+              source: { ...clickedPiece.position },
+              target: null,
+            },
+            nextActionType: currentActionType,
+          };
+        }
+        return {
+          selection: { selectedPieceId: null, source: null, target: null },
+          nextActionType: "pass",
+        };
+      },
+    },
+    host: {
+      applyAction: async () => ({ accepted: true, state: null, legalActions: [] }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({
+        state: null,
+        actions: [
+          { type: "move", actorId: "A1", from: { row: 2, col: 2 }, to: { row: 2, col: 3 } },
+          { type: "move", actorId: "A1", from: { row: 2, col: 2 }, to: { row: 3, col: 2 } },
+        ],
+        previewActions: [
+          { type: "move", actorId: "A1", from: { row: 2, col: 2 }, to: { row: 2, col: 3 }, legal: true },
+          { type: "move", actorId: "A1", from: { row: 2, col: 2 }, to: { row: 3, col: 2 }, legal: true },
+        ],
+      }),
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: {
+      set innerHTML(value) {
+        previewHtml = value;
+      },
+      get innerHTML() {
+        return previewHtml;
+      },
+      set textContent(value) {
+        previewHtml = value;
+      },
+      get textContent() {
+        return previewHtml;
+      },
+      addEventListener: noop,
+      removeEventListener: noop,
+    },
+    boardTurnIndicatorEl: { textContent: "", classList: { remove: noop, add: noop } },
+  });
+
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      outcome: null,
+      pieces: [
+        {
+          id: "A1",
+          owner: "P1",
+          kind: "unit",
+          position: { row: 2, col: 2 },
+          supplied: true,
+          commanded: true,
+        },
+      ],
+    },
+    {
+      legalActions: [
+        { type: "move", actorId: "A1", from: { row: 2, col: 2 }, to: { row: 2, col: 3 } },
+        { type: "move", actorId: "A1", from: { row: 2, col: 2 }, to: { row: 3, col: 2 } },
+      ],
+    },
+  );
+
+  onCellClick({ row: 2, col: 2 });
+  await new Promise((r) => setTimeout(r, 0));
+
+  assert.match(previewHtml, /board-preview-coordinate-chip-selected-piece/);
+  assert.match(previewHtml, /board-preview-coordinate-chip-selected-piece-p1/);
+  assert.match(previewHtml, />2,2</);
+  assert.equal(previewHtml.includes("board-preview-coordinate-chip-source"), false);
+});
+
 test("board runtime does not flash no-moves preview text while selected piece moves are loading", async () => {
   let onCellClick = null;
   let resolvePieceMoves = null;

@@ -228,19 +228,25 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (selectedSource && sameCoordinate(coord, selectedSource)) {
       const actorPiece =
         selectedPieceId && state?.pieces?.find((piece) => piece.id === selectedPieceId);
-      const pieceForContinuation =
+      const pieceAtSource =
         actorPiece && sameCoordinate(actorPiece.position, selectedSource)
           ? actorPiece
           : state?.pieces?.find((piece) => sameCoordinate(piece.position, selectedSource));
-      if (pieceForContinuation) {
-        if (continuationHighlights.pendingPieceIds.has(pieceForContinuation.id)) {
+      if (pieceAtSource) {
+        if (continuationHighlights.pendingPieceIds.has(pieceAtSource.id)) {
           return `board-preview-coordinate-chip-continuation-pending ${getContinuationSideChipClass()}`;
         }
-        if (continuationHighlights.movedPieceIds.has(pieceForContinuation.id)) {
+        if (continuationHighlights.movedPieceIds.has(pieceAtSource.id)) {
           return `board-preview-coordinate-chip-continuation-moved ${getContinuationSideChipClass()}`;
         }
       }
-      return `board-preview-coordinate-chip-source ${getContinuationSideChipClass()}`;
+      const ownerTone =
+        pieceAtSource?.owner === "P1"
+          ? "board-preview-coordinate-chip-selected-piece-p1"
+          : pieceAtSource?.owner === "P2"
+            ? "board-preview-coordinate-chip-selected-piece-p2"
+            : "board-preview-coordinate-chip-selected-piece-neutral";
+      return `board-preview-coordinate-chip-selected-piece ${ownerTone}`;
     }
 
     const otherRole = getContinuationRoleAtCoordinate(coord, continuationHighlights);
@@ -408,7 +414,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         }
       } else if (selectedSource) {
         setBoardPreviewPromptHtml(
-          `Piece at ${renderBoardPreviewCoordinate(selectedSource)}. Select a square to move to:`,
+          `Selected piece at ${renderBoardPreviewCoordinate(selectedSource)}. Select a square to move to:`,
         );
       } else {
         setBoardPreviewPrompt("Select a square to move to:");
@@ -425,7 +431,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!preferredPreview || preferredPreview.legal === false) {
       if (selectedSource) {
         setBoardPreviewPromptHtml(
-          `Piece at ${renderBoardPreviewCoordinate(selectedSource)}. Select a square to move to:`,
+          `Selected piece at ${renderBoardPreviewCoordinate(selectedSource)}. Select a square to move to:`,
         );
       } else {
         setBoardPreviewPrompt("Select a square to move to:");

@@ -106,28 +106,22 @@ body {
   color: var(--ink);
 }
 
-.board-preview-coordinate-chip-source {
-  background: #edf7f1;
-  border-color: var(--accent);
-  color: var(--accent);
+/* Selected piece square: fill + teal ring like the board cell; coordinate text = piece owner (token color). */
+.board-preview-coordinate-chip.board-preview-coordinate-chip-selected-piece {
+  background: #fbf8f0;
+  border-color: var(--move-selection-ring);
 }
 
-.board-preview-coordinate-chip-source.board-preview-coordinate-chip-side-p1 {
-  background: rgba(194, 69, 47, 0.1);
-  border-color: rgba(194, 69, 47, 0.4);
+.board-preview-coordinate-chip-selected-piece.board-preview-coordinate-chip-selected-piece-p1 {
   color: var(--player-p1);
 }
 
-.board-preview-coordinate-chip-source.board-preview-coordinate-chip-side-p2 {
-  background: rgba(45, 103, 199, 0.1);
-  border-color: rgba(45, 103, 199, 0.4);
+.board-preview-coordinate-chip-selected-piece.board-preview-coordinate-chip-selected-piece-p2 {
   color: var(--player-p2);
 }
 
-.board-preview-coordinate-chip-source.board-preview-coordinate-chip-side-neutral {
-  background: #edf7f1;
-  border-color: var(--accent);
-  color: var(--accent);
+.board-preview-coordinate-chip-selected-piece.board-preview-coordinate-chip-selected-piece-neutral {
+  color: var(--move-selection-ring);
 }
 
 .board-preview-coordinate-chip-target {
