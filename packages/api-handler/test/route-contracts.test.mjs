@@ -9,45 +9,14 @@ import { resolveToStability } from "../../game-engine/src/resolve.ts";
 const CACHE_NO_STORE = "no-store";
 
 function buildEnv(options = {}) {
-  const mode = options.dbMode ?? "success";
-  let lastMessage = null;
-
   const db = {
-    prepare(query) {
-      assert.equal(query, "INSERT INTO milestone_actions (message) VALUES (?1)");
-
-      if (mode === "throw_prepare") {
-        throw new Error("prepare failed");
-      }
-
-      return {
-        bind(message) {
-          lastMessage = message;
-
-          if (mode === "throw_bind") {
-            throw new Error("bind failed");
-          }
-
-          return this;
-        },
-        async run() {
-          if (mode === "throw_run") {
-            throw new Error("run failed");
-          }
-          if (mode === "run_unsuccessful") {
-            return { success: false };
-          }
-          return { success: true, meta: { last_row_id: 7 } };
-        },
-      };
+    prepare() {
+      throw new Error("unexpected_db_access");
     },
   };
 
   return {
     env: { DB: db },
-    getLastMessage() {
-      return lastMessage;
-    },
   };
 }
 
@@ -152,45 +121,6 @@ test("unsupported method/path combinations return 404 not_found and no-store", a
     assert.equal(body.ok, false);
     assert.equal(body.error, "not_found");
   }
-});
-
-test("/api/test-action returns stable insert_failed contract for unsuccessful and thrown DB writes", async () => {
-  const scenarios = ["run_unsuccessful", "throw_prepare", "throw_bind", "throw_run"];
-
-  for (const dbMode of scenarios) {
-    const { env } = buildEnv({ dbMode });
-    const response = await handleApiRequest(
-      new Request("https://righelt.pages.dev/api/test-action", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "hello" }),
-      }),
-      env,
-    );
-
-    const body = await response.json();
-    assert.equal(response.status, 500);
-    assert.equal(response.headers.get("cache-control"), CACHE_NO_STORE);
-    assert.equal(body.ok, false);
-    assert.equal(body.error, "insert_failed");
-  }
-});
-
-test("/api/test-action malformed JSON still succeeds with default message", async () => {
-  const { env, getLastMessage } = buildEnv();
-  const response = await handleApiRequest(
-    new Request("https://righelt.pages.dev/api/test-action", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{",
-    }),
-    env,
-  );
-
-  const body = await response.json();
-  assert.equal(response.status, 200);
-  assert.equal(body.ok, true);
-  assert.equal(getLastMessage(), "Button clicked from web client");
 });
 
 test("/api/engine/playground/piece-moves returns deterministic sorted actions", async () => {

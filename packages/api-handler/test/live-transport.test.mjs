@@ -89,6 +89,24 @@ test("live transport: create/list/get game lifecycle is server-backed", async ()
   assert.equal(directBody.game.canJoinAsPlayer, true);
 });
 
+test("live transport: persistence writes avoid dropped participant and join-request tables", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", { identityId: "id-b", mode: "player" }),
+    env,
+  );
+
+  const writes = env.DB.getWrites().map((entry) => entry.query);
+  assert.equal(writes.some((query) => query.includes("live_participants")), false);
+  assert.equal(writes.some((query) => query.includes("live_join_requests")), false);
+  assert.equal(writes.some((query) => query.includes("INSERT INTO live_invites (token, game_id, shared_by_role)")), true);
+});
+
 test("live transport: paged home sections return latest-activity slices", async () => {
   const createdGameIds = [];
   for (let index = 0; index < 6; index += 1) {
@@ -1497,7 +1515,7 @@ test("live transport: offline playground exposes end-turn when one identity cont
   assert.equal(ended.status, 200);
 });
 
-test("live transport: play-as-both persists separate participant rows for the same identity", async () => {
+test("live transport: play-as-both persists separate seats for the same identity in the projection", async () => {
   const created = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
     env,
@@ -1519,14 +1537,9 @@ test("live transport: play-as-both persists separate participant rows for the sa
   assert.deepEqual(promotedBody.game.myRoles, ["Player 1", "Player 2"]);
   assert.equal(promotedBody.game.myConnectionConnected, true);
 
-  const participants = env.DB.getParticipants(gameId);
-  assert.deepEqual(
-    participants.map((participant) => [participant.identity_id, participant.role]).sort(),
-    [
-      ["id-a", "Player 1"],
-      ["id-a", "Player 2"],
-    ],
-  );
+  const persisted = env.DB.getGameState(gameId);
+  assert.equal(persisted.player1.identityId, "id-a");
+  assert.equal(persisted.player2.identityId, "id-a");
 });
 
 test("live transport: player 2 can claim an open player 1 seat via play-as-both", async () => {
@@ -1558,14 +1571,9 @@ test("live transport: player 2 can claim an open player 1 seat via play-as-both"
   assert.equal(body.game.player2.identityId, "id-a");
   assert.equal(body.game.pendingJoinRequests.length, 0);
 
-  const participants = env.DB.getParticipants(gameId);
-  assert.deepEqual(
-    participants.map((participant) => [participant.identity_id, participant.role]).sort(),
-    [
-      ["id-a", "Player 1"],
-      ["id-a", "Player 2"],
-    ],
-  );
+  const persisted = env.DB.getGameState(gameId);
+  assert.equal(persisted.player1.identityId, "id-a");
+  assert.equal(persisted.player2.identityId, "id-a");
 });
 
 test("live transport: dual-seat view models expose combined role and connection metadata", async () => {

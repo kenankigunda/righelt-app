@@ -15,8 +15,6 @@ import {
 const LIVE_GAMES_TABLE = "live_games";
 const LIVE_INVITES_TABLE = "live_invites";
 const LIVE_EVENTS_TABLE = "live_events";
-const LIVE_PARTICIPANTS_TABLE = "live_participants";
-const LIVE_JOIN_REQUESTS_TABLE = "live_join_requests";
 
 type D1RunResult = {
   success: boolean;
@@ -633,14 +631,13 @@ export const saveInviteTokens = async (env: LiveGameEnv, game: LiveGame) => {
   await Promise.all(
     entries.map(([token, sharedByRole]) =>
       env.DB.prepare(
-        `INSERT INTO ${LIVE_INVITES_TABLE} (token, game_id, shared_by_role, created_at)
-         VALUES (?1, ?2, ?3, ?4)
+        `INSERT INTO ${LIVE_INVITES_TABLE} (token, game_id, shared_by_role)
+         VALUES (?1, ?2, ?3)
          ON CONFLICT(token) DO UPDATE SET
            game_id = excluded.game_id,
-           shared_by_role = excluded.shared_by_role,
-           created_at = excluded.created_at`,
+           shared_by_role = excluded.shared_by_role`,
       )
-        .bind(token, game.id, sharedByRole, game.createdAt)
+        .bind(token, game.id, sharedByRole)
         .run(),
     ),
   );
@@ -664,71 +661,15 @@ export const resolveInvite = async (
   };
 };
 
-export const replaceParticipants = async (env: LiveGameEnv, game: LiveGame) => {
-  await env.DB.prepare(`DELETE FROM ${LIVE_PARTICIPANTS_TABLE} WHERE game_id = ?1`).bind(game.id).run();
-  const participants = [
-    game.player1 ? { role: "Player 1", participant: game.player1 } : null,
-    game.player2 ? { role: "Player 2", participant: game.player2 } : null,
-    ...game.viewers.map((participant) => ({ role: "Viewer" as const, participant })),
-  ].filter(Boolean) as Array<{ role: "Player 1" | "Player 2" | "Viewer"; participant: LiveGame["player1"] & { identityId: string } }>;
-
-  await Promise.all(
-    participants.map(({ role, participant }) =>
-      env.DB.prepare(
-        `INSERT INTO ${LIVE_PARTICIPANTS_TABLE}
-           (game_id, identity_id, role, joined_at, last_heartbeat_at, connected, session_count)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
-      )
-        .bind(
-          game.id,
-          participant.identityId,
-          role,
-          participant.joinedAt,
-          participant.lastHeartbeatAt,
-          participant.connected ? 1 : 0,
-          participant.sessionCount,
-        )
-        .run(),
-    ),
-  );
-};
-
-export const replaceJoinRequests = async (env: LiveGameEnv, game: LiveGame) => {
-  await env.DB.prepare(`DELETE FROM ${LIVE_JOIN_REQUESTS_TABLE} WHERE game_id = ?1`).bind(game.id).run();
-  await Promise.all(
-    game.pendingJoinRequests.map((request: JoinRequest) =>
-      env.DB.prepare(
-        `INSERT INTO ${LIVE_JOIN_REQUESTS_TABLE}
-           (game_id, requester_identity_id, requested_seat, source, status, requested_at, resolved_at, resolved_by)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
-      )
-        .bind(
-          game.id,
-          request.identityId,
-          request.requestedSeat,
-          request.source,
-          request.status ?? "pending",
-          request.requestedAt,
-          request.resolvedAt ?? null,
-          request.resolvedBy ?? null,
-        )
-        .run(),
-    ),
-  );
-};
-
 export const appendEvent = async (env: LiveGameEnv, gameId: string, event: ServerEvent & { eventSeq: number }) => {
   await env.DB.prepare(
     `INSERT INTO ${LIVE_EVENTS_TABLE}
-       (game_id, event_seq, event_type, actor_identity_id, created_at, payload_json)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+       (game_id, event_seq, payload_json)
+     VALUES (?1, ?2, ?3)`,
   )
     .bind(
       gameId,
       event.eventSeq,
-      event.type,
-      "identityId" in event ? event.identityId : "requesterIdentityId" in event ? event.requesterIdentityId : null,
-      new Date().toISOString(),
       JSON.stringify(event),
     )
     .run();
@@ -753,8 +694,6 @@ export const persistGameState = async (
 ) => {
   await saveProjection(env, game, eventSeq);
   await saveInviteTokens(env, game);
-  await replaceParticipants(env, game);
-  await replaceJoinRequests(env, game);
   if (event) {
     await appendEvent(env, game.id, event);
   }

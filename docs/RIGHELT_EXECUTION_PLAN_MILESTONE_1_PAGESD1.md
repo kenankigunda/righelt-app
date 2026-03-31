@@ -10,8 +10,8 @@ This document is the current from-scratch setup guide for Milestone 1 in this re
 
 Deploy a Pages-hosted web app that:
 1. Shows deployment metadata (`deployedAt`, `commitSha`).
-2. Calls same-origin API endpoint `POST /api/test-action`.
-3. Persists to D1 (`milestone_actions`) and returns JSON response.
+2. Calls the same deployed API surface used by the app.
+3. Verifies the Pages-to-Worker path and D1-backed live game flow.
 
 ## Architecture Used
 
@@ -110,8 +110,8 @@ npm i -g pnpm wrangler
    ```bash
    pnpm dev:web
    ```
-4. Open local app and click `Run Test Action`.
-5. Confirm response JSON with `ok: true` and non-null `actionId`.
+4. Open local app.
+5. Confirm the app loads without API errors and can create a live game.
 
 ## Deployment Flow (Current)
 
@@ -131,14 +131,9 @@ Deploy workflow is serialized (`concurrency` enabled) to prevent overlapping run
 
 1. Open `https://righelt.pages.dev`.
 2. Confirm `Deployment info` shows current deploy timestamp + latest commit short SHA.
-3. Click `Run Test Action`.
-4. Confirm success response:
-   - `ok: true`
-   - `actionId` present
-   - `createdAt` present
-5. Confirm API health:
+3. Confirm API health:
    - `https://righelt.pages.dev/api/health` returns JSON `{ "ok": true, ... }`.
-6. Confirm direct Worker health:
+4. Confirm direct Worker health:
    - `https://righelt-api.kenankigunda.workers.dev/api/health` returns the same binding payload.
 
 For split-stack operations and recovery, use [`docs/RIGHELT_PAGES_WORKER_SPLIT_RUNBOOK.md`](/Users/kenankigunda/Documents/righelt/docs/RIGHELT_PAGES_WORKER_SPLIT_RUNBOOK.md).

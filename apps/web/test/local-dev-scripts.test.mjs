@@ -74,6 +74,8 @@ test("shared D1 retention cleanup helpers centralize validation and SQL generati
   assert.match(dbCleanupSharedSource, /\$\{sourceLabel\} must be a positive integer/);
   assert.match(dbCleanupSharedSource, /export const buildReportSql = \(retentionHours\) =>/);
   assert.match(dbCleanupSharedSource, /latest_activity_at < datetime\('now', '-\$\{retentionHours\} hours'\)/);
+  assert.doesNotMatch(dbCleanupSharedSource, /live_participants/);
+  assert.doesNotMatch(dbCleanupSharedSource, /live_join_requests/);
   assert.match(dbCleanupSharedSource, /export const createCleanupSqlFiles = \(\{/);
   assert.match(dbCleanupSharedSource, /righelt-db-retention-/);
 });

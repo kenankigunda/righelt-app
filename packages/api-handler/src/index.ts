@@ -431,32 +431,6 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
     );
   }
 
-  if (request.method === "POST" && url.pathname === "/api/test-action") {
-    try {
-      const payload = await parseJsonBody(request);
-      const message =
-        typeof payload.message === "string" && payload.message.trim().length > 0
-          ? payload.message.trim()
-          : "Button clicked from web client";
-
-      const insert = await env.DB.prepare("INSERT INTO milestone_actions (message) VALUES (?1)")
-        .bind(message)
-        .run();
-
-      if (!insert.success) {
-        return jsonNoStore({ ok: false, error: "insert_failed" }, 500);
-      }
-
-      const actionId = insert.meta?.last_row_id ?? null;
-      const createdAt = new Date().toISOString();
-      const event = { type: "test_action_recorded", actionId, message, createdAt, payload: { actionId, message } };
-
-      return jsonNoStore({ ok: true, actionId, createdAt, event });
-    } catch {
-      return jsonNoStore({ ok: false, error: "insert_failed" }, 500);
-    }
-  }
-
   if (request.method === "POST" && url.pathname === "/api/commands/validate") {
     const body = await parseJsonBody(request);
     const command = body.command as ClientCommand | undefined;
