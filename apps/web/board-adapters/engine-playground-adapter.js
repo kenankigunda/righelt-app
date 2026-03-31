@@ -1176,6 +1176,11 @@ export function createEnginePlaygroundBoardAdapter() {
           if (isSupplyPoint(row, col)) {
             const supplyMarker = document.createElement("span");
             supplyMarker.className = "supply-point-marker";
+            if (row === 0 && col === BOARD_SIZE - 1) {
+              supplyMarker.classList.add("supply-point-p1");
+            } else if (row === BOARD_SIZE - 1 && col === 0) {
+              supplyMarker.classList.add("supply-point-p2");
+            }
             supplyMarker.textContent = "◆";
             cell.appendChild(supplyMarker);
           }

@@ -803,16 +803,55 @@ button {
   position: absolute;
   inset: 0;
   margin: auto;
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  z-index: 0;
+  z-index: 2;
   pointer-events: none;
-  font-size: 1.08rem;
-  color: #2f8e63;
+  font-size: 0;
+  color: transparent;
   line-height: 1;
+  transform: translateZ(0);
+  background: transparent;
+}
+
+.supply-point-marker::before,
+.supply-point-marker::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* Inner green diamond border */
+.supply-point-marker::before {
+  width: 7px;
+  height: 7px;
+  border: 2px solid #2f8e63;
+  box-sizing: border-box;
+  background: #2f8e63;
+}
+
+/* Outer owner-colored diamond border with a small gap. */
+.supply-point-marker::after {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--muted);
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.supply-point-marker.supply-point-p1::after {
+  border-color: var(--player-p1);
+}
+
+.supply-point-marker.supply-point-p2::after {
+  border-color: var(--player-p2);
 }
 
 .form-row {
