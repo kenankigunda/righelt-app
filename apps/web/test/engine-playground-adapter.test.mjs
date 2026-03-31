@@ -667,7 +667,10 @@ test("project previews use a plus badge while move-style previews use lightweigh
   assert.match(adapterSource, /path\.setAttribute\("stroke-opacity", previewOpacity\);/);
   assert.match(adapterSource, /arrowPath\.setAttribute\("fill-opacity", opacity\);/);
   assert.match(adapterSource, /const isSelectedTarget = targetCell\?\.classList\.contains\("target"\) \?\? false;/);
-  assert.match(adapterSource, /shouldCurveActionPreview\(piece\.position, action\.to, \[supplyPath, commandPath\]\)/);
+  assert.match(
+    adapterSource,
+    /drawArrowLine\(\s*piece\.position,\s*action\.to,\s*piece\.owner,\s*false,\s*isSelectedTarget,\s*\)/s,
+  );
   assert.doesNotMatch(adapterSource, /drawPath\(\[piece\.position, action\.to\], "#8b5ec0", "5 5"\)/);
   assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*ghost\.classList\.add\("preview-created"\);\s*\}/s);
   assert.match(styleSource, /\.piece-token\.move-ghost\.preview-created::after\s*\{[\s\S]*content:\s*"\+";[\s\S]*top:\s*-7px;[\s\S]*right:\s*-8px;/s);

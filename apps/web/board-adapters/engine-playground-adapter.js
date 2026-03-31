@@ -765,7 +765,7 @@ export function createEnginePlaygroundBoardAdapter() {
           piece.position,
           action.to,
           piece.owner,
-          shouldCurveActionPreview(piece.position, action.to, [supplyPath, commandPath]),
+          false,
           isSelectedTarget,
         );
       }
