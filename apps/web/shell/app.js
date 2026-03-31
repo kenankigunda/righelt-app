@@ -1846,26 +1846,26 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
   maybeUpdateUndoRequestOutcomeFeedback(game);
   const liveSyncBanner =
     game.rollbackNotice && game.rollbackNotice.trim().length > 0
-      ? `<div class="alert danger">${escapeHtml(game.rollbackNotice)}</div>`
+      ? `<div class="alert danger shell-game-alert">${escapeHtml(game.rollbackNotice)}</div>`
       : game.syncStatus === "confirming"
-        ? `<div class="alert warn">Move confirmation is retrying. The board stays optimistic until the server confirms.</div>`
+        ? `<div class="alert warn shell-game-alert">Move confirmation is retrying. The board stays optimistic until the server confirms.</div>`
       : game.syncStatus === "desynced"
-        ? `<div class="alert warn">Live sync is recovering. The board is showing the last authoritative state.</div>`
+        ? `<div class="alert warn shell-game-alert">Live sync is recovering. The board is showing the last authoritative state.</div>`
         : "";
   const offlineBanner =
     game.showOfflineState || inviteFromRole === "offline"
-      ? `<div class="alert warn">Offline mode: invite and remote join actions are disabled.</div>`
+      ? `<div class="alert warn shell-game-alert">Offline mode: invite and remote join actions are disabled.</div>`
       : "";
 
   const undoRequestBanner =
     undoRequestFeedback && undoRequestFeedbackGameId === game.id
-      ? `<div class="alert">${escapeHtml(undoRequestFeedback)}</div>`
+      ? `<div class="alert shell-game-alert">${escapeHtml(undoRequestFeedback)}</div>`
       : "";
 
   return `
-    ${offlineBanner ? `<section class="panel">${offlineBanner}</section>` : ""}
-    ${liveSyncBanner ? `<section class="panel">${liveSyncBanner}</section>` : ""}
-    ${undoRequestBanner ? `<section class="panel">${undoRequestBanner}</section>` : ""}
+    ${offlineBanner}
+    ${liveSyncBanner}
+    ${undoRequestBanner}
   `;
 };
 
@@ -2366,8 +2366,9 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
     getCurrentFlyoutState(),
   )}`;
 
+  const gameAlerts = renderGameAlertsHtml(game, inviteFromRole);
   return `
-    ${renderGameAlertsHtml(game, inviteFromRole)}
+    ${gameAlerts ? `<div class="shell-game-alerts">${gameAlerts}</div>` : ""}
     <section class="layout-grid">
       <div class="stack" data-shell-sticky-target="left" data-sticky-enabled="false">
         <section class="panel">${renderGameSummaryPanel(game)}</section>

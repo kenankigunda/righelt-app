@@ -82,7 +82,7 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-item\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*5\.25rem;[\s\S]*border-radius:\s*0;[\s\S]*border-width:\s*0;[\s\S]*border-top:\s*1px solid var\(--line\);[\s\S]*padding:\s*1\.7rem 1rem;/s,
+    /\.shell-header-menu-panel button\.secondary\.shell-header-menu-item\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*3\.75rem;[\s\S]*border-radius:\s*0;[\s\S]*padding:\s*1rem 1\.1rem;/s,
   );
   assert.match(
     shellStylesSource,
