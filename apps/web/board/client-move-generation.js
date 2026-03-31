@@ -354,6 +354,8 @@ const localGroupMembers = (state, pieceId) => {
 
 const localGroupStrength = (state, pieceId) => localGroupMembers(state, pieceId).length;
 
+const canOfferPushForPiece = (state, pieceId) => localGroupStrength(state, pieceId) >= 2;
+
 const enemyAdjacentCount = (state, owner, center) =>
   state.pieces.filter((piece) => piece.owner !== owner && isAnyAdjacent(piece.position, center)).length;
 
@@ -585,9 +587,14 @@ export const listPieceMovesFromLegalActions = ({ state, legalActions, pieceId })
     return [];
   }
 
+  const allowPush = canOfferPushForPiece(state, pieceId);
+
   return legalActions
     .filter((action) => {
       if (!action || action.type === "pass") {
+        return false;
+      }
+      if (action.type === "push" && !allowPush) {
         return false;
       }
       if (action.actorId === pieceId) {
@@ -605,11 +612,16 @@ export const listPieceMovePreviews = ({ state, legalActions, pieceId }) => {
     return [];
   }
 
+  const allowPush = canOfferPushForPiece(state, pieceId);
+
   const actions = listPieceMovesFromLegalActions({ state, legalActions, pieceId });
   const previews = actions.map((action) => ({ ...action, legal: true, previewPiece: buildPreviewPiece(state, action) }));
   const previewKeys = new Set(actions.map((action) => JSON.stringify(action)));
 
   for (const action of buildCandidateActions(piece)) {
+    if (action.type === "push" && !allowPush) {
+      continue;
+    }
     const actionKey = JSON.stringify(action);
     if (previewKeys.has(actionKey)) {
       continue;

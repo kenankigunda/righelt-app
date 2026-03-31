@@ -88,6 +88,34 @@ test("client move generation includes blocked push previews for inadequate group
   );
 });
 
+test("client move generation omits push moves and previews when local group strength is below 2", () => {
+  const state = {
+    boardSize: 10,
+    sideToMove: "P1",
+    turnIndex: 0,
+    continuation: null,
+    outcome: { status: "ongoing" },
+    pieces: [
+      { id: "C1", owner: "P1", kind: "commander", position: { row: 3, col: 6 }, supplied: true, commanded: true },
+      { id: "C2", owner: "P2", kind: "commander", position: { row: 6, col: 3 }, supplied: true, commanded: true },
+      { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 3 }, supplied: true, commanded: true },
+      { id: "D1", owner: "P2", kind: "unit", position: { row: 5, col: 3 }, supplied: true, commanded: true },
+    ],
+  };
+
+  const response = buildPieceMoveResponse({
+    state,
+    legalActions: [
+      { type: "pass" },
+      { type: "push", actorId: "A1", from: { row: 4, col: 3 }, to: { row: 5, col: 3 } },
+    ],
+    pieceId: "A1",
+  });
+
+  assert.equal(response.actions.some((action) => action.type === "push"), false);
+  assert.equal(response.previewActions.some((action) => action.type === "push"), false);
+});
+
 test("client move generation previews a projected commander action as a unit", () => {
   const state = {
     boardSize: 10,

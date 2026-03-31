@@ -39,6 +39,7 @@
  *   selectedPieceMovePreviews?: unknown[],
  *   removalEffects?: unknown[],
  *   interactionMode?: "interactive" | "static",
+ *   selectedPieceOverlayPhase?: "actionPreviews" | "supplyCommand",
  * }) => void} render
  * @property {(snapshot: unknown) => string} getCommanderSupplySummary
  * @property {(input: {

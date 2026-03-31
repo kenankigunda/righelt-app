@@ -651,6 +651,8 @@ export function createEnginePlaygroundBoardAdapter() {
     selectedPieceId,
     selectedPieceMoves,
     selectedPieceMovePreviews,
+    currentActionType: overlayActionType,
+    selectedPieceOverlayPhase,
   }) => {
     if (!overlayLinesEl) {
       return;
@@ -720,6 +722,8 @@ export function createEnginePlaygroundBoardAdapter() {
       }
     }
 
+    const drawSupplyCommand = selectedPieceOverlayPhase !== "actionPreviews";
+    const drawActionPreviews = selectedPieceOverlayPhase !== "supplyCommand";
     const supplyPath = normalizeOverlayPath(getSupplyPathForPiece(snapshot, piece));
     const commandPath = normalizeOverlayPath(getCommandPathForPiece(snapshot, piece));
     const commandStroke = PREVIEW_STROKE_BY_OWNER[piece.owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
@@ -727,8 +731,14 @@ export function createEnginePlaygroundBoardAdapter() {
       supplyPath,
       commandPath,
     );
-    drawPath(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey);
-    drawPath(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey);
+    if (drawSupplyCommand) {
+      drawPath(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey);
+      drawPath(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey);
+    }
+
+    if (!drawActionPreviews) {
+      return;
+    }
 
     const previews = Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves;
     const previewsByTargetKey = new Map();
@@ -743,7 +753,7 @@ export function createEnginePlaygroundBoardAdapter() {
     }
 
     for (const [targetKey, actionsAtTarget] of previewsByTargetKey.entries()) {
-      const preferredActionType = pickBestActionTypeForTarget(actionsAtTarget, null);
+      const preferredActionType = pickBestActionTypeForTarget(actionsAtTarget, overlayActionType ?? null);
       const action = actionsAtTarget.find((candidate) => candidate.type === preferredActionType) ?? actionsAtTarget[0];
       const targetCell = cellByCoordinateKey.get(targetKey);
       const isSelectedTarget = targetCell?.classList.contains("target") ?? false;
@@ -755,7 +765,7 @@ export function createEnginePlaygroundBoardAdapter() {
           piece.position,
           action.to,
           piece.owner,
-          shouldCurveActionPreview(piece.position, action.to, [supplyPath, commandPath]),
+          false,
           isSelectedTarget,
         );
       }
@@ -767,6 +777,14 @@ export function createEnginePlaygroundBoardAdapter() {
         }
         if (action.legal === false && action.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED") {
           ghost.classList.add("illegal-unsupplied");
+        }
+        if (action.type === "push") {
+          const pushStack = targetCell.querySelector(".piece-stack[data-push-preview-stack]");
+          if (pushStack) {
+            ghost.classList.add("stacked-piece", "stacked-top");
+            pushStack.appendChild(ghost);
+            continue;
+          }
         }
         targetCell.appendChild(ghost);
       }
@@ -974,6 +992,7 @@ export function createEnginePlaygroundBoardAdapter() {
       allowFreeSelection,
       currentActionType,
       interactionMode: renderInteractionMode,
+      selectedPieceOverlayPhase,
     }) {
       if (!boardEl) {
         throw new Error("Adapter not mounted");
@@ -988,6 +1007,17 @@ export function createEnginePlaygroundBoardAdapter() {
       const removalByCoordinateKey = new Map(
         (Array.isArray(removalEffects) ? removalEffects : []).map((effect) => [coordKey(effect.position), effect]),
       );
+
+      const continuationHighlight = deriveContinuationHighlightByPieceId(snapshot, legalActions);
+      const isContinuationHighlightedSquare = (row, col) => {
+        const piecesHere = findPiecesAt(snapshot, row, col);
+        return piecesHere.some(
+          (piece) =>
+            continuationHighlight.pendingPieceIds.has(piece.id) ||
+            continuationHighlight.movedPieceIds.has(piece.id),
+        );
+      };
+      const isLiveInteractiveBoard = overlay?.mode !== "recorded-action";
 
       for (let row = 0; row < BOARD_SIZE; row += 1) {
         for (let col = 0; col < BOARD_SIZE; col += 1) {
@@ -1052,6 +1082,17 @@ export function createEnginePlaygroundBoardAdapter() {
           if (isSource) cell.classList.add("source");
           if (isTarget) {
             cell.classList.add("target");
+            if (
+              isLiveInteractiveBoard &&
+              !isContinuationHighlightedSquare(row, col) &&
+              effectiveInteractionMode === "interactive"
+            ) {
+              if (snapshot?.sideToMove === "P1") {
+                cell.classList.add("target-side-p1");
+              } else if (snapshot?.sideToMove === "P2") {
+                cell.classList.add("target-side-p2");
+              }
+            }
           }
 
           if (isTarget) {
@@ -1065,6 +1106,20 @@ export function createEnginePlaygroundBoardAdapter() {
           cell.dataset.col = String(col);
 
           const cellPieces = findPiecesAt(snapshot, row, col);
+          const selectedActorForPushPreview =
+            overlay?.mode === "interactive" && effectiveSelection.selectedPieceId
+              ? findPieceById(snapshot, effectiveSelection.selectedPieceId)
+              : null;
+          const legalPushToCell = legalAtCell.some((action) => action.type === "push");
+          const showPushPreviewDefenderStack =
+            isTarget &&
+            currentActionType === "push" &&
+            cellPieces.length === 1 &&
+            cellPiece &&
+            selectedActorForPushPreview &&
+            cellPiece.owner !== selectedActorForPushPreview.owner &&
+            legalPushToCell;
+
           if (cellPieces.length > 1) {
             const stack = document.createElement("span");
             stack.className = "piece-stack";
@@ -1091,6 +1146,14 @@ export function createEnginePlaygroundBoardAdapter() {
               stack.appendChild(token);
             }
             cell.appendChild(stack);
+          } else if (showPushPreviewDefenderStack) {
+            const stack = document.createElement("span");
+            stack.className = "piece-stack";
+            stack.dataset.pushPreviewStack = "1";
+            const defenderToken = buildPieceToken(cellPiece);
+            defenderToken.classList.add("stacked-piece", "stacked-underlay", "stacked-pushed");
+            stack.appendChild(defenderToken);
+            cell.appendChild(stack);
           } else {
             const marker = cellPiece ? buildPieceToken(cellPiece) : document.createElement("span");
             if (!cellPiece) {
@@ -1113,6 +1176,11 @@ export function createEnginePlaygroundBoardAdapter() {
           if (isSupplyPoint(row, col)) {
             const supplyMarker = document.createElement("span");
             supplyMarker.className = "supply-point-marker";
+            if (row === 0 && col === BOARD_SIZE - 1) {
+              supplyMarker.classList.add("supply-point-p1");
+            } else if (row === BOARD_SIZE - 1 && col === 0) {
+              supplyMarker.classList.add("supply-point-p2");
+            }
             supplyMarker.textContent = "◆";
             cell.appendChild(supplyMarker);
           }
@@ -1131,6 +1199,17 @@ export function createEnginePlaygroundBoardAdapter() {
               colAxis.classList.add("axis-strong");
             } else if (hasDifferentTarget && target && col === target.col && (!source || source.col !== target.col)) {
               colAxis.classList.add("axis-medium");
+              if (
+                isLiveInteractiveBoard &&
+                !isContinuationHighlightedSquare(row, col) &&
+                effectiveInteractionMode === "interactive"
+              ) {
+                if (snapshot?.sideToMove === "P1") {
+                  colAxis.classList.add("axis-target-p1");
+                } else if (snapshot?.sideToMove === "P2") {
+                  colAxis.classList.add("axis-target-p2");
+                }
+              }
             }
             colAxis.textContent = String(col);
             cell.appendChild(colAxis);
@@ -1150,6 +1229,17 @@ export function createEnginePlaygroundBoardAdapter() {
               rowAxis.classList.add("axis-strong");
             } else if (hasDifferentTarget && target && row === target.row && (!source || source.row !== target.row)) {
               rowAxis.classList.add("axis-medium");
+              if (
+                isLiveInteractiveBoard &&
+                !isContinuationHighlightedSquare(row, col) &&
+                effectiveInteractionMode === "interactive"
+              ) {
+                if (snapshot?.sideToMove === "P1") {
+                  rowAxis.classList.add("axis-target-p1");
+                } else if (snapshot?.sideToMove === "P2") {
+                  rowAxis.classList.add("axis-target-p2");
+                }
+              }
             }
             rowAxis.textContent = String(row);
             cell.appendChild(rowAxis);
@@ -1167,6 +1257,8 @@ export function createEnginePlaygroundBoardAdapter() {
         selectedPieceId: selection.selectedPieceId,
         selectedPieceMoves,
         selectedPieceMovePreviews,
+        currentActionType,
+        selectedPieceOverlayPhase,
       });
     },
 

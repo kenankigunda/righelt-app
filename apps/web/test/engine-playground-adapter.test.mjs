@@ -341,6 +341,79 @@ test("board adapter static render uses non-focusable cells", async () => {
   });
 });
 
+test("interactive overlay omits supply lines in action preview phase and omits move previews in supply command phase", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl, overlayLinesEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P1",
+      continuation: null,
+      pieces: [
+        { id: "C1", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+        { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
+      ],
+      artifacts: {
+        supply: [
+          {
+            player: "P1",
+            shortestPathByPieceId: {
+              A1: [
+                { row: 4, col: 2 },
+                { row: 4, col: 1 },
+              ],
+            },
+          },
+        ],
+        command: {
+          shortestPathToCommanderByPieceId: {
+            A1: [
+              { row: 4, col: 2 },
+              { row: 3, col: 2 },
+            ],
+          },
+        },
+        groups: {
+          componentByPieceId: { A1: "G1" },
+          membersByComponentId: { G1: ["A1"] },
+          strengthByComponentId: { G1: 1 },
+        },
+      },
+    };
+
+    const previews = [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 }, legal: true }];
+    const baseRender = {
+      snapshot,
+      selection: { selectedPieceId: "A1", source: { row: 4, col: 2 }, target: null },
+      overlay: { mode: "interactive" },
+      legalActions: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "move",
+    };
+
+    adapter.render({
+      ...baseRender,
+      selectedPieceMoves: previews,
+      selectedPieceMovePreviews: previews,
+      selectedPieceOverlayPhase: "actionPreviews",
+    });
+
+    const supplyStrokeLines = overlayLinesEl.querySelectorAll("line").filter((line) => line.getAttribute("stroke") === "#2f8e63");
+    assert.equal(supplyStrokeLines.length, 0);
+    assert.equal(getCell(boardEl, 4, 3)?.querySelectorAll(".move-ghost").length > 0, true);
+
+    adapter.render({
+      ...baseRender,
+      selectedPieceMoves: previews,
+      selectedPieceMovePreviews: previews,
+      selectedPieceOverlayPhase: "supplyCommand",
+    });
+
+    const supplyLinesAfter = overlayLinesEl.querySelectorAll("line").filter((line) => line.getAttribute("stroke") === "#2f8e63");
+    assert.ok(supplyLinesAfter.length > 0);
+    assert.equal(boardEl.querySelectorAll(".move-ghost").length, 0);
+  });
+});
+
 test("preview arrow curvature detects overlapping supply or command segments only", () => {
   assert.equal(
     segmentsOverlapOnSameLine(
@@ -594,7 +667,10 @@ test("project previews use a plus badge while move-style previews use lightweigh
   assert.match(adapterSource, /path\.setAttribute\("stroke-opacity", previewOpacity\);/);
   assert.match(adapterSource, /arrowPath\.setAttribute\("fill-opacity", opacity\);/);
   assert.match(adapterSource, /const isSelectedTarget = targetCell\?\.classList\.contains\("target"\) \?\? false;/);
-  assert.match(adapterSource, /shouldCurveActionPreview\(piece\.position, action\.to, \[supplyPath, commandPath\]\)/);
+  assert.match(
+    adapterSource,
+    /drawArrowLine\(\s*piece\.position,\s*action\.to,\s*piece\.owner,\s*false,\s*isSelectedTarget,\s*\)/s,
+  );
   assert.doesNotMatch(adapterSource, /drawPath\(\[piece\.position, action\.to\], "#8b5ec0", "5 5"\)/);
   assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*ghost\.classList\.add\("preview-created"\);\s*\}/s);
   assert.match(styleSource, /\.piece-token\.move-ghost\.preview-created::after\s*\{[\s\S]*content:\s*"\+";[\s\S]*top:\s*-7px;[\s\S]*right:\s*-8px;/s);
@@ -619,7 +695,10 @@ test("action preview ghosts stay centered instead of using preview offsets", () 
 });
 
 test("same-target previews render only the preferred action type", () => {
-  assert.match(adapterSource, /const preferredActionType = pickBestActionTypeForTarget\(actionsAtTarget, null\);/);
+  assert.match(
+    adapterSource,
+    /const preferredActionType = pickBestActionTypeForTarget\(actionsAtTarget, overlayActionType \?\? null\);/,
+  );
   assert.match(adapterSource, /const action = actionsAtTarget\.find\(\(candidate\) => candidate\.type === preferredActionType\) \?\? actionsAtTarget\[0\];/);
 });
 

@@ -31,11 +31,28 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /aria-pressed="\$\{currentRoute\.debug \? "true" : "false"\}"/);
   assert.match(source, /title: "Debug mode"/);
   assert.match(source, /Scenarios/);
-  assert.match(source, /<h1>Righelt<\/h1>/);
+  assert.match(source, /<h1><a class="shell-header-title-link" href="\$\{buildHomeHash\(getCurrentFlyoutState\(\)\)\}" data-flyout-link="home">Righelt<\/a><\/h1>/);
+  assert.match(source, /const renderHeaderWideActions = \(\) =>/);
+  assert.match(source, /const renderHeaderNarrowMenu = \(\) =>/);
+  assert.match(source, /data-action="toggle-header-menu"/);
+  assert.match(source, /data-header-menu-open="\$\{headerMenuOpen \? "true" : "false"\}"/);
+  assert.match(source, /const menuId = "shell-header-menu";/);
+  assert.match(source, /aria-controls="\$\{menuId\}"/);
+  assert.match(source, /data-header-menu-close="true"/);
+  assert.match(source, /class="shell-header-menu-panel\$\{headerMenuOpen \? " is-open" : ""\}"/);
+  assert.match(source, /aria-hidden="\$\{headerMenuOpen \? "false" : "true"\}"/);
+  assert.match(source, /tabindex="\$\{headerMenuOpen \? "0" : "-1"\}"/);
+  assert.doesNotMatch(source, /renderHeaderHomeAction/);
+  assert.doesNotMatch(source, />Home<\/(?:a|span)>/);
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Live Sync<\/h2>[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
   assert.match(source, /const getDocumentTitle = \(\) => \{\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;\s*\}\s*return "Righelt";\s*\};/s);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
+  assert.match(source, /data-game-shell-track/);
+  assert.match(source, /data-mobile-panel="players"/);
+  assert.match(source, /data-mobile-panel="board"/);
+  assert.match(source, /data-mobile-panel="history"/);
+  assert.match(source, /data-action="switch-game-panel"/);
   assert.match(source, /data-shell-sticky-target="left" data-sticky-enabled="false"/);
   assert.match(source, /data-shell-sticky-target="board" data-sticky-enabled="false"/);
   assert.match(source, /data-game-panel="history"/);
@@ -47,6 +64,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /return FLYOUT_KEYS\.every\(\(flyoutKey\) => \{/);
   assert.match(source, /const shouldEnableStickyShellColumn = \(\{ matchesWideScreen, columnHeight, viewportHeight \}\) =>/);
   assert.match(source, /const getCurrentFlyoutState = \(\) => \(\{\s*\.\.\.Object\.fromEntries\(FLYOUT_KEYS\.map\(\(key\) => \[key, currentRoute\[key\] === true\]\)\),\s*\}\);/s);
+  assert.match(source, /const getCurrentGameHashState = \(panel = getGamePanel\(\)\) => \(\{\s*\.\.\.getCurrentFlyoutState\(\),\s*panel,\s*\}\);/s);
   assert.match(source, /const getBaseRouteRenderKey = \(route = currentRoute\) => \{/);
   assert.match(source, /const getRouteRenderKey = \(route = currentRoute\) =>/);
   assert.match(source, /const isFlyoutOnlyRouteChange = \(previousRoute, nextRoute\) =>/);
@@ -67,6 +85,8 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /window\.requestAnimationFrame\(\(\) => \{\s*scrollHomeSectionToTop\(sectionKey\);\s*\}\);/s);
   assert.match(source, /const syncShellLayoutMode = \(\) => \{/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", layoutMode\);/);
+  assert.match(source, /appEl\.setAttribute\("data-shell-route", currentRoute\?\.name \|\| "unknown"\);/);
+  assert.match(source, /appEl\.style\.setProperty\("--shell-game-panel-index", String\(getGamePanelIndex\(activeGamePanel\)\)\);/);
   assert.match(source, /FLYOUT_KEYS\.forEach\(\(key\) => \{\s*appEl\.setAttribute\(`data-\$\{key\}-open`, currentRoute\[key\] \? "true" : "false"\);\s*\}\);/s);
   assert.match(source, /appEl\.setAttribute\("data-flyout-count", String\(getOpenFlyoutCount\(\)\)\);/);
   assert.match(source, /appEl\.setAttribute\("data-shell-content-width", String\(Math\.round\(getAvailableShellContentWidth\(\)\)\)\);/);
@@ -154,13 +174,13 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /clearCoordinatedFlyoutMotionStyles\(\);/);
   assert.match(source, /const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">\$\{renderHeader\(\)\}\$\{body\}<\/div>\$\{renderFlyouts\(\)\}<\/div>`;/);
   assert.match(source, /document\.title = getDocumentTitle\(\);/);
-  assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
+  assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*syncMountedGameShellPanelUi\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
   assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*syncScenarioAuthoringControls\(\);\s*updateMountedGameShell\(/s);
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.match(source, /data-flyout-link="home"/);
-  assert.match(source, /data-flyout-link="tutorial"/);
   assert.match(source, /data-flyout-link="game"/);
+  assert.doesNotMatch(source, /data-flyout-link="tutorial"/);
   assert.match(source, /data-action="copy-invite" data-game-id=/);
   assert.doesNotMatch(source, /replaceWith\(previousBoardPanel\)/);
 });
@@ -262,7 +282,7 @@ test("scenario selector labels use titles without visible ids", () => {
 test("debug flyout persists locally while scenario-created games close the scenarios flyout", () => {
   assert.match(source, /import \{ loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted \} from "\.\/persistence\.js";/);
   assert.match(source, /const getPersistedDebugFlyoutOpen = \(\) => loadDebugFlyoutOpen\(storage\);/);
-  assert.match(source, /const routeWithPersistedPreferences = \{\s*\.\.\.route,\s*debug: getPersistedDebugFlyoutOpen\(\),\s*\};/s);
+  assert.match(source, /const routeWithPersistedPreferences = \{\s*\.\.\.route,\s*debug: getPersistedDebugFlyoutOpen\(\),\s*panel: route\.name === "game" \? normalizeGamePanel\(route\.panel\) : route\.panel,\s*\};/s);
   assert.match(source, /return \{\s*\.\.\.routeWithPersistedPreferences,\s*\.\.\.resolveFlyoutState\(routeWithPersistedPreferences,/s);
   assert.doesNotMatch(source, /toggleDebugHash/);
   assert.match(source, /if \(action === "open-debug"\) \{[\s\S]*saveDebugFlyoutOpen\(storage, true\);[\s\S]*currentRoute = normalizeRouteFlyoutState\(\{ \.\.\.currentRoute, debug: true \}, \{ preferredFlyoutKey: "debug" \}\);[\s\S]*render\(\);/s);
@@ -326,14 +346,30 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /<span>\$\{renderHomeRoleLine\(game\)\}<\/span>/);
   assert.match(source, /\$\{seatConnectionLine\}/);
   assert.match(source, /const moveLabel = Array\.isArray\(game\.moves\) \? `Move \$\{game\.moves\.length \+ 1\}` : "Move pending";/);
-  assert.match(source, /reconcileMiniBoardPreviews\(\);\s*scheduleGameShellStickyLayout\(\);/);
+  assert.match(source, /reconcileMiniBoardPreviews\(\);\s*syncMountedGameShellPanelUi\(shellRoot\);\s*scheduleGameShellStickyLayout\(\);/);
 });
 
 test("withBusy only repaints immediately for actions that need visible busy state", () => {
   assert.match(source, /const withBusy = async \(fn, \{ renderStart = true, renderEnd = true \} = \{\}\) => \{/);
   assert.match(source, /if \(renderStart\) \{\s*render\(\);\s*\}/s);
-  assert.match(source, /const shouldRenderBusyStateStart =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "return-live" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
-  assert.match(source, /const shouldRenderBusyStateEnd =\s*action !== "copy-invite" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(source, /const shouldRenderBusyStateStart =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "return-live" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "toggle-header-menu" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(source, /const shouldRenderBusyStateEnd =\s*action !== "copy-invite" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "toggle-header-menu" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(
+    source,
+    /if \(target\.closest\("\[data-header-menu-close='true'\]"\)\) \{\s*closeHeaderMenu\(\);\s*if \(isNarrowHeaderMode\(\)\) \{\s*syncNarrowHeaderMenuDom\(\);\s*\}\s*\}/s,
+  );
+  assert.match(
+    source,
+    /if \(action === "toggle-header-menu"\) \{\s*headerMenuOpen = !headerMenuOpen;\s*if \(isNarrowHeaderMode\(\)\) \{\s*syncNarrowHeaderMenuDom\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}\s*return;\s*\}/s,
+  );
+  assert.match(
+    source,
+    /window\.addEventListener\("click", \(event\) => \{[\s\S]*if \(target\.closest\("\[data-header-menu-root\]"\)\) \{\s*return;\s*\}[\s\S]*closeHeaderMenu\(\);[\s\S]*syncNarrowHeaderMenuDom\(\);/s,
+  );
+  assert.match(
+    source,
+    /window\.addEventListener\("keydown", \(event\) => \{[\s\S]*event\.key !== "Escape"[\s\S]*closeHeaderMenu\(\);[\s\S]*syncNarrowHeaderMenuDom\(\);/s,
+  );
   assert.match(source, /\}, \{ renderStart: shouldRenderBusyStateStart, renderEnd: shouldRenderBusyStateEnd \}\);/);
   assert.match(source, /const renderFeedbackReveal = \(message\) =>/);
   assert.match(source, /feedback-reveal\$\{message \? " is-visible" : ""\}/);

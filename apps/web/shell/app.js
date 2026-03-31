@@ -18,7 +18,9 @@ import {
 } from "./scenarios.js";
 import { shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import {
+  DEFAULT_GAME_PANEL,
   FLYOUT_KEYS,
+  GAME_PANEL_KEYS,
   buildHashForRoute,
   buildGameHash,
   buildHomeHash,
@@ -128,9 +130,15 @@ let pressedControlEl = null;
 let controlReleaseTimer = null;
 let stickyLayoutFrame = 0;
 let homeSectionResizeFrame = 0;
+let activePanelSwipe = null;
+let panelTransitionResetTimer = null;
+let headerMenuOpen = false;
 const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;
 const SHELL_VIEWPORT_GUTTER_PX = 16;
 const FLYOUT_MOTION_MS = 180;
+const GAME_SHELL_PANEL_SWIPE_TRIGGER_PX = 72;
+const GAME_SHELL_PANEL_SWIPE_INTENT_PX = 18;
+const GAME_SHELL_PANEL_TRANSITION_MS = 220;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
 const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
@@ -784,8 +792,19 @@ const delay = (ms) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+const normalizeGamePanel = (panel) => (GAME_PANEL_KEYS.includes(panel) ? panel : DEFAULT_GAME_PANEL);
+const getGamePanel = (route = currentRoute) => (route?.name === "game" ? normalizeGamePanel(route.panel) : DEFAULT_GAME_PANEL);
+const getGamePanelIndex = (panel = getGamePanel()) => Math.max(0, GAME_PANEL_KEYS.indexOf(normalizeGamePanel(panel)));
+const getAdjacentGamePanel = (panel = getGamePanel(), direction = 0) => {
+  const nextIndex = Math.min(Math.max(getGamePanelIndex(panel) + direction, 0), GAME_PANEL_KEYS.length - 1);
+  return GAME_PANEL_KEYS[nextIndex];
+};
 const getCurrentFlyoutState = () => ({
   ...Object.fromEntries(FLYOUT_KEYS.map((key) => [key, currentRoute[key] === true])),
+});
+const getCurrentGameHashState = (panel = getGamePanel()) => ({
+  ...getCurrentFlyoutState(),
+  panel,
 });
 const getBaseRouteRenderKey = (route = currentRoute) => {
   if (!route || typeof route !== "object") {
@@ -803,7 +822,7 @@ const getBaseRouteRenderKey = (route = currentRoute) => {
   return String(route.name || "unknown");
 };
 const getRouteRenderKey = (route = currentRoute) =>
-  `${getBaseRouteRenderKey(route)}|${FLYOUT_KEYS.map((key) => `${key}:${route?.[key] === true}`).join("|")}`;
+  `${getBaseRouteRenderKey(route)}|panel:${route?.name === "game" ? getGamePanel(route) : ""}|${FLYOUT_KEYS.map((key) => `${key}:${route?.[key] === true}`).join("|")}`;
 const isFlyoutOnlyRouteChange = (previousRoute, nextRoute) =>
   getBaseRouteRenderKey(previousRoute) === getBaseRouteRenderKey(nextRoute) &&
   getRouteRenderKey(previousRoute) !== getRouteRenderKey(nextRoute);
@@ -851,6 +870,7 @@ const normalizeRouteFlyoutState = (route, { preferredFlyoutKey = null } = {}) =>
   const routeWithPersistedPreferences = {
     ...route,
     debug: getPersistedDebugFlyoutOpen(),
+    panel: route.name === "game" ? normalizeGamePanel(route.panel) : route.panel,
   };
   return {
     ...routeWithPersistedPreferences,
@@ -888,10 +908,137 @@ const getHomeSectionColumnCount = (sectionKey) => {
 const getHomeSectionVisiblePageSize = (sectionKey) => (getHomeSectionColumnCount(sectionKey) >= 3
   ? HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT
   : HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE);
+const isNarrowHeaderMode = () => getShellLayoutMode() === "narrow";
+const closeHeaderMenu = () => {
+  headerMenuOpen = false;
+};
+const syncNarrowHeaderMenuDom = () => {
+  if (!isNarrowHeaderMode() || !(appEl instanceof HTMLElement)) {
+    return;
+  }
+  const root = appEl.querySelector("[data-header-menu-root]");
+  const panel = appEl.querySelector("[data-header-menu-panel]");
+  const button = root?.querySelector?.('[data-action="toggle-header-menu"]');
+  if (!(root instanceof HTMLElement) || !(panel instanceof HTMLElement) || !(button instanceof HTMLElement)) {
+    return;
+  }
+
+  const menuId = panel.id || "shell-header-menu";
+  root.setAttribute("data-header-menu-open", headerMenuOpen ? "true" : "false");
+  button.setAttribute("aria-expanded", headerMenuOpen ? "true" : "false");
+  button.setAttribute("aria-label", headerMenuOpen ? "Close navigation menu" : "Open navigation menu");
+  button.setAttribute("aria-controls", menuId);
+  panel.setAttribute("aria-hidden", headerMenuOpen ? "false" : "true");
+
+  panel.querySelectorAll("[data-header-menu-close='true']").forEach((itemEl) => {
+    if (!(itemEl instanceof HTMLElement)) {
+      return;
+    }
+    itemEl.setAttribute("tabindex", headerMenuOpen ? "0" : "-1");
+    const itemAction = itemEl.getAttribute("data-action") || "";
+    if (itemAction === "open-scenarios" || itemAction === "close-scenarios") {
+      const pressed = currentRoute.scenarios === true;
+      itemEl.classList.toggle("is-active", pressed);
+      itemEl.setAttribute("aria-pressed", pressed ? "true" : "false");
+      itemEl.setAttribute("data-action", pressed ? "close-scenarios" : "open-scenarios");
+    } else if (itemAction === "open-debug" || itemAction === "close-debug") {
+      const pressed = currentRoute.debug === true;
+      itemEl.classList.toggle("is-active", pressed);
+      itemEl.setAttribute("aria-pressed", pressed ? "true" : "false");
+      itemEl.setAttribute("data-action", pressed ? "close-debug" : "open-debug");
+    }
+  });
+
+  if (headerMenuOpen) {
+    if (!prefersReducedMotion()) {
+      panel.classList.remove("is-open");
+      void panel.offsetHeight;
+      window.requestAnimationFrame(() => {
+        const livePanel = appEl.querySelector("[data-header-menu-panel]");
+        if (!(livePanel instanceof HTMLElement) || !headerMenuOpen) {
+          syncRenderedMarkupSnapshot();
+          return;
+        }
+        livePanel.classList.add("is-open");
+        syncRenderedMarkupSnapshot();
+      });
+      return;
+    }
+    panel.classList.add("is-open");
+  } else {
+    panel.classList.remove("is-open");
+  }
+  syncRenderedMarkupSnapshot();
+};
+const renderHeaderWideActions = () => `
+  <button
+    class="secondary${currentRoute.scenarios ? " is-active" : ""}"
+    type="button"
+    data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
+    aria-pressed="${currentRoute.scenarios ? "true" : "false"}"
+  >Scenarios</button>
+  <button
+    class="secondary${currentRoute.debug ? " is-active" : ""}"
+    type="button"
+    data-action="${currentRoute.debug ? "close-debug" : "open-debug"}"
+    aria-pressed="${currentRoute.debug ? "true" : "false"}"
+  >Debug</button>
+`;
+const renderHeaderNarrowMenu = () => {
+  const menuId = "shell-header-menu";
+  return `
+    <div class="shell-header-menu-root" data-header-menu-root data-header-menu-open="${headerMenuOpen ? "true" : "false"}">
+      <button
+        class="secondary shell-header-menu-button"
+        type="button"
+        data-action="toggle-header-menu"
+        aria-expanded="${headerMenuOpen ? "true" : "false"}"
+        aria-controls="${menuId}"
+        aria-label="${headerMenuOpen ? "Close navigation menu" : "Open navigation menu"}"
+      >
+        <span class="shell-header-menu-icon" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </span>
+      </button>
+      <div
+        class="shell-header-menu-panel${headerMenuOpen ? " is-open" : ""}"
+        id="${menuId}"
+        data-header-menu-panel
+        aria-hidden="${headerMenuOpen ? "false" : "true"}"
+      >
+        <button
+          class="secondary shell-header-menu-item${currentRoute.scenarios ? " is-active" : ""}"
+          type="button"
+          data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
+          data-header-menu-close="true"
+          aria-pressed="${currentRoute.scenarios ? "true" : "false"}"
+          tabindex="${headerMenuOpen ? "0" : "-1"}"
+        >Scenarios</button>
+        <button
+          class="secondary shell-header-menu-item${currentRoute.debug ? " is-active" : ""}"
+          type="button"
+          data-action="${currentRoute.debug ? "close-debug" : "open-debug"}"
+          data-header-menu-close="true"
+          aria-pressed="${currentRoute.debug ? "true" : "false"}"
+          tabindex="${headerMenuOpen ? "0" : "-1"}"
+        >Debug</button>
+      </div>
+    </div>
+  `;
+};
 const syncShellLayoutMode = () => {
   const layoutMode = getShellLayoutMode();
+  if (layoutMode === "wide" && headerMenuOpen) {
+    closeHeaderMenu();
+  }
   if (appEl instanceof HTMLElement) {
     appEl.setAttribute("data-shell-layout-mode", layoutMode);
+    appEl.setAttribute("data-shell-route", currentRoute?.name || "unknown");
+    const activeGamePanel = getGamePanel();
+    appEl.setAttribute("data-shell-game-panel", activeGamePanel);
+    appEl.style.setProperty("--shell-game-panel-index", String(getGamePanelIndex(activeGamePanel)));
     FLYOUT_KEYS.forEach((key) => {
       appEl.setAttribute(`data-${key}-open`, currentRoute[key] ? "true" : "false");
     });
@@ -1015,6 +1162,17 @@ const startControlPress = (controlEl) => {
   controlEl.classList.add("is-pressing");
   pressedControlEl = controlEl;
 };
+
+const clearActivePanelSwipe = () => {
+  activePanelSwipe = null;
+};
+
+const shouldHandleGamePanelSwipe = (target) =>
+  currentRoute.name === "game" &&
+  getShellLayoutMode() === "narrow" &&
+  target instanceof HTMLElement &&
+  target.closest("[data-game-shell-root]") instanceof HTMLElement &&
+  !target.closest(".shell-mobile-tabbar");
 
 const getCurrentViewedGameId = () => {
   if (currentRoute.name === "game") {
@@ -1195,28 +1353,11 @@ const renderTurnHistory = (game) => {
 const renderHeader = () => `
   <header class="shell-header">
     <div class="shell-header-main">
-      <h1>Righelt</h1>
+      <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Righelt</a></h1>
     </div>
     <div class="shell-header-actions">
-      <div class="nav-row">
-        ${
-          currentRoute.name !== "home"
-            ? `<a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Home</a>`
-            : ""
-        }
-        <button
-          class="secondary${currentRoute.scenarios ? " is-active" : ""}"
-          type="button"
-          data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
-          aria-pressed="${currentRoute.scenarios ? "true" : "false"}"
-        >Scenarios</button>
-        <button
-          class="secondary${currentRoute.debug ? " is-active" : ""}"
-          type="button"
-          data-action="${currentRoute.debug ? "close-debug" : "open-debug"}"
-          aria-pressed="${currentRoute.debug ? "true" : "false"}"
-        >Debug</button>
-        <a class="button-link secondary" href="${buildTutorialHash(null, getCurrentFlyoutState())}" data-flyout-link="tutorial">Tutorial</a>
+      <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
+        ${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
       </div>
     </div>
   </header>
@@ -1705,26 +1846,26 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
   maybeUpdateUndoRequestOutcomeFeedback(game);
   const liveSyncBanner =
     game.rollbackNotice && game.rollbackNotice.trim().length > 0
-      ? `<div class="alert danger">${escapeHtml(game.rollbackNotice)}</div>`
+      ? `<div class="alert danger shell-game-alert">${escapeHtml(game.rollbackNotice)}</div>`
       : game.syncStatus === "confirming"
-        ? `<div class="alert warn">Move confirmation is retrying. The board stays optimistic until the server confirms.</div>`
+        ? `<div class="alert warn shell-game-alert">Move confirmation is retrying. The board stays optimistic until the server confirms.</div>`
       : game.syncStatus === "desynced"
-        ? `<div class="alert warn">Live sync is recovering. The board is showing the last authoritative state.</div>`
+        ? `<div class="alert warn shell-game-alert">Live sync is recovering. The board is showing the last authoritative state.</div>`
         : "";
   const offlineBanner =
     game.showOfflineState || inviteFromRole === "offline"
-      ? `<div class="alert warn">Offline mode: invite and remote join actions are disabled.</div>`
+      ? `<div class="alert warn shell-game-alert">Offline mode: invite and remote join actions are disabled.</div>`
       : "";
 
   const undoRequestBanner =
     undoRequestFeedback && undoRequestFeedbackGameId === game.id
-      ? `<div class="alert">${escapeHtml(undoRequestFeedback)}</div>`
+      ? `<div class="alert shell-game-alert">${escapeHtml(undoRequestFeedback)}</div>`
       : "";
 
   return `
-    ${offlineBanner ? `<section class="panel">${offlineBanner}</section>` : ""}
-    ${liveSyncBanner ? `<section class="panel">${liveSyncBanner}</section>` : ""}
-    ${undoRequestBanner ? `<section class="panel">${undoRequestBanner}</section>` : ""}
+    ${offlineBanner}
+    ${liveSyncBanner}
+    ${undoRequestBanner}
   `;
 };
 
@@ -1851,7 +1992,7 @@ const renderHistoryPanel = (game) => {
 
 const renderBoardPanel = (game) => `
   <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span></h2>
-  <p class="board-preview-label" id="shell-board-preview-label">Select a piece to see it supply and command lines + what it can do:</p>
+  <p class="board-preview-label" id="shell-board-preview-label">Select a piece to preview moves; click it again for supply and command lines only:</p>
   <div class="board-wrap">
     <div id="shell-board" class="board"></div>
     <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
@@ -1872,29 +2013,89 @@ const shouldEnableStickyShellColumn = ({ matchesWideScreen, columnHeight, viewpo
   Number.isFinite(viewportHeight) &&
   columnHeight <= viewportHeight;
 
+const renderGameShellPanelTab = (panelKey, label) => `
+  <button
+    class="secondary shell-mobile-tab"
+    type="button"
+    data-action="switch-game-panel"
+    data-panel="${panelKey}"
+    aria-pressed="${getGamePanel() === panelKey ? "true" : "false"}"
+    aria-current="${getGamePanel() === panelKey ? "page" : "false"}"
+  >${label}</button>
+`;
+
 const renderGameShellFrame = (game) => `
   <div id="shell-game-alerts"></div>
-  <section class="layout-grid" data-game-shell-root data-game-id="${escapeHtml(game.id)}">
-    <div class="stack" data-shell-sticky-target="left" data-sticky-enabled="false">
-      <section class="panel" data-game-panel="summary"></section>
-      <section class="panel" data-game-panel="join"></section>
-      <section class="panel" data-game-panel="participants"></section>
-    </div>
+  <section class="game-shell-frame" data-game-shell-root data-game-id="${escapeHtml(game.id)}">
+    <div class="game-shell-track-wrap">
+      <section class="layout-grid game-shell-track" data-game-shell-track>
+        <div class="stack game-shell-mobile-panel" data-mobile-panel="players" data-shell-sticky-target="left" data-sticky-enabled="false">
+          <section class="panel" data-game-panel="summary"></section>
+          <section class="panel" data-game-panel="join"></section>
+          <section class="panel" data-game-panel="participants"></section>
+        </div>
 
-    <div class="stack" data-shell-sticky-target="board" data-sticky-enabled="false">
-      <section class="panel" data-shell-panel="board">
-        ${renderBoardPanel(game)}
+        <div class="stack game-shell-mobile-panel" data-mobile-panel="board" data-shell-sticky-target="board" data-sticky-enabled="false">
+          <section class="panel" data-shell-panel="board">
+            ${renderBoardPanel(game)}
+          </section>
+        </div>
+
+        <div class="stack game-shell-mobile-panel" data-mobile-panel="history">
+          <section class="panel" data-game-panel="history"></section>
+        </div>
       </section>
     </div>
-
-    <div class="stack">
-      <section class="panel" data-game-panel="history"></section>
-    </div>
+    <nav class="shell-mobile-tabbar" aria-label="Game panels">
+      ${renderGameShellPanelTab("players", "Players")}
+      ${renderGameShellPanelTab("board", "Board")}
+      ${renderGameShellPanelTab("history", "History")}
+    </nav>
   </section>
 `;
 
 const getMountedGameShellRoot = () =>
   appEl?.querySelector?.("[data-game-shell-root]") instanceof HTMLElement ? appEl.querySelector("[data-game-shell-root]") : null;
+const syncMountedGameShellPanelUi = (shellRoot = getMountedGameShellRoot()) => {
+  if (!(shellRoot instanceof HTMLElement)) {
+    return;
+  }
+  const activePanel = getGamePanel();
+  const nextPanelIndex = getGamePanelIndex(activePanel);
+  shellRoot.querySelectorAll("[data-action='switch-game-panel'][data-panel]").forEach((buttonEl) => {
+    if (!(buttonEl instanceof HTMLElement)) {
+      return;
+    }
+    const isActive = buttonEl.getAttribute("data-panel") === activePanel;
+    buttonEl.setAttribute("aria-pressed", isActive ? "true" : "false");
+    buttonEl.setAttribute("aria-current", isActive ? "page" : "false");
+  });
+  const trackEl = shellRoot.querySelector("[data-game-shell-track]");
+  if (trackEl instanceof HTMLElement) {
+    const previousPanelIndex = Number.parseInt(trackEl.dataset.panelIndex || String(nextPanelIndex), 10);
+    const shouldAnimate =
+      getShellLayoutMode() === "narrow" &&
+      !prefersReducedMotion() &&
+      trackEl.dataset.hasMounted === "true" &&
+      previousPanelIndex !== nextPanelIndex;
+    trackEl.dataset.panelIndex = String(nextPanelIndex);
+    trackEl.dataset.hasMounted = "true";
+    if (shouldAnimate) {
+      trackEl.dataset.transitionState = nextPanelIndex > previousPanelIndex ? "forward" : "backward";
+      if (panelTransitionResetTimer) {
+        window.clearTimeout(panelTransitionResetTimer);
+      }
+      panelTransitionResetTimer = window.setTimeout(() => {
+        panelTransitionResetTimer = null;
+        if (trackEl instanceof HTMLElement) {
+          trackEl.dataset.transitionState = "";
+        }
+      }, GAME_SHELL_PANEL_TRANSITION_MS);
+    } else {
+      trackEl.dataset.transitionState = "";
+    }
+  }
+};
 const getMountedShellPageEl = () =>
   appEl?.querySelector?.(".shell-page-shell") instanceof HTMLElement ? appEl.querySelector(".shell-page-shell") : null;
 const getMountedHeaderEl = () =>
@@ -2125,6 +2326,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
     }
   });
   reconcileMiniBoardPreviews();
+  syncMountedGameShellPanelUi(shellRoot);
   scheduleGameShellStickyLayout();
   return true;
 };
@@ -2164,8 +2366,9 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
     getCurrentFlyoutState(),
   )}`;
 
+  const gameAlerts = renderGameAlertsHtml(game, inviteFromRole);
   return `
-    ${renderGameAlertsHtml(game, inviteFromRole)}
+    ${gameAlerts ? `<div class="shell-game-alerts">${gameAlerts}</div>` : ""}
     <section class="layout-grid">
       <div class="stack" data-shell-sticky-target="left" data-sticky-enabled="false">
         <section class="panel">${renderGameSummaryPanel(game)}</section>
@@ -2785,6 +2988,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     syncFlyoutAwareLinks();
     syncCopyInviteLinks();
     updateHeaderFields();
+    syncMountedGameShellPanelUi();
     reconcileMiniBoardPreviews();
     animateHomeSectionTransitions();
     syncScenarioAuthoringControls();
@@ -2848,6 +3052,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   syncFlyoutAwareLinks();
   syncCopyInviteLinks();
   updateHeaderFields();
+  syncMountedGameShellPanelUi();
   reconcileMiniBoardPreviews();
   animateHomeSectionTransitions();
   syncScenarioAuthoringControls();
@@ -3045,6 +3250,7 @@ const navigateTo = (hash) => {
   const nextRoute = normalizeRouteFlyoutState(parsedRoute, { preferredFlyoutKey });
   const nextHash = buildHashForRoute(nextRoute);
   const previousRoute = currentRoute;
+  closeHeaderMenu();
   if (window.location.hash === nextHash) {
     currentRoute = nextRoute;
     syncFlyoutRenderOrder(currentRoute);
@@ -3071,6 +3277,7 @@ const navigateTo = (hash) => {
 
 window.addEventListener("hashchange", () => {
   const previousRoute = currentRoute;
+  closeHeaderMenu();
   const parsedRoute = parseRouteFromHash(window.location.hash);
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
   const normalizedHash = buildHashForRoute(currentRoute);
@@ -3131,6 +3338,13 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (target.closest("[data-header-menu-close='true']")) {
+    closeHeaderMenu();
+    if (isNarrowHeaderMode()) {
+      syncNarrowHeaderMenuDom();
+    }
+  }
+
   const actionEl = target.closest("[data-action]");
   if (!actionEl) {
     return;
@@ -3145,6 +3359,7 @@ appEl.addEventListener("click", async (event) => {
     action !== "return-live" &&
     action !== "tutorial-next" &&
     action !== "tutorial-skip" &&
+    action !== "toggle-header-menu" &&
     action !== "open-debug" &&
     action !== "open-scenarios" &&
     action !== "close-debug" &&
@@ -3154,6 +3369,7 @@ appEl.addEventListener("click", async (event) => {
     action !== "toggle-undone-group" &&
     action !== "tutorial-next" &&
     action !== "tutorial-skip" &&
+    action !== "toggle-header-menu" &&
     action !== "open-debug" &&
     action !== "open-scenarios" &&
     action !== "close-debug" &&
@@ -3216,6 +3432,15 @@ appEl.addEventListener("click", async (event) => {
   };
 
   await withBusy(async () => {
+    if (action === "toggle-header-menu") {
+      headerMenuOpen = !headerMenuOpen;
+      if (isNarrowHeaderMode()) {
+        syncNarrowHeaderMenuDom();
+      } else {
+        render({ animatePanels: false, includeBoard: false });
+      }
+      return;
+    }
     if (action === "open-debug") {
       if (!currentRoute.debug) {
         saveDebugFlyoutOpen(storage, true);
@@ -3254,6 +3479,18 @@ appEl.addEventListener("click", async (event) => {
           navigateTo(toggleScenariosHash(window.location.hash));
         });
       }
+      return;
+    }
+
+    if (action === "switch-game-panel") {
+      if (currentRoute.name !== "game" || getShellLayoutMode() !== "narrow") {
+        return;
+      }
+      const nextPanel = normalizeGamePanel(actionEl.getAttribute("data-panel"));
+      if (nextPanel === getGamePanel()) {
+        return;
+      }
+      navigateTo(buildGameHash(currentRoute.gameId, currentRoute.inviteFromRole, getCurrentGameHashState(nextPanel)));
       return;
     }
 
@@ -3317,7 +3554,7 @@ appEl.addEventListener("click", async (event) => {
       });
       markInviteChoiceCommitted(gameId);
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId, null, getCurrentFlyoutState()));
+        navigateTo(buildGameHash(gameId, null, getCurrentGameHashState(currentRoute.name === "game" ? getGamePanel() : DEFAULT_GAME_PANEL)));
         return;
       }
       await syncRouteDataAndLiveChannels();
@@ -3338,7 +3575,7 @@ appEl.addEventListener("click", async (event) => {
         setInviteFeedback("Player join request sent. You are now viewing the game while approval is pending.");
       }
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId, null, getCurrentFlyoutState()));
+        navigateTo(buildGameHash(gameId, null, getCurrentGameHashState(currentRoute.name === "game" ? getGamePanel() : DEFAULT_GAME_PANEL)));
         return;
       }
       await syncRouteDataAndLiveChannels();
@@ -3715,6 +3952,88 @@ window.addEventListener("pointerup", (event) => {
 
 window.addEventListener("pointercancel", () => {
   clearHistoryPress();
+});
+
+window.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!headerMenuOpen || !(target instanceof HTMLElement)) {
+    return;
+  }
+  if (target.closest("[data-header-menu-root]")) {
+    return;
+  }
+  closeHeaderMenu();
+  syncNarrowHeaderMenuDom();
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !headerMenuOpen) {
+    return;
+  }
+  closeHeaderMenu();
+  syncNarrowHeaderMenuDom();
+});
+
+appEl.addEventListener("touchstart", (event) => {
+  const touch = event.touches[0];
+  const target = event.target;
+  if (!touch || !shouldHandleGamePanelSwipe(target)) {
+    clearActivePanelSwipe();
+    return;
+  }
+  activePanelSwipe = {
+    startX: touch.clientX,
+    startY: touch.clientY,
+    deltaX: 0,
+    deltaY: 0,
+    intentLocked: false,
+  };
+}, { passive: true });
+
+appEl.addEventListener("touchmove", (event) => {
+  if (!activePanelSwipe) {
+    return;
+  }
+  const touch = event.touches[0];
+  if (!touch) {
+    clearActivePanelSwipe();
+    return;
+  }
+  activePanelSwipe.deltaX = touch.clientX - activePanelSwipe.startX;
+  activePanelSwipe.deltaY = touch.clientY - activePanelSwipe.startY;
+  if (!activePanelSwipe.intentLocked) {
+    const absX = Math.abs(activePanelSwipe.deltaX);
+    const absY = Math.abs(activePanelSwipe.deltaY);
+    if (absX < GAME_SHELL_PANEL_SWIPE_INTENT_PX) {
+      return;
+    }
+    if (absX <= absY * 1.15) {
+      clearActivePanelSwipe();
+      return;
+    }
+    activePanelSwipe.intentLocked = true;
+  }
+  event.preventDefault();
+}, { passive: false });
+
+appEl.addEventListener("touchend", () => {
+  if (!activePanelSwipe) {
+    return;
+  }
+  const deltaX = activePanelSwipe.deltaX;
+  clearActivePanelSwipe();
+  if (Math.abs(deltaX) < GAME_SHELL_PANEL_SWIPE_TRIGGER_PX || currentRoute.name !== "game") {
+    return;
+  }
+  const nextPanel = deltaX < 0 ? getAdjacentGamePanel(getGamePanel(), 1) : getAdjacentGamePanel(getGamePanel(), -1);
+  if (nextPanel === getGamePanel()) {
+    return;
+  }
+  navigateTo(buildGameHash(currentRoute.gameId, currentRoute.inviteFromRole, getCurrentGameHashState(nextPanel)));
+});
+
+window.addEventListener("touchcancel", () => {
+  clearActivePanelSwipe();
 });
 
 const initialRender = async () => {

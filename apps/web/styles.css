@@ -13,6 +13,8 @@
   --player-p1: #c2452f;
   --player-p2: #2d67c7;
   --player-both: #7b53ab;
+  /* Blue-green complement to warm paper/cream; distinct from --accent (source/hover) and from P1/P2. */
+  --move-selection-ring: #0d6b56;
 }
 
 body {
@@ -53,36 +55,47 @@ body {
 .board-preview-label {
   margin: 0.35rem 0 0.75rem;
   color: var(--ink);
-  line-height: 1.1;
-  min-height: calc(1.1em * 2);
+  /* Line height matches inline chips so coordinate tokens don’t grow the line box. */
+  line-height: 1.45;
+  min-height: calc(2 * 1.45em);
   font-size: 1.3rem;
 }
 
-.board-preview-highlight-chip {
-  display: inline-block;
-  padding: 0.05rem 0.45rem 0.12rem;
+@media (max-width: 430px) {
+  .board-preview-label {
+    font-size: 1.15rem;
+  }
+}
+
+/* Chips share one fixed em height so preview label block height stays stable with or without tokens. */
+.board-preview-coordinate-chip,
+.board-preview-highlight-chip,
+.board-preview-retreat-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.45em;
+  padding: 0 0.42rem;
+  box-sizing: border-box;
+  vertical-align: middle;
+  line-height: 1;
+  font-size: 0.9em;
   border-radius: 999px;
-  background: #e6f2d3;
+}
+
+.board-preview-highlight-chip {
   border: 1px solid #c7db9f;
-  line-height: 1.1;
+  background: #e6f2d3;
 }
 
 .board-preview-retreat-chip {
-  display: inline-block;
-  padding: 0.05rem 0.45rem 0.12rem;
-  border-radius: 999px;
-  background: #f3e7c5;
   border: 1px solid #d1b06a;
+  background: #f3e7c5;
   color: #72531a;
-  line-height: 1.1;
 }
 
 .board-preview-coordinate-chip {
-  display: inline-block;
-  padding: 0.05rem 0.45rem 0.12rem;
-  border-radius: 999px;
   border: 1px solid #cac7bd;
-  line-height: 1.1;
   background: #fbf8f0;
   color: var(--ink);
 }
@@ -93,10 +106,22 @@ body {
   color: var(--ink);
 }
 
-.board-preview-coordinate-chip-source {
-  background: #edf7f1;
-  border-color: var(--accent);
-  color: var(--accent);
+/* Selected piece square: fill + teal ring like the board cell; coordinate text = piece owner (token color). */
+.board-preview-coordinate-chip.board-preview-coordinate-chip-selected-piece {
+  background: #fbf8f0;
+  border-color: var(--move-selection-ring);
+}
+
+.board-preview-coordinate-chip-selected-piece.board-preview-coordinate-chip-selected-piece-p1 {
+  color: var(--player-p1);
+}
+
+.board-preview-coordinate-chip-selected-piece.board-preview-coordinate-chip-selected-piece-p2 {
+  color: var(--player-p2);
+}
+
+.board-preview-coordinate-chip-selected-piece.board-preview-coordinate-chip-selected-piece-neutral {
+  color: var(--move-selection-ring);
 }
 
 .board-preview-coordinate-chip-target {
@@ -105,13 +130,63 @@ body {
   color: var(--accent-2);
 }
 
-.board-preview-coordinate-chip-continuation-pending {
+.board-preview-coordinate-chip-target.board-preview-coordinate-chip-side-p1 {
+  background: rgba(194, 69, 47, 0.12);
+  border-color: rgba(194, 69, 47, 0.45);
+  color: var(--player-p1);
+}
+
+.board-preview-coordinate-chip-target.board-preview-coordinate-chip-side-p2 {
+  background: rgba(45, 103, 199, 0.12);
+  border-color: rgba(45, 103, 199, 0.45);
+  color: var(--player-p2);
+}
+
+.board-preview-coordinate-chip-target.board-preview-coordinate-chip-side-neutral {
+  background: #fbefeb;
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
+
+/* Push retreat actor: same palette as .cell.retreat-piece / .board-preview-retreat-chip (not square-highlight green). */
+.board-preview-coordinate-chip.board-preview-coordinate-chip-retreat {
+  border-color: #d1b06a;
+  background: #f3e7c5;
+  color: #72531a;
+}
+
+/* Rush / push follow continuation actors: match side-to-move (preview arrows), not generic green. */
+.board-preview-coordinate-chip-continuation-pending.board-preview-coordinate-chip-side-p1 {
+  background: rgba(194, 69, 47, 0.12);
+  border-color: rgba(194, 69, 47, 0.4);
+  color: var(--player-p1);
+}
+
+.board-preview-coordinate-chip-continuation-pending.board-preview-coordinate-chip-side-p2 {
+  background: rgba(45, 103, 199, 0.12);
+  border-color: rgba(45, 103, 199, 0.4);
+  color: var(--player-p2);
+}
+
+.board-preview-coordinate-chip-continuation-pending.board-preview-coordinate-chip-side-neutral {
   background: #e6f2d3;
   border-color: #c7db9f;
   color: var(--ink);
 }
 
-.board-preview-coordinate-chip-continuation-moved {
+.board-preview-coordinate-chip-continuation-moved.board-preview-coordinate-chip-side-p1 {
+  background: rgba(194, 69, 47, 0.07);
+  border-color: rgba(194, 69, 47, 0.26);
+  color: rgba(194, 69, 47, 0.82);
+}
+
+.board-preview-coordinate-chip-continuation-moved.board-preview-coordinate-chip-side-p2 {
+  background: rgba(45, 103, 199, 0.07);
+  border-color: rgba(45, 103, 199, 0.26);
+  color: rgba(45, 103, 199, 0.82);
+}
+
+.board-preview-coordinate-chip-continuation-moved.board-preview-coordinate-chip-side-neutral {
   background: #f5f7ef;
   border-color: #d7dec9;
   color: var(--muted);
@@ -128,6 +203,17 @@ body {
   font-size: 0.9rem;
   font-weight: 600;
   vertical-align: baseline;
+}
+
+.board-preview-label .board-preview-inline-button {
+  display: inline-flex;
+  align-items: center;
+  height: 1.45em;
+  margin: 0 0.1rem 0 0;
+  padding: 0 0.42rem;
+  box-sizing: border-box;
+  vertical-align: middle;
+  font-size: 0.88em;
 }
 
 [data-hover-capability="hover"] .board-preview-inline-button:hover {
@@ -278,7 +364,11 @@ button {
   background: var(--cell-fill);
 }
 
-[data-hover-capability="hover"] .board[data-interaction-mode="interactive"] .cell:not(.unselectable):hover {
+/* Do not override border on source/target: they use border + inset shadow as one ring; changing
+   only border-color here produced a second color on hover (green border, red/pink inset). */
+[data-hover-capability="hover"]
+  .board[data-interaction-mode="interactive"]
+  .cell:not(.unselectable):not(.source):not(.target):hover {
   border-color: var(--accent);
 }
 
@@ -298,6 +388,16 @@ button {
 .cell.target {
   border-color: var(--accent-2);
   box-shadow: inset 0 0 0 1px var(--accent-2);
+}
+
+.cell.target.target-side-p1:not(.continuation-member) {
+  border-color: var(--player-p1);
+  box-shadow: inset 0 0 0 1px var(--player-p1);
+}
+
+.cell.target.target-side-p2:not(.continuation-member) {
+  border-color: var(--player-p2);
+  box-shadow: inset 0 0 0 1px var(--player-p2);
 }
 
 .cell.removal-effect::after {
@@ -371,8 +471,8 @@ button {
 }
 
 .cell.selected-piece {
-  border-color: #2b4c94;
-  box-shadow: inset 0 0 0 1px #2b4c94;
+  border-color: var(--move-selection-ring);
+  box-shadow: inset 0 0 0 1px var(--move-selection-ring);
 }
 
 .cell.selected-piece.inactive-selected-piece::after {
@@ -673,8 +773,16 @@ button {
   font-weight: 800;
 }
 
+.axis-label.axis-medium.axis-target-p1 {
+  color: var(--player-p1);
+}
+
+.axis-label.axis-medium.axis-target-p2 {
+  color: var(--player-p2);
+}
+
 .axis-label.axis-strong {
-  color: #0f5fa0;
+  color: var(--move-selection-ring);
   font-weight: 900;
   text-shadow: 0 0 0.01px currentColor;
 }
@@ -695,16 +803,55 @@ button {
   position: absolute;
   inset: 0;
   margin: auto;
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  z-index: 0;
+  z-index: 2;
   pointer-events: none;
-  font-size: 1.08rem;
-  color: #2f8e63;
+  font-size: 0;
+  color: transparent;
   line-height: 1;
+  transform: translateZ(0);
+  background: transparent;
+}
+
+.supply-point-marker::before,
+.supply-point-marker::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* Inner green diamond border */
+.supply-point-marker::before {
+  width: 7px;
+  height: 7px;
+  border: 2px solid #2f8e63;
+  box-sizing: border-box;
+  background: #2f8e63;
+}
+
+/* Outer owner-colored diamond border with a small gap. */
+.supply-point-marker::after {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--muted);
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.supply-point-marker.supply-point-p1::after {
+  border-color: var(--player-p1);
+}
+
+.supply-point-marker.supply-point-p2::after {
+  border-color: var(--player-p2);
 }
 
 .form-row {
@@ -834,7 +981,7 @@ button:disabled {
   cursor: progress;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 900px) {
   .grid {
     grid-template-columns: 1fr;
   }
