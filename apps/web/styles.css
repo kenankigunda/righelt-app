@@ -13,6 +13,8 @@
   --player-p1: #c2452f;
   --player-p2: #2d67c7;
   --player-both: #7b53ab;
+  /* Blue-green complement to warm paper/cream; distinct from --accent (source/hover) and from P1/P2. */
+  --move-selection-ring: #0d6b56;
 }
 
 body {
@@ -471,8 +473,8 @@ button {
 }
 
 .cell.selected-piece {
-  border-color: #2b4c94;
-  box-shadow: inset 0 0 0 1px #2b4c94;
+  border-color: var(--move-selection-ring);
+  box-shadow: inset 0 0 0 1px var(--move-selection-ring);
 }
 
 .cell.selected-piece.inactive-selected-piece::after {
@@ -782,7 +784,7 @@ button {
 }
 
 .axis-label.axis-strong {
-  color: #0f5fa0;
+  color: var(--move-selection-ring);
   font-weight: 900;
   text-shadow: 0 0 0.01px currentColor;
 }
