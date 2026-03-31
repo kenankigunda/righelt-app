@@ -16,7 +16,7 @@ import {
   loadScenarioCatalog,
   tryLocalScenarioWrite,
 } from "./scenarios.js";
-import { shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
+import { shouldResetBoardSelection, shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import {
   DEFAULT_GAME_PANEL,
   FLYOUT_KEYS,
@@ -2313,7 +2313,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   if (historyEl instanceof HTMLElement) {
     historyEl.innerHTML = renderHistoryPanel(game);
   }
-  if (includeBoard) {
+  if (includeBoard || mountedBoardGameId === game.id) {
     mountBoardForGame(game);
   }
   FLYOUT_KEYS.forEach((flyoutKey) => {
@@ -2717,7 +2717,15 @@ const mountBoardForGame = (game) => {
     syncStatus: game.syncStatus ?? "ready",
     rollbackNotice: game.rollbackNotice ?? "",
   });
-  const resetSelection = mountedHistoryMoveIndex !== historyMoveIndex || (mountedSyncStatusKey !== syncStatusKey && Boolean(game.rollbackNotice));
+  const resetSelection =
+    mountedHistoryMoveIndex !== historyMoveIndex ||
+    (mountedSyncStatusKey !== syncStatusKey && Boolean(game.rollbackNotice)) ||
+    shouldResetBoardSelection({
+      currentSnapshot: boardRuntime.getState?.() ?? null,
+      nextSnapshot: snapshot,
+      currentSelection: boardRuntime.getSelection?.() ?? null,
+      nextLegalActions: effectiveLegalActions,
+    });
   mountedHistoryMoveIndex = historyMoveIndex;
   boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
   boardRuntime.syncInteractionCapabilities?.();

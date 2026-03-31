@@ -57,6 +57,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /data-shell-sticky-target="board" data-sticky-enabled="false"/);
   assert.match(source, /data-game-panel="history"/);
   assert.match(source, /const updateMountedGameShell = \(\{ game, inviteFromRole = null, inviteToken = null, includeBoard = true \} = \{\}\) => \{/);
+  assert.match(source, /if \(includeBoard \|\| mountedBoardGameId === game\.id\) \{\s*mountBoardForGame\(game\);\s*\}/s);
   assert.match(source, /const getMountedHeaderEl = \(\) =>/);
   assert.match(source, /const updateMountedHeader = \(\) => \{/);
   assert.match(source, /currentHeaderEl\.replaceWith\(nextHeaderEl\);/);
@@ -248,6 +249,7 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /transport\.subscribe\(\(change\) => \{\s*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);\s*\}\);/s);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
   assert.match(source, /return !getActiveApprovalRequest\(game\) && !getActiveRevertRequest\(game\) && !getActivePendingRevertRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
+  assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*\}\);/s);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
 });
 
