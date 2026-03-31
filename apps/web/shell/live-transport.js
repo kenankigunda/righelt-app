@@ -131,6 +131,25 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const withOfflineQuery = (path) => `${path}${path.includes("?") ? "&" : "?"}offline=${offline ? "1" : "0"}`;
   const withForcedOfflineQuery = (path, forcedOffline) => `${path}${path.includes("?") ? "&" : "?"}offline=${forcedOffline ? "1" : "0"}`;
+  const isIdentityControlledPlayground = (game) => canOperateOfflinePlayground(game, identityId);
+  const isLocallyPlayableGame = (game) => Boolean(game?.localOnly || game?.offlineLocal || isIdentityControlledPlayground(game));
+  const canReplayOfflineMutations = (game) => Boolean(!game?.localOnly && isIdentityControlledPlayground(game));
+  const shouldPersistOfflineGame = (game) => Boolean(game?.localOnly || (isIdentityControlledPlayground(game) && (offline || offlinePendingByGameId.has(game.id))));
+  const shouldUseLocalOfflineExecution = (game) => Boolean(game?.localOnly || (offline && isLocallyPlayableGame(game)));
+  const canLocallyEndTurn = (game) => {
+    const activeTurn = getActiveTurn(game);
+    const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(game);
+    const turnOwnerIdentity = turnOwnerSeat === "Player 1" ? game?.player1?.identityId ?? null : game?.player2?.identityId ?? null;
+    return (
+      isLocallyPlayableGame(game) &&
+      isIdentityControlledPlayground(game) &&
+      game?.myRole !== "Viewer" &&
+      game?.myRole !== "Guest" &&
+      !game?.inHistoryMode &&
+      turnOwnerIdentity === identityId &&
+      Boolean(activeTurn?.moveIndexes?.length)
+    );
+  };
 
   const emitChange = (change) => {
     for (const listener of listeners) {
@@ -279,19 +298,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     next.showOfflineState = true;
     next.canInvite = false;
     next.showJoinActions = false;
-    const offlinePlayable = next.localOnly || next.offlineLocal || canOperateOfflinePlayground(next, identityId);
-    next.canRecordMove = Boolean(offlinePlayable && next.canRecordMove);
-    const activeTurn = getActiveTurn(next);
-    const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(next);
-    const turnOwnerIdentity = turnOwnerSeat === "Player 1" ? next.player1?.identityId ?? null : next.player2?.identityId ?? null;
-    const dualSeatOfflinePlayground = offlinePlayable && canOperateOfflinePlayground(next, identityId);
-    next.canEndTurn =
-      Boolean(dualSeatOfflinePlayground) &&
-      next.myRole !== "Viewer" &&
-      next.myRole !== "Guest" &&
-      !next.inHistoryMode &&
-      turnOwnerIdentity === identityId &&
-      Boolean(getActiveTurn(next)?.moveIndexes?.length);
+    next.canRecordMove = Boolean(isLocallyPlayableGame(next) && next.canRecordMove);
+    next.canEndTurn = canLocallyEndTurn(next);
     if (persistenceWarningCode) {
       next.persistenceWarningCode = persistenceWarningCode;
     }
@@ -301,7 +309,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const persistLocalState = () => {
     try {
       const persistedGames = [...gameById.values()]
-        .filter((game) => game?.localOnly === true || (canOperateOfflinePlayground(game, identityId) && (offline || offlinePendingByGameId.has(game.id))))
+        .filter((game) => shouldPersistOfflineGame(game))
         .map((game) => clone(game));
       const pendingMutationsByGameId = Object.fromEntries(
         [...offlinePendingByGameId.entries()]
@@ -359,13 +367,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       !next.inHistoryMode &&
       controlIdentity === identityId &&
       legalActions.length > 0;
-    next.canEndTurn =
-      (next.localOnly || next.offlineLocal || canOperateOfflinePlayground(next, identityId)) &&
-      canOperateOfflinePlayground(next, identityId) &&
-      !next.inHistoryMode &&
-      controlSeat === turnOwnerSeat &&
-      turnOwnerIdentity === identityId &&
-      Boolean(currentTurn?.moveIndexes?.length);
+    next.canEndTurn = canLocallyEndTurn(next);
     if (persistenceWarningCode) {
       next.persistenceWarningCode = persistenceWarningCode;
     }
@@ -1064,8 +1066,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       if (!game) {
         throw new Error("game_not_found");
       }
-      const offlinePlayable = game.localOnly || game.offlineLocal || canOperateOfflinePlayground(game, identityId);
-      if (!offlinePlayable) {
+      if (!isLocallyPlayableGame(game)) {
         const error = new Error("offline_move_local_only");
         error.code = "offline_move_local_only";
         throw error;
@@ -1084,7 +1085,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
         error.code = result.validation?.code || "offline_apply_failed";
         throw error;
       }
-      if (!game.localOnly) {
+      if (canReplayOfflineMutations(game)) {
         queueOfflineMutation(gameId, { type: "apply", state: result.previousState, action });
       }
       return { ok: true, game: upsertGame(next), move: result.move };
@@ -1100,7 +1101,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const loadGameLegalActions = async ({ gameId, state }) => {
     const game = getGameViewModel(gameId);
-    if (game?.localOnly || (offline && canOperateOfflinePlayground(game, identityId))) {
+    if (shouldUseLocalOfflineExecution(game)) {
       const body = computeLocalLegalActions(state ?? game.currentSnapshot ?? game.board?.state ?? null);
       const next = clone(game);
       next.board.state = clone(body.state);
@@ -1123,7 +1124,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const loadGamePieceMoves = async ({ gameId, state, pieceId }) => {
     const game = getGameViewModel(gameId);
-    if (game?.localOnly || (offline && canOperateOfflinePlayground(game, identityId))) {
+    if (shouldUseLocalOfflineExecution(game)) {
       return buildPieceMoveResponse({
         state: state ?? game.currentSnapshot ?? game.board?.state ?? null,
         legalActions: Array.isArray(game.legalActions) ? game.legalActions : [],
@@ -1144,11 +1145,11 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const applyGameAction = async ({ gameId, state, action }) => {
     const game = getGameViewModel(gameId);
-    if (game?.localOnly || (offline && canOperateOfflinePlayground(game, identityId))) {
+    if (shouldUseLocalOfflineExecution(game)) {
       const next = clone(game);
       const result = applyLocalAction({ game: next, action });
       if (result.accepted) {
-        if (!game.localOnly) {
+        if (canReplayOfflineMutations(game)) {
           queueOfflineMutation(gameId, { type: "apply", state: result.previousState, action });
         }
         upsertGame(next);
@@ -1198,10 +1199,10 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const endTurn = async ({ gameId }) => {
     const game = getGameViewModel(gameId);
-    if (game?.localOnly || (offline && canOperateOfflinePlayground(game, identityId))) {
+    if (shouldUseLocalOfflineExecution(game)) {
       const next = clone(game);
       const turn = applyOfflineEndTurn(next);
-      if (!game.localOnly) {
+      if (canReplayOfflineMutations(game)) {
         queueOfflineMutation(gameId, { type: "end-turn" });
       }
       return { ok: true, turn, game: upsertGame(next) };
@@ -1377,7 +1378,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const getSyncMetrics = () => clone(syncMetrics);
 
   for (const persistedGame of Array.isArray(persistedState?.games) ? persistedState.games : []) {
-    if (persistedGame?.localOnly === true || canOperateOfflinePlayground(persistedGame, identityId)) {
+    if (shouldPersistOfflineGame(persistedGame)) {
       upsertGame(persistedGame);
     }
   }
