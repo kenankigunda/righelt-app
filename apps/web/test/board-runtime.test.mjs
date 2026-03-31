@@ -1058,6 +1058,115 @@ test("board runtime keeps lone-target auto-selection while forced click target s
   });
 });
 
+test("board runtime toggles overlay phase when the selected piece is clicked again", async () => {
+  let onCellClick = null;
+  const renderCalls = [];
+  let boardPreviewLabelValue = "";
+  const boardPreviewLabelEl = {
+    get textContent() {
+      return boardPreviewLabelValue;
+    },
+    set textContent(value) {
+      boardPreviewLabelValue = value;
+    },
+    get innerHTML() {
+      return boardPreviewLabelValue;
+    },
+    set innerHTML(value) {
+      boardPreviewLabelValue = value;
+    },
+    addEventListener: noop,
+    removeEventListener: noop,
+  };
+
+  const multiMoves = [
+    { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } },
+    { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 5, col: 2 } },
+  ];
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: ({ onCellClick: nextOnCellClick }) => {
+        onCellClick = nextOnCellClick;
+      },
+      render: (payload) => renderCalls.push(payload),
+      getSelectedPieceSummary: ({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) => {
+        const selectedPiece = snapshot?.pieces?.find((piece) => piece.id === selectedPieceId) ?? null;
+        if (!selectedPiece) {
+          return null;
+        }
+        return { details: { owner: selectedPiece.owner }, actions: selectedPieceMovePreviews ?? selectedPieceMoves };
+      },
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: ({ snapshot, clickedCoord, currentActionType }) => {
+        const clickedPiece =
+          snapshot?.pieces?.find((piece) => piece.position.row === clickedCoord.row && piece.position.col === clickedCoord.col) ??
+          null;
+        if (!clickedPiece) {
+          return {
+            selection: {
+              selectedPieceId: "A1",
+              source: { row: 4, col: 2 },
+              target: null,
+            },
+            nextActionType: currentActionType,
+          };
+        }
+        return {
+          selection: {
+            selectedPieceId: clickedPiece.id,
+            source: { ...clickedPiece.position },
+            target: null,
+          },
+          nextActionType: currentActionType,
+        };
+      },
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({
+        state: null,
+        actions: multiMoves,
+        previewActions: multiMoves.map((a) => ({ ...a, legal: true })),
+      }),
+      canInteract: () => true,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl,
+    boardTurnIndicatorEl: null,
+  });
+
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      outcome: null,
+      pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true }],
+    },
+    { legalActions: multiMoves },
+  );
+
+  onCellClick({ row: 4, col: 2 });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(renderCalls.at(-1)?.selectedPieceOverlayPhase, "actionPreviews");
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Selected piece at"), true);
+
+  onCellClick({ row: 4, col: 2 });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(renderCalls.at(-1)?.selectedPieceOverlayPhase, "supplyCommand");
+  assert.deepEqual(runtime.getSelection().target, null);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Showing supply & command lines"), true);
+});
+
 test("board runtime can submit a legal target immediately after piece selection", async () => {
   let onCellClick = null;
   const appliedActions = [];

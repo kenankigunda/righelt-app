@@ -1992,7 +1992,7 @@ const renderHistoryPanel = (game) => {
 
 const renderBoardPanel = (game) => `
   <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span></h2>
-  <p class="board-preview-label" id="shell-board-preview-label">Select a piece to see its supply and command lines + what it can do:</p>
+  <p class="board-preview-label" id="shell-board-preview-label">Select a piece to preview moves; click it again for supply and command lines only:</p>
   <div class="board-wrap">
     <div id="shell-board" class="board"></div>
     <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>

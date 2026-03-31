@@ -341,6 +341,79 @@ test("board adapter static render uses non-focusable cells", async () => {
   });
 });
 
+test("interactive overlay omits supply lines in action preview phase and omits move previews in supply command phase", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl, overlayLinesEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P1",
+      continuation: null,
+      pieces: [
+        { id: "C1", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+        { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
+      ],
+      artifacts: {
+        supply: [
+          {
+            player: "P1",
+            shortestPathByPieceId: {
+              A1: [
+                { row: 4, col: 2 },
+                { row: 4, col: 1 },
+              ],
+            },
+          },
+        ],
+        command: {
+          shortestPathToCommanderByPieceId: {
+            A1: [
+              { row: 4, col: 2 },
+              { row: 3, col: 2 },
+            ],
+          },
+        },
+        groups: {
+          componentByPieceId: { A1: "G1" },
+          membersByComponentId: { G1: ["A1"] },
+          strengthByComponentId: { G1: 1 },
+        },
+      },
+    };
+
+    const previews = [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 }, legal: true }];
+    const baseRender = {
+      snapshot,
+      selection: { selectedPieceId: "A1", source: { row: 4, col: 2 }, target: null },
+      overlay: { mode: "interactive" },
+      legalActions: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "move",
+    };
+
+    adapter.render({
+      ...baseRender,
+      selectedPieceMoves: previews,
+      selectedPieceMovePreviews: previews,
+      selectedPieceOverlayPhase: "actionPreviews",
+    });
+
+    const supplyStrokeLines = overlayLinesEl.querySelectorAll("line").filter((line) => line.getAttribute("stroke") === "#2f8e63");
+    assert.equal(supplyStrokeLines.length, 0);
+    assert.equal(getCell(boardEl, 4, 3)?.querySelectorAll(".move-ghost").length > 0, true);
+
+    adapter.render({
+      ...baseRender,
+      selectedPieceMoves: previews,
+      selectedPieceMovePreviews: previews,
+      selectedPieceOverlayPhase: "supplyCommand",
+    });
+
+    const supplyLinesAfter = overlayLinesEl.querySelectorAll("line").filter((line) => line.getAttribute("stroke") === "#2f8e63");
+    assert.ok(supplyLinesAfter.length > 0);
+    assert.equal(boardEl.querySelectorAll(".move-ghost").length, 0);
+  });
+});
+
 test("preview arrow curvature detects overlapping supply or command segments only", () => {
   assert.equal(
     segmentsOverlapOnSameLine(

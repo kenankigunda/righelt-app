@@ -652,6 +652,7 @@ export function createEnginePlaygroundBoardAdapter() {
     selectedPieceMoves,
     selectedPieceMovePreviews,
     currentActionType: overlayActionType,
+    selectedPieceOverlayPhase,
   }) => {
     if (!overlayLinesEl) {
       return;
@@ -721,6 +722,8 @@ export function createEnginePlaygroundBoardAdapter() {
       }
     }
 
+    const drawSupplyCommand = selectedPieceOverlayPhase !== "actionPreviews";
+    const drawActionPreviews = selectedPieceOverlayPhase !== "supplyCommand";
     const supplyPath = normalizeOverlayPath(getSupplyPathForPiece(snapshot, piece));
     const commandPath = normalizeOverlayPath(getCommandPathForPiece(snapshot, piece));
     const commandStroke = PREVIEW_STROKE_BY_OWNER[piece.owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
@@ -728,8 +731,14 @@ export function createEnginePlaygroundBoardAdapter() {
       supplyPath,
       commandPath,
     );
-    drawPath(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey);
-    drawPath(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey);
+    if (drawSupplyCommand) {
+      drawPath(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey);
+      drawPath(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey);
+    }
+
+    if (!drawActionPreviews) {
+      return;
+    }
 
     const previews = Array.isArray(selectedPieceMovePreviews) ? selectedPieceMovePreviews : selectedPieceMoves;
     const previewsByTargetKey = new Map();
@@ -983,6 +992,7 @@ export function createEnginePlaygroundBoardAdapter() {
       allowFreeSelection,
       currentActionType,
       interactionMode: renderInteractionMode,
+      selectedPieceOverlayPhase,
     }) {
       if (!boardEl) {
         throw new Error("Adapter not mounted");
@@ -1243,6 +1253,7 @@ export function createEnginePlaygroundBoardAdapter() {
         selectedPieceMoves,
         selectedPieceMovePreviews,
         currentActionType,
+        selectedPieceOverlayPhase,
       });
     },
 
