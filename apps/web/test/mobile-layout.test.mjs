@@ -221,7 +221,7 @@ test("shared legacy grid collapses at the unified 900px breakpoint", () => {
 test("board preview prompt tightens font size on very narrow screens to preserve a two-line helper block", () => {
   assert.match(
     stylesSource,
-    /\.board-preview-label\s*\{[\s\S]*min-height:\s*calc\(1\.1em \* 2\);[\s\S]*font-size:\s*1\.3rem;/s,
+    /\.board-preview-label\s*\{[\s\S]*line-height:\s*1\.45;[\s\S]*min-height:\s*calc\(2 \* 1\.45em\);[\s\S]*font-size:\s*1\.3rem;/s,
   );
   assert.match(
     stylesSource,
