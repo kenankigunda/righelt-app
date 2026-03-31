@@ -165,26 +165,65 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
   };
 
+  const getContinuationSideChipClass = () => {
+    if (state?.sideToMove === "P1") {
+      return "board-preview-coordinate-chip-side-p1";
+    }
+    if (state?.sideToMove === "P2") {
+      return "board-preview-coordinate-chip-side-p2";
+    }
+    return "board-preview-coordinate-chip-side-neutral";
+  };
+
+  /** Amber retreat actor chip — matches `.cell.retreat-piece`, not green continuation/square highlight. */
+  const getPushRetreatActorCoordinateChipClass = (coord) => {
+    if (!coord || state?.continuation?.type !== "push" || state.continuation.phase !== "retreat") {
+      return null;
+    }
+    const pushedId = state.continuation.pushedPieceId;
+    const pushedPiece = state.pieces?.find((piece) => piece.id === pushedId);
+    if (!pushedPiece || !sameCoordinate(coord, pushedPiece.position)) {
+      return null;
+    }
+    return "board-preview-coordinate-chip-retreat";
+  };
+
   const getBoardPreviewCoordinateChipClass = (coord) => {
     if (!coord) {
       return "board-preview-coordinate-chip-neutral";
     }
 
+    const retreatActorChipClass = getPushRetreatActorCoordinateChipClass(coord);
+    if (retreatActorChipClass) {
+      return retreatActorChipClass;
+    }
+
     if (selectedTarget && sameCoordinate(coord, selectedTarget)) {
       return "board-preview-coordinate-chip-target";
     }
+
+    const continuationHighlights = deriveContinuationHighlightByPieceId(state, legalActions);
+
     if (selectedSource && sameCoordinate(coord, selectedSource)) {
+      const pieceAtSource = state?.pieces?.find((piece) => sameCoordinate(piece.position, selectedSource));
+      if (pieceAtSource) {
+        if (continuationHighlights.pendingPieceIds.has(pieceAtSource.id)) {
+          return `board-preview-coordinate-chip-continuation-pending ${getContinuationSideChipClass()}`;
+        }
+        if (continuationHighlights.movedPieceIds.has(pieceAtSource.id)) {
+          return `board-preview-coordinate-chip-continuation-moved ${getContinuationSideChipClass()}`;
+        }
+      }
       return "board-preview-coordinate-chip-source";
     }
 
-    const continuationHighlights = deriveContinuationHighlightByPieceId(state, legalActions);
     const pieceAtCoord = state?.pieces?.find((piece) => sameCoordinate(piece.position, coord));
     if (pieceAtCoord) {
       if (continuationHighlights.pendingPieceIds.has(pieceAtCoord.id)) {
-        return "board-preview-coordinate-chip-continuation-pending";
+        return `board-preview-coordinate-chip-continuation-pending ${getContinuationSideChipClass()}`;
       }
       if (continuationHighlights.movedPieceIds.has(pieceAtCoord.id)) {
-        return "board-preview-coordinate-chip-continuation-moved";
+        return `board-preview-coordinate-chip-continuation-moved ${getContinuationSideChipClass()}`;
       }
     }
 
@@ -237,7 +276,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return null;
     }
     const suffix = currentPieceId === pushedPiece.id ? "Select a square to retreat to:" : "Select it to retreat:";
-    return `Your piece on the <span class="board-preview-retreat-chip">highlighted square</span> has been pushed! ${escapeHtml(suffix)}`;
+    return `Your piece at ${renderBoardPreviewCoordinate(pushedPiece.position)} has been pushed! ${escapeHtml(suffix)}`;
   };
 
   const clearRemovalEffects = () => {
@@ -326,13 +365,27 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       if (pushRetreatPrompt) {
         setBoardPreviewPromptHtml(pushRetreatPrompt);
       } else if (pieceSummary.details.owner !== state.sideToMove) {
-        setBoardPreviewPrompt("Opponent piece. Supply and command lines shown only:");
+        if (selectedSource) {
+          setBoardPreviewPromptHtml(
+            `Opponent piece at ${renderBoardPreviewCoordinate(selectedSource)}. Supply and command lines shown only:`,
+          );
+        } else {
+          setBoardPreviewPrompt("Opponent piece. Supply and command lines shown only:");
+        }
       } else if (selectedPieceMoves.length === 0) {
         if (state.continuation?.type === "rush") {
           setRushContinuationPrompt(state.sideToMove);
+        } else if (selectedSource) {
+          setBoardPreviewPromptHtml(
+            `No moves available from ${renderBoardPreviewCoordinate(selectedSource)}. Supply and command lines shown only:`,
+          );
         } else {
           setBoardPreviewPrompt("No moves for this piece at this time. Supply and command lines shown only:");
         }
+      } else if (selectedSource) {
+        setBoardPreviewPromptHtml(
+          `Piece at ${renderBoardPreviewCoordinate(selectedSource)}. Select a square to move to:`,
+        );
       } else {
         setBoardPreviewPrompt("Select a square to move to:");
       }
@@ -346,7 +399,13 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const preferredPreview = previewsAtTarget.find((action) => action.type === getActionType()) ?? previewsAtTarget[0] ?? null;
 
     if (!preferredPreview || preferredPreview.legal === false) {
-      setBoardPreviewPrompt("Select a square to move to:");
+      if (selectedSource) {
+        setBoardPreviewPromptHtml(
+          `Piece at ${renderBoardPreviewCoordinate(selectedSource)}. Select a square to move to:`,
+        );
+      } else {
+        setBoardPreviewPrompt("Select a square to move to:");
+      }
       return;
     }
 

@@ -229,6 +229,21 @@ test("board preview prompt tightens font size on very narrow screens to preserve
   );
 });
 
+test("very narrow game shell tightens gutters and hides board axis labels", () => {
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 480px\)\s*\{[\s\S]*#app\[data-shell-route="game"\][\s\S]*calc\(100vw - 0\.65rem\)/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 480px\)\s*\{[\s\S]*\[data-shell-panel="board"\]\s*\.axis-label[\s\S]*display:\s*none/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 480px\)\s*\{[\s\S]*\[data-shell-panel="board"\]\s*\.board-wrap[\s\S]*padding-bottom:\s*0\.35rem/s,
+  );
+});
+
 test("home mini-board cards use uniform grid widths across wrapped rows", () => {
   assert.match(
     shellStylesSource,

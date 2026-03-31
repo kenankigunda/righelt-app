@@ -116,13 +116,45 @@ body {
   color: var(--accent-2);
 }
 
-.board-preview-coordinate-chip-continuation-pending {
+/* Push retreat actor: same palette as .cell.retreat-piece / .board-preview-retreat-chip (not square-highlight green). */
+.board-preview-coordinate-chip.board-preview-coordinate-chip-retreat {
+  border-color: #d1b06a;
+  background: #f3e7c5;
+  color: #72531a;
+}
+
+/* Rush / push follow continuation actors: match side-to-move (preview arrows), not generic green. */
+.board-preview-coordinate-chip-continuation-pending.board-preview-coordinate-chip-side-p1 {
+  background: rgba(194, 69, 47, 0.12);
+  border-color: rgba(194, 69, 47, 0.4);
+  color: var(--player-p1);
+}
+
+.board-preview-coordinate-chip-continuation-pending.board-preview-coordinate-chip-side-p2 {
+  background: rgba(45, 103, 199, 0.12);
+  border-color: rgba(45, 103, 199, 0.4);
+  color: var(--player-p2);
+}
+
+.board-preview-coordinate-chip-continuation-pending.board-preview-coordinate-chip-side-neutral {
   background: #e6f2d3;
   border-color: #c7db9f;
   color: var(--ink);
 }
 
-.board-preview-coordinate-chip-continuation-moved {
+.board-preview-coordinate-chip-continuation-moved.board-preview-coordinate-chip-side-p1 {
+  background: rgba(194, 69, 47, 0.07);
+  border-color: rgba(194, 69, 47, 0.26);
+  color: rgba(194, 69, 47, 0.82);
+}
+
+.board-preview-coordinate-chip-continuation-moved.board-preview-coordinate-chip-side-p2 {
+  background: rgba(45, 103, 199, 0.07);
+  border-color: rgba(45, 103, 199, 0.26);
+  color: rgba(45, 103, 199, 0.82);
+}
+
+.board-preview-coordinate-chip-continuation-moved.board-preview-coordinate-chip-side-neutral {
   background: #f5f7ef;
   border-color: #d7dec9;
   color: var(--muted);

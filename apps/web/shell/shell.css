@@ -428,6 +428,41 @@ button.secondary:disabled {
     inset 0 0 0 1px rgba(13, 122, 90, 0.4);
 }
 
+/* Very small viewports: reclaim horizontal space for the main board (game + invite previews). */
+@media (max-width: 480px) {
+  #app[data-shell-route="game"],
+  #app[data-shell-route="invite"] {
+    width: min(var(--shell-main-max-width), calc(100vw - 0.65rem));
+  }
+
+  #app[data-shell-route="game"] .shell-header,
+  #app[data-shell-route="invite"] .shell-header {
+    padding-left: 0.65rem;
+    padding-right: 0.65rem;
+  }
+
+  #app[data-shell-layout-mode="narrow"][data-shell-route="game"] [data-shell-panel="board"],
+  #app[data-shell-layout-mode="narrow"][data-shell-route="invite"] [data-shell-panel="board"] {
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
+  }
+
+  #app[data-shell-route="game"] [data-shell-panel="board"] .axis-label,
+  #app[data-shell-route="invite"] [data-shell-panel="board"] .axis-label {
+    display: none;
+  }
+
+  #app[data-shell-route="game"] [data-shell-panel="board"] .board-wrap,
+  #app[data-shell-route="invite"] [data-shell-panel="board"] .board-wrap {
+    padding-bottom: 0.35rem;
+  }
+
+  #app[data-shell-route="game"] [data-shell-panel="board"] .overlay-lines,
+  #app[data-shell-route="invite"] [data-shell-panel="board"] .overlay-lines {
+    bottom: 0.35rem;
+  }
+}
+
 #app[data-shell-layout-mode="narrow"] [data-shell-panel="board"] .board > .cell {
   aspect-ratio: 1 / 1;
   min-height: 0;

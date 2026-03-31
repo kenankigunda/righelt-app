@@ -403,6 +403,75 @@ test("board runtime does not submit retreat continuation while interaction is lo
   assert.equal(applyCount, 0);
 });
 
+test("board runtime uses retreat chip styling for push retreat actor coordinate in preview label", async () => {
+  let previewHtml = "";
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: noop,
+      getSelectedPieceSummary: () => null,
+    },
+    host: {
+      applyAction: async () => ({ accepted: true, state: null, legalActions: [] }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: {
+      set innerHTML(value) {
+        previewHtml = value;
+      },
+      get innerHTML() {
+        return previewHtml;
+      },
+      set textContent(value) {
+        previewHtml = value;
+      },
+      get textContent() {
+        return previewHtml;
+      },
+      addEventListener: noop,
+      removeEventListener: noop,
+    },
+    boardTurnIndicatorEl: { textContent: "", classList: { remove: noop, add: noop } },
+  });
+
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P2",
+      turnIndex: 0,
+      continuation: {
+        type: "push",
+        phase: "retreat",
+        pushedPieceId: "D1",
+        followGroupPieceIds: ["D1"],
+      },
+      outcome: null,
+      pieces: [
+        {
+          id: "D1",
+          owner: "P2",
+          kind: "unit",
+          position: { row: 4, col: 2 },
+          supplied: true,
+          commanded: true,
+          pushed: true,
+        },
+      ],
+    },
+    { legalActions: [{ type: "retreat", actorId: "D1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }] },
+  );
+
+  assert.match(previewHtml, /board-preview-coordinate-chip-retreat/);
+  assert.match(previewHtml, />4,2</);
+  assert.equal(previewHtml.includes("board-preview-coordinate-chip-continuation-pending"), false);
+});
+
 test("board runtime does not flash no-moves preview text while selected piece moves are loading", async () => {
   let onCellClick = null;
   let resolvePieceMoves = null;
