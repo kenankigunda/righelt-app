@@ -989,6 +989,17 @@ export function createEnginePlaygroundBoardAdapter() {
         (Array.isArray(removalEffects) ? removalEffects : []).map((effect) => [coordKey(effect.position), effect]),
       );
 
+      const continuationHighlight = deriveContinuationHighlightByPieceId(snapshot, legalActions);
+      const isContinuationHighlightedSquare = (row, col) => {
+        const piecesHere = findPiecesAt(snapshot, row, col);
+        return piecesHere.some(
+          (piece) =>
+            continuationHighlight.pendingPieceIds.has(piece.id) ||
+            continuationHighlight.movedPieceIds.has(piece.id),
+        );
+      };
+      const isLiveInteractiveBoard = overlay?.mode !== "recorded-action";
+
       for (let row = 0; row < BOARD_SIZE; row += 1) {
         for (let col = 0; col < BOARD_SIZE; col += 1) {
           const cell = document.createElement(effectiveInteractionMode === "static" ? "div" : "button");
@@ -1052,6 +1063,17 @@ export function createEnginePlaygroundBoardAdapter() {
           if (isSource) cell.classList.add("source");
           if (isTarget) {
             cell.classList.add("target");
+            if (
+              isLiveInteractiveBoard &&
+              !isContinuationHighlightedSquare(row, col) &&
+              effectiveInteractionMode === "interactive"
+            ) {
+              if (snapshot?.sideToMove === "P1") {
+                cell.classList.add("target-side-p1");
+              } else if (snapshot?.sideToMove === "P2") {
+                cell.classList.add("target-side-p2");
+              }
+            }
           }
 
           if (isTarget) {
@@ -1131,6 +1153,17 @@ export function createEnginePlaygroundBoardAdapter() {
               colAxis.classList.add("axis-strong");
             } else if (hasDifferentTarget && target && col === target.col && (!source || source.col !== target.col)) {
               colAxis.classList.add("axis-medium");
+              if (
+                isLiveInteractiveBoard &&
+                !isContinuationHighlightedSquare(row, col) &&
+                effectiveInteractionMode === "interactive"
+              ) {
+                if (snapshot?.sideToMove === "P1") {
+                  colAxis.classList.add("axis-target-p1");
+                } else if (snapshot?.sideToMove === "P2") {
+                  colAxis.classList.add("axis-target-p2");
+                }
+              }
             }
             colAxis.textContent = String(col);
             cell.appendChild(colAxis);
@@ -1150,6 +1183,17 @@ export function createEnginePlaygroundBoardAdapter() {
               rowAxis.classList.add("axis-strong");
             } else if (hasDifferentTarget && target && row === target.row && (!source || source.row !== target.row)) {
               rowAxis.classList.add("axis-medium");
+              if (
+                isLiveInteractiveBoard &&
+                !isContinuationHighlightedSquare(row, col) &&
+                effectiveInteractionMode === "interactive"
+              ) {
+                if (snapshot?.sideToMove === "P1") {
+                  rowAxis.classList.add("axis-target-p1");
+                } else if (snapshot?.sideToMove === "P2") {
+                  rowAxis.classList.add("axis-target-p2");
+                }
+              }
             }
             rowAxis.textContent = String(row);
             cell.appendChild(rowAxis);

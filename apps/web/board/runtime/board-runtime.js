@@ -188,6 +188,20 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     return "board-preview-coordinate-chip-retreat";
   };
 
+  const getContinuationRoleAtCoordinate = (coord, highlights) => {
+    const piecesHere = state?.pieces?.filter((piece) => sameCoordinate(piece.position, coord)) ?? [];
+    if (piecesHere.length === 0) {
+      return null;
+    }
+    if (piecesHere.some((piece) => highlights.pendingPieceIds.has(piece.id))) {
+      return "pending";
+    }
+    if (piecesHere.some((piece) => highlights.movedPieceIds.has(piece.id))) {
+      return "moved";
+    }
+    return null;
+  };
+
   const getBoardPreviewCoordinateChipClass = (coord) => {
     if (!coord) {
       return "board-preview-coordinate-chip-neutral";
@@ -198,33 +212,43 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return retreatActorChipClass;
     }
 
-    if (selectedTarget && sameCoordinate(coord, selectedTarget)) {
-      return "board-preview-coordinate-chip-target";
-    }
-
     const continuationHighlights = deriveContinuationHighlightByPieceId(state, legalActions);
 
+    if (selectedTarget && sameCoordinate(coord, selectedTarget)) {
+      const targetRole = getContinuationRoleAtCoordinate(coord, continuationHighlights);
+      if (targetRole === "pending") {
+        return `board-preview-coordinate-chip-continuation-pending ${getContinuationSideChipClass()}`;
+      }
+      if (targetRole === "moved") {
+        return `board-preview-coordinate-chip-continuation-moved ${getContinuationSideChipClass()}`;
+      }
+      return `board-preview-coordinate-chip-target ${getContinuationSideChipClass()}`;
+    }
+
     if (selectedSource && sameCoordinate(coord, selectedSource)) {
-      const pieceAtSource = state?.pieces?.find((piece) => sameCoordinate(piece.position, selectedSource));
-      if (pieceAtSource) {
-        if (continuationHighlights.pendingPieceIds.has(pieceAtSource.id)) {
+      const actorPiece =
+        selectedPieceId && state?.pieces?.find((piece) => piece.id === selectedPieceId);
+      const pieceForContinuation =
+        actorPiece && sameCoordinate(actorPiece.position, selectedSource)
+          ? actorPiece
+          : state?.pieces?.find((piece) => sameCoordinate(piece.position, selectedSource));
+      if (pieceForContinuation) {
+        if (continuationHighlights.pendingPieceIds.has(pieceForContinuation.id)) {
           return `board-preview-coordinate-chip-continuation-pending ${getContinuationSideChipClass()}`;
         }
-        if (continuationHighlights.movedPieceIds.has(pieceAtSource.id)) {
+        if (continuationHighlights.movedPieceIds.has(pieceForContinuation.id)) {
           return `board-preview-coordinate-chip-continuation-moved ${getContinuationSideChipClass()}`;
         }
       }
-      return "board-preview-coordinate-chip-source";
+      return `board-preview-coordinate-chip-source ${getContinuationSideChipClass()}`;
     }
 
-    const pieceAtCoord = state?.pieces?.find((piece) => sameCoordinate(piece.position, coord));
-    if (pieceAtCoord) {
-      if (continuationHighlights.pendingPieceIds.has(pieceAtCoord.id)) {
-        return `board-preview-coordinate-chip-continuation-pending ${getContinuationSideChipClass()}`;
-      }
-      if (continuationHighlights.movedPieceIds.has(pieceAtCoord.id)) {
-        return `board-preview-coordinate-chip-continuation-moved ${getContinuationSideChipClass()}`;
-      }
+    const otherRole = getContinuationRoleAtCoordinate(coord, continuationHighlights);
+    if (otherRole === "pending") {
+      return `board-preview-coordinate-chip-continuation-pending ${getContinuationSideChipClass()}`;
+    }
+    if (otherRole === "moved") {
+      return `board-preview-coordinate-chip-continuation-moved ${getContinuationSideChipClass()}`;
     }
 
     return "board-preview-coordinate-chip-neutral";

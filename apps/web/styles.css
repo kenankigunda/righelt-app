@@ -110,7 +110,43 @@ body {
   color: var(--accent);
 }
 
+.board-preview-coordinate-chip-source.board-preview-coordinate-chip-side-p1 {
+  background: rgba(194, 69, 47, 0.1);
+  border-color: rgba(194, 69, 47, 0.4);
+  color: var(--player-p1);
+}
+
+.board-preview-coordinate-chip-source.board-preview-coordinate-chip-side-p2 {
+  background: rgba(45, 103, 199, 0.1);
+  border-color: rgba(45, 103, 199, 0.4);
+  color: var(--player-p2);
+}
+
+.board-preview-coordinate-chip-source.board-preview-coordinate-chip-side-neutral {
+  background: #edf7f1;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .board-preview-coordinate-chip-target {
+  background: #fbefeb;
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
+
+.board-preview-coordinate-chip-target.board-preview-coordinate-chip-side-p1 {
+  background: rgba(194, 69, 47, 0.12);
+  border-color: rgba(194, 69, 47, 0.45);
+  color: var(--player-p1);
+}
+
+.board-preview-coordinate-chip-target.board-preview-coordinate-chip-side-p2 {
+  background: rgba(45, 103, 199, 0.12);
+  border-color: rgba(45, 103, 199, 0.45);
+  color: var(--player-p2);
+}
+
+.board-preview-coordinate-chip-target.board-preview-coordinate-chip-side-neutral {
   background: #fbefeb;
   border-color: var(--accent-2);
   color: var(--accent-2);
@@ -352,6 +388,16 @@ button {
 .cell.target {
   border-color: var(--accent-2);
   box-shadow: inset 0 0 0 1px var(--accent-2);
+}
+
+.cell.target.target-side-p1:not(.continuation-member) {
+  border-color: var(--player-p1);
+  box-shadow: inset 0 0 0 1px var(--player-p1);
+}
+
+.cell.target.target-side-p2:not(.continuation-member) {
+  border-color: var(--player-p2);
+  box-shadow: inset 0 0 0 1px var(--player-p2);
 }
 
 .cell.removal-effect::after {
@@ -725,6 +771,14 @@ button {
 .axis-label.axis-medium {
   color: #7e4f18;
   font-weight: 800;
+}
+
+.axis-label.axis-medium.axis-target-p1 {
+  color: var(--player-p1);
+}
+
+.axis-label.axis-medium.axis-target-p2 {
+  color: var(--player-p2);
 }
 
 .axis-label.axis-strong {
