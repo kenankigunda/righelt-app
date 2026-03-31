@@ -9,12 +9,14 @@ on:
       - "packages/game-engine/**"
       - "packages/shared-types/**"
       - "db/migrations/**"
+      - "db/ops/**"
       - "package.json"
       - "pnpm-workspace.yaml"
       - "tsconfig.json"
       - "tsconfig.base.json"
       - ".github/workflows/ci.yml"
       - ".github/workflows/deploy.yml"
+      - ".github/workflows/db-retention-cleanup.yml"
   push:
     branches: [main]
     paths:
@@ -24,12 +26,14 @@ on:
       - "packages/game-engine/**"
       - "packages/shared-types/**"
       - "db/migrations/**"
+      - "db/ops/**"
       - "package.json"
       - "pnpm-workspace.yaml"
       - "tsconfig.json"
       - "tsconfig.base.json"
       - ".github/workflows/ci.yml"
       - ".github/workflows/deploy.yml"
+      - ".github/workflows/db-retention-cleanup.yml"
 
 jobs:
   checks:

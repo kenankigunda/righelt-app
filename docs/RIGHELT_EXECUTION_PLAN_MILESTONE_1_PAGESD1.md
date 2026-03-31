@@ -100,7 +100,7 @@ npm i -g pnpm wrangler
 
 1. Apply migrations locally:
    ```bash
-   pnpm d1:migrate:dev -- --local
+   pnpm db:local
    ```
 2. Start API Worker dev server:
    ```bash
