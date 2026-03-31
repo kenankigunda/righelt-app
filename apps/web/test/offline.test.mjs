@@ -24,3 +24,20 @@ test("offline local playground hidden from home list until explicit go-online co
   assert.equal(goOnline.ok, true);
   assert.equal(store.listGames().length, 1);
 });
+
+test("go-online restores normal live affordances for a previously offline-local game", async () => {
+  const { store } = createTestStore();
+  const game = await store.createGame({ playgroundMode: true, offlineLocal: true });
+
+  let vm = store.getGameViewModel(game.id);
+  assert.equal(vm.showOfflineState, true);
+  assert.equal(vm.showJoinActions, false);
+  assert.equal(vm.canInvite, false);
+
+  store.goOnlineGame({ gameId: game.id, confirmed: true });
+  vm = store.getGameViewModel(game.id);
+  assert.equal(vm.offlineLocal, false);
+  assert.equal(vm.showOfflineState, false);
+  assert.equal(vm.showJoinActions, true);
+  assert.equal(vm.canInvite, true);
+});

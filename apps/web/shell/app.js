@@ -1854,7 +1854,12 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
         : "";
   const offlineBanner =
     game.showOfflineState || inviteFromRole === "offline"
-      ? `<div class="alert warn shell-game-alert">Offline mode: invite and remote join actions are disabled.</div>`
+      ? `<div class="alert warn shell-game-alert">Offline mode: invite, share, and remote join actions are disabled until you explicitly go online.</div>`
+      : "";
+  const persistenceWarningBanner =
+    game.persistenceWarningCode === "offline_progress_may_be_lost"
+      ? `<div class="alert danger shell-game-alert">Offline progress may be lost on this device because local saving failed. Keep this tab open until storage is working again.</div>`
+      : "";
       : "";
 
   const undoRequestBanner =
@@ -1864,6 +1869,7 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
 
   return `
     ${offlineBanner}
+    ${persistenceWarningBanner}
     ${liveSyncBanner}
     ${undoRequestBanner}
   `;
@@ -3534,7 +3540,13 @@ appEl.addEventListener("click", async (event) => {
         const game = transport.getGameViewModel(gameId);
         if (game?.offlineLocal) {
           const confirmed = window.confirm("Go online with this local game?");
-          await transport.goOnlineGame({ gameId, confirmed });
+          if (!confirmed) {
+            return;
+          }
+          const promoted = await transport.goOnlineGame({ gameId, confirmed });
+          if (promoted?.id && promoted.id !== gameId) {
+            navigateTo(buildGameHash(promoted.id, null, getCurrentFlyoutState()));
+          }
         }
       }
       window.__righeltOffline = next;

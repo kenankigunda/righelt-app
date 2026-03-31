@@ -784,6 +784,9 @@ export class GameRoomDO {
       if (body.confirmed !== true) {
         return json({ ok: false, error: "confirmation_required" }, 409);
       }
+      if (!game.offlineLocal) {
+        return json({ ok: false, error: "game_not_offline_local" }, 409);
+      }
       game.offlineLocal = false;
       game.updatedAt = now();
       addNotification(game, "Game moved online");

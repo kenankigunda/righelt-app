@@ -204,3 +204,91 @@ test("shell integration: direct game route on a new device behaves like a non-pl
   assert.equal(result.game.myRole, "Viewer");
   assert.equal(result.game.pendingPlayerRequestSeat, "Player 2");
 });
+
+test("shell integration: non-player join request upgrades to player after approval and clears pending state", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-shell-int-6");
+  const guest = harness.createClient("id-guest-shell-int-6");
+
+  const created = await owner.store.createGame({ playgroundMode: false, offlineLocal: false });
+  const guestLanding = await guest.store.loadGame(created.id, { openAsViewer: false });
+
+  assert.equal(guestLanding.myRole, "Guest");
+  assert.equal(guestLanding.canJoinAsPlayer, true);
+  assert.equal(guestLanding.canJoinAsViewer, true);
+
+  const requested = await guest.store.joinGame({ gameId: created.id, mode: "player" });
+  assert.equal(requested.pendingApproval, true);
+  assert.equal(requested.game.myRole, "Viewer");
+
+  const ownerView = await harness.waitForGame(
+    owner,
+    created.id,
+    (game) => game.pendingJoinRequests?.length === 1 && game.pendingJoinRequests[0]?.identityId === guest.identityId,
+  );
+  assert.equal(ownerView.pendingJoinRequests[0].requestedSeat, "Player 2");
+
+  const approved = await owner.store.approvePendingRequest({ gameId: created.id, requesterIdentityId: guest.identityId });
+  assert.equal(approved.ok, true);
+
+  const guestView = await harness.waitForGame(
+    guest,
+    created.id,
+    (game) => game.myRole === "Player 2" && game.pendingJoinRequests?.length === 0,
+  );
+
+  assert.equal(guestView.player2?.identityId, guest.identityId);
+  assert.equal(guestView.canJoinAsPlayer, false);
+  assert.equal(guestView.canJoinAsViewer, false);
+});
+
+test("shell integration: history mode stays pinned while remote live updates append and return-to-live catches up", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-shell-int-7");
+  const guest = harness.createClient("id-guest-shell-int-7");
+
+  const created = await owner.store.createGame({ playgroundMode: false, offlineLocal: false });
+  await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
+
+  await owner.store.addMove({ gameId: created.id, notation: "P1-M1" });
+  const historyView = await owner.store.selectHistoryMove({ gameId: created.id, moveIndex: 0 });
+  assert.equal(historyView.inHistoryMode, true);
+  assert.equal(historyView.historyIndex, 0);
+
+  await guest.store.addMove({ gameId: created.id, notation: "P2-M1" });
+
+  const ownerHistoryAfterRemoteMove = await harness.waitForGame(
+    owner,
+    created.id,
+    (game) => game.inHistoryMode === true && game.historyIndex === 0 && game.moves?.length === 2,
+  );
+  assert.equal(ownerHistoryAfterRemoteMove.currentTurn.index, 2);
+  assert.equal(ownerHistoryAfterRemoteMove.currentSnapshot.turnIndex, 0);
+
+  const liveView = await owner.store.returnToLive({ gameId: created.id });
+  assert.equal(liveView.inHistoryMode, false);
+  assert.equal(liveView.currentTurn.index, 2);
+  assert.equal(liveView.currentTurn.playerSeat, "Player 1");
+  assert.equal(liveView.currentSnapshot.sideToMove, "P1");
+});
+
+test("shell integration: offline-local game stays hidden until go-online, then reloads through canonical live listing", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-shell-int-8");
+
+  const created = await owner.store.createGame({ playgroundMode: true, offlineLocal: true });
+
+  assert.equal(owner.store.listGames().some((entry) => entry.id === created.id), false);
+
+  const promoted = await owner.store.goOnlineGame({ gameId: created.id, confirmed: true });
+  assert.equal(promoted.id, created.id);
+  assert.equal(promoted.offlineLocal, false);
+
+  const listed = owner.store.listGames();
+  assert.equal(listed.some((entry) => entry.id === created.id), true);
+
+  const reloaded = await owner.store.loadGame(created.id, { openAsViewer: false });
+  assert.equal(reloaded.offlineLocal, false);
+  assert.equal(reloaded.canInvite, true);
+  assert.equal(reloaded.showOfflineState, false);
+});

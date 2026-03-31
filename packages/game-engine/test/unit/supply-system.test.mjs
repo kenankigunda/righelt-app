@@ -71,7 +71,7 @@ test("supplied is false when path to supply does not exist", () => {
   assert.equal(resolved.pieces.some((piece) => piece.id === "U1a"), false);
 });
 
-test("supply recomputes after occupancy change before final terminal evaluation", () => {
+test("H-004 supply recomputes after occupancy change before final terminal evaluation", () => {
   const state = createInitialState();
   addPiece(state, {
     id: "U2a",
@@ -170,7 +170,7 @@ test("supply is blocked by enemy vertical command-edge cells", () => {
   assert.equal(resolved.pieces.some((piece) => piece.id === "U1edgeV"), false);
 });
 
-test("friendly command-edge cells do not block own supply routes", () => {
+test("H-006 friendly command-edge cells do not block own supply routes", () => {
   const state = createInitialState();
   addPiece(state, { id: "U1reachable", owner: "P1", kind: "unit", position: { row: 8, col: 8 }, supplied: false, commanded: false });
   addPiece(state, { id: "U1wallL", owner: "P1", kind: "unit", position: { row: 4, col: 0 }, supplied: true, commanded: true });

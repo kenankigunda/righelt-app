@@ -134,3 +134,30 @@ Additional future candidates:
   - `pnpm test:api-handler` passed
   - `pnpm --filter @righelt/web test` passed
 - Future scope: `defined`
+
+## Traceability Audit Snapshot
+
+This section is the lightweight audit ledger for shell/live-transport correctness. It maps the normative web-app spec to the current automated coverage shape so regressions are easier to spot during follow-up work.
+
+### Status keys
+
+- `behavior-covered`: validated by behavior-level tests against real state transitions or rendered/view-model outcomes
+- `static-guard-only`: covered only by source-shape or implementation-structure assertions
+- `partially-covered`: key flow exists in tests, but important cross-client or lifecycle edges are still missing
+- `gap`: not yet covered by a meaningful automated regression test
+
+### Current audit
+
+| Surface | Spec focus | Status | Current evidence | Follow-up |
+| --- | --- | --- | --- | --- |
+| Invite token resolution -> canonical game route | Web app spec Sections 2 and 4 | `behavior-covered` | `packages/api-handler/test/shell-integration.test.mjs` | Keep as merge gate |
+| Direct game route on new device behaves like non-player invite | Web app spec Section 4 | `behavior-covered` | `packages/api-handler/test/shell-integration.test.mjs` | Extend across refresh/load paths |
+| Player-seat request -> approval -> upgraded capability state | Web app spec Section 4 | `partially-covered` | `packages/api-handler/test/live-transport.test.mjs`, `apps/web/test/join.test.mjs` | Add multi-client shell integration coverage |
+| Approval gate ignore/dismiss behavior | Web app spec Section 4 | `static-guard-only` | `apps/web/test/ui-guards.test.mjs` | Add behavior-level shell tests where feasible |
+| Join action availability and disabled fallbacks | Web app spec Section 4 | `partially-covered` | `packages/api-handler/test/shell-integration.test.mjs`, `apps/web/test/ui-guards.test.mjs` | Add explicit behavior assertions for full/closed seats |
+| History mode persists while live updates append | Web app spec Sections 1 and 15 | `gap` | none at transport integration layer | Add multi-client shell integration scenario |
+| Return-to-live after history catches up to latest snapshot | Web app spec Sections 1 and 15 | `partially-covered` | `apps/web/test/history.test.mjs`, `apps/web/test/e2e.test.mjs` | Add real transport-backed coverage |
+| Offline-local hidden until explicit go-online confirmation | Web app spec Section 14 | `behavior-covered` | `packages/api-handler/test/live-transport.test.mjs`, `apps/web/test/offline.test.mjs` | Add shell integration reload/listing coverage |
+| Dual-seat / play-as-both transition semantics | Web app spec Sections 3 and 14 | `behavior-covered` | `packages/api-handler/test/live-transport.test.mjs`, `apps/web/test/join.test.mjs` | Keep broad regression coverage |
+| Websocket replay vs state-sync recovery | Web app spec Sections 2 and 15 | `partially-covered` | `packages/api-handler/test/live-websocket.test.mjs`, `apps/web/test/live-sync.test.mjs` | Add store-facing integration assertions around authoritative refresh state |
+| Pages proxy shell route forwarding | Split-stack deployment contract | `partially-covered` | `apps/api/test/worker-entry.test.mjs` | Expand beyond health/create/presence smoke routes |

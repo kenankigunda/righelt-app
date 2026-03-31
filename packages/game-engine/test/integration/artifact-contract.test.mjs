@@ -123,7 +123,7 @@ test("Q-004 commanded piece path-to-commander artifact is present and determinis
   );
 });
 
-test("group artifact exposes components, members, and strengths", () => {
+test("Q-005 group artifact exposes connected components, members, and strengths", () => {
   const state = createInitialState();
   addPiece(state, {
     id: "U1a",
@@ -151,7 +151,7 @@ test("group artifact exposes components, members, and strengths", () => {
   assert.equal(typeof groups.strengthByComponentId[componentId], "number");
 });
 
-test("piece supplied/commanded booleans are consistent with artifacts", () => {
+test("Q-006 piece supplied/commanded booleans are consistent with artifacts", () => {
   const state = createInitialState();
   addPiece(state, {
     id: "U1a",
@@ -174,7 +174,7 @@ test("piece supplied/commanded booleans are consistent with artifacts", () => {
   }
 });
 
-test("minimal and full artifact replay modes produce identical final gameplay state", () => {
+test("Q-007 minimal and full artifact replay modes produce identical final gameplay state", () => {
   const initial = createInitialState();
   const actions = [{ type: "pass" }, { type: "pass" }, { type: "pass" }];
 

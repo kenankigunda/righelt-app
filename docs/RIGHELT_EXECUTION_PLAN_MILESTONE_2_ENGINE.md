@@ -218,6 +218,27 @@ Exit criteria:
 
 ## 6. Parallel Worktree Execution Model
 
+## 7. Coverage Audit Snapshot
+
+This plan remains the non-normative place to track whether matrix intent is explicitly represented in automated tests.
+
+### Current engine audit notes
+
+1. Matrix coverage is broad and green, but a few rule families were previously validated only incidentally or without explicit matrix IDs in test names.
+2. The main areas worth keeping explicit are:
+   - `H-004` / supply recomputation timing after atomic changes
+   - `I-001..I-006` / command-system invariants and inactivity enforcement
+   - `Q-005..Q-007` / artifact consistency and full-vs-minimal parity
+   - continuation cases where display status and frozen actionable status intentionally diverge
+3. Follow-up work should prefer adding explicit regression tests and IDs over relying on indirect coverage through broader scenario tests.
+
+### Coverage policy update
+
+1. Every newly added matrix scenario or web-spec regression should either:
+   - name the matrix/spec requirement directly in the test, or
+   - be linked from a nearby audit section explaining which requirement it covers.
+2. When a test only proves implementation structure rather than user-visible behavior, classify it as a static guard and avoid treating it as complete behavioral coverage.
+
 This milestone can be run in parallel by multiple Codex threads using separate git worktrees.  
 Each worktree owns a bounded slice of files and test IDs, with periodic sync checkpoints.
 
