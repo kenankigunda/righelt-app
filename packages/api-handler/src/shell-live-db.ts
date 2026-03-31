@@ -5,6 +5,7 @@ import {
   createInviteToken,
   nextMoveId,
   now,
+  type JoinRequest,
   type LiveGame,
   type Participant,
   type ScenarioSavedSelection,
