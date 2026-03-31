@@ -717,6 +717,140 @@ test("live transport store allows offline end-turn only for dual-seat offline pl
   assert.equal(vm.canEndTurn, true);
 });
 
+test("live transport store keeps existing playground games interactive while offline", async () => {
+  const storage = createMemoryStorage();
+  storage.setItem("righelt.identity.id.v1", "id-a");
+  const gameId = "game-playground-offline";
+  const baseState = resolveToStability(createInitialState(), { artifactMode: "full" });
+  const baseGame = {
+    id: gameId,
+    createdAt: "2026-02-26T00:00:00.000Z",
+    lastMoveAt: null,
+    updatedAt: "2026-02-26T00:00:00.000Z",
+    offlineLocal: false,
+    playgroundMode: true,
+    player1: { identityId: "id-a", connected: true },
+    player2: { identityId: "id-a", connected: true },
+    viewers: [],
+    pendingJoinRequests: [],
+    turns: [{ index: 0, startedAt: "2026-02-26T00:00:00.000Z", endedAt: null, playerSeat: "Player 1", status: "active", moveIndexes: [], lastMoveAt: null }],
+    moves: [],
+    notifications: ["Playground mode active"],
+    myRole: "Player 1",
+    inHistoryMode: false,
+    historyIndex: null,
+    currentSnapshot: clone(baseState),
+    board: { state: clone(baseState) },
+    currentTurn: { index: 0, startedAt: "2026-02-26T00:00:00.000Z", endedAt: null, playerSeat: "Player 1", status: "active", moveIndexes: [], lastMoveAt: null },
+    legalActions: listLegalActions(baseState),
+    canRecordMove: true,
+    canEndTurn: false,
+    controlSeat: "Player 1",
+    control: "turn-owner",
+    canInvite: true,
+    showJoinActions: true,
+    showOfflineState: false,
+  };
+  const calls = [];
+  const fetcher = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || "GET", body: init.body ? JSON.parse(String(init.body)) : null });
+    if (String(url).startsWith("/api/shell/games?")) {
+      return Response.json({ ok: true, games: [baseGame] });
+    }
+    if (String(url).startsWith(`/api/shell/games/${gameId}?`)) {
+      return Response.json({ ok: true, game: baseGame });
+    }
+    if (String(url) === `/api/shell/games/${gameId}/apply` && init.method === "POST") {
+      return Response.json({
+        ok: true,
+        accepted: true,
+        game: buildAcknowledgedGame(baseGame, JSON.parse(String(init.body)).action),
+      });
+    }
+    return Response.json({ ok: true, game: baseGame });
+  };
+
+  const store = createLiveTransportStore({ storage, fetcher, random: () => 0.55555 });
+  await store.refreshGames();
+  await store.loadGame(gameId);
+  await store.setOffline(true);
+
+  const offlineVm = store.getGameViewModel(gameId);
+  assert.equal(offlineVm.canRecordMove, true);
+
+  const action = offlineVm.legalActions.find((entry) => entry.type !== "pass") ?? offlineVm.legalActions[0];
+  const applied = await store.applyGameAction({ gameId, state: offlineVm.currentSnapshot, action });
+  assert.equal(applied.accepted, true);
+  assert.equal(calls.some((entry) => entry.url === `/api/shell/games/${gameId}/apply`), false);
+
+  await store.setOffline(false);
+  assert.equal(calls.some((entry) => entry.url === `/api/shell/games/${gameId}/apply`), true);
+});
+
+test("live transport store restores offline playground progress for an existing playground game after reload", async () => {
+  const storage = createMemoryStorage();
+  storage.setItem("righelt.identity.id.v1", "id-a");
+  const gameId = "game-playground-reload";
+  const baseState = resolveToStability(createInitialState(), { artifactMode: "full" });
+  const baseGame = {
+    id: gameId,
+    createdAt: "2026-02-26T00:00:00.000Z",
+    lastMoveAt: null,
+    updatedAt: "2026-02-26T00:00:00.000Z",
+    offlineLocal: false,
+    playgroundMode: true,
+    player1: { identityId: "id-a", connected: true },
+    player2: { identityId: "id-a", connected: true },
+    viewers: [],
+    pendingJoinRequests: [],
+    turns: [{ index: 0, startedAt: "2026-02-26T00:00:00.000Z", endedAt: null, playerSeat: "Player 1", status: "active", moveIndexes: [], lastMoveAt: null }],
+    moves: [],
+    notifications: ["Playground mode active"],
+    myRole: "Player 1",
+    inHistoryMode: false,
+    historyIndex: null,
+    currentSnapshot: clone(baseState),
+    board: { state: clone(baseState) },
+    currentTurn: { index: 0, startedAt: "2026-02-26T00:00:00.000Z", endedAt: null, playerSeat: "Player 1", status: "active", moveIndexes: [], lastMoveAt: null },
+    legalActions: listLegalActions(baseState),
+    canRecordMove: true,
+    canEndTurn: false,
+    controlSeat: "Player 1",
+    control: "turn-owner",
+    canInvite: true,
+    showJoinActions: true,
+    showOfflineState: false,
+  };
+  const fetcher = async (url) => {
+    if (String(url).startsWith("/api/shell/games?")) {
+      return Response.json({ ok: true, games: [baseGame] });
+    }
+    if (String(url).startsWith(`/api/shell/games/${gameId}?`)) {
+      return Response.json({ ok: true, game: baseGame });
+    }
+    return Response.json({ ok: true, game: baseGame });
+  };
+
+  const firstStore = createLiveTransportStore({ storage, fetcher, random: () => 0.66666 });
+  await firstStore.refreshGames();
+  await firstStore.loadGame(gameId);
+  await firstStore.setOffline(true);
+  const firstVm = firstStore.getGameViewModel(gameId);
+  const action = firstVm.legalActions.find((entry) => entry.type !== "pass") ?? firstVm.legalActions[0];
+  const applied = await firstStore.applyGameAction({ gameId, state: firstVm.currentSnapshot, action });
+  assert.equal(applied.accepted, true);
+
+  const reloadedStore = createLiveTransportStore({ storage, fetcher, random: () => 0.77777 });
+  await reloadedStore.setOffline(true);
+  const restored = reloadedStore.getGameViewModel(gameId);
+
+  assert.equal(restored.playgroundMode, true);
+  assert.equal(restored.offlineLocal, false);
+  assert.equal(restored.canRecordMove, true);
+  assert.equal(restored.moves.length, 1);
+  assert.deepEqual(restored.moves[0].action, action);
+});
+
 test("live transport store restores local offline games after reload", async () => {
   const storage = createMemoryStorage();
   storage.setItem("righelt.identity.id.v1", "id-local");

@@ -26,6 +26,7 @@ export const loadLiveTransportState = (storage) =>
   loadJson(storage, LIVE_TRANSPORT_STATE_KEY, {
     games: [],
     warningCode: null,
+    pendingMutationsByGameId: {},
   });
 export const saveLiveTransportState = (storage, state) => saveJson(storage, LIVE_TRANSPORT_STATE_KEY, state);
 

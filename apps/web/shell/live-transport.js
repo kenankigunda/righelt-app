@@ -20,6 +20,8 @@ const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
+const canOperateOfflinePlayground = (game, identityId) =>
+  Boolean(game?.playgroundMode) && game?.player1?.identityId === identityId && game?.player2?.identityId === identityId;
 const getControlSeatForTurn = (state, turnOwnerSeat) => {
   const continuation = state?.continuation;
   if (!continuation) {
@@ -101,7 +103,9 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   let games = [];
   let gameById = new Map();
   const lastEventSeqByGameId = new Map();
-  const offlinePendingByGameId = new Map();
+  const offlinePendingByGameId = new Map(
+    Object.entries(persistedState?.pendingMutationsByGameId ?? {}).map(([gameId, mutations]) => [gameId, clone(mutations)]),
+  );
   const optimisticStateByGameId = new Map();
   const listeners = new Set();
   const syncMetrics = {
@@ -275,15 +279,12 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     next.showOfflineState = true;
     next.canInvite = false;
     next.showJoinActions = false;
-    next.canRecordMove = Boolean(next.offlineLocal && next.canRecordMove);
+    const offlinePlayable = next.localOnly || next.offlineLocal || canOperateOfflinePlayground(next, identityId);
+    next.canRecordMove = Boolean(offlinePlayable && next.canRecordMove);
     const activeTurn = getActiveTurn(next);
     const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(next);
     const turnOwnerIdentity = turnOwnerSeat === "Player 1" ? next.player1?.identityId ?? null : next.player2?.identityId ?? null;
-    const dualSeatOfflinePlayground =
-      next.offlineLocal &&
-      next.playgroundMode &&
-      next.player1?.identityId === identityId &&
-      next.player2?.identityId === identityId;
+    const dualSeatOfflinePlayground = offlinePlayable && canOperateOfflinePlayground(next, identityId);
     next.canEndTurn =
       Boolean(dualSeatOfflinePlayground) &&
       next.myRole !== "Viewer" &&
@@ -299,9 +300,18 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const persistLocalState = () => {
     try {
+      const persistedGames = [...gameById.values()]
+        .filter((game) => game?.localOnly === true || (canOperateOfflinePlayground(game, identityId) && (offline || offlinePendingByGameId.has(game.id))))
+        .map((game) => clone(game));
+      const pendingMutationsByGameId = Object.fromEntries(
+        [...offlinePendingByGameId.entries()]
+          .filter(([gameId]) => persistedGames.some((game) => game.id === gameId))
+          .map(([gameId, mutations]) => [gameId, clone(mutations)]),
+      );
       saveLiveTransportState(storage, {
-        games: [...gameById.values()].filter((game) => game?.localOnly === true).map((game) => clone(game)),
+        games: persistedGames,
         warningCode: null,
+        pendingMutationsByGameId,
       });
       if (persistenceWarningCode) {
         persistenceWarningCode = null;
@@ -350,10 +360,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       controlIdentity === identityId &&
       legalActions.length > 0;
     next.canEndTurn =
-      next.offlineLocal &&
-      next.playgroundMode &&
-      next.player1?.identityId === identityId &&
-      next.player2?.identityId === identityId &&
+      (next.localOnly || next.offlineLocal || canOperateOfflinePlayground(next, identityId)) &&
+      canOperateOfflinePlayground(next, identityId) &&
       !next.inHistoryMode &&
       controlSeat === turnOwnerSeat &&
       turnOwnerIdentity === identityId &&
@@ -510,6 +518,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     const current = offlinePendingByGameId.get(gameId) ?? [];
     current.push(mutation);
     offlinePendingByGameId.set(gameId, current);
+    persistLocalState();
   };
 
   const computeLocalLegalActions = (state) => {
@@ -583,6 +592,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       accepted: true,
       action,
       move,
+      previousState: stable,
       state: next,
       legalActions: game.legalActions,
       game: decorateLocalGame(game),
@@ -654,6 +664,22 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     offlinePendingByGameId.clear();
     for (const [gameId, mutations] of entries) {
       for (const mutation of mutations) {
+        if (mutation.type === "apply") {
+          const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/apply`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              identityId,
+              state: mutation.state,
+              action: mutation.action,
+            }),
+          });
+          const body = await mustOk(response);
+          if (body.game) {
+            upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+          }
+          continue;
+        }
         if (mutation.type === "move") {
           const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/moves`, {
             method: "POST",
@@ -1038,7 +1064,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       if (!game) {
         throw new Error("game_not_found");
       }
-      if (!game.offlineLocal) {
+      const offlinePlayable = game.localOnly || game.offlineLocal || canOperateOfflinePlayground(game, identityId);
+      if (!offlinePlayable) {
         const error = new Error("offline_move_local_only");
         error.code = "offline_move_local_only";
         throw error;
@@ -1057,6 +1084,9 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
         error.code = result.validation?.code || "offline_apply_failed";
         throw error;
       }
+      if (!game.localOnly) {
+        queueOfflineMutation(gameId, { type: "apply", state: result.previousState, action });
+      }
       return { ok: true, game: upsertGame(next), move: result.move };
     }
     const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/moves`), {
@@ -1070,7 +1100,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const loadGameLegalActions = async ({ gameId, state }) => {
     const game = getGameViewModel(gameId);
-    if (game?.localOnly) {
+    if (game?.localOnly || (offline && canOperateOfflinePlayground(game, identityId))) {
       const body = computeLocalLegalActions(state ?? game.currentSnapshot ?? game.board?.state ?? null);
       const next = clone(game);
       next.board.state = clone(body.state);
@@ -1093,7 +1123,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const loadGamePieceMoves = async ({ gameId, state, pieceId }) => {
     const game = getGameViewModel(gameId);
-    if (game?.localOnly) {
+    if (game?.localOnly || (offline && canOperateOfflinePlayground(game, identityId))) {
       return buildPieceMoveResponse({
         state: state ?? game.currentSnapshot ?? game.board?.state ?? null,
         legalActions: Array.isArray(game.legalActions) ? game.legalActions : [],
@@ -1114,10 +1144,13 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const applyGameAction = async ({ gameId, state, action }) => {
     const game = getGameViewModel(gameId);
-    if (game?.localOnly) {
+    if (game?.localOnly || (offline && canOperateOfflinePlayground(game, identityId))) {
       const next = clone(game);
       const result = applyLocalAction({ game: next, action });
       if (result.accepted) {
+        if (!game.localOnly) {
+          queueOfflineMutation(gameId, { type: "apply", state: result.previousState, action });
+        }
         upsertGame(next);
       }
       return {
@@ -1165,9 +1198,12 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const endTurn = async ({ gameId }) => {
     const game = getGameViewModel(gameId);
-    if (game?.localOnly) {
+    if (game?.localOnly || (offline && canOperateOfflinePlayground(game, identityId))) {
       const next = clone(game);
       const turn = applyOfflineEndTurn(next);
+      if (!game.localOnly) {
+        queueOfflineMutation(gameId, { type: "end-turn" });
+      }
       return { ok: true, turn, game: upsertGame(next) };
     }
     if (offline) {
@@ -1341,7 +1377,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const getSyncMetrics = () => clone(syncMetrics);
 
   for (const persistedGame of Array.isArray(persistedState?.games) ? persistedState.games : []) {
-    if (persistedGame?.localOnly === true) {
+    if (persistedGame?.localOnly === true || canOperateOfflinePlayground(persistedGame, identityId)) {
       upsertGame(persistedGame);
     }
   }
