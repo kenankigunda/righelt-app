@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { listLegalActions } from "../../game-engine/src/legal";
 import { handleApiRequest } from "../src/index.ts";
 import { __resetLiveGameStateForTests } from "../src/shell-live.ts";
-import { applyServerAction, createInitialGame } from "../src/shell-live-core.ts";
+import { applyServerAction, createInitialGame, reconcileGameToScenarioResultingState } from "../src/shell-live-core.ts";
 import { createFakeD1 } from "./support/fake-d1.mjs";
 import { createFakeGameRooms } from "./support/fake-game-rooms.mjs";
 
@@ -330,6 +330,61 @@ test("live transport: scenario import exposes pending saved selection and accept
   const applied = applyServerAction(localGame, acceptedAction, undefined, null);
   assert.equal(applied.ok, true);
   assert.equal(localGame.pendingScenarioSelection, null);
+});
+
+test("live transport: reconcileGameToScenarioResultingState restores saved selection after history-backed imports", () => {
+  const game = createInitialGame({
+    gameId: "game-history-selection",
+    identityId: "id-a",
+    playgroundMode: false,
+    offlineLocal: false,
+  });
+
+  reconcileGameToScenarioResultingState(game, {
+    formatVersion: 2,
+    id: SCENARIO_UUIDS.savedSelection,
+    title: "History-backed saved selection",
+    description: "Preserves selection after reconcile",
+    incorrect: false,
+    initialState: {
+      boardSize: 10,
+      sideToMove: "P1",
+      turnIndex: 0,
+      pieces: [
+        { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+        { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+      ],
+      continuation: null,
+      outcome: { status: "ongoing" },
+    },
+    moves: [],
+    resultingState: {
+      boardSize: 10,
+      sideToMove: "P1",
+      turnIndex: 3,
+      pieces: [
+        { id: "P1-C", owner: "P1", kind: "commander", position: { row: 0, col: 0 }, supplied: true, commanded: true },
+        { id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 }, supplied: true, commanded: true },
+      ],
+      continuation: null,
+      outcome: { status: "ongoing" },
+    },
+    expectedFinalStateHash: "hash-placeholder",
+    expectedOutcome: "ongoing",
+    savedSelection: {
+      source: { row: 0, col: 0 },
+      target: null,
+      actorSide: "P1",
+      turnIndex: 3,
+    },
+  });
+
+  assert.deepEqual(game.pendingScenarioSelection, {
+    source: { row: 0, col: 0 },
+    target: null,
+    actorSide: "P1",
+    turnIndex: 3,
+  });
 });
 
 test("live transport: create-from-scenario preserves copied player seats when the importer is already a player", async () => {

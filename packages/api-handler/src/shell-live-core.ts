@@ -473,6 +473,7 @@ export const reconcileGameToScenarioResultingState = (game: LiveGame, scenario: 
   reconciled.sideToMove = scenario.resultingState.sideToMove;
   reconciled.turnIndex = scenario.resultingState.turnIndex;
   game.board.state = reconciled;
+  game.pendingScenarioSelection = clone(scenario.savedSelection);
 
   const targetTurnIndex = reconciled.turnIndex ?? 0;
   const existingTurns = Array.isArray(game.turns) ? game.turns.filter((turn) => turn.index <= targetTurnIndex) : [];
