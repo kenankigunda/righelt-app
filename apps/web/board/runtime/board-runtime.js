@@ -316,7 +316,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       } else if (state.continuation?.type === "push" && state.continuation.phase === "follow") {
         setPushFollowContinuationPrompt(state.sideToMove);
       } else {
-        setBoardPreviewPrompt("Select a piece to see it supply and command lines + what it can do:");
+        setBoardPreviewPrompt("Select a piece to see its supply and command lines + what it can do:");
       }
       return;
     }
