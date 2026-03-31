@@ -651,6 +651,7 @@ export function createEnginePlaygroundBoardAdapter() {
     selectedPieceId,
     selectedPieceMoves,
     selectedPieceMovePreviews,
+    currentActionType: overlayActionType,
   }) => {
     if (!overlayLinesEl) {
       return;
@@ -743,7 +744,7 @@ export function createEnginePlaygroundBoardAdapter() {
     }
 
     for (const [targetKey, actionsAtTarget] of previewsByTargetKey.entries()) {
-      const preferredActionType = pickBestActionTypeForTarget(actionsAtTarget, null);
+      const preferredActionType = pickBestActionTypeForTarget(actionsAtTarget, overlayActionType ?? null);
       const action = actionsAtTarget.find((candidate) => candidate.type === preferredActionType) ?? actionsAtTarget[0];
       const targetCell = cellByCoordinateKey.get(targetKey);
       const isSelectedTarget = targetCell?.classList.contains("target") ?? false;
@@ -767,6 +768,14 @@ export function createEnginePlaygroundBoardAdapter() {
         }
         if (action.legal === false && action.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED") {
           ghost.classList.add("illegal-unsupplied");
+        }
+        if (action.type === "push") {
+          const pushStack = targetCell.querySelector(".piece-stack[data-push-preview-stack]");
+          if (pushStack) {
+            ghost.classList.add("stacked-piece", "stacked-top");
+            pushStack.appendChild(ghost);
+            continue;
+          }
         }
         targetCell.appendChild(ghost);
       }
@@ -1087,6 +1096,20 @@ export function createEnginePlaygroundBoardAdapter() {
           cell.dataset.col = String(col);
 
           const cellPieces = findPiecesAt(snapshot, row, col);
+          const selectedActorForPushPreview =
+            overlay?.mode === "interactive" && effectiveSelection.selectedPieceId
+              ? findPieceById(snapshot, effectiveSelection.selectedPieceId)
+              : null;
+          const legalPushToCell = legalAtCell.some((action) => action.type === "push");
+          const showPushPreviewDefenderStack =
+            isTarget &&
+            currentActionType === "push" &&
+            cellPieces.length === 1 &&
+            cellPiece &&
+            selectedActorForPushPreview &&
+            cellPiece.owner !== selectedActorForPushPreview.owner &&
+            legalPushToCell;
+
           if (cellPieces.length > 1) {
             const stack = document.createElement("span");
             stack.className = "piece-stack";
@@ -1112,6 +1135,14 @@ export function createEnginePlaygroundBoardAdapter() {
               }
               stack.appendChild(token);
             }
+            cell.appendChild(stack);
+          } else if (showPushPreviewDefenderStack) {
+            const stack = document.createElement("span");
+            stack.className = "piece-stack";
+            stack.dataset.pushPreviewStack = "1";
+            const defenderToken = buildPieceToken(cellPiece);
+            defenderToken.classList.add("stacked-piece", "stacked-underlay", "stacked-pushed");
+            stack.appendChild(defenderToken);
             cell.appendChild(stack);
           } else {
             const marker = cellPiece ? buildPieceToken(cellPiece) : document.createElement("span");
@@ -1211,6 +1242,7 @@ export function createEnginePlaygroundBoardAdapter() {
         selectedPieceId: selection.selectedPieceId,
         selectedPieceMoves,
         selectedPieceMovePreviews,
+        currentActionType,
       });
     },
 
