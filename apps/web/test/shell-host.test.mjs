@@ -182,6 +182,50 @@ test("shell host applyAction uses canonical legal actions from the updated game 
   assert.deepEqual(result.legalActions, canonicalLegalActions);
 });
 
+test("shell host applyAction prefers the optimistic game snapshot over a stale direct state payload", async () => {
+  const optimisticState = {
+    sideToMove: "P2",
+    turnIndex: 1,
+    continuation: null,
+    pieces: [{ id: "P2-C", owner: "P2", kind: "commander", position: { row: 9, col: 9 } }],
+  };
+  const transport = {
+    getGameViewModel() {
+      return {
+        currentSnapshot: optimisticState,
+        currentTurn: { playerSeat: "Player 2" },
+        legalActions: [{ type: "move", actorId: "P2-C", from: { row: 9, col: 9 }, to: { row: 8, col: 9 } }],
+      };
+    },
+    async applyGameAction() {
+      return {
+        accepted: true,
+        state: {
+          sideToMove: "P1",
+          turnIndex: 0,
+          continuation: null,
+          pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 } }],
+        },
+        game: {
+          currentSnapshot: optimisticState,
+          currentTurn: { playerSeat: "Player 2" },
+          legalActions: [{ type: "move", actorId: "P2-C", from: { row: 9, col: 9 }, to: { row: 8, col: 9 } }],
+        },
+      };
+    },
+  };
+
+  const host = createShellBoardHost({ transport, gameId: "g-4b", canInteract: () => true });
+  const result = await host.applyAction(
+    { sideToMove: "P1", turnIndex: 0, continuation: null, pieces: [] },
+    { type: "project", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 4 } },
+  );
+
+  assert.equal(result.accepted, true);
+  assert.deepEqual(result.state, optimisticState);
+  assert.equal(result.boardMessage?.type, "turn_ended");
+});
+
 test("shell host derives selected piece moves from cached legal actions without transport piece-move calls", async () => {
   const transport = {
     getGameViewModel() {

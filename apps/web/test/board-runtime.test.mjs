@@ -2128,6 +2128,11 @@ test("board runtime emits turn-ended when applyAction returns a settled next-tur
   });
 
   assert.equal(boardMessages.some((message) => message?.type === "turn_ended"), true);
+  assert.deepEqual(runtime.getSelection(), {
+    selectedPieceId: null,
+    source: null,
+    target: null,
+  });
   assert.deepEqual(actionResults.at(-1), {
     accepted: true,
     outcome: null,
