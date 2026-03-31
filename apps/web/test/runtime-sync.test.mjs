@@ -95,6 +95,51 @@ test("shell board selection is preserved for same-turn continuation snapshots th
   );
 });
 
+test("shell board source-only selection resets when the selected source becomes empty", () => {
+  assert.equal(
+    shouldResetBoardSelection({
+      currentSnapshot: { sideToMove: "P1", turnIndex: 0, pieces: [] },
+      nextSnapshot: {
+        sideToMove: "P1",
+        turnIndex: 0,
+        pieces: [],
+      },
+      currentSelection: {
+        selectedPieceId: "A1",
+        source: { row: 4, col: 2 },
+        target: null,
+      },
+      nextLegalActions: [{ type: "move", actorId: "B1", from: { row: 6, col: 6 }, to: { row: 6, col: 7 } }],
+    }),
+    true,
+  );
+});
+
+test("shell board source-only selection is preserved when the same actor remains at the source", () => {
+  assert.equal(
+    shouldResetBoardSelection({
+      currentSnapshot: { sideToMove: "P1", turnIndex: 0, pieces: [] },
+      nextSnapshot: {
+        sideToMove: "P1",
+        turnIndex: 0,
+        pieces: [
+          {
+            id: "A1",
+            position: { row: 4, col: 2 },
+          },
+        ],
+      },
+      currentSelection: {
+        selectedPieceId: "A1",
+        source: { row: 4, col: 2 },
+        target: null,
+      },
+      nextLegalActions: [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }],
+    }),
+    false,
+  );
+});
+
 test("shell board mount skips reload when runtime already matches current snapshot", () => {
   assert.equal(
     shouldSkipBoardRuntimeReload({

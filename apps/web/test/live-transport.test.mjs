@@ -1086,6 +1086,54 @@ test("live transport store applies optimistic moves immediately and clears pendi
   assert.equal(settledView.syncStatus, "ready");
 });
 
+test("live transport store hands off to the next turn immediately for optimistic turn-ending actions", async () => {
+  const baseGame = buildLiveGame();
+  const nextAction = baseGame.legalActions.find((action) => action.type === "project") ?? baseGame.legalActions[0];
+  let resolveApply = null;
+
+  const fetcher = async (url, init = {}) => {
+    if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/apply?offline=0` && init.method === "POST") {
+      return new Promise((resolve) => {
+        resolveApply = resolve;
+      });
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.31415 });
+  await store.loadGame(baseGame.id);
+
+  const pending = await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+  assert.equal(pending.accepted, true);
+
+  const optimisticView = store.getGameViewModel(baseGame.id);
+  assert.equal(optimisticView.pendingMoves.length, 1);
+  assert.equal(optimisticView.currentSnapshot.sideToMove, "P2");
+  assert.equal(optimisticView.currentSnapshot.turnIndex, 1);
+  assert.equal(optimisticView.currentTurn.playerSeat, "Player 2");
+  assert.equal(optimisticView.canRecordMove, false);
+  assert.equal(optimisticView.canEndTurn, false);
+
+  resolveApply?.(
+    Response.json({
+      ok: true,
+      accepted: true,
+      clientCommandId: pending.clientCommandId,
+      eventSeq: 2,
+      game: buildAcknowledgedGame(baseGame, nextAction),
+    }),
+  );
+  await tick();
+
+  const settledView = store.getGameViewModel(baseGame.id);
+  assert.equal(settledView.pendingMoves.length, 0);
+  assert.equal(settledView.currentSnapshot.sideToMove, "P2");
+  assert.equal(settledView.currentSnapshot.turnIndex, 1);
+});
+
 test("live transport store hands retreat control to the defending player", async () => {
   const scenario = buildPushRetreatScenario();
   const gameId = "game-retreat-control";
