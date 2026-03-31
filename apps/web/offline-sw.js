@@ -1,18 +1,4 @@
-import { OFFLINE_SHELL_ASSETS, OFFLINE_SHELL_CACHE } from "./offline/bootstrap.js";
-
-const isShellAssetRequest = (request) => {
-  if (!(request instanceof Request)) {
-    return false;
-  }
-  if (request.method !== "GET") {
-    return false;
-  }
-  const url = new URL(request.url);
-  if (url.pathname.startsWith("/api/")) {
-    return false;
-  }
-  return OFFLINE_SHELL_ASSETS.includes(url.pathname) || request.mode === "navigate";
-};
+import { OFFLINE_SHELL_ASSETS, OFFLINE_SHELL_CACHE, handleOfflineShellFetch, isOfflineShellRequest } from "./offline/bootstrap.js";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -30,18 +16,15 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (!isShellAssetRequest(event.request)) {
+  if (!isOfflineShellRequest(event.request)) {
     return;
   }
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) {
-        return cached;
-      }
-      if (event.request.mode === "navigate") {
-        return caches.match("/index.html");
-      }
-      return fetch(event.request);
+    handleOfflineShellFetch({
+      request: event.request,
+      cacheStorage: caches,
+      fetcher: fetch,
+      cacheName: OFFLINE_SHELL_CACHE,
     }),
   );
 });
