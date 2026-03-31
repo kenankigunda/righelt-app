@@ -523,7 +523,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         selectedPieceMoves = [];
         selectedPieceMovePreviews = [];
 
-        controls.onBoardMessage?.(body.boardMessage ?? { type: "move_sent", origin: "board-runtime" });
+        const turnChanged =
+          previousState?.sideToMove !== state?.sideToMove || previousState?.turnIndex !== state?.turnIndex;
+        controls.onBoardMessage?.(
+          body.boardMessage ?? { type: turnChanged ? "turn_ended" : "move_sent", origin: "board-runtime" },
+        );
 
         if (!applyForcedContinuationSelection()) {
           if (previousState?.sideToMove && state?.sideToMove && previousState.sideToMove !== state.sideToMove) {
@@ -542,38 +546,6 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         }
         setResult({ accepted: true, outcome: body.outcome ?? state.outcome });
 
-        const continuationType = state?.continuation?.type ?? null;
-        const shouldAutoEndTurn = continuationType !== "rush" && continuationType !== "push";
-        if (shouldAutoEndTurn) {
-          const alreadyEndedByAction =
-            previousState?.sideToMove !== state?.sideToMove ||
-            previousState?.turnIndex !== state?.turnIndex;
-
-          if (!alreadyEndedByAction && typeof host.endTurn === "function") {
-            const endResult = await host.endTurn(state);
-            if (endResult?.accepted) {
-              state = endResult.state ?? state;
-              legalActions = Array.isArray(endResult.legalActions) ? endResult.legalActions : legalActions;
-              clearSelection();
-              refreshSelectionLabels();
-              renderBoard();
-              renderStatus();
-              setResult({ accepted: true, outcome: endResult.outcome ?? state.outcome });
-              controls.onBoardMessage?.(endResult.boardMessage ?? { type: "turn_ended", origin: "board-runtime" });
-              return;
-            }
-
-            state = endResult?.state ?? state;
-            legalActions = Array.isArray(endResult?.legalActions) ? endResult.legalActions : legalActions;
-            refreshSelectionLabels();
-            renderBoard();
-            renderStatus();
-            setResult({ accepted: false, validation: endResult?.validation ?? null });
-            return;
-          }
-
-          controls.onBoardMessage?.({ type: "turn_ended", origin: "board-runtime" });
-        }
         return;
       }
 

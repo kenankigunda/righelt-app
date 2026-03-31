@@ -84,6 +84,33 @@ test("shell host applyAction preserves removedPieces from the transport response
   assert.deepEqual(result.removedPieces, removedPieces);
 });
 
+test("shell host applyAction emits turn_ended when the returned snapshot already handed off the turn", async () => {
+  const transport = {
+    getGameViewModel() {
+      return {
+        currentSnapshot: { sideToMove: "P2", turnIndex: 1, continuation: null, pieces: [] },
+        currentTurn: { playerSeat: "Player 2" },
+        legalActions: [{ type: "move" }],
+      };
+    },
+    async applyGameAction() {
+      return {
+        accepted: true,
+        state: { sideToMove: "P2", turnIndex: 1, continuation: null, pieces: [] },
+      };
+    },
+  };
+
+  const host = createShellBoardHost({ transport, gameId: "g-3b", canInteract: () => true });
+  const result = await host.applyAction(
+    { sideToMove: "P1", turnIndex: 0, continuation: null, pieces: [] },
+    { type: "pass" },
+  );
+
+  assert.equal(result.accepted, true);
+  assert.equal(result.boardMessage?.type, "turn_ended");
+});
+
 test("shell host applyAction uses canonical legal actions from the updated game view", async () => {
   const canonicalState = {
     sideToMove: "P1",

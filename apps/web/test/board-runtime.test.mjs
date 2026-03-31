@@ -1662,7 +1662,7 @@ test("board runtime keeps selection while piece moves are still loading", async 
   await new Promise((resolve) => setTimeout(resolve, 0));
 });
 
-test("board runtime surfaces auto end-turn rejection without emitting turn-ended message", async () => {
+test("board runtime emits turn-ended when applyAction returns a settled next-turn state", async () => {
   const actionResults = [];
   const boardMessages = [];
 
@@ -1692,29 +1692,17 @@ test("board runtime surfaces auto end-turn rejection without emitting turn-ended
       applyAction: async () => ({
         accepted: true,
         state: {
-          sideToMove: "P1",
-          turnIndex: 0,
+          sideToMove: "P2",
+          turnIndex: 1,
           continuation: null,
           outcome: null,
           pieces: [],
         },
-        legalActions: [{ type: "pass" }],
+        legalActions: [{ type: "move" }],
       }),
       loadInitialState: async () => ({ state: null, legalActions: [] }),
       loadLegalActions: async () => ({ state: null, legalActions: [] }),
       loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
-      endTurn: async () => ({
-        accepted: false,
-        validation: { ok: false, code: "turn_has_no_moves" },
-        state: {
-          sideToMove: "P1",
-          turnIndex: 0,
-          continuation: null,
-          outcome: null,
-          pieces: [],
-        },
-        legalActions: [{ type: "pass" }],
-      }),
       canInteract: () => true,
     },
     controls: {
@@ -1747,9 +1735,9 @@ test("board runtime surfaces auto end-turn rejection without emitting turn-ended
     to: { row: 4, col: 3 },
   });
 
-  assert.equal(boardMessages.some((message) => message?.type === "turn_ended"), false);
+  assert.equal(boardMessages.some((message) => message?.type === "turn_ended"), true);
   assert.deepEqual(actionResults.at(-1), {
-    accepted: false,
-    validation: { ok: false, code: "turn_has_no_moves" },
+    accepted: true,
+    outcome: null,
   });
 });

@@ -491,6 +491,7 @@ test("/api/engine/playground/apply keeps push continuation active after retreat 
   ]);
 });
 
+
 test("/api/engine/playground/piece-moves returns invalid_piece_id when pieceId is missing", async () => {
   const { env } = buildEnv();
   const stateResponse = await handleApiRequest(

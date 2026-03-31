@@ -12,7 +12,8 @@ test("game controls do not render standalone record-move or end-turn buttons", (
   assert.doesNotMatch(source, /data-action="record-move"/);
   assert.doesNotMatch(source, /data-action="end-turn"/);
   assert.doesNotMatch(source, /getActionType:\s*\(\)\s*=>\s*"pass"/);
-  assert.match(shellHostSource, /boardMessage:\s*\{\s*type:\s*"move_sent"/);
+  assert.match(shellHostSource, /const turnChanged = state\?\.sideToMove !== snapshot\?\.sideToMove \|\| state\?\.turnIndex !== snapshot\?\.turnIndex;/);
+  assert.match(shellHostSource, /type:\s*turnChanged\s*\?\s*"turn_ended"\s*:\s*"move_sent"/);
   assert.match(shellHostSource, /control:\s*getControlLabel/);
   assert.match(shellHostSource, /boardMessage:\s*\{\s*type:\s*"turn_ended"\s*\}/);
 });
