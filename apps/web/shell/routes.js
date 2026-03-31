@@ -1,8 +1,11 @@
 const HOME_ROUTE = { name: "home" };
 export const FLYOUT_KEYS = ["debug", "scenarios"];
 const URL_FLYOUT_KEYS = ["scenarios"];
+export const GAME_PANEL_KEYS = ["players", "board", "history"];
+export const DEFAULT_GAME_PANEL = "board";
 
 const trimSlash = (value) => value.replace(/^\/+|\/+$/g, "");
+const normalizeGamePanel = (value) => (GAME_PANEL_KEYS.includes(value) ? value : DEFAULT_GAME_PANEL);
 const getFlyoutState = (query) =>
   {
     const urlFlyouts = Object.fromEntries(URL_FLYOUT_KEYS.map((key) => [key, query.get(key) === "1"]));
@@ -39,6 +42,7 @@ export const parseRouteFromHash = (hash) => {
       name: "game",
       gameId: decodeURIComponent(parts[1]),
       inviteFromRole: query.get("from") || null,
+      panel: normalizeGamePanel(query.get("panel")),
     }, query);
   }
 
@@ -98,12 +102,24 @@ const appendFlyoutQuery = (hash, flyouts = {}) => {
 
 export const buildHomeHash = (flyouts = {}) => appendFlyoutQuery("#/", flyouts);
 
-export const buildGameHash = (gameId, inviteFromRole = null, flyouts = {}) => {
+export const buildGameHash = (gameId, inviteFromRole = null, routeState = {}) => {
   const safe = encodeURIComponent(gameId);
-  if (!inviteFromRole) {
-    return appendFlyoutQuery(`#/game/${safe}`, flyouts);
+  const query = new URLSearchParams();
+  if (inviteFromRole) {
+    query.set("from", inviteFromRole);
   }
-  return appendFlyoutQuery(`#/game/${safe}?from=${encodeURIComponent(inviteFromRole)}`, flyouts);
+  const panel = normalizeGamePanel(routeState?.panel);
+  if (panel !== DEFAULT_GAME_PANEL) {
+    query.set("panel", panel);
+  }
+  const normalizedFlyouts = normalizeFlyoutState(routeState);
+  URL_FLYOUT_KEYS.forEach((key) => {
+    if (normalizedFlyouts[key] === true) {
+      query.set(key, "1");
+    }
+  });
+  const queryText = query.toString();
+  return queryText.length > 0 ? `#/game/${safe}?${queryText}` : `#/game/${safe}`;
 };
 
 export const buildInviteHash = (inviteToken, flyouts = {}) => appendFlyoutQuery(`#/invite/${encodeURIComponent(inviteToken)}`, flyouts);
@@ -142,7 +158,7 @@ export const isShellRouteHash = (hash) => {
 const buildHashForParsedRoute = (parsed, flyouts) => {
   switch (parsed.name) {
     case "game":
-      return buildGameHash(parsed.gameId, parsed.inviteFromRole, flyouts);
+      return buildGameHash(parsed.gameId, parsed.inviteFromRole, { ...flyouts, panel: parsed.panel });
     case "invite":
       return buildInviteHash(parsed.inviteToken, flyouts);
     case "tutorial":

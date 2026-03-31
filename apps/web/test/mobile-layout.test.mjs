@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const testDir = fileURLToPath(new URL(".", import.meta.url));
 const indexSource = readFileSync(join(testDir, "..", "index.html"), "utf8");
 const shellStylesSource = readFileSync(join(testDir, "..", "shell", "shell.css"), "utf8");
+const stylesSource = readFileSync(join(testDir, "..", "styles.css"), "utf8");
 
 test("web app keeps the standard mobile viewport meta tag", () => {
   assert.match(indexSource, /<meta name="viewport" content="width=device-width, initial-scale=1\.0" \/>/);
@@ -26,7 +27,7 @@ test("shell header wraps long mobile status and identity tokens instead of widen
 test("shell header stacks cleanly on narrow screens", () => {
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 640px\)\s*\{[\s\S]*\.shell-header\s*\{[\s\S]*flex-wrap:\s*wrap;[\s\S]*\}[\s\S]*\.shell-header-main,\s*\.shell-header-actions\s*\{[\s\S]*flex:\s*1 1 100%;[\s\S]*max-width:\s*100%;/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header\s*\{[\s\S]*flex-wrap:\s*wrap;[\s\S]*\}[\s\S]*\.shell-header-main,\s*\.shell-header-actions\s*\{[\s\S]*flex:\s*1 1 100%;[\s\S]*max-width:\s*100%;/s,
   );
 });
 
@@ -131,23 +132,23 @@ test("wide-screen shell sticky columns only target the left and board stacks", (
   );
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 640px\)\s*\{[\s\S]*\.shell-flyout-stack\s*\{[\s\S]*left:\s*0;[\s\S]*flex-direction:\s*column;[\s\S]*justify-content:\s*flex-end;/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-flyout-stack\s*\{[\s\S]*left:\s*0;[\s\S]*flex-direction:\s*column;[\s\S]*justify-content:\s*flex-end;/s,
   );
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 640px\)\s*\{[\s\S]*\.shell-flyout\s*\{[\s\S]*width:\s*100%;[\s\S]*max-height:\s*50vh;[\s\S]*flex:\s*0 1 50vh;[\s\S]*border-left:\s*0;[\s\S]*border-right:\s*0;[\s\S]*border-bottom:\s*0;/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-flyout\s*\{[\s\S]*width:\s*100%;[\s\S]*max-height:\s*50vh;[\s\S]*flex:\s*0 1 50vh;[\s\S]*border-left:\s*0;[\s\S]*border-right:\s*0;[\s\S]*border-bottom:\s*0;/s,
   );
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 640px\)\s*\{[\s\S]*\.shell-flyout\s*\{[\s\S]*transform:\s*translateY\(calc\(100%\s*\+\s*1rem\)\);/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-flyout\s*\{[\s\S]*transform:\s*translateY\(calc\(100%\s*\+\s*1rem\)\);/s,
   );
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 640px\)\s*\{[\s\S]*\.shell-flyout\.is-open\s*\{[\s\S]*transform:\s*translateY\(0\);/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-flyout\.is-open\s*\{[\s\S]*transform:\s*translateY\(0\);/s,
   );
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 640px\)\s*\{[\s\S]*\.shell-flyout\.is-closing\s*\{[\s\S]*transform:\s*translateY\(100%\);/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-flyout\.is-closing\s*\{[\s\S]*transform:\s*translateY\(100%\);/s,
   );
 });
 
@@ -160,9 +161,24 @@ test("narrow-screen shell layout still collapses to one column without sticky ru
     shellStylesSource,
     /#app\[data-shell-layout-mode="narrow"\]\s+\[data-shell-panel="board"\]\s+\.board\s*>\s*\.cell\s*\{[\s\S]*aspect-ratio:\s*1\s*\/\s*1;[\s\S]*min-height:\s*0;/s,
   );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-route="game"\]\[data-shell-layout-mode="narrow"\]\s+\.game-shell-track\s*\{[\s\S]*display:\s*flex;[\s\S]*transform:\s*translateX\(calc\(var\(--shell-game-panel-index,\s*1\)\s*\*\s*-100%\)\);[\s\S]*transition:\s*transform var\(--shell-mobile-panel-transition\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-route="game"\]\[data-shell-layout-mode="narrow"\]\s+\.shell-mobile-tabbar\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);[\s\S]*position:\s*sticky;[\s\S]*bottom:\s*0;/s,
+  );
   assert.doesNotMatch(
     shellStylesSource,
     /#app\[data-shell-layout-mode="narrow"\]\s+\.layout-grid > \[data-shell-sticky-target\][\s\S]*position:\s*sticky;/s,
+  );
+});
+
+test("shared legacy grid collapses at the unified 900px breakpoint", () => {
+  assert.match(
+    stylesSource,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.grid\s*\{[\s\S]*grid-template-columns:\s*1fr;/s,
   );
 });
 

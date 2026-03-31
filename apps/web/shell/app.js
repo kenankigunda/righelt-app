@@ -18,7 +18,9 @@ import {
 } from "./scenarios.js";
 import { shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import {
+  DEFAULT_GAME_PANEL,
   FLYOUT_KEYS,
+  GAME_PANEL_KEYS,
   buildHashForRoute,
   buildGameHash,
   buildHomeHash,
@@ -128,9 +130,14 @@ let pressedControlEl = null;
 let controlReleaseTimer = null;
 let stickyLayoutFrame = 0;
 let homeSectionResizeFrame = 0;
+let activePanelSwipe = null;
+let panelTransitionResetTimer = null;
 const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;
 const SHELL_VIEWPORT_GUTTER_PX = 16;
 const FLYOUT_MOTION_MS = 180;
+const GAME_SHELL_PANEL_SWIPE_TRIGGER_PX = 72;
+const GAME_SHELL_PANEL_SWIPE_INTENT_PX = 18;
+const GAME_SHELL_PANEL_TRANSITION_MS = 220;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
 const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
@@ -784,8 +791,19 @@ const delay = (ms) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+const normalizeGamePanel = (panel) => (GAME_PANEL_KEYS.includes(panel) ? panel : DEFAULT_GAME_PANEL);
+const getGamePanel = (route = currentRoute) => (route?.name === "game" ? normalizeGamePanel(route.panel) : DEFAULT_GAME_PANEL);
+const getGamePanelIndex = (panel = getGamePanel()) => Math.max(0, GAME_PANEL_KEYS.indexOf(normalizeGamePanel(panel)));
+const getAdjacentGamePanel = (panel = getGamePanel(), direction = 0) => {
+  const nextIndex = Math.min(Math.max(getGamePanelIndex(panel) + direction, 0), GAME_PANEL_KEYS.length - 1);
+  return GAME_PANEL_KEYS[nextIndex];
+};
 const getCurrentFlyoutState = () => ({
   ...Object.fromEntries(FLYOUT_KEYS.map((key) => [key, currentRoute[key] === true])),
+});
+const getCurrentGameHashState = (panel = getGamePanel()) => ({
+  ...getCurrentFlyoutState(),
+  panel,
 });
 const getBaseRouteRenderKey = (route = currentRoute) => {
   if (!route || typeof route !== "object") {
@@ -803,7 +821,7 @@ const getBaseRouteRenderKey = (route = currentRoute) => {
   return String(route.name || "unknown");
 };
 const getRouteRenderKey = (route = currentRoute) =>
-  `${getBaseRouteRenderKey(route)}|${FLYOUT_KEYS.map((key) => `${key}:${route?.[key] === true}`).join("|")}`;
+  `${getBaseRouteRenderKey(route)}|panel:${route?.name === "game" ? getGamePanel(route) : ""}|${FLYOUT_KEYS.map((key) => `${key}:${route?.[key] === true}`).join("|")}`;
 const isFlyoutOnlyRouteChange = (previousRoute, nextRoute) =>
   getBaseRouteRenderKey(previousRoute) === getBaseRouteRenderKey(nextRoute) &&
   getRouteRenderKey(previousRoute) !== getRouteRenderKey(nextRoute);
@@ -851,6 +869,7 @@ const normalizeRouteFlyoutState = (route, { preferredFlyoutKey = null } = {}) =>
   const routeWithPersistedPreferences = {
     ...route,
     debug: getPersistedDebugFlyoutOpen(),
+    panel: route.name === "game" ? normalizeGamePanel(route.panel) : route.panel,
   };
   return {
     ...routeWithPersistedPreferences,
@@ -892,6 +911,10 @@ const syncShellLayoutMode = () => {
   const layoutMode = getShellLayoutMode();
   if (appEl instanceof HTMLElement) {
     appEl.setAttribute("data-shell-layout-mode", layoutMode);
+    appEl.setAttribute("data-shell-route", currentRoute?.name || "unknown");
+    const activeGamePanel = getGamePanel();
+    appEl.setAttribute("data-shell-game-panel", activeGamePanel);
+    appEl.style.setProperty("--shell-game-panel-index", String(getGamePanelIndex(activeGamePanel)));
     FLYOUT_KEYS.forEach((key) => {
       appEl.setAttribute(`data-${key}-open`, currentRoute[key] ? "true" : "false");
     });
@@ -1015,6 +1038,17 @@ const startControlPress = (controlEl) => {
   controlEl.classList.add("is-pressing");
   pressedControlEl = controlEl;
 };
+
+const clearActivePanelSwipe = () => {
+  activePanelSwipe = null;
+};
+
+const shouldHandleGamePanelSwipe = (target) =>
+  currentRoute.name === "game" &&
+  getShellLayoutMode() === "narrow" &&
+  target instanceof HTMLElement &&
+  target.closest("[data-game-shell-root]") instanceof HTMLElement &&
+  !target.closest(".shell-mobile-tabbar");
 
 const getCurrentViewedGameId = () => {
   if (currentRoute.name === "game") {
@@ -1872,29 +1906,89 @@ const shouldEnableStickyShellColumn = ({ matchesWideScreen, columnHeight, viewpo
   Number.isFinite(viewportHeight) &&
   columnHeight <= viewportHeight;
 
+const renderGameShellPanelTab = (panelKey, label) => `
+  <button
+    class="secondary shell-mobile-tab"
+    type="button"
+    data-action="switch-game-panel"
+    data-panel="${panelKey}"
+    aria-pressed="${getGamePanel() === panelKey ? "true" : "false"}"
+    aria-current="${getGamePanel() === panelKey ? "page" : "false"}"
+  >${label}</button>
+`;
+
 const renderGameShellFrame = (game) => `
   <div id="shell-game-alerts"></div>
-  <section class="layout-grid" data-game-shell-root data-game-id="${escapeHtml(game.id)}">
-    <div class="stack" data-shell-sticky-target="left" data-sticky-enabled="false">
-      <section class="panel" data-game-panel="summary"></section>
-      <section class="panel" data-game-panel="join"></section>
-      <section class="panel" data-game-panel="participants"></section>
-    </div>
+  <section class="game-shell-frame" data-game-shell-root data-game-id="${escapeHtml(game.id)}">
+    <div class="game-shell-track-wrap">
+      <section class="layout-grid game-shell-track" data-game-shell-track>
+        <div class="stack game-shell-mobile-panel" data-mobile-panel="players" data-shell-sticky-target="left" data-sticky-enabled="false">
+          <section class="panel" data-game-panel="summary"></section>
+          <section class="panel" data-game-panel="join"></section>
+          <section class="panel" data-game-panel="participants"></section>
+        </div>
 
-    <div class="stack" data-shell-sticky-target="board" data-sticky-enabled="false">
-      <section class="panel" data-shell-panel="board">
-        ${renderBoardPanel(game)}
+        <div class="stack game-shell-mobile-panel" data-mobile-panel="board" data-shell-sticky-target="board" data-sticky-enabled="false">
+          <section class="panel" data-shell-panel="board">
+            ${renderBoardPanel(game)}
+          </section>
+        </div>
+
+        <div class="stack game-shell-mobile-panel" data-mobile-panel="history">
+          <section class="panel" data-game-panel="history"></section>
+        </div>
       </section>
     </div>
-
-    <div class="stack">
-      <section class="panel" data-game-panel="history"></section>
-    </div>
+    <nav class="shell-mobile-tabbar" aria-label="Game panels">
+      ${renderGameShellPanelTab("players", "Players")}
+      ${renderGameShellPanelTab("board", "Board")}
+      ${renderGameShellPanelTab("history", "History")}
+    </nav>
   </section>
 `;
 
 const getMountedGameShellRoot = () =>
   appEl?.querySelector?.("[data-game-shell-root]") instanceof HTMLElement ? appEl.querySelector("[data-game-shell-root]") : null;
+const syncMountedGameShellPanelUi = (shellRoot = getMountedGameShellRoot()) => {
+  if (!(shellRoot instanceof HTMLElement)) {
+    return;
+  }
+  const activePanel = getGamePanel();
+  const nextPanelIndex = getGamePanelIndex(activePanel);
+  shellRoot.querySelectorAll("[data-action='switch-game-panel'][data-panel]").forEach((buttonEl) => {
+    if (!(buttonEl instanceof HTMLElement)) {
+      return;
+    }
+    const isActive = buttonEl.getAttribute("data-panel") === activePanel;
+    buttonEl.setAttribute("aria-pressed", isActive ? "true" : "false");
+    buttonEl.setAttribute("aria-current", isActive ? "page" : "false");
+  });
+  const trackEl = shellRoot.querySelector("[data-game-shell-track]");
+  if (trackEl instanceof HTMLElement) {
+    const previousPanelIndex = Number.parseInt(trackEl.dataset.panelIndex || String(nextPanelIndex), 10);
+    const shouldAnimate =
+      getShellLayoutMode() === "narrow" &&
+      !prefersReducedMotion() &&
+      trackEl.dataset.hasMounted === "true" &&
+      previousPanelIndex !== nextPanelIndex;
+    trackEl.dataset.panelIndex = String(nextPanelIndex);
+    trackEl.dataset.hasMounted = "true";
+    if (shouldAnimate) {
+      trackEl.dataset.transitionState = nextPanelIndex > previousPanelIndex ? "forward" : "backward";
+      if (panelTransitionResetTimer) {
+        window.clearTimeout(panelTransitionResetTimer);
+      }
+      panelTransitionResetTimer = window.setTimeout(() => {
+        panelTransitionResetTimer = null;
+        if (trackEl instanceof HTMLElement) {
+          trackEl.dataset.transitionState = "";
+        }
+      }, GAME_SHELL_PANEL_TRANSITION_MS);
+    } else {
+      trackEl.dataset.transitionState = "";
+    }
+  }
+};
 const getMountedShellPageEl = () =>
   appEl?.querySelector?.(".shell-page-shell") instanceof HTMLElement ? appEl.querySelector(".shell-page-shell") : null;
 const getMountedHeaderEl = () =>
@@ -2125,6 +2219,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
     }
   });
   reconcileMiniBoardPreviews();
+  syncMountedGameShellPanelUi(shellRoot);
   scheduleGameShellStickyLayout();
   return true;
 };
@@ -2785,6 +2880,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     syncFlyoutAwareLinks();
     syncCopyInviteLinks();
     updateHeaderFields();
+    syncMountedGameShellPanelUi();
     reconcileMiniBoardPreviews();
     animateHomeSectionTransitions();
     syncScenarioAuthoringControls();
@@ -2848,6 +2944,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   syncFlyoutAwareLinks();
   syncCopyInviteLinks();
   updateHeaderFields();
+  syncMountedGameShellPanelUi();
   reconcileMiniBoardPreviews();
   animateHomeSectionTransitions();
   syncScenarioAuthoringControls();
@@ -3257,6 +3354,18 @@ appEl.addEventListener("click", async (event) => {
       return;
     }
 
+    if (action === "switch-game-panel") {
+      if (currentRoute.name !== "game" || getShellLayoutMode() !== "narrow") {
+        return;
+      }
+      const nextPanel = normalizeGamePanel(actionEl.getAttribute("data-panel"));
+      if (nextPanel === getGamePanel()) {
+        return;
+      }
+      navigateTo(buildGameHash(currentRoute.gameId, currentRoute.inviteFromRole, getCurrentGameHashState(nextPanel)));
+      return;
+    }
+
     if (action === "create-game") {
       const game = await transport.createGame({ playgroundMode: false, offlineLocal: false });
       navigateTo(buildGameHash(game.id, null, getCurrentFlyoutState()));
@@ -3317,7 +3426,7 @@ appEl.addEventListener("click", async (event) => {
       });
       markInviteChoiceCommitted(gameId);
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId, null, getCurrentFlyoutState()));
+        navigateTo(buildGameHash(gameId, null, getCurrentGameHashState(currentRoute.name === "game" ? getGamePanel() : DEFAULT_GAME_PANEL)));
         return;
       }
       await syncRouteDataAndLiveChannels();
@@ -3338,7 +3447,7 @@ appEl.addEventListener("click", async (event) => {
         setInviteFeedback("Player join request sent. You are now viewing the game while approval is pending.");
       }
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId, null, getCurrentFlyoutState()));
+        navigateTo(buildGameHash(gameId, null, getCurrentGameHashState(currentRoute.name === "game" ? getGamePanel() : DEFAULT_GAME_PANEL)));
         return;
       }
       await syncRouteDataAndLiveChannels();
@@ -3715,6 +3824,68 @@ window.addEventListener("pointerup", (event) => {
 
 window.addEventListener("pointercancel", () => {
   clearHistoryPress();
+});
+
+appEl.addEventListener("touchstart", (event) => {
+  const touch = event.touches[0];
+  const target = event.target;
+  if (!touch || !shouldHandleGamePanelSwipe(target)) {
+    clearActivePanelSwipe();
+    return;
+  }
+  activePanelSwipe = {
+    startX: touch.clientX,
+    startY: touch.clientY,
+    deltaX: 0,
+    deltaY: 0,
+    intentLocked: false,
+  };
+}, { passive: true });
+
+appEl.addEventListener("touchmove", (event) => {
+  if (!activePanelSwipe) {
+    return;
+  }
+  const touch = event.touches[0];
+  if (!touch) {
+    clearActivePanelSwipe();
+    return;
+  }
+  activePanelSwipe.deltaX = touch.clientX - activePanelSwipe.startX;
+  activePanelSwipe.deltaY = touch.clientY - activePanelSwipe.startY;
+  if (!activePanelSwipe.intentLocked) {
+    const absX = Math.abs(activePanelSwipe.deltaX);
+    const absY = Math.abs(activePanelSwipe.deltaY);
+    if (absX < GAME_SHELL_PANEL_SWIPE_INTENT_PX) {
+      return;
+    }
+    if (absX <= absY * 1.15) {
+      clearActivePanelSwipe();
+      return;
+    }
+    activePanelSwipe.intentLocked = true;
+  }
+  event.preventDefault();
+}, { passive: false });
+
+appEl.addEventListener("touchend", () => {
+  if (!activePanelSwipe) {
+    return;
+  }
+  const deltaX = activePanelSwipe.deltaX;
+  clearActivePanelSwipe();
+  if (Math.abs(deltaX) < GAME_SHELL_PANEL_SWIPE_TRIGGER_PX || currentRoute.name !== "game") {
+    return;
+  }
+  const nextPanel = deltaX < 0 ? getAdjacentGamePanel(getGamePanel(), 1) : getAdjacentGamePanel(getGamePanel(), -1);
+  if (nextPanel === getGamePanel()) {
+    return;
+  }
+  navigateTo(buildGameHash(currentRoute.gameId, currentRoute.inviteFromRole, getCurrentGameHashState(nextPanel)));
+});
+
+window.addEventListener("touchcancel", () => {
+  clearActivePanelSwipe();
 });
 
 const initialRender = async () => {

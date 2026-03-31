@@ -25,14 +25,20 @@ test("routing resolves home hash variants with URL-tracked scenarios state only"
 });
 
 test("routing resolves game path with inviter role and URL-tracked scenarios flag", () => {
-  const parsed = parseRouteFromHash("#/game/game-1?from=Player%201&debug=1&scenarios=1");
+  const parsed = parseRouteFromHash("#/game/game-1?from=Player%201&panel=history&debug=1&scenarios=1");
   assert.equal(parsed.name, "game");
   assert.equal(parsed.gameId, "game-1");
   assert.equal(parsed.inviteFromRole, "Player 1");
+  assert.equal(parsed.panel, "history");
   assert.equal(parsed.debug, false);
   assert.equal(parsed.scenarios, true);
 
-  assert.equal(buildGameHash("game-1", "Player 2", { debug: true, scenarios: true }), "#/game/game-1?from=Player%202&scenarios=1");
+  assert.equal(
+    buildGameHash("game-1", "Player 2", { panel: "history", debug: true, scenarios: true }),
+    "#/game/game-1?from=Player+2&panel=history&scenarios=1",
+  );
+  assert.equal(buildGameHash("game-1", null, { panel: "board", scenarios: true }), "#/game/game-1?scenarios=1");
+  assert.equal(buildGameHash("game-1", null, { panel: "nope" }), "#/game/game-1");
 });
 
 test("routing resolves tutorial path and unknown routes", () => {
@@ -89,8 +95,8 @@ test("routing can collapse flyouts when stacking is disabled", () => {
     { debug: true, scenarios: false },
   );
   assert.equal(
-    buildHashForRoute({ name: "game", gameId: "game-1", inviteFromRole: null, debug: false, scenarios: true }),
-    "#/game/game-1?scenarios=1",
+    buildHashForRoute({ name: "game", gameId: "game-1", inviteFromRole: null, panel: "players", debug: false, scenarios: true }),
+    "#/game/game-1?panel=players&scenarios=1",
   );
 });
 

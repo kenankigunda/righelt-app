@@ -834,7 +834,7 @@ button:disabled {
   cursor: progress;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 900px) {
   .grid {
     grid-template-columns: 1fr;
   }
