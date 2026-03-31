@@ -107,9 +107,9 @@ Alternate full-stack variants keep the Pages and API worker ports paired:
 
 If you need a fresh local D1 state per suffix, run the matching migration command first:
 
-- `pnpm db:local:a` or `pnpm d1:migrate:dev:a`
-- `pnpm db:local:b` or `pnpm d1:migrate:dev:b`
-- `pnpm db:local:c` or `pnpm d1:migrate:dev:c`
+- `pnpm db:local:a`
+- `pnpm db:local:b`
+- `pnpm db:local:c`
 
 ## Recovery Rules
 
