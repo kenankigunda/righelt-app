@@ -1860,7 +1860,6 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
     game.persistenceWarningCode === "offline_progress_may_be_lost"
       ? `<div class="alert danger shell-game-alert">Offline progress may be lost on this device because local saving failed. Keep this tab open until storage is working again.</div>`
       : "";
-      : "";
 
   const undoRequestBanner =
     undoRequestFeedback && undoRequestFeedbackGameId === game.id
