@@ -44,12 +44,13 @@ export const createShellBoardHost = ({ transport, gameId, canInteract }) => ({
         : Array.isArray(response.legalActions)
           ? response.legalActions
           : [];
+      const turnChanged = state?.sideToMove !== snapshot?.sideToMove || state?.turnIndex !== snapshot?.turnIndex;
       return {
         ...response,
         state: snapshot,
         legalActions,
         boardMessage: {
-          type: "move_sent",
+          type: turnChanged ? "turn_ended" : "move_sent",
           control: getControlLabel({ state: snapshot, currentTurn: current?.currentTurn }),
         },
       };

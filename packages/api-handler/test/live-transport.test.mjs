@@ -512,6 +512,11 @@ test("live transport: history branch launch replays prior history and preserves 
   const gameId = createdBody.game.id;
 
   await handleApiRequest(
+    req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-owner" }),
+    env,
+  );
+
+  await handleApiRequest(
     req(`/api/shell/games/${gameId}/join`, "POST", {
       identityId: "id-viewer",
       mode: "viewer",
@@ -565,8 +570,8 @@ test("live transport: history branch launch replays prior history and preserves 
   );
   const branchBody = await branch.json();
   assert.equal(branch.status, 200);
-  assert.equal(branchBody.game.player1.identityId, "id-viewer");
-  assert.equal(branchBody.game.player2, null);
+  assert.equal(branchBody.game.player1, null);
+  assert.equal(branchBody.game.player2.identityId, "id-viewer");
   assert.deepEqual(branchBody.game.viewers, []);
   assert.equal(branchBody.game.inHistoryMode, false);
   assert.deepEqual(branchBody.game.initialSelectionAction, secondMoveEntry.action);
@@ -910,38 +915,30 @@ test("live transport: join approval flow and presence/history/move transitions",
   );
   const moveBody = await move.json();
   assert.equal(moveBody.game.moves.length, 1);
-  assert.equal(moveBody.game.currentTurn.playerSeat, "Player 1");
-  assert.equal(moveBody.game.currentTurn.moveIndexes.length, 1);
-  assert.equal(moveBody.game.currentSnapshot.sideToMove, "P1");
+  assert.equal(moveBody.game.currentTurn.playerSeat, "Player 2");
+  assert.equal(moveBody.game.currentTurn.moveIndexes.length, 0);
+  assert.equal(moveBody.game.currentSnapshot.sideToMove, "P2");
   assert.equal(typeof moveBody.eventSeq, "number");
 
   const secondMove = await handleApiRequest(
     req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
     env,
   );
-  const secondMoveBody = await secondMove.json();
-  assert.equal(secondMoveBody.game.moves.length, 2);
-  assert.equal(secondMoveBody.game.currentTurn.moveIndexes.length, 2);
-  assert.equal(secondMoveBody.game.currentSnapshot.sideToMove, "P1");
+  assert.equal((await secondMove.json()).error, "not_your_turn");
 
   const endTurn = await handleApiRequest(
     req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: "id-owner" }),
     env,
   );
-  const endTurnBody = await endTurn.json();
-  assert.equal(endTurnBody.game.currentTurn.playerSeat, "Player 2");
-  assert.equal(endTurnBody.game.currentTurn.moveIndexes.length, 0);
-  assert.equal(endTurnBody.game.currentSnapshot.sideToMove, "P2");
-  assert.equal(endTurnBody.game.currentSnapshot.continuation, null);
-  assert.equal(typeof endTurnBody.eventSeq, "number");
+  assert.equal((await endTurn.json()).error, "not_your_turn");
 
   const history = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-owner", moveIndex: 1 }),
+    req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-owner", moveIndex: 0 }),
     env,
   );
   const historyBody = await history.json();
   assert.equal(historyBody.game.inHistoryMode, true);
-  assert.equal(historyBody.game.historyIndex, 1);
+  assert.equal(historyBody.game.historyIndex, 0);
 
   const joinerViewDuringHistory = await handleApiRequest(
     req(`/api/shell/games/${gameId}?identityId=id-joiner`, "GET"),
@@ -985,7 +982,7 @@ test("live transport: join approval flow and presence/history/move transitions",
   assert.equal(viewerPresence.status, 400);
 });
 
-test("live transport: apply and end-turn echo clientCommandId and persist it on appended events", async () => {
+test("live transport: apply echoes clientCommandId and auto-settles ordinary turns", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
     env,
@@ -1005,24 +1002,14 @@ test("live transport: apply and end-turn echo clientCommandId and persist it on 
   const applyBody = await apply.json();
   assert.equal(applyBody.accepted, true);
   assert.equal(applyBody.clientCommandId, "cmd-apply-1");
-
-  const endTurn = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/end-turn`, "POST", {
-      identityId: "id-owner",
-      clientCommandId: "cmd-end-1",
-    }),
-    env,
-  );
-  const endTurnBody = await endTurn.json();
-  assert.equal(endTurnBody.ok, true);
-  assert.equal(endTurnBody.clientCommandId, "cmd-end-1");
+  assert.equal(applyBody.game.currentTurn.playerSeat, "Player 2");
+  assert.equal(applyBody.game.currentSnapshot.sideToMove, "P2");
 
   const events = env.DB.getEvents(gameId).map((row) => JSON.parse(row.payload_json));
   assert.equal(events.some((event) => event.type === "event_appended" && event.clientCommandId === "cmd-apply-1"), true);
-  assert.equal(events.some((event) => event.type === "event_appended" && event.clientCommandId === "cmd-end-1"), true);
 });
 
-test("live transport: duplicate clientCommandId retries are idempotent for apply and end-turn", async () => {
+test("live transport: duplicate clientCommandId retries are idempotent for apply after auto-settlement", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
     env,
@@ -1054,35 +1041,14 @@ test("live transport: duplicate clientCommandId retries are idempotent for apply
   assert.equal(applyRetryBody.ok, true);
   assert.equal(applyRetryBody.duplicate, true);
 
-  const endOne = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/end-turn`, "POST", {
-      identityId: "id-owner",
-      clientCommandId: "cmd-end-dup",
-    }),
-    env,
-  );
-  assert.equal(endOne.status, 200);
-
-  const endRetry = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/end-turn`, "POST", {
-      identityId: "id-owner",
-      clientCommandId: "cmd-end-dup",
-    }),
-    env,
-  );
-  const endRetryBody = await endRetry.json();
-  assert.equal(endRetryBody.ok, true);
-  assert.equal(endRetryBody.duplicate, true);
-
   const events = env.DB
     .getEvents(gameId)
     .map((row) => JSON.parse(row.payload_json))
     .filter((event) => event.type === "event_appended");
   assert.equal(events.filter((event) => event.clientCommandId === "cmd-apply-dup").length, 1);
-  assert.equal(events.filter((event) => event.clientCommandId === "cmd-end-dup").length, 1);
 });
 
-test("live transport: apply and end-turn idempotency are scoped by command kind", async () => {
+test("live transport: stale apply state is rejected with authoritative recovery payload", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
     env,
@@ -1090,32 +1056,34 @@ test("live transport: apply and end-turn idempotency are scoped by command kind"
   const createdBody = await create.json();
   const gameId = createdBody.game.id;
 
-  const apply = await handleApiRequest(
+  await handleApiRequest(req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-owner" }), env);
+
+  const firstApply = await handleApiRequest(
     req(`/api/shell/games/${gameId}/apply`, "POST", {
       identityId: "id-owner",
-      clientCommandId: "cmd-shared",
+      clientCommandId: "cmd-fresh",
       state: createdBody.game.currentSnapshot,
       action: { type: "pass" },
     }),
     env,
   );
-  assert.equal(apply.status, 200);
+  assert.equal(firstApply.status, 200);
 
-  const endTurn = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/end-turn`, "POST", {
+  const staleApply = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/apply`, "POST", {
       identityId: "id-owner",
-      clientCommandId: "cmd-shared",
+      clientCommandId: "cmd-stale",
+      state: createdBody.game.currentSnapshot,
+      action: { type: "pass" },
     }),
     env,
   );
-  const endTurnBody = await endTurn.json();
-  assert.equal(endTurn.status, 200);
-  assert.equal(endTurnBody.duplicate, undefined);
-
-  // Same clientCommandId as the prior /apply must not make /end-turn look like a duplicate
-  // turn-end (events are scoped by reason === turn_ended in the handler).
-  // A second /apply with that id is not asserted here: after end-turn it is often not the
-  // same player's turn, so the response would be not_your_turn rather than duplicate.
+  const staleBody = await staleApply.json();
+  assert.equal(staleApply.status, 200);
+  assert.equal(staleBody.accepted, false);
+  assert.equal(staleBody.validation?.code, "stale_state");
+  assert.equal(staleBody.state.sideToMove, "P2");
+  assert.equal(staleBody.game.currentSnapshot.sideToMove, "P2");
 });
 
 test("live transport: revert request requires approval and marks moves undone on approval", async () => {
@@ -1330,6 +1298,7 @@ test("live transport: condensed repair logs summarize large move backfills unles
     env,
   );
   const gameId = (await create.json()).game.id;
+  await handleApiRequest(req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-owner" }), env);
   for (let index = 0; index < 5; index += 1) {
     await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
   }
@@ -1506,13 +1475,13 @@ test("live transport: offline playground exposes end-turn when one identity cont
 
   const view = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-local&offline=1`), env);
   const body = await view.json();
-  assert.equal(body.game.canEndTurn, true);
+  assert.equal(body.game.canEndTurn, false);
 
   const ended = await handleApiRequest(
     req(`/api/shell/games/${gameId}/end-turn?offline=1`, "POST", { identityId: "id-local" }),
     env,
   );
-  assert.equal(ended.status, 200);
+  assert.equal(ended.status, 409);
 });
 
 test("live transport: play-as-both persists separate seats for the same identity in the projection", async () => {
@@ -1617,9 +1586,6 @@ test("live transport: dual-seat identity can undo latest move regardless of acti
   assert.equal(firstMove.status, 200);
   const firstMoveBody = await firstMove.json();
   assert.equal(firstMoveBody.game.canUndoLastMove, true);
-
-  const endTurn = await handleApiRequest(req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: "id-a" }), env);
-  assert.equal(endTurn.status, 200);
 
   const secondMove = await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-a" }), env);
   assert.equal(secondMove.status, 200);

@@ -23,6 +23,7 @@ const createMemoryStorage = () => {
 const clone = (value) => structuredClone(value);
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
+const getNextSide = (side) => (side === "P1" ? "P2" : "P1");
 const getControlSeatForTurn = (state, turnOwnerSeat) => {
   const continuation = state?.continuation;
   if (continuation?.type === "push" && continuation.phase === "retreat") {
@@ -92,8 +93,16 @@ const buildAcknowledgedGame = (baseGame, action) => {
   const stable = resolveToStability(baseGame.board.state, { artifactMode: "full" });
   const applied = applyAction(stable, action);
   const nextState = resolveToStability(applied.state, { artifactMode: "full" });
-  nextState.sideToMove = "P1";
-  nextState.turnIndex = 0;
+  const turnSettled = nextState.continuation == null;
+  if (turnSettled) {
+    nextState.sideToMove = getNextSide(stable.sideToMove);
+    nextState.turnIndex = (stable.turnIndex ?? 0) + 1;
+    nextState.continuation = null;
+    nextState.pieces = nextState.pieces.map((piece) => ({ ...piece, shifted: false, pushed: false }));
+  } else {
+    nextState.sideToMove = "P1";
+    nextState.turnIndex = 0;
+  }
 
   return {
     ...clone(baseGame),
@@ -114,22 +123,53 @@ const buildAcknowledgedGame = (baseGame, action) => {
       },
     ],
     turns: [
-      {
-        ...clone(baseGame.turns[0]),
-        moveIndexes: [0, 1],
-        lastMoveAt: "2026-02-26T00:00:02.000Z",
-      },
+      turnSettled
+        ? {
+            ...clone(baseGame.turns[0]),
+            endedAt: "2026-02-26T00:00:02.000Z",
+            status: "complete",
+            moveIndexes: [0, 1],
+            lastMoveAt: "2026-02-26T00:00:02.000Z",
+          }
+        : {
+            ...clone(baseGame.turns[0]),
+            moveIndexes: [0, 1],
+            lastMoveAt: "2026-02-26T00:00:02.000Z",
+          },
+      ...(turnSettled
+        ? [
+            {
+              index: 1,
+              startedAt: "2026-02-26T00:00:02.000Z",
+              endedAt: null,
+              playerSeat: "Player 2",
+              status: "active",
+              moveIndexes: [],
+              lastMoveAt: null,
+            },
+          ]
+        : []),
     ],
-    currentTurn: {
-      ...clone(baseGame.currentTurn),
-      moveIndexes: [0, 1],
-      lastMoveAt: "2026-02-26T00:00:02.000Z",
-    },
+    currentTurn: turnSettled
+      ? {
+          index: 1,
+          startedAt: "2026-02-26T00:00:02.000Z",
+          endedAt: null,
+          playerSeat: "Player 2",
+          status: "active",
+          moveIndexes: [],
+          lastMoveAt: null,
+        }
+      : {
+          ...clone(baseGame.currentTurn),
+          moveIndexes: [0, 1],
+          lastMoveAt: "2026-02-26T00:00:02.000Z",
+        },
     currentSnapshot: clone(nextState),
     board: { state: clone(nextState) },
     legalActions: listLegalActions(nextState),
-    canRecordMove: true,
-    canEndTurn: true,
+    canRecordMove: !turnSettled,
+    canEndTurn: !turnSettled,
   };
 };
 

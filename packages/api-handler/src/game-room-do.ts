@@ -12,7 +12,7 @@ import {
   addNotification,
   assignIdentityToScenarioSeat,
   applyScenarioToGame,
-  applyServerAction,
+  applyServerActionWithExpectedState,
   applyServerMove,
   applyRevertToMove,
   asAction,
@@ -561,6 +561,21 @@ export class GameRoomDO {
       if (role !== "Player 1" && role !== "Player 2") {
         return json({ ok: false, error: "role_not_allowed" }, 403);
       }
+      if (commandMetadata.clientCommandId) {
+        const existingMove = game.moves.find(
+          (entry) => entry.undone !== true && entry.clientCommandId === commandMetadata.clientCommandId,
+        );
+        if (existingMove) {
+          return json({
+            ok: true,
+            move: existingMove,
+            clientCommandId: commandMetadata.clientCommandId,
+            game: withViewModel(game, identityId),
+            eventSeq: this.eventSeq,
+            duplicate: true,
+          });
+        }
+      }
       const sideToMoveSeat = getSideToMoveSeat(game);
       const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
       if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
@@ -601,6 +616,24 @@ export class GameRoomDO {
       if (role !== "Player 1" && role !== "Player 2") {
         return json({ ok: false, error: "role_not_allowed" }, 403);
       }
+      if (commandMetadata.clientCommandId) {
+        const existingMove = game.moves.find(
+          (entry) => entry.undone !== true && entry.clientCommandId === commandMetadata.clientCommandId,
+        );
+        if (existingMove) {
+          return json({
+            ok: true,
+            accepted: true,
+            move: existingMove,
+            clientCommandId: commandMetadata.clientCommandId,
+            state: existingMove.snapshot,
+            removedPieces: [],
+            game: withViewModel(game, identityId),
+            eventSeq: this.eventSeq,
+            duplicate: true,
+          });
+        }
+      }
       const sideToMoveSeat = getSideToMoveSeat(game);
       const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
       if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
@@ -615,7 +648,7 @@ export class GameRoomDO {
         return json({ ok: false, error: "invalid_action" }, 400);
       }
       const notation = typeof body.notation === "string" ? body.notation : undefined;
-      const moved = applyServerAction(game, action, notation, commandMetadata.clientCommandId);
+      const moved = applyServerActionWithExpectedState(game, action, bodyState, notation, commandMetadata.clientCommandId);
       if (!moved.ok) {
         if (moved.validation && moved.state) {
           return json({

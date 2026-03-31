@@ -1,4 +1,5 @@
 import { applyAction } from "../../game-engine/src/apply";
+import { deterministicStateHash } from "../../game-engine/src/hash";
 import { listLegalActions, validateAction } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import { createInitialState } from "../../game-engine/src/state";
@@ -451,13 +452,6 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
     const moved = applyServerAction(game, scenarioMove.action, scenarioMove.notation, null);
     if (!moved.ok) {
       throw new Error(moved.error || "scenario_apply_failed");
-    }
-    const shouldAutoEndTurn = moved.state.continuation == null;
-    if (shouldAutoEndTurn) {
-      const ended = endServerTurn(game);
-      if (!ended.ok) {
-        throw new Error(ended.error);
-      }
     }
     moveTimes.push(moved.move.at);
   }
@@ -1036,6 +1030,16 @@ const pickLegalAction = (state: GameState): Action | null => {
 };
 
 export const applyServerAction = (game: LiveGame, action: Action, notation?: string, clientCommandId?: string | null) => {
+  return applyServerActionWithExpectedState(game, action, null, notation, clientCommandId);
+};
+
+export const applyServerActionWithExpectedState = (
+  game: LiveGame,
+  action: Action,
+  expectedState: GameState | null,
+  notation?: string,
+  clientCommandId?: string | null,
+) => {
   if (clientCommandId) {
     const existingMove = game.moves.find((entry) => !isMoveUndone(entry) && entry.clientCommandId === clientCommandId);
     if (existingMove) {
@@ -1053,6 +1057,17 @@ export const applyServerAction = (game: LiveGame, action: Action, notation?: str
     return { ok: false as const, error: "turn_not_initialized" };
   }
   const stable = resolveToStability(game.board.state, { artifactMode: "full" });
+  if (expectedState) {
+    const expectedStable = resolveToStability(expectedState, { artifactMode: "full" });
+    if (deterministicStateHash(expectedStable) !== deterministicStateHash(stable)) {
+      return {
+        ok: false as const,
+        error: "stale_state",
+        validation: { ok: false as const, code: "stale_state" },
+        state: stable,
+      };
+    }
+  }
   const validation = validateAction(stable, action);
   if (!validation.ok) {
     return { ok: false as const, error: validation.code || "invalid_action", validation, state: stable };
@@ -1075,7 +1090,7 @@ export const applyServerAction = (game: LiveGame, action: Action, notation?: str
     action: clone(action),
     clientCommandId: clientCommandId ?? null,
     selectionSnapshot: stable,
-    snapshot: next,
+    snapshot: clone(next),
   };
   game.moves.push(move);
   activeTurn.moveIndexes.push(move.index);
@@ -1090,7 +1105,16 @@ export const applyServerAction = (game: LiveGame, action: Action, notation?: str
   game.lastMoveAt = move.at;
   game.updatedAt = move.at;
   addNotification(game, `Move recorded in turn ${activeTurn.index + 1}`);
-  return { ok: true as const, move, state: next, removedPieces };
+  let turnSettled = false;
+  if (next.continuation == null) {
+    const ended = endServerTurn(game);
+    if (!ended.ok) {
+      return { ok: false as const, error: ended.error };
+    }
+    turnSettled = true;
+  }
+  move.snapshot = clone(game.board.state);
+  return { ok: true as const, move, state: clone(game.board.state), removedPieces, turnSettled };
 };
 
 export const applyServerMove = (game: LiveGame, notation?: string, clientCommandId?: string | null) => {
