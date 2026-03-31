@@ -567,7 +567,7 @@ test("live transport store can promote player 2 to both seats when player 1 is o
   assert.equal(calls.some((entry) => entry.url.startsWith("/api/shell/games/game-000001/play-as-both")), true);
 });
 
-test("live transport store keeps offline moves local until reconnect", async () => {
+test("live transport store rejects offline mutations for non-local games", async () => {
   const calls = [];
   const gameId = "game-offline-1";
   const baseGame = {
@@ -604,12 +604,6 @@ test("live transport store keeps offline moves local until reconnect", async () 
     if (String(url) === `/api/shell/games/${gameId}?identityId=id-a` && (!init.method || init.method === "GET")) {
       return Response.json({ ok: true, game: baseGame });
     }
-    if (String(url) === "/api/engine/playground/legal") {
-      return Response.json({ ok: true, state: { sideToMove: "P1", turnIndex: 0, pieces: [] }, legalActions: [{ type: "pass" }] });
-    }
-    if (String(url) === "/api/engine/playground/apply") {
-      return Response.json({ ok: true, accepted: true, state: { sideToMove: "P1", turnIndex: 0, pieces: [] } });
-    }
     if (String(url) === `/api/shell/games/${gameId}/moves`) {
       return Response.json({
         ok: true,
@@ -630,12 +624,9 @@ test("live transport store keeps offline moves local until reconnect", async () 
   await store.refreshGames();
   await store.loadGame(gameId);
   await store.setOffline(true);
-  const localMove = await store.addMove({ gameId });
-  assert.equal(localMove.game.moves.length, 1);
-  assert.equal(calls.some((entry) => entry.url === `/api/shell/games/${gameId}/moves`), false);
 
-  await store.setOffline(false);
-  assert.equal(calls.some((entry) => entry.url === `/api/shell/games/${gameId}/moves`), true);
+  await assert.rejects(() => store.addMove({ gameId }), (error) => error?.code === "offline_move_local_only");
+  assert.equal(calls.some((entry) => entry.url === `/api/shell/games/${gameId}/moves`), false);
 });
 
 test("live transport store overlays offline view state onto cached games", async () => {
@@ -724,6 +715,112 @@ test("live transport store allows offline end-turn only for dual-seat offline pl
 
   const vm = store.getGameViewModel(gameId);
   assert.equal(vm.canEndTurn, true);
+});
+
+test("live transport store restores local offline games after reload", async () => {
+  const storage = createMemoryStorage();
+  storage.setItem("righelt.identity.id.v1", "id-local");
+  const fetcher = async () => Response.json({ ok: true, games: [] });
+
+  const firstStore = createLiveTransportStore({ storage, fetcher, random: () => 0.11111 });
+  await firstStore.setOffline(true);
+  const localGame = await firstStore.createGame({ playgroundMode: true, offlineLocal: true });
+  const firstAction = localGame.legalActions.find((action) => action.type !== "pass") ?? localGame.legalActions[0];
+  const applied = await firstStore.applyGameAction({ gameId: localGame.id, state: localGame.currentSnapshot, action: firstAction });
+
+  assert.equal(applied.accepted, true);
+
+  const reloadedStore = createLiveTransportStore({ storage, fetcher, random: () => 0.22222 });
+  await reloadedStore.setOffline(true);
+  const restored = reloadedStore.getGameViewModel(localGame.id);
+
+  assert.equal(restored.localOnly, true);
+  assert.equal(restored.moves.length, 1);
+  assert.deepEqual(restored.moves[0].action, firstAction);
+  assert.equal(restored.turns[0].moveIndexes.length, 1);
+});
+
+test("live transport store promotes local offline games without auto-converting on reconnect", async () => {
+  const storage = createMemoryStorage();
+  storage.setItem("righelt.identity.id.v1", "id-local");
+  const calls = [];
+  const fetcher = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || "GET", body: init.body ? JSON.parse(String(init.body)) : null });
+    if (String(url) === "/api/shell/games?offline=0" && init.method === "POST") {
+      return Response.json({
+        ok: true,
+        eventSeq: 1,
+        game: {
+          ...buildLiveGame(),
+          id: "game-online-1",
+          offlineLocal: false,
+          playgroundMode: true,
+          player1: { identityId: "id-local", connected: true },
+          player2: { identityId: "id-local", connected: true },
+          myRole: "Player 1",
+        },
+      });
+    }
+    if (String(url) === "/api/shell/scenarios/import?offline=0" && init.method === "POST") {
+      return Response.json({
+        ok: true,
+        eventSeq: 2,
+        game: {
+          ...buildLiveGame(),
+          id: "game-online-1",
+          offlineLocal: false,
+          playgroundMode: true,
+          player1: { identityId: "id-local", connected: true },
+          player2: { identityId: "id-local", connected: true },
+          myRole: "Player 1",
+          showJoinActions: true,
+          canInvite: true,
+          showOfflineState: false,
+        },
+      });
+    }
+    if (String(url).startsWith("/api/shell/games?")) {
+      return Response.json({ ok: true, games: [] });
+    }
+    return Response.json({ ok: true, game: null });
+  };
+
+  const store = createLiveTransportStore({ storage, fetcher, random: () => 0.33333 });
+  await store.setOffline(true);
+  const localGame = await store.createGame({ playgroundMode: true, offlineLocal: true });
+  await store.setOffline(false);
+
+  const stillLocal = store.getGameViewModel(localGame.id);
+  assert.equal(stillLocal.localOnly, true);
+  assert.equal(calls.some((entry) => entry.url === "/api/shell/games?offline=0" && entry.method === "POST"), false);
+
+  const promoted = await store.goOnlineGame({ gameId: localGame.id, confirmed: true });
+  assert.equal(promoted.id, "game-online-1");
+  assert.equal(promoted.offlineLocal, false);
+  assert.equal(store.getGameViewModel(localGame.id), null);
+  assert.equal(calls.some((entry) => entry.url === "/api/shell/games?offline=0" && entry.method === "POST"), true);
+  assert.equal(calls.some((entry) => entry.url === "/api/shell/scenarios/import?offline=0" && entry.method === "POST"), true);
+});
+
+test("live transport store surfaces durable persistence warnings when saving local offline state fails", async () => {
+  const storage = createMemoryStorage();
+  const originalSetItem = storage.setItem;
+  storage.setItem = (key, value) => {
+    if (key === "righelt.live_transport.state.v1") {
+      throw new Error("quota_exceeded");
+    }
+    return originalSetItem(key, value);
+  };
+  const fetcher = async () => Response.json({ ok: true, games: [] });
+  const store = createLiveTransportStore({ storage, fetcher, random: () => 0.44444 });
+
+  await store.setOffline(true);
+  const localGame = await store.createGame({ playgroundMode: true, offlineLocal: true });
+  const warned = store.getGameViewModel(localGame.id);
+  assert.equal(warned.persistenceWarningCode, "offline_progress_may_be_lost");
+
+  const again = store.getGameViewModel(localGame.id);
+  assert.equal(again.persistenceWarningCode, "offline_progress_may_be_lost");
 });
 
 test("live transport store ignores stale game snapshots once a newer eventSeq is cached", async () => {

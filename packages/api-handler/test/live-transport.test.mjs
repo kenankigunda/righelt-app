@@ -1718,3 +1718,19 @@ test("live transport: stale participants load as disconnected until they become 
     Date.now = realNow;
   }
 });
+
+test("live transport: go-online rejects non-offline-local games", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+
+  const goOnline = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/go-online`, "POST", { identityId: "id-owner", confirmed: true }),
+    env,
+  );
+
+  assert.equal(goOnline.status, 409);
+  assert.equal((await goOnline.json()).error, "game_not_offline_local");
+});

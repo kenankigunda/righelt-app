@@ -225,3 +225,37 @@ test("split-stack integration forwards presence updates through the Pages proxy"
   assert.equal(body.ok, true);
   assert.equal(typeof body.eventSeq, "number");
 });
+
+test("split-stack integration forwards go-online guardrails through the Pages proxy", async () => {
+  const env = buildEnv();
+  const apiServiceEnv = {
+    API_SERVICE: {
+      fetch(request) {
+        return apiWorker.fetch(request, env);
+      },
+    },
+  };
+
+  const create = await proxyRequest({
+    request: new Request("https://righelt.pages.dev/api/shell/games?offline=0", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    }),
+    env: apiServiceEnv,
+  });
+  const createBody = await create.json();
+
+  const goOnline = await proxyRequest({
+    request: new Request(`https://righelt.pages.dev/api/shell/games/${createBody.game.id}/go-online?offline=0`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId: "id-owner", confirmed: true }),
+    }),
+    env: apiServiceEnv,
+  });
+
+  assert.equal(goOnline.status, 409);
+  const body = await goOnline.json();
+  assert.equal(body.error, "game_not_offline_local");
+});

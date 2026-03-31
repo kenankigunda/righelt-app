@@ -1,4 +1,5 @@
 const SHELL_STATE_KEY = "righelt.shell.state.v1";
+const LIVE_TRANSPORT_STATE_KEY = "righelt.live_transport.state.v1";
 const IDENTITY_KEY = "righelt.identity.id.v1";
 const TUTORIAL_KEY = "righelt.tutorial.done.v1";
 const DEBUG_FLYOUT_KEY = "righelt.debug.flyout.v1";
@@ -21,6 +22,12 @@ export const saveJson = (storage, key, value) => {
 
 export const loadShellState = (storage) => loadJson(storage, SHELL_STATE_KEY, { games: [] });
 export const saveShellState = (storage, state) => saveJson(storage, SHELL_STATE_KEY, state);
+export const loadLiveTransportState = (storage) =>
+  loadJson(storage, LIVE_TRANSPORT_STATE_KEY, {
+    games: [],
+    warningCode: null,
+  });
+export const saveLiveTransportState = (storage, state) => saveJson(storage, LIVE_TRANSPORT_STATE_KEY, state);
 
 export const loadIdentity = (storage) => storage.getItem(IDENTITY_KEY);
 export const saveIdentity = (storage, identityId) => storage.setItem(IDENTITY_KEY, identityId);
