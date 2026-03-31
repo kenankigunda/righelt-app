@@ -23,6 +23,7 @@ const escapeHtml = (value) =>
 
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "unset");
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
+const MOBILE_BOARD_PREVIEW_BREAKPOINT_QUERY = "(max-width: 430px)";
 
 const defaultActionType = "pass";
 const TARGET_ORIGIN = {
@@ -37,6 +38,9 @@ const OVERLAY_MODE = {
   NONE: "none",
   RECORDED_ACTION: "recorded-action",
 };
+
+const shouldUseCompactBoardPreviewCta = () =>
+  globalThis.window?.matchMedia?.(MOBILE_BOARD_PREVIEW_BREAKPOINT_QUERY)?.matches === true;
 
 export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let elements = {
@@ -337,8 +341,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
   const setRushContinuationPrompt = (player) => {
     const toneClass = player === "P1" ? "player-tone-p1" : player === "P2" ? "player-tone-p2" : "player-tone-neutral";
+    const endTurnLabel = shouldUseCompactBoardPreviewCta() ? "end turn now" : "end your turn now";
     setBoardPreviewPromptHtml(
-      `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares, or <button type="button" class="board-preview-inline-button" data-board-preview-action="end-turn">end your turn now</button>`,
+      `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares, or <button type="button" class="board-preview-inline-button" data-board-preview-action="end-turn">${endTurnLabel}</button>`,
     );
   };
 

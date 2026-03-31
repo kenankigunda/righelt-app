@@ -212,6 +212,95 @@ test("board runtime renders removal effects returned from shell apply actions", 
   }
 });
 
+test("board runtime shortens rush continuation CTA on narrow mobile viewports only", async () => {
+  let previewHtml = "";
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    matchMedia: (query) => ({
+      matches: query === "(max-width: 430px)",
+    }),
+  };
+
+  try {
+    const runtime = createBoardRuntime({
+      boardAdapter: {
+        mount: noop,
+        render: noop,
+        getSelectedPieceSummary: () => null,
+        getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+        getPieceAt: (snapshot, coord) =>
+          snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+        nextSelectionForCell: () => ({
+          selection: { selectedPieceId: null, source: null, target: null },
+          nextActionType: "pass",
+        }),
+      },
+      host: {
+        applyAction: async () => ({ accepted: false }),
+        loadInitialState: async () => ({ state: null, legalActions: [] }),
+        loadLegalActions: async () => ({ state: null, legalActions: [] }),
+        loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+        canInteract: () => true,
+      },
+    });
+
+    runtime.bindElements({
+      boardEl: {},
+      overlayLinesEl: {},
+      boardPreviewLabelEl: {
+        set innerHTML(value) {
+          previewHtml = value;
+        },
+        get innerHTML() {
+          return previewHtml;
+        },
+        set textContent(value) {
+          previewHtml = value;
+        },
+        get textContent() {
+          return previewHtml;
+        },
+        addEventListener: noop,
+        removeEventListener: noop,
+      },
+      boardTurnIndicatorEl: { textContent: "", classList: { remove: noop, add: noop } },
+    });
+
+    await runtime.loadSnapshot(
+      {
+        sideToMove: "P1",
+        turnIndex: 0,
+        continuation: {
+          type: "rush",
+          phase: "continue",
+          rushPieceId: "A1",
+          remainingPieceIds: ["A1"],
+          movedPieceIds: [],
+        },
+        outcome: null,
+        pieces: [
+          {
+            id: "A1",
+            owner: "P1",
+            kind: "unit",
+            position: { row: 4, col: 4 },
+            supplied: true,
+            commanded: true,
+          },
+        ],
+      },
+      {
+        legalActions: [{ type: "pass", actorId: "A1", from: { row: 4, col: 4 } }],
+      },
+    );
+
+    assert.match(previewHtml, />end turn now</);
+    assert.doesNotMatch(previewHtml, />end your turn now</);
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
 test("board runtime preserves in-progress removal effects across snapshot reloads", async () => {
   const renderCalls = [];
   const scheduledTimers = [];
