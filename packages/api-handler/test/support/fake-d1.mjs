@@ -4,10 +4,9 @@ export const createFakeD1 = () => {
   const shellGames = new Map();
   const shellInvites = new Map();
   const shellEvents = new Map();
-  const shellParticipants = new Map();
-  const shellJoinRequests = new Map();
   const nextGameReadOverrideById = new Map();
   let selectGameByIdCount = 0;
+  const writes = [];
 
   const prepare = (query) => {
     const normalized = normalizeQuery(query);
@@ -19,9 +18,7 @@ export const createFakeD1 = () => {
         return statement;
       },
       async run() {
-        if (normalized === "INSERT INTO milestone_actions (message) VALUES (?1)") {
-          return { success: true, meta: { last_row_id: 1 } };
-        }
+        writes.push({ query: normalized, params: [...params] });
 
         if (normalized.includes("INSERT INTO live_games")) {
           const [gameId, createdAt, updatedAt, latestActivityAt, offlineLocal, stateJson, eventSeq = 0] = params;
@@ -38,68 +35,21 @@ export const createFakeD1 = () => {
         }
 
         if (normalized.includes("INSERT INTO live_invites")) {
-          const [token, gameId, sharedByRole, createdAt] = params;
+          const [token, gameId, sharedByRole] = params;
           shellInvites.set(token, {
             token,
             game_id: gameId,
             shared_by_role: sharedByRole,
-            created_at: createdAt,
           });
-          return { success: true };
-        }
-
-        if (normalized.includes("DELETE FROM live_participants WHERE game_id = ?1")) {
-          shellParticipants.set(params[0], []);
-          return { success: true };
-        }
-
-        if (normalized.includes("INSERT INTO live_participants")) {
-          const [gameId, identityId, role, joinedAt, lastHeartbeatAt, connected, sessionCount] = params;
-          const current = shellParticipants.get(gameId) ?? [];
-          current.push({
-            game_id: gameId,
-            identity_id: identityId,
-            role,
-            joined_at: joinedAt,
-            last_heartbeat_at: lastHeartbeatAt,
-            connected,
-            session_count: sessionCount,
-          });
-          shellParticipants.set(gameId, current);
-          return { success: true };
-        }
-
-        if (normalized.includes("DELETE FROM live_join_requests WHERE game_id = ?1")) {
-          shellJoinRequests.set(params[0], []);
-          return { success: true };
-        }
-
-        if (normalized.includes("INSERT INTO live_join_requests")) {
-          const [gameId, requesterIdentityId, requestedSeat, source, status, requestedAt, resolvedAt, resolvedBy] = params;
-          const current = shellJoinRequests.get(gameId) ?? [];
-          current.push({
-            game_id: gameId,
-            requester_identity_id: requesterIdentityId,
-            requested_seat: requestedSeat,
-            source,
-            status,
-            requested_at: requestedAt,
-            resolved_at: resolvedAt,
-            resolved_by: resolvedBy,
-          });
-          shellJoinRequests.set(gameId, current);
           return { success: true };
         }
 
         if (normalized.includes("INSERT INTO live_events")) {
-          const [gameId, eventSeq, eventType, actorIdentityId, createdAt, payloadJson] = params;
+          const [gameId, eventSeq, payloadJson] = params;
           const current = shellEvents.get(gameId) ?? [];
           current.push({
             game_id: gameId,
             event_seq: eventSeq,
-            event_type: eventType,
-            actor_identity_id: actorIdentityId,
-            created_at: createdAt,
             payload_json: payloadJson,
           });
           current.sort((left, right) => left.event_seq - right.event_seq);
@@ -195,10 +145,9 @@ export const createFakeD1 = () => {
       shellGames.clear();
       shellInvites.clear();
       shellEvents.clear();
-      shellParticipants.clear();
-      shellJoinRequests.clear();
       nextGameReadOverrideById.clear();
       selectGameByIdCount = 0;
+      writes.length = 0;
     },
     overwriteGameState(gameId, update) {
       const row = shellGames.get(gameId);
@@ -224,11 +173,11 @@ export const createFakeD1 = () => {
       }
       return JSON.parse(row.state_json);
     },
-    getParticipants(gameId) {
-      return structuredClone(shellParticipants.get(gameId) ?? []);
-    },
     getEvents(gameId) {
       return structuredClone(shellEvents.get(gameId) ?? []);
+    },
+    getWrites() {
+      return structuredClone(writes);
     },
     getStats() {
       return {

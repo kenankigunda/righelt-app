@@ -26,16 +26,14 @@ test("D1 retention cleanup workflow validates retention hours before execution",
 test("cleanup SQL deletes stale live data by latest activity in dependency-safe order", () => {
   assert.match(cleanupSql, /latest_activity_at < datetime\('now', '-' \|\| \?1 \|\| ' hours'\)/);
   assert.equal(cleanupSql.includes("milestone_actions"), false);
+  assert.equal(cleanupSql.includes("live_participants"), false);
+  assert.equal(cleanupSql.includes("live_join_requests"), false);
 
   const eventsIndex = cleanupSql.indexOf("DELETE FROM live_events");
-  const participantsIndex = cleanupSql.indexOf("DELETE FROM live_participants");
-  const joinRequestsIndex = cleanupSql.indexOf("DELETE FROM live_join_requests");
   const invitesIndex = cleanupSql.indexOf("DELETE FROM live_invites");
   const gamesIndex = cleanupSql.indexOf("DELETE FROM live_games");
 
   assert.ok(eventsIndex >= 0);
-  assert.ok(participantsIndex > eventsIndex);
-  assert.ok(joinRequestsIndex > participantsIndex);
-  assert.ok(invitesIndex > joinRequestsIndex);
+  assert.ok(invitesIndex > eventsIndex);
   assert.ok(gamesIndex > invitesIndex);
 });

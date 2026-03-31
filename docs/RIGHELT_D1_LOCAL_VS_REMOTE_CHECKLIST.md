@@ -140,7 +140,7 @@ How to set `DB_RETENTION_HOURS` for a run:
 What to expect in the workflow logs:
 
 - A preflight line showing the chosen retention window and target D1 database.
-- A pre-cleanup report listing stale row counts for `live_games`, `live_events`, `live_participants`, `live_join_requests`, and `live_invites`.
+- A pre-cleanup report listing stale row counts for `live_games`, `live_events`, and `live_invites`.
 - The delete step executing against the remote D1 database.
 - A post-cleanup report showing the remaining stale row counts after deletion.
 

@@ -7,27 +7,13 @@ const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-reval
 const CACHE_NO_STORE = "no-store";
 
 function buildEnv() {
-  let lastMessage = null;
-
   return {
     env: {
       DB: {
-        prepare(query) {
-          assert.equal(query, "INSERT INTO milestone_actions (message) VALUES (?1)");
-          return {
-            bind(message) {
-              lastMessage = message;
-              return this;
-            },
-            async run() {
-              return { success: true, meta: { last_row_id: 42 } };
-            },
-          };
+        prepare() {
+          throw new Error("unexpected_db_access");
         },
       },
-    },
-    getLastMessage() {
-      return lastMessage;
     },
   };
 }
@@ -108,27 +94,4 @@ test("end-to-end API flow returns consistent state transitions and cache contrac
   assert.equal(validateBody.ok, true);
   assert.equal(validateBody.accepted, true);
   assert.equal(validateBody.commandType, "pass");
-});
-
-test("/api/test-action trims message, writes DB row, and returns event payload", async () => {
-  const { env, getLastMessage } = buildEnv();
-
-  const response = await handleApiRequest(
-    new Request("https://righelt.pages.dev/api/test-action", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message: "   Hello from E2E   " }),
-    }),
-    env,
-  );
-
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("cache-control"), CACHE_NO_STORE);
-
-  const body = await response.json();
-  assert.equal(body.ok, true);
-  assert.equal(body.actionId, 42);
-  assert.equal(body.event.type, "test_action_recorded");
-  assert.equal(body.event.payload.message, "Hello from E2E");
-  assert.equal(getLastMessage(), "Hello from E2E");
 });

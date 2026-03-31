@@ -29,22 +29,6 @@ WHERE game_id IN (
   WHERE ${staleCondition}
 )
 UNION ALL
-SELECT 'live_participants' AS table_name, COUNT(*) AS stale_row_count
-FROM live_participants
-WHERE game_id IN (
-  SELECT game_id
-  FROM live_games
-  WHERE ${staleCondition}
-)
-UNION ALL
-SELECT 'live_join_requests' AS table_name, COUNT(*) AS stale_row_count
-FROM live_join_requests
-WHERE game_id IN (
-  SELECT game_id
-  FROM live_games
-  WHERE ${staleCondition}
-)
-UNION ALL
 SELECT 'live_invites' AS table_name, COUNT(*) AS stale_row_count
 FROM live_invites
 WHERE game_id IN (
