@@ -156,6 +156,10 @@ test("narrow-screen shell layout still collapses to one column without sticky ru
     shellStylesSource,
     /#app\[data-shell-layout-mode="narrow"\]\s+\.layout-grid\s*\{[\s\S]*grid-template-columns:\s*1fr;/s,
   );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="narrow"\]\s+\[data-shell-panel="board"\]\s+\.board\s*>\s*\.cell\s*\{[\s\S]*aspect-ratio:\s*1\s*\/\s*1;[\s\S]*min-height:\s*0;/s,
+  );
   assert.doesNotMatch(
     shellStylesSource,
     /#app\[data-shell-layout-mode="narrow"\]\s+\.layout-grid > \[data-shell-sticky-target\][\s\S]*position:\s*sticky;/s,

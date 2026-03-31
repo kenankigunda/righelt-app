@@ -239,6 +239,11 @@ button.secondary:disabled {
   grid-template-columns: 1fr;
 }
 
+#app[data-shell-layout-mode="narrow"] [data-shell-panel="board"] .board > .cell {
+  aspect-ratio: 1 / 1;
+  min-height: 0;
+}
+
 .small {
   color: var(--muted);
   font-size: 0.9rem;
