@@ -210,6 +210,17 @@ test("shared legacy grid collapses at the unified 900px breakpoint", () => {
   );
 });
 
+test("board preview prompt tightens font size on very narrow screens to preserve a two-line helper block", () => {
+  assert.match(
+    stylesSource,
+    /\.board-preview-label\s*\{[\s\S]*min-height:\s*calc\(1\.1em \* 2\);[\s\S]*font-size:\s*1\.3rem;/s,
+  );
+  assert.match(
+    stylesSource,
+    /@media \(max-width: 430px\)\s*\{[\s\S]*\.board-preview-label\s*\{[\s\S]*font-size:\s*1\.15rem;/s,
+  );
+});
+
 test("home mini-board cards use uniform grid widths across wrapped rows", () => {
   assert.match(
     shellStylesSource,
