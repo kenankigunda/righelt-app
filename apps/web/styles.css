@@ -370,7 +370,11 @@ button {
   background: var(--cell-fill);
 }
 
-[data-hover-capability="hover"] .board[data-interaction-mode="interactive"] .cell:not(.unselectable):hover {
+/* Do not override border on source/target: they use border + inset shadow as one ring; changing
+   only border-color here produced a second color on hover (green border, red/pink inset). */
+[data-hover-capability="hover"]
+  .board[data-interaction-mode="interactive"]
+  .cell:not(.unselectable):not(.source):not(.target):hover {
   border-color: var(--accent);
 }
 
