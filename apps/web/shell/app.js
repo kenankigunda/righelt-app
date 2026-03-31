@@ -912,6 +912,64 @@ const isNarrowHeaderMode = () => getShellLayoutMode() === "narrow";
 const closeHeaderMenu = () => {
   headerMenuOpen = false;
 };
+const syncNarrowHeaderMenuDom = () => {
+  if (!isNarrowHeaderMode() || !(appEl instanceof HTMLElement)) {
+    return;
+  }
+  const root = appEl.querySelector("[data-header-menu-root]");
+  const panel = appEl.querySelector("[data-header-menu-panel]");
+  const button = root?.querySelector?.('[data-action="toggle-header-menu"]');
+  if (!(root instanceof HTMLElement) || !(panel instanceof HTMLElement) || !(button instanceof HTMLElement)) {
+    return;
+  }
+
+  const menuId = panel.id || "shell-header-menu";
+  root.setAttribute("data-header-menu-open", headerMenuOpen ? "true" : "false");
+  button.setAttribute("aria-expanded", headerMenuOpen ? "true" : "false");
+  button.setAttribute("aria-label", headerMenuOpen ? "Close navigation menu" : "Open navigation menu");
+  button.setAttribute("aria-controls", menuId);
+  panel.setAttribute("aria-hidden", headerMenuOpen ? "false" : "true");
+
+  panel.querySelectorAll("[data-header-menu-close='true']").forEach((itemEl) => {
+    if (!(itemEl instanceof HTMLElement)) {
+      return;
+    }
+    itemEl.setAttribute("tabindex", headerMenuOpen ? "0" : "-1");
+    const itemAction = itemEl.getAttribute("data-action") || "";
+    if (itemAction === "open-scenarios" || itemAction === "close-scenarios") {
+      const pressed = currentRoute.scenarios === true;
+      itemEl.classList.toggle("is-active", pressed);
+      itemEl.setAttribute("aria-pressed", pressed ? "true" : "false");
+      itemEl.setAttribute("data-action", pressed ? "close-scenarios" : "open-scenarios");
+    } else if (itemAction === "open-debug" || itemAction === "close-debug") {
+      const pressed = currentRoute.debug === true;
+      itemEl.classList.toggle("is-active", pressed);
+      itemEl.setAttribute("aria-pressed", pressed ? "true" : "false");
+      itemEl.setAttribute("data-action", pressed ? "close-debug" : "open-debug");
+    }
+  });
+
+  if (headerMenuOpen) {
+    if (!prefersReducedMotion()) {
+      panel.classList.remove("is-open");
+      void panel.offsetHeight;
+      window.requestAnimationFrame(() => {
+        const livePanel = appEl.querySelector("[data-header-menu-panel]");
+        if (!(livePanel instanceof HTMLElement) || !headerMenuOpen) {
+          syncRenderedMarkupSnapshot();
+          return;
+        }
+        livePanel.classList.add("is-open");
+        syncRenderedMarkupSnapshot();
+      });
+      return;
+    }
+    panel.classList.add("is-open");
+  } else {
+    panel.classList.remove("is-open");
+  }
+  syncRenderedMarkupSnapshot();
+};
 const renderHeaderWideActions = () => `
   <button
     class="secondary${currentRoute.scenarios ? " is-active" : ""}"
@@ -929,7 +987,7 @@ const renderHeaderWideActions = () => `
 const renderHeaderNarrowMenu = () => {
   const menuId = "shell-header-menu";
   return `
-    <div class="shell-header-menu-root" data-header-menu-root>
+    <div class="shell-header-menu-root" data-header-menu-root data-header-menu-open="${headerMenuOpen ? "true" : "false"}">
       <button
         class="secondary shell-header-menu-button"
         type="button"
@@ -944,26 +1002,29 @@ const renderHeaderNarrowMenu = () => {
           <span></span>
         </span>
       </button>
-      ${
-        headerMenuOpen
-          ? `<div class="shell-header-menu-panel" id="${menuId}" data-header-menu-panel>
-              <button
-                class="secondary shell-header-menu-item${currentRoute.scenarios ? " is-active" : ""}"
-                type="button"
-                data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
-                data-header-menu-close="true"
-                aria-pressed="${currentRoute.scenarios ? "true" : "false"}"
-              >Scenarios</button>
-              <button
-                class="secondary shell-header-menu-item${currentRoute.debug ? " is-active" : ""}"
-                type="button"
-                data-action="${currentRoute.debug ? "close-debug" : "open-debug"}"
-                data-header-menu-close="true"
-                aria-pressed="${currentRoute.debug ? "true" : "false"}"
-              >Debug</button>
-            </div>`
-          : ""
-      }
+      <div
+        class="shell-header-menu-panel${headerMenuOpen ? " is-open" : ""}"
+        id="${menuId}"
+        data-header-menu-panel
+        aria-hidden="${headerMenuOpen ? "false" : "true"}"
+      >
+        <button
+          class="secondary shell-header-menu-item${currentRoute.scenarios ? " is-active" : ""}"
+          type="button"
+          data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
+          data-header-menu-close="true"
+          aria-pressed="${currentRoute.scenarios ? "true" : "false"}"
+          tabindex="${headerMenuOpen ? "0" : "-1"}"
+        >Scenarios</button>
+        <button
+          class="secondary shell-header-menu-item${currentRoute.debug ? " is-active" : ""}"
+          type="button"
+          data-action="${currentRoute.debug ? "close-debug" : "open-debug"}"
+          data-header-menu-close="true"
+          aria-pressed="${currentRoute.debug ? "true" : "false"}"
+          tabindex="${headerMenuOpen ? "0" : "-1"}"
+        >Debug</button>
+      </div>
     </div>
   `;
 };
@@ -3278,6 +3339,9 @@ appEl.addEventListener("click", async (event) => {
 
   if (target.closest("[data-header-menu-close='true']")) {
     closeHeaderMenu();
+    if (isNarrowHeaderMode()) {
+      syncNarrowHeaderMenuDom();
+    }
   }
 
   const actionEl = target.closest("[data-action]");
@@ -3369,7 +3433,11 @@ appEl.addEventListener("click", async (event) => {
   await withBusy(async () => {
     if (action === "toggle-header-menu") {
       headerMenuOpen = !headerMenuOpen;
-      render({ animatePanels: false, includeBoard: false });
+      if (isNarrowHeaderMode()) {
+        syncNarrowHeaderMenuDom();
+      } else {
+        render({ animatePanels: false, includeBoard: false });
+      }
       return;
     }
     if (action === "open-debug") {
@@ -3894,7 +3962,7 @@ window.addEventListener("click", (event) => {
     return;
   }
   closeHeaderMenu();
-  render({ animatePanels: false, includeBoard: false });
+  syncNarrowHeaderMenuDom();
 });
 
 window.addEventListener("keydown", (event) => {
@@ -3902,7 +3970,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   closeHeaderMenu();
-  render({ animatePanels: false, includeBoard: false });
+  syncNarrowHeaderMenuDom();
 });
 
 appEl.addEventListener("touchstart", (event) => {

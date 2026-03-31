@@ -74,6 +74,14 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
+    /\.shell-header-menu-panel\s*\{[\s\S]*transform-origin:\s*top right;[\s\S]*transform:\s*translateY\(-0\.35rem\) scale\(0\.78\);[\s\S]*opacity:\s*0;[\s\S]*pointer-events:\s*none;[\s\S]*transition:\s*[\s\S]*transform 180ms ease,[\s\S]*opacity 180ms ease;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-header-menu-panel\.is-open\s*\{[\s\S]*transform:\s*translateY\(0\) scale\(1\);[\s\S]*opacity:\s*1;[\s\S]*pointer-events:\s*auto;/s,
+  );
+  assert.match(
+    shellStylesSource,
     /\.shell-header-menu-item\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*5\.25rem;[\s\S]*border-radius:\s*0;[\s\S]*border-width:\s*0;[\s\S]*border-top:\s*1px solid var\(--line\);[\s\S]*padding:\s*1\.7rem 1rem;/s,
   );
   assert.match(

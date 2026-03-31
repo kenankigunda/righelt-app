@@ -165,6 +165,19 @@ body {
   border-radius: 12px;
   background: rgba(255, 250, 241, 0.98);
   box-shadow: 0 10px 24px rgba(30, 34, 28, 0.14);
+  transform-origin: top right;
+  transform: translateY(-0.35rem) scale(0.78);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 180ms ease,
+    opacity 180ms ease;
+}
+
+.shell-header-menu-panel.is-open {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .shell-header-menu-item {
@@ -1345,6 +1358,10 @@ textarea:focus-visible {
   }
 
   .shell-flyout {
+    transition: none;
+  }
+
+  .shell-header-menu-panel {
     transition: none;
   }
 }
