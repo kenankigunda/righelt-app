@@ -431,13 +431,22 @@ const getControlSeatForTurn = (state: GameState, turnOwnerSeat: "Player 1" | "Pl
   return turnOwnerSeat;
 };
 
+const inferTurnOwnerSeat = (selectionSnapshot: GameState): "Player 1" | "Player 2" => {
+  const controlSeat = getSeatForSide(selectionSnapshot.sideToMove);
+  const continuation = selectionSnapshot?.continuation;
+  if (continuation?.type === "push" && continuation.phase === "retreat") {
+    return getNextSeat(controlSeat);
+  }
+  return controlSeat;
+};
+
 const rehydrateMoveHistory = (persistedMoves: PersistedMoveEntry[], initialState: GameState): LiveGame["moves"] => {
   let replayState = toHydratedState(initialState);
   const turnOwnerSeatByIndex = new Map<number, "Player 1" | "Player 2">();
 
   return persistedMoves.map((move) => {
     const selectionSnapshot = clone(replayState);
-    const turnOwnerSeat = turnOwnerSeatByIndex.get(move.turnIndex) ?? getSeatForSide(move.actorSide);
+    const turnOwnerSeat = turnOwnerSeatByIndex.get(move.turnIndex) ?? inferTurnOwnerSeat(selectionSnapshot);
     turnOwnerSeatByIndex.set(move.turnIndex, turnOwnerSeat);
 
     const applied = resolveToStability(applyAction(clone(selectionSnapshot), clone(move.action)).state, { artifactMode: "full" });
@@ -558,7 +567,26 @@ const deserializeGame = ({
 
   const hydratedInitialState = toHydratedState(initialState);
   const hydratedCurrentState = toHydratedState(currentState);
-  const moves = rehydrateMoveHistory(persistedMoves, hydratedInitialState);
+  let moves: LiveGame["moves"];
+  try {
+    moves = rehydrateMoveHistory(persistedMoves, hydratedInitialState);
+  } catch (error) {
+    recordMismatch(
+      mismatches,
+      "moves",
+      "replayable compact move history",
+      error instanceof Error ? error.message : error,
+      "rejected_invalid_projection",
+    );
+    console.error(JSON.stringify(buildShapeLogPayload({ gameId: row.game_id, context, mismatches })));
+    return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
+  }
+  const hasUndoneMoves = persistedMoves.some((move) => move.undone === true);
+  const replayedCurrentState = moves.at(-1)?.snapshot ?? hydratedInitialState;
+  const boardState =
+    moves.length > 0 && !hasUndoneMoves
+      ? replayedCurrentState
+      : hydratedCurrentState;
 
   const game: LiveGame = {
     id: typeof parsed.id === "string" && parsed.id ? parsed.id : row.game_id,
@@ -567,7 +595,7 @@ const deserializeGame = ({
     lastMoveAt: typeof parsed.lastMoveAt === "string" ? parsed.lastMoveAt : null,
     playgroundMode: parsed.playgroundMode === true,
     offlineLocal: parsed.offlineLocal === true,
-    board: { state: hydratedCurrentState },
+    board: { state: boardState },
     player1: fromPersistedParticipant(parsed.player1, "player1", mismatches),
     player2: fromPersistedParticipant(parsed.player2, "player2", mismatches),
     viewers: fromPersistedParticipants(parsed.viewers, "viewers", mismatches),

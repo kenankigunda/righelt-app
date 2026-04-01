@@ -277,6 +277,88 @@ test("live transport: scenario import auto-advances the turn after a project-end
   assert.equal(body.game.moves[0].turnIndex, 0);
 });
 
+test("live transport: project-ended history remains playable after room reload from compact persistence", async () => {
+  const scenarioImport = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-a",
+      scenario: {
+        formatVersion: 2,
+        id: SCENARIO_UUIDS.projectEndsTurn,
+        title: "Project ends turn",
+        description: "Regression for compact persistence after project ends a turn",
+        incorrect: false,
+        initialState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [
+            { id: "C1", owner: "P1", kind: "commander", position: { row: 3, col: 6 }, supplied: true, commanded: true },
+            { id: "C2", owner: "P2", kind: "commander", position: { row: 6, col: 3 }, supplied: true, commanded: true },
+          ],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        moves: [
+          {
+            turnIndex: 0,
+            turnMoveIndex: 0,
+            actorSide: "P1",
+            notation: "PROJECT (3,6) -> (5,6)",
+            action: {
+              type: "project",
+              actorId: "C1",
+              from: { row: 3, col: 6 },
+              to: { row: 5, col: 6 },
+            },
+          },
+        ],
+        resultingState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [
+            { id: "C1", owner: "P1", kind: "commander", position: { row: 3, col: 6 }, supplied: true, commanded: true },
+            { id: "C2", owner: "P2", kind: "commander", position: { row: 6, col: 3 }, supplied: true, commanded: true },
+            { id: "U1-1", owner: "P1", kind: "unit", position: { row: 5, col: 6 }, supplied: true, commanded: true },
+          ],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        expectedFinalStateHash: "hash-placeholder",
+        expectedOutcome: "ongoing",
+      },
+    }),
+    env,
+  );
+
+  const importedBody = await scenarioImport.json();
+  const gameId = importedBody.game.id;
+  env.GAME_ROOMS.restart(gameId);
+
+  const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-a`), env);
+  const openBody = await open.json();
+  assert.equal(open.status, 200);
+  assert.equal(openBody.game.currentTurn.index, 1);
+  assert.equal(openBody.game.currentTurn.playerSeat, "Player 2");
+  assert.equal(openBody.game.currentSnapshot.sideToMove, "P2");
+  assert.equal(openBody.game.currentSnapshot.turnIndex, 1);
+  assert.equal(openBody.game.currentSnapshot.continuation, null);
+
+  const apply = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/apply`, "POST", {
+      identityId: "id-a",
+      state: openBody.game.currentSnapshot,
+      action: { type: "pass" },
+    }),
+    env,
+  );
+  const applyBody = await apply.json();
+  assert.equal(apply.status, 200);
+  assert.equal(applyBody.accepted, true);
+  assert.equal(applyBody.state.sideToMove, "P1");
+  assert.equal(applyBody.state.turnIndex, 2);
+});
+
 test("live transport: scenario import exposes pending saved selection and accepted moves clear it", async () => {
   const scenarioImport = await handleApiRequest(
     req("/api/shell/scenarios/import", "POST", {
@@ -766,6 +848,40 @@ test("live transport: compact event persistence omits heavy snapshots while pres
   assert.equal("inviteTokens" in event.game, false);
   assert.equal("selectionSnapshot" in event.game.moves[0], false);
   assert.equal("snapshot" in event.game.moves[0], false);
+});
+
+test("live transport: compact persistence prefers replayed live state when stored currentState drifts from full history", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+  await handleApiRequest(req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-owner" }), env);
+  await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
+  await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
+
+  const overwritten = env.DB.overwriteGameState(gameId, (game) => ({
+    ...game,
+    currentState: {
+      ...game.initialState,
+      continuation: {
+        type: "rush",
+        owner: "P1",
+        frozenOwner: "P1",
+        frozenPieceStatesById: {},
+        rushedPieceIds: [],
+        chainLength: 1,
+      },
+    },
+  }));
+  assert.equal(overwritten, true);
+
+  const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+  const openBody = await open.json();
+  assert.equal(open.status, 200);
+  assert.equal(openBody.game.currentSnapshot.turnIndex, 2);
+  assert.equal(openBody.game.currentSnapshot.sideToMove, "P1");
+  assert.equal(openBody.game.currentSnapshot.continuation, null);
 });
 
 test("live transport: invalid persisted board state returns controlled error and is skipped from list", async () => {
@@ -1260,6 +1376,141 @@ test("live transport: compact persistence keeps revert behavior after rehydratin
   assert.equal(revertBody.autoApproved, true);
   assert.equal(revertBody.game.moves.every((move) => move.undone === true), true);
   assert.deepEqual(revertBody.game.currentSnapshot, openBody.game.moves[0].selectionSnapshot);
+});
+
+test("live transport: compact persistence reloads trimmed history that starts with a retreat move", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await create.json();
+  const gameId = createdBody.game.id;
+
+  await handleApiRequest(req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-owner" }), env);
+
+  const basePieces = createdBody.game.currentSnapshot.pieces;
+  const scenarioImport = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-owner",
+      targetGameId: gameId,
+      scenario: {
+        formatVersion: 2,
+        id: "6ef4d06b-8cbc-43c0-8b04-77a0f00db90e",
+        title: "Trimmed retreat reload",
+        description: "Regression for compact rehydration when the first retained move is retreat",
+        incorrect: false,
+        initialState: {
+          ...createdBody.game.currentSnapshot,
+          pieces: [
+            ...basePieces,
+            { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 1 }, supplied: true, commanded: true },
+            { id: "A2", owner: "P1", kind: "unit", position: { row: 3, col: 1 }, supplied: true, commanded: true },
+            { id: "D1", owner: "P2", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
+          ],
+        },
+        moves: [],
+        resultingState: {
+          ...createdBody.game.currentSnapshot,
+          pieces: [
+            ...basePieces,
+            { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 1 }, supplied: true, commanded: true },
+            { id: "A2", owner: "P1", kind: "unit", position: { row: 3, col: 1 }, supplied: true, commanded: true },
+            { id: "D1", owner: "P2", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
+          ],
+        },
+        expectedFinalStateHash: "hash-placeholder",
+        expectedOutcome: "ongoing",
+      },
+    }),
+    env,
+  );
+  assert.equal(scenarioImport.status, 200);
+
+  const importedOpen = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+  const importedBody = await importedOpen.json();
+
+  const push = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/apply`, "POST", {
+      identityId: "id-owner",
+      state: importedBody.game.currentSnapshot,
+      action: {
+        type: "push",
+        actorId: "A1",
+        from: { row: 4, col: 1 },
+        to: { row: 4, col: 2 },
+      },
+    }),
+    env,
+  );
+  const pushBody = await push.json();
+  assert.equal(push.status, 200);
+  assert.equal(pushBody.accepted, true);
+
+  const retreat = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/apply`, "POST", {
+      identityId: "id-owner",
+      state: pushBody.state,
+      action: {
+        type: "retreat",
+        actorId: "D1",
+        from: { row: 4, col: 2 },
+        to: { row: 4, col: 3 },
+      },
+    }),
+    env,
+  );
+  const retreatBody = await retreat.json();
+  assert.equal(retreat.status, 200);
+  assert.equal(retreatBody.accepted, true);
+
+  const follow = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/apply`, "POST", {
+      identityId: "id-owner",
+      state: retreatBody.state,
+      action: {
+        type: "follow",
+        actorId: "A2",
+        from: { row: 3, col: 1 },
+        to: { row: 4, col: 1 },
+      },
+    }),
+    env,
+  );
+  const followBody = await follow.json();
+  assert.equal(follow.status, 200);
+  assert.equal(followBody.accepted, true);
+
+  const persisted = env.DB.getGameState(gameId);
+  const overwritten = env.DB.overwriteGameState(gameId, (game) => ({
+    ...game,
+    initialState: retreatBody.move.selectionSnapshot,
+    moves: game.moves.slice(1).map((move, index) => ({
+      ...move,
+      index,
+    })),
+    turns: game.turns.map((turn, index) =>
+      index === 0
+        ? {
+            ...turn,
+            moveIndexes: [0, 1],
+          }
+        : turn
+    ),
+  }));
+  assert.equal(overwritten, true);
+  assert.equal(persisted.moves.length, 3);
+
+  env.GAME_ROOMS.restart(gameId);
+
+  const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+  const openBody = await open.json();
+  assert.equal(open.status, 200);
+  assert.equal(openBody.game.moves.length, 2);
+  assert.equal(openBody.game.moves[0].action.type, "retreat");
+  assert.equal(openBody.game.moves[0].selectionSnapshot.continuation?.phase, "retreat");
+  assert.equal(openBody.game.moves[1].action.type, "follow");
+  assert.equal(openBody.game.currentSnapshot.turnIndex, 1);
+  assert.equal(openBody.game.currentSnapshot.sideToMove, "P2");
 });
 
 test("live transport: compact persistence stays materially smaller across long histories", async () => {
