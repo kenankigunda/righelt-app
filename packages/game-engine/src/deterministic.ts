@@ -81,6 +81,9 @@ function normalizeContinuation(value: ContinuationContext | null): ContinuationC
     followGroupPieceIds: value.followGroupPieceIds
       ? [...value.followGroupPieceIds].sort((a, b) => a.localeCompare(b))
       : undefined,
+    forcedResupplyPieceIds: value.forcedResupplyPieceIds
+      ? [...value.forcedResupplyPieceIds].sort((a, b) => a.localeCompare(b))
+      : undefined,
     rushedPieceIds: value.rushedPieceIds ? [...value.rushedPieceIds].sort((a, b) => a.localeCompare(b)) : undefined,
     frozenPieceStatesById,
   };

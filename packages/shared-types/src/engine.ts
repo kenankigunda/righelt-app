@@ -36,6 +36,7 @@ export type ContinuationContext = {
   pushedPieceId?: string;
   followGroupPieceIds?: string[];
   rushedPieceIds?: string[];
+  forcedResupplyPieceIds?: string[];
   frozenOwner?: PlayerId;
   frozenPieceStatesById?: Record<string, FrozenPieceState>;
   chainLength: number;

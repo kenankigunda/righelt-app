@@ -1,5 +1,8 @@
 import type { Action, GameState, Piece, ValidationResult } from "./types";
 import { BOARD_SIZE } from "./deterministic";
+import { deterministicStateHash } from "./hash";
+import { applyValidatedAction } from "./apply";
+import { resolveToStability } from "./resolve";
 
 function outOfBounds(value: { row: number; col: number } | undefined): boolean {
   if (!value) {
@@ -294,6 +297,82 @@ function wouldBeSuppliedAfterPush(
   return wouldCoordinateBeSuppliedForOwner(hypothetical, owner, destination);
 }
 
+function protectedOwnerForAction(actionType: Action["type"], owner: "P1" | "P2") {
+  if (actionType === "rush" || actionType === "push" || actionType === "follow") {
+    return owner;
+  }
+  return null;
+}
+
+const continuationSupplyClosureCache = new Map<string, boolean>();
+
+function ownerPieceIds(state: GameState, owner: "P1" | "P2"): string[] {
+  return state.pieces
+    .filter((piece) => piece.owner === owner)
+    .map((piece) => piece.id)
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function ownerStateIsFullySupplied(state: GameState, owner: "P1" | "P2", expectedPieceIds: string[]): boolean {
+  const piecesById = new Map(
+    state.pieces.filter((piece) => piece.owner === owner).map((piece) => [piece.id, piece]),
+  );
+  return expectedPieceIds.every((pieceId) => {
+    const piece = piecesById.get(pieceId);
+    return Boolean(piece?.supplied);
+  });
+}
+
+function canCloseContinuationWithOwnerSupplied(
+  state: GameState,
+  owner: "P1" | "P2",
+  expectedPieceIds: string[],
+  visiting = new Set<string>(),
+): boolean {
+  const stable = resolveToStability(state, { artifactMode: "minimal" });
+  const cacheKey = `${owner}|${expectedPieceIds.join(",")}|${deterministicStateHash(stable)}`;
+  const cached = continuationSupplyClosureCache.get(cacheKey);
+  if (typeof cached === "boolean") {
+    return cached;
+  }
+  if (visiting.has(cacheKey)) {
+    return false;
+  }
+  if (!stable.continuation) {
+    const result = ownerStateIsFullySupplied(stable, owner, expectedPieceIds);
+    continuationSupplyClosureCache.set(cacheKey, result);
+    return result;
+  }
+
+  visiting.add(cacheKey);
+  const legalActions = listLegalActions(stable);
+  for (const nextAction of legalActions) {
+    const next = applyValidatedAction(stable, nextAction).state;
+    if (canCloseContinuationWithOwnerSupplied(next, owner, expectedPieceIds, visiting)) {
+      visiting.delete(cacheKey);
+      continuationSupplyClosureCache.set(cacheKey, true);
+      return true;
+    }
+  }
+  visiting.delete(cacheKey);
+  continuationSupplyClosureCache.set(cacheKey, false);
+  return false;
+}
+
+function continuationActionPreservesOwnerSupply(
+  state: GameState,
+  action: Action,
+  owner: "P1" | "P2",
+): boolean {
+  const simulated = applyValidatedAction(state, action).state;
+  const expectedPieceIds = ownerPieceIds(simulated, owner);
+  const stable = resolveToStability(simulated, { artifactMode: "minimal" });
+  if (action.type === "rush" && ownerStateIsFullySupplied(stable, owner, expectedPieceIds)) {
+    return true;
+  }
+  return canCloseContinuationWithOwnerSupplied(stable, owner, expectedPieceIds);
+}
+
 function resolveActor(state: GameState, action: Action) {
   if (action.actorId) {
     return state.pieces.find((piece) => piece.id === action.actorId);
@@ -457,7 +536,8 @@ export function listLegalActions(state: GameState): Action[] {
           }
           return actions.filter((candidate) => validateAction(state, candidate).ok);
         });
-      return [...rushActions, { type: "pass" }];
+      const passAction: Action = { type: "pass" };
+      return validateAction(state, passAction).ok ? [...rushActions, passAction] : rushActions;
     }
 
     return state.continuation.phase === "retreat" ? getPushRetreatActions(state) : getPushFollowActions(state);
@@ -523,6 +603,13 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         ok: false,
         code: "CONTINUATION_REQUIRED",
         message: "Pass is not legal while continuation is active",
+      };
+    }
+    if (state.continuation?.type === "rush" && (state.continuation.forcedResupplyPieceIds?.length ?? 0) > 0) {
+      return {
+        ok: false,
+        code: "CONTINUATION_REQUIRED",
+        message: "Rush continuation cannot end while your pieces remain unsupplied",
       };
     }
     return { ok: true };
@@ -692,11 +779,15 @@ export function validateAction(state: GameState, action: Action): ValidationResu
       }
     }
 
-    if (!wouldBeSuppliedAfterRelocation(state, actor.id, actor.owner, action.to)) {
+    const protectedOwner = protectedOwnerForAction(action.type, actor.owner);
+    if (
+      protectedOwner &&
+      !continuationActionPreservesOwnerSupply(state, action, protectedOwner)
+    ) {
       return {
         ok: false,
         code: "SUPPLY_DESTINATION_UNSUPPLIED",
-        message: "Rush destination would be unsupplied",
+        message: "Rush sequence cannot close with all of your pieces supplied",
       };
     }
 
@@ -743,11 +834,15 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         message: "Push requires strictly greater attacker group strength",
       };
     }
-    if (!wouldBeSuppliedAfterPush(state, actor.id, defender.id, actor.owner, action.to)) {
+    const protectedOwner = protectedOwnerForAction(action.type, actor.owner);
+    if (
+      protectedOwner &&
+      !continuationActionPreservesOwnerSupply(state, action, protectedOwner)
+    ) {
       return {
         ok: false,
         code: "SUPPLY_DESTINATION_UNSUPPLIED",
-        message: "Push destination would be unsupplied",
+        message: "Push sequence cannot close with all of your pieces supplied",
       };
     }
     return { ok: true };
@@ -800,11 +895,15 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         message: "Follow actor must be orthogonally adjacent to current follow-point",
       };
     }
-    if (!wouldBeSuppliedAfterRelocation(state, actor.id, actor.owner, state.continuation.followPoint)) {
+    const protectedOwner = protectedOwnerForAction(action.type, actor.owner);
+    if (
+      protectedOwner &&
+      !continuationActionPreservesOwnerSupply(state, action, protectedOwner)
+    ) {
       return {
         ok: false,
         code: "SUPPLY_DESTINATION_UNSUPPLIED",
-        message: "Follow destination would be unsupplied",
+        message: "Follow sequence cannot close with all of your pieces supplied",
       };
     }
     return { ok: true };
@@ -844,13 +943,6 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         ok: false,
         code: "RULE_VIOLATION",
         message: "Retreat destination cannot be the reserved follow-point",
-      };
-    }
-    if (!wouldBeSuppliedAfterRelocation(state, actor.id, actor.owner, action.to)) {
-      return {
-        ok: false,
-        code: "SUPPLY_DESTINATION_UNSUPPLIED",
-        message: "Retreat destination would be unsupplied",
       };
     }
     return { ok: true };

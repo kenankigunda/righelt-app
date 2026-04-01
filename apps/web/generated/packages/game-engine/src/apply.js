@@ -55,6 +55,9 @@ export function applyAction(state, action) {
     if (!validation.ok) {
         throw new Error(`Cannot apply invalid action: ${validation.code}`);
     }
+    return applyValidatedAction(state, action);
+}
+export function applyValidatedAction(state, action) {
     const next = normalizeState(state);
     const actor = (action.actorId && next.pieces.find((piece) => piece.id === action.actorId)) ||
         (action.from &&
@@ -92,6 +95,7 @@ export function applyAction(state, action) {
             next.continuation = {
                 type: "rush",
                 owner: actor.owner,
+                forcedResupplyPieceIds: [],
                 frozenOwner: actor.owner,
                 frozenPieceStatesById: captureFrozenPieceStates(state, actor.owner),
                 rushedPieceIds: [actor.id],
@@ -125,6 +129,7 @@ export function applyAction(state, action) {
             followPoint: origin,
             pushedPieceId: defender.id,
             followGroupPieceIds: pushingGroupPieceIds,
+            forcedResupplyPieceIds: [],
             frozenOwner: actor.owner,
             frozenPieceStatesById: captureFrozenPieceStates(state, actor.owner),
             chainLength: 1,

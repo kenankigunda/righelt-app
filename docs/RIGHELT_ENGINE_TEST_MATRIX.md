@@ -183,8 +183,8 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 - When: `Rush` attempted.
 - Then: Rejected.
 
-### F-007 Rush destination must remain supplied
-- Given: Rush destination is geometrically legal and empty but would leave rusher unsupplied.
+### F-007 Rush destination must permit sequence-end resupply
+- Given: Rush destination is geometrically legal and empty but no legal rush continuation can close with all of the rushing player's pieces supplied.
 - When: `Rush` attempted.
 - Then: Rejected.
 
@@ -251,20 +251,23 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 - When: Resolve forced retreat step.
 - Then: Pushed piece removed.
 
-### G-017 Push illegal when pushed destination would leave attacker unsupplied
-- Given: Push geometry and strength are valid, but after forming the pushed square the attacking piece would be unsupplied on that destination.
+### G-017 Push legal when temporary attacker unsupply can be repaired
+- Given: Push geometry and strength are valid, the push creates temporary attacker unsupply, and at least one legal continuation closes with all attacker pieces supplied.
 - When: `Push`.
-- Then: Rejected with destination-supply failure.
+- Then: Accepted.
 
 ### G-018 Follow illegal when follow destination would leave follower unsupplied
-- Given: Follow actor is otherwise eligible, but moving into follow-point would leave that piece unsupplied.
+- Given: Follow actor is otherwise eligible, but every legal continuation after that follow leaves at least one attacker piece unsupplied at sequence end.
 - When: `Follow`.
 - Then: Rejected with destination-supply failure.
 
-### G-019 Retreat illegal when retreat destination would leave retreating piece unsupplied
+### G-019 Retreat legal into temporary unsupply
 - Given: Retreat destination is orthogonally adjacent and empty, but would leave the retreating piece unsupplied.
 - When: `Retreat`.
-- Then: Rejected with destination-supply failure.
+- Then:
+  - Retreat is accepted.
+  - Retreating piece remains on board during the sequence.
+  - Retreating piece is removed only if still unsupplied after the sequence ends.
 
 ## H. Supply System
 
@@ -279,7 +282,7 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 - Then: `supplied=false`.
 
 ### H-003 Non-commander unsupplied removal
-- Given: Non-commander piece unsupplied after resolution step.
+- Given: Non-commander piece unsupplied after the full move sequence closes.
 - When: Resolve to stability.
 - Then: Piece removed per rules engine policy.
 

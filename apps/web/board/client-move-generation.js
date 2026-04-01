@@ -1,4 +1,15 @@
+import { validateAction as validateEngineAction } from "../generated/packages/game-engine/src/legal.js";
+
 const BOARD_SIZE = 10;
+
+const withEngineValidationShape = (state) => ({
+  boardSize: state?.boardSize ?? BOARD_SIZE,
+  sideToMove: state?.sideToMove ?? "P1",
+  turnIndex: state?.turnIndex ?? 0,
+  continuation: state?.continuation ?? null,
+  outcome: state?.outcome ?? { status: "ongoing" },
+  pieces: Array.isArray(state?.pieces) ? state.pieces : [],
+});
 
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
 
@@ -627,7 +638,7 @@ export const listPieceMovePreviews = ({ state, legalActions, pieceId }) => {
       continue;
     }
 
-    const validation = validateActionForPreview(state, action);
+    const validation = validateEngineAction(withEngineValidationShape(state), action);
     if (
       validation.code === "SUPPLY_DESTINATION_UNSUPPLIED" ||
       validation.code === "PUSH_STRENGTH_TOO_WEAK"

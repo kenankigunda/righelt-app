@@ -69,6 +69,10 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
     throw new Error(`Cannot apply invalid action: ${validation.code}`);
   }
 
+  return applyValidatedAction(state, action);
+}
+
+export function applyValidatedAction(state: GameState, action: Action): ApplyResult {
   const next = normalizeState(state);
   const actor =
     (action.actorId && next.pieces.find((piece) => piece.id === action.actorId)) ||
@@ -108,6 +112,7 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
       next.continuation = {
         type: "rush",
         owner: actor.owner,
+        forcedResupplyPieceIds: [],
         frozenOwner: actor.owner,
         frozenPieceStatesById: captureFrozenPieceStates(state, actor.owner),
         rushedPieceIds: [actor.id],
@@ -142,6 +147,7 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
       followPoint: origin,
       pushedPieceId: defender.id,
       followGroupPieceIds: pushingGroupPieceIds,
+      forcedResupplyPieceIds: [],
       frozenOwner: actor.owner,
       frozenPieceStatesById: captureFrozenPieceStates(state, actor.owner),
       chainLength: 1,

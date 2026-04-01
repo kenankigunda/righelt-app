@@ -297,6 +297,64 @@ test("/api/engine/playground/piece-moves includes blocked push previews for inad
   );
 });
 
+test("/api/engine/playground/piece-moves keeps unsupplied retreat destinations legal", async () => {
+  const { env } = buildEnv();
+
+  const state = {
+    boardSize: 10,
+    sideToMove: "P2",
+    turnIndex: 0,
+    continuation: {
+      type: "push",
+      owner: "P2",
+      attackerOwner: "P1",
+      phase: "retreat",
+      followPoint: { row: 4, col: 3 },
+      pushedPieceId: "D1",
+      chainLength: 1,
+    },
+    outcome: { status: "ongoing" },
+    pieces: [
+      { id: "C1", owner: "P1", kind: "commander", position: { row: 3, col: 6 }, supplied: true, commanded: true },
+      { id: "C2", owner: "P2", kind: "commander", position: { row: 8, col: 1 }, supplied: true, commanded: true },
+      { id: "D1", owner: "P2", kind: "unit", position: { row: 5, col: 3 }, supplied: true, commanded: true, pushed: true },
+      { id: "U1-wall-top", owner: "P1", kind: "unit", position: { row: 0, col: 3 }, supplied: true, commanded: true },
+      { id: "U1-wall-bottom", owner: "P1", kind: "unit", position: { row: 9, col: 3 }, supplied: true, commanded: true },
+      { id: "U1-block-north", owner: "P1", kind: "unit", position: { row: 4, col: 4 }, supplied: true, commanded: true },
+      { id: "U1-block-south", owner: "P1", kind: "unit", position: { row: 6, col: 4 }, supplied: true, commanded: true },
+      { id: "U1-block-east", owner: "P1", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true },
+    ],
+  };
+
+  const response = await handleApiRequest(
+    new Request("https://righelt.pages.dev/api/engine/playground/piece-moves", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state, pieceId: "D1" }),
+    }),
+    env,
+  );
+
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(
+    body.actions.some((action) => action.type === "retreat" && action.to?.row === 5 && action.to?.col === 4),
+    true,
+  );
+  assert.equal(
+    body.previewActions.some(
+      (action) =>
+        action.type === "retreat" &&
+        action.to?.row === 5 &&
+        action.to?.col === 4 &&
+        action.legal === false &&
+        action.blockedReason === "SUPPLY_DESTINATION_UNSUPPLIED",
+    ),
+    false,
+  );
+});
+
 test("/api/engine/playground/apply illegal action returns accepted=false with validation and legalActions", async () => {
   const { env } = buildEnv();
 

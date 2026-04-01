@@ -144,6 +144,55 @@ test("client move generation previews a projected commander action as a unit", (
   });
 });
 
+test("client move generation keeps unsupplied retreat destinations legal", () => {
+  const state = {
+    boardSize: 10,
+    sideToMove: "P2",
+    turnIndex: 0,
+    continuation: {
+      type: "push",
+      owner: "P2",
+      attackerOwner: "P1",
+      phase: "retreat",
+      followPoint: { row: 4, col: 3 },
+      pushedPieceId: "D1",
+      chainLength: 1,
+    },
+    outcome: { status: "ongoing" },
+    pieces: [
+      { id: "C1", owner: "P1", kind: "commander", position: { row: 3, col: 6 }, supplied: true, commanded: true },
+      { id: "C2", owner: "P2", kind: "commander", position: { row: 8, col: 1 }, supplied: true, commanded: true },
+      { id: "D1", owner: "P2", kind: "unit", position: { row: 5, col: 3 }, supplied: true, commanded: true, pushed: true },
+      { id: "U1-wall-top", owner: "P1", kind: "unit", position: { row: 0, col: 3 }, supplied: true, commanded: true },
+      { id: "U1-wall-bottom", owner: "P1", kind: "unit", position: { row: 9, col: 3 }, supplied: true, commanded: true },
+      { id: "U1-block-north", owner: "P1", kind: "unit", position: { row: 4, col: 4 }, supplied: true, commanded: true },
+      { id: "U1-block-south", owner: "P1", kind: "unit", position: { row: 6, col: 4 }, supplied: true, commanded: true },
+      { id: "U1-block-east", owner: "P1", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true },
+    ],
+  };
+
+  const response = buildPieceMoveResponse({
+    state,
+    legalActions: [{ type: "retreat", actorId: "D1", from: { row: 5, col: 3 }, to: { row: 5, col: 4 } }],
+    pieceId: "D1",
+  });
+
+  assert.equal(
+    response.actions.some((action) => action.type === "retreat" && action.to?.row === 5 && action.to?.col === 4),
+    true,
+  );
+  assert.equal(
+    response.previewActions.some(
+      (action) =>
+        action.type === "retreat" &&
+        action.to?.row === 5 &&
+        action.to?.col === 4 &&
+        action.legal === false,
+    ),
+    false,
+  );
+});
+
 test("client move generation marks preview pieces uncommanded when the resulting action severs command", () => {
   const state = {
     boardSize: 10,

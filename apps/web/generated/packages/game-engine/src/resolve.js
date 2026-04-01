@@ -1,4 +1,4 @@
-import { validateAction } from "./legal.js";
+import { listLegalActions, validateAction } from "./legal.js";
 const MAX_RESOLVE_PASSES = 64;
 const SUPPLY_POINTS = {
     P1: { row: 0, col: 9 },
@@ -50,6 +50,9 @@ function cloneState(state) {
                         { ...frozenState },
                     ]))
                     : undefined,
+                forcedResupplyPieceIds: state.continuation.forcedResupplyPieceIds
+                    ? [...state.continuation.forcedResupplyPieceIds]
+                    : undefined,
                 rushedPieceIds: state.continuation.rushedPieceIds ? [...state.continuation.rushedPieceIds] : undefined,
             }
             : null,
@@ -62,6 +65,15 @@ function networkPieces(state) {
 }
 function isFrozenPieceDuringContinuation(state, pieceId, owner) {
     return Boolean(state.continuation?.frozenOwner === owner && state.continuation.frozenPieceStatesById?.[pieceId]);
+}
+function protectedOwnerDuringContinuation(state) {
+    if (!state.continuation) {
+        return null;
+    }
+    if (state.continuation.type === "push") {
+        return state.continuation.attackerOwner ?? null;
+    }
+    return state.continuation.owner;
 }
 function setPieceDisplayStatus(piece, nextSupplied, nextCommanded) {
     let changed = false;
@@ -609,23 +621,8 @@ function applyContinuationPhase(state) {
             state.turnIndex += 1;
             return true;
         }
-        const occupied = state.pieces.some((piece) => !piece.pushed && piece.position.row === followPoint.row && piece.position.col === followPoint.col);
-        if (occupied) {
-            return false;
-        }
-        const allowedPieces = new Set(state.continuation.followGroupPieceIds ?? []);
-        const hasFriendlyAdjacent = state.pieces.some((piece) => {
-            if (piece.owner !== expectedOwner ||
-                piece.pushed ||
-                piece.shifted ||
-                (allowedPieces.size > 0 && !allowedPieces.has(piece.id))) {
-                return false;
-            }
-            const rowDelta = Math.abs(piece.position.row - followPoint.row);
-            const colDelta = Math.abs(piece.position.col - followPoint.col);
-            return rowDelta + colDelta === 1;
-        });
-        if (!hasFriendlyAdjacent) {
+        const followActions = listLegalActions(state).filter((action) => action.type === "follow");
+        if (followActions.length === 0 && (state.continuation.forcedResupplyPieceIds?.length ?? 0) === 0) {
             state.continuation = null;
             state.sideToMove = attackerOwner === "P1" ? "P2" : "P1";
             state.turnIndex += 1;
@@ -639,31 +636,8 @@ function applyContinuationPhase(state) {
         return false;
     }
     if (state.continuation.type === "rush") {
-        const hasRushCandidate = state.pieces
-            .filter((piece) => piece.owner === expectedOwner)
-            .some((piece) => {
-            for (let rowDelta = -1; rowDelta <= 1; rowDelta += 1) {
-                for (let colDelta = -1; colDelta <= 1; colDelta += 1) {
-                    if (rowDelta === 0 && colDelta === 0) {
-                        continue;
-                    }
-                    const candidate = {
-                        type: "rush",
-                        actorId: piece.id,
-                        from: piece.position,
-                        to: {
-                            row: piece.position.row + rowDelta,
-                            col: piece.position.col + colDelta,
-                        },
-                    };
-                    if (validateAction(state, candidate).ok) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        });
-        if (!hasRushCandidate) {
+        const hasRushCandidate = listLegalActions(state).some((action) => action.type === "rush");
+        if (!hasRushCandidate && (state.continuation.forcedResupplyPieceIds?.length ?? 0) === 0) {
             state.continuation = null;
             state.sideToMove = expectedOwner === "P1" ? "P2" : "P1";
             return true;
@@ -736,7 +710,27 @@ function applySupplyPhase(state, mode) {
     }
     return changed;
 }
+function refreshForcedResupplyPhase(state) {
+    if (!state.continuation) {
+        return false;
+    }
+    const protectedOwner = protectedOwnerDuringContinuation(state);
+    const nextForcedIds = protectedOwner
+        ? sortIds(state.pieces
+            .filter((piece) => piece.owner === protectedOwner && !piece.supplied)
+            .map((piece) => piece.id))
+        : [];
+    const previousForcedIds = state.continuation.forcedResupplyPieceIds ?? [];
+    if (JSON.stringify(previousForcedIds) === JSON.stringify(nextForcedIds)) {
+        return false;
+    }
+    state.continuation.forcedResupplyPieceIds = nextForcedIds;
+    return true;
+}
 function applyForcedEffectsPhase(state) {
+    if (state.continuation) {
+        return false;
+    }
     const beforeCount = state.pieces.length;
     state.pieces = state.pieces.filter((piece) => piece.pushed ||
         piece.kind === "commander" ||
@@ -745,6 +739,9 @@ function applyForcedEffectsPhase(state) {
     return state.pieces.length !== beforeCount;
 }
 function evaluateTerminalPhase(state) {
+    if (state.continuation) {
+        return false;
+    }
     if (state.outcome.status !== "ongoing") {
         return false;
     }
@@ -787,6 +784,9 @@ function runResolvePass(state, mode) {
     }
     // Phase 2: supply.
     if (applySupplyPhase(state, mode)) {
+        changed = true;
+    }
+    if (refreshForcedResupplyPhase(state)) {
         changed = true;
     }
     // Phase 3: command.

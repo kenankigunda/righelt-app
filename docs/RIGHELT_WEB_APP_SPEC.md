@@ -123,7 +123,9 @@ For the current board implementation:
   - Board may emit `turnEnded` early during optional continuation windows (for example during rush) when the user elects to stop.
 - During rush and push continuations, the board must continue to treat the initiating player's command/supply state as frozen from the moment that sequence started.
 - Any command/supply change created during the continuation is reconciled only after the continuation fully closes for frozen-status checks and forced-removal purposes.
-- However, destination-supply legality is never frozen: the board must not offer or commit a move/retreat/follow/push destination that would leave the moved piece unsupplied on that destination.
+- `Move` and `Project` still use immediate destination-supply legality.
+- During rush and attacker-side push/follow continuations, legality must be evaluated against whether the sequence can still close with all of that player's pieces supplied.
+- Retreat previews into currently unsupplied squares are legal when other retreat rules are satisfied; they must not be shown as supply-blocked.
 - Even so, the board should visually render pieces using the live "if the sequence ended now" command/supply result at the current board position.
 - A piece that was eligible at the start of the continuation must remain highlighted/selectable/movable for that continuation when the frozen rules still allow it, even if its live displayed status now appears inactive.
 - Shell must treat `turnEnded` as an abstract control message and must not infer it from action-type heuristics.
@@ -374,13 +376,14 @@ Tutorial restart:
 
 - Piece move previews in playground are split into:
   - legal destination actions (submittable)
-  - blocked destination previews (non-submittable) for actions that fail only due to destination supply (`SUPPLY_DESTINATION_UNSUPPLIED`)
+  - blocked destination previews (non-submittable) for actions that fail only because the acting side cannot close the sequence with all of its own pieces supplied (`SUPPLY_DESTINATION_UNSUPPLIED`)
 - The `/api/engine/playground/piece-moves` contract must expose:
   - `actions`: legal-only actions
   - `previewActions`: legal actions plus supply-blocked destination previews, each with a `legal` flag and optional `blockedReason`
 - UI behavior:
   - legal previews render as normal ghost destinations
   - supply-blocked previews still render at the destination, but the ghost piece is crossed out to indicate illegality
+  - retreat previews into unsupplied squares remain legal previews rather than supply-blocked previews
   - target/action picking must use legal actions only; blocked previews are informational and must not be auto-selected as legal actions
 - Playground board selection mode:
   - default (toggle off): users may only pick source cells that contain pieces and destination cells that have at least one legal action from the selected source

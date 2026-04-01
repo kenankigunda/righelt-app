@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { applyAction, listLegalActions, validateAction } from "../../src/index.ts";
+import { resolveToStability } from "../../src/resolve.ts";
 import { commander, makeState, unit } from "../helpers/state-builders.mjs";
 
 test("G-001 push legal with stronger attacker group", () => {
@@ -410,7 +411,7 @@ test("G-016 edge push still grants retreat through the attacker origin square", 
   assert.equal(next.turnIndex, 0);
 });
 
-test("G-017 push illegal when pushed destination would leave attacker unsupplied", () => {
+test("G-017 push legal when temporary attacker unsupply can be repaired before the sequence closes", () => {
   const state = makeState({
     pieces: [
       commander("C1", "P1", 3, 6),
@@ -436,10 +437,7 @@ test("G-017 push illegal when pushed destination would leave attacker unsupplied
     to: { row: 4, col: 5 },
   });
 
-  assert.equal(result.ok, false);
-  if (!result.ok) {
-    assert.equal(result.code, "SUPPLY_DESTINATION_UNSUPPLIED");
-  }
+  assert.equal(result.ok, true);
 });
 
 test("G-018 follow illegal when follow destination would leave follower unsupplied", () => {
@@ -480,7 +478,7 @@ test("G-018 follow illegal when follow destination would leave follower unsuppli
   }
 });
 
-test("G-019 retreat illegal when retreat destination would leave retreating piece unsupplied", () => {
+test("G-019 retreat into an unsupplied square is legal and the defender survives until sequence end", () => {
   const state = makeState({
     sideToMove: "P2",
     continuation: {
@@ -511,8 +509,24 @@ test("G-019 retreat illegal when retreat destination would leave retreating piec
     to: { row: 5, col: 4 },
   });
 
-  assert.equal(result.ok, false);
-  if (!result.ok) {
-    assert.equal(result.code, "SUPPLY_DESTINATION_UNSUPPLIED");
-  }
+  assert.equal(result.ok, true);
+
+  const afterRetreat = applyAction(state, {
+    type: "retreat",
+    actorId: "D1",
+    from: { row: 5, col: 3 },
+    to: { row: 5, col: 4 },
+  }).state;
+  const defenderAfterRetreat = afterRetreat.pieces.find((piece) => piece.id === "D1");
+  assert.equal(Boolean(defenderAfterRetreat), true);
+  assert.deepEqual(defenderAfterRetreat?.position, { row: 5, col: 4 });
+
+  const stabilized = makeState({
+    ...afterRetreat,
+    continuation: null,
+    sideToMove: "P2",
+    turnIndex: 1,
+  });
+  const settled = resolveToStability(stabilized, { artifactMode: "minimal" });
+  assert.equal(settled.pieces.some((piece) => piece.id === "D1"), false);
 });

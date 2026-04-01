@@ -126,9 +126,25 @@ expectReplayFailure({
   label: "replay failure reports CONTINUATION_REQUIRED when passing during continuation",
   initial: {
     ...createInitialState(),
+    sideToMove: "P2",
+    pieces: [
+      ...createInitialState().pieces,
+      {
+        id: "D1",
+        owner: "P2",
+        kind: "unit",
+        position: { row: 4, col: 4 },
+        supplied: true,
+        commanded: true,
+        pushed: true,
+      },
+    ],
     continuation: {
       type: "push",
-      owner: "P1",
+      owner: "P2",
+      attackerOwner: "P1",
+      phase: "retreat",
+      pushedPieceId: "D1",
       followPoint: { row: 3, col: 6 },
       chainLength: 1,
     },
@@ -137,7 +153,7 @@ expectReplayFailure({
   index: 0,
   expectedCode: "CONTINUATION_REQUIRED",
   expectedTurnIndex: 0,
-  expectedSideToMove: "P1",
+  expectedSideToMove: "P2",
 });
 
 expectReplayFailure({

@@ -279,6 +279,31 @@ test("F-012 pass ends rush continuation even when more rushes are available", ()
   assert.equal(next.turnIndex, 1);
 });
 
+test("F-012b pass is illegal while rush continuation still has forced resupply debt", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      forcedResupplyPieceIds: ["U1-2"],
+      rushedPieceIds: ["U1-1"],
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 0, 0, { commanded: false }),
+      commander("C2", "P2", 9, 9, { commanded: false }),
+      unit("U1-1", "P1", 4, 4),
+      unit("U1-2", "P1", 5, 5, { supplied: false, displaySupplied: false }),
+      unit("U2-1", "P2", 5, 7),
+    ],
+  });
+
+  const result = validateAction(state, { type: "pass" });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.code, "CONTINUATION_REQUIRED");
+  }
+});
+
 test("F-013 rush destination that would be unsupplied is illegal", () => {
   const state = makeState({
     pieces: [
