@@ -174,7 +174,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /clearCoordinatedFlyoutMotionStyles\(\);/);
   assert.match(source, /const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">\$\{renderHeader\(\)\}\$\{body\}<\/div>\$\{renderFlyouts\(\)\}<\/div>`;/);
   assert.match(source, /document\.title = getDocumentTitle\(\);/);
-  assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*syncMountedGameShellPanelUi\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
+  assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{[\s\S]*updateMountedHeader\(\);[\s\S]*updateMountedFlyouts\(\);[\s\S]*syncFlyoutAwareLinks\(\);[\s\S]*syncCopyInviteLinks\(\);[\s\S]*updateHeaderFields\(\);[\s\S]*syncMountedGameShellPanelUi\(\);[\s\S]*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);[\s\S]*return;\s*\}/s);
   assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*syncScenarioAuthoringControls\(\);\s*updateMountedGameShell\(/s);
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
@@ -192,11 +192,24 @@ test("live sync applies authoritative pushed game payloads before render", () =>
   assert.match(source, /if \(document\.getElementById\("shell-debug-last-event"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
+test("shell render and route hydration emit verbose timing diagnostics", () => {
+  assert.match(source, /const isVerboseShellLoggingEnabled = \(\) => \{/);
+  assert.match(source, /const logShellDiagnostic = \(event, payload = \{\}, \{ verboseOnly = true \} = \{\}\) => \{/);
+  assert.match(source, /logShellDiagnostic\("shell_route_sync_timing"/);
+  assert.match(source, /logShellDiagnostic\("shell_home_section_page_timing"/);
+  assert.match(source, /logShellDiagnostic\("shell_render_timing"/);
+  assert.match(source, /logShellDiagnostic\("shell_live_sync_passive_fallback_enabled"/);
+  assert.match(source, /logShellDiagnostic\("shell_live_sync_passive_refresh_tick"/);
+});
+
 test("live sync status renders are deduplicated by stable status key", () => {
   assert.match(source, /let lastWsStatusKey = toStableKey\(wsStatus\);/);
   assert.match(source, /const statusKey = toStableKey\(status\);/);
   assert.match(source, /if \(statusKey === lastWsStatusKey\) \{\s*return;\s*\}/s);
-  assert.match(source, /lastWsStatusKey = statusKey;\s*wsStatus = status;\s*if \(status\.state === "closed" && status\.reconnectAttempts >= 3\) \{\s*void syncRouteDataPassive\(\);\s*\}[\s\S]*updateHeaderFields\(\);/s);
+  assert.match(source, /lastWsStatusKey = statusKey;\s*wsStatus = status;/);
+  assert.match(source, /if \(status\.state === "connected"\) \{\s*disablePassiveLiveSyncFallback\(routeGameId\);\s*\}/s);
+  assert.match(source, /status\.reconnectAttempts >= LIVE_SYNC_RECONNECT_FALLBACK_ATTEMPTS/);
+  assert.match(source, /enablePassiveLiveSyncFallback\(routeGameId\);\s*void syncRouteDataPassive\(\);/s);
   assert.match(source, /if \(document\.getElementById\("shell-debug-live-sync"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
@@ -205,9 +218,19 @@ test("syncLiveChannels manages subscriptions through the shared active game set"
     source,
     /const activeLiveGameIds = new Set\(\);/,
   );
-  assert.match(source, /const desiredGameIds = new Set\(routeGameId \? \[routeGameId\] : \[\]\);/);
+  assert.match(source, /const passiveLiveGameIds = new Set\(\);/);
+  assert.match(source, /const desiredGameIds = new Set\(routeGameId && !passiveLiveGameIds\.has\(routeGameId\) \? \[routeGameId\] : \[\]\);/);
   assert.match(source, /liveSync\.disconnectGame\(gameId\);/);
   assert.match(source, /liveSync\.connectGame\(gameId\);/);
+});
+
+test("game routes fall back to passive refresh after repeated websocket failures", () => {
+  assert.match(source, /const LIVE_SYNC_PASSIVE_REFRESH_MS = 5_000;/);
+  assert.match(source, /const LIVE_SYNC_RECONNECT_FALLBACK_ATTEMPTS = 3;/);
+  assert.match(source, /const schedulePassiveLiveSyncRefresh = \(gameId\) => \{/);
+  assert.match(source, /await syncRouteDataPassive\(\);\s*schedulePassiveLiveSyncRefresh\(gameId\);/s);
+  assert.match(source, /const enablePassiveLiveSyncFallback = \(gameId\) => \{/);
+  assert.match(source, /liveSync\.disconnectGame\(gameId\);\s*activeLiveGameIds\.delete\(gameId\);/s);
 });
 
 test("history renderer emits move-only rows without visible turn wrappers", () => {

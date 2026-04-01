@@ -66,7 +66,7 @@ test("invite choice commit suppresses repeat game-route invite gate and join act
   assert.match(source, /if \(routeName === "game" && inviteChoiceCommittedByGameId\.has\(game\.id\)\) \{\s*return null;\s*\}/s);
   assert.match(source, /if \(action === "join-viewer" \|\| action === "accept-invite-viewer"\)[\s\S]*?markInviteChoiceCommitted\(gameId\);/s);
   assert.match(source, /if \(action === "join-player" \|\| action === "accept-invite-player"\)[\s\S]*?markInviteChoiceCommitted\(gameId\);/s);
-  assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*resolvedInvite = null;\s*await transport\.loadGame\(currentRoute\.gameId, \{ openAsViewer: false \}\);\s*routeHydrated = true;\s*return;\s*\}/s);
+  assert.match(source, /if \(currentRoute\.name === "game"\) \{[\s\S]*resolvedInvite = null;[\s\S]*await transport\.loadGame\(currentRoute\.gameId, \{ openAsViewer: false \}\);[\s\S]*routeHydrated = true;[\s\S]*return;\s*\}/s);
 });
 
 test("game route live sync connection is not gated by participant role", () => {
@@ -74,7 +74,7 @@ test("game route live sync connection is not gated by participant role", () => {
     source,
     /const routeGameId =\s*shouldLiveSyncRoute\(currentRoute\)\s*&&/s,
   );
-  assert.match(source, /const desiredGameIds = new Set\(routeGameId \? \[routeGameId\] : \[\]\);/);
+  assert.match(source, /const desiredGameIds = new Set\(routeGameId && !passiveLiveGameIds\.has\(routeGameId\) \? \[routeGameId\] : \[\]\);/);
 });
 
 test("home uses per-section pagination and isolates smoke-player games in debug mode", () => {

@@ -28,9 +28,18 @@ export const resolveLocalDevVariant = (webPort) => {
 
 export const resolveLocalApiPort = (webPort) => resolveLocalDevVariant(webPort).apiPort;
 
-export const buildLocalApiOrigin = (webPort) => `http://127.0.0.1:${resolveLocalApiPort(webPort)}`;
+const normalizeLocalHost = (hostname) => {
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]") {
+    return hostname;
+  }
+  return "127.0.0.1";
+};
 
-export const buildLocalApiWsHost = (webPort) => `127.0.0.1:${resolveLocalApiPort(webPort)}`;
+export const buildLocalApiOrigin = (webPort, hostname = "127.0.0.1") =>
+  `http://${normalizeLocalHost(hostname)}:${resolveLocalApiPort(webPort)}`;
+
+export const buildLocalApiWsHost = (webPort, hostname = "127.0.0.1") =>
+  `${normalizeLocalHost(hostname)}:${resolveLocalApiPort(webPort)}`;
 
 export const buildLocalApiPersistPath = (webPort) => {
   const variant = resolveLocalDevVariant(webPort);

@@ -36,6 +36,38 @@ const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
 
 type HomeSectionKey = "my" | "other" | "smoke";
 
+const nowMs = () =>
+  typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+
+const getProcessEnvFlag = (key: string) => {
+  const processLike = (globalThis as { process?: { env?: Record<string, unknown> } }).process;
+  const raw = processLike?.env?.[key];
+  return raw == null ? "" : String(raw).toLowerCase();
+};
+
+const isVerboseServerLoggingEnabled = () => {
+  const processEnvFlag = getProcessEnvFlag("RIGHELT_VERBOSE_SERVER_LOGS");
+  const globalFlag =
+    typeof globalThis !== "undefined" && (globalThis as { __RIGHELT_VERBOSE_SERVER_LOGS?: unknown }).__RIGHELT_VERBOSE_SERVER_LOGS
+      ? String((globalThis as { __RIGHELT_VERBOSE_SERVER_LOGS?: unknown }).__RIGHELT_VERBOSE_SERVER_LOGS).toLowerCase()
+      : "";
+  const value = processEnvFlag || globalFlag;
+  return value === "1" || value === "true" || value === "yes" || value === "on" || value === "verbose";
+};
+
+const logServerDiagnostic = (event: string, payload: Record<string, unknown>, verboseOnly = true) => {
+  if (verboseOnly && !isVerboseServerLoggingEnabled()) {
+    return;
+  }
+  console.info(
+    JSON.stringify({
+      event,
+      at: new Date().toISOString(),
+      ...payload,
+    }),
+  );
+};
+
 const json = (body: unknown, status = 200, cacheControl = CACHE_NO_STORE): Response =>
   new Response(JSON.stringify(body), {
     status,
@@ -183,6 +215,7 @@ export const handleLiveGameRequest = async (
   }
 
   if (request.method === "GET" && route.length === 1 && route[0] === "games") {
+    const requestStartMs = nowMs();
     const identityId = asIdentity(url.searchParams.get("identityId"));
     if (!identityId) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
@@ -193,10 +226,19 @@ export const handleLiveGameRequest = async (
     const paginationRequested = section !== null || pageParam !== null || pageSizeParam !== null;
     const games = await listVisibleGameProjections(env);
     if (!paginationRequested) {
+      const viewModelStartMs = nowMs();
+      const viewModels = games.map((game) => withViewModel(game, identityId, offline));
+      logServerDiagnostic("shell_http_games_list_timing", {
+        identityId,
+        totalGames: viewModels.length,
+        projectionCount: games.length,
+        viewModelMs: Math.round((nowMs() - viewModelStartMs) * 100) / 100,
+        totalMs: Math.round((nowMs() - requestStartMs) * 100) / 100,
+      });
       return {
         handled: true,
         status: 200,
-        body: { ok: true, games: games.map((game) => withViewModel(game, identityId, offline)) },
+        body: { ok: true, games: viewModels },
         cacheControl: CACHE_NO_STORE,
       };
     }
@@ -206,6 +248,7 @@ export const handleLiveGameRequest = async (
       return { handled: true, status: 400, body: { ok: false, error: "invalid_pagination" }, cacheControl: CACHE_NO_STORE };
     }
     const debug = url.searchParams.get("debug") === "1";
+    const pageQueryStartMs = nowMs();
     const pageResult = await loadVisibleGamePage(env, {
       identityId,
       section,
@@ -213,6 +256,8 @@ export const handleLiveGameRequest = async (
       pageSize,
       debug,
     });
+    const pageQueryMs = nowMs() - pageQueryStartMs;
+    const hydrateStartMs = nowMs();
     const pagedGames = await Promise.all(
       pageResult.gameIds.map(async (gameId) => {
         const projection = await loadGameProjection(env, gameId);
@@ -221,9 +266,22 @@ export const handleLiveGameRequest = async (
           : null;
       }),
     );
+    const hydrateMs = nowMs() - hydrateStartMs;
     const totalGames = pageResult.totalGames;
     const totalPages = totalGames === 0 ? 0 : Math.ceil(totalGames / pageSize);
     const safePage = pageResult.safePage;
+    logServerDiagnostic("shell_http_games_page_timing", {
+      identityId,
+      section,
+      page,
+      pageSize,
+      safePage,
+      totalGames,
+      returnedGames: pagedGames.filter(Boolean).length,
+      pageQueryMs: Math.round(pageQueryMs * 100) / 100,
+      hydrateMs: Math.round(hydrateMs * 100) / 100,
+      totalMs: Math.round((nowMs() - requestStartMs) * 100) / 100,
+    });
     return {
       handled: true,
       status: 200,
@@ -410,8 +468,11 @@ export const handleLiveGameRequest = async (
   }
 
   if (route.length >= 2 && route[0] === "games") {
+    const requestStartMs = nowMs();
+    const loadProjectionStartMs = nowMs();
     const gameId = route[1];
     const projection = await loadGameProjection(env, gameId);
+    const loadProjectionMs = nowMs() - loadProjectionStartMs;
     if (!projection) {
       return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: CACHE_NO_STORE };
     }
@@ -430,10 +491,20 @@ export const handleLiveGameRequest = async (
       if (!identityId) {
         return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
       }
+      const viewModelStartMs = nowMs();
+      const viewModel = withViewModel(game, identityId, offline);
+      logServerDiagnostic("shell_http_game_load_timing", {
+        identityId,
+        gameId,
+        loadProjectionMs: Math.round(loadProjectionMs * 100) / 100,
+        viewModelMs: Math.round((nowMs() - viewModelStartMs) * 100) / 100,
+        moveCount: Array.isArray(game.moves) ? game.moves.length : 0,
+        totalMs: Math.round((nowMs() - requestStartMs) * 100) / 100,
+      });
       return {
         handled: true,
         status: 200,
-        body: { ok: true, game: withViewModel(game, identityId, offline), eventSeq: projection.eventSeq },
+        body: { ok: true, game: viewModel, eventSeq: projection.eventSeq },
         cacheControl: CACHE_NO_STORE,
       };
     }

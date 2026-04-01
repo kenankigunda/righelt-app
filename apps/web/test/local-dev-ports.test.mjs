@@ -23,7 +23,10 @@ test("local dev web ports map to isolated API worker ports and state directories
   assert.equal(resolveLocalApiPort("8791"), 8794);
 
   assert.equal(buildLocalApiOrigin("8789"), "http://127.0.0.1:8792");
+  assert.equal(buildLocalApiOrigin("8789", "localhost"), "http://localhost:8792");
+  assert.equal(buildLocalApiOrigin("8789", "[::1]"), "http://[::1]:8792");
   assert.equal(buildLocalApiWsHost("8790"), "127.0.0.1:8793");
+  assert.equal(buildLocalApiWsHost("8790", "localhost"), "localhost:8793");
   assert.equal(buildLocalApiPersistPath("8788"), ".wrangler/state/api-local-dev");
   assert.equal(buildLocalApiPersistPath("8791"), ".wrangler/state/api-local-dev-c");
 });

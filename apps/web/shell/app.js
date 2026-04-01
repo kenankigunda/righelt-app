@@ -81,6 +81,35 @@ const toStableKey = (value) => {
   return JSON.stringify(value);
 };
 
+const nowMs = () => (typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now());
+const isVerboseShellLoggingEnabled = () => {
+  const processEnvFlag =
+    typeof process !== "undefined" && process?.env?.RIGHELT_VERBOSE_CLIENT_LOGS
+      ? String(process.env.RIGHELT_VERBOSE_CLIENT_LOGS).toLowerCase()
+      : "";
+  const globalFlag =
+    typeof globalThis !== "undefined" && (globalThis.__RIGHELT_VERBOSE_CLIENT_LOGS || globalThis.__RIGHELT_VERBOSE_SHELL_LOGS)
+      ? String(globalThis.__RIGHELT_VERBOSE_CLIENT_LOGS || globalThis.__RIGHELT_VERBOSE_SHELL_LOGS).toLowerCase()
+      : "";
+  const storageFlag = storage?.getItem?.("righelt.verboseClientLogs");
+  const value = processEnvFlag || globalFlag || (typeof storageFlag === "string" ? storageFlag.toLowerCase() : "");
+  return value === "1" || value === "true" || value === "yes" || value === "on" || value === "verbose";
+};
+const logShellDiagnostic = (event, payload = {}, { verboseOnly = true } = {}) => {
+  if (verboseOnly && !isVerboseShellLoggingEnabled()) {
+    return;
+  }
+  const logger = console.info;
+  logger(
+    JSON.stringify({
+      event,
+      at: new Date().toISOString(),
+      route: currentRoute?.name ?? "unknown",
+      ...payload,
+    }),
+  );
+};
+
 let currentRoute = parseRouteFromHash(window.location.hash);
 let mountedBoardGameId = null;
 let mountedHistoryMoveIndex = null;
@@ -142,8 +171,13 @@ const GAME_SHELL_PANEL_TRANSITION_MS = 220;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
 const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
+const LIVE_SYNC_PASSIVE_REFRESH_MS = 5_000;
+const LIVE_SYNC_RECONNECT_FALLBACK_ATTEMPTS = 3;
 const lastAnimatedHomeSectionTokenByKey = new Map();
 const activeLiveGameIds = new Set();
+const passiveLiveGameIds = new Set();
+let passiveLiveSyncTimer = 0;
+let passiveLiveSyncGameId = null;
 const createHomeSectionState = (title) => ({
   title,
   page: 0,
@@ -627,7 +661,56 @@ const getHomeSectionCachedGameIndex = (section, gameId) => {
   return null;
 };
 const shouldDisableLiveSync = () => window.__righeltOffline === true || navigator.onLine === false;
+const clearPassiveLiveSyncRefresh = () => {
+  if (passiveLiveSyncTimer) {
+    clearTimeout(passiveLiveSyncTimer);
+    passiveLiveSyncTimer = 0;
+  }
+  passiveLiveSyncGameId = null;
+};
+const schedulePassiveLiveSyncRefresh = (gameId) => {
+  if (!gameId || passiveLiveSyncGameId === gameId || shouldDisableLiveSync()) {
+    return;
+  }
+  clearPassiveLiveSyncRefresh();
+  passiveLiveSyncGameId = gameId;
+  logShellDiagnostic("shell_live_sync_passive_refresh_scheduled", { gameId, delayMs: LIVE_SYNC_PASSIVE_REFRESH_MS });
+  passiveLiveSyncTimer = window.setTimeout(async () => {
+    passiveLiveSyncTimer = 0;
+    const currentGameId = getCurrentViewedGameId();
+    if (!currentGameId || currentGameId !== gameId || !passiveLiveGameIds.has(gameId) || shouldDisableLiveSync()) {
+      passiveLiveSyncGameId = null;
+      return;
+    }
+    logShellDiagnostic("shell_live_sync_passive_refresh_tick", { gameId });
+    await syncRouteDataPassive();
+    schedulePassiveLiveSyncRefresh(gameId);
+  }, LIVE_SYNC_PASSIVE_REFRESH_MS);
+};
+const enablePassiveLiveSyncFallback = (gameId) => {
+  if (!gameId) {
+    return;
+  }
+  logShellDiagnostic("shell_live_sync_passive_fallback_enabled", { gameId, reason: wsStatus.state, reconnectAttempts: wsStatus.reconnectAttempts });
+  passiveLiveGameIds.add(gameId);
+  liveSync.disconnectGame(gameId);
+  activeLiveGameIds.delete(gameId);
+  schedulePassiveLiveSyncRefresh(gameId);
+};
+const disablePassiveLiveSyncFallback = (gameId) => {
+  if (!gameId) {
+    clearPassiveLiveSyncRefresh();
+    passiveLiveGameIds.clear();
+    return;
+  }
+  logShellDiagnostic("shell_live_sync_passive_fallback_disabled", { gameId });
+  passiveLiveGameIds.delete(gameId);
+  if (passiveLiveSyncGameId === gameId) {
+    clearPassiveLiveSyncRefresh();
+  }
+};
 const resetRouteWsStatus = () => {
+  clearPassiveLiveSyncRefresh();
   wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
   lastWsStatusKey = toStableKey(wsStatus);
 };
@@ -2837,6 +2920,7 @@ const loadHomeSectionServerPage = async (
     visibleColumnCount = getHomeSectionColumnCount(sectionKey),
   } = {},
 ) => {
+  const startedAt = nowMs();
   const previous = getHomeSection(sectionKey);
   setHomeSection(sectionKey, {
     ...previous,
@@ -2870,6 +2954,14 @@ const loadHomeSectionServerPage = async (
       errorMessage: "",
     };
     setHomeSection(sectionKey, nextSection);
+    logShellDiagnostic("shell_home_section_page_timing", {
+      sectionKey,
+      requestedServerPage: serverPage,
+      normalizedServerPage,
+      returnedGames: serverPageGameIds.length,
+      totalGames: nextSection.totalGames,
+      durationMs: Math.round((nowMs() - startedAt) * 100) / 100,
+    });
     return nextSection;
   } catch (error) {
     const nextSection = {
@@ -2881,6 +2973,12 @@ const loadHomeSectionServerPage = async (
     };
     setHomeSection(sectionKey, nextSection);
     window.__righeltLastError = nextSection.errorMessage;
+    logShellDiagnostic("shell_home_section_page_failed", {
+      sectionKey,
+      requestedServerPage: serverPage,
+      durationMs: Math.round((nowMs() - startedAt) * 100) / 100,
+      error: nextSection.errorMessage,
+    }, { verboseOnly: false });
     return nextSection;
   }
 };
@@ -3046,6 +3144,16 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
 };
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
+  const renderStartedAt = nowMs();
+  const finishRenderLog = (result = "complete", extra = {}) => {
+    logShellDiagnostic("shell_render_timing", {
+      result,
+      animatePanels,
+      includeBoard,
+      durationMs: Math.round((nowMs() - renderStartedAt) * 100) / 100,
+      ...extra,
+    });
+  };
   document.title = getDocumentTitle();
   const routeKey = getRouteRenderKey();
   const baseRouteKey = getBaseRouteRenderKey();
@@ -3068,6 +3176,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     }
     scheduleGameShellStickyLayout();
     syncRenderedMarkupSnapshot();
+    finishRenderLog("flyout_patch");
     return;
   }
   const mountedGameShell = getMountedGameShellRoot();
@@ -3083,6 +3192,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
       inviteFromRole: currentRoute.inviteFromRole,
       includeBoard,
     });
+    finishRenderLog("incremental_game_shell");
     return;
   }
 
@@ -3130,6 +3240,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
+    finishRenderLog("non_board_route");
     return;
   }
   if (currentRoute.name === "game") {
@@ -3139,6 +3250,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
         inviteFromRole: currentRoute.inviteFromRole,
         includeBoard,
       });
+      finishRenderLog("incremental_game_route");
       return;
     }
     mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
@@ -3148,6 +3260,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     mountBoardForGame(transport.getGameViewModel(resolvedInvite.gameId));
     scheduleGameShellStickyLayout();
   }
+  finishRenderLog("board_route");
 };
 
 const withBusy = async (fn, { renderStart = true, renderEnd = true } = {}) => {
@@ -3168,24 +3281,43 @@ const withBusy = async (fn, { renderStart = true, renderEnd = true } = {}) => {
 };
 
 const syncRouteData = async () => {
+  const startedAt = nowMs();
   if (currentRoute.name === "home") {
     await syncHomeSections();
     routeHydrated = true;
+    logShellDiagnostic("shell_route_sync_timing", {
+      target: "home",
+      durationMs: Math.round((nowMs() - startedAt) * 100) / 100,
+    });
     return;
   }
   if (currentRoute.name === "game") {
     resolvedInvite = null;
     await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
     routeHydrated = true;
+    logShellDiagnostic("shell_route_sync_timing", {
+      target: "game",
+      gameId: currentRoute.gameId,
+      durationMs: Math.round((nowMs() - startedAt) * 100) / 100,
+    });
     return;
   }
   if (currentRoute.name === "invite") {
     resolvedInvite = await transport.resolveInvite(currentRoute.inviteToken);
     await transport.loadGame(resolvedInvite.gameId, { openAsViewer: false });
     routeHydrated = true;
+    logShellDiagnostic("shell_route_sync_timing", {
+      target: "invite",
+      gameId: resolvedInvite?.gameId ?? null,
+      durationMs: Math.round((nowMs() - startedAt) * 100) / 100,
+    });
     return;
   }
   routeHydrated = true;
+  logShellDiagnostic("shell_route_sync_timing", {
+    target: currentRoute.name,
+    durationMs: Math.round((nowMs() - startedAt) * 100) / 100,
+  });
 };
 
 const syncRouteDataAndLiveChannels = async () => {
@@ -3239,11 +3371,21 @@ const syncLiveChannels = () => {
       : currentRoute.name === "invite"
         ? resolvedInvite?.gameId || null
         : null);
-  const desiredGameIds = new Set(routeGameId ? [routeGameId] : []);
+  if (routeGameId) {
+    schedulePassiveLiveSyncRefresh(routeGameId);
+  } else {
+    clearPassiveLiveSyncRefresh();
+  }
+  const desiredGameIds = new Set(routeGameId && !passiveLiveGameIds.has(routeGameId) ? [routeGameId] : []);
   for (const gameId of [...activeLiveGameIds]) {
     if (!desiredGameIds.has(gameId)) {
       liveSync.disconnectGame(gameId);
       activeLiveGameIds.delete(gameId);
+    }
+  }
+  for (const gameId of [...passiveLiveGameIds]) {
+    if (gameId !== routeGameId) {
+      disablePassiveLiveSyncFallback(gameId);
     }
   }
   for (const gameId of desiredGameIds) {
@@ -3304,7 +3446,14 @@ const liveSync = createLiveSyncClient({
     }
     lastWsStatusKey = statusKey;
     wsStatus = status;
-    if (status.state === "closed" && status.reconnectAttempts >= 3) {
+    if (status.state === "connected") {
+      disablePassiveLiveSyncFallback(routeGameId);
+    }
+    if (
+      (status.state === "closed" && status.reconnectAttempts >= LIVE_SYNC_RECONNECT_FALLBACK_ATTEMPTS) ||
+      (status.state === "error" && status.reconnectAttempts >= LIVE_SYNC_RECONNECT_FALLBACK_ATTEMPTS)
+    ) {
+      enablePassiveLiveSyncFallback(routeGameId);
       void syncRouteDataPassive();
     }
     if (document.getElementById("shell-debug-live-sync")) {

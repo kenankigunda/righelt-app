@@ -115,7 +115,7 @@ test("live sync routes local dev websocket traffic directly to the API worker", 
 
     client.connectGame("g-123");
     assert.equal(MockSocket.instances.length, 1);
-    assert.match(MockSocket.instances[0].url, /^ws:\/\/127\.0\.0\.1:8787\//);
+    assert.match(MockSocket.instances[0].url, /^ws:\/\/localhost:8787\//);
     assert.match(MockSocket.instances[0].url, /\/api\/shell\/games\/g-123\/ws/);
     assert.match(MockSocket.instances[0].url, /lastEventSeq=7/);
     client.disconnect();
@@ -148,7 +148,7 @@ test("live sync routes suffixed local dev websocket traffic to the matching API 
 
     client.connectGame("g-789");
     assert.equal(MockSocket.instances.length, 1);
-    assert.match(MockSocket.instances[0].url, /^ws:\/\/127\.0\.0\.1:8792\//);
+    assert.match(MockSocket.instances[0].url, /^ws:\/\/localhost:8792\//);
     assert.match(MockSocket.instances[0].url, /\/api\/shell\/games\/g-789\/ws/);
     assert.match(MockSocket.instances[0].url, /lastEventSeq=4/);
     client.disconnect();

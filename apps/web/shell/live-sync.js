@@ -19,13 +19,15 @@ const createWsUrl = ({ identityId, gameId, sessionId, lastEventSeq }) => {
     sessionId,
     lastEventSeq: String(lastEventSeq ?? 0),
   });
-  const host = isLocalDevHost(window.location.hostname) ? buildLocalApiWsHost(window.location.port) : window.location.host;
+  const host = isLocalDevHost(window.location.hostname)
+    ? buildLocalApiWsHost(window.location.port, window.location.hostname)
+    : window.location.host;
   return `${protocol}://${host}/api/shell/games/${encodeURIComponent(gameId)}/ws?${params.toString()}`;
 };
 
 const createPresenceUrl = (gameId) => {
   const origin = isLocalDevHost(window.location.hostname)
-    ? buildLocalApiOrigin(window.location.port)
+    ? buildLocalApiOrigin(window.location.port, window.location.hostname)
     : window.location.origin ?? `${window.location.protocol}//${window.location.host}`;
   return `${origin}/api/shell/games/${encodeURIComponent(gameId)}/presence`;
 };

@@ -16,6 +16,7 @@ const RETRY_BASE_MS = 500;
 const RETRY_MAX_MS = 5_000;
 const MAX_CONFIRM_RETRIES = 5;
 const OFFLINE_PROGRESS_WARNING = "offline_progress_may_be_lost";
+const nowMs = () => (typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now());
 const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
@@ -219,6 +220,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const recalculateOptimisticGame = (gameId) => {
+    const startedAt = nowMs();
     const authoritativeGame = gameById.get(gameId);
     const optimistic = getOptimisticState(gameId);
     optimistic.commandResults = new Map();
@@ -239,12 +241,24 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       queue: optimistic.pendingCommands,
     });
     if (!projection.ok) {
+      logDiagnostic("warn", "live_transport_optimistic_projection_failed", {
+        gameId,
+        queueLength: optimistic.pendingCommands.length,
+        error: projection.error || "projection_failed",
+        durationMs: Math.round((nowMs() - startedAt) * 100) / 100,
+      });
       optimistic.derivedGame = decorateGameWithSync(authoritativeGame, gameId);
       return projection;
     }
 
     optimistic.commandResults = projection.commandResults;
     optimistic.derivedGame = decorateGameWithSync(projection.game, gameId);
+    logDiagnostic("info", "live_transport_optimistic_projection_timing", {
+      gameId,
+      queueLength: optimistic.pendingCommands.length,
+      durationMs: Math.round((nowMs() - startedAt) * 100) / 100,
+      moveCount: Array.isArray(projection.game?.moves) ? projection.game.moves.length : 0,
+    }, { verboseOnly: true });
     return { ok: true, game: optimistic.derivedGame };
   };
 
@@ -930,6 +944,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       pageSize: String(pageSize),
       debug: debug ? "1" : "0",
     });
+    const startedAt = nowMs();
     const response = await fetcher(withOfflineQuery(`/api/shell/games?${params.toString()}`), {
       method: "GET",
       cache: "no-store",
@@ -939,6 +954,14 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     for (const game of gamesPage) {
       upsertGame(game);
     }
+    logDiagnostic("info", "live_transport_home_page_timing", {
+      section,
+      page,
+      pageSize,
+      returnedGames: gamesPage.length,
+      totalGames: typeof body.totalGames === "number" ? body.totalGames : null,
+      durationMs: Math.round((nowMs() - startedAt) * 100) / 100,
+    }, { verboseOnly: true });
     return {
       ...body,
       games: gamesPage.map((game) => getGameViewModel(game.id) ?? game),
@@ -953,6 +976,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     if (offline) {
       return cached;
     }
+    const startedAt = nowMs();
     const response = await fetcher(
       withOfflineQuery(
         `/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}${
@@ -966,6 +990,12 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     );
     const body = await mustOk(response);
     upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+    logDiagnostic("info", "live_transport_game_load_timing", {
+      gameId,
+      openAsViewer,
+      durationMs: Math.round((nowMs() - startedAt) * 100) / 100,
+      moveCount: Array.isArray(body.game?.moves) ? body.game.moves.length : null,
+    }, { verboseOnly: true });
     return getGameViewModel(gameId);
   };
 

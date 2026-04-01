@@ -22,7 +22,7 @@ const isLocalDevRequest = (request) => {
 
 const buildLocalUpstreamRequest = (request) => {
   const url = new URL(request.url);
-  const upstream = new URL(`${url.pathname}${url.search}`, buildLocalApiOrigin(url.port));
+  const upstream = new URL(`${url.pathname}${url.search}`, buildLocalApiOrigin(url.port, url.hostname));
   return new Request(upstream.toString(), request);
 };
 

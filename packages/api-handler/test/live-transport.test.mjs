@@ -218,6 +218,24 @@ test("live transport: paged home sections still work for legacy rows with missin
   assert.deepEqual(body.games.map((game) => game.id), [gameId]);
 });
 
+test("live transport: shell route payloads still expose interactive legal actions while home page payloads stay lightweight", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await create.json();
+  const gameId = createdBody.game.id;
+
+  const page = await handleApiRequest(req("/api/shell/games?identityId=id-owner&section=my&page=0&pageSize=4&debug=0"), env);
+  const pageBody = await page.json();
+  assert.deepEqual(pageBody.games.map((game) => game.legalActions), [[]]);
+
+  const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+  const openBody = await open.json();
+  assert.equal(Array.isArray(openBody.game.legalActions), true);
+  assert.equal(openBody.game.legalActions.length > 0, true);
+});
+
 test("live transport: scenario import creates a canonical new game", async () => {
   const scenarioImport = await handleApiRequest(
     req("/api/shell/scenarios/import", "POST", {
