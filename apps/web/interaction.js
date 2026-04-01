@@ -9,6 +9,12 @@ export function pickBestActionTypeForTarget(actionsAtTarget, currentType) {
     return null;
   }
 
+  const hasRush = actionsAtTarget.some((action) => action.type === "rush");
+  const hasMove = actionsAtTarget.some((action) => action.type === "move");
+  if (hasRush && hasMove) {
+    return "rush";
+  }
+
   if (actionsAtTarget.some((action) => action.type === currentType)) {
     return currentType;
   }
