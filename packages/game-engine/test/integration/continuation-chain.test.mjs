@@ -427,3 +427,109 @@ test("O-004 resolve handles continuation-induced forced removals before terminal
   assert.equal(resolved.sideToMove, "P2");
   assert.equal(resolved.turnIndex, 1);
 });
+
+test("active continuation defers both supply removals and commander terminal outcome until the sequence closes", () => {
+  const state = baseState();
+  state.continuation = {
+    type: "rush",
+    owner: "P1",
+    frozenOwner: "P1",
+    frozenPieceStatesById: {
+      C1: { supplied: true, commanded: true },
+      U1a: { supplied: true, commanded: true },
+    },
+    rushedPieceIds: [],
+    chainLength: 1,
+  };
+  state.pieces.push({
+    id: "U1a",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 1, col: 1 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U2c1n",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 2, col: 6 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U2c1s",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 4, col: 6 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U2c1w",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 3, col: 5 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U2c1e",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 3, col: 7 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U2u1n",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 0, col: 1 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U2u1s",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 2, col: 1 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U2u1w",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 1, col: 0 },
+    supplied: true,
+    commanded: true,
+  });
+  state.pieces.push({
+    id: "U2u1e",
+    owner: "P2",
+    kind: "unit",
+    position: { row: 1, col: 2 },
+    supplied: true,
+    commanded: true,
+  });
+
+  const duringContinuation = resolveToStability(state, { artifactMode: "minimal" });
+  assert.equal(duringContinuation.outcome.status, "ongoing");
+  assert.equal(duringContinuation.continuation?.type, "rush");
+  assert.equal(duringContinuation.pieces.some((piece) => piece.id === "U1a"), true);
+  assert.equal(Boolean(duringContinuation.pieces.find((piece) => piece.id === "C1")?.supplied), true);
+  assert.equal(Boolean(duringContinuation.pieces.find((piece) => piece.id === "U1a")?.supplied), true);
+  assert.equal(Boolean(duringContinuation.pieces.find((piece) => piece.id === "C1")?.displaySupplied), false);
+  assert.equal(Boolean(duringContinuation.pieces.find((piece) => piece.id === "U1a")?.displaySupplied), false);
+
+  const afterClosure = resolveToStability(
+    {
+      ...duringContinuation,
+      continuation: null,
+    },
+    { artifactMode: "minimal" },
+  );
+  assert.equal(afterClosure.outcome.status, "p2_win");
+  assert.equal(afterClosure.pieces.some((piece) => piece.id === "U1a"), false);
+});
