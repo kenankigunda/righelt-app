@@ -9,6 +9,8 @@ const runtimeOnlyMigrationPath = path.resolve(import.meta.dirname, "../../../db/
 const runtimeOnlyMigrationSql = readFileSync(runtimeOnlyMigrationPath, "utf8");
 const dropMilestoneActionsMigrationPath = path.resolve(import.meta.dirname, "../../../db/migrations/0006_drop_milestone_actions.sql");
 const dropMilestoneActionsMigrationSql = readFileSync(dropMilestoneActionsMigrationPath, "utf8");
+const liveGameHomeSummariesMigrationPath = path.resolve(import.meta.dirname, "../../../db/migrations/0007_live_game_home_page_summaries.sql");
+const liveGameHomeSummariesMigrationSql = readFileSync(liveGameHomeSummariesMigrationPath, "utf8");
 
 test("live participants migration allows one identity to occupy multiple roles", () => {
   assert.match(migrationSql, /PRIMARY KEY \(game_id, identity_id, role\)/);
@@ -29,4 +31,16 @@ test("runtime-only live schema migration preserves retained rows and drops dead 
 
 test("follow-up cleanup migration drops the legacy milestone actions table", () => {
   assert.match(dropMilestoneActionsMigrationSql, /DROP TABLE IF EXISTS milestone_actions;/);
+});
+
+test("home-page summary migration adds persisted section filter columns and backfills them from state_json", () => {
+  assert.match(liveGameHomeSummariesMigrationSql, /ALTER TABLE live_games ADD COLUMN player1_identity_id TEXT;/);
+  assert.match(liveGameHomeSummariesMigrationSql, /ALTER TABLE live_games ADD COLUMN player2_identity_id TEXT;/);
+  assert.match(liveGameHomeSummariesMigrationSql, /ALTER TABLE live_games ADD COLUMN has_smoke_player INTEGER NOT NULL DEFAULT 0;/);
+  assert.match(liveGameHomeSummariesMigrationSql, /player1_identity_id = json_extract\(state_json, '\$\.player1\.identityId'\)/);
+  assert.match(liveGameHomeSummariesMigrationSql, /player2_identity_id = json_extract\(state_json, '\$\.player2\.identityId'\)/);
+  assert.match(liveGameHomeSummariesMigrationSql, /FROM json_each\(COALESCE\(json_extract\(state_json, '\$\.viewers'\), '\[\]'\)\)/);
+  assert.match(liveGameHomeSummariesMigrationSql, /FROM json_each\(COALESCE\(json_extract\(state_json, '\$\.pendingJoinRequests'\), '\[\]'\)\)/);
+  assert.match(liveGameHomeSummariesMigrationSql, /CREATE INDEX IF NOT EXISTS idx_live_games_home_my/);
+  assert.match(liveGameHomeSummariesMigrationSql, /CREATE INDEX IF NOT EXISTS idx_live_games_home_smoke/);
 });

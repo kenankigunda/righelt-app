@@ -121,10 +121,16 @@ test("home uses per-section pagination and isolates smoke-player games in debug 
   assert.match(source, /data-action="create-game"/);
   assert.match(source, /home-games-section-controls home-games-section-controls-\$\{escapeHtml\(placement\)\}/);
   assert.match(source, /const shouldAlwaysRender = sectionKey === "my";/);
-  assert.match(source, /const showEmptyState = section\.totalGames === 0;/);
+  assert.match(source, /const hasCachedData = hasHomeSectionCachedData\(section\);/);
+  assert.match(source, /const showLoadingState = section\.status === "loading" && !hasCachedData;/);
+  assert.match(source, /const showErrorState = section\.status === "error" && !hasCachedData;/);
+  assert.match(source, /const showEmptyState = section\.totalGames === 0 && !showLoadingState && !showErrorState;/);
   assert.match(source, /const showHeaderPaging = showPaging && section\.visibleColumnCount > 1;/);
   assert.match(source, /const showFooterPaging = showPaging && section\.visibleColumnCount === 1;/);
   assert.match(source, /const hasHeaderAction = sectionKey === "my";/);
+  assert.match(source, /data-action="retry-home-section"/);
+  assert.match(source, /Loading games\.\.\./);
+  assert.match(source, /Could not load games\./);
   assert.match(source, /data-home-header-has-action="\$\{hasHeaderAction \? "true" : "false"\}"/);
   assert.match(source, /<div class="home-games-section-header-center">/);
   assert.match(source, /<div class="home-games-section-header-actions">/);

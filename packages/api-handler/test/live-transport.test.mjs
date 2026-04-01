@@ -165,6 +165,54 @@ test("live transport: paged home sections isolate smoke games only in debug mode
   assert.deepEqual(smokePageBody.games.map((game) => game.id), [smokeBody.game.id]);
 });
 
+test("live transport: paged home sections only hydrate the requested page of projections", async () => {
+  const createdGameIds = [];
+  for (let index = 0; index < 9; index += 1) {
+    const create = await handleApiRequest(
+      req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+      env,
+    );
+    const body = await create.json();
+    createdGameIds.push(body.game.id);
+    env.DB.overwriteGameState(body.game.id, (game) => ({
+      ...game,
+      lastMoveAt: `2026-02-26T00:00:${String(index).padStart(2, "0")}.000Z`,
+      updatedAt: `2026-02-26T00:00:${String(index).padStart(2, "0")}.000Z`,
+    }));
+  }
+
+  const beforeReads = env.DB.getStats().selectGameByIdCount;
+  const page = await handleApiRequest(req("/api/shell/games?identityId=id-owner&section=my&page=0&pageSize=4&debug=0"), env);
+  const body = await page.json();
+  const afterReads = env.DB.getStats().selectGameByIdCount;
+
+  assert.equal(page.status, 200);
+  assert.equal(body.games.length, 4);
+  assert.equal(afterReads - beforeReads, 4);
+});
+
+test("live transport: paged home sections still work for legacy rows with missing summary columns", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    env,
+  );
+  const createdBody = await create.json();
+  const gameId = createdBody.game.id;
+
+  env.DB.overwriteGameRow(gameId, (row) => ({
+    ...row,
+    player1_identity_id: null,
+    player2_identity_id: null,
+    has_smoke_player: null,
+  }));
+
+  const page = await handleApiRequest(req("/api/shell/games?identityId=id-owner&section=my&page=0&pageSize=4&debug=0"), env);
+  const body = await page.json();
+
+  assert.equal(page.status, 200);
+  assert.deepEqual(body.games.map((game) => game.id), [gameId]);
+});
+
 test("live transport: scenario import creates a canonical new game", async () => {
   const scenarioImport = await handleApiRequest(
     req("/api/shell/scenarios/import", "POST", {

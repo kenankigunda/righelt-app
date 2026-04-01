@@ -14,7 +14,7 @@ import {
   resolveLaunchParticipantCopyMode,
   withViewModel,
 } from "./shell-live-core";
-import { loadGameProjection, listVisibleGameProjections, resolveInvite, type D1DatabaseLike } from "./shell-live-db";
+import { loadGameProjection, loadVisibleGamePage, listVisibleGameProjections, resolveInvite, type D1DatabaseLike } from "./shell-live-db";
 
 type DurableObjectIdLike = { name?: string; toString?: () => string };
 type DurableObjectStubLike = { fetch: (request: Request) => Promise<Response> };
@@ -206,26 +206,22 @@ export const handleLiveGameRequest = async (
       return { handled: true, status: 400, body: { ok: false, error: "invalid_pagination" }, cacheControl: CACHE_NO_STORE };
     }
     const debug = url.searchParams.get("debug") === "1";
-    const visibleGames = games
-      .map((game) => withViewModel(game, identityId, offline))
-      .filter((game) => {
-        const isSmokeGame = gameIncludesIdentity(game, DEPLOY_SMOKE_PLAYER_ID);
-        if (section === "smoke") {
-          return debug && isSmokeGame;
-        }
-        if (debug && isSmokeGame) {
-          return false;
-        }
-        if (section === "my") {
-          return isPlayerRole(game.myRole);
-        }
-        return !isPlayerRole(game.myRole);
-      });
-    const totalGames = visibleGames.length;
+    const pageResult = await loadVisibleGamePage(env, {
+      identityId,
+      section,
+      page,
+      pageSize,
+      debug,
+    });
+    const pagedGames = await Promise.all(
+      pageResult.gameIds.map(async (gameId) => {
+        const projection = await loadGameProjection(env, gameId);
+        return projection?.kind === "ok" ? withViewModel(projection.game, identityId, offline) : null;
+      }),
+    );
+    const totalGames = pageResult.totalGames;
     const totalPages = totalGames === 0 ? 0 : Math.ceil(totalGames / pageSize);
-    const safePage = totalPages === 0 ? 0 : Math.min(page, totalPages - 1);
-    const start = safePage * pageSize;
-    const pagedGames = totalPages === 0 ? [] : visibleGames.slice(start, start + pageSize);
+    const safePage = pageResult.safePage;
     return {
       handled: true,
       status: 200,
@@ -236,7 +232,7 @@ export const handleLiveGameRequest = async (
         pageSize,
         totalGames,
         totalPages,
-        games: pagedGames,
+        games: pagedGames.filter(Boolean),
       },
       cacheControl: CACHE_NO_STORE,
     };

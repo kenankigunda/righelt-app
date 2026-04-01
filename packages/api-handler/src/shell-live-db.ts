@@ -79,7 +79,18 @@ type PersistedGameRow = {
   updated_at: string;
   state_json: string;
   event_seq: number;
+  player1_identity_id?: string | null;
+  player2_identity_id?: string | null;
+  has_smoke_player?: number | null;
 };
+
+type PersistedGameSummary = {
+  player1IdentityId: string | null;
+  player2IdentityId: string | null;
+  hasSmokePlayer: boolean;
+};
+
+type HomeSectionKey = "my" | "other" | "smoke";
 
 const getActualType = (value: unknown) => {
   if (value === null) {
@@ -571,6 +582,66 @@ const normalizePersistedGame = (
   return { kind: "ok", game, eventSeq: Number(row.event_seq || 0) };
 };
 
+const isNonEmptyIdentity = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
+
+const buildPersistedGameSummary = (game: LiveGame): PersistedGameSummary => {
+  const player1IdentityId = isNonEmptyIdentity(game.player1?.identityId) ? game.player1.identityId.trim() : null;
+  const player2IdentityId = isNonEmptyIdentity(game.player2?.identityId) ? game.player2.identityId.trim() : null;
+  const hasSmokePlayer = Boolean(
+    player1IdentityId === "smoke-player" ||
+      player2IdentityId === "smoke-player" ||
+      game.viewers.some((viewer) => viewer.identityId === "smoke-player") ||
+      game.pendingJoinRequests.some((request) => request.identityId === "smoke-player"),
+  );
+  return {
+    player1IdentityId,
+    player2IdentityId,
+    hasSmokePlayer,
+  };
+};
+
+const buildHomeSectionWhereClause = (section: HomeSectionKey, debug: boolean) => {
+  const player1IdentitySql = `COALESCE(player1_identity_id, json_extract(state_json, '$.player1.identityId'))`;
+  const player2IdentitySql = `COALESCE(player2_identity_id, json_extract(state_json, '$.player2.identityId'))`;
+  const hasSmokeSql = `COALESCE(
+    has_smoke_player,
+    CASE
+      WHEN ${player1IdentitySql} = 'smoke-player' THEN 1
+      WHEN ${player2IdentitySql} = 'smoke-player' THEN 1
+      WHEN EXISTS (
+        SELECT 1
+        FROM json_each(COALESCE(json_extract(state_json, '$.viewers'), '[]'))
+        WHERE json_extract(json_each.value, '$.identityId') = 'smoke-player'
+      ) THEN 1
+      WHEN EXISTS (
+        SELECT 1
+        FROM json_each(COALESCE(json_extract(state_json, '$.pendingJoinRequests'), '[]'))
+        WHERE json_extract(json_each.value, '$.identityId') = 'smoke-player'
+      ) THEN 1
+      ELSE 0
+    END
+  )`;
+  const isMySql = `(${player1IdentitySql} = ?1 OR ${player2IdentitySql} = ?1)`;
+  const nonSmokeSql = `${hasSmokeSql} = 0`;
+
+  if (section === "my") {
+    return {
+      whereClause: `offline_local = 0 AND ${isMySql} AND ${nonSmokeSql}`,
+      params: (identityId: string) => [identityId],
+    };
+  }
+  if (section === "smoke") {
+    return {
+      whereClause: debug ? `offline_local = 0 AND ${hasSmokeSql} = 1` : "1 = 0",
+      params: (_identityId: string) => [],
+    };
+  }
+  return {
+    whereClause: `offline_local = 0 AND ${isMySql} = 0 AND ${nonSmokeSql}`,
+    params: (identityId: string) => [identityId],
+  };
+};
+
 export const loadGameProjection = async (env: LiveGameEnv, gameId: string): Promise<PersistedGameProjection | null> => {
   const row = await env.DB.prepare(
     `SELECT game_id, created_at, updated_at, state_json, event_seq FROM ${LIVE_GAMES_TABLE} WHERE game_id = ?1`,
@@ -595,18 +666,79 @@ export const listVisibleGameProjections = async (env: LiveGameEnv): Promise<Live
   });
 };
 
+export const loadVisibleGamePage = async (
+  env: LiveGameEnv,
+  {
+    identityId,
+    section,
+    page,
+    pageSize,
+    debug,
+  }: {
+    identityId: string;
+    section: HomeSectionKey;
+    page: number;
+    pageSize: number;
+    debug: boolean;
+  },
+): Promise<{ totalGames: number; safePage: number; gameIds: string[] }> => {
+  const { whereClause, params } = buildHomeSectionWhereClause(section, debug);
+  const sectionParams = params(identityId);
+  const countRow = await env.DB.prepare(
+    `SELECT COUNT(*) AS total_games
+     FROM ${LIVE_GAMES_TABLE}
+     WHERE ${whereClause}`,
+  )
+    .bind(...sectionParams)
+    .first<{ total_games?: number | string }>();
+  const totalGames = Math.max(0, Number(countRow?.total_games ?? 0));
+  const totalPages = totalGames === 0 ? 0 : Math.ceil(totalGames / pageSize);
+  const safePage = totalPages === 0 ? 0 : Math.min(page, totalPages - 1);
+  if (totalGames === 0) {
+    return { totalGames, safePage: 0, gameIds: [] };
+  }
+  const offset = safePage * pageSize;
+  const result = await env.DB.prepare(
+    `SELECT game_id
+     FROM ${LIVE_GAMES_TABLE}
+     WHERE ${whereClause}
+     ORDER BY latest_activity_at DESC, created_at DESC
+     LIMIT ?${sectionParams.length + 1}
+     OFFSET ?${sectionParams.length + 2}`,
+  )
+    .bind(...sectionParams, pageSize, offset)
+    .all<{ game_id?: string }>();
+  const gameIds = (result.results ?? []).flatMap((row) => (typeof row.game_id === "string" && row.game_id ? [row.game_id] : []));
+  return { totalGames, safePage, gameIds };
+};
+
 export const saveProjection = async (
   env: LiveGameEnv,
   game: LiveGame,
   eventSeq: number,
 ) => {
+  const summary = buildPersistedGameSummary(game);
   await env.DB.prepare(
-    `INSERT INTO ${LIVE_GAMES_TABLE} (game_id, created_at, updated_at, latest_activity_at, offline_local, state_json, event_seq)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `INSERT INTO ${LIVE_GAMES_TABLE} (
+       game_id,
+       created_at,
+       updated_at,
+       latest_activity_at,
+       offline_local,
+       player1_identity_id,
+       player2_identity_id,
+       has_smoke_player,
+       state_json,
+       event_seq
+     )
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
      ON CONFLICT(game_id) DO UPDATE SET
        updated_at = excluded.updated_at,
        latest_activity_at = excluded.latest_activity_at,
        offline_local = excluded.offline_local,
+       player1_identity_id = excluded.player1_identity_id,
+       player2_identity_id = excluded.player2_identity_id,
+       has_smoke_player = excluded.has_smoke_player,
        state_json = excluded.state_json,
        event_seq = excluded.event_seq`,
   )
@@ -616,6 +748,9 @@ export const saveProjection = async (
       game.updatedAt,
       game.lastMoveAt || game.updatedAt || game.createdAt,
       game.offlineLocal ? 1 : 0,
+      summary.player1IdentityId,
+      summary.player2IdentityId,
+      summary.hasSmokePlayer ? 1 : 0,
       JSON.stringify(game),
       eventSeq,
     )

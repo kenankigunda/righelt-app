@@ -158,6 +158,8 @@ const createHomeSectionState = (title) => ({
   visibleColumnCount: 1,
   slideDirection: "none",
   animationToken: 0,
+  status: "idle",
+  errorMessage: "",
 });
 let homeSections = {
   my: createHomeSectionState("My games"),
@@ -551,6 +553,19 @@ const setHomeSection = (sectionKey, nextState) => {
     [sectionKey]: nextState,
   };
 };
+const getHomeSectionStatusMessage = (error) => {
+  if (!error) {
+    return "Failed to load games";
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return String(error);
+};
+const hasHomeSectionCachedData = (section) =>
+  section.totalGames > 0 ||
+  Object.keys(section.serverPageGameIdsByPage ?? {}).length > 0 ||
+  section.gameIds.length > 0;
 const getHomeSectionVisibleTotalPages = (totalGames, visiblePageSize) =>
   totalGames <= 0 ? 0 : Math.ceil(totalGames / visiblePageSize);
 const getHomeSectionSafePage = (totalGames, visiblePageSize, page) => {
@@ -1785,14 +1800,26 @@ const renderHomeGameSection = (sectionKey) => {
   const section = getHomeSection(sectionKey);
   const games = section.gameIds.map((gameId) => transport.getGameViewModel(gameId)).filter(Boolean);
   const shouldAlwaysRender = sectionKey === "my";
-  if (!Array.isArray(games) || (!shouldAlwaysRender && (games.length === 0 || section.totalGames === 0))) {
+  const hasCachedData = hasHomeSectionCachedData(section);
+  if (!Array.isArray(games) || (!shouldAlwaysRender && games.length === 0 && !hasCachedData && section.status !== "loading" && section.status !== "error")) {
     return "";
   }
-  const showEmptyState = section.totalGames === 0;
+  const showLoadingState = section.status === "loading" && !hasCachedData;
+  const showErrorState = section.status === "error" && !hasCachedData;
+  const showEmptyState = section.totalGames === 0 && !showLoadingState && !showErrorState;
   const showPaging = section.totalPages > 1;
   const showHeaderPaging = showPaging && section.visibleColumnCount > 1;
   const showFooterPaging = showPaging && section.visibleColumnCount === 1;
   const hasHeaderAction = sectionKey === "my";
+  const statusBanner =
+    section.status === "error" && hasCachedData
+      ? `<p class="small home-games-status">Could not refresh games. Showing cached results.</p>`
+      : "";
+  const emptyStateHtml = showLoadingState
+    ? `<p class="small home-games-empty">Loading games...</p>`
+    : showErrorState
+      ? `<div class="home-games-empty"><p class="small">Could not load games.</p><button class="secondary" data-action="retry-home-section" data-home-section="${escapeHtml(sectionKey)}">Retry</button></div>`
+      : `<p class="small home-games-empty">No games yet.</p>`;
   return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}">
       <div class="home-games-section-header" data-home-header-has-action="${hasHeaderAction ? "true" : "false"}">
       <div class="home-games-section-heading">
@@ -1806,8 +1833,9 @@ const renderHomeGameSection = (sectionKey) => {
         ${hasHeaderAction ? renderHomeStartButton() : ""}
       </div>
     </div>
+    ${statusBanner}
     ${showEmptyState
-      ? `<p class="small home-games-empty">No games yet.</p>`
+      ? emptyStateHtml
       : `<div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
       <div class="home-games-carousel-track" data-home-carousel-track="${escapeHtml(sectionKey)}">
         <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
@@ -2810,29 +2838,51 @@ const loadHomeSectionServerPage = async (
   } = {},
 ) => {
   const previous = getHomeSection(sectionKey);
-  const response = await transport.loadGamesPage({
-    section: sectionKey,
-    page: serverPage,
-    pageSize: HOME_SECTION_SERVER_PAGE_SIZE,
-    debug: currentRoute.debug === true,
-  });
-  const normalizedServerPage = typeof response.page === "number" ? response.page : 0;
-  const serverPageGameIds = Array.isArray(response.games) ? response.games.map((game) => game.id) : [];
-  const nextSection = {
+  setHomeSection(sectionKey, {
     ...previous,
-    totalGames: typeof response.totalGames === "number" ? response.totalGames : 0,
-    serverPage: normalizedServerPage,
-    serverTotalPages: typeof response.totalPages === "number" ? response.totalPages : 0,
-    serverPageGameIds,
-    serverPageGameIdsByPage: {
-      ...previous.serverPageGameIdsByPage,
-      [normalizedServerPage]: serverPageGameIds,
-    },
     visiblePageSize,
     visibleColumnCount,
-  };
-  setHomeSection(sectionKey, nextSection);
-  return nextSection;
+    status: "loading",
+    errorMessage: "",
+  });
+  try {
+    const response = await transport.loadGamesPage({
+      section: sectionKey,
+      page: serverPage,
+      pageSize: HOME_SECTION_SERVER_PAGE_SIZE,
+      debug: currentRoute.debug === true,
+    });
+    const normalizedServerPage = typeof response.page === "number" ? response.page : 0;
+    const serverPageGameIds = Array.isArray(response.games) ? response.games.map((game) => game.id) : [];
+    const nextSection = {
+      ...previous,
+      totalGames: typeof response.totalGames === "number" ? response.totalGames : 0,
+      serverPage: normalizedServerPage,
+      serverTotalPages: typeof response.totalPages === "number" ? response.totalPages : 0,
+      serverPageGameIds,
+      serverPageGameIdsByPage: {
+        ...previous.serverPageGameIdsByPage,
+        [normalizedServerPage]: serverPageGameIds,
+      },
+      visiblePageSize,
+      visibleColumnCount,
+      status: "ready",
+      errorMessage: "",
+    };
+    setHomeSection(sectionKey, nextSection);
+    return nextSection;
+  } catch (error) {
+    const nextSection = {
+      ...previous,
+      visiblePageSize,
+      visibleColumnCount,
+      status: "error",
+      errorMessage: getHomeSectionStatusMessage(error),
+    };
+    setHomeSection(sectionKey, nextSection);
+    window.__righeltLastError = nextSection.errorMessage;
+    return nextSection;
+  }
 };
 
 const loadHomeSectionPage = async (
@@ -2879,6 +2929,7 @@ const loadHomeSectionPage = async (
     gameIds: visibleGameIds,
     slideDirection: nextDirection,
     animationToken: nextDirection === "none" ? previous.animationToken : previous.animationToken + 1,
+    status: nextSection.status === "error" ? "error" : "ready",
   });
 };
 
@@ -2922,22 +2973,21 @@ const syncResponsiveHomeSectionPageSizes = async () => {
 
 const syncHomeSections = async () => {
   const visibleSectionKeys = getVisibleHomeSectionKeys();
+  visibleSectionKeys.forEach((sectionKey) => {
+    const section = getHomeSection(sectionKey);
+    setHomeSection(sectionKey, {
+      ...section,
+      visiblePageSize: getHomeSectionVisiblePageSize(sectionKey),
+      visibleColumnCount: getHomeSectionColumnCount(sectionKey),
+      slideDirection: "none",
+      status: "loading",
+      errorMessage: "",
+    });
+  });
+  render({ animatePanels: false, includeBoard: false });
   await Promise.all(
     visibleSectionKeys.map(async (sectionKey) => {
       const section = getHomeSection(sectionKey);
-      setHomeSection(sectionKey, {
-        ...section,
-        totalGames: 0,
-        totalPages: 0,
-        gameIds: [],
-        serverPage: 0,
-        serverTotalPages: 0,
-        serverPageGameIds: [],
-        serverPageGameIdsByPage: {},
-        visiblePageSize: getHomeSectionVisiblePageSize(sectionKey),
-        visibleColumnCount: getHomeSectionColumnCount(sectionKey),
-        slideDirection: "none",
-      });
       await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
     }),
   );
@@ -2957,6 +3007,8 @@ const syncHomeSections = async () => {
       visiblePageSize: HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
       visibleColumnCount: 1,
       slideDirection: "none",
+      status: "idle",
+      errorMessage: "",
     });
   });
 };
@@ -2966,15 +3018,29 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
   homeSectionResizeFrame = window.requestAnimationFrame(() => {
     homeSectionResizeFrame = 0;
     void (async () => {
-      if (currentRoute.name !== "home") {
-        return;
+      try {
+        if (currentRoute.name !== "home") {
+          return;
+        }
+        const didUpdate = await syncResponsiveHomeSectionPageSizes();
+        if (!didUpdate) {
+          return;
+        }
+        syncLiveChannels();
+        render({ animatePanels: false, includeBoard: false });
+      } catch (error) {
+        const message = getHomeSectionStatusMessage(error);
+        window.__righeltLastError = message;
+        for (const sectionKey of getVisibleHomeSectionKeys()) {
+          const section = getHomeSection(sectionKey);
+          setHomeSection(sectionKey, {
+            ...section,
+            status: "error",
+            errorMessage: section.errorMessage || message,
+          });
+        }
+        render({ animatePanels: false, includeBoard: false });
       }
-      const didUpdate = await syncResponsiveHomeSectionPageSizes();
-      if (!didUpdate) {
-        return;
-      }
-      syncLiveChannels();
-      render({ animatePanels: false, includeBoard: false });
     })();
   });
 };
@@ -3522,6 +3588,20 @@ appEl.addEventListener("click", async (event) => {
       window.requestAnimationFrame(() => {
         scrollHomeSectionToTop(sectionKey);
       });
+      return;
+    }
+
+    if (action === "retry-home-section") {
+      const sectionKey = actionEl.getAttribute("data-home-section");
+      if (!sectionKey) {
+        return;
+      }
+      await loadHomeSectionPage(sectionKey, {
+        page: getHomeSection(sectionKey).page,
+        direction: "none",
+      });
+      syncLiveChannels();
+      render({ animatePanels: false, includeBoard: false });
       return;
     }
 

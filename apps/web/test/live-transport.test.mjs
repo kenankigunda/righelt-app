@@ -479,6 +479,25 @@ test("live transport store loads paged home sections through section-aware query
   assert.equal(page.games[0].id, "game-000006");
 });
 
+test("live transport store surfaces local_api_unavailable when a paged home section request fails", async () => {
+  const storage = createMemoryStorage();
+  storage.setItem("righelt.identity.id.v1", "id-page");
+  const fetcher = async () =>
+    Response.json(
+      { ok: false, error: "local_api_unavailable" },
+      {
+        status: 503,
+      },
+    );
+
+  const store = createLiveTransportStore({ storage, fetcher, random: () => 0.7 });
+
+  await assert.rejects(
+    store.loadGamesPage({ section: "my", page: 0, pageSize: 4, debug: false }),
+    /local_api_unavailable/,
+  );
+});
+
 test("live transport store can promote player 1 to both seats when player 2 is open", async () => {
   const calls = [];
   const fetcher = async (url, init = {}) => {

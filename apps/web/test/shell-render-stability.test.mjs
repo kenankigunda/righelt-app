@@ -251,6 +251,20 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
 });
 
+test("home sections keep cached cards during reloads and handle fetch failures without uncaught resize rejections", () => {
+  assert.match(source, /status: "idle"/);
+  assert.match(source, /errorMessage: ""/);
+  assert.match(source, /const hasHomeSectionCachedData = \(section\) =>/);
+  assert.match(source, /status: "loading"/);
+  assert.match(source, /status: "error"/);
+  assert.match(source, /Loading games\.\.\./);
+  assert.match(source, /Could not load games\./);
+  assert.match(source, /Showing cached results\./);
+  assert.match(source, /data-action="retry-home-section"/);
+  assert.match(source, /try \{\s*if \(currentRoute\.name !== "home"\) \{\s*return;\s*\}[\s\S]*await syncResponsiveHomeSectionPageSizes\(\);[\s\S]*\} catch \(error\) \{/s);
+  assert.doesNotMatch(source, /totalGames:\s*0,\s*totalPages:\s*0,\s*gameIds:\s*\[\],\s*serverPage:\s*0,\s*serverTotalPages:\s*0,\s*serverPageGameIds:\s*\[\],\s*serverPageGameIdsByPage:\s*\{\}/);
+});
+
 test("scenario selector labels use titles without visible ids", () => {
   assert.match(source, /`\$\{scenario\.title\}\$\{scenario\.incorrect \? " \[incorrect\]" : ""\}`/);
   assert.doesNotMatch(source, /`\$\{scenario\.id\} - \$\{scenario\.title\}/);
