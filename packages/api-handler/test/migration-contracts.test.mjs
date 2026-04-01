@@ -9,6 +9,8 @@ const runtimeOnlyMigrationPath = path.resolve(import.meta.dirname, "../../../db/
 const runtimeOnlyMigrationSql = readFileSync(runtimeOnlyMigrationPath, "utf8");
 const dropMilestoneActionsMigrationPath = path.resolve(import.meta.dirname, "../../../db/migrations/0006_drop_milestone_actions.sql");
 const dropMilestoneActionsMigrationSql = readFileSync(dropMilestoneActionsMigrationPath, "utf8");
+const purgeLiveRuntimeDataMigrationPath = path.resolve(import.meta.dirname, "../../../db/migrations/0007_purge_live_runtime_data.sql");
+const purgeLiveRuntimeDataMigrationSql = readFileSync(purgeLiveRuntimeDataMigrationPath, "utf8");
 const purgeLiveDataPath = path.resolve(import.meta.dirname, "../../../db/ops/purge-live-data.sql");
 const purgeLiveDataSql = readFileSync(purgeLiveDataPath, "utf8");
 
@@ -31,6 +33,16 @@ test("runtime-only live schema migration preserves retained rows and drops dead 
 
 test("follow-up cleanup migration drops the legacy milestone actions table", () => {
   assert.match(dropMilestoneActionsMigrationSql, /DROP TABLE IF EXISTS milestone_actions;/);
+});
+
+test("live runtime purge migration clears events, invites, and games in dependency-safe order", () => {
+  const eventsIndex = purgeLiveRuntimeDataMigrationSql.indexOf("DELETE FROM live_events");
+  const invitesIndex = purgeLiveRuntimeDataMigrationSql.indexOf("DELETE FROM live_invites");
+  const gamesIndex = purgeLiveRuntimeDataMigrationSql.indexOf("DELETE FROM live_games");
+
+  assert.ok(eventsIndex >= 0);
+  assert.ok(invitesIndex > eventsIndex);
+  assert.ok(gamesIndex > invitesIndex);
 });
 
 test("live data purge SQL clears events, invites, and games in dependency-safe order", () => {
