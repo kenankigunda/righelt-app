@@ -58,7 +58,8 @@ test("root package scripts expose only db-prefixed local migration commands", ()
 test("local D1 retention cleanup helper requires explicit hours and mirrors workflow steps", () => {
   assert.match(dbCleanupLocalSource, /const retentionHours = getArg\("--hours"\);/);
   assert.match(dbCleanupLocalSource, /validateRetentionHours\(retentionHours, "flag: --hours"\)/);
-  assert.match(dbCleanupLocalSource, /Running local D1 retention cleanup for data older than \$\{retentionHours\} hours/);
+  assert.match(dbCleanupLocalSource, /describeRetentionWindow/);
+  assert.match(dbCleanupLocalSource, /Running local D1 retention cleanup for \$\{describeRetentionWindow\(retentionHours\)\}/);
   assert.match(dbCleanupLocalSource, /Target D1 database: \$\{dbName\}/);
   assert.match(dbCleanupLocalSource, /Local D1 persist path: \$\{persistTo\}/);
   assert.match(dbCleanupLocalSource, /createCleanupSqlFiles/);
@@ -71,7 +72,9 @@ test("local D1 retention cleanup helper requires explicit hours and mirrors work
 test("shared D1 retention cleanup helpers centralize validation and SQL generation", () => {
   assert.match(dbCleanupSharedSource, /export const validateRetentionHours = \(value, sourceLabel = "retention hours"\)/);
   assert.match(dbCleanupSharedSource, /Missing required \$\{sourceLabel\}/);
-  assert.match(dbCleanupSharedSource, /\$\{sourceLabel\} must be a positive integer/);
+  assert.match(dbCleanupSharedSource, /\$\{sourceLabel\} must be a non-negative integer/);
+  assert.match(dbCleanupSharedSource, /retentionHours === "0"/);
+  assert.match(dbCleanupSharedSource, /"all games"/);
   assert.match(dbCleanupSharedSource, /export const buildReportSql = \(retentionHours\) =>/);
   assert.match(dbCleanupSharedSource, /latest_activity_at < datetime\('now', '-\$\{retentionHours\} hours'\)/);
   assert.doesNotMatch(dbCleanupSharedSource, /live_participants/);
@@ -81,9 +84,11 @@ test("shared D1 retention cleanup helpers centralize validation and SQL generati
 });
 
 test("GitHub D1 retention cleanup helper reuses the shared cleanup generator", () => {
-  assert.match(dbCleanupGithubSource, /createCleanupSqlFiles, validateRetentionHours/);
+  assert.match(dbCleanupGithubSource, /createCleanupSqlFiles/);
+  assert.match(dbCleanupGithubSource, /describeRetentionWindow/);
+  assert.match(dbCleanupGithubSource, /validateRetentionHours/);
   assert.match(dbCleanupGithubSource, /validateRetentionHours\(retentionHours, "env var: DB_RETENTION_HOURS"\)/);
-  assert.match(dbCleanupGithubSource, /Running DB retention cleanup for data older than \$\{retentionHours\} hours/);
+  assert.match(dbCleanupGithubSource, /Running DB retention cleanup for \$\{describeRetentionWindow\(retentionHours\)\}/);
   assert.match(dbCleanupGithubSource, /appendFileSync\(githubEnvPath, `REPORT_SQL_PATH=/);
   assert.match(dbCleanupGithubSource, /appendFileSync\(githubEnvPath, `CLEANUP_SQL_PATH=/);
 });
