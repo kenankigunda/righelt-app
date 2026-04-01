@@ -123,14 +123,6 @@ export const createFakeD1 = () => {
           return { results };
         }
 
-        if (normalized.includes("SELECT token, shared_by_role FROM live_invites WHERE game_id = ?1")) {
-          const gameId = params[0];
-          const results = [...shellInvites.values()]
-            .filter((row) => row.game_id === gameId)
-            .map((row) => ({ token: row.token, shared_by_role: row.shared_by_role }));
-          return { results };
-        }
-
         if (normalized.includes("SELECT payload_json FROM live_events")) {
           const [gameId, lastEventSeq] = params;
           const results = (shellEvents.get(gameId) ?? [])
@@ -180,10 +172,6 @@ export const createFakeD1 = () => {
         return null;
       }
       return JSON.parse(row.state_json);
-    },
-    getGameRow(gameId) {
-      const row = shellGames.get(gameId);
-      return row ? structuredClone(row) : null;
     },
     getEvents(gameId) {
       return structuredClone(shellEvents.get(gameId) ?? []);
