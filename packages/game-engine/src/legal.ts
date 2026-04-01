@@ -4,6 +4,10 @@ import { deterministicStateHash } from "./hash";
 import { applyValidatedAction } from "./apply";
 import { resolveToStability } from "./resolve";
 
+export type LegalActionOptions = {
+  skipContinuationClosureCheck?: boolean;
+};
+
 function outOfBounds(value: { row: number; col: number } | undefined): boolean {
   if (!value) {
     return false;
@@ -345,7 +349,7 @@ function canCloseContinuationWithOwnerSupplied(
   }
 
   visiting.add(cacheKey);
-  const legalActions = listLegalActions(stable);
+  const legalActions = listLegalActions(stable, { skipContinuationClosureCheck: true });
   for (const nextAction of legalActions) {
     const next = applyValidatedAction(stable, nextAction).state;
     if (canCloseContinuationWithOwnerSupplied(next, owner, expectedPieceIds, visiting)) {
@@ -507,7 +511,7 @@ function validateContinuation(state: GameState, action: Action): ValidationResul
   return null;
 }
 
-export function listLegalActions(state: GameState): Action[] {
+export function listLegalActions(state: GameState, options: LegalActionOptions = {}): Action[] {
   if (state.outcome.status !== "ongoing") {
     return [];
   }
@@ -534,10 +538,10 @@ export function listLegalActions(state: GameState): Action[] {
               });
             }
           }
-          return actions.filter((candidate) => validateAction(state, candidate).ok);
+          return actions.filter((candidate) => validateAction(state, candidate, options).ok);
         });
       const passAction: Action = { type: "pass" };
-      return validateAction(state, passAction).ok ? [...rushActions, passAction] : rushActions;
+      return validateAction(state, passAction, options).ok ? [...rushActions, passAction] : rushActions;
     }
 
     return state.continuation.phase === "retreat" ? getPushRetreatActions(state) : getPushFollowActions(state);
@@ -556,7 +560,7 @@ export function listLegalActions(state: GameState): Action[] {
             from: { ...piece.position },
             to: { row, col },
           };
-          if (validateAction(state, action).ok) {
+          if (validateAction(state, action, options).ok) {
             actions.push(action);
           }
         }
@@ -567,7 +571,7 @@ export function listLegalActions(state: GameState): Action[] {
   return actions;
 }
 
-export function validateAction(state: GameState, action: Action): ValidationResult {
+export function validateAction(state: GameState, action: Action, options: LegalActionOptions = {}): ValidationResult {
   if (state.outcome.status !== "ongoing") {
     return {
       ok: false,
@@ -782,6 +786,7 @@ export function validateAction(state: GameState, action: Action): ValidationResu
     const protectedOwner = protectedOwnerForAction(action.type, actor.owner);
     if (
       protectedOwner &&
+      !options.skipContinuationClosureCheck &&
       !continuationActionPreservesOwnerSupply(state, action, protectedOwner)
     ) {
       return {
@@ -837,6 +842,7 @@ export function validateAction(state: GameState, action: Action): ValidationResu
     const protectedOwner = protectedOwnerForAction(action.type, actor.owner);
     if (
       protectedOwner &&
+      !options.skipContinuationClosureCheck &&
       !continuationActionPreservesOwnerSupply(state, action, protectedOwner)
     ) {
       return {
@@ -898,6 +904,7 @@ export function validateAction(state: GameState, action: Action): ValidationResu
     const protectedOwner = protectedOwnerForAction(action.type, actor.owner);
     if (
       protectedOwner &&
+      !options.skipContinuationClosureCheck &&
       !continuationActionPreservesOwnerSupply(state, action, protectedOwner)
     ) {
       return {

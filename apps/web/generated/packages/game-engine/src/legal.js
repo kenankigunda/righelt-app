@@ -248,7 +248,7 @@ function canCloseContinuationWithOwnerSupplied(state, owner, expectedPieceIds, v
         return result;
     }
     visiting.add(cacheKey);
-    const legalActions = listLegalActions(stable);
+    const legalActions = listLegalActions(stable, { skipContinuationClosureCheck: true });
     for (const nextAction of legalActions) {
         const next = applyValidatedAction(stable, nextAction).state;
         if (canCloseContinuationWithOwnerSupplied(next, owner, expectedPieceIds, visiting)) {
@@ -385,7 +385,7 @@ function validateContinuation(state, action) {
     }
     return null;
 }
-export function listLegalActions(state) {
+export function listLegalActions(state, options = {}) {
     if (state.outcome.status !== "ongoing") {
         return [];
     }
@@ -411,10 +411,10 @@ export function listLegalActions(state) {
                         });
                     }
                 }
-                return actions.filter((candidate) => validateAction(state, candidate).ok);
+                return actions.filter((candidate) => validateAction(state, candidate, options).ok);
             });
             const passAction = { type: "pass" };
-            return validateAction(state, passAction).ok ? [...rushActions, passAction] : rushActions;
+            return validateAction(state, passAction, options).ok ? [...rushActions, passAction] : rushActions;
         }
         return state.continuation.phase === "retreat" ? getPushRetreatActions(state) : getPushFollowActions(state);
     }
@@ -430,7 +430,7 @@ export function listLegalActions(state) {
                         from: { ...piece.position },
                         to: { row, col },
                     };
-                    if (validateAction(state, action).ok) {
+                    if (validateAction(state, action, options).ok) {
                         actions.push(action);
                     }
                 }
@@ -439,7 +439,7 @@ export function listLegalActions(state) {
     }
     return actions;
 }
-export function validateAction(state, action) {
+export function validateAction(state, action, options = {}) {
     if (state.outcome.status !== "ongoing") {
         return {
             ok: false,
@@ -640,6 +640,7 @@ export function validateAction(state, action) {
         }
         const protectedOwner = protectedOwnerForAction(action.type, actor.owner);
         if (protectedOwner &&
+            !options.skipContinuationClosureCheck &&
             !continuationActionPreservesOwnerSupply(state, action, protectedOwner)) {
             return {
                 ok: false,
@@ -690,6 +691,7 @@ export function validateAction(state, action) {
         }
         const protectedOwner = protectedOwnerForAction(action.type, actor.owner);
         if (protectedOwner &&
+            !options.skipContinuationClosureCheck &&
             !continuationActionPreservesOwnerSupply(state, action, protectedOwner)) {
             return {
                 ok: false,
@@ -746,6 +748,7 @@ export function validateAction(state, action) {
         }
         const protectedOwner = protectedOwnerForAction(action.type, actor.owner);
         if (protectedOwner &&
+            !options.skipContinuationClosureCheck &&
             !continuationActionPreservesOwnerSupply(state, action, protectedOwner)) {
             return {
                 ok: false,
