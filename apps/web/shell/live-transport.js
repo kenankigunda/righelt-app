@@ -10,7 +10,7 @@ import { loadIdentity, loadLiveTransportState, saveIdentity, saveLiveTransportSt
 import { defaultNotationForAction, projectOptimisticGame } from "./optimistic-live.js";
 
 const clone = (value) => structuredClone(value);
-const MAX_HISTORY = 200;
+const MAX_HISTORY = 500;
 const CONFIRM_WINDOW_MS = 15_000;
 const RETRY_BASE_MS = 500;
 const RETRY_MAX_MS = 5_000;

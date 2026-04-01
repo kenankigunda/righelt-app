@@ -1,20 +1,35 @@
-import type { ServerEvent } from "../../shared-types/src/events";
+import type {
+  EventAppendedEvent,
+  JoinRequestCreatedEvent,
+  JoinRequestResolvedEvent,
+  PresenceChangedEvent,
+  ServerEvent,
+} from "../../shared-types/src/events";
+import { applyAction } from "../../game-engine/src/apply";
+import { resolveToStability } from "../../game-engine/src/resolve";
+import type { Action, GameState } from "../../game-engine/src/types";
 import {
   asAction,
   asGameState,
   createInviteToken,
-  nextMoveId,
+  getNextSeat,
+  getSeatForSide,
+  getSideForSeat,
   now,
   type JoinRequest,
   type LiveGame,
   type Participant,
+  type RevertRequest,
   type ScenarioSavedSelection,
+  type TurnEntry,
   type Viewer,
 } from "./shell-live-core";
 
 const LIVE_GAMES_TABLE = "live_games";
 const LIVE_INVITES_TABLE = "live_invites";
 const LIVE_EVENTS_TABLE = "live_events";
+const PERSISTED_GAME_FORMAT_VERSION = 1;
+const MAX_PERSISTED_NOTIFICATIONS = 50;
 
 type D1RunResult = {
   success: boolean;
@@ -50,24 +65,7 @@ export type PersistedGameMismatch = {
   repair: string;
 };
 
-type RepairLogPayload = {
-  event: "live_game_shape_repaired";
-  gameId: string;
-  context: PersistedGameLoadContext;
-  mismatches: PersistedGameMismatch[];
-  mismatchCount?: number;
-  condensed?: boolean;
-};
-type InvalidLogPayload = {
-  event: "live_game_shape_invalid";
-  gameId: string;
-  context: PersistedGameLoadContext;
-  mismatches: PersistedGameMismatch[];
-  mismatchCount?: number;
-  condensed?: boolean;
-};
-
-export type PersistedGameLoadContext = "single" | "list";
+export type PersistedGameLoadContext = "single" | "list" | "event";
 
 export type PersistedGameProjection =
   | { kind: "ok"; game: LiveGame; eventSeq: number }
@@ -79,6 +77,111 @@ type PersistedGameRow = {
   updated_at: string;
   state_json: string;
   event_seq: number;
+};
+
+type PersistedInviteRow = {
+  token: string;
+  shared_by_role: "Viewer" | "Player 1" | "Player 2";
+};
+
+type PersistedEventRow = {
+  payload_json: string;
+};
+
+type PersistedParticipant = {
+  identityId: string;
+  connected: boolean;
+  joinedAt: string;
+  lastHeartbeatAt: string;
+  sessionCount: number;
+};
+
+type PersistedMoveEntry = {
+  moveId: string;
+  index: number;
+  turnIndex: number;
+  turnMoveIndex: number;
+  displayMoveNumber: number;
+  actorSide: "P1" | "P2";
+  at: string;
+  notation: string;
+  action: Action;
+  clientCommandId?: string | null;
+  undone?: boolean;
+  undoneAt?: string | null;
+  undoneByIdentityId?: string | null;
+};
+
+type PersistedLiveGame = {
+  formatVersion: number;
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  lastMoveAt: string | null;
+  playgroundMode: boolean;
+  offlineLocal: boolean;
+  initialState: GameState;
+  currentState: GameState;
+  player1: PersistedParticipant | null;
+  player2: PersistedParticipant | null;
+  viewers: PersistedParticipant[];
+  pendingJoinRequests: JoinRequest[];
+  pendingRevertRequest: RevertRequest | null;
+  turns: TurnEntry[];
+  moves: PersistedMoveEntry[];
+  historyIndexByIdentity: Record<string, number>;
+  pendingScenarioSelection: ScenarioSavedSelection | null;
+  notifications: string[];
+  initialSelectionAction?: Action | null;
+};
+
+type PersistedEventBase = {
+  type: ServerEvent["type"];
+  eventSeq: number;
+};
+
+type PersistedEventAppended = PersistedEventBase & {
+  type: "event_appended";
+  reason: string;
+  clientCommandId?: string | null;
+  game: PersistedLiveGame;
+};
+
+type PersistedPresenceChanged = PersistedEventBase & {
+  type: "presence_changed";
+  identityId: string;
+  role: "Player 1" | "Player 2" | "Viewer";
+  roles?: Array<"Player 1" | "Player 2" | "Viewer">;
+  connected: boolean;
+  game: PersistedLiveGame;
+};
+
+type PersistedJoinRequestCreated = PersistedEventBase & {
+  type: "join_request_created";
+  requesterIdentityId: string;
+  requestedSeat: "Player 1" | "Player 2";
+  game: PersistedLiveGame;
+};
+
+type PersistedJoinRequestResolved = PersistedEventBase & {
+  type: "join_request_resolved";
+  requesterIdentityId: string;
+  accepted: boolean;
+  seat: "Player 1" | "Player 2" | null;
+  game: PersistedLiveGame;
+};
+
+type PersistedServerEvent =
+  | PersistedEventAppended
+  | PersistedPresenceChanged
+  | PersistedJoinRequestCreated
+  | PersistedJoinRequestResolved;
+
+type ShapeLogPayload = {
+  event: "live_game_shape_invalid";
+  gameId: string;
+  context: PersistedGameLoadContext;
+  mismatches: PersistedGameMismatch[];
 };
 
 const getActualType = (value: unknown) => {
@@ -127,448 +230,536 @@ const recordMismatch = (
   });
 };
 
-const getProcessEnvFlag = (key: string) => {
-  const processLike = (globalThis as { process?: { env?: Record<string, unknown> } }).process;
-  const raw = processLike?.env?.[key];
-  return raw == null ? "" : String(raw).toLowerCase();
-};
-
-const isVerboseRepairLoggingEnabled = () => {
-  const processEnvFlag = getProcessEnvFlag("RIGHELT_VERBOSE_REPAIR_LOGS");
-  const globalFlag =
-    typeof globalThis !== "undefined" && (globalThis as { __RIGHELT_VERBOSE_REPAIR_LOGS?: unknown }).__RIGHELT_VERBOSE_REPAIR_LOGS
-      ? String((globalThis as { __RIGHELT_VERBOSE_REPAIR_LOGS?: unknown }).__RIGHELT_VERBOSE_REPAIR_LOGS).toLowerCase()
-      : "";
-  const value = processEnvFlag || globalFlag;
-  return value === "1" || value === "true" || value === "yes" || value === "on" || value === "verbose";
-};
-
-const condenseRepairMismatches = (mismatches: PersistedGameMismatch[]): PersistedGameMismatch[] => {
-  const generatedMoveIdCount = mismatches.filter(
-    (entry) => entry.field.startsWith("moves[") && entry.field.endsWith("].moveId") && entry.repair === "generated_move_id",
-  ).length;
-  const derivedDisplayMoveNumberCount = mismatches.filter(
-    (entry) =>
-      entry.field.startsWith("moves[") &&
-      entry.field.endsWith("].displayMoveNumber") &&
-      entry.repair === "derived_from_active_history",
-  ).length;
-  const shouldCondense = generatedMoveIdCount + derivedDisplayMoveNumberCount >= 8;
-  if (!shouldCondense) {
-    return mismatches;
-  }
-  const condensed = mismatches.filter(
-    (entry) =>
-      !(
-        (entry.field.startsWith("moves[") && entry.field.endsWith("].moveId") && entry.repair === "generated_move_id") ||
-        (entry.field.startsWith("moves[") &&
-          entry.field.endsWith("].displayMoveNumber") &&
-          entry.repair === "derived_from_active_history")
-      ),
-  );
-  if (generatedMoveIdCount > 0) {
-    condensed.push({
-      field: "moves[*].moveId",
-      expected: "non-empty string",
-      actualType: "summary",
-      actualSummary: `${generatedMoveIdCount} move entries missing moveId`,
-      repair: "generated_move_id",
-    });
-  }
-  if (derivedDisplayMoveNumberCount > 0) {
-    condensed.push({
-      field: "moves[*].displayMoveNumber",
-      expected: "finite number",
-      actualType: "summary",
-      actualSummary: `${derivedDisplayMoveNumberCount} move entries missing displayMoveNumber`,
-      repair: "derived_from_active_history",
-    });
-  }
-  return condensed;
-};
-
 const buildShapeLogPayload = ({
-  event,
   gameId,
   context,
   mismatches,
 }: {
-  event: "live_game_shape_repaired" | "live_game_shape_invalid";
   gameId: string;
   context: PersistedGameLoadContext;
   mismatches: PersistedGameMismatch[];
-}): RepairLogPayload | InvalidLogPayload => {
-  const verbose = isVerboseRepairLoggingEnabled();
-  const loggedMismatches = verbose ? mismatches : condenseRepairMismatches(mismatches);
-  const payload: RepairLogPayload | InvalidLogPayload =
-    event === "live_game_shape_repaired"
-      ? {
-          event,
-          gameId,
-          context,
-          mismatches: loggedMismatches,
-        }
-      : {
-          event,
-          gameId,
-          context,
-          mismatches: loggedMismatches,
-        };
-  if (!verbose && loggedMismatches.length !== mismatches.length) {
-    payload.condensed = true;
-    payload.mismatchCount = mismatches.length;
-  }
-  return payload;
-};
+}): ShapeLogPayload => ({
+  event: "live_game_shape_invalid",
+  gameId,
+  context,
+  mismatches,
+});
 
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-const normalizeScenarioSavedSelection = (
-  value: unknown,
-  mismatches: PersistedGameMismatch[],
-): ScenarioSavedSelection | null => {
-  if (value == null) {
-    return null;
-  }
-  if (!isRecord(value)) {
-    recordMismatch(mismatches, "pendingScenarioSelection", "scenario saved selection", value, "defaulted_to_null");
-    return null;
-  }
-  const source = isRecord(value.source) && typeof value.source.row === "number" && typeof value.source.col === "number"
-    ? { row: value.source.row, col: value.source.col }
+const clone = <T>(value: T): T => structuredClone(value);
+
+const toMinimalState = (state: GameState): GameState => resolveToStability(clone(state), { artifactMode: "minimal" });
+const toHydratedState = (state: GameState): GameState => resolveToStability(clone(state), { artifactMode: "full" });
+
+const toPersistedParticipant = (participant: Participant | null): PersistedParticipant | null =>
+  participant
+    ? {
+        identityId: participant.identityId,
+        connected: participant.connected,
+        joinedAt: participant.joinedAt,
+        lastHeartbeatAt: participant.lastHeartbeatAt,
+        sessionCount: participant.sessionCount,
+      }
     : null;
-  const target =
-    value.target == null
-      ? null
-      : isRecord(value.target) && typeof value.target.row === "number" && typeof value.target.col === "number"
-        ? { row: value.target.row, col: value.target.col }
-        : null;
-  if (
-    !source ||
-    (value.target != null && !target) ||
-    (value.actorSide !== "P1" && value.actorSide !== "P2") ||
-    typeof value.turnIndex !== "number"
-  ) {
-    recordMismatch(mismatches, "pendingScenarioSelection", "scenario saved selection", value, "defaulted_to_null");
-    return null;
-  }
-  return {
-    source,
-    target,
-    actorSide: value.actorSide,
-    turnIndex: value.turnIndex,
-  };
-};
 
-const normalizeParticipant = (
-  value: unknown,
-  field: string,
-  mismatches: PersistedGameMismatch[],
-): Participant | null => {
+const fromPersistedParticipant = (value: unknown, field: string, mismatches: PersistedGameMismatch[]): Participant | null => {
   if (value == null) {
     return null;
   }
-  if (!isRecord(value) || typeof value.identityId !== "string" || value.identityId.trim().length === 0) {
-    recordMismatch(mismatches, field, "participant", value, "defaulted_to_null");
+  if (
+    !isRecord(value) ||
+    typeof value.identityId !== "string" ||
+    typeof value.connected !== "boolean" ||
+    typeof value.joinedAt !== "string" ||
+    typeof value.lastHeartbeatAt !== "string" ||
+    typeof value.sessionCount !== "number"
+  ) {
+    recordMismatch(mismatches, field, "persisted participant", value, "rejected_invalid_projection");
     return null;
   }
-  const identityId = value.identityId.trim();
-  const joinedAt = typeof value.joinedAt === "string" && value.joinedAt ? value.joinedAt : now();
-  if (!(typeof value.joinedAt === "string" && value.joinedAt)) {
-    recordMismatch(mismatches, `${field}.joinedAt`, "non-empty string", value.joinedAt, "defaulted_to_now");
-  }
-  let lastHeartbeatAt = typeof value.lastHeartbeatAt === "string" && value.lastHeartbeatAt ? value.lastHeartbeatAt : joinedAt;
-  if (typeof value.lastHeartbeatAt !== "string" || !value.lastHeartbeatAt) {
-    if (typeof value.lastSeenAt === "string" && value.lastSeenAt) {
-      lastHeartbeatAt = value.lastSeenAt;
-      recordMismatch(mismatches, `${field}.lastHeartbeatAt`, "non-empty string", value.lastHeartbeatAt, "copied_from_lastSeenAt");
-    } else {
-      recordMismatch(mismatches, `${field}.lastHeartbeatAt`, "non-empty string", value.lastHeartbeatAt, "defaulted_to_joinedAt");
-    }
-  }
-  const sessionCount = typeof value.sessionCount === "number" && Number.isFinite(value.sessionCount) ? value.sessionCount : 0;
-  if (!(typeof value.sessionCount === "number" && Number.isFinite(value.sessionCount))) {
-    recordMismatch(mismatches, `${field}.sessionCount`, "finite number", value.sessionCount, "defaulted_to_zero");
-  }
-  const connected = typeof value.connected === "boolean" ? value.connected : sessionCount > 0;
-  if (typeof value.connected !== "boolean") {
-    recordMismatch(mismatches, `${field}.connected`, "boolean", value.connected, "derived_from_sessionCount");
-  }
   return {
-    identityId,
-    joinedAt,
-    lastHeartbeatAt,
-    sessionCount,
-    connected,
+    identityId: value.identityId,
+    connected: value.connected,
+    joinedAt: value.joinedAt,
+    lastHeartbeatAt: value.lastHeartbeatAt,
+    sessionCount: value.sessionCount,
   };
 };
 
-const normalizeViewerList = (value: unknown, mismatches: PersistedGameMismatch[]): Viewer[] => {
+const fromPersistedParticipants = (value: unknown, field: string, mismatches: PersistedGameMismatch[]): Viewer[] => {
   if (!Array.isArray(value)) {
-    recordMismatch(mismatches, "viewers", "viewer[]", value, "defaulted_to_empty_array");
+    recordMismatch(mismatches, field, "participant[]", value, "rejected_invalid_projection");
     return [];
   }
   return value.flatMap((entry, index) => {
-    const participant = normalizeParticipant(entry, `viewers[${index}]`, mismatches);
-    if (!participant) {
-      recordMismatch(mismatches, `viewers[${index}]`, "viewer", entry, "dropped_invalid_record");
-      return [];
-    }
-    return [participant];
+    const participant = fromPersistedParticipant(entry, `${field}[${index}]`, mismatches);
+    return participant ? [participant] : [];
   });
 };
 
-const normalizeJoinRequests = (value: unknown, mismatches: PersistedGameMismatch[]): JoinRequest[] => {
+const fromPersistedJoinRequests = (value: unknown, mismatches: PersistedGameMismatch[]): JoinRequest[] => {
   if (!Array.isArray(value)) {
-    recordMismatch(mismatches, "pendingJoinRequests", "join_request[]", value, "defaulted_to_empty_array");
+    recordMismatch(mismatches, "pendingJoinRequests", "join_request[]", value, "rejected_invalid_projection");
     return [];
   }
   return value.flatMap((entry, index) => {
-    if (!isRecord(entry) || typeof entry.identityId !== "string" || (entry.requestedSeat !== "Player 1" && entry.requestedSeat !== "Player 2")) {
-      recordMismatch(mismatches, `pendingJoinRequests[${index}]`, "join_request", entry, "dropped_invalid_record");
+    if (
+      !isRecord(entry) ||
+      typeof entry.identityId !== "string" ||
+      (entry.requestedSeat !== "Player 1" && entry.requestedSeat !== "Player 2") ||
+      typeof entry.requestedAt !== "string" ||
+      (entry.source !== "viewer_invite" && entry.source !== "home_list")
+    ) {
+      recordMismatch(mismatches, `pendingJoinRequests[${index}]`, "join_request", entry, "rejected_invalid_projection");
       return [];
     }
-    const requestedAt = typeof entry.requestedAt === "string" && entry.requestedAt ? entry.requestedAt : now();
-    if (!(typeof entry.requestedAt === "string" && entry.requestedAt)) {
-      recordMismatch(mismatches, `pendingJoinRequests[${index}].requestedAt`, "non-empty string", entry.requestedAt, "defaulted_to_now");
-    }
-    const source = entry.source === "viewer_invite" || entry.source === "home_list" ? entry.source : "home_list";
-    if (entry.source !== "viewer_invite" && entry.source !== "home_list") {
-      recordMismatch(mismatches, `pendingJoinRequests[${index}].source`, "\"viewer_invite\" | \"home_list\"", entry.source, "defaulted_to_home_list");
-    }
-    const status = entry.status === "pending" || entry.status === "accepted" || entry.status === "rejected" ? entry.status : undefined;
-    if (typeof entry.status !== "undefined" && typeof status === "undefined") {
-      recordMismatch(mismatches, `pendingJoinRequests[${index}].status`, "\"pending\" | \"accepted\" | \"rejected\"", entry.status, "dropped_invalid_value");
-    }
     return [{
-      identityId: entry.identityId.trim(),
+      identityId: entry.identityId,
       requestedSeat: entry.requestedSeat,
-      requestedAt,
-      source,
-      status,
+      requestedAt: entry.requestedAt,
+      source: entry.source,
+      status:
+        entry.status === "pending" || entry.status === "accepted" || entry.status === "rejected"
+          ? entry.status
+          : undefined,
       resolvedAt: typeof entry.resolvedAt === "string" || entry.resolvedAt === null ? entry.resolvedAt : null,
       resolvedBy: typeof entry.resolvedBy === "string" || entry.resolvedBy === null ? entry.resolvedBy : null,
     }];
   });
 };
 
-const normalizeInviteTokens = (value: unknown, mismatches: PersistedGameMismatch[]) => {
-  const fallback = {
-    viewer: createInviteToken(),
-    player1: createInviteToken(),
-    player2: createInviteToken(),
-  };
-  if (!isRecord(value)) {
-    recordMismatch(mismatches, "inviteTokens", "{ viewer, player1, player2 }", value, "generated_missing_tokens");
-    return fallback;
-  }
-  return {
-    viewer: typeof value.viewer === "string" && value.viewer ? value.viewer : (recordMismatch(
-      mismatches,
-      "inviteTokens.viewer",
-      "non-empty string",
-      value.viewer,
-      "generated_token",
-    ), fallback.viewer),
-    player1: typeof value.player1 === "string" && value.player1 ? value.player1 : (recordMismatch(
-      mismatches,
-      "inviteTokens.player1",
-      "non-empty string",
-      value.player1,
-      "generated_token",
-    ), fallback.player1),
-    player2: typeof value.player2 === "string" && value.player2 ? value.player2 : (recordMismatch(
-      mismatches,
-      "inviteTokens.player2",
-      "non-empty string",
-      value.player2,
-      "generated_token",
-    ), fallback.player2),
-  };
-};
-
-const normalizeHistoryIndexByIdentity = (value: unknown, mismatches: PersistedGameMismatch[]) => {
-  if (!isRecord(value)) {
-    recordMismatch(mismatches, "historyIndexByIdentity", "record<string, number>", value, "defaulted_to_empty_object");
-    return {} as Record<string, number>;
-  }
-  return Object.fromEntries(
-    Object.entries(value).flatMap(([identityId, indexValue]) => {
-      if (typeof indexValue === "number" && Number.isInteger(indexValue) && indexValue >= 0) {
-        return [[identityId, indexValue]];
-      }
-      recordMismatch(
-        mismatches,
-        `historyIndexByIdentity.${identityId}`,
-        "non-negative integer",
-        indexValue,
-        "dropped_invalid_entry",
-      );
-      return [];
-    }),
-  );
-};
-
-const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): LiveGame["moves"] => {
+const fromPersistedTurns = (value: unknown, mismatches: PersistedGameMismatch[]): TurnEntry[] => {
   if (!Array.isArray(value)) {
-    recordMismatch(mismatches, "moves", "move[]", value, "defaulted_to_empty_array");
+    recordMismatch(mismatches, "turns", "turn[]", value, "rejected_invalid_projection");
     return [];
   }
-  let activeMoveCounter = 0;
-  return value
-    .filter((entry) => Boolean(entry) && typeof entry === "object")
-    .map((entry, index) => {
-      const move = entry as Record<string, unknown>;
-      const undone = move.undone === true;
-      if (!undone) {
-        activeMoveCounter += 1;
-      }
-      const next = {
-        ...(entry as LiveGame["moves"][number]),
-        moveId: typeof move.moveId === "string" && move.moveId.length > 0 ? move.moveId : nextMoveId(),
-        index: typeof move.index === "number" && Number.isFinite(move.index) ? move.index : index,
-        displayMoveNumber:
-          typeof move.displayMoveNumber === "number" && Number.isFinite(move.displayMoveNumber)
-            ? move.displayMoveNumber
-            : activeMoveCounter,
-      } satisfies LiveGame["moves"][number];
-      if (typeof move.moveId !== "string" || move.moveId.length === 0) {
-        recordMismatch(mismatches, `moves[${index}].moveId`, "non-empty string", move.moveId, "generated_move_id");
-      }
-      if (typeof move.displayMoveNumber !== "number" || !Number.isFinite(move.displayMoveNumber)) {
-        recordMismatch(
-          mismatches,
-          `moves[${index}].displayMoveNumber`,
-          "finite number",
-          move.displayMoveNumber,
-          "derived_from_active_history",
-        );
-      }
-      return next;
-    });
+  return value.flatMap((entry, index) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.index !== "number" ||
+      typeof entry.startedAt !== "string" ||
+      (typeof entry.endedAt !== "string" && entry.endedAt !== null) ||
+      (entry.playerSeat !== "Player 1" && entry.playerSeat !== "Player 2") ||
+      (entry.status !== "active" && entry.status !== "complete") ||
+      !Array.isArray(entry.moveIndexes) ||
+      (typeof entry.lastMoveAt !== "string" && entry.lastMoveAt !== null)
+    ) {
+      recordMismatch(mismatches, `turns[${index}]`, "turn", entry, "rejected_invalid_projection");
+      return [];
+    }
+    return [{
+      index: entry.index,
+      startedAt: entry.startedAt,
+      endedAt: entry.endedAt,
+      playerSeat: entry.playerSeat,
+      status: entry.status,
+      moveIndexes: entry.moveIndexes.filter((moveIndex) => typeof moveIndex === "number"),
+      lastMoveAt: entry.lastMoveAt,
+    }];
+  });
 };
 
-const normalizePersistedGame = (
-  row: PersistedGameRow,
-  context: PersistedGameLoadContext,
-): PersistedGameProjection => {
+const toPersistedMove = (move: LiveGame["moves"][number]): PersistedMoveEntry => ({
+  moveId: move.moveId,
+  index: move.index,
+  turnIndex: move.turnIndex,
+  turnMoveIndex: move.turnMoveIndex,
+  displayMoveNumber: move.displayMoveNumber,
+  actorSide: move.actorSide,
+  at: move.at,
+  notation: move.notation,
+  action: clone(move.action),
+  clientCommandId: move.clientCommandId ?? null,
+  undone: move.undone === true,
+  undoneAt: move.undoneAt ?? null,
+  undoneByIdentityId: move.undoneByIdentityId ?? null,
+});
+
+const fromPersistedMoveEntries = (value: unknown, mismatches: PersistedGameMismatch[]): PersistedMoveEntry[] => {
+  if (!Array.isArray(value)) {
+    recordMismatch(mismatches, "moves", "persisted_move[]", value, "rejected_invalid_projection");
+    return [];
+  }
+  return value.flatMap((entry, index) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.moveId !== "string" ||
+      typeof entry.index !== "number" ||
+      typeof entry.turnIndex !== "number" ||
+      typeof entry.turnMoveIndex !== "number" ||
+      typeof entry.displayMoveNumber !== "number" ||
+      (entry.actorSide !== "P1" && entry.actorSide !== "P2") ||
+      typeof entry.at !== "string" ||
+      typeof entry.notation !== "string"
+    ) {
+      recordMismatch(mismatches, `moves[${index}]`, "persisted move", entry, "rejected_invalid_projection");
+      return [];
+    }
+    const action = asAction(entry.action);
+    if (!action) {
+      recordMismatch(mismatches, `moves[${index}].action`, "Action", entry.action, "rejected_invalid_projection");
+      return [];
+    }
+    return [{
+      moveId: entry.moveId,
+      index: entry.index,
+      turnIndex: entry.turnIndex,
+      turnMoveIndex: entry.turnMoveIndex,
+      displayMoveNumber: entry.displayMoveNumber,
+      actorSide: entry.actorSide,
+      at: entry.at,
+      notation: entry.notation,
+      action,
+      clientCommandId: typeof entry.clientCommandId === "string" || entry.clientCommandId === null ? entry.clientCommandId : null,
+      undone: entry.undone === true,
+      undoneAt: typeof entry.undoneAt === "string" || entry.undoneAt === null ? entry.undoneAt : null,
+      undoneByIdentityId:
+        typeof entry.undoneByIdentityId === "string" || entry.undoneByIdentityId === null ? entry.undoneByIdentityId : null,
+    }];
+  });
+};
+
+const getControlSeatForTurn = (state: GameState, turnOwnerSeat: "Player 1" | "Player 2") => {
+  const continuation = state?.continuation;
+  if (!continuation) {
+    return turnOwnerSeat;
+  }
+  if (continuation.type === "push" && continuation.phase === "retreat") {
+    return getNextSeat(turnOwnerSeat);
+  }
+  return turnOwnerSeat;
+};
+
+const rehydrateMoveHistory = (persistedMoves: PersistedMoveEntry[], initialState: GameState): LiveGame["moves"] => {
+  let replayState = toHydratedState(initialState);
+  const turnOwnerSeatByIndex = new Map<number, "Player 1" | "Player 2">();
+
+  return persistedMoves.map((move) => {
+    const selectionSnapshot = clone(replayState);
+    const turnOwnerSeat = turnOwnerSeatByIndex.get(move.turnIndex) ?? getSeatForSide(move.actorSide);
+    turnOwnerSeatByIndex.set(move.turnIndex, turnOwnerSeat);
+
+    const applied = resolveToStability(applyAction(clone(selectionSnapshot), clone(move.action)).state, { artifactMode: "full" });
+    applied.sideToMove = getSideForSeat(getControlSeatForTurn(applied, turnOwnerSeat));
+    applied.turnIndex = move.turnIndex;
+
+    const snapshot = clone(applied);
+    if (snapshot.continuation == null) {
+      const nextSeat = getNextSeat(turnOwnerSeat);
+      snapshot.sideToMove = getSideForSeat(nextSeat);
+      snapshot.turnIndex = move.turnIndex + 1;
+    }
+    replayState = clone(snapshot);
+
+    return {
+      ...move,
+      action: clone(move.action),
+      clientCommandId: move.clientCommandId ?? null,
+      undone: move.undone === true,
+      undoneAt: move.undoneAt ?? null,
+      undoneByIdentityId: move.undoneByIdentityId ?? null,
+      selectionSnapshot,
+      snapshot,
+    };
+  });
+};
+
+const serializeGame = (game: LiveGame): PersistedLiveGame => ({
+  formatVersion: PERSISTED_GAME_FORMAT_VERSION,
+  id: game.id,
+  createdAt: game.createdAt,
+  updatedAt: game.updatedAt,
+  lastMoveAt: game.lastMoveAt ?? null,
+  playgroundMode: game.playgroundMode === true,
+  offlineLocal: game.offlineLocal === true,
+  initialState: toMinimalState(game.moves[0]?.selectionSnapshot ?? game.board.state),
+  currentState: toMinimalState(game.board.state),
+  player1: toPersistedParticipant(game.player1),
+  player2: toPersistedParticipant(game.player2),
+  viewers: game.viewers.map((viewer) => toPersistedParticipant(viewer)).filter(Boolean) as PersistedParticipant[],
+  pendingJoinRequests: clone(game.pendingJoinRequests),
+  pendingRevertRequest: clone(game.pendingRevertRequest),
+  turns: clone(game.turns),
+  moves: game.moves.map((move) => toPersistedMove(move)),
+  historyIndexByIdentity: clone(game.historyIndexByIdentity ?? {}),
+  pendingScenarioSelection: clone(game.pendingScenarioSelection),
+  notifications: (Array.isArray(game.notifications) ? game.notifications : [])
+    .filter((entry): entry is string => typeof entry === "string")
+    .slice(0, MAX_PERSISTED_NOTIFICATIONS),
+  initialSelectionAction: game.initialSelectionAction ? clone(game.initialSelectionAction) : null,
+});
+
+const deserializeGame = ({
+  serialized,
+  row,
+  context,
+  inviteTokens,
+}: {
+  serialized: string;
+  row: Pick<PersistedGameRow, "game_id" | "created_at" | "updated_at" | "event_seq">;
+  context: PersistedGameLoadContext;
+  inviteTokens: { viewer: string; player1: string; player2: string };
+}): PersistedGameProjection => {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(row.state_json);
+    parsed = JSON.parse(serialized);
   } catch (error) {
     const mismatches: PersistedGameMismatch[] = [];
     recordMismatch(
       mismatches,
       "state_json",
-      "valid JSON object",
+      "valid compact JSON object",
       error instanceof Error ? error.message : error,
       "rejected_invalid_projection",
     );
-    console.error(
-      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches })),
-    );
+    console.error(JSON.stringify(buildShapeLogPayload({ gameId: row.game_id, context, mismatches })));
+    return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
+  }
+
+  if (!isRecord(parsed)) {
+    const mismatches: PersistedGameMismatch[] = [];
+    recordMismatch(mismatches, "game", "compact persisted game object", parsed, "rejected_invalid_projection");
+    console.error(JSON.stringify(buildShapeLogPayload({ gameId: row.game_id, context, mismatches })));
     return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
   }
 
   const mismatches: PersistedGameMismatch[] = [];
-  if (!isRecord(parsed)) {
-    recordMismatch(mismatches, "game", "object", parsed, "rejected_invalid_projection");
-    console.error(
-      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches })),
-    );
-    return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
-  }
-
-  const board = isRecord(parsed.board) ? parsed.board : null;
-  if (!board) {
-    recordMismatch(mismatches, "board", "{ state: GameState }", parsed.board, "rejected_invalid_projection");
-  }
-  const boardState = asGameState(board?.state);
-  if (!boardState) {
-    recordMismatch(mismatches, "board.state", "GameState", board?.state, "rejected_invalid_projection");
-  }
-  if (!board || !boardState) {
-    console.error(
-      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches })),
-    );
-    return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
-  }
-
-  const moves = normalizeMoves(parsed.moves, mismatches);
-  const turns = Array.isArray(parsed.turns) ? (parsed.turns as LiveGame["turns"]) : (recordMismatch(
-    mismatches,
-    "turns",
-    "turn[]",
-    parsed.turns,
-    "defaulted_to_empty_array",
-  ), []);
-  const notifications = Array.isArray(parsed.notifications) ? parsed.notifications.filter((entry) => typeof entry === "string") : (recordMismatch(
-    mismatches,
-    "notifications",
-    "string[]",
-    parsed.notifications,
-    "defaulted_to_empty_array",
-  ), []);
-  const initialSelectionAction = typeof parsed.initialSelectionAction === "undefined" || parsed.initialSelectionAction === null
-    ? null
-    : asAction(parsed.initialSelectionAction) ?? (recordMismatch(
+  if (parsed.formatVersion !== PERSISTED_GAME_FORMAT_VERSION) {
+    recordMismatch(
       mismatches,
-      "initialSelectionAction",
-      "Action",
-      parsed.initialSelectionAction,
-      "defaulted_to_null",
-    ), null);
-  if (Array.isArray(parsed.notifications) && notifications.length !== parsed.notifications.length) {
-    recordMismatch(mismatches, "notifications", "string[]", parsed.notifications, "dropped_non_string_entries");
+      "formatVersion",
+      String(PERSISTED_GAME_FORMAT_VERSION),
+      parsed.formatVersion,
+      "rejected_invalid_projection",
+    );
+    console.error(JSON.stringify(buildShapeLogPayload({ gameId: row.game_id, context, mismatches })));
+    return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
   }
+
+  const initialState = asGameState(parsed.initialState);
+  const currentState = asGameState(parsed.currentState);
+  if (!initialState || !currentState) {
+    if (!initialState) {
+      recordMismatch(mismatches, "initialState", "GameState", parsed.initialState, "rejected_invalid_projection");
+    }
+    if (!currentState) {
+      recordMismatch(mismatches, "currentState", "GameState", parsed.currentState, "rejected_invalid_projection");
+    }
+    console.error(JSON.stringify(buildShapeLogPayload({ gameId: row.game_id, context, mismatches })));
+    return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
+  }
+
+  const persistedMoves = fromPersistedMoveEntries(parsed.moves, mismatches);
+  if (mismatches.length > 0) {
+    console.error(JSON.stringify(buildShapeLogPayload({ gameId: row.game_id, context, mismatches })));
+    return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
+  }
+
+  const hydratedInitialState = toHydratedState(initialState);
+  const hydratedCurrentState = toHydratedState(currentState);
+  const moves = rehydrateMoveHistory(persistedMoves, hydratedInitialState);
 
   const game: LiveGame = {
     id: typeof parsed.id === "string" && parsed.id ? parsed.id : row.game_id,
-    createdAt: typeof parsed.createdAt === "string" && parsed.createdAt ? parsed.createdAt : row.created_at || row.updated_at || now(),
+    createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : row.created_at || now(),
+    updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : row.updated_at || now(),
     lastMoveAt: typeof parsed.lastMoveAt === "string" ? parsed.lastMoveAt : null,
-    updatedAt: typeof parsed.updatedAt === "string" && parsed.updatedAt ? parsed.updatedAt : row.updated_at || row.created_at || now(),
     playgroundMode: parsed.playgroundMode === true,
     offlineLocal: parsed.offlineLocal === true,
-    board: { state: boardState },
-    player1: normalizeParticipant(parsed.player1, "player1", mismatches),
-    player2: normalizeParticipant(parsed.player2, "player2", mismatches),
-    viewers: normalizeViewerList(parsed.viewers, mismatches),
-    pendingJoinRequests: normalizeJoinRequests(parsed.pendingJoinRequests, mismatches),
-    pendingRevertRequest:
-      parsed.pendingRevertRequest && typeof parsed.pendingRevertRequest === "object"
-        ? (parsed.pendingRevertRequest as LiveGame["pendingRevertRequest"])
-        : null,
-    turns,
+    board: { state: hydratedCurrentState },
+    player1: fromPersistedParticipant(parsed.player1, "player1", mismatches),
+    player2: fromPersistedParticipant(parsed.player2, "player2", mismatches),
+    viewers: fromPersistedParticipants(parsed.viewers, "viewers", mismatches),
+    pendingJoinRequests: fromPersistedJoinRequests(parsed.pendingJoinRequests, mismatches),
+    pendingRevertRequest: (parsed.pendingRevertRequest as RevertRequest | null) ?? null,
+    turns: fromPersistedTurns(parsed.turns, mismatches),
     moves,
-    historyIndexByIdentity: normalizeHistoryIndexByIdentity(parsed.historyIndexByIdentity, mismatches),
-    pendingScenarioSelection: normalizeScenarioSavedSelection(parsed.pendingScenarioSelection, mismatches),
-    notifications,
-    initialSelectionAction,
-    inviteTokens: normalizeInviteTokens(parsed.inviteTokens, mismatches),
+    historyIndexByIdentity: isRecord(parsed.historyIndexByIdentity)
+      ? Object.entries(parsed.historyIndexByIdentity).reduce<Record<string, number>>((acc, [identityId, value]) => {
+          if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+            acc[identityId] = value;
+          }
+          return acc;
+        }, {})
+      : {},
+    pendingScenarioSelection:
+      parsed.pendingScenarioSelection == null || isRecord(parsed.pendingScenarioSelection)
+        ? (parsed.pendingScenarioSelection as ScenarioSavedSelection | null)
+        : null,
+    notifications: Array.isArray(parsed.notifications)
+      ? parsed.notifications.filter((entry): entry is string => typeof entry === "string")
+      : [],
+    initialSelectionAction: parsed.initialSelectionAction == null ? null : asAction(parsed.initialSelectionAction),
+    inviteTokens,
   };
 
-  if (typeof parsed.id !== "string" || !parsed.id) {
-    recordMismatch(mismatches, "id", "non-empty string", parsed.id, "defaulted_from_row_game_id");
-  }
-  if (typeof parsed.createdAt !== "string" || !parsed.createdAt) {
-    recordMismatch(mismatches, "createdAt", "non-empty string", parsed.createdAt, "defaulted_from_row_timestamp");
-  }
-  if (typeof parsed.updatedAt !== "string" || !parsed.updatedAt) {
-    recordMismatch(mismatches, "updatedAt", "non-empty string", parsed.updatedAt, "defaulted_from_row_timestamp");
-  }
-  if (typeof parsed.playgroundMode !== "boolean") {
-    recordMismatch(mismatches, "playgroundMode", "boolean", parsed.playgroundMode, "defaulted_to_false");
-  }
-  if (typeof parsed.offlineLocal !== "boolean") {
-    recordMismatch(mismatches, "offlineLocal", "boolean", parsed.offlineLocal, "defaulted_to_false");
+  if (mismatches.length > 0) {
+    console.error(JSON.stringify(buildShapeLogPayload({ gameId: row.game_id, context, mismatches })));
+    return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
   }
 
-  if (mismatches.length > 0) {
-    console.warn(
-      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_repaired", gameId: game.id, context, mismatches })),
-    );
-  }
   return { kind: "ok", game, eventSeq: Number(row.event_seq || 0) };
+};
+
+const serializeEvent = (event: ServerEvent & { eventSeq: number }): PersistedServerEvent | null => {
+  if (!("game" in event)) {
+    return null;
+  }
+  if (event.type === "event_appended") {
+    return {
+      type: event.type,
+      eventSeq: event.eventSeq,
+      reason: event.reason,
+      clientCommandId: event.clientCommandId ?? null,
+      game: serializeGame(event.game as LiveGame),
+    } satisfies PersistedEventAppended;
+  }
+  if (event.type === "presence_changed") {
+    return {
+      type: event.type,
+      eventSeq: event.eventSeq,
+      identityId: event.identityId,
+      role: event.role,
+      roles: event.roles,
+      connected: event.connected,
+      game: serializeGame(event.game as LiveGame),
+    } satisfies PersistedPresenceChanged;
+  }
+  if (event.type === "join_request_created") {
+    return {
+      type: event.type,
+      eventSeq: event.eventSeq,
+      requesterIdentityId: event.requesterIdentityId,
+      requestedSeat: event.requestedSeat,
+      game: serializeGame(event.game as LiveGame),
+    } satisfies PersistedJoinRequestCreated;
+  }
+  if (event.type === "join_request_resolved") {
+    return {
+      type: event.type,
+      eventSeq: event.eventSeq,
+      requesterIdentityId: event.requesterIdentityId,
+      accepted: event.accepted,
+      seat: event.seat,
+      game: serializeGame(event.game as LiveGame),
+    } satisfies PersistedJoinRequestResolved;
+  }
+  return null;
+};
+
+const deserializeEvent = async (
+  env: LiveGameEnv,
+  gameId: string,
+  payloadJson: string,
+): Promise<ServerEvent | null> => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payloadJson);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed) || typeof parsed.type !== "string" || typeof parsed.eventSeq !== "number" || !isRecord(parsed.game)) {
+    return null;
+  }
+  const inviteTokens = await loadInviteTokens(env, gameId);
+  const projection = deserializeGame({
+    serialized: JSON.stringify(parsed.game),
+    row: { game_id: gameId, created_at: "", updated_at: "", event_seq: parsed.eventSeq },
+    context: "event",
+    inviteTokens,
+  });
+  if (projection.kind !== "ok") {
+    return null;
+  }
+
+  if (parsed.type === "event_appended" && typeof parsed.reason === "string") {
+    return {
+      type: "event_appended",
+      eventSeq: parsed.eventSeq,
+      reason: parsed.reason,
+      clientCommandId: typeof parsed.clientCommandId === "string" || parsed.clientCommandId === null ? parsed.clientCommandId : null,
+      game: projection.game,
+    } satisfies EventAppendedEvent;
+  }
+  if (
+    parsed.type === "presence_changed" &&
+    typeof parsed.identityId === "string" &&
+    (parsed.role === "Player 1" || parsed.role === "Player 2" || parsed.role === "Viewer") &&
+    typeof parsed.connected === "boolean"
+  ) {
+    return {
+      type: "presence_changed",
+      eventSeq: parsed.eventSeq,
+      identityId: parsed.identityId,
+      role: parsed.role,
+      roles: Array.isArray(parsed.roles)
+        ? parsed.roles.filter((role): role is "Player 1" | "Player 2" | "Viewer" => role === "Player 1" || role === "Player 2" || role === "Viewer")
+        : undefined,
+      connected: parsed.connected,
+      game: projection.game,
+    } satisfies PresenceChangedEvent;
+  }
+  if (
+    parsed.type === "join_request_created" &&
+    typeof parsed.requesterIdentityId === "string" &&
+    (parsed.requestedSeat === "Player 1" || parsed.requestedSeat === "Player 2")
+  ) {
+    return {
+      type: "join_request_created",
+      eventSeq: parsed.eventSeq,
+      requesterIdentityId: parsed.requesterIdentityId,
+      requestedSeat: parsed.requestedSeat,
+      game: projection.game,
+    } satisfies JoinRequestCreatedEvent;
+  }
+  if (
+    parsed.type === "join_request_resolved" &&
+    typeof parsed.requesterIdentityId === "string" &&
+    typeof parsed.accepted === "boolean" &&
+    (parsed.seat === "Player 1" || parsed.seat === "Player 2" || parsed.seat === null)
+  ) {
+    return {
+      type: "join_request_resolved",
+      eventSeq: parsed.eventSeq,
+      requesterIdentityId: parsed.requesterIdentityId,
+      accepted: parsed.accepted,
+      seat: parsed.seat,
+      game: projection.game,
+    } satisfies JoinRequestResolvedEvent;
+  }
+  return null;
+};
+
+const loadInviteTokens = async (
+  env: LiveGameEnv,
+  gameId: string,
+): Promise<{ viewer: string; player1: string; player2: string }> => {
+  const result = await env.DB.prepare(
+    `SELECT token, shared_by_role FROM ${LIVE_INVITES_TABLE} WHERE game_id = ?1`,
+  )
+    .bind(gameId)
+    .all<PersistedInviteRow>();
+
+  const tokens = {
+    viewer: "",
+    player1: "",
+    player2: "",
+  };
+  for (const row of result.results ?? []) {
+    if (row.shared_by_role === "Viewer") {
+      tokens.viewer = row.token;
+    } else if (row.shared_by_role === "Player 1") {
+      tokens.player1 = row.token;
+    } else if (row.shared_by_role === "Player 2") {
+      tokens.player2 = row.token;
+    }
+  }
+  return {
+    viewer: tokens.viewer || createInviteToken(),
+    player1: tokens.player1 || createInviteToken(),
+    player2: tokens.player2 || createInviteToken(),
+  };
 };
 
 export const loadGameProjection = async (env: LiveGameEnv, gameId: string): Promise<PersistedGameProjection | null> => {
@@ -580,7 +771,8 @@ export const loadGameProjection = async (env: LiveGameEnv, gameId: string): Prom
   if (!row?.state_json) {
     return null;
   }
-  return normalizePersistedGame(row, "single");
+  const inviteTokens = await loadInviteTokens(env, gameId);
+  return deserializeGame({ serialized: row.state_json, row, context: "single", inviteTokens });
 };
 
 export const listVisibleGameProjections = async (env: LiveGameEnv): Promise<LiveGame[]> => {
@@ -589,10 +781,14 @@ export const listVisibleGameProjections = async (env: LiveGameEnv): Promise<Live
      WHERE offline_local = 0
      ORDER BY latest_activity_at DESC, created_at DESC`,
   ).all<PersistedGameRow>();
-  return (result.results ?? []).flatMap((row) => {
-    const projection = normalizePersistedGame(row, "list");
-    return projection.kind === "ok" ? [projection.game] : [];
-  });
+
+  const projections = await Promise.all(
+    (result.results ?? []).map(async (row) => {
+      const inviteTokens = await loadInviteTokens(env, row.game_id);
+      return deserializeGame({ serialized: row.state_json, row, context: "list", inviteTokens });
+    }),
+  );
+  return projections.flatMap((projection) => (projection.kind === "ok" ? [projection.game] : []));
 };
 
 export const saveProjection = async (
@@ -616,7 +812,7 @@ export const saveProjection = async (
       game.updatedAt,
       game.lastMoveAt || game.updatedAt || game.createdAt,
       game.offlineLocal ? 1 : 0,
-      JSON.stringify(game),
+      JSON.stringify(serializeGame(game)),
       eventSeq,
     )
     .run();
@@ -662,16 +858,16 @@ export const resolveInvite = async (
 };
 
 export const appendEvent = async (env: LiveGameEnv, gameId: string, event: ServerEvent & { eventSeq: number }) => {
+  const serialized = serializeEvent(event);
+  if (!serialized) {
+    return;
+  }
   await env.DB.prepare(
     `INSERT INTO ${LIVE_EVENTS_TABLE}
        (game_id, event_seq, payload_json)
      VALUES (?1, ?2, ?3)`,
   )
-    .bind(
-      gameId,
-      event.eventSeq,
-      JSON.stringify(event),
-    )
+    .bind(gameId, event.eventSeq, JSON.stringify(serialized))
     .run();
 };
 
@@ -682,8 +878,12 @@ export const loadEventsAfter = async (env: LiveGameEnv, gameId: string, lastEven
      ORDER BY event_seq ASC`,
   )
     .bind(gameId, lastEventSeq)
-    .all<{ payload_json: string }>();
-  return (result.results ?? []).map((row) => JSON.parse(row.payload_json) as ServerEvent);
+    .all<PersistedEventRow>();
+
+  const events = await Promise.all(
+    (result.results ?? []).map((row) => deserializeEvent(env, gameId, row.payload_json)),
+  );
+  return events.filter((event): event is ServerEvent => Boolean(event));
 };
 
 export const persistGameState = async (
