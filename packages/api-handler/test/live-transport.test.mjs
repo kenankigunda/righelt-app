@@ -659,8 +659,7 @@ test("live transport: game reads do not stay stale when persistent state changes
       identityId: "id-player2",
       connected: true,
       joinedAt: "2026-03-10T01:31:00.000Z",
-      lastHeartbeatAt: "2026-03-10T01:31:00.000Z",
-      sessionCount: 1,
+      lastSeenAt: "2026-03-10T01:31:00.000Z",
     },
     notifications: ["Player joined", ...(Array.isArray(state.notifications) ? state.notifications : [])],
   }));
@@ -692,8 +691,7 @@ test("live transport: stale read during GET must not overwrite newer persisted g
       identityId: "id-player2",
       connected: true,
       joinedAt: "2026-03-10T02:00:00.000Z",
-      lastHeartbeatAt: "2026-03-10T02:00:00.000Z",
-      sessionCount: 1,
+      lastSeenAt: "2026-03-10T02:00:00.000Z",
     },
     notifications: ["Player joined", ...(Array.isArray(state.notifications) ? state.notifications : [])],
   }));
@@ -708,64 +706,97 @@ test("live transport: stale read during GET must not overwrite newer persisted g
   assert.equal(persistedAfterRead?.notifications?.[0], "Player joined");
 });
 
-test("live transport: compact persistence omits heavy snapshots and hydrates move history on read", async () => {
-  const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
-    env,
-  );
-  const gameId = (await create.json()).game.id;
-  await handleApiRequest(req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-owner" }), env);
-  await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
-  await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
-
-  const persisted = env.DB.getGameState(gameId);
-  assert.equal(typeof persisted.initialState, "object");
-  assert.equal(typeof persisted.currentState, "object");
-  assert.equal("inviteTokens" in persisted, false);
-  assert.equal("selectionSnapshot" in persisted.moves[0], false);
-  assert.equal("snapshot" in persisted.moves[0], false);
-
-  const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
-  const openBody = await open.json();
-  assert.equal(open.status, 200);
-  assert.equal(typeof openBody.game.moves[0].moveId, "string");
-  assert.equal(typeof openBody.game.moves[0].selectionSnapshot, "object");
-  assert.equal(typeof openBody.game.moves[0].snapshot, "object");
-  assert.equal(typeof openBody.game.inviteToken, "string");
-
-  const history = await handleApiRequest(req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-owner", moveIndex: 0 }), env);
-  const historyBody = await history.json();
-  assert.equal(history.status, 200);
-  assert.deepEqual(historyBody.game.currentSnapshot, openBody.game.moves[0].selectionSnapshot);
-});
-
-test("live transport: compact event persistence omits heavy snapshots while preserving replay metadata", async () => {
+test("live transport: persisted shape repairs missing history index and logs the exact mismatch", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
     env,
   );
   const createBody = await create.json();
   const gameId = createBody.game.id;
+  const overwritten = env.DB.overwriteGameState(gameId, (state) => {
+    const next = { ...state };
+    delete next.historyIndexByIdentity;
+    return next;
+  });
+  assert.equal(overwritten, true);
 
-  const apply = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/apply`, "POST", {
-      identityId: "id-owner",
-      clientCommandId: "cmd-compact-event",
-      state: createBody.game.currentSnapshot,
-      action: { type: "pass" },
-    }),
+  const consoleCapture = captureConsoleEvents();
+  try {
+    const list = await handleApiRequest(req("/api/shell/games?identityId=id-owner"), env);
+    const listBody = await list.json();
+    assert.equal(list.status, 200);
+    assert.equal(listBody.games.some((entry) => entry.id === gameId), true);
+    const listedGame = listBody.games.find((entry) => entry.id === gameId);
+    assert.equal(listedGame.historyIndex, null);
+
+    const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+    const openBody = await open.json();
+    assert.equal(open.status, 200);
+    assert.equal(openBody.game.historyIndex, null);
+
+    const repairEvents = consoleCapture.warnings.map((entry) => JSON.parse(entry));
+    assert.equal(repairEvents.some((entry) => entry.event === "live_game_shape_repaired"), true);
+    const historyMismatch = repairEvents.flatMap((entry) => entry.mismatches).find((entry) => entry.field === "historyIndexByIdentity");
+    assert.deepEqual(historyMismatch, {
+      field: "historyIndexByIdentity",
+      expected: "record<string, number>",
+      actualType: "undefined",
+      actualSummary: "undefined",
+      repair: "defaulted_to_empty_object",
+    });
+  } finally {
+    consoleCapture.restore();
+  }
+});
+
+test("live transport: persisted shape repairs legacy participants and malformed arrays with structured logs", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
     env,
   );
-  assert.equal(apply.status, 200);
+  const createBody = await create.json();
+  const gameId = createBody.game.id;
+  const overwritten = env.DB.overwriteGameState(gameId, (state) => ({
+    ...state,
+    player2: {
+      identityId: "id-player2",
+      connected: "sometimes",
+      joinedAt: "2026-03-10T03:00:00.000Z",
+      lastSeenAt: "2026-03-10T03:05:00.000Z",
+    },
+    viewers: "not-an-array",
+    pendingJoinRequests: [{ nope: true }],
+    notifications: ["Player joined", 4],
+    inviteTokens: { viewer: "viewer-token" },
+  }));
+  assert.equal(overwritten, true);
 
-  const event = JSON.parse(env.DB.getEvents(gameId).at(-1).payload_json);
-  assert.equal(event.type, "event_appended");
-  assert.equal(event.clientCommandId, "cmd-compact-event");
-  assert.equal(typeof event.game.initialState, "object");
-  assert.equal(typeof event.game.currentState, "object");
-  assert.equal("inviteTokens" in event.game, false);
-  assert.equal("selectionSnapshot" in event.game.moves[0], false);
-  assert.equal("snapshot" in event.game.moves[0], false);
+  const consoleCapture = captureConsoleEvents();
+  try {
+    const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+    const body = await open.json();
+    assert.equal(open.status, 200);
+    assert.equal(body.game.player2.identityId, "id-player2");
+    assert.equal(body.game.player2.lastHeartbeatAt, "2026-03-10T03:05:00.000Z");
+    assert.equal(body.game.player2.sessionCount, 0);
+    assert.deepEqual(body.game.viewers, []);
+    assert.deepEqual(body.game.pendingJoinRequests, []);
+    assert.deepEqual(body.game.notifications, ["Player joined"]);
+    assert.equal(typeof body.game.inviteToken, "string");
+    assert.equal(body.game.inviteToken.length > 0, true);
+
+    const repairEvent = consoleCapture.warnings.map((entry) => JSON.parse(entry)).find((entry) => entry.event === "live_game_shape_repaired");
+    assert.equal(Boolean(repairEvent), true);
+    const mismatchFields = repairEvent.mismatches.map((entry) => entry.field);
+    assert.equal(mismatchFields.includes("player2.lastHeartbeatAt"), true);
+    assert.equal(mismatchFields.includes("player2.sessionCount"), true);
+    assert.equal(mismatchFields.includes("viewers"), true);
+    assert.equal(mismatchFields.includes("pendingJoinRequests[0]"), true);
+    assert.equal(mismatchFields.includes("inviteTokens.player1"), true);
+    assert.equal(mismatchFields.includes("inviteTokens.player2"), true);
+  } finally {
+    consoleCapture.restore();
+  }
 });
 
 test("live transport: invalid persisted board state returns controlled error and is skipped from list", async () => {
@@ -785,7 +816,7 @@ test("live transport: invalid persisted board state returns controlled error and
 
   const overwritten = env.DB.overwriteGameState(invalidGameId, (state) => ({
     ...state,
-    currentState: null,
+    board: {},
   }));
   assert.equal(overwritten, true);
 
@@ -805,7 +836,7 @@ test("live transport: invalid persisted board state returns controlled error and
     const invalidEvent = consoleCapture.errors.map((entry) => JSON.parse(entry)).find((entry) => entry.event === "live_game_shape_invalid");
     assert.equal(Boolean(invalidEvent), true);
     assert.equal(invalidEvent.gameId, invalidGameId);
-    assert.equal(invalidEvent.mismatches.some((entry) => entry.field === "currentState"), true);
+    assert.equal(invalidEvent.mismatches.some((entry) => entry.field === "board.state"), true);
   } finally {
     consoleCapture.restore();
   }
@@ -1235,55 +1266,75 @@ test("live transport: requester can rescind pending revert request", async () =>
   assert.equal(rescindBody.game.moves.some((move) => move.undone === true), false);
 });
 
-test("live transport: compact persistence keeps revert behavior after rehydrating move snapshots", async () => {
+test("live transport: persisted legacy moves get moveId backfilled for revert actions", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
     env,
   );
   const gameId = (await create.json()).game.id;
-  await handleApiRequest(req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-owner" }), env);
   await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
-  await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
+
+  env.DB.overwriteGameState(gameId, (state) => ({
+    ...state,
+    moves: state.moves.map((move) => {
+      const next = { ...move };
+      delete next.moveId;
+      delete next.displayMoveNumber;
+      return next;
+    }),
+  }));
 
   const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
   const openBody = await open.json();
   assert.equal(open.status, 200);
-  const targetMoveId = openBody.game.moves[0].moveId;
-  assert.equal(typeof openBody.game.moves[0].selectionSnapshot, "object");
-
-  const revert = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/revert-request`, "POST", { identityId: "id-owner", targetMoveId }),
-    env,
-  );
-  const revertBody = await revert.json();
-  assert.equal(revert.status, 200);
-  assert.equal(revertBody.autoApproved, true);
-  assert.equal(revertBody.game.moves.every((move) => move.undone === true), true);
-  assert.deepEqual(revertBody.game.currentSnapshot, openBody.game.moves[0].selectionSnapshot);
+  assert.equal(typeof openBody.game.moves[0].moveId, "string");
+  assert.equal(openBody.game.moves[0].moveId.length > 0, true);
+  assert.equal(typeof openBody.game.moves[0].displayMoveNumber, "number");
 });
 
-test("live transport: compact persistence stays materially smaller across long histories", async () => {
+test("live transport: condensed repair logs summarize large move backfills unless verbose is enabled", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
     env,
   );
   const gameId = (await create.json()).game.id;
   await handleApiRequest(req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-owner" }), env);
-  for (let index = 0; index < 120; index += 1) {
+  for (let index = 0; index < 5; index += 1) {
     await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
   }
 
-  const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
-  const body = await open.json();
-  assert.equal(open.status, 200);
-  assert.equal(body.game.moves.length >= 100, true);
+  env.DB.overwriteGameState(gameId, (state) => ({
+    ...state,
+    moves: state.moves.map((move) => {
+      const next = { ...move };
+      delete next.moveId;
+      delete next.displayMoveNumber;
+      return next;
+    }),
+  }));
 
-  const row = env.DB.getGameRow(gameId);
-  assert.equal(typeof row?.state_json, "string");
-  assert.equal(row.state_json.includes("selectionSnapshot"), false);
-  assert.equal(row.state_json.includes("\"snapshot\""), false);
-  assert.equal(row.state_json.includes("inviteTokens"), false);
-  assert.equal(Buffer.byteLength(row.state_json, "utf8") < Buffer.byteLength(JSON.stringify(body.game), "utf8"), true);
+  const capture = captureConsoleEvents();
+  try {
+    const currentVerboseFlag = (globalThis).__RIGHELT_VERBOSE_REPAIR_LOGS;
+    (globalThis).__RIGHELT_VERBOSE_REPAIR_LOGS = "";
+    await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+    const condensedEvent = capture.warnings.map((entry) => JSON.parse(entry)).find((entry) => entry.event === "live_game_shape_repaired");
+    assert.equal(condensedEvent.condensed, true);
+    assert.equal(condensedEvent.mismatchCount >= 10, true);
+    assert.equal(condensedEvent.mismatches.some((entry) => entry.field === "moves[*].moveId"), true);
+    assert.equal(condensedEvent.mismatches.some((entry) => entry.field === "moves[*].displayMoveNumber"), true);
+
+    capture.warnings.length = 0;
+    (globalThis).__RIGHELT_VERBOSE_REPAIR_LOGS = "1";
+    await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+    const verboseEvent = capture.warnings.map((entry) => JSON.parse(entry)).find((entry) => entry.event === "live_game_shape_repaired");
+    assert.equal(verboseEvent.condensed ?? false, false);
+    assert.equal(verboseEvent.mismatches.some((entry) => entry.field === "moves[0].moveId"), true);
+    assert.equal(verboseEvent.mismatches.some((entry) => entry.field === "moves[0].displayMoveNumber"), true);
+    (globalThis).__RIGHELT_VERBOSE_REPAIR_LOGS = currentVerboseFlag;
+  } finally {
+    capture.restore();
+  }
 });
 
 test("live transport: player invite token enables immediate player join without guessable game role query", async () => {

@@ -7,7 +7,7 @@ import {
   saveTutorialCompleted,
 } from "./persistence.js";
 
-const MAX_HISTORY = 500;
+const MAX_HISTORY = 200;
 
 const createId = (prefix, random) => `${prefix}-${random().toString(36).slice(2, 10)}`;
 
