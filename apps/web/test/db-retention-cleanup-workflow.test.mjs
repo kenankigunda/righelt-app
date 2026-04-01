@@ -24,7 +24,7 @@ test("D1 retention cleanup workflow validates retention hours before execution",
 });
 
 test("cleanup SQL deletes stale live data by latest activity in dependency-safe order", () => {
-  assert.match(cleanupSql, /\?1 = '0' OR latest_activity_at < datetime\('now', '-' \|\| \?1 \|\| ' hours'\)/);
+  assert.match(cleanupSql, /__STALE_CONDITION__/);
   assert.equal(cleanupSql.includes("milestone_actions"), false);
   assert.equal(cleanupSql.includes("live_participants"), false);
   assert.equal(cleanupSql.includes("live_join_requests"), false);

@@ -46,7 +46,7 @@ WHERE game_id IN (
 };
 
 export const buildCleanupSql = (cleanupSqlTemplate, retentionHours) =>
-  cleanupSqlTemplate.replace(/\?1/g, retentionHours);
+  cleanupSqlTemplate.replaceAll("__STALE_CONDITION__", buildStaleCondition(retentionHours));
 
 export const createCleanupSqlFiles = ({
   repoRoot,

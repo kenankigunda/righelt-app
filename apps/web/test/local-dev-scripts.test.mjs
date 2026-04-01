@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
@@ -11,6 +12,7 @@ const devWebAutoSource = readFileSync(path.join(repoRoot, "scripts", "dev-web-au
 const dbCleanupLocalSource = readFileSync(path.join(repoRoot, "scripts", "db-retention-cleanup-local.mjs"), "utf8");
 const dbCleanupSharedSource = readFileSync(path.join(repoRoot, "scripts", "db-retention-cleanup-shared.mjs"), "utf8");
 const dbCleanupGithubSource = readFileSync(path.join(repoRoot, "scripts", "db-retention-cleanup-github.mjs"), "utf8");
+const dbCleanupSharedModule = await import(pathToFileURL(path.join(repoRoot, "scripts", "db-retention-cleanup-shared.mjs")).href);
 
 test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.equal(scripts.dev, "pnpm dev:web");
@@ -81,6 +83,18 @@ test("shared D1 retention cleanup helpers centralize validation and SQL generati
   assert.doesNotMatch(dbCleanupSharedSource, /live_join_requests/);
   assert.match(dbCleanupSharedSource, /export const createCleanupSqlFiles = \(\{/);
   assert.match(dbCleanupSharedSource, /righelt-db-retention-/);
+});
+
+test("shared cleanup SQL generator expands zero-hour cleanup to a full-table predicate", () => {
+  const cleanupTemplate = readFileSync(path.join(repoRoot, "db", "ops", "cleanup-live-data.sql"), "utf8");
+  const zeroCleanupSql = dbCleanupSharedModule.buildCleanupSql(cleanupTemplate, "0");
+  const fortyEightHourCleanupSql = dbCleanupSharedModule.buildCleanupSql(cleanupTemplate, "48");
+
+  assert.match(zeroCleanupSql, /WHERE 1 = 1/);
+  assert.doesNotMatch(zeroCleanupSql, /'0'/);
+  assert.doesNotMatch(zeroCleanupSql, /__STALE_CONDITION__/);
+  assert.match(fortyEightHourCleanupSql, /latest_activity_at < datetime\('now', '-48 hours'\)/);
+  assert.doesNotMatch(fortyEightHourCleanupSql, /__STALE_CONDITION__/);
 });
 
 test("GitHub D1 retention cleanup helper reuses the shared cleanup generator", () => {
