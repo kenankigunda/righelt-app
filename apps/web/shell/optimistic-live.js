@@ -137,26 +137,26 @@ const buildPendingMoveEntry = ({ command, selectionSnapshot, snapshot, activeTur
   pending: true,
 });
 
-const finalizeProjectedView = ({ authoritativeGame, workingGame, identityId, queue, pendingMoves }) => {
+const finalizeProjectedView = ({ authoritativeGame, workingGame, identityId, queue, pendingMoves, liveLegalActions = null }) => {
   const next = clone(workingGame);
   const activeTurn = getActiveTurn(next);
   const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(next);
   const controlSeat = getControlSeatForTurn(next.board.state, turnOwnerSeat);
   const controlIdentity = getSeatIdentity(next, controlSeat);
   const turnOwnerIdentity = getSeatIdentity(next, turnOwnerSeat);
-  const liveLegalActions = listLegalActions(next.board.state);
+  const resolvedLegalActions = Array.isArray(liveLegalActions) ? clone(liveLegalActions) : listLegalActions(next.board.state);
   const isPlayer = next.myRole === "Player 1" || next.myRole === "Player 2";
 
   next.turnOwnerSeat = turnOwnerSeat;
   next.controlSeat = controlSeat;
   next.control = controlSeat === turnOwnerSeat ? "turn-owner" : "opponent";
   next.currentTurn = activeTurn ? clone(activeTurn) : null;
-  next.legalActions = liveLegalActions;
+  next.legalActions = resolvedLegalActions;
   next.pendingMoves = pendingMoves.map((move) => clone(move));
   next.pendingCommandCount = queue.length;
   next.liveCurrentSnapshot = clone(next.board.state);
   next.currentSnapshot = next.inHistoryMode ? authoritativeGame.currentSnapshot : clone(next.board.state);
-  next.canRecordMove = isPlayer && !next.inHistoryMode && controlIdentity === identityId && liveLegalActions.length > 0;
+  next.canRecordMove = isPlayer && !next.inHistoryMode && controlIdentity === identityId && resolvedLegalActions.length > 0;
   next.canEndTurn =
     isPlayer &&
     !next.inHistoryMode &&
@@ -175,6 +175,7 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
 
   const pendingMoves = [];
   const commandResults = new Map();
+  let latestLegalActions = null;
 
   for (const command of queue) {
     if (command.kind === "apply") {
@@ -183,7 +184,7 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
         return { ok: false, error: "turn_not_initialized", clientCommandId: command.clientCommandId };
       }
 
-      const stable = resolveToStability(workingGame.board.state, { artifactMode: "full" });
+      const stable = workingGame.board.state;
       const validation = validateAction(stable, command.action);
       if (!validation.ok) {
         return {
@@ -199,6 +200,7 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
       const settledState = nextStable.continuation == null ? settleResolvedTurnState(nextStable) : nextStable;
       const removedPieces = collectRemovedPieceNotices(stable, applied.state, nextStable, command.action);
       const turnSettled = nextStable.continuation == null;
+      const settledLegalActions = listLegalActions(settledState);
       if (!turnSettled) {
         nextStable.sideToMove = getSideForSeat(getControlSeatForTurn(nextStable, activeTurn.playerSeat));
         nextStable.turnIndex = activeTurn.index;
@@ -234,10 +236,11 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
       commandResults.set(command.clientCommandId, {
         accepted: true,
         state: clone(settledState),
-        legalActions: listLegalActions(settledState),
+        legalActions: settledLegalActions,
         removedPieces,
         outcome: settledState.outcome ?? null,
       });
+      latestLegalActions = settledLegalActions;
       continue;
     }
 
@@ -245,17 +248,18 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
     if (!ended.ok) {
       return { ok: false, error: ended.error, clientCommandId: command.clientCommandId };
     }
+    latestLegalActions = listLegalActions(workingGame.board.state);
     commandResults.set(command.clientCommandId, {
       accepted: true,
       state: clone(workingGame.board.state),
-      legalActions: listLegalActions(workingGame.board.state),
+      legalActions: latestLegalActions,
       outcome: workingGame.board.state.outcome ?? null,
     });
   }
 
   return {
     ok: true,
-    game: finalizeProjectedView({ authoritativeGame, workingGame, identityId, queue, pendingMoves }),
+    game: finalizeProjectedView({ authoritativeGame, workingGame, identityId, queue, pendingMoves, liveLegalActions: latestLegalActions }),
     commandResults,
   };
 };

@@ -738,7 +738,18 @@ const getJoinAsViewerDisabledReason = (game: LiveGame, offline: boolean, myRole:
   return null;
 };
 
-export const withViewModel = (game: LiveGame, identityId: string, offline = false) => {
+type ViewModelOptions = {
+  includeLegalActions?: boolean;
+  legalActions?: Action[];
+  currentSnapshot?: GameState | null;
+};
+
+export const withViewModel = (
+  game: LiveGame,
+  identityId: string,
+  offline = false,
+  options: ViewModelOptions = {},
+) => {
   const historyIndexByIdentity = game.historyIndexByIdentity ?? {};
   const moves = Array.isArray(game.moves) ? game.moves : [];
   const turns = Array.isArray(game.turns) ? game.turns : [];
@@ -765,10 +776,11 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     : false;
   const historyIndex = typeof historyIndexByIdentity[identityId] === "number" ? historyIndexByIdentity[identityId] : null;
   const inHistoryMode = typeof historyIndex === "number";
-  const currentSnapshot =
+  const defaultCurrentSnapshot =
     typeof historyIndex === "number" && moves[historyIndex]
       ? moves[historyIndex].selectionSnapshot
       : game.board.state;
+  const currentSnapshot = options.currentSnapshot ?? defaultCurrentSnapshot;
   const pendingScenarioSelection =
     game.pendingScenarioSelection &&
     game.pendingScenarioSelection.actorSide === currentSnapshot?.sideToMove &&
@@ -786,7 +798,12 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
   const sideToMoveIdentity = getSeatIdentity(game, controlSeat);
   const turnOwnerIdentity = getSeatIdentity(game, turnOwnerSeat);
   const isPlayer = myRole === "Player 1" || myRole === "Player 2";
-  const legalNow = listLegalActions(game.board.state);
+  const includeLegalActions = options.includeLegalActions !== false;
+  const legalNow = includeLegalActions
+    ? Array.isArray(options.legalActions)
+      ? clone(options.legalActions)
+      : listLegalActions(game.board.state)
+    : [];
   const offlineTurnControlAllowed = !offline || canOperateOfflinePlaygroundTurn(game, identityId);
   const approvableRequesterIds = pendingJoinRequests
     .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
@@ -839,7 +856,7 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
           : inviteTokens.viewer,
     showOfflineState: offline || game.offlineLocal,
     showJoinActions: !offline && !game.offlineLocal,
-    canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
+    canRecordMove: includeLegalActions && isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
     legalActions: legalNow,
     canEndTurn:
       offlineTurnControlAllowed &&

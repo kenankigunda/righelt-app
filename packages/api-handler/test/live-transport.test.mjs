@@ -62,6 +62,9 @@ test("live transport: create/list/get game lifecycle is server-backed", async ()
   assert.equal(create.status, 200);
   const createBody = await create.json();
   const gameId = createBody.game.id;
+  assert.equal(Array.isArray(createBody.game.legalActions), true);
+  assert.equal(createBody.game.legalActions.length > 0, true);
+  assert.equal(createBody.game.canRecordMove, true);
 
   const list = await handleApiRequest(req("/api/shell/games?identityId=id-a"), env);
   const listBody = await list.json();
@@ -129,6 +132,8 @@ test("live transport: paged home sections return latest-activity slices", async 
   assert.equal(firstBody.totalPages, 1);
   assert.equal(firstBody.page, 0);
   assert.equal(firstBody.games.length, 6);
+  assert.deepEqual(firstBody.games.map((game) => game.legalActions), [[], [], [], [], [], []]);
+  assert.deepEqual(firstBody.games.map((game) => game.canRecordMove), [false, false, false, false, false, false]);
   assert.deepEqual(
     firstBody.games.map((game) => game.id),
     [...createdGameIds].reverse().slice(0, 6),

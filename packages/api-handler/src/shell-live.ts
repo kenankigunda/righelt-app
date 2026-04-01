@@ -216,7 +216,9 @@ export const handleLiveGameRequest = async (
     const pagedGames = await Promise.all(
       pageResult.gameIds.map(async (gameId) => {
         const projection = await loadGameProjection(env, gameId);
-        return projection?.kind === "ok" ? withViewModel(projection.game, identityId, offline) : null;
+        return projection?.kind === "ok"
+          ? withViewModel(projection.game, identityId, offline, { includeLegalActions: false })
+          : null;
       }),
     );
     const totalGames = pageResult.totalGames;
@@ -536,14 +538,15 @@ export const handleLiveGameRequest = async (
         return { handled: true, status: 409, body: { ok: false, error: "not_your_turn" }, cacheControl: CACHE_NO_STORE };
       }
       const stable = resolveToStability(game.board.state, { artifactMode: "full" });
+      const legalActions = listLegalActions(stable);
       return {
         handled: true,
         status: 200,
         body: {
           ok: true,
           state: stable,
-          legalActions: listLegalActions(stable),
-          game: withViewModel(game, identityId, offline),
+          legalActions,
+          game: withViewModel(game, identityId, offline, { legalActions, currentSnapshot: stable }),
         },
         cacheControl: CACHE_NO_STORE,
       };
@@ -571,6 +574,7 @@ export const handleLiveGameRequest = async (
         return { handled: true, status: 400, body: { ok: false, error: "invalid_piece_id" }, cacheControl: CACHE_NO_STORE };
       }
       const stable = resolveToStability(game.board.state, { artifactMode: "full" });
+      const legalActions = listLegalActions(stable);
       return {
         handled: true,
         status: 200,
@@ -580,7 +584,7 @@ export const handleLiveGameRequest = async (
           pieceId,
           actions: enumeratePieceActions(stable, pieceId),
           previewActions: enumeratePieceActionPreviews(stable, pieceId),
-          game: withViewModel(game, identityId, offline),
+          game: withViewModel(game, identityId, offline, { legalActions, currentSnapshot: stable }),
         },
         cacheControl: CACHE_NO_STORE,
       };

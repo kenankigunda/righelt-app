@@ -651,14 +651,15 @@ export class GameRoomDO {
       const moved = applyServerActionWithExpectedState(game, action, bodyState, notation, commandMetadata.clientCommandId);
       if (!moved.ok) {
         if (moved.validation && moved.state) {
+          const legalActions = listLegalActions(moved.state);
           return json({
             ok: true,
             accepted: false,
             clientCommandId: commandMetadata.clientCommandId,
             validation: moved.validation,
             state: moved.state,
-            legalActions: listLegalActions(moved.state),
-            game: withViewModel(game, identityId),
+            legalActions,
+            game: withViewModel(game, identityId, false, { legalActions, currentSnapshot: moved.state }),
             eventSeq: this.eventSeq,
           });
         }
@@ -677,6 +678,7 @@ export class GameRoomDO {
           duplicate: true,
         });
       }
+      const legalActions = listLegalActions(moved.state);
       await this.commit({
         type: "event_appended",
         reason: "move_recorded",
@@ -690,7 +692,7 @@ export class GameRoomDO {
         clientCommandId: commandMetadata.clientCommandId,
         state: moved.state,
         removedPieces: moved.removedPieces,
-        game: withViewModel(game, identityId),
+        game: withViewModel(game, identityId, false, { legalActions, currentSnapshot: moved.state }),
         eventSeq: this.eventSeq,
       });
     }
@@ -822,11 +824,12 @@ export class GameRoomDO {
 
     if (request.method === "POST" && path === "/legal") {
       const stable = game.board.state;
+      const legalActions = listLegalActions(stable);
       return json({
         ok: true,
         state: stable,
-        legalActions: listLegalActions(stable),
-        game: withViewModel(game, identityId),
+        legalActions,
+        game: withViewModel(game, identityId, false, { legalActions, currentSnapshot: stable }),
         eventSeq: this.eventSeq,
       });
     }
@@ -836,13 +839,14 @@ export class GameRoomDO {
       if (!pieceId) {
         return json({ ok: false, error: "invalid_piece_id" }, 400);
       }
+      const legalActions = listLegalActions(game.board.state);
       return json({
         ok: true,
         state: game.board.state,
         pieceId,
         actions: enumeratePieceActions(game.board.state, pieceId),
         previewActions: enumeratePieceActionPreviews(game.board.state, pieceId),
-        game: withViewModel(game, identityId),
+        game: withViewModel(game, identityId, false, { legalActions, currentSnapshot: game.board.state }),
         eventSeq: this.eventSeq,
       });
     }
