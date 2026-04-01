@@ -5,7 +5,7 @@ import { resolveToStability } from "../../game-engine/src/resolve";
 import { createInitialState } from "../../game-engine/src/state";
 import type { Action, GameState } from "../../game-engine/src/types";
 
-export const MAX_HISTORY = 200;
+export const MAX_HISTORY = 500;
 const BOARD_SIZE = 10;
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
