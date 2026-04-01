@@ -6,14 +6,21 @@ export const validateRetentionHours = (value, sourceLabel = "retention hours") =
   if (!value) {
     throw new Error(`Missing required ${sourceLabel}`);
   }
-  if (!/^[1-9][0-9]*$/.test(value)) {
-    throw new Error(`${sourceLabel} must be a positive integer`);
+  if (!/^(0|[1-9][0-9]*)$/.test(value)) {
+    throw new Error(`${sourceLabel} must be a non-negative integer`);
   }
   return value;
 };
 
 export const buildStaleCondition = (retentionHours) =>
-  `latest_activity_at < datetime('now', '-${retentionHours} hours')`;
+  retentionHours === "0"
+    ? "1 = 1"
+    : `latest_activity_at < datetime('now', '-${retentionHours} hours')`;
+
+export const describeRetentionWindow = (retentionHours) =>
+  retentionHours === "0"
+    ? "all games"
+    : `data older than ${retentionHours} hours`;
 
 export const buildReportSql = (retentionHours) => {
   const staleCondition = buildStaleCondition(retentionHours);
@@ -39,7 +46,7 @@ WHERE game_id IN (
 };
 
 export const buildCleanupSql = (cleanupSqlTemplate, retentionHours) =>
-  cleanupSqlTemplate.replace(/\?1/g, retentionHours);
+  cleanupSqlTemplate.replaceAll("__STALE_CONDITION__", buildStaleCondition(retentionHours));
 
 export const createCleanupSqlFiles = ({
   repoRoot,

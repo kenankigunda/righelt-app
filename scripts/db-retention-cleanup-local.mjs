@@ -1,7 +1,11 @@
 import { rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { createCleanupSqlFiles, validateRetentionHours } from "./db-retention-cleanup-shared.mjs";
+import {
+  createCleanupSqlFiles,
+  describeRetentionWindow,
+  validateRetentionHours,
+} from "./db-retention-cleanup-shared.mjs";
 
 const args = process.argv.slice(2);
 
@@ -27,7 +31,7 @@ try {
   process.exit(1);
 }
 
-console.log(`Running local D1 retention cleanup for data older than ${retentionHours} hours`);
+console.log(`Running local D1 retention cleanup for ${describeRetentionWindow(retentionHours)}`);
 console.log(`Target D1 database: ${dbName}`);
 console.log(`Local D1 persist path: ${persistTo}`);
 const { reportSqlPath, cleanupSqlPath, workingDir } = createCleanupSqlFiles({

@@ -1,6 +1,10 @@
 import { appendFileSync } from "node:fs";
 import path from "node:path";
-import { createCleanupSqlFiles, validateRetentionHours } from "./db-retention-cleanup-shared.mjs";
+import {
+  createCleanupSqlFiles,
+  describeRetentionWindow,
+  validateRetentionHours,
+} from "./db-retention-cleanup-shared.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const githubEnvPath = process.env.GITHUB_ENV;
@@ -41,7 +45,7 @@ const { reportSqlPath, cleanupSqlPath } = createCleanupSqlFiles({
   tempDir: runnerTemp,
 });
 
-console.log(`Running DB retention cleanup for data older than ${retentionHours} hours`);
+console.log(`Running DB retention cleanup for ${describeRetentionWindow(retentionHours)}`);
 console.log(`Target D1 database: ${dbName}`);
 
 appendFileSync(githubEnvPath, `REPORT_SQL_PATH=${reportSqlPath}\n`);
