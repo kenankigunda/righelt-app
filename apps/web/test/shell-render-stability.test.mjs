@@ -46,6 +46,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.doesNotMatch(source, />Home<\/(?:a|span)>/);
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Live Sync<\/h2>[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
   assert.match(source, /const getDocumentTitle = \(\) => \{\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;\s*\}\s*return "Righelt";\s*\};/s);
+  assert.match(source, /return \[liveSyncBanner,\s*undoRequestBanner\]\.filter\(Boolean\)\.join\(""\);/);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
   assert.match(source, /data-game-shell-track/);

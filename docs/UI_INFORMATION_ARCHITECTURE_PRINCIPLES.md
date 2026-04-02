@@ -19,3 +19,9 @@ This document defines shared information-architecture rules for compact UI surfa
 - Apply this rule anywhere we present repeated metadata stacks, including future game cards, summaries, flyouts, and side-by-side status surfaces.
 - Treat stable row ordering and stable row height as part of the product's information architecture, not just a visual polish detail.
 - If a design change removes one row from only some siblings, explicitly decide whether a placeholder or other layout reservation is needed to preserve alignment.
+
+## Mobile Screen Real Estate Principle
+
+- On narrow mobile layouts, shared shell routes should use the smallest safe outer gutters that preserve readability and tap comfort.
+- The home page should follow the same screen-real-estate maximization rule as the game page instead of reserving extra horizontal chrome by default.
+- When we tighten mobile gutters for one primary shell route, treat that as a shared shell principle and document whether sibling routes should inherit it.
