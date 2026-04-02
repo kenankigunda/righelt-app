@@ -67,11 +67,23 @@ jobs:
       - name: Generated web runtime is up to date
         run: pnpm check:web-engine-generated
 
-      - name: Unit tests
-        run: pnpm test:unit
+      - name: Engine unit tests
+        run: pnpm test:engine:unit
 
-      - name: Integration tests
-        run: pnpm test:integration
+      - name: Web unit tests
+        run: pnpm test:web:unit -- --reporter spec
+
+      - name: Engine integration tests
+        run: pnpm test:engine:integration
+
+      - name: API handler integration tests
+        run: pnpm test:api-handler
+
+      - name: API worker integration tests
+        run: pnpm test:api-worker
+
+      - name: Web integration tests
+        run: pnpm test:web:integration -- --reporter spec
 
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
@@ -81,3 +93,11 @@ jobs:
 
       - name: E2E workflow tests
         run: pnpm test:e2e
+
+      - name: Upload Playwright results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          if-no-files-found: ignore

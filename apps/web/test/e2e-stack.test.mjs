@@ -29,6 +29,10 @@ test("E2E stack launcher provisions isolated local state and split-stack readine
 test("Playwright config boots the shared local stack and captures failure artifacts", () => {
   assert.match(playwrightConfigSource, /testDir: "\.\/e2e"/);
   assert.match(playwrightConfigSource, /workers: 1/);
+  assert.match(playwrightConfigSource, /process\.env\.CI/);
+  assert.match(playwrightConfigSource, /"github"/);
+  assert.match(playwrightConfigSource, /"junit"/);
+  assert.match(playwrightConfigSource, /test-results\/playwright\/results\.xml/);
   assert.match(playwrightConfigSource, /trace: "retain-on-failure"/);
   assert.match(playwrightConfigSource, /screenshot: "only-on-failure"/);
   assert.match(playwrightConfigSource, /command: "node scripts\/e2e-stack\.mjs"/);
