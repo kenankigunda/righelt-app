@@ -25,3 +25,9 @@ This document defines shared information-architecture rules for compact UI surfa
 - On narrow mobile layouts, shared shell routes should use the smallest safe outer gutters that preserve readability and tap comfort.
 - The home page should follow the same screen-real-estate maximization rule as the game page instead of reserving extra horizontal chrome by default.
 - When we tighten mobile gutters for one primary shell route, treat that as a shared shell principle and document whether sibling routes should inherit it.
+
+## Hover Capability Principle
+
+- Button and button-link hover styling must be gated by `data-hover-capability="hover"`.
+- Treat hover styling as progressive enhancement only and do not make required behavior depend on hover availability.
+- When adding new interactive hover affordances, verify that non-hover and touch devices preserve the same required behavior without hidden-only states.

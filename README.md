@@ -2,83 +2,49 @@
 
 This repository is the foundation for the Righelt web app.
 
-## Repository Layout
+## What Lives Here
 
-- `docs/`
-  - `RIGHELT_RULES_SPEC.md` (formal source-of-truth game specification)
-  - `RIGHELT_WEB_APP_SPEC.md` (formal source-of-truth web app behavior specification)
-  - `RIGHELT_ENGINE_TEST_MATRIX.md` (engine acceptance scenarios)
-  - `TESTING_STRATEGY.md` (repo-wide unit/integration/E2E policy and lane ownership)
-  - `WORKFLOW_COVERAGE.md` (workflow inventory showing success/recovery E2E and integration coverage)
-  - `RIGHELT_EXECUTION_PLAN_MILESTONE_2_ENGINE.md` (engine implementation + validation plan)
-  - `RIGHELT_PLAYER_RULES.md` (player-facing rules guide)
-- `archive/`
-  - Archived files from the legacy implementation
+Righelt is organized around formal specs, implementation packages, and test lanes that stay aligned with CI.
 
-## Purpose
+- `apps/web` contains the Pages-hosted web client.
+- `apps/api` contains the Cloudflare Worker entrypoint and local worker config.
+- `packages/game-engine` contains the authoritative game engine logic.
+- `packages/api-handler` contains the shared live-game and API handling logic.
+- `packages/shared-types` contains shared runtime and contract types.
+- `db/` contains D1 migrations and database operations runbooks.
+- `docs/` contains product specs, testing strategy, execution plans, and operational runbooks.
+- `archive/` preserves legacy implementation material for reference only.
 
-- Use the documents in `docs/` as the authoritative rules and validation basis for the rewrite.
-- Keep `archive/` intact for historical reference only.
+## Getting Started
 
-## UI Button Hover Addendum
+1. Install dependencies with `pnpm install`.
+2. Start the default local stack with `pnpm dev:all`.
+3. Run the core non-watch validation flow with `pnpm test`.
 
-- Button and button-link hover styling follows the existing hover-capability rule and is gated by `data-hover-capability="hover"`.
-- Apply button hover effects only as progressive enhancement; do not change required behavior on non-hover/touch devices.
+Useful variants:
 
-## AI Workflow
+- `pnpm dev:web` starts only the web app.
+- `pnpm dev:api` starts only the API worker.
+- `pnpm test:unit`, `pnpm test:integration`, and `pnpm test:e2e` run individual test lanes.
 
-- Repo-level default agent rules live in `AGENTS.md`.
-- Non-default workflows and advanced AI runbooks live under `docs/ai/`.
+## Read This First
 
-### Team Shorthand
+The repo uses a few documents as the main source of truth, depending on what you are changing:
 
-Shorthand definitions are case-insensitive and live in `AGENTS.md` as the source of truth.
+- `docs/RIGHELT_RULES_SPEC.md` for formal game rules.
+- `docs/RIGHELT_WEB_APP_SPEC.md` for web app behavior and UX requirements.
+- `docs/RIGHELT_ENGINE_TEST_MATRIX.md` for engine acceptance scenarios.
+- `docs/TESTING_STRATEGY.md` for unit, integration, and E2E lane ownership.
+- `docs/WORKFLOW_COVERAGE.md` for workflow coverage inventory and gaps.
+- `docs/RIGHELT_PLAYER_RULES.md` for the player-facing rules guide.
 
-## Testing Strategy
+## Developer Notes
 
-- `unit` tests cover one module/component in isolation.
-- `integration` tests cover subsystem and contract boundaries plus meaningful workflow variants.
-- `E2E` tests are reserved for real browser workflows against the local Pages + API stack.
-- Every behavioral change should add or update unit and integration coverage and should explicitly consider whether the touched workflow needs new or expanded E2E coverage.
+- UI information architecture and frontend interaction conventions live in `docs/UI_INFORMATION_ARCHITECTURE_PRINCIPLES.md`.
+- Diagnostic and verbose logging toggles live in `docs/DEBUGGING_AND_DIAGNOSTICS.md`.
+- Repo-level AI collaboration rules and shorthand live in `AGENTS.md`.
+- Non-default AI workflows and runbooks live in `docs/ai/`.
 
 ## License
 
 This project is closed-source and proprietary. See `LICENSE`.
-
-## Live Game Repair Logging
-
-When legacy persisted game data is loaded, the API may emit a `live_game_shape_repaired` warning if it backfills missing fields (for example legacy move metadata).
-
-- Default behavior is **condensed logging** for large repetitive move backfills.
-- Full per-field/per-move mismatch logs are available in **verbose mode**.
-
-Enable verbose repair logs with either option:
-
-- Environment variable: `RIGHELT_VERBOSE_REPAIR_LOGS=1`
-- Runtime flag: `globalThis.__RIGHELT_VERBOSE_REPAIR_LOGS = "1"`
-
-## Client Live Transport Diagnostics
-
-The web live transport emits compact diagnostic logs for important sync failures (for example confirm/retry transitions, timeout rollbacks, and true desync states).
-
-- Default behavior logs only high-signal warnings/errors.
-- Verbose mode adds detailed informational traces (for example stale snapshot suppression, history-mode change events, and revert request/approval traces).
-
-Enable verbose client diagnostics with any of:
-
-- Environment variable: `RIGHELT_VERBOSE_CLIENT_LOGS=1`
-- Runtime flag: `globalThis.__RIGHELT_VERBOSE_CLIENT_LOGS = "1"`
-- Runtime alias: `globalThis.__RIGHELT_VERBOSE_LIVE_TRANSPORT_LOGS = "1"`
-- Browser storage: `localStorage.setItem("righelt.verboseClientLogs", "1")`
-
-## Server Live Room Diagnostics
-
-The live game Durable Object emits compact server diagnostics for high-impact runtime issues in request/approval flows and websocket delivery.
-
-- Default behavior logs high-signal warnings (for example revert request/approval rejections, websocket send failures, and heartbeat-expired sessions).
-- Verbose mode adds event-flow traces (for example commit events, websocket replay vs state-sync behavior, and presence transition details).
-
-Enable verbose server diagnostics with either option:
-
-- Environment variable: `RIGHELT_VERBOSE_SERVER_LOGS=1`
-- Runtime alias: `globalThis.__RIGHELT_VERBOSE_SERVER_LOGS = "1"` or `globalThis.__RIGHELT_VERBOSE_GAME_ROOM_LOGS = "1"`
