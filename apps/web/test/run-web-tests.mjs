@@ -8,11 +8,23 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let requestedLayer = "all";
+let reporter = null;
+let reporterDestination = null;
 const filters = [];
 for (let index = 2; index < process.argv.length; index += 1) {
   const value = process.argv[index];
   if (value === "--layer") {
     requestedLayer = process.argv[index + 1] ?? "all";
+    index += 1;
+    continue;
+  }
+  if (value === "--reporter") {
+    reporter = process.argv[index + 1] ?? null;
+    index += 1;
+    continue;
+  }
+  if (value === "--reporter-destination") {
+    reporterDestination = process.argv[index + 1] ?? null;
     index += 1;
     continue;
   }
@@ -39,7 +51,17 @@ if (selected.length === 0) {
   process.exit(1);
 }
 
-const args = ["--test", ...selected.map((file) => path.join(__dirname, file))];
+const args = ["--test"];
+
+if (reporter) {
+  args.push("--test-reporter", reporter);
+}
+
+if (reporterDestination) {
+  args.push("--test-reporter-destination", reporterDestination);
+}
+
+args.push(...selected.map((file) => path.join(__dirname, file)));
 const result = spawnSync(process.execPath, args, { stdio: "inherit" });
 
 process.exit(result.status ?? 1);

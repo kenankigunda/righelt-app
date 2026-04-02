@@ -13,6 +13,7 @@ const dbCleanupLocalSource = readFileSync(path.join(repoRoot, "scripts", "db-ret
 const dbCleanupSharedSource = readFileSync(path.join(repoRoot, "scripts", "db-retention-cleanup-shared.mjs"), "utf8");
 const dbCleanupGithubSource = readFileSync(path.join(repoRoot, "scripts", "db-retention-cleanup-github.mjs"), "utf8");
 const generatedGuardSource = readFileSync(path.join(repoRoot, "scripts", "check-web-engine-generated.mjs"), "utf8");
+const webTestRunnerSource = readFileSync(path.join(repoRoot, "apps", "web", "test", "run-web-tests.mjs"), "utf8");
 const dbCleanupSharedModule = await import(pathToFileURL(path.join(repoRoot, "scripts", "db-retention-cleanup-shared.mjs")).href);
 const devWebAutoModule = await import(pathToFileURL(path.join(repoRoot, "scripts", "dev-web-auto.mjs")).href);
 
@@ -150,4 +151,11 @@ test("generated web runtime guard rebuilds and fails on stale output", () => {
   assert.match(generatedGuardSource, /run\("pnpm", \["build:web-engine"\]\);/);
   assert.match(generatedGuardSource, /git", \["status", "--short", "--untracked-files=all", "--", GENERATED_ROOT\]/);
   assert.match(generatedGuardSource, /Generated web engine output is stale/);
+});
+
+test("web test runner forwards optional reporter settings into node --test", () => {
+  assert.match(webTestRunnerSource, /if \(value === "--reporter"\)/);
+  assert.match(webTestRunnerSource, /if \(value === "--reporter-destination"\)/);
+  assert.match(webTestRunnerSource, /args\.push\("--test-reporter", reporter\);/);
+  assert.match(webTestRunnerSource, /args\.push\("--test-reporter-destination", reporterDestination\);/);
 });
