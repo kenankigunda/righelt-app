@@ -15,6 +15,7 @@ const jobBlock = (jobId, nextJobId = null) => {
 
 test("CI grants the permissions required for publishing GitHub test results", () => {
   assert.match(workflow, /permissions:\s+contents: read\s+checks: write/s);
+  assert.match(workflow, /env:\s+FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"/s);
 });
 
 test("CI uses split job-level checks and Node 22", () => {
@@ -30,6 +31,10 @@ test("CI uses split job-level checks and Node 22", () => {
   assert.match(workflow, /e2e-workflows:\s+name: E2E workflows/s);
   assert.match(workflow, /test-results:\s+name: Test results/s);
   assert.match(workflow, /node-version: "22"/);
+  assert.match(workflow, /uses: actions\/checkout@v5/);
+  assert.match(workflow, /uses: actions\/setup-node@v5/);
+  assert.match(workflow, /uses: actions\/upload-artifact@v6/);
+  assert.match(workflow, /uses: actions\/download-artifact@v6/);
 });
 
 test("CI allows non-E2E checks to run in parallel and only gates workflow E2E behind smoke", () => {
@@ -86,7 +91,7 @@ test("CI emits JUnit from each lane and publishes a consolidated test-results ch
   );
   assert.match(workflow, /PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results\/e2e-smoke\/results\.xml/);
   assert.match(workflow, /PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results\/e2e-workflows\/results\.xml/);
-  assert.match(workflow, /uses: actions\/download-artifact@v4/);
+  assert.match(workflow, /uses: actions\/download-artifact@v6/);
   assert.match(workflow, /pattern: junit-\*/);
   assert.doesNotMatch(workflow, /merge-multiple: true/);
   assert.match(workflow, /uses: mikepenz\/action-junit-report@v6/);
