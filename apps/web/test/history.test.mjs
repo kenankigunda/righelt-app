@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { MAX_HISTORY } from "../generated/packages/shared-types/src/constants.js";
 import { createTestStore } from "./support.mjs";
 
 test("history mode uses selected move snapshot and return-to-live clears history mode", async () => {
@@ -50,11 +51,11 @@ test("history trimming preserves contiguous move indexes and live turn controls 
 
   store.selectHistoryMove({ gameId: game.id, moveIndex: 0 });
   let vm = store.getGameViewModel(game.id);
-  assert.equal(vm.moves.length, 200);
-  assert.equal(vm.moves[0].notation, "M6");
+  assert.equal(vm.moves.length, MAX_HISTORY);
+  assert.equal(vm.moves[0].notation, `M${205 - MAX_HISTORY + 1}`);
   assert.deepEqual(
     vm.currentTurn.moveIndexes,
-    Array.from({ length: 200 }, (_, index) => index),
+    Array.from({ length: MAX_HISTORY }, (_, index) => index),
   );
   assert.equal(vm.inHistoryMode, true);
 

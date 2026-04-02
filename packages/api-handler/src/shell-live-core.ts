@@ -158,6 +158,12 @@ export const getSideToMoveSeat = (game: LiveGame): "Player 1" | "Player 2" =>
 export const getActiveTurn = (game: LiveGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
 const isMoveUndone = (move: MoveEntry | null | undefined) => move?.undone === true;
 const getActiveMoves = (game: LiveGame) => game.moves.filter((move) => !isMoveUndone(move));
+const getNextDisplayMoveNumber = (game: LiveGame) => {
+  const latestActiveMove = [...game.moves].reverse().find((move) => !isMoveUndone(move));
+  return typeof latestActiveMove?.displayMoveNumber === "number" && Number.isFinite(latestActiveMove.displayMoveNumber)
+    ? latestActiveMove.displayMoveNumber + 1
+    : getActiveMoves(game).length + 1;
+};
 
 export const asIdentity = (value: unknown) => (typeof value === "string" && value.trim().length > 0 ? value.trim() : null);
 export const asGameState = (value: unknown): GameState | null =>
@@ -904,19 +910,21 @@ const renumberHistory = (game: LiveGame) => {
     if (!move.moveId) {
       move.moveId = nextMoveId();
     }
+    const hasStableDisplayNumber = typeof move.displayMoveNumber === "number" && Number.isFinite(move.displayMoveNumber);
     if (!isMoveUndone(move)) {
       activeMoveCounter += 1;
-      move.displayMoveNumber = activeMoveCounter;
-    } else if (typeof move.displayMoveNumber !== "number" || !Number.isFinite(move.displayMoveNumber)) {
+      if (!hasStableDisplayNumber) {
+        move.displayMoveNumber = activeMoveCounter;
+      }
+    } else if (!hasStableDisplayNumber) {
       move.displayMoveNumber = activeMoveCounter;
     }
   });
   game.turns.forEach((turn) => {
-    turn.moveIndexes = turn.moveIndexes
-      .map((_, turnMoveIndex) =>
-        game.moves.find((move) => !isMoveUndone(move) && move.turnIndex === turn.index && move.turnMoveIndex === turnMoveIndex)?.index ?? -1,
-      )
-      .filter((index) => index >= 0);
+    turn.moveIndexes = game.moves
+      .filter((move) => !isMoveUndone(move) && move.turnIndex === turn.index)
+      .map((move) => move.index);
+    turn.lastMoveAt = turn.moveIndexes.length > 0 ? game.moves[turn.moveIndexes[turn.moveIndexes.length - 1]]?.at ?? null : null;
   });
 };
 
@@ -1064,7 +1072,7 @@ export const applyServerActionWithExpectedState = (
     index: game.moves.length,
     turnIndex: activeTurn.index,
     turnMoveIndex: activeTurn.moveIndexes.length,
-    displayMoveNumber: getActiveMoves(game).length + 1,
+    displayMoveNumber: getNextDisplayMoveNumber(game),
     actorSide: stable.sideToMove,
     at: now(),
     notation: notation || defaultNotationForAction(action),
