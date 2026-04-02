@@ -68,19 +68,19 @@ jobs:
         run: pnpm check:web-engine-generated
 
       - name: Engine unit tests
-        run: pnpm test:engine:unit -- --test-reporter spec
+        run: pnpm test:engine:unit
 
       - name: Web unit tests
         run: pnpm test:web:unit -- --reporter spec
 
       - name: Engine integration tests
-        run: pnpm test:engine:integration -- --test-reporter spec
+        run: pnpm test:engine:integration
 
       - name: API handler integration tests
-        run: pnpm test:api-handler -- --test-reporter spec
+        run: pnpm test:api-handler
 
       - name: API worker integration tests
-        run: pnpm test:api-worker -- --test-reporter spec
+        run: pnpm test:api-worker
 
       - name: Web integration tests
         run: pnpm test:web:integration -- --reporter spec

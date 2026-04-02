@@ -41,11 +41,11 @@ test("CI runs granular test steps in fast-fail order before the E2E gates", () =
   assert.ok(installPlaywrightIndex < smokeIndex);
   assert.ok(smokeIndex < broadIndex);
 
-  assert.match(workflow, /run: pnpm test:engine:unit -- --test-reporter spec/);
+  assert.match(workflow, /run: pnpm test:engine:unit/);
   assert.match(workflow, /run: pnpm test:web:unit -- --reporter spec/);
-  assert.match(workflow, /run: pnpm test:engine:integration -- --test-reporter spec/);
-  assert.match(workflow, /run: pnpm test:api-handler -- --test-reporter spec/);
-  assert.match(workflow, /run: pnpm test:api-worker -- --test-reporter spec/);
+  assert.match(workflow, /run: pnpm test:engine:integration/);
+  assert.match(workflow, /run: pnpm test:api-handler/);
+  assert.match(workflow, /run: pnpm test:api-worker/);
   assert.match(workflow, /run: pnpm test:web:integration -- --reporter spec/);
   assert.match(workflow, /run: pnpm test:e2e:smoke/);
   assert.match(workflow, /run: pnpm test:e2e/);
