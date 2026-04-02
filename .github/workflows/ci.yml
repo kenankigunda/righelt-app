@@ -62,8 +62,6 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup pnpm via Corepack
         run: corepack enable && corepack prepare pnpm@9 --activate
@@ -85,8 +83,6 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup pnpm via Corepack
         run: corepack enable && corepack prepare pnpm@9 --activate
@@ -108,8 +104,6 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup pnpm via Corepack
         run: corepack enable && corepack prepare pnpm@9 --activate
@@ -139,8 +133,6 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup pnpm via Corepack
         run: corepack enable && corepack prepare pnpm@9 --activate
@@ -170,8 +162,6 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup pnpm via Corepack
         run: corepack enable && corepack prepare pnpm@9 --activate
@@ -201,8 +191,6 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup pnpm via Corepack
         run: corepack enable && corepack prepare pnpm@9 --activate
@@ -232,8 +220,6 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup pnpm via Corepack
         run: corepack enable && corepack prepare pnpm@9 --activate
@@ -263,8 +249,6 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup pnpm via Corepack
         run: corepack enable && corepack prepare pnpm@9 --activate
@@ -294,8 +278,6 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup pnpm via Corepack
         run: corepack enable && corepack prepare pnpm@9 --activate
@@ -341,8 +323,6 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: "pnpm"
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup pnpm via Corepack
         run: corepack enable && corepack prepare pnpm@9 --activate
