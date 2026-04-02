@@ -13,6 +13,9 @@ let reporterDestination = null;
 const filters = [];
 for (let index = 2; index < process.argv.length; index += 1) {
   const value = process.argv[index];
+  if (value === "--") {
+    continue;
+  }
   if (value === "--layer") {
     requestedLayer = process.argv[index + 1] ?? "all";
     index += 1;

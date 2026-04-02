@@ -154,6 +154,7 @@ test("generated web runtime guard rebuilds and fails on stale output", () => {
 });
 
 test("web test runner forwards optional reporter settings into node --test", () => {
+  assert.match(webTestRunnerSource, /if \(value === "--"\) \{\s*continue;\s*\}/);
   assert.match(webTestRunnerSource, /if \(value === "--reporter"\)/);
   assert.match(webTestRunnerSource, /if \(value === "--reporter-destination"\)/);
   assert.match(webTestRunnerSource, /args\.push\("--test-reporter", reporter\);/);
