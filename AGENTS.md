@@ -28,6 +28,7 @@ This file defines repo-specific operating rules for AI coding agents working in 
 
 - Run only tests relevant to touched packages for the current change.
 - Run required acceptance checks before final integration.
+- Treat the repo-level full verification flow as `pnpm test`, and keep it aligned with CI checks so local full-pass validation catches the same classes of failures.
 - If tests cannot run, state why and what remains unverified.
 - Prefer deterministic, non-watch test commands in agent execution.
 - Add and/or extend a comprehensive test set for the changed behavior, with explicit regression-focused assertions.

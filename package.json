@@ -30,7 +30,7 @@
     "dev:all:b:auto": "node scripts/dev-web-auto.mjs 8790 --with-api --watch-backend",
     "dev:all:c:auto": "node scripts/dev-web-auto.mjs 8791 --with-api --watch-backend",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "pnpm test:engine && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web",
+    "test": "pnpm typecheck && pnpm test:engine && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web",
     "test:engine": "tsx --test $(find packages/game-engine/test -name '*.test.mjs' -type f | sort)",
     "test:engine:unit": "tsx --test $(find packages/game-engine/test/unit -name '*.test.mjs' -type f | sort)",
     "test:engine:integration": "tsx --test $(find packages/game-engine/test/integration -name '*.test.mjs' -type f | sort)",
