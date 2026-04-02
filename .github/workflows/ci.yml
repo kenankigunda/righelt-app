@@ -14,6 +14,7 @@ on:
       - "package.json"
       - "playwright.config.mjs"
       - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
       - "scripts/**"
       - "tsconfig.json"
       - "tsconfig.base.json"
@@ -34,6 +35,7 @@ on:
       - "package.json"
       - "playwright.config.mjs"
       - "pnpm-workspace.yaml"
+      - "pnpm-lock.yaml"
       - "scripts/**"
       - "tsconfig.json"
       - "tsconfig.base.json"
@@ -41,8 +43,13 @@ on:
       - ".github/workflows/deploy.yml"
       - ".github/workflows/db-retention-cleanup.yml"
 
+permissions:
+  contents: read
+  checks: write
+
 jobs:
-  checks:
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -56,7 +63,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
@@ -64,40 +73,382 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+  generated-web-runtime:
+    name: Generated web runtime
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
       - name: Generated web runtime is up to date
         run: pnpm check:web-engine-generated
 
+  engine-unit:
+    name: Engine unit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
       - name: Engine unit tests
-        run: pnpm test:engine:unit
+        run: pnpm test:engine:unit -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/engine-unit/results.xml
+
+      - name: Upload engine unit JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-engine-unit
+          path: test-results/engine-unit/results.xml
+          if-no-files-found: ignore
+
+  web-unit:
+    name: Web unit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
 
       - name: Web unit tests
-        run: pnpm test:web:unit -- --reporter spec
+        run: pnpm test:web:unit -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/web-unit/results.xml
+
+      - name: Upload web unit JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-web-unit
+          path: test-results/web-unit/results.xml
+          if-no-files-found: ignore
+
+  engine-integration:
+    name: Engine integration
+    runs-on: ubuntu-latest
+    needs:
+      - typecheck
+      - generated-web-runtime
+      - engine-unit
+      - web-unit
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
 
       - name: Engine integration tests
-        run: pnpm test:engine:integration
+        run: pnpm test:engine:integration -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/engine-integration/results.xml
+
+      - name: Upload engine integration JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-engine-integration
+          path: test-results/engine-integration/results.xml
+          if-no-files-found: ignore
+
+  api-handler-integration:
+    name: API handler integration
+    runs-on: ubuntu-latest
+    needs:
+      - typecheck
+      - generated-web-runtime
+      - engine-unit
+      - web-unit
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
 
       - name: API handler integration tests
-        run: pnpm test:api-handler
+        run: pnpm test:api-handler -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/api-handler-integration/results.xml
+
+      - name: Upload API handler integration JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-api-handler-integration
+          path: test-results/api-handler-integration/results.xml
+          if-no-files-found: ignore
+
+  api-worker-integration:
+    name: API worker integration
+    runs-on: ubuntu-latest
+    needs:
+      - typecheck
+      - generated-web-runtime
+      - engine-unit
+      - web-unit
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
 
       - name: API worker integration tests
-        run: pnpm test:api-worker
+        run: pnpm test:api-worker -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/api-worker-integration/results.xml
+
+      - name: Upload API worker integration JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-api-worker-integration
+          path: test-results/api-worker-integration/results.xml
+          if-no-files-found: ignore
+
+  web-integration:
+    name: Web integration
+    runs-on: ubuntu-latest
+    needs:
+      - typecheck
+      - generated-web-runtime
+      - engine-unit
+      - web-unit
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
 
       - name: Web integration tests
-        run: pnpm test:web:integration -- --reporter spec
+        run: pnpm test:web:integration -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/web-integration/results.xml
+
+      - name: Upload web integration JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-web-integration
+          path: test-results/web-integration/results.xml
+          if-no-files-found: ignore
+
+  e2e-smoke:
+    name: E2E smoke
+    runs-on: ubuntu-latest
+    needs:
+      - engine-integration
+      - api-handler-integration
+      - api-worker-integration
+      - web-integration
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
 
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
 
       - name: E2E smoke tests
+        env:
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/e2e-smoke/results.xml
+          PLAYWRIGHT_OUTPUT_DIR: test-results/e2e-smoke/artifacts
         run: pnpm test:e2e:smoke
 
-      - name: E2E workflow tests
-        run: pnpm test:e2e
-
-      - name: Upload Playwright results
+      - name: Upload E2E smoke JUnit
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-results
-          path: test-results/
+          name: junit-e2e-smoke
+          path: test-results/e2e-smoke/results.xml
           if-no-files-found: ignore
+
+      - name: Upload E2E smoke Playwright debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e-smoke-debug
+          path: test-results/e2e-smoke/artifacts
+          if-no-files-found: ignore
+
+  e2e-workflows:
+    name: E2E workflows
+    runs-on: ubuntu-latest
+    needs:
+      - e2e-smoke
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: E2E workflow tests
+        env:
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/e2e-workflows/results.xml
+          PLAYWRIGHT_OUTPUT_DIR: test-results/e2e-workflows/artifacts
+        run: pnpm test:e2e
+
+      - name: Upload E2E workflows JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-e2e-workflows
+          path: test-results/e2e-workflows/results.xml
+          if-no-files-found: ignore
+
+      - name: Upload E2E workflow Playwright debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e-workflows-debug
+          path: test-results/e2e-workflows/artifacts
+          if-no-files-found: ignore
+
+  test-results:
+    name: Test results
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    needs:
+      - engine-unit
+      - web-unit
+      - engine-integration
+      - api-handler-integration
+      - api-worker-integration
+      - web-integration
+      - e2e-smoke
+      - e2e-workflows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download lane JUnit artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: junit-*
+          path: test-results/published
+          merge-multiple: true
+
+      - name: Publish GitHub test results
+        uses: mikepenz/action-junit-report@v6
+        with:
+          check_name: Test results
+          report_paths: test-results/published/**/*.xml
+          fail_on_failure: false
+          require_tests: false
+          check_annotations: true
+          job_summary: true
+          detailed_summary: true
+          comment: false

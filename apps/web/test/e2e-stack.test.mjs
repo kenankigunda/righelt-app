@@ -30,9 +30,12 @@ test("Playwright config boots the shared local stack and captures failure artifa
   assert.match(playwrightConfigSource, /testDir: "\.\/e2e"/);
   assert.match(playwrightConfigSource, /workers: 1/);
   assert.match(playwrightConfigSource, /process\.env\.CI/);
+  assert.match(playwrightConfigSource, /PLAYWRIGHT_JUNIT_OUTPUT_FILE/);
+  assert.match(playwrightConfigSource, /PLAYWRIGHT_OUTPUT_DIR/);
   assert.match(playwrightConfigSource, /"github"/);
   assert.match(playwrightConfigSource, /"junit"/);
   assert.match(playwrightConfigSource, /test-results\/playwright\/results\.xml/);
+  assert.match(playwrightConfigSource, /test-results\/playwright\/artifacts/);
   assert.match(playwrightConfigSource, /trace: "retain-on-failure"/);
   assert.match(playwrightConfigSource, /screenshot: "only-on-failure"/);
   assert.match(playwrightConfigSource, /command: "node scripts\/e2e-stack\.mjs"/);

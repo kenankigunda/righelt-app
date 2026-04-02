@@ -8,8 +8,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let requestedLayer = "all";
-let reporter = null;
-let reporterDestination = null;
+const reporters = [];
+const reporterDestinations = [];
 const filters = [];
 for (let index = 2; index < process.argv.length; index += 1) {
   const value = process.argv[index];
@@ -22,12 +22,22 @@ for (let index = 2; index < process.argv.length; index += 1) {
     continue;
   }
   if (value === "--reporter") {
-    reporter = process.argv[index + 1] ?? null;
+    const reporter = process.argv[index + 1] ?? null;
+    if (!reporter) {
+      console.error("Missing value for --reporter");
+      process.exit(1);
+    }
+    reporters.push(reporter);
     index += 1;
     continue;
   }
   if (value === "--reporter-destination") {
-    reporterDestination = process.argv[index + 1] ?? null;
+    const reporterDestination = process.argv[index + 1] ?? null;
+    if (!reporterDestination) {
+      console.error("Missing value for --reporter-destination");
+      process.exit(1);
+    }
+    reporterDestinations.push(reporterDestination);
     index += 1;
     continue;
   }
@@ -56,11 +66,25 @@ if (selected.length === 0) {
 
 const args = ["--test"];
 
-if (reporter) {
+if (reporters.length === 0) {
+  reporters.push("spec");
+}
+
+if (reporterDestinations.length > 0 && reporterDestinations.length !== reporters.length) {
+  console.error("Reporter destinations must match the number of reporters.");
+  process.exit(1);
+}
+
+if (reporters.length > 1 && reporterDestinations.length === 0) {
+  console.error("Multiple reporters require explicit --reporter-destination entries.");
+  process.exit(1);
+}
+
+for (const reporter of reporters) {
   args.push("--test-reporter", reporter);
 }
 
-if (reporterDestination) {
+for (const reporterDestination of reporterDestinations) {
   args.push("--test-reporter-destination", reporterDestination);
 }
 
