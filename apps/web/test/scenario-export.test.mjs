@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildHistoryBranchSeedFromGame, buildScenarioFromGame } from "../shell/scenarios.js";
+import {
+  buildHistoryBranchSeedFromGame,
+  buildScenarioFromGame,
+  getScenarioWriterBaseUrl,
+  loadScenarioCatalog,
+} from "../shell/scenarios.js";
 
 const SCENARIO_UUIDS = {
   exportUsesCanonicalTurn: "0066b0ed-c5ba-4a89-a81a-1811d08d2d9d",
@@ -457,4 +462,100 @@ test("buildHistoryBranchSeedFromGame excludes undone moves before selected move"
   assert.equal(seed.scenario.moves.length, 1);
   assert.equal(seed.scenario.moves[0].notation, "M1");
   assert.match(seed.title, /move 2/);
+});
+
+test("buildHistoryBranchSeedFromGame uses human move numbers in descriptions when display numbers are absent", () => {
+  const seed = buildHistoryBranchSeedFromGame(
+    {
+      id: "game-branch-4",
+      myRole: "Viewer",
+      myRoles: ["Viewer"],
+      moves: [
+        {
+          index: 0,
+          turnIndex: 0,
+          turnMoveIndex: 0,
+          actorSide: "P1",
+          notation: "M1",
+          action: { type: "move", actorId: "U1", from: { row: 1, col: 1 }, to: { row: 1, col: 2 } },
+          selectionSnapshot: { boardSize: 10, sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+          snapshot: { boardSize: 10, sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+        },
+        {
+          index: 1,
+          turnIndex: 0,
+          turnMoveIndex: 1,
+          actorSide: "P1",
+          notation: "M2",
+          action: { type: "move", actorId: "U2", from: { row: 2, col: 2 }, to: { row: 2, col: 3 } },
+          selectionSnapshot: { boardSize: 10, sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+          snapshot: { boardSize: 10, sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+        },
+      ],
+      board: {
+        state: { boardSize: 10, sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+      },
+    },
+    1,
+  );
+
+  assert.equal(seed.title, "Branch from game-branch move 2");
+  assert.equal(seed.scenario.description, "Replay through move 2 and open before move 3.");
+});
+
+test("loadScenarioCatalog normalizes legacy scenario fields and catalog defaults", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    Response.json({
+      scenarios: [
+        {
+          id: "legacy-scenario",
+          title: "Legacy import",
+          initial_state: { sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+          resulting_state: { sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+          expected_final_state_hash: "hash-legacy",
+          expected_outcome: "ongoing",
+          saved_selection: {
+            source: { row: "4", col: "5" },
+            target: { row: 4, col: 6 },
+            actorSide: "P1",
+            turnIndex: "7",
+          },
+        },
+      ],
+    });
+
+  try {
+    const catalog = await loadScenarioCatalog();
+    assert.equal(catalog.id, "S");
+    assert.equal(catalog.title, "Saved Scenarios");
+    assert.equal(catalog.scenarios.length, 1);
+    assert.deepEqual(catalog.scenarios[0].savedSelection, {
+      source: { row: 4, col: 5 },
+      target: { row: 4, col: 6 },
+      actorSide: "P1",
+      turnIndex: 7,
+    });
+    assert.equal(catalog.scenarios[0].description, "Legacy import");
+    assert.equal(catalog.scenarios[0].expectedFinalStateHash, "hash-legacy");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("getScenarioWriterBaseUrl only enables the local writer on localhost-style hosts", () => {
+  const originalWindow = globalThis.window;
+
+  try {
+    globalThis.window = { location: { hostname: "localhost", port: "8789" } };
+    assert.equal(getScenarioWriterBaseUrl(), "http://localhost:9789");
+
+    globalThis.window = { location: { hostname: "127.0.0.1", port: "" } };
+    assert.equal(getScenarioWriterBaseUrl(), "http://127.0.0.1:1080");
+
+    globalThis.window = { location: { hostname: "righelt.pages.dev", port: "443" } };
+    assert.equal(getScenarioWriterBaseUrl(), null);
+  } finally {
+    globalThis.window = originalWindow;
+  }
 });

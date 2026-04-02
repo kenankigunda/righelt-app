@@ -202,13 +202,14 @@ export const buildHistoryBranchSeedFromGame = (game, moveIndex) => {
   const resultingState = structuredClone(move.selectionSnapshot);
   const sourceLabel = String(game?.id || "").startsWith("game-") ? String(game.id).slice(0, 11) : String(game?.id || "game");
   const scenarioId = createUuidV4();
+  const moveNumber = move.displayMoveNumber ?? move.index + 1;
   return {
-    title: `Branch from ${sourceLabel} move ${move.displayMoveNumber ?? move.index + 1}`,
+    title: `Branch from ${sourceLabel} move ${moveNumber}`,
     scenario: normalizeScenario({
       formatVersion: 2,
       id: scenarioId,
-      title: `Branch from ${sourceLabel} move ${move.displayMoveNumber ?? move.index + 1}`,
-      description: `Replay through move ${move.displayMoveNumber ?? move.index} and open before move ${move.displayMoveNumber ?? move.index + 1}.`,
+      title: `Branch from ${sourceLabel} move ${moveNumber}`,
+      description: `Replay through move ${moveNumber} and open before move ${moveNumber + 1}.`,
       incorrect: false,
       initialState,
       moves: selectedMoves.map((selectedMove) => ({

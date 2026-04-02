@@ -282,10 +282,9 @@ export const createShellStore = ({
         game.moves[i].index = i;
       }
       game.turns.forEach((turn) => {
-        turn.moveIndexes = turn.moveIndexes.map((_, index) => {
-          const moveAtIndex = game.moves.find((move) => move.turnIndex === turn.index && move.turnMoveIndex === index);
-          return moveAtIndex ? moveAtIndex.index : -1;
-        }).filter((index) => index >= 0);
+        turn.moveIndexes = game.moves
+          .filter((move) => move.turnIndex === turn.index)
+          .map((move) => move.index);
       });
     }
 

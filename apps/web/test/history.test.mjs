@@ -35,3 +35,35 @@ test("new moves append while in history mode", async () => {
   assert.equal(vm.inHistoryMode, true);
   assert.equal(vm.currentTurn.moveIndexes.length, 2);
 });
+
+test("history trimming preserves contiguous move indexes and live turn controls after long games", async () => {
+  const { store } = createTestStore();
+  const game = await store.createGame();
+
+  for (let index = 1; index <= 205; index += 1) {
+    store.addMove({
+      gameId: game.id,
+      notation: `M${index}`,
+      snapshot: { turnIndex: 0, sideToMove: "P1" },
+    });
+  }
+
+  store.selectHistoryMove({ gameId: game.id, moveIndex: 0 });
+  let vm = store.getGameViewModel(game.id);
+  assert.equal(vm.moves.length, 200);
+  assert.equal(vm.moves[0].notation, "M6");
+  assert.deepEqual(
+    vm.currentTurn.moveIndexes,
+    Array.from({ length: 200 }, (_, index) => index),
+  );
+  assert.equal(vm.inHistoryMode, true);
+
+  store.returnToLive({ gameId: game.id });
+  const ended = store.endTurn({ gameId: game.id });
+  assert.notEqual(ended?.ok, false);
+
+  vm = store.getGameViewModel(game.id);
+  assert.equal(vm.inHistoryMode, false);
+  assert.equal(vm.currentTurn.index, 1);
+  assert.equal(vm.currentTurn.playerSeat, "Player 2");
+});
