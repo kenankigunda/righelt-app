@@ -2,13 +2,31 @@ import { readdirSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { classifyWebTestFile } from "./test-layers.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const filters = process.argv.slice(2).map((value) => value.toLowerCase());
+let requestedLayer = "all";
+const filters = [];
+for (let index = 2; index < process.argv.length; index += 1) {
+  const value = process.argv[index];
+  if (value === "--layer") {
+    requestedLayer = process.argv[index + 1] ?? "all";
+    index += 1;
+    continue;
+  }
+  filters.push(value.toLowerCase());
+}
+
+if (!["all", "unit", "integration"].includes(requestedLayer)) {
+  console.error("Unknown web test layer:", requestedLayer);
+  process.exit(1);
+}
+
 const candidates = readdirSync(__dirname)
   .filter((file) => file.endsWith(".test.mjs"))
+  .filter((file) => requestedLayer === "all" || classifyWebTestFile(file) === requestedLayer)
   .sort();
 
 const selected =

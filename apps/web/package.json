@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "node ./test/run-web-tests.mjs",
+    "test:unit": "node ./test/run-web-tests.mjs --layer unit",
+    "test:integration": "node ./test/run-web-tests.mjs --layer integration",
     "typecheck": "node -e \"process.exit(0)\""
   }
 }

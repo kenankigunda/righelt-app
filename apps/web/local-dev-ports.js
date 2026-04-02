@@ -3,6 +3,7 @@ export const LOCAL_DEV_PORT_VARIANTS = Object.freeze([
   { suffix: "a", webPort: 8789, apiPort: 8792 },
   { suffix: "b", webPort: 8790, apiPort: 8793 },
   { suffix: "c", webPort: 8791, apiPort: 8794 },
+  { suffix: "e2e", webPort: 9888, apiPort: 9887 },
 ]);
 
 const DEFAULT_LOCAL_DEV_VARIANT = LOCAL_DEV_PORT_VARIANTS[0];

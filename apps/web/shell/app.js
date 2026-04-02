@@ -1257,7 +1257,7 @@ const renderTurnHistory = (game) => {
       actorSide: move.actorSide || null,
       html: `<li class="history-item ${playerToneClassForSide(move.actorSide || "P1")}${selectedClass}${undoneClass}" data-action="jump-history" data-game-id="${escapeHtml(
         game.id,
-      )}" data-move-index="${move.index}">
+      )}" data-move-index="${move.index}" data-testid="history-move-item">
           <span class="history-move-line">Move ${escapeHtml(
             String(move.displayMoveNumber ?? move.index + 1),
           )}: ${escapeHtml(move.notation)}</span>
@@ -1333,7 +1333,7 @@ const renderTurnHistory = (game) => {
   const emptyTurnItem = game.inHistoryMode
     ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(
         game.id,
-      )}" ${busy ? "disabled" : ""}>Return to live view</button></li>`
+      )}" data-testid="history-return-live" ${busy ? "disabled" : ""}>Return to live view</button></li>`
     : liveStatusItem;
   const undoLastMoveItem =
     !game.inHistoryMode && game.canUndoLastMove && game.latestActiveMoveId
@@ -1773,7 +1773,7 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
 </div>`;
 
 const renderHomeStartButton = () =>
-  `<button class="home-start-button" data-action="create-game" ${busy ? "disabled" : ""}>Start new game</button>`;
+  `<button class="home-start-button" data-action="create-game" data-testid="home-create-game" ${busy ? "disabled" : ""}>Start new game</button>`;
 
 const renderHomeGameSection = (sectionKey) => {
   const section = getHomeSection(sectionKey);
@@ -1861,9 +1861,9 @@ const renderGameSummaryPanel = (game) => {
     <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
     <div class="section-stack">
       <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
-      <p class="small">Role: ${renderRoleLabel(game.myRole, game)}</p>
+      <p class="small" data-testid="game-role">Role: ${renderRoleLabel(game.myRole, game)}</p>
       <div class="section-followup">
-        <p class="small">Active turn: ${
+        <p class="small" data-testid="active-turn-label">Active turn: ${
           game.currentTurn
             ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderSeatLabel(game.currentTurn.playerSeat)} · ${escapeHtml(
                 String(game.currentTurn.moveIndexes.length),
@@ -1878,14 +1878,14 @@ const renderGameSummaryPanel = (game) => {
 
 const renderJoinInvitePanel = (game, inviteLink) => {
   const pendingSeatNotice = game.pendingPlayerRequestSeat
-    ? `<div class="alert">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
+    ? `<div class="alert" data-testid="pending-player-request-notice">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
     : "";
   const pendingRows =
     game.pendingJoinRequests.length === 0
       ? "<li class=\"small\">No pending join requests</li>"
       : game.pendingJoinRequests
           .map(
-            (request) => `<li>
+            (request) => `<li data-testid="pending-join-request" data-requester-id="${escapeHtml(request.identityId)}">
               <span class="mono">${escapeHtml(request.identityId)}</span> requests ${renderSeatLabel(request.requestedSeat)}
               <button class="secondary" data-action="approve-request" data-game-id="${escapeHtml(
                 game.id,
@@ -1893,29 +1893,29 @@ const renderJoinInvitePanel = (game, inviteLink) => {
                 !busy && Array.isArray(game.approvableRequesterIds) && game.approvableRequesterIds.includes(request.identityId)
                   ? ""
                   : "disabled"
-              }>Approve</button>
+              } data-testid="approve-request-inline">Approve</button>
             </li>`,
           )
           .join("");
   const joinInviteActions = renderSectionActions([
     game.canJoinAsViewer
-      ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${!busy ? "" : "disabled"}>Join as viewer</button>`
+      ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="join-viewer" class="secondary" ${!busy ? "" : "disabled"}>Join as viewer</button>`
       : "",
     game.canJoinAsPlayer && game.showJoinActions
-      ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" ${!busy ? "" : "disabled"}>Join as player</button>`
+      ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" data-testid="join-player" ${!busy ? "" : "disabled"}>Join as player</button>`
       : "",
     game.canPlayAsBothPlayers
       ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
           !busy ? "" : "disabled"
         }>Play as both players</button>`
       : "",
-    `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-link="${escapeHtml(inviteLink)}" ${
+    `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-link="${escapeHtml(inviteLink)}" data-testid="copy-invite" ${
       game.canInvite && !busy ? "" : "disabled"
     }>Invite someone else</button>`,
   ]);
 
   return `
-    <h2>Join / Invite</h2>
+    <h2 data-testid="join-invite-heading">Join / Invite</h2>
     ${pendingSeatNotice}
     ${joinInviteActions}
     ${renderFeedbackReveal(inviteFeedback)}
@@ -1934,9 +1934,9 @@ const renderParticipantsPanel = (game) => {
   const participantRows = participants
     .map((entry) => {
       if (!entry.value) {
-        return `<li>${renderSeatLabel(entry.label)}: <span class="small">Open seat</span></li>`;
+        return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: <span class="small">Open seat</span></li>`;
       }
-      return `<li>${renderSeatLabel(entry.label)}: <span class="mono">${escapeHtml(entry.value.identityId)}</span> ${formatStatus(entry.value.connected)}</li>`;
+      return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: <span class="mono">${escapeHtml(entry.value.identityId)}</span> ${formatStatus(entry.value.connected)}</li>`;
     })
     .join("");
 
@@ -1946,12 +1946,12 @@ const renderParticipantsPanel = (game) => {
       : game.viewers
           .map(
             (viewer) =>
-              `<li>Viewer: <span class="mono">${escapeHtml(viewer.identityId)}</span> ${formatStatus(viewer.connected)}</li>`,
+              `<li data-testid="participant-viewer">Viewer: <span class="mono">${escapeHtml(viewer.identityId)}</span> ${formatStatus(viewer.connected)}</li>`,
           )
           .join("");
   return `
     <h2>Participants</h2>
-    <ul class="participant-list">${participantRows}${viewerRows}</ul>
+    <ul class="participant-list" data-testid="participants-list">${participantRows}${viewerRows}</ul>
   `;
 };
 
@@ -1971,7 +1971,7 @@ const renderHistoryPanel = (game) => {
     <h2>History</h2>
     <div class="section-followup">
       ${historyBanner}
-      <ol class="history-list">${historyRows}</ol>
+      <ol class="history-list" data-testid="history-list">${historyRows}</ol>
     </div>
   `;
 };
@@ -1979,8 +1979,8 @@ const renderHistoryPanel = (game) => {
 const renderBoardPanel = (game) => `
   <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span></h2>
   <p class="board-preview-label" id="shell-board-preview-label">Select a piece to preview moves; click it again for supply and command lines only:</p>
-  <div class="board-wrap">
-    <div id="shell-board" class="board"></div>
+  <div class="board-wrap" data-testid="game-board-wrap">
+    <div id="shell-board" class="board" data-testid="game-board"></div>
     <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
   </div>
   <div class="overlay-key" aria-label="Overlay color key">
@@ -2012,7 +2012,7 @@ const renderGameShellPanelTab = (panelKey, label) => `
 
 const renderGameShellFrame = (game) => `
   <div id="shell-game-alerts"></div>
-  <section class="game-shell-frame" data-game-shell-root data-game-id="${escapeHtml(game.id)}">
+  <section class="game-shell-frame" data-game-shell-root data-game-id="${escapeHtml(game.id)}" data-testid="game-shell">
     <div class="game-shell-track-wrap">
       <section class="layout-grid game-shell-track" data-game-shell-track>
         <div class="stack game-shell-mobile-panel" data-mobile-panel="players" data-shell-sticky-target="left" data-sticky-enabled="false">
@@ -2378,7 +2378,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
 const renderApprovalGate = (game, request) => {
   const background = renderGameContent(game.id);
   return `
-    <section class="invite-gate">
+    <section class="invite-gate" data-testid="approval-gate">
       <section class="panel invite-gate-modal">
         <p class="small invite-gate-kicker">Approval required</p>
         <h2>Respond to this player request</h2>
@@ -2389,6 +2389,7 @@ const renderApprovalGate = (game, request) => {
               data-action="accept-request"
               data-game-id="${escapeHtml(game.id)}"
               data-requester-id="${escapeHtml(request.identityId)}"
+              data-testid="accept-request"
               ${busy ? "disabled" : ""}
             >Accept</button>
             <span class="small invite-choice-note">Approve the request and promote this participant into the requested player seat.</span>
@@ -2399,6 +2400,7 @@ const renderApprovalGate = (game, request) => {
               data-action="ignore-request"
               data-game-id="${escapeHtml(game.id)}"
               data-requester-id="${escapeHtml(request.identityId)}"
+              data-testid="ignore-request"
               ${busy ? "disabled" : ""}
             >Ignore</button>
             <span class="small invite-choice-note">Dismiss this prompt for now. The request remains visible in Join / Invite.</span>
@@ -2416,7 +2418,7 @@ const renderRevertApprovalGate = (game, request) => {
   const background = renderGameContent(game.id);
   const move = Array.isArray(game.moves) ? game.moves.find((entry) => entry.moveId === request.targetMoveId) : null;
   return `
-    <section class="invite-gate">
+    <section class="invite-gate" data-testid="invite-gate">
       <section class="panel invite-gate-modal">
         <p class="small invite-gate-kicker">Approval required</p>
         <h2>Respond to undo request</h2>
@@ -2456,7 +2458,7 @@ const renderRevertWaitingGate = (game, request) => {
   const background = renderGameContent(game.id);
   const move = Array.isArray(game.moves) ? game.moves.find((entry) => entry.moveId === request.targetMoveId) : null;
   return `
-    <section class="invite-gate">
+    <section class="invite-gate" data-testid="invite-gate">
       <section class="panel invite-gate-modal">
         <p class="small invite-gate-kicker">Approval pending</p>
         <h2>Waiting for undo approval</h2>
@@ -2550,13 +2552,13 @@ const renderInviteLanding = (inviteContext) => {
         ${pendingNotice}
         <div class="invite-choice-list">
           <div class="invite-choice-row">
-            <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" ${
+            <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-player" ${
               canJoinPlayer && !busy ? "" : "disabled"
             }>${escapeHtml(playerActionLabel)}</button>
             <span class="small invite-choice-note">${escapeHtml(playerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
-            <button data-action="accept-invite-viewer" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
+            <button data-action="accept-invite-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-viewer" class="secondary" ${
               canJoinViewer && !busy ? "" : "disabled"
             }>Join as viewer</button>
             <span class="small invite-choice-note">${escapeHtml(viewerExplainer)}</span>

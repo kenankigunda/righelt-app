@@ -10,8 +10,11 @@ on:
       - "packages/shared-types/**"
       - "db/migrations/**"
       - "db/ops/**"
+      - "e2e/**"
       - "package.json"
+      - "playwright.config.mjs"
       - "pnpm-workspace.yaml"
+      - "scripts/**"
       - "tsconfig.json"
       - "tsconfig.base.json"
       - ".github/workflows/ci.yml"
@@ -27,8 +30,11 @@ on:
       - "packages/shared-types/**"
       - "db/migrations/**"
       - "db/ops/**"
+      - "e2e/**"
       - "package.json"
+      - "playwright.config.mjs"
       - "pnpm-workspace.yaml"
+      - "scripts/**"
       - "tsconfig.json"
       - "tsconfig.base.json"
       - ".github/workflows/ci.yml"
@@ -61,14 +67,17 @@ jobs:
       - name: Generated web runtime is up to date
         run: pnpm check:web-engine-generated
 
-      - name: Engine tests
-        run: pnpm test:engine
+      - name: Unit tests
+        run: pnpm test:unit
 
-      - name: API handler tests
-        run: pnpm test:api-handler
+      - name: Integration tests
+        run: pnpm test:integration
 
-      - name: API worker tests
-        run: pnpm test:api-worker
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
 
-      - name: Web tests
-        run: pnpm test:web
+      - name: E2E smoke tests
+        run: pnpm test:e2e:smoke
+
+      - name: E2E workflow tests
+        run: pnpm test:e2e
