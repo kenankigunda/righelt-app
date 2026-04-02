@@ -9,7 +9,7 @@ const mainSource = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
 
 test("shell entry imports board adapter only via contract+adapter modules", () => {
   assert.match(mainSource, /board-adapter-contract\.js/);
-  assert.match(mainSource, /board-adapters\/engine-playground-adapter\.js/);
+  assert.match(mainSource, /board-adapters\/engine-board-adapter\.js/);
 });
 
 test("shell entry does not import engine internals directly", () => {

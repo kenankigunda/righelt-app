@@ -103,7 +103,7 @@ export type LiveGame = {
   createdAt: string;
   lastMoveAt: string | null;
   updatedAt: string;
-  playgroundMode: boolean;
+  selfPlayMode: boolean;
   board: {
     state: GameState;
   };
@@ -290,11 +290,11 @@ export const addNotification = (game: LiveGame, message: string) => {
 export const createInitialGame = ({
   gameId,
   identityId,
-  playgroundMode,
+  selfPlayMode,
 }: {
   gameId: string;
   identityId: string;
-  playgroundMode: boolean;
+  selfPlayMode: boolean;
 }): LiveGame => {
   const initial = resolveToStability(createInitialState(), { artifactMode: "full" });
   const createdAt = now();
@@ -303,7 +303,7 @@ export const createInitialGame = ({
     createdAt,
     lastMoveAt: null,
     updatedAt: createdAt,
-    playgroundMode,
+    selfPlayMode,
     board: { state: initial },
     player1: {
       identityId,
@@ -312,7 +312,7 @@ export const createInitialGame = ({
       lastHeartbeatAt: createdAt,
       sessionCount: 0,
     },
-    player2: playgroundMode
+    player2: selfPlayMode
       ? {
           identityId,
           connected: true,
@@ -338,7 +338,7 @@ export const createInitialGame = ({
     moves: [],
     historyIndexByIdentity: {},
     pendingScenarioSelection: null,
-    notifications: ["Game created", playgroundMode ? "Playground mode active" : "Invite a second player"],
+    notifications: ["Game created", selfPlayMode ? "Self-play mode active" : "Invite a second player"],
     inviteTokens: {
       viewer: createInviteToken(),
       player1: createInviteToken(),
@@ -502,7 +502,7 @@ export const reconcileGameToScenarioResultingState = (game: LiveGame, scenario: 
 };
 
 export const copyParticipantsBetweenGames = (source: LiveGame, target: LiveGame) => {
-  target.playgroundMode = source.playgroundMode;
+  target.selfPlayMode = source.selfPlayMode;
   target.player1 = cloneParticipant(source.player1);
   target.player2 = cloneParticipant(source.player2);
   target.viewers = source.viewers.map((viewer) => cloneParticipant(viewer)).filter(Boolean) as Viewer[];
@@ -575,7 +575,7 @@ export const applyLaunchParticipantCopyMode = (
     return;
   }
 
-  target.playgroundMode = false;
+  target.selfPlayMode = false;
   const sideToMoveSeat = getSideToMoveSeat(target);
   const viewerParticipant = {
     identityId,
@@ -708,8 +708,8 @@ const getJoinAsPlayerDisabledReason = (game: LiveGame, myRole: string) => {
   if (myRole === "Player 1" || myRole === "Player 2") {
     return "You are already joined as a player.";
   }
-  if (game.playgroundMode) {
-    return "Playground mode does not accept remote player joins.";
+  if (game.selfPlayMode) {
+    return "Self-play mode does not accept remote player joins.";
   }
   if (game.player1 && game.player2) {
     return "Game already has the maximum number of players.";

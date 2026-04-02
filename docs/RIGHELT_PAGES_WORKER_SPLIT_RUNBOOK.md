@@ -55,7 +55,7 @@ Create-game smoke:
 ```bash
 curl -fsS -X POST 'https://righelt.pages.dev/api/shell/games?offline=1' \
   -H 'content-type: application/json' \
-  --data '{"identityId":"smoke-player","playgroundMode":false,"offlineLocal":false}'
+  --data '{"identityId":"smoke-player","selfPlayMode":false,"offlineLocal":false}'
 ```
 
 Expected signal:

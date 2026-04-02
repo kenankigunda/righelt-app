@@ -29,7 +29,7 @@ test("shell create-game fails with stable misconfiguration error when GAME_ROOMS
     new Request("https://righelt.pages.dev/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId: "id-a", playgroundMode: false }),
+      body: JSON.stringify({ identityId: "id-a", selfPlayMode: false }),
     }),
     buildEnv(),
   );

@@ -2,12 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  createEnginePlaygroundBoardAdapter,
+  createEngineBoardAdapter,
   getPieceRenderStatus,
   getInactiveSelectedPieceLabel,
   getRemovalAnimationDelayMs,
   getSelectedPieceTooltipLabel,
-} from "../board-adapters/engine-playground-adapter.js";
+} from "../board-adapters/engine-board-adapter.js";
 
 test("getPieceRenderStatus prefers display booleans over actionable booleans", () => {
   assert.deepEqual(
@@ -25,7 +25,7 @@ test("getPieceRenderStatus prefers display booleans over actionable booleans", (
 });
 
 test("selected piece summary exposes live render status and frozen actionable status", () => {
-  const adapter = createEnginePlaygroundBoardAdapter();
+  const adapter = createEngineBoardAdapter();
   const snapshot = {
     pieces: [
       {
@@ -80,7 +80,7 @@ test("selected piece summary exposes live render status and frozen actionable st
 });
 
 test("selected piece summary keeps actionable status while continuation copy can describe future inactivity", () => {
-  const adapter = createEnginePlaygroundBoardAdapter();
+  const adapter = createEngineBoardAdapter();
   const snapshot = {
     continuation: {
       type: "rush",
@@ -118,7 +118,7 @@ test("selected piece summary keeps actionable status while continuation copy can
 });
 
 test("commander supply summary uses display supply status", () => {
-  const adapter = createEnginePlaygroundBoardAdapter();
+  const adapter = createEngineBoardAdapter();
   const snapshot = {
     pieces: [
       {

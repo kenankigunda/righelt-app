@@ -498,7 +498,7 @@ function isPushContinuationGroupMember(snapshot, piece) {
   return (snapshot.continuation.followGroupPieceIds ?? []).includes(piece.id);
 }
 
-export function createEnginePlaygroundBoardAdapter() {
+export function createEngineBoardAdapter() {
   let boardEl = null;
   let overlayLinesEl = null;
   let interactionMode = "interactive";
@@ -880,7 +880,7 @@ export function createEnginePlaygroundBoardAdapter() {
   };
 
   return {
-    id: "engine-playground",
+    id: "engine-board",
 
     getCapabilities() {
       return {

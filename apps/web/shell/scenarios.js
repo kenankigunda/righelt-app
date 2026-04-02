@@ -1,3 +1,6 @@
+import { isUuidV4 } from "../generated/packages/shared-types/src/validation.js";
+import { computeScenarioStateHash } from "../scenario-adapters/engine-scenario-adapter.js";
+
 const normalizeCoord = (coord) => {
   if (!coord || typeof coord !== "object") {
     return null;
@@ -141,18 +144,7 @@ export const downloadScenarioCatalog = (catalog, filename = "scenarios.catalog.j
   URL.revokeObjectURL(url);
 };
 
-export const computeStateHash = async (candidateState) => {
-  const response = await fetch("/api/engine/playground/hash", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ state: candidateState }),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to compute hash: HTTP ${response.status}`);
-  }
-  const body = await response.json();
-  return body.hash;
-};
+export const computeStateHash = async (candidateState) => computeScenarioStateHash(candidateState);
 
 export const buildScenarioFromGame = async (
   game,
@@ -225,4 +217,3 @@ export const buildHistoryBranchSeedFromGame = (game, moveIndex) => {
     participantCopyMode: getLaunchParticipantCopyMode(game),
   };
 };
-import { isUuidV4 } from "../generated/packages/shared-types/src/validation.js";

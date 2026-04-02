@@ -96,7 +96,7 @@ This avoids leaking adapter instances when the selected scenario changes or when
 
 Target files:
 
-- `apps/web/board-adapters/engine-playground-adapter.js`
+- `apps/web/board-adapters/engine-board-adapter.js`
 - `apps/web/board-adapter-contract.js`
 - new module under `apps/web/board/` for mini-board lifecycle and rendering
 

@@ -49,7 +49,7 @@ test("player 1 can convert an open-seat game to play-as-both-players mode", asyn
 
   const vm = store.getGameViewModel(game.id);
   assert.equal(vm.player2?.identityId, vm.player1?.identityId);
-  assert.equal(vm.playgroundMode, true);
+  assert.equal(vm.selfPlayMode, true);
   assert.equal(vm.canPlayAsBothPlayers, false);
 });
 
@@ -64,7 +64,7 @@ test("player 2 can convert an open-seat game to play-as-both-players mode", asyn
           ...game,
           player1: null,
           player2: game.player1,
-          playgroundMode: false,
+          selfPlayMode: false,
           pendingJoinRequests: [{ identityId: "id-other", requestedSeat: "Player 1", requestedAt: "2026-02-26T00:00:00.000Z" }],
         },
       ],
@@ -87,7 +87,7 @@ test("player 2 can convert an open-seat game to play-as-both-players mode", asyn
 
   const vm = reloadedStore.getGameViewModel(game.id);
   assert.equal(vm.player1?.identityId, vm.player2?.identityId);
-  assert.equal(vm.playgroundMode, true);
+  assert.equal(vm.selfPlayMode, true);
   assert.equal(vm.pendingJoinRequests.length, 0);
   assert.equal(vm.canPlayAsBothPlayers, false);
 });

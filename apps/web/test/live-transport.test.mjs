@@ -54,7 +54,7 @@ const buildLiveGame = () => {
     createdAt: "2026-02-26T00:00:00.000Z",
     lastMoveAt: "2026-02-26T00:00:01.000Z",
     updatedAt: "2026-02-26T00:00:01.000Z",
-    playgroundMode: false,
+    selfPlayMode: false,
     player1: { identityId: "id-a", connected: true },
     player2: { identityId: "id-b", connected: true },
     viewers: [],
@@ -210,7 +210,7 @@ const buildGameForIdentity = ({ gameId, identityId, myRole, state, currentTurn, 
     createdAt: "2026-02-26T00:00:00.000Z",
     lastMoveAt: moves.at(-1)?.at ?? "2026-02-26T00:00:01.000Z",
     updatedAt: moves.at(-1)?.at ?? "2026-02-26T00:00:01.000Z",
-    playgroundMode: false,
+    selfPlayMode: false,
     player1: { identityId: "id-a", connected: true },
     player2: { identityId: "id-b", connected: true },
     viewers: [],
@@ -327,7 +327,7 @@ test("live transport store posts scenario imports through the shell scenarios en
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: "2026-02-26T00:00:01.000Z",
           updatedAt: "2026-02-26T00:00:01.000Z",
-          playgroundMode: false,
+          selfPlayMode: false,
           player1: { identityId: "id-scenario", connected: true },
           player2: null,
           viewers: [],
@@ -384,7 +384,7 @@ test("live transport store posts history branch launches through the shell histo
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: null,
           updatedAt: "2026-02-26T00:00:00.000Z",
-          playgroundMode: false,
+          selfPlayMode: false,
           player1: null,
           player2: { identityId: "id-branch", connected: true },
           viewers: [],
@@ -480,7 +480,7 @@ test("live transport store can promote player 1 to both seats when player 2 is o
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: null,
           updatedAt: "2026-02-26T00:00:00.000Z",
-          playgroundMode: true,
+          selfPlayMode: true,
           player1: { identityId: "id-a", connected: true },
           player2: { identityId: "id-a", connected: true },
           viewers: [],
@@ -503,7 +503,7 @@ test("live transport store can promote player 1 to both seats when player 2 is o
   const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
   const result = await store.playAsBothPlayers({ gameId: "game-000001" });
 
-  assert.equal(result.game.playgroundMode, true);
+  assert.equal(result.game.selfPlayMode, true);
   assert.equal(result.game.player2?.identityId, "id-a");
   assert.equal(calls.some((entry) => entry.url.startsWith("/api/shell/games/game-000001/play-as-both")), true);
 });
@@ -521,7 +521,7 @@ test("live transport store can promote player 2 to both seats when player 1 is o
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: null,
           updatedAt: "2026-02-26T00:00:00.000Z",
-          playgroundMode: true,
+          selfPlayMode: true,
           player1: { identityId: "id-a", connected: true },
           player2: { identityId: "id-a", connected: true },
           viewers: [],
@@ -546,7 +546,7 @@ test("live transport store can promote player 2 to both seats when player 1 is o
   const store = createLiveTransportStore({ storage, fetcher, random: () => 0.12345 });
   const result = await store.playAsBothPlayers({ gameId: "game-000001" });
 
-  assert.equal(result.game.playgroundMode, true);
+  assert.equal(result.game.selfPlayMode, true);
   assert.equal(result.game.player1?.identityId, "id-a");
   assert.equal(calls.some((entry) => entry.url.startsWith("/api/shell/games/game-000001/play-as-both")), true);
 });
