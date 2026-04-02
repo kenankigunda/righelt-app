@@ -626,6 +626,83 @@ test("recorded-action push overlay keeps push group highlight and count", async 
   });
 });
 
+test("push retreat overlay keeps original push group highlighted while members are separated", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P2",
+      continuation: {
+        type: "push",
+        phase: "retreat",
+        pushedPieceId: "D1",
+        followGroupPieceIds: ["A1", "A2"],
+      },
+      pieces: [
+        {
+          id: "A1",
+          owner: "P1",
+          kind: "unit",
+          position: { row: 4, col: 3 },
+          supplied: true,
+          commanded: true,
+          shifted: true,
+        },
+        {
+          id: "A2",
+          owner: "P1",
+          kind: "unit",
+          position: { row: 4, col: 1 },
+          supplied: true,
+          commanded: true,
+          shifted: false,
+        },
+        {
+          id: "D1",
+          owner: "P2",
+          kind: "unit",
+          position: { row: 4, col: 2 },
+          supplied: true,
+          commanded: true,
+          pushed: true,
+        },
+      ],
+      artifacts: {
+        groups: {
+          componentByPieceId: { A1: "G1", A2: "G2" },
+          membersByComponentId: { G1: ["A1"], G2: ["A2"] },
+          strengthByComponentId: { G1: 1, G2: 1 },
+        },
+      },
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: {
+        mode: "interactive",
+        selection: { selectedPieceId: null, source: null, target: null },
+      },
+      legalActions: [
+        { type: "retreat", actorId: "D1", from: { row: 4, col: 2 }, to: { row: 5, col: 2 } },
+        { type: "follow", actorId: "A2", from: { row: 4, col: 1 }, to: { row: 4, col: 2 } },
+      ],
+      selectedPieceMoves: [],
+      selectedPieceMovePreviews: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "retreat",
+    });
+
+    assert.equal(getCell(boardEl, 4, 3)?.classList.contains("group-member"), true);
+    assert.equal(getCell(boardEl, 4, 3)?.classList.contains("continuation-moved"), false);
+    assert.equal(getCell(boardEl, 4, 1)?.classList.contains("group-member"), true);
+    assert.equal(getCell(boardEl, 4, 1)?.classList.contains("continuation-pending"), true);
+    assert.equal(boardEl.querySelectorAll(".group-strength-badge").length, 1);
+    assert.equal(getCell(boardEl, 4, 1)?.querySelector(".group-strength-badge")?.textContent, "2");
+    assert.equal(getCell(boardEl, 4, 2)?.classList.contains("retreat-piece"), true);
+  });
+});
+
 test("empty-cell preview markers use a geometry-based centered dot", () => {
   assert.match(adapterSource, /marker\.className = "piece-empty";\s*marker\.setAttribute\("aria-hidden", "true"\);/s);
   assert.doesNotMatch(adapterSource, /marker\.textContent = "\.";/);

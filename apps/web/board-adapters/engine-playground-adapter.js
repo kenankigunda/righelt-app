@@ -402,7 +402,37 @@ function getGroupInfoForPiece(snapshot, piece) {
 }
 
 function applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey) {
-  const { movedPieceIds, pendingPieceIds } = deriveContinuationHighlightByPieceId(snapshot, legalActions);
+  const { groupMemberPieceIds, movedPieceIds, pendingPieceIds } = deriveContinuationHighlightByPieceId(
+    snapshot,
+    legalActions,
+  );
+  const continuationGroupMembers = [...groupMemberPieceIds]
+    .map((pieceId) => findPieceById(snapshot, pieceId))
+    .filter((candidate) => Boolean(candidate));
+
+  for (const piece of continuationGroupMembers) {
+    cellByCoordinateKey.get(coordKey(piece.position))?.classList.add("group-member");
+  }
+
+  const continuationAnchor = continuationGroupMembers
+    .map((member) => member.position)
+    .sort((a, b) => {
+      if (a.row !== b.row) {
+        return a.row - b.row;
+      }
+      return a.col - b.col;
+    })[0];
+
+  if (continuationAnchor && continuationGroupMembers.length > 1) {
+    const anchorCell = cellByCoordinateKey.get(coordKey(continuationAnchor));
+    if (anchorCell) {
+      const badge = document.createElement("span");
+      badge.className = "group-strength-badge";
+      badge.textContent = String(continuationGroupMembers.length);
+      anchorCell.appendChild(badge);
+    }
+  }
+
   for (const pieceId of movedPieceIds) {
     const piece = findPieceById(snapshot, pieceId);
     if (!piece) {
