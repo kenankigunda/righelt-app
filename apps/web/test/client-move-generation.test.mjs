@@ -39,7 +39,6 @@ test("client move generation includes unsupplied-blocked previews but not legal 
   assert.equal(
     response.previewActions.some(
       (action) =>
-        action.type === "move" &&
         action.to?.row === 4 &&
         action.to?.col === 5 &&
         action.legal === false &&
@@ -173,4 +172,44 @@ test("client move generation marks preview pieces uncommanded when the resulting
     kind: "unit",
     position: { row: 4, col: 5 },
   });
+});
+
+test("client move generation keeps sequence-completable rush previews legal", () => {
+  const state = {
+    boardSize: 10,
+    sideToMove: "P1",
+    turnIndex: 0,
+    continuation: null,
+    outcome: { status: "ongoing" },
+    pieces: [
+      { id: "C1", owner: "P1", kind: "commander", position: { row: 3, col: 6 }, supplied: true, commanded: true },
+      { id: "C2", owner: "P2", kind: "commander", position: { row: 6, col: 3 }, supplied: true, commanded: true },
+      { id: "A", owner: "P1", kind: "unit", position: { row: 4, col: 4 }, supplied: true, commanded: true },
+      { id: "B", owner: "P1", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true },
+      { id: "E0", owner: "P2", kind: "unit", position: { row: 0, col: 4 }, supplied: true, commanded: true },
+      { id: "E1", owner: "P2", kind: "unit", position: { row: 9, col: 4 }, supplied: true, commanded: true },
+      { id: "E2", owner: "P2", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
+    ],
+  };
+
+  const response = buildPieceMoveResponse({
+    state,
+    legalActions: [{ type: "rush", actorId: "A", from: { row: 4, col: 4 }, to: { row: 4, col: 3 } }],
+    pieceId: "A",
+  });
+
+  assert.equal(
+    response.actions.some((action) => action.type === "rush" && action.to?.row === 4 && action.to?.col === 3),
+    true,
+  );
+  assert.equal(
+    response.previewActions.some(
+      (action) =>
+        action.type === "rush" &&
+        action.to?.row === 4 &&
+        action.to?.col === 3 &&
+        action.legal === true,
+    ),
+    true,
+  );
 });

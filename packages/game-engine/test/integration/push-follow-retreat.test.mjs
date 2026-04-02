@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { applyAction, listLegalActions, validateAction } from "../../src/index.ts";
+import { resolveToStability } from "../../src/resolve.ts";
 import { commander, makeState, unit } from "../helpers/state-builders.mjs";
 
 test("G-001 push legal with stronger attacker group", () => {
@@ -480,7 +481,7 @@ test("G-018 follow illegal when follow destination would leave follower unsuppli
   }
 });
 
-test("G-019 retreat illegal when retreat destination would leave retreating piece unsupplied", () => {
+test("G-019 retreat may enter a temporarily unsupplied square", () => {
   const state = makeState({
     sideToMove: "P2",
     continuation: {
@@ -490,6 +491,7 @@ test("G-019 retreat illegal when retreat destination would leave retreating piec
       phase: "retreat",
       followPoint: { row: 4, col: 3 },
       pushedPieceId: "D1",
+      followGroupPieceIds: ["A"],
       chainLength: 1,
     },
     pieces: [
@@ -511,8 +513,45 @@ test("G-019 retreat illegal when retreat destination would leave retreating piec
     to: { row: 5, col: 4 },
   });
 
-  assert.equal(result.ok, false);
-  if (!result.ok) {
-    assert.equal(result.code, "SUPPLY_DESTINATION_UNSUPPLIED");
-  }
+  assert.equal(result.ok, true);
+});
+
+test("retreated piece is removed for loss of supply only after the push sequence closes", () => {
+  const state = makeState({
+    sideToMove: "P2",
+    continuation: {
+      type: "push",
+      owner: "P2",
+      attackerOwner: "P1",
+      phase: "retreat",
+      followPoint: { row: 4, col: 3 },
+      pushedPieceId: "D1",
+      followGroupPieceIds: ["A"],
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 3, 6),
+      commander("C2", "P2", 8, 1),
+      unit("D1", "P2", 5, 3, { pushed: true }),
+      unit("U1-wall-top", "P1", 0, 3),
+      unit("U1-wall-bottom", "P1", 9, 3),
+      unit("U1-block-north", "P1", 4, 4),
+      unit("U1-block-south", "P1", 6, 4),
+      unit("U1-block-east", "P1", 5, 5),
+    ],
+  });
+
+  const afterRetreat = applyAction(state, {
+    type: "retreat",
+    actorId: "D1",
+    from: { row: 5, col: 3 },
+    to: { row: 5, col: 4 },
+  }).state;
+
+  assert.equal(afterRetreat.pieces.some((piece) => piece.id === "D1"), true);
+  assert.equal(afterRetreat.continuation?.phase, "follow");
+
+  const resolved = resolveToStability(afterRetreat, { artifactMode: "minimal" });
+  assert.equal(resolved.continuation, null);
+  assert.equal(resolved.pieces.some((piece) => piece.id === "D1"), false);
 });

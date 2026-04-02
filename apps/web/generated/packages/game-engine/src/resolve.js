@@ -1,3 +1,4 @@
+import { canCloseContinuationNow } from "./continuation.js";
 import { SUPPLY_POINTS } from "./deterministic.js";
 import { validateAction } from "./legal.js";
 const MAX_RESOLVE_PASSES = 64;
@@ -48,6 +49,7 @@ function cloneState(state) {
                     ]))
                     : undefined,
                 rushedPieceIds: state.continuation.rushedPieceIds ? [...state.continuation.rushedPieceIds] : undefined,
+                rushChainPieceIds: state.continuation.rushChainPieceIds ? [...state.continuation.rushChainPieceIds] : undefined,
             }
             : null,
         outcome: { ...state.outcome },
@@ -601,9 +603,17 @@ function applyContinuationPhase(state) {
         }
         const followPoint = state.continuation.followPoint;
         if (!followPoint) {
+            if (!canCloseContinuationNow(state)) {
+                return false;
+            }
             state.continuation = null;
             state.sideToMove = attackerOwner === "P1" ? "P2" : "P1";
             state.turnIndex += 1;
+            for (const piece of state.pieces) {
+                if (piece.shifted) {
+                    piece.shifted = false;
+                }
+            }
             return true;
         }
         const occupied = state.pieces.some((piece) => !piece.pushed && piece.position.row === followPoint.row && piece.position.col === followPoint.col);
@@ -623,6 +633,9 @@ function applyContinuationPhase(state) {
             return rowDelta + colDelta === 1;
         });
         if (!hasFriendlyAdjacent) {
+            if (!canCloseContinuationNow(state)) {
+                return false;
+            }
             state.continuation = null;
             state.sideToMove = attackerOwner === "P1" ? "P2" : "P1";
             state.turnIndex += 1;
@@ -660,9 +673,10 @@ function applyContinuationPhase(state) {
             }
             return false;
         });
-        if (!hasRushCandidate) {
+        if (!hasRushCandidate && canCloseContinuationNow(state)) {
             state.continuation = null;
             state.sideToMove = expectedOwner === "P1" ? "P2" : "P1";
+            state.turnIndex += 1;
             return true;
         }
     }
@@ -734,6 +748,9 @@ function applySupplyPhase(state, mode) {
     return changed;
 }
 function applyForcedEffectsPhase(state) {
+    if (state.continuation) {
+        return false;
+    }
     const beforeCount = state.pieces.length;
     state.pieces = state.pieces.filter((piece) => piece.pushed ||
         piece.kind === "commander" ||
@@ -811,8 +828,8 @@ export function resolveToStability(state, options) {
     while (pass < maxPasses) {
         const changed = runResolvePass(state, mode);
         if (!changed) {
-            if (evaluateTerminalPhase(state) && state.continuation) {
-                state.continuation = null;
+            if (!state.continuation) {
+                evaluateTerminalPhase(state);
             }
             return state;
         }

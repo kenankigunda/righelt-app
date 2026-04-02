@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { applyAction, listLegalActions, validateAction } from "../../src/index.ts";
+import { buildContinuationSuccessorState, canCloseContinuationNow, isContinuationCompletable } from "../../src/continuation.ts";
 import { resolveToStability } from "../../src/resolve.ts";
 import { commander, makeState, unit } from "../helpers/state-builders.mjs";
 
@@ -301,6 +302,60 @@ test("F-013 rush destination that would be unsupplied is illegal", () => {
   });
 
   assert.equal(result.ok, false);
+});
+
+test("rush may enter a temporarily unsupplied state when a later rush can resupply the chain", () => {
+  const state = makeState({
+    pieces: [
+      commander("C1", "P1", 3, 6),
+      commander("C2", "P2", 6, 3),
+      unit("A", "P1", 4, 4),
+      unit("B", "P1", 5, 5),
+      unit("E0", "P2", 0, 4),
+      unit("E1", "P2", 9, 4),
+      unit("E2", "P2", 4, 2),
+    ],
+  });
+
+  const action = {
+    type: "rush",
+    actorId: "A",
+    from: { row: 4, col: 4 },
+    to: { row: 4, col: 3 },
+  };
+
+  const result = validateAction(state, action);
+  assert.equal(result.ok, true);
+
+  const successor = buildContinuationSuccessorState(state, action);
+  assert.equal(canCloseContinuationNow(successor), false);
+  assert.equal(isContinuationCompletable(successor), true);
+  assert.deepEqual(successor.continuation?.rushChainPieceIds, ["A"]);
+});
+
+test("rush pass is illegal while the rush chain remains unsupplied", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      rushedPieceIds: ["A"],
+      rushChainPieceIds: ["A"],
+      chainLength: 1,
+    },
+    pieces: [
+      commander("C1", "P1", 3, 6),
+      commander("C2", "P2", 6, 3),
+      unit("A", "P1", 4, 3),
+      unit("B", "P1", 5, 5),
+      unit("E0", "P2", 0, 4),
+      unit("E1", "P2", 9, 4),
+      unit("E2", "P2", 4, 2),
+    ],
+  });
+
+  const result = validateAction(state, { type: "pass" });
+  assert.equal(result.ok, false);
+  assert.equal(canCloseContinuationNow(state), false);
 });
 
 test("F-014 rush continuation uses frozen commanded state for the initiating player", () => {

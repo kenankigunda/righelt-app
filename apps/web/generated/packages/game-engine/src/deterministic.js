@@ -59,6 +59,9 @@ function normalizeContinuation(value) {
             ? [...value.followGroupPieceIds].sort((a, b) => a.localeCompare(b))
             : undefined,
         rushedPieceIds: value.rushedPieceIds ? [...value.rushedPieceIds].sort((a, b) => a.localeCompare(b)) : undefined,
+        rushChainPieceIds: value.rushChainPieceIds
+            ? [...value.rushChainPieceIds].sort((a, b) => a.localeCompare(b))
+            : undefined,
         frozenPieceStatesById,
     };
 }

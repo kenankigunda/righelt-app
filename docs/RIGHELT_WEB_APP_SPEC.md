@@ -120,10 +120,12 @@ For the current board implementation:
   - It must not appear as a move entry in move history.
 - Board decides when to emit `turnEnded` for this game implementation.
   - Board auto-emits `turnEnded` when the turn should close (for example after `project`, after `pass`, or after other non-continuation commits).
-  - Board may emit `turnEnded` early during optional continuation windows (for example during rush) when the user elects to stop.
+  - Board may emit `turnEnded` early during optional continuation windows only when closure is currently legal (for example during rush after the rush chain is already resupplied).
 - During rush and push continuations, the board must continue to treat the initiating player's command/supply state as frozen from the moment that sequence started.
 - Any command/supply change created during the continuation is reconciled only after the continuation fully closes for frozen-status checks and forced-removal purposes.
-- However, destination-supply legality is never frozen: the board must not offer or commit a move/retreat/follow/push destination that would leave the moved piece unsupplied on that destination.
+- `Move` and `Project` still use immediate destination-supply legality.
+- `Rush`, `Push`, and `Follow` instead use sequence-completion legality: the board must not offer or commit a destination that cannot complete to a closure state with the obligated initiating-side continuation pieces supplied.
+- `Retreat` may be temporarily unsupplied; closure legality never requires the attacker to resupply the opposing retreated piece.
 - Even so, the board should visually render pieces using the live "if the sequence ended now" command/supply result at the current board position.
 - A piece that was eligible at the start of the continuation must remain highlighted/selectable/movable for that continuation when the frozen rules still allow it, even if its live displayed status now appears inactive.
 - Shell must treat `turnEnded` as an abstract control message and must not infer it from action-type heuristics.
@@ -374,7 +376,7 @@ Tutorial restart:
 
 - Piece move previews in self-play are split into:
   - legal destination actions (submittable)
-  - blocked destination previews (non-submittable) for actions that fail only due to destination supply (`SUPPLY_DESTINATION_UNSUPPLIED`)
+  - blocked destination previews (non-submittable) for actions that fail only because they cannot complete to a legal end-supplied closure state (`SUPPLY_DESTINATION_UNSUPPLIED`)
 - The engine board adapter and related board helpers must expose:
   - `actions`: legal-only actions
   - `previewActions`: legal actions plus supply-blocked destination previews, each with a `legal` flag and optional `blockedReason`
