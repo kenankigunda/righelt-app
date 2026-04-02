@@ -58,17 +58,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
@@ -83,17 +81,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
@@ -108,17 +104,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
@@ -141,17 +135,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
@@ -174,17 +166,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
@@ -207,17 +197,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
@@ -240,17 +228,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
@@ -273,17 +259,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
@@ -306,17 +290,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
@@ -355,17 +337,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false

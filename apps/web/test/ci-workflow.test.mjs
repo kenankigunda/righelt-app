@@ -35,6 +35,9 @@ test("CI uses split job-level checks and Node 22", () => {
   assert.match(workflow, /uses: actions\/setup-node@v5/);
   assert.match(workflow, /uses: actions\/upload-artifact@v6/);
   assert.match(workflow, /uses: actions\/download-artifact@v6/);
+  assert.match(workflow, /name: Setup pnpm via Corepack/);
+  assert.match(workflow, /corepack enable && corepack prepare pnpm@9 --activate/);
+  assert.doesNotMatch(workflow, /pnpm\/action-setup@/);
 });
 
 test("CI allows non-E2E checks to run in parallel and only gates workflow E2E behind smoke", () => {
