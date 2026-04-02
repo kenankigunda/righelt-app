@@ -167,11 +167,6 @@ jobs:
   engine-integration:
     name: Engine integration
     runs-on: ubuntu-latest
-    needs:
-      - typecheck
-      - generated-web-runtime
-      - engine-unit
-      - web-unit
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -205,11 +200,6 @@ jobs:
   api-handler-integration:
     name: API handler integration
     runs-on: ubuntu-latest
-    needs:
-      - typecheck
-      - generated-web-runtime
-      - engine-unit
-      - web-unit
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -243,11 +233,6 @@ jobs:
   api-worker-integration:
     name: API worker integration
     runs-on: ubuntu-latest
-    needs:
-      - typecheck
-      - generated-web-runtime
-      - engine-unit
-      - web-unit
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -281,11 +266,6 @@ jobs:
   web-integration:
     name: Web integration
     runs-on: ubuntu-latest
-    needs:
-      - typecheck
-      - generated-web-runtime
-      - engine-unit
-      - web-unit
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -319,11 +299,6 @@ jobs:
   e2e-smoke:
     name: E2E smoke
     runs-on: ubuntu-latest
-    needs:
-      - engine-integration
-      - api-handler-integration
-      - api-worker-integration
-      - web-integration
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -422,6 +397,8 @@ jobs:
     if: ${{ always() }}
     runs-on: ubuntu-latest
     needs:
+      - typecheck
+      - generated-web-runtime
       - engine-unit
       - web-unit
       - engine-integration

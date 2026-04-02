@@ -32,36 +32,21 @@ test("CI uses split job-level checks and Node 22", () => {
   assert.match(workflow, /node-version: "22"/);
 });
 
-test("CI preserves fast-fail phase ordering with job needs", () => {
+test("CI allows non-E2E checks to run in parallel and only gates workflow E2E behind smoke", () => {
   const engineIntegration = jobBlock("engine-integration", "api-handler-integration");
-  assert.match(
-    engineIntegration,
-    /needs:\n\s+- typecheck\n\s+- generated-web-runtime\n\s+- engine-unit\n\s+- web-unit/s,
-  );
+  assert.doesNotMatch(engineIntegration, /\n\s+needs:\n/);
 
   const apiHandlerIntegration = jobBlock("api-handler-integration", "api-worker-integration");
-  assert.match(
-    apiHandlerIntegration,
-    /needs:\n\s+- typecheck\n\s+- generated-web-runtime\n\s+- engine-unit\n\s+- web-unit/s,
-  );
+  assert.doesNotMatch(apiHandlerIntegration, /\n\s+needs:\n/);
 
   const apiWorkerIntegration = jobBlock("api-worker-integration", "web-integration");
-  assert.match(
-    apiWorkerIntegration,
-    /needs:\n\s+- typecheck\n\s+- generated-web-runtime\n\s+- engine-unit\n\s+- web-unit/s,
-  );
+  assert.doesNotMatch(apiWorkerIntegration, /\n\s+needs:\n/);
 
   const webIntegration = jobBlock("web-integration", "e2e-smoke");
-  assert.match(
-    webIntegration,
-    /needs:\n\s+- typecheck\n\s+- generated-web-runtime\n\s+- engine-unit\n\s+- web-unit/s,
-  );
+  assert.doesNotMatch(webIntegration, /\n\s+needs:\n/);
 
   const smoke = jobBlock("e2e-smoke", "e2e-workflows");
-  assert.match(
-    smoke,
-    /needs:\n\s+- engine-integration\n\s+- api-handler-integration\n\s+- api-worker-integration\n\s+- web-integration/s,
-  );
+  assert.doesNotMatch(smoke, /\n\s+needs:\n/);
 
   const workflows = jobBlock("e2e-workflows", "test-results");
   assert.match(workflows, /needs:\n\s+- e2e-smoke/s);
@@ -70,7 +55,7 @@ test("CI preserves fast-fail phase ordering with job needs", () => {
   assert.match(results, /if: \$\{\{ always\(\) \}\}/);
   assert.match(
     results,
-    /needs:\n\s+- engine-unit\n\s+- web-unit\n\s+- engine-integration\n\s+- api-handler-integration\n\s+- api-worker-integration\n\s+- web-integration\n\s+- e2e-smoke\n\s+- e2e-workflows/s,
+    /needs:\n\s+- typecheck\n\s+- generated-web-runtime\n\s+- engine-unit\n\s+- web-unit\n\s+- engine-integration\n\s+- api-handler-integration\n\s+- api-worker-integration\n\s+- web-integration\n\s+- e2e-smoke\n\s+- e2e-workflows/s,
   );
 });
 
