@@ -4,7 +4,7 @@ import { createTestStore } from "./support.mjs";
 
 test("e2e shell flow: create, invite-join request, approve, and history", async () => {
   const { store } = createTestStore();
-  const game = await store.createGame({ playgroundMode: false });
+  const game = await store.createGame({ selfPlayMode: false });
 
   const pending = store.joinGame({ gameId: game.id, mode: "player", inviteFromRole: null });
   assert.equal(pending.pendingApproval, true);

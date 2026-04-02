@@ -249,7 +249,7 @@ export const handleLiveGameRequest = async (
       body: JSON.stringify({
         identityId,
         gameId,
-        playgroundMode: body.playgroundMode === true,
+        selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
       }),
     });
     return {
@@ -307,7 +307,7 @@ export const handleLiveGameRequest = async (
         identityId,
         gameId: newGameId,
         scenario,
-        playgroundMode: sourceProjection?.game.playgroundMode === true,
+        selfPlayMode: sourceProjection?.game.selfPlayMode === true,
         sourceGame: sourceProjection?.game ?? null,
         participantCopyMode,
         initialSelectionAction,
@@ -356,7 +356,7 @@ export const handleLiveGameRequest = async (
         gameId: newGameId,
         scenario,
         initialSelectionAction,
-        playgroundMode: sourceProjection.game.playgroundMode === true,
+        selfPlayMode: sourceProjection.game.selfPlayMode === true,
         sourceGame: sourceProjection.game,
         participantCopyMode,
         preserveResultingState: true,

@@ -206,7 +206,7 @@ export class GameRoomDO {
       this.game = createInitialGame({
         gameId,
         identityId,
-        playgroundMode: body.playgroundMode === true,
+        selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
       });
       this.eventSeq = 1;
       await persistGameState(this.env, this.game, this.eventSeq, null);
@@ -226,7 +226,7 @@ export class GameRoomDO {
       this.game = createInitialGame({
         gameId,
         identityId,
-        playgroundMode: body.playgroundMode === true,
+        selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
       });
       const sourceGame = body.sourceGame && typeof body.sourceGame === "object" ? (body.sourceGame as LiveGame) : null;
       const participantCopyMode = sourceGame
@@ -241,7 +241,7 @@ export class GameRoomDO {
           this.game.viewers = [];
           this.game.pendingJoinRequests = [];
         }
-        this.game.playgroundMode = body.playgroundMode === true;
+        this.game.selfPlayMode = body.selfPlayMode === true || body.playgroundMode === true;
       }
       applyScenarioToGame(this.game, scenario);
       if (body.preserveResultingState === true) {
@@ -303,8 +303,8 @@ export class GameRoomDO {
         return json({ ok: true, pendingApproval: false, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
       }
 
-      if (game.playgroundMode) {
-        return json({ ok: false, error: "playground_player_join_disabled" }, 409);
+      if (game.selfPlayMode) {
+        return json({ ok: false, error: "self_play_player_join_disabled" }, 409);
       }
       if (game.player1?.identityId === identityId || game.player2?.identityId === identityId) {
         return json({ ok: false, error: "identity_already_player" }, 409);
@@ -767,7 +767,7 @@ export class GameRoomDO {
         return json({ ok: false, error: "play_as_both_unavailable" }, 409);
       }
       promoteIdentityToSeat(game, targetSeat, identityId, this.getSessionCount(identityId));
-      game.playgroundMode = true;
+      game.selfPlayMode = true;
       game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.requestedSeat !== targetSeat);
       addNotification(game, "Play as both players enabled");
       await this.commit({

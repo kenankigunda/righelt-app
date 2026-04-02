@@ -357,38 +357,38 @@ Tutorial restart:
 ### 12.1 Offline Playground Requirements
 
 - `Playground mode` must be runnable with no network access.
-- Users must be able to start a new playground game while offline from the home page and play full turns locally.
+- Users must be able to start a new self-play game while offline from the home page and play full turns locally.
 - While offline, move validation and rule resolution must run fully on-device; no server round trip may be required to continue play.
-- The app must persist offline playground game state locally (including move history) so a reload on the same device restores the game.
+- The app must persist offline self-play game state locally (including move history) so a reload on the same device restores the game.
 - If a local persistence write fails, the UI must show a non-dismissed warning that offline progress may be lost.
-- Offline playground sessions are single-device only:
+- Offline self-play sessions are single-device only:
   - Invite creation/sharing must be disabled while offline.
   - Join-as-player/join-as-viewer actions for other devices must be unavailable while offline.
   - Presence indicators for remote participants must be hidden or replaced with an `Offline` state.
 - The game board must show a clear `Offline` indicator whenever backend connectivity is unavailable.
-- The web app shell and assets required for playground mode (HTML/CSS/JS/fonts/icons) must be cached for offline startup after at least one successful online load.
-- When connectivity returns, the app may offer an explicit `Go online` action for that local playground game; this transition must require user confirmation and must not happen automatically mid-turn.
+- The web app shell and assets required for self-play mode (HTML/CSS/JS/fonts/icons) must be cached for offline startup after at least one successful online load.
+- When connectivity returns, the app may offer an explicit `Go online` action for that local self-play game; this transition must require user confirmation and must not happen automatically mid-turn.
 - Until user confirms `Go online`, the local offline game remains device-local and does not appear in public/home game lists.
 
-### 12.2 Playground Move Preview Semantics
+### 12.2 Self-Play Move Preview Semantics
 
-- Piece move previews in playground are split into:
+- Piece move previews in self-play are split into:
   - legal destination actions (submittable)
   - blocked destination previews (non-submittable) for actions that fail only due to destination supply (`SUPPLY_DESTINATION_UNSUPPLIED`)
-- The `/api/engine/playground/piece-moves` contract must expose:
+- The engine board adapter and related board helpers must expose:
   - `actions`: legal-only actions
   - `previewActions`: legal actions plus supply-blocked destination previews, each with a `legal` flag and optional `blockedReason`
 - UI behavior:
   - legal previews render as normal ghost destinations
   - supply-blocked previews still render at the destination, but the ghost piece is crossed out to indicate illegality
   - target/action picking must use legal actions only; blocked previews are informational and must not be auto-selected as legal actions
-- Playground board selection mode:
+- Self-play board selection mode:
   - default (toggle off): users may only pick source cells that contain pieces and destination cells that have at least one legal action from the selected source
   - free-selection mode (toggle on): users may click arbitrary empty source/destination cells for inspection/manual experimentation
 
-### 12.3 Playground Removal Feedback
+### 12.3 Self-Play Removal Feedback
 
-- The `/api/engine/playground/apply` success contract may include `removedPieces`, a transient list of piece-removal notices for pieces removed as part of the accepted action resolution.
+- Accepted action resolution may include `removedPieces`, a transient list of piece-removal notices for pieces removed as part of the accepted action resolution.
 - Each removal notice must include:
   - `pieceId`
   - `position`

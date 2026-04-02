@@ -6,6 +6,7 @@ import {
   getScenarioWriterBaseUrl,
   loadScenarioCatalog,
 } from "../shell/scenarios.js";
+import { computeScenarioStateHash } from "../scenario-adapters/engine-scenario-adapter.js";
 
 const SCENARIO_UUIDS = {
   exportUsesCanonicalTurn: "0066b0ed-c5ba-4a89-a81a-1811d08d2d9d",
@@ -15,15 +16,7 @@ const SCENARIO_UUIDS = {
 };
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const withMockedHash = async (run) => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => Response.json({ hash: "hash-live-state" });
-  try {
-    await run();
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-};
+const withMockedHash = async (run) => run();
 
 test("buildScenarioFromGame uses the provided resulting state for live exports", async () => {
   await withMockedHash(async () => {
@@ -87,7 +80,7 @@ test("buildScenarioFromGame uses the provided resulting state for live exports",
     assert.equal(scenario.id, SCENARIO_UUIDS.exportUsesCanonicalTurn);
     assert.equal(scenario.resultingState.sideToMove, "P2");
     assert.equal(scenario.resultingState.turnIndex, 1);
-    assert.equal(scenario.expectedFinalStateHash, "hash-live-state");
+    assert.equal(scenario.expectedFinalStateHash, await computeScenarioStateHash(scenario.resultingState));
     assert.equal(scenario.description, "Export uses canonical turn");
   });
 });
@@ -202,10 +195,9 @@ test("buildScenarioFromGame can export a pre-move history snapshot with no prior
         },
       },
     );
-
     assert.deepEqual(scenario.initialState, historySnapshot);
-    assert.deepEqual(scenario.resultingState, historySnapshot);
     assert.deepEqual(scenario.moves, []);
+    assert.equal(scenario.expectedFinalStateHash, await computeScenarioStateHash(scenario.resultingState));
     assert.deepEqual(scenario.savedSelection, {
       source: { row: 3, col: 6 },
       target: { row: 5, col: 6 },

@@ -69,6 +69,18 @@ const defaultHistoryAction = (snapshot, nextSnapshot) => ({
   to: nextSnapshot?.pieces?.[0]?.position ?? { row: 0, col: 0 },
 });
 const getActiveTurn = (game) => game.turns[game.turns.length - 1] || null;
+const normalizeGame = (game) => {
+  if (!game || typeof game !== "object") {
+    return game;
+  }
+  const selfPlayMode = game.selfPlayMode === true || game.playgroundMode === true;
+  const normalized = {
+    ...game,
+    selfPlayMode,
+  };
+  delete normalized.playgroundMode;
+  return normalized;
+};
 
 export const createShellStore = ({
   storage,
@@ -85,7 +97,7 @@ export const createShellStore = ({
 
   let tutorialCompleted = loadTutorialCompleted(storage);
   const persisted = loadShellState(storage);
-  let games = Array.isArray(persisted.games) ? persisted.games : [];
+  let games = Array.isArray(persisted.games) ? persisted.games.map(normalizeGame) : [];
 
   const persist = () => {
     try {
@@ -95,7 +107,7 @@ export const createShellStore = ({
 
   const getGame = (gameId) => games.find((candidate) => candidate.id === gameId) || null;
 
-  const createGame = async ({ playgroundMode = false } = {}) => {
+  const createGame = async ({ selfPlayMode = false } = {}) => {
     const timestamp = now();
     const board = await loadBoardState();
     const game = {
@@ -103,10 +115,10 @@ export const createShellStore = ({
       createdAt: timestamp,
       lastMoveAt: null,
       updatedAt: timestamp,
-      playgroundMode,
+      selfPlayMode,
       board,
       player1: { identityId, connected: true, joinedAt: timestamp },
-      player2: playgroundMode ? { identityId, connected: true, joinedAt: timestamp } : null,
+      player2: selfPlayMode ? { identityId, connected: true, joinedAt: timestamp } : null,
       viewers: [],
       pendingJoinRequests: [],
       turns: [
@@ -122,7 +134,7 @@ export const createShellStore = ({
       ],
       moves: [],
       historyIndex: null,
-      notifications: ["Game created", playgroundMode ? "Playground mode active" : "Invite a second player"],
+      notifications: ["Game created", selfPlayMode ? "Self-play mode active" : "Invite a second player"],
     };
     games = [game, ...games].sort(byLatestActivityDesc);
     persist();
@@ -154,8 +166,8 @@ export const createShellStore = ({
       return { ok: true, role: "Viewer", game: clone(game) };
     }
 
-    if (game.playgroundMode) {
-      return { ok: false, error: "playground_player_join_disabled" };
+    if (game.selfPlayMode) {
+      return { ok: false, error: "self_play_player_join_disabled" };
     }
 
     const requestedSeat = !game.player1
@@ -208,7 +220,7 @@ export const createShellStore = ({
     } else {
       game.player2 = { identityId, connected: true, joinedAt: now() };
     }
-    game.playgroundMode = true;
+    game.selfPlayMode = true;
     game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.requestedSeat !== targetSeat);
     game.notifications.unshift("Play as both players enabled");
     game.updatedAt = now();
@@ -386,7 +398,7 @@ export const createShellStore = ({
           : null,
       currentTurn: clone(getActiveTurn(game)),
       canJoinAsPlayer:
-        role !== "Player 1" && role !== "Player 2" && !game.playgroundMode && (!game.player1 || !game.player2),
+        role !== "Player 1" && role !== "Player 2" && !game.selfPlayMode && (!game.player1 || !game.player2),
       canPlayAsBothPlayers: Boolean(getClaimableDualSeat(game, identityId)),
       canInvite: true,
       showJoinActions: true,

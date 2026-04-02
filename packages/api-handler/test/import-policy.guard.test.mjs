@@ -20,14 +20,14 @@ test("startup API handler avoids game-engine barrel imports", async () => {
   }
 });
 
-test("startup bootstrap payload is precomputed at module scope", async () => {
+test("API handler no longer exposes deprecated engine playground routes", async () => {
   const source = await readFile(API_HANDLER_ENTRYPOINT, "utf8");
   assert.equal(
-    source.includes("const INITIAL_PLAYGROUND_STATE = resolveToStability(createInitialState(), { artifactMode: \"full\" });"),
-    true,
+    source.includes("/api/engine/playground/"),
+    false,
   );
   assert.equal(
-    source.includes("const INITIAL_PLAYGROUND_LEGAL_ACTIONS = listLegalActions(INITIAL_PLAYGROUND_STATE);"),
-    true,
+    source.includes("INITIAL_PLAYGROUND_STATE"),
+    false,
   );
 });

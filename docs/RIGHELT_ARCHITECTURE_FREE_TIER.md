@@ -15,7 +15,7 @@ It is aligned to:
 
 ## 1. Goals and Constraints
 
-- Run the full web app (live games, viewers, invites, presence, history, tutorial flags, playground mode) on free tiers.
+- Run the full web app (live games, viewers, invites, presence, history, tutorial flags, self-play mode) on free tiers.
 - Keep architecture simple enough for a small team.
 - Preserve deterministic rule evaluation and replayability.
 - Avoid click-heavy operations; prefer repo-driven infrastructure and scripts.
@@ -38,7 +38,7 @@ CI/CD:
 ## 3. High-Level Architecture
 
 Components:
-1. `apps/web`: frontend (home, game board, history sidebar, tutorial, playground controls).
+1. `apps/web`: frontend (home, game board, history sidebar, tutorial, self-play controls).
 2. `apps/web/functions`: same-origin API routes (Pages Functions).
 3. `packages/api-handler`: shared HTTP API handler logic.
 4. `packages/game-engine`: deterministic game engine shared by server runtime and tests.
@@ -62,19 +62,19 @@ Persistence strategy:
 - Event-sourced per game (`game_events` append-only with monotonically increasing `event_seq`).
 - Snapshot every N moves (`game_snapshots`) for efficient history reconstruction.
 
-## 5. Playground Mode Integration
+## 5. Self-Play Mode Integration
 
 Game fields:
-- `mode`: `STANDARD | PLAYGROUND`
-- `playground_controller_device_id`: device controlling both seats while in playground
+- `mode`: `STANDARD | SELF_PLAY`
+- `self_play_controller_device_id`: device controlling both seats while in self-play
 
 Rules:
 - Both logical seats (`P1`, `P2`) remain intact; only control mapping differs.
-- In playground mode, only the controller device can submit actions for either side, respecting turn order and legality.
-- Playground UI preview overlays may include non-submittable destination hints when blocked solely by destination supply; these are carried separately from legal actions in preview payloads.
-- Playground apply responses may also carry transient `removedPieces` notices so the client can animate and explain forced removals without mutating engine history/state contracts.
-- Invite recipients may join only as `Viewer` while playground is active.
-- `exit_playground` converts to standard seating and re-enables normal player-join policies.
+- In self-play mode, only the controller device can submit actions for either side, respecting turn order and legality.
+- Self-play UI preview overlays may include non-submittable destination hints when blocked solely by destination supply; these are carried separately from legal actions in preview payloads.
+- Self-play apply responses may also carry transient `removedPieces` notices so the client can animate and explain forced removals without mutating engine history/state contracts.
+- Invite recipients may join only as `Viewer` while self-play is active.
+- `exit_self_play` converts to standard seating and re-enables normal player-join policies.
 
 ## 6. Identity, Role, and Authorization
 
@@ -100,7 +100,7 @@ Core server events:
 - `presence_changed`
 - `join_request_created`
 - `join_request_resolved`
-- `playground_exited`
+- `self_play_exited`
 - `error`
 
 Presence:
@@ -115,7 +115,7 @@ Presence:
 - `POST /api/games/:id/join`
 - `POST /api/games/:id/join-requests/:requestId/approve`
 - `POST /api/games/:id/commands`
-- `POST /api/games/:id/exit-playground`
+- `POST /api/games/:id/exit-self-play`
 - `GET /api/games/:id`
 - `GET /api/games/:id/history`
 - `GET /api/lobby`

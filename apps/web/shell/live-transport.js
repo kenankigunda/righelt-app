@@ -534,11 +534,11 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return getGameViewModel(gameId);
   };
 
-  const createGame = async ({ playgroundMode = false } = {}) => {
+  const createGame = async ({ selfPlayMode = false } = {}) => {
     const response = await fetcher("/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, playgroundMode }),
+      body: JSON.stringify({ identityId, selfPlayMode }),
     });
     const body = await mustOk(response);
     clearRollbackNotice(body.game.id);

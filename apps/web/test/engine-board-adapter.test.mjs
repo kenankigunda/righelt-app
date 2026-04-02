@@ -6,17 +6,17 @@ import { fileURLToPath } from "node:url";
 
 import {
   buildSharedPathSegmentOffsetMaps,
-  createEnginePlaygroundBoardAdapter,
+  createEngineBoardAdapter,
   getCurvedArrowAnchor,
   normalizeOverlayPath,
   getPathSegmentOffsetVector,
   getSegmentKey,
   segmentsOverlapOnSameLine,
   shouldCurveActionPreview,
-} from "../board-adapters/engine-playground-adapter.js";
+} from "../board-adapters/engine-board-adapter.js";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
-const adapterSource = readFileSync(join(testDir, "..", "board-adapters", "engine-playground-adapter.js"), "utf8");
+const adapterSource = readFileSync(join(testDir, "..", "board-adapters", "engine-board-adapter.js"), "utf8");
 const styleSource = readFileSync(join(testDir, "..", "styles.css"), "utf8");
 
 class FakeClassList {
@@ -175,7 +175,7 @@ const withFakeDocument = async (run) => {
 };
 
 const createMountedAdapter = () => {
-  const adapter = createEnginePlaygroundBoardAdapter();
+  const adapter = createEngineBoardAdapter();
   const boardEl = new FakeElement("div");
   const overlayLinesEl = new FakeElement("svg");
   adapter.mount({
@@ -190,7 +190,7 @@ const getCell = (boardEl, row, col) =>
   boardEl.children.find((child) => Number(child.dataset.row) === row && Number(child.dataset.col) === col) ?? null;
 
 test("retreat stack click selects pushed piece as retreat actor", () => {
-  const adapter = createEnginePlaygroundBoardAdapter();
+  const adapter = createEngineBoardAdapter();
   const snapshot = {
     sideToMove: "P2",
     continuation: {
@@ -250,7 +250,7 @@ test("board adapter delegates hover callbacks only for real cell boundary change
       listeners.delete(type);
     },
   };
-  const adapter = createEnginePlaygroundBoardAdapter();
+  const adapter = createEngineBoardAdapter();
   const hoverStarts = [];
   const hoverEnds = [];
 
@@ -293,7 +293,7 @@ test("board adapter static mount skips interactive listeners", () => {
       listeners.delete(type);
     },
   };
-  const adapter = createEnginePlaygroundBoardAdapter();
+  const adapter = createEngineBoardAdapter();
 
   adapter.mount({
     boardEl,
@@ -307,7 +307,7 @@ test("board adapter static mount skips interactive listeners", () => {
 
 test("board adapter static render uses non-focusable cells", async () => {
   await withFakeDocument(async () => {
-    const adapter = createEnginePlaygroundBoardAdapter();
+    const adapter = createEngineBoardAdapter();
     const boardEl = new FakeElement("div");
     const overlayLinesEl = new FakeElement("svg");
     adapter.mount({

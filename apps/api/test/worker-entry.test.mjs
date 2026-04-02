@@ -72,7 +72,7 @@ test("split-stack integration creates a game through the Pages proxy", async () 
     request: new Request("https://righelt.pages.dev/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId: "id-a", playgroundMode: false }),
+      body: JSON.stringify({ identityId: "id-a", selfPlayMode: false }),
     }),
     env: {
       API_SERVICE: {
@@ -96,7 +96,7 @@ test("split-stack integration resolves invite tokens through the Pages proxy", a
     request: new Request("https://righelt.pages.dev/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId: "id-invite", playgroundMode: false }),
+      body: JSON.stringify({ identityId: "id-invite", selfPlayMode: false }),
     }),
     env: {
       API_SERVICE: {
@@ -139,7 +139,7 @@ test("split-stack integration forwards history and return-to-live shell routes t
     request: new Request("https://righelt.pages.dev/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId: "id-history", playgroundMode: true }),
+      body: JSON.stringify({ identityId: "id-history", selfPlayMode: true }),
     }),
     env: apiServiceEnv,
   });
@@ -188,7 +188,7 @@ test("split-stack integration forwards presence updates through the Pages proxy"
     request: new Request("https://righelt.pages.dev/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId: "id-presence", playgroundMode: false }),
+      body: JSON.stringify({ identityId: "id-presence", selfPlayMode: false }),
     }),
     env: {
       API_SERVICE: {

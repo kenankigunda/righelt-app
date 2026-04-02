@@ -541,7 +541,7 @@ const normalizePersistedGame = (
     createdAt: typeof parsed.createdAt === "string" && parsed.createdAt ? parsed.createdAt : row.created_at || row.updated_at || now(),
     lastMoveAt: typeof parsed.lastMoveAt === "string" ? parsed.lastMoveAt : null,
     updatedAt: typeof parsed.updatedAt === "string" && parsed.updatedAt ? parsed.updatedAt : row.updated_at || row.created_at || now(),
-    playgroundMode: parsed.playgroundMode === true,
+    selfPlayMode: parsed.selfPlayMode === true || parsed.playgroundMode === true,
     board: { state: boardState },
     player1: normalizeParticipant(parsed.player1, "player1", mismatches),
     player2: normalizeParticipant(parsed.player2, "player2", mismatches),
@@ -569,8 +569,8 @@ const normalizePersistedGame = (
   if (typeof parsed.updatedAt !== "string" || !parsed.updatedAt) {
     recordMismatch(mismatches, "updatedAt", "non-empty string", parsed.updatedAt, "defaulted_from_row_timestamp");
   }
-  if (typeof parsed.playgroundMode !== "boolean") {
-    recordMismatch(mismatches, "playgroundMode", "boolean", parsed.playgroundMode, "defaulted_to_false");
+  if (typeof parsed.selfPlayMode !== "boolean" && typeof parsed.playgroundMode !== "boolean") {
+    recordMismatch(mismatches, "selfPlayMode", "boolean", parsed.selfPlayMode, "defaulted_to_false");
   }
 
   if (mismatches.length > 0) {

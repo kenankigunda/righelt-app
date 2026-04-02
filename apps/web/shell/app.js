@@ -1,5 +1,5 @@
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
-import { createEnginePlaygroundBoardAdapter } from "../board-adapters/engine-playground-adapter.js";
+import { createEngineBoardAdapter } from "../board-adapters/engine-board-adapter.js";
 import { syncMiniBoardPreviews } from "../board/mini-board-preview.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
@@ -70,7 +70,7 @@ const createMemoryStorageFallback = () => {
 const storage = typeof window.localStorage !== "undefined" ? window.localStorage : createMemoryStorageFallback();
 const transport = createLiveTransportStore({ storage });
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
-const boardAdapter = createEnginePlaygroundBoardAdapter();
+const boardAdapter = createEngineBoardAdapter();
 const hoverCapability = ensureHoverCapabilityController();
 assertGameBoardAdapter(boardAdapter);
 
@@ -2220,7 +2220,7 @@ const reconcileMiniBoardPreviews = () => {
     previews,
     registry: miniBoardPreviewRegistry,
     createAdapter: () => {
-      const adapter = createEnginePlaygroundBoardAdapter();
+      const adapter = createEngineBoardAdapter();
       assertGameBoardAdapter(adapter);
       return adapter;
     },
@@ -3487,7 +3487,7 @@ appEl.addEventListener("click", async (event) => {
     }
 
     if (action === "create-game") {
-      const game = await transport.createGame({ playgroundMode: false });
+      const game = await transport.createGame({ selfPlayMode: false });
       navigateTo(buildGameHash(game.id, null, getCurrentFlyoutState()));
       return;
     }
