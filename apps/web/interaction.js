@@ -139,26 +139,27 @@ export function buildActionPayload(type, source, target, actorId = null) {
 }
 
 export function deriveContinuationHighlightByPieceId(snapshot, legalActions) {
+  const groupMemberPieceIds = new Set();
   const movedPieceIds = new Set();
   const pendingPieceIds = new Set();
 
   if (!snapshot?.continuation) {
-    return { movedPieceIds, pendingPieceIds };
+    return { groupMemberPieceIds, movedPieceIds, pendingPieceIds };
   }
 
   if (snapshot.continuation.type === "push") {
     for (const pieceId of snapshot.continuation.followGroupPieceIds ?? []) {
-      const piece = snapshot.pieces?.find((candidate) => candidate.id === pieceId);
-      if (!piece) {
+      groupMemberPieceIds.add(pieceId);
+    }
+    for (const action of Array.isArray(legalActions) ? legalActions : []) {
+      if (action?.type !== "follow" || typeof action.actorId !== "string") {
         continue;
       }
-      if (piece.shifted) {
-        movedPieceIds.add(pieceId);
-      } else {
-        pendingPieceIds.add(pieceId);
+      if (groupMemberPieceIds.has(action.actorId)) {
+        pendingPieceIds.add(action.actorId);
       }
     }
-    return { movedPieceIds, pendingPieceIds };
+    return { groupMemberPieceIds, movedPieceIds, pendingPieceIds };
   }
 
   if (snapshot.continuation.type === "rush") {
@@ -175,7 +176,7 @@ export function deriveContinuationHighlightByPieceId(snapshot, legalActions) {
     }
   }
 
-  return { movedPieceIds, pendingPieceIds };
+  return { groupMemberPieceIds, movedPieceIds, pendingPieceIds };
 }
 
 export function shouldResetSelectionOnDocumentClick(target) {
