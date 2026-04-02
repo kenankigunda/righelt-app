@@ -1,3 +1,4 @@
+import { BOARD_SIZE, SUPPLY_POINTS } from "../generated/packages/game-engine/src/deterministic.js";
 import {
   deriveContinuationHighlightByPieceId,
   getBlockedPreviewLabel,
@@ -6,7 +7,6 @@ import {
   shouldPreferActionTargetOnOccupiedCell,
 } from "../interaction.js";
 
-const BOARD_SIZE = 10;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const REMOVAL_FLASH_DURATION_MS = 1800;
 const PREVIEW_STROKE_BY_OWNER = {
@@ -20,7 +20,9 @@ const PREVIEW_OPACITY = {
 const OVERLAY_PARALLEL_SPLIT_OFFSET = 2.5;
 
 const coordKey = (coord) => `${coord.row},${coord.col}`;
-const isSupplyPoint = (row, col) => (row === 0 && col === 9) || (row === 9 && col === 0);
+const isSupplyPoint = (row, col) =>
+  (row === SUPPLY_POINTS.P1.row && col === SUPPLY_POINTS.P1.col) ||
+  (row === SUPPLY_POINTS.P2.row && col === SUPPLY_POINTS.P2.col);
 export const getPieceRenderStatus = (piece) => ({
   supplied: piece?.displaySupplied ?? piece?.supplied ?? false,
   commanded: piece?.displayCommanded ?? piece?.commanded ?? false,

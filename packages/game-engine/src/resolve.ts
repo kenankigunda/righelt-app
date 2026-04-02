@@ -1,11 +1,8 @@
 import type { ArtifactContractV1, ArtifactMode, GameState, ResolveArtifacts } from "./types";
+import { SUPPLY_POINTS } from "./deterministic";
 import { validateAction } from "./legal";
 
 const MAX_RESOLVE_PASSES = 64;
-const SUPPLY_POINTS = {
-  P1: { row: 0, col: 9 },
-  P2: { row: 9, col: 0 },
-} as const;
 
 function sortIds(ids: Iterable<string>): string[] {
   return [...ids].sort((a, b) => a.localeCompare(b));

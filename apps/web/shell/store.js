@@ -6,8 +6,7 @@ import {
   saveShellState,
   saveTutorialCompleted,
 } from "./persistence.js";
-
-const MAX_HISTORY = 200;
+import { MAX_HISTORY } from "../generated/packages/shared-types/src/history.js";
 
 const createId = (prefix, random) => `${prefix}-${random().toString(36).slice(2, 10)}`;
 
@@ -282,10 +281,9 @@ export const createShellStore = ({
         game.moves[i].index = i;
       }
       game.turns.forEach((turn) => {
-        turn.moveIndexes = turn.moveIndexes.map((_, index) => {
-          const moveAtIndex = game.moves.find((move) => move.turnIndex === turn.index && move.turnMoveIndex === index);
-          return moveAtIndex ? moveAtIndex.index : -1;
-        }).filter((index) => index >= 0);
+        turn.moveIndexes = game.moves
+          .filter((move) => move.turnIndex === turn.index)
+          .map((move) => move.index);
       });
     }
 

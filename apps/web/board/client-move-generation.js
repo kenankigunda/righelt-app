@@ -1,4 +1,4 @@
-const BOARD_SIZE = 10;
+import { BOARD_SIZE, SUPPLY_POINTS } from "../generated/packages/game-engine/src/deterministic.js";
 
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
 
@@ -145,11 +145,6 @@ const buildCommandEdgesForPieces = (pieces) => {
   }
 
   return edges;
-};
-
-const SUPPLY_POINTS = {
-  P1: { row: 0, col: 9 },
-  P2: { row: 9, col: 0 },
 };
 
 const isCoordinateSuppliedForOwner = (pieces, owner, target) => {

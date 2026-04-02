@@ -1,8 +1,8 @@
-const SHELL_STATE_KEY = "righelt.shell.state.v1";
-const LIVE_TRANSPORT_STATE_KEY = "righelt.live_transport.state.v1";
-const IDENTITY_KEY = "righelt.identity.id.v1";
-const TUTORIAL_KEY = "righelt.tutorial.done.v1";
-const DEBUG_FLYOUT_KEY = "righelt.debug.flyout.v1";
+export const SHELL_STATE_KEY = "righelt.shell.state.v1";
+export const LIVE_TRANSPORT_STATE_KEY = "righelt.live_transport.state.v1";
+export const IDENTITY_KEY = "righelt.identity.id.v1";
+export const TUTORIAL_KEY = "righelt.tutorial.done.v1";
+export const DEBUG_FLYOUT_KEY = "righelt.debug.flyout.v1";
 
 export const loadJson = (storage, key, fallback) => {
   try {

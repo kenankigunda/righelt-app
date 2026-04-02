@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createLiveTransportStore } from "../shell/live-transport.js";
+import { IDENTITY_KEY } from "../shell/persistence.js";
 import {
   applyAction,
   createInitialState,
@@ -312,7 +313,7 @@ test("live transport store uses backend responses for create/load/join flows", a
 
 test("live transport store posts scenario imports through the shell scenarios endpoint", async () => {
   const storage = createMemoryStorage();
-  storage.setItem("righelt.identity.id.v1", "id-scenario");
+  storage.setItem(IDENTITY_KEY, "id-scenario");
   const fetcher = async (url, init = {}) => {
     if (String(url) === "/api/shell/scenarios/import") {
       const body = JSON.parse(String(init.body || "{}"));
@@ -365,7 +366,7 @@ test("live transport store posts scenario imports through the shell scenarios en
 
 test("live transport store posts history branch launches through the shell history endpoint", async () => {
   const storage = createMemoryStorage();
-  storage.setItem("righelt.identity.id.v1", "id-branch");
+  storage.setItem(IDENTITY_KEY, "id-branch");
   const fetcher = async (url, init = {}) => {
     if (String(url) === "/api/shell/history/branch") {
       const body = JSON.parse(String(init.body || "{}"));
@@ -442,7 +443,7 @@ test("live transport store posts history branch launches through the shell histo
 
 test("live transport store loads paged home sections through section-aware query params", async () => {
   const storage = createMemoryStorage();
-  storage.setItem("righelt.identity.id.v1", "id-page");
+  storage.setItem(IDENTITY_KEY, "id-page");
   const calls = [];
   const fetcher = async (url) => {
     calls.push(String(url));
@@ -541,7 +542,7 @@ test("live transport store can promote player 2 to both seats when player 1 is o
   };
 
   const storage = createMemoryStorage();
-  storage.setItem("righelt.identity.id.v1", "id-a");
+  storage.setItem(IDENTITY_KEY, "id-a");
   const store = createLiveTransportStore({ storage, fetcher, random: () => 0.12345 });
   const result = await store.playAsBothPlayers({ gameId: "game-000001" });
 
@@ -553,7 +554,7 @@ test("live transport store can promote player 2 to both seats when player 1 is o
 test("live transport store ignores stale game snapshots once a newer eventSeq is cached", async () => {
   const gameId = "game-seq-1";
   const storage = createMemoryStorage();
-  storage.setItem("righelt.identity.id.v1", "id-a");
+  storage.setItem(IDENTITY_KEY, "id-a");
 
   const fetcher = async (url, init = {}) => {
     if (String(url) === `/api/shell/games/${gameId}/piece-moves` && init.method === "POST") {
@@ -779,7 +780,7 @@ test("live transport store hands retreat control to the defending player", async
   const ownerStore = createLiveTransportStore({
     storage: (() => {
       const storage = createMemoryStorage();
-      storage.setItem("righelt.identity.id.v1", "id-a");
+      storage.setItem(IDENTITY_KEY, "id-a");
       return storage;
     })(),
     fetcher: async (url, init = {}) => {
@@ -823,7 +824,7 @@ test("live transport store hands retreat control to the defending player", async
   const defenderStore = createLiveTransportStore({
     storage: (() => {
       const storage = createMemoryStorage();
-      storage.setItem("righelt.identity.id.v1", "id-b");
+      storage.setItem(IDENTITY_KEY, "id-b");
       return storage;
     })(),
     fetcher: async (url, init = {}) => {
@@ -1129,7 +1130,7 @@ test("live transport store generates unique command ids across store instances",
 
 test("live transport store posts revert lifecycle endpoints", async () => {
   const storage = createMemoryStorage();
-  storage.setItem("righelt.identity.id.v1", "id-revert");
+  storage.setItem(IDENTITY_KEY, "id-revert");
   const calls = [];
   const fetcher = async (url, init = {}) => {
     calls.push({ url: String(url), method: init.method || "GET", body: init.body ? JSON.parse(String(init.body)) : null });

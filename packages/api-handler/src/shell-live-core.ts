@@ -1,13 +1,12 @@
 import { applyAction } from "../../game-engine/src/apply";
+import { BOARD_SIZE } from "../../game-engine/src/deterministic";
 import { deterministicStateHash } from "../../game-engine/src/hash";
 import { listLegalActions, validateAction } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import { createInitialState } from "../../game-engine/src/state";
+import { MAX_HISTORY } from "../../shared-types/src/history";
+import { isUuidV4 } from "../../shared-types/src/validation";
 import type { Action, GameState } from "../../game-engine/src/types";
-
-export const MAX_HISTORY = 200;
-const BOARD_SIZE = 10;
-const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type Participant = {
   identityId: string;
@@ -158,6 +157,12 @@ export const getSideToMoveSeat = (game: LiveGame): "Player 1" | "Player 2" =>
 export const getActiveTurn = (game: LiveGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
 const isMoveUndone = (move: MoveEntry | null | undefined) => move?.undone === true;
 const getActiveMoves = (game: LiveGame) => game.moves.filter((move) => !isMoveUndone(move));
+const getNextDisplayMoveNumber = (game: LiveGame) => {
+  const latestActiveMove = [...game.moves].reverse().find((move) => !isMoveUndone(move));
+  return typeof latestActiveMove?.displayMoveNumber === "number" && Number.isFinite(latestActiveMove.displayMoveNumber)
+    ? latestActiveMove.displayMoveNumber + 1
+    : getActiveMoves(game).length + 1;
+};
 
 export const asIdentity = (value: unknown) => (typeof value === "string" && value.trim().length > 0 ? value.trim() : null);
 export const asGameState = (value: unknown): GameState | null =>
@@ -204,7 +209,7 @@ export const asScenarioRecord = (value: unknown): ScenarioRecord | null => {
   if (
     candidate.formatVersion !== 2 ||
     typeof candidate.id !== "string" ||
-    !UUID_V4_PATTERN.test(candidate.id) ||
+    !isUuidV4(candidate.id) ||
     typeof candidate.title !== "string"
   ) {
     return null;
@@ -904,19 +909,21 @@ const renumberHistory = (game: LiveGame) => {
     if (!move.moveId) {
       move.moveId = nextMoveId();
     }
+    const hasStableDisplayNumber = typeof move.displayMoveNumber === "number" && Number.isFinite(move.displayMoveNumber);
     if (!isMoveUndone(move)) {
       activeMoveCounter += 1;
-      move.displayMoveNumber = activeMoveCounter;
-    } else if (typeof move.displayMoveNumber !== "number" || !Number.isFinite(move.displayMoveNumber)) {
+      if (!hasStableDisplayNumber) {
+        move.displayMoveNumber = activeMoveCounter;
+      }
+    } else if (!hasStableDisplayNumber) {
       move.displayMoveNumber = activeMoveCounter;
     }
   });
   game.turns.forEach((turn) => {
-    turn.moveIndexes = turn.moveIndexes
-      .map((_, turnMoveIndex) =>
-        game.moves.find((move) => !isMoveUndone(move) && move.turnIndex === turn.index && move.turnMoveIndex === turnMoveIndex)?.index ?? -1,
-      )
-      .filter((index) => index >= 0);
+    turn.moveIndexes = game.moves
+      .filter((move) => !isMoveUndone(move) && move.turnIndex === turn.index)
+      .map((move) => move.index);
+    turn.lastMoveAt = turn.moveIndexes.length > 0 ? game.moves[turn.moveIndexes[turn.moveIndexes.length - 1]]?.at ?? null : null;
   });
 };
 
@@ -1064,7 +1071,7 @@ export const applyServerActionWithExpectedState = (
     index: game.moves.length,
     turnIndex: activeTurn.index,
     turnMoveIndex: activeTurn.moveIndexes.length,
-    displayMoveNumber: getActiveMoves(game).length + 1,
+    displayMoveNumber: getNextDisplayMoveNumber(game),
     actorSide: stable.sideToMove,
     at: now(),
     notation: notation || defaultNotationForAction(action),

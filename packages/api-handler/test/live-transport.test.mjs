@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { listLegalActions } from "../../game-engine/src/legal";
+import { MAX_HISTORY } from "../../shared-types/src/history";
 import { handleApiRequest } from "../src/index.ts";
 import { __resetLiveGameStateForTests } from "../src/shell-live.ts";
 import { applyServerAction, createInitialGame } from "../src/shell-live-core.ts";
@@ -602,6 +603,44 @@ test("live transport: scenario import rejects non-UUID scenario ids", async () =
       scenario: {
         formatVersion: 2,
         id: "S-001",
+        title: "Invalid Scenario Id",
+        description: "Should be rejected",
+        incorrect: false,
+        initialState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        moves: [],
+        resultingState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        expectedFinalStateHash: "hash-placeholder",
+        expectedOutcome: "ongoing",
+      },
+    }),
+    env,
+  );
+
+  assert.equal(scenarioImport.status, 400);
+  await assert.deepEqual(await scenarioImport.json(), { ok: false, error: "invalid_scenario_payload" });
+});
+
+test("live transport: scenario import rejects UUID-shaped non-v4 scenario ids", async () => {
+  const scenarioImport = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-a",
+      scenario: {
+        formatVersion: 2,
+        id: "123e4567-e89b-12d3-a456-426614174000",
         title: "Invalid Scenario Id",
         description: "Should be rejected",
         incorrect: false,
@@ -1645,4 +1684,35 @@ test("live transport: stale participants load as disconnected until they become 
   } finally {
     Date.now = realNow;
   }
+});
+
+test("live transport: trimmed history keeps absolute move numbers and consistent turn indexes", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+  await handleApiRequest(req(`/api/shell/games/${gameId}/play-as-both`, "POST", { identityId: "id-owner" }), env);
+
+  for (let index = 0; index < MAX_HISTORY + 3; index += 1) {
+    const moveResponse = await handleApiRequest(req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }), env);
+    assert.equal(moveResponse.status, 200);
+  }
+
+  const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
+  const openBody = await open.json();
+
+  assert.equal(open.status, 200);
+  assert.equal(openBody.game.moves.length, MAX_HISTORY);
+  assert.deepEqual(
+    openBody.game.moves.map((move) => move.displayMoveNumber),
+    Array.from({ length: MAX_HISTORY }, (_, index) => index + 4),
+  );
+  const totalMoves = MAX_HISTORY + 3;
+  assert.deepEqual(
+    openBody.game.turns.find((turn) => turn.index === totalMoves - 1)?.moveIndexes,
+    [MAX_HISTORY - 1],
+  );
+  assert.equal(openBody.game.currentTurn.index, totalMoves);
+  assert.equal(openBody.game.currentTurn.moveIndexes.length, 0);
 });

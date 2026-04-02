@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { SHELL_STATE_KEY } from "../shell/persistence.js";
 import { createShellStore } from "../shell/store.js";
 import { createTestStore } from "./support.mjs";
 
@@ -56,7 +57,7 @@ test("player 2 can convert an open-seat game to play-as-both-players mode", asyn
   const { store, storage } = createTestStore();
   const game = await store.createGame();
   storage.setItem(
-    "righelt.shell.state.v1",
+    SHELL_STATE_KEY,
     JSON.stringify({
       games: [
         {

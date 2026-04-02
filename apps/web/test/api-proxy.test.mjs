@@ -108,6 +108,7 @@ test("Pages proxy returns a stable 503 when the local API worker is unavailable"
     });
 
     assert.equal(response.status, 503);
+    assert.equal(response.headers.get("cache-control"), "no-store");
     assert.deepEqual(await response.json(), {
       ok: false,
       error: "local_api_unavailable",

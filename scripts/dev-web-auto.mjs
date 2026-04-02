@@ -2,7 +2,9 @@ import { spawn } from "node:child_process";
 import http from "node:http";
 import { watch, promises as fs } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { buildLocalApiOrigin, buildLocalApiPersistPath, resolveLocalApiPort } from "../apps/web/local-dev-ports.js";
+import { isUuidV4 } from "../packages/shared-types/src/validation.js";
 
 const args = process.argv.slice(2);
 const port = args[0] ?? "8788";
@@ -35,8 +37,6 @@ let apiWrangler = null;
 let pagesWrangler = null;
 let exitCode = 0;
 let shuttingDown = false;
-const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 const fixtureWriterPort = (() => {
   const numeric = Number.parseInt(port, 10);
   if (!Number.isFinite(numeric)) {
@@ -65,7 +65,7 @@ const writeScenarioCatalog = async (catalog) => {
   await fs.writeFile(scenarioCatalogPath, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
 };
 
-const isValidScenarioShape = (scenario) => {
+export const isValidScenarioShape = (scenario) => {
   if (!scenario || typeof scenario !== "object") {
     return false;
   }
@@ -74,7 +74,7 @@ const isValidScenarioShape = (scenario) => {
   const description = typeof scenario.description === "string" ? scenario.description.trim() : "";
   const expectedHash = typeof scenario.expectedFinalStateHash === "string" ? scenario.expectedFinalStateHash : "";
   const expectedOutcome = typeof scenario.expectedOutcome === "string" ? scenario.expectedOutcome : "";
-  return Boolean(scenarioId && UUID_V4_PATTERN.test(scenarioId) && title && description && expectedHash && expectedOutcome);
+  return Boolean(scenarioId && isUuidV4(scenarioId) && title && description && expectedHash && expectedOutcome);
 };
 
 const readJsonBody = (request) =>
@@ -256,33 +256,6 @@ const scheduleTouch = () => {
 };
 
 const watchers = [];
-if (watchBackend) {
-  for (const root of watchRoots) {
-    try {
-      const watcher = watch(root, { recursive: true }, (_eventType, filename) => {
-        if (!filename) {
-          scheduleTouch();
-          return;
-        }
-        const ext = path.extname(filename.toString());
-        if (watchableExt.has(ext)) {
-          scheduleTouch();
-        }
-      });
-      watchers.push(watcher);
-    } catch (error) {
-      console.error(`[dev-web] failed to watch ${root}`, error);
-      process.exit(1);
-    }
-  }
-}
-
-console.log(
-  watchBackend
-    ? `[dev-web] starting on :${port} with backend watcher enabled${withApi ? ` and local api orchestration on :${localApiPort}` : ""}`
-    : `[dev-web] starting on :${port}${withApi ? ` with local api orchestration on :${localApiPort}` : ""}`,
-);
-startFixtureWriterServer();
 
 const maybeOpenFromChunk = (chunk) => {
   const text = chunk.toString();
@@ -335,9 +308,6 @@ const shutdown = (nextExitCode = exitCode) => {
 
   maybeExit();
 };
-
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
 
 const attachChild = (child, { openBrowser = false, label }) => {
   managedChildren.add(child);
@@ -415,18 +385,55 @@ const startPagesWrangler = () => {
   }, 2000);
 };
 
-try {
-  if (withApi) {
-    startApiWrangler();
-    await waitForLocalApiReady();
-    console.log(`[dev-web] local api ready at ${LOCAL_API_ORIGIN}`);
-  }
-  startPagesWrangler();
-} catch (error) {
-  console.error("[dev-web] failed to start split-stack local dev", error);
-  shutdown(1);
-}
+export const runDevWebAuto = async () => {
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
-if (managedChildren.size === 0) {
-  process.exit(exitCode);
+  if (watchBackend) {
+    for (const root of watchRoots) {
+      try {
+        const watcher = watch(root, { recursive: true }, (_eventType, filename) => {
+          if (!filename) {
+            scheduleTouch();
+            return;
+          }
+          const ext = path.extname(filename.toString());
+          if (watchableExt.has(ext)) {
+            scheduleTouch();
+          }
+        });
+        watchers.push(watcher);
+      } catch (error) {
+        console.error(`[dev-web] failed to watch ${root}`, error);
+        process.exit(1);
+      }
+    }
+  }
+
+  console.log(
+    watchBackend
+      ? `[dev-web] starting on :${port} with backend watcher enabled${withApi ? ` and local api orchestration on :${localApiPort}` : ""}`
+      : `[dev-web] starting on :${port}${withApi ? ` with local api orchestration on :${localApiPort}` : ""}`,
+  );
+  startFixtureWriterServer();
+
+  try {
+    if (withApi) {
+      startApiWrangler();
+      await waitForLocalApiReady();
+      console.log(`[dev-web] local api ready at ${LOCAL_API_ORIGIN}`);
+    }
+    startPagesWrangler();
+  } catch (error) {
+    console.error("[dev-web] failed to start split-stack local dev", error);
+    shutdown(1);
+  }
+
+  if (managedChildren.size === 0) {
+    process.exit(exitCode);
+  }
+};
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await runDevWebAuto();
 }

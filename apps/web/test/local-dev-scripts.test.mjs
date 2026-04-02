@@ -12,7 +12,9 @@ const devWebAutoSource = readFileSync(path.join(repoRoot, "scripts", "dev-web-au
 const dbCleanupLocalSource = readFileSync(path.join(repoRoot, "scripts", "db-retention-cleanup-local.mjs"), "utf8");
 const dbCleanupSharedSource = readFileSync(path.join(repoRoot, "scripts", "db-retention-cleanup-shared.mjs"), "utf8");
 const dbCleanupGithubSource = readFileSync(path.join(repoRoot, "scripts", "db-retention-cleanup-github.mjs"), "utf8");
+const generatedGuardSource = readFileSync(path.join(repoRoot, "scripts", "check-web-engine-generated.mjs"), "utf8");
 const dbCleanupSharedModule = await import(pathToFileURL(path.join(repoRoot, "scripts", "db-retention-cleanup-shared.mjs")).href);
+const devWebAutoModule = await import(pathToFileURL(path.join(repoRoot, "scripts", "dev-web-auto.mjs")).href);
 
 test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.equal(scripts.dev, "pnpm dev:web");
@@ -35,6 +37,8 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.equal(scripts["dev:all:a"], "node scripts/dev-web-auto.mjs 8789 --with-api");
   assert.equal(scripts["dev:all:b"], "node scripts/dev-web-auto.mjs 8790 --with-api");
   assert.equal(scripts["dev:all:c"], "node scripts/dev-web-auto.mjs 8791 --with-api");
+  assert.equal(scripts["check:web-engine-generated"], "node scripts/check-web-engine-generated.mjs");
+  assert.match(scripts.test, /^pnpm typecheck && pnpm check:web-engine-generated && /);
 });
 
 test("root package scripts expose only db-prefixed local migration commands", () => {
@@ -108,10 +112,34 @@ test("GitHub D1 retention cleanup helper reuses the shared cleanup generator", (
 });
 
 test("local scenario writer replaces full scenario records during update", () => {
-  assert.match(devWebAutoSource, /const isValidScenarioShape = \(scenario\) => \{/);
+  assert.match(devWebAutoSource, /export const isValidScenarioShape = \(scenario\) => \{/);
   assert.match(devWebAutoSource, /const description = typeof scenario\.description === "string" \? scenario\.description\.trim\(\) : "";/);
   assert.match(devWebAutoSource, /if \(!isValidScenarioShape\(scenario\)\) \{\s*jsonResponse\(response, 400, \{ ok: false, error: "invalid_scenario_shape" \}\);/s);
   assert.match(devWebAutoSource, /const scenarioIndex = catalog\.scenarios\.findIndex\(\(entry\) => entry\.id === scenario\.id\);/);
   assert.match(devWebAutoSource, /catalog\.scenarios\.splice\(scenarioIndex, 1, scenario\);/);
   assert.doesNotMatch(devWebAutoSource, /const expectedHash = typeof body\.expectedFinalStateHash === "string"/);
+});
+
+test("local scenario writer validation rejects UUID-shaped non-v4 ids", () => {
+  const validScenario = {
+    id: "0066b0ed-c5ba-4a89-a81a-1811d08d2d9d",
+    title: "Valid scenario",
+    description: "Valid description",
+    expectedFinalStateHash: "hash-live-state",
+    expectedOutcome: "ongoing",
+  };
+  const wrongVersionScenario = {
+    ...validScenario,
+    id: "123e4567-e89b-12d3-a456-426614174000",
+  };
+
+  assert.equal(devWebAutoModule.isValidScenarioShape(validScenario), true);
+  assert.equal(devWebAutoModule.isValidScenarioShape(wrongVersionScenario), false);
+});
+
+test("generated web runtime guard rebuilds and fails on stale output", () => {
+  assert.match(generatedGuardSource, /const GENERATED_ROOT = "apps\/web\/generated";/);
+  assert.match(generatedGuardSource, /run\("pnpm", \["build:web-engine"\]\);/);
+  assert.match(generatedGuardSource, /git", \["status", "--short", "--untracked-files=all", "--", GENERATED_ROOT\]/);
+  assert.match(generatedGuardSource, /Generated web engine output is stale/);
 });

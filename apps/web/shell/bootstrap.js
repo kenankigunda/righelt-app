@@ -1,4 +1,4 @@
-const BOOTSTRAP_CACHE_CONTROL = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
+import { CACHE_BOOTSTRAP_SHORT } from "../generated/packages/shared-types/src/http.js";
 
 const STATIC_BOOTSTRAP_PAYLOAD = Object.freeze({
   app: "righelt-web-shell",
@@ -14,6 +14,6 @@ const STATIC_BOOTSTRAP_PAYLOAD = Object.freeze({
 
 export const getBootstrapPayload = () => STATIC_BOOTSTRAP_PAYLOAD;
 
-export const getBootstrapCachePolicy = () => BOOTSTRAP_CACHE_CONTROL;
+export const getBootstrapCachePolicy = () => CACHE_BOOTSTRAP_SHORT;
 
 export const shouldDeferNonCriticalLoad = ({ firstRenderComplete }) => firstRenderComplete === true;

@@ -29,8 +29,6 @@ const normalizeSavedSelection = (savedSelection) => {
   };
 };
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 const createUuidV4 = () => {
   if (typeof globalThis.crypto?.randomUUID === "function") {
     return globalThis.crypto.randomUUID();
@@ -160,7 +158,7 @@ export const buildScenarioFromGame = async (
   game,
   { scenarioId, title, description, moveLimit = null, resultingStateOverride = null, savedSelection = null } = {},
 ) => {
-  if (!UUID_PATTERN.test(String(scenarioId || ""))) {
+  if (!isUuidV4(String(scenarioId || ""))) {
     throw new Error("Scenario IDs must be UUID v4 values.");
   }
   const safeMoveLimit = Number.isFinite(moveLimit) ? Math.max(0, Math.min(moveLimit, game.moves.length)) : game.moves.length;
@@ -202,13 +200,14 @@ export const buildHistoryBranchSeedFromGame = (game, moveIndex) => {
   const resultingState = structuredClone(move.selectionSnapshot);
   const sourceLabel = String(game?.id || "").startsWith("game-") ? String(game.id).slice(0, 11) : String(game?.id || "game");
   const scenarioId = createUuidV4();
+  const moveNumber = move.displayMoveNumber ?? move.index + 1;
   return {
-    title: `Branch from ${sourceLabel} move ${move.displayMoveNumber ?? move.index + 1}`,
+    title: `Branch from ${sourceLabel} move ${moveNumber}`,
     scenario: normalizeScenario({
       formatVersion: 2,
       id: scenarioId,
-      title: `Branch from ${sourceLabel} move ${move.displayMoveNumber ?? move.index + 1}`,
-      description: `Replay through move ${move.displayMoveNumber ?? move.index} and open before move ${move.displayMoveNumber ?? move.index + 1}.`,
+      title: `Branch from ${sourceLabel} move ${moveNumber}`,
+      description: `Replay through move ${moveNumber} and open before move ${moveNumber + 1}.`,
       incorrect: false,
       initialState,
       moves: selectedMoves.map((selectedMove) => ({
@@ -226,3 +225,4 @@ export const buildHistoryBranchSeedFromGame = (game, moveIndex) => {
     participantCopyMode: getLaunchParticipantCopyMode(game),
   };
 };
+import { isUuidV4 } from "../generated/packages/shared-types/src/validation.js";

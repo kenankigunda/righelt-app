@@ -1,5 +1,6 @@
 import { listLegalActions } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
+import { CACHE_BOOTSTRAP_SHORT, CACHE_NO_STORE } from "../../shared-types/src/http";
 import {
   asAction,
   asGameState,
@@ -34,8 +35,6 @@ export type LiveGameRequestEnv = {
   GAME_ROOMS: DurableObjectNamespaceLike;
 };
 
-const CACHE_NO_STORE = "no-store";
-const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
 const GAME_ROOMS_BINDING_ERROR = "server_misconfigured_game_rooms_binding";
 const INVALID_PERSISTED_GAME_ERROR = "invalid_persisted_game";
 

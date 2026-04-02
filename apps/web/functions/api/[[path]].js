@@ -1,6 +1,5 @@
+import { CACHE_NO_STORE } from "../../generated/packages/shared-types/src/http.js";
 import { buildLocalApiOrigin, isLocalDevHost } from "../../local-dev-ports.js";
-
-const CACHE_NO_STORE = "no-store";
 const API_SERVICE_BINDING_ERROR = "server_misconfigured_api_service_binding";
 const LOCAL_API_UNAVAILABLE_ERROR = "local_api_unavailable";
 
