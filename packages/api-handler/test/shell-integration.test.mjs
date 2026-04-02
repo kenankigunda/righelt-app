@@ -271,3 +271,174 @@ test("shell integration: history mode stays pinned while remote live updates app
   assert.equal(liveView.currentTurn.playerSeat, "Player 1");
   assert.equal(liveView.currentSnapshot.sideToMove, "P1");
 });
+
+test("shell integration: ignored player-seat request remains pending across refreshes until approval resolves it", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-shell-int-8");
+  const guest = harness.createClient("id-guest-shell-int-8");
+
+  const created = await owner.store.createGame({ selfPlayMode: false });
+  const guestLanding = await guest.store.loadGame(created.id, { openAsViewer: false });
+  assert.equal(guestLanding.myRole, "Guest");
+
+  const requested = await guest.store.joinGame({ gameId: created.id, mode: "player" });
+  assert.equal(requested.pendingApproval, true);
+  assert.equal(requested.game.myRole, "Viewer");
+
+  const ownerPending = await harness.waitForGame(
+    owner,
+    created.id,
+    (game) => game.pendingJoinRequests?.length === 1 && game.pendingJoinRequests[0]?.identityId === guest.identityId,
+  );
+  assert.equal(ownerPending.pendingJoinRequests[0].requestedSeat, "Player 2");
+
+  const ownerRefreshed = await harness.refreshGame(owner, created.id);
+  const guestRefreshed = await harness.refreshGame(guest, created.id);
+  assert.equal(ownerRefreshed.pendingJoinRequests.length, 1);
+  assert.equal(guestRefreshed.myRole, "Viewer");
+  assert.equal(guestRefreshed.pendingPlayerRequestSeat, "Player 2");
+});
+
+test("shell integration: direct refresh after missed updates restores the authoritative turn and preserves role", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-shell-int-9");
+  const guest = harness.createClient("id-guest-shell-int-9");
+
+  const created = await owner.store.createGame({ selfPlayMode: false });
+  await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
+
+  const guestBeforeMove = guest.store.getGameViewModel(created.id);
+  assert.equal(guestBeforeMove.currentTurn.index, 0);
+  assert.equal(guestBeforeMove.currentTurn.playerSeat, "Player 1");
+
+  await owner.store.addMove({ gameId: created.id, notation: "P1-M1" });
+
+  const staleGuestView = guest.store.getGameViewModel(created.id);
+  assert.equal(staleGuestView.currentTurn.index, 0);
+  assert.equal(staleGuestView.myRole, "Player 2");
+
+  const refreshedGuestView = await harness.refreshGame(guest, created.id);
+  assert.equal(refreshedGuestView.currentTurn.index, 1);
+  assert.equal(refreshedGuestView.currentTurn.playerSeat, "Player 2");
+  assert.equal(refreshedGuestView.myRole, "Player 2");
+  assert.equal(refreshedGuestView.pendingJoinRequests.length, 0);
+});
+
+test("shell integration: full seats leave a third client with viewer-only fallback across direct loads", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-shell-int-10");
+  const player = harness.createClient("id-player-shell-int-10");
+  const viewer = harness.createClient("id-viewer-shell-int-10");
+
+  const created = await owner.store.createGame({ selfPlayMode: false });
+  await harness.acceptInviteAsPlayer(player, harness.buildPlayerInviteHash(created));
+
+  const viewerLanding = await harness.refreshGame(viewer, created.id);
+  assert.equal(viewerLanding.myRole, "Guest");
+  assert.equal(viewerLanding.canJoinAsPlayer, false);
+  assert.equal(viewerLanding.canJoinAsViewer, true);
+
+  const joined = await viewer.store.joinGame({ gameId: created.id, mode: "viewer" });
+  assert.equal(joined.game.myRole, "Viewer");
+
+  const viewerRefreshed = await harness.refreshGame(viewer, created.id);
+  assert.equal(viewerRefreshed.myRole, "Viewer");
+  assert.equal(viewerRefreshed.canJoinAsPlayer, false);
+  assert.equal(viewerRefreshed.canJoinAsViewer, false);
+});
+
+test("shell integration: self-play state disables external player joins across refreshes and direct loads", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-shell-int-11");
+  const outsider = harness.createClient("id-outsider-shell-int-11");
+
+  const created = await owner.store.createGame({ selfPlayMode: false });
+  await owner.store.playAsBothPlayers({ gameId: created.id });
+
+  const outsiderLanding = await harness.refreshGame(outsider, created.id);
+  assert.equal(outsiderLanding.canJoinAsPlayer, false);
+  assert.equal(outsiderLanding.canJoinAsViewer, true);
+
+  await assert.rejects(
+    () => outsider.store.joinGame({ gameId: created.id, mode: "player" }),
+    (error) => {
+      assert.equal(error.code, "self_play_player_join_disabled");
+      return true;
+    },
+  );
+
+  const outsiderViewerJoin = await outsider.store.joinGame({ gameId: created.id, mode: "viewer" });
+  assert.equal(outsiderViewerJoin.game.myRole, "Viewer");
+});
+
+test("shell integration: revert request approval clears pending state and marks targeted moves undone through the transport store", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-shell-int-12");
+  const guest = harness.createClient("id-guest-shell-int-12");
+
+  const created = await owner.store.createGame({ selfPlayMode: false });
+  await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
+
+  const firstMove = await owner.store.addMove({ gameId: created.id, notation: "P1-M1" });
+  const secondMove = await guest.store.addMove({ gameId: created.id, notation: "P2-M1" });
+  const targetMoveId = firstMove.game.moves[0].moveId;
+  assert.equal(typeof secondMove.game.moves[1].moveId, "string");
+
+  const requested = await owner.store.requestRevertToMove({ gameId: created.id, targetMoveId });
+  assert.equal(requested.pendingRevertRequest?.targetMoveId, targetMoveId);
+
+  const approved = await guest.store.approveRevertRequest({
+    gameId: created.id,
+    requestId: requested.pendingRevertRequest.requestId,
+  });
+  assert.equal(approved.pendingRevertRequest, null);
+  assert.equal(approved.moves.find((move) => move.moveId === targetMoveId)?.undone, true);
+
+  const ownerAfterApproval = await harness.refreshGame(owner, created.id);
+  assert.equal(ownerAfterApproval.pendingRevertRequest, null);
+  assert.equal(ownerAfterApproval.moves.find((move) => move.moveId === targetMoveId)?.undone, true);
+});
+
+test("shell integration: revert request rejection clears pending state without undoing moves", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-shell-int-13");
+  const guest = harness.createClient("id-guest-shell-int-13");
+
+  const created = await owner.store.createGame({ selfPlayMode: false });
+  await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
+
+  const firstMove = await owner.store.addMove({ gameId: created.id, notation: "P1-M1" });
+  const requested = await owner.store.requestRevertToMove({
+    gameId: created.id,
+    targetMoveId: firstMove.game.moves[0].moveId,
+  });
+
+  const rejected = await guest.store.rejectRevertRequest({
+    gameId: created.id,
+    requestId: requested.pendingRevertRequest.requestId,
+  });
+  assert.equal(rejected.pendingRevertRequest, null);
+  assert.equal(rejected.moves.some((move) => move.undone === true), false);
+});
+
+test("shell integration: requester can rescind a pending revert request through the transport store", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-shell-int-14");
+  const guest = harness.createClient("id-guest-shell-int-14");
+
+  const created = await owner.store.createGame({ selfPlayMode: false });
+  await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
+
+  const firstMove = await owner.store.addMove({ gameId: created.id, notation: "P1-M1" });
+  const requested = await owner.store.requestRevertToMove({
+    gameId: created.id,
+    targetMoveId: firstMove.game.moves[0].moveId,
+  });
+
+  const rescinded = await owner.store.rescindRevertRequest({
+    gameId: created.id,
+    requestId: requested.pendingRevertRequest.requestId,
+  });
+  assert.equal(rescinded.pendingRevertRequest, null);
+  assert.equal(rescinded.moves.some((move) => move.undone === true), false);
+});

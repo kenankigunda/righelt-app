@@ -37,6 +37,15 @@ export const createIsolatedPage = async (browser) => {
   return { context, page };
 };
 
+export const setOfflineState = async (page, offline) => {
+  await page.context().setOffline(offline);
+  await expect
+    .poll(async () => page.evaluate(() => navigator.onLine), {
+      message: `Expected browser navigator.onLine to become ${offline ? "false" : "true"}`,
+    })
+    .toBe(!offline);
+};
+
 export const createGameFromHome = async (page) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
@@ -106,6 +115,14 @@ export const expectHistoryMoveCountToIncrease = async (page, initialCount) => {
     .toBeGreaterThan(initialCount);
 };
 
+export const expectHistoryMoveCountToEqualOrExceed = async (page, expectedCount) => {
+  await expect
+    .poll(async () => getHistoryMoveCount(page), {
+      message: `Expected browser history move count to reach at least ${expectedCount}`,
+    })
+    .toBeGreaterThanOrEqual(expectedCount);
+};
+
 const getFirstPlayableAction = async (page) =>
   page.evaluate(async () => {
     const identityId = window.localStorage.getItem("righelt.identity.id.v1");
@@ -156,6 +173,39 @@ export const openHistoryAndReturnLive = async (page) => {
   await expect(page.getByTestId("history-return-live")).toBeVisible();
   await page.getByTestId("history-return-live").click();
   await expect(page.getByTestId("history-return-live")).toHaveCount(0);
+};
+
+export const openHistoryMode = async (page, moveIndex = 0) => {
+  await expect(historyMoveItems(page).nth(moveIndex)).toBeVisible();
+  await historyMoveItems(page).nth(moveIndex).click();
+  await expect(page.getByTestId("history-return-live")).toBeVisible();
+};
+
+export const returnToLive = async (page) => {
+  await expect(page.getByTestId("history-return-live")).toBeVisible();
+  await page.getByTestId("history-return-live").click();
+  await expect(page.getByTestId("history-return-live")).toHaveCount(0);
+};
+
+export const expectViewerFallbackJoinSurface = async (page) => {
+  await expect
+    .poll(async () => getVisibleJoinSurface(page), {
+      message: "Expected a visible join surface for a fallback viewer join",
+    })
+    .not.toBeNull();
+  if ((await page.getByTestId("join-player").count()) > 0) {
+    await expect(page.getByTestId("join-player")).toBeDisabled();
+  }
+  if ((await page.getByTestId("invite-join-player").count()) > 0) {
+    await expect(page.getByTestId("invite-join-player")).toBeDisabled();
+  }
+  if ((await page.getByTestId("join-viewer").count()) > 0) {
+    await expect(page.getByTestId("join-viewer")).toBeVisible();
+    await expect(page.getByTestId("join-viewer")).toBeEnabled();
+    return;
+  }
+  await expect(page.getByTestId("invite-join-viewer")).toBeVisible();
+  await expect(page.getByTestId("invite-join-viewer")).toBeEnabled();
 };
 
 export const closeContextQuietly = async (context) => {
