@@ -12,6 +12,7 @@ const devWebAutoSource = readFileSync(path.join(repoRoot, "scripts", "dev-web-au
 const dbCleanupLocalSource = readFileSync(path.join(repoRoot, "scripts", "db-retention-cleanup-local.mjs"), "utf8");
 const dbCleanupSharedSource = readFileSync(path.join(repoRoot, "scripts", "db-retention-cleanup-shared.mjs"), "utf8");
 const dbCleanupGithubSource = readFileSync(path.join(repoRoot, "scripts", "db-retention-cleanup-github.mjs"), "utf8");
+const generatedGuardSource = readFileSync(path.join(repoRoot, "scripts", "check-web-engine-generated.mjs"), "utf8");
 const dbCleanupSharedModule = await import(pathToFileURL(path.join(repoRoot, "scripts", "db-retention-cleanup-shared.mjs")).href);
 const devWebAutoModule = await import(pathToFileURL(path.join(repoRoot, "scripts", "dev-web-auto.mjs")).href);
 
@@ -36,6 +37,8 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.equal(scripts["dev:all:a"], "node scripts/dev-web-auto.mjs 8789 --with-api");
   assert.equal(scripts["dev:all:b"], "node scripts/dev-web-auto.mjs 8790 --with-api");
   assert.equal(scripts["dev:all:c"], "node scripts/dev-web-auto.mjs 8791 --with-api");
+  assert.equal(scripts["check:web-engine-generated"], "node scripts/check-web-engine-generated.mjs");
+  assert.match(scripts.test, /^pnpm typecheck && pnpm check:web-engine-generated && /);
 });
 
 test("root package scripts expose only db-prefixed local migration commands", () => {
@@ -132,4 +135,11 @@ test("local scenario writer validation rejects UUID-shaped non-v4 ids", () => {
 
   assert.equal(devWebAutoModule.isValidScenarioShape(validScenario), true);
   assert.equal(devWebAutoModule.isValidScenarioShape(wrongVersionScenario), false);
+});
+
+test("generated web runtime guard rebuilds and fails on stale output", () => {
+  assert.match(generatedGuardSource, /const GENERATED_ROOT = "apps\/web\/generated";/);
+  assert.match(generatedGuardSource, /run\("pnpm", \["build:web-engine"\]\);/);
+  assert.match(generatedGuardSource, /git", \["status", "--short", "--untracked-files=all", "--", GENERATED_ROOT\]/);
+  assert.match(generatedGuardSource, /Generated web engine output is stale/);
 });

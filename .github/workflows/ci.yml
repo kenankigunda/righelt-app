@@ -58,6 +58,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Generated web runtime is up to date
+        run: pnpm check:web-engine-generated
+
       - name: Engine tests
         run: pnpm test:engine
 
