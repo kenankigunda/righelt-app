@@ -13,6 +13,7 @@ const dbCleanupLocalSource = readFileSync(path.join(repoRoot, "scripts", "db-ret
 const dbCleanupSharedSource = readFileSync(path.join(repoRoot, "scripts", "db-retention-cleanup-shared.mjs"), "utf8");
 const dbCleanupGithubSource = readFileSync(path.join(repoRoot, "scripts", "db-retention-cleanup-github.mjs"), "utf8");
 const generatedGuardSource = readFileSync(path.join(repoRoot, "scripts", "check-web-engine-generated.mjs"), "utf8");
+const nodeTestRunnerSource = readFileSync(path.join(repoRoot, "scripts", "run-node-tests.mjs"), "utf8");
 const webTestRunnerSource = readFileSync(path.join(repoRoot, "apps", "web", "test", "run-web-tests.mjs"), "utf8");
 const dbCleanupSharedModule = await import(pathToFileURL(path.join(repoRoot, "scripts", "db-retention-cleanup-shared.mjs")).href);
 const devWebAutoModule = await import(pathToFileURL(path.join(repoRoot, "scripts", "dev-web-auto.mjs")).href);
@@ -42,6 +43,11 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.match(scripts.test, /^pnpm typecheck && pnpm check:web-engine-generated && /);
   assert.equal(scripts["test:unit"], "pnpm test:engine:unit && pnpm test:web:unit");
   assert.equal(scripts["test:integration"], "pnpm test:engine:integration && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web:integration");
+  assert.equal(scripts["test:engine"], "node scripts/run-node-tests.mjs packages/game-engine/test");
+  assert.equal(scripts["test:engine:unit"], "node scripts/run-node-tests.mjs packages/game-engine/test/unit");
+  assert.equal(scripts["test:engine:integration"], "node scripts/run-node-tests.mjs packages/game-engine/test/integration");
+  assert.equal(scripts["test:api-handler"], "node scripts/run-node-tests.mjs packages/api-handler/test");
+  assert.equal(scripts["test:api-worker"], "node scripts/run-node-tests.mjs apps/api/test");
   assert.equal(scripts["test:web"], "node apps/web/test/run-web-tests.mjs");
   assert.equal(scripts["test:web:unit"], "node apps/web/test/run-web-tests.mjs --layer unit");
   assert.equal(scripts["test:web:integration"], "node apps/web/test/run-web-tests.mjs --layer integration");
@@ -153,10 +159,28 @@ test("generated web runtime guard rebuilds and fails on stale output", () => {
   assert.match(generatedGuardSource, /Generated web engine output is stale/);
 });
 
+test("shared Node test runner discovers test files recursively and supports multiple reporters", () => {
+  assert.match(nodeTestRunnerSource, /const reporters = \[];/);
+  assert.match(nodeTestRunnerSource, /const reporterDestinations = \[];/);
+  assert.match(nodeTestRunnerSource, /if \(reporters.length === 0\) \{\s*reporters\.push\("spec"\);/s);
+  assert.match(nodeTestRunnerSource, /"--import", "tsx", "--test"/);
+  assert.match(nodeTestRunnerSource, /Multiple reporters require explicit --reporter-destination entries/);
+  assert.match(nodeTestRunnerSource, /if \(destination === "stdout" \|\| destination === "stderr"\)/);
+  assert.match(nodeTestRunnerSource, /mkdirSync\(path\.dirname\(path\.resolve\(destination\)\), \{ recursive: true \}\);/);
+  assert.match(nodeTestRunnerSource, /files\.push\(...collectTestFiles\(entryPath\)\)/);
+  assert.match(nodeTestRunnerSource, /entry\.name\.endsWith\("\.test\.mjs"\)/);
+});
+
 test("web test runner forwards optional reporter settings into node --test", () => {
   assert.match(webTestRunnerSource, /if \(value === "--"\) \{\s*continue;\s*\}/);
+  assert.match(webTestRunnerSource, /const reporters = \[];/);
+  assert.match(webTestRunnerSource, /const reporterDestinations = \[];/);
   assert.match(webTestRunnerSource, /if \(value === "--reporter"\)/);
   assert.match(webTestRunnerSource, /if \(value === "--reporter-destination"\)/);
+  assert.match(webTestRunnerSource, /if \(reporters.length === 0\) \{\s*reporters\.push\("spec"\);/s);
+  assert.match(webTestRunnerSource, /Multiple reporters require explicit --reporter-destination entries/);
+  assert.match(webTestRunnerSource, /if \(reporterDestination === "stdout" \|\| reporterDestination === "stderr"\)/);
+  assert.match(webTestRunnerSource, /mkdirSync\(path\.dirname\(path\.resolve\(reporterDestination\)\), \{ recursive: true \}\);/);
   assert.match(webTestRunnerSource, /args\.push\("--test-reporter", reporter\);/);
   assert.match(webTestRunnerSource, /args\.push\("--test-reporter-destination", reporterDestination\);/);
 });
