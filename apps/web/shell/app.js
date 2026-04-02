@@ -893,9 +893,16 @@ const getHomeSectionColumnCount = (sectionKey) => {
   }
   return Math.max(1, Math.floor((sectionWidth + gapWidth) / (cardWidth + gapWidth)));
 };
-const getHomeSectionVisiblePageSize = (sectionKey) => (getHomeSectionColumnCount(sectionKey) >= 3
-  ? HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT
-  : HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE);
+const getHomeSectionVisiblePageSize = (sectionKey) => {
+  const columnCount = getHomeSectionColumnCount(sectionKey);
+  if (columnCount >= 3) {
+    return HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT;
+  }
+  if (columnCount === 2) {
+    return HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE;
+  }
+  return HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT;
+};
 const isNarrowHeaderMode = () => getShellLayoutMode() === "narrow";
 const closeHeaderMenu = () => {
   headerMenuOpen = false;

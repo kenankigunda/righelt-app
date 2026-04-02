@@ -104,7 +104,10 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /const getHomeSectionColumnCount = \(sectionKey\) => \{/);
   assert.match(source, /Math\.max\(1, Math\.floor\(\(sectionWidth \+ gapWidth\) \/ \(cardWidth \+ gapWidth\)\)\)/);
   assert.match(source, /const getHomeSectionVisiblePageSize = \(sectionKey\) =>/);
-  assert.match(source, /getHomeSectionColumnCount\(sectionKey\) >= 3/);
+  assert.match(source, /const columnCount = getHomeSectionColumnCount\(sectionKey\);/);
+  assert.match(source, /if \(columnCount >= 3\) \{\s*return HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT;\s*\}/s);
+  assert.match(source, /if \(columnCount === 2\) \{\s*return HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE;\s*\}/s);
+  assert.match(source, /return HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT;/);
   assert.match(source, /HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE/);
   assert.match(source, /HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT/);
   assert.match(source, /const getHomeSectionRequiredServerPages = \(\{ totalGames, visiblePageSize, page \}\) => \{/);
@@ -165,4 +168,24 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.doesNotMatch(source, /class="panel home-start-panel"/);
   assert.doesNotMatch(source, /<h2>Active Games<\/h2>/);
   assert.doesNotMatch(source, /<h2>Preview Board/);
+});
+
+test("home visible page size maps 3/2/1 columns to 3/4/3 cards", () => {
+  const match = source.match(/const getHomeSectionVisiblePageSize = \(sectionKey\) => \{([\s\S]*?)\n\};/);
+  assert.ok(match, "expected getHomeSectionVisiblePageSize definition");
+
+  const createVisiblePageSize = new Function(
+    "getHomeSectionColumnCount",
+    "HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT",
+    "HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE",
+    `return (sectionKey) => {${match[1]}\n};`,
+  );
+
+  const wideThreeColumn = createVisiblePageSize(() => 3, 3, 4);
+  const twoColumn = createVisiblePageSize(() => 2, 3, 4);
+  const oneColumn = createVisiblePageSize(() => 1, 3, 4);
+
+  assert.equal(wideThreeColumn("my"), 3);
+  assert.equal(twoColumn("my"), 4);
+  assert.equal(oneColumn("my"), 3);
 });
