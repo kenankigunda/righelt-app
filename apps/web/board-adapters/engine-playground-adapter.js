@@ -489,6 +489,13 @@ function applyGroupDecorations(snapshot, piece, cellByCoordinateKey, { showBadge
   }
 }
 
+function isPushContinuationGroupMember(snapshot, piece) {
+  if (!piece || snapshot?.continuation?.type !== "push") {
+    return false;
+  }
+  return (snapshot.continuation.followGroupPieceIds ?? []).includes(piece.id);
+}
+
 export function createEnginePlaygroundBoardAdapter() {
   let boardEl = null;
   let overlayLinesEl = null;
@@ -742,7 +749,9 @@ export function createEnginePlaygroundBoardAdapter() {
       }
     }
 
-    applyGroupDecorations(snapshot, piece, cellByCoordinateKey);
+    if (!isPushContinuationGroupMember(snapshot, piece)) {
+      applyGroupDecorations(snapshot, piece, cellByCoordinateKey);
+    }
 
     applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey);
     if (snapshot?.continuation?.type === "push" && snapshot.continuation.phase === "retreat") {

@@ -703,6 +703,54 @@ test("push retreat overlay keeps original push group highlighted while members a
   });
 });
 
+test("selected followable push member shows only the original push-group strength badge", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P1",
+      continuation: {
+        type: "push",
+        phase: "follow",
+        followGroupPieceIds: ["A1", "A2", "A3", "A4", "A5"],
+      },
+      pieces: [
+        { id: "A1", owner: "P1", kind: "unit", position: { row: 5, col: 2 }, supplied: true, commanded: false },
+        { id: "A2", owner: "P1", kind: "unit", position: { row: 5, col: 3 }, supplied: true, commanded: false },
+        { id: "A3", owner: "P1", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: false },
+        { id: "A4", owner: "P1", kind: "unit", position: { row: 5, col: 6 }, supplied: true, commanded: false },
+        { id: "A5", owner: "P1", kind: "unit", position: { row: 6, col: 3 }, supplied: true, commanded: false },
+      ],
+      artifacts: {
+        groups: {
+          componentByPieceId: { A1: "G1", A2: "G1", A3: "G2", A4: "G2", A5: "G3" },
+          membersByComponentId: { G1: ["A1", "A2"], G2: ["A3", "A4"], G3: ["A5"] },
+          strengthByComponentId: { G1: 2, G2: 2, G3: 1 },
+        },
+      },
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: "A3", source: { row: 5, col: 5 }, target: { row: 5, col: 4 } },
+      overlay: {
+        mode: "interactive",
+        selection: { selectedPieceId: "A3", source: { row: 5, col: 5 }, target: { row: 5, col: 4 } },
+      },
+      legalActions: [{ type: "follow", actorId: "A3", from: { row: 5, col: 5 }, to: { row: 5, col: 4 } }],
+      selectedPieceMoves: [{ type: "follow", actorId: "A3", from: { row: 5, col: 5 }, to: { row: 5, col: 4 } }],
+      selectedPieceMovePreviews: [{ type: "follow", actorId: "A3", from: { row: 5, col: 5 }, to: { row: 5, col: 4 } }],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "follow",
+      selectedPieceOverlayPhase: "actionPreviews",
+    });
+
+    assert.equal(boardEl.querySelectorAll(".group-strength-badge").length, 1);
+    assert.equal(getCell(boardEl, 5, 2)?.querySelector(".group-strength-badge")?.textContent, "5");
+    assert.equal(getCell(boardEl, 5, 5)?.classList.contains("continuation-pending"), true);
+  });
+});
+
 test("empty-cell preview markers use a geometry-based centered dot", () => {
   assert.match(adapterSource, /marker\.className = "piece-empty";\s*marker\.setAttribute\("aria-hidden", "true"\);/s);
   assert.doesNotMatch(adapterSource, /marker\.textContent = "\.";/);
