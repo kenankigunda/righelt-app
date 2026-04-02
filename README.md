@@ -30,26 +30,7 @@ This repository is the foundation for the Righelt web app.
 
 ### Team Shorthand
 
-Shorthands are case-insensitive (for example: `cp = CP = Cp`).
-
-- `Cp` = commit + push + wait before continuing
-- `Cpn` = commit + push + take the next action
-- `Opr` = open a PR and give me the link
-- PR descriptions should always use bullet points written in Sentence case.
-- `Dd` = do a deep investigation to understand holistically, give your diagnosis, and propose a change; wait before implementing
-- `Dfix` = diagnose and fix
-- `Ddfix` = do a deep investigation to diagnose and fix holistically
-- `Rgr` = regression hardening pass: run the full relevant test pass, add or extend regression tests for the changed behavior and adjacent workflows, cover important edge cases, and report any remaining coverage gaps
-- `Sb` = switch branch; expects either an explicit branch name or a description that can be used to infer the intended branch
-- `Snb` = switch to a new `codex/` branch whose name is auto-derived from the most recent non-`main` changes in flight; reuse the active feature/topic slug when clear, otherwise derive a short descriptive slug from the latest branch/commit context and append a disambiguating suffix if needed
-- `Sbtb` = switch back to this branch
-- `Audit branches` = run the detailed branch audit workflow in `docs/BRANCH_AUDIT_WORKFLOW.md` and update `docs/BRANCH_AUDIT.md`
-- `Aubr` = `Audit branches`
-- `Cleanup branches` = use the latest on-disk contents of `docs/BRANCH_AUDIT.md` as the pre-cleanup baseline, rerun `Audit branches`, including updating `docs/BRANCH_AUDIT.md` when the audit changes, and stop if the refreshed audit differs from that baseline file state, reporting the difference; do not compare against only the last committed version; never modify `main`; before any local-only branch deletions, update `docs/REMOTE_ONLY_BRANCH_SUMMARIES.md` as needed for branches that will remain remote-only; then delete `(a)` branches from local and remote, delete `(d)` branches from local only, delete `(e)` branches from remote only, and remove summary entries from `docs/REMOTE_ONLY_BRANCH_SUMMARIES.md` after confirming the corresponding remote branches were deleted
-- `Clbr` = `Cleanup branches`
-- `Rbom` = rebase on latest origin main
-- `Fp` = force push (`--force-with-lease`)
-- `Mmp` = merge to main and push
+Shorthand definitions are case-insensitive and live in `AGENTS.md` as the source of truth.
 
 ## License
 
