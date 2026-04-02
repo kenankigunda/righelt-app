@@ -23,19 +23,10 @@ This repository is the foundation for the Righelt web app.
 - Button and button-link hover styling follows the existing hover-capability rule and is gated by `data-hover-capability="hover"`.
 - Apply button hover effects only as progressive enhancement; do not change required behavior on non-hover/touch devices.
 
-## AI Workflow (Agents + Skills)
+## AI Workflow
 
-- Repo-level agent rules live in `AGENTS.md`.
-- Use `$orchestrator` for coordinator-led feature development across multiple worktrees/streams.
-- Skills are **turn-scoped**: mention `$orchestrator` in each request where you want it applied.
-
-### Coordinated Feature Files
-
-For orchestrated features, use:
-
-- `docs/features/<feature-id>/plan.yaml` (source of truth for stream graph and acceptance checks)
-- `docs/features/<feature-id>/streams/<stream-id>.md` (per-stream brief)
-- `docs/features/<feature-id>/coordination-log.md` (status, gates, merge decisions)
+- Repo-level default agent rules live in `AGENTS.md`.
+- Non-default workflows and advanced AI runbooks live under `docs/ai/`.
 
 ### Team Shorthand
 
