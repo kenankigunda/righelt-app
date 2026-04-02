@@ -95,6 +95,7 @@ Merge by dependency/topological order, never by completion timestamp alone.
 - If tests cannot run, state why and what remains unverified.
 - Prefer deterministic, non-watch test commands in agent execution.
 - Every stream must add and/or extend a comprehensive test set for its spec-covered subset, with explicit regression-focused assertions.
+- Treat regression hardening as a default requirement for every change: run the full relevant test pass, add or extend tests for the changed behavior, cover nearby/adjacent workflows that could be affected, and include edge cases or tricky state transitions that could plausibly regress.
 - Stream test plans must map expected behavior to source references (spec sections, test matrix rows, and identified gaps requiring new tests).
 - Validated correctness is a hard gate: do not advance a stream to the next development step until required tests for the current step pass.
 - During multi-stream execution, the coordinator owns cross-stream test conflict resolution and final end-to-end correctness validation against desired behavior.
@@ -126,6 +127,7 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 - `Dd` = do a deep investigation to understand holistically, give your diagnosis, and propose a change; wait before implementing
 - `Dfix` = diagnose and fix
 - `Ddfix` = do a deep investigation to diagnose and fix holistically
+- `Rgr` = regression hardening pass: run the full relevant test pass, add or extend regression tests for the changed behavior and adjacent workflows, cover important edge cases, and report any remaining coverage gaps
 - `Sb` = switch branch; expects either an explicit branch name or a description that can be used to infer the intended branch
 - `Snb` = switch to a new `codex/` branch whose name is auto-derived from the most recent non-`main` changes in flight; reuse the active feature/topic slug when clear, otherwise derive a short descriptive slug from the latest branch/commit context and append a disambiguating suffix if needed
 - `Sbtb` = switch back to this branch

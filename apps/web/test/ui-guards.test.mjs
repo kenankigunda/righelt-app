@@ -8,6 +8,14 @@ const testDir = fileURLToPath(new URL(".", import.meta.url));
 const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
 const shellHostSource = readFileSync(join(testDir, "..", "board", "hosts", "shell-host.js"), "utf8");
 
+const extractSourceSegment = (startMarker, endMarker) => {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start);
+  assert.notEqual(start, -1, `expected start marker: ${startMarker}`);
+  assert.notEqual(end, -1, `expected end marker: ${endMarker}`);
+  return source.slice(start, end);
+};
+
 test("game controls do not render standalone record-move or end-turn buttons", () => {
   assert.doesNotMatch(source, /data-action="record-move"/);
   assert.doesNotMatch(source, /data-action="end-turn"/);
@@ -188,4 +196,158 @@ test("home visible page size maps 3/2/1 columns to 3/4/3 cards", () => {
   assert.equal(wideThreeColumn("my"), 3);
   assert.equal(twoColumn("my"), 4);
   assert.equal(oneColumn("my"), 3);
+});
+
+test("home visible game cache stitches 4-item server pages into 3-item single-column pages", () => {
+  const helpers = extractSourceSegment("const getHomeSectionVisibleTotalPages", "const getHomeSectionCachedGameIndex");
+  const createHelpers = new Function(
+    "HOME_SECTION_SERVER_PAGE_SIZE",
+    `${helpers}
+    return {
+      getHomeSectionVisibleGameIdsFromCache,
+    };`,
+  );
+  const { getHomeSectionVisibleGameIdsFromCache } = createHelpers(4);
+  const section = {
+    totalGames: 7,
+    page: 0,
+    visiblePageSize: 3,
+    serverPageGameIdsByPage: {
+      0: ["a", "b", "c", "d"],
+      1: ["e", "f", "g"],
+    },
+  };
+
+  assert.deepEqual(getHomeSectionVisibleGameIdsFromCache(section, { page: 0, visiblePageSize: 3 }), ["a", "b", "c"]);
+  assert.deepEqual(getHomeSectionVisibleGameIdsFromCache(section, { page: 1, visiblePageSize: 3 }), ["d", "e", "f"]);
+  assert.deepEqual(getHomeSectionVisibleGameIdsFromCache(section, { page: 2, visiblePageSize: 3 }), ["g"]);
+});
+
+test("responsive home pagination reanchors from 2-column pages to 1-column pages using the leading visible game", async () => {
+  const segment = extractSourceSegment("const syncResponsiveHomeSectionPageSizes = async () => {", "const syncHomeSections = async () => {");
+  const createSyncResponsiveHomeSectionPageSizes = new Function(
+    "getVisibleHomeSectionKeys",
+    "getHomeSection",
+    "getHomeSectionColumnCount",
+    "getHomeSectionVisiblePageSize",
+    "getHomeSectionCachedGameIndex",
+    "getHomeSectionVisibleGameIdsFromCache",
+    "setHomeSection",
+    "loadHomeSectionPage",
+    `${segment}
+    return syncResponsiveHomeSectionPageSizes;`,
+  );
+
+  const section = {
+    page: 1,
+    totalGames: 8,
+    totalPages: 2,
+    gameIds: ["e", "f", "g", "h"],
+    visiblePageSize: 4,
+    visibleColumnCount: 2,
+    serverPageGameIdsByPage: {
+      0: ["a", "b", "c", "d"],
+      1: ["e", "f", "g", "h"],
+    },
+  };
+  const loadCalls = [];
+  const setCalls = [];
+  const syncResponsiveHomeSectionPageSizes = createSyncResponsiveHomeSectionPageSizes(
+    () => ["my"],
+    () => section,
+    () => 1,
+    () => 3,
+    () => 4,
+    () => null,
+    (...args) => setCalls.push(args),
+    async (...args) => {
+      loadCalls.push(args);
+    },
+  );
+
+  const updated = await syncResponsiveHomeSectionPageSizes();
+
+  assert.equal(updated, true);
+  assert.deepEqual(setCalls, []);
+  assert.equal(loadCalls.length, 1);
+  assert.deepEqual(loadCalls[0], [
+    "my",
+    {
+      page: 1,
+      direction: "none",
+      visiblePageSize: 3,
+      visibleColumnCount: 1,
+    },
+  ]);
+});
+
+test("responsive home pagination avoids reload when 3-column and 1-column modes both use 3 visible cards", async () => {
+  const totalPagesHelpers = extractSourceSegment("const getHomeSectionVisibleTotalPages", "const getHomeSectionSafePage");
+  const { getHomeSectionVisibleTotalPages } = new Function(
+    `${totalPagesHelpers}
+    return { getHomeSectionVisibleTotalPages };`,
+  )();
+  const segment = extractSourceSegment("const syncResponsiveHomeSectionPageSizes = async () => {", "const syncHomeSections = async () => {");
+  const createSyncResponsiveHomeSectionPageSizes = new Function(
+    "getVisibleHomeSectionKeys",
+    "getHomeSection",
+    "getHomeSectionColumnCount",
+    "getHomeSectionVisiblePageSize",
+    "getHomeSectionVisibleTotalPages",
+    "getHomeSectionCachedGameIndex",
+    "getHomeSectionVisibleGameIdsFromCache",
+    "setHomeSection",
+    "loadHomeSectionPage",
+    `${segment}
+    return syncResponsiveHomeSectionPageSizes;`,
+  );
+
+  const section = {
+    page: 1,
+    totalGames: 8,
+    totalPages: 3,
+    gameIds: ["d", "e", "f"],
+    visiblePageSize: 3,
+    visibleColumnCount: 3,
+    serverPageGameIdsByPage: {
+      0: ["a", "b", "c", "d"],
+      1: ["e", "f", "g", "h"],
+    },
+  };
+  const loadCalls = [];
+  const setCalls = [];
+  const syncResponsiveHomeSectionPageSizes = createSyncResponsiveHomeSectionPageSizes(
+    () => ["my"],
+    () => section,
+    () => 1,
+    () => 3,
+    getHomeSectionVisibleTotalPages,
+    () => 3,
+    (_section, { page, visiblePageSize }) => {
+      if (page === 1 && visiblePageSize === 3) {
+        return ["d", "e", "f"];
+      }
+      return null;
+    },
+    (...args) => setCalls.push(args),
+    async (...args) => {
+      loadCalls.push(args);
+    },
+  );
+
+  const updated = await syncResponsiveHomeSectionPageSizes();
+
+  assert.equal(updated, true);
+  assert.deepEqual(loadCalls, []);
+  assert.equal(setCalls.length, 1);
+  assert.deepEqual(setCalls[0], [
+    "my",
+    {
+      ...section,
+      page: 1,
+      totalPages: 3,
+      gameIds: ["d", "e", "f"],
+      visibleColumnCount: 1,
+    },
+  ]);
 });
