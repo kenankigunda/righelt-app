@@ -846,7 +846,6 @@ export function createEnginePlaygroundBoardAdapter() {
         live: true,
         history: false,
         tutorial: false,
-        offlineLocal: false,
       };
     },
 

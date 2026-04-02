@@ -207,7 +207,6 @@ export class GameRoomDO {
         gameId,
         identityId,
         playgroundMode: body.playgroundMode === true,
-        offlineLocal: body.offlineLocal === true,
       });
       this.eventSeq = 1;
       await persistGameState(this.env, this.game, this.eventSeq, null);
@@ -228,7 +227,6 @@ export class GameRoomDO {
         gameId,
         identityId,
         playgroundMode: body.playgroundMode === true,
-        offlineLocal: body.offlineLocal === true,
       });
       const sourceGame = body.sourceGame && typeof body.sourceGame === "object" ? (body.sourceGame as LiveGame) : null;
       const participantCopyMode = sourceGame
@@ -775,24 +773,6 @@ export class GameRoomDO {
       await this.commit({
         type: "event_appended",
         reason: "play_as_both_players",
-        game,
-      });
-      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
-    }
-
-    if (request.method === "POST" && path === "/go-online") {
-      if (body.confirmed !== true) {
-        return json({ ok: false, error: "confirmation_required" }, 409);
-      }
-      if (!game.offlineLocal) {
-        return json({ ok: false, error: "game_not_offline_local" }, 409);
-      }
-      game.offlineLocal = false;
-      game.updatedAt = now();
-      addNotification(game, "Game moved online");
-      await this.commit({
-        type: "event_appended",
-        reason: "game_moved_online",
         game,
       });
       return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });

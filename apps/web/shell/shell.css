@@ -489,7 +489,7 @@ button.secondary:disabled {
   color: #0d7a5a;
 }
 
-.status-chip.offline {
+.status-chip.disconnected {
   color: var(--danger);
 }
 

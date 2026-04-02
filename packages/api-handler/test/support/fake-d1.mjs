@@ -21,13 +21,12 @@ export const createFakeD1 = () => {
         writes.push({ query: normalized, params: [...params] });
 
         if (normalized.includes("INSERT INTO live_games")) {
-          const [gameId, createdAt, updatedAt, latestActivityAt, offlineLocal, stateJson, eventSeq = 0] = params;
+          const [gameId, createdAt, updatedAt, latestActivityAt, stateJson, eventSeq = 0] = params;
           shellGames.set(gameId, {
             game_id: gameId,
             created_at: createdAt,
             updated_at: updatedAt,
             latest_activity_at: latestActivityAt,
-            offline_local: offlineLocal,
             state_json: stateJson,
             event_seq: eventSeq,
           });
@@ -101,12 +100,10 @@ export const createFakeD1 = () => {
       },
       async all() {
         if (
-          (normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq FROM live_games") ||
-            normalized.includes("SELECT state_json FROM live_games")) &&
-          normalized.includes("WHERE offline_local = 0")
+          normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq FROM live_games") ||
+          normalized.includes("SELECT state_json FROM live_games")
         ) {
           const results = [...shellGames.values()]
-            .filter((row) => row.offline_local === 0)
             .sort((left, right) => {
               if (left.latest_activity_at !== right.latest_activity_at) {
                 return right.latest_activity_at.localeCompare(left.latest_activity_at);

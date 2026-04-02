@@ -12,7 +12,7 @@ const contractSource = readFileSync(join(testDir, "..", "board-adapter-contract.
 test("assertGameBoardAdapter accepts valid adapter shape", () => {
   const adapter = {
     getCapabilities() {
-      return { live: true, history: false, tutorial: false, offlineLocal: false };
+      return { live: true, history: false, tutorial: false };
     },
     mount() {},
     unmount() {},
@@ -40,7 +40,7 @@ test("assertGameBoardAdapter accepts valid adapter shape", () => {
 test("assertGameBoardAdapter throws when required method is missing", () => {
   const adapter = {
     getCapabilities() {
-      return { live: true, history: false, tutorial: false, offlineLocal: false };
+      return { live: true, history: false, tutorial: false };
     },
   };
 

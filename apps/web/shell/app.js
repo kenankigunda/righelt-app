@@ -175,7 +175,7 @@ const escapeHtml = (value) =>
     .replaceAll("'", "&#39;");
 
 const formatStatus = (connected) =>
-  connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip offline">Disconnected</span>';
+  connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip disconnected">Disconnected</span>';
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getControlSeatForTurn = (state, turnOwnerSeat) => {
   const continuation = state?.continuation;
@@ -611,13 +611,13 @@ const getHomeSectionCachedGameIndex = (section, gameId) => {
   }
   return null;
 };
-const shouldDisableLiveSync = () => window.__righeltOffline === true || navigator.onLine === false;
+const shouldDisableLiveSync = () => navigator.onLine === false;
 const resetRouteWsStatus = () => {
   wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
   lastWsStatusKey = toStableKey(wsStatus);
 };
 
-const renderPlaceholderBadge = () => '<span class="status-chip offline">Not yet implemented</span>';
+const renderPlaceholderBadge = () => '<span class="status-chip disconnected">Not yet implemented</span>';
 const renderSectionActions = (actions) => {
   const items = actions.filter((value) => typeof value === "string" && value.trim().length > 0);
   if (items.length === 0) {
@@ -1501,7 +1501,6 @@ const renderDebugContent = () => {
     route.name === "home"
       ? {
           identityId: transport.getIdentityId(),
-          offline: window.__righeltOffline || false,
           loadedGames: transport.listGames().map((entry) => ({ id: entry.id, moves: entry.moves.length, role: entry.myRole })),
         }
       : route.name === "tutorial"
@@ -1852,14 +1851,6 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
       : game.syncStatus === "desynced"
         ? `<div class="alert warn shell-game-alert">Live sync is recovering. The board is showing the last authoritative state.</div>`
         : "";
-  const offlineBanner =
-    game.showOfflineState || inviteFromRole === "offline"
-      ? `<div class="alert warn shell-game-alert">Offline mode: invite, share, and remote join actions are disabled until you explicitly go online.</div>`
-      : "";
-  const persistenceWarningBanner =
-    game.persistenceWarningCode === "offline_progress_may_be_lost"
-      ? `<div class="alert danger shell-game-alert">Offline progress may be lost on this device because local saving failed. Keep this tab open until storage is working again.</div>`
-      : "";
 
   const undoRequestBanner =
     undoRequestFeedback && undoRequestFeedbackGameId === game.id
@@ -1867,8 +1858,6 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
       : "";
 
   return `
-    ${offlineBanner}
-    ${persistenceWarningBanner}
     ${liveSyncBanner}
     ${undoRequestBanner}
   `;
@@ -1925,7 +1914,7 @@ const renderJoinInvitePanel = (game, inviteLink) => {
       : "",
     game.canPlayAsBothPlayers
       ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
-          !game.showOfflineState && !busy ? "" : "disabled"
+          !busy ? "" : "disabled"
         }>Play as both players</button>`
       : "",
     `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-link="${escapeHtml(inviteLink)}" ${
@@ -3319,7 +3308,6 @@ window.addEventListener("hashchange", () => {
 
 window.addEventListener("online", () => {
   void withBusy(async () => {
-    await transport.setOffline(false);
     syncLiveChannels();
     await syncRouteDataAndLiveChannels();
   });
@@ -3327,7 +3315,6 @@ window.addEventListener("online", () => {
 
 window.addEventListener("offline", () => {
   void withBusy(async () => {
-    await transport.setOffline(true);
     liveSync.disconnectAll();
     activeLiveGameIds.clear();
     resetRouteWsStatus();
@@ -3508,7 +3495,7 @@ appEl.addEventListener("click", async (event) => {
     }
 
     if (action === "create-game") {
-      const game = await transport.createGame({ playgroundMode: false, offlineLocal: false });
+      const game = await transport.createGame({ playgroundMode: false });
       navigateTo(buildGameHash(game.id, null, getCurrentFlyoutState()));
       return;
     }
@@ -3530,35 +3517,6 @@ appEl.addEventListener("click", async (event) => {
       window.requestAnimationFrame(() => {
         scrollHomeSectionToTop(sectionKey);
       });
-      return;
-    }
-
-    if (action === "create-offline-playground") {
-      await transport.setOffline(true);
-      const game = await transport.createGame({ playgroundMode: true, offlineLocal: true });
-      navigateTo(buildGameHash(game.id, "offline", getCurrentFlyoutState()));
-      return;
-    }
-
-    if (action === "toggle-offline") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const next = !(window.__righeltOffline || false);
-      if (!next && gameId) {
-        const game = transport.getGameViewModel(gameId);
-        if (game?.offlineLocal) {
-          const confirmed = window.confirm("Go online with this local game?");
-          if (!confirmed) {
-            return;
-          }
-          const promoted = await transport.goOnlineGame({ gameId, confirmed });
-          if (promoted?.id && promoted.id !== gameId) {
-            navigateTo(buildGameHash(promoted.id, null, getCurrentFlyoutState()));
-          }
-        }
-      }
-      window.__righeltOffline = next;
-      await transport.setOffline(next);
-      await syncRouteDataAndLiveChannels();
       return;
     }
 
@@ -4056,10 +4014,6 @@ window.addEventListener("touchcancel", () => {
 });
 
 const initialRender = async () => {
-  if (navigator.onLine === false) {
-    await transport.setOffline(true);
-  }
-
   routeHydrated = false;
   syncLiveChannels();
   await withBusy(async () => {
