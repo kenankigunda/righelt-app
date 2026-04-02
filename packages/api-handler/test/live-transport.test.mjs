@@ -90,6 +90,20 @@ test("live transport: create/paged-list/get game lifecycle is server-backed", as
   assert.equal(directBody.game.canJoinAsPlayer, true);
 });
 
+test("live transport: legacy playgroundMode create payload is normalized to selfPlayMode", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: true }),
+    env,
+  );
+  assert.equal(create.status, 200);
+  const createBody = await create.json();
+
+  assert.equal(createBody.game.selfPlayMode, true);
+  assert.equal("playgroundMode" in createBody.game, false);
+  assert.equal(createBody.game.player1?.identityId, "id-a");
+  assert.equal(createBody.game.player2?.identityId, "id-a");
+});
+
 test("live transport: persistence writes avoid dropped participant and join-request tables", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", selfPlayMode: false }),
