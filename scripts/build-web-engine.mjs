@@ -43,7 +43,7 @@ const walk = async (dir) => {
       files.push(...(await walk(fullPath)));
       continue;
     }
-    if (entry.isFile() && (entry.name.endsWith(".ts") || entry.name.endsWith(".js"))) {
+    if (entry.isFile() && !entry.name.endsWith(".d.ts") && (entry.name.endsWith(".ts") || entry.name.endsWith(".js"))) {
       files.push(fullPath);
     }
   }

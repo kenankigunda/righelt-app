@@ -4,7 +4,7 @@ import { deterministicStateHash } from "../../game-engine/src/hash";
 import { listLegalActions, validateAction } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import { createInitialState } from "../../game-engine/src/state";
-import { MAX_HISTORY } from "../../shared-types/src/constants";
+import { MAX_HISTORY } from "../../shared-types/src/history";
 import { isUuidV4 } from "../../shared-types/src/validation";
 import type { Action, GameState } from "../../game-engine/src/types";
 

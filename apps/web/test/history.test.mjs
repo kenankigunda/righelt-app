@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MAX_HISTORY } from "../generated/packages/shared-types/src/constants.js";
+import { MAX_HISTORY } from "../generated/packages/shared-types/src/history.js";
 import { createTestStore } from "./support.mjs";
 
 test("history mode uses selected move snapshot and return-to-live clears history mode", async () => {

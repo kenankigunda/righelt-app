@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { listLegalActions } from "../../game-engine/src/legal";
-import { MAX_HISTORY } from "../../shared-types/src/constants";
+import { MAX_HISTORY } from "../../shared-types/src/history";
 import { handleApiRequest } from "../src/index.ts";
 import { __resetLiveGameStateForTests } from "../src/shell-live.ts";
 import { applyServerAction, createInitialGame } from "../src/shell-live-core.ts";
