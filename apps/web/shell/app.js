@@ -141,7 +141,6 @@ const GAME_SHELL_PANEL_SWIPE_INTENT_PX = 18;
 const GAME_SHELL_PANEL_TRANSITION_MS = 220;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
-const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
 const lastAnimatedHomeSectionTokenByKey = new Map();
 const activeLiveGameIds = new Set();
 const createHomeSectionState = (title) => ({
@@ -532,17 +531,6 @@ const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
 };
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
 const canControlLiveBoard = (game) => Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
-const gameIncludesIdentity = (game, identityId) => {
-  if (!game || !identityId) {
-    return false;
-  }
-  return (
-    game.player1?.identityId === identityId ||
-    game.player2?.identityId === identityId ||
-    (Array.isArray(game.viewers) && game.viewers.some((viewer) => viewer?.identityId === identityId)) ||
-    (Array.isArray(game.pendingJoinRequests) && game.pendingJoinRequests.some((request) => request?.identityId === identityId))
-  );
-};
 const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "other", "smoke"] : ["my", "other"]);
 const getHomeSection = (sectionKey) => homeSections[sectionKey] ?? createHomeSectionState(sectionKey);
 const setHomeSection = (sectionKey, nextState) => {
@@ -905,9 +893,16 @@ const getHomeSectionColumnCount = (sectionKey) => {
   }
   return Math.max(1, Math.floor((sectionWidth + gapWidth) / (cardWidth + gapWidth)));
 };
-const getHomeSectionVisiblePageSize = (sectionKey) => (getHomeSectionColumnCount(sectionKey) >= 3
-  ? HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT
-  : HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE);
+const getHomeSectionVisiblePageSize = (sectionKey) => {
+  const columnCount = getHomeSectionColumnCount(sectionKey);
+  if (columnCount >= 3) {
+    return HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT;
+  }
+  if (columnCount === 2) {
+    return HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE;
+  }
+  return HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT;
+};
 const isNarrowHeaderMode = () => getShellLayoutMode() === "narrow";
 const closeHeaderMenu = () => {
   headerMenuOpen = false;

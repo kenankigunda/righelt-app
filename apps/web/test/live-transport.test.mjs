@@ -300,7 +300,6 @@ test("live transport store uses backend responses for create/load/join flows", a
   };
 
   const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
-  await store.refreshGames();
   const created = await store.createGame();
   assert.equal(created.id, "game-000001");
 

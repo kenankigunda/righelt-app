@@ -54,7 +54,7 @@ test.beforeEach(() => {
   env.GAME_ROOMS.reset();
 });
 
-test("live transport: create/list/get game lifecycle is server-backed", async () => {
+test("live transport: create/paged-list/get game lifecycle is server-backed", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false }),
     env,
@@ -63,7 +63,7 @@ test("live transport: create/list/get game lifecycle is server-backed", async ()
   const createBody = await create.json();
   const gameId = createBody.game.id;
 
-  const list = await handleApiRequest(req("/api/shell/games?identityId=id-a"), env);
+  const list = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=my&page=0&pageSize=6&debug=0"), env);
   const listBody = await list.json();
   assert.equal(listBody.games.length >= 1, true);
   assert.equal(listBody.games.some((entry) => entry.id === gameId), true);
@@ -133,9 +133,12 @@ test("live transport: paged home sections return latest-activity slices", async 
     firstBody.games.map((game) => game.id),
     [...createdGameIds].reverse().slice(0, 6),
   );
+  const reads = env.DB.getReads().map((entry) => entry.query);
+  assert.equal(reads.some((query) => query.includes("SELECT COUNT(*) AS total_games FROM live_games")), true);
+  assert.equal(reads.some((query) => query.includes("LIMIT ?2") && query.includes("OFFSET ?3")), true);
 });
 
-test("live transport: paged home sections isolate smoke games only in debug mode", async () => {
+test("live transport: paged home sections isolate smoke games into debug-only smoke section", async () => {
   const mine = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false }),
     env,
@@ -151,6 +154,18 @@ test("live transport: paged home sections isolate smoke games only in debug mode
     env,
   );
   const smokeBody = await smoke.json();
+
+  const nonDebugMyPage = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=my&page=0&pageSize=6&debug=0"), env);
+  const nonDebugMyBody = await nonDebugMyPage.json();
+  assert.deepEqual(nonDebugMyBody.games.map((game) => game.id), [mineBody.game.id]);
+
+  const nonDebugOtherPage = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=other&page=0&pageSize=6&debug=0"), env);
+  const nonDebugOtherBody = await nonDebugOtherPage.json();
+  assert.deepEqual(nonDebugOtherBody.games.map((game) => game.id), [otherBody.game.id]);
+
+  const nonDebugSmokePage = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=smoke&page=0&pageSize=6&debug=0"), env);
+  const nonDebugSmokeBody = await nonDebugSmokePage.json();
+  assert.deepEqual(nonDebugSmokeBody.games.map((game) => game.id), []);
 
   const myPage = await handleApiRequest(req("/api/shell/games?identityId=id-a&section=my&page=0&pageSize=6&debug=1"), env);
   const myBody = await myPage.json();
@@ -721,7 +736,7 @@ test("live transport: persisted shape repairs missing history index and logs the
 
   const consoleCapture = captureConsoleEvents();
   try {
-    const list = await handleApiRequest(req("/api/shell/games?identityId=id-owner"), env);
+    const list = await handleApiRequest(req("/api/shell/games?identityId=id-owner&section=my&page=0&pageSize=6&debug=0"), env);
     const listBody = await list.json();
     assert.equal(list.status, 200);
     assert.equal(listBody.games.some((entry) => entry.id === gameId), true);
@@ -826,7 +841,7 @@ test("live transport: invalid persisted board state returns controlled error and
     assert.equal(open.status, 500);
     assert.equal(openBody.error, "invalid_persisted_game");
 
-    const list = await handleApiRequest(req("/api/shell/games?identityId=id-valid"), env);
+    const list = await handleApiRequest(req("/api/shell/games?identityId=id-valid&section=my&page=0&pageSize=6&debug=0"), env);
     const listBody = await list.json();
     assert.equal(list.status, 200);
     assert.equal(listBody.games.some((entry) => entry.id === validGameId), true);
