@@ -1,3 +1,4 @@
+import { IDENTITY_KEY, SHELL_STATE_KEY } from "../shell/persistence.js";
 import { createShellStore } from "../shell/store.js";
 
 export const createMemoryStorage = () => {
@@ -37,5 +38,19 @@ export const createTestStore = () => {
     loadBoardState: async () => structuredClone(board),
   });
 
+  return { store, storage };
+};
+
+export const createStoreWithPersistedGames = ({ identityId, games, board = null }) => {
+  const storage = createMemoryStorage();
+  storage.setItem(IDENTITY_KEY, identityId);
+  storage.setItem(SHELL_STATE_KEY, JSON.stringify({ games }));
+  const fallbackBoard = board ?? structuredClone(games[0]?.board ?? { state: { pieces: [], sideToMove: "P1", turnIndex: 0 }, legalActions: [] });
+  const store = createShellStore({
+    storage,
+    random: () => 0.333333,
+    now: () => "2026-02-26T00:00:00.000Z",
+    loadBoardState: async () => structuredClone(fallbackBoard),
+  });
   return { store, storage };
 };
