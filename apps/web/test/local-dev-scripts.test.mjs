@@ -165,6 +165,8 @@ test("shared Node test runner discovers test files recursively and supports mult
   assert.match(nodeTestRunnerSource, /if \(reporters.length === 0\) \{\s*reporters\.push\("spec"\);/s);
   assert.match(nodeTestRunnerSource, /"--import", "tsx", "--test"/);
   assert.match(nodeTestRunnerSource, /Multiple reporters require explicit --reporter-destination entries/);
+  assert.match(nodeTestRunnerSource, /if \(destination === "stdout" \|\| destination === "stderr"\)/);
+  assert.match(nodeTestRunnerSource, /mkdirSync\(path\.dirname\(path\.resolve\(destination\)\), \{ recursive: true \}\);/);
   assert.match(nodeTestRunnerSource, /files\.push\(...collectTestFiles\(entryPath\)\)/);
   assert.match(nodeTestRunnerSource, /entry\.name\.endsWith\("\.test\.mjs"\)/);
 });
@@ -177,6 +179,8 @@ test("web test runner forwards optional reporter settings into node --test", () 
   assert.match(webTestRunnerSource, /if \(value === "--reporter-destination"\)/);
   assert.match(webTestRunnerSource, /if \(reporters.length === 0\) \{\s*reporters\.push\("spec"\);/s);
   assert.match(webTestRunnerSource, /Multiple reporters require explicit --reporter-destination entries/);
+  assert.match(webTestRunnerSource, /if \(reporterDestination === "stdout" \|\| reporterDestination === "stderr"\)/);
+  assert.match(webTestRunnerSource, /mkdirSync\(path\.dirname\(path\.resolve\(reporterDestination\)\), \{ recursive: true \}\);/);
   assert.match(webTestRunnerSource, /args\.push\("--test-reporter", reporter\);/);
   assert.match(webTestRunnerSource, /args\.push\("--test-reporter-destination", reporterDestination\);/);
 });

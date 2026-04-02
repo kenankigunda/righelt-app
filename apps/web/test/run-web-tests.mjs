@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -78,6 +78,13 @@ if (reporterDestinations.length > 0 && reporterDestinations.length !== reporters
 if (reporters.length > 1 && reporterDestinations.length === 0) {
   console.error("Multiple reporters require explicit --reporter-destination entries.");
   process.exit(1);
+}
+
+for (const reporterDestination of reporterDestinations) {
+  if (reporterDestination === "stdout" || reporterDestination === "stderr") {
+    continue;
+  }
+  mkdirSync(path.dirname(path.resolve(reporterDestination)), { recursive: true });
 }
 
 for (const reporter of reporters) {
