@@ -88,6 +88,7 @@ test("CI emits JUnit from each lane and publishes a consolidated test-results ch
   assert.match(workflow, /PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results\/e2e-workflows\/results\.xml/);
   assert.match(workflow, /uses: actions\/download-artifact@v4/);
   assert.match(workflow, /pattern: junit-\*/);
+  assert.doesNotMatch(workflow, /merge-multiple: true/);
   assert.match(workflow, /uses: mikepenz\/action-junit-report@v6/);
   assert.match(workflow, /check_name: Test results/);
   assert.match(workflow, /report_paths: test-results\/published\/\*\*\/\*\.xml/);

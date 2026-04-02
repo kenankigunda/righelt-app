@@ -416,7 +416,6 @@ jobs:
         with:
           pattern: junit-*
           path: test-results/published
-          merge-multiple: true
 
       - name: Publish GitHub test results
         uses: mikepenz/action-junit-report@v6
