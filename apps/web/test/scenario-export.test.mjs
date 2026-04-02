@@ -231,6 +231,22 @@ test("buildScenarioFromGame rejects non-UUID scenario ids", async () => {
   });
 });
 
+test("buildScenarioFromGame rejects UUID-shaped non-v4 scenario ids", async () => {
+  await withMockedHash(async () => {
+    await assert.rejects(
+      () =>
+        buildScenarioFromGame(
+          { moves: [], board: { state: { sideToMove: "P1", turnIndex: 0, pieces: [], continuation: null, outcome: { status: "ongoing" } } } },
+          {
+            scenarioId: "123e4567-e89b-12d3-a456-426614174000",
+            title: "Invalid UUID version",
+          },
+        ),
+      /UUID v4/,
+    );
+  });
+});
+
 test("buildScenarioFromGame excludes undone moves from exported scenario payload", async () => {
   await withMockedHash(async () => {
     const scenario = await buildScenarioFromGame(

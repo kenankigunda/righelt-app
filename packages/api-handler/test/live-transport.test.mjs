@@ -633,6 +633,44 @@ test("live transport: scenario import rejects non-UUID scenario ids", async () =
   assert.equal(scenarioImport.status, 400);
   await assert.deepEqual(await scenarioImport.json(), { ok: false, error: "invalid_scenario_payload" });
 });
+
+test("live transport: scenario import rejects UUID-shaped non-v4 scenario ids", async () => {
+  const scenarioImport = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-a",
+      scenario: {
+        formatVersion: 2,
+        id: "123e4567-e89b-12d3-a456-426614174000",
+        title: "Invalid Scenario Id",
+        description: "Should be rejected",
+        incorrect: false,
+        initialState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        moves: [],
+        resultingState: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        expectedFinalStateHash: "hash-placeholder",
+        expectedOutcome: "ongoing",
+      },
+    }),
+    env,
+  );
+
+  assert.equal(scenarioImport.status, 400);
+  await assert.deepEqual(await scenarioImport.json(), { ok: false, error: "invalid_scenario_payload" });
+});
 test("live transport: game reads query persistent storage even when process cache is warm", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false }),

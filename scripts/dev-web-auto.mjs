@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import http from "node:http";
 import { watch, promises as fs } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { buildLocalApiOrigin, buildLocalApiPersistPath, resolveLocalApiPort } from "../apps/web/local-dev-ports.js";
 import { isUuidV4 } from "../packages/shared-types/src/validation.js";
 
@@ -64,7 +65,7 @@ const writeScenarioCatalog = async (catalog) => {
   await fs.writeFile(scenarioCatalogPath, `${JSON.stringify(catalog, null, 2)}\n`, "utf8");
 };
 
-const isValidScenarioShape = (scenario) => {
+export const isValidScenarioShape = (scenario) => {
   if (!scenario || typeof scenario !== "object") {
     return false;
   }
@@ -255,33 +256,6 @@ const scheduleTouch = () => {
 };
 
 const watchers = [];
-if (watchBackend) {
-  for (const root of watchRoots) {
-    try {
-      const watcher = watch(root, { recursive: true }, (_eventType, filename) => {
-        if (!filename) {
-          scheduleTouch();
-          return;
-        }
-        const ext = path.extname(filename.toString());
-        if (watchableExt.has(ext)) {
-          scheduleTouch();
-        }
-      });
-      watchers.push(watcher);
-    } catch (error) {
-      console.error(`[dev-web] failed to watch ${root}`, error);
-      process.exit(1);
-    }
-  }
-}
-
-console.log(
-  watchBackend
-    ? `[dev-web] starting on :${port} with backend watcher enabled${withApi ? ` and local api orchestration on :${localApiPort}` : ""}`
-    : `[dev-web] starting on :${port}${withApi ? ` with local api orchestration on :${localApiPort}` : ""}`,
-);
-startFixtureWriterServer();
 
 const maybeOpenFromChunk = (chunk) => {
   const text = chunk.toString();
@@ -334,9 +308,6 @@ const shutdown = (nextExitCode = exitCode) => {
 
   maybeExit();
 };
-
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
 
 const attachChild = (child, { openBrowser = false, label }) => {
   managedChildren.add(child);
@@ -414,18 +385,55 @@ const startPagesWrangler = () => {
   }, 2000);
 };
 
-try {
-  if (withApi) {
-    startApiWrangler();
-    await waitForLocalApiReady();
-    console.log(`[dev-web] local api ready at ${LOCAL_API_ORIGIN}`);
-  }
-  startPagesWrangler();
-} catch (error) {
-  console.error("[dev-web] failed to start split-stack local dev", error);
-  shutdown(1);
-}
+export const runDevWebAuto = async () => {
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
-if (managedChildren.size === 0) {
-  process.exit(exitCode);
+  if (watchBackend) {
+    for (const root of watchRoots) {
+      try {
+        const watcher = watch(root, { recursive: true }, (_eventType, filename) => {
+          if (!filename) {
+            scheduleTouch();
+            return;
+          }
+          const ext = path.extname(filename.toString());
+          if (watchableExt.has(ext)) {
+            scheduleTouch();
+          }
+        });
+        watchers.push(watcher);
+      } catch (error) {
+        console.error(`[dev-web] failed to watch ${root}`, error);
+        process.exit(1);
+      }
+    }
+  }
+
+  console.log(
+    watchBackend
+      ? `[dev-web] starting on :${port} with backend watcher enabled${withApi ? ` and local api orchestration on :${localApiPort}` : ""}`
+      : `[dev-web] starting on :${port}${withApi ? ` with local api orchestration on :${localApiPort}` : ""}`,
+  );
+  startFixtureWriterServer();
+
+  try {
+    if (withApi) {
+      startApiWrangler();
+      await waitForLocalApiReady();
+      console.log(`[dev-web] local api ready at ${LOCAL_API_ORIGIN}`);
+    }
+    startPagesWrangler();
+  } catch (error) {
+    console.error("[dev-web] failed to start split-stack local dev", error);
+    shutdown(1);
+  }
+
+  if (managedChildren.size === 0) {
+    process.exit(exitCode);
+  }
+};
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await runDevWebAuto();
 }
