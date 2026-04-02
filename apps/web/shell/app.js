@@ -1852,10 +1852,7 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
       ? `<div class="alert shell-game-alert">${escapeHtml(undoRequestFeedback)}</div>`
       : "";
 
-  return `
-    ${liveSyncBanner}
-    ${undoRequestBanner}
-  `;
+  return [liveSyncBanner, undoRequestBanner].filter(Boolean).join("");
 };
 
 const renderGameSummaryPanel = (game) => {

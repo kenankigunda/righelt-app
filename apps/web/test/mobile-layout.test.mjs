@@ -23,7 +23,7 @@ test("shell header wraps long mobile status and identity tokens instead of widen
 test("shell header stacks cleanly on narrow screens", () => {
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header\s*\{[\s\S]*align-items:\s*flex-start;[\s\S]*\}[\s\S]*\.shell-header-main,\s*\.shell-header-actions\s*\{[\s\S]*flex:\s*0 1 auto;/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header\s*\{[\s\S]*align-items:\s*center;[\s\S]*\}[\s\S]*\.shell-header-main,\s*\.shell-header-actions\s*\{[\s\S]*flex:\s*0 1 auto;/s,
   );
   assert.match(
     shellStylesSource,
@@ -54,7 +54,7 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header\s*\{[\s\S]*display:\s*flex;[\s\S]*border-radius:\s*14px;[\s\S]*padding:\s*0\.9rem 1rem;/s,
+    /\.shell-header\s*\{[\s\S]*display:\s*flex;[\s\S]*align-items:\s*center;[\s\S]*border-radius:\s*14px;[\s\S]*padding:\s*0\.9rem 1rem;/s,
   );
   assert.match(
     shellStylesSource,
@@ -97,7 +97,19 @@ test("shell main layout transitions width when docked flyouts open or close", ()
   );
   assert.match(
     shellStylesSource,
+    /\.app-root\s*\{[\s\S]*gap:\s*0\.75rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
     /\.shell-main-content\s*\{[\s\S]*transition:[\s\S]*width 180ms ease,[\s\S]*max-width 180ms ease;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-main-content\s*\{[\s\S]*gap:\s*0\.75rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-game-alerts:empty,\s*#shell-game-alerts:empty\s*\{[\s\S]*display:\s*none;/s,
   );
 });
 
@@ -229,11 +241,18 @@ test("board preview prompt tightens font size on very narrow screens to preserve
   );
 });
 
-test("very narrow game shell tightens gutters and hides board axis labels", () => {
+test("very narrow home and game shells tighten gutters to maximize screen real estate", () => {
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 480px\)\s*\{[\s\S]*#app\[data-shell-route="game"\][\s\S]*calc\(100vw - 0\.65rem\)/s,
+    /@media \(max-width: 480px\)\s*\{[\s\S]*#app\[data-shell-route="home"\],\s*#app\[data-shell-route="game"\],\s*#app\[data-shell-route="invite"\]\s*\{[\s\S]*calc\(100vw - 0\.65rem\)/s,
   );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 480px\)\s*\{[\s\S]*#app\[data-shell-route="home"\] \.shell-header,\s*#app\[data-shell-route="game"\] \.shell-header,\s*#app\[data-shell-route="invite"\] \.shell-header\s*\{[\s\S]*padding-left:\s*0\.65rem;[\s\S]*padding-right:\s*0\.65rem;/s,
+  );
+});
+
+test("very narrow game shell still hides board axis labels and trims board padding", () => {
   assert.match(
     shellStylesSource,
     /@media \(max-width: 480px\)\s*\{[\s\S]*\[data-shell-panel="board"\]\s*\.axis-label[\s\S]*display:\s*none/s,
