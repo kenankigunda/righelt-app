@@ -6,8 +6,7 @@ import {
   saveShellState,
   saveTutorialCompleted,
 } from "./persistence.js";
-
-const MAX_HISTORY = 200;
+import { MAX_HISTORY } from "../generated/packages/shared-types/src/constants.js";
 
 const createId = (prefix, random) => `${prefix}-${random().toString(36).slice(2, 10)}`;
 
