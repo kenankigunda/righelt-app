@@ -29,8 +29,6 @@ const normalizeSavedSelection = (savedSelection) => {
   };
 };
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 const createUuidV4 = () => {
   if (typeof globalThis.crypto?.randomUUID === "function") {
     return globalThis.crypto.randomUUID();
@@ -160,7 +158,7 @@ export const buildScenarioFromGame = async (
   game,
   { scenarioId, title, description, moveLimit = null, resultingStateOverride = null, savedSelection = null } = {},
 ) => {
-  if (!UUID_PATTERN.test(String(scenarioId || ""))) {
+  if (!isUuidV4(String(scenarioId || ""))) {
     throw new Error("Scenario IDs must be UUID v4 values.");
   }
   const safeMoveLimit = Number.isFinite(moveLimit) ? Math.max(0, Math.min(moveLimit, game.moves.length)) : game.moves.length;
@@ -227,3 +225,4 @@ export const buildHistoryBranchSeedFromGame = (game, moveIndex) => {
     participantCopyMode: getLaunchParticipantCopyMode(game),
   };
 };
+import { isUuidV4 } from "../generated/packages/shared-types/src/validation.js";

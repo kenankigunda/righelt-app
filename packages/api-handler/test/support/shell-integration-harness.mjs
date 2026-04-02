@@ -1,11 +1,10 @@
 import { createLiveTransportStore } from "../../../../apps/web/shell/live-transport.js";
+import { IDENTITY_KEY } from "../../../../apps/web/shell/persistence.js";
 import { buildGameHash, buildInviteHash, parseRouteFromHash } from "../../../../apps/web/shell/routes.js";
 import { handleApiRequest } from "../../src/index.ts";
 import { __resetLiveGameStateForTests } from "../../src/shell-live.ts";
 import { createFakeD1 } from "./fake-d1.mjs";
 import { createFakeGameRooms } from "./fake-game-rooms.mjs";
-
-const IDENTITY_KEY = "righelt.identity.id.v1";
 
 const env = {
   DB: createFakeD1(),

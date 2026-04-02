@@ -1,9 +1,6 @@
+import { SUPPLY_POINTS } from "./deterministic.js";
 import { validateAction } from "./legal.js";
 const MAX_RESOLVE_PASSES = 64;
-const SUPPLY_POINTS = {
-    P1: { row: 0, col: 9 },
-    P2: { row: 9, col: 0 },
-};
 function sortIds(ids) {
     return [...ids].sort((a, b) => a.localeCompare(b));
 }

@@ -43,6 +43,13 @@ This file defines repo-specific operating rules for AI coding agents working in 
 - Prefer non-interactive git commands.
 - Keep commits/changes scoped to the active task and acceptance criteria.
 
+## 5.1) Shared Constants Policy
+
+- Any constant that defines shared runtime behavior, protocol semantics, cache policy, validation rules, game invariants, or other cross-module behavior must have a single source of truth.
+- Generated files may mirror shared constants for runtime packaging, but they are never authoritative; update the source module first, then regenerate outputs.
+- Do not duplicate shared constants across app, API, scripts, and tests when consumers can import the authoritative source safely.
+- Exception: tests may keep literal values when they are asserting an external/public contract and importing the implementation constant would make the test tautological.
+
 ## 6) Communication Expectations
 
 - State assumptions explicitly when inputs are incomplete.

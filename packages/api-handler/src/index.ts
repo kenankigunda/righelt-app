@@ -1,5 +1,7 @@
 import type { ClientCommand, ServerEvent } from "../../shared-types/src";
+import { CACHE_BOOTSTRAP_SHORT, CACHE_NO_STORE } from "../../shared-types/src/http";
 import { applyAction } from "../../game-engine/src/apply";
+import { BOARD_SIZE } from "../../game-engine/src/deterministic";
 import { createInitialState } from "../../game-engine/src/state";
 import { deterministicStateHash } from "../../game-engine/src/hash";
 import { listLegalActions, validateAction } from "../../game-engine/src/legal";
@@ -43,8 +45,6 @@ type RemovedPieceNotice = {
   message: string;
 };
 
-const CACHE_NO_STORE = "no-store";
-const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
 const hasGameRoomsBinding = (env: Partial<ApiEnv>) =>
   Boolean(env?.GAME_ROOMS && typeof env.GAME_ROOMS.idFromName === "function" && typeof env.GAME_ROOMS.get === "function");
 
@@ -84,8 +84,6 @@ const asAction = (value: unknown): Action | null => {
   }
   return value as Action;
 };
-
-const BOARD_SIZE = 10;
 
 const INITIAL_PLAYGROUND_STATE = resolveToStability(createInitialState(), { artifactMode: "full" });
 const INITIAL_PLAYGROUND_LEGAL_ACTIONS = listLegalActions(INITIAL_PLAYGROUND_STATE);

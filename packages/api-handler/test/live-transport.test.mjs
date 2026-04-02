@@ -1670,10 +1670,11 @@ test("live transport: trimmed history keeps absolute move numbers and consistent
     openBody.game.moves.map((move) => move.displayMoveNumber),
     Array.from({ length: MAX_HISTORY }, (_, index) => index + 4),
   );
+  const totalMoves = MAX_HISTORY + 3;
   assert.deepEqual(
-    openBody.game.turns.find((turn) => turn.index === 7)?.moveIndexes,
-    [4],
+    openBody.game.turns.find((turn) => turn.index === totalMoves - 1)?.moveIndexes,
+    [MAX_HISTORY - 1],
   );
-  assert.equal(openBody.game.currentTurn.index, 8);
+  assert.equal(openBody.game.currentTurn.index, totalMoves);
   assert.equal(openBody.game.currentTurn.moveIndexes.length, 0);
 });

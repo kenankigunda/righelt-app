@@ -1,4 +1,4 @@
-import { BOARD_SIZE } from "./deterministic.js";
+import { BOARD_SIZE, SUPPLY_POINTS } from "./deterministic.js";
 function outOfBounds(value) {
     if (!value) {
         return false;
@@ -49,10 +49,6 @@ function isActivePieceInContext(state, piece) {
         commanded: frozen.commanded,
     });
 }
-const SUPPLY_POINTS = {
-    P1: { row: 0, col: 9 },
-    P2: { row: 9, col: 0 },
-};
 function coordinateKey(row, col) {
     return `${row},${col}`;
 }

@@ -3,6 +3,7 @@ import http from "node:http";
 import { watch, promises as fs } from "node:fs";
 import path from "node:path";
 import { buildLocalApiOrigin, buildLocalApiPersistPath, resolveLocalApiPort } from "../apps/web/local-dev-ports.js";
+import { isUuidV4 } from "../packages/shared-types/src/validation.js";
 
 const args = process.argv.slice(2);
 const port = args[0] ?? "8788";
@@ -35,8 +36,6 @@ let apiWrangler = null;
 let pagesWrangler = null;
 let exitCode = 0;
 let shuttingDown = false;
-const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 const fixtureWriterPort = (() => {
   const numeric = Number.parseInt(port, 10);
   if (!Number.isFinite(numeric)) {
@@ -74,7 +73,7 @@ const isValidScenarioShape = (scenario) => {
   const description = typeof scenario.description === "string" ? scenario.description.trim() : "";
   const expectedHash = typeof scenario.expectedFinalStateHash === "string" ? scenario.expectedFinalStateHash : "";
   const expectedOutcome = typeof scenario.expectedOutcome === "string" ? scenario.expectedOutcome : "";
-  return Boolean(scenarioId && UUID_V4_PATTERN.test(scenarioId) && title && description && expectedHash && expectedOutcome);
+  return Boolean(scenarioId && isUuidV4(scenarioId) && title && description && expectedHash && expectedOutcome);
 };
 
 const readJsonBody = (request) =>

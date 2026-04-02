@@ -1,5 +1,5 @@
 import type { Action, GameState, Piece, ValidationResult } from "./types";
-import { BOARD_SIZE } from "./deterministic";
+import { BOARD_SIZE, SUPPLY_POINTS } from "./deterministic";
 
 function outOfBounds(value: { row: number; col: number } | undefined): boolean {
   if (!value) {
@@ -69,11 +69,6 @@ function isActivePieceInContext(state: GameState, piece: Piece) {
     commanded: frozen.commanded,
   });
 }
-
-const SUPPLY_POINTS = {
-  P1: { row: 0, col: 9 },
-  P2: { row: 9, col: 0 },
-} as const;
 
 type PieceForSupplyCheck = {
   id: string;
