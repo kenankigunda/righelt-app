@@ -309,6 +309,23 @@ test("history navigation skips the busy pre-render but still clears disabled sta
   assert.match(source, /\}, \{ renderStart: shouldRenderBusyStateStart, renderEnd: shouldRenderBusyStateEnd \}\);/);
 });
 
+test("shell renders durable browser E2E selectors for core workflow surfaces", () => {
+  assert.match(source, /data-testid="home-create-game"/);
+  assert.match(source, /data-testid="game-role"/);
+  assert.match(source, /data-testid="copy-invite"/);
+  assert.match(source, /data-testid="participants-list"/);
+  assert.match(source, /data-testid="game-board"/);
+  assert.match(source, /data-testid="history-list"/);
+  assert.match(source, /data-testid="history-move-item"/);
+  assert.match(source, /data-testid="history-return-live"/);
+  assert.match(source, /data-testid="approval-gate"/);
+  assert.match(source, /data-testid="accept-request"/);
+  assert.match(source, /data-testid="ignore-request"/);
+  assert.match(source, /data-testid="invite-gate"/);
+  assert.match(source, /data-testid="invite-join-player"/);
+  assert.match(source, /data-testid="invite-join-viewer"/);
+});
+
 test("shell renders and reconciles mini board previews for home and debug surfaces", () => {
   assert.match(source, /const miniBoardPreviewRegistry = new Map\(\);/);
   assert.match(source, /const renderedMiniBoardPreviewPayloads = new Map\(\);/);

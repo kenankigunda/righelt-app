@@ -39,6 +39,14 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.equal(scripts["dev:all:c"], "node scripts/dev-web-auto.mjs 8791 --with-api");
   assert.equal(scripts["check:web-engine-generated"], "node scripts/check-web-engine-generated.mjs");
   assert.match(scripts.test, /^pnpm typecheck && pnpm check:web-engine-generated && /);
+  assert.equal(scripts["test:unit"], "pnpm test:engine:unit && pnpm test:web:unit");
+  assert.equal(scripts["test:integration"], "pnpm test:engine:integration && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web:integration");
+  assert.equal(scripts["test:web"], "node apps/web/test/run-web-tests.mjs");
+  assert.equal(scripts["test:web:unit"], "node apps/web/test/run-web-tests.mjs --layer unit");
+  assert.equal(scripts["test:web:integration"], "node apps/web/test/run-web-tests.mjs --layer integration");
+  assert.equal(scripts["e2e:install"], "playwright install chromium");
+  assert.equal(scripts["test:e2e:smoke"], "playwright test --grep @smoke");
+  assert.equal(scripts["test:e2e"], "playwright test --grep-invert @smoke");
 });
 
 test("root package scripts expose only db-prefixed local migration commands", () => {

@@ -8,6 +8,8 @@ This repository is the foundation for the Righelt web app.
   - `RIGHELT_RULES_SPEC.md` (formal source-of-truth game specification)
   - `RIGHELT_WEB_APP_SPEC.md` (formal source-of-truth web app behavior specification)
   - `RIGHELT_ENGINE_TEST_MATRIX.md` (engine acceptance scenarios)
+  - `TESTING_STRATEGY.md` (repo-wide unit/integration/E2E policy and lane ownership)
+  - `WORKFLOW_COVERAGE.md` (workflow inventory showing success/recovery E2E and integration coverage)
   - `RIGHELT_EXECUTION_PLAN_MILESTONE_2_ENGINE.md` (engine implementation + validation plan)
   - `RIGHELT_PLAYER_RULES.md` (player-facing rules guide)
 - `archive/`
@@ -31,6 +33,13 @@ This repository is the foundation for the Righelt web app.
 ### Team Shorthand
 
 Shorthand definitions are case-insensitive and live in `AGENTS.md` as the source of truth.
+
+## Testing Strategy
+
+- `unit` tests cover one module/component in isolation.
+- `integration` tests cover subsystem and contract boundaries plus meaningful workflow variants.
+- `E2E` tests are reserved for real browser workflows against the local Pages + API stack.
+- Every behavioral change should add or update unit and integration coverage and should explicitly consider whether the touched workflow needs new or expanded E2E coverage.
 
 ## License
 

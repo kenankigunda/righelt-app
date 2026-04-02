@@ -26,12 +26,19 @@ This file defines repo-specific operating rules for AI coding agents working in 
 
 ## 4) Testing Policy
 
+- Testing layers are standardized repo-wide:
+  - `unit test` = one module/component in isolation
+  - `integration test` = multiple components/subsystems or contract boundaries together
+  - `E2E test` = the full browser workflow against the real local web + API stack
 - Run only tests relevant to touched packages for the current change.
 - Run required acceptance checks before final integration.
 - Treat the repo-level full verification flow as `pnpm test`, and keep it aligned with CI checks so local full-pass validation catches the same classes of failures.
 - If tests cannot run, state why and what remains unverified.
 - Prefer deterministic, non-watch test commands in agent execution.
 - Add and/or extend a comprehensive test set for the changed behavior, with explicit regression-focused assertions.
+- Every behavioral change is expected to add or update `unit + integration` coverage unless it is purely non-functional.
+- Every touched workflow must explicitly consider whether its `E2E` coverage should be added or expanded.
+- Keep workflow success proof in `E2E` and keep variant/permutation depth in `integration` tests to avoid redundant browser matrices.
 - Treat regression hardening as a default requirement for every change: run the full relevant test pass, add or extend tests for the changed behavior, cover nearby/adjacent workflows that could be affected, and include edge cases or tricky state transitions that could plausibly regress.
 - Test plans should map expected behavior to source references such as spec sections, test matrix rows, and identified gaps requiring new tests.
 - Validated correctness is a hard gate: do not advance a change to the next development step until required tests for the current step pass.

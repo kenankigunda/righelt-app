@@ -15,17 +15,21 @@ test("local dev web ports map to isolated API worker ports and state directories
     { suffix: "a", webPort: 8789, apiPort: 8792 },
     { suffix: "b", webPort: 8790, apiPort: 8793 },
     { suffix: "c", webPort: 8791, apiPort: 8794 },
+    { suffix: "e2e", webPort: 9888, apiPort: 9887 },
   ]);
 
   assert.equal(resolveLocalApiPort("8788"), 8787);
   assert.equal(resolveLocalApiPort("8789"), 8792);
   assert.equal(resolveLocalApiPort("8790"), 8793);
   assert.equal(resolveLocalApiPort("8791"), 8794);
+  assert.equal(resolveLocalApiPort("9888"), 9887);
 
   assert.equal(buildLocalApiOrigin("8789"), "http://127.0.0.1:8792");
   assert.equal(buildLocalApiWsHost("8790"), "127.0.0.1:8793");
+  assert.equal(buildLocalApiOrigin("9888"), "http://127.0.0.1:9887");
   assert.equal(buildLocalApiPersistPath("8788"), ".wrangler/state/api-local-dev");
   assert.equal(buildLocalApiPersistPath("8791"), ".wrangler/state/api-local-dev-c");
+  assert.equal(buildLocalApiPersistPath("9888"), ".wrangler/state/api-local-dev-e2e");
 });
 
 test("local dev port mapping falls back to the default API worker port", () => {
