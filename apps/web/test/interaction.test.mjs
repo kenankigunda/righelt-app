@@ -329,3 +329,23 @@ test("deriveContinuationHighlightByPieceId preserves the original push group whi
   assert.deepEqual([...result.movedPieceIds].sort(), []);
   assert.deepEqual([...result.pendingPieceIds].sort(), ["A2"]);
 });
+
+test("deriveContinuationHighlightByPieceId ignores follow actions from outside the preserved push group", () => {
+  const result = deriveContinuationHighlightByPieceId(
+    {
+      continuation: {
+        type: "push",
+        phase: "follow",
+        followGroupPieceIds: ["A1", "A2"],
+      },
+      pieces: [{ id: "A1" }, { id: "A2" }, { id: "B1" }],
+    },
+    [
+      { type: "follow", actorId: "A2", to: { row: 4, col: 2 } },
+      { type: "follow", actorId: "B1", to: { row: 5, col: 5 } },
+    ],
+  );
+
+  assert.deepEqual([...result.groupMemberPieceIds].sort(), ["A1", "A2"]);
+  assert.deepEqual([...result.pendingPieceIds].sort(), ["A2"]);
+});

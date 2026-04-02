@@ -751,6 +751,49 @@ test("selected followable push member shows only the original push-group strengt
   });
 });
 
+test("push continuation badge counts only preserved members still present on the board", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P1",
+      continuation: {
+        type: "push",
+        phase: "follow",
+        followGroupPieceIds: ["A1", "A2", "A3"],
+      },
+      pieces: [
+        { id: "A1", owner: "P1", kind: "unit", position: { row: 5, col: 2 }, supplied: true, commanded: true },
+        { id: "A3", owner: "P1", kind: "unit", position: { row: 5, col: 4 }, supplied: true, commanded: true },
+      ],
+      artifacts: {
+        groups: {
+          componentByPieceId: { A1: "G1", A3: "G2" },
+          membersByComponentId: { G1: ["A1"], G2: ["A3"] },
+          strengthByComponentId: { G1: 1, G2: 1 },
+        },
+      },
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: {
+        mode: "interactive",
+        selection: { selectedPieceId: null, source: null, target: null },
+      },
+      legalActions: [{ type: "follow", actorId: "A3", from: { row: 5, col: 4 }, to: { row: 5, col: 3 } }],
+      selectedPieceMoves: [],
+      selectedPieceMovePreviews: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "follow",
+    });
+
+    assert.equal(boardEl.querySelectorAll(".group-strength-badge").length, 1);
+    assert.equal(getCell(boardEl, 5, 2)?.querySelector(".group-strength-badge")?.textContent, "2");
+  });
+});
+
 test("empty-cell preview markers use a geometry-based centered dot", () => {
   assert.match(adapterSource, /marker\.className = "piece-empty";\s*marker\.setAttribute\("aria-hidden", "true"\);/s);
   assert.doesNotMatch(adapterSource, /marker\.textContent = "\.";/);
