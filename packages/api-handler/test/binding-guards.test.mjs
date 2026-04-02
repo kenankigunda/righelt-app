@@ -26,10 +26,10 @@ const buildEnv = () => ({
 
 test("shell create-game fails with stable misconfiguration error when GAME_ROOMS binding is missing", async () => {
   const response = await handleApiRequest(
-    new Request("https://righelt.pages.dev/api/shell/games?offline=1", {
+    new Request("https://righelt.pages.dev/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+      body: JSON.stringify({ identityId: "id-a", playgroundMode: false }),
     }),
     buildEnv(),
   );

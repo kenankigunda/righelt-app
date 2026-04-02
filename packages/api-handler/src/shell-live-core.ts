@@ -105,7 +105,6 @@ export type LiveGame = {
   lastMoveAt: string | null;
   updatedAt: string;
   playgroundMode: boolean;
-  offlineLocal: boolean;
   board: {
     state: GameState;
   };
@@ -287,12 +286,10 @@ export const createInitialGame = ({
   gameId,
   identityId,
   playgroundMode,
-  offlineLocal,
 }: {
   gameId: string;
   identityId: string;
   playgroundMode: boolean;
-  offlineLocal: boolean;
 }): LiveGame => {
   const initial = resolveToStability(createInitialState(), { artifactMode: "full" });
   const createdAt = now();
@@ -302,7 +299,6 @@ export const createInitialGame = ({
     lastMoveAt: null,
     updatedAt: createdAt,
     playgroundMode,
-    offlineLocal,
     board: { state: initial },
     player1: {
       identityId,
@@ -703,18 +699,9 @@ export const dismissCompetingJoinRequests = (game: LiveGame, acceptedIdentityId:
   game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.identityId === acceptedIdentityId);
 };
 
-const canOperateOfflinePlaygroundTurn = (game: LiveGame, identityId: string) =>
-  game.offlineLocal &&
-  game.playgroundMode &&
-  game.player1?.identityId === identityId &&
-  game.player2?.identityId === identityId;
-
-const getJoinAsPlayerDisabledReason = (game: LiveGame, offline: boolean, myRole: string) => {
+const getJoinAsPlayerDisabledReason = (game: LiveGame, myRole: string) => {
   if (myRole === "Player 1" || myRole === "Player 2") {
     return "You are already joined as a player.";
-  }
-  if (offline || game.offlineLocal) {
-    return "Remote joining is unavailable while offline.";
   }
   if (game.playgroundMode) {
     return "Playground mode does not accept remote player joins.";
@@ -725,20 +712,17 @@ const getJoinAsPlayerDisabledReason = (game: LiveGame, offline: boolean, myRole:
   return null;
 };
 
-const getJoinAsViewerDisabledReason = (game: LiveGame, offline: boolean, myRole: string) => {
+const getJoinAsViewerDisabledReason = (game: LiveGame, myRole: string) => {
   if (myRole === "Viewer") {
     return "You are already joined as a viewer.";
   }
   if (myRole === "Player 1" || myRole === "Player 2") {
     return "You are already in this game.";
   }
-  if (offline || game.offlineLocal) {
-    return "Remote joining is unavailable while offline.";
-  }
   return null;
 };
 
-export const withViewModel = (game: LiveGame, identityId: string, offline = false) => {
+export const withViewModel = (game: LiveGame, identityId: string) => {
   const historyIndexByIdentity = game.historyIndexByIdentity ?? {};
   const moves = Array.isArray(game.moves) ? game.moves : [];
   const turns = Array.isArray(game.turns) ? game.turns : [];
@@ -787,7 +771,6 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
   const turnOwnerIdentity = getSeatIdentity(game, turnOwnerSeat);
   const isPlayer = myRole === "Player 1" || myRole === "Player 2";
   const legalNow = listLegalActions(game.board.state);
-  const offlineTurnControlAllowed = !offline || canOperateOfflinePlaygroundTurn(game, identityId);
   const approvableRequesterIds = pendingJoinRequests
     .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
     .map((request) => request.identityId);
@@ -812,8 +795,8 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
       latestActiveMoveSeat &&
       getSeatIdentity(game, latestActiveMoveSeat) === identityId,
   );
-  const joinAsPlayerDisabledReason = getJoinAsPlayerDisabledReason(game, offline, myRole);
-  const joinAsViewerDisabledReason = getJoinAsViewerDisabledReason(game, offline, myRole);
+  const joinAsPlayerDisabledReason = getJoinAsPlayerDisabledReason(game, myRole);
+  const joinAsViewerDisabledReason = getJoinAsViewerDisabledReason(game, myRole);
 
   return {
     ...clone(game),
@@ -830,19 +813,17 @@ export const withViewModel = (game: LiveGame, identityId: string, offline = fals
     canPlayAsBothPlayers: Boolean(getClaimableDualSeat(game, identityId)),
     joinAsPlayerDisabledReason,
     joinAsViewerDisabledReason,
-    canInvite: !offline && !game.offlineLocal,
+    canInvite: true,
     inviteToken:
       myRole === "Player 1"
         ? inviteTokens.player1
         : myRole === "Player 2"
           ? inviteTokens.player2
           : inviteTokens.viewer,
-    showOfflineState: offline || game.offlineLocal,
-    showJoinActions: !offline && !game.offlineLocal,
+    showJoinActions: true,
     canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
     legalActions: legalNow,
     canEndTurn:
-      offlineTurnControlAllowed &&
       isPlayer &&
       !inHistoryMode &&
       controlSeat === turnOwnerSeat &&

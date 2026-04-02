@@ -56,7 +56,7 @@ test.beforeEach(() => {
 
 test("live transport: create/list/get game lifecycle is server-backed", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false }),
     env,
   );
   assert.equal(create.status, 200);
@@ -91,7 +91,7 @@ test("live transport: create/list/get game lifecycle is server-backed", async ()
 
 test("live transport: persistence writes avoid dropped participant and join-request tables", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false }),
     env,
   );
   const gameId = (await create.json()).game.id;
@@ -111,7 +111,7 @@ test("live transport: paged home sections return latest-activity slices", async 
   const createdGameIds = [];
   for (let index = 0; index < 6; index += 1) {
     const create = await handleApiRequest(
-      req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+      req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
       env,
     );
     const body = await create.json();
@@ -137,17 +137,17 @@ test("live transport: paged home sections return latest-activity slices", async 
 
 test("live transport: paged home sections isolate smoke games only in debug mode", async () => {
   const mine = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false }),
     env,
   );
   const mineBody = await mine.json();
   const other = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-b", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-b", playgroundMode: false }),
     env,
   );
   const otherBody = await other.json();
   const smoke = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "smoke-player", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "smoke-player", playgroundMode: false }),
     env,
   );
   const smokeBody = await smoke.json();
@@ -335,7 +335,6 @@ test("live transport: scenario import exposes pending saved selection and accept
     gameId: "game-local-scenario-selection",
     identityId: "id-a",
     playgroundMode: false,
-    offlineLocal: false,
   });
   localGame.pendingScenarioSelection = {
     source: { row: 3, col: 6 },
@@ -352,7 +351,7 @@ test("live transport: scenario import exposes pending saved selection and accept
 
 test("live transport: create-from-scenario preserves copied player seats when the importer is already a player", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false }),
     env,
   );
   const createBody = await create.json();
@@ -416,7 +415,7 @@ test("live transport: create-from-scenario preserves copied player seats when th
 
 test("live transport: scenario launch from an existing game applies shared participant copy policy", async () => {
   const created = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createdBody = await created.json();
@@ -505,7 +504,7 @@ test("live transport: scenario launch from an existing game applies shared parti
 
 test("live transport: history branch launch replays prior history and preserves next-action preselection with viewer-only participant override", async () => {
   const created = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createdBody = await created.json();
@@ -620,7 +619,7 @@ test("live transport: scenario import rejects non-UUID scenario ids", async () =
 });
 test("live transport: game reads query persistent storage even when process cache is warm", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false }),
     env,
   );
   const createBody = await create.json();
@@ -639,7 +638,7 @@ test("live transport: game reads query persistent storage even when process cach
 
 test("live transport: game reads do not stay stale when persistent state changes outside process cache", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createBody = await create.json();
@@ -674,7 +673,7 @@ test("live transport: game reads do not stay stale when persistent state changes
 
 test("live transport: stale read during GET must not overwrite newer persisted game state", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createBody = await create.json();
@@ -708,7 +707,7 @@ test("live transport: stale read during GET must not overwrite newer persisted g
 
 test("live transport: persisted shape repairs missing history index and logs the exact mismatch", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createBody = await create.json();
@@ -751,7 +750,7 @@ test("live transport: persisted shape repairs missing history index and logs the
 
 test("live transport: persisted shape repairs legacy participants and malformed arrays with structured logs", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createBody = await create.json();
@@ -801,14 +800,14 @@ test("live transport: persisted shape repairs legacy participants and malformed 
 
 test("live transport: invalid persisted board state returns controlled error and is skipped from list", async () => {
   const validCreate = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-valid", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-valid", playgroundMode: false }),
     env,
   );
   const validBody = await validCreate.json();
   const validGameId = validBody.game.id;
 
   const invalidCreate = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-bad", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-bad", playgroundMode: false }),
     env,
   );
   const invalidBody = await invalidCreate.json();
@@ -844,7 +843,7 @@ test("live transport: invalid persisted board state returns controlled error and
 
 test("live transport: invite and game resolution survive process-local cache reset", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false }),
     env,
   );
   const createBody = await create.json();
@@ -868,7 +867,7 @@ test("live transport: invite and game resolution survive process-local cache res
 
 test("live transport: join approval flow and presence/history/move transitions", async () => {
   const created = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createdBody = await created.json();
@@ -984,7 +983,7 @@ test("live transport: join approval flow and presence/history/move transitions",
 
 test("live transport: apply echoes clientCommandId and auto-settles ordinary turns", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createdBody = await create.json();
@@ -1011,7 +1010,7 @@ test("live transport: apply echoes clientCommandId and auto-settles ordinary tur
 
 test("live transport: duplicate clientCommandId retries are idempotent for apply after auto-settlement", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createdBody = await create.json();
@@ -1050,7 +1049,7 @@ test("live transport: duplicate clientCommandId retries are idempotent for apply
 
 test("live transport: stale apply state is rejected with authoritative recovery payload", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createdBody = await create.json();
@@ -1088,7 +1087,7 @@ test("live transport: stale apply state is rejected with authoritative recovery 
 
 test("live transport: revert request requires approval and marks moves undone on approval", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createdBody = await create.json();
@@ -1168,7 +1167,7 @@ test("live transport: revert request requires approval and marks moves undone on
 
 test("live transport: dual-seat identity auto-approves revert requests", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const gameId = (await create.json()).game.id;
@@ -1192,7 +1191,7 @@ test("live transport: dual-seat identity auto-approves revert requests", async (
 
 test("live transport: revert request can be rejected by approver", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const gameId = (await create.json()).game.id;
@@ -1227,7 +1226,7 @@ test("live transport: revert request can be rejected by approver", async () => {
 
 test("live transport: requester can rescind pending revert request", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const gameId = (await create.json()).game.id;
@@ -1268,7 +1267,7 @@ test("live transport: requester can rescind pending revert request", async () =>
 
 test("live transport: persisted legacy moves get moveId backfilled for revert actions", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const gameId = (await create.json()).game.id;
@@ -1294,7 +1293,7 @@ test("live transport: persisted legacy moves get moveId backfilled for revert ac
 
 test("live transport: condensed repair logs summarize large move backfills unless verbose is enabled", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const gameId = (await create.json()).game.id;
@@ -1339,7 +1338,7 @@ test("live transport: condensed repair logs summarize large move backfills unles
 
 test("live transport: player invite token enables immediate player join without guessable game role query", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createdBody = await create.json();
@@ -1363,7 +1362,7 @@ test("live transport: player invite token enables immediate player join without 
 
 test("live transport: non-player invite token requires approval for player join and joins viewer immediately", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createdBody = await create.json();
@@ -1398,95 +1397,9 @@ test("live transport: non-player invite token requires approval for player join 
   assert.equal(joinBody.game.viewers.some((viewer) => viewer.identityId === "id-requester"), true);
 });
 
-test("live transport: offline-local game hidden until go-online confirmation", async () => {
-  const createOffline = await handleApiRequest(
-    req("/api/shell/games?offline=1", "POST", {
-      identityId: "id-local",
-      playgroundMode: true,
-      offlineLocal: true,
-    }),
-    env,
-  );
-  const createBody = await createOffline.json();
-  const gameId = createBody.game.id;
-
-  const listBefore = await handleApiRequest(req("/api/shell/games?identityId=id-local&offline=1"), env);
-  const listBeforeBody = await listBefore.json();
-  assert.equal(listBeforeBody.games.some((entry) => entry.id === gameId), false);
-
-  const denied = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/go-online?offline=1`, "POST", { identityId: "id-local", confirmed: false }),
-    env,
-  );
-  assert.equal(denied.status, 409);
-
-  const allow = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/go-online?offline=1`, "POST", { identityId: "id-local", confirmed: true }),
-    env,
-  );
-  assert.equal(allow.status, 200);
-
-  const listAfter = await handleApiRequest(req("/api/shell/games?identityId=id-local&offline=1"), env);
-  const listAfterBody = await listAfter.json();
-  assert.equal(listAfterBody.games.some((entry) => entry.id === gameId), true);
-});
-
-test("live transport: offline view does not reconnect participant and offline moves are local only", async () => {
-  const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
-    env,
-  );
-  const gameId = (await create.json()).game.id;
-
-  await handleApiRequest(
-    req(`/api/shell/games/${gameId}/join`, "POST", {
-      identityId: "id-player2",
-      mode: "player",
-      inviteFromRole: "Player 1",
-    }),
-    env,
-  );
-
-  const offlineView = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-player2&offline=1`), env);
-  const offlineBody = await offlineView.json();
-  assert.equal(offlineBody.game.player2.connected, false);
-
-  const offlineMove = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/moves?offline=1`, "POST", { identityId: "id-owner" }),
-    env,
-  );
-  assert.equal(offlineMove.status, 409);
-  assert.equal((await offlineMove.json()).error, "offline_move_local_only");
-});
-
-test("live transport: offline playground exposes end-turn when one identity controls both seats", async () => {
-  const created = await handleApiRequest(
-    req("/api/shell/games?offline=1", "POST", { identityId: "id-local", playgroundMode: true, offlineLocal: true }),
-    env,
-  );
-  const createdBody = await created.json();
-  const gameId = createdBody.game.id;
-
-  const moved = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/moves?offline=1`, "POST", { identityId: "id-local" }),
-    env,
-  );
-  assert.equal(moved.status, 200);
-
-  const view = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-local&offline=1`), env);
-  const body = await view.json();
-  assert.equal(body.game.canEndTurn, false);
-
-  const ended = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/end-turn?offline=1`, "POST", { identityId: "id-local" }),
-    env,
-  );
-  assert.equal(ended.status, 409);
-});
-
 test("live transport: play-as-both persists separate seats for the same identity in the projection", async () => {
   const created = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false }),
     env,
   );
   const createdBody = await created.json();
@@ -1513,7 +1426,7 @@ test("live transport: play-as-both persists separate seats for the same identity
 
 test("live transport: player 2 can claim an open player 1 seat via play-as-both", async () => {
   const created = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false }),
     env,
   );
   const gameId = (await created.json()).game.id;
@@ -1547,7 +1460,7 @@ test("live transport: player 2 can claim an open player 1 seat via play-as-both"
 
 test("live transport: dual-seat view models expose combined role and connection metadata", async () => {
   const created = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false }),
     env,
   );
   const gameId = (await created.json()).game.id;
@@ -1572,7 +1485,7 @@ test("live transport: dual-seat view models expose combined role and connection 
 
 test("live transport: dual-seat identity can undo latest move regardless of acting seat", async () => {
   const created = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: false }),
     env,
   );
   const gameId = (await created.json()).game.id;
@@ -1597,7 +1510,7 @@ test("live transport: dual-seat identity can undo latest move regardless of acti
 
 test("live transport: move endpoint rejects non-player and wrong-turn players", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const createBody = await create.json();
@@ -1643,7 +1556,7 @@ test("live transport: move endpoint rejects non-player and wrong-turn players", 
 
 test("live transport: end-turn rejects empty turns", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const gameId = (await create.json()).game.id;
@@ -1658,7 +1571,7 @@ test("live transport: end-turn rejects empty turns", async () => {
 
 test("live transport: approve rejects unauthorized approver", async () => {
   const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
     env,
   );
   const gameId = (await create.json()).game.id;
@@ -1690,7 +1603,7 @@ test("live transport: stale participants load as disconnected until they become 
 
   try {
     const create = await handleApiRequest(
-      req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
+      req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false }),
       env,
     );
     const gameId = (await create.json()).game.id;
@@ -1717,20 +1630,4 @@ test("live transport: stale participants load as disconnected until they become 
   } finally {
     Date.now = realNow;
   }
-});
-
-test("live transport: go-online rejects non-offline-local games", async () => {
-  const create = await handleApiRequest(
-    req("/api/shell/games", "POST", { identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
-    env,
-  );
-  const gameId = (await create.json()).game.id;
-
-  const goOnline = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/go-online`, "POST", { identityId: "id-owner", confirmed: true }),
-    env,
-  );
-
-  assert.equal(goOnline.status, 409);
-  assert.equal((await goOnline.json()).error, "game_not_offline_local");
 });

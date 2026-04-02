@@ -8,7 +8,7 @@
  *
  * @typedef {object} GameBoardAdapter
  * @property {string} id
- * @property {() => {live: boolean, history: boolean, tutorial: boolean, offlineLocal: boolean}} getCapabilities
+ * @property {() => {live: boolean, history: boolean, tutorial: boolean}} getCapabilities
  * @property {(options: {
  *   boardEl: HTMLElement,
  *   overlayLinesEl: SVGElement,

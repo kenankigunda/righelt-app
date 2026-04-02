@@ -528,7 +528,6 @@ const normalizePersistedGame = (
     lastMoveAt: typeof parsed.lastMoveAt === "string" ? parsed.lastMoveAt : null,
     updatedAt: typeof parsed.updatedAt === "string" && parsed.updatedAt ? parsed.updatedAt : row.updated_at || row.created_at || now(),
     playgroundMode: parsed.playgroundMode === true,
-    offlineLocal: parsed.offlineLocal === true,
     board: { state: boardState },
     player1: normalizeParticipant(parsed.player1, "player1", mismatches),
     player2: normalizeParticipant(parsed.player2, "player2", mismatches),
@@ -559,9 +558,6 @@ const normalizePersistedGame = (
   if (typeof parsed.playgroundMode !== "boolean") {
     recordMismatch(mismatches, "playgroundMode", "boolean", parsed.playgroundMode, "defaulted_to_false");
   }
-  if (typeof parsed.offlineLocal !== "boolean") {
-    recordMismatch(mismatches, "offlineLocal", "boolean", parsed.offlineLocal, "defaulted_to_false");
-  }
 
   if (mismatches.length > 0) {
     console.warn(
@@ -586,7 +582,6 @@ export const loadGameProjection = async (env: LiveGameEnv, gameId: string): Prom
 export const listVisibleGameProjections = async (env: LiveGameEnv): Promise<LiveGame[]> => {
   const result = await env.DB.prepare(
     `SELECT game_id, created_at, updated_at, state_json, event_seq FROM ${LIVE_GAMES_TABLE}
-     WHERE offline_local = 0
      ORDER BY latest_activity_at DESC, created_at DESC`,
   ).all<PersistedGameRow>();
   return (result.results ?? []).flatMap((row) => {
@@ -601,12 +596,11 @@ export const saveProjection = async (
   eventSeq: number,
 ) => {
   await env.DB.prepare(
-    `INSERT INTO ${LIVE_GAMES_TABLE} (game_id, created_at, updated_at, latest_activity_at, offline_local, state_json, event_seq)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+    `INSERT INTO ${LIVE_GAMES_TABLE} (game_id, created_at, updated_at, latest_activity_at, state_json, event_seq)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
      ON CONFLICT(game_id) DO UPDATE SET
        updated_at = excluded.updated_at,
        latest_activity_at = excluded.latest_activity_at,
-       offline_local = excluded.offline_local,
        state_json = excluded.state_json,
        event_seq = excluded.event_seq`,
   )
@@ -615,7 +609,6 @@ export const saveProjection = async (
       game.createdAt,
       game.updatedAt,
       game.lastMoveAt || game.updatedAt || game.createdAt,
-      game.offlineLocal ? 1 : 0,
       JSON.stringify(game),
       eventSeq,
     )

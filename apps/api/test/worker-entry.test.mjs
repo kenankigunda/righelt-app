@@ -69,10 +69,10 @@ test("split-stack integration preserves health payload through Pages proxy", asy
 test("split-stack integration creates a game through the Pages proxy", async () => {
   const env = buildEnv();
   const response = await proxyRequest({
-    request: new Request("https://righelt.pages.dev/api/shell/games?offline=1", {
+    request: new Request("https://righelt.pages.dev/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId: "id-a", playgroundMode: false, offlineLocal: false }),
+      body: JSON.stringify({ identityId: "id-a", playgroundMode: false }),
     }),
     env: {
       API_SERVICE: {
@@ -93,10 +93,10 @@ test("split-stack integration creates a game through the Pages proxy", async () 
 test("split-stack integration resolves invite tokens through the Pages proxy", async () => {
   const env = buildEnv();
   const create = await proxyRequest({
-    request: new Request("https://righelt.pages.dev/api/shell/games?offline=0", {
+    request: new Request("https://righelt.pages.dev/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId: "id-invite", playgroundMode: false, offlineLocal: false }),
+      body: JSON.stringify({ identityId: "id-invite", playgroundMode: false }),
     }),
     env: {
       API_SERVICE: {
@@ -136,17 +136,17 @@ test("split-stack integration forwards history and return-to-live shell routes t
   };
 
   const create = await proxyRequest({
-    request: new Request("https://righelt.pages.dev/api/shell/games?offline=1", {
+    request: new Request("https://righelt.pages.dev/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId: "id-history", playgroundMode: true, offlineLocal: false }),
+      body: JSON.stringify({ identityId: "id-history", playgroundMode: true }),
     }),
     env: apiServiceEnv,
   });
   const createBody = await create.json();
 
   const move = await proxyRequest({
-    request: new Request(`https://righelt.pages.dev/api/shell/games/${createBody.game.id}/moves?offline=0`, {
+    request: new Request(`https://righelt.pages.dev/api/shell/games/${createBody.game.id}/moves`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId: "id-history", notation: "M1" }),
@@ -156,7 +156,7 @@ test("split-stack integration forwards history and return-to-live shell routes t
   assert.equal(move.status, 200);
 
   const history = await proxyRequest({
-    request: new Request(`https://righelt.pages.dev/api/shell/games/${createBody.game.id}/history?offline=0`, {
+    request: new Request(`https://righelt.pages.dev/api/shell/games/${createBody.game.id}/history`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId: "id-history", moveIndex: 0 }),
@@ -169,7 +169,7 @@ test("split-stack integration forwards history and return-to-live shell routes t
   assert.equal(historyBody.game.historyIndex, 0);
 
   const live = await proxyRequest({
-    request: new Request(`https://righelt.pages.dev/api/shell/games/${createBody.game.id}/live?offline=0`, {
+    request: new Request(`https://righelt.pages.dev/api/shell/games/${createBody.game.id}/live`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId: "id-history" }),
@@ -185,10 +185,10 @@ test("split-stack integration forwards history and return-to-live shell routes t
 test("split-stack integration forwards presence updates through the Pages proxy", async () => {
   const env = buildEnv();
   const create = await proxyRequest({
-    request: new Request("https://righelt.pages.dev/api/shell/games?offline=1", {
+    request: new Request("https://righelt.pages.dev/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId: "id-presence", playgroundMode: false, offlineLocal: false }),
+      body: JSON.stringify({ identityId: "id-presence", playgroundMode: false }),
     }),
     env: {
       API_SERVICE: {
@@ -224,38 +224,4 @@ test("split-stack integration forwards presence updates through the Pages proxy"
   const body = await response.json();
   assert.equal(body.ok, true);
   assert.equal(typeof body.eventSeq, "number");
-});
-
-test("split-stack integration forwards go-online guardrails through the Pages proxy", async () => {
-  const env = buildEnv();
-  const apiServiceEnv = {
-    API_SERVICE: {
-      fetch(request) {
-        return apiWorker.fetch(request, env);
-      },
-    },
-  };
-
-  const create = await proxyRequest({
-    request: new Request("https://righelt.pages.dev/api/shell/games?offline=0", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId: "id-owner", playgroundMode: false, offlineLocal: false }),
-    }),
-    env: apiServiceEnv,
-  });
-  const createBody = await create.json();
-
-  const goOnline = await proxyRequest({
-    request: new Request(`https://righelt.pages.dev/api/shell/games/${createBody.game.id}/go-online?offline=0`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId: "id-owner", confirmed: true }),
-    }),
-    env: apiServiceEnv,
-  });
-
-  assert.equal(goOnline.status, 409);
-  const body = await goOnline.json();
-  assert.equal(body.error, "game_not_offline_local");
 });

@@ -87,19 +87,16 @@ export const createShellStore = ({
   let tutorialCompleted = loadTutorialCompleted(storage);
   const persisted = loadShellState(storage);
   let games = Array.isArray(persisted.games) ? persisted.games : [];
-  let offline = false;
 
   const persist = () => {
     try {
       saveShellState(storage, { games });
-    } catch {
-      saveWarning("offline_progress_may_be_lost");
-    }
+    } catch {}
   };
 
   const getGame = (gameId) => games.find((candidate) => candidate.id === gameId) || null;
 
-  const createGame = async ({ playgroundMode = false, offlineLocal = false } = {}) => {
+  const createGame = async ({ playgroundMode = false } = {}) => {
     const timestamp = now();
     const board = await loadBoardState();
     const game = {
@@ -108,7 +105,6 @@ export const createShellStore = ({
       lastMoveAt: null,
       updatedAt: timestamp,
       playgroundMode,
-      offlineLocal,
       board,
       player1: { identityId, connected: true, joinedAt: timestamp },
       player2: playgroundMode ? { identityId, connected: true, joinedAt: timestamp } : null,
@@ -134,11 +130,7 @@ export const createShellStore = ({
     return clone(game);
   };
 
-  const setOffline = (value) => {
-    offline = value;
-  };
-
-  const listGames = () => clone(games.filter((game) => !game.offlineLocal)).sort(byLatestActivityDesc);
+  const listGames = () => clone(games).sort(byLatestActivityDesc);
 
   const openAsViewer = (gameId) => {
     const game = getGame(gameId);
@@ -153,10 +145,6 @@ export const createShellStore = ({
     const game = getGame(gameId);
     if (!game) {
       return { ok: false, error: "game_not_found" };
-    }
-
-    if (offline && !game.offlineLocal) {
-      return { ok: false, error: "offline_join_blocked" };
     }
 
     if (mode === "viewer") {
@@ -364,17 +352,6 @@ export const createShellStore = ({
     return clone(game);
   };
 
-  const goOnlineGame = ({ gameId, confirmed }) => {
-    const game = getGame(gameId);
-    if (!game) return { ok: false, error: "game_not_found" };
-    if (!confirmed) return { ok: false, error: "confirmation_required" };
-    game.offlineLocal = false;
-    game.updatedAt = now();
-    game.notifications.unshift("Game moved online");
-    persist();
-    return { ok: true, game: clone(game) };
-  };
-
   const markTutorialCompleted = () => {
     tutorialCompleted = true;
     saveTutorialCompleted(storage, true);
@@ -413,9 +390,8 @@ export const createShellStore = ({
       canJoinAsPlayer:
         role !== "Player 1" && role !== "Player 2" && !game.playgroundMode && (!game.player1 || !game.player2),
       canPlayAsBothPlayers: Boolean(getClaimableDualSeat(game, identityId)),
-      canInvite: !offline && !game.offlineLocal,
-      showOfflineState: offline || game.offlineLocal,
-      showJoinActions: !offline && !game.offlineLocal,
+      canInvite: true,
+      showJoinActions: true,
       canEndTurn:
         (role === "Player 1" || role === "Player 2") &&
         typeof game.historyIndex !== "number" &&
@@ -437,8 +413,6 @@ export const createShellStore = ({
     selectHistoryMove,
     returnToLive,
     setParticipantConnected,
-    goOnlineGame,
-    setOffline,
     listGames,
     getGameViewModel,
     getTutorialCompleted,

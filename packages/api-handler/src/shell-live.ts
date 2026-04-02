@@ -160,8 +160,6 @@ export const handleLiveGameRequest = async (
     return null;
   }
 
-  const offline = url.searchParams.get("offline") === "1";
-
   if (request.method === "GET" && route.length === 1 && route[0] === "bootstrap") {
     return {
       handled: true,
@@ -196,7 +194,7 @@ export const handleLiveGameRequest = async (
       return {
         handled: true,
         status: 200,
-        body: { ok: true, games: games.map((game) => withViewModel(game, identityId, offline)) },
+        body: { ok: true, games: games.map((game) => withViewModel(game, identityId)) },
         cacheControl: CACHE_NO_STORE,
       };
     }
@@ -207,7 +205,7 @@ export const handleLiveGameRequest = async (
     }
     const debug = url.searchParams.get("debug") === "1";
     const visibleGames = games
-      .map((game) => withViewModel(game, identityId, offline))
+      .map((game) => withViewModel(game, identityId))
       .filter((game) => {
         const isSmokeGame = gameIncludesIdentity(game, DEPLOY_SMOKE_PLAYER_ID);
         if (section === "smoke") {
@@ -288,7 +286,6 @@ export const handleLiveGameRequest = async (
         identityId,
         gameId,
         playgroundMode: body.playgroundMode === true,
-        offlineLocal: body.offlineLocal === true,
       }),
     });
     return {
@@ -347,7 +344,6 @@ export const handleLiveGameRequest = async (
         gameId: newGameId,
         scenario,
         playgroundMode: sourceProjection?.game.playgroundMode === true,
-        offlineLocal: sourceProjection?.game.offlineLocal === true,
         sourceGame: sourceProjection?.game ?? null,
         participantCopyMode,
         initialSelectionAction,
@@ -397,7 +393,6 @@ export const handleLiveGameRequest = async (
         scenario,
         initialSelectionAction,
         playgroundMode: sourceProjection.game.playgroundMode === true,
-        offlineLocal: sourceProjection.game.offlineLocal === true,
         sourceGame: sourceProjection.game,
         participantCopyMode,
         preserveResultingState: true,
@@ -435,7 +430,7 @@ export const handleLiveGameRequest = async (
       return {
         handled: true,
         status: 200,
-        body: { ok: true, game: withViewModel(game, identityId, offline), eventSeq: projection.eventSeq },
+        body: { ok: true, game: withViewModel(game, identityId), eventSeq: projection.eventSeq },
         cacheControl: CACHE_NO_STORE,
       };
     }
@@ -453,9 +448,6 @@ export const handleLiveGameRequest = async (
     if (route.length === 3 && route[2] === "join") {
       if (!hasGameRoomsBinding(env)) {
         return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
-      }
-      if (offline && !game.offlineLocal) {
-        return { handled: true, status: 409, body: { ok: false, error: "offline_join_blocked" }, cacheControl: CACHE_NO_STORE };
       }
       let inviteFromRole =
         body.inviteFromRole === "Player 1" || body.inviteFromRole === "Player 2" || body.inviteFromRole === "Viewer"
@@ -495,7 +487,6 @@ export const handleLiveGameRequest = async (
         "history",
         "live",
         "play-as-both",
-        "go-online",
         "presence",
         "revert-request",
         "revert-approve",
@@ -505,13 +496,6 @@ export const handleLiveGameRequest = async (
     ) {
       if (!hasGameRoomsBinding(env)) {
         return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
-      }
-      if (
-        offline &&
-        !game.offlineLocal &&
-        (route[2] === "moves" || route[2] === "apply" || route[2] === "end-turn" || route[2] === "play-as-both")
-      ) {
-        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: CACHE_NO_STORE };
       }
       const response = await fetchGameRoom(env, gameId, `/${route[2]}`, {
         method: "POST",
@@ -527,9 +511,6 @@ export const handleLiveGameRequest = async (
     }
 
     if (route.length === 3 && route[2] === "legal") {
-      if (offline && !game.offlineLocal) {
-        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: CACHE_NO_STORE };
-      }
       const role = findRoleForIdentity(game, identityId);
       if (role !== "Player 1" && role !== "Player 2") {
         return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: CACHE_NO_STORE };
@@ -547,16 +528,13 @@ export const handleLiveGameRequest = async (
           ok: true,
           state: stable,
           legalActions: listLegalActions(stable),
-          game: withViewModel(game, identityId, offline),
+          game: withViewModel(game, identityId),
         },
         cacheControl: CACHE_NO_STORE,
       };
     }
 
     if (route.length === 3 && route[2] === "piece-moves") {
-      if (offline && !game.offlineLocal) {
-        return { handled: true, status: 409, body: { ok: false, error: "offline_move_local_only" }, cacheControl: CACHE_NO_STORE };
-      }
       const role = findRoleForIdentity(game, identityId);
       if (role !== "Player 1" && role !== "Player 2") {
         return { handled: true, status: 403, body: { ok: false, error: "role_not_allowed" }, cacheControl: CACHE_NO_STORE };
@@ -584,7 +562,7 @@ export const handleLiveGameRequest = async (
           pieceId,
           actions: enumeratePieceActions(stable, pieceId),
           previewActions: enumeratePieceActionPreviews(stable, pieceId),
-          game: withViewModel(game, identityId, offline),
+          game: withViewModel(game, identityId),
         },
         cacheControl: CACHE_NO_STORE,
       };

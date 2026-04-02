@@ -47,7 +47,7 @@ test("Pages proxy falls back to local API origin when service binding is absent 
 
   try {
     const response = await onRequest({
-      request: new Request("http://localhost:8788/api/shell/games?offline=1", {
+      request: new Request("http://localhost:8788/api/shell/games", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ identityId: "id-a" }),
@@ -57,7 +57,7 @@ test("Pages proxy falls back to local API origin when service binding is absent 
 
     assert.equal(response.status, 200);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, "http://127.0.0.1:8787/api/shell/games?offline=1");
+    assert.equal(calls[0].url, "http://127.0.0.1:8787/api/shell/games");
     assert.equal(calls[0].method, "POST");
     assert.equal(calls[0].headers.get("content-type"), "application/json");
     assert.deepEqual(await calls[0].json(), { identityId: "id-a" });
@@ -78,7 +78,7 @@ test("Pages proxy maps suffixed local dev pages ports to matching API worker por
 
   try {
     const response = await onRequest({
-      request: new Request("http://localhost:8789/api/shell/games?offline=1", {
+      request: new Request("http://localhost:8789/api/shell/games", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ identityId: "id-b" }),
@@ -88,7 +88,7 @@ test("Pages proxy maps suffixed local dev pages ports to matching API worker por
 
     assert.equal(response.status, 200);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, "http://127.0.0.1:8792/api/shell/games?offline=1");
+    assert.equal(calls[0].url, "http://127.0.0.1:8792/api/shell/games");
     assert.deepEqual(await calls[0].json(), { identityId: "id-b" });
   } finally {
     globalThis.fetch = originalFetch;
@@ -130,7 +130,7 @@ test("Pages proxy bypasses API_SERVICE entirely for local dev requests", async (
 
   try {
     const response = await onRequest({
-      request: new Request("http://localhost:8788/api/shell/games?offline=0", {
+      request: new Request("http://localhost:8788/api/shell/games", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ identityId: "id-a" }),
@@ -148,7 +148,7 @@ test("Pages proxy bypasses API_SERVICE entirely for local dev requests", async (
     assert.equal(response.status, 200);
     assert.equal(bindingCalls, 0);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, "http://127.0.0.1:8787/api/shell/games?offline=0");
+    assert.equal(calls[0].url, "http://127.0.0.1:8787/api/shell/games");
     assert.deepEqual(await response.json(), { ok: true, source: "fallback" });
   } finally {
     globalThis.fetch = originalFetch;

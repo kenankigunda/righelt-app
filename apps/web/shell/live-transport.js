@@ -1,27 +1,15 @@
-import {
-  applyAction as applyEngineAction,
-  createInitialState,
-  deterministicStateHash,
-  listLegalActions,
-  resolveToStability,
-} from "../generated/packages/game-engine/src/index.js";
-import { buildPieceMoveResponse } from "../board/client-move-generation.js";
-import { loadIdentity, loadLiveTransportState, saveIdentity, saveLiveTransportState } from "./persistence.js";
+import { listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
+import { loadIdentity, saveIdentity } from "./persistence.js";
 import { defaultNotationForAction, projectOptimisticGame } from "./optimistic-live.js";
 
 const clone = (value) => structuredClone(value);
-const MAX_HISTORY = 200;
 const CONFIRM_WINDOW_MS = 15_000;
 const RETRY_BASE_MS = 500;
 const RETRY_MAX_MS = 5_000;
 const MAX_CONFIRM_RETRIES = 5;
-const OFFLINE_PROGRESS_WARNING = "offline_progress_may_be_lost";
-const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
-const canOperateOfflinePlayground = (game, identityId) =>
-  Boolean(game?.playgroundMode) && game?.player1?.identityId === identityId && game?.player2?.identityId === identityId;
 const getControlSeatForTurn = (state, turnOwnerSeat) => {
   const continuation = state?.continuation;
   if (!continuation) {
@@ -33,21 +21,7 @@ const getControlSeatForTurn = (state, turnOwnerSeat) => {
   return turnOwnerSeat;
 };
 
-const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "(?,?)");
-
-const renumberHistory = (game) => {
-  game.moves.forEach((move, index) => {
-    move.index = index;
-  });
-  game.turns.forEach((turn) => {
-    turn.moveIndexes = turn.moveIndexes
-      .map((_, turnMoveIndex) => game.moves.find((move) => move.turnIndex === turn.index && move.turnMoveIndex === turnMoveIndex)?.index ?? -1)
-      .filter((index) => index >= 0);
-  });
-};
-
 const createIdentity = (random = Math.random) => `id-${random().toString(36).slice(2, 10)}`;
-const createLocalGameId = (random = Math.random) => `local-${Date.now().toString(36)}-${Math.floor(random() * 1_000_000).toString(36)}`;
 const createClientCommandId = ({ gameId, identityId, random = Math.random }) => {
   const now = Date.now().toString(36);
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -97,15 +71,9 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     saveIdentity(storage, identityId);
   }
 
-  const persistedState = loadLiveTransportState(storage);
-
-  let offline = false;
   let games = [];
   let gameById = new Map();
   const lastEventSeqByGameId = new Map();
-  const offlinePendingByGameId = new Map(
-    Object.entries(persistedState?.pendingMutationsByGameId ?? {}).map(([gameId, mutations]) => [gameId, clone(mutations)]),
-  );
   const optimisticStateByGameId = new Map();
   const listeners = new Set();
   const syncMetrics = {
@@ -114,7 +82,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     confirmTimeoutRefresh: 0,
     trueDesync: 0,
   };
-  let persistenceWarningCode = persistedState?.warningCode === OFFLINE_PROGRESS_WARNING ? OFFLINE_PROGRESS_WARNING : null;
   const logDiagnostic = (level, event, payload = {}, { verboseOnly = false } = {}) => {
     if (verboseOnly && !isVerboseClientLoggingEnabled(storage)) {
       return;
@@ -127,28 +94,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     };
     const logger = level === "warn" ? console.warn : level === "error" ? console.error : console.info;
     logger(JSON.stringify(entry));
-  };
-
-  const withOfflineQuery = (path) => `${path}${path.includes("?") ? "&" : "?"}offline=${offline ? "1" : "0"}`;
-  const withForcedOfflineQuery = (path, forcedOffline) => `${path}${path.includes("?") ? "&" : "?"}offline=${forcedOffline ? "1" : "0"}`;
-  const isIdentityControlledPlayground = (game) => canOperateOfflinePlayground(game, identityId);
-  const isLocallyPlayableGame = (game) => Boolean(game?.localOnly || game?.offlineLocal || isIdentityControlledPlayground(game));
-  const canReplayOfflineMutations = (game) => Boolean(!game?.localOnly && isIdentityControlledPlayground(game));
-  const shouldPersistOfflineGame = (game) => Boolean(game?.localOnly || (isIdentityControlledPlayground(game) && (offline || offlinePendingByGameId.has(game.id))));
-  const shouldUseLocalOfflineExecution = (game) => Boolean(game?.localOnly || (offline && isLocallyPlayableGame(game)));
-  const canLocallyEndTurn = (game) => {
-    const activeTurn = getActiveTurn(game);
-    const turnOwnerSeat = activeTurn?.playerSeat ?? getSideToMoveSeat(game);
-    const turnOwnerIdentity = turnOwnerSeat === "Player 1" ? game?.player1?.identityId ?? null : game?.player2?.identityId ?? null;
-    return (
-      isLocallyPlayableGame(game) &&
-      isIdentityControlledPlayground(game) &&
-      game?.myRole !== "Viewer" &&
-      game?.myRole !== "Guest" &&
-      !game?.inHistoryMode &&
-      turnOwnerIdentity === identityId &&
-      Boolean(activeTurn?.moveIndexes?.length)
-    );
   };
 
   const emitChange = (change) => {
@@ -272,161 +217,18 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const syncCacheFromList = (nextGames) => {
     games = clone(nextGames);
-    const localGames = [...gameById.values()].filter((game) => game?.localOnly === true);
-    gameById = new Map([
-      ...games.map((game) => [game.id, clone(game)]),
-      ...localGames.map((game) => [game.id, decorateLocalGame(game)]),
-    ]);
+    gameById = new Map(games.map((game) => [game.id, clone(game)]));
     for (const game of games) {
       recalculateOptimisticGame(game.id);
     }
-    for (const game of localGames) {
-      recalculateOptimisticGame(game.id);
-    }
-    persistLocalState();
     emitChange({ type: "games_refreshed" });
   };
 
-  const applyClientOfflineViewState = (game) => {
-    const next = clone(game);
-    if (!offline) {
-      if (persistenceWarningCode) {
-        next.persistenceWarningCode = persistenceWarningCode;
-      }
-      return next;
-    }
-    next.showOfflineState = true;
-    next.canInvite = false;
-    next.showJoinActions = false;
-    next.canRecordMove = Boolean(isLocallyPlayableGame(next) && next.canRecordMove);
-    next.canEndTurn = canLocallyEndTurn(next);
-    if (persistenceWarningCode) {
-      next.persistenceWarningCode = persistenceWarningCode;
-    }
-    return next;
-  };
-
-  const persistLocalState = () => {
-    try {
-      const persistedGames = [...gameById.values()]
-        .filter((game) => shouldPersistOfflineGame(game))
-        .map((game) => clone(game));
-      const pendingMutationsByGameId = Object.fromEntries(
-        [...offlinePendingByGameId.entries()]
-          .filter(([gameId]) => persistedGames.some((game) => game.id === gameId))
-          .map(([gameId, mutations]) => [gameId, clone(mutations)]),
-      );
-      saveLiveTransportState(storage, {
-        games: persistedGames,
-        warningCode: null,
-        pendingMutationsByGameId,
-      });
-      if (persistenceWarningCode) {
-        persistenceWarningCode = null;
-      }
-    } catch {
-      persistenceWarningCode = OFFLINE_PROGRESS_WARNING;
-    }
-  };
-
-  const decorateLocalGame = (game) => {
-    const next = clone(game);
-    const currentSnapshot = clone(next.board?.state ?? next.currentSnapshot ?? null);
-    const currentTurn = getActiveTurn(next);
-    const turnOwnerSeat = currentTurn?.playerSeat ?? getSideToMoveSeat(next);
-    const controlSeat = getControlSeatForTurn(currentSnapshot, turnOwnerSeat);
-    const turnOwnerIdentity = turnOwnerSeat === "Player 1" ? next.player1?.identityId ?? null : next.player2?.identityId ?? null;
-    const controlIdentity = controlSeat === "Player 1" ? next.player1?.identityId ?? null : next.player2?.identityId ?? null;
-    const legalActions = Array.isArray(next.legalActions) ? clone(next.legalActions) : listLegalActions(currentSnapshot);
-    next.currentSnapshot = currentSnapshot;
-    next.board = { state: currentSnapshot };
-    next.currentTurn = currentTurn ? clone(currentTurn) : null;
-    next.legalActions = legalActions;
-    next.myRole = next.player1?.identityId === identityId ? "Player 1" : next.player2?.identityId === identityId ? "Player 2" : "Guest";
-    next.myRoles =
-      next.player1?.identityId === identityId && next.player2?.identityId === identityId
-        ? ["Player 1", "Player 2"]
-        : next.myRole === "Player 1" || next.myRole === "Player 2"
-          ? [next.myRole]
-          : [];
-    next.inHistoryMode = false;
-    next.historyIndex = null;
-    next.canJoinAsPlayer = false;
-    next.canJoinAsViewer = false;
-    next.joinAsPlayerDisabledReason = "Remote joining is unavailable while offline.";
-    next.joinAsViewerDisabledReason = "Remote joining is unavailable while offline.";
-    next.canPlayAsBothPlayers = false;
-    next.canInvite = false;
-    next.showJoinActions = false;
-    next.showOfflineState = true;
-    next.controlSeat = controlSeat;
-    next.control = controlSeat === turnOwnerSeat ? "turn-owner" : "opponent";
-    next.turnOwnerSeat = turnOwnerSeat;
-    next.canRecordMove =
-      (next.myRole === "Player 1" || next.myRole === "Player 2") &&
-      !next.inHistoryMode &&
-      controlIdentity === identityId &&
-      legalActions.length > 0;
-    next.canEndTurn = canLocallyEndTurn(next);
-    if (persistenceWarningCode) {
-      next.persistenceWarningCode = persistenceWarningCode;
-    }
-    return next;
-  };
-
-  const createLocalGame = ({ playgroundMode = false, offlineLocal = false }) => {
-    const createdAt = new Date().toISOString();
-    const initial = resolveToStability(createInitialState(), { artifactMode: "full" });
-    const currentTurn = {
-      index: initial.turnIndex ?? 0,
-      startedAt: createdAt,
-      endedAt: null,
-      playerSeat: getSideToMoveSeat({ board: { state: initial } }),
-      status: "active",
-      moveIndexes: [],
-      lastMoveAt: null,
-    };
-    return decorateLocalGame({
-      id: createLocalGameId(random),
-      localOnly: true,
-      createdAt,
-      lastMoveAt: null,
-      updatedAt: createdAt,
-      offlineLocal,
-      playgroundMode,
-      player1: { identityId, connected: true, joinedAt: createdAt, lastHeartbeatAt: createdAt, sessionCount: 0 },
-      player2: playgroundMode
-        ? { identityId, connected: true, joinedAt: createdAt, lastHeartbeatAt: createdAt, sessionCount: 0 }
-        : null,
-      viewers: [],
-      pendingJoinRequests: [],
-      pendingRevertRequest: null,
-      turns: [currentTurn],
-      moves: [],
-      notifications: ["Game created", playgroundMode ? "Playground mode active" : "Invite a second player"],
-      currentTurn,
-      currentSnapshot: clone(initial),
-      board: { state: clone(initial) },
-      legalActions: listLegalActions(initial),
-    });
-  };
-
-  const removeGame = (gameId) => {
-    games = games.filter((entry) => entry.id !== gameId);
-    gameById.delete(gameId);
-    optimisticStateByGameId.delete(gameId);
-    offlinePendingByGameId.delete(gameId);
-    lastEventSeqByGameId.delete(gameId);
-    persistLocalState();
-  };
-
   const upsertGame = (game) => {
-    const next = game?.localOnly ? decorateLocalGame(game) : clone(game);
+    const next = clone(game);
     gameById.set(next.id, next);
     const current = games.filter((entry) => entry.id !== next.id);
-    if (!next.offlineLocal) {
-      current.push(next);
-    }
+    current.push(next);
     current.sort((left, right) => {
       const leftTs = left.lastMoveAt || left.createdAt;
       const rightTs = right.lastMoveAt || right.createdAt;
@@ -434,7 +236,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     });
     games = current;
     recalculateOptimisticGame(next.id);
-    persistLocalState();
     return next;
   };
 
@@ -516,199 +317,9 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const applyLiveGameUpdate = ({ game, eventSeq = null, clientCommandId = null }) =>
     upsertGameSnapshot({ game, eventSeq, clientCommandId, changeType: "authoritative_update" });
 
-  const queueOfflineMutation = (gameId, mutation) => {
-    const current = offlinePendingByGameId.get(gameId) ?? [];
-    current.push(mutation);
-    offlinePendingByGameId.set(gameId, current);
-    persistLocalState();
-  };
-
-  const computeLocalLegalActions = (state) => {
-    const stable = resolveToStability(clone(state), { artifactMode: "full" });
-    return {
-      state: stable,
-      legalActions: listLegalActions(stable),
-    };
-  };
-
-  const applyLocalAction = ({ game, action, notation = defaultNotationForAction(action) }) => {
-    const activeTurn = getActiveTurn(game);
-    if (!activeTurn) {
-      throw new Error("turn_not_initialized");
-    }
-    const stable = resolveToStability(clone(game.board.state), { artifactMode: "full" });
-    const computed = applyEngineAction(stable, clone(action));
-    if (!computed?.state) {
-      return {
-        ok: true,
-        accepted: false,
-        validation: computed?.validation ?? { ok: false, code: "invalid_action" },
-        state: stable,
-        legalActions: listLegalActions(stable),
-      };
-    }
-    const selectionSnapshot = structuredClone(game.board.state);
-    const next = resolveToStability(computed.state, { artifactMode: "full" });
-
-    const at = new Date().toISOString();
-    const move = {
-      index: game.moves.length,
-      turnIndex: activeTurn.index,
-      turnMoveIndex: activeTurn.moveIndexes.length,
-      actorSide: game.board.state.sideToMove,
-      at,
-      notation,
-      action: structuredClone(action),
-      selectionSnapshot,
-      snapshot: next,
-    };
-    game.moves.push(move);
-    activeTurn.moveIndexes.push(move.index);
-    activeTurn.lastMoveAt = at;
-    if (game.moves.length > MAX_HISTORY) {
-      game.moves.shift();
-      renumberHistory(game);
-    }
-    const advancedTurn = (next.turnIndex ?? activeTurn.index) > activeTurn.index;
-    if (advancedTurn) {
-      activeTurn.endedAt = at;
-      activeTurn.status = "complete";
-      game.turns.push({
-        index: next.turnIndex,
-        startedAt: at,
-        endedAt: null,
-        playerSeat: getSideToMoveSeat({ board: { state: next } }),
-        status: "active",
-        moveIndexes: [],
-        lastMoveAt: null,
-      });
-    }
-    game.board.state = next;
-    game.currentSnapshot = clone(next);
-    game.lastMoveAt = at;
-    game.updatedAt = at;
-    game.legalActions = listLegalActions(next);
-    game.notifications = [`Offline move recorded`, ...(game.notifications ?? [])].slice(0, 50);
-    return {
-      ok: true,
-      accepted: true,
-      action,
-      move,
-      previousState: stable,
-      state: next,
-      legalActions: game.legalActions,
-      game: decorateLocalGame(game),
-    };
-  };
-
-  const applyOfflineEndTurn = (game) => {
-    const activeTurn = getActiveTurn(game);
-    if (!activeTurn || activeTurn.moveIndexes.length === 0) {
-      throw new Error("turn_has_no_moves");
-    }
-    const endedAt = new Date().toISOString();
-    activeTurn.endedAt = endedAt;
-    activeTurn.status = "complete";
-    const nextSeat = getNextSeat(activeTurn.playerSeat);
-    const nextTurn = {
-      index: activeTurn.index + 1,
-      startedAt: endedAt,
-      endedAt: null,
-      playerSeat: nextSeat,
-      status: "active",
-      moveIndexes: [],
-      lastMoveAt: null,
-    };
-    game.turns.push(nextTurn);
-    game.board.state = {
-      ...game.board.state,
-      sideToMove: getSideForSeat(nextSeat),
-      turnIndex: nextTurn.index,
-    };
-    game.currentSnapshot = clone(game.board.state);
-    game.legalActions = listLegalActions(game.board.state);
-    game.updatedAt = endedAt;
-    game.notifications = [`Offline turn ended`, ...(game.notifications ?? [])].slice(0, 50);
-    return nextTurn;
-  };
-
-  const buildPromotionScenario = async (game) => {
-    const selectedMoves = game.moves.filter((move) => move?.undone !== true);
-    const resultingState = clone(game.board?.state ?? game.currentSnapshot ?? null);
-    return {
-      formatVersion: 2,
-      id:
-        typeof globalThis.crypto?.randomUUID === "function"
-          ? globalThis.crypto.randomUUID()
-          : `00000000-0000-4000-8000-${Math.floor(random() * 1e12)
-              .toString()
-              .padStart(12, "0")}`,
-      title: `Offline game ${game.id}`,
-      description: "Promoted offline-local game",
-      incorrect: false,
-      initialState: clone(selectedMoves[0]?.selectionSnapshot ?? resultingState),
-      moves: selectedMoves.map((move) => ({
-        turnIndex: move.turnIndex,
-        turnMoveIndex: move.turnMoveIndex,
-        actorSide: move.actorSide,
-        notation: move.notation,
-        action: clone(move.action),
-      })),
-      resultingState,
-      expectedFinalStateHash: deterministicStateHash(resultingState),
-      expectedOutcome: resultingState?.outcome?.status ?? "ongoing",
-      savedSelection: null,
-    };
-  };
-
-  const flushOfflineQueue = async () => {
-    const entries = [...offlinePendingByGameId.entries()];
-    offlinePendingByGameId.clear();
-    for (const [gameId, mutations] of entries) {
-      for (const mutation of mutations) {
-        if (mutation.type === "apply") {
-          const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/apply`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              identityId,
-              state: mutation.state,
-              action: mutation.action,
-            }),
-          });
-          const body = await mustOk(response);
-          if (body.game) {
-            upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
-          }
-          continue;
-        }
-        if (mutation.type === "move") {
-          const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/moves`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ identityId, notation: mutation.notation }),
-          });
-          const body = await mustOk(response);
-          upsertGame(body.game);
-          continue;
-        }
-        if (mutation.type === "end-turn") {
-          const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/end-turn`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ identityId }),
-          });
-          const body = await mustOk(response);
-          upsertGame(body.game);
-        }
-      }
-      await loadGame(gameId);
-    }
-  };
-
   const sendCommandRequest = async ({ gameId, command }) =>
     command.kind === "apply"
-      ? fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/apply`), {
+      ? fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/apply`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -718,7 +329,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
             clientCommandId: command.clientCommandId,
           }),
         })
-      : fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/end-turn`), {
+      : fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/end-turn`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -729,7 +340,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const refreshAuthoritativeGameSnapshot = async (gameId) => {
     const response = await fetcher(
-      withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}`),
+      `/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}`,
       {
         method: "GET",
         cache: "no-store",
@@ -755,10 +366,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const sendNextPendingCommand = async (gameId, { forcedCommandId = null, retryAttempt = 0 } = {}) => {
-    if (offline) {
-      return;
-    }
-
     const optimistic = getOptimisticState(gameId);
     if (optimistic.inflightCommandId && optimistic.inflightCommandId !== forcedCommandId) {
       return;
@@ -899,10 +506,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const refreshGames = async () => {
-    if (offline) {
-      return listGames();
-    }
-    const response = await fetcher(withOfflineQuery(`/api/shell/games?identityId=${encodeURIComponent(identityId)}`), {
+    const response = await fetcher(`/api/shell/games?identityId=${encodeURIComponent(identityId)}`, {
       method: "GET",
       cache: "no-store",
     });
@@ -912,17 +516,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const loadGamesPage = async ({ section, page = 0, pageSize = 6, debug = false } = {}) => {
-    if (offline) {
-      return {
-        ok: true,
-        section,
-        page: 0,
-        pageSize,
-        totalGames: 0,
-        totalPages: 0,
-        games: [],
-      };
-    }
     const params = new URLSearchParams({
       identityId,
       section: String(section || ""),
@@ -930,7 +523,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       pageSize: String(pageSize),
       debug: debug ? "1" : "0",
     });
-    const response = await fetcher(withOfflineQuery(`/api/shell/games?${params.toString()}`), {
+    const response = await fetcher(`/api/shell/games?${params.toString()}`, {
       method: "GET",
       cache: "no-store",
     });
@@ -946,19 +539,10 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const loadGame = async (gameId, { openAsViewer = false } = {}) => {
-    const cached = getGameViewModel(gameId);
-    if (cached?.localOnly) {
-      return cached;
-    }
-    if (offline) {
-      return cached;
-    }
     const response = await fetcher(
-      withOfflineQuery(
-        `/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}${
-          openAsViewer ? "&openAsViewer=1" : ""
-        }`,
-      ),
+      `/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}${
+        openAsViewer ? "&openAsViewer=1" : ""
+      }`,
       {
         method: "GET",
         cache: "no-store",
@@ -969,14 +553,11 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return getGameViewModel(gameId);
   };
 
-  const createGame = async ({ playgroundMode = false, offlineLocal = false } = {}) => {
-    if (offline && offlineLocal) {
-      return upsertGame(createLocalGame({ playgroundMode, offlineLocal }));
-    }
-    const response = await fetcher(withOfflineQuery("/api/shell/games"), {
+  const createGame = async ({ playgroundMode = false } = {}) => {
+    const response = await fetcher("/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, playgroundMode, offlineLocal }),
+      body: JSON.stringify({ identityId, playgroundMode }),
     });
     const body = await mustOk(response);
     clearRollbackNotice(body.game.id);
@@ -984,7 +565,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const importScenario = async ({ scenario, targetGameId = null, sourceGameId = null } = {}) => {
-    const response = await fetcher(withOfflineQuery("/api/shell/scenarios/import"), {
+    const response = await fetcher("/api/shell/scenarios/import", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, scenario, targetGameId, sourceGameId }),
@@ -1003,7 +584,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     initialSelectionAction,
     participantCopyMode,
   } = {}) => {
-    const response = await fetcher(withOfflineQuery("/api/shell/history/branch"), {
+    const response = await fetcher("/api/shell/history/branch", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -1023,7 +604,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const resolveInvite = async (inviteToken) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/invites/${encodeURIComponent(inviteToken)}`), {
+    const response = await fetcher(`/api/shell/invites/${encodeURIComponent(inviteToken)}`, {
       method: "GET",
       cache: "no-store",
     });
@@ -1031,7 +612,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const joinGame = async ({ gameId, mode, inviteFromRole = null, inviteToken = null }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/join`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/join`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, mode, inviteFromRole, inviteToken }),
@@ -1041,7 +622,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const playAsBothPlayers = async ({ gameId }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/play-as-both`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/play-as-both`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId }),
@@ -1051,7 +632,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const approvePendingRequest = async ({ gameId, requesterIdentityId }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/approve`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/approve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, requesterIdentityId }),
@@ -1061,36 +642,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const addMove = async ({ gameId, notation }) => {
-    if (offline) {
-      const game = getGameViewModel(gameId);
-      if (!game) {
-        throw new Error("game_not_found");
-      }
-      if (!isLocallyPlayableGame(game)) {
-        const error = new Error("offline_move_local_only");
-        error.code = "offline_move_local_only";
-        throw error;
-      }
-      const next = clone(game);
-      const legalBody = computeLocalLegalActions(next.board.state);
-      const action = Array.isArray(legalBody.legalActions) && legalBody.legalActions.length > 0 ? legalBody.legalActions[0] : null;
-      if (!action) {
-        const error = new Error("no_legal_actions");
-        error.code = "no_legal_actions";
-        throw error;
-      }
-      const result = applyLocalAction({ game: next, action, notation: notation || defaultNotationForAction(action) });
-      if (!result.accepted) {
-        const error = new Error(result.validation?.code || "offline_apply_failed");
-        error.code = result.validation?.code || "offline_apply_failed";
-        throw error;
-      }
-      if (canReplayOfflineMutations(game)) {
-        queueOfflineMutation(gameId, { type: "apply", state: result.previousState, action });
-      }
-      return { ok: true, game: upsertGame(next), move: result.move };
-    }
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/moves`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/moves`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, notation }),
@@ -1100,17 +652,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const loadGameLegalActions = async ({ gameId, state }) => {
-    const game = getGameViewModel(gameId);
-    if (shouldUseLocalOfflineExecution(game)) {
-      const body = computeLocalLegalActions(state ?? game.currentSnapshot ?? game.board?.state ?? null);
-      const next = clone(game);
-      next.board.state = clone(body.state);
-      next.currentSnapshot = clone(body.state);
-      next.legalActions = clone(body.legalActions);
-      upsertGame(next);
-      return { ok: true, state: body.state, legalActions: body.legalActions, game: getGameViewModel(gameId) };
-    }
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/legal`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/legal`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, state }),
@@ -1123,15 +665,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const loadGamePieceMoves = async ({ gameId, state, pieceId }) => {
-    const game = getGameViewModel(gameId);
-    if (shouldUseLocalOfflineExecution(game)) {
-      return buildPieceMoveResponse({
-        state: state ?? game.currentSnapshot ?? game.board?.state ?? null,
-        legalActions: Array.isArray(game.legalActions) ? game.legalActions : [],
-        pieceId,
-      });
-    }
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/piece-moves`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/piece-moves`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, state, pieceId }),
@@ -1144,31 +678,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const applyGameAction = async ({ gameId, state, action }) => {
-    const game = getGameViewModel(gameId);
-    if (shouldUseLocalOfflineExecution(game)) {
-      const next = clone(game);
-      const result = applyLocalAction({ game: next, action });
-      if (result.accepted) {
-        if (canReplayOfflineMutations(game)) {
-          queueOfflineMutation(gameId, { type: "apply", state: result.previousState, action });
-        }
-        upsertGame(next);
-      }
-      return {
-        ...result,
-        game: result.accepted ? getGameViewModel(gameId) : game,
-      };
-    }
-    if (offline) {
-      return {
-        ok: true,
-        accepted: false,
-        validation: { ok: false, code: "offline_move_local_only", message: "Offline play is only available for offline-local games." },
-        state,
-        legalActions: game?.legalActions ?? [],
-      };
-    }
-
     const command = {
       kind: "apply",
       clientCommandId: createClientCommandId({ gameId, identityId, random }),
@@ -1198,21 +707,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const endTurn = async ({ gameId }) => {
-    const game = getGameViewModel(gameId);
-    if (shouldUseLocalOfflineExecution(game)) {
-      const next = clone(game);
-      const turn = applyOfflineEndTurn(next);
-      if (canReplayOfflineMutations(game)) {
-        queueOfflineMutation(gameId, { type: "end-turn" });
-      }
-      return { ok: true, turn, game: upsertGame(next) };
-    }
-    if (offline) {
-      const error = new Error("offline_move_local_only");
-      error.code = "offline_move_local_only";
-      throw error;
-    }
-
     const current = getGameViewModel(gameId);
     const command = {
       kind: "end-turn",
@@ -1236,7 +730,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const selectHistoryMove = async ({ gameId, moveIndex }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/history`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/history`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, moveIndex }),
@@ -1247,7 +741,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const returnToLive = async ({ gameId }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/live`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/live`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId }),
@@ -1258,7 +752,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const requestRevertToMove = async ({ gameId, targetMoveId }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/revert-request`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/revert-request`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, targetMoveId }),
@@ -1270,7 +764,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const approveRevertRequest = async ({ gameId, requestId }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/revert-approve`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/revert-approve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, requestId }),
@@ -1282,7 +776,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const rejectRevertRequest = async ({ gameId, requestId }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/revert-reject`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/revert-reject`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, requestId }),
@@ -1294,7 +788,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const rescindRevertRequest = async ({ gameId, requestId }) => {
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/revert-rescind`), {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/revert-rescind`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, requestId }),
@@ -1312,41 +806,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     throw new Error("presence_http_removed");
   };
 
-  const goOnlineGame = async ({ gameId, confirmed }) => {
-    const game = getGameViewModel(gameId);
-    if (game?.localOnly) {
-      if (confirmed !== true) {
-        const error = new Error("confirmation_required");
-        error.code = "confirmation_required";
-        throw error;
-      }
-      const created = await fetcher(withForcedOfflineQuery("/api/shell/games", false), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ identityId, playgroundMode: game.playgroundMode === true, offlineLocal: false }),
-      });
-      const createdBody = await mustOk(created);
-      const scenario = await buildPromotionScenario(game);
-      const imported = await fetcher(withForcedOfflineQuery("/api/shell/scenarios/import", false), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ identityId, scenario, targetGameId: createdBody.game.id, sourceGameId: null }),
-      });
-      const importedBody = await mustOk(imported);
-      removeGame(gameId);
-      upsertGameSnapshot({ game: importedBody.game ?? createdBody.game, eventSeq: importedBody.eventSeq ?? createdBody.eventSeq });
-      return getGameViewModel(importedBody.game?.id ?? createdBody.game.id);
-    }
-    const response = await fetcher(withOfflineQuery(`/api/shell/games/${encodeURIComponent(gameId)}/go-online`), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, confirmed }),
-    });
-    const body = await mustOk(response);
-    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
-    return getGameViewModel(gameId);
-  };
-
   const listGames = () => games.map((game) => getGameViewModel(game.id)).filter(Boolean);
 
   const getGameViewModel = (gameId) => {
@@ -1358,30 +817,12 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     if (!game) {
       return null;
     }
-    const base = game.localOnly ? decorateLocalGame(game) : game;
-    return applyClientOfflineViewState(base);
-  };
-
-  const setOffline = (value) => {
-    const previous = offline;
-    offline = value;
-    persistLocalState();
-    emitChange({ type: "offline_changed", offline });
-    if (previous && !offline) {
-      return flushOfflineQueue();
-    }
-    return Promise.resolve();
+    return game;
   };
 
   const getIdentityId = () => identityId;
   const getLastEventSeq = (gameId) => lastEventSeqByGameId.get(gameId) ?? 0;
   const getSyncMetrics = () => clone(syncMetrics);
-
-  for (const persistedGame of Array.isArray(persistedState?.games) ? persistedState.games : []) {
-    if (shouldPersistOfflineGame(persistedGame)) {
-      upsertGame(persistedGame);
-    }
-  }
 
   return {
     refreshGames,
@@ -1409,10 +850,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     applyLiveGameUpdate,
     getLastEventSeq,
     getSyncMetrics,
-    goOnlineGame,
     listGames,
     getGameViewModel,
-    setOffline,
     getIdentityId,
     subscribe,
     unsubscribe,
