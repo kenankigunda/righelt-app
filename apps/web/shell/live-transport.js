@@ -215,15 +215,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     emitChange({ type: "rollback_notice_cleared", gameId });
   };
 
-  const syncCacheFromList = (nextGames) => {
-    games = clone(nextGames);
-    gameById = new Map(games.map((game) => [game.id, clone(game)]));
-    for (const game of games) {
-      recalculateOptimisticGame(game.id);
-    }
-    emitChange({ type: "games_refreshed" });
-  };
-
   const upsertGame = (game) => {
     const next = clone(game);
     gameById.set(next.id, next);
@@ -503,16 +494,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       result: optimistic.commandResults.get(command.clientCommandId),
       game: optimistic.derivedGame,
     };
-  };
-
-  const refreshGames = async () => {
-    const response = await fetcher(`/api/shell/games?identityId=${encodeURIComponent(identityId)}`, {
-      method: "GET",
-      cache: "no-store",
-    });
-    const body = await mustOk(response);
-    syncCacheFromList(Array.isArray(body.games) ? body.games : []);
-    return listGames();
   };
 
   const loadGamesPage = async ({ section, page = 0, pageSize = 6, debug = false } = {}) => {
@@ -825,7 +806,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const getSyncMetrics = () => clone(syncMetrics);
 
   return {
-    refreshGames,
     loadGamesPage,
     loadGame,
     resolveInvite,

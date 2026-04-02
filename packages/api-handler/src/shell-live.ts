@@ -14,7 +14,13 @@ import {
   resolveLaunchParticipantCopyMode,
   withViewModel,
 } from "./shell-live-core";
-import { loadGameProjection, listVisibleGameProjections, resolveInvite, type D1DatabaseLike } from "./shell-live-db";
+import {
+  countHomeSectionGames,
+  listHomeSectionGameProjectionPage,
+  loadGameProjection,
+  resolveInvite,
+  type D1DatabaseLike,
+} from "./shell-live-db";
 
 type DurableObjectIdLike = { name?: string; toString?: () => string };
 type DurableObjectStubLike = { fetch: (request: Request) => Promise<Response> };
@@ -32,7 +38,6 @@ const CACHE_NO_STORE = "no-store";
 const CACHE_BOOTSTRAP_SHORT = "public, max-age=0, s-maxage=60, stale-while-revalidate=300";
 const GAME_ROOMS_BINDING_ERROR = "server_misconfigured_game_rooms_binding";
 const INVALID_PERSISTED_GAME_ERROR = "invalid_persisted_game";
-const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
 
 type HomeSectionKey = "my" | "other" | "smoke";
 
@@ -98,23 +103,6 @@ const fetchGameRoom = async (
   const headers = new Headers(init.headers || {});
   headers.set("x-game-id", gameId);
   return roomStubForGame(env, gameId).fetch(new Request(`https://game-room${path}`, { ...init, headers }));
-};
-
-const isPlayerRole = (role: string | null | undefined) => role === "Player 1" || role === "Player 2";
-
-const gameIncludesIdentity = (game: Record<string, unknown>, identityId: string) => {
-  const player1 = game.player1 as { identityId?: string } | null | undefined;
-  const player2 = game.player2 as { identityId?: string } | null | undefined;
-  const viewers = Array.isArray(game.viewers) ? game.viewers : [];
-  const pendingJoinRequests = Array.isArray(game.pendingJoinRequests) ? game.pendingJoinRequests : [];
-  return (
-    player1?.identityId === identityId ||
-    player2?.identityId === identityId ||
-    viewers.some((viewer) => Boolean(viewer) && typeof viewer === "object" && (viewer as { identityId?: string }).identityId === identityId) ||
-    pendingJoinRequests.some(
-      (request) => Boolean(request) && typeof request === "object" && (request as { identityId?: string }).identityId === identityId,
-    )
-  );
 };
 
 const parseHomeSectionKey = (value: string | null): HomeSectionKey | null =>
@@ -188,42 +176,19 @@ export const handleLiveGameRequest = async (
     const section = parseHomeSectionKey(url.searchParams.get("section"));
     const pageParam = url.searchParams.get("page");
     const pageSizeParam = url.searchParams.get("pageSize");
-    const paginationRequested = section !== null || pageParam !== null || pageSizeParam !== null;
-    const games = await listVisibleGameProjections(env);
-    if (!paginationRequested) {
-      return {
-        handled: true,
-        status: 200,
-        body: { ok: true, games: games.map((game) => withViewModel(game, identityId)) },
-        cacheControl: CACHE_NO_STORE,
-      };
-    }
     const page = parseNonNegativeInt(pageParam);
     const pageSize = parseNonNegativeInt(pageSizeParam);
     if (!section || page === null || pageSize === null || pageSize <= 0) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_pagination" }, cacheControl: CACHE_NO_STORE };
     }
     const debug = url.searchParams.get("debug") === "1";
-    const visibleGames = games
-      .map((game) => withViewModel(game, identityId))
-      .filter((game) => {
-        const isSmokeGame = gameIncludesIdentity(game, DEPLOY_SMOKE_PLAYER_ID);
-        if (section === "smoke") {
-          return debug && isSmokeGame;
-        }
-        if (debug && isSmokeGame) {
-          return false;
-        }
-        if (section === "my") {
-          return isPlayerRole(game.myRole);
-        }
-        return !isPlayerRole(game.myRole);
-      });
-    const totalGames = visibleGames.length;
+    const totalGames = await countHomeSectionGames(env, { identityId, section, debug });
     const totalPages = totalGames === 0 ? 0 : Math.ceil(totalGames / pageSize);
     const safePage = totalPages === 0 ? 0 : Math.min(page, totalPages - 1);
-    const start = safePage * pageSize;
-    const pagedGames = totalPages === 0 ? [] : visibleGames.slice(start, start + pageSize);
+    const pagedGames =
+      totalPages === 0
+        ? []
+        : await listHomeSectionGameProjectionPage(env, { identityId, section, page: safePage, pageSize, debug });
     return {
       handled: true,
       status: 200,
@@ -234,7 +199,7 @@ export const handleLiveGameRequest = async (
         pageSize,
         totalGames,
         totalPages,
-        games: pagedGames,
+        games: pagedGames.map((game) => withViewModel(game, identityId)),
       },
       cacheControl: CACHE_NO_STORE,
     };

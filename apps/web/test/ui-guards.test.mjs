@@ -77,10 +77,8 @@ test("game route live sync connection is not gated by participant role", () => {
   assert.match(source, /const desiredGameIds = new Set\(routeGameId \? \[routeGameId\] : \[\]\);/);
 });
 
-test("home uses per-section pagination and isolates smoke-player games in debug mode", () => {
-  assert.match(source, /const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";/);
+test("home uses per-section pagination and renders the smoke section only in debug mode", () => {
   assert.match(source, /const isPlayerRole = \(role\) => role === "Player 1" \|\| role === "Player 2";/);
-  assert.match(source, /const gameIncludesIdentity = \(game, identityId\) => \{/);
   assert.match(source, /const HOME_SECTION_SERVER_PAGE_SIZE = 4;/);
   assert.match(source, /const HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT = 3;/);
   assert.match(source, /const HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE = 4;/);

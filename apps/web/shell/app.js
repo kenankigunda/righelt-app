@@ -141,7 +141,6 @@ const GAME_SHELL_PANEL_SWIPE_INTENT_PX = 18;
 const GAME_SHELL_PANEL_TRANSITION_MS = 220;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
-const DEPLOY_SMOKE_PLAYER_ID = "smoke-player";
 const lastAnimatedHomeSectionTokenByKey = new Map();
 const activeLiveGameIds = new Set();
 const createHomeSectionState = (title) => ({
@@ -532,17 +531,6 @@ const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
 };
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
 const canControlLiveBoard = (game) => Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
-const gameIncludesIdentity = (game, identityId) => {
-  if (!game || !identityId) {
-    return false;
-  }
-  return (
-    game.player1?.identityId === identityId ||
-    game.player2?.identityId === identityId ||
-    (Array.isArray(game.viewers) && game.viewers.some((viewer) => viewer?.identityId === identityId)) ||
-    (Array.isArray(game.pendingJoinRequests) && game.pendingJoinRequests.some((request) => request?.identityId === identityId))
-  );
-};
 const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "other", "smoke"] : ["my", "other"]);
 const getHomeSection = (sectionKey) => homeSections[sectionKey] ?? createHomeSectionState(sectionKey);
 const setHomeSection = (sectionKey, nextState) => {
