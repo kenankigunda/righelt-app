@@ -266,10 +266,11 @@ export const handleLiveGameRequest = async (
     }
     const body = await parseBody(request);
     const identityId = asIdentity(body.identityId);
+    const requestedGameId = asIdentity(body.gameId);
     if (!identityId) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
     }
-    const gameId = nextGameId();
+    const gameId = requestedGameId ?? nextGameId();
     const response = await fetchGameRoom(env, gameId, "/create", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -323,7 +324,8 @@ export const handleLiveGameRequest = async (
         cacheControl: CACHE_NO_STORE,
       };
     }
-    const newGameId = nextGameId();
+    const requestedGameId = asIdentity(body.gameId);
+    const newGameId = requestedGameId ?? nextGameId();
     const participantCopyMode = sourceProjection?.game
       ? resolveLaunchParticipantCopyMode(sourceProjection.game, identityId)
       : null;
@@ -374,7 +376,8 @@ export const handleLiveGameRequest = async (
       };
     }
     const participantCopyMode = resolveLaunchParticipantCopyMode(sourceProjection.game, identityId);
-    const newGameId = nextGameId();
+    const requestedGameId = asIdentity(body.gameId);
+    const newGameId = requestedGameId ?? nextGameId();
     const response = await fetchGameRoom(env, newGameId, "/create-from-scenario", {
       method: "POST",
       headers: { "content-type": "application/json" },

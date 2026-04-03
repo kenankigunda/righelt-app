@@ -12,8 +12,10 @@ test("creator can move immediately after creating an optimistic game without syn
   const { context, page } = await createIsolatedPage(browser);
 
   try {
-    await createGameFromHome(page);
+    const created = await createGameFromHome(page);
     const initialHistoryCount = await getHistoryMoveCount(page);
+
+    expect(created.serverGameId).toBe(created.gameId);
 
     await makeAnyLegalMove(page, "p1");
 

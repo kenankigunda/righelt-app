@@ -49,7 +49,12 @@ export const setOfflineState = async (page, offline) => {
 export const createGameFromHome = async (page) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
+  const createResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "POST" && url.pathname === "/api/shell/games";
+  });
   await page.getByTestId("home-create-game").click();
+  const createResponse = await createResponsePromise;
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
 
@@ -59,9 +64,12 @@ export const createGameFromHome = async (page) => {
     throw new Error(`Expected game hash after creation, received ${url.hash}`);
   }
 
+  const createBody = await createResponse.json();
+
   return {
     gameHash: url.hash,
     gameId: decodeURIComponent(match[1]),
+    serverGameId: createBody?.game?.id ?? null,
   };
 };
 
