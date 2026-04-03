@@ -1,4 +1,5 @@
 import { BOARD_SIZE, SUPPLY_POINTS } from "../generated/packages/game-engine/src/deterministic.js";
+import { getRushContinuationBlockingPiece } from "../generated/packages/game-engine/src/continuation.js";
 import {
   deriveContinuationHighlightByPieceId,
   getBlockedPreviewLabel,
@@ -449,6 +450,11 @@ function applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey
     }
     cellByCoordinateKey.get(coordKey(piece.position))?.classList.add("continuation-member", "continuation-pending");
   }
+
+  const rushBlocker = snapshot?.continuation?.type === "rush" ? getRushContinuationBlockingPiece(snapshot) : null;
+  if (rushBlocker) {
+    cellByCoordinateKey.get(coordKey(rushBlocker.position))?.classList.add("rush-blocker");
+  }
 }
 
 function applyGroupDecorations(snapshot, piece, cellByCoordinateKey, { showBadge = true } = {}) {
@@ -674,6 +680,7 @@ export function createEngineBoardAdapter() {
         "continuation-member",
         "continuation-moved",
         "continuation-pending",
+        "rush-blocker",
         "retreat-piece",
         "selected-piece",
         "inactive-selected-piece",

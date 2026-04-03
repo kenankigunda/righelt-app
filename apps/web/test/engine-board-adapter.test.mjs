@@ -794,6 +794,47 @@ test("push continuation badge counts only preserved members still present on the
   });
 });
 
+test("rush blocker square receives the dedicated rush-blocker highlight", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P1",
+      continuation: {
+        type: "rush",
+        owner: "P1",
+        rushedPieceIds: ["A", "B"],
+        rushChainPieceIds: ["A", "B"],
+        chainLength: 2,
+      },
+      pieces: [
+        { id: "A", owner: "P1", kind: "unit", position: { row: 4, col: 3 }, supplied: true, commanded: true },
+        { id: "B", owner: "P1", kind: "unit", position: { row: 5, col: 1 }, supplied: true, commanded: true },
+        { id: "C1", owner: "P1", kind: "commander", position: { row: 0, col: 8 }, supplied: true, commanded: true },
+        { id: "C2", owner: "P2", kind: "commander", position: { row: 9, col: 0 }, supplied: true, commanded: true },
+        { id: "E0", owner: "P2", kind: "unit", position: { row: 0, col: 4 }, supplied: true, commanded: true },
+        { id: "E1", owner: "P2", kind: "unit", position: { row: 9, col: 4 }, supplied: true, commanded: true },
+      ],
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: {
+        mode: "interactive",
+        selection: { selectedPieceId: null, source: null, target: null },
+      },
+      legalActions: [{ type: "rush", actorId: "B", from: { row: 5, col: 1 }, to: { row: 4, col: 2 } }],
+      selectedPieceMoves: [],
+      selectedPieceMovePreviews: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "rush",
+    });
+
+    assert.equal(getCell(boardEl, 5, 1)?.classList.contains("rush-blocker"), true);
+  });
+});
+
 test("empty-cell preview markers use a geometry-based centered dot", () => {
   assert.match(adapterSource, /marker\.className = "piece-empty";\s*marker\.setAttribute\("aria-hidden", "true"\);/s);
   assert.doesNotMatch(adapterSource, /marker\.textContent = "\.";/);
@@ -821,7 +862,13 @@ test("inactive pieces use the square fill color instead of transparency", () => 
   assert.match(styleSource, /\.cell\.group-member\s*\{[\s\S]*--cell-fill:\s*#eef8f1;/s);
   assert.match(styleSource, /\.cell\.continuation-moved\s*\{[\s\S]*--cell-fill:\s*#f5f7ef;/s);
   assert.match(styleSource, /\.cell\.continuation-pending\s*\{[\s\S]*--cell-fill:\s*#e6f2d3;/s);
+  assert.match(styleSource, /\.cell\.rush-blocker\s*\{[\s\S]*--cell-fill:\s*#f7ead4;[\s\S]*border-color:\s*#cf9542;/s);
   assert.match(styleSource, /\.cell\.retreat-piece\s*\{[\s\S]*--cell-fill:\s*#f3e7c5;/s);
+});
+
+test("rush blocker chip styling matches the dedicated board-square treatment", () => {
+  assert.match(styleSource, /\.board-preview-coordinate-chip\.board-preview-coordinate-chip-rush-blocker\s*\{[\s\S]*background:\s*#f7ead4;[\s\S]*border-color:\s*#cf9542;[\s\S]*color:\s*#8a5712;/s);
+  assert.match(adapterSource, /cellByCoordinateKey\.get\(coordKey\(rushBlocker\.position\)\)\?\.classList\.add\("rush-blocker"\);/);
 });
 
 test("project previews use a plus badge while move-style previews use lightweight owner-colored arrows", () => {

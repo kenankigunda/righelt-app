@@ -351,6 +351,52 @@ function obligationOwner(state: GameState): "P1" | "P2" | null {
     : state.continuation.owner;
 }
 
+function compareBlockerPieces(left: Piece, right: Piece): number {
+  if (left.position.row !== right.position.row) {
+    return left.position.row - right.position.row;
+  }
+  if (left.position.col !== right.position.col) {
+    return left.position.col - right.position.col;
+  }
+  return left.id.localeCompare(right.id);
+}
+
+export function getRushContinuationBlockingPiece(state: GameState): Piece | null {
+  if (!state.continuation || state.continuation.type !== "rush") {
+    return null;
+  }
+
+  const owner = obligationOwner(state);
+  if (!owner) {
+    return null;
+  }
+
+  const obligationPieceIds = obligationPieceIdsForContinuation(state);
+  if (obligationPieceIds.length === 0) {
+    return null;
+  }
+
+  const suppliedIds = computeLiveSuppliedPieceIds(state, owner);
+  const unsuppliedBlockers = obligationPieceIds
+    .filter((pieceId) => !suppliedIds.has(pieceId))
+    .map((pieceId) => state.pieces.find((piece) => piece.id === pieceId) ?? null)
+    .filter((piece): piece is Piece => Boolean(piece));
+
+  if (unsuppliedBlockers.length === 0) {
+    return null;
+  }
+
+  const rushedPieceIds = state.continuation.rushedPieceIds ?? [];
+  for (let index = rushedPieceIds.length - 1; index >= 0; index -= 1) {
+    const blocker = unsuppliedBlockers.find((piece) => piece.id === rushedPieceIds[index]);
+    if (blocker) {
+      return blocker;
+    }
+  }
+
+  return [...unsuppliedBlockers].sort(compareBlockerPieces)[0] ?? null;
+}
+
 function areObligationPiecesSupplied(state: GameState): boolean {
   const owner = obligationOwner(state);
   if (!owner) {

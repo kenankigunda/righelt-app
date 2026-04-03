@@ -65,6 +65,34 @@ export const createGameFromHome = async (page) => {
   };
 };
 
+export const importScenarioGame = async (page, scenario, baseURL) => {
+  await page.goto("/");
+  await expect(page.getByTestId("home-create-game")).toBeVisible();
+
+  const { gameId } = await page.evaluate(async (payload) => {
+    const identityId = window.localStorage.getItem("righelt.identity.id.v1");
+    if (!identityId) {
+      throw new Error("Expected identity id in local storage before importing scenario");
+    }
+
+    const response = await fetch("/api/shell/scenarios/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId, scenario: payload.scenario }),
+    });
+    const body = await response.json();
+    if (!response.ok || !body?.game?.id) {
+      throw new Error(`Scenario import failed: ${response.status} ${JSON.stringify(body)}`);
+    }
+    return { gameId: body.game.id };
+  }, { scenario });
+
+  const gameHash = `#/game/${encodeURIComponent(gameId)}`;
+  await page.goto(buildAppUrl(baseURL, gameHash));
+  await expect(page.getByTestId("game-shell")).toBeVisible();
+  return { gameId, gameHash };
+};
+
 export const openDirectGameLink = async (page, baseURL, gameHash) => {
   await page.goto(buildAppUrl(baseURL, gameHash));
   await expect

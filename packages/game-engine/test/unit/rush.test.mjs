@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { applyAction, listLegalActions, validateAction } from "../../src/index.ts";
-import { buildContinuationSuccessorState, canCloseContinuationNow, isContinuationCompletable } from "../../src/continuation.ts";
+import {
+  buildContinuationSuccessorState,
+  canCloseContinuationNow,
+  getRushContinuationBlockingPiece,
+  isContinuationCompletable,
+} from "../../src/continuation.ts";
 import { resolveToStability } from "../../src/resolve.ts";
 import { commander, makeState, unit } from "../helpers/state-builders.mjs";
 
@@ -356,6 +361,100 @@ test("rush pass is illegal while the rush chain remains unsupplied", () => {
   const result = validateAction(state, { type: "pass" });
   assert.equal(result.ok, false);
   assert.equal(canCloseContinuationNow(state), false);
+});
+
+test("rush blocker helper returns null outside rush continuations and when closable", () => {
+  const noContinuation = makeState({
+    pieces: [commander("C1", "P1", 0, 9), commander("C2", "P2", 9, 0), unit("A", "P1", 4, 4)],
+  });
+  assert.equal(getRushContinuationBlockingPiece(noContinuation), null);
+
+  const closableRush = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      rushedPieceIds: ["A"],
+      rushChainPieceIds: ["A"],
+      chainLength: 1,
+    },
+    pieces: [commander("C1", "P1", 0, 9), commander("C2", "P2", 9, 0), unit("A", "P1", 4, 4)],
+  });
+  assert.equal(canCloseContinuationNow(closableRush), true);
+  assert.equal(getRushContinuationBlockingPiece(closableRush), null);
+});
+
+test("rush blocker helper prefers the most recently rushed unsupplied blocker", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      rushedPieceIds: ["A", "B"],
+      rushChainPieceIds: ["A", "B"],
+      chainLength: 2,
+    },
+    pieces: [
+      commander("C1", "P1", 0, 8),
+      commander("C2", "P2", 9, 0),
+      unit("A", "P1", 4, 3),
+      unit("B", "P1", 5, 1),
+      unit("E0", "P2", 0, 4),
+      unit("E1", "P2", 9, 4),
+    ],
+  });
+
+  const blocker = getRushContinuationBlockingPiece(state);
+  assert.equal(canCloseContinuationNow(state), false);
+  assert.equal(blocker?.id, "B");
+  assert.deepEqual(blocker?.position, { row: 5, col: 1 });
+});
+
+test("rush blocker helper falls back deterministically when the most recent rusher is supplied", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      rushedPieceIds: ["Z", "B"],
+      rushChainPieceIds: ["A", "B", "Z"],
+      chainLength: 3,
+    },
+    pieces: [
+      commander("C1", "P1", 3, 6),
+      commander("C2", "P2", 6, 3),
+      unit("A", "P1", 4, 3),
+      unit("B", "P1", 7, 7),
+      unit("Z", "P1", 4, 6),
+      unit("E0", "P2", 0, 4),
+      unit("E1", "P2", 9, 4),
+      unit("E2", "P2", 4, 2),
+    ],
+  });
+
+  const blocker = getRushContinuationBlockingPiece(state);
+  assert.equal(canCloseContinuationNow(state), false);
+  assert.equal(blocker?.id, "A");
+  assert.deepEqual(blocker?.position, { row: 4, col: 3 });
+});
+
+test("rush blocker helper ignores rush-chain ids for removed pieces", () => {
+  const state = makeState({
+    continuation: {
+      type: "rush",
+      owner: "P1",
+      rushedPieceIds: ["A", "B"],
+      rushChainPieceIds: ["A", "B", "GONE"],
+      chainLength: 2,
+    },
+    pieces: [
+      commander("C1", "P1", 0, 8),
+      commander("C2", "P2", 9, 0),
+      unit("A", "P1", 4, 3),
+      unit("B", "P1", 5, 1),
+      unit("E0", "P2", 0, 4),
+      unit("E1", "P2", 9, 4),
+    ],
+  });
+
+  assert.equal(getRushContinuationBlockingPiece(state)?.id, "B");
 });
 
 test("F-014 rush continuation uses frozen commanded state for the initiating player", () => {
