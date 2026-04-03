@@ -49,3 +49,23 @@ test("home pagination refreshes correctly when a moved game reorders onto an ear
     await closeContextQuietly(context);
   }
 });
+
+test("home header pagination is visible at narrow viewport with a multi-column grid", async ({ browser }) => {
+  const { context, page } = await createIsolatedPage(browser);
+
+  try {
+    await page.setViewportSize({ width: 850, height: 1100 });
+    await createGamesViaApi(page, 5);
+    await page.goto("/");
+
+    const mySection = page.locator('[data-home-section-root="my"]');
+    await expect(mySection).toBeVisible();
+
+    const headerPaging = mySection.locator(".home-games-section-controls-header");
+    await expect(headerPaging).toBeVisible();
+    await expect(headerPaging).toContainText("Page 1 of 2");
+    await expect(mySection.locator(".home-games-section-controls-footer")).toHaveCount(0);
+  } finally {
+    await closeContextQuietly(context);
+  }
+});

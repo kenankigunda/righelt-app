@@ -290,7 +290,7 @@ test("home mini-board cards use uniform grid widths across wrapped rows", () => 
   );
   assert.match(
     shellStylesSource,
-    /#app\[data-shell-layout-mode="wide"\]\s+\.home-games-section-header\[data-home-header-has-action="true"\]\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\);/s,
+    /\.home-games-section-header\[data-home-header-paging="true"\]\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\);/s,
   );
   assert.match(
     shellStylesSource,
@@ -302,11 +302,7 @@ test("home mini-board cards use uniform grid widths across wrapped rows", () => 
   );
   assert.match(
     shellStylesSource,
-    /#app\[data-shell-layout-mode="wide"\]\s+\.home-games-section-header-center\s*\{\s*display:\s*inline-flex;\s*\}/s,
-  );
-  assert.match(
-    shellStylesSource,
-    /#app\[data-shell-layout-mode="wide"\]\s+\.home-games-section-header\[data-home-header-has-action="true"\]\s+\.home-games-section-header-center\s*\{[\s\S]*justify-content:\s*center;[\s\S]*justify-self:\s*stretch;/s,
+    /\.home-games-section-header\[data-home-header-paging="true"\]\s+\.home-games-section-header-center\s*\{[\s\S]*display:\s*inline-flex;[\s\S]*justify-content:\s*center;[\s\S]*justify-self:\s*stretch;/s,
   );
   assert.match(
     shellStylesSource,

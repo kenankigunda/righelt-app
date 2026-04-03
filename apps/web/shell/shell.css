@@ -912,7 +912,7 @@ button.button-release-bounce,
   margin-bottom: 0.7rem;
 }
 
-#app[data-shell-layout-mode="wide"] .home-games-section-header[data-home-header-has-action="true"] {
+.home-games-section-header[data-home-header-paging="true"] {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
 }
 
@@ -942,11 +942,8 @@ button.button-release-bounce,
   justify-self: end;
 }
 
-#app[data-shell-layout-mode="wide"] .home-games-section-header-center {
+.home-games-section-header[data-home-header-paging="true"] .home-games-section-header-center {
   display: inline-flex;
-}
-
-#app[data-shell-layout-mode="wide"] .home-games-section-header[data-home-header-has-action="true"] .home-games-section-header-center {
   justify-content: center;
   justify-self: stretch;
 }

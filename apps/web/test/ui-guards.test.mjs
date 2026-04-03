@@ -137,7 +137,10 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /const showHeaderPaging = showPaging && section\.visibleColumnCount > 1;/);
   assert.match(source, /const showFooterPaging = showPaging && section\.visibleColumnCount === 1;/);
   assert.match(source, /const hasHeaderAction = sectionKey === "my";/);
-  assert.match(source, /data-home-header-has-action="\$\{hasHeaderAction \? "true" : "false"\}"/);
+  assert.match(
+    source,
+    /<div class="home-games-section-header" data-home-header-has-action="\$\{hasHeaderAction \? "true" : "false"\}" data-home-header-paging="\$\{showHeaderPaging \? "true" : "false"\}">/,
+  );
   assert.match(source, /<div class="home-games-section-header-center">/);
   assert.match(source, /<div class="home-games-section-header-actions">/);
   assert.match(source, /<div class="home-games-section-heading">/);
