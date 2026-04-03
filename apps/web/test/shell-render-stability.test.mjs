@@ -206,7 +206,9 @@ test("live sync status renders are deduplicated by stable status key", () => {
 test("sync store manages subscriptions through the active route game id", () => {
   assert.match(source, /syncStore\.setActiveGameId\(routeGameId\);/);
   assert.match(syncStoreSource, /let activeGameId = null;/);
-  assert.match(syncStoreSource, /const desiredGameIds = new Set\(\[activeGameId\]\);/);
+  assert.match(syncStoreSource, /const isFailedCreateStub = \(game\) =>/);
+  assert.match(syncStoreSource, /const activeGame =/);
+  assert.match(syncStoreSource, /const desiredGameIds = isFailedCreateStub\(activeGame\) \? new Set\(\) : new Set\(\[activeGameId\]\);/);
   assert.match(syncStoreSource, /for \(const gameId of liveSync\.getDesiredGameIds\(\)\) \{/);
   assert.match(syncStoreSource, /liveSync\.disconnectGame\(gameId\);/);
   assert.match(syncStoreSource, /liveSync\.connectGame\(gameId\);/);
