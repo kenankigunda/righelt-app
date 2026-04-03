@@ -437,7 +437,7 @@ test("live sync sends beacon-backed disconnect hints on offline and reconnects o
   const originalNavigator = globalThis.navigator;
   const originalFetch = globalThis.fetch;
   const documentMock = createMockDocument();
-  const windowMock = createMockWindow();
+  const windowMock = createMockWindow({ protocol: "http:", hostname: "localhost", host: "localhost:8789", port: "8789" });
   const beacons = [];
   const fetchCalls = [];
 
@@ -472,7 +472,7 @@ test("live sync sends beacon-backed disconnect hints on offline and reconnects o
     await flushAsync(0);
 
     assert.equal(beacons.length, 1);
-    assert.match(String(beacons[0].url), /\/api\/shell\/games\/g-online\/presence$/);
+    assert.equal(String(beacons[0].url), "http://localhost:8789/api/shell/games/g-online/presence");
     assert.equal(fetchCalls.length, 0);
 
     globalThis.navigator.onLine = true;
@@ -495,7 +495,7 @@ test("live sync sends disconnecting hints on pagehide and beforeunload", async (
   const originalDocument = globalThis.document;
   const originalNavigator = globalThis.navigator;
   const originalFetch = globalThis.fetch;
-  const windowMock = createMockWindow();
+  const windowMock = createMockWindow({ protocol: "http:", hostname: "localhost", host: "localhost:8789", port: "8789" });
   const beacons = [];
   const fetchCalls = [];
 
@@ -527,12 +527,66 @@ test("live sync sends disconnecting hints on pagehide and beforeunload", async (
     MockSocket.instances[0].emit("open");
     windowMock.dispatchEvent("beforeunload");
     assert.equal(beacons.length, 1);
-    assert.match(String(beacons[0].url), /\/api\/shell\/games\/g-pagehide\/presence$/);
+    assert.equal(String(beacons[0].url), "http://localhost:8789/api/shell/games/g-pagehide/presence");
 
     windowMock.dispatchEvent("pagehide");
     await flushAsync(0);
     assert.equal(beacons.length, 2);
+    assert.equal(String(beacons[1].url), "http://localhost:8789/api/shell/games/g-pagehide/presence");
     assert.equal(fetchCalls.length, 0);
+    client.disconnectAll();
+  } finally {
+    globalThis.WebSocket = originalWs;
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
+    setGlobalNavigator(originalNavigator);
+    globalThis.fetch = originalFetch;
+    MockSocket.instances.length = 0;
+  }
+});
+
+test("live sync keeps fetch keepalive presence fallback same-origin in local dev", async () => {
+  const originalWs = globalThis.WebSocket;
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  const originalNavigator = globalThis.navigator;
+  const originalFetch = globalThis.fetch;
+  const documentMock = createMockDocument();
+  const windowMock = createMockWindow({ protocol: "http:", hostname: "localhost", host: "localhost:8789", port: "8789" });
+  const fetchCalls = [];
+
+  globalThis.WebSocket = MockSocket;
+  globalThis.window = windowMock;
+  globalThis.document = documentMock;
+  setGlobalNavigator({
+    onLine: true,
+    sendBeacon() {
+      return false;
+    },
+  });
+  globalThis.fetch = async (url, init) => {
+    fetchCalls.push({ url, init });
+    return new Response(null, { status: 200 });
+  };
+
+  try {
+    const client = createLiveSyncClient({
+      identityId: "id-fetch-fallback",
+      getLastEventSeq: () => 9,
+      onEvent: () => {},
+      reconnectBaseMs: 5,
+      reconnectMaxMs: 10,
+    });
+
+    client.connectGame("g-fetch-fallback");
+    MockSocket.instances[0].emit("open");
+    windowMock.dispatchEvent("beforeunload");
+    await flushAsync(0);
+
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(String(fetchCalls[0].url), "http://localhost:8789/api/shell/games/g-fetch-fallback/presence");
+    assert.equal(fetchCalls[0].init.method, "POST");
+    assert.equal(fetchCalls[0].init.keepalive, true);
     client.disconnectAll();
   } finally {
     globalThis.WebSocket = originalWs;

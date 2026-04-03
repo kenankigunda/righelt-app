@@ -1,4 +1,4 @@
-import { buildLocalApiOrigin, buildLocalApiWsHost, isLocalDevHost } from "../local-dev-ports.js";
+import { buildLocalApiWsHost, isLocalDevHost } from "../local-dev-ports.js";
 
 const WS_RECONNECT_BASE_MS = 1_000;
 const WS_RECONNECT_MAX_MS = 30_000;
@@ -24,9 +24,7 @@ const createWsUrl = ({ identityId, gameId, sessionId, lastEventSeq }) => {
 };
 
 const createPresenceUrl = (gameId) => {
-  const origin = isLocalDevHost(window.location.hostname)
-    ? buildLocalApiOrigin(window.location.port)
-    : window.location.origin ?? `${window.location.protocol}//${window.location.host}`;
+  const origin = window.location.origin ?? `${window.location.protocol}//${window.location.host}`;
   return `${origin}/api/shell/games/${encodeURIComponent(gameId)}/presence`;
 };
 
