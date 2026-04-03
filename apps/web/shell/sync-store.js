@@ -19,6 +19,12 @@ const createOperationError = (message, code = "operation_failed") => {
   return error;
 };
 
+const createGameIdMismatchError = (operationLabel, expectedGameId, actualGameId) =>
+  createOperationError(
+    `${operationLabel} returned an unexpected game id. Expected ${expectedGameId} but received ${actualGameId}.`,
+    "game_id_mismatch",
+  );
+
 const clone = (value) => structuredClone(value);
 
 const createGameId = () => {
@@ -222,6 +228,17 @@ export const createSyncStore = ({
     operationManager.fail(clientCommandId, error);
   };
 
+  const failDependentOperationsForGame = (gameId, error, excludedOperationIds = []) => {
+    const excluded = new Set(excludedOperationIds.filter(Boolean));
+    const pendingOperations = operationManager.getPendingOperations(gameId);
+    for (const handle of pendingOperations) {
+      if (excluded.has(handle.id)) {
+        continue;
+      }
+      failOperation(handle.id, error);
+    }
+  };
+
   transport.subscribe((change) => {
     const clientCommandId = typeof change?.clientCommandId === "string" ? change.clientCommandId : null;
     if (change?.type === "authoritative_update" && clientCommandId) {
@@ -341,13 +358,26 @@ export const createSyncStore = ({
       void transport
         .createGame({ selfPlayMode, gameId })
         .then((game) => {
+          if (game?.id !== gameId) {
+            const mismatchError = createGameIdMismatchError("Game creation", gameId, game?.id ?? "unknown");
+            transport.discardPendingCommands?.(gameId, {
+              notice: "Queued local actions were cleared because game creation failed to bind to the expected game id.",
+            });
+            failOperation(`create:${gameId}`, mismatchError);
+            failDependentOperationsForGame(gameId, mismatchError, [`create:${gameId}`]);
+            return;
+          }
           transport.applyLiveGameUpdate({ game });
           operationManager.confirm(`create:${gameId}`, transport.getGameViewModel(gameId) ?? game);
           clearPendingLocalGame(gameId);
           transport.flushPendingCommands?.(gameId);
         })
         .catch((error) => {
+          transport.discardPendingCommands?.(gameId, {
+            notice: "Queued local actions were cleared because game creation failed.",
+          });
           failOperation(`create:${gameId}`, error);
+          failDependentOperationsForGame(gameId, error, [`create:${gameId}`]);
         });
 
       return handle;
@@ -436,6 +466,15 @@ export const createSyncStore = ({
           selfPlayMode,
         })
         .then((result) => {
+          if (result?.game?.id !== gameId) {
+            const mismatchError = createGameIdMismatchError("History branch creation", gameId, result?.game?.id ?? "unknown");
+            transport.discardPendingCommands?.(gameId, {
+              notice: "Queued local actions were cleared because history branch creation failed to bind to the expected game id.",
+            });
+            failOperation(`branch:${gameId}`, mismatchError);
+            failDependentOperationsForGame(gameId, mismatchError, [`branch:${gameId}`]);
+            return;
+          }
           if (result?.game) {
             transport.applyLiveGameUpdate({ game: result.game });
           }
@@ -444,9 +483,14 @@ export const createSyncStore = ({
             game: transport.getGameViewModel(gameId) ?? result?.game ?? stubGame,
           });
           clearPendingLocalGame(gameId);
+          transport.flushPendingCommands?.(gameId);
         })
         .catch((error) => {
+          transport.discardPendingCommands?.(gameId, {
+            notice: "Queued local actions were cleared because history branch creation failed.",
+          });
           failOperation(`branch:${gameId}`, error);
+          failDependentOperationsForGame(gameId, error, [`branch:${gameId}`]);
         });
 
       return handle;

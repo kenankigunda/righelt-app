@@ -373,3 +373,136 @@ test("sync store defers move confirmation until optimistic game creation commits
     `flush:${createHandle.result.id}`,
   ]);
 });
+
+test("sync store fails create and queued optimistic commands when the server responds with a mismatched game id", async () => {
+  const { transport, games } = createTransportHarness();
+  const calls = [];
+
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: ({ shouldDeferCommandSend }) => ({
+      ...transport,
+      createGame: async ({ gameId }) => {
+        calls.push(`create:${gameId}`);
+        return {
+          ...(games.get(`server-${gameId}`) ?? {}),
+          id: `server-${gameId}`,
+          notifications: ["Game created on wrong id"],
+        };
+      },
+      applyGameAction: async ({ gameId }) => {
+        const shouldDefer = shouldDeferCommandSend(gameId, { kind: "apply" });
+        calls.push(shouldDefer ? `apply-deferred:${gameId}` : `apply-sent:${gameId}`);
+        return {
+          ok: true,
+          accepted: true,
+          clientCommandId: "cmd-move",
+          state: games.get(gameId)?.currentSnapshot ?? null,
+          legalActions: games.get(gameId)?.legalActions ?? [],
+          game: games.get(gameId),
+        };
+      },
+      discardPendingCommands: (gameId) => {
+        calls.push(`discard:${gameId}`);
+      },
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const createHandle = store.createGame({ selfPlayMode: false });
+  const moveHandle = await store.applyGameAction({
+    gameId: createHandle.result.id,
+    state: createHandle.result.currentSnapshot,
+    action: { type: "pass" },
+  });
+
+  await assert.rejects(createHandle.committed, (error) => error?.code === "game_id_mismatch");
+  await assert.rejects(moveHandle.committed, (error) => error?.code === "game_id_mismatch");
+  assert.equal(createHandle.status, "failed");
+  assert.equal(moveHandle.status, "failed");
+  assert.deepEqual(calls, [
+    `create:${createHandle.result.id}`,
+    `apply-deferred:${createHandle.result.id}`,
+    `discard:${createHandle.result.id}`,
+  ]);
+});
+
+test("sync store fails history branch and queued optimistic commands when the server responds with a mismatched game id", async () => {
+  const { transport, games } = createTransportHarness();
+  const calls = [];
+  games.set("game-source", {
+    id: "game-source",
+    myRole: "Player 1",
+    player1: { identityId: "id-test", connected: true },
+    player2: null,
+    viewers: [],
+  });
+
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: ({ shouldDeferCommandSend }) => ({
+      ...transport,
+      launchHistoryBranch: async ({ gameId }) => {
+        calls.push(`branch:${gameId}`);
+        return {
+          game: {
+            ...(games.get(`server-${gameId}`) ?? {}),
+            id: `server-${gameId}`,
+            notifications: ["Branch created on wrong id"],
+          },
+        };
+      },
+      applyGameAction: async ({ gameId }) => {
+        const shouldDefer = shouldDeferCommandSend(gameId, { kind: "apply" });
+        calls.push(shouldDefer ? `apply-deferred:${gameId}` : `apply-sent:${gameId}`);
+        return {
+          ok: true,
+          accepted: true,
+          clientCommandId: "cmd-branch-move",
+          state: games.get(gameId)?.currentSnapshot ?? null,
+          legalActions: games.get(gameId)?.legalActions ?? [],
+          game: games.get(gameId),
+        };
+      },
+      discardPendingCommands: (gameId) => {
+        calls.push(`discard:${gameId}`);
+      },
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const branchHandle = store.launchHistoryBranch({
+    sourceGameId: "game-source",
+    sourceMoveIndex: 2,
+    scenario: {
+      resultingState: { sideToMove: "P1", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+    },
+    initialSelectionAction: { type: "move", actorId: "U1", from: { row: 1, col: 1 }, to: { row: 2, col: 1 } },
+    participantCopyMode: "copy_source_participants",
+  });
+  const moveHandle = await store.applyGameAction({
+    gameId: branchHandle.result.game.id,
+    state: branchHandle.result.game.currentSnapshot,
+    action: { type: "pass" },
+  });
+
+  await assert.rejects(branchHandle.committed, (error) => error?.code === "game_id_mismatch");
+  await assert.rejects(moveHandle.committed, (error) => error?.code === "game_id_mismatch");
+  assert.equal(branchHandle.status, "failed");
+  assert.equal(moveHandle.status, "failed");
+  assert.deepEqual(calls, [
+    `branch:${branchHandle.result.game.id}`,
+    `apply-deferred:${branchHandle.result.game.id}`,
+    `discard:${branchHandle.result.game.id}`,
+  ]);
+});

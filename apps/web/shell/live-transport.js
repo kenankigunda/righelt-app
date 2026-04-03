@@ -843,6 +843,13 @@ export const createLiveTransportStore = ({
   const flushPendingCommands = (gameId) => {
     void sendNextPendingCommand(gameId);
   };
+  const discardPendingCommands = (gameId, { notice = "" } = {}) => {
+    clearOptimisticQueue(gameId, {
+      notice,
+      syncStatus: "ready",
+      changeType: "optimistic_queue_cleared",
+    });
+  };
 
   return {
     loadGamesPage,
@@ -870,6 +877,7 @@ export const createLiveTransportStore = ({
     getLastEventSeq,
     getSyncMetrics,
     flushPendingCommands,
+    discardPendingCommands,
     listGames,
     getHomeGameCard,
     getGameViewModel,

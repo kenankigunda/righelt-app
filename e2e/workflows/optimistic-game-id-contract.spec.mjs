@@ -20,13 +20,19 @@ test("optimistic create-game keeps route id, server id, and first apply target a
   const { context, page } = await createIsolatedPage(browser);
 
   try {
+    const createRequestPromise = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return request.method() === "POST" && url.pathname === "/api/shell/games";
+    });
     const created = await createGameFromHome(page);
     const initialHistoryCount = await getHistoryMoveCount(page);
     const applyRequestPromise = waitForApplyRequestForGame(page, created.gameId);
+    const createRequest = await createRequestPromise;
 
     await makeAnyLegalMove(page, "p1");
 
     const applyRequest = await applyRequestPromise;
+    expect(createRequest.postDataJSON()?.gameId).toBe(created.gameId);
     expect(created.serverGameId).toBe(created.gameId);
     expect(new URL(applyRequest.url()).pathname).toBe(`/api/shell/games/${created.gameId}/apply`);
     await expect
@@ -46,10 +52,16 @@ test("optimistic history branch keeps popup route id, server id, and first apply
     await createGameFromHome(page);
     await makeAnyLegalMove(page, "p1");
 
+    const branchRequestPromise = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return request.method() === "POST" && url.pathname === "/api/shell/history/branch";
+    });
     const { popup, branchBody, gameId } = await launchHistoryBranchFromMove(page, 0);
     const branchHistoryCount = await getHistoryMoveCount(popup);
     const applyRequestPromise = waitForApplyRequestForGame(popup, gameId);
+    const branchRequest = await branchRequestPromise;
 
+    expect(branchRequest.postDataJSON()?.gameId).toBe(gameId);
     expect(branchBody?.game?.id).toBe(gameId);
     expect(await getCurrentGameIdFromPage(popup)).toBe(gameId);
 
