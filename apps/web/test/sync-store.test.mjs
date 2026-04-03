@@ -282,3 +282,94 @@ test("sync store launches history branches with immediate local stubs", async ()
   assert.equal(committed.game.id, handle.result.game.id);
   assert.equal(committed.game.notifications.at(-1), "History branch launched");
 });
+
+test("sync store defers move confirmation until optimistic game creation commits", async () => {
+  const { transport, games } = createTransportHarness();
+  let resolveCreate = null;
+  let resolveApply = null;
+  const calls = [];
+
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: ({ shouldDeferCommandSend }) => ({
+      ...transport,
+      createGame: async ({ gameId }) => {
+        calls.push(`create:${gameId}`);
+        return new Promise((resolve) => {
+          resolveCreate = () => {
+            const game = {
+              ...(games.get(gameId) ?? {}),
+              id: gameId,
+              notifications: ["Game created"],
+            };
+            resolve(game);
+          };
+        });
+      },
+      applyGameAction: async ({ gameId }) => {
+        const shouldDefer = shouldDeferCommandSend(gameId, { kind: "apply" });
+        calls.push(shouldDefer ? `apply-deferred:${gameId}` : `apply-sent:${gameId}`);
+        if (shouldDefer) {
+          transport.applyLiveGameUpdate({
+            game: {
+              ...(games.get(gameId) ?? {}),
+              pendingMoves: [{ notation: "MOVE 1" }],
+              pendingCommandCount: 1,
+            },
+          });
+          return {
+            ok: true,
+            accepted: true,
+            clientCommandId: "cmd-move",
+            state: games.get(gameId)?.currentSnapshot ?? null,
+            legalActions: games.get(gameId)?.legalActions ?? [],
+            game: games.get(gameId),
+          };
+        }
+        return new Promise((resolve) => {
+          resolveApply = () => {
+            resolve({
+              ok: true,
+              accepted: true,
+              clientCommandId: "cmd-move",
+              state: games.get(gameId)?.currentSnapshot ?? null,
+              legalActions: games.get(gameId)?.legalActions ?? [],
+              game: games.get(gameId),
+            });
+          };
+        });
+      },
+      flushPendingCommands: (gameId) => {
+        calls.push(`flush:${gameId}`);
+        resolveApply?.();
+      },
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const createHandle = store.createGame({ selfPlayMode: false });
+  const moveHandle = await store.applyGameAction({
+    gameId: createHandle.result.id,
+    state: createHandle.result.currentSnapshot,
+    action: { type: "pass" },
+  });
+
+  assert.equal(createHandle.status, "pending");
+  assert.equal(moveHandle.status, "pending");
+  assert.deepEqual(calls, [`create:${createHandle.result.id}`, `apply-deferred:${createHandle.result.id}`]);
+
+  resolveCreate?.();
+  await createHandle.committed;
+  await moveHandle.committed;
+
+  assert.deepEqual(calls, [
+    `create:${createHandle.result.id}`,
+    `apply-deferred:${createHandle.result.id}`,
+    `flush:${createHandle.result.id}`,
+  ]);
+});

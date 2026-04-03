@@ -170,10 +170,22 @@ export const createSyncStore = ({
   createTransportStore = createLiveTransportStore,
   createSyncClient = createLiveSyncClient,
 } = {}) => {
-  const transport = createTransportStore({ storage, fetcher, random });
   const operationManager = createOperationManager();
   const pendingLocalGames = readPendingLocalGames(storage);
   let activeGameId = null;
+  const isCreatePendingForGame = (gameId) => {
+    const handle = operationManager.getHandle(`create:${gameId}`);
+    return handle?.status === "pending";
+  };
+  const transport = createTransportStore({
+    storage,
+    fetcher,
+    random,
+    shouldDeferCommandSend: (gameId, command) => {
+      void command;
+      return isCreatePendingForGame(gameId);
+    },
+  });
 
   const savePendingLocalGame = (game) => {
     pendingLocalGames[game.id] = clone(game);
@@ -332,6 +344,7 @@ export const createSyncStore = ({
           transport.applyLiveGameUpdate({ game });
           operationManager.confirm(`create:${gameId}`, transport.getGameViewModel(gameId) ?? game);
           clearPendingLocalGame(gameId);
+          transport.flushPendingCommands?.(gameId);
         })
         .catch((error) => {
           failOperation(`create:${gameId}`, error);

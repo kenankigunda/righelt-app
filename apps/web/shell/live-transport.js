@@ -65,7 +65,12 @@ const isVerboseClientLoggingEnabled = (storage) => {
   return value === "1" || value === "true" || value === "yes" || value === "on" || value === "verbose";
 };
 
-export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Math.random }) => {
+export const createLiveTransportStore = ({
+  storage,
+  fetcher = fetch,
+  random = Math.random,
+  shouldDeferCommandSend = () => false,
+} = {}) => {
   let identityId = loadIdentity(storage);
   if (!identityId) {
     identityId = createIdentity(random);
@@ -380,6 +385,17 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
         optimistic.syncStatus = "ready";
         recalculateOptimisticGame(gameId);
       }
+      return;
+    }
+
+    if (shouldDeferCommandSend(gameId, command)) {
+      optimistic.inflightCommandId = null;
+      optimistic.syncStatus = "applying-update";
+      optimistic.confirmingCommandId = null;
+      optimistic.retryAttempt = 0;
+      optimistic.confirmDeadlineAt = 0;
+      recalculateOptimisticGame(gameId);
+      emitChange({ type: "optimistic_send_deferred", gameId, clientCommandId: command.clientCommandId });
       return;
     }
 
@@ -824,6 +840,9 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const getIdentityId = () => identityId;
   const getLastEventSeq = (gameId) => lastEventSeqByGameId.get(gameId) ?? 0;
   const getSyncMetrics = () => clone(syncMetrics);
+  const flushPendingCommands = (gameId) => {
+    void sendNextPendingCommand(gameId);
+  };
 
   return {
     loadGamesPage,
@@ -850,6 +869,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     applyLiveGameUpdate,
     getLastEventSeq,
     getSyncMetrics,
+    flushPendingCommands,
     listGames,
     getHomeGameCard,
     getGameViewModel,
