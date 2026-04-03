@@ -150,6 +150,222 @@ test("integration sync store keeps the optimistic game id stable across history 
   assert.equal(store.getGameViewModel(requestedBranchId)?.moves.length, branchGame.game.moves.length + 1);
 });
 
+test("integration sync store hydrates a pending history branch from shared storage before the server commit lands", async () => {
+  const env = createApiEnv();
+  const storage = createMemoryStorage();
+  let releaseBranch = null;
+  const branchReady = new Promise((resolve) => {
+    releaseBranch = resolve;
+  });
+
+  const fetcher = async (url, init = {}) => {
+    if (String(url) === "/api/shell/history/branch" && (init.method || "GET") === "POST") {
+      await branchReady;
+    }
+    return apiWorker.fetch(
+      new Request(toAbsoluteUrl(url), {
+        method: init.method || "GET",
+        headers: init.headers,
+        body: init.body,
+      }),
+      env,
+    );
+  };
+  const createSyncClient = () => ({
+    connectGame() {},
+    disconnectGame() {},
+    disconnectAll() {},
+    getDesiredGameIds: () => [],
+  });
+  const sourceStore = createSyncStore({ storage, fetcher, createSyncClient });
+
+  const sourceHandle = sourceStore.createGame({ selfPlayMode: false });
+  const sourceGame = await Promise.race([
+    sourceHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("source create commit timed out")), 2_000)),
+  ]);
+
+  const sourceAction = sourceGame.legalActions.find((entry) => entry.type !== "pass") ?? sourceGame.legalActions[0];
+  const sourceMoveHandle = await sourceStore.applyGameAction({
+    gameId: sourceGame.id,
+    state: sourceGame.currentSnapshot,
+    action: sourceAction,
+  });
+  await Promise.race([
+    sourceMoveHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("source move commit timed out")), 2_000)),
+  ]);
+
+  const sourceView = sourceStore.getGameViewModel(sourceGame.id);
+  const branchSeed = buildHistoryBranchSeedFromGame(sourceView, 0);
+  const branchHandle = sourceStore.launchHistoryBranch({
+    sourceGameId: sourceGame.id,
+    sourceMoveIndex: 0,
+    scenario: branchSeed.scenario,
+    initialSelectionAction: branchSeed.initialSelectionAction,
+    participantCopyMode: branchSeed.participantCopyMode,
+  });
+  const popupStore = createSyncStore({ storage, fetcher, createSyncClient });
+
+  const pendingBranch = await popupStore.loadGame(branchHandle.result.game.id, { openAsViewer: false });
+  assert.equal(pendingBranch.id, branchHandle.result.game.id);
+  assert.equal(pendingBranch.notifications[0], "History branch pending sync");
+  assert.equal(pendingBranch.initialSelectionAction?.type, branchSeed.initialSelectionAction?.type ?? null);
+
+  releaseBranch?.();
+  const committedBranch = await Promise.race([
+    branchHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("branch create commit timed out")), 2_000)),
+  ]);
+
+  assert.equal(committedBranch.game.id, branchHandle.result.game.id);
+});
+
+test("integration sync store lets an already-created second store discover a pending history branch", async () => {
+  const env = createApiEnv();
+  const storage = createMemoryStorage();
+  let releaseBranch = null;
+  const branchReady = new Promise((resolve) => {
+    releaseBranch = resolve;
+  });
+
+  const fetcher = async (url, init = {}) => {
+    if (String(url) === "/api/shell/history/branch" && (init.method || "GET") === "POST") {
+      await branchReady;
+    }
+    return apiWorker.fetch(
+      new Request(toAbsoluteUrl(url), {
+        method: init.method || "GET",
+        headers: init.headers,
+        body: init.body,
+      }),
+      env,
+    );
+  };
+  const createSyncClient = () => ({
+    connectGame() {},
+    disconnectGame() {},
+    disconnectAll() {},
+    getDesiredGameIds: () => [],
+  });
+  const popupStore = createSyncStore({ storage, fetcher, createSyncClient });
+  const sourceStore = createSyncStore({ storage, fetcher, createSyncClient });
+
+  const sourceHandle = sourceStore.createGame({ selfPlayMode: false });
+  const sourceGame = await Promise.race([
+    sourceHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("source create commit timed out")), 2_000)),
+  ]);
+
+  const sourceAction = sourceGame.legalActions.find((entry) => entry.type !== "pass") ?? sourceGame.legalActions[0];
+  const sourceMoveHandle = await sourceStore.applyGameAction({
+    gameId: sourceGame.id,
+    state: sourceGame.currentSnapshot,
+    action: sourceAction,
+  });
+  await Promise.race([
+    sourceMoveHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("source move commit timed out")), 2_000)),
+  ]);
+
+  const sourceView = sourceStore.getGameViewModel(sourceGame.id);
+  const branchSeed = buildHistoryBranchSeedFromGame(sourceView, 0);
+  const branchHandle = sourceStore.launchHistoryBranch({
+    sourceGameId: sourceGame.id,
+    sourceMoveIndex: 0,
+    scenario: branchSeed.scenario,
+    initialSelectionAction: branchSeed.initialSelectionAction,
+    participantCopyMode: branchSeed.participantCopyMode,
+  });
+
+  const pendingBranch = await popupStore.loadGame(branchHandle.result.game.id, { openAsViewer: false });
+  assert.equal(pendingBranch.id, branchHandle.result.game.id);
+  assert.equal(pendingBranch.notifications[0], "History branch pending sync");
+
+  releaseBranch?.();
+  const committedBranch = await Promise.race([
+    branchHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("branch create commit timed out")), 2_000)),
+  ]);
+
+  assert.equal(committedBranch.game.id, branchHandle.result.game.id);
+});
+
+test("integration sync store stops hydrating a shared-storage branch stub after the source branch creation fails", async () => {
+  const env = createApiEnv();
+  const storage = createMemoryStorage();
+  let releaseBranch = null;
+  const branchReady = new Promise((resolve) => {
+    releaseBranch = resolve;
+  });
+
+  const fetcher = async (url, init = {}) => {
+    if (String(url) === "/api/shell/history/branch" && (init.method || "GET") === "POST") {
+      await branchReady;
+      return new Response(JSON.stringify({ ok: false, error: "forced_branch_failure" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return apiWorker.fetch(
+      new Request(toAbsoluteUrl(url), {
+        method: init.method || "GET",
+        headers: init.headers,
+        body: init.body,
+      }),
+      env,
+    );
+  };
+  const createSyncClient = () => ({
+    connectGame() {},
+    disconnectGame() {},
+    disconnectAll() {},
+    getDesiredGameIds: () => [],
+  });
+  const sourceStore = createSyncStore({ storage, fetcher, createSyncClient });
+
+  const sourceHandle = sourceStore.createGame({ selfPlayMode: false });
+  const sourceGame = await Promise.race([
+    sourceHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("source create commit timed out")), 2_000)),
+  ]);
+
+  const sourceAction = sourceGame.legalActions.find((entry) => entry.type !== "pass") ?? sourceGame.legalActions[0];
+  const sourceMoveHandle = await sourceStore.applyGameAction({
+    gameId: sourceGame.id,
+    state: sourceGame.currentSnapshot,
+    action: sourceAction,
+  });
+  await Promise.race([
+    sourceMoveHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("source move commit timed out")), 2_000)),
+  ]);
+
+  const sourceView = sourceStore.getGameViewModel(sourceGame.id);
+  const branchSeed = buildHistoryBranchSeedFromGame(sourceView, 0);
+  const branchHandle = sourceStore.launchHistoryBranch({
+    sourceGameId: sourceGame.id,
+    sourceMoveIndex: 0,
+    scenario: branchSeed.scenario,
+    initialSelectionAction: branchSeed.initialSelectionAction,
+    participantCopyMode: branchSeed.participantCopyMode,
+  });
+  const popupStore = createSyncStore({ storage, fetcher, createSyncClient });
+
+  const pendingBranch = await popupStore.loadGame(branchHandle.result.game.id, { openAsViewer: false });
+  assert.equal(pendingBranch.id, branchHandle.result.game.id);
+
+  releaseBranch?.();
+  await assert.rejects(
+    Promise.race([
+      branchHandle.committed,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("branch failure timed out")), 2_000)),
+    ]),
+    /forced_branch_failure/,
+  );
+  await assert.rejects(popupStore.loadGame(branchHandle.result.game.id, { openAsViewer: false }));
+});
+
 test("integration sync store keeps a failed create-game stub locally hydratable with an alert banner", async () => {
   const env = createApiEnv();
   const storage = createMemoryStorage();

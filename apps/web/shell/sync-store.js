@@ -182,7 +182,7 @@ export const createSyncStore = ({
   createSyncClient = createLiveSyncClient,
 } = {}) => {
   const operationManager = createOperationManager();
-  const pendingLocalGames = readPendingLocalGames(storage);
+  let pendingLocalGames = readPendingLocalGames(storage);
   let activeGameId = null;
   const isCreatePendingForGame = (gameId) => {
     const handle = operationManager.getHandle(`create:${gameId}`);
@@ -198,13 +198,25 @@ export const createSyncStore = ({
     },
   });
 
+  const getStoredPendingLocalGame = (gameId) => {
+    pendingLocalGames = readPendingLocalGames(storage);
+    return gameId ? pendingLocalGames[gameId] ?? null : null;
+  };
+
   const savePendingLocalGame = (game) => {
-    pendingLocalGames[game.id] = clone(game);
+    pendingLocalGames = {
+      ...readPendingLocalGames(storage),
+      [game.id]: clone(game),
+    };
     writePendingLocalGames(storage, pendingLocalGames);
   };
 
   const clearPendingLocalGame = (gameId) => {
-    if (!gameId || !pendingLocalGames[gameId]) {
+    if (!gameId) {
+      return;
+    }
+    pendingLocalGames = readPendingLocalGames(storage);
+    if (!pendingLocalGames[gameId]) {
       return;
     }
     delete pendingLocalGames[gameId];
@@ -335,7 +347,7 @@ export const createSyncStore = ({
   return {
     ...transport,
     loadGame: async (gameId, options = {}) => {
-      const localPendingGame = transport.getGameViewModel(gameId) ?? pendingLocalGames[gameId] ?? null;
+      const localPendingGame = transport.getGameViewModel(gameId) ?? getStoredPendingLocalGame(gameId);
       const hasPendingOperation = operationManager.getPendingOperations(gameId).length > 0;
       const shouldHydrateLocalGame = Boolean(localPendingGame) && (hasPendingOperation || isFailedCreateStub(localPendingGame));
       if (shouldHydrateLocalGame) {
@@ -349,8 +361,13 @@ export const createSyncStore = ({
         clearPendingLocalGame(gameId);
         return loadedGame;
       } catch (error) {
-        if (shouldHydrateLocalGame) {
-          return transport.getGameViewModel(gameId) ?? localPendingGame;
+        const fallbackPendingGame = getStoredPendingLocalGame(gameId);
+        const fallbackGame = transport.getGameViewModel(gameId) ?? fallbackPendingGame;
+        if (fallbackGame && (fallbackPendingGame || hasPendingOperation || isFailedCreateStub(fallbackGame))) {
+          if (!transport.getGameViewModel(gameId) && fallbackPendingGame) {
+            transport.applyLiveGameUpdate({ game: fallbackPendingGame });
+          }
+          return transport.getGameViewModel(gameId) ?? fallbackPendingGame ?? fallbackGame;
         }
         throw error;
       }

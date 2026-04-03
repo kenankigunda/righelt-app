@@ -327,6 +327,195 @@ test("sync store launches history branches with immediate local stubs", async ()
   assert.equal(committed.game.notifications.at(-1), "History branch launched");
 });
 
+test("sync store falls back to a shared-storage branch stub when a second store loads before commit", async () => {
+  const storage = createMemoryStorage();
+  let releaseBranch = null;
+  const branchReady = new Promise((resolve) => {
+    releaseBranch = resolve;
+  });
+
+  const createBranchStore = () => {
+    const { transport, games } = createTransportHarness();
+    games.set("game-source", {
+      id: "game-source",
+      myRole: "Player 1",
+      player1: { identityId: "id-test", connected: true },
+      player2: null,
+      viewers: [],
+    });
+    return createSyncStore({
+      storage,
+      createTransportStore: () => ({
+        ...transport,
+        loadGame: async () => {
+          throw Object.assign(new Error("HTTP_404"), { code: "HTTP_404" });
+        },
+        launchHistoryBranch: async ({ gameId }) => {
+          await branchReady;
+          return {
+            game: {
+              ...(games.get(gameId) ?? {}),
+              id: gameId,
+              notifications: ["History branch launched"],
+            },
+          };
+        },
+      }),
+      createSyncClient: () => ({
+        connectGame() {},
+        disconnectGame() {},
+        disconnectAll() {},
+        getDesiredGameIds: () => [],
+      }),
+    });
+  };
+
+  const sourceStore = createBranchStore();
+  const branchHandle = sourceStore.launchHistoryBranch({
+    sourceGameId: "game-source",
+    sourceMoveIndex: 2,
+    scenario: {
+      resultingState: { sideToMove: "P1", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+    },
+    initialSelectionAction: { type: "move", actorId: "U1", from: { row: 1, col: 1 }, to: { row: 2, col: 1 } },
+    participantCopyMode: "copy_source_participants",
+  });
+
+  const popupStore = createBranchStore();
+  const pendingBranch = await popupStore.loadGame(branchHandle.result.game.id, { openAsViewer: false });
+  assert.equal(pendingBranch.id, branchHandle.result.game.id);
+  assert.equal(pendingBranch.notifications[0], "History branch pending sync");
+  assert.equal(pendingBranch.initialSelectionAction?.actorId, "U1");
+
+  releaseBranch?.();
+  const committed = await branchHandle.committed;
+  assert.equal(committed.game.id, branchHandle.result.game.id);
+});
+
+test("sync store lets an already-created second store discover a pending branch from shared storage", async () => {
+  const storage = createMemoryStorage();
+  let releaseBranch = null;
+  const branchReady = new Promise((resolve) => {
+    releaseBranch = resolve;
+  });
+
+  const createBranchStore = () => {
+    const { transport, games } = createTransportHarness();
+    games.set("game-source", {
+      id: "game-source",
+      myRole: "Player 1",
+      player1: { identityId: "id-test", connected: true },
+      player2: null,
+      viewers: [],
+    });
+    return createSyncStore({
+      storage,
+      createTransportStore: () => ({
+        ...transport,
+        loadGame: async () => {
+          throw Object.assign(new Error("HTTP_404"), { code: "HTTP_404" });
+        },
+        launchHistoryBranch: async ({ gameId }) => {
+          await branchReady;
+          return {
+            game: {
+              ...(games.get(gameId) ?? {}),
+              id: gameId,
+              notifications: ["History branch launched"],
+            },
+          };
+        },
+      }),
+      createSyncClient: () => ({
+        connectGame() {},
+        disconnectGame() {},
+        disconnectAll() {},
+        getDesiredGameIds: () => [],
+      }),
+    });
+  };
+
+  const popupStore = createBranchStore();
+  const sourceStore = createBranchStore();
+  const branchHandle = sourceStore.launchHistoryBranch({
+    sourceGameId: "game-source",
+    sourceMoveIndex: 2,
+    scenario: {
+      resultingState: { sideToMove: "P1", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+    },
+    initialSelectionAction: { type: "move", actorId: "U1", from: { row: 1, col: 1 }, to: { row: 2, col: 1 } },
+    participantCopyMode: "copy_source_participants",
+  });
+
+  const pendingBranch = await popupStore.loadGame(branchHandle.result.game.id, { openAsViewer: false });
+  assert.equal(pendingBranch.id, branchHandle.result.game.id);
+  assert.equal(pendingBranch.notifications[0], "History branch pending sync");
+
+  releaseBranch?.();
+  const committed = await branchHandle.committed;
+  assert.equal(committed.game.id, branchHandle.result.game.id);
+});
+
+test("sync store stops hydrating a shared-storage branch stub after the source branch creation fails", async () => {
+  const storage = createMemoryStorage();
+  let releaseBranch = null;
+  const branchReady = new Promise((resolve) => {
+    releaseBranch = resolve;
+  });
+
+  const createBranchStore = () => {
+    const { transport, games } = createTransportHarness();
+    games.set("game-source", {
+      id: "game-source",
+      myRole: "Player 1",
+      player1: { identityId: "id-test", connected: true },
+      player2: null,
+      viewers: [],
+    });
+    return createSyncStore({
+      storage,
+      createTransportStore: () => ({
+        ...transport,
+        loadGame: async () => {
+          throw Object.assign(new Error("HTTP_404"), { code: "HTTP_404" });
+        },
+        launchHistoryBranch: async () => {
+          await branchReady;
+          throw new Error("branch_failed");
+        },
+      }),
+      createSyncClient: () => ({
+        connectGame() {},
+        disconnectGame() {},
+        disconnectAll() {},
+        getDesiredGameIds: () => [],
+      }),
+    });
+  };
+
+  const sourceStore = createBranchStore();
+  const branchHandle = sourceStore.launchHistoryBranch({
+    sourceGameId: "game-source",
+    sourceMoveIndex: 2,
+    scenario: {
+      resultingState: { sideToMove: "P1", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+    },
+    initialSelectionAction: { type: "move", actorId: "U1", from: { row: 1, col: 1 }, to: { row: 2, col: 1 } },
+    participantCopyMode: "copy_source_participants",
+  });
+
+  const popupStore = createBranchStore();
+  const pendingBranch = await popupStore.loadGame(branchHandle.result.game.id, { openAsViewer: false });
+  assert.equal(pendingBranch.id, branchHandle.result.game.id);
+
+  releaseBranch?.();
+  await assert.rejects(branchHandle.committed, /branch_failed/);
+  await assert.rejects(
+    popupStore.loadGame(branchHandle.result.game.id, { openAsViewer: false }),
+    (error) => error?.code === "HTTP_404",
+  );
+});
+
 test("sync store defers move confirmation until optimistic game creation commits", async () => {
   const { transport, games } = createTransportHarness();
   let resolveCreate = null;
