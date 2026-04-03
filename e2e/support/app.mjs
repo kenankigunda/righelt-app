@@ -271,6 +271,18 @@ export const launchHistoryBranchFromMove = async (page, moveIndex = 0) => {
   };
 };
 
+export const openPendingHistoryBranchFromMove = async (page, moveIndex = 0) => {
+  await openHistoryMode(page, moveIndex);
+  const popupPromise = page.waitForEvent("popup");
+  await page.locator('[data-action="launch-history-branch"]').click();
+  const popup = await popupPromise;
+  await popup.waitForLoadState("domcontentloaded");
+  return {
+    popup,
+    gameId: await getCurrentGameIdFromPage(popup),
+  };
+};
+
 export const returnToLive = async (page) => {
   await expect(page.getByTestId("history-return-live")).toBeVisible();
   await page.getByTestId("history-return-live").click();
