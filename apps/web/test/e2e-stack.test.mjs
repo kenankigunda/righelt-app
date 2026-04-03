@@ -10,9 +10,9 @@ const playwrightConfigSource = readFileSync(path.join(repoRoot, "playwright.conf
 
 test("root scripts expose layered E2E commands", () => {
   assert.equal(packageJson.scripts["e2e:install"], "playwright install chromium");
-  assert.equal(packageJson.scripts["test:e2e:smoke"], "playwright test --grep @smoke");
-  assert.equal(packageJson.scripts["test:e2e"], "playwright test --grep-invert @smoke");
-  assert.equal(packageJson.scripts["test:e2e:headed"], "playwright test --grep-invert @smoke --headed");
+  assert.equal("test:e2e:smoke" in packageJson.scripts, false);
+  assert.equal(packageJson.scripts["test:e2e"], "playwright test");
+  assert.equal(packageJson.scripts["test:e2e:headed"], "playwright test --headed");
 });
 
 test("E2E stack launcher provisions isolated local state and split-stack readiness checks", () => {

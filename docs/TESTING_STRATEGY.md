@@ -24,14 +24,13 @@ This repo uses a strict three-layer testing model:
 
 ## CI Order
 
-CI runs in fast-fail order:
+CI runs in lane order:
 
 1. `typecheck`
 2. generated runtime freshness guard
 3. `unit`
 4. `integration`
-5. `E2E smoke`
-6. broad required `E2E`
+5. `E2E`
 
 ## Change Review Expectations
 
