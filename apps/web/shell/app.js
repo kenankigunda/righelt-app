@@ -1804,7 +1804,7 @@ const renderHomeGameSection = (sectionKey) => {
   const showFooterPaging = showPaging && section.visibleColumnCount === 1;
   const hasHeaderAction = sectionKey === "my";
   return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}">
-      <div class="home-games-section-header" data-home-header-has-action="${hasHeaderAction ? "true" : "false"}">
+      <div class="home-games-section-header" data-home-header-has-action="${hasHeaderAction ? "true" : "false"}" data-home-header-paging="${showHeaderPaging ? "true" : "false"}">
       <div class="home-games-section-heading">
         <h2>${escapeHtml(section.title)}</h2>
         <p class="small">${section.totalGames === 1 ? "1 game" : `${section.totalGames} games`}</p>
