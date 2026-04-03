@@ -298,8 +298,8 @@ test("history branch launch keeps the source tab stable while opening a new tab"
   assert.match(source, /action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "return-live"/s);
   assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*buildHistoryBranchSeedFromGame\(activeGame, moveIndex\);[\s\S]*transport\.launchHistoryBranch\(/s);
   assert.match(source, /window\.open\(`\$\{window\.location\.pathname\}\$\{window\.location\.search\}\$\{nextHash\}`,\s*"_blank",\s*"noopener"\);/);
-  assert.match(source, /const initialSelectionAction = !game\.inHistoryMode \? game\.initialSelectionAction \?\? null : null;/);
-  assert.match(source, /const hydratedSelectionAction = scenarioSelectionHydration\.selectionAction \?\? initialSelectionAction;/);
+  assert.match(source, /const initialSelectionHydration = resolveInitialSelectionHydration\(/);
+  assert.match(source, /const hydratedSelectionAction = scenarioSelectionHydration\.selectionAction \?\? initialSelectionHydration\.selectionAction;/);
   assert.match(source, /selectionAction: hydratedSelectionAction,/);
 });
 

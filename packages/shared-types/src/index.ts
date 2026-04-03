@@ -3,4 +3,5 @@ export * from "./events";
 export * from "./engine";
 export * from "./history";
 export * from "./http";
+export * from "./shell-live-turn.js";
 export * from "./validation";

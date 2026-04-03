@@ -4,24 +4,16 @@ import {
   resolveToStability,
   validateAction,
 } from "../generated/packages/game-engine/src/index.js";
+import {
+  finalizeResolvedTurn,
+  getControlSeatForTurn,
+  getSideForSeat,
+} from "../generated/packages/shared-types/src/shell-live-turn.js";
 
 const clone = (value) => structuredClone(value);
-const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
-const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
 const getSeatIdentity = (game, seat) => (seat === "Player 1" ? game.player1?.identityId ?? null : game.player2?.identityId ?? null);
-
-const getControlSeatForTurn = (state, turnOwnerSeat) => {
-  const continuation = state?.continuation;
-  if (!continuation) {
-    return turnOwnerSeat;
-  }
-  if (continuation.type === "push" && continuation.phase === "retreat") {
-    return getNextSeat(turnOwnerSeat);
-  }
-  return turnOwnerSeat;
-};
 
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "(?,?)");
 
@@ -66,22 +58,6 @@ const collectRemovedPieceNotices = (before, afterApply, afterStability, action) 
   return notices;
 };
 
-const settleResolvedTurnState = (state) =>
-  resolveToStability(
-    {
-      ...state,
-      sideToMove: state.sideToMove === "P1" ? "P2" : "P1",
-      turnIndex: (state.turnIndex ?? 0) + 1,
-      continuation: null,
-      pieces: state.pieces.map((piece) => ({
-        ...piece,
-        shifted: false,
-        pushed: false,
-      })),
-    },
-    { artifactMode: "full" },
-  );
-
 const completeTurn = (game, queuedAt) => {
   const activeTurn = getActiveTurn(game);
   if (!activeTurn) {
@@ -94,31 +70,14 @@ const completeTurn = (game, queuedAt) => {
   const endedAt = queuedAt;
   activeTurn.endedAt = endedAt;
   activeTurn.status = "complete";
-  const nextSeat = getNextSeat(activeTurn.playerSeat);
-  const nextTurn = {
-    index: activeTurn.index + 1,
-    startedAt: endedAt,
-    endedAt: null,
-    playerSeat: nextSeat,
-    status: "active",
-    moveIndexes: [],
-    lastMoveAt: null,
-  };
+  const { nextState, nextTurn } = finalizeResolvedTurn({
+    state: game.board.state,
+    activeTurn,
+    endedAt,
+    resolveToStability,
+  });
   game.turns.push(nextTurn);
-  game.board.state = resolveToStability(
-    {
-      ...game.board.state,
-      sideToMove: getSideForSeat(nextSeat),
-      turnIndex: nextTurn.index,
-      continuation: null,
-      pieces: game.board.state.pieces.map((piece) => ({
-        ...piece,
-        shifted: false,
-        pushed: false,
-      })),
-    },
-    { artifactMode: "full" },
-  );
+  game.board.state = nextState;
   game.updatedAt = endedAt;
   return { ok: true, nextTurn };
 };
@@ -196,9 +155,17 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
 
       const applied = applyAction(stable, command.action);
       const nextStable = resolveToStability(applied.state, { artifactMode: "full" });
-      const settledState = nextStable.continuation == null ? settleResolvedTurnState(nextStable) : nextStable;
       const removedPieces = collectRemovedPieceNotices(stable, applied.state, nextStable, command.action);
       const turnSettled = nextStable.continuation == null;
+      const finalizedTurn = turnSettled
+        ? finalizeResolvedTurn({
+            state: nextStable,
+            activeTurn,
+            endedAt: command.queuedAt,
+            resolveToStability,
+          })
+        : null;
+      const settledState = finalizedTurn?.nextState ?? nextStable;
       if (!turnSettled) {
         nextStable.sideToMove = getSideForSeat(getControlSeatForTurn(nextStable, activeTurn.playerSeat));
         nextStable.turnIndex = activeTurn.index;
@@ -212,15 +179,7 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
       if (turnSettled) {
         activeTurn.endedAt = command.queuedAt;
         activeTurn.status = "complete";
-        workingGame.turns.push({
-          index: settledState.turnIndex,
-          startedAt: command.queuedAt,
-          endedAt: null,
-          playerSeat: getSideToMoveSeat({ board: { state: settledState } }),
-          status: "active",
-          moveIndexes: [],
-          lastMoveAt: null,
-        });
+        workingGame.turns.push(finalizedTurn.nextTurn);
       }
 
       const pendingMove = buildPendingMoveEntry({

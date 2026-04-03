@@ -5,6 +5,7 @@ import { listLegalActions, validateAction } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import { createInitialState } from "../../game-engine/src/state";
 import { MAX_HISTORY } from "../../shared-types/src/history";
+import { finalizeResolvedTurn } from "../../shared-types/src/shell-live-turn.js";
 import { isUuidV4 } from "../../shared-types/src/validation";
 import type { Action, GameState } from "../../game-engine/src/types";
 
@@ -1125,33 +1126,16 @@ export const endServerTurn = (game: LiveGame) => {
   const endedAt = now();
   activeTurn.endedAt = endedAt;
   activeTurn.status = "complete";
-  const nextSeat = getNextSeat(activeTurn.playerSeat);
-  const nextTurn: TurnEntry = {
-    index: activeTurn.index + 1,
-    startedAt: endedAt,
-    endedAt: null,
-    playerSeat: nextSeat,
-    status: "active",
-    moveIndexes: [],
-    lastMoveAt: null,
-  };
+  const { nextState, nextTurn } = finalizeResolvedTurn({
+    state: game.board.state,
+    activeTurn,
+    endedAt,
+    resolveToStability,
+  });
   game.turns.push(nextTurn);
-  game.board.state = resolveToStability(
-    {
-      ...game.board.state,
-      sideToMove: getSideForSeat(nextSeat),
-      turnIndex: nextTurn.index,
-      continuation: null,
-      pieces: game.board.state.pieces.map((piece) => ({
-        ...piece,
-        shifted: false,
-        pushed: false,
-      })),
-    },
-    { artifactMode: "full" },
-  );
+  game.board.state = nextState;
   game.updatedAt = endedAt;
-  addNotification(game, `Turn ${activeTurn.index + 1} ended. ${nextSeat} to play`);
+  addNotification(game, `Turn ${activeTurn.index + 1} ended. ${nextTurn.playerSeat} to play`);
   return { ok: true as const, turn: clone(nextTurn) };
 };
 
