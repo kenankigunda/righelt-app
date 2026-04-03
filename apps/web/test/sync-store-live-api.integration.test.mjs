@@ -3,8 +3,7 @@ import assert from "node:assert/strict";
 
 import { createSyncStore } from "../shell/sync-store.js";
 import { buildHistoryBranchSeedFromGame } from "../shell/scenarios.js";
-import { handleApiRequest } from "../../../packages/api-handler/src/index.ts";
-import { __resetLiveGameStateForTests } from "../../../packages/api-handler/src/shell-live.ts";
+import apiWorker from "../../api/index.js";
 import { createFakeD1 } from "../../../packages/api-handler/test/support/fake-d1.mjs";
 import { createFakeGameRooms } from "../../../packages/api-handler/test/support/fake-game-rooms.mjs";
 
@@ -29,7 +28,6 @@ const createApiEnv = () => {
 const toAbsoluteUrl = (url) => (String(url).startsWith("http") ? String(url) : `https://example.test${String(url)}`);
 
 const createTrackedSyncStore = () => {
-  __resetLiveGameStateForTests();
   const env = createApiEnv();
   const storage = createMemoryStorage();
   const requests = [];
@@ -42,7 +40,7 @@ const createTrackedSyncStore = () => {
         method: init.method || "GET",
         body: parsedBody,
       });
-      return handleApiRequest(
+      return apiWorker.fetch(
         new Request(toAbsoluteUrl(url), {
           method: init.method || "GET",
           headers: init.headers,
