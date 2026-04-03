@@ -2,6 +2,14 @@ name = "righelt-api"
 main = "index.js"
 compatibility_date = "2026-03-12"
 
+[observability]
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+
 [[d1_databases]]
 binding = "DB"
 database_name = "righelt-db-dev"

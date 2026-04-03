@@ -28,6 +28,9 @@ test("Pages config binds API_SERVICE to righelt-api", () => {
 
 test("API worker config owns DB and GameRoomDO bindings", () => {
   assert.match(apiWranglerConfig, /^name = "righelt-api"$/m);
+  assert.match(apiWranglerConfig, /^\[observability\]$/m);
+  assert.match(apiWranglerConfig, /\[observability\.logs\][\s\S]*^enabled = true$[\s\S]*^invocation_logs = true$/m);
+  assert.match(apiWranglerConfig, /\[observability\.traces\][\s\S]*^enabled = false$/m);
   assert.match(apiWranglerConfig, /\[\[d1_databases\]\][\s\S]*^binding = "DB"$/m);
   assert.match(
     apiWranglerConfig,
