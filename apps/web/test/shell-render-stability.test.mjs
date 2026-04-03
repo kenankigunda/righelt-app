@@ -248,10 +248,14 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
 
 test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /transport\.subscribe\(\(change\) => \{\s*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);\s*\}\);/s);
+  assert.match(source, /const canHydrateRouteFromLocalState = \(route = currentRoute\) => \{/);
+  assert.match(source, /return Boolean\(transport\.getGameViewModel\(route\.gameId\)\);/);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
   assert.match(source, /return !getActiveApprovalRequest\(game\) && !getActiveRevertRequest\(game\) && !getActivePendingRevertRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
   assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*\}\);/s);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
+  assert.match(source, /const game = transport\.getGameViewModel\(gameId\);\s*if \(!routeHydrated && !game\) \{/s);
+  assert.match(source, /if \(canHydrateRouteFromLocalState\(currentRoute\)\) \{\s*routeHydrated = true;\s*syncLiveChannels\(\);\s*render\(\);\s*return;\s*\}/s);
 });
 
 test("scenario selector labels use titles without visible ids", () => {
@@ -297,6 +301,7 @@ test("debug flyout persists locally while scenario-created games close the scena
 test("history branch launch keeps the source tab stable while opening a new tab", () => {
   assert.match(source, /action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "return-live"/s);
   assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*buildHistoryBranchSeedFromGame\(activeGame, moveIndex\);[\s\S]*transport\.launchHistoryBranch\(/s);
+  assert.match(source, /const handle = transport\.launchHistoryBranch\(/);
   assert.match(source, /window\.open\(`\$\{window\.location\.pathname\}\$\{window\.location\.search\}\$\{nextHash\}`,\s*"_blank",\s*"noopener"\);/);
   assert.match(source, /const initialSelectionHydration = resolveInitialSelectionHydration\(/);
   assert.match(source, /const hydratedSelectionAction = scenarioSelectionHydration\.selectionAction \?\? initialSelectionHydration\.selectionAction;/);

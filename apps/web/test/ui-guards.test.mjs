@@ -92,6 +92,14 @@ test("game route live sync connection is not gated by participant role", () => {
   assert.match(syncStoreSource, /liveSync\.connectGame\(gameId\);/);
 });
 
+test("optimistic game creation and history branch actions bypass the blocking busy wrapper", () => {
+  assert.match(source, /if \(action === "create-game"\) \{\s*const handle = transport\.createGame\(\{ selfPlayMode: false \}\);/s);
+  assert.match(source, /navigateTo\(buildGameHash\(handle\.result\.id, null, getCurrentFlyoutState\(\)\)\);/);
+  assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*const handle = transport\.launchHistoryBranch\(/s);
+  assert.match(source, /const nextHash = buildGameHash\(handle\.result\.game\.id, null, \{/s);
+  assert.doesNotMatch(source, /if \(action === "create-game"\) \{[\s\S]*await transport\.createGame/s);
+});
+
 test("home uses per-section pagination and renders the smoke section only in debug mode", () => {
   assert.match(source, /const isPlayerRole = \(role\) => role === "Player 1" \|\| role === "Player 2";/);
   assert.match(source, /const HOME_SECTION_SERVER_PAGE_SIZE = 4;/);

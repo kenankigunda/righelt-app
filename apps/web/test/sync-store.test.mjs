@@ -11,6 +11,27 @@ const createMemoryStorage = () => {
   };
 };
 
+const createTransportHarness = () => {
+  const listeners = new Set();
+  const games = new Map();
+  return {
+    listeners,
+    games,
+    transport: {
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      getIdentityId: () => "id-test",
+      getLastEventSeq: () => 0,
+      getGameViewModel: (gameId) => games.get(gameId) ?? null,
+      applyLiveGameUpdate: ({ game }) => {
+        games.set(game.id, game);
+      },
+    },
+  };
+};
+
 test("sync store setActiveGameId manages live sync connections", () => {
   const calls = [];
   const desiredGameIds = [];
@@ -168,4 +189,96 @@ test("sync store wraps optimistic transport responses in operation handles", asy
   );
   await assert.rejects(endTurnHandle.committed, /Sync failed/);
   assert.equal(endTurnHandle.status, "failed");
+});
+
+test("sync store creates local game stubs immediately and commits them in the background", async () => {
+  const { transport, games } = createTransportHarness();
+  let createRequest = null;
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      ...transport,
+      createGame: async (payload) => {
+        createRequest = payload;
+        return {
+          ...(games.get(payload.gameId) ?? {}),
+          id: payload.gameId,
+          notifications: ["Game created"],
+        };
+      },
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const handle = store.createGame({ selfPlayMode: false });
+  assert.equal(handle.status, "pending");
+  assert.match(handle.result.id, /^game-[0-9a-f]+$/);
+  assert.equal(store.getGameViewModel(handle.result.id)?.id, handle.result.id);
+
+  const localLoad = await store.loadGame(handle.result.id, { openAsViewer: false });
+  assert.equal(localLoad.id, handle.result.id);
+  assert.equal(createRequest.gameId, handle.result.id);
+  assert.equal(createRequest.selfPlayMode, false);
+
+  const committed = await handle.committed;
+  assert.equal(committed.id, handle.result.id);
+  assert.equal(committed.notifications.at(-1), "Game created");
+});
+
+test("sync store launches history branches with immediate local stubs", async () => {
+  const { transport, games } = createTransportHarness();
+  games.set("game-source", {
+    id: "game-source",
+    myRole: "Player 2",
+    player1: null,
+    player2: { identityId: "id-test", connected: true },
+    viewers: [],
+  });
+  let branchRequest = null;
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      ...transport,
+      launchHistoryBranch: async (payload) => {
+        branchRequest = payload;
+        return {
+          game: {
+            ...(games.get(payload.gameId) ?? {}),
+            id: payload.gameId,
+            notifications: ["History branch launched"],
+          },
+        };
+      },
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const handle = store.launchHistoryBranch({
+    sourceGameId: "game-source",
+    sourceMoveIndex: 2,
+    scenario: {
+      resultingState: { sideToMove: "P2", turnIndex: 3, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+    },
+    initialSelectionAction: { type: "move", actorId: "U1", from: { row: 1, col: 1 }, to: { row: 2, col: 1 } },
+    participantCopyMode: "viewer_as_side_to_move",
+  });
+
+  assert.equal(handle.status, "pending");
+  assert.match(handle.result.game.id, /^game-[0-9a-f]+$/);
+  assert.equal(store.getGameViewModel(handle.result.game.id)?.initialSelectionAction?.actorId, "U1");
+  assert.equal(branchRequest.gameId, handle.result.game.id);
+
+  const committed = await handle.committed;
+  assert.equal(committed.game.id, handle.result.game.id);
+  assert.equal(committed.game.notifications.at(-1), "History branch launched");
 });

@@ -2353,11 +2353,10 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
 };
 
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
-  if (!routeHydrated) {
+  const game = transport.getGameViewModel(gameId);
+  if (!routeHydrated && !game) {
     return `<section class="panel"><h2>Loading game...</h2><p class="small">Synchronizing current game state.</p></section>`;
   }
-
-  const game = transport.getGameViewModel(gameId);
   if (!game) {
     return `<section class="panel"><h2>Loading game...</h2><p class="small">Fetching latest server state.</p></section>`;
   }
@@ -3144,6 +3143,13 @@ const syncRouteDataAndLiveChannels = async () => {
   syncLiveChannels();
 };
 
+const canHydrateRouteFromLocalState = (route = currentRoute) => {
+  if (route?.name !== "game" || !route?.gameId) {
+    return false;
+  }
+  return Boolean(transport.getGameViewModel(route.gameId));
+};
+
 const syncRouteDataPassive = async () => {
   if (busy) {
     return;
@@ -3277,6 +3283,12 @@ window.addEventListener("hashchange", () => {
     return;
   }
   syncFlyoutRenderOrder(currentRoute);
+  if (canHydrateRouteFromLocalState(currentRoute)) {
+    routeHydrated = true;
+    syncLiveChannels();
+    render();
+    return;
+  }
   if (isFlyoutOnlyRouteChange(previousRoute, currentRoute)) {
     if (currentRoute.name === "home" && previousRoute.debug !== currentRoute.debug) {
       routeHydrated = false;
@@ -3404,6 +3416,36 @@ appEl.addEventListener("click", async (event) => {
     }, 0);
   };
 
+  if (action === "create-game") {
+    const handle = transport.createGame({ selfPlayMode: false });
+    navigateTo(buildGameHash(handle.result.id, null, getCurrentFlyoutState()));
+    return;
+  }
+
+  if (action === "launch-history-branch") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
+    const activeGame = gameId ? transport.getGameViewModel(gameId) : null;
+    if (!activeGame || !Number.isFinite(moveIndex)) {
+      return;
+    }
+    const branchSeed = buildHistoryBranchSeedFromGame(activeGame, moveIndex);
+    const handle = transport.launchHistoryBranch({
+      sourceGameId: activeGame.id,
+      sourceMoveIndex: moveIndex,
+      scenario: branchSeed.scenario,
+      initialSelectionAction: branchSeed.initialSelectionAction,
+      participantCopyMode: branchSeed.participantCopyMode,
+    });
+    const nextHash = buildGameHash(handle.result.game.id, null, {
+      ...getCurrentFlyoutState(),
+      scenarios: false,
+    });
+    window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
+
   await withBusy(async () => {
     if (action === "toggle-header-menu") {
       headerMenuOpen = !headerMenuOpen;
@@ -3464,12 +3506,6 @@ appEl.addEventListener("click", async (event) => {
         return;
       }
       navigateTo(buildGameHash(currentRoute.gameId, currentRoute.inviteFromRole, getCurrentGameHashState(nextPanel)));
-      return;
-    }
-
-    if (action === "create-game") {
-      const game = await transport.createGame({ selfPlayMode: false });
-      navigateTo(buildGameHash(game.id, null, getCurrentFlyoutState()));
       return;
     }
 
@@ -3633,33 +3669,6 @@ appEl.addEventListener("click", async (event) => {
       await animateHistoryDeselection(actionEl);
       await transport.returnToLive({ gameId });
       await syncRouteDataAndLiveChannels();
-      return;
-    }
-
-    if (action === "launch-history-branch") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
-      const activeGame = gameId ? transport.getGameViewModel(gameId) : null;
-      if (!activeGame || !Number.isFinite(moveIndex)) {
-        return;
-      }
-      const branchSeed = buildHistoryBranchSeedFromGame(activeGame, moveIndex);
-      const result = await transport.launchHistoryBranch({
-        sourceGameId: activeGame.id,
-        sourceMoveIndex: moveIndex,
-        scenario: branchSeed.scenario,
-        initialSelectionAction: branchSeed.initialSelectionAction,
-        participantCopyMode: branchSeed.participantCopyMode,
-      });
-      if (!result?.game?.id) {
-        return;
-      }
-      const nextHash = buildGameHash(result.game.id, null, {
-        ...getCurrentFlyoutState(),
-        scenarios: false,
-      });
-      window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
-      render({ animatePanels: false, includeBoard: false });
       return;
     }
 
