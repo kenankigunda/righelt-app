@@ -8,6 +8,10 @@ import {
   listLegalActions,
   resolveToStability,
 } from "../generated/packages/game-engine/src/index.js";
+import {
+  finalizeResolvedTurn,
+  getControlSeatForTurn,
+} from "../generated/packages/shared-types/src/shell-live-turn.js";
 
 const IMPORT_SCENARIO_UUID = "e5e48740-f8e2-4b32-bfbf-c46ec98b5962";
 const HISTORY_BRANCH_UUID = "32bfe814-d353-4492-af25-4cb9f9a9dd75";
@@ -23,15 +27,6 @@ const createMemoryStorage = () => {
 
 const clone = (value) => structuredClone(value);
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
-const getNextSide = (side) => (side === "P1" ? "P2" : "P1");
-const getControlSeatForTurn = (state, turnOwnerSeat) => {
-  const continuation = state?.continuation;
-  if (continuation?.type === "push" && continuation.phase === "retreat") {
-    return getNextSeat(turnOwnerSeat);
-  }
-  return turnOwnerSeat;
-};
 
 const buildLiveGame = () => {
   const initial = resolveToStability(createInitialState(), { artifactMode: "full" });
@@ -80,6 +75,9 @@ const buildLiveGame = () => {
     currentSnapshot: clone(currentState),
     board: { state: clone(currentState) },
     currentTurn: clone(currentTurn),
+    turnOwnerSeat: "Player 1",
+    controlSeat: "Player 1",
+    control: "turn-owner",
     legalActions: listLegalActions(currentState),
     canRecordMove: true,
     canEndTurn: true,
@@ -93,14 +91,24 @@ const buildAcknowledgedGame = (baseGame, action) => {
   const applied = applyAction(stable, action);
   const nextState = resolveToStability(applied.state, { artifactMode: "full" });
   const turnSettled = nextState.continuation == null;
+  const nextMoveIndex = baseGame.moves.length;
+  const finalizedTurn = turnSettled
+    ? finalizeResolvedTurn({
+        state: nextState,
+        activeTurn: baseGame.currentTurn,
+        endedAt: "2026-02-26T00:00:02.000Z",
+        resolveToStability,
+      })
+    : null;
   if (turnSettled) {
-    nextState.sideToMove = getNextSide(stable.sideToMove);
-    nextState.turnIndex = (stable.turnIndex ?? 0) + 1;
-    nextState.continuation = null;
-    nextState.pieces = nextState.pieces.map((piece) => ({ ...piece, shifted: false, pushed: false }));
+    nextState.sideToMove = finalizedTurn.nextState.sideToMove;
+    nextState.turnIndex = finalizedTurn.nextState.turnIndex;
+    nextState.continuation = finalizedTurn.nextState.continuation;
+    nextState.pieces = finalizedTurn.nextState.pieces;
   } else {
-    nextState.sideToMove = "P1";
-    nextState.turnIndex = 0;
+    nextState.sideToMove =
+      (getControlSeatForTurn(nextState, baseGame.currentTurn.playerSeat) === "Player 1" ? "P1" : "P2");
+    nextState.turnIndex = baseGame.currentTurn.index;
   }
 
   return {
@@ -110,9 +118,9 @@ const buildAcknowledgedGame = (baseGame, action) => {
     moves: [
       ...clone(baseGame.moves),
       {
-        index: 1,
-        turnIndex: 0,
-        turnMoveIndex: 1,
+        index: nextMoveIndex,
+        turnIndex: baseGame.currentTurn.index,
+        turnMoveIndex: baseGame.currentTurn.moveIndexes.length,
         actorSide: stable.sideToMove,
         at: "2026-02-26T00:00:02.000Z",
         notation: "MOVE 2",
@@ -124,52 +132,123 @@ const buildAcknowledgedGame = (baseGame, action) => {
     turns: [
       turnSettled
         ? {
-            ...clone(baseGame.turns[0]),
+            ...clone(baseGame.currentTurn),
             endedAt: "2026-02-26T00:00:02.000Z",
             status: "complete",
-            moveIndexes: [0, 1],
+            moveIndexes: [...clone(baseGame.currentTurn.moveIndexes), nextMoveIndex],
             lastMoveAt: "2026-02-26T00:00:02.000Z",
           }
         : {
-            ...clone(baseGame.turns[0]),
-            moveIndexes: [0, 1],
+            ...clone(baseGame.currentTurn),
+            moveIndexes: [...clone(baseGame.currentTurn.moveIndexes), nextMoveIndex],
             lastMoveAt: "2026-02-26T00:00:02.000Z",
           },
       ...(turnSettled
-        ? [
-            {
-              index: 1,
-              startedAt: "2026-02-26T00:00:02.000Z",
-              endedAt: null,
-              playerSeat: "Player 2",
-              status: "active",
-              moveIndexes: [],
-              lastMoveAt: null,
-            },
-          ]
+        ? [clone(finalizedTurn.nextTurn)]
         : []),
     ],
     currentTurn: turnSettled
-      ? {
-          index: 1,
-          startedAt: "2026-02-26T00:00:02.000Z",
-          endedAt: null,
-          playerSeat: "Player 2",
-          status: "active",
-          moveIndexes: [],
-          lastMoveAt: null,
-        }
+      ? clone(finalizedTurn.nextTurn)
       : {
           ...clone(baseGame.currentTurn),
-          moveIndexes: [0, 1],
+          moveIndexes: [...clone(baseGame.currentTurn.moveIndexes), nextMoveIndex],
           lastMoveAt: "2026-02-26T00:00:02.000Z",
         },
     currentSnapshot: clone(nextState),
     board: { state: clone(nextState) },
+    turnOwnerSeat: turnSettled ? "Player 2" : baseGame.currentTurn.playerSeat,
+    controlSeat: getControlSeatForTurn(nextState, turnSettled ? "Player 2" : baseGame.currentTurn.playerSeat),
+    control: getControlSeatForTurn(nextState, turnSettled ? "Player 2" : baseGame.currentTurn.playerSeat) === (turnSettled ? "Player 2" : baseGame.currentTurn.playerSeat) ? "turn-owner" : "opponent",
     legalActions: listLegalActions(nextState),
     canRecordMove: !turnSettled,
     canEndTurn: !turnSettled,
   };
+};
+
+const assertOptimisticParity = ({ optimisticView, authoritativeGame }) => {
+  assert.deepEqual(optimisticView.currentSnapshot, authoritativeGame.currentSnapshot);
+  assert.deepEqual(
+    {
+      index: optimisticView.currentTurn?.index ?? null,
+      playerSeat: optimisticView.currentTurn?.playerSeat ?? null,
+      status: optimisticView.currentTurn?.status ?? null,
+      moveIndexes: optimisticView.currentTurn?.moveIndexes ?? null,
+    },
+    {
+      index: authoritativeGame.currentTurn?.index ?? null,
+      playerSeat: authoritativeGame.currentTurn?.playerSeat ?? null,
+      status: authoritativeGame.currentTurn?.status ?? null,
+      moveIndexes: authoritativeGame.currentTurn?.moveIndexes ?? null,
+    },
+  );
+  assert.deepEqual(optimisticView.legalActions, authoritativeGame.legalActions);
+  assert.equal(optimisticView.controlSeat, authoritativeGame.controlSeat);
+  assert.equal(optimisticView.control, authoritativeGame.control);
+  assert.equal(optimisticView.canRecordMove, authoritativeGame.canRecordMove);
+  assert.equal(optimisticView.canEndTurn, authoritativeGame.canEndTurn);
+};
+
+const buildOptimisticParityFetcher = ({ baseGame, acknowledgedGame }) => {
+  let resolveApply = null;
+  return {
+    fetcher: async (url, init = {}) => {
+      if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+        return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+      }
+      if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
+        return new Promise((resolve) => {
+          resolveApply = resolve;
+        });
+      }
+      return Response.json({ ok: true, games: [] });
+    },
+    acknowledge: (clientCommandId) =>
+      resolveApply?.(
+        Response.json({
+          ok: true,
+          accepted: true,
+          clientCommandId,
+          eventSeq: 2,
+          game: acknowledgedGame,
+        }),
+      ),
+  };
+};
+
+const buildBranchParityVariant = (variant) => {
+  const game = buildLiveGame();
+  game.id = `game-branch-${variant}`;
+  game.currentSnapshot.turnIndex = 4;
+  game.board.state.turnIndex = 4;
+  game.currentTurn.index = 4;
+  game.currentTurn.moveIndexes = [4];
+  game.turns = [
+    { index: 0, startedAt: "2026-02-26T00:00:00.000Z", endedAt: "2026-02-26T00:00:01.000Z", playerSeat: "Player 1", status: "complete", moveIndexes: [0], lastMoveAt: "2026-02-26T00:00:01.000Z" },
+    { index: 1, startedAt: "2026-02-26T00:00:01.000Z", endedAt: "2026-02-26T00:00:02.000Z", playerSeat: "Player 2", status: "complete", moveIndexes: [1], lastMoveAt: "2026-02-26T00:00:02.000Z" },
+    { index: 2, startedAt: "2026-02-26T00:00:02.000Z", endedAt: "2026-02-26T00:00:03.000Z", playerSeat: "Player 1", status: "complete", moveIndexes: [2], lastMoveAt: "2026-02-26T00:00:03.000Z" },
+    { index: 3, startedAt: "2026-02-26T00:00:03.000Z", endedAt: "2026-02-26T00:00:04.000Z", playerSeat: "Player 2", status: "complete", moveIndexes: [3], lastMoveAt: "2026-02-26T00:00:04.000Z" },
+    clone(game.currentTurn),
+  ];
+  game.moves = [
+    { ...clone(game.moves[0]), index: 0, turnIndex: 0, turnMoveIndex: 0, notation: "P1-M1" },
+    { ...clone(game.moves[0]), index: 1, turnIndex: 1, turnMoveIndex: 0, actorSide: "P2", notation: "P2-M1" },
+    { ...clone(game.moves[0]), index: 2, turnIndex: 2, turnMoveIndex: 0, notation: "P1-M2" },
+    { ...clone(game.moves[0]), index: 3, turnIndex: 3, turnMoveIndex: 0, actorSide: "P2", notation: "P2-M2" },
+    { ...clone(game.moves[0]), index: 4, turnIndex: 4, turnMoveIndex: 0, notation: "BRANCH READY", snapshot: clone(game.currentSnapshot) },
+  ];
+  if (variant === "tail-undos") {
+    game.moves.push(
+      { ...clone(game.moves[4]), index: 5, turnIndex: 4, turnMoveIndex: 1, notation: "UNDONE TAIL 1", undone: true },
+      { ...clone(game.moves[4]), index: 6, turnIndex: 5, turnMoveIndex: 0, notation: "UNDONE TAIL 2", undone: true },
+    );
+  }
+  if (variant === "divergent-history") {
+    game.moves.push(
+      { ...clone(game.moves[4]), index: 5, turnIndex: 4, turnMoveIndex: 1, notation: "ALT CONTINUE", actorSide: "P1", undone: true },
+      { ...clone(game.moves[4]), index: 6, turnIndex: 5, turnMoveIndex: 0, notation: "ALT REPLY", actorSide: "P2", undone: true },
+    );
+  }
+  return game;
 };
 
 const buildPushRetreatScenario = () => {
@@ -681,19 +760,8 @@ test("live transport store hands off to the next turn immediately for optimistic
   const nextAction =
     baseGame.legalActions.find((action) => buildAcknowledgedGame(baseGame, action).currentSnapshot.turnIndex === 1) ??
     baseGame.legalActions[0];
-  let resolveApply = null;
-
-  const fetcher = async (url, init = {}) => {
-    if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
-    }
-    if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
-      return new Promise((resolve) => {
-        resolveApply = resolve;
-      });
-    }
-    return Response.json({ ok: true, games: [] });
-  };
+  const acknowledgedGame = buildAcknowledgedGame(baseGame, nextAction);
+  const { fetcher, acknowledge } = buildOptimisticParityFetcher({ baseGame, acknowledgedGame });
 
   const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.31415 });
   await store.loadGame(baseGame.id);
@@ -703,28 +771,43 @@ test("live transport store hands off to the next turn immediately for optimistic
 
   const optimisticView = store.getGameViewModel(baseGame.id);
   assert.equal(optimisticView.pendingMoves.length, 1);
-  assert.equal(optimisticView.currentSnapshot.continuation, null);
-  assert.ok(optimisticView.currentSnapshot.turnIndex > baseGame.currentSnapshot.turnIndex);
-  assert.equal(optimisticView.currentTurn.moveIndexes.length, 0);
-  assert.equal(optimisticView.canRecordMove, false);
-  assert.equal(optimisticView.canEndTurn, false);
-  const acknowledgedGame = buildAcknowledgedGame(baseGame, nextAction);
+  assertOptimisticParity({ optimisticView, authoritativeGame: acknowledgedGame });
 
-  resolveApply?.(
-    Response.json({
-      ok: true,
-      accepted: true,
-      clientCommandId: pending.clientCommandId,
-      eventSeq: 2,
-      game: acknowledgedGame,
-    }),
-  );
+  acknowledge(pending.clientCommandId);
   await tick();
 
   const settledView = store.getGameViewModel(baseGame.id);
   assert.equal(settledView.pendingMoves.length, 0);
-  assert.equal(settledView.currentSnapshot.continuation, null);
+  assertOptimisticParity({ optimisticView: settledView, authoritativeGame: acknowledgedGame });
 });
+
+for (const variant of ["no-undos", "tail-undos", "divergent-history"]) {
+  test(`live transport store keeps optimistic turn-ending parity for history branch variant: ${variant}`, async () => {
+    const baseGame = buildBranchParityVariant(variant);
+    const nextAction =
+      baseGame.legalActions.find((action) => buildAcknowledgedGame(baseGame, action).currentSnapshot.turnIndex === 5) ??
+      baseGame.legalActions[0];
+    const acknowledgedGame = buildAcknowledgedGame(baseGame, nextAction);
+    const { fetcher, acknowledge } = buildOptimisticParityFetcher({ baseGame, acknowledgedGame });
+
+    const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.2718 });
+    await store.loadGame(baseGame.id);
+
+    const pending = await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+    assert.equal(pending.accepted, true);
+
+    const optimisticView = store.getGameViewModel(baseGame.id);
+    assert.equal(optimisticView.pendingMoves.length, 1);
+    assertOptimisticParity({ optimisticView, authoritativeGame: acknowledgedGame });
+
+    acknowledge(pending.clientCommandId);
+    await tick();
+
+    const settledView = store.getGameViewModel(baseGame.id);
+    assert.equal(settledView.pendingMoves.length, 0);
+    assertOptimisticParity({ optimisticView: settledView, authoritativeGame: acknowledgedGame });
+  });
+}
 
 test("live transport store hands retreat control to the defending player", async () => {
   const scenario = buildPushRetreatScenario();

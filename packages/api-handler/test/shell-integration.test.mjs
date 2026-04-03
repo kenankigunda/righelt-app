@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createShellIntegrationHarness } from "./support/shell-integration-harness.mjs";
 import { parseRouteFromHash } from "../../../apps/web/shell/routes.js";
+import { buildHistoryBranchSeedFromGame } from "../../../apps/web/shell/scenarios.js";
 import { createInitialState, resolveToStability } from "../../../apps/web/generated/packages/game-engine/src/index.js";
 
 test("shell integration: opaque invite token resolves and joins into canonical game route", async () => {
@@ -420,6 +421,108 @@ test("shell integration: revert request rejection clears pending state without u
   assert.equal(rejected.pendingRevertRequest, null);
   assert.equal(rejected.moves.some((move) => move.undone === true), false);
 });
+
+const assertParityFields = (optimisticView, authoritativeView) => {
+  assert.deepEqual(optimisticView.currentSnapshot, authoritativeView.currentSnapshot);
+  assert.deepEqual(
+    {
+      index: optimisticView.currentTurn?.index ?? null,
+      playerSeat: optimisticView.currentTurn?.playerSeat ?? null,
+      status: optimisticView.currentTurn?.status ?? null,
+      moveIndexes: optimisticView.currentTurn?.moveIndexes ?? null,
+    },
+    {
+      index: authoritativeView.currentTurn?.index ?? null,
+      playerSeat: authoritativeView.currentTurn?.playerSeat ?? null,
+      status: authoritativeView.currentTurn?.status ?? null,
+      moveIndexes: authoritativeView.currentTurn?.moveIndexes ?? null,
+    },
+  );
+  assert.deepEqual(optimisticView.legalActions, authoritativeView.legalActions);
+  assert.equal(optimisticView.controlSeat, authoritativeView.controlSeat);
+  assert.equal(optimisticView.control, authoritativeView.control);
+  assert.equal(optimisticView.canRecordMove, authoritativeView.canRecordMove);
+  assert.equal(optimisticView.canEndTurn, authoritativeView.canEndTurn);
+};
+
+for (const variant of ["no-undos", "tail-undos", "divergent-history"]) {
+  test(`shell integration: history branch optimistic parity holds for ${variant}`, async () => {
+    const harness = createShellIntegrationHarness();
+    const owner = harness.createClient(`id-owner-shell-branch-${variant}`);
+    const guest = harness.createClient(`id-guest-shell-branch-${variant}`);
+
+    const created = await owner.store.createGame({ selfPlayMode: false });
+    await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
+
+    await owner.store.addMove({ gameId: created.id, notation: "P1-M1" });
+    await guest.store.addMove({ gameId: created.id, notation: "P2-M1" });
+    await owner.store.addMove({ gameId: created.id, notation: "P1-M2" });
+
+    let sourceView = await harness.refreshGame(owner, created.id);
+    let branchMoveIndex = 2;
+
+    if (variant !== "no-undos") {
+      const revertTargetMoveId = sourceView.moves[1].moveId;
+      await owner.store.requestRevertToMove({ gameId: created.id, targetMoveId: revertTargetMoveId });
+      const guestAfterRequest = await harness.waitForGame(
+        guest,
+        created.id,
+        (game) => game.pendingRevertRequest?.targetMoveId === revertTargetMoveId,
+      );
+      await guest.store.approveRevertRequest({
+        gameId: created.id,
+        requestId: guestAfterRequest.pendingRevertRequest.requestId,
+      });
+      sourceView = await harness.refreshGame(owner, created.id);
+      branchMoveIndex = 0;
+    }
+
+    if (variant === "divergent-history") {
+      const firstContinuationClient = sourceView.canRecordMove ? owner : guest;
+      const secondContinuationClient = firstContinuationClient === owner ? guest : owner;
+      await firstContinuationClient.store.addMove({ gameId: created.id, notation: "ALT-1" });
+      await secondContinuationClient.store.addMove({ gameId: created.id, notation: "ALT-2" });
+      sourceView = await harness.refreshGame(owner, created.id);
+      branchMoveIndex = sourceView.moves.findLastIndex((move) => move.undone !== true);
+    }
+
+    const branchSeed = buildHistoryBranchSeedFromGame(sourceView, branchMoveIndex);
+    const branch = await owner.store.launchHistoryBranch({
+      sourceGameId: created.id,
+      sourceMoveIndex: branchMoveIndex,
+      scenario: branchSeed.scenario,
+      initialSelectionAction: branchSeed.initialSelectionAction,
+      participantCopyMode: branchSeed.participantCopyMode,
+    });
+
+    const branchAction =
+      branch.game.legalActions.find(
+        (action) =>
+          action.type === branch.game.initialSelectionAction?.type &&
+          action.actorId === branch.game.initialSelectionAction?.actorId &&
+          action.from?.row === branch.game.initialSelectionAction?.from?.row &&
+          action.from?.col === branch.game.initialSelectionAction?.from?.col &&
+          action.to?.row === branch.game.initialSelectionAction?.to?.row &&
+          action.to?.col === branch.game.initialSelectionAction?.to?.col,
+      ) ?? branch.game.legalActions[0];
+
+    const optimistic = await owner.store.applyGameAction({
+      gameId: branch.game.id,
+      state: branch.game.currentSnapshot,
+      action: branchAction,
+    });
+    assert.equal(optimistic.accepted, true);
+
+    const optimisticView = owner.store.getGameViewModel(branch.game.id);
+    const authoritativeView = await harness.waitForGame(
+      owner,
+      branch.game.id,
+      (game) => game.pendingCommandCount === 0 && game.moves.length === branch.game.moves.length + 1,
+    );
+
+    assertParityFields(optimisticView, authoritativeView);
+  });
+}
 
 test("shell integration: requester can rescind a pending revert request through the transport store", async () => {
   const harness = createShellIntegrationHarness();

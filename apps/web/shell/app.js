@@ -16,6 +16,7 @@ import {
   loadScenarioCatalog,
   tryLocalScenarioWrite,
 } from "./scenarios.js";
+import { resolveInitialSelectionHydration } from "./selection-hydration.js";
 import { shouldResetBoardSelection, shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import {
   DEFAULT_GAME_PANEL,
@@ -89,6 +90,7 @@ let mountedLegalActionsKey = null;
 let mountedOverlayKey = null;
 let mountedSyncStatusKey = null;
 let boardRuntime = null;
+const consumedInitialSelectionActionKeyByGameId = new Map();
 let busy = false;
 let wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
 let lastWsStatusKey = toStableKey(wsStatus);
@@ -2627,13 +2629,19 @@ const mountBoardForGame = (game) => {
   const snapshot = game.currentSnapshot ?? null;
   const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
   const historySelectionAction = game.inHistoryMode ? game.historySelectionAction ?? null : null;
-  const initialSelectionAction = !game.inHistoryMode ? game.initialSelectionAction ?? null : null;
   const overlayMode = game.inHistoryMode ? "recorded-action" : "interactive";
   const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode ? game.legalActions : [];
   const scenarioSelectionHydration = resolvePendingScenarioHydration({
     game,
     snapshot,
     legalActions: effectiveLegalActions,
+  });
+  const initialSelectionHydration = resolveInitialSelectionHydration({
+    gameId: game.id,
+    initialSelectionAction: !game.inHistoryMode ? game.initialSelectionAction ?? null : null,
+    legalActions: effectiveLegalActions,
+    consumedActionKey: consumedInitialSelectionActionKeyByGameId.get(game.id) ?? null,
+    toStableKey,
   });
   if (!snapshot) {
     return;
@@ -2642,7 +2650,7 @@ const mountBoardForGame = (game) => {
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
   const forceClickTargetSelection = currentRoute.scenarios;
-  const hydratedSelectionAction = scenarioSelectionHydration.selectionAction ?? initialSelectionAction;
+  const hydratedSelectionAction = scenarioSelectionHydration.selectionAction ?? initialSelectionHydration.selectionAction;
   const overlayKey = toStableKey({
     overlayMode,
     recordedAction: historySelectionAction,
@@ -2685,6 +2693,9 @@ const mountBoardForGame = (game) => {
     });
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
     boardRuntime.syncInteractionCapabilities?.();
+    if (initialSelectionHydration.shouldConsume) {
+      consumedInitialSelectionActionKeyByGameId.set(game.id, initialSelectionHydration.nextConsumedActionKey);
+    }
     void boardRuntime.loadSnapshot(snapshot, {
       legalActions: effectiveLegalActions,
       resetSelection: true,
@@ -2741,6 +2752,9 @@ const mountBoardForGame = (game) => {
   mountedLegalActionsKey = legalActionsKey;
   mountedOverlayKey = overlayKey;
   mountedSyncStatusKey = syncStatusKey;
+  if (initialSelectionHydration.shouldConsume) {
+    consumedInitialSelectionActionKeyByGameId.set(game.id, initialSelectionHydration.nextConsumedActionKey);
+  }
   void boardRuntime.loadSnapshot(snapshot, {
     legalActions: effectiveLegalActions,
     resetSelection,
