@@ -52,8 +52,9 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.equal(scripts["test:web:unit"], "node apps/web/test/run-web-tests.mjs --layer unit");
   assert.equal(scripts["test:web:integration"], "node apps/web/test/run-web-tests.mjs --layer integration");
   assert.equal(scripts["e2e:install"], "playwright install chromium");
-  assert.equal(scripts["test:e2e:smoke"], "playwright test --grep @smoke");
-  assert.equal(scripts["test:e2e"], "playwright test --grep-invert @smoke");
+  assert.equal("test:e2e:smoke" in scripts, false);
+  assert.equal(scripts["test:e2e"], "playwright test");
+  assert.equal(scripts["test:e2e:headed"], "playwright test --headed");
 });
 
 test("root package scripts expose only db-prefixed local migration commands", () => {

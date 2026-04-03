@@ -27,8 +27,7 @@ test("CI uses split job-level checks and Node 22", () => {
   assert.match(workflow, /api-handler-integration:\s+name: API handler integration/s);
   assert.match(workflow, /api-worker-integration:\s+name: API worker integration/s);
   assert.match(workflow, /web-integration:\s+name: Web integration/s);
-  assert.match(workflow, /e2e-smoke:\s+name: E2E smoke/s);
-  assert.match(workflow, /e2e-workflows:\s+name: E2E workflows/s);
+  assert.match(workflow, /e2e:\s+name: E2E/s);
   assert.match(workflow, /test-results:\s+name: Test results/s);
   assert.match(workflow, /node-version: "22"/);
   assert.match(workflow, /uses: actions\/checkout@v5/);
@@ -42,7 +41,7 @@ test("CI uses split job-level checks and Node 22", () => {
   assert.doesNotMatch(workflow, /cache-dependency-path: pnpm-lock\.yaml/);
 });
 
-test("CI allows non-E2E checks to run in parallel and only gates workflow E2E behind smoke", () => {
+test("CI allows non-E2E checks to run in parallel and keeps E2E as a single independent lane", () => {
   const engineIntegration = jobBlock("engine-integration", "api-handler-integration");
   assert.doesNotMatch(engineIntegration, /\n\s+needs:\n/);
 
@@ -52,20 +51,17 @@ test("CI allows non-E2E checks to run in parallel and only gates workflow E2E be
   const apiWorkerIntegration = jobBlock("api-worker-integration", "web-integration");
   assert.doesNotMatch(apiWorkerIntegration, /\n\s+needs:\n/);
 
-  const webIntegration = jobBlock("web-integration", "e2e-smoke");
+  const webIntegration = jobBlock("web-integration", "e2e");
   assert.doesNotMatch(webIntegration, /\n\s+needs:\n/);
 
-  const smoke = jobBlock("e2e-smoke", "e2e-workflows");
-  assert.doesNotMatch(smoke, /\n\s+needs:\n/);
-
-  const workflows = jobBlock("e2e-workflows", "test-results");
-  assert.match(workflows, /needs:\n\s+- e2e-smoke/s);
+  const e2e = jobBlock("e2e", "test-results");
+  assert.doesNotMatch(e2e, /\n\s+needs:\n/);
 
   const results = jobBlock("test-results");
   assert.match(results, /if: \$\{\{ always\(\) \}\}/);
   assert.match(
     results,
-    /needs:\n\s+- typecheck\n\s+- generated-web-runtime\n\s+- engine-unit\n\s+- web-unit\n\s+- engine-integration\n\s+- api-handler-integration\n\s+- api-worker-integration\n\s+- web-integration\n\s+- e2e-smoke\n\s+- e2e-workflows/s,
+    /needs:\n\s+- typecheck\n\s+- generated-web-runtime\n\s+- engine-unit\n\s+- web-unit\n\s+- engine-integration\n\s+- api-handler-integration\n\s+- api-worker-integration\n\s+- web-integration\n\s+- e2e/s,
   );
 });
 
@@ -94,8 +90,7 @@ test("CI emits JUnit from each lane and publishes a consolidated test-results ch
     workflow,
     /pnpm test:web:integration -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results\/web-integration\/results\.xml/,
   );
-  assert.match(workflow, /PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results\/e2e-smoke\/results\.xml/);
-  assert.match(workflow, /PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results\/e2e-workflows\/results\.xml/);
+  assert.match(workflow, /PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results\/e2e\/results\.xml/);
   assert.match(workflow, /uses: actions\/download-artifact@v6/);
   assert.match(workflow, /pattern: junit-\*/);
   assert.doesNotMatch(workflow, /merge-multiple: true/);
@@ -111,8 +106,6 @@ test("CI keeps JUnit and Playwright debug artifacts available after lane executi
   assert.match(workflow, /name: junit-api-handler-integration/);
   assert.match(workflow, /name: junit-api-worker-integration/);
   assert.match(workflow, /name: junit-web-integration/);
-  assert.match(workflow, /name: junit-e2e-smoke/);
-  assert.match(workflow, /name: junit-e2e-workflows/);
-  assert.match(workflow, /name: playwright-e2e-smoke-debug/);
-  assert.match(workflow, /name: playwright-e2e-workflows-debug/);
+  assert.match(workflow, /name: junit-e2e/);
+  assert.match(workflow, /name: playwright-e2e-debug/);
 });

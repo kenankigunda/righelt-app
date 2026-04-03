@@ -267,8 +267,8 @@ jobs:
           path: test-results/web-integration/results.xml
           if-no-files-found: ignore
 
-  e2e-smoke:
-    name: E2E smoke
+  e2e:
+    name: E2E
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -288,71 +288,26 @@ jobs:
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: E2E smoke tests
+      - name: E2E tests
         env:
-          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/e2e-smoke/results.xml
-          PLAYWRIGHT_OUTPUT_DIR: test-results/e2e-smoke/artifacts
-        run: pnpm test:e2e:smoke
-
-      - name: Upload E2E smoke JUnit
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: junit-e2e-smoke
-          path: test-results/e2e-smoke/results.xml
-          if-no-files-found: ignore
-
-      - name: Upload E2E smoke Playwright debug artifacts
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: playwright-e2e-smoke-debug
-          path: test-results/e2e-smoke/artifacts
-          if-no-files-found: ignore
-
-  e2e-workflows:
-    name: E2E workflows
-    runs-on: ubuntu-latest
-    needs:
-      - e2e-smoke
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm via Corepack
-        run: corepack enable && corepack prepare pnpm@9 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
-
-      - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: E2E workflow tests
-        env:
-          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/e2e-workflows/results.xml
-          PLAYWRIGHT_OUTPUT_DIR: test-results/e2e-workflows/artifacts
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/e2e/results.xml
+          PLAYWRIGHT_OUTPUT_DIR: test-results/e2e/artifacts
         run: pnpm test:e2e
 
-      - name: Upload E2E workflows JUnit
+      - name: Upload E2E JUnit
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: junit-e2e-workflows
-          path: test-results/e2e-workflows/results.xml
+          name: junit-e2e
+          path: test-results/e2e/results.xml
           if-no-files-found: ignore
 
-      - name: Upload E2E workflow Playwright debug artifacts
+      - name: Upload E2E Playwright debug artifacts
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: playwright-e2e-workflows-debug
-          path: test-results/e2e-workflows/artifacts
+          name: playwright-e2e-debug
+          path: test-results/e2e/artifacts
           if-no-files-found: ignore
 
   test-results:
@@ -368,8 +323,7 @@ jobs:
       - api-handler-integration
       - api-worker-integration
       - web-integration
-      - e2e-smoke
-      - e2e-workflows
+      - e2e
     steps:
       - name: Checkout
         uses: actions/checkout@v5
