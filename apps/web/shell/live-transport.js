@@ -172,7 +172,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
     if (!authoritativeGame) {
       optimistic.derivedGame = null;
-      homeGameCardById.delete(gameId);
       return { ok: true, game: null };
     }
 

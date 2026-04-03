@@ -175,6 +175,46 @@ test("live transport: paged home sections include debug timings only when reques
   assert.equal(typeof debugBody.timing.totalMs, "number");
 });
 
+test("live transport: paged home sections log structured timings even when no games are returned", async () => {
+  const originalInfo = console.info;
+  const infoCalls = [];
+  console.info = (...args) => {
+    infoCalls.push(args);
+  };
+
+  try {
+    const nonDebugList = await handleApiRequest(req("/api/shell/games?identityId=id-owner-empty&section=my&page=0&pageSize=4&debug=0"), env);
+    const nonDebugBody = await nonDebugList.json();
+    assert.equal(nonDebugBody.totalGames, 0);
+    assert.equal("timing" in nonDebugBody, false);
+
+    const debugList = await handleApiRequest(req("/api/shell/games?identityId=id-owner-empty&section=my&page=0&pageSize=4&debug=1"), env);
+    const debugBody = await debugList.json();
+    assert.equal(debugBody.totalGames, 0);
+    assert.equal(typeof debugBody.timing.totalMs, "number");
+
+    const parsedEntries = infoCalls
+      .map((args) => args[0])
+      .filter((value) => typeof value === "string")
+      .map((value) => {
+        try {
+          return JSON.parse(value);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    const timingEntries = parsedEntries.filter((entry) => entry.event === "shell_games_list_timing");
+    assert.equal(timingEntries.length >= 2, true);
+    assert.equal(timingEntries.every((entry) => entry.section === "my"), true);
+    assert.equal(timingEntries.every((entry) => entry.resultCount === 0), true);
+    assert.equal(timingEntries.every((entry) => typeof entry.totalMs === "number"), true);
+  } finally {
+    console.info = originalInfo;
+  }
+});
+
 test("live transport: paged home sections isolate smoke games into debug-only smoke section", async () => {
   const mine = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", selfPlayMode: false }),

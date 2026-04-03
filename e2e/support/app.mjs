@@ -65,6 +65,33 @@ export const createGameFromHome = async (page) => {
   };
 };
 
+export const createGamesViaApi = async (page, count) => {
+  await page.goto("/");
+  await expect(page.getByTestId("home-create-game")).toBeVisible();
+
+  return page.evaluate(async (gameCount) => {
+    const identityId = window.localStorage.getItem("righelt.identity.id.v1");
+    if (!identityId) {
+      throw new Error("Expected identity id in local storage before creating games");
+    }
+
+    const createdGameIds = [];
+    for (let index = 0; index < gameCount; index += 1) {
+      const response = await fetch("/api/shell/games", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ identityId, selfPlayMode: false }),
+      });
+      const body = await response.json();
+      if (!response.ok || !body?.game?.id) {
+        throw new Error(`Game creation failed: ${response.status} ${JSON.stringify(body)}`);
+      }
+      createdGameIds.push(body.game.id);
+    }
+    return createdGameIds;
+  }, count);
+};
+
 export const importScenarioGame = async (page, scenario, baseURL) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();

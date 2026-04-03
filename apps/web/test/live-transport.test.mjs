@@ -441,6 +441,8 @@ test("live transport store posts scenario imports through the shell scenarios en
   });
 
   assert.equal(result.game.id, "game-apply-here");
+  assert.equal(store.getHomeGameCard("game-apply-here")?.id, "game-apply-here");
+  assert.equal(store.getHomeGameCard("game-apply-here")?.previewSnapshot?.sideToMove, "P1");
 });
 
 test("live transport store posts history branch launches through the shell history endpoint", async () => {
@@ -763,6 +765,60 @@ test("live transport store applies optimistic moves immediately and clears pendi
   const settledHomeCard = store.getHomeGameCard(baseGame.id);
   assert.equal(settledHomeCard.syncStatus, "ready");
   assert.equal(settledHomeCard.moveCount, 2);
+});
+
+test("live transport store refreshes a home card from an authoritative remote update without reopening the game", async () => {
+  const storage = createMemoryStorage();
+  storage.setItem(IDENTITY_KEY, "id-a");
+  const baseGame = buildLiveGame();
+  const initialCard = {
+    id: baseGame.id,
+    createdAt: baseGame.createdAt,
+    lastMoveAt: baseGame.lastMoveAt,
+    updatedAt: baseGame.updatedAt,
+    moveCount: 1,
+    previewSnapshot: clone(baseGame.currentSnapshot),
+    myRole: "Player 1",
+    canJoinAsPlayer: false,
+    player1: clone(baseGame.player1),
+    player2: clone(baseGame.player2),
+  };
+  const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
+  const acknowledgedGame = buildAcknowledgedGame(baseGame, nextAction);
+
+  const store = createLiveTransportStore({
+    storage,
+    fetcher: async (url) => {
+      if (String(url).startsWith("/api/shell/games?")) {
+        return Response.json({
+          ok: true,
+          section: "my",
+          page: 0,
+          pageSize: 4,
+          totalGames: 1,
+          totalPages: 1,
+          games: [initialCard],
+        });
+      }
+      return Response.json({ ok: true, games: [] });
+    },
+    random: () => 0.12345,
+  });
+
+  await store.loadGamesPage({ section: "my", page: 0, pageSize: 4 });
+  assert.equal(store.getGameViewModel(baseGame.id), null);
+  assert.equal(store.getHomeGameCard(baseGame.id)?.moveCount, 1);
+  assert.equal(store.getHomeGameCard(baseGame.id)?.previewSnapshot?.sideToMove, "P1");
+
+  store.applyLiveGameUpdate({
+    game: acknowledgedGame,
+    eventSeq: 2,
+  });
+
+  const updatedHomeCard = store.getHomeGameCard(baseGame.id);
+  assert.equal(updatedHomeCard?.moveCount, 2);
+  assert.equal(updatedHomeCard?.previewSnapshot?.sideToMove, acknowledgedGame.currentSnapshot.sideToMove);
+  assert.equal(updatedHomeCard?.previewSnapshot?.turnIndex, acknowledgedGame.currentSnapshot.turnIndex);
 });
 
 test("live transport store hands off to the next turn immediately for optimistic turn-ending actions", async () => {
@@ -1333,6 +1389,9 @@ test("live transport store posts revert lifecycle endpoints", async () => {
   const store = createLiveTransportStore({ storage, fetcher, random: () => 0.1 });
   await store.requestRevertToMove({ gameId: "game-revert", targetMoveId: "move-1" });
   await store.approveRevertRequest({ gameId: "game-revert", requestId: "req-1" });
+  const approvedHomeCard = store.getHomeGameCard("game-revert");
+  assert.equal(approvedHomeCard?.moveCount, 1);
+  assert.equal(approvedHomeCard?.previewSnapshot?.sideToMove, "P1");
   await store.rejectRevertRequest({ gameId: "game-revert", requestId: "req-1" });
   await store.rescindRevertRequest({ gameId: "game-revert", requestId: "req-1" });
 
