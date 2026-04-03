@@ -230,6 +230,50 @@ test("sync store creates local game stubs immediately and commits them in the ba
   assert.equal(committed.notifications.at(-1), "Game created");
 });
 
+test("sync store keeps a failed create-game stub mounted with a rollback banner", async () => {
+  const { transport } = createTransportHarness();
+  const desiredGameIds = [];
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      ...transport,
+      createGame: async () => {
+        throw new Error("server_rejected_create");
+      },
+    }),
+    createSyncClient: () => ({
+      connectGame: (gameId) => {
+        desiredGameIds.push(gameId);
+      },
+      disconnectGame: (gameId) => {
+        const index = desiredGameIds.indexOf(gameId);
+        if (index >= 0) {
+          desiredGameIds.splice(index, 1);
+        }
+      },
+      disconnectAll: () => {
+        desiredGameIds.length = 0;
+      },
+      getDesiredGameIds: () => [...desiredGameIds],
+    }),
+  });
+
+  const handle = store.createGame({ selfPlayMode: false });
+  store.setActiveGameId(handle.result.id);
+  await assert.rejects(handle.committed, /server_rejected_create/);
+
+  const failedGame = store.getGameViewModel(handle.result.id);
+  assert.equal(handle.status, "failed");
+  assert.equal(
+    failedGame.rollbackNotice,
+    "Game creation failed. The server could not create this game. Return home and try again.",
+  );
+  assert.equal(failedGame.notifications[0], "Game creation failed");
+  assert.equal(failedGame.id, handle.result.id);
+  assert.equal((await store.loadGame(handle.result.id)).id, handle.result.id);
+  assert.deepEqual(desiredGameIds, []);
+});
+
 test("sync store launches history branches with immediate local stubs", async () => {
   const { transport, games } = createTransportHarness();
   games.set("game-source", {

@@ -149,3 +149,72 @@ test("integration sync store keeps the optimistic game id stable across history 
   assert.equal(committedBranchMove.accepted, true);
   assert.equal(store.getGameViewModel(requestedBranchId)?.moves.length, branchGame.game.moves.length + 1);
 });
+
+test("integration sync store keeps a failed create-game stub locally hydratable with an alert banner", async () => {
+  const env = createApiEnv();
+  const storage = createMemoryStorage();
+  const syncClientCalls = [];
+  const desiredGameIds = [];
+  const store = createSyncStore({
+    storage,
+    fetcher: async (url, init = {}) => {
+      if (String(url) === "/api/shell/games" && (init.method || "GET") === "POST") {
+        return new Response(JSON.stringify({ ok: false, error: "forced_create_failure" }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return apiWorker.fetch(
+        new Request(toAbsoluteUrl(url), {
+          method: init.method || "GET",
+          headers: init.headers,
+          body: init.body,
+        }),
+        env,
+      );
+    },
+    createSyncClient: () => ({
+      connectGame: (gameId) => {
+        if (!desiredGameIds.includes(gameId)) {
+          desiredGameIds.push(gameId);
+        }
+        syncClientCalls.push(["connect", gameId]);
+      },
+      disconnectGame: (gameId) => {
+        const index = desiredGameIds.indexOf(gameId);
+        if (index >= 0) {
+          desiredGameIds.splice(index, 1);
+        }
+        syncClientCalls.push(["disconnect", gameId]);
+      },
+      disconnectAll: () => {
+        desiredGameIds.length = 0;
+        syncClientCalls.push(["disconnectAll"]);
+      },
+      getDesiredGameIds: () => [...desiredGameIds],
+    }),
+  });
+
+  const createHandle = store.createGame({ selfPlayMode: false });
+  store.setActiveGameId(createHandle.result.id);
+
+  await assert.rejects(
+    Promise.race([
+      createHandle.committed,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("create failure timed out")), 2_000)),
+    ]),
+    /forced_create_failure/,
+  );
+
+  const failedGame = await store.loadGame(createHandle.result.id, { openAsViewer: false });
+  assert.equal(failedGame.id, createHandle.result.id);
+  assert.equal(
+    failedGame.rollbackNotice,
+    "Game creation failed. The server could not create this game. Return home and try again.",
+  );
+  assert.equal(failedGame.notifications[0], "Game creation failed");
+  assert.deepEqual(syncClientCalls, [
+    ["connect", createHandle.result.id],
+    ["disconnect", createHandle.result.id],
+  ]);
+});

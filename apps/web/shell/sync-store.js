@@ -25,7 +25,12 @@ const createGameIdMismatchError = (operationLabel, expectedGameId, actualGameId)
     "game_id_mismatch",
   );
 
+const GAME_CREATION_FAILED_BANNER = "Game creation failed. The server could not create this game. Return home and try again.";
+
 const clone = (value) => structuredClone(value);
+
+const isFailedCreateStub = (game) =>
+  Boolean(game && typeof game.rollbackNotice === "string" && game.rollbackNotice === GAME_CREATION_FAILED_BANNER);
 
 const createGameId = () => {
   const bytes = new Uint8Array(18);
@@ -228,6 +233,24 @@ export const createSyncStore = ({
     operationManager.fail(clientCommandId, error);
   };
 
+  const markGameCreationFailed = (gameId) => {
+    const game = transport.getGameViewModel(gameId);
+    if (!game) {
+      return;
+    }
+    const failedGame = {
+      ...clone(game),
+      syncStatus: "ready",
+      rollbackNotice: GAME_CREATION_FAILED_BANNER,
+      notifications: ["Game creation failed", ...(Array.isArray(game.notifications) ? game.notifications : [])],
+      pendingMoves: [],
+      pendingCommandCount: 0,
+    };
+    transport.applyLiveGameUpdate({ game: failedGame });
+    syncActiveGame();
+    clearPendingLocalGame(gameId);
+  };
+
   const failDependentOperationsForGame = (gameId, error, excludedOperationIds = []) => {
     const excluded = new Set(excludedOperationIds.filter(Boolean));
     const pendingOperations = operationManager.getPendingOperations(gameId);
@@ -285,7 +308,9 @@ export const createSyncStore = ({
       liveSync.disconnectAll();
       return;
     }
-    const desiredGameIds = new Set([activeGameId]);
+    const activeGame =
+      activeGameId && typeof transport.getGameViewModel === "function" ? transport.getGameViewModel(activeGameId) : null;
+    const desiredGameIds = isFailedCreateStub(activeGame) ? new Set() : new Set([activeGameId]);
     for (const gameId of liveSync.getDesiredGameIds()) {
       if (!desiredGameIds.has(gameId)) {
         liveSync.disconnectGame(gameId);
@@ -312,7 +337,8 @@ export const createSyncStore = ({
     loadGame: async (gameId, options = {}) => {
       const localPendingGame = transport.getGameViewModel(gameId) ?? pendingLocalGames[gameId] ?? null;
       const hasPendingOperation = operationManager.getPendingOperations(gameId).length > 0;
-      if (localPendingGame && hasPendingOperation) {
+      const shouldHydrateLocalGame = Boolean(localPendingGame) && (hasPendingOperation || isFailedCreateStub(localPendingGame));
+      if (shouldHydrateLocalGame) {
         if (!transport.getGameViewModel(gameId)) {
           transport.applyLiveGameUpdate({ game: localPendingGame });
         }
@@ -323,7 +349,7 @@ export const createSyncStore = ({
         clearPendingLocalGame(gameId);
         return loadedGame;
       } catch (error) {
-        if (localPendingGame && hasPendingOperation) {
+        if (shouldHydrateLocalGame) {
           return transport.getGameViewModel(gameId) ?? localPendingGame;
         }
         throw error;
@@ -361,8 +387,9 @@ export const createSyncStore = ({
           if (game?.id !== gameId) {
             const mismatchError = createGameIdMismatchError("Game creation", gameId, game?.id ?? "unknown");
             transport.discardPendingCommands?.(gameId, {
-              notice: "Queued local actions were cleared because game creation failed to bind to the expected game id.",
+              notice: GAME_CREATION_FAILED_BANNER,
             });
+            markGameCreationFailed(gameId);
             failOperation(`create:${gameId}`, mismatchError);
             failDependentOperationsForGame(gameId, mismatchError, [`create:${gameId}`]);
             return;
@@ -374,8 +401,9 @@ export const createSyncStore = ({
         })
         .catch((error) => {
           transport.discardPendingCommands?.(gameId, {
-            notice: "Queued local actions were cleared because game creation failed.",
+            notice: GAME_CREATION_FAILED_BANNER,
           });
+          markGameCreationFailed(gameId);
           failOperation(`create:${gameId}`, error);
           failDependentOperationsForGame(gameId, error, [`create:${gameId}`]);
         });
