@@ -1,4 +1,9 @@
 import { BOARD_SIZE, SUPPLY_POINTS } from "../generated/packages/game-engine/src/deterministic.js";
+import {
+  buildContinuationSuccessorState,
+  canCloseContinuationNow,
+  isContinuationCompletable,
+} from "../generated/packages/game-engine/src/continuation.js";
 
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
 
@@ -403,6 +408,9 @@ const validateActionForPreview = (state, action) => {
     if (state.continuation && state.continuation.type !== "rush") {
       return { ok: false, code: "CONTINUATION_REQUIRED" };
     }
+    if (state.continuation?.type === "rush" && !canCloseContinuationNow(state)) {
+      return { ok: false, code: "CONTINUATION_REQUIRED" };
+    }
     return { ok: true };
   }
 
@@ -424,7 +432,8 @@ const validateActionForPreview = (state, action) => {
     if (!action.to || !isOrthogonallyAdjacent(actor.position, action.to) || hasPieceAt(state, action.to)) {
       return { ok: false, code: "RULE_VIOLATION" };
     }
-    if (!wouldBeSuppliedAfterRelocation(state, actor.id, actor.owner, action.to)) {
+    const successor = buildContinuationSuccessorState(state, action);
+    if (!isContinuationCompletable(successor)) {
       return { ok: false, code: "SUPPLY_DESTINATION_UNSUPPLIED" };
     }
     return { ok: true };
@@ -503,7 +512,8 @@ const validateActionForPreview = (state, action) => {
     if (attackerStrength <= defenderStrength) {
       return { ok: false, code: "PUSH_STRENGTH_TOO_WEAK" };
     }
-    if (!wouldBeSuppliedAfterPush(state, actor.id, defender.id, actor.owner, action.to)) {
+    const successor = buildContinuationSuccessorState(state, action);
+    if (!isContinuationCompletable(successor)) {
       return { ok: false, code: "SUPPLY_DESTINATION_UNSUPPLIED" };
     }
     return { ok: true };
@@ -525,7 +535,8 @@ const validateActionForPreview = (state, action) => {
     ) {
       return { ok: false, code: "RULE_VIOLATION" };
     }
-    if (!wouldBeSuppliedAfterRelocation(state, actor.id, actor.owner, state.continuation.followPoint)) {
+    const successor = buildContinuationSuccessorState(state, action);
+    if (!isContinuationCompletable(successor)) {
       return { ok: false, code: "SUPPLY_DESTINATION_UNSUPPLIED" };
     }
     return { ok: true };
@@ -544,9 +555,6 @@ const validateActionForPreview = (state, action) => {
       (state.continuation.followPoint && sameCoordinate(action.to, state.continuation.followPoint))
     ) {
       return { ok: false, code: "RULE_VIOLATION" };
-    }
-    if (!wouldBeSuppliedAfterRelocation(state, actor.id, actor.owner, action.to)) {
-      return { ok: false, code: "SUPPLY_DESTINATION_UNSUPPLIED" };
     }
     return { ok: true };
   }

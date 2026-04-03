@@ -183,10 +183,10 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 - When: `Rush` attempted.
 - Then: Rejected.
 
-### F-007 Rush destination must remain supplied
-- Given: Rush destination is geometrically legal and empty but would leave rusher unsupplied.
+### F-007 Rush destination may be temporarily unsupplied if the chain can be resupplied
+- Given: Rush destination is geometrically legal and empty, would be unsupplied if the sequence ended immediately, but a later legal rush in the same local rush chain restores supply before closure.
 - When: `Rush` attempted.
-- Then: Rejected.
+- Then: Accepted; rush continuation remains open and `Pass` is still illegal until the rush chain is supplied.
 
 ## G. Push / Follow / Retreat
 
@@ -251,20 +251,20 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 - When: Resolve forced retreat step.
 - Then: Pushed piece removed.
 
-### G-017 Push illegal when pushed destination would leave attacker unsupplied
-- Given: Push geometry and strength are valid, but after forming the pushed square the attacking piece would be unsupplied on that destination.
+### G-017 Push illegal only when no completion path can resupply the attacker group
+- Given: Push geometry and strength are valid, but every legal retreat/follow continuation branch ends with the recorded attacker follow group still unsupplied.
 - When: `Push`.
 - Then: Rejected with destination-supply failure.
 
-### G-018 Follow illegal when follow destination would leave follower unsupplied
-- Given: Follow actor is otherwise eligible, but moving into follow-point would leave that piece unsupplied.
+### G-018 Follow illegal when no completion path can resupply the attacker group
+- Given: Follow actor is otherwise eligible, but every legal continuation branch after that follow ends with the recorded attacker follow group still unsupplied.
 - When: `Follow`.
 - Then: Rejected with destination-supply failure.
 
-### G-019 Retreat illegal when retreat destination would leave retreating piece unsupplied
-- Given: Retreat destination is orthogonally adjacent and empty, but would leave the retreating piece unsupplied.
+### G-019 Retreat may be temporarily unsupplied
+- Given: Retreat destination is orthogonally adjacent and empty, but would leave the retreating piece unsupplied if the sequence ended immediately.
 - When: `Retreat`.
-- Then: Rejected with destination-supply failure.
+- Then: Accepted; the piece survives until the push sequence closes and is destroyed then only if still unsupplied.
 
 ## H. Supply System
 
@@ -279,7 +279,7 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 - Then: `supplied=false`.
 
 ### H-003 Non-commander unsupplied removal
-- Given: Non-commander piece unsupplied after resolution step.
+- Given: Non-commander piece unsupplied after resolution stability with no active continuation.
 - When: Resolve to stability.
 - Then: Piece removed per rules engine policy.
 

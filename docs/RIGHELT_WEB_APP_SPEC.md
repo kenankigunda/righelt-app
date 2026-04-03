@@ -120,10 +120,16 @@ For the current board implementation:
   - It must not appear as a move entry in move history.
 - Board decides when to emit `turnEnded` for this game implementation.
   - Board auto-emits `turnEnded` when the turn should close (for example after `project`, after `pass`, or after other non-continuation commits).
-  - Board may emit `turnEnded` early during optional continuation windows (for example during rush) when the user elects to stop.
+- Board may emit `turnEnded` early during optional continuation windows only when closure is currently legal (for example during rush after the rush chain is already resupplied).
+- When a rush continuation cannot end yet because the rush chain is still unsupplied, the board preview label must instruct the player to continue rushing and name one blocking piece with a coordinate chip.
+- If multiple rush-chain pieces are still blocking closure, the named piece must be:
+  - the most recently rushed unsupplied piece, if any
+  - otherwise the unsupplied blocker with the lowest row, then col, then piece id
 - During rush and push continuations, the board must continue to treat the initiating player's command/supply state as frozen from the moment that sequence started.
 - Any command/supply change created during the continuation is reconciled only after the continuation fully closes for frozen-status checks and forced-removal purposes.
-- However, destination-supply legality is never frozen: the board must not offer or commit a move/retreat/follow/push destination that would leave the moved piece unsupplied on that destination.
+- `Move` and `Project` still use immediate destination-supply legality.
+- `Rush`, `Push`, and `Follow` instead use sequence-completion legality: the board must not offer or commit a destination that cannot complete to a closure state with the obligated initiating-side continuation pieces supplied.
+- `Retreat` may be temporarily unsupplied; closure legality never requires the attacker to resupply the opposing retreated piece.
 - Even so, the board should visually render pieces using the live "if the sequence ended now" command/supply result at the current board position.
 - A piece that was eligible at the start of the continuation must remain highlighted/selectable/movable for that continuation when the frozen rules still allow it, even if its live displayed status now appears inactive.
 - Shell must treat `turnEnded` as an abstract control message and must not infer it from action-type heuristics.
@@ -153,13 +159,16 @@ For the current board implementation:
 
 - Inline pills/chips used inside instructional copy are treated as self-contained UI tokens rather than prose.
 - When a board position appears in plain text, it uses parentheses, for example `(x,y)`.
-- When a board position inside the board preview label is rendered as an inline chip, the chip text omits parentheses because the chip already distinguishes it visually.
+- Any board position shown inside the board preview label must be rendered as an inline coordinate chip rather than plain text.
+- Board preview label coordinate chips omit parentheses because the chip already distinguishes the position visually.
 - The coordinate chip color must match the current visual treatment of that square on the board as closely as the UI allows:
   - selected source square -> source chip treatment
   - selected destination square -> destination chip treatment
   - continuation square already moved -> faint continuation chip treatment
   - continuation square still to move -> prominent continuation chip treatment
+  - named rush-blocker square -> dedicated rush-blocker chip treatment
   - otherwise -> neutral square chip treatment
+- Coordinate chips and their referenced board squares must share the same semantic highlight role; when a new square highlight role is introduced, a matching coordinate chip treatment must be introduced with it.
 - During push retreat flow, the pushed piece's square must use a dedicated retreat highlight treatment.
 - The retreat instruction should refer to that location as `highlighted square` in a pill matching the retreat highlight, rather than by coordinates.
 - When a board preview label or similar instruction ends with a pill/chip or inline action button, no trailing punctuation is used after that UI token.
@@ -374,7 +383,7 @@ Tutorial restart:
 
 - Piece move previews in self-play are split into:
   - legal destination actions (submittable)
-  - blocked destination previews (non-submittable) for actions that fail only due to destination supply (`SUPPLY_DESTINATION_UNSUPPLIED`)
+  - blocked destination previews (non-submittable) for actions that fail only because they cannot complete to a legal end-supplied closure state (`SUPPLY_DESTINATION_UNSUPPLIED`)
 - The engine board adapter and related board helpers must expose:
   - `actions`: legal-only actions
   - `previewActions`: legal actions plus supply-blocked destination previews, each with a `legal` flag and optional `blockedReason`

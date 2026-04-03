@@ -272,10 +272,10 @@ test("board runtime shortens rush continuation CTA on narrow mobile viewports on
         turnIndex: 0,
         continuation: {
           type: "rush",
-          phase: "continue",
-          rushPieceId: "A1",
-          remainingPieceIds: ["A1"],
-          movedPieceIds: [],
+          owner: "P1",
+          rushedPieceIds: ["A1"],
+          rushChainPieceIds: ["A1"],
+          chainLength: 1,
         },
         outcome: null,
         pieces: [
@@ -299,6 +299,289 @@ test("board runtime shortens rush continuation CTA on narrow mobile viewports on
   } finally {
     globalThis.window = originalWindow;
   }
+});
+
+test("board runtime omits end-turn CTA when the rush chain is not yet closable", async () => {
+  let previewHtml = "";
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: noop,
+      getSelectedPieceSummary: () => null,
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      canInteract: () => true,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: {
+      set innerHTML(value) {
+        previewHtml = value;
+      },
+      get innerHTML() {
+        return previewHtml;
+      },
+      set textContent(value) {
+        previewHtml = value;
+      },
+      get textContent() {
+        return previewHtml;
+      },
+      addEventListener: noop,
+      removeEventListener: noop,
+    },
+    boardTurnIndicatorEl: { textContent: "", classList: { remove: noop, add: noop } },
+  });
+
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: {
+        type: "rush",
+        owner: "P1",
+        rushedPieceIds: ["A"],
+        rushChainPieceIds: ["A"],
+        chainLength: 1,
+      },
+      outcome: null,
+      pieces: [
+        {
+          id: "A",
+          owner: "P1",
+          kind: "unit",
+          position: { row: 4, col: 3 },
+          supplied: true,
+          commanded: true,
+        },
+        {
+          id: "B",
+          owner: "P1",
+          kind: "unit",
+          position: { row: 5, col: 5 },
+          supplied: true,
+          commanded: true,
+        },
+        {
+          id: "C1",
+          owner: "P1",
+          kind: "commander",
+          position: { row: 3, col: 6 },
+          supplied: true,
+          commanded: true,
+        },
+        {
+          id: "C2",
+          owner: "P2",
+          kind: "commander",
+          position: { row: 6, col: 3 },
+          supplied: true,
+          commanded: true,
+        },
+        {
+          id: "E0",
+          owner: "P2",
+          kind: "unit",
+          position: { row: 0, col: 4 },
+          supplied: true,
+          commanded: true,
+        },
+        {
+          id: "E1",
+          owner: "P2",
+          kind: "unit",
+          position: { row: 9, col: 4 },
+          supplied: true,
+          commanded: true,
+        },
+        {
+          id: "E2",
+          owner: "P2",
+          kind: "unit",
+          position: { row: 4, col: 2 },
+          supplied: true,
+          commanded: true,
+        },
+      ],
+    },
+    {
+      legalActions: [{ type: "rush", actorId: "B", from: { row: 5, col: 5 }, to: { row: 4, col: 4 } }],
+    },
+  );
+
+  assert.doesNotMatch(previewHtml, /data-board-preview-action="end-turn"/);
+  assert.match(previewHtml, /Continue rushing on one of the/);
+  assert.match(previewHtml, /to reconnect your piece at/);
+  assert.match(previewHtml, /board-preview-coordinate-chip-rush-blocker/);
+  assert.match(previewHtml, />4,3</);
+});
+
+test("board runtime rush blocker prompt prefers the most recently rushed unsupplied piece", async () => {
+  let previewHtml = "";
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: noop,
+      getSelectedPieceSummary: () => null,
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      canInteract: () => true,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: {
+      set innerHTML(value) {
+        previewHtml = value;
+      },
+      get innerHTML() {
+        return previewHtml;
+      },
+      set textContent(value) {
+        previewHtml = value;
+      },
+      get textContent() {
+        return previewHtml;
+      },
+      addEventListener: noop,
+      removeEventListener: noop,
+    },
+    boardTurnIndicatorEl: { textContent: "", classList: { remove: noop, add: noop } },
+  });
+
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: {
+        type: "rush",
+        owner: "P1",
+        rushedPieceIds: ["A", "B"],
+        rushChainPieceIds: ["A", "B"],
+        chainLength: 2,
+      },
+      outcome: null,
+      pieces: [
+        { id: "A", owner: "P1", kind: "unit", position: { row: 4, col: 3 }, supplied: true, commanded: true },
+        { id: "B", owner: "P1", kind: "unit", position: { row: 5, col: 1 }, supplied: true, commanded: true },
+        { id: "C1", owner: "P1", kind: "commander", position: { row: 0, col: 8 }, supplied: true, commanded: true },
+        { id: "C2", owner: "P2", kind: "commander", position: { row: 9, col: 0 }, supplied: true, commanded: true },
+        { id: "E0", owner: "P2", kind: "unit", position: { row: 0, col: 4 }, supplied: true, commanded: true },
+        { id: "E1", owner: "P2", kind: "unit", position: { row: 9, col: 4 }, supplied: true, commanded: true },
+      ],
+    },
+    {
+      legalActions: [{ type: "rush", actorId: "B", from: { row: 5, col: 1 }, to: { row: 4, col: 2 } }],
+    },
+  );
+
+  assert.match(previewHtml, /board-preview-coordinate-chip-rush-blocker/);
+  assert.match(previewHtml, />5,1</);
+});
+
+test("board runtime falls back to generic rush prompt when blocker lookup yields no piece", async () => {
+  let previewHtml = "";
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: noop,
+      getSelectedPieceSummary: () => null,
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      canInteract: () => true,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: {
+      set innerHTML(value) {
+        previewHtml = value;
+      },
+      get innerHTML() {
+        return previewHtml;
+      },
+      set textContent(value) {
+        previewHtml = value;
+      },
+      get textContent() {
+        return previewHtml;
+      },
+      addEventListener: noop,
+      removeEventListener: noop,
+    },
+    boardTurnIndicatorEl: { textContent: "", classList: { remove: noop, add: noop } },
+  });
+
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: {
+        type: "rush",
+        owner: "P1",
+        rushedPieceIds: ["GONE"],
+        rushChainPieceIds: ["GONE"],
+        chainLength: 1,
+      },
+      outcome: null,
+      pieces: [
+        { id: "C1", owner: "P1", kind: "commander", position: { row: 3, col: 6 }, supplied: true, commanded: true },
+        { id: "C2", owner: "P2", kind: "commander", position: { row: 6, col: 3 }, supplied: true, commanded: true },
+        { id: "B", owner: "P1", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true },
+        { id: "E0", owner: "P2", kind: "unit", position: { row: 4, col: 4 }, supplied: true, commanded: true },
+      ],
+    },
+    {
+      legalActions: [{ type: "rush", actorId: "B", from: { row: 5, col: 5 }, to: { row: 4, col: 5 } }],
+    },
+  );
+
+  assert.match(previewHtml, /Continue rushing on one of the/);
+  assert.doesNotMatch(previewHtml, /to reconnect your piece at/);
+  assert.doesNotMatch(previewHtml, /board-preview-coordinate-chip-rush-blocker/);
 });
 
 test("board runtime preserves in-progress removal effects across snapshot reloads", async () => {

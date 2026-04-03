@@ -192,6 +192,12 @@ body {
   color: var(--muted);
 }
 
+.board-preview-coordinate-chip.board-preview-coordinate-chip-rush-blocker {
+  background: #f7ead4;
+  border-color: #cf9542;
+  color: #8a5712;
+}
+
 .board-preview-inline-button {
   display: inline-block;
   margin: 0 0 0.1rem;
@@ -462,6 +468,12 @@ button {
 
 .cell.continuation-pending {
   --cell-fill: #e6f2d3;
+}
+
+.cell.rush-blocker {
+  --cell-fill: #f7ead4;
+  border-color: #cf9542;
+  box-shadow: inset 0 0 0 1px #cf9542;
 }
 
 .cell.retreat-piece {

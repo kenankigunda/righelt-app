@@ -1,4 +1,5 @@
 import type { Action, ApplyResult, GameState } from "./types";
+import { getRushChainMembers } from "./continuation";
 import { BOARD_SIZE, normalizeState } from "./deterministic";
 import { localGroupMembers, validateAction } from "./legal";
 
@@ -111,12 +112,18 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
         frozenOwner: actor.owner,
         frozenPieceStatesById: captureFrozenPieceStates(state, actor.owner),
         rushedPieceIds: [actor.id],
+        rushChainPieceIds: getRushChainMembers(next, actor.id),
         chainLength: 1,
       };
     } else {
       const rushedPieceIds = new Set(next.continuation.rushedPieceIds ?? []);
       rushedPieceIds.add(actor.id);
+      const rushChainPieceIds = new Set(next.continuation.rushChainPieceIds ?? []);
+      for (const pieceId of getRushChainMembers(next, actor.id)) {
+        rushChainPieceIds.add(pieceId);
+      }
       next.continuation.rushedPieceIds = [...rushedPieceIds];
+      next.continuation.rushChainPieceIds = [...rushChainPieceIds];
       next.continuation.chainLength += 1;
     }
   } else if (action.type === "push" && actor && action.to) {

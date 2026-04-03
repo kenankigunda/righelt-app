@@ -9,6 +9,10 @@ import {
   shouldResetSelectionOnDocumentClick,
   shouldSubmitOnEnter,
 } from "../../interaction.js";
+import {
+  canCloseContinuationNow,
+  getRushContinuationBlockingPiece,
+} from "../../generated/packages/game-engine/src/continuation.js";
 import { buildPieceMoveResponse } from "../client-move-generation.js";
 
 const PLAYER_TONE_CLASSES = ["player-tone-p1", "player-tone-p2", "player-tone-both", "player-tone-neutral"];
@@ -263,6 +267,16 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return "board-preview-coordinate-chip-neutral";
     }
 
+    const rushBlocker = state?.continuation?.type === "rush" ? getRushContinuationBlockingPiece(state) : null;
+    if (
+      rushBlocker &&
+      !sameCoordinate(coord, selectedTarget) &&
+      !sameCoordinate(coord, selectedSource) &&
+      sameCoordinate(coord, rushBlocker.position)
+    ) {
+      return "board-preview-coordinate-chip-rush-blocker";
+    }
+
     const retreatActorChipClass = getPushRetreatActorCoordinateChipClass(coord);
     if (retreatActorChipClass) {
       return retreatActorChipClass;
@@ -339,8 +353,21 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     elements.boardPreviewLabelEl.innerHTML = `${clickInstruction} <strong>${escapeHtml(labelWithoutCoordinate)} ${renderBoardPreviewCoordinate(selectedTarget)}</strong>`;
   };
 
-  const setRushContinuationPrompt = (player) => {
+  const setRushContinuationPrompt = (snapshot, player) => {
     const toneClass = player === "P1" ? "player-tone-p1" : player === "P2" ? "player-tone-p2" : "player-tone-neutral";
+    if (!canCloseContinuationNow(snapshot)) {
+      const rushBlocker = getRushContinuationBlockingPiece(snapshot);
+      if (rushBlocker) {
+        setBoardPreviewPromptHtml(
+          `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares to reconnect your piece at ${renderBoardPreviewCoordinate(rushBlocker.position)}`,
+        );
+        return;
+      }
+      setBoardPreviewPromptHtml(
+        `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares`,
+      );
+      return;
+    }
     const endTurnLabel = shouldUseCompactBoardPreviewCta() ? "end turn now" : "end your turn now";
     setBoardPreviewPromptHtml(
       `Continue rushing on one of the <span class="board-preview-highlight-chip ${toneClass}">highlighted</span> squares, or <button type="button" class="board-preview-inline-button" data-board-preview-action="end-turn">${endTurnLabel}</button>`,
@@ -440,7 +467,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       if (pushRetreatPrompt) {
         setBoardPreviewPromptHtml(pushRetreatPrompt);
       } else if (state.continuation?.type === "rush") {
-        setRushContinuationPrompt(state.sideToMove);
+        setRushContinuationPrompt(state, state.sideToMove);
       } else if (state.continuation?.type === "push" && state.continuation.phase === "follow") {
         setPushFollowContinuationPrompt(state.sideToMove);
       } else {
@@ -466,7 +493,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         }
       } else if (!canOverlayToggle) {
         if (state.continuation?.type === "rush") {
-          setRushContinuationPrompt(state.sideToMove);
+          setRushContinuationPrompt(state, state.sideToMove);
         } else if (selectedSource) {
           setBoardPreviewPromptHtml(
             `No moves available from ${renderBoardPreviewCoordinate(selectedSource)}. Supply & command lines shown only:`,

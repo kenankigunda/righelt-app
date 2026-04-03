@@ -1,4 +1,9 @@
 import type { Action, GameState, Piece, ValidationResult } from "./types";
+import {
+  buildContinuationSuccessorState,
+  canCloseContinuationNow,
+  isContinuationCompletable,
+} from "./continuation";
 import { BOARD_SIZE, SUPPLY_POINTS } from "./deterministic";
 
 function outOfBounds(value: { row: number; col: number } | undefined): boolean {
@@ -452,7 +457,11 @@ export function listLegalActions(state: GameState): Action[] {
           }
           return actions.filter((candidate) => validateAction(state, candidate).ok);
         });
-      return [...rushActions, { type: "pass" }];
+      const actions = [...rushActions];
+      if (validateAction(state, { type: "pass" }).ok) {
+        actions.push({ type: "pass" });
+      }
+      return actions;
     }
 
     return state.continuation.phase === "retreat" ? getPushRetreatActions(state) : getPushFollowActions(state);
@@ -518,6 +527,13 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         ok: false,
         code: "CONTINUATION_REQUIRED",
         message: "Pass is not legal while continuation is active",
+      };
+    }
+    if (state.continuation?.type === "rush" && !canCloseContinuationNow(state)) {
+      return {
+        ok: false,
+        code: "CONTINUATION_REQUIRED",
+        message: "Rush continuation must continue until the rush chain is resupplied",
       };
     }
     return { ok: true };
@@ -687,11 +703,12 @@ export function validateAction(state: GameState, action: Action): ValidationResu
       }
     }
 
-    if (!wouldBeSuppliedAfterRelocation(state, actor.id, actor.owner, action.to)) {
+    const successor = buildContinuationSuccessorState(state, action);
+    if (!isContinuationCompletable(successor)) {
       return {
         ok: false,
         code: "SUPPLY_DESTINATION_UNSUPPLIED",
-        message: "Rush destination would be unsupplied",
+        message: "Rush destination cannot complete to an end-supplied rush chain",
       };
     }
 
@@ -738,11 +755,12 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         message: "Push requires strictly greater attacker group strength",
       };
     }
-    if (!wouldBeSuppliedAfterPush(state, actor.id, defender.id, actor.owner, action.to)) {
+    const successor = buildContinuationSuccessorState(state, action);
+    if (!isContinuationCompletable(successor)) {
       return {
         ok: false,
         code: "SUPPLY_DESTINATION_UNSUPPLIED",
-        message: "Push destination would be unsupplied",
+        message: "Push destination cannot complete to an end-supplied pushing group",
       };
     }
     return { ok: true };
@@ -795,11 +813,12 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         message: "Follow actor must be orthogonally adjacent to current follow-point",
       };
     }
-    if (!wouldBeSuppliedAfterRelocation(state, actor.id, actor.owner, state.continuation.followPoint)) {
+    const successor = buildContinuationSuccessorState(state, action);
+    if (!isContinuationCompletable(successor)) {
       return {
         ok: false,
         code: "SUPPLY_DESTINATION_UNSUPPLIED",
-        message: "Follow destination would be unsupplied",
+        message: "Follow destination cannot complete to an end-supplied pushing group",
       };
     }
     return { ok: true };
@@ -839,13 +858,6 @@ export function validateAction(state: GameState, action: Action): ValidationResu
         ok: false,
         code: "RULE_VIOLATION",
         message: "Retreat destination cannot be the reserved follow-point",
-      };
-    }
-    if (!wouldBeSuppliedAfterRelocation(state, actor.id, actor.owner, action.to)) {
-      return {
-        ok: false,
-        code: "SUPPLY_DESTINATION_UNSUPPLIED",
-        message: "Retreat destination would be unsupplied",
       };
     }
     return { ok: true };

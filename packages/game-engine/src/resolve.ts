@@ -1,4 +1,5 @@
 import type { ArtifactContractV1, ArtifactMode, GameState, ResolveArtifacts } from "./types";
+import { canCloseContinuationNow } from "./continuation";
 import { SUPPLY_POINTS } from "./deterministic";
 import { validateAction } from "./legal";
 
@@ -58,6 +59,7 @@ function cloneState(state: GameState): GameState {
               )
             : undefined,
           rushedPieceIds: state.continuation.rushedPieceIds ? [...state.continuation.rushedPieceIds] : undefined,
+          rushChainPieceIds: state.continuation.rushChainPieceIds ? [...state.continuation.rushChainPieceIds] : undefined,
         }
       : null,
     outcome: { ...state.outcome },
@@ -749,9 +751,17 @@ function applyContinuationPhase(state: GameState): boolean {
 
     const followPoint = state.continuation.followPoint;
     if (!followPoint) {
+      if (!canCloseContinuationNow(state)) {
+        return false;
+      }
       state.continuation = null;
       state.sideToMove = attackerOwner === "P1" ? "P2" : "P1";
       state.turnIndex += 1;
+      for (const piece of state.pieces) {
+        if (piece.shifted) {
+          piece.shifted = false;
+        }
+      }
       return true;
     }
 
@@ -778,6 +788,9 @@ function applyContinuationPhase(state: GameState): boolean {
     });
 
     if (!hasFriendlyAdjacent) {
+      if (!canCloseContinuationNow(state)) {
+        return false;
+      }
       state.continuation = null;
       state.sideToMove = attackerOwner === "P1" ? "P2" : "P1";
       state.turnIndex += 1;
@@ -817,9 +830,10 @@ function applyContinuationPhase(state: GameState): boolean {
         return false;
       });
 
-    if (!hasRushCandidate) {
+    if (!hasRushCandidate && canCloseContinuationNow(state)) {
       state.continuation = null;
       state.sideToMove = expectedOwner === "P1" ? "P2" : "P1";
+      state.turnIndex += 1;
       return true;
     }
   }
@@ -898,6 +912,9 @@ function applySupplyPhase(state: GameState, mode: ArtifactMode): boolean {
 }
 
 function applyForcedEffectsPhase(state: GameState): boolean {
+  if (state.continuation) {
+    return false;
+  }
   const beforeCount = state.pieces.length;
   state.pieces = state.pieces.filter(
     (piece) =>
@@ -996,8 +1013,8 @@ export function resolveToStability(
   while (pass < maxPasses) {
     const changed = runResolvePass(state, mode);
     if (!changed) {
-      if (evaluateTerminalPhase(state) && state.continuation) {
-        state.continuation = null;
+      if (!state.continuation) {
+        evaluateTerminalPhase(state);
       }
       return state;
     }

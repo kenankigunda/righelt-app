@@ -46,7 +46,7 @@ Some actions (especially Push and Rush) can create short continuation sequences 
 
 During those continuation sequences, a piece that started the sequence able to act can still finish that sequence even if the board position has already cut its live supply or command.
 The interface may show that piece as it would look if the sequence stopped immediately, but it remains usable for the continuation while that sequence is still open.
-That freeze does not let any piece move into a square where it would be unsupplied.
+What matters is whether the whole sequence can still finish with the required friendly continuation pieces re-supplied before the turn ends.
 
 ## 4. Actions
 
@@ -74,18 +74,18 @@ This is how your board presence grows.
 A tactical one-step move (including diagonals) that is only legal under the following conditions:
 
 - Destination must be empty.
-- Destination must still leave the rushing piece supplied.
+- The rush must still be completable so the current rush chain ends supplied before you may end the turn.
 - Orthogonal rushes require enemy contact near the destination.
 - Diagonal rushes require enemy contact in the relevant corner-adjacent lanes.
 - In a rush sequence, each individual piece can rush at most once.
-- After your first rush, extra rushes are optional: you may pass to end the rush sequence and end your turn.
+- After your first rush, extra rushes are optional only once the current rush chain is already resupplied; until then, the continuation is forced.
 - During the rush sequence, the game still remembers which of your pieces were allowed to keep acting from the start of the sequence, even if the board display now shows a broken supply/command line.
 
 Use Rush for tempo and local repositioning around conflict.
 
 Important legality note:
-- You cannot choose a destination that would make the moved/created piece unsupplied.
-- That remains true inside continuation sequences as well: frozen command/supply only preserves who may keep acting, not permission to end a move on an unsupplied square.
+- `Move` and `Project` still require an immediately supplied destination.
+- Inside rush and push continuations, a move may be temporarily unsupplied if the sequence can still finish with your obligated rush chain or push group resupplied.
 - It is allowed to make a move that later leaves a piece uncommanded after resolution.
 
 ## 4.5 Push
@@ -95,7 +95,7 @@ Push lets you displace an enemy piece, but only if your local formation is stron
 - The enemy piece you push must be directly orthogonally adjacent to the pushing piece.
 - You can push only if your local **group strength** is greater than the defender’s.
 - If legal, your piece advances into the enemy piece’s square and the enemy piece is temporarily stacked there as a pushed piece.
-- The pushed square must still leave the pushing piece supplied.
+- The push must still be completable so your pushing group ends supplied when the push sequence closes.
 - The pushed piece’s owner must then resolve a forced retreat.
 - After that retreat, the pushing player completes any required **follow** moves through the vacated trail.
 - During that push continuation, the display can show that some of the attacker's pieces would now be inactive if play stopped immediately, but pieces that were still entitled to continue from the start of the push remain usable until the push sequence finishes.
@@ -120,17 +120,18 @@ A pushed piece must retreat to an adjacent orthogonal empty square.
 - During that brief retreat step, retreat is the only action they may take.
 - They may still inspect other pieces, but no other actions are legal.
 - The vacated follow trail square is reserved for the follow sequence and is not a legal retreat destination.
-- The retreat destination must still leave the retreating piece supplied.
+- The retreating piece may be temporarily unsupplied.
 - If there is only one retreat square, that retreat is effectively forced.
 - If there is no legal retreat square, the pushed piece is destroyed immediately.
 - If the pushed piece is destroyed because there is no retreat square, play does not pause for a retreat step and stays with the pushing player for follow completion.
+- The attacker is never required to resupply that retreated enemy piece; if it is still unsupplied when the push sequence ends, it is destroyed then.
 
 ### Follow rule
 
 After retreat finishes, play immediately returns to the pushing player.
 
 - Friendly pieces may need to **follow** into the vacated chain to keep the pushing structure connected.
-- A follow move is only legal if that destination still leaves the following piece supplied.
+- A follow move is only legal if the whole push sequence can still finish with the pushing group supplied.
 - If only one piece can make the next required follow, that piece is effectively forced.
 - If that forced piece has only one follow square, that move is effectively forced.
 - When no more follow moves are possible, the push sequence ends.
@@ -151,6 +152,7 @@ Supply routes are blocked by:
 - enemy command lines crossing board cells between their linked pieces
 
 If a non-Commander has no supply route after resolution, it is removed from the board.
+During rush and push continuations, that removal waits until the continuation finishes.
 If a Commander has no supply route after resolution, the game ends immediately (win/loss/draw as applicable).
 
 ## 5.2 Command network

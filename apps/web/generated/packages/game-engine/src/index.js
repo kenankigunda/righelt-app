@@ -8,3 +8,4 @@ export * from "./apply.js";
 export * from "./replay.js";
 export * from "./serialize.js";
 export * from "./resolve.js";
+export * from "./continuation.js";
