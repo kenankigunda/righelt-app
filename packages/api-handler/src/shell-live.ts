@@ -13,11 +13,11 @@ import {
   getSideToMoveSeat,
   nextGameId,
   resolveLaunchParticipantCopyMode,
-  withViewModel,
+  withFullViewModel,
 } from "./shell-live-core";
 import {
   countHomeSectionGames,
-  listHomeSectionGameProjectionPage,
+  listHomeSectionStaticGameCardPage,
   loadGameProjection,
   resolveInvite,
   type D1DatabaseLike,
@@ -37,6 +37,7 @@ export type LiveGameRequestEnv = {
 
 const GAME_ROOMS_BINDING_ERROR = "server_misconfigured_game_rooms_binding";
 const INVALID_PERSISTED_GAME_ERROR = "invalid_persisted_game";
+const nowMs = () => Date.now();
 
 type HomeSectionKey = "my" | "other" | "smoke";
 
@@ -181,13 +182,38 @@ export const handleLiveGameRequest = async (
       return { handled: true, status: 400, body: { ok: false, error: "invalid_pagination" }, cacheControl: CACHE_NO_STORE };
     }
     const debug = url.searchParams.get("debug") === "1";
+    const totalStart = nowMs();
     const totalGames = await countHomeSectionGames(env, { identityId, section, debug });
+    const countMs = nowMs() - totalStart;
     const totalPages = totalGames === 0 ? 0 : Math.ceil(totalGames / pageSize);
     const safePage = totalPages === 0 ? 0 : Math.min(page, totalPages - 1);
-    const pagedGames =
+    const queryStart = nowMs();
+    const pagedGameResult =
       totalPages === 0
-        ? []
-        : await listHomeSectionGameProjectionPage(env, { identityId, section, page: safePage, pageSize, debug });
+        ? { games: [], parseMs: 0, cardModelMs: 0 }
+        : await listHomeSectionStaticGameCardPage(env, { identityId, section, page: safePage, pageSize, debug });
+    const queryMs = nowMs() - queryStart;
+    const pagedGames = pagedGameResult.games;
+    const timing = {
+      countMs,
+      queryMs,
+      parseMs: pagedGameResult.parseMs,
+      cardModelMs: pagedGameResult.cardModelMs,
+      totalMs: countMs + queryMs,
+    };
+    console.info(JSON.stringify({
+      event: "shell_games_list_timing",
+      at: new Date().toISOString(),
+      identityId,
+      section,
+      page,
+      safePage,
+      pageSize,
+      totalGames,
+      totalPages,
+      resultCount: pagedGames.length,
+      ...timing,
+    }));
     return {
       handled: true,
       status: 200,
@@ -198,7 +224,8 @@ export const handleLiveGameRequest = async (
         pageSize,
         totalGames,
         totalPages,
-        games: pagedGames.map((game) => withViewModel(game, identityId)),
+        games: pagedGames,
+        ...(debug ? { timing } : {}),
       },
       cacheControl: CACHE_NO_STORE,
     };
@@ -394,7 +421,7 @@ export const handleLiveGameRequest = async (
       return {
         handled: true,
         status: 200,
-        body: { ok: true, game: withViewModel(game, identityId), eventSeq: projection.eventSeq },
+        body: { ok: true, game: withFullViewModel(game, identityId), eventSeq: projection.eventSeq },
         cacheControl: CACHE_NO_STORE,
       };
     }
@@ -492,7 +519,7 @@ export const handleLiveGameRequest = async (
           ok: true,
           state: stable,
           legalActions: listLegalActions(stable),
-          game: withViewModel(game, identityId),
+          game: withFullViewModel(game, identityId),
         },
         cacheControl: CACHE_NO_STORE,
       };
@@ -526,7 +553,7 @@ export const handleLiveGameRequest = async (
           pieceId,
           actions: enumeratePieceActions(stable, pieceId),
           previewActions: enumeratePieceActionPreviews(stable, pieceId),
-          game: withViewModel(game, identityId),
+          game: withFullViewModel(game, identityId),
         },
         cacheControl: CACHE_NO_STORE,
       };

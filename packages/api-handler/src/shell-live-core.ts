@@ -126,6 +126,20 @@ export type LiveGame = {
   };
 };
 
+export type StaticGameCard = {
+  id: string;
+  createdAt: string;
+  lastMoveAt: string | null;
+  updatedAt: string;
+  moveCount: number;
+  previewSnapshot: GameState | null;
+  previewSelection: ScenarioSavedSelection | null;
+  myRole: "Player 1" | "Player 2" | "Viewer" | "Guest";
+  canJoinAsPlayer: boolean;
+  player1: Participant | null;
+  player2: Participant | null;
+};
+
 export type RemovedPieceNotice = {
   pieceId: string;
   position: { row: number; col: number };
@@ -728,7 +742,53 @@ const getJoinAsViewerDisabledReason = (game: LiveGame, myRole: string) => {
   return null;
 };
 
-export const withViewModel = (game: LiveGame, identityId: string) => {
+export const toStaticGameCard = (
+  game: Pick<LiveGame, "id" | "createdAt" | "lastMoveAt" | "updatedAt" | "selfPlayMode" | "board" | "player1" | "player2" | "viewers"> & {
+    pendingJoinRequests?: LiveGame["pendingJoinRequests"];
+    historyIndexByIdentity?: LiveGame["historyIndexByIdentity"];
+    pendingScenarioSelection?: LiveGame["pendingScenarioSelection"];
+    moves?: LiveGame["moves"];
+    moveCount?: number;
+    previewSnapshot?: GameState | null;
+  },
+  identityId: string,
+): StaticGameCard => {
+  const myRole = findRoleForIdentity(
+    {
+      ...game,
+      pendingJoinRequests: Array.isArray(game.pendingJoinRequests) ? game.pendingJoinRequests : [],
+      historyIndexByIdentity: game.historyIndexByIdentity ?? {},
+      pendingScenarioSelection: game.pendingScenarioSelection ?? null,
+      moves: Array.isArray(game.moves) ? game.moves : [],
+      turns: [],
+      pendingRevertRequest: null,
+      notifications: [],
+      inviteTokens: { viewer: "", player1: "", player2: "" },
+    },
+    identityId,
+  );
+  const canJoinAsPlayer = myRole !== "Player 1" && myRole !== "Player 2" && !game.selfPlayMode && (!game.player1 || !game.player2);
+  return {
+    id: game.id,
+    createdAt: game.createdAt,
+    lastMoveAt: game.lastMoveAt,
+    updatedAt: game.updatedAt,
+    moveCount:
+      typeof game.moveCount === "number" && Number.isFinite(game.moveCount)
+        ? game.moveCount
+        : Array.isArray(game.moves)
+          ? game.moves.length
+          : 0,
+    previewSnapshot: game.previewSnapshot ?? game.board.state ?? null,
+    previewSelection: game.pendingScenarioSelection ?? null,
+    myRole,
+    canJoinAsPlayer,
+    player1: game.player1 ?? null,
+    player2: game.player2 ?? null,
+  };
+};
+
+export const withFullViewModel = (game: LiveGame, identityId: string) => {
   const historyIndexByIdentity = game.historyIndexByIdentity ?? {};
   const moves = Array.isArray(game.moves) ? game.moves : [];
   const turns = Array.isArray(game.turns) ? game.turns : [];
@@ -850,6 +910,8 @@ export const withViewModel = (game: LiveGame, identityId: string) => {
     latestActiveMoveId: latestActiveMove?.moveId ?? null,
   };
 };
+
+export const withViewModel = withFullViewModel;
 
 const formatCoordinate = (coord: { row: number; col: number } | null | undefined) =>
   coord ? `(${coord.row},${coord.col})` : "(?,?)";

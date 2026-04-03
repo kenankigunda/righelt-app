@@ -26,6 +26,34 @@ test("shell integration: opaque invite token resolves and joins into canonical g
   assert.equal(accepted.game.myRole, "Player 2");
 });
 
+test("shell integration: home card list stays lightweight until opening the full game", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-shell-home-card-1");
+  const reloadedOwner = harness.createClient("id-owner-shell-home-card-1");
+
+  const created = await owner.store.createGame({ selfPlayMode: false });
+  const homePage = await reloadedOwner.store.loadGamesPage({ section: "my", page: 0, pageSize: 4, debug: true });
+
+  assert.equal(homePage.games.some((game) => game.id === created.id), true);
+  const listed = homePage.games.find((game) => game.id === created.id);
+  assert.equal(typeof listed.moveCount, "number");
+  assert.equal("legalActions" in listed, false);
+  assert.equal("moves" in listed, false);
+  assert.equal(reloadedOwner.store.getHomeGameCard(created.id)?.id, created.id);
+  assert.equal(reloadedOwner.store.getGameViewModel(created.id), null);
+
+  const opened = await reloadedOwner.store.loadGame(created.id);
+  assert.equal(opened.id, created.id);
+  assert.equal(Array.isArray(opened.legalActions), true);
+  assert.equal(Array.isArray(opened.moves), true);
+
+  await owner.store.addMove({ gameId: created.id, notation: "M1" });
+  const refreshedHomePage = await reloadedOwner.store.loadGamesPage({ section: "my", page: 0, pageSize: 4, debug: false });
+  const refreshed = refreshedHomePage.games.find((game) => game.id === created.id);
+  assert.equal(refreshed.moveCount, 1);
+  assert.equal(refreshed.previewSnapshot.sideToMove, "P2");
+});
+
 test("shell integration: each ordinary move settles the turn to the next player", async () => {
   const harness = createShellIntegrationHarness();
   const owner = harness.createClient("id-owner-shell-int-2");

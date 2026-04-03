@@ -144,6 +144,10 @@ test("live transport: paged home sections return latest-activity slices", async 
   assert.equal(firstBody.totalPages, 1);
   assert.equal(firstBody.page, 0);
   assert.equal(firstBody.games.length, 6);
+  assert.equal(typeof firstBody.games[0].moveCount, "number");
+  assert.equal("legalActions" in firstBody.games[0], false);
+  assert.equal("moves" in firstBody.games[0], false);
+  assert.equal("timing" in firstBody, false);
   assert.deepEqual(
     firstBody.games.map((game) => game.id),
     [...createdGameIds].reverse().slice(0, 6),
@@ -151,6 +155,64 @@ test("live transport: paged home sections return latest-activity slices", async 
   const reads = env.DB.getReads().map((entry) => entry.query);
   assert.equal(reads.some((query) => query.includes("SELECT COUNT(*) AS total_games FROM live_games")), true);
   assert.equal(reads.some((query) => query.includes("LIMIT ?2") && query.includes("OFFSET ?3")), true);
+});
+
+test("live transport: paged home sections include debug timings only when requested", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", selfPlayMode: false }),
+    env,
+  );
+  const { game } = await create.json();
+
+  const debugList = await handleApiRequest(req("/api/shell/games?identityId=id-owner&section=my&page=0&pageSize=4&debug=1"), env);
+  const debugBody = await debugList.json();
+
+  assert.equal(debugBody.games[0].id, game.id);
+  assert.equal(typeof debugBody.timing.countMs, "number");
+  assert.equal(typeof debugBody.timing.queryMs, "number");
+  assert.equal(typeof debugBody.timing.parseMs, "number");
+  assert.equal(typeof debugBody.timing.cardModelMs, "number");
+  assert.equal(typeof debugBody.timing.totalMs, "number");
+});
+
+test("live transport: paged home sections log structured timings even when no games are returned", async () => {
+  const originalInfo = console.info;
+  const infoCalls = [];
+  console.info = (...args) => {
+    infoCalls.push(args);
+  };
+
+  try {
+    const nonDebugList = await handleApiRequest(req("/api/shell/games?identityId=id-owner-empty&section=my&page=0&pageSize=4&debug=0"), env);
+    const nonDebugBody = await nonDebugList.json();
+    assert.equal(nonDebugBody.totalGames, 0);
+    assert.equal("timing" in nonDebugBody, false);
+
+    const debugList = await handleApiRequest(req("/api/shell/games?identityId=id-owner-empty&section=my&page=0&pageSize=4&debug=1"), env);
+    const debugBody = await debugList.json();
+    assert.equal(debugBody.totalGames, 0);
+    assert.equal(typeof debugBody.timing.totalMs, "number");
+
+    const parsedEntries = infoCalls
+      .map((args) => args[0])
+      .filter((value) => typeof value === "string")
+      .map((value) => {
+        try {
+          return JSON.parse(value);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    const timingEntries = parsedEntries.filter((entry) => entry.event === "shell_games_list_timing");
+    assert.equal(timingEntries.length >= 2, true);
+    assert.equal(timingEntries.every((entry) => entry.section === "my"), true);
+    assert.equal(timingEntries.every((entry) => entry.resultCount === 0), true);
+    assert.equal(timingEntries.every((entry) => typeof entry.totalMs === "number"), true);
+  } finally {
+    console.info = originalInfo;
+  }
 });
 
 test("live transport: paged home sections isolate smoke games into debug-only smoke section", async () => {
@@ -794,7 +856,7 @@ test("live transport: persisted shape repairs missing history index and logs the
     assert.equal(list.status, 200);
     assert.equal(listBody.games.some((entry) => entry.id === gameId), true);
     const listedGame = listBody.games.find((entry) => entry.id === gameId);
-    assert.equal(listedGame.historyIndex, null);
+    assert.equal("historyIndex" in listedGame, false);
 
     const open = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-owner`), env);
     const openBody = await open.json();

@@ -77,6 +77,7 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 - `Dfix` = diagnose and fix
 - `Ddfix` = do a deep investigation to diagnose and fix holistically
 - `Rgr` = regression hardening pass: run the full relevant test pass, add or extend regression tests for the changed behavior and adjacent workflows, cover important edge cases, and report any remaining coverage gaps
+- `Fhr` = fragility hardening review: use the workflow in `docs/ai/FRAGILITY_HARDENING_WORKFLOW.md` to think like a tester, identify creative failure modes and fragile adjacent behavior, verify them with targeted tests, fix issues found, and report any remaining risks
 - `Sb` = switch branch; expects either an explicit branch name or a description that can be used to infer the intended branch
 - `Snb` = switch to a new `codex/` branch whose name is auto-derived from the most recent non-`main` changes in flight; reuse the active feature/topic slug when clear, otherwise derive a short descriptive slug from the latest branch/commit context and append a disambiguating suffix if needed
 - `Snbom` = `Snb` off of `origin/main`
