@@ -198,7 +198,10 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return { ok: true, game: optimistic.derivedGame };
   };
 
-  const clearOptimisticQueue = (gameId, { notice = "", syncStatus = "ready", changeType = "optimistic_queue_cleared" } = {}) => {
+  const clearOptimisticQueue = (
+    gameId,
+    { notice = "", syncStatus = "ready", changeType = "optimistic_queue_cleared", clientCommandId = null } = {},
+  ) => {
     const optimistic = getOptimisticState(gameId);
     clearRetryState(optimistic);
     optimistic.pendingCommands = [];
@@ -207,7 +210,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     optimistic.syncStatus = syncStatus;
     optimistic.rollbackNotice = notice;
     recalculateOptimisticGame(gameId);
-    emitChange({ type: changeType, gameId });
+    emitChange({ type: changeType, gameId, clientCommandId });
   };
 
   const clearRollbackNotice = (gameId) => {
@@ -399,6 +402,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
           notice: "A predicted move was rejected by the server. The board was restored.",
           syncStatus: "ready",
           changeType: "optimistic_rollback",
+          clientCommandId: command.clientCommandId,
         });
         if (body.game) {
           upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
@@ -458,6 +462,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
             notice: "Move confirmation timed out. The board was restored to the latest authoritative state.",
             syncStatus: "ready",
             changeType: "optimistic_rollback",
+            clientCommandId: command.clientCommandId,
           });
           logDiagnostic("warn", "live_transport_confirmation_timeout_rollback", {
             gameId,
@@ -471,6 +476,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
           notice: "Move sync failed before confirmation. The board was restored to the last authoritative state.",
           syncStatus: "desynced",
           changeType: "optimistic_desynced",
+          clientCommandId: command.clientCommandId,
         });
         logDiagnostic("error", "live_transport_desynced", {
           gameId,

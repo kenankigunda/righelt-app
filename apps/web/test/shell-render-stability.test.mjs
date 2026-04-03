@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
 const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
+const syncStoreSource = readFileSync(join(testDir, "..", "shell", "sync-store.js"), "utf8");
 
 test("shell render patches same-route game updates without replacing the board panel", () => {
   assert.match(source, /FLYOUT_KEYS,/);
@@ -188,9 +189,9 @@ test("shell render patches same-route game updates without replacing the board p
 });
 
 test("live sync applies authoritative pushed game payloads before render", () => {
-  assert.match(source, /payload\?\.type === "state_sync"/);
-  assert.match(source, /payload\?\.type === "event_appended"/);
-  assert.match(source, /transport\.applyLiveGameUpdate\(\{ game: payload\.game, eventSeq: payload\.eventSeq, clientCommandId: payload\.clientCommandId \?\? null \}\);/);
+  assert.match(syncStoreSource, /payload\?\.type === "state_sync"/);
+  assert.match(syncStoreSource, /payload\?\.type === "event_appended"/);
+  assert.match(syncStoreSource, /transport\.applyLiveGameUpdate\(\{\s*game: payload\.game,\s*eventSeq: payload\.eventSeq,\s*clientCommandId: payload\.clientCommandId \?\? null,\s*\}\);/s);
   assert.match(source, /if \(document\.getElementById\("shell-debug-last-event"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
@@ -202,14 +203,13 @@ test("live sync status renders are deduplicated by stable status key", () => {
   assert.match(source, /if \(document\.getElementById\("shell-debug-live-sync"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
-test("syncLiveChannels manages subscriptions through the shared active game set", () => {
-  assert.match(
-    source,
-    /const activeLiveGameIds = new Set\(\);/,
-  );
-  assert.match(source, /const desiredGameIds = new Set\(routeGameId \? \[routeGameId\] : \[\]\);/);
-  assert.match(source, /liveSync\.disconnectGame\(gameId\);/);
-  assert.match(source, /liveSync\.connectGame\(gameId\);/);
+test("sync store manages subscriptions through the active route game id", () => {
+  assert.match(source, /syncStore\.setActiveGameId\(routeGameId\);/);
+  assert.match(syncStoreSource, /let activeGameId = null;/);
+  assert.match(syncStoreSource, /const desiredGameIds = new Set\(\[activeGameId\]\);/);
+  assert.match(syncStoreSource, /for \(const gameId of liveSync\.getDesiredGameIds\(\)\) \{/);
+  assert.match(syncStoreSource, /liveSync\.disconnectGame\(gameId\);/);
+  assert.match(syncStoreSource, /liveSync\.connectGame\(gameId\);/);
 });
 
 test("history renderer emits move-only rows without visible turn wrappers", () => {

@@ -1,0 +1,171 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createSyncStore } from "../shell/sync-store.js";
+
+const createMemoryStorage = () => {
+  const map = new Map();
+  return {
+    getItem: (key) => (map.has(key) ? map.get(key) : null),
+    setItem: (key, value) => map.set(key, String(value)),
+    removeItem: (key) => map.delete(key),
+  };
+};
+
+test("sync store setActiveGameId manages live sync connections", () => {
+  const calls = [];
+  const desiredGameIds = [];
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      subscribe: () => () => {},
+      getIdentityId: () => "id-test",
+      getLastEventSeq: () => 0,
+    }),
+    createSyncClient: () => ({
+      connectGame: (gameId) => {
+        desiredGameIds.push(gameId);
+        calls.push(["connect", gameId]);
+      },
+      disconnectGame: (gameId) => {
+        const index = desiredGameIds.indexOf(gameId);
+        if (index >= 0) {
+          desiredGameIds.splice(index, 1);
+        }
+        calls.push(["disconnect", gameId]);
+      },
+      disconnectAll: () => {
+        desiredGameIds.length = 0;
+        calls.push(["disconnectAll"]);
+      },
+      getDesiredGameIds: () => [...desiredGameIds],
+    }),
+  });
+
+  store.setActiveGameId("game-1");
+  store.setActiveGameId("game-2");
+  store.setActiveGameId(null);
+
+  assert.deepEqual(calls, [
+    ["connect", "game-1"],
+    ["disconnect", "game-1"],
+    ["connect", "game-2"],
+    ["disconnectAll"],
+  ]);
+});
+
+test("sync store applies authoritative live payloads before forwarding events", () => {
+  const appliedPayloads = [];
+  let forwardedPayload = null;
+  let capturedOnEvent = null;
+
+  createSyncStore({
+    storage: createMemoryStorage(),
+    onEvent: (payload) => {
+      forwardedPayload = payload;
+    },
+    createTransportStore: () => ({
+      subscribe: () => () => {},
+      getIdentityId: () => "id-test",
+      getLastEventSeq: () => 7,
+      applyLiveGameUpdate: (payload) => {
+        appliedPayloads.push(payload);
+      },
+    }),
+    createSyncClient: (options) => {
+      capturedOnEvent = options.onEvent;
+      return {
+        connectGame() {},
+        disconnectGame() {},
+        disconnectAll() {},
+        getDesiredGameIds: () => [],
+      };
+    },
+  });
+
+  capturedOnEvent(
+    {
+      type: "event_appended",
+      game: { id: "game-1" },
+      eventSeq: 8,
+      clientCommandId: "cmd-1",
+    },
+    { gameId: "game-1" },
+  );
+
+  assert.deepEqual(appliedPayloads, [
+    { game: { id: "game-1" }, eventSeq: 8, clientCommandId: "cmd-1" },
+  ]);
+  assert.deepEqual(forwardedPayload, {
+    type: "event_appended",
+    game: { id: "game-1" },
+    eventSeq: 8,
+    clientCommandId: "cmd-1",
+  });
+});
+
+test("sync store wraps optimistic transport responses in operation handles", async () => {
+  const listeners = new Set();
+  let currentGame = {
+    id: "game-1",
+    currentSnapshot: { sideToMove: "P1" },
+    legalActions: [{ type: "move" }],
+    currentTurn: { index: 0 },
+  };
+
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      getIdentityId: () => "id-test",
+      getLastEventSeq: () => 0,
+      getGameViewModel: () => currentGame,
+      applyGameAction: async () => ({
+        ok: true,
+        accepted: true,
+        clientCommandId: "cmd-apply",
+        state: { sideToMove: "P1" },
+        legalActions: [{ type: "move" }],
+        game: currentGame,
+      }),
+      endTurn: async () => ({
+        ok: true,
+        clientCommandId: "cmd-turn",
+        turn: { index: 0 },
+        game: currentGame,
+      }),
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const actionHandle = await store.applyGameAction({ gameId: "game-1", state: {}, action: { type: "pass" } });
+  assert.equal(actionHandle.status, "pending");
+  assert.equal(store.getPendingOperations("game-1").length, 1);
+
+  currentGame = {
+    ...currentGame,
+    currentSnapshot: { sideToMove: "P2" },
+    legalActions: [{ type: "end-turn" }],
+  };
+  listeners.forEach((listener) =>
+    listener({ type: "authoritative_update", gameId: "game-1", clientCommandId: "cmd-apply" }),
+  );
+
+  const committedAction = await actionHandle.committed;
+  assert.equal(actionHandle.status, "committed");
+  assert.deepEqual(committedAction.state, { sideToMove: "P2" });
+
+  const endTurnHandle = await store.endTurn({ gameId: "game-1" });
+  listeners.forEach((listener) =>
+    listener({ type: "optimistic_desynced", gameId: "game-1", clientCommandId: "cmd-turn" }),
+  );
+  await assert.rejects(endTurnHandle.committed, /Sync failed/);
+  assert.equal(endTurnHandle.status, "failed");
+});

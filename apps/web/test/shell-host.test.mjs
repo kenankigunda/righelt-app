@@ -182,6 +182,40 @@ test("shell host applyAction uses canonical legal actions from the updated game 
   assert.deepEqual(result.legalActions, canonicalLegalActions);
 });
 
+test("shell host unwraps operation handles returned by the sync store", async () => {
+  const transport = {
+    getGameViewModel() {
+      return {
+        currentSnapshot: { sideToMove: "P2", turnIndex: 1, continuation: null, pieces: [] },
+        currentTurn: { playerSeat: "Player 2" },
+        legalActions: [{ type: "move" }],
+      };
+    },
+    async applyGameAction() {
+      return {
+        id: "cmd-1",
+        status: "pending",
+        error: null,
+        committed: Promise.resolve(),
+        result: {
+          accepted: true,
+          state: { sideToMove: "P2", turnIndex: 1, continuation: null, pieces: [] },
+          legalActions: [{ type: "move" }],
+        },
+      };
+    },
+  };
+
+  const host = createShellBoardHost({ transport, gameId: "g-handle", canInteract: () => true });
+  const result = await host.applyAction(
+    { sideToMove: "P1", turnIndex: 0, continuation: null, pieces: [] },
+    { type: "pass" },
+  );
+
+  assert.equal(result.accepted, true);
+  assert.equal(result.boardMessage?.type, "turn_ended");
+});
+
 test("shell host applyAction prefers the optimistic game snapshot over a stale direct state payload", async () => {
   const optimisticState = {
     sideToMove: "P2",

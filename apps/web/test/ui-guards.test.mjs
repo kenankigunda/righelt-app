@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
 const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
+const syncStoreSource = readFileSync(join(testDir, "..", "shell", "sync-store.js"), "utf8");
 const shellHostSource = readFileSync(join(testDir, "..", "board", "hosts", "shell-host.js"), "utf8");
 
 const extractSourceSegment = (startMarker, endMarker) => {
@@ -85,7 +86,10 @@ test("game route live sync connection is not gated by participant role", () => {
     source,
     /const routeGameId =\s*shouldLiveSyncRoute\(currentRoute\)\s*&&/s,
   );
-  assert.match(source, /const desiredGameIds = new Set\(routeGameId \? \[routeGameId\] : \[\]\);/);
+  assert.match(source, /syncStore\.setActiveGameId\(routeGameId\);/);
+  assert.match(syncStoreSource, /const desiredGameIds = new Set\(\[activeGameId\]\);/);
+  assert.match(syncStoreSource, /liveSync\.disconnectGame\(gameId\);/);
+  assert.match(syncStoreSource, /liveSync\.connectGame\(gameId\);/);
 });
 
 test("home uses per-section pagination and renders the smoke section only in debug mode", () => {

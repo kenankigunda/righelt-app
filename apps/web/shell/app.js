@@ -4,8 +4,7 @@ import { syncMiniBoardPreviews } from "../board/mini-board-preview.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
-import { createLiveTransportStore } from "./live-transport.js";
-import { createLiveSyncClient } from "./live-sync.js";
+import { createSyncStore } from "./sync-store.js";
 import { ensureHoverCapabilityController } from "../hover-capability.js";
 import { applyCommandLegendSwatch, getCommandLegendSwatchStyle } from "../legend.js";
 import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from "./persistence.js";
@@ -70,11 +69,12 @@ const createMemoryStorageFallback = () => {
 };
 
 const storage = typeof window.localStorage !== "undefined" ? window.localStorage : createMemoryStorageFallback();
-const transport = createLiveTransportStore({ storage });
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 const boardAdapter = createEngineBoardAdapter();
 const hoverCapability = ensureHoverCapabilityController();
 assertGameBoardAdapter(boardAdapter);
+const liveSyncMetricCounts = Object.create(null);
+window.__righeltLiveSyncMetrics = liveSyncMetricCounts;
 
 const toStableKey = (value) => {
   if (value === null || typeof value === "undefined") {
@@ -145,7 +145,6 @@ const GAME_SHELL_PANEL_TRANSITION_MS = 220;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
 const lastAnimatedHomeSectionTokenByKey = new Map();
-const activeLiveGameIds = new Set();
 const createHomeSectionState = (title) => ({
   title,
   page: 0,
@@ -601,7 +600,6 @@ const getHomeSectionCachedGameIndex = (section, gameId) => {
   }
   return null;
 };
-const shouldDisableLiveSync = () => navigator.onLine === false;
 const resetRouteWsStatus = () => {
   wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
   lastWsStatusKey = toStableKey(wsStatus);
@@ -3171,65 +3169,12 @@ const syncScenarioCatalog = async () => {
   }
 };
 
-transport.subscribe((change) => {
-  render({
-    animatePanels: false,
-    includeBoard: change?.type !== "optimistic_enqueue",
-  });
-});
-
-const syncLiveChannels = () => {
-  if (shouldDisableLiveSync()) {
-    liveSync.disconnectAll();
-    activeLiveGameIds.clear();
-    resetRouteWsStatus();
-    return;
-  }
-  const routeGameId =
-    shouldLiveSyncRoute(currentRoute) &&
-    (currentRoute.name === "game"
-      ? currentRoute.gameId
-      : currentRoute.name === "invite"
-        ? resolvedInvite?.gameId || null
-        : null);
-  const desiredGameIds = new Set(routeGameId ? [routeGameId] : []);
-  for (const gameId of [...activeLiveGameIds]) {
-    if (!desiredGameIds.has(gameId)) {
-      liveSync.disconnectGame(gameId);
-      activeLiveGameIds.delete(gameId);
-    }
-  }
-  for (const gameId of desiredGameIds) {
-    if (!activeLiveGameIds.has(gameId)) {
-      liveSync.connectGame(gameId);
-      activeLiveGameIds.add(gameId);
-    }
-  }
-  if (!routeGameId) {
-    resetRouteWsStatus();
-  }
-};
-
-const liveSyncMetricCounts = Object.create(null);
-window.__righeltLiveSyncMetrics = liveSyncMetricCounts;
-
-const liveSync = createLiveSyncClient({
-  identityId: transport.getIdentityId(),
-  getLastEventSeq: (gameId) => (gameId ? transport.getLastEventSeq(gameId) : 0),
+const syncStore = createSyncStore({
+  storage,
   onEvent: (payload) => {
     wsLastEvent = payload?.type
       ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
       : "unknown";
-    if (
-      (payload?.type === "state_sync" ||
-        payload?.type === "event_appended" ||
-        payload?.type === "presence_changed" ||
-        payload?.type === "join_request_created" ||
-        payload?.type === "join_request_resolved") &&
-      payload?.game
-    ) {
-      transport.applyLiveGameUpdate({ game: payload.game, eventSeq: payload.eventSeq, clientCommandId: payload.clientCommandId ?? null });
-    }
     if (document.getElementById("shell-debug-last-event")) {
       updateHeaderFields();
     } else {
@@ -3267,6 +3212,28 @@ const liveSync = createLiveSyncClient({
     }
   },
 });
+const transport = syncStore;
+
+transport.subscribe((change) => {
+  render({
+    animatePanels: false,
+    includeBoard: change?.type !== "optimistic_enqueue",
+  });
+});
+
+const syncLiveChannels = () => {
+  const routeGameId =
+    shouldLiveSyncRoute(currentRoute) &&
+    (currentRoute.name === "game"
+      ? currentRoute.gameId
+      : currentRoute.name === "invite"
+        ? resolvedInvite?.gameId || null
+        : null);
+  syncStore.setActiveGameId(routeGameId);
+  if (!routeGameId) {
+    resetRouteWsStatus();
+  }
+};
 
 const navigateTo = (hash) => {
   const parsedRoute = parseRouteFromHash(hash);
@@ -3324,22 +3291,6 @@ window.addEventListener("hashchange", () => {
   routeHydrated = false;
   syncLiveChannels();
   void withBusy(async () => {
-    await syncRouteDataAndLiveChannels();
-  });
-});
-
-window.addEventListener("online", () => {
-  void withBusy(async () => {
-    syncLiveChannels();
-    await syncRouteDataAndLiveChannels();
-  });
-});
-
-window.addEventListener("offline", () => {
-  void withBusy(async () => {
-    liveSync.disconnectAll();
-    activeLiveGameIds.clear();
-    resetRouteWsStatus();
     await syncRouteDataAndLiveChannels();
   });
 });
