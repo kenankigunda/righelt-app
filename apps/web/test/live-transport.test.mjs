@@ -739,6 +739,10 @@ test("live transport store applies optimistic moves immediately and clears pendi
   assert.equal(optimisticView.pendingCommandCount, 1);
   assert.equal(optimisticView.moves.length, 1);
   assert.notDeepEqual(optimisticView.currentSnapshot, baseGame.currentSnapshot);
+  const optimisticHomeCard = store.getHomeGameCard(baseGame.id);
+  assert.equal(optimisticHomeCard.syncStatus, "applying-update");
+  assert.equal(optimisticHomeCard.moveCount, 1);
+  assert.notDeepEqual(optimisticHomeCard.previewSnapshot, baseGame.currentSnapshot);
 
   resolveApply?.(
     Response.json({
@@ -756,6 +760,9 @@ test("live transport store applies optimistic moves immediately and clears pendi
   assert.equal(settledView.pendingCommandCount, 0);
   assert.equal(settledView.moves.length, 2);
   assert.equal(settledView.syncStatus, "ready");
+  const settledHomeCard = store.getHomeGameCard(baseGame.id);
+  assert.equal(settledHomeCard.syncStatus, "ready");
+  assert.equal(settledHomeCard.moveCount, 2);
 });
 
 test("live transport store hands off to the next turn immediately for optimistic turn-ending actions", async () => {

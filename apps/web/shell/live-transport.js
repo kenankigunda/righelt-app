@@ -172,11 +172,13 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
     if (!authoritativeGame) {
       optimistic.derivedGame = null;
+      homeGameCardById.delete(gameId);
       return { ok: true, game: null };
     }
 
     if (optimistic.pendingCommands.length === 0) {
       optimistic.derivedGame = decorateGameWithSync(authoritativeGame, gameId);
+      homeGameCardById.set(gameId, buildStaticGameCardFromGame(optimistic.derivedGame));
       return { ok: true, game: optimistic.derivedGame };
     }
 
@@ -187,11 +189,13 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     });
     if (!projection.ok) {
       optimistic.derivedGame = decorateGameWithSync(authoritativeGame, gameId);
+      homeGameCardById.set(gameId, buildStaticGameCardFromGame(optimistic.derivedGame));
       return projection;
     }
 
     optimistic.commandResults = projection.commandResults;
     optimistic.derivedGame = decorateGameWithSync(projection.game, gameId);
+    homeGameCardById.set(gameId, buildStaticGameCardFromGame(optimistic.derivedGame));
     return { ok: true, game: optimistic.derivedGame };
   };
 
