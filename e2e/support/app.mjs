@@ -100,6 +100,15 @@ export const createGamesViaApi = async (page, count) => {
   }, count);
 };
 
+export const getCurrentGameIdFromPage = async (page) => {
+  const url = new URL(page.url());
+  const match = url.hash.match(/^#\/game\/([^?]+)/);
+  if (!match) {
+    throw new Error(`Expected game hash in page URL, received ${url.hash}`);
+  }
+  return decodeURIComponent(match[1]);
+};
+
 export const importScenarioGame = async (page, scenario, baseURL) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
@@ -242,6 +251,24 @@ export const openHistoryMode = async (page, moveIndex = 0) => {
   await expect(historyMoveItems(page).nth(moveIndex)).toBeVisible();
   await historyMoveItems(page).nth(moveIndex).click();
   await expect(page.getByTestId("history-return-live")).toBeVisible();
+};
+
+export const launchHistoryBranchFromMove = async (page, moveIndex = 0) => {
+  await openHistoryMode(page, moveIndex);
+  const branchResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "POST" && url.pathname === "/api/shell/history/branch";
+  });
+  const popupPromise = page.waitForEvent("popup");
+  await page.locator('[data-action="launch-history-branch"]').click();
+  const [popup, branchResponse] = await Promise.all([popupPromise, branchResponsePromise]);
+  await popup.waitForLoadState("domcontentloaded");
+  const branchBody = await branchResponse.json();
+  return {
+    popup,
+    branchBody,
+    gameId: await getCurrentGameIdFromPage(popup),
+  };
 };
 
 export const returnToLive = async (page) => {

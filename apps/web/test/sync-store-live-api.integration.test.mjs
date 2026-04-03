@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createSyncStore } from "../shell/sync-store.js";
+import { buildHistoryBranchSeedFromGame } from "../shell/scenarios.js";
 import { handleApiRequest } from "../../../packages/api-handler/src/index.ts";
 import { __resetLiveGameStateForTests } from "../../../packages/api-handler/src/shell-live.ts";
 import { createFakeD1 } from "../../../packages/api-handler/test/support/fake-d1.mjs";
@@ -27,12 +28,11 @@ const createApiEnv = () => {
 
 const toAbsoluteUrl = (url) => (String(url).startsWith("http") ? String(url) : `https://example.test${String(url)}`);
 
-test("integration sync store keeps the optimistic game id when creating and immediately moving against the real API", async () => {
+const createTrackedSyncStore = () => {
   __resetLiveGameStateForTests();
   const env = createApiEnv();
   const storage = createMemoryStorage();
   const requests = [];
-
   const store = createSyncStore({
     storage,
     fetcher: async (url, init = {}) => {
@@ -58,6 +58,11 @@ test("integration sync store keeps the optimistic game id when creating and imme
       getDesiredGameIds: () => [],
     }),
   });
+  return { env, storage, requests, store };
+};
+
+test("integration sync store keeps the optimistic game id when creating and immediately moving against the real API", async () => {
+  const { requests, store } = createTrackedSyncStore();
 
   const createHandle = store.createGame({ selfPlayMode: false });
   const requestedGameId = createHandle.result.id;
@@ -86,4 +91,63 @@ test("integration sync store keeps the optimistic game id when creating and imme
   assert.ok(applyRequest);
   assert.equal(committedMove.accepted, true);
   assert.equal(store.getGameViewModel(requestedGameId)?.moves.length, 1);
+});
+
+test("integration sync store keeps the optimistic game id stable across history branch creation and immediate moves", async () => {
+  const { requests, store } = createTrackedSyncStore();
+
+  const sourceHandle = store.createGame({ selfPlayMode: false });
+  const sourceGame = await Promise.race([
+    sourceHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("source create commit timed out")), 2_000)),
+  ]);
+
+  const sourceAction = sourceGame.legalActions.find((entry) => entry.type !== "pass") ?? sourceGame.legalActions[0];
+  const sourceMoveHandle = await store.applyGameAction({
+    gameId: sourceGame.id,
+    state: sourceGame.currentSnapshot,
+    action: sourceAction,
+  });
+  await Promise.race([
+    sourceMoveHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("source move commit timed out")), 2_000)),
+  ]);
+
+  const sourceView = store.getGameViewModel(sourceGame.id);
+  const branchSeed = buildHistoryBranchSeedFromGame(sourceView, 0);
+  const branchHandle = store.launchHistoryBranch({
+    sourceGameId: sourceGame.id,
+    sourceMoveIndex: 0,
+    scenario: branchSeed.scenario,
+    initialSelectionAction: branchSeed.initialSelectionAction,
+    participantCopyMode: branchSeed.participantCopyMode,
+  });
+  const requestedBranchId = branchHandle.result.game.id;
+
+  const branchGame = await Promise.race([
+    branchHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("branch create commit timed out")), 2_000)),
+  ]);
+
+  assert.equal(branchGame.game.id, requestedBranchId);
+  const branchRequest = requests.find((entry) => entry.url === "/api/shell/history/branch" && entry.method === "POST");
+  assert.equal(branchRequest?.body?.gameId, requestedBranchId);
+
+  const branchAction = branchGame.game.legalActions.find((entry) => entry.type !== "pass") ?? branchGame.game.legalActions[0];
+  const branchMoveHandle = await store.applyGameAction({
+    gameId: requestedBranchId,
+    state: branchGame.game.currentSnapshot,
+    action: branchAction,
+  });
+  const committedBranchMove = await Promise.race([
+    branchMoveHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("branch move commit timed out")), 2_000)),
+  ]);
+
+  const branchApplyRequest = requests.find(
+    (entry) => entry.url === `/api/shell/games/${requestedBranchId}/apply` && entry.method === "POST",
+  );
+  assert.ok(branchApplyRequest);
+  assert.equal(committedBranchMove.accepted, true);
+  assert.equal(store.getGameViewModel(requestedBranchId)?.moves.length, branchGame.game.moves.length + 1);
 });

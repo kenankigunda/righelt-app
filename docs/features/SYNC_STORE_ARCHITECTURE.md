@@ -204,8 +204,10 @@ Wrap existing `createLiveTransportStore` + `createLiveSyncClient` into a single 
 - **Unit tests**: `setActiveGameId()` correctly manages WS connect/disconnect calls
 - **Unit tests**: Online/offline transitions are handled internally (no external event listener needed)
 - **Integration test**: All existing tests pass with syncStore swapped in
-- **Manual test**: create game, make moves, verify live sync works
-- **Manual test**: browser goes offline → WS disconnects → browser comes online → WS reconnects
+- **Integration test**: real API-backed sync-store tests prove optimistic route ids stay equal across request body, response body, local route id, and first follow-up mutation target
+- **E2E test**: browser workflow verifies create-game route id equals the server response id and the first `/apply` request uses that same id
+- **E2E test**: browser workflow verifies history-branch popup route id equals the server response id and the first branch `/apply` request uses that same id
+- Manual testing may be used for exploratory confidence, but the verification gate for these contracts is automated
 
 ---
 
@@ -258,6 +260,7 @@ Add a promise-based operation lifecycle to ALL store operations.
   - Board runtime receives same response shape as before (via shell-host.js adaptation)
   - All 7 existing `shell-host.test.mjs` tests pass (contract: shell-host prefers transport's canonical game view)
   - All existing `live-transport.test.mjs` tests pass (~1345 lines of coverage including optimistic handoff, turn settlement parity)
+  - Client-generated-id workflows assert identifier stability end to end: request body id, response body id, local route id, and first follow-up mutation game id must all match
 - **Manual test**: board interactions feel identical (optimistic result is same object)
 
 ---
