@@ -181,7 +181,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.match(source, /data-flyout-link="home"/);
-  assert.match(source, /data-flyout-link="game"/);
+  assert.match(source, /flyoutLink \? `data-flyout-link="\$\{escapeHtml\(flyoutLink\)\}"` : ""/);
   assert.doesNotMatch(source, /data-flyout-link="tutorial"/);
   assert.match(source, /data-action="copy-invite" data-game-id=/);
   assert.doesNotMatch(source, /replaceWith\(previousBoardPanel\)/);
@@ -333,9 +333,8 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /data-mini-board-preview data-preview-id=/);
   assert.match(source, /const reconcileMiniBoardPreviews = \(\) => \{/);
   assert.match(source, /syncMiniBoardPreviews\(\{/);
-  assert.match(source, /const getGamePreviewSnapshot = \(game\) => game\?\.liveCurrentSnapshot \?\? game\?\.board\?\.state \?\? game\?\.currentSnapshot \?\? null;/);
-  assert.match(source, /previewId: `home:\$\{game\.id\}`/);
-  assert.match(source, /previewId: `scenario:\$\{selectedScenario\.id\}`/);
+  assert.match(source, /const getStaticCardPreviewSnapshot = \(card\) => card\?\.previewSnapshot \?\? null;/);
+  assert.match(source, /previewId: `\$\{variant\}:\$\{card\.id\}`/);
   assert.match(source, /class="mini-board-card"/);
   assert.match(source, /class="mini-board-card-link-surface"[\s\S]*href=/);
   assert.match(source, /data-game-id="\$\{escapeHtml\(game\.id\)\}"/);
@@ -365,7 +364,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /<div class="mini-board-card-meta mini-board-card-meta-primary">/);
   assert.match(source, /<span>\$\{renderHomeRoleLine\(game\)\}<\/span>/);
   assert.match(source, /\$\{seatConnectionLine\}/);
-  assert.match(source, /const moveLabel = Array\.isArray\(game\.moves\) \? `Move \$\{game\.moves\.length \+ 1\}` : "Move pending";/);
+  assert.match(source, /const moveLabel = `Move \$\{game\.moveCount \+ 1\}`;/);
   assert.match(source, /reconcileMiniBoardPreviews\(\);\s*syncMountedGameShellPanelUi\(shellRoot\);\s*scheduleGameShellStickyLayout\(\);/);
 });
 

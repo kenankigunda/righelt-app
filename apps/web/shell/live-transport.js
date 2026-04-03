@@ -1,6 +1,7 @@
 import { listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
 import { loadIdentity, saveIdentity } from "./persistence.js";
 import { defaultNotationForAction, projectOptimisticGame } from "./optimistic-live.js";
+import { buildStaticGameCardFromGame, normalizeStaticGameCard } from "./static-game-cards.js";
 
 const clone = (value) => structuredClone(value);
 const CONFIRM_WINDOW_MS = 15_000;
@@ -73,6 +74,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   let games = [];
   let gameById = new Map();
+  let homeGameCardById = new Map();
   const lastEventSeqByGameId = new Map();
   const optimisticStateByGameId = new Map();
   const listeners = new Set();
@@ -218,6 +220,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const upsertGame = (game) => {
     const next = clone(game);
     gameById.set(next.id, next);
+    homeGameCardById.set(next.id, buildStaticGameCardFromGame(next));
     const current = games.filter((entry) => entry.id !== next.id);
     current.push(next);
     current.sort((left, right) => {
@@ -509,13 +512,13 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       cache: "no-store",
     });
     const body = await mustOk(response);
-    const gamesPage = Array.isArray(body.games) ? body.games : [];
+    const gamesPage = Array.isArray(body.games) ? body.games.map((game) => normalizeStaticGameCard(game)) : [];
     for (const game of gamesPage) {
-      upsertGame(game);
+      homeGameCardById.set(game.id, game);
     }
     return {
       ...body,
-      games: gamesPage.map((game) => getGameViewModel(game.id) ?? game),
+      games: gamesPage,
     };
   };
 
@@ -788,6 +791,10 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const listGames = () => games.map((game) => getGameViewModel(game.id)).filter(Boolean);
+  const getHomeGameCard = (gameId) => {
+    const card = homeGameCardById.get(gameId);
+    return card ? clone(card) : null;
+  };
 
   const getGameViewModel = (gameId) => {
     const optimistic = getOptimisticState(gameId);
@@ -831,6 +838,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     getLastEventSeq,
     getSyncMetrics,
     listGames,
+    getHomeGameCard,
     getGameViewModel,
     getIdentityId,
     subscribe,

@@ -544,6 +544,9 @@ test("live transport store loads paged home sections through section-aware query
   assert.equal(page.totalPages, 2);
   assert.equal(page.games.length, 1);
   assert.equal(page.games[0].id, "game-000006");
+  assert.equal(page.games[0].moveCount, 1);
+  assert.equal(store.getHomeGameCard("game-000006")?.id, "game-000006");
+  assert.equal(store.getGameViewModel("game-000006"), null);
 });
 
 test("live transport store can promote player 1 to both seats when player 2 is open", async () => {
