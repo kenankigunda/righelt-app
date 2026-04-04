@@ -96,6 +96,9 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
   - `Tka [t-###]` = run only the Architect step (spec must already exist, or ticket is an improvement)
   - `Tke [t-###]` = fan out Eng subtasks from an existing eng plan
   - `Tkv [t-###]` = run the Lead's final end-to-end Tester validation pass
+- Sprint flows — uses the workflow in `docs/ai/TICKET_WORKFLOW.md`:
+  - `Ps [type]` = **P**lanning **S**print: drive all tickets of the given type (e.g. `feature`, `bug`, `improvement`) that are not yet `Ready for execution` through spec + planning to `Ready for execution`
+  - `Es` = **E**xecution **S**print: drive all `Ready for execution` tickets through implementation + review to `Ready for acceptance`
 
 ## 7) Backlog
 
