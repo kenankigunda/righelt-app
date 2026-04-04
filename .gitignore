@@ -39,6 +39,8 @@ test-results/
 .vscode/
 *.swp
 *.swo
+.claude/
+!.claude/agents/
 
 # OS
 .DS_Store
