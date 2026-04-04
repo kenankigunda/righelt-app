@@ -102,7 +102,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /targetEl\.setAttribute\("data-sticky-enabled", stickyEnabled \? "true" : "false"\);/);
   assert.match(source, /const mountedGameShell = getMountedGameShellRoot\(\);/);
   assert.match(source, /shouldUseIncrementalGameShell\(\)/);
-  assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),/s);
+  assert.match(source, /updateMountedGameShell\(\{\s*game: syncStore\.getGameViewModel\(currentRoute\.gameId\),/s);
   assert.match(source, /includeBoard: change\?\.type !== "optimistic_enqueue"/);
   assert.match(source, /const getAnimatedPanels = \(\) =>/);
   assert.match(source, /const getAnimatedFlyoutEls = \(layoutMode = getShellLayoutMode\(\)\) => \{/);
@@ -188,9 +188,10 @@ test("shell render patches same-route game updates without replacing the board p
 });
 
 test("live sync applies authoritative pushed game payloads before render", () => {
-  assert.match(source, /payload\?\.type === "state_sync"/);
-  assert.match(source, /payload\?\.type === "event_appended"/);
-  assert.match(source, /transport\.applyLiveGameUpdate\(\{ game: payload\.game, eventSeq: payload\.eventSeq, clientCommandId: payload\.clientCommandId \?\? null \}\);/);
+  const syncStoreSource = readFileSync(join(testDir, "..", "shell", "sync-store.js"), "utf8");
+  assert.match(syncStoreSource, /payload\?\.type === "state_sync"/);
+  assert.match(syncStoreSource, /payload\?\.type === "event_appended"/);
+  assert.match(syncStoreSource, /transport\.applyLiveGameUpdate\(\{[\s\S]*game: payload\.game,[\s\S]*eventSeq: payload\.eventSeq,[\s\S]*clientCommandId: payload\.clientCommandId \?\? null/s);
   assert.match(source, /if \(document\.getElementById\("shell-debug-last-event"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
@@ -202,14 +203,15 @@ test("live sync status renders are deduplicated by stable status key", () => {
   assert.match(source, /if \(document\.getElementById\("shell-debug-live-sync"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
-test("syncLiveChannels manages subscriptions through the shared active game set", () => {
+test("syncLiveChannels delegates to syncStore.setActiveGameId", () => {
+  assert.match(source, /syncStore\.setActiveGameId\(routeGameId\)/);
   assert.match(
     source,
-    /const activeLiveGameIds = new Set\(\);/,
+    /const routeGameId = shouldLiveSyncRoute\(currentRoute\) \? getCurrentViewedGameId\(\) : null;/,
   );
-  assert.match(source, /const desiredGameIds = new Set\(routeGameId \? \[routeGameId\] : \[\]\);/);
-  assert.match(source, /liveSync\.disconnectGame\(gameId\);/);
-  assert.match(source, /liveSync\.connectGame\(gameId\);/);
+  const syncStoreSource = readFileSync(join(testDir, "..", "shell", "sync-store.js"), "utf8");
+  assert.match(syncStoreSource, /liveSync\.disconnectGame/);
+  assert.match(syncStoreSource, /liveSync\.connectGame/);
 });
 
 test("history renderer emits move-only rows without visible turn wrappers", () => {
@@ -247,10 +249,10 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
 });
 
 test("transport subscriptions drive immediate game-shell updates", () => {
-  assert.match(source, /transport\.subscribe\(\(change\) => \{\s*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);\s*\}\);/s);
+  assert.match(source, /syncStore\.subscribe\(\(change\) => \{\s*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);\s*\}\);/s);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
   assert.match(source, /return !getActiveApprovalRequest\(game\) && !getActiveRevertRequest\(game\) && !getActivePendingRevertRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
-  assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*\}\);/s);
+  assert.match(source, /updateMountedGameShell\(\{\s*game: syncStore\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*\}\);/s);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
 });
 
@@ -296,7 +298,7 @@ test("debug flyout persists locally while scenario-created games close the scena
 
 test("history branch launch keeps the source tab stable while opening a new tab", () => {
   assert.match(source, /action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "return-live"/s);
-  assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*buildHistoryBranchSeedFromGame\(activeGame, moveIndex\);[\s\S]*transport\.launchHistoryBranch\(/s);
+  assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*buildHistoryBranchSeedFromGame\(activeGame, moveIndex\);[\s\S]*syncStore\.launchHistoryBranch\(/s);
   assert.match(source, /window\.open\(`\$\{window\.location\.pathname\}\$\{window\.location\.search\}\$\{nextHash\}`,\s*"_blank",\s*"noopener"\);/);
   assert.match(source, /const initialSelectionHydration = resolveInitialSelectionHydration\(/);
   assert.match(source, /const hydratedSelectionAction = scenarioSelectionHydration\.selectionAction \?\? initialSelectionHydration\.selectionAction;/);

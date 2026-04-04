@@ -4,8 +4,7 @@ import { syncMiniBoardPreviews } from "../board/mini-board-preview.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
-import { createLiveTransportStore } from "./live-transport.js";
-import { createLiveSyncClient } from "./live-sync.js";
+import { createSyncStore } from "./sync-store.js";
 import { ensureHoverCapabilityController } from "../hover-capability.js";
 import { applyCommandLegendSwatch, getCommandLegendSwatchStyle } from "../legend.js";
 import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from "./persistence.js";
@@ -70,7 +69,51 @@ const createMemoryStorageFallback = () => {
 };
 
 const storage = typeof window.localStorage !== "undefined" ? window.localStorage : createMemoryStorageFallback();
-const transport = createLiveTransportStore({ storage });
+const liveSyncMetricCounts = Object.create(null);
+window.__righeltLiveSyncMetrics = liveSyncMetricCounts;
+const syncStore = createSyncStore({
+  storage,
+  onSyncEvent: (payload) => {
+    wsLastEvent = payload?.type
+      ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
+      : "unknown";
+    if (document.getElementById("shell-debug-last-event")) {
+      updateHeaderFields();
+    } else {
+      render({ animatePanels: false, includeBoard: false });
+    }
+  },
+  onSyncStatus: (status) => {
+    const routeGameId = getCurrentViewedGameId();
+    if (!routeGameId || status.gameId !== routeGameId || !shouldLiveSyncRoute(currentRoute)) {
+      return;
+    }
+    const statusKey = toStableKey(status);
+    if (statusKey === lastWsStatusKey) {
+      return;
+    }
+    lastWsStatusKey = statusKey;
+    wsStatus = status;
+    if (status.state === "closed" && status.reconnectAttempts >= 3) {
+      void syncRouteDataPassive();
+    }
+    if (document.getElementById("shell-debug-live-sync")) {
+      updateHeaderFields();
+    } else {
+      render({ animatePanels: false, includeBoard: false });
+    }
+  },
+  onSyncMetric: (metric) => {
+    const key = metric?.type || "unknown";
+    liveSyncMetricCounts[key] = (liveSyncMetricCounts[key] ?? 0) + 1;
+    liveSyncMetricCounts.last = metric;
+    liveSyncMetricCounts.activeSocketCount = metric?.activeSocketCount ?? 0;
+    liveSyncMetricCounts.desiredSocketCount = metric?.desiredSocketCount ?? 0;
+  },
+  onSyncError: (error) => {
+    window.__righeltLastError = error instanceof Error ? error.message : String(error);
+  },
+});
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 const boardAdapter = createEngineBoardAdapter();
 const hoverCapability = ensureHoverCapabilityController();
@@ -145,7 +188,6 @@ const GAME_SHELL_PANEL_TRANSITION_MS = 220;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
 const lastAnimatedHomeSectionTokenByKey = new Map();
-const activeLiveGameIds = new Set();
 const createHomeSectionState = (title) => ({
   title,
   page: 0,
@@ -425,7 +467,7 @@ const getScenarioExportContext = (game) => {
 const getActiveScenarioGame = () => {
   const activeGameId =
     currentRoute.name === "game" ? currentRoute.gameId : currentRoute.name === "invite" ? resolvedInvite?.gameId || null : null;
-  return activeGameId ? transport.getGameViewModel(activeGameId) : null;
+  return activeGameId ? syncStore.getGameViewModel(activeGameId) : null;
 };
 const replaceScenarioInCatalog = (scenario) => {
   scenarioCatalog = {
@@ -601,7 +643,6 @@ const getHomeSectionCachedGameIndex = (section, gameId) => {
   }
   return null;
 };
-const shouldDisableLiveSync = () => navigator.onLine === false;
 const resetRouteWsStatus = () => {
   wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
   lastWsStatusKey = toStableKey(wsStatus);
@@ -1484,15 +1525,15 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
 const renderDebugContent = () => {
   const route = currentRoute;
   const gameId = route.name === "game" ? route.gameId : route.name === "invite" ? resolvedInvite?.gameId || null : null;
-  const game = gameId ? transport.getGameViewModel(gameId) : null;
+  const game = gameId ? syncStore.getGameViewModel(gameId) : null;
   const selection = boardRuntime?.getSelection?.() ?? null;
   const legalActions = boardRuntime?.getLegalActions?.() ?? (game?.legalActions ?? []);
   const currentSnapshot = game?.currentSnapshot ?? null;
   const routeDiagnostics =
     route.name === "home"
       ? {
-          identityId: transport.getIdentityId(),
-          loadedGames: transport.listGames().map((entry) => ({ id: entry.id, moves: entry.moves.length, role: entry.myRole })),
+          identityId: syncStore.getIdentityId(),
+          loadedGames: syncStore.listGames().map((entry) => ({ id: entry.id, moves: entry.moves.length, role: entry.myRole })),
         }
       : route.name === "tutorial"
         ? {
@@ -1506,10 +1547,10 @@ const renderDebugContent = () => {
   return `
     <section class="panel debug-panel">
       <h2>Live Sync</h2>
-      <pre class="debug-pre">Identity <span id="shell-debug-identity" class="mono">${escapeHtml(transport.getIdentityId())}</span>
+      <pre class="debug-pre">Identity <span id="shell-debug-identity" class="mono">${escapeHtml(syncStore.getIdentityId())}</span>
 Live sync: <span id="shell-debug-live-sync" class="mono">${escapeHtml(`${wsStatus.state}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`)}</span>
 Last event: <span id="shell-debug-last-event" class="mono">${escapeHtml(wsLastEvent)}</span>
-Sync metrics: <span id="shell-debug-sync-metrics" class="mono">${escapeHtml(JSON.stringify(transport.getSyncMetrics()))}</span></pre>
+Sync metrics: <span id="shell-debug-sync-metrics" class="mono">${escapeHtml(JSON.stringify(syncStore.getSyncMetrics()))}</span></pre>
     </section>
     <section class="panel debug-panel">
       <h2>Engine Status</h2>
@@ -1558,7 +1599,7 @@ const renderScenarioFlyout = () => {
   }
   const route = currentRoute;
   const gameId = route.name === "game" ? route.gameId : route.name === "invite" ? resolvedInvite?.gameId || null : null;
-  const game = gameId ? transport.getGameViewModel(gameId) : null;
+  const game = gameId ? syncStore.getGameViewModel(gameId) : null;
   return renderFlyout({
     title: "Scenarios",
     variant: "scenarios",
@@ -1586,7 +1627,7 @@ const renderFlyoutBodyByKey = (flyoutKey) => {
   if (flyoutKey === "scenarios") {
     const route = currentRoute;
     const scenarioGameId = route.name === "game" ? route.gameId : route.name === "invite" ? resolvedInvite?.gameId || null : null;
-    const scenarioGame = scenarioGameId ? transport.getGameViewModel(scenarioGameId) : null;
+    const scenarioGame = scenarioGameId ? syncStore.getGameViewModel(scenarioGameId) : null;
     return renderScenarioPanel({ route, game: scenarioGame });
   }
   if (flyoutKey === "debug") {
@@ -1616,7 +1657,7 @@ const updateHeaderFields = () => {
   const lastEventEl = document.getElementById("shell-debug-last-event");
   const syncMetricsEl = document.getElementById("shell-debug-sync-metrics");
   if (identityEl) {
-    identityEl.textContent = transport.getIdentityId();
+    identityEl.textContent = syncStore.getIdentityId();
   }
   if (liveSyncEl) {
     liveSyncEl.textContent = `${wsStatus.state}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`;
@@ -1625,7 +1666,7 @@ const updateHeaderFields = () => {
     lastEventEl.textContent = wsLastEvent;
   }
   if (syncMetricsEl) {
-    syncMetricsEl.textContent = JSON.stringify(transport.getSyncMetrics());
+    syncMetricsEl.textContent = JSON.stringify(syncStore.getSyncMetrics());
   }
 };
 
@@ -1793,7 +1834,7 @@ const renderHomeStartButton = () =>
 
 const renderHomeGameSection = (sectionKey) => {
   const section = getHomeSection(sectionKey);
-  const games = section.gameIds.map((gameId) => transport.getHomeGameCard(gameId)).filter(Boolean);
+  const games = section.gameIds.map((gameId) => syncStore.getHomeGameCard(gameId)).filter(Boolean);
   const shouldAlwaysRender = sectionKey === "my";
   if (!Array.isArray(games) || (!shouldAlwaysRender && (games.length === 0 || section.totalGames === 0))) {
     return "";
@@ -2165,7 +2206,7 @@ const syncCopyInviteLinks = () => {
     if (!gameId) {
       return;
     }
-    const game = transport.getGameViewModel(gameId);
+    const game = syncStore.getGameViewModel(gameId);
     const inviteToken = game?.inviteToken || resolvedInvite?.inviteToken || gameId;
     const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(inviteToken, getCurrentFlyoutState())}`;
     buttonEl.setAttribute("data-link", inviteLink);
@@ -2347,7 +2388,7 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
   if (currentRoute.name !== "game" || !routeHydrated || !gameId) {
     return false;
   }
-  const game = transport.getGameViewModel(gameId);
+  const game = syncStore.getGameViewModel(gameId);
   if (!game) {
     return false;
   }
@@ -2359,7 +2400,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
     return `<section class="panel"><h2>Loading game...</h2><p class="small">Synchronizing current game state.</p></section>`;
   }
 
-  const game = transport.getGameViewModel(gameId);
+  const game = syncStore.getGameViewModel(gameId);
   if (!game) {
     return `<section class="panel"><h2>Loading game...</h2><p class="small">Fetching latest server state.</p></section>`;
   }
@@ -2505,7 +2546,7 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   if (!routeHydrated) {
     return renderGameContent(gameId, inviteFromRole, inviteToken);
   }
-  const game = transport.getGameViewModel(gameId);
+  const game = syncStore.getGameViewModel(gameId);
   if (!game) {
     return renderGameContent(gameId, inviteFromRole, inviteToken);
   }
@@ -2532,7 +2573,7 @@ const renderInviteLanding = (inviteContext) => {
     return `<section class="panel"><h2>Loading invite...</h2><p class="small">Resolving invite destination.</p></section>`;
   }
 
-  const game = transport.getGameViewModel(inviteContext.gameId);
+  const game = syncStore.getGameViewModel(inviteContext.gameId);
   const background = renderGameContent(inviteContext.gameId, inviteContext.inviteFromRole, inviteContext.inviteToken);
   if (!game) {
     return background;
@@ -2680,10 +2721,10 @@ const mountBoardForGame = (game) => {
     boardRuntime = createBoardRuntime({
       boardAdapter,
       host: createShellBoardHost({
-        transport,
+        transport: syncStore,
         gameId: game.id,
         canInteract: () => {
-          const view = transport.getGameViewModel(game.id);
+          const view = syncStore.getGameViewModel(game.id);
           return canControlLiveBoard(view);
         },
       }),
@@ -2829,7 +2870,7 @@ const loadHomeSectionServerPage = async (
   } = {},
 ) => {
   const previous = getHomeSection(sectionKey);
-  const response = await transport.loadGamesPage({
+  const response = await syncStore.loadGamesPage({
     section: sectionKey,
     page: serverPage,
     pageSize: HOME_SECTION_SERVER_PAGE_SIZE,
@@ -3032,7 +3073,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     updateHeaderFields();
     syncScenarioAuthoringControls();
     updateMountedGameShell({
-      game: transport.getGameViewModel(currentRoute.gameId),
+      game: syncStore.getGameViewModel(currentRoute.gameId),
       inviteFromRole: currentRoute.inviteFromRole,
       includeBoard,
     });
@@ -3043,11 +3084,11 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (currentRoute.name === "home") {
     body = renderHome();
   } else if (currentRoute.name === "game") {
-    const game = transport.getGameViewModel(currentRoute.gameId);
+    const game = syncStore.getGameViewModel(currentRoute.gameId);
     const inviteContext = getInviteContextForGame(game, "game");
     body = inviteContext ? renderInviteLanding(inviteContext) : renderGame(currentRoute.gameId, currentRoute.inviteFromRole);
   } else if (currentRoute.name === "invite") {
-    const game = resolvedInvite?.gameId ? transport.getGameViewModel(resolvedInvite.gameId) : null;
+    const game = resolvedInvite?.gameId ? syncStore.getGameViewModel(resolvedInvite.gameId) : null;
     const inviteContext = getInviteContextForGame(game, "invite");
     body = inviteContext ? renderInviteLanding(inviteContext) : renderGame(resolvedInvite?.gameId || null, resolvedInvite?.inviteFromRole || null, resolvedInvite?.inviteToken || null);
   } else if (currentRoute.name === "tutorial") {
@@ -3088,17 +3129,17 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (currentRoute.name === "game") {
     if (shouldUseIncrementalGameShell()) {
       updateMountedGameShell({
-        game: transport.getGameViewModel(currentRoute.gameId),
+        game: syncStore.getGameViewModel(currentRoute.gameId),
         inviteFromRole: currentRoute.inviteFromRole,
         includeBoard,
       });
       return;
     }
-    mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
+    mountBoardForGame(syncStore.getGameViewModel(currentRoute.gameId));
     scheduleGameShellStickyLayout();
   }
   if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
-    mountBoardForGame(transport.getGameViewModel(resolvedInvite.gameId));
+    mountBoardForGame(syncStore.getGameViewModel(resolvedInvite.gameId));
     scheduleGameShellStickyLayout();
   }
 };
@@ -3128,13 +3169,13 @@ const syncRouteData = async () => {
   }
   if (currentRoute.name === "game") {
     resolvedInvite = null;
-    await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
+    await syncStore.loadGame(currentRoute.gameId, { openAsViewer: false });
     routeHydrated = true;
     return;
   }
   if (currentRoute.name === "invite") {
-    resolvedInvite = await transport.resolveInvite(currentRoute.inviteToken);
-    await transport.loadGame(resolvedInvite.gameId, { openAsViewer: false });
+    resolvedInvite = await syncStore.resolveInvite(currentRoute.inviteToken);
+    await syncStore.loadGame(resolvedInvite.gameId, { openAsViewer: false });
     routeHydrated = true;
     return;
   }
@@ -3171,7 +3212,7 @@ const syncScenarioCatalog = async () => {
   }
 };
 
-transport.subscribe((change) => {
+syncStore.subscribe((change) => {
   render({
     animatePanels: false,
     includeBoard: change?.type !== "optimistic_enqueue",
@@ -3179,94 +3220,12 @@ transport.subscribe((change) => {
 });
 
 const syncLiveChannels = () => {
-  if (shouldDisableLiveSync()) {
-    liveSync.disconnectAll();
-    activeLiveGameIds.clear();
-    resetRouteWsStatus();
-    return;
-  }
-  const routeGameId =
-    shouldLiveSyncRoute(currentRoute) &&
-    (currentRoute.name === "game"
-      ? currentRoute.gameId
-      : currentRoute.name === "invite"
-        ? resolvedInvite?.gameId || null
-        : null);
-  const desiredGameIds = new Set(routeGameId ? [routeGameId] : []);
-  for (const gameId of [...activeLiveGameIds]) {
-    if (!desiredGameIds.has(gameId)) {
-      liveSync.disconnectGame(gameId);
-      activeLiveGameIds.delete(gameId);
-    }
-  }
-  for (const gameId of desiredGameIds) {
-    if (!activeLiveGameIds.has(gameId)) {
-      liveSync.connectGame(gameId);
-      activeLiveGameIds.add(gameId);
-    }
-  }
+  const routeGameId = shouldLiveSyncRoute(currentRoute) ? getCurrentViewedGameId() : null;
+  syncStore.setActiveGameId(routeGameId);
   if (!routeGameId) {
     resetRouteWsStatus();
   }
 };
-
-const liveSyncMetricCounts = Object.create(null);
-window.__righeltLiveSyncMetrics = liveSyncMetricCounts;
-
-const liveSync = createLiveSyncClient({
-  identityId: transport.getIdentityId(),
-  getLastEventSeq: (gameId) => (gameId ? transport.getLastEventSeq(gameId) : 0),
-  onEvent: (payload) => {
-    wsLastEvent = payload?.type
-      ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
-      : "unknown";
-    if (
-      (payload?.type === "state_sync" ||
-        payload?.type === "event_appended" ||
-        payload?.type === "presence_changed" ||
-        payload?.type === "join_request_created" ||
-        payload?.type === "join_request_resolved") &&
-      payload?.game
-    ) {
-      transport.applyLiveGameUpdate({ game: payload.game, eventSeq: payload.eventSeq, clientCommandId: payload.clientCommandId ?? null });
-    }
-    if (document.getElementById("shell-debug-last-event")) {
-      updateHeaderFields();
-    } else {
-      render({ animatePanels: false, includeBoard: false });
-    }
-  },
-  onError: (error) => {
-    window.__righeltLastError = error instanceof Error ? error.message : String(error);
-  },
-  onMetric: (metric) => {
-    const key = metric?.type || "unknown";
-    liveSyncMetricCounts[key] = (liveSyncMetricCounts[key] ?? 0) + 1;
-    liveSyncMetricCounts.last = metric;
-    liveSyncMetricCounts.activeSocketCount = metric?.activeSocketCount ?? 0;
-    liveSyncMetricCounts.desiredSocketCount = metric?.desiredSocketCount ?? 0;
-  },
-  onStatus: (status) => {
-    const routeGameId = getCurrentViewedGameId();
-    if (!routeGameId || status.gameId !== routeGameId || !shouldLiveSyncRoute(currentRoute)) {
-      return;
-    }
-    const statusKey = toStableKey(status);
-    if (statusKey === lastWsStatusKey) {
-      return;
-    }
-    lastWsStatusKey = statusKey;
-    wsStatus = status;
-    if (status.state === "closed" && status.reconnectAttempts >= 3) {
-      void syncRouteDataPassive();
-    }
-    if (document.getElementById("shell-debug-live-sync")) {
-      updateHeaderFields();
-    } else {
-      render({ animatePanels: false, includeBoard: false });
-    }
-  },
-});
 
 const navigateTo = (hash) => {
   const parsedRoute = parseRouteFromHash(hash);
@@ -3330,15 +3289,12 @@ window.addEventListener("hashchange", () => {
 
 window.addEventListener("online", () => {
   void withBusy(async () => {
-    syncLiveChannels();
     await syncRouteDataAndLiveChannels();
   });
 });
 
 window.addEventListener("offline", () => {
   void withBusy(async () => {
-    liveSync.disconnectAll();
-    activeLiveGameIds.clear();
     resetRouteWsStatus();
     await syncRouteDataAndLiveChannels();
   });
@@ -3517,7 +3473,7 @@ appEl.addEventListener("click", async (event) => {
     }
 
     if (action === "create-game") {
-      const game = await transport.createGame({ selfPlayMode: false });
+      const game = await syncStore.createGame({ selfPlayMode: false });
       navigateTo(buildGameHash(game.id, null, getCurrentFlyoutState()));
       return;
     }
@@ -3545,7 +3501,7 @@ appEl.addEventListener("click", async (event) => {
     if (action === "join-viewer" || action === "accept-invite-viewer") {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
-      await transport.joinGame({
+      await syncStore.joinGame({
         gameId,
         mode: "viewer",
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
@@ -3563,7 +3519,7 @@ appEl.addEventListener("click", async (event) => {
     if (action === "join-player" || action === "accept-invite-player") {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
-      const result = await transport.joinGame({
+      const result = await syncStore.joinGame({
         gameId,
         mode: "player",
         inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
@@ -3584,7 +3540,7 @@ appEl.addEventListener("click", async (event) => {
     if (action === "play-as-both-players") {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
-      await transport.playAsBothPlayers({ gameId });
+      await syncStore.playAsBothPlayers({ gameId });
       await syncRouteDataAndLiveChannels();
       return;
     }
@@ -3594,7 +3550,7 @@ appEl.addEventListener("click", async (event) => {
       const requester = actionEl.getAttribute("data-requester-id");
       if (!gameId || !requester) return;
       ignoredApprovalRequests.delete(getApprovalRequestKey(gameId, requester));
-      await transport.approvePendingRequest({ gameId, requesterIdentityId: requester });
+      await syncStore.approvePendingRequest({ gameId, requesterIdentityId: requester });
       await syncRouteDataAndLiveChannels();
       return;
     }
@@ -3613,7 +3569,7 @@ appEl.addEventListener("click", async (event) => {
       const requestId = actionEl.getAttribute("data-request-id");
       if (!gameId || !requestId) return;
       ignoredRevertRequests.delete(getRevertRequestKey(gameId, requestId));
-      await transport.approveRevertRequest({ gameId, requestId });
+      await syncStore.approveRevertRequest({ gameId, requestId });
       await syncRouteDataAndLiveChannels();
       return;
     }
@@ -3623,7 +3579,7 @@ appEl.addEventListener("click", async (event) => {
       const requestId = actionEl.getAttribute("data-request-id");
       if (!gameId || !requestId) return;
       ignoredRevertRequests.add(getRevertRequestKey(gameId, requestId));
-      await transport.rejectRevertRequest({ gameId, requestId });
+      await syncStore.rejectRevertRequest({ gameId, requestId });
       await syncRouteDataAndLiveChannels();
       return;
     }
@@ -3632,7 +3588,7 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       const requestId = actionEl.getAttribute("data-request-id");
       if (!gameId || !requestId) return;
-      await transport.rescindRevertRequest({ gameId, requestId });
+      await syncStore.rescindRevertRequest({ gameId, requestId });
       await syncRouteDataAndLiveChannels();
       return;
     }
@@ -3669,7 +3625,7 @@ appEl.addEventListener("click", async (event) => {
       clearHistoryPress();
       playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
-      await transport.selectHistoryMove({ gameId, moveIndex });
+      await syncStore.selectHistoryMove({ gameId, moveIndex });
       await syncRouteDataAndLiveChannels();
       return;
     }
@@ -3680,7 +3636,7 @@ appEl.addEventListener("click", async (event) => {
       clearHistoryPress();
       playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
-      await transport.returnToLive({ gameId });
+      await syncStore.returnToLive({ gameId });
       await syncRouteDataAndLiveChannels();
       return;
     }
@@ -3688,12 +3644,12 @@ appEl.addEventListener("click", async (event) => {
     if (action === "launch-history-branch") {
       const gameId = actionEl.getAttribute("data-game-id");
       const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
-      const activeGame = gameId ? transport.getGameViewModel(gameId) : null;
+      const activeGame = gameId ? syncStore.getGameViewModel(gameId) : null;
       if (!activeGame || !Number.isFinite(moveIndex)) {
         return;
       }
       const branchSeed = buildHistoryBranchSeedFromGame(activeGame, moveIndex);
-      const result = await transport.launchHistoryBranch({
+      const result = await syncStore.launchHistoryBranch({
         sourceGameId: activeGame.id,
         sourceMoveIndex: moveIndex,
         scenario: branchSeed.scenario,
@@ -3718,7 +3674,7 @@ appEl.addEventListener("click", async (event) => {
       if (!gameId || !moveId) {
         return;
       }
-      await transport.requestRevertToMove({ gameId, targetMoveId: moveId });
+      await syncStore.requestRevertToMove({ gameId, targetMoveId: moveId });
       await syncRouteDataAndLiveChannels();
       return;
     }
@@ -3745,9 +3701,9 @@ appEl.addEventListener("click", async (event) => {
       }
       const activeGameId =
         currentRoute.name === "game" ? currentRoute.gameId : currentRoute.name === "invite" ? resolvedInvite?.gameId || null : null;
-      const activeGame = activeGameId ? transport.getGameViewModel(activeGameId) : null;
+      const activeGame = activeGameId ? syncStore.getGameViewModel(activeGameId) : null;
       const shouldApplyInPlace = Boolean(activeGame && activeGame.moves.length === 0);
-      const result = await transport.importScenario({
+      const result = await syncStore.importScenario({
         scenario: selectedScenario,
         targetGameId: shouldApplyInPlace ? activeGameId : null,
         sourceGameId: activeGame && !shouldApplyInPlace ? activeGame.id : null,
