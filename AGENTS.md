@@ -90,6 +90,17 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 - `Rbom` = rebase on latest origin main
 - `Fp` = force push (`--force-with-lease`)
 - `Mmp` = merge to main and push
+- Ticket kick-off (`Tk` = **T**icket **K**ick-off) — uses the workflow in `docs/ai/TICKET_WORKFLOW.md`:
+  - `Tk [t-###]` = kick off ticket: assign Lead, route by label (feature → PO + Architect; bug → PO + Architect; improvement → Architect only), run through Eng and final Tester validation
+  - `Tkpo [t-###]` = run only the PO step for a ticket (spec must not yet exist)
+  - `Tka [t-###]` = run only the Architect step (spec must already exist, or ticket is an improvement)
+  - `Tke [t-###]` = fan out Eng subtasks from an existing eng plan
+  - `Tkv [t-###]` = run the Lead's final end-to-end Tester validation pass
+
+## 7) Backlog
+
+This project uses Backlog.md MCP for task management. Before creating tasks or when uncertain about the workflow, load the instructions: read `backlog://workflow/overview` (MCP resource), or call `get_backlog_instructions()` if resources aren't available. Full ticket workflow: `docs/ai/TICKET_WORKFLOW.md`.
+
 
 ## 7) Scope of This File
 
