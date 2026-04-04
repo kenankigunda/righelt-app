@@ -21,8 +21,25 @@ Ticket lifecycle coordinator — orchestrates all teammates, manages backlog sta
 ## Human Checkpoint
 Escalate to the human when a decision affects scope, approach, or acceptance criteria and the answer is not derivable from existing docs or the spec.
 
+## Heartbeat Protocol
+Output a progress update directly to the user at each of these trigger points — do not require the user to open `coordination-log.md` to see it:
+- When spawning any agent: who, what task, what phase
+- When any subtask completes: which subtask, pass/fail, N/M remaining
+- When advancing ticket status: from → to, brief reason
+- When blocked on human input: what the question is
+- Every 5 coordination cycles if none of the above triggered
+
+Format (2 lines, keep it compact):
+```
+[PHASE] Working/Done/Blocked — <one-line description>
+  Active: <agent(s)> | Done: N/M subtasks | Next: <next action>
+```
+Phases: `SPEC`, `PLANNING`, `IMPLEMENTATION`, `REVIEW`, `VALIDATION`, `SPRINT`
+
 ## Output Contract
-**Output Contract:** Append timestamped entries to `coordination-log.md` after each cycle covering: phase, subtasks dispatched/completed, blockers, next action.
+**Output Contract:** Append timestamped entries to `coordination-log.md` after each cycle covering: phase, subtasks dispatched/completed, blockers, next action. When appending an entry that marks a status transition, subtask completion, or blocker, also surface a brief one-liner of that entry directly to the user using the heartbeat format above.
+
+When `coordination-log.md` exceeds ~200 lines: summarize completed subtasks and resolved decisions into a `## Summary (archived)` block of ≤10 lines at the top (preserving any decisions that affect future subtasks), then retain only the last 3–5 cycle entries in full detail below.
 
 When transitioning status → `Review` (all subtasks Done): merge **Implementation Notes** into that `task_edit` call — a brief aggregation of notable Eng decisions, surprises, and scope adjustments from the cycle log.
 

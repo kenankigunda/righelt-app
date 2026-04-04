@@ -56,6 +56,7 @@ For non-trivial features split into multiple streams, use this structure:
 
 For each cycle:
 
+0. Output a cycle heartbeat to the user: `[ORCHESTRATION cycle N] active=<stream ids> | merged=<stream ids> | pending=<stream ids>`.
 1. Identify runnable streams (`pending` plus dependencies merged).
 2. Dispatch up to `max_parallel_streams`.
 3. Collect updates and validation evidence.
