@@ -29,7 +29,7 @@ Status meanings:
 | Presence indicators and reconnect role restore | `partial` | `present` | `present` | Browser proof is currently indirect through reconnect workflows; direct browser assertions for participant presence badges are still light. |
 | History navigation and return to live | `present` | `present` | `present` | Includes live appends while pinned to history and explicit return-to-live restoration. |
 | Identity and role persistence across reload | `present` | `present` | `present` | Covered for approved participant reload and transport refresh after missed updates. |
-| Revert / undo request lifecycle | `missing` | `missing` | `present` | Strong transport coverage exists for request, approve, reject, rescind, and undone history state, but there is no browser proof yet. |
+| Revert / undo request lifecycle | `present` | `partial` | `present` | Browser proof now covers optimistic undo with both auto-approve and approval-required paths; approve/reject/rescind remain deeper in integration than in dedicated browser flows. |
 
 ## Extended Shell Workflows
 
@@ -45,6 +45,7 @@ Status meanings:
 | Scenario save/update authoring flow | `missing` | `missing` | `partial` | Scenario builder and local-writer helpers are covered, but end-user save/update interaction and error handling are not. |
 | History branch launch from selected move | `missing` | `missing` | `present` | Transport and export/seed coverage exist; browser proof for branch launch and landing state is missing. |
 | Notification and prompt quality across core shell states | `missing` | `missing` | `present` | Store coverage proves required categories exist, but browser proof for prompt timing, replacement, and non-janky transitions is still absent. |
+| Localized pending controls for join / approve / invite-copy | `present` | `partial` | `present` | Browser proof covers pulsing local pending state and pending-game invite copy waiting for commit; broader error-path polish for every button variant is still mostly owned below browser level. |
 
 ## Platform And Polish Safeguards
 
@@ -66,15 +67,13 @@ The most important follow-up coverage still missing from the current repo is:
 
 1. Offline-local self-play:
    the spec expects offline creation, local persistence, reload restore, disabled remote actions, visible offline state, and explicit `Go online` confirmation. The current automated evidence does not yet prove that workflow holistically.
-2. Browser-level revert / undo flow:
-   transport coverage is strong, but there is still no end-user proof for opening a move in history, requesting undo, seeing approval/pending surfaces, and observing the undone history presentation.
-3. Browser-level tutorial flow:
+2. Browser-level tutorial flow:
    first-run trigger, live-route handoff after completion, skip/next timing, and restart-from-game remain uncovered in the actual shell UI.
-4. Browser-level scenario workflows:
+3. Browser-level scenario workflows:
    loading a saved scenario, launching a history branch, and saving/updating scenarios through the flyout are not yet exercised end-to-end.
-5. Browser-level home-page workflows:
+4. Browser-level home-page workflows:
    public entry from the list, pagination behavior, preview-board isolation, and latest-activity ordering are still only covered below the browser layer.
-6. Presence and prompt polish:
+5. Presence and prompt polish:
    the app has strong lower-level coverage, but there is still limited browser proof for visible participant status changes, waiting/your-turn prompts, and disabled-action explainer quality.
 
 ## Current Guidance

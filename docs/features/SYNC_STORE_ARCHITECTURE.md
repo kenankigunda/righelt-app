@@ -24,13 +24,14 @@ This document started as a forward-looking implementation plan. The branch now c
 - **Phase 2 complete for the core optimistic command path**: `OperationHandle` and `operation-manager.js` back move and end-turn flows, and `shell-host.js` adapts to handle-backed results.
 - **Phase 3 complete**: optimistic client-generated IDs are implemented for create-game and history-branch flows, including stable route/API/request/response ID contracts and queueing of follow-up commands until creation commits.
 - **Phase 4 complete**: revert request / approve / reject / rescind flows now use optimistic local prediction through the sync store, including client-generated revert request ids, rollback on failure, and browser coverage for both auto-approve and approval-required cases.
+- **Phase 5 complete**: localized pulsing pending-button behavior now covers join-viewer, join-player, accept-invite variants, approve-request, play-as-both-players, and pending-game invite copy without blocking the rest of the shell UI.
+- **Phase 6 partially complete**: the global `busy` gate has been bypassed for create-game, history-branch, revert actions, and the localized pending-button operations that now own their own in-place loading state.
 - **Phase 8 partially complete**: failed optimistic create-game flows now surface an alert-style banner and preserve a failed local stub instead of collapsing into a broken route.
 - **Testing hardening complete for implemented phases**: the branch adds unit, integration, and E2E contract coverage for optimistic game IDs and optimistic revert flows so these behaviors are no longer dependent on manual verification.
 
 ### Still remaining
 
-- **Phase 5 not started**: invite-copy on pending games still needs the localized pulsing "Creating invite..." flow and handle lookup support.
-- **Phase 6 partially complete**: several flows now bypass the global `busy` wrapper (`create-game`, `launch-history-branch`, revert actions), but the app still has a broader `busy` architecture and does not yet implement the full pulsing-button / skeleton system across all remaining operations.
+- **Phase 6 not complete**: the app still has a broader `busy` architecture and does not yet implement the full pulsing-button / skeleton system across all remaining operations.
 - **Phase 7 not started**: pending history items are not yet restyled as fully interactable busy items.
 - **Phase 8 not complete**: failed-operation UX is still split between newer failure handling and older `rollbackNotice` behavior; there is not yet a single unified failed-operation banner/reset flow for all operation types.
 - **Phase 9 not started**: history navigation is still server-coupled rather than fully local-first with fire-and-forget sync.
