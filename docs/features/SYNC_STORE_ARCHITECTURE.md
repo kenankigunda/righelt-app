@@ -14,6 +14,39 @@ The goal is to unify all client-server communication behind a single **sync stor
 - Provides a "reset to previous state" + alert banner on unrecoverable failure
 - **Eliminates the global `busy` flag** — operations return immediately, so the UI is never blocked
 
+## Branch implementation status (`codex/client-local-sync-store`)
+
+This document started as a forward-looking implementation plan. The branch now contains a substantial partial implementation, so this section records what has already landed here versus what still remains.
+
+### Completed on this branch
+
+- **Phase 1 complete**: `createSyncStore()` is the active facade used by `app.js`, and it owns the live-sync/WebSocket coordination that used to be wired in the app layer.
+- **Phase 2 complete for the core optimistic command path**: `OperationHandle` and `operation-manager.js` back move and end-turn flows, and `shell-host.js` adapts to handle-backed results.
+- **Phase 3 complete**: optimistic client-generated IDs are implemented for create-game and history-branch flows, including stable route/API/request/response ID contracts and queueing of follow-up commands until creation commits.
+- **Phase 4 complete**: revert request / approve / reject / rescind flows now use optimistic local prediction through the sync store, including client-generated revert request ids, rollback on failure, and browser coverage for both auto-approve and approval-required cases.
+- **Phase 8 partially complete**: failed optimistic create-game flows now surface an alert-style banner and preserve a failed local stub instead of collapsing into a broken route.
+- **Testing hardening complete for implemented phases**: the branch adds unit, integration, and E2E contract coverage for optimistic game IDs and optimistic revert flows so these behaviors are no longer dependent on manual verification.
+
+### Still remaining
+
+- **Phase 5 not started**: invite-copy on pending games still needs the localized pulsing "Creating invite..." flow and handle lookup support.
+- **Phase 6 partially complete**: several flows now bypass the global `busy` wrapper (`create-game`, `launch-history-branch`, revert actions), but the app still has a broader `busy` architecture and does not yet implement the full pulsing-button / skeleton system across all remaining operations.
+- **Phase 7 not started**: pending history items are not yet restyled as fully interactable busy items.
+- **Phase 8 not complete**: failed-operation UX is still split between newer failure handling and older `rollbackNotice` behavior; there is not yet a single unified failed-operation banner/reset flow for all operation types.
+- **Phase 9 not started**: history navigation is still server-coupled rather than fully local-first with fire-and-forget sync.
+- **Phase 10 not started**: `live-sync.js` still exists as a distinct module rather than being fully absorbed into `sync-store.js`.
+- **Phase 11 not started**: dead store cleanup and final simplification have not happened yet.
+- **Phase 12 deferred**: offline support has not been reintroduced.
+
+### Current practical milestone
+
+The branch has delivered the sync-store foundation plus the two highest-value optimistic workflows:
+
+- optimistic creation / branching with stable client-generated IDs
+- optimistic revert flows with rollback-safe local prediction
+
+The next biggest remaining product milestone is to finish removing the global `busy` architecture for the remaining non-optimistic actions and replace it with localized pulsing/skeleton states.
+
 ---
 
 ## Recent codebase changes to account for
@@ -177,6 +210,8 @@ These load an entire view that depends on server data. Show **pulsing loading sk
 
 ## Phase 1: Create sync-store facade (no behavior change)
 
+**Status on this branch:** Completed
+
 Wrap existing `createLiveTransportStore` + `createLiveSyncClient` into a single `createSyncStore()` that absorbs all glue code currently in `app.js`.
 
 ### Files
@@ -212,6 +247,8 @@ Wrap existing `createLiveTransportStore` + `createLiveSyncClient` into a single 
 ---
 
 ## Phase 2: Introduce OperationHandle + operation manager
+
+**Status on this branch:** Completed for move/end-turn and reused by later optimistic flows
 
 Add a promise-based operation lifecycle to ALL store operations.
 
@@ -267,6 +304,8 @@ Add a promise-based operation lifecycle to ALL store operations.
 
 ## Phase 3: Optimistic game creation and history branching (client-generated IDs)
 
+**Status on this branch:** Completed
+
 Make game creation and history branching feel instant. The client generates game IDs upfront so URLs are stable.
 
 ### Why client-generated IDs work
@@ -308,12 +347,13 @@ All games now use `game-{hex}` format. The previous `local-{timestamp}-{random}`
 - **Unit tests**: `launchHistoryBranch()` returns handle with new game ID, scenario-derived initial state
 - **Integration test**: create game → make moves before commit → server commits → moves applied
 - **Integration test**: history branch → new game loads in new tab → server commits → game state matches
-- **Manual test**: click "Start new game" → game view appears instantly, URL is final
-- **Manual test**: click "Create new game at this move" → new tab opens instantly with branched game
+- **Automated contract tests now present on this branch**: request body id, response body id, local route id, and first follow-up mutation game id must all match for both create-game and history-branch workflows
 
 ---
 
 ## Phase 4: Optimistic revert operations (local state prediction)
+
+**Status on this branch:** Completed
 
 Make revert requests, approvals, rejections, and rescissions feel instant with local state prediction.
 
@@ -336,20 +376,24 @@ All return `OperationHandle` with `status: 'pending'`. If server rejects (e.g., 
 | Action | File | What changes |
 |--------|------|-------------|
 | Modify | `apps/web/shell/sync-store.js` | `requestRevertToMove()`, `approveRevertRequest()`, `rejectRevertRequest()`, `rescindRevertRequest()` apply local state prediction, return pending OperationHandle, POST to server in background. |
-| Modify | `apps/web/shell/live-transport.js` | Add optimistic state mutation helpers for revert operations (set/clear `pendingRevertRequest`, mark moves as `undone`). |
+| Modify | `apps/web/shell/live-transport.js` | Preserve client-generated revert request ids in transport requests; sync-store performs the local optimistic mutation. |
 | Modify | `apps/web/shell/app.js` | Revert action handlers: no `await`, use handle.result for immediate UI update. Remove busy gating. |
 
 ### Verification
 - **Unit tests**: Each revert operation returns pending handle with correct optimistic state
 - **Unit tests**: Server rejection triggers rollback to pre-revert state
-- **Integration test**: Request revert → opponent approves → game state reverts correctly
-- **Integration test**: Request revert → opponent rejects → optimistic state rolls back
-- **Manual test**: Click "Undo back to this move" → revert-pending UI appears instantly
-- **Manual test**: Click "Approve revert" → board updates instantly to reverted state
+- **Integration tests now present on this branch**:
+  - request revert with open seat → optimistic local revert uses client request id and committed game stays aligned
+  - request revert with a second player present → pending request keeps the same client request id through server commit
+- **E2E tests now present on this branch**:
+  - undo-last-move applies optimistically before the delayed revert response returns
+  - approval-required undo preserves the same client-generated revert request id in both the request payload and rendered controls
 
 ---
 
 ## Phase 5: Optimistic invite flow
+
+**Status on this branch:** Not started
 
 Make invites feel responsive while ensuring the clipboard gets a valid (committed) link.
 
@@ -384,6 +428,8 @@ Make invites feel responsive while ensuring the clipboard gets a valid (committe
 
 ## Phase 6: Eliminate the global `busy` flag + add pulsing/skeletons
 
+**Status on this branch:** Partially complete
+
 Remove the `busy` flag and `withBusy()` pattern from `app.js`. Replace with localized pending states.
 
 ### Pulsing animation and loading skeletons
@@ -407,6 +453,17 @@ All pending states use a consistent **subtle pulse animation** (CSS `@keyframes 
 - `ignore-request`, `toggle-undone-group` → instant, no busy
 - `save-scenario`, `update-scenario` → instant local write, no busy
 - `copy-invite` (committed game) → instant clipboard, no busy
+
+Implemented so far on this branch:
+- `create-game`
+- `launch-history-branch`
+- all revert operations
+
+Still remaining on this branch:
+- join/invite/player-request flows
+- scenario import skeletons
+- home pagination skeletons
+- removing the remaining global `busy` plumbing entirely
 
 **Pulsing button** (Tier 4 — specific button pulses, rest interactive):
 - `join-viewer`, `join-player`, `accept-invite-viewer`, `accept-invite-player` → join button pulses
@@ -450,6 +507,8 @@ All pending states use a consistent **subtle pulse animation** (CSS `@keyframes 
 
 ## Phase 7: Pending/committed styling in history log
 
+**Status on this branch:** Not started
+
 Make pending moves visually distinct but fully interactable.
 
 ### Files
@@ -471,6 +530,18 @@ Make pending moves visually distinct but fully interactable.
 
 ## Phase 8: Failed operation UX — alert banner + reset
 
+**Status on this branch:** Partially complete
+
+Implemented so far on this branch:
+- failed optimistic create-game leaves the local stub mounted
+- failed create-game shows an alert banner instead of collapsing the route
+- dependent optimistic commands are failed and cleared when create/branch binding fails
+
+Still remaining on this branch:
+- unify all failed-operation surfaces behind a single failed-operation API
+- remove the older split between `rollbackNotice` and operation-manager-backed failures
+- add dismiss/reset behavior for all failed optimistic operations, not just creation-related failures
+
 Surface unrecoverable failures with a dismissible banner.
 
 ### Files
@@ -490,6 +561,8 @@ Surface unrecoverable failures with a dismissible banner.
 ---
 
 ## Phase 9: Make history navigation local-first
+
+**Status on this branch:** Not started
 
 History navigation (`selectHistoryMove`, `returnToLive`) executes instantly with no server dependency.
 
@@ -516,6 +589,8 @@ History navigation (`selectHistoryMove`, `returnToLive`) executes instantly with
 
 ## Phase 10: Internalize WebSocket layer
 
+**Status on this branch:** Not started
+
 Absorb `live-sync.js` fully into the sync store.
 
 ### Files
@@ -535,6 +610,8 @@ Absorb `live-sync.js` fully into the sync store.
 ---
 
 ## Phase 11: Cleanup
+
+**Status on this branch:** Not started
 
 ### Files
 
@@ -556,6 +633,8 @@ Absorb `live-sync.js` fully into the sync store.
 ---
 
 ## Phase 12: Re-introduce offline support (future)
+
+**Status on this branch:** Deferred / not started
 
 The original requirement states that operations not involving another player should run fully offline, including self-play and local history navigation. Offline mode was recently removed from the codebase (commit 1686f2f). The sync store architecture is designed to properly support this when the time comes.
 
