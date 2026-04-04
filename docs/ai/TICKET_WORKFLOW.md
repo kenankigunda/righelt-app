@@ -9,7 +9,7 @@ Use this workflow for any ticket in `backlog/tasks/` that has been assigned to a
 ## Skills Contract
 
 - Re-mention required skills in each turn where they should apply.
-- Role definitions live in `.claude/agents/` (authoritative) and `docs/ai/teams/` (reference mirror).
+- Role definitions live in `.claude/agents/` (authoritative).
 - Call `get_backlog_instructions()` before any backlog MCP tool operations.
 - If a referenced skill or role file is missing: state the issue briefly, fall back to AGENTS.md defaults, avoid blocking unless strictly required.
 
