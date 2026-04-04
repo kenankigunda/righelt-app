@@ -64,7 +64,7 @@ Lead spawns `architect` agent with the ticket ID. Architect:
 4. **Consults Tester once** via `Agent` tool: passes design → receives test plan → saves as `docs/tickets/t-###/test-plan.md`
 5. Drafts `docs/tickets/t-###/eng-plan.md` from `docs/tickets/ENG_PLAN_TEMPLATE.md`
 6. Creates subtasks via `task_create` with `parentTaskId: t-###`; sets `depends_on` and WIP limit
-7. Calls `task_edit` to update `references` and Implementation Plan section
+7. Calls `task_edit` on parent to add `eng-plan.md` and `test-plan.md` to `references`; populates **Implementation Plan** (3–5 bullet summary of approach + link to `eng-plan.md`) and **Definition of Done** (technical checklist from acceptance checks) — all in one call.
 
 Lead appends to coordination-log.md. Calls `task_edit` status → `In Progress`.
 
@@ -81,7 +81,9 @@ Lead fans out unblocked subtasks (respecting `depends_on` and WIP limit) to `eng
 Lead reads coordination-log.md each cycle; calls `task_list parent=t-###` to check subtask state; resolves merge conflicts; re-runs acceptance checks after merges.
 
 ### Step 5 — Final Validation
-Once all subtasks are `Done`, Lead calls `task_edit` status → `Review`. Spawns `tester` agent for a **fresh skeptical pass** — not a checklist re-run. Tester approaches the full changeset as if seeing it for the first time: `test-plan.md` is the floor, but Tester actively hunts seam failures, state drift, multi-client edge cases, and subtle regressions that per-subtask gates may have missed. Tester reports pass/fail per item, new failure modes, remaining risks. Lead: if material issues, creates new subtasks and loops to Step 4; otherwise calls `task_complete` on the parent ticket. Appends final summary to coordination-log.md.
+Once all subtasks are `Done`: Lead calls `task_edit` status → `Review`, also populating **Implementation Notes** (brief aggregation of Eng report decisions and surprises from the cycle log) — merged into the same call.
+
+Spawns `tester` agent for a **fresh skeptical pass** — not a checklist re-run. Tester approaches the full changeset as if seeing it for the first time: `test-plan.md` is the floor, but Tester actively hunts seam failures, state drift, multi-client edge cases, and subtle regressions that per-subtask gates may have missed. Tester reports pass/fail per item, new failure modes, remaining risks. Lead: if material issues, creates new subtasks and loops to Step 4; otherwise calls `task_complete` on the parent, including a **Final Summary** (PR-style paragraph: what was built, what changed, what was deferred) — same content as the coordination-log.md final entry, routed to the task field as well.
 
 ## Merge Gates and Coordination
 

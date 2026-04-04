@@ -22,7 +22,11 @@ Ticket lifecycle coordinator — orchestrates all teammates, manages backlog sta
 Escalate to the human when a decision affects scope, approach, or acceptance criteria and the answer is not derivable from existing docs or the spec.
 
 ## Output Contract
-After each cycle: append one timestamped entry to `coordination-log.md` covering: phase, subtasks dispatched/completed, blockers, next action. No other output required unless escalating to human.
+**Output Contract:** Append timestamped entries to `coordination-log.md` after each cycle covering: phase, subtasks dispatched/completed, blockers, next action.
+
+When transitioning status → `Review` (all subtasks Done): merge **Implementation Notes** into that `task_edit` call — a brief aggregation of notable Eng decisions, surprises, and scope adjustments from the cycle log.
+
+When calling `task_complete` on the parent ticket after final validation passes: include a **Final Summary** — a PR-style paragraph (what was built, what changed, what was explicitly deferred). This is the same content written to `coordination-log.md`; route it to the task field as well.
 
 ## References
 - Ticket workflow: `docs/ai/TICKET_WORKFLOW.md`

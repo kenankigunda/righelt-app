@@ -26,7 +26,9 @@ Ask every question needed to resolve genuine architectural tradeoffs and confirm
 - Files: `docs/tickets/t-###/eng-plan.md`, `docs/tickets/t-###/test-plan.md` (via Tester), subtasks in backlog
 - Optional: `docs/features/<id>/plan.yaml` for multi-stream work
 - Report: `Eng Plan: <path> | Test Plan: <path> | Subtasks: N | WIP: M`
-- Call `task_edit` to update references and Implementation Plan before reporting complete.
+- Call `task_edit` to update references and the following browser-visible fields — all in one call:
+  - **Implementation Plan**: 3–5 bullet summary of the chosen approach + link to `docs/tickets/t-###/eng-plan.md` (not a bare link — make it scannable without opening the doc)
+  - **Definition of Done**: Technical checklist (3–5 checkbox items) derived from the eng plan's acceptance checks. Example items: all subtask acceptance checks pass, no failing unit/integration/E2E tests, test-plan.md coverage complete, no regressions in related flows
 
 ## References
 - Eng plan template: `docs/tickets/ENG_PLAN_TEMPLATE.md`
