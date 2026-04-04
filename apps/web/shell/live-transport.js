@@ -764,11 +764,11 @@ export const createLiveTransportStore = ({
     return getGameViewModel(gameId);
   };
 
-  const requestRevertToMove = async ({ gameId, targetMoveId }) => {
+  const requestRevertToMove = async ({ gameId, targetMoveId, requestId = null }) => {
     const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/revert-request`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, targetMoveId }),
+      body: JSON.stringify({ identityId, targetMoveId, requestId }),
     });
     const body = await mustOk(response);
     logDiagnostic("info", "live_transport_revert_requested", { gameId, targetMoveId }, { verboseOnly: true });

@@ -32,6 +32,72 @@ const createTransportHarness = () => {
   };
 };
 
+const createRevertReadyGame = () => ({
+  id: "game-revert",
+  createdAt: "2026-04-03T00:00:00.000Z",
+  updatedAt: "2026-04-03T00:00:02.000Z",
+  lastMoveAt: "2026-04-03T00:00:02.000Z",
+  player1: { identityId: "id-test", connected: true },
+  player2: { identityId: "id-peer", connected: true },
+  viewers: [],
+  pendingJoinRequests: [],
+  pendingRevertRequest: null,
+  myPendingRevertRequest: null,
+  approvableRevertRequest: null,
+  notifications: ["Ready"],
+  myRole: "Player 1",
+  inHistoryMode: false,
+  historyIndex: null,
+  currentSnapshot: { boardSize: 10, sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+  board: { state: { boardSize: 10, sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } } },
+  turns: [
+    {
+      index: 0,
+      startedAt: "2026-04-03T00:00:00.000Z",
+      endedAt: null,
+      playerSeat: "Player 1",
+      status: "active",
+      moveIndexes: [0],
+      lastMoveAt: "2026-04-03T00:00:02.000Z",
+    },
+  ],
+  currentTurn: {
+    index: 0,
+    startedAt: "2026-04-03T00:00:00.000Z",
+    endedAt: null,
+    playerSeat: "Player 1",
+    status: "active",
+    moveIndexes: [0],
+    lastMoveAt: "2026-04-03T00:00:02.000Z",
+  },
+  turnOwnerSeat: "Player 1",
+  controlSeat: "Player 1",
+  control: "turn-owner",
+  legalActions: [{ type: "pass" }],
+  canRecordMove: false,
+  canEndTurn: true,
+  canJoinAsPlayer: false,
+  canJoinAsViewer: false,
+  showJoinActions: true,
+  canInvite: true,
+  latestActiveMoveId: "move-1",
+  canUndoLastMove: true,
+  moves: [
+    {
+      index: 0,
+      moveId: "move-1",
+      displayMoveNumber: 1,
+      turnIndex: 0,
+      turnMoveIndex: 0,
+      actorSide: "P1",
+      notation: "M1",
+      at: "2026-04-03T00:00:02.000Z",
+      action: { type: "project", from: { row: 3, col: 6 }, to: { row: 5, col: 6 } },
+      selectionSnapshot: { boardSize: 10, sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+    },
+  ],
+});
+
 test("sync store setActiveGameId manages live sync connections", () => {
   const calls = [];
   const desiredGameIds = [];
@@ -272,6 +338,208 @@ test("sync store keeps a failed create-game stub mounted with a rollback banner"
   assert.equal(failedGame.id, handle.result.id);
   assert.equal((await store.loadGame(handle.result.id)).id, handle.result.id);
   assert.deepEqual(desiredGameIds, []);
+});
+
+test("sync store requests reverts optimistically with a stable client request id", async () => {
+  const { transport, games } = createTransportHarness();
+  games.set("game-revert", createRevertReadyGame());
+  let requestPayload = null;
+  let resolveRequest;
+  const requestCommitted = new Promise((resolve) => {
+    resolveRequest = resolve;
+  });
+
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      ...transport,
+      requestRevertToMove: async (payload) => {
+        requestPayload = payload;
+        await requestCommitted;
+        return {
+          ...createRevertReadyGame(),
+          pendingRevertRequest: {
+            requestId: payload.requestId,
+            requesterIdentityId: "id-test",
+            targetMoveId: payload.targetMoveId,
+            targetMoveIndex: 0,
+            requestedAt: "2026-04-03T00:00:03.000Z",
+            status: "pending",
+          },
+          myPendingRevertRequest: {
+            requestId: payload.requestId,
+            requesterIdentityId: "id-test",
+            targetMoveId: payload.targetMoveId,
+            targetMoveIndex: 0,
+            requestedAt: "2026-04-03T00:00:03.000Z",
+            status: "pending",
+          },
+          notifications: ["Undo request pending approval"],
+        };
+      },
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const handle = store.requestRevertToMove({ gameId: "game-revert", targetMoveId: "move-1" });
+  assert.equal(handle.status, "pending");
+  assert.match(handle.result.pendingRevertRequest.requestId, /^revert-/);
+  assert.equal(store.getGameViewModel("game-revert").pendingRevertRequest.requestId, handle.result.pendingRevertRequest.requestId);
+
+  resolveRequest();
+  const committed = await handle.committed;
+  assert.equal(requestPayload.requestId, handle.result.pendingRevertRequest.requestId);
+  assert.equal(committed.pendingRevertRequest.requestId, handle.result.pendingRevertRequest.requestId);
+});
+
+test("sync store rolls back an optimistic revert approval when the server rejects it", async () => {
+  const { transport, games } = createTransportHarness();
+  const game = createRevertReadyGame();
+  game.pendingRevertRequest = {
+    requestId: "req-1",
+    requesterIdentityId: "id-test",
+    targetMoveId: "move-1",
+    targetMoveIndex: 0,
+    requestedAt: "2026-04-03T00:00:03.000Z",
+    status: "pending",
+  };
+  game.approvableRevertRequest = structuredClone(game.pendingRevertRequest);
+  games.set("game-revert", game);
+
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      ...transport,
+      approveRevertRequest: async () => {
+        throw new Error("revert_approval_rejected");
+      },
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const handle = store.approveRevertRequest({ gameId: "game-revert", requestId: "req-1" });
+  assert.equal(handle.status, "pending");
+  assert.equal(store.getGameViewModel("game-revert").pendingRevertRequest, null);
+  assert.equal(store.getGameViewModel("game-revert").moves[0].undone, true);
+
+  await assert.rejects(handle.committed, /revert_approval_rejected/);
+  assert.equal(handle.status, "failed");
+  assert.equal(store.getGameViewModel("game-revert").pendingRevertRequest.requestId, "req-1");
+  assert.notEqual(store.getGameViewModel("game-revert").moves[0].undone, true);
+});
+
+test("sync store computes undo ownership for optimistic revert approval from the current identity", () => {
+  const { transport, games } = createTransportHarness();
+  const game = {
+    ...createRevertReadyGame(),
+    player1: { identityId: "id-peer", connected: true },
+    player2: { identityId: "id-test", connected: true },
+    myRole: "Player 2",
+    currentSnapshot: { boardSize: 10, sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } },
+    board: { state: { boardSize: 10, sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } } },
+    turns: [
+      {
+        index: 0,
+        startedAt: "2026-04-03T00:00:00.000Z",
+        endedAt: null,
+        playerSeat: "Player 1",
+        status: "active",
+        moveIndexes: [0, 1],
+        lastMoveAt: "2026-04-03T00:00:03.000Z",
+      },
+    ],
+    currentTurn: {
+      index: 0,
+      startedAt: "2026-04-03T00:00:00.000Z",
+      endedAt: null,
+      playerSeat: "Player 1",
+      status: "active",
+      moveIndexes: [0, 1],
+      lastMoveAt: "2026-04-03T00:00:03.000Z",
+    },
+    latestActiveMoveId: "move-2",
+    canUndoLastMove: false,
+    moves: [
+      {
+        ...createRevertReadyGame().moves[0],
+        moveId: "move-1",
+        at: "2026-04-03T00:00:02.000Z",
+        selectionSnapshot: {
+          boardSize: 10,
+          sideToMove: "P2",
+          turnIndex: 0,
+          pieces: [],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+      },
+      {
+        ...createRevertReadyGame().moves[0],
+        index: 1,
+        moveId: "move-2",
+        displayMoveNumber: 2,
+        turnMoveIndex: 1,
+        at: "2026-04-03T00:00:03.000Z",
+        selectionSnapshot: {
+          boardSize: 10,
+          sideToMove: "P2",
+          turnIndex: 1,
+          pieces: [],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+      },
+    ],
+    pendingRevertRequest: {
+      requestId: "req-2",
+      requesterIdentityId: "id-peer",
+      targetMoveId: "move-2",
+      targetMoveIndex: 1,
+      requestedAt: "2026-04-03T00:00:04.000Z",
+      status: "pending",
+    },
+    approvableRevertRequest: {
+      requestId: "req-2",
+      requesterIdentityId: "id-peer",
+      targetMoveId: "move-2",
+      targetMoveIndex: 1,
+      requestedAt: "2026-04-03T00:00:04.000Z",
+      status: "pending",
+    },
+  };
+  games.set("game-revert", game);
+
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      ...transport,
+      approveRevertRequest: async () => ({
+        ...game,
+        pendingRevertRequest: null,
+        approvableRevertRequest: null,
+      }),
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const handle = store.approveRevertRequest({ gameId: "game-revert", requestId: "req-2" });
+  assert.equal(handle.result.canUndoLastMove, false);
+  assert.equal(store.getGameViewModel("game-revert").canUndoLastMove, false);
 });
 
 test("sync store launches history branches with immediate local stubs", async () => {

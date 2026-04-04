@@ -47,6 +47,27 @@ const createGameId = () => {
 
 const getSeatForSide = (sideToMove) => (sideToMove === "P1" ? "Player 1" : "Player 2");
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
+const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
+const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
+const getControlSeatForTurn = (state, turnOwnerSeat) => {
+  const continuation = state?.continuation;
+  if (!continuation) {
+    return turnOwnerSeat;
+  }
+  if (continuation.type === "push" && continuation.phase === "retreat") {
+    return getNextSeat(turnOwnerSeat);
+  }
+  return turnOwnerSeat;
+};
+
+const createLocalRequestId = (prefix = "req") => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Math.random().toString(16).slice(2)}-${Date.now().toString(16)}`;
+};
+
+const getSeatIdentity = (game, seat) => (seat === "Player 1" ? game.player1?.identityId ?? null : game.player2?.identityId ?? null);
 
 const createParticipant = (identityId, at) => ({
   identityId,
@@ -117,6 +138,148 @@ const buildLocalGameView = ({
     canInvite: true,
     inviteToken: gameId,
     initialSelectionAction: initialSelectionAction ? clone(initialSelectionAction) : null,
+  };
+};
+
+const createCurrentTurnFromState = (game, stableState, createdAt, activeMoves) => {
+  const turnIndex = stableState.turnIndex ?? 0;
+  const existingTurns = Array.isArray(game.turns) ? game.turns : [];
+  const existingTurn = existingTurns.find((turn) => turn?.index === turnIndex) ?? null;
+  const currentTurnMoves = activeMoves.filter((move) => move?.turnIndex === turnIndex);
+  return {
+    index: turnIndex,
+    startedAt: existingTurn?.startedAt ?? currentTurnMoves[0]?.at ?? game.createdAt ?? createdAt,
+    endedAt: null,
+    playerSeat: existingTurn?.playerSeat ?? getSeatForSide(stableState.sideToMove),
+    status: "active",
+    moveIndexes: currentTurnMoves.map((move) => move.index),
+    lastMoveAt: currentTurnMoves.at(-1)?.at ?? null,
+  };
+};
+
+const buildTurnsAfterRevert = (game, stableState, activeMoves, revertedAt) => {
+  const currentTurn = createCurrentTurnFromState(game, stableState, revertedAt, activeMoves);
+  const existingTurns = Array.isArray(game.turns) ? game.turns : [];
+  const priorTurns = existingTurns
+    .filter((turn) => turn && typeof turn.index === "number" && turn.index < currentTurn.index)
+    .map((turn) => {
+      const turnMoves = activeMoves.filter((move) => move?.turnIndex === turn.index);
+      return {
+        ...clone(turn),
+        moveIndexes: turnMoves.map((move) => move.index),
+        lastMoveAt: turnMoves.at(-1)?.at ?? turn.lastMoveAt ?? null,
+      };
+    })
+    .filter((turn) => turn.moveIndexes.length > 0);
+  return [...priorTurns, currentTurn];
+};
+
+const buildOptimisticRevertRequestGame = ({ game, requestId, requesterIdentityId, targetMoveId }) => {
+  const targetMoveIndex = Array.isArray(game.moves) ? game.moves.findIndex((move) => move?.moveId === targetMoveId) : -1;
+  if (targetMoveIndex < 0) {
+    throw createOperationError("The target move could not be found for the undo request.", "move_not_found");
+  }
+  const requestedAt = new Date().toISOString();
+  const pendingRevertRequest = {
+    requestId,
+    requesterIdentityId,
+    targetMoveId,
+    targetMoveIndex,
+    requestedAt,
+    status: "pending",
+  };
+  const nextGame = clone(game);
+  nextGame.pendingRevertRequest = pendingRevertRequest;
+  nextGame.myPendingRevertRequest = pendingRevertRequest;
+  nextGame.approvableRevertRequest = null;
+  nextGame.notifications = ["Undo request pending approval", ...(Array.isArray(game.notifications) ? game.notifications : [])];
+  nextGame.updatedAt = requestedAt;
+  return nextGame;
+};
+
+const clearOptimisticRevertRequest = ({ game, notification }) => {
+  const nextGame = clone(game);
+  nextGame.pendingRevertRequest = null;
+  nextGame.myPendingRevertRequest = null;
+  nextGame.approvableRevertRequest = null;
+  nextGame.notifications = [notification, ...(Array.isArray(game.notifications) ? game.notifications : [])];
+  nextGame.updatedAt = new Date().toISOString();
+  return nextGame;
+};
+
+const buildOptimisticApprovedRevertGame = ({
+  game,
+  requesterIdentityId,
+  currentIdentityId,
+  targetMoveId: explicitTargetMoveId = null,
+}) => {
+  const pendingRevertRequest = game.pendingRevertRequest ?? game.myPendingRevertRequest ?? game.approvableRevertRequest ?? null;
+  const targetMoveId = explicitTargetMoveId ?? pendingRevertRequest?.targetMoveId ?? null;
+  const targetMoveIndex =
+    typeof pendingRevertRequest?.targetMoveIndex === "number"
+      ? pendingRevertRequest.targetMoveIndex
+      : Array.isArray(game.moves)
+        ? game.moves.findIndex((move) => move?.moveId === targetMoveId)
+        : -1;
+  const targetMove = targetMoveIndex >= 0 ? game.moves[targetMoveIndex] ?? null : null;
+  if (!targetMoveId || !targetMove?.selectionSnapshot) {
+    throw createOperationError("The undo target could not be resolved for local prediction.", "move_not_found");
+  }
+  const revertedAt = new Date().toISOString();
+  const moves = Array.isArray(game.moves)
+    ? game.moves.map((move, index) =>
+        index >= targetMoveIndex
+          ? {
+              ...clone(move),
+              undone: true,
+              undoneAt: revertedAt,
+              undoneByIdentityId: requesterIdentityId,
+            }
+          : clone(move),
+      )
+    : [];
+  const activeMoves = moves.filter((move) => move?.undone !== true);
+  const stableState = resolveToStability(clone(targetMove.selectionSnapshot), { artifactMode: "full" });
+  const currentTurn = createCurrentTurnFromState(game, stableState, revertedAt, activeMoves);
+  const turns = buildTurnsAfterRevert(game, stableState, activeMoves, revertedAt);
+  const turnOwnerSeat = currentTurn.playerSeat;
+  const controlSeat = getControlSeatForTurn(stableState, turnOwnerSeat);
+  const roleAllowsPlay = isPlayerRole(game.myRole);
+  const latestActiveMove = activeMoves.at(-1) ?? null;
+  const latestActiveMoveSeat = latestActiveMove ? getSeatForSide(latestActiveMove.actorSide) : null;
+  const latestActiveMoveIdentity = latestActiveMoveSeat ? getSeatIdentity(game, latestActiveMoveSeat) : null;
+  const legalActions = listLegalActions(stableState);
+
+  return {
+    ...clone(game),
+    moves,
+    pendingRevertRequest: null,
+    myPendingRevertRequest: null,
+    approvableRevertRequest: null,
+    historyIndex: null,
+    inHistoryMode: false,
+    currentSnapshot: clone(stableState),
+    board: {
+      ...(game.board ? clone(game.board) : {}),
+      state: clone(stableState),
+    },
+    currentTurn,
+    turns,
+    historySelectionAction: null,
+    initialSelectionAction: targetMove.action ? clone(targetMove.action) : null,
+    turnOwnerSeat,
+    controlSeat,
+    control: controlSeat === turnOwnerSeat ? "turn-owner" : "opponent",
+    legalActions,
+    canRecordMove: roleAllowsPlay && legalActions.length > 0,
+    canEndTurn:
+      roleAllowsPlay && controlSeat === turnOwnerSeat && game.myRole === turnOwnerSeat && currentTurn.moveIndexes.length > 0,
+    latestActiveMoveId: latestActiveMove?.moveId ?? null,
+    canUndoLastMove: latestActiveMoveIdentity === currentIdentityId,
+    pendingScenarioSelection: null,
+    lastMoveAt: latestActiveMove?.at ?? null,
+    updatedAt: revertedAt,
+    notifications: ["Undo applied", ...(Array.isArray(game.notifications) ? game.notifications : [])],
   };
 };
 
@@ -272,6 +435,37 @@ export const createSyncStore = ({
       }
       failOperation(handle.id, error);
     }
+  };
+
+  const runOptimisticGameOperation = ({ id, gameId, buildOptimisticGame, commit }) => {
+    const currentGame = transport.getGameViewModel(gameId);
+    if (!currentGame) {
+      throw createOperationError(`Game ${gameId} is not loaded.`, "game_not_loaded");
+    }
+    const previousGame = clone(currentGame);
+    const optimisticGame = buildOptimisticGame(previousGame);
+    transport.applyLiveGameUpdate({ game: optimisticGame });
+
+    const handle = operationManager.enqueue({
+      id,
+      gameId,
+      result: optimisticGame,
+    });
+
+    void Promise.resolve()
+      .then(() => commit())
+      .then((game) => {
+        if (game) {
+          transport.applyLiveGameUpdate({ game });
+        }
+        operationManager.confirm(id, transport.getGameViewModel(gameId) ?? game ?? optimisticGame);
+      })
+      .catch((error) => {
+        transport.applyLiveGameUpdate({ game: previousGame });
+        operationManager.fail(id, error);
+      });
+
+    return handle;
   };
 
   transport.subscribe((change) => {
@@ -540,6 +734,62 @@ export const createSyncStore = ({
 
       return handle;
     },
+    requestRevertToMove: ({ gameId, targetMoveId }) => {
+      const currentGame = transport.getGameViewModel(gameId);
+      if (!currentGame) {
+        throw createOperationError(`Game ${gameId} is not loaded.`, "game_not_loaded");
+      }
+      const requesterIdentityId = transport.getIdentityId();
+      const targetMove = Array.isArray(currentGame.moves) ? currentGame.moves.find((move) => move?.moveId === targetMoveId) ?? null : null;
+      if (!targetMove) {
+        throw createOperationError("The target move could not be found for the undo request.", "move_not_found");
+      }
+      const requesterSeat = isPlayerRole(currentGame.myRole) ? currentGame.myRole : getSeatForSide(targetMove.actorSide);
+      const approverIdentityId = getSeatIdentity(currentGame, getNextSeat(requesterSeat));
+      const requestId = createLocalRequestId("revert");
+      return runOptimisticGameOperation({
+        id: `revert-request:${requestId}`,
+        gameId,
+        buildOptimisticGame: (game) =>
+          approverIdentityId
+            ? buildOptimisticRevertRequestGame({ game, requestId, requesterIdentityId, targetMoveId })
+            : buildOptimisticApprovedRevertGame({
+                game,
+                requesterIdentityId,
+                currentIdentityId: requesterIdentityId,
+                targetMoveId,
+              }),
+        commit: async () => transport.requestRevertToMove({ gameId, targetMoveId, requestId }),
+      });
+    },
+    approveRevertRequest: ({ gameId, requestId }) => {
+      const currentGame = transport.getGameViewModel(gameId);
+      const requesterIdentityId = currentGame?.pendingRevertRequest?.requesterIdentityId ?? currentGame?.myPendingRevertRequest?.requesterIdentityId;
+      const currentIdentityId = transport.getIdentityId();
+      if (!requesterIdentityId) {
+        throw createOperationError("No pending undo request is available to approve.", "request_not_found");
+      }
+      return runOptimisticGameOperation({
+        id: `revert-approve:${requestId}`,
+        gameId,
+        buildOptimisticGame: (game) => buildOptimisticApprovedRevertGame({ game, requesterIdentityId, currentIdentityId }),
+        commit: async () => transport.approveRevertRequest({ gameId, requestId }),
+      });
+    },
+    rejectRevertRequest: ({ gameId, requestId }) =>
+      runOptimisticGameOperation({
+        id: `revert-reject:${requestId}`,
+        gameId,
+        buildOptimisticGame: (game) => clearOptimisticRevertRequest({ game, notification: "Undo request rejected" }),
+        commit: async () => transport.rejectRevertRequest({ gameId, requestId }),
+      }),
+    rescindRevertRequest: ({ gameId, requestId }) =>
+      runOptimisticGameOperation({
+        id: `revert-rescind:${requestId}`,
+        gameId,
+        buildOptimisticGame: (game) => clearOptimisticRevertRequest({ game, notification: "Undo request rescinded" }),
+        commit: async () => transport.rescindRevertRequest({ gameId, requestId }),
+      }),
     setActiveGameId: (gameId) => {
       activeGameId = gameId || null;
       syncActiveGame();

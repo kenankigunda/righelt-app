@@ -1440,7 +1440,7 @@ test("live transport store posts revert lifecycle endpoints", async () => {
   };
 
   const store = createLiveTransportStore({ storage, fetcher, random: () => 0.1 });
-  await store.requestRevertToMove({ gameId: "game-revert", targetMoveId: "move-1" });
+  await store.requestRevertToMove({ gameId: "game-revert", targetMoveId: "move-1", requestId: "req-client-1" });
   await store.approveRevertRequest({ gameId: "game-revert", requestId: "req-1" });
   const approvedHomeCard = store.getHomeGameCard("game-revert");
   assert.equal(approvedHomeCard?.moveCount, 1);
@@ -1458,6 +1458,7 @@ test("live transport store posts revert lifecycle endpoints", async () => {
   const rescindCall = calls.find((entry) => entry.url === "/api/shell/games/game-revert/revert-rescind");
   assert.equal(requestCall.body.identityId, "id-revert");
   assert.equal(requestCall.body.targetMoveId, "move-1");
+  assert.equal(requestCall.body.requestId, "req-client-1");
   assert.equal(approveCall.body.identityId, "id-revert");
   assert.equal(approveCall.body.requestId, "req-1");
   assert.equal(rejectCall.body.identityId, "id-revert");

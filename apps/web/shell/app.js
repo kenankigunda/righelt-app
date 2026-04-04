@@ -3446,6 +3446,42 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "accept-revert-request") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const requestId = actionEl.getAttribute("data-request-id");
+    if (!gameId || !requestId) return;
+    ignoredRevertRequests.delete(getRevertRequestKey(gameId, requestId));
+    transport.approveRevertRequest({ gameId, requestId });
+    return;
+  }
+
+  if (action === "reject-revert-request") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const requestId = actionEl.getAttribute("data-request-id");
+    if (!gameId || !requestId) return;
+    ignoredRevertRequests.add(getRevertRequestKey(gameId, requestId));
+    transport.rejectRevertRequest({ gameId, requestId });
+    return;
+  }
+
+  if (action === "rescind-revert-request") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const requestId = actionEl.getAttribute("data-request-id");
+    if (!gameId || !requestId) return;
+    transport.rescindRevertRequest({ gameId, requestId });
+    return;
+  }
+
+  if (action === "revert-to-move" || action === "undo-last-move") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const moveId = actionEl.getAttribute("data-move-id");
+    if (!gameId || !moveId) {
+      return;
+    }
+    transport.requestRevertToMove({ gameId, targetMoveId: moveId });
+    return;
+  }
+
   await withBusy(async () => {
     if (action === "toggle-header-menu") {
       headerMenuOpen = !headerMenuOpen;
@@ -3595,35 +3631,6 @@ appEl.addEventListener("click", async (event) => {
       return;
     }
 
-    if (action === "accept-revert-request") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const requestId = actionEl.getAttribute("data-request-id");
-      if (!gameId || !requestId) return;
-      ignoredRevertRequests.delete(getRevertRequestKey(gameId, requestId));
-      await transport.approveRevertRequest({ gameId, requestId });
-      await syncRouteDataAndLiveChannels();
-      return;
-    }
-
-    if (action === "reject-revert-request") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const requestId = actionEl.getAttribute("data-request-id");
-      if (!gameId || !requestId) return;
-      ignoredRevertRequests.add(getRevertRequestKey(gameId, requestId));
-      await transport.rejectRevertRequest({ gameId, requestId });
-      await syncRouteDataAndLiveChannels();
-      return;
-    }
-
-    if (action === "rescind-revert-request") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const requestId = actionEl.getAttribute("data-request-id");
-      if (!gameId || !requestId) return;
-      await transport.rescindRevertRequest({ gameId, requestId });
-      await syncRouteDataAndLiveChannels();
-      return;
-    }
-
     if (action === "toggle-undone-group") {
       const groupKey = actionEl.getAttribute("data-group-key");
       if (!groupKey) return;
@@ -3668,17 +3675,6 @@ appEl.addEventListener("click", async (event) => {
       playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
       await transport.returnToLive({ gameId });
-      await syncRouteDataAndLiveChannels();
-      return;
-    }
-
-    if (action === "revert-to-move" || action === "undo-last-move") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const moveId = actionEl.getAttribute("data-move-id");
-      if (!gameId || !moveId) {
-        return;
-      }
-      await transport.requestRevertToMove({ gameId, targetMoveId: moveId });
       await syncRouteDataAndLiveChannels();
       return;
     }

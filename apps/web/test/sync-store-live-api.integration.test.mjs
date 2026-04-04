@@ -434,3 +434,159 @@ test("integration sync store keeps a failed create-game stub locally hydratable 
     ["disconnect", createHandle.result.id],
   ]);
 });
+
+test("integration sync store keeps optimistic revert request ids aligned through auto-approved server commits", async () => {
+  const env = createApiEnv();
+  const storage = createMemoryStorage();
+  const requests = [];
+  let releaseRevertRequest = null;
+  const revertRequestReleased = new Promise((resolve) => {
+    releaseRevertRequest = resolve;
+  });
+
+  const store = createSyncStore({
+    storage,
+    fetcher: async (url, init = {}) => {
+      const parsedBody = typeof init.body === "string" ? JSON.parse(init.body) : null;
+      requests.push({
+        url: String(url),
+        method: init.method || "GET",
+        body: parsedBody,
+      });
+      if (String(url).includes("/revert-request") && (init.method || "GET") === "POST") {
+        await revertRequestReleased;
+      }
+      return apiWorker.fetch(
+        new Request(toAbsoluteUrl(url), {
+          method: init.method || "GET",
+          headers: init.headers,
+          body: init.body,
+        }),
+        env,
+      );
+    },
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const createHandle = store.createGame({ selfPlayMode: false });
+  const createdGame = await createHandle.committed;
+  const action = createdGame.legalActions.find((entry) => entry.type !== "pass") ?? createdGame.legalActions[0];
+  const moveHandle = await store.applyGameAction({
+    gameId: createdGame.id,
+    state: createdGame.currentSnapshot,
+    action,
+  });
+  await moveHandle.committed;
+
+  const revertHandle = store.requestRevertToMove({
+    gameId: createdGame.id,
+    targetMoveId: store.getGameViewModel(createdGame.id).latestActiveMoveId,
+  });
+
+  const optimisticRequestId = revertHandle.id.replace(/^revert-request:/, "");
+  assert.match(optimisticRequestId, /^revert-/);
+  assert.equal(store.getGameViewModel(createdGame.id).pendingRevertRequest, null);
+  assert.equal(store.getGameViewModel(createdGame.id).moves.at(-1)?.undone, true);
+
+  releaseRevertRequest();
+  const committedGame = await revertHandle.committed;
+  const request = requests.find((entry) => entry.url.endsWith("/revert-request") && entry.method === "POST");
+  assert.equal(request?.body?.requestId, optimisticRequestId);
+  assert.equal(committedGame.pendingRevertRequest, null);
+  assert.equal(committedGame.moves.at(-1)?.undone, true);
+  assert.equal(store.getGameViewModel(createdGame.id).pendingRevertRequest, null);
+  assert.equal(store.getGameViewModel(createdGame.id).moves.at(-1)?.undone, true);
+});
+
+test("integration sync store keeps optimistic revert request ids aligned when approval is required", async () => {
+  const env = createApiEnv();
+  const ownerStorage = createMemoryStorage();
+  const guestStorage = createMemoryStorage();
+  const requests = [];
+  let releaseRevertRequest = null;
+  const revertRequestReleased = new Promise((resolve) => {
+    releaseRevertRequest = resolve;
+  });
+
+  const createStore = (storage) =>
+    createSyncStore({
+      storage,
+      fetcher: async (url, init = {}) => {
+        const parsedBody = typeof init.body === "string" ? JSON.parse(init.body) : null;
+        requests.push({
+          url: String(url),
+          method: init.method || "GET",
+          body: parsedBody,
+          identityId: storage.getItem("righelt.identity.id.v1"),
+        });
+        if (String(url).includes("/revert-request") && (init.method || "GET") === "POST") {
+          await revertRequestReleased;
+        }
+        return apiWorker.fetch(
+          new Request(toAbsoluteUrl(url), {
+            method: init.method || "GET",
+            headers: init.headers,
+            body: init.body,
+          }),
+          env,
+        );
+      },
+      createSyncClient: () => ({
+        connectGame() {},
+        disconnectGame() {},
+        disconnectAll() {},
+        getDesiredGameIds: () => [],
+      }),
+    });
+
+  const ownerStore = createStore(ownerStorage);
+  const guestStore = createStore(guestStorage);
+
+  const createHandle = ownerStore.createGame({ selfPlayMode: false });
+  const createdGame = await createHandle.committed;
+  const guestJoin = await guestStore.joinGame({ gameId: createdGame.id, mode: "player", inviteFromRole: null });
+  assert.equal(guestJoin.pendingApproval, true);
+
+  const ownerGameWithJoinRequest = await ownerStore.loadGame(createdGame.id, { openAsViewer: false });
+  const pendingRequester = ownerGameWithJoinRequest.pendingJoinRequests?.[0]?.identityId ?? null;
+  assert.ok(pendingRequester);
+  const approvedJoin = await ownerStore.approvePendingRequest({ gameId: createdGame.id, requesterIdentityId: pendingRequester });
+  assert.equal(approvedJoin.ok, true);
+
+  const refreshedOwnerGame = await ownerStore.loadGame(createdGame.id, { openAsViewer: false });
+  const action = refreshedOwnerGame.legalActions.find((entry) => entry.type !== "pass") ?? refreshedOwnerGame.legalActions[0];
+  const moveHandle = await ownerStore.applyGameAction({
+    gameId: refreshedOwnerGame.id,
+    state: refreshedOwnerGame.currentSnapshot,
+    action,
+  });
+  await moveHandle.committed;
+
+  const revertHandle = ownerStore.requestRevertToMove({
+    gameId: refreshedOwnerGame.id,
+    targetMoveId: ownerStore.getGameViewModel(refreshedOwnerGame.id).latestActiveMoveId,
+  });
+
+  const optimisticRequestId = revertHandle.result.pendingRevertRequest.requestId;
+  assert.match(optimisticRequestId, /^revert-/);
+  assert.equal(ownerStore.getGameViewModel(refreshedOwnerGame.id).pendingRevertRequest.requestId, optimisticRequestId);
+  assert.equal(ownerStore.getGameViewModel(refreshedOwnerGame.id).myPendingRevertRequest.requestId, optimisticRequestId);
+
+  releaseRevertRequest();
+  const committedGame = await revertHandle.committed;
+  const request = requests.find(
+    (entry) =>
+      entry.url.endsWith(`/games/${createdGame.id}/revert-request`) &&
+      entry.method === "POST" &&
+      entry.identityId === ownerStore.getIdentityId(),
+  );
+  assert.equal(request?.body?.requestId, optimisticRequestId);
+  assert.equal(committedGame.pendingRevertRequest?.requestId, optimisticRequestId);
+  assert.equal(committedGame.myPendingRevertRequest?.requestId, optimisticRequestId);
+  assert.equal(committedGame.moves.at(-1)?.undone, undefined);
+});
