@@ -1,18 +1,21 @@
 ---
-id: "t-020"
-title: "Client sync store for immediate responsiveness"
-status: "In Progress"
+id: T-020
+title: Client sync store for immediate responsiveness
+status: In Progress
 assignee: []
-created_date: "2026-04-04"
-updated_date: "2026-04-04"
-labels: ["feature"]
-priority: "high"
+created_date: '2026-04-04'
+updated_date: '2026-04-04 06:19'
+labels:
+  - feature
 dependencies: []
 references:
-  - "docs/features/SYNC_STORE_ARCHITECTURE.md"
+  - docs/features/SYNC_STORE_ARCHITECTURE.md
+priority: high
 ---
 
 ## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
 Notion priority: P0. Subtask: t-020.01 (Client-side optimistic updates for history).
 
 Unify all client-server communication behind a single sync store that returns immediate optimistic results, eliminates the global `busy` flag, and provides a reset/alert path on unrecoverable failure.
@@ -26,9 +29,10 @@ Unify all client-server communication behind a single sync store that returns im
 
 Remaining: Phases 5 (invite-copy on pending games), 6 (full pulsing-button/skeleton system), 7 (pending history items), 8 (unified failure UX), 9 (local-first history nav), 10 (absorb live-sync.js), 11 (dead store cleanup), 12 (offline support). See architecture doc for full phase breakdown.
 
-**Branch `claude/fervent-allen`** — independent implementation pass also in progress.
+**Branch `claude/client-local-sync-store`** — independent implementation pass also in progress, but with less progress.
 
 ## References
 - Architecture & eng plan: `docs/features/SYNC_STORE_ARCHITECTURE.md`
 - Active implementation: branch `codex/client-local-sync-store`
 - Independent implementation: worktree/branch `claude/fervent-allen`
+<!-- SECTION:DESCRIPTION:END -->
