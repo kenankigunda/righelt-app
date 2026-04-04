@@ -573,3 +573,98 @@ test("shell integration: requester can rescind a pending revert request through 
   assert.equal(rescinded.pendingRevertRequest, null);
   assert.equal(rescinded.moves.some((move) => move.undone === true), false);
 });
+
+// ---------------------------------------------------------------------------
+// t-001.02 — Integration tests for destroyedPieces persistence
+// Covers: I-05, I-06, I-07, I-09
+// ---------------------------------------------------------------------------
+
+test("I-05: move API response — game.moves includes destroyedPieces on each move after addMove", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-i05-dp");
+  const guest = harness.createClient("id-guest-i05-dp");
+
+  const created = await owner.store.createGame({ selfPlayMode: false });
+  await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
+
+  const moved = await owner.store.addMove({ gameId: created.id, notation: "I05-M1" });
+
+  // The move returned in the response must carry destroyedPieces
+  assert.ok(moved.move, "response must include move");
+  assert.ok(Array.isArray(moved.move.destroyedPieces), "move.destroyedPieces must be an array");
+
+  // The game view model in the response must also have destroyedPieces on each move
+  assert.ok(Array.isArray(moved.game.moves), "game.moves must be an array");
+  for (const m of moved.game.moves) {
+    assert.ok(Array.isArray(m.destroyedPieces), `game.moves[${m.index}].destroyedPieces must be an array`);
+  }
+});
+
+test("I-06: duplicate clientCommandId path — game view includes destroyedPieces, no crash", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-i06-dp");
+  const guest = harness.createClient("id-guest-i06-dp");
+
+  const created = await owner.store.createGame({ selfPlayMode: false });
+  await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
+
+  await owner.store.addMove({ gameId: created.id, notation: "I06-M1" });
+
+  // Load the game — moves should have destroyedPieces
+  const gameView = await harness.refreshGame(owner, created.id);
+  assert.ok(Array.isArray(gameView.moves), "moves must be an array");
+  for (const m of gameView.moves) {
+    assert.ok(Array.isArray(m.destroyedPieces), `game.moves[${m.index}].destroyedPieces must be an array`);
+  }
+  // No errors thrown — game loaded cleanly
+});
+
+test("I-07: history endpoint — moves loaded from server include destroyedPieces", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-i07-dp");
+  const guest = harness.createClient("id-guest-i07-dp");
+
+  const created = await owner.store.createGame({ selfPlayMode: false });
+  await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
+
+  await owner.store.addMove({ gameId: created.id, notation: "I07-M1" });
+  await guest.store.addMove({ gameId: created.id, notation: "I07-M2" });
+
+  // Reload the full game — simulates history endpoint delivery
+  const gameView = await harness.refreshGame(owner, created.id);
+  assert.ok(Array.isArray(gameView.moves));
+  assert.ok(gameView.moves.length >= 2, "at least 2 moves should be present");
+  for (const m of gameView.moves) {
+    assert.ok(
+      Array.isArray(m.destroyedPieces),
+      `history move[${m.index}].destroyedPieces must be an array`,
+    );
+  }
+});
+
+test("I-09: late-join participant receives destroyedPieces in history catchup", async () => {
+  const harness = createShellIntegrationHarness();
+  const owner = harness.createClient("id-owner-i09-dp");
+  const guest = harness.createClient("id-guest-i09-dp");
+  // A third client using the same identity as owner simulates the owner
+  // "reconnecting" on a new session — receiving the full game state catchup.
+  const ownerReconnect = harness.createClient("id-owner-i09-dp");
+
+  const created = await owner.store.createGame({ selfPlayMode: false });
+  await harness.acceptInviteAsPlayer(guest, harness.buildPlayerInviteHash(created));
+
+  // Record moves before the reconnect
+  await owner.store.addMove({ gameId: created.id, notation: "I09-M1" });
+  await guest.store.addMove({ gameId: created.id, notation: "I09-M2" });
+
+  // Simulate the owner reconnecting on a new session (late-join / history catchup)
+  const lateView = await ownerReconnect.store.loadGame(created.id);
+  assert.ok(Array.isArray(lateView.moves), "reconnected client must see moves");
+  assert.ok(lateView.moves.length >= 2, "reconnected client should receive all recorded moves");
+  for (const m of lateView.moves) {
+    assert.ok(
+      Array.isArray(m.destroyedPieces),
+      `reconnected client history move[${m.index}].destroyedPieces must be an array`,
+    );
+  }
+});

@@ -626,6 +626,7 @@ export class GameRoomDO {
             clientCommandId: commandMetadata.clientCommandId,
             state: existingMove.snapshot,
             removedPieces: [],
+            destroyedPieces: existingMove.destroyedPieces ?? [],
             game: withViewModel(game, identityId),
             eventSeq: this.eventSeq,
             duplicate: true,
@@ -670,6 +671,7 @@ export class GameRoomDO {
           clientCommandId: commandMetadata.clientCommandId,
           state: moved.state,
           removedPieces: moved.removedPieces,
+          destroyedPieces: moved.destroyedPieces ?? [],
           game: withViewModel(game, identityId),
           eventSeq: this.eventSeq,
           duplicate: true,
@@ -688,6 +690,7 @@ export class GameRoomDO {
         clientCommandId: commandMetadata.clientCommandId,
         state: moved.state,
         removedPieces: moved.removedPieces,
+        destroyedPieces: moved.destroyedPieces ?? [],
         game: withViewModel(game, identityId),
         eventSeq: this.eventSeq,
       });

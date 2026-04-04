@@ -317,6 +317,7 @@ test("shell renders durable browser E2E selectors for core workflow surfaces", (
   assert.match(source, /data-testid="game-board"/);
   assert.match(source, /data-testid="history-list"/);
   assert.match(source, /data-testid="history-move-item"/);
+  assert.match(source, /data-testid="history-destruction-item"/);
   assert.match(source, /data-testid="history-return-live"/);
   assert.match(source, /data-testid="approval-gate"/);
   assert.match(source, /data-testid="accept-request"/);
@@ -412,8 +413,8 @@ test("history navigation uses pointer-down press state with a single mouseup rel
   assert.match(source, /boardWrapEl\.classList\.add\("history-board-release"\);/);
   assert.match(source, /actionEl\.classList\.add\("history-item-release"\);/);
   assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*const controlEl = target\.closest\("button, \.button-link, \.mini-board-card-link-surface"\);[\s\S]*startControlPress\(controlEl\);/s);
-  assert.match(source, /window\.addEventListener\("pointerup", \(event\) => \{[\s\S]*action === "jump-history" \|\| action === "return-live"[\s\S]*return;[\s\S]*clearHistoryPress\(\);\s*\}\);/s);
-  assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*action !== "jump-history" && action !== "return-live"[\s\S]*startHistoryPress\(actionEl\);/s);
+  assert.match(source, /window\.addEventListener\("pointerup", \(event\) => \{[\s\S]*action === "jump-history" \|\| action === "jump-destruction" \|\| action === "return-live"[\s\S]*return;[\s\S]*clearHistoryPress\(\);\s*\}\);/s);
+  assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*action !== "jump-history" && action !== "jump-destruction" && action !== "return-live"[\s\S]*startHistoryPress\(actionEl\);/s);
   assert.match(source, /const animateHistoryDeselection = async \(actionEl\) => \{/);
   assert.match(source, /currentSelected\.classList\.add\("is-deselecting"\);/);
   assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearControlPress\(\);[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);

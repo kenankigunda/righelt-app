@@ -1091,7 +1091,7 @@ const playHistoryReleaseBounce = (actionEl) => {
     boardWrapEl.classList.add("history-board-release");
   }
 
-  if (actionEl instanceof HTMLElement && actionEl.classList.contains("history-item")) {
+  if (actionEl instanceof HTMLElement && (actionEl.classList.contains("history-item") || actionEl.classList.contains("history-destruction-item"))) {
     actionEl.classList.remove("history-item-release");
     void actionEl.offsetWidth;
     actionEl.classList.add("history-item-release");
@@ -1145,7 +1145,7 @@ const startHistoryPress = (actionEl) => {
     boardWrapEl.classList.add("history-board-pressing");
   }
 
-  if (actionEl.classList.contains("history-item")) {
+  if (actionEl.classList.contains("history-item") || actionEl.classList.contains("history-destruction-item")) {
     actionEl.classList.add("is-pressing");
     pressedHistoryActionEl = actionEl;
   }
@@ -1254,6 +1254,13 @@ const renderTurnHistory = (game) => {
           move.moveId || "",
         )}" ${busy ? "disabled" : ""}>Undo back to this move</button>`
       : "";
+    const destroyedPieces = Array.isArray(move.destroyedPieces) ? move.destroyedPieces : [];
+    const destructionSubBullets = destroyedPieces.length > 0
+      ? `<ul class="history-destruction-list">${destroyedPieces.map((record) => {
+          const ownerSideClass = playerToneClassForSide(record.ownerSeat === "p1" ? "P1" : record.ownerSeat === "p2" ? "P2" : "neutral");
+          return `<li class="history-destruction-item ${ownerSideClass}" data-action="jump-destruction" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}" data-position-row="${record.position.row}" data-position-col="${record.position.col}" data-testid="history-destruction-item">DESTROYED (${record.position.row},${record.position.col})</li>`;
+        }).join("")}</ul>`
+      : "";
     return {
       undone: move.undone === true,
       actorSide: move.actorSide || null,
@@ -1266,6 +1273,7 @@ const renderTurnHistory = (game) => {
           <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
           ${revertButton}
           ${branchButton}
+          ${destructionSubBullets}
         </li>`,
     };
   });
@@ -3376,6 +3384,7 @@ appEl.addEventListener("click", async (event) => {
   const shouldRenderBusyStateStart =
     action !== "copy-invite" &&
     action !== "jump-history" &&
+    action !== "jump-destruction" &&
     action !== "launch-history-branch" &&
     action !== "toggle-undone-group" &&
     action !== "return-live" &&
@@ -3665,6 +3674,7 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
       if (!gameId || !Number.isFinite(moveIndex)) return;
+      boardRuntime?.clearDestructionHighlight?.();
       clearControlPress();
       clearHistoryPress();
       playHistoryReleaseBounce(actionEl);
@@ -3674,9 +3684,26 @@ appEl.addEventListener("click", async (event) => {
       return;
     }
 
+    if (action === "jump-destruction") {
+      const gameId = actionEl.getAttribute("data-game-id");
+      const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
+      const row = Number.parseInt(actionEl.getAttribute("data-position-row") || "-1", 10);
+      const col = Number.parseInt(actionEl.getAttribute("data-position-col") || "-1", 10);
+      if (!gameId || !Number.isFinite(moveIndex) || !Number.isFinite(row) || !Number.isFinite(col)) return;
+      clearControlPress();
+      clearHistoryPress();
+      playHistoryReleaseBounce(actionEl);
+      await animateHistoryDeselection(actionEl);
+      await transport.selectHistoryMove({ gameId, moveIndex });
+      await syncRouteDataAndLiveChannels();
+      boardRuntime?.setDestructionHighlight?.({ row, col });
+      return;
+    }
+
     if (action === "return-live") {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
+      boardRuntime?.clearDestructionHighlight?.();
       clearHistoryPress();
       playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
@@ -3927,7 +3954,7 @@ appEl.addEventListener("pointerdown", (event) => {
     return;
   }
   const action = actionEl.getAttribute("data-action");
-  if (action !== "jump-history" && action !== "return-live") {
+  if (action !== "jump-history" && action !== "jump-destruction" && action !== "return-live") {
     return;
   }
   startHistoryPress(actionEl);
@@ -3942,7 +3969,7 @@ window.addEventListener("pointerup", (event) => {
   if (target instanceof HTMLElement) {
     const actionEl = target.closest("[data-action]");
     const action = actionEl?.getAttribute("data-action");
-    if (action === "jump-history" || action === "return-live") {
+    if (action === "jump-history" || action === "jump-destruction" || action === "return-live") {
       return;
     }
   }

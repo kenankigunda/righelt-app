@@ -47,6 +47,8 @@ export type MoveEntry = {
   undoneByIdentityId?: string | null;
   selectionSnapshot: GameState;
   snapshot: GameState;
+  /** Persistent record of pieces destroyed during resolution of this move. */
+  destroyedPieces?: DestroyedPieceRecord[];
 };
 
 export type RevertRequest = {
@@ -145,6 +147,21 @@ export type RemovedPieceNotice = {
   position: { row: number; col: number };
   reason: "loss_of_supply" | "no_retreat";
   message: string;
+};
+
+/**
+ * A persistent record of a piece that was removed during resolution of a move.
+ * Stored on `MoveEntry.destroyedPieces` for use in history rendering.
+ *
+ * Invariant: A Commander removal always produces a terminal outcome (`p1_win`,
+ * `p2_win`, or `draw`). A move where `outcome.status === "ongoing"` cannot
+ * contain a Commander removal. Therefore, `reason: "commander_unsupplied"` is
+ * safely inferred whenever `piece.kind === "commander"` at removal time.
+ */
+export type DestroyedPieceRecord = {
+  position: { row: number; col: number };
+  ownerSeat: "p1" | "p2";
+  reason: "no_retreat" | "loss_of_supply" | "commander_unsupplied";
 };
 
 export type PieceMovePreview = Action & {
@@ -965,6 +982,58 @@ const collectRemovedPieceNotices = (
   return notices;
 };
 
+/**
+ * Collect `DestroyedPieceRecord` entries for a single move resolution.
+ *
+ * Invariant (see `DestroyedPieceRecord`): A Commander removal always produces a
+ * terminal outcome. When `piece.kind === "commander"` the reason is classified
+ * as `"commander_unsupplied"` rather than `"loss_of_supply"`. A move with
+ * `outcome.status === "ongoing"` will never produce a Commander record here.
+ *
+ * Mirrors the JS implementation in `apps/web/shell/optimistic-live.js`.
+ * Keep both in sync; U-17 is the parity guard.
+ */
+export const collectDestroyedPieceRecords = (
+  before: GameState,
+  afterApply: GameState,
+  afterStability: GameState,
+  action: Action,
+): DestroyedPieceRecord[] => {
+  const afterApplyIds = new Set(afterApply.pieces.map((piece) => piece.id));
+  const afterStableIds = new Set(afterStability.pieces.map((piece) => piece.id));
+  const records: DestroyedPieceRecord[] = [];
+
+  for (const piece of before.pieces) {
+    if (!afterApplyIds.has(piece.id)) {
+      const reason: DestroyedPieceRecord["reason"] =
+        piece.kind === "commander"
+          ? "commander_unsupplied"
+          : piece.pushed || action.type === "push" || action.type === "retreat"
+            ? "no_retreat"
+            : "loss_of_supply";
+      records.push({
+        position: { ...piece.position },
+        ownerSeat: piece.owner === "P1" ? "p1" : "p2",
+        reason,
+      });
+    }
+  }
+
+  for (const piece of afterApply.pieces) {
+    if (!afterStableIds.has(piece.id)) {
+      const reason: DestroyedPieceRecord["reason"] =
+        piece.kind === "commander" ? "commander_unsupplied" : "loss_of_supply";
+      records.push({
+        position: { ...piece.position },
+        ownerSeat: piece.owner === "P1" ? "p1" : "p2",
+        reason,
+      });
+    }
+  }
+
+  return records;
+};
+
 const renumberHistory = (game: LiveGame) => {
   let activeMoveCounter = 0;
   game.moves.forEach((move, index) => {
@@ -1100,6 +1169,7 @@ export const applyServerActionWithExpectedState = (
         move: clone(existingMove),
         state: clone(existingMove.snapshot ?? game.board.state),
         removedPieces: [],
+        destroyedPieces: existingMove.destroyedPieces ?? [],
       };
     }
   }
@@ -1126,6 +1196,7 @@ export const applyServerActionWithExpectedState = (
   const applied = applyAction(stable, action);
   const next = resolveToStability(applied.state, { artifactMode: "full" });
   const removedPieces = collectRemovedPieceNotices(stable, applied.state, next, action);
+  const destroyedPieces = collectDestroyedPieceRecords(stable, applied.state, next, action);
   next.sideToMove = getSideForSeat(getControlSeatForTurn(next, activeTurn.playerSeat));
   next.turnIndex = activeTurn.index;
 
@@ -1142,6 +1213,7 @@ export const applyServerActionWithExpectedState = (
     clientCommandId: clientCommandId ?? null,
     selectionSnapshot: stable,
     snapshot: clone(next),
+    destroyedPieces,
   };
   game.moves.push(move);
   activeTurn.moveIndexes.push(move.index);
@@ -1165,7 +1237,7 @@ export const applyServerActionWithExpectedState = (
     turnSettled = true;
   }
   move.snapshot = clone(game.board.state);
-  return { ok: true as const, move, state: clone(game.board.state), removedPieces, turnSettled };
+  return { ok: true as const, move, state: clone(game.board.state), removedPieces, destroyedPieces, turnSettled };
 };
 
 export const applyServerMove = (game: LiveGame, notation?: string, clientCommandId?: string | null) => {

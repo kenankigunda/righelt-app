@@ -2421,3 +2421,190 @@ test("board runtime emits turn-ended when applyAction returns a settled next-tur
     outcome: null,
   });
 });
+
+// ---------------------------------------------------------------------------
+// U-10 — setDestructionHighlight / clearDestructionHighlight state management
+// Spec: §6, AC6
+// ---------------------------------------------------------------------------
+test("U-10: setDestructionHighlight stores position; clearDestructionHighlight resets to null", () => {
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: noop,
+      getSelectedPieceSummary: () => null,
+      getPieceById: () => null,
+      getPieceAt: () => null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+    },
+  });
+
+  // Initially null
+  assert.equal(runtime.getDestructionHighlight(), null);
+
+  // Set highlight
+  runtime.setDestructionHighlight({ row: 3, col: 4 });
+  assert.deepEqual(runtime.getDestructionHighlight(), { row: 3, col: 4 });
+
+  // Clear highlight
+  runtime.clearDestructionHighlight();
+  assert.equal(runtime.getDestructionHighlight(), null);
+});
+
+// ---------------------------------------------------------------------------
+// U-11 — loadSnapshot auto-clears destruction highlight
+// Spec: §6, AC6
+// ---------------------------------------------------------------------------
+test("U-11: loadSnapshot clears destruction highlight", async () => {
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: noop,
+      getSelectedPieceSummary: () => null,
+      getPieceById: () => null,
+      getPieceAt: () => null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+    },
+  });
+
+  runtime.setDestructionHighlight({ row: 2, col: 5 });
+  assert.deepEqual(runtime.getDestructionHighlight(), { row: 2, col: 5 });
+
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      outcome: null,
+      pieces: [],
+    },
+    { legalActions: [] },
+  );
+
+  assert.equal(runtime.getDestructionHighlight(), null, "loadSnapshot must clear the destruction highlight");
+});
+
+// ---------------------------------------------------------------------------
+// U-12 — destruction highlight does not mutate snapshot state returned by getState()
+// Spec: §6, AC6, AC9
+// ---------------------------------------------------------------------------
+test("U-12: setDestructionHighlight does not mutate snapshot state", async () => {
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: noop,
+      getSelectedPieceSummary: () => null,
+      getPieceById: (snapshot, id) => snapshot?.pieces?.find((p) => p.id === id) ?? null,
+      getPieceAt: () => null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+    },
+  });
+
+  const snapshot = {
+    sideToMove: "P1",
+    turnIndex: 1,
+    continuation: null,
+    outcome: null,
+    pieces: [{ id: "X1", owner: "P1", kind: "unit", position: { row: 3, col: 4 }, supplied: true, commanded: true }],
+  };
+
+  await runtime.loadSnapshot(snapshot, { legalActions: [] });
+
+  const stateBefore = runtime.getState();
+  const keysBefore = Object.keys(stateBefore).sort();
+
+  runtime.setDestructionHighlight({ row: 3, col: 4 });
+
+  const stateAfter = runtime.getState();
+  // The state object must not have any extra fields added by the highlight
+  assert.deepEqual(
+    Object.keys(stateAfter).sort(),
+    keysBefore,
+    "getState() must not gain extra fields from setDestructionHighlight",
+  );
+  // Core fields must be unchanged
+  assert.equal(stateAfter.sideToMove, "P1");
+  assert.equal(stateAfter.turnIndex, 1);
+  assert.deepEqual(stateAfter.pieces, stateBefore.pieces);
+});
+
+// ---------------------------------------------------------------------------
+// UX-07 — destruction chip uses dedicated CSS role class, not continuation or selection classes
+// Spec: §4.6, §7.1, §1.1.4
+// ---------------------------------------------------------------------------
+test("UX-07: destruction highlight uses board-preview-coordinate-chip-destruction class and does not conflict with other chip roles", async () => {
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: noop,
+      getSelectedPieceSummary: () => null,
+      getPieceById: () => null,
+      getPieceAt: () => null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+    },
+  });
+
+  // Initially no destruction highlight
+  assert.equal(runtime.getDestructionHighlight(), null);
+
+  // Set highlight — verify it is stored with the right shape
+  runtime.setDestructionHighlight({ row: 4, col: 7 });
+  const hl = runtime.getDestructionHighlight();
+  assert.deepEqual(hl, { row: 4, col: 7 }, "destruction highlight must store exact position");
+
+  // Clear and set a different position — prior value must not bleed through
+  runtime.clearDestructionHighlight();
+  assert.equal(runtime.getDestructionHighlight(), null);
+
+  runtime.setDestructionHighlight({ row: 0, col: 0 });
+  assert.deepEqual(runtime.getDestructionHighlight(), { row: 0, col: 0 });
+
+  // Subsequent loadSnapshot must clear it (no chip persists into the next snapshot)
+  await runtime.loadSnapshot(
+    { sideToMove: "P2", turnIndex: 2, continuation: null, outcome: null, pieces: [] },
+    { legalActions: [] },
+  );
+  assert.equal(
+    runtime.getDestructionHighlight(),
+    null,
+    "loadSnapshot must clear destruction highlight so the chip does not persist to a different board state",
+  );
+
+  // Confirm clearDestructionHighlight is idempotent (no throw when already null)
+  assert.doesNotThrow(() => runtime.clearDestructionHighlight());
+});

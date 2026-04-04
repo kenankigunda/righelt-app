@@ -198,6 +198,15 @@ body {
   color: #8a5712;
 }
 
+/* Destruction-highlight chip: dark crimson palette, distinct from continuation (player-toned)
+   and selection chips (teal/green). Used for the square where a piece was destroyed.
+   Per RIGHELT_WEB_APP_SPEC §1.1.4: new square-highlight role → matching coordinate chip treatment. */
+.board-preview-coordinate-chip.board-preview-coordinate-chip-destruction {
+  background: #f5e6e6;
+  border-color: #b03030;
+  color: #7a1a1a;
+}
+
 .board-preview-inline-button {
   display: inline-block;
   margin: 0 0 0.1rem;
