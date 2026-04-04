@@ -111,6 +111,30 @@ test("revert actions bypass the blocking busy wrapper and use optimistic sync-st
   assert.doesNotMatch(source, /if \(action === "revert-to-move" \|\| action === "undo-last-move"\) \{[\s\S]*await transport\.requestRevertToMove/s);
 });
 
+test("join, approval, and pending invite copy use localized button pending instead of the global busy gate", () => {
+  assert.match(source, /const getJoinButtonKey = \(mode, gameId\) => `join:\$\{mode\}:\$\{gameId\}`;/);
+  assert.match(source, /const getApproveRequestButtonKey = \(gameId, requesterIdentityId\) => `approve-request:\$\{gameId\}:\$\{requesterIdentityId\}`;/);
+  assert.match(source, /const getCopyInviteButtonKey = \(gameId\) => `copy-invite:\$\{gameId\}`;/);
+  assert.match(source, /const withPendingButton = async \(pendingKey, fn, \{ renderStart = true, renderEnd = true \} = \{\}\) => \{/);
+  assert.match(source, /const renderButtonStateAttributes = \(\{ className = "", pendingKey = null, disabled = false \} = \{\}\) => \{/);
+  assert.match(source, /data-testid="join-viewer"[^`]*renderButtonStateAttributes\(\{\s*className: "secondary",\s*pendingKey: joinViewerButtonKey,/s);
+  assert.match(source, /data-testid="join-player"[^`]*renderButtonStateAttributes\(\{\s*pendingKey: joinPlayerButtonKey,/s);
+  assert.match(source, /data-testid="approve-request-inline"[^`]*renderButtonStateAttributes\(/s);
+  assert.match(source, /data-testid="copy-invite"[^`]*renderButtonStateAttributes\(\{\s*pendingKey: copyInviteButtonKey,/s);
+  assert.match(source, /if \(action === "join-viewer" \|\| action === "accept-invite-viewer"\) \{[\s\S]*withPendingButton\(getJoinButtonKey\("viewer", gameId\), async \(\) => \{/s);
+  assert.match(source, /if \(action === "join-player" \|\| action === "accept-invite-player"\) \{[\s\S]*withPendingButton\(getJoinButtonKey\("player", gameId\), async \(\) => \{/s);
+  assert.match(source, /if \(action === "approve-request" \|\| action === "accept-request"\) \{[\s\S]*withPendingButton\(getApproveRequestButtonKey\(gameId, requester\), async \(\) => \{/s);
+  assert.match(source, /if \(action === "copy-invite"\) \{[\s\S]*const gameHandle = transport\.getGameHandle\?\.\(gameId\) \?\? null;/s);
+  assert.match(syncStoreSource, /getGameHandle: \(gameId\) => \{/);
+  assert.match(syncStoreSource, /operationManager\.getHandle\(`create:\$\{gameId\}`\)/);
+  assert.match(syncStoreSource, /operationManager\.getHandle\(`branch:\$\{gameId\}`\)/);
+  assert.doesNotMatch(source, /data-testid="join-viewer"[^`]*busy \? "disabled" : ""/s);
+  assert.doesNotMatch(source, /data-testid="join-player"[^`]*busy \? "disabled" : ""/s);
+  assert.doesNotMatch(source, /data-testid="invite-join-player"[^`]*busy \? "disabled" : ""/s);
+  assert.doesNotMatch(source, /data-testid="invite-join-viewer"[^`]*busy \? "disabled" : ""/s);
+  assert.doesNotMatch(source, /data-testid="copy-invite"[^`]*busy \? "disabled" : ""/s);
+});
+
 test("home uses per-section pagination and renders the smoke section only in debug mode", () => {
   assert.match(source, /const isPlayerRole = \(role\) => role === "Player 1" \|\| role === "Player 2";/);
   assert.match(source, /const HOME_SECTION_SERVER_PAGE_SIZE = 4;/);

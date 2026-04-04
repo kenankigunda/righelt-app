@@ -330,6 +330,21 @@ button.secondary:disabled {
   color: #8a8375;
 }
 
+@keyframes shell-button-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.58;
+  }
+}
+
+button.button-pending,
+.button-link.button-pending {
+  animation: shell-button-pulse 1.15s ease-in-out infinite;
+}
+
 /* Compact size variant for dense inline actions; keep semantics on the base/secondary class. */
 .mini-button {
   padding: 0.32rem 0.55rem;

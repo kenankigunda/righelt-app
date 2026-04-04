@@ -221,6 +221,46 @@ test("integration sync store hydrates a pending history branch from shared stora
   assert.equal(committedBranch.game.id, branchHandle.result.game.id);
 });
 
+test("integration sync store exposes a pending game handle until optimistic creation commits", async () => {
+  const env = createApiEnv();
+  const storage = createMemoryStorage();
+  let releaseCreate = null;
+  const createReleased = new Promise((resolve) => {
+    releaseCreate = resolve;
+  });
+
+  const store = createSyncStore({
+    storage,
+    fetcher: async (url, init = {}) => {
+      if (String(url) === "/api/shell/games" && (init.method || "GET") === "POST") {
+        await createReleased;
+      }
+      return apiWorker.fetch(
+        new Request(toAbsoluteUrl(url), {
+          method: init.method || "GET",
+          headers: init.headers,
+          body: init.body,
+        }),
+        env,
+      );
+    },
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const handle = store.createGame({ selfPlayMode: false });
+  assert.equal(store.getGameHandle(handle.result.id), handle);
+
+  releaseCreate?.();
+  const committedGame = await handle.committed;
+  assert.equal(store.getGameHandle(committedGame.id)?.status, "committed");
+  assert.equal(store.getGameHandle(committedGame.id)?.result?.id, committedGame.id);
+});
+
 test("integration sync store lets an already-created second store discover a pending history branch", async () => {
   const env = createApiEnv();
   const storage = createMemoryStorage();

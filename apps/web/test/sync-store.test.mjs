@@ -296,6 +296,43 @@ test("sync store creates local game stubs immediately and commits them in the ba
   assert.equal(committed.notifications.at(-1), "Game created");
 });
 
+test("sync store exposes the active game handle for pending and committed games", async () => {
+  const { transport, games } = createTransportHarness();
+  let releaseCreate;
+  const createReady = new Promise((resolve) => {
+    releaseCreate = resolve;
+  });
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      ...transport,
+      createGame: async (payload) => {
+        await createReady;
+        return {
+          ...(games.get(payload.gameId) ?? {}),
+          id: payload.gameId,
+          notifications: ["Game created"],
+        };
+      },
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const handle = store.createGame({ selfPlayMode: false });
+  assert.equal(store.getGameHandle(handle.result.id), handle);
+
+  releaseCreate();
+  const committed = await handle.committed;
+  const committedHandle = store.getGameHandle(committed.id);
+  assert.equal(committedHandle?.status, "committed");
+  assert.equal(committedHandle?.result?.id, committed.id);
+});
+
 test("sync store keeps a failed create-game stub mounted with a rollback banner", async () => {
   const { transport } = createTransportHarness();
   const desiredGameIds = [];

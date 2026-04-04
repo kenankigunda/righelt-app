@@ -114,6 +114,7 @@ const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
 const ignoredRevertRequests = new Set();
 const expandedUndoneGroups = new Set();
+const pendingButtonKeys = new Set();
 let lastRenderedMarkup = "";
 let lastRenderedMainMarkup = "";
 let lastRenderedFlyoutMarkup = "";
@@ -174,6 +175,25 @@ const escapeHtml = (value) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+
+const getJoinButtonKey = (mode, gameId) => `join:${mode}:${gameId}`;
+const getPlayAsBothButtonKey = (gameId) => `play-as-both:${gameId}`;
+const getApproveRequestButtonKey = (gameId, requesterIdentityId) => `approve-request:${gameId}:${requesterIdentityId}`;
+const getCopyInviteButtonKey = (gameId) => `copy-invite:${gameId}`;
+const isButtonPending = (key) => Boolean(key) && pendingButtonKeys.has(key);
+const renderButtonStateAttributes = ({ className = "", pendingKey = null, disabled = false } = {}) => {
+  const classes = className
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  if (isButtonPending(pendingKey)) {
+    classes.push("button-pending");
+  }
+  const classAttr = classes.length > 0 ? ` class="${classes.join(" ")}"` : "";
+  const pendingAttr = isButtonPending(pendingKey) ? ' data-pending="true" aria-busy="true"' : "";
+  const disabledAttr = disabled ? " disabled" : "";
+  return `${classAttr}${pendingAttr}${disabledAttr}`;
+};
 
 const formatStatus = (connected) =>
   connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip disconnected">Disconnected</span>';
@@ -1891,6 +1911,10 @@ const renderGameSummaryPanel = (game) => {
 };
 
 const renderJoinInvitePanel = (game, inviteLink) => {
+  const joinViewerButtonKey = getJoinButtonKey("viewer", game.id);
+  const joinPlayerButtonKey = getJoinButtonKey("player", game.id);
+  const playAsBothButtonKey = getPlayAsBothButtonKey(game.id);
+  const copyInviteButtonKey = getCopyInviteButtonKey(game.id);
   const pendingSeatNotice = game.pendingPlayerRequestSeat
     ? `<div class="alert" data-testid="pending-player-request-notice">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
     : "";
@@ -1899,33 +1923,43 @@ const renderJoinInvitePanel = (game, inviteLink) => {
       ? "<li class=\"small\">No pending join requests</li>"
       : game.pendingJoinRequests
           .map(
-            (request) => `<li data-testid="pending-join-request" data-requester-id="${escapeHtml(request.identityId)}">
+            (request) => {
+              const approveRequestButtonKey = getApproveRequestButtonKey(game.id, request.identityId);
+              return `<li data-testid="pending-join-request" data-requester-id="${escapeHtml(request.identityId)}">
               <span class="mono">${escapeHtml(request.identityId)}</span> requests ${renderSeatLabel(request.requestedSeat)}
-              <button class="secondary" data-action="approve-request" data-game-id="${escapeHtml(
-                game.id,
-              )}" data-requester-id="${escapeHtml(request.identityId)}" ${
-                !busy && Array.isArray(game.approvableRequesterIds) && game.approvableRequesterIds.includes(request.identityId)
-                  ? ""
-                  : "disabled"
-              } data-testid="approve-request-inline">Approve</button>
-            </li>`,
+              <button data-action="approve-request" data-game-id="${escapeHtml(game.id)}" data-requester-id="${escapeHtml(
+                request.identityId,
+              )}" data-testid="approve-request-inline"${renderButtonStateAttributes({
+                className: "secondary",
+                pendingKey: approveRequestButtonKey,
+                disabled: !Array.isArray(game.approvableRequesterIds) || !game.approvableRequesterIds.includes(request.identityId),
+              })}>${isButtonPending(approveRequestButtonKey) ? "Approving..." : "Approve"}</button>
+            </li>`;
+            },
           )
           .join("");
   const joinInviteActions = renderSectionActions([
     game.canJoinAsViewer
-      ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="join-viewer" class="secondary" ${!busy ? "" : "disabled"}>Join as viewer</button>`
+      ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="join-viewer"${renderButtonStateAttributes({
+          className: "secondary",
+          pendingKey: joinViewerButtonKey,
+        })}>${isButtonPending(joinViewerButtonKey) ? "Joining..." : "Join as viewer"}</button>`
       : "",
     game.canJoinAsPlayer && game.showJoinActions
-      ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" data-testid="join-player" ${!busy ? "" : "disabled"}>Join as player</button>`
+      ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" data-testid="join-player"${renderButtonStateAttributes({
+          pendingKey: joinPlayerButtonKey,
+        })}>${isButtonPending(joinPlayerButtonKey) ? "Joining..." : "Join as player"}</button>`
       : "",
     game.canPlayAsBothPlayers
-      ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
-          !busy ? "" : "disabled"
-        }>Play as both players</button>`
+      ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({
+          className: "secondary",
+          pendingKey: playAsBothButtonKey,
+        })}>${isButtonPending(playAsBothButtonKey) ? "Claiming seats..." : "Play as both players"}</button>`
       : "",
-    `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-link="${escapeHtml(inviteLink)}" data-testid="copy-invite" ${
-      game.canInvite && !busy ? "" : "disabled"
-    }>Invite someone else</button>`,
+    `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-link="${escapeHtml(inviteLink)}" data-testid="copy-invite"${renderButtonStateAttributes({
+      pendingKey: copyInviteButtonKey,
+      disabled: !game.canInvite,
+    })}>${isButtonPending(copyInviteButtonKey) ? "Creating invite..." : "Invite someone else"}</button>`,
   ]);
 
   return `
@@ -2555,6 +2589,8 @@ const renderInviteLanding = (inviteContext) => {
   const pendingNotice = game.pendingPlayerRequestSeat
     ? `<div class="alert">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
     : "";
+  const joinPlayerButtonKey = getJoinButtonKey("player", game.id);
+  const joinViewerButtonKey = getJoinButtonKey("viewer", game.id);
 
   return `
     <section class="invite-gate">
@@ -2565,15 +2601,18 @@ const renderInviteLanding = (inviteContext) => {
         ${pendingNotice}
         <div class="invite-choice-list">
           <div class="invite-choice-row">
-            <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-player" ${
-              canJoinPlayer && !busy ? "" : "disabled"
-            }>${escapeHtml(playerActionLabel)}</button>
+            <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-player"${renderButtonStateAttributes({
+              pendingKey: joinPlayerButtonKey,
+              disabled: !canJoinPlayer,
+            })}>${isButtonPending(joinPlayerButtonKey) ? "Joining..." : escapeHtml(playerActionLabel)}</button>
             <span class="small invite-choice-note">${escapeHtml(playerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
-            <button data-action="accept-invite-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-viewer" class="secondary" ${
-              canJoinViewer && !busy ? "" : "disabled"
-            }>Join as viewer</button>
+            <button data-action="accept-invite-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-viewer"${renderButtonStateAttributes({
+              className: "secondary",
+              pendingKey: joinViewerButtonKey,
+              disabled: !canJoinViewer,
+            })}>${isButtonPending(joinViewerButtonKey) ? "Joining..." : "Join as viewer"}</button>
             <span class="small invite-choice-note">${escapeHtml(viewerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
@@ -3117,6 +3156,27 @@ const withBusy = async (fn, { renderStart = true, renderEnd = true } = {}) => {
   }
 };
 
+const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd = true } = {}) => {
+  if (!pendingKey || pendingButtonKeys.has(pendingKey)) {
+    return;
+  }
+  pendingButtonKeys.add(pendingKey);
+  if (renderStart) {
+    render({ animatePanels: false, includeBoard: false });
+  }
+  try {
+    return await fn();
+  } catch (error) {
+    window.__righeltLastError = error instanceof Error ? error.message : String(error);
+    return undefined;
+  } finally {
+    pendingButtonKeys.delete(pendingKey);
+    if (renderEnd) {
+      render({ animatePanels: false, includeBoard: false });
+    }
+  }
+};
+
 const syncRouteData = async () => {
   if (currentRoute.name === "home") {
     await syncHomeSections();
@@ -3482,6 +3542,100 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "join-viewer" || action === "accept-invite-viewer") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    void withPendingButton(getJoinButtonKey("viewer", gameId), async () => {
+      await transport.joinGame({
+        gameId,
+        mode: "viewer",
+        inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
+        inviteToken: resolvedInvite?.inviteToken || null,
+      });
+      markInviteChoiceCommitted(gameId);
+      if (currentRoute.name === "invite" || currentRoute.name === "game") {
+        navigateTo(buildGameHash(gameId, null, getCurrentGameHashState(currentRoute.name === "game" ? getGamePanel() : DEFAULT_GAME_PANEL)));
+        return;
+      }
+      await syncRouteDataAndLiveChannels();
+    });
+    return;
+  }
+
+  if (action === "join-player" || action === "accept-invite-player") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    void withPendingButton(getJoinButtonKey("player", gameId), async () => {
+      const result = await transport.joinGame({
+        gameId,
+        mode: "player",
+        inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
+        inviteToken: resolvedInvite?.inviteToken || null,
+      });
+      markInviteChoiceCommitted(gameId);
+      if (result.pendingApproval) {
+        setInviteFeedback("Player join request sent. You are now viewing the game while approval is pending.");
+      }
+      if (currentRoute.name === "invite" || currentRoute.name === "game") {
+        navigateTo(buildGameHash(gameId, null, getCurrentGameHashState(currentRoute.name === "game" ? getGamePanel() : DEFAULT_GAME_PANEL)));
+        return;
+      }
+      await syncRouteDataAndLiveChannels();
+    });
+    return;
+  }
+
+  if (action === "play-as-both-players") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    void withPendingButton(getPlayAsBothButtonKey(gameId), async () => {
+      await transport.playAsBothPlayers({ gameId });
+      await syncRouteDataAndLiveChannels();
+    });
+    return;
+  }
+
+  if (action === "approve-request" || action === "accept-request") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const requester = actionEl.getAttribute("data-requester-id");
+    if (!gameId || !requester) return;
+    ignoredApprovalRequests.delete(getApprovalRequestKey(gameId, requester));
+    void withPendingButton(getApproveRequestButtonKey(gameId, requester), async () => {
+      await transport.approvePendingRequest({ gameId, requesterIdentityId: requester });
+      await syncRouteDataAndLiveChannels();
+    });
+    return;
+  }
+
+  if (action === "copy-invite") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) {
+      return;
+    }
+    const gameHandle = transport.getGameHandle?.(gameId) ?? null;
+    const copyInvite = async () => {
+      if (gameHandle?.status === "pending") {
+        await gameHandle.committed;
+      }
+      const game = transport.getGameViewModel(gameId);
+      const inviteToken = game?.inviteToken || resolvedInvite?.inviteToken || gameId;
+      const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(inviteToken, getCurrentFlyoutState())}`;
+      let copied = false;
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(inviteLink);
+        copied = true;
+      }
+      window.__righeltLastInvite = inviteLink;
+      setInviteFeedback(copied ? "Invite link copied to clipboard" : "Clipboard unavailable");
+    };
+    if (gameHandle?.status === "pending") {
+      void withPendingButton(getCopyInviteButtonKey(gameId), copyInvite);
+      return;
+    }
+    await copyInvite();
+    return;
+  }
+
   await withBusy(async () => {
     if (action === "toggle-header-menu") {
       headerMenuOpen = !headerMenuOpen;
@@ -3565,63 +3719,6 @@ appEl.addEventListener("click", async (event) => {
       return;
     }
 
-    if (action === "join-viewer" || action === "accept-invite-viewer") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      await transport.joinGame({
-        gameId,
-        mode: "viewer",
-        inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
-        inviteToken: resolvedInvite?.inviteToken || null,
-      });
-      markInviteChoiceCommitted(gameId);
-      if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId, null, getCurrentGameHashState(currentRoute.name === "game" ? getGamePanel() : DEFAULT_GAME_PANEL)));
-        return;
-      }
-      await syncRouteDataAndLiveChannels();
-      return;
-    }
-
-    if (action === "join-player" || action === "accept-invite-player") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      const result = await transport.joinGame({
-        gameId,
-        mode: "player",
-        inviteFromRole: currentRoute.inviteFromRole || resolvedInvite?.inviteFromRole || null,
-        inviteToken: resolvedInvite?.inviteToken || null,
-      });
-      markInviteChoiceCommitted(gameId);
-      if (result.pendingApproval) {
-        setInviteFeedback("Player join request sent. You are now viewing the game while approval is pending.");
-      }
-      if (currentRoute.name === "invite" || currentRoute.name === "game") {
-        navigateTo(buildGameHash(gameId, null, getCurrentGameHashState(currentRoute.name === "game" ? getGamePanel() : DEFAULT_GAME_PANEL)));
-        return;
-      }
-      await syncRouteDataAndLiveChannels();
-      return;
-    }
-
-    if (action === "play-as-both-players") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      await transport.playAsBothPlayers({ gameId });
-      await syncRouteDataAndLiveChannels();
-      return;
-    }
-
-    if (action === "approve-request" || action === "accept-request") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const requester = actionEl.getAttribute("data-requester-id");
-      if (!gameId || !requester) return;
-      ignoredApprovalRequests.delete(getApprovalRequestKey(gameId, requester));
-      await transport.approvePendingRequest({ gameId, requesterIdentityId: requester });
-      await syncRouteDataAndLiveChannels();
-      return;
-    }
-
     if (action === "ignore-request") {
       const gameId = actionEl.getAttribute("data-game-id");
       const requester = actionEl.getAttribute("data-requester-id");
@@ -3640,18 +3737,6 @@ appEl.addEventListener("click", async (event) => {
         expandedUndoneGroups.add(groupKey);
       }
       render({ animatePanels: false, includeBoard: false });
-      return;
-    }
-
-    if (action === "copy-invite") {
-      const link = actionEl.getAttribute("data-link") || "";
-      let copied = false;
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(link);
-        copied = true;
-      }
-      window.__righeltLastInvite = link;
-      setInviteFeedback(copied ? "Invite link copied to clipboard" : "Clipboard unavailable");
       return;
     }
 

@@ -795,6 +795,20 @@ export const createSyncStore = ({
       syncActiveGame();
     },
     getActiveGameId: () => activeGameId,
+    getGameHandle: (gameId) => {
+      if (!gameId) {
+        return null;
+      }
+      const pendingHandle =
+        operationManager.getHandle(`create:${gameId}`) ??
+        operationManager.getHandle(`branch:${gameId}`) ??
+        null;
+      if (pendingHandle) {
+        return pendingHandle;
+      }
+      const game = transport.getGameViewModel(gameId);
+      return game ? operationManager.createCommitted({ id: `game:${gameId}`, gameId, result: game }) : null;
+    },
     getPendingOperations: (gameId) => operationManager.getPendingOperations(gameId),
     getFailedOperations: (gameId) => operationManager.getFailedOperations(gameId),
     dismissOperation: (operationId) => operationManager.dismiss(operationId),
