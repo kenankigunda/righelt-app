@@ -40,11 +40,11 @@ test("game route shows a skeleton while the initial game load is still in flight
 
     const navigation = delayedPage.goto(buildAppUrl(baseURL, gameHash));
     await delayedPage.waitForLoadState("domcontentloaded");
-    await expect(delayedPage.getByTestId("game-view-skeleton")).toBeVisible();
+    await delayedPage.waitForSelector('[data-testid="game-view-skeleton"]', { state: "visible" });
     await delayedPage.evaluate(() => window.__righeltTestReleaseFetch());
 
     await navigation;
-    await expect(delayedPage.getByTestId("game-shell")).toBeVisible();
+    await expect(delayedPage.getByTestId("invite-gate")).toBeVisible();
   } finally {
     await closeContextQuietly(delayedContext);
     await closeContextQuietly(ownerContext);
@@ -88,7 +88,7 @@ test("invite route shows a skeleton while invite resolution is pending", async (
 
     const navigation = invitePage.goto(buildAppUrl(baseURL, `#/invite/${encodeURIComponent(gameId)}`));
     await invitePage.waitForLoadState("domcontentloaded");
-    await expect(invitePage.getByTestId("invite-view-skeleton")).toBeVisible();
+    await invitePage.waitForSelector('[data-testid="invite-view-skeleton"]', { state: "visible" });
     await invitePage.evaluate(() => window.__righeltTestReleaseFetch());
 
     await navigation;
