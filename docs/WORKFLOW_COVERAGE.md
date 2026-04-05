@@ -43,7 +43,7 @@ Status meanings:
 | Offline-local self-play creation, reload restore, and explicit `Go online` confirmation | `missing` | `missing` | `missing` | This remains the largest workflow gap relative to the web-app spec. Current tests only cover adjacent pieces like live-sync offline handling and legacy self-play normalization. |
 | Scenario import into a live game | `missing` | `missing` | `present` | Store and transport coverage are good; browser-level scenario-flyout/load flow is not yet covered. |
 | Scenario save/update authoring flow | `missing` | `missing` | `partial` | Scenario builder and local-writer helpers are covered, but end-user save/update interaction and error handling are not. |
-| History branch launch from selected move | `missing` | `missing` | `present` | Transport and export/seed coverage exist; browser proof for branch launch and landing state is missing. |
+| History branch launch from selected move | `present` | `missing` | `present` | Browser proof covers optimistic popup launch, stable route/request/response IDs, delayed-commit usability, and the first immediate branched move; explicit browser proof for branch-create failure handling is still missing. |
 | Notification and prompt quality across core shell states | `missing` | `missing` | `present` | Store coverage proves required categories exist, but browser proof for prompt timing, replacement, and non-janky transitions is still absent. |
 | Localized pending controls for join / approve / invite-copy | `present` | `partial` | `present` | Browser proof covers pulsing local pending state and pending-game invite copy waiting for commit; broader error-path polish for every button variant is still mostly owned below browser level. |
 
@@ -70,7 +70,7 @@ The most important follow-up coverage still missing from the current repo is:
 2. Browser-level tutorial flow:
    first-run trigger, live-route handoff after completion, skip/next timing, and restart-from-game remain uncovered in the actual shell UI.
 3. Browser-level scenario workflows:
-   loading a saved scenario, launching a history branch, and saving/updating scenarios through the flyout are not yet exercised end-to-end.
+   loading a saved scenario and saving/updating scenarios through the flyout are not yet exercised end-to-end; history-branch success proof exists now, but branch failure UX is still not browser-covered.
 4. Browser-level home-page workflows:
    public entry from the list, pagination behavior, preview-board isolation, and latest-activity ordering are still only covered below the browser layer.
 5. Presence and prompt polish:
