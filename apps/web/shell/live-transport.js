@@ -878,6 +878,7 @@ export const createLiveTransportStore = ({
     getSyncMetrics,
     flushPendingCommands,
     discardPendingCommands,
+    clearRollbackNotice,
     listGames,
     getHomeGameCard,
     getGameViewModel,
