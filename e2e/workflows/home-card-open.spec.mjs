@@ -3,6 +3,7 @@ import { test, expect } from "@playwright/test";
 import {
   closeContextQuietly,
   createGameFromHome,
+  createGamesViaApi,
   createIsolatedPage,
   getHistoryMoveCount,
   makeAnyLegalMove,
@@ -37,6 +38,37 @@ test("home cards render, open the full game, and refresh after live progress", a
     await expect(updatedCard).toBeVisible();
     await expect(updatedCard).toContainText("Move 2");
     await expect(updatedCard.locator(".mini-board-preview-status")).toContainText("Player 2 to play");
+  } finally {
+    await closeContextQuietly(context);
+  }
+});
+
+test("live updates only refresh the moved game's home preview and leave neighboring cards isolated", async ({ browser }) => {
+  const { context, page } = await createIsolatedPage(browser);
+
+  try {
+    const createdGameIds = await createGamesViaApi(page, 2);
+    const stationaryGameId = createdGameIds[0];
+    const movedGameId = createdGameIds[1];
+
+    await page.goto("/");
+
+    const stationaryCard = page.locator(`[data-game-id="${stationaryGameId}"]`).first();
+    await expect(stationaryCard).toBeVisible();
+    await expect(stationaryCard).toContainText("Move 1");
+    await expect(stationaryCard.locator(".mini-board-preview-status")).toContainText("Player 1 to play");
+
+    await page.locator(`[data-game-id="${movedGameId}"]`).first().click();
+    await expect(page.getByTestId("game-shell")).toBeVisible();
+    await makeAnyLegalMove(page, "p1");
+
+    await page.getByRole("link", { name: "Righelt" }).click();
+    const movedCard = page.locator(`[data-game-id="${movedGameId}"]`).first();
+    await expect(movedCard).toContainText("Move 2");
+    await expect(movedCard.locator(".mini-board-preview-status")).toContainText("Player 2 to play");
+
+    await expect(stationaryCard).toContainText("Move 1");
+    await expect(stationaryCard.locator(".mini-board-preview-status")).toContainText("Player 1 to play");
   } finally {
     await closeContextQuietly(context);
   }
