@@ -403,7 +403,7 @@ test("integration sync store lets an already-created second store discover a pen
   assert.equal(committedBranch.game.id, branchHandle.result.game.id);
 });
 
-test("integration sync store stops hydrating a shared-storage branch stub after the source branch creation fails", async () => {
+test("integration sync store keeps a failed shared-storage branch stub hydratable with a failure banner", async () => {
   const env = createApiEnv();
   const storage = createMemoryStorage();
   let releaseBranch = null;
@@ -475,7 +475,10 @@ test("integration sync store stops hydrating a shared-storage branch stub after 
     ]),
     /forced_branch_failure/,
   );
-  await assert.rejects(popupStore.loadGame(branchHandle.result.game.id, { openAsViewer: false }));
+  const failedBranch = await popupStore.loadGame(branchHandle.result.game.id, { openAsViewer: false });
+  assert.equal(failedBranch.id, branchHandle.result.game.id);
+  assert.equal(failedBranch.notifications[0], "History branch creation failed");
+  assert.equal(popupStore.getFailedOperations(branchHandle.result.game.id)[0]?.error?.message, "forced_branch_failure");
 });
 
 test("integration sync store keeps a failed create-game stub locally hydratable with an alert banner", async () => {

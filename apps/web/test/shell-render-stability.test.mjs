@@ -214,10 +214,11 @@ test("live sync status renders are deduplicated by stable status key", () => {
 test("sync store manages subscriptions through the active route game id", () => {
   assert.match(source, /syncStore\.setActiveGameId\(routeGameId\);/);
   assert.match(syncStoreSource, /let activeGameId = null;/);
-  assert.match(syncStoreSource, /const isFailedCreateStub = \(game, failureNotice = ""\) =>/);
+  assert.match(syncStoreSource, /const getLocalFailureMessage = \(game\) =>/);
+  assert.match(syncStoreSource, /const isFailedLocalStub = \(game\) =>/);
   assert.match(syncStoreSource, /const getRollbackFailureHandle = \(gameId\) =>/);
   assert.match(syncStoreSource, /const activeGame =/);
-  assert.match(syncStoreSource, /const desiredGameIds =[\s\S]*isFailedCreateStub\(activeGame, getRollbackFailureHandle\(activeGameId\)\?\.error\?\.message \?\? ""\)/);
+  assert.match(syncStoreSource, /const desiredGameIds =[\s\S]*isFailedLocalStub\(activeGame\)/);
   assert.match(syncStoreSource, /for \(const gameId of liveSync\.getDesiredGameIds\(\)\) \{/);
   assert.match(syncStoreSource, /liveSync\.disconnectGame\(gameId\);/);
   assert.match(syncStoreSource, /liveSync\.connectGame\(gameId\);/);

@@ -34,7 +34,10 @@ const ROLLBACK_FAILURE_PREFIX = "rollback:";
 
 const clone = (value) => structuredClone(value);
 
-const isFailedCreateStub = (game, failureNotice = "") => Boolean(game && failureNotice === GAME_CREATION_FAILED_BANNER);
+const getLocalFailureMessage = (game) =>
+  typeof game?.localFailureMessage === "string" ? game.localFailureMessage.trim() : "";
+
+const isFailedLocalStub = (game) => Boolean(game && getLocalFailureMessage(game));
 
 const getRollbackFailureId = (gameId) => `${ROLLBACK_FAILURE_PREFIX}${gameId}`;
 const getRollbackFailureGameId = (operationId) =>
@@ -911,16 +914,23 @@ export const createSyncStore = ({
     operationManager.confirm(clientCommandId, finalResult);
   };
 
-  const failOperation = (clientCommandId, error) => {
+  const failOperation = (clientCommandId, error, { preserveLocalGame = false } = {}) => {
     if (!clientCommandId) {
       return;
     }
     const handle = operationManager.getHandle(clientCommandId);
-    clearPendingLocalGame(handle?.gameId ?? null);
+    if (!preserveLocalGame) {
+      clearPendingLocalGame(handle?.gameId ?? null);
+    }
     operationManager.fail(clientCommandId, error);
   };
 
   const getUnifiedFailedOperations = (gameId) => {
+    const game = transport.getGameViewModel(gameId);
+    const localFailureMessage = getLocalFailureMessage(game);
+    if (game && localFailureMessage) {
+      return [createRollbackFailureHandle(game, localFailureMessage)];
+    }
     const rollbackHandle = getRollbackFailureHandle(gameId);
     return rollbackHandle ? [rollbackHandle] : operationManager.getFailedOperations(gameId);
   };
@@ -930,27 +940,43 @@ export const createSyncStore = ({
     if (!game) {
       return;
     }
+    markLocalStubFailed(gameId, {
+      notification: "Game creation failed",
+      message: GAME_CREATION_FAILED_BANNER,
+    });
+  };
+
+  const markLocalStubFailed = (gameId, { notification, message }) => {
+    const game = transport.getGameViewModel(gameId);
+    if (!game) {
+      return null;
+    }
     const failedGame = {
       ...clone(game),
       syncStatus: "ready",
-      notifications: ["Game creation failed", ...(Array.isArray(game.notifications) ? game.notifications : [])],
+      notifications: [
+        notification,
+        ...(Array.isArray(game.notifications) ? game.notifications.filter((entry) => entry !== notification) : []),
+      ],
       pendingMoves: [],
       pendingCommandCount: 0,
+      localFailureMessage:
+        typeof message === "string" && message.trim().length > 0 ? message.trim() : "The operation could not be completed.",
     };
     transport.applyLiveGameUpdate({ game: failedGame });
-    upsertRollbackFailure(gameId, GAME_CREATION_FAILED_BANNER);
+    savePendingLocalGame(failedGame);
     syncActiveGame();
-    clearPendingLocalGame(gameId);
+    return failedGame;
   };
 
-  const failDependentOperationsForGame = (gameId, error, excludedOperationIds = []) => {
+  const failDependentOperationsForGame = (gameId, error, excludedOperationIds = [], options = {}) => {
     const excluded = new Set(excludedOperationIds.filter(Boolean));
     const pendingOperations = operationManager.getPendingOperations(gameId);
     for (const handle of pendingOperations) {
       if (excluded.has(handle.id)) {
         continue;
       }
-      failOperation(handle.id, error);
+      failOperation(handle.id, error, options);
     }
   };
 
@@ -1046,8 +1072,7 @@ export const createSyncStore = ({
     }
     const activeGame =
       activeGameId && typeof transport.getGameViewModel === "function" ? transport.getGameViewModel(activeGameId) : null;
-    const desiredGameIds =
-      isFailedCreateStub(activeGame, getRollbackFailureHandle(activeGameId)?.error?.message ?? "") ? new Set() : new Set([activeGameId]);
+    const desiredGameIds = isFailedLocalStub(activeGame) ? new Set() : new Set([activeGameId]);
     for (const gameId of liveSync.getDesiredGameIds()) {
       if (!desiredGameIds.has(gameId)) {
         liveSync.disconnectGame(gameId);
@@ -1074,9 +1099,7 @@ export const createSyncStore = ({
     loadGame: async (gameId, options = {}) => {
       const localPendingGame = transport.getGameViewModel(gameId) ?? getStoredPendingLocalGame(gameId);
       const hasPendingOperation = operationManager.getPendingOperations(gameId).length > 0;
-      const shouldHydrateLocalGame =
-        Boolean(localPendingGame) &&
-        (hasPendingOperation || isFailedCreateStub(localPendingGame, getRollbackFailureHandle(gameId)?.error?.message ?? ""));
+      const shouldHydrateLocalGame = Boolean(localPendingGame) && (hasPendingOperation || isFailedLocalStub(localPendingGame));
       if (shouldHydrateLocalGame) {
         if (!transport.getGameViewModel(gameId)) {
           transport.applyLiveGameUpdate({ game: localPendingGame });
@@ -1090,11 +1113,8 @@ export const createSyncStore = ({
       } catch (error) {
         const fallbackPendingGame = getStoredPendingLocalGame(gameId);
         const fallbackGame = transport.getGameViewModel(gameId) ?? fallbackPendingGame;
-        if (
-          fallbackGame &&
-          (fallbackPendingGame || hasPendingOperation || isFailedCreateStub(fallbackGame, getRollbackFailureHandle(gameId)?.error?.message ?? ""))
-        ) {
-          if (!transport.getGameViewModel(gameId) && fallbackPendingGame) {
+        if (fallbackGame && (fallbackPendingGame || hasPendingOperation || isFailedLocalStub(fallbackGame))) {
+          if (fallbackPendingGame) {
             transport.applyLiveGameUpdate({ game: fallbackPendingGame });
           }
           return transport.getGameViewModel(gameId) ?? fallbackPendingGame ?? fallbackGame;
@@ -1137,8 +1157,8 @@ export const createSyncStore = ({
               notice: GAME_CREATION_FAILED_BANNER,
             });
             markGameCreationFailed(gameId);
-            failOperation(`create:${gameId}`, mismatchError);
-            failDependentOperationsForGame(gameId, mismatchError, [`create:${gameId}`]);
+            failOperation(`create:${gameId}`, mismatchError, { preserveLocalGame: true });
+            failDependentOperationsForGame(gameId, mismatchError, [`create:${gameId}`], { preserveLocalGame: true });
             return;
           }
           transport.applyLiveGameUpdate({ game });
@@ -1151,8 +1171,8 @@ export const createSyncStore = ({
             notice: GAME_CREATION_FAILED_BANNER,
           });
           markGameCreationFailed(gameId);
-          failOperation(`create:${gameId}`, error);
-          failDependentOperationsForGame(gameId, error, [`create:${gameId}`]);
+          failOperation(`create:${gameId}`, error, { preserveLocalGame: true });
+          failDependentOperationsForGame(gameId, error, [`create:${gameId}`], { preserveLocalGame: true });
         });
 
       return handle;
@@ -1276,8 +1296,12 @@ export const createSyncStore = ({
             transport.discardPendingCommands?.(gameId, {
               notice: "Queued local actions were cleared because history branch creation failed to bind to the expected game id.",
             });
-            failOperation(`branch:${gameId}`, mismatchError);
-            failDependentOperationsForGame(gameId, mismatchError, [`branch:${gameId}`]);
+            markLocalStubFailed(gameId, {
+              notification: "History branch creation failed",
+              message: mismatchError.message,
+            });
+            failOperation(`branch:${gameId}`, mismatchError, { preserveLocalGame: true });
+            failDependentOperationsForGame(gameId, mismatchError, [`branch:${gameId}`], { preserveLocalGame: true });
             return;
           }
           if (result?.game) {
@@ -1294,8 +1318,12 @@ export const createSyncStore = ({
           transport.discardPendingCommands?.(gameId, {
             notice: "Queued local actions were cleared because history branch creation failed.",
           });
-          failOperation(`branch:${gameId}`, error);
-          failDependentOperationsForGame(gameId, error, [`branch:${gameId}`]);
+          markLocalStubFailed(gameId, {
+            notification: "History branch creation failed",
+            message: error?.message || "History branch creation failed.",
+          });
+          failOperation(`branch:${gameId}`, error, { preserveLocalGame: true });
+          failDependentOperationsForGame(gameId, error, [`branch:${gameId}`], { preserveLocalGame: true });
         });
 
       return handle;
@@ -1393,6 +1421,13 @@ export const createSyncStore = ({
       }
       const rollbackGameId = getRollbackFailureGameId(operationId);
       if (rollbackGameId) {
+        const game = transport.getGameViewModel(rollbackGameId);
+        if (isFailedLocalStub(game)) {
+          const nextGame = clone(game);
+          delete nextGame.localFailureMessage;
+          transport.applyLiveGameUpdate({ game: nextGame });
+          clearPendingLocalGame(rollbackGameId);
+        }
         for (const failedHandle of operationManager.getFailedOperations(rollbackGameId)) {
           operationManager.dismiss(failedHandle.id);
         }

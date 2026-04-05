@@ -521,10 +521,11 @@ test("sync store dismisses failed operations and clears the visible rollback not
 
   const handle = store.createGame({ selfPlayMode: false });
   await assert.rejects(handle.committed, /server_rejected_create/);
-  assert.equal(store.getFailedOperations(handle.result.id)[0]?.id, `rollback:${handle.result.id}`);
+  const failureId = `rollback:${handle.result.id}`;
+  assert.equal(store.getFailedOperations(handle.result.id)[0]?.id, failureId);
   assert.equal(store.getFailedOperations(handle.result.id)[0]?.error?.message?.length > 0, true);
 
-  store.dismissFailedOperation(handle.id);
+  store.dismissFailedOperation(failureId);
 
   assert.deepEqual(store.getFailedOperations(handle.result.id), []);
 });
@@ -1070,7 +1071,7 @@ test("sync store lets an already-created second store discover a pending branch 
   assert.equal(committed.game.id, branchHandle.result.game.id);
 });
 
-test("sync store stops hydrating a shared-storage branch stub after the source branch creation fails", async () => {
+test("sync store keeps a failed shared-storage branch stub hydratable with a failure banner", async () => {
   const storage = createMemoryStorage();
   let releaseBranch = null;
   const branchReady = new Promise((resolve) => {
@@ -1124,10 +1125,10 @@ test("sync store stops hydrating a shared-storage branch stub after the source b
 
   releaseBranch?.();
   await assert.rejects(branchHandle.committed, /branch_failed/);
-  await assert.rejects(
-    popupStore.loadGame(branchHandle.result.game.id, { openAsViewer: false }),
-    (error) => error?.code === "HTTP_404",
-  );
+  const failedBranch = await popupStore.loadGame(branchHandle.result.game.id, { openAsViewer: false });
+  assert.equal(failedBranch.id, branchHandle.result.game.id);
+  assert.equal(failedBranch.notifications[0], "History branch creation failed");
+  assert.equal(popupStore.getFailedOperations(branchHandle.result.game.id)[0]?.error?.message, "branch_failed");
 });
 
 test("sync store defers move confirmation until optimistic game creation commits", async () => {

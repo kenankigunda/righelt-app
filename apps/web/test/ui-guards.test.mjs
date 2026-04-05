@@ -96,10 +96,10 @@ test("game route live sync connection is not gated by participant role", () => {
     /const routeGameId =\s*shouldLiveSyncRoute\(currentRoute\)\s*&&/s,
   );
   assert.match(source, /syncStore\.setActiveGameId\(routeGameId\);/);
-  assert.match(syncStoreSource, /const isFailedCreateStub = \(game, failureNotice = ""\) =>/);
-  assert.match(syncStoreSource, /const getRollbackFailureHandle = \(gameId\) =>/);
+  assert.match(syncStoreSource, /const getLocalFailureMessage = \(game\) =>/);
+  assert.match(syncStoreSource, /const isFailedLocalStub = \(game\) =>/);
   assert.match(syncStoreSource, /const activeGame =/);
-  assert.match(syncStoreSource, /const desiredGameIds =[\s\S]*isFailedCreateStub\(activeGame, getRollbackFailureHandle\(activeGameId\)\?\.error\?\.message \?\? ""\)/);
+  assert.match(syncStoreSource, /const desiredGameIds =[\s\S]*isFailedLocalStub\(activeGame\)/);
   assert.match(syncStoreSource, /liveSync\.disconnectGame\(gameId\);/);
   assert.match(syncStoreSource, /liveSync\.connectGame\(gameId\);/);
 });
