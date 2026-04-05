@@ -745,8 +745,11 @@ export function createEngineBoardAdapter() {
       }
 
       if (action.from && startPiece) {
+        const sourceSnapshotPiece = findPieceAt(snapshot, action.from.row, action.from.col);
         const sourceCell = cellByCoordinateKey.get(coordKey(action.from));
-        if (sourceCell) {
+        const shouldAppendSourceToken =
+          !sourceSnapshotPiece || (typeof sourceSnapshotPiece.id === "string" && sourceSnapshotPiece.id !== startPiece.id);
+        if (sourceCell && shouldAppendSourceToken) {
           const sourceToken = buildPieceToken(startPiece, action.type !== "project");
           sourceToken.classList.add("recorded-action-source-piece");
           if (action.type !== "project") {

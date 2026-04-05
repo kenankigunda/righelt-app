@@ -736,20 +736,21 @@ button {
   transform: translate(-50%, -50%);
   z-index: 2;
   opacity: 0.46;
+  overflow: hidden;
   pointer-events: none;
 }
 
 .piece-token.history-destruction-piece::after {
   content: "";
   position: absolute;
-  left: 3px;
-  bottom: 2px;
-  width: 3px;
-  height: 21px;
-  background: rgba(255, 255, 255, 0.96);
+  left: 8px;
+  top: -4px;
+  width: 4px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.98);
   border-radius: 999px;
-  transform: rotate(-49deg);
-  transform-origin: bottom left;
+  transform: rotate(45deg);
+  transform-origin: center;
 }
 
 @keyframes removal-piece-flash {

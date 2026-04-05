@@ -588,6 +588,7 @@ test("recorded-action overlay shows move markers without supply, command, or non
 
     assert.equal(getCell(boardEl, 4, 2)?.classList.contains("source"), true);
     assert.equal(getCell(boardEl, 4, 3)?.classList.contains("target"), true);
+    assert.equal(getCell(boardEl, 4, 2)?.querySelectorAll(".piece-token").length, 1);
     assert.equal(getCell(boardEl, 4, 2)?.querySelector(".recorded-action-source-piece")?.classList.contains("inactive"), false);
     assert.equal(getCell(boardEl, 4, 3)?.querySelector(".move-ghost")?.classList.contains("inactive"), false);
     assert.equal(getCell(boardEl, 4, 4)?.querySelector(".piece-token")?.classList.contains("inactive"), true);
@@ -881,9 +882,10 @@ test("history destruction overlays render as dedicated struck-through board toke
   assert.match(adapterSource, /const destroyedByCoordinateKey = new Map/);
   assert.match(adapterSource, /cell\.appendChild\(buildDestroyedPieceOverlayToken\(destroyedPiece\)\);/);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*opacity:\s*0\.46;/s);
-  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.96\);/s);
-  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*width:\s*3px;/s);
-  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*transform:\s*rotate\(-49deg\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*overflow:\s*hidden;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.98\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*width:\s*4px;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*transform:\s*rotate\(45deg\);/s);
 });
 
 test("rush blocker chip styling matches the dedicated board-square treatment", () => {
