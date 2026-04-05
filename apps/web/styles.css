@@ -742,11 +742,13 @@ button {
 }
 
 .piece-token.history-destruction-piece.p1 {
+  --destroyed-cut-border: rgba(194, 69, 47, 0.46);
   background: rgba(194, 69, 47, 0.46);
   border-color: rgba(194, 69, 47, 0.46);
 }
 
 .piece-token.history-destruction-piece.p2 {
+  --destroyed-cut-border: rgba(45, 103, 199, 0.46);
   background: rgba(45, 103, 199, 0.46);
   border-color: rgba(45, 103, 199, 0.46);
 }
@@ -765,6 +767,23 @@ button {
 
 .piece-token.history-destruction-piece.commander {
   border-color: rgba(246, 229, 141, 0.46);
+}
+
+.piece-token.history-destruction-piece::before {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 50%;
+  width: 1.5px;
+  height: 36px;
+  background: var(--destroyed-cut-border, transparent);
+  border-radius: 999px;
+  box-shadow:
+    -3.5px 0 0 var(--destroyed-cut-border, transparent),
+    3.5px 0 0 var(--destroyed-cut-border, transparent);
+  transform: translate(-50%, -50%) rotate(45deg);
+  transform-origin: center;
 }
 
 .piece-token.history-destruction-piece::after {

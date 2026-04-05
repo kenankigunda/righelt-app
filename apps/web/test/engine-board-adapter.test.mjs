@@ -929,11 +929,14 @@ test("history destruction overlays render as dedicated struck-through board toke
   assert.match(adapterSource, /commanded:\s*record\?\.commanded !== false,/);
   assert.doesNotMatch(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*opacity:\s*0\.46;/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*0\.46\);/s);
-  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.p1\s*\{[\s\S]*background:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);[\s\S]*border-color:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);/s);
-  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.p2\s*\{[\s\S]*background:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);[\s\S]*border-color:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.p1\s*\{[\s\S]*--destroyed-cut-border:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);[\s\S]*background:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);[\s\S]*border-color:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.p2\s*\{[\s\S]*--destroyed-cut-border:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);[\s\S]*background:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);[\s\S]*border-color:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece\.inactive\s*\{[\s\S]*background:\s*var\(--cell-fill, #fbf8f0\);/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece\.inactive\.p1\s*\{[\s\S]*border-color:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece\.inactive\.p2\s*\{[\s\S]*border-color:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::before\s*\{[\s\S]*z-index:\s*3;[\s\S]*width:\s*1\.5px;[\s\S]*height:\s*36px;[\s\S]*background:\s*var\(--destroyed-cut-border, transparent\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::before\s*\{[\s\S]*box-shadow:[\s\S]*-3\.5px 0 0 var\(--destroyed-cut-border, transparent\),[\s\S]*3\.5px 0 0 var\(--destroyed-cut-border, transparent\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::before\s*\{[\s\S]*transform:\s*translate\(-50%,\s*-50%\)\s*rotate\(45deg\);/s);
   assert.doesNotMatch(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*overflow:\s*hidden;/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*background:\s*#ffffff;/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*z-index:\s*4;/s);
