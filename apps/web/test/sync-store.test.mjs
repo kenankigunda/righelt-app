@@ -822,9 +822,9 @@ test("sync store stops hydrating a shared-storage branch stub after the source b
 });
 
 test("sync store defers move confirmation until optimistic game creation commits", async () => {
-  const { transport, games } = createTransportHarness();
+  const { transport, games, listeners } = createTransportHarness();
   let resolveCreate = null;
-  let resolveApply = null;
+  let sendDeferredApply = null;
   const calls = [];
 
   const store = createSyncStore({
@@ -848,6 +848,21 @@ test("sync store defers move confirmation until optimistic game creation commits
         const shouldDefer = shouldDeferCommandSend(gameId, { kind: "apply" });
         calls.push(shouldDefer ? `apply-deferred:${gameId}` : `apply-sent:${gameId}`);
         if (shouldDefer) {
+          sendDeferredApply = () => {
+            const committedGame = {
+              ...(games.get(gameId) ?? {}),
+              pendingMoves: [],
+              pendingCommandCount: 0,
+              notifications: ["Move committed"],
+            };
+            transport.applyLiveGameUpdate({ game: committedGame });
+            for (const listener of listeners) {
+              listener({
+                type: "authoritative_update",
+                clientCommandId: "cmd-move",
+              });
+            }
+          };
           transport.applyLiveGameUpdate({
             game: {
               ...(games.get(gameId) ?? {}),
@@ -864,22 +879,11 @@ test("sync store defers move confirmation until optimistic game creation commits
             game: games.get(gameId),
           };
         }
-        return new Promise((resolve) => {
-          resolveApply = () => {
-            resolve({
-              ok: true,
-              accepted: true,
-              clientCommandId: "cmd-move",
-              state: games.get(gameId)?.currentSnapshot ?? null,
-              legalActions: games.get(gameId)?.legalActions ?? [],
-              game: games.get(gameId),
-            });
-          };
-        });
+        throw new Error("apply should remain deferred until create commits");
       },
       flushPendingCommands: (gameId) => {
         calls.push(`flush:${gameId}`);
-        resolveApply?.();
+        sendDeferredApply?.();
       },
     }),
     createSyncClient: () => ({
@@ -914,6 +918,7 @@ test("sync store defers move confirmation until optimistic game creation commits
 
 test("sync store fails create and queued optimistic commands when the server responds with a mismatched game id", async () => {
   const { transport, games } = createTransportHarness();
+  let resolveCreate = null;
   const calls = [];
 
   const store = createSyncStore({
@@ -922,11 +927,14 @@ test("sync store fails create and queued optimistic commands when the server res
       ...transport,
       createGame: async ({ gameId }) => {
         calls.push(`create:${gameId}`);
-        return {
-          ...(games.get(`server-${gameId}`) ?? {}),
-          id: `server-${gameId}`,
-          notifications: ["Game created on wrong id"],
-        };
+        return new Promise((resolve) => {
+          resolveCreate = () =>
+            resolve({
+              ...(games.get(`server-${gameId}`) ?? {}),
+              id: `server-${gameId}`,
+              notifications: ["Game created on wrong id"],
+            });
+        });
       },
       applyGameAction: async ({ gameId }) => {
         const shouldDefer = shouldDeferCommandSend(gameId, { kind: "apply" });
@@ -959,6 +967,7 @@ test("sync store fails create and queued optimistic commands when the server res
     action: { type: "pass" },
   });
 
+  resolveCreate?.();
   await assert.rejects(createHandle.committed, (error) => error?.code === "game_id_mismatch");
   await assert.rejects(moveHandle.committed, (error) => error?.code === "game_id_mismatch");
   assert.equal(createHandle.status, "failed");
@@ -972,6 +981,7 @@ test("sync store fails create and queued optimistic commands when the server res
 
 test("sync store fails history branch and queued optimistic commands when the server responds with a mismatched game id", async () => {
   const { transport, games } = createTransportHarness();
+  let resolveBranch = null;
   const calls = [];
   games.set("game-source", {
     id: "game-source",
@@ -987,13 +997,16 @@ test("sync store fails history branch and queued optimistic commands when the se
       ...transport,
       launchHistoryBranch: async ({ gameId }) => {
         calls.push(`branch:${gameId}`);
-        return {
-          game: {
-            ...(games.get(`server-${gameId}`) ?? {}),
-            id: `server-${gameId}`,
-            notifications: ["Branch created on wrong id"],
-          },
-        };
+        return new Promise((resolve) => {
+          resolveBranch = () =>
+            resolve({
+              game: {
+                ...(games.get(`server-${gameId}`) ?? {}),
+                id: `server-${gameId}`,
+                notifications: ["Branch created on wrong id"],
+              },
+            });
+        });
       },
       applyGameAction: async ({ gameId }) => {
         const shouldDefer = shouldDeferCommandSend(gameId, { kind: "apply" });
@@ -1034,6 +1047,7 @@ test("sync store fails history branch and queued optimistic commands when the se
     action: { type: "pass" },
   });
 
+  resolveBranch?.();
   await assert.rejects(branchHandle.committed, (error) => error?.code === "game_id_mismatch");
   await assert.rejects(moveHandle.committed, (error) => error?.code === "game_id_mismatch");
   assert.equal(branchHandle.status, "failed");

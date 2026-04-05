@@ -347,9 +347,13 @@ export const createSyncStore = ({
   const operationManager = createOperationManager();
   let pendingLocalGames = readPendingLocalGames(storage);
   let activeGameId = null;
-  const isCreatePendingForGame = (gameId) => {
-    const handle = operationManager.getHandle(`create:${gameId}`);
-    return handle?.status === "pending";
+  const isPendingOptimisticGameCreation = (gameId) => {
+    const createHandle = operationManager.getHandle(`create:${gameId}`);
+    if (createHandle?.status === "pending") {
+      return true;
+    }
+    const branchHandle = operationManager.getHandle(`branch:${gameId}`);
+    return branchHandle?.status === "pending";
   };
   const transport = createTransportStore({
     storage,
@@ -357,7 +361,7 @@ export const createSyncStore = ({
     random,
     shouldDeferCommandSend: (gameId, command) => {
       void command;
-      return isCreatePendingForGame(gameId);
+      return isPendingOptimisticGameCreation(gameId);
     },
   });
 
