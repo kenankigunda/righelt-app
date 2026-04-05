@@ -22,17 +22,20 @@ test("create-game shows an alert banner when the server rejects the create respo
     await expect(page.getByTestId("home-create-game")).toBeVisible();
     await page.getByTestId("home-create-game").click();
 
-    const failureBanner = page.locator(".shell-game-alert");
+    const failureBanner = page.getByTestId("sync-failure-banner");
     await expect(page.getByTestId("game-shell")).toBeVisible();
     await expect(failureBanner).toContainText(
       "Game creation failed. The server could not create this game. Return home and try again.",
     );
+    await expect(failureBanner.getByRole("button", { name: "Dismiss" })).toBeVisible();
     await expect(page.getByText("Latest: Game creation failed")).toBeVisible();
     await page.waitForTimeout(4_000);
     await expect(page.getByTestId("game-shell")).toBeVisible();
     await expect(failureBanner).toContainText(
       "Game creation failed. The server could not create this game. Return home and try again.",
     );
+    await failureBanner.getByRole("button", { name: "Dismiss" }).click();
+    await expect(page.getByTestId("sync-failure-banner")).toHaveCount(0);
   } finally {
     await closeContextQuietly(context);
   }

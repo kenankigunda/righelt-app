@@ -30,11 +30,31 @@ const createGameIdMismatchError = (operationLabel, expectedGameId, actualGameId)
   );
 
 const GAME_CREATION_FAILED_BANNER = "Game creation failed. The server could not create this game. Return home and try again.";
+const ROLLBACK_FAILURE_PREFIX = "rollback:";
 
 const clone = (value) => structuredClone(value);
 
 const isFailedCreateStub = (game) =>
   Boolean(game && typeof game.rollbackNotice === "string" && game.rollbackNotice === GAME_CREATION_FAILED_BANNER);
+
+const getRollbackFailureId = (gameId) => `${ROLLBACK_FAILURE_PREFIX}${gameId}`;
+const getRollbackFailureGameId = (operationId) =>
+  typeof operationId === "string" && operationId.startsWith(ROLLBACK_FAILURE_PREFIX)
+    ? operationId.slice(ROLLBACK_FAILURE_PREFIX.length) || null
+    : null;
+
+const createRollbackFailureHandle = (game) => {
+  const error = createOperationError(game.rollbackNotice || "The operation could not be completed.", "authoritative_rollback");
+  const committed = Promise.resolve(game);
+  return {
+    id: getRollbackFailureId(game.id),
+    gameId: game.id,
+    status: "failed",
+    result: game,
+    committed,
+    error,
+  };
+};
 
 const createSessionId = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -872,6 +892,16 @@ export const createSyncStore = ({
     operationManager.fail(clientCommandId, error);
   };
 
+  const getUnifiedFailedOperations = (gameId) => {
+    const failedOperations = operationManager.getFailedOperations(gameId);
+    const game = gameId ? transport.getGameViewModel(gameId) : null;
+    const rollbackNotice = typeof game?.rollbackNotice === "string" ? game.rollbackNotice.trim() : "";
+    if (!game || rollbackNotice.length === 0) {
+      return failedOperations;
+    }
+    return [createRollbackFailureHandle(game)];
+  };
+
   const markGameCreationFailed = (gameId) => {
     const game = transport.getGameViewModel(gameId);
     if (!game) {
@@ -1311,16 +1341,23 @@ export const createSyncStore = ({
       return game ? operationManager.createCommitted({ id: `game:${gameId}`, gameId, result: game }) : null;
     },
     getPendingOperations: (gameId) => operationManager.getPendingOperations(gameId),
-    getFailedOperations: (gameId) => operationManager.getFailedOperations(gameId),
+    getFailedOperations: (gameId) => getUnifiedFailedOperations(gameId),
     dismissFailedOperation: (operationId) => {
       const handle = operationManager.getHandle(operationId);
-      if (!handle || handle.status !== "failed") {
+      if (handle?.status === "failed") {
+        if (handle.gameId) {
+          transport.clearRollbackNotice?.(handle.gameId);
+        }
+        operationManager.dismiss(operationId);
         return;
       }
-      if (handle.gameId) {
-        transport.clearRollbackNotice?.(handle.gameId);
+      const rollbackGameId = getRollbackFailureGameId(operationId);
+      if (rollbackGameId) {
+        for (const failedHandle of operationManager.getFailedOperations(rollbackGameId)) {
+          operationManager.dismiss(failedHandle.id);
+        }
+        transport.clearRollbackNotice?.(rollbackGameId);
       }
-      operationManager.dismiss(operationId);
     },
     dismissOperation: (operationId) => operationManager.dismiss(operationId),
   };

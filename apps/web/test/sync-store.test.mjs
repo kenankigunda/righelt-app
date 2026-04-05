@@ -531,13 +531,46 @@ test("sync store dismisses failed operations and clears the visible rollback not
 
   const handle = store.createGame({ selfPlayMode: false });
   await assert.rejects(handle.committed, /server_rejected_create/);
-  assert.equal(store.getFailedOperations(handle.result.id)[0]?.id, handle.id);
+  assert.equal(store.getFailedOperations(handle.result.id)[0]?.id, `rollback:${handle.result.id}`);
   assert.equal(store.getGameViewModel(handle.result.id)?.rollbackNotice?.length > 0, true);
 
   store.dismissFailedOperation(handle.id);
 
   assert.deepEqual(store.getFailedOperations(handle.result.id), []);
   assert.equal(store.getGameViewModel(handle.result.id)?.rollbackNotice ?? "", "");
+});
+
+test("sync store exposes rollback notices through the shared failed-operation API", () => {
+  const { transport, games } = createTransportHarness();
+  games.set("game-rollback", {
+    ...createRevertReadyGame(),
+    id: "game-rollback",
+    rollbackNotice: "Move sync failed before confirmation. The board was restored to the last authoritative state.",
+  });
+
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => transport,
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const failedOperations = store.getFailedOperations("game-rollback");
+  assert.equal(failedOperations.length, 1);
+  assert.equal(failedOperations[0]?.id, "rollback:game-rollback");
+  assert.equal(
+    failedOperations[0]?.error?.message,
+    "Move sync failed before confirmation. The board was restored to the last authoritative state.",
+  );
+
+  store.dismissFailedOperation("rollback:game-rollback");
+
+  assert.deepEqual(store.getFailedOperations("game-rollback"), []);
+  assert.equal(store.getGameViewModel("game-rollback")?.rollbackNotice ?? "", "");
 });
 
 test("sync store requests reverts optimistically with a stable client request id", async () => {

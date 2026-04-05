@@ -1922,9 +1922,7 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
     )
     .join("");
   const liveSyncBanner =
-    failedOperations.length === 0 && game.rollbackNotice && game.rollbackNotice.trim().length > 0
-      ? `<div class="alert danger shell-game-alert">${escapeHtml(game.rollbackNotice)}</div>`
-      : game.syncStatus === "confirming"
+    failedOperations.length === 0 && game.syncStatus === "confirming"
         ? `<div class="alert warn shell-game-alert">Move confirmation is retrying. The board stays optimistic until the server confirms.</div>`
       : game.syncStatus === "desynced"
         ? `<div class="alert warn shell-game-alert">Live sync is recovering. The board is showing the last authoritative state.</div>`

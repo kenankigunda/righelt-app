@@ -27,15 +27,14 @@ This document started as a forward-looking implementation plan. The branch now c
 - **Phase 5 complete**: localized pulsing pending-button behavior now covers join-viewer, join-player, accept-invite variants, approve-request, play-as-both-players, and pending-game invite copy without blocking the rest of the shell UI.
 - **Phase 6 partially complete**: the global `busy` gate has been bypassed for create-game, history-branch, revert actions, and the localized pending-button operations that now own their own in-place loading state.
 - **Phase 7 complete**: pending history rows now remain clickable while visually pending, and the history UI exposes localized busy state instead of disabling interaction through the global shell lock.
-- **Phase 8 partially complete**: failed optimistic create-game flows now surface an alert-style banner and preserve a failed local stub instead of collapsing into a broken route.
+- **Phase 8 complete**: failed-operation UX is now unified behind the sync-store failed-operation API, including rollback-notice-backed failures, dismiss/reset handling, and browser coverage for the failed create-game banner flow.
 - **Phase 9 complete**: history jump and return-to-live now project locally first and reconcile with the server in the background, including latching history selection while live updates append underneath.
+- **Phase 10 complete**: the live-sync/WebSocket client is owned directly by `sync-store.js`, and the old `live-sync.js` compatibility shim has been removed.
 - **Testing hardening complete for implemented phases**: the branch adds unit, integration, and E2E contract coverage for optimistic game IDs, optimistic revert flows, localized pending controls, history branching, and local-first history navigation so these behaviors are no longer dependent on manual verification.
 
 ### Still remaining
 
 - **Phase 6 not complete**: the app still has a broader `busy` architecture and does not yet implement the full pulsing-button / skeleton system across all remaining operations.
-- **Phase 8 not complete**: failed-operation UX is still split between newer failure handling and older `rollbackNotice` behavior; there is not yet a single unified failed-operation banner/reset flow for all operation types.
-- **Phase 10 not started**: `live-sync.js` still exists as a distinct module rather than being fully absorbed into `sync-store.js`.
 - **Phase 11 not started**: dead store cleanup and final simplification have not happened yet.
 - **Phase 12 deferred**: offline support has not been reintroduced.
 

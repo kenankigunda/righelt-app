@@ -50,6 +50,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const failedOperations = transport\.getFailedOperations\?\.\(game\.id\) \?\? \[\];/);
   assert.match(source, /data-testid="sync-failure-banner"/);
   assert.match(source, /data-action="dismiss-failed-operation"/);
+  assert.doesNotMatch(source, /failedOperations\.length === 0 && game\.rollbackNotice/);
   assert.match(source, /return \[failedOperationBanners,\s*liveSyncBanner,\s*undoRequestBanner\]\.filter\(Boolean\)\.join\(""\);/);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
