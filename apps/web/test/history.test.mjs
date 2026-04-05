@@ -183,7 +183,8 @@ test("UX-03: shell.css contains destruction list indentation and no placeholder 
   assert.match(cssSrc, /\.history-item > \*\s*\{[\s\S]*grid-column:\s*2;/s);
   assert.match(cssSrc, /\.history-item-info,\s*\.history-item-actions\s*\{[\s\S]*gap:\s*var\(--history-entry-row-gap\);/s);
   assert.match(cssSrc, /\.history-item::before\s*\{[\s\S]*grid-column:\s*1;[\s\S]*justify-self:\s*center;[\s\S]*align-self:\s*start;/s);
-  assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*padding:\s*0 0 0 0\.28rem;/s);
+  assert.match(cssSrc, /\.history-undone-group-content\s*\{[\s\S]*padding-left:\s*0\.1rem;/s);
+  assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*padding:\s*0 0 0 0\.1rem;/s);
   assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*margin:\s*0;/s);
   assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*gap:\s*var\(--history-entry-row-gap\);/s);
   assert.match(cssSrc, /\.history-branch-button\s*\{[\s\S]*margin-top:\s*0;/s);
