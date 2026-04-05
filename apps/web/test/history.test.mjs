@@ -173,7 +173,10 @@ test("UX-03: shell.css contains destruction list indentation and no placeholder 
   assert.match(cssSrc, /\.history-destruction-list/);
   assert.match(cssSrc, /\.history-destruction-item/);
   assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*list-style:\s*disc;/s);
+  assert.match(cssSrc, /\.history-item\s*\{[\s\S]*gap:\s*0\.16rem;/s);
   assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*padding:\s*0 0 0 0\.6rem;/s);
+  assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*margin:\s*0;/s);
+  assert.match(cssSrc, /\.history-branch-button\s*\{[\s\S]*margin-top:\s*0;/s);
   assert.doesNotMatch(cssSrc, /\.history-destruction-list\s*\{[^}]*min-height/);
   assert.doesNotMatch(cssSrc, /\.history-destruction-item::before/);
 });
