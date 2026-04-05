@@ -114,6 +114,81 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
   assert.equal(boardPreviewLabelEl.textContent, "Showing recorded move.");
 });
 
+test("board runtime shows destruction highlight chip in recorded-action mode", async () => {
+  let boardPreviewLabelValue = "";
+  const boardPreviewLabelEl = {
+    get textContent() {
+      return boardPreviewLabelValue;
+    },
+    set textContent(value) {
+      boardPreviewLabelValue = value;
+    },
+    get innerHTML() {
+      return boardPreviewLabelValue;
+    },
+    set innerHTML(value) {
+      boardPreviewLabelValue = value;
+    },
+    addEventListener: noop,
+    removeEventListener: noop,
+  };
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: noop,
+      getSelectedPieceSummary: () => null,
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      canInteract: () => false,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl,
+    boardTurnIndicatorEl: null,
+  });
+
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      outcome: null,
+      pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true }],
+    },
+    {
+      legalActions: [],
+      overlayMode: "recorded-action",
+      recordedAction: {
+        type: "move",
+        actorId: "A1",
+        from: { row: 4, col: 2 },
+        to: { row: 4, col: 3 },
+      },
+    },
+  );
+
+  runtime.setDestructionHighlight({ row: 9, col: 9 });
+
+  assert.match(boardPreviewLabelEl.innerHTML, /board-preview-coordinate-chip-destruction/);
+  assert.match(boardPreviewLabelEl.textContent, /Showing recorded move\./);
+  assert.match(boardPreviewLabelEl.textContent, /9,9/);
+});
+
 test("board runtime renders removal effects returned from shell apply actions", async () => {
   const renderCalls = [];
   const scheduledTimers = [];

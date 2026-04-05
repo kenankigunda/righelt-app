@@ -478,7 +478,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
     if (overlayMode === OVERLAY_MODE.RECORDED_ACTION) {
       const recordedActionLabel = recordedAction?.from && recordedAction?.to ? "Showing recorded move." : "Showing history move.";
-      setBoardPreviewPrompt(recordedActionLabel);
+      if (destructionHighlight) {
+        setBoardPreviewPromptHtml(`${escapeHtml(recordedActionLabel)} Highlighted square ${renderBoardPreviewCoordinate(destructionHighlight)}.`);
+      } else {
+        setBoardPreviewPrompt(recordedActionLabel);
+      }
       return;
     }
 
