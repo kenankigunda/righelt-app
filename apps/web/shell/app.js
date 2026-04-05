@@ -121,7 +121,6 @@ let lastRenderedFlyoutMarkup = "";
 let lastRenderedRouteKey = "";
 let lastRenderedBaseRouteKey = "";
 let routeSyncRequestId = 0;
-let scenarioImportPending = false;
 const HISTORY_SELECTION_EXIT_MS = 56;
 const HISTORY_RELEASE_BOUNCE_MS = 140;
 const HOME_SECTION_SERVER_PAGE_SIZE = 4;
@@ -1441,7 +1440,7 @@ const renderScenarioOptionList = () =>
 
 const renderScenarioPanel = ({ route, game = null } = {}) => {
   const selectedScenario = getSelectedScenario();
-  const scenarioLoadPending = scenarioImportPending;
+  const scenarioLoadPending = isButtonPending(SCENARIO_LOAD_PENDING_KEY);
   const scenarioCard = selectedScenario ? buildStaticGameCardFromScenario(selectedScenario) : null;
   const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex : game?.moves?.length ?? 0;
   const canAuthorScenarios = Boolean(game) && canAuthorScenariosLocally();
@@ -3910,7 +3909,7 @@ appEl.addEventListener("click", async (event) => {
 
   if (action === "load-scenario") {
     const selectedScenario = getSelectedScenario();
-    if (!selectedScenario || scenarioImportPending || isButtonPending(SCENARIO_LOAD_PENDING_KEY)) {
+    if (!selectedScenario || isButtonPending(SCENARIO_LOAD_PENDING_KEY)) {
       if (!selectedScenario) {
         setSelectedScenarioFeedback("No scenario selected.");
         render({ animatePanels: false, includeBoard: false });
@@ -3924,8 +3923,6 @@ appEl.addEventListener("click", async (event) => {
     await withPendingButton(
       SCENARIO_LOAD_PENDING_KEY,
       async () => {
-        scenarioImportPending = true;
-        render({ animatePanels: false, includeBoard: false });
         try {
           const result = await transport.importScenario({
             scenario: selectedScenario,
@@ -3947,12 +3944,9 @@ appEl.addEventListener("click", async (event) => {
           navigateTo(nextHash);
         } catch (error) {
           window.__righeltLastError = error instanceof Error ? error.message : String(error);
-        } finally {
-          scenarioImportPending = false;
-          render({ animatePanels: false, includeBoard: false });
         }
       },
-      { renderEnd: false },
+      { renderEnd: true },
     );
     return;
   }
