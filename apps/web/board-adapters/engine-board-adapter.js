@@ -317,17 +317,21 @@ function buildPieceToken(piece, ghost = false) {
 }
 
 const findRenderablePieceToken = (cell) => {
-  if (!cell || !Array.isArray(cell.children)) {
+  if (!cell?.querySelectorAll) {
     return null;
   }
+  const tokens = Array.from(cell.querySelectorAll(".piece-token"));
+  const renderableTokens = tokens.filter(
+    (child) =>
+      child?.classList &&
+      !child.classList.contains("move-ghost") &&
+      !child.classList.contains("history-destruction-piece") &&
+      !child.classList.contains("removal-piece"),
+  );
   return (
-    cell.children.find(
-      (child) =>
-        child?.classList?.contains("piece-token") &&
-        !child.classList.contains("move-ghost") &&
-        !child.classList.contains("history-destruction-piece") &&
-        !child.classList.contains("removal-piece"),
-    ) ?? null
+    renderableTokens.find((child) => child.classList.contains("stacked-top")) ??
+    renderableTokens[0] ??
+    null
   );
 };
 

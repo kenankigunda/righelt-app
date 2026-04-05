@@ -643,6 +643,52 @@ test("recorded-action project overlay decorates the existing history target piec
   });
 });
 
+test("recorded-action project overlay decorates the visible top token when the history target is stacked", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl, overlayLinesEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P2",
+      continuation: null,
+      pieces: [
+        { id: "A1", owner: "P1", kind: "commander", position: { row: 6, col: 5 }, supplied: true, commanded: true },
+        { id: "A2", owner: "P1", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true },
+        { id: "B1", owner: "P1", kind: "commander", position: { row: 5, col: 5 }, supplied: true, commanded: true },
+      ],
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: {
+        mode: "recorded-action",
+        recordedAction: { type: "project", actorId: "A1", from: { row: 6, col: 5 }, to: { row: 5, col: 5 } },
+        recordedActionStartPiece: {
+          id: "A1",
+          owner: "P1",
+          kind: "commander",
+          position: { row: 6, col: 5 },
+          supplied: true,
+          commanded: true,
+        },
+      },
+      legalActions: [],
+      selectedPieceMoves: [],
+      selectedPieceMovePreviews: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "project",
+    });
+
+    const targetCell = getCell(boardEl, 5, 5);
+    const stackTokens = targetCell?.querySelectorAll(".piece-stack .piece-token") ?? [];
+    assert.equal(targetCell?.querySelectorAll(".move-ghost").length, 0);
+    assert.equal(stackTokens.length >= 2, true);
+    assert.equal(targetCell?.querySelector(".piece-stack .piece-token.stacked-top")?.classList.contains("preview-created"), true);
+    assert.equal(overlayLinesEl.querySelectorAll("line").length, 0);
+    assert.equal(overlayLinesEl.querySelectorAll("path").length, 0);
+  });
+});
+
 test("recorded-action push overlay keeps push group highlight and count", async () => {
   await withFakeDocument(async () => {
     const { adapter, boardEl } = createMountedAdapter();
@@ -969,6 +1015,8 @@ test("project previews use a plus badge while move-style previews use lightweigh
   );
   assert.doesNotMatch(adapterSource, /drawPath\(\[piece\.position, action\.to\], "#8b5ec0", "5 5"\)/);
   assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*const existingToken = findRenderablePieceToken\(targetCell\);[\s\S]*existingToken\.classList\.add\("preview-created"\);[\s\S]*return;[\s\S]*\}/s);
+  assert.match(adapterSource, /const tokens = Array\.from\(cell\.querySelectorAll\("\.piece-token"\)\);/);
+  assert.match(adapterSource, /renderableTokens\.find\(\(child\) => child\.classList\.contains\("stacked-top"\)\) \?\?[\s\S]*renderableTokens\[0\]/s);
   assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*ghost\.classList\.add\("preview-created"\);\s*\}/s);
   assert.match(styleSource, /\.piece-token\.preview-created::after\s*\{[\s\S]*content:\s*"\+";[\s\S]*top:\s*-7px;[\s\S]*right:\s*-8px;[\s\S]*z-index:\s*3;/s);
   assert.match(styleSource, /:root\s*\{[\s\S]*--player-p1:\s*#c2452f;[\s\S]*--player-p2:\s*#2d67c7;/s);
