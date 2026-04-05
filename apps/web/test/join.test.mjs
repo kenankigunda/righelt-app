@@ -1,8 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { SHELL_STATE_KEY } from "../shell/persistence.js";
-import { createShellStore } from "../shell/store.js";
-import { createStoreWithPersistedGames, createTestStore } from "./support.mjs";
+import { createShellStore, createStoreWithPersistedGames, createTestStore } from "./support.mjs";
 
 test("home list open is viewer-only and does not auto-assign player seat", async () => {
   const { store } = createTestStore();

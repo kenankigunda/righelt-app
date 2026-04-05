@@ -90,6 +90,30 @@ test("split-stack integration creates a game through the Pages proxy", async () 
   assert.equal(body.game.player1.identityId, "id-a");
 });
 
+test("split-stack integration preserves a caller-provided game id through the Pages proxy", async () => {
+  const env = buildEnv();
+  const requestedGameId = "game-pages-proxy-create-001";
+  const response = await proxyRequest({
+    request: new Request("https://righelt.pages.dev/api/shell/games", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId: "id-proxy", selfPlayMode: false, gameId: requestedGameId }),
+    }),
+    env: {
+      API_SERVICE: {
+        fetch(request) {
+          return apiWorker.fetch(request, env);
+        },
+      },
+    },
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.game.id, requestedGameId);
+});
+
 test("split-stack integration resolves invite tokens through the Pages proxy", async () => {
   const env = buildEnv();
   const create = await proxyRequest({

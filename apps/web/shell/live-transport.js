@@ -65,7 +65,12 @@ const isVerboseClientLoggingEnabled = (storage) => {
   return value === "1" || value === "true" || value === "yes" || value === "on" || value === "verbose";
 };
 
-export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Math.random }) => {
+export const createLiveTransportStore = ({
+  storage,
+  fetcher = fetch,
+  random = Math.random,
+  shouldDeferCommandSend = () => false,
+} = {}) => {
   let identityId = loadIdentity(storage);
   if (!identityId) {
     identityId = createIdentity(random);
@@ -132,7 +137,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
         pendingCommands: [],
         inflightCommandId: null,
         syncStatus: "ready",
-        rollbackNotice: "",
         derivedGame: null,
         commandResults: new Map(),
         retryTimer: null,
@@ -161,7 +165,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     next.pendingCommandCount = optimistic.pendingCommands.length;
     next.liveCurrentSnapshot = clone(next.liveCurrentSnapshot ?? next.board?.state ?? next.currentSnapshot ?? null);
     next.syncStatus = optimistic.syncStatus;
-    next.rollbackNotice = optimistic.rollbackNotice;
     return next;
   };
 
@@ -198,26 +201,18 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return { ok: true, game: optimistic.derivedGame };
   };
 
-  const clearOptimisticQueue = (gameId, { notice = "", syncStatus = "ready", changeType = "optimistic_queue_cleared" } = {}) => {
+  const clearOptimisticQueue = (
+    gameId,
+    { notice = "", syncStatus = "ready", changeType = "optimistic_queue_cleared", clientCommandId = null } = {},
+  ) => {
     const optimistic = getOptimisticState(gameId);
     clearRetryState(optimistic);
     optimistic.pendingCommands = [];
     optimistic.inflightCommandId = null;
     optimistic.commandResults = new Map();
     optimistic.syncStatus = syncStatus;
-    optimistic.rollbackNotice = notice;
     recalculateOptimisticGame(gameId);
-    emitChange({ type: changeType, gameId });
-  };
-
-  const clearRollbackNotice = (gameId) => {
-    const optimistic = getOptimisticState(gameId);
-    optimistic.rollbackNotice = "";
-    if (optimistic.syncStatus !== "applying-update") {
-      optimistic.syncStatus = "ready";
-    }
-    recalculateOptimisticGame(gameId);
-    emitChange({ type: "rollback_notice_cleared", gameId });
+    emitChange({ type: changeType, gameId, clientCommandId, failureNotice: notice });
   };
 
   const upsertGame = (game) => {
@@ -380,6 +375,17 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
       return;
     }
 
+    if (shouldDeferCommandSend(gameId, command)) {
+      optimistic.inflightCommandId = null;
+      optimistic.syncStatus = "applying-update";
+      optimistic.confirmingCommandId = null;
+      optimistic.retryAttempt = 0;
+      optimistic.confirmDeadlineAt = 0;
+      recalculateOptimisticGame(gameId);
+      emitChange({ type: "optimistic_send_deferred", gameId, clientCommandId: command.clientCommandId });
+      return;
+    }
+
     optimistic.inflightCommandId = command.clientCommandId;
     optimistic.syncStatus = retryAttempt > 0 || optimistic.syncStatus === "confirming" ? "confirming" : "applying-update";
     optimistic.confirmingCommandId = command.clientCommandId;
@@ -399,6 +405,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
           notice: "A predicted move was rejected by the server. The board was restored.",
           syncStatus: "ready",
           changeType: "optimistic_rollback",
+          clientCommandId: command.clientCommandId,
         });
         if (body.game) {
           upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
@@ -458,6 +465,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
             notice: "Move confirmation timed out. The board was restored to the latest authoritative state.",
             syncStatus: "ready",
             changeType: "optimistic_rollback",
+            clientCommandId: command.clientCommandId,
           });
           logDiagnostic("warn", "live_transport_confirmation_timeout_rollback", {
             gameId,
@@ -471,6 +479,7 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
           notice: "Move sync failed before confirmation. The board was restored to the last authoritative state.",
           syncStatus: "desynced",
           changeType: "optimistic_desynced",
+          clientCommandId: command.clientCommandId,
         });
         logDiagnostic("error", "live_transport_desynced", {
           gameId,
@@ -483,7 +492,6 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
 
   const enqueueOptimisticCommand = ({ gameId, command }) => {
     const optimistic = getOptimisticState(gameId);
-    optimistic.rollbackNotice = "";
     optimistic.syncStatus = "applying-update";
     optimistic.pendingCommands.push(command);
     const recalculated = recalculateOptimisticGame(gameId);
@@ -540,14 +548,13 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return getGameViewModel(gameId);
   };
 
-  const createGame = async ({ selfPlayMode = false } = {}) => {
+  const createGame = async ({ selfPlayMode = false, gameId = null } = {}) => {
     const response = await fetcher("/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, selfPlayMode }),
+      body: JSON.stringify({ identityId, selfPlayMode, gameId }),
     });
     const body = await mustOk(response);
-    clearRollbackNotice(body.game.id);
     return upsertGame(body.game);
   };
 
@@ -565,22 +572,26 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   };
 
   const launchHistoryBranch = async ({
+    gameId = null,
     sourceGameId,
     sourceMoveIndex,
     scenario,
     initialSelectionAction,
     participantCopyMode,
+    selfPlayMode = false,
   } = {}) => {
     const response = await fetcher("/api/shell/history/branch", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         identityId,
+        gameId,
         sourceGameId,
         sourceMoveIndex,
         scenario,
         initialSelectionAction,
         participantCopyMode,
+        selfPlayMode,
       }),
     });
     const body = await mustOk(response);
@@ -738,11 +749,11 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     return getGameViewModel(gameId);
   };
 
-  const requestRevertToMove = async ({ gameId, targetMoveId }) => {
+  const requestRevertToMove = async ({ gameId, targetMoveId, requestId = null }) => {
     const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/revert-request`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, targetMoveId }),
+      body: JSON.stringify({ identityId, targetMoveId, requestId }),
     });
     const body = await mustOk(response);
     logDiagnostic("info", "live_transport_revert_requested", { gameId, targetMoveId }, { verboseOnly: true });
@@ -814,6 +825,16 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
   const getIdentityId = () => identityId;
   const getLastEventSeq = (gameId) => lastEventSeqByGameId.get(gameId) ?? 0;
   const getSyncMetrics = () => clone(syncMetrics);
+  const flushPendingCommands = (gameId) => {
+    void sendNextPendingCommand(gameId);
+  };
+  const discardPendingCommands = (gameId, { notice = "" } = {}) => {
+    clearOptimisticQueue(gameId, {
+      notice,
+      syncStatus: "ready",
+      changeType: "optimistic_queue_cleared",
+    });
+  };
 
   return {
     loadGamesPage,
@@ -840,6 +861,8 @@ export const createLiveTransportStore = ({ storage, fetcher = fetch, random = Ma
     applyLiveGameUpdate,
     getLastEventSeq,
     getSyncMetrics,
+    flushPendingCommands,
+    discardPendingCommands,
     listGames,
     getHomeGameCard,
     getGameViewModel,

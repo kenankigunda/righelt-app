@@ -22,6 +22,24 @@ This repo uses a strict three-layer testing model:
   - one recovery/failure-path `E2E`
   - integration coverage for important workflow variants beneath the browser layer
 
+## Contract-Drift Rules
+
+- Any workflow that creates a client-generated identifier before the server confirms it must be covered by automated tests for identifier stability.
+- Those tests must prove the full contract, not just the happy-path UI:
+  - the client sends the optimistic identifier in the create request body
+  - the server response echoes the same identifier
+  - the route or opened tab uses that same identifier
+  - the first follow-up mutation targets that same identifier
+- This rule applies to create-game, history-branch, and any future optimistic route-opening workflow.
+
+## Verification Guidance
+
+- Manual testing is useful for exploration, but it is not an acceptable substitute for regression proof on transport, routing, persistence, or optimistic-state contracts.
+- For cross-boundary bugs, verification should default to:
+  - `integration` tests that exercise the real API boundary with captured requests and responses
+  - `E2E` tests that assert the browser route and observed network traffic remain consistent
+- PRs and implementation notes should call out when a change adds or updates one of these contract tests.
+
 ## CI Order
 
 CI runs in lane order:

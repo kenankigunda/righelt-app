@@ -1246,14 +1246,18 @@ test("live transport: revert request requires approval and marks moves undone on
   await handleApiRequest(req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-player2", moveIndex: 2 }), env);
 
   const requestRevert = await handleApiRequest(
-    req(`/api/shell/games/${gameId}/revert-request`, "POST", { identityId: "id-owner", targetMoveId }),
+    req(`/api/shell/games/${gameId}/revert-request`, "POST", {
+      identityId: "id-owner",
+      targetMoveId,
+      requestId: "req-client-1",
+    }),
     env,
   );
   const requestBody = await requestRevert.json();
   assert.equal(requestRevert.status, 200);
   assert.equal(requestBody.pendingApproval, true);
   assert.equal(requestBody.game.pendingRevertRequest?.targetMoveId, targetMoveId);
-  assert.equal(typeof requestBody.game.pendingRevertRequest?.requestId, "string");
+  assert.equal(requestBody.game.pendingRevertRequest?.requestId, "req-client-1");
 
   const unauthorizedApprove = await handleApiRequest(
     req(`/api/shell/games/${gameId}/revert-approve`, "POST", {

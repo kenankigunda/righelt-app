@@ -1,8 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createShellStore } from "../shell/store.js";
 import { SHELL_STATE_KEY } from "../shell/persistence.js";
-import { createMemoryStorage, createTestStore } from "./support.mjs";
+import { createMemoryStorage, createShellStore, createTestStore } from "./support.mjs";
 
 test("self-play mode binds both player seats to same identity", async () => {
   const { store } = createTestStore();

@@ -16,8 +16,25 @@ import {
 test("history mode stays latched while live updates append and return-to-live restores the latest state", async ({ browser, baseURL }) => {
   const { context: creatorContext, page: creatorPage } = await createIsolatedPage(browser);
   const { context: playerContext, page: playerPage } = await createIsolatedPage(browser);
+  let releaseHistory = null;
+  let releaseLive = null;
+  const historyReady = new Promise((resolve) => {
+    releaseHistory = resolve;
+  });
+  const liveReady = new Promise((resolve) => {
+    releaseLive = resolve;
+  });
 
   try {
+    await creatorContext.route("**/api/shell/games/*/history", async (route) => {
+      await historyReady;
+      await route.continue();
+    });
+    await creatorContext.route("**/api/shell/games/*/live", async (route) => {
+      await liveReady;
+      await route.continue();
+    });
+
     const { gameHash } = await createGameFromHome(creatorPage);
     await openDirectGameLink(playerPage, baseURL, gameHash);
     await requestPlayerJoin(playerPage);
@@ -27,6 +44,8 @@ test("history mode stays latched while live updates append and return-to-live re
     await makeAnyLegalMove(creatorPage, "p1");
     const historyCountBeforeSelection = await getHistoryMoveCount(creatorPage);
     await openHistoryMode(creatorPage, 0);
+    await expect(creatorPage.getByTestId("history-return-live")).toBeVisible();
+    releaseHistory?.();
 
     await makeAnyLegalMove(playerPage, "p2");
     await expect
@@ -35,8 +54,8 @@ test("history mode stays latched while live updates append and return-to-live re
       })
       .toBeGreaterThan(historyCountBeforeSelection);
 
-    await expect(creatorPage.getByTestId("history-return-live")).toBeVisible();
     await returnToLive(creatorPage);
+    releaseLive?.();
     await expect(creatorPage.getByTestId("history-return-live")).toHaveCount(0);
     await expect(creatorPage.getByTestId("game-role")).toContainText("Player 1");
   } finally {

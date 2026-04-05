@@ -4,8 +4,7 @@ import { syncMiniBoardPreviews } from "../board/mini-board-preview.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
-import { createLiveTransportStore } from "./live-transport.js";
-import { createLiveSyncClient } from "./live-sync.js";
+import { createSyncStore } from "./sync-store.js";
 import { ensureHoverCapabilityController } from "../hover-capability.js";
 import { applyCommandLegendSwatch, getCommandLegendSwatchStyle } from "../legend.js";
 import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from "./persistence.js";
@@ -70,11 +69,12 @@ const createMemoryStorageFallback = () => {
 };
 
 const storage = typeof window.localStorage !== "undefined" ? window.localStorage : createMemoryStorageFallback();
-const transport = createLiveTransportStore({ storage });
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 const boardAdapter = createEngineBoardAdapter();
 const hoverCapability = ensureHoverCapabilityController();
 assertGameBoardAdapter(boardAdapter);
+const liveSyncMetricCounts = Object.create(null);
+window.__righeltLiveSyncMetrics = liveSyncMetricCounts;
 
 const toStableKey = (value) => {
   if (value === null || typeof value === "undefined") {
@@ -92,7 +92,6 @@ let mountedOverlayKey = null;
 let mountedSyncStatusKey = null;
 let boardRuntime = null;
 const consumedInitialSelectionActionKeyByGameId = new Map();
-let busy = false;
 let wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
 let lastWsStatusKey = toStableKey(wsStatus);
 let wsLastEvent = "none";
@@ -114,11 +113,14 @@ const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
 const ignoredRevertRequests = new Set();
 const expandedUndoneGroups = new Set();
+const pendingButtonKeys = new Set();
+const pendingHomeSectionKeys = new Set();
 let lastRenderedMarkup = "";
 let lastRenderedMainMarkup = "";
 let lastRenderedFlyoutMarkup = "";
 let lastRenderedRouteKey = "";
 let lastRenderedBaseRouteKey = "";
+let routeSyncRequestId = 0;
 const HISTORY_SELECTION_EXIT_MS = 56;
 const HISTORY_RELEASE_BOUNCE_MS = 140;
 const HOME_SECTION_SERVER_PAGE_SIZE = 4;
@@ -145,7 +147,6 @@ const GAME_SHELL_PANEL_TRANSITION_MS = 220;
 const miniBoardPreviewRegistry = new Map();
 const renderedMiniBoardPreviewPayloads = new Map();
 const lastAnimatedHomeSectionTokenByKey = new Map();
-const activeLiveGameIds = new Set();
 const createHomeSectionState = (title) => ({
   title,
   page: 0,
@@ -175,6 +176,42 @@ const escapeHtml = (value) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+
+const getJoinButtonKey = (mode, gameId) => `join:${mode}:${gameId}`;
+const getPlayAsBothButtonKey = (gameId) => `play-as-both:${gameId}`;
+const getApproveRequestButtonKey = (gameId, requesterIdentityId) => `approve-request:${gameId}:${requesterIdentityId}`;
+const getCopyInviteButtonKey = (gameId) => `copy-invite:${gameId}`;
+const SCENARIO_LOAD_PENDING_KEY = "scenario:load";
+const SCENARIO_UPDATE_PENDING_KEY = "scenario:update";
+const SCENARIO_SAVE_PENDING_KEY = "scenario:save";
+const isButtonPending = (key) => Boolean(key) && pendingButtonKeys.has(key);
+const isHomeSectionPending = (sectionKey) => Boolean(sectionKey) && pendingHomeSectionKeys.has(sectionKey);
+const renderButtonStateAttributes = ({ className = "", pendingKey = null, disabled = false } = {}) => {
+  const classes = className
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  if (isButtonPending(pendingKey)) {
+    classes.push("button-pending");
+  }
+  const classAttr = classes.length > 0 ? ` class="${classes.join(" ")}"` : "";
+  const pendingAttr = isButtonPending(pendingKey) ? ' data-pending="true" aria-busy="true"' : "";
+  const disabledAttr = disabled ? " disabled" : "";
+  return `${classAttr}${pendingAttr}${disabledAttr}`;
+};
+const renderPendingStateAttributes = ({ className = "", pending = false, disabled = false } = {}) => {
+  const classes = className
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  if (pending) {
+    classes.push("button-pending");
+  }
+  const classAttr = classes.length > 0 ? ` class="${classes.join(" ")}"` : "";
+  const pendingAttr = pending ? ' data-pending="true" aria-busy="true"' : "";
+  const disabledAttr = disabled ? " disabled" : "";
+  return `${classAttr}${pendingAttr}${disabledAttr}`;
+};
 
 const formatStatus = (connected) =>
   connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip disconnected">Disconnected</span>';
@@ -403,11 +440,11 @@ const canSubmitScenarioUpdate = () => {
 const syncScenarioAuthoringControls = () => {
   const updateButtonEl = appEl?.querySelector?.('[data-action="update-scenario"]');
   if (updateButtonEl instanceof HTMLButtonElement) {
-    updateButtonEl.disabled = busy || !canSubmitScenarioUpdate();
+    updateButtonEl.disabled = !canSubmitScenarioUpdate() || isButtonPending(SCENARIO_UPDATE_PENDING_KEY);
   }
   const saveButtonEl = appEl?.querySelector?.('[data-action="save-scenario"]');
   if (saveButtonEl instanceof HTMLButtonElement) {
-    saveButtonEl.disabled = busy || !canSubmitSaveScenarioDraft();
+    saveButtonEl.disabled = !canSubmitSaveScenarioDraft() || isButtonPending(SCENARIO_SAVE_PENDING_KEY);
   }
 };
 const getScenarioExportContext = (game) => {
@@ -601,7 +638,6 @@ const getHomeSectionCachedGameIndex = (section, gameId) => {
   }
   return null;
 };
-const shouldDisableLiveSync = () => navigator.onLine === false;
 const resetRouteWsStatus = () => {
   wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
   lastWsStatusKey = toStableKey(wsStatus);
@@ -1213,6 +1249,11 @@ const getActivePendingRevertRequest = (game) => {
   return request;
 };
 
+const getFailedOperationsKey = (gameId) =>
+  (transport.getFailedOperations?.(gameId) ?? [])
+    .map((operation) => `${operation.id}:${operation.status}`)
+    .join("|");
+
 const renderTurnHistory = (game) => {
   if (!Array.isArray(game.turns) || game.turns.length === 0) {
     return "<li class=\"small\">No turns yet.</li>";
@@ -1247,12 +1288,12 @@ const renderTurnHistory = (game) => {
     const branchButton = game.inHistoryMode && game.historyIndex === move.index && move.undone !== true
       ? `<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${escapeHtml(
           String(move.index),
-        )}" ${busy ? "disabled" : ""}>Create new game at this move</button>`
+        )}">Create new game at this move</button>`
       : "";
     const revertButton = game.inHistoryMode && game.historyIndex === move.index && move.undone !== true
       ? `<button class="secondary mini-button history-branch-button" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(
           move.moveId || "",
-        )}" ${busy ? "disabled" : ""}>Undo back to this move</button>`
+        )}">Undo back to this move</button>`
       : "";
     return {
       undone: move.undone === true,
@@ -1270,7 +1311,9 @@ const renderTurnHistory = (game) => {
     };
   });
   const pendingRows = (Array.isArray(game.pendingMoves) ? game.pendingMoves : []).map(
-    (move) => `<li class="history-item history-item-pending ${playerToneClassForSide(move.actorSide || (move.turnIndex % 2 === 0 ? "P1" : "P2"))}" aria-disabled="true">
+    (move) => `<li class="history-item history-item-pending ${playerToneClassForSide(move.actorSide || (move.turnIndex % 2 === 0 ? "P1" : "P2"))}" data-action="jump-history" data-game-id="${escapeHtml(
+      game.id,
+    )}" data-move-index="${escapeHtml(String(move.index))}" data-testid="history-pending-move-item" aria-busy="true">
           <span class="history-move-line">Move ${escapeHtml(
             String(move.index + 1),
           )}: ${escapeHtml(move.notation)} · Pending</span>
@@ -1306,7 +1349,7 @@ const renderTurnHistory = (game) => {
     reverseChronologicalMoveRows.push(`
       <li class="history-item history-item-undone-group is-undone ${toneClass}${expanded ? " is-expanded" : ""}" data-action="toggle-undone-group" data-group-key="${escapeHtml(
         groupKey,
-      )}" aria-expanded="${expanded ? "true" : "false"}" ${busy ? 'aria-disabled="true"' : ""}>
+      )}" aria-expanded="${expanded ? "true" : "false"}">
         <span class="history-move-line">${count} move${count === 1 ? "" : "s"} undone</span>
       </li>`);
     if (expanded) {
@@ -1335,13 +1378,13 @@ const renderTurnHistory = (game) => {
   const emptyTurnItem = game.inHistoryMode
     ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(
         game.id,
-      )}" data-testid="history-return-live" ${busy ? "disabled" : ""}>Return to live view</button></li>`
+      )}" data-testid="history-return-live">Return to live view</button></li>`
     : liveStatusItem;
   const undoLastMoveItem =
     !game.inHistoryMode && game.canUndoLastMove && game.latestActiveMoveId
       ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="undo-last-move" data-game-id="${escapeHtml(
           game.id,
-        )}" data-move-id="${escapeHtml(game.latestActiveMoveId)}" ${busy ? "disabled" : ""}>Undo last move</button></li>`
+        )}" data-move-id="${escapeHtml(game.latestActiveMoveId)}">Undo last move</button></li>`
       : "";
 
   return `${emptyTurnItem}${undoLastMoveItem}${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
@@ -1397,6 +1440,7 @@ const renderScenarioOptionList = () =>
 
 const renderScenarioPanel = ({ route, game = null } = {}) => {
   const selectedScenario = getSelectedScenario();
+  const scenarioLoadPending = isButtonPending(SCENARIO_LOAD_PENDING_KEY);
   const scenarioCard = selectedScenario ? buildStaticGameCardFromScenario(selectedScenario) : null;
   const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex : game?.moves?.length ?? 0;
   const canAuthorScenarios = Boolean(game) && canAuthorScenariosLocally();
@@ -1406,6 +1450,17 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
   const selectedScenarioTitle = selectedScenario?.title ?? "";
   const selectedScenarioDescription = selectedScenario?.description ?? "Scenarios replay canonical shell history into a game.";
   const canUpdateScenario = canAuthorScenarios && Boolean(selectedScenario);
+  if (scenarioLoadPending) {
+    return `
+      <section class="panel debug-panel scenario-panel scenario-panel-load" data-testid="scenario-load-skeleton">
+        <h2>Load a scenario</h2>
+        <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
+        <div class="skeleton-pulse skeleton-line"></div>
+        <div class="skeleton-pulse skeleton-board"></div>
+        <div class="skeleton-pulse skeleton-button"></div>
+      </section>
+    `;
+  }
   return `
     <section class="panel debug-panel scenario-panel scenario-panel-load">
       <h2>Load a scenario</h2>
@@ -1450,10 +1505,17 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
           : ""
       }
       <div class="row">
-        <button data-action="load-scenario" ${selectedScenario ? "" : "disabled"}>${route.name === "home" ? "Open Scenario" : canLoadIntoCurrentGame ? "Load into This Game" : "Open in New Tab"}</button>
+        <button data-action="load-scenario"${renderButtonStateAttributes({
+          pendingKey: SCENARIO_LOAD_PENDING_KEY,
+          disabled: !selectedScenario,
+        })}>${route.name === "home" ? "Open Scenario" : canLoadIntoCurrentGame ? "Load into This Game" : "Open in New Tab"}</button>
         ${
           canUpdateScenario
-            ? `<button class="secondary" data-action="update-scenario"${busy || !selectedScenarioTitle.trim() || !selectedScenarioDescription.trim() ? " disabled" : ""}>Update to match current board</button>`
+            ? `<button data-action="update-scenario"${renderButtonStateAttributes({
+                className: "secondary",
+                pendingKey: SCENARIO_UPDATE_PENDING_KEY,
+                disabled: !selectedScenarioTitle.trim() || !selectedScenarioDescription.trim(),
+              })}>Update to match current board</button>`
             : ""
         }
       </div>
@@ -1472,7 +1534,11 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
               <textarea id="save-scenario-description" data-scenario-save-field="description" rows="4">${escapeHtml(saveDraft.description)}</textarea>
             </div>
             <div class="row">
-              <button class="secondary" data-action="save-scenario"${busy || !canSaveScenario ? " disabled" : ""}>Save current board as new scenario</button>
+              <button data-action="save-scenario"${renderButtonStateAttributes({
+                className: "secondary",
+                pendingKey: SCENARIO_SAVE_PENDING_KEY,
+                disabled: !canSaveScenario,
+              })}>Save current board as new scenario</button>
             </div>
             <pre class="debug-pre" aria-live="polite">${escapeHtml(saveScenarioFeedback || "No new scenario saved yet.")}</pre>
           </section>`
@@ -1772,27 +1838,28 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
   class="home-games-section-controls home-games-section-controls-${escapeHtml(placement)}"
 >
   <button
-    class="secondary"
+    ${renderPendingStateAttributes({ className: "secondary", pending: isHomeSectionPending(sectionKey) })}
     data-action="home-page-prev"
     data-home-section="${escapeHtml(sectionKey)}"
-    ${busy ? "disabled" : ""}
     aria-label="Previous ${escapeHtml(section.title)} page"
   >&larr;</button>
   <p class="small home-games-section-page-label">Page ${section.page + 1} of ${section.totalPages}</p>
   <button
-    class="secondary"
+    ${renderPendingStateAttributes({ className: "secondary", pending: isHomeSectionPending(sectionKey) })}
     data-action="home-page-next"
     data-home-section="${escapeHtml(sectionKey)}"
-    ${busy ? "disabled" : ""}
     aria-label="Next ${escapeHtml(section.title)} page"
   >&rarr;</button>
 </div>`;
 
 const renderHomeStartButton = () =>
-  `<button class="home-start-button" data-action="create-game" data-testid="home-create-game" ${busy ? "disabled" : ""}>Start new game</button>`;
+  `<button class="home-start-button" data-action="create-game" data-testid="home-create-game">Start new game</button>`;
 
 const renderHomeGameSection = (sectionKey) => {
   const section = getHomeSection(sectionKey);
+  if (isHomeSectionPending(sectionKey)) {
+    return renderHomeSectionSkeleton(section.title, { showStartButton: sectionKey === "my" });
+  }
   const games = section.gameIds.map((gameId) => transport.getHomeGameCard(gameId)).filter(Boolean);
   const shouldAlwaysRender = sectionKey === "my";
   if (!Array.isArray(games) || (!shouldAlwaysRender && (games.length === 0 || section.totalGames === 0))) {
@@ -1842,6 +1909,13 @@ const scrollHomeSectionToTop = (sectionKey) => {
 };
 
 const renderHome = () => {
+  if (!routeHydrated) {
+    return `
+      <section class="stack">
+        ${getVisibleHomeSectionKeys().map((sectionKey) => renderHomeSectionSkeleton(getHomeSection(sectionKey).title, { showStartButton: sectionKey === "my" })).join("")}
+      </section>
+    `;
+  }
   const sectionHtml = getVisibleHomeSectionKeys().map((sectionKey) => renderHomeGameSection(sectionKey)).join("");
   const listHtml = sectionHtml || `<section class="panel"><p class="small">No games yet.</p></section>`;
 
@@ -1853,11 +1927,20 @@ const renderHome = () => {
 };
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
+  const failedOperations = transport.getFailedOperations?.(game.id) ?? [];
   maybeUpdateUndoRequestOutcomeFeedback(game);
+  const failedOperationBanners = failedOperations
+    .map(
+      (operation) => `<div class="alert danger shell-game-alert sync-failure-banner" data-testid="sync-failure-banner">
+        <div class="sync-failure-copy">
+          <strong>Sync failed.</strong> ${escapeHtml(operation.error?.message || "The operation could not be completed.")}
+        </div>
+        <button class="secondary mini-button" data-action="dismiss-failed-operation" data-operation-id="${escapeHtml(operation.id)}">Dismiss</button>
+      </div>`,
+    )
+    .join("");
   const liveSyncBanner =
-    game.rollbackNotice && game.rollbackNotice.trim().length > 0
-      ? `<div class="alert danger shell-game-alert">${escapeHtml(game.rollbackNotice)}</div>`
-      : game.syncStatus === "confirming"
+    failedOperations.length === 0 && game.syncStatus === "confirming"
         ? `<div class="alert warn shell-game-alert">Move confirmation is retrying. The board stays optimistic until the server confirms.</div>`
       : game.syncStatus === "desynced"
         ? `<div class="alert warn shell-game-alert">Live sync is recovering. The board is showing the last authoritative state.</div>`
@@ -1868,8 +1951,92 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
       ? `<div class="alert shell-game-alert">${escapeHtml(undoRequestFeedback)}</div>`
       : "";
 
-  return [liveSyncBanner, undoRequestBanner].filter(Boolean).join("");
+  return [failedOperationBanners, liveSyncBanner, undoRequestBanner].filter(Boolean).join("");
 };
+
+const renderHomeCardSkeleton = () => `
+  <article class="mini-board-card mini-board-card-skeleton" data-testid="home-card-skeleton">
+    <div class="mini-board-card-copy">
+      <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
+      <div class="skeleton-pulse skeleton-line skeleton-line-subtitle"></div>
+    </div>
+    <div class="skeleton-pulse skeleton-board"></div>
+    <div class="skeleton-pulse skeleton-line skeleton-line-status"></div>
+  </article>
+`;
+
+const renderHomeSectionSkeleton = (title, { showStartButton = false } = {}) => `
+  <section class="panel home-games-section" data-testid="home-section-skeleton">
+    <div class="home-games-section-header" data-home-header-has-action="${showStartButton ? "true" : "false"}" data-home-header-paging="false">
+      <div class="home-games-section-heading">
+        <h2>${escapeHtml(title)}</h2>
+        <p class="small">Loading games...</p>
+      </div>
+      <div class="home-games-section-header-center"></div>
+      <div class="home-games-section-header-actions">
+        ${showStartButton ? renderHomeStartButton() : ""}
+      </div>
+    </div>
+    <div class="home-games-carousel">
+      <div class="mini-board-card-list mini-board-card-list-skeleton">
+        ${Array.from({ length: 3 }, () => renderHomeCardSkeleton()).join("")}
+      </div>
+    </div>
+  </section>
+`;
+
+const renderGameViewSkeleton = () => `
+  <section class="layout-grid layout-grid-skeleton" data-testid="game-view-skeleton">
+    <div class="stack">
+      <section class="panel skeleton-panel">
+        <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
+        <div class="skeleton-pulse skeleton-line"></div>
+        <div class="skeleton-pulse skeleton-line skeleton-line-short"></div>
+      </section>
+      <section class="panel skeleton-panel">
+        <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
+        <div class="skeleton-pulse skeleton-button"></div>
+        <div class="skeleton-pulse skeleton-line skeleton-line-short"></div>
+      </section>
+      <section class="panel skeleton-panel">
+        <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
+        <div class="skeleton-pulse skeleton-line"></div>
+        <div class="skeleton-pulse skeleton-line skeleton-line-short"></div>
+      </section>
+    </div>
+    <div class="stack">
+      <section class="panel skeleton-panel">
+        <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
+        <div class="skeleton-pulse skeleton-board"></div>
+      </section>
+    </div>
+    <div class="stack">
+      <section class="panel skeleton-panel">
+        <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
+        <div class="skeleton-pulse skeleton-line"></div>
+        <div class="skeleton-pulse skeleton-line"></div>
+        <div class="skeleton-pulse skeleton-line skeleton-line-short"></div>
+      </section>
+    </div>
+  </section>
+`;
+
+const renderInvitePageSkeleton = () => `
+  <section class="invite-gate" data-testid="invite-view-skeleton">
+    <section class="panel invite-gate-modal skeleton-panel">
+      <div class="skeleton-pulse skeleton-line skeleton-line-kicker"></div>
+      <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
+      <div class="skeleton-pulse skeleton-line"></div>
+      <div class="invite-choice-list">
+        <div class="skeleton-pulse skeleton-button"></div>
+        <div class="skeleton-pulse skeleton-button"></div>
+      </div>
+    </section>
+    <div class="invite-gate-content" aria-hidden="true">
+      ${renderGameViewSkeleton()}
+    </div>
+  </section>
+`;
 
 const renderGameSummaryPanel = (game) => {
   const latestNote = game.notifications[0] || "Ready";
@@ -1893,6 +2060,10 @@ const renderGameSummaryPanel = (game) => {
 };
 
 const renderJoinInvitePanel = (game, inviteLink) => {
+  const joinViewerButtonKey = getJoinButtonKey("viewer", game.id);
+  const joinPlayerButtonKey = getJoinButtonKey("player", game.id);
+  const playAsBothButtonKey = getPlayAsBothButtonKey(game.id);
+  const copyInviteButtonKey = getCopyInviteButtonKey(game.id);
   const pendingSeatNotice = game.pendingPlayerRequestSeat
     ? `<div class="alert" data-testid="pending-player-request-notice">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
     : "";
@@ -1901,33 +2072,43 @@ const renderJoinInvitePanel = (game, inviteLink) => {
       ? "<li class=\"small\">No pending join requests</li>"
       : game.pendingJoinRequests
           .map(
-            (request) => `<li data-testid="pending-join-request" data-requester-id="${escapeHtml(request.identityId)}">
+            (request) => {
+              const approveRequestButtonKey = getApproveRequestButtonKey(game.id, request.identityId);
+              return `<li data-testid="pending-join-request" data-requester-id="${escapeHtml(request.identityId)}">
               <span class="mono">${escapeHtml(request.identityId)}</span> requests ${renderSeatLabel(request.requestedSeat)}
-              <button class="secondary" data-action="approve-request" data-game-id="${escapeHtml(
-                game.id,
-              )}" data-requester-id="${escapeHtml(request.identityId)}" ${
-                !busy && Array.isArray(game.approvableRequesterIds) && game.approvableRequesterIds.includes(request.identityId)
-                  ? ""
-                  : "disabled"
-              } data-testid="approve-request-inline">Approve</button>
-            </li>`,
+              <button data-action="approve-request" data-game-id="${escapeHtml(game.id)}" data-requester-id="${escapeHtml(
+                request.identityId,
+              )}" data-testid="approve-request-inline"${renderButtonStateAttributes({
+                className: "secondary",
+                pendingKey: approveRequestButtonKey,
+                disabled: !Array.isArray(game.approvableRequesterIds) || !game.approvableRequesterIds.includes(request.identityId),
+              })}>${isButtonPending(approveRequestButtonKey) ? "Approving..." : "Approve"}</button>
+            </li>`;
+            },
           )
           .join("");
   const joinInviteActions = renderSectionActions([
     game.canJoinAsViewer
-      ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="join-viewer" class="secondary" ${!busy ? "" : "disabled"}>Join as viewer</button>`
+      ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="join-viewer"${renderButtonStateAttributes({
+          className: "secondary",
+          pendingKey: joinViewerButtonKey,
+        })}>${isButtonPending(joinViewerButtonKey) ? "Joining..." : "Join as viewer"}</button>`
       : "",
     game.canJoinAsPlayer && game.showJoinActions
-      ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" data-testid="join-player" ${!busy ? "" : "disabled"}>Join as player</button>`
+      ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" data-testid="join-player"${renderButtonStateAttributes({
+          pendingKey: joinPlayerButtonKey,
+        })}>${isButtonPending(joinPlayerButtonKey) ? "Joining..." : "Join as player"}</button>`
       : "",
     game.canPlayAsBothPlayers
-      ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}" class="secondary" ${
-          !busy ? "" : "disabled"
-        }>Play as both players</button>`
+      ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({
+          className: "secondary",
+          pendingKey: playAsBothButtonKey,
+        })}>${isButtonPending(playAsBothButtonKey) ? "Claiming seats..." : "Play as both players"}</button>`
       : "",
-    `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-link="${escapeHtml(inviteLink)}" data-testid="copy-invite" ${
-      game.canInvite && !busy ? "" : "disabled"
-    }>Invite someone else</button>`,
+    `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-link="${escapeHtml(inviteLink)}" data-testid="copy-invite"${renderButtonStateAttributes({
+      pendingKey: copyInviteButtonKey,
+      disabled: !game.canInvite,
+    })}>${isButtonPending(copyInviteButtonKey) ? "Creating invite..." : "Invite someone else"}</button>`,
   ]);
 
   return `
@@ -2355,13 +2536,12 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
 };
 
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
-  if (!routeHydrated) {
-    return `<section class="panel"><h2>Loading game...</h2><p class="small">Synchronizing current game state.</p></section>`;
-  }
-
   const game = transport.getGameViewModel(gameId);
+  if (!routeHydrated && !game) {
+    return renderGameViewSkeleton();
+  }
   if (!game) {
-    return `<section class="panel"><h2>Loading game...</h2><p class="small">Fetching latest server state.</p></section>`;
+    return renderGameViewSkeleton();
   }
   const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(
     game.inviteToken || inviteToken || game.id,
@@ -2406,7 +2586,6 @@ const renderApprovalGate = (game, request) => {
               data-game-id="${escapeHtml(game.id)}"
               data-requester-id="${escapeHtml(request.identityId)}"
               data-testid="accept-request"
-              ${busy ? "disabled" : ""}
             >Accept</button>
             <span class="small invite-choice-note">Approve the request and promote this participant into the requested player seat.</span>
           </div>
@@ -2417,7 +2596,6 @@ const renderApprovalGate = (game, request) => {
               data-game-id="${escapeHtml(game.id)}"
               data-requester-id="${escapeHtml(request.identityId)}"
               data-testid="ignore-request"
-              ${busy ? "disabled" : ""}
             >Ignore</button>
             <span class="small invite-choice-note">Dismiss this prompt for now. The request remains visible in Join / Invite.</span>
           </div>
@@ -2447,7 +2625,6 @@ const renderRevertApprovalGate = (game, request) => {
               data-action="accept-revert-request"
               data-game-id="${escapeHtml(game.id)}"
               data-request-id="${escapeHtml(request.requestId)}"
-              ${busy ? "disabled" : ""}
             >Accept</button>
             <span class="small invite-choice-note">Approve and mark selected/future moves undone.</span>
           </div>
@@ -2457,7 +2634,6 @@ const renderRevertApprovalGate = (game, request) => {
               data-action="reject-revert-request"
               data-game-id="${escapeHtml(game.id)}"
               data-request-id="${escapeHtml(request.requestId)}"
-              ${busy ? "disabled" : ""}
             >Reject</button>
             <span class="small invite-choice-note">Dismiss this request and keep both players on the current live game state.</span>
           </div>
@@ -2488,7 +2664,6 @@ const renderRevertWaitingGate = (game, request) => {
               data-action="rescind-revert-request"
               data-game-id="${escapeHtml(game.id)}"
               data-request-id="${escapeHtml(request.requestId)}"
-              ${busy ? "disabled" : ""}
             >Rescind</button>
             <span class="small invite-choice-note">Cancel this request and unlock both players to continue without undoing.</span>
           </div>
@@ -2529,7 +2704,7 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
 
 const renderInviteLanding = (inviteContext) => {
   if (!routeHydrated || !inviteContext?.gameId) {
-    return `<section class="panel"><h2>Loading invite...</h2><p class="small">Resolving invite destination.</p></section>`;
+    return renderInvitePageSkeleton();
   }
 
   const game = transport.getGameViewModel(inviteContext.gameId);
@@ -2558,6 +2733,8 @@ const renderInviteLanding = (inviteContext) => {
   const pendingNotice = game.pendingPlayerRequestSeat
     ? `<div class="alert">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
     : "";
+  const joinPlayerButtonKey = getJoinButtonKey("player", game.id);
+  const joinViewerButtonKey = getJoinButtonKey("viewer", game.id);
 
   return `
     <section class="invite-gate">
@@ -2568,15 +2745,18 @@ const renderInviteLanding = (inviteContext) => {
         ${pendingNotice}
         <div class="invite-choice-list">
           <div class="invite-choice-row">
-            <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-player" ${
-              canJoinPlayer && !busy ? "" : "disabled"
-            }>${escapeHtml(playerActionLabel)}</button>
+            <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-player"${renderButtonStateAttributes({
+              pendingKey: joinPlayerButtonKey,
+              disabled: !canJoinPlayer,
+            })}>${isButtonPending(joinPlayerButtonKey) ? "Joining..." : escapeHtml(playerActionLabel)}</button>
             <span class="small invite-choice-note">${escapeHtml(playerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
-            <button data-action="accept-invite-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-viewer" class="secondary" ${
-              canJoinViewer && !busy ? "" : "disabled"
-            }>Join as viewer</button>
+            <button data-action="accept-invite-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-viewer"${renderButtonStateAttributes({
+              className: "secondary",
+              pendingKey: joinViewerButtonKey,
+              disabled: !canJoinViewer,
+            })}>${isButtonPending(joinViewerButtonKey) ? "Joining..." : "Join as viewer"}</button>
             <span class="small invite-choice-note">${escapeHtml(viewerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
@@ -2703,7 +2883,7 @@ const mountBoardForGame = (game) => {
     mountedOverlayKey = overlayKey;
     mountedSyncStatusKey = toStableKey({
       syncStatus: game.syncStatus ?? "ready",
-      rollbackNotice: game.rollbackNotice ?? "",
+      failedOperationsKey: getFailedOperationsKey(game.id),
     });
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
     boardRuntime.syncInteractionCapabilities?.();
@@ -2721,13 +2901,14 @@ const mountBoardForGame = (game) => {
     return;
   }
 
+  const failedOperationsKey = getFailedOperationsKey(game.id);
   const syncStatusKey = toStableKey({
     syncStatus: game.syncStatus ?? "ready",
-    rollbackNotice: game.rollbackNotice ?? "",
+    failedOperationsKey,
   });
   const resetSelection =
     mountedHistoryMoveIndex !== historyMoveIndex ||
-    (mountedSyncStatusKey !== syncStatusKey && Boolean(game.rollbackNotice)) ||
+    (mountedSyncStatusKey !== syncStatusKey && failedOperationsKey.length > 0) ||
     shouldResetBoardSelection({
       currentSnapshot: boardRuntime.getState?.() ?? null,
       nextSnapshot: snapshot,
@@ -3047,9 +3228,15 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     const inviteContext = getInviteContextForGame(game, "game");
     body = inviteContext ? renderInviteLanding(inviteContext) : renderGame(currentRoute.gameId, currentRoute.inviteFromRole);
   } else if (currentRoute.name === "invite") {
-    const game = resolvedInvite?.gameId ? transport.getGameViewModel(resolvedInvite.gameId) : null;
-    const inviteContext = getInviteContextForGame(game, "invite");
-    body = inviteContext ? renderInviteLanding(inviteContext) : renderGame(resolvedInvite?.gameId || null, resolvedInvite?.inviteFromRole || null, resolvedInvite?.inviteToken || null);
+    if (!routeHydrated) {
+      body = renderInvitePageSkeleton();
+    } else {
+      const game = resolvedInvite?.gameId ? transport.getGameViewModel(resolvedInvite.gameId) : null;
+      const inviteContext = getInviteContextForGame(game, "invite");
+      body = inviteContext
+        ? renderInviteLanding(inviteContext)
+        : renderGame(resolvedInvite?.gameId || null, resolvedInvite?.inviteFromRole || null, resolvedInvite?.inviteToken || null);
+    }
   } else if (currentRoute.name === "tutorial") {
     body = renderTutorial(currentRoute.gameId);
   } else {
@@ -3103,19 +3290,23 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   }
 };
 
-const withBusy = async (fn, { renderStart = true, renderEnd = true } = {}) => {
-  busy = true;
+const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd = true } = {}) => {
+  if (!pendingKey || pendingButtonKeys.has(pendingKey)) {
+    return;
+  }
+  pendingButtonKeys.add(pendingKey);
   if (renderStart) {
-    render();
+    render({ animatePanels: false, includeBoard: false });
   }
   try {
-    await fn();
+    return await fn();
   } catch (error) {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
+    return undefined;
   } finally {
-    busy = false;
+    pendingButtonKeys.delete(pendingKey);
     if (renderEnd) {
-      render();
+      render({ animatePanels: false, includeBoard: false });
     }
   }
 };
@@ -3123,22 +3314,18 @@ const withBusy = async (fn, { renderStart = true, renderEnd = true } = {}) => {
 const syncRouteData = async () => {
   if (currentRoute.name === "home") {
     await syncHomeSections();
-    routeHydrated = true;
     return;
   }
   if (currentRoute.name === "game") {
     resolvedInvite = null;
     await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
-    routeHydrated = true;
     return;
   }
   if (currentRoute.name === "invite") {
     resolvedInvite = await transport.resolveInvite(currentRoute.inviteToken);
     await transport.loadGame(resolvedInvite.gameId, { openAsViewer: false });
-    routeHydrated = true;
     return;
   }
-  routeHydrated = true;
 };
 
 const syncRouteDataAndLiveChannels = async () => {
@@ -3146,13 +3333,40 @@ const syncRouteDataAndLiveChannels = async () => {
   syncLiveChannels();
 };
 
-const syncRouteDataPassive = async () => {
-  if (busy) {
-    return;
+const canHydrateRouteFromLocalState = (route = currentRoute) => {
+  if (route?.name !== "game" || !route?.gameId) {
+    return false;
   }
+  return Boolean(transport.getGameViewModel(route.gameId));
+};
+
+const startRouteSync = ({ renderStart = true } = {}) => {
+  const requestId = ++routeSyncRequestId;
+  routeHydrated = false;
+  syncLiveChannels();
+  if (renderStart) {
+    render({ animatePanels: false, includeBoard: false });
+  }
+  void (async () => {
+    try {
+      await syncRouteDataAndLiveChannels();
+    } catch (error) {
+      window.__righeltLastError = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (requestId !== routeSyncRequestId) {
+        return;
+      }
+      routeHydrated = true;
+      render({ animatePanels: false, includeBoard: false });
+    }
+  })();
+};
+
+const syncRouteDataPassive = async () => {
   try {
     await syncRouteDataAndLiveChannels();
-    render();
+    routeHydrated = true;
+    render({ animatePanels: false, includeBoard: false });
   } catch (error) {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
   }
@@ -3171,65 +3385,12 @@ const syncScenarioCatalog = async () => {
   }
 };
 
-transport.subscribe((change) => {
-  render({
-    animatePanels: false,
-    includeBoard: change?.type !== "optimistic_enqueue",
-  });
-});
-
-const syncLiveChannels = () => {
-  if (shouldDisableLiveSync()) {
-    liveSync.disconnectAll();
-    activeLiveGameIds.clear();
-    resetRouteWsStatus();
-    return;
-  }
-  const routeGameId =
-    shouldLiveSyncRoute(currentRoute) &&
-    (currentRoute.name === "game"
-      ? currentRoute.gameId
-      : currentRoute.name === "invite"
-        ? resolvedInvite?.gameId || null
-        : null);
-  const desiredGameIds = new Set(routeGameId ? [routeGameId] : []);
-  for (const gameId of [...activeLiveGameIds]) {
-    if (!desiredGameIds.has(gameId)) {
-      liveSync.disconnectGame(gameId);
-      activeLiveGameIds.delete(gameId);
-    }
-  }
-  for (const gameId of desiredGameIds) {
-    if (!activeLiveGameIds.has(gameId)) {
-      liveSync.connectGame(gameId);
-      activeLiveGameIds.add(gameId);
-    }
-  }
-  if (!routeGameId) {
-    resetRouteWsStatus();
-  }
-};
-
-const liveSyncMetricCounts = Object.create(null);
-window.__righeltLiveSyncMetrics = liveSyncMetricCounts;
-
-const liveSync = createLiveSyncClient({
-  identityId: transport.getIdentityId(),
-  getLastEventSeq: (gameId) => (gameId ? transport.getLastEventSeq(gameId) : 0),
+const syncStore = createSyncStore({
+  storage,
   onEvent: (payload) => {
     wsLastEvent = payload?.type
       ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
       : "unknown";
-    if (
-      (payload?.type === "state_sync" ||
-        payload?.type === "event_appended" ||
-        payload?.type === "presence_changed" ||
-        payload?.type === "join_request_created" ||
-        payload?.type === "join_request_resolved") &&
-      payload?.game
-    ) {
-      transport.applyLiveGameUpdate({ game: payload.game, eventSeq: payload.eventSeq, clientCommandId: payload.clientCommandId ?? null });
-    }
     if (document.getElementById("shell-debug-last-event")) {
       updateHeaderFields();
     } else {
@@ -3267,6 +3428,28 @@ const liveSync = createLiveSyncClient({
     }
   },
 });
+const transport = syncStore;
+
+transport.subscribe((change) => {
+  render({
+    animatePanels: false,
+    includeBoard: change?.type !== "optimistic_enqueue",
+  });
+});
+
+const syncLiveChannels = () => {
+  const routeGameId =
+    shouldLiveSyncRoute(currentRoute) &&
+    (currentRoute.name === "game"
+      ? currentRoute.gameId
+      : currentRoute.name === "invite"
+        ? resolvedInvite?.gameId || null
+        : null);
+  syncStore.setActiveGameId(routeGameId);
+  if (!routeGameId) {
+    resetRouteWsStatus();
+  }
+};
 
 const navigateTo = (hash) => {
   const parsedRoute = parseRouteFromHash(hash);
@@ -3280,20 +3463,13 @@ const navigateTo = (hash) => {
     syncFlyoutRenderOrder(currentRoute);
     if (isFlyoutOnlyRouteChange(previousRoute, nextRoute)) {
       if (currentRoute.name === "home" && previousRoute.debug !== currentRoute.debug) {
-        routeHydrated = false;
-        void withBusy(async () => {
-          await syncRouteDataAndLiveChannels();
-        }, { renderStart: false, renderEnd: true });
+        startRouteSync({ renderStart: false });
         return;
       }
       render();
       return;
     }
-    routeHydrated = false;
-    syncLiveChannels();
-    void withBusy(async () => {
-      await syncRouteDataAndLiveChannels();
-    });
+    startRouteSync();
     return;
   }
   window.location.hash = nextHash;
@@ -3310,38 +3486,21 @@ window.addEventListener("hashchange", () => {
     return;
   }
   syncFlyoutRenderOrder(currentRoute);
+  if (canHydrateRouteFromLocalState(currentRoute)) {
+    routeHydrated = true;
+    syncLiveChannels();
+    render();
+    return;
+  }
   if (isFlyoutOnlyRouteChange(previousRoute, currentRoute)) {
     if (currentRoute.name === "home" && previousRoute.debug !== currentRoute.debug) {
-      routeHydrated = false;
-      void withBusy(async () => {
-        await syncRouteDataAndLiveChannels();
-      }, { renderStart: false, renderEnd: true });
+      startRouteSync({ renderStart: false });
       return;
     }
     render();
     return;
   }
-  routeHydrated = false;
-  syncLiveChannels();
-  void withBusy(async () => {
-    await syncRouteDataAndLiveChannels();
-  });
-});
-
-window.addEventListener("online", () => {
-  void withBusy(async () => {
-    syncLiveChannels();
-    await syncRouteDataAndLiveChannels();
-  });
-});
-
-window.addEventListener("offline", () => {
-  void withBusy(async () => {
-    liveSync.disconnectAll();
-    activeLiveGameIds.clear();
-    resetRouteWsStatus();
-    await syncRouteDataAndLiveChannels();
-  });
+  startRouteSync();
 });
 
 window.addEventListener("resize", () => {
@@ -3373,30 +3532,6 @@ appEl.addEventListener("click", async (event) => {
   }
 
   const action = actionEl.getAttribute("data-action");
-  const shouldRenderBusyStateStart =
-    action !== "copy-invite" &&
-    action !== "jump-history" &&
-    action !== "launch-history-branch" &&
-    action !== "toggle-undone-group" &&
-    action !== "return-live" &&
-    action !== "tutorial-next" &&
-    action !== "tutorial-skip" &&
-    action !== "toggle-header-menu" &&
-    action !== "open-debug" &&
-    action !== "open-scenarios" &&
-    action !== "close-debug" &&
-    action !== "close-scenarios";
-  const shouldRenderBusyStateEnd =
-    action !== "copy-invite" &&
-    action !== "toggle-undone-group" &&
-    action !== "tutorial-next" &&
-    action !== "tutorial-skip" &&
-    action !== "toggle-header-menu" &&
-    action !== "open-debug" &&
-    action !== "open-scenarios" &&
-    action !== "close-debug" &&
-    action !== "close-scenarios";
-
   const animateFlyoutClose = async (flyoutKey, closeFlyout) => {
     const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
     const mainContentEl = appEl?.querySelector?.(".shell-main-content");
@@ -3453,98 +3588,76 @@ appEl.addEventListener("click", async (event) => {
     }, 0);
   };
 
-  await withBusy(async () => {
-    if (action === "toggle-header-menu") {
-      headerMenuOpen = !headerMenuOpen;
-      if (isNarrowHeaderMode()) {
-        syncNarrowHeaderMenuDom();
-      } else {
-        render({ animatePanels: false, includeBoard: false });
-      }
-      return;
-    }
-    if (action === "open-debug") {
-      if (!currentRoute.debug) {
-        saveDebugFlyoutOpen(storage, true);
-        setFlyoutOpenState("debug", true);
-        currentRoute = normalizeRouteFlyoutState({ ...currentRoute, debug: true }, { preferredFlyoutKey: "debug" });
-        if (currentRoute.name === "home") {
-          await syncRouteDataAndLiveChannels();
-        }
-        render();
-      }
-      return;
-    }
-    if (action === "open-scenarios") {
-      if (!currentRoute.scenarios) {
-        setFlyoutOpenState("scenarios", true);
-        navigateTo(toggleScenariosHash(window.location.hash));
-      }
-      return;
-    }
-    if (action === "close-debug") {
-      if (currentRoute.debug) {
-        await animateFlyoutClose("debug", () => {
-          saveDebugFlyoutOpen(storage, false);
-          currentRoute = normalizeRouteFlyoutState({ ...currentRoute, debug: false });
-        });
-        if (currentRoute.name === "home") {
-          await syncRouteDataAndLiveChannels();
-        }
-        render();
-      }
-      return;
-    }
-    if (action === "close-scenarios") {
-      if (currentRoute.scenarios) {
-        await animateFlyoutClose("scenarios", () => {
-          navigateTo(toggleScenariosHash(window.location.hash));
-        });
-      }
-      return;
-    }
+  if (action === "create-game") {
+    const handle = transport.createGame({ selfPlayMode: false });
+    navigateTo(buildGameHash(handle.result.id, null, getCurrentFlyoutState()));
+    return;
+  }
 
-    if (action === "switch-game-panel") {
-      if (currentRoute.name !== "game" || getShellLayoutMode() !== "narrow") {
-        return;
-      }
-      const nextPanel = normalizeGamePanel(actionEl.getAttribute("data-panel"));
-      if (nextPanel === getGamePanel()) {
-        return;
-      }
-      navigateTo(buildGameHash(currentRoute.gameId, currentRoute.inviteFromRole, getCurrentGameHashState(nextPanel)));
+  if (action === "launch-history-branch") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
+    const activeGame = gameId ? transport.getGameViewModel(gameId) : null;
+    if (!activeGame || !Number.isFinite(moveIndex)) {
       return;
     }
+    const branchSeed = buildHistoryBranchSeedFromGame(activeGame, moveIndex);
+    const handle = transport.launchHistoryBranch({
+      sourceGameId: activeGame.id,
+      sourceMoveIndex: moveIndex,
+      scenario: branchSeed.scenario,
+      initialSelectionAction: branchSeed.initialSelectionAction,
+      participantCopyMode: branchSeed.participantCopyMode,
+    });
+    const nextHash = buildGameHash(handle.result.game.id, null, {
+      ...getCurrentFlyoutState(),
+      scenarios: false,
+    });
+    window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
 
-    if (action === "create-game") {
-      const game = await transport.createGame({ selfPlayMode: false });
-      navigateTo(buildGameHash(game.id, null, getCurrentFlyoutState()));
+  if (action === "accept-revert-request") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const requestId = actionEl.getAttribute("data-request-id");
+    if (!gameId || !requestId) return;
+    ignoredRevertRequests.delete(getRevertRequestKey(gameId, requestId));
+    transport.approveRevertRequest({ gameId, requestId });
+    return;
+  }
+
+  if (action === "reject-revert-request") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const requestId = actionEl.getAttribute("data-request-id");
+    if (!gameId || !requestId) return;
+    ignoredRevertRequests.add(getRevertRequestKey(gameId, requestId));
+    transport.rejectRevertRequest({ gameId, requestId });
+    return;
+  }
+
+  if (action === "rescind-revert-request") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const requestId = actionEl.getAttribute("data-request-id");
+    if (!gameId || !requestId) return;
+    transport.rescindRevertRequest({ gameId, requestId });
+    return;
+  }
+
+  if (action === "revert-to-move" || action === "undo-last-move") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const moveId = actionEl.getAttribute("data-move-id");
+    if (!gameId || !moveId) {
       return;
     }
+    transport.requestRevertToMove({ gameId, targetMoveId: moveId });
+    return;
+  }
 
-    if (action === "home-page-prev" || action === "home-page-next") {
-      const sectionKey = actionEl.getAttribute("data-home-section");
-      const section = getHomeSection(sectionKey);
-      if (!sectionKey || section.totalPages <= 1) {
-        return;
-      }
-      const delta = action === "home-page-prev" ? -1 : 1;
-      const nextPage = (section.page + delta + section.totalPages) % section.totalPages;
-      await loadHomeSectionPage(sectionKey, {
-        page: nextPage,
-        direction: action === "home-page-prev" ? "prev" : "next",
-      });
-      syncLiveChannels();
-      render({ animatePanels: false, includeBoard: false });
-      window.requestAnimationFrame(() => {
-        scrollHomeSectionToTop(sectionKey);
-      });
-      return;
-    }
-
-    if (action === "join-viewer" || action === "accept-invite-viewer") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
+  if (action === "join-viewer" || action === "accept-invite-viewer") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    void withPendingButton(getJoinButtonKey("viewer", gameId), async () => {
       await transport.joinGame({
         gameId,
         mode: "viewer",
@@ -3557,12 +3670,14 @@ appEl.addEventListener("click", async (event) => {
         return;
       }
       await syncRouteDataAndLiveChannels();
-      return;
-    }
+    });
+    return;
+  }
 
-    if (action === "join-player" || action === "accept-invite-player") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
+  if (action === "join-player" || action === "accept-invite-player") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    void withPendingButton(getJoinButtonKey("player", gameId), async () => {
       const result = await transport.joinGame({
         gameId,
         mode: "player",
@@ -3578,279 +3693,354 @@ appEl.addEventListener("click", async (event) => {
         return;
       }
       await syncRouteDataAndLiveChannels();
-      return;
-    }
+    });
+    return;
+  }
 
-    if (action === "play-as-both-players") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
+  if (action === "play-as-both-players") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    void withPendingButton(getPlayAsBothButtonKey(gameId), async () => {
       await transport.playAsBothPlayers({ gameId });
       await syncRouteDataAndLiveChannels();
-      return;
-    }
+    });
+    return;
+  }
 
-    if (action === "approve-request" || action === "accept-request") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const requester = actionEl.getAttribute("data-requester-id");
-      if (!gameId || !requester) return;
-      ignoredApprovalRequests.delete(getApprovalRequestKey(gameId, requester));
+  if (action === "approve-request" || action === "accept-request") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const requester = actionEl.getAttribute("data-requester-id");
+    if (!gameId || !requester) return;
+    ignoredApprovalRequests.delete(getApprovalRequestKey(gameId, requester));
+    void withPendingButton(getApproveRequestButtonKey(gameId, requester), async () => {
       await transport.approvePendingRequest({ gameId, requesterIdentityId: requester });
       await syncRouteDataAndLiveChannels();
+    });
+    return;
+  }
+
+  if (action === "copy-invite") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) {
       return;
     }
-
-    if (action === "ignore-request") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const requester = actionEl.getAttribute("data-requester-id");
-      if (!gameId || !requester) return;
-      ignoredApprovalRequests.add(getApprovalRequestKey(gameId, requester));
-      render();
-      return;
-    }
-
-    if (action === "accept-revert-request") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const requestId = actionEl.getAttribute("data-request-id");
-      if (!gameId || !requestId) return;
-      ignoredRevertRequests.delete(getRevertRequestKey(gameId, requestId));
-      await transport.approveRevertRequest({ gameId, requestId });
-      await syncRouteDataAndLiveChannels();
-      return;
-    }
-
-    if (action === "reject-revert-request") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const requestId = actionEl.getAttribute("data-request-id");
-      if (!gameId || !requestId) return;
-      ignoredRevertRequests.add(getRevertRequestKey(gameId, requestId));
-      await transport.rejectRevertRequest({ gameId, requestId });
-      await syncRouteDataAndLiveChannels();
-      return;
-    }
-
-    if (action === "rescind-revert-request") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const requestId = actionEl.getAttribute("data-request-id");
-      if (!gameId || !requestId) return;
-      await transport.rescindRevertRequest({ gameId, requestId });
-      await syncRouteDataAndLiveChannels();
-      return;
-    }
-
-    if (action === "toggle-undone-group") {
-      const groupKey = actionEl.getAttribute("data-group-key");
-      if (!groupKey) return;
-      if (expandedUndoneGroups.has(groupKey)) {
-        expandedUndoneGroups.delete(groupKey);
-      } else {
-        expandedUndoneGroups.add(groupKey);
+    const gameHandle = transport.getGameHandle?.(gameId) ?? null;
+    const copyInvite = async () => {
+      if (gameHandle?.status === "pending") {
+        await gameHandle.committed;
       }
-      render({ animatePanels: false, includeBoard: false });
-      return;
-    }
-
-    if (action === "copy-invite") {
-      const link = actionEl.getAttribute("data-link") || "";
+      const game = transport.getGameViewModel(gameId);
+      const inviteToken = game?.inviteToken || resolvedInvite?.inviteToken || gameId;
+      const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(inviteToken, getCurrentFlyoutState())}`;
       let copied = false;
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(link);
+        await navigator.clipboard.writeText(inviteLink);
         copied = true;
       }
-      window.__righeltLastInvite = link;
+      window.__righeltLastInvite = inviteLink;
       setInviteFeedback(copied ? "Invite link copied to clipboard" : "Clipboard unavailable");
+    };
+    if (gameHandle?.status === "pending") {
+      void withPendingButton(getCopyInviteButtonKey(gameId), copyInvite);
       return;
     }
+    await copyInvite();
+    return;
+  }
 
-    if (action === "jump-history") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
-      if (!gameId || !Number.isFinite(moveIndex)) return;
-      clearControlPress();
-      clearHistoryPress();
-      playHistoryReleaseBounce(actionEl);
-      await animateHistoryDeselection(actionEl);
-      await transport.selectHistoryMove({ gameId, moveIndex });
-      await syncRouteDataAndLiveChannels();
+  if (action === "dismiss-failed-operation") {
+    const operationId = actionEl.getAttribute("data-operation-id");
+    if (!operationId) {
       return;
     }
+    transport.dismissFailedOperation?.(operationId);
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
 
-    if (action === "return-live") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      clearHistoryPress();
-      playHistoryReleaseBounce(actionEl);
-      await animateHistoryDeselection(actionEl);
-      await transport.returnToLive({ gameId });
-      await syncRouteDataAndLiveChannels();
-      return;
+  if (action === "jump-history") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
+    if (!gameId || !Number.isFinite(moveIndex)) return;
+    clearControlPress();
+    clearHistoryPress();
+    playHistoryReleaseBounce(actionEl);
+    await animateHistoryDeselection(actionEl);
+    transport.selectHistoryMove({ gameId, moveIndex });
+    return;
+  }
+
+  if (action === "return-live") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    clearHistoryPress();
+    playHistoryReleaseBounce(actionEl);
+    await animateHistoryDeselection(actionEl);
+    transport.returnToLive({ gameId });
+    return;
+  }
+
+  if (action === "toggle-header-menu") {
+    headerMenuOpen = !headerMenuOpen;
+    if (isNarrowHeaderMode()) {
+      syncNarrowHeaderMenuDom();
+    } else {
+      render({ animatePanels: false, includeBoard: false });
     }
-
-    if (action === "launch-history-branch") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
-      const activeGame = gameId ? transport.getGameViewModel(gameId) : null;
-      if (!activeGame || !Number.isFinite(moveIndex)) {
+    return;
+  }
+  if (action === "open-debug") {
+    if (!currentRoute.debug) {
+      saveDebugFlyoutOpen(storage, true);
+      setFlyoutOpenState("debug", true);
+      currentRoute = normalizeRouteFlyoutState({ ...currentRoute, debug: true }, { preferredFlyoutKey: "debug" });
+      if (currentRoute.name === "home") {
+        startRouteSync({ renderStart: false });
         return;
       }
-      const branchSeed = buildHistoryBranchSeedFromGame(activeGame, moveIndex);
-      const result = await transport.launchHistoryBranch({
-        sourceGameId: activeGame.id,
-        sourceMoveIndex: moveIndex,
-        scenario: branchSeed.scenario,
-        initialSelectionAction: branchSeed.initialSelectionAction,
-        participantCopyMode: branchSeed.participantCopyMode,
+      render({ animatePanels: false, includeBoard: false });
+    }
+    return;
+  }
+  if (action === "open-scenarios") {
+    if (!currentRoute.scenarios) {
+      setFlyoutOpenState("scenarios", true);
+      navigateTo(toggleScenariosHash(window.location.hash));
+    }
+    return;
+  }
+  if (action === "close-debug") {
+    if (currentRoute.debug) {
+      await animateFlyoutClose("debug", () => {
+        saveDebugFlyoutOpen(storage, false);
+        currentRoute = normalizeRouteFlyoutState({ ...currentRoute, debug: false });
       });
-      if (!result?.game?.id) {
+      if (currentRoute.name === "home") {
+        startRouteSync({ renderStart: false });
         return;
       }
-      const nextHash = buildGameHash(result.game.id, null, {
-        ...getCurrentFlyoutState(),
-        scenarios: false,
+      render({ animatePanels: false, includeBoard: false });
+    }
+    return;
+  }
+  if (action === "close-scenarios") {
+    if (currentRoute.scenarios) {
+      await animateFlyoutClose("scenarios", () => {
+        navigateTo(toggleScenariosHash(window.location.hash));
       });
-      window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
+    }
+    return;
+  }
+
+  if (action === "switch-game-panel") {
+    if (currentRoute.name !== "game" || getShellLayoutMode() !== "narrow") {
+      return;
+    }
+    const nextPanel = normalizeGamePanel(actionEl.getAttribute("data-panel"));
+    if (nextPanel === getGamePanel()) {
+      return;
+    }
+    navigateTo(buildGameHash(currentRoute.gameId, currentRoute.inviteFromRole, getCurrentGameHashState(nextPanel)));
+    return;
+  }
+
+  if (action === "home-page-prev" || action === "home-page-next") {
+    const sectionKey = actionEl.getAttribute("data-home-section");
+    const section = getHomeSection(sectionKey);
+    if (!sectionKey || section.totalPages <= 1 || isHomeSectionPending(sectionKey)) {
+      return;
+    }
+    const delta = action === "home-page-prev" ? -1 : 1;
+    const nextPage = (section.page + delta + section.totalPages) % section.totalPages;
+    pendingHomeSectionKeys.add(sectionKey);
+    render({ animatePanels: false, includeBoard: false });
+    try {
+      await loadHomeSectionPage(sectionKey, {
+        page: nextPage,
+        direction: action === "home-page-prev" ? "prev" : "next",
+      });
+      syncLiveChannels();
+    } catch (error) {
+      window.__righeltLastError = error instanceof Error ? error.message : String(error);
+    } finally {
+      pendingHomeSectionKeys.delete(sectionKey);
+      render({ animatePanels: false, includeBoard: false });
+      window.requestAnimationFrame(() => {
+        scrollHomeSectionToTop(sectionKey);
+      });
+    }
+    return;
+  }
+
+  if (action === "ignore-request") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const requester = actionEl.getAttribute("data-requester-id");
+    if (!gameId || !requester) return;
+    ignoredApprovalRequests.add(getApprovalRequestKey(gameId, requester));
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
+
+  if (action === "toggle-undone-group") {
+    const groupKey = actionEl.getAttribute("data-group-key");
+    if (!groupKey) return;
+    if (expandedUndoneGroups.has(groupKey)) {
+      expandedUndoneGroups.delete(groupKey);
+    } else {
+      expandedUndoneGroups.add(groupKey);
+    }
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
+
+  if (action === "tutorial-next" || action === "tutorial-skip") {
+    tutorial.next();
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
+
+  if (action === "tutorial-complete") {
+    saveTutorialCompleted(storage, true);
+    tutorial.reset();
+    const gameId = actionEl.getAttribute("data-game-id");
+    navigateTo(gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : buildHomeHash(getCurrentFlyoutState()));
+    return;
+  }
+
+  if (action === "load-scenario") {
+    const selectedScenario = getSelectedScenario();
+    if (!selectedScenario || isButtonPending(SCENARIO_LOAD_PENDING_KEY)) {
+      if (!selectedScenario) {
+        setSelectedScenarioFeedback("No scenario selected.");
+        render({ animatePanels: false, includeBoard: false });
+      }
+      return;
+    }
+    const activeGameId =
+      currentRoute.name === "game" ? currentRoute.gameId : currentRoute.name === "invite" ? resolvedInvite?.gameId || null : null;
+    const activeGame = activeGameId ? transport.getGameViewModel(activeGameId) : null;
+    const shouldApplyInPlace = Boolean(activeGame && activeGame.moves.length === 0);
+    await withPendingButton(
+      SCENARIO_LOAD_PENDING_KEY,
+      async () => {
+        try {
+          const result = await transport.importScenario({
+            scenario: selectedScenario,
+            targetGameId: shouldApplyInPlace ? activeGameId : null,
+            sourceGameId: activeGame && !shouldApplyInPlace ? activeGame.id : null,
+          });
+          setSelectedScenarioFeedback(`Scenario ${selectedScenario.id} loaded.`);
+          if (!result?.game?.id) {
+            return;
+          }
+          const nextHash = buildGameHash(result.game.id, null, {
+            ...getCurrentFlyoutState(),
+            scenarios: false,
+          });
+          if (activeGame && !shouldApplyInPlace) {
+            window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
+            return;
+          }
+          navigateTo(nextHash);
+        } catch (error) {
+          window.__righeltLastError = error instanceof Error ? error.message : String(error);
+        }
+      },
+      { renderEnd: true },
+    );
+    return;
+  }
+
+  if (action === "update-scenario" || action === "save-scenario") {
+    const activeGame = getActiveScenarioGame();
+    if (!activeGame) {
+      if (action === "update-scenario") {
+        setSelectedScenarioFeedback("Open a game to update the selected scenario.");
+      } else {
+        setSaveScenarioFeedback("Open a game to save a new scenario.");
+      }
       render({ animatePanels: false, includeBoard: false });
       return;
     }
-
-    if (action === "revert-to-move" || action === "undo-last-move") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const moveId = actionEl.getAttribute("data-move-id");
-      if (!gameId || !moveId) {
-        return;
+    if (!canAuthorScenariosLocally()) {
+      if (action === "update-scenario") {
+        setSelectedScenarioFeedback("Scenario authoring is only available on localhost.");
+      } else {
+        setSaveScenarioFeedback("Scenario authoring is only available on localhost.");
       }
-      await transport.requestRevertToMove({ gameId, targetMoveId: moveId });
-      await syncRouteDataAndLiveChannels();
+      render({ animatePanels: false, includeBoard: false });
       return;
     }
-
-    if (action === "tutorial-next" || action === "tutorial-skip") {
-      tutorial.next();
-      return;
-    }
-
-    if (action === "tutorial-complete") {
-      saveTutorialCompleted(storage, true);
-      tutorial.reset();
-      const gameId = actionEl.getAttribute("data-game-id");
-      navigateTo(gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : buildHomeHash(getCurrentFlyoutState()));
-      return;
-    }
-
-    if (action === "load-scenario") {
-      const selectedScenario = getSelectedScenario();
-      if (!selectedScenario) {
+    if (action === "update-scenario") {
+      if (!getSelectedScenario()) {
         setSelectedScenarioFeedback("No scenario selected.");
         render({ animatePanels: false, includeBoard: false });
         return;
       }
-      const activeGameId =
-        currentRoute.name === "game" ? currentRoute.gameId : currentRoute.name === "invite" ? resolvedInvite?.gameId || null : null;
-      const activeGame = activeGameId ? transport.getGameViewModel(activeGameId) : null;
-      const shouldApplyInPlace = Boolean(activeGame && activeGame.moves.length === 0);
-      const result = await transport.importScenario({
-        scenario: selectedScenario,
-        targetGameId: shouldApplyInPlace ? activeGameId : null,
-        sourceGameId: activeGame && !shouldApplyInPlace ? activeGame.id : null,
-      });
-      setSelectedScenarioFeedback(`Scenario ${selectedScenario.id} loaded.`);
-      if (!result?.game?.id) {
-        render({ animatePanels: false, includeBoard: false });
-        return;
-      }
-      const nextHash = buildGameHash(result.game.id, null, {
-        ...getCurrentFlyoutState(),
-        scenarios: false,
-      });
-      if (activeGame && !shouldApplyInPlace) {
-        window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
-        render({ animatePanels: false, includeBoard: false });
-        return;
-      }
-      navigateTo(nextHash);
-      return;
-    }
-
-    if (action === "update-scenario" || action === "save-scenario") {
-      const activeGame = getActiveScenarioGame();
-      if (!activeGame) {
-        if (action === "update-scenario") {
-          setSelectedScenarioFeedback("Open a game to update the selected scenario.");
-        } else {
-          setSaveScenarioFeedback("Open a game to save a new scenario.");
-        }
-        render({ animatePanels: false, includeBoard: false });
-        return;
-      }
-      if (!canAuthorScenariosLocally()) {
-        if (action === "update-scenario") {
-          setSelectedScenarioFeedback("Scenario authoring is only available on localhost.");
-        } else {
-          setSaveScenarioFeedback("Scenario authoring is only available on localhost.");
-        }
-        render({ animatePanels: false, includeBoard: false });
-        return;
-      }
-      if (action === "update-scenario") {
-        if (!getSelectedScenario()) {
-          setSelectedScenarioFeedback("No scenario selected.");
-          render({ animatePanels: false, includeBoard: false });
-          return;
-        }
-        const title = getScenarioEditableFieldText("title");
-        const description = getScenarioEditableFieldText("description");
-        if (!title || !description) {
-          setSelectedScenarioFeedback("Scenario title and description are required.");
-          syncScenarioAuthoringControls();
-          return;
-        }
-        const updated = await updateSelectedScenarioRecord({
-          activeGame,
-          title,
-          description,
-          includeCurrentBoard: true,
-          feedbackMessage: (scenario) => `Scenario ${scenario.id} updated.`,
-        });
-        if (!updated.ok) {
-          setSelectedScenarioFeedback("Failed to update scenario locally.");
-          render({ animatePanels: false, includeBoard: false });
-          return;
-        }
-        render({ animatePanels: false, includeBoard: false });
-        return;
-      }
-      const draft = getSaveScenarioDraft();
-      if (!draft.title || !draft.description) {
-        setSaveScenarioFeedback("Scenario title and description are required.");
+      const title = getScenarioEditableFieldText("title");
+      const description = getScenarioEditableFieldText("description");
+      if (!title || !description) {
+        setSelectedScenarioFeedback("Scenario title and description are required.");
         syncScenarioAuthoringControls();
         return;
       }
-      const exportContext = getScenarioExportContext(activeGame);
-      const scenario = await buildScenarioFromGame(activeGame, {
-        scenarioId: crypto.randomUUID(),
-        title: draft.title,
-        description: draft.description,
-        moveLimit: exportContext.moveLimit,
-        resultingStateOverride: exportContext.currentSnapshot,
-        savedSelection: exportContext.savedSelection,
-      });
-      const localWrite = await tryLocalScenarioWrite("/scenarios/save", { scenario });
-      if (!localWrite.ok) {
-        setSaveScenarioFeedback("Failed to save scenario locally.");
-        render({ animatePanels: false, includeBoard: false });
-        return;
-      }
-      scenarioCatalog = localWrite.body?.catalog ?? {
-        ...scenarioCatalog,
-        scenarios: [...scenarioCatalog.scenarios, scenario],
-      };
-      selectedScenarioId = scenario.id;
-      saveScenarioDraftTitle = "";
-      saveScenarioDraftDescription = "";
-      setSaveScenarioFeedback(formatScenarioInfo(scenario, "No new scenario saved yet."));
-      setSelectedScenarioFeedback("");
-      render({ animatePanels: false, includeBoard: false });
+      await withPendingButton(
+        SCENARIO_UPDATE_PENDING_KEY,
+        async () => {
+          const updated = await updateSelectedScenarioRecord({
+            activeGame,
+            title,
+            description,
+            includeCurrentBoard: true,
+            feedbackMessage: (scenario) => `Scenario ${scenario.id} updated.`,
+          });
+          if (!updated.ok) {
+            setSelectedScenarioFeedback("Failed to update scenario locally.");
+          }
+          render({ animatePanels: false, includeBoard: false });
+        },
+        { renderEnd: false },
+      );
+      return;
     }
-  }, { renderStart: shouldRenderBusyStateStart, renderEnd: shouldRenderBusyStateEnd });
+    const draft = getSaveScenarioDraft();
+    if (!draft.title || !draft.description) {
+      setSaveScenarioFeedback("Scenario title and description are required.");
+      syncScenarioAuthoringControls();
+      return;
+    }
+    const exportContext = getScenarioExportContext(activeGame);
+    await withPendingButton(
+      SCENARIO_SAVE_PENDING_KEY,
+      async () => {
+        const scenario = await buildScenarioFromGame(activeGame, {
+          scenarioId: crypto.randomUUID(),
+          title: draft.title,
+          description: draft.description,
+          moveLimit: exportContext.moveLimit,
+          resultingStateOverride: exportContext.currentSnapshot,
+          savedSelection: exportContext.savedSelection,
+        });
+        const localWrite = await tryLocalScenarioWrite("/scenarios/save", { scenario });
+        if (!localWrite.ok) {
+          setSaveScenarioFeedback("Failed to save scenario locally.");
+          render({ animatePanels: false, includeBoard: false });
+          return;
+        }
+        scenarioCatalog = localWrite.body?.catalog ?? {
+          ...scenarioCatalog,
+          scenarios: [...scenarioCatalog.scenarios, scenario],
+        };
+        selectedScenarioId = scenario.id;
+        saveScenarioDraftTitle = "";
+        saveScenarioDraftDescription = "";
+        setSaveScenarioFeedback(formatScenarioInfo(scenario, "No new scenario saved yet."));
+        setSelectedScenarioFeedback("");
+        render({ animatePanels: false, includeBoard: false });
+      },
+      { renderEnd: false },
+    );
+  }
 });
 
 appEl.addEventListener("change", (event) => {
@@ -3888,7 +4078,7 @@ appEl.addEventListener("focusout", (event) => {
     return;
   }
   window.setTimeout(async () => {
-    if (busy || !canAuthorScenariosLocally()) {
+    if (!canAuthorScenariosLocally()) {
       return;
     }
     const activeGame = getActiveScenarioGame();
@@ -4038,10 +4228,22 @@ window.addEventListener("touchcancel", () => {
 const initialRender = async () => {
   routeHydrated = false;
   syncLiveChannels();
-  await withBusy(async () => {
-    await syncScenarioCatalog();
-    await syncRouteDataAndLiveChannels();
-  });
+  render({ animatePanels: false, includeBoard: false });
+  const scenarioCatalogPromise = (async () => {
+    try {
+      await syncScenarioCatalog();
+    } catch (error) {
+      window.__righeltLastError = error instanceof Error ? error.message : String(error);
+    } finally {
+      render({ animatePanels: false, includeBoard: false });
+    }
+  })();
+  startRouteSync({ renderStart: false });
+  try {
+    await scenarioCatalogPromise;
+  } catch (error) {
+    window.__righeltLastError = error instanceof Error ? error.message : String(error);
+  }
 };
 
 void initialRender();

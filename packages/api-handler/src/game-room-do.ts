@@ -390,6 +390,7 @@ export class GameRoomDO {
 
     if (request.method === "POST" && path === "/revert-request") {
       const targetMoveId = asIdentity(body.targetMoveId);
+      const requestedRequestId = asIdentity(body.requestId);
       if (!targetMoveId) {
         this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, error: "invalid_target_move" });
         return json({ ok: false, error: "invalid_target_move" }, 400);
@@ -427,7 +428,7 @@ export class GameRoomDO {
         return json({ ok: true, autoApproved: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
       }
       game.pendingRevertRequest = {
-        requestId: nextMoveId(),
+        requestId: requestedRequestId ?? nextMoveId(),
         requesterIdentityId: identityId,
         targetMoveId,
         targetMoveIndex: targetMove.index,

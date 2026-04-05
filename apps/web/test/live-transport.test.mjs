@@ -821,6 +821,59 @@ test("live transport store refreshes a home card from an authoritative remote up
   assert.equal(updatedHomeCard?.previewSnapshot?.turnIndex, acknowledgedGame.currentSnapshot.turnIndex);
 });
 
+test("live transport store can defer command sends until a caller flushes them", async () => {
+  const baseGame = buildLiveGame();
+  const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
+  const calls = [];
+  let resolveApply = null;
+  let deferred = true;
+
+  const fetcher = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || "GET" });
+    if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
+      return new Promise((resolve) => {
+        resolveApply = resolve;
+      });
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({
+    storage: createMemoryStorage(),
+    fetcher,
+    random: () => 0.12345,
+    shouldDeferCommandSend: () => deferred,
+  });
+  await store.loadGame(baseGame.id);
+  calls.length = 0;
+
+  const pending = await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+  assert.equal(pending.accepted, true);
+  assert.equal(calls.some((entry) => entry.url.endsWith("/apply")), false);
+  assert.equal(store.getGameViewModel(baseGame.id)?.pendingCommandCount, 1);
+
+  deferred = false;
+  store.flushPendingCommands(baseGame.id);
+  await tick();
+  assert.equal(calls.some((entry) => entry.url.endsWith("/apply")), true);
+
+  resolveApply?.(
+    Response.json({
+      ok: true,
+      accepted: true,
+      clientCommandId: pending.clientCommandId,
+      eventSeq: 2,
+      game: buildAcknowledgedGame(baseGame, nextAction),
+    }),
+  );
+  await tick();
+
+  assert.equal(store.getGameViewModel(baseGame.id)?.pendingCommandCount, 0);
+});
+
 test("live transport store hands off to the next turn immediately for optimistic turn-ending actions", async () => {
   const baseGame = buildLiveGame();
   const nextAction =
@@ -1387,7 +1440,7 @@ test("live transport store posts revert lifecycle endpoints", async () => {
   };
 
   const store = createLiveTransportStore({ storage, fetcher, random: () => 0.1 });
-  await store.requestRevertToMove({ gameId: "game-revert", targetMoveId: "move-1" });
+  await store.requestRevertToMove({ gameId: "game-revert", targetMoveId: "move-1", requestId: "req-client-1" });
   await store.approveRevertRequest({ gameId: "game-revert", requestId: "req-1" });
   const approvedHomeCard = store.getHomeGameCard("game-revert");
   assert.equal(approvedHomeCard?.moveCount, 1);
@@ -1405,6 +1458,7 @@ test("live transport store posts revert lifecycle endpoints", async () => {
   const rescindCall = calls.find((entry) => entry.url === "/api/shell/games/game-revert/revert-rescind");
   assert.equal(requestCall.body.identityId, "id-revert");
   assert.equal(requestCall.body.targetMoveId, "move-1");
+  assert.equal(requestCall.body.requestId, "req-client-1");
   assert.equal(approveCall.body.identityId, "id-revert");
   assert.equal(approveCall.body.requestId, "req-1");
   assert.equal(rejectCall.body.identityId, "id-revert");

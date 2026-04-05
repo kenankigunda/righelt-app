@@ -176,6 +176,7 @@ test("web test runner forwards optional reporter settings into node --test", () 
   assert.match(webTestRunnerSource, /if \(value === "--"\) \{\s*continue;\s*\}/);
   assert.match(webTestRunnerSource, /const reporters = \[];/);
   assert.match(webTestRunnerSource, /const reporterDestinations = \[];/);
+  assert.match(webTestRunnerSource, /const args = \["--import", "tsx", "--test"\];/);
   assert.match(webTestRunnerSource, /if \(value === "--reporter"\)/);
   assert.match(webTestRunnerSource, /if \(value === "--reporter-destination"\)/);
   assert.match(webTestRunnerSource, /if \(reporters.length === 0\) \{\s*reporters\.push\("spec"\);/s);

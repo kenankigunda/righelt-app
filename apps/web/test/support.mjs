@@ -1,5 +1,427 @@
-import { IDENTITY_KEY, SHELL_STATE_KEY } from "../shell/persistence.js";
-import { createShellStore } from "../shell/store.js";
+import {
+  IDENTITY_KEY,
+  SHELL_STATE_KEY,
+  loadIdentity,
+  loadShellState,
+  loadTutorialCompleted,
+  saveIdentity,
+  saveShellState,
+  saveTutorialCompleted,
+} from "../shell/persistence.js";
+import { MAX_HISTORY } from "../generated/packages/shared-types/src/history.js";
+
+const createId = (prefix, random) => `${prefix}-${random().toString(36).slice(2, 10)}`;
+
+const clone = (value) => structuredClone(value);
+
+const byLatestActivityDesc = (left, right) => {
+  const leftTs = left.lastMoveAt || left.createdAt;
+  const rightTs = right.lastMoveAt || right.createdAt;
+  return rightTs.localeCompare(leftTs);
+};
+
+const getRolesForIdentity = (game, identityId) => {
+  const roles = [];
+  if (game.player1?.identityId === identityId) roles.push("Player 1");
+  if (game.player2?.identityId === identityId) roles.push("Player 2");
+  if (game.viewers.some((viewer) => viewer.identityId === identityId)) roles.push("Viewer");
+  return roles;
+};
+
+const ensureViewer = (game, identityId) => {
+  if (game.viewers.some((viewer) => viewer.identityId === identityId)) {
+    return;
+  }
+  game.viewers.push({ identityId, connected: true, joinedAt: new Date().toISOString() });
+};
+
+const getClaimableDualSeat = (game, identityId) => {
+  if (game.player1?.identityId === identityId && !game.player2) {
+    return "Player 2";
+  }
+  if (game.player2?.identityId === identityId && !game.player1) {
+    return "Player 1";
+  }
+  return null;
+};
+
+const isSeatRequestEligible = (game, seat) => {
+  if (seat === "Player 2" && !game.player2) {
+    return true;
+  }
+  if (seat === "Player 1" && !game.player1) {
+    return true;
+  }
+  return false;
+};
+
+const getSeatForSide = (side) => (side === "P1" ? "Player 1" : "Player 2");
+const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
+const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
+const defaultHistoryAction = (snapshot, nextSnapshot) => ({
+  type: "move",
+  from: snapshot?.pieces?.[0]?.position ?? { row: 0, col: 0 },
+  to: nextSnapshot?.pieces?.[0]?.position ?? { row: 0, col: 0 },
+});
+const getActiveTurn = (game) => game.turns[game.turns.length - 1] || null;
+const normalizeGame = (game) => {
+  if (!game || typeof game !== "object") {
+    return game;
+  }
+  const selfPlayMode = game.selfPlayMode === true || game.playgroundMode === true;
+  const normalized = {
+    ...game,
+    selfPlayMode,
+  };
+  delete normalized.playgroundMode;
+  return normalized;
+};
+
+export const createShellStore = ({
+  storage,
+  now = () => new Date().toISOString(),
+  random = Math.random,
+  loadBoardState,
+}) => {
+  let identityId = loadIdentity(storage);
+  if (!identityId) {
+    identityId = createId("id", random);
+    saveIdentity(storage, identityId);
+  }
+
+  let tutorialCompleted = loadTutorialCompleted(storage);
+  const persisted = loadShellState(storage);
+  let games = Array.isArray(persisted.games) ? persisted.games.map(normalizeGame) : [];
+
+  const persist = () => {
+    try {
+      saveShellState(storage, { games });
+    } catch {}
+  };
+
+  const getGame = (gameId) => games.find((candidate) => candidate.id === gameId) || null;
+
+  const createGame = async ({ selfPlayMode = false } = {}) => {
+    const timestamp = now();
+    const board = await loadBoardState();
+    const game = {
+      id: createId("game", random),
+      createdAt: timestamp,
+      lastMoveAt: null,
+      updatedAt: timestamp,
+      selfPlayMode,
+      board,
+      player1: { identityId, connected: true, joinedAt: timestamp },
+      player2: selfPlayMode ? { identityId, connected: true, joinedAt: timestamp } : null,
+      viewers: [],
+      pendingJoinRequests: [],
+      turns: [
+        {
+          index: board.state.turnIndex ?? 0,
+          startedAt: timestamp,
+          endedAt: null,
+          playerSeat: getSeatForSide(board.state.sideToMove),
+          status: "active",
+          moveIndexes: [],
+          lastMoveAt: null,
+        },
+      ],
+      moves: [],
+      historyIndex: null,
+      notifications: ["Game created", selfPlayMode ? "Self-play mode active" : "Invite a second player"],
+    };
+    games = [game, ...games].sort(byLatestActivityDesc);
+    persist();
+    return clone(game);
+  };
+
+  const listGames = () => clone(games).sort(byLatestActivityDesc);
+
+  const openAsViewer = (gameId) => {
+    const game = getGame(gameId);
+    if (!game) return null;
+    ensureViewer(game, identityId);
+    game.updatedAt = now();
+    persist();
+    return clone(game);
+  };
+
+  const joinGame = ({ gameId, mode, inviteFromRole = null }) => {
+    const game = getGame(gameId);
+    if (!game) {
+      return { ok: false, error: "game_not_found" };
+    }
+
+    if (mode === "viewer") {
+      ensureViewer(game, identityId);
+      game.notifications.unshift("Viewer joined");
+      game.updatedAt = now();
+      persist();
+      return { ok: true, role: "Viewer", game: clone(game) };
+    }
+
+    if (game.selfPlayMode) {
+      return { ok: false, error: "self_play_player_join_disabled" };
+    }
+
+    const requestedSeat = !game.player1
+      ? "Player 1"
+      : !game.player2
+        ? "Player 2"
+        : null;
+
+    if (!requestedSeat || !isSeatRequestEligible(game, requestedSeat)) {
+      return { ok: false, error: "no_player_seat_available" };
+    }
+
+    const sharedByPlayer = inviteFromRole === "Player 1" || inviteFromRole === "Player 2";
+    if (!sharedByPlayer) {
+      ensureViewer(game, identityId);
+      game.pendingJoinRequests.push({
+        identityId,
+        requestedSeat,
+        requestedAt: now(),
+        source: inviteFromRole ? "viewer_invite" : "home_list",
+      });
+      game.notifications.unshift("Player seat request pending approval");
+      game.updatedAt = now();
+      persist();
+      return { ok: true, role: "Viewer", pendingApproval: true, game: clone(game) };
+    }
+
+    if (requestedSeat === "Player 1") {
+      game.player1 = { identityId, connected: true, joinedAt: now() };
+    } else {
+      game.player2 = { identityId, connected: true, joinedAt: now() };
+    }
+    game.notifications.unshift("Player joined");
+    game.updatedAt = now();
+    persist();
+    return { ok: true, role: requestedSeat, game: clone(game) };
+  };
+
+  const playAsBothPlayers = ({ gameId }) => {
+    const game = getGame(gameId);
+    if (!game) {
+      return { ok: false, error: "game_not_found" };
+    }
+    const targetSeat = getClaimableDualSeat(game, identityId);
+    if (!targetSeat) {
+      return { ok: false, error: "play_as_both_unavailable" };
+    }
+    if (targetSeat === "Player 1") {
+      game.player1 = { identityId, connected: true, joinedAt: now() };
+    } else {
+      game.player2 = { identityId, connected: true, joinedAt: now() };
+    }
+    game.selfPlayMode = true;
+    game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.requestedSeat !== targetSeat);
+    game.notifications.unshift("Play as both players enabled");
+    game.updatedAt = now();
+    persist();
+    return { ok: true, game: clone(game) };
+  };
+
+  const approvePendingRequest = ({ gameId, requesterIdentityId }) => {
+    const game = getGame(gameId);
+    if (!game) return { ok: false, error: "game_not_found" };
+
+    const requester = game.pendingJoinRequests.find((item) => item.identityId === requesterIdentityId);
+    if (!requester) {
+      return { ok: false, error: "request_not_found" };
+    }
+
+    game.pendingJoinRequests = game.pendingJoinRequests.filter((item) => item.identityId !== requesterIdentityId);
+
+    if (requester.requestedSeat === "Player 1" && !game.player1) {
+      game.player1 = { identityId: requester.identityId, connected: true, joinedAt: now() };
+    }
+    if (requester.requestedSeat === "Player 2" && !game.player2) {
+      game.player2 = { identityId: requester.identityId, connected: true, joinedAt: now() };
+    }
+
+    game.notifications.unshift("Player request approved");
+    game.updatedAt = now();
+    persist();
+    return { ok: true, game: clone(game) };
+  };
+
+  const setParticipantConnected = ({ gameId, role, connected }) => {
+    const game = getGame(gameId);
+    if (!game) return null;
+    const entry = role === "Player 1" ? game.player1 : role === "Player 2" ? game.player2 : null;
+    if (!entry) return null;
+    entry.connected = connected;
+    game.notifications.unshift(`Participant ${connected ? "connected" : "disconnected"}`);
+    game.updatedAt = now();
+    persist();
+    return clone(game);
+  };
+
+  const addMove = ({ gameId, notation, snapshot }) => {
+    const game = getGame(gameId);
+    if (!game) return null;
+    const activeTurn = getActiveTurn(game);
+    if (!activeTurn) return null;
+
+    const move = {
+      index: game.moves.length,
+      turnIndex: activeTurn.index,
+      turnMoveIndex: activeTurn.moveIndexes.length,
+      at: now(),
+      notation,
+      action: defaultHistoryAction(game.board.state, snapshot || game.board.state),
+      selectionSnapshot: structuredClone(game.board.state),
+      snapshot: {
+        ...(snapshot || game.board.state),
+        sideToMove: getSideForSeat(activeTurn.playerSeat),
+        turnIndex: activeTurn.index,
+      },
+    };
+    game.moves.push(move);
+    activeTurn.moveIndexes.push(move.index);
+    activeTurn.lastMoveAt = move.at;
+    if (game.moves.length > MAX_HISTORY) {
+      game.moves.shift();
+      for (let index = 0; index < game.moves.length; index += 1) {
+        game.moves[index].index = index;
+      }
+      game.turns.forEach((turn) => {
+        turn.moveIndexes = game.moves.filter((moveEntry) => moveEntry.turnIndex === turn.index).map((moveEntry) => moveEntry.index);
+      });
+    }
+
+    game.board.state = structuredClone(move.snapshot);
+    game.lastMoveAt = move.at;
+    game.updatedAt = move.at;
+    game.notifications.unshift(`Move recorded in turn ${activeTurn.index + 1}`);
+    persist();
+    return clone(game);
+  };
+
+  const endTurn = ({ gameId }) => {
+    const game = getGame(gameId);
+    if (!game) return null;
+    const activeTurn = getActiveTurn(game);
+    if (!activeTurn || activeTurn.moveIndexes.length === 0) {
+      return { ok: false, error: "turn_has_no_moves" };
+    }
+
+    const endedAt = now();
+    activeTurn.endedAt = endedAt;
+    activeTurn.status = "complete";
+
+    const nextSeat = getNextSeat(activeTurn.playerSeat);
+    game.turns.push({
+      index: activeTurn.index + 1,
+      startedAt: endedAt,
+      endedAt: null,
+      playerSeat: nextSeat,
+      status: "active",
+      moveIndexes: [],
+      lastMoveAt: null,
+    });
+    game.board.state = {
+      ...game.board.state,
+      sideToMove: getSideForSeat(nextSeat),
+      turnIndex: activeTurn.index + 1,
+    };
+    game.updatedAt = endedAt;
+    game.notifications.unshift(`Turn ${activeTurn.index + 1} ended. ${nextSeat} to play`);
+    persist();
+    return clone(game);
+  };
+
+  const selectHistoryMove = ({ gameId, moveIndex }) => {
+    const game = getGame(gameId);
+    if (!game) return null;
+    if (moveIndex < 0 || moveIndex >= game.moves.length) {
+      return null;
+    }
+    game.historyIndex = moveIndex;
+    game.notifications.unshift("Viewing history (not live)");
+    game.updatedAt = now();
+    persist();
+    return clone(game);
+  };
+
+  const returnToLive = ({ gameId }) => {
+    const game = getGame(gameId);
+    if (!game) return null;
+    game.historyIndex = null;
+    game.updatedAt = now();
+    persist();
+    return clone(game);
+  };
+
+  const markTutorialCompleted = () => {
+    tutorialCompleted = true;
+    saveTutorialCompleted(storage, true);
+  };
+
+  const getTutorialCompleted = () => tutorialCompleted;
+
+  const getGameViewModel = (gameId) => {
+    const game = getGame(gameId);
+    if (!game) return null;
+
+    const myRoles = getRolesForIdentity(game, identityId);
+    const role = myRoles[0] ?? "Guest";
+    const myConnectionConnected =
+      myRoles.length > 0 &&
+      myRoles.every((entry) => {
+        if (entry === "Player 1") return Boolean(game.player1?.connected);
+        if (entry === "Player 2") return Boolean(game.player2?.connected);
+        return game.viewers.some((viewer) => viewer.identityId === identityId && viewer.connected);
+      });
+    return {
+      ...clone(game),
+      myRole: role,
+      myRoles,
+      myConnectionConnected,
+      inHistoryMode: typeof game.historyIndex === "number",
+      currentSnapshot:
+        typeof game.historyIndex === "number" && game.moves[game.historyIndex]
+          ? game.moves[game.historyIndex].selectionSnapshot || game.moves[game.historyIndex].snapshot
+          : game.board.state,
+      historySelectionAction:
+        typeof game.historyIndex === "number" && game.moves[game.historyIndex]
+          ? game.moves[game.historyIndex].action ?? null
+          : null,
+      currentTurn: clone(getActiveTurn(game)),
+      canJoinAsPlayer:
+        role !== "Player 1" && role !== "Player 2" && !game.selfPlayMode && (!game.player1 || !game.player2),
+      canPlayAsBothPlayers: Boolean(getClaimableDualSeat(game, identityId)),
+      canInvite: true,
+      showJoinActions: true,
+      canEndTurn:
+        (role === "Player 1" || role === "Player 2") &&
+        typeof game.historyIndex !== "number" &&
+        getActiveTurn(game)?.playerSeat === role &&
+        getActiveTurn(game)?.moveIndexes.length > 0,
+    };
+  };
+
+  const getIdentityId = () => identityId;
+
+  return {
+    createGame,
+    joinGame,
+    playAsBothPlayers,
+    openAsViewer,
+    approvePendingRequest,
+    addMove,
+    endTurn,
+    selectHistoryMove,
+    returnToLive,
+    setParticipantConnected,
+    listGames,
+    getGameViewModel,
+    getTutorialCompleted,
+    markTutorialCompleted,
+    getIdentityId,
+  };
+};
 
 export const createMemoryStorage = () => {
   const map = new Map();
