@@ -738,6 +738,7 @@ button {
   transform: translate(-50%, -50%);
   z-index: 2;
   color: rgba(255, 255, 255, 0.46);
+  animation: removal-piece-flash 0.36s ease-in-out infinite alternate;
   pointer-events: none;
 }
 
