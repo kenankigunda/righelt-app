@@ -30,13 +30,13 @@ This document started as a forward-looking implementation plan. The branch now c
 - **Phase 8 complete**: failed-operation UX is now unified behind the sync-store failed-operation API, including rollback-notice-backed failures, dismiss/reset handling, and browser coverage for the failed create-game banner flow.
 - **Phase 9 complete**: history jump and return-to-live now project locally first and reconcile with the server in the background, including latching history selection while live updates append underneath.
 - **Phase 10 complete**: the live-sync/WebSocket client is owned directly by `sync-store.js`, and the old `live-sync.js` compatibility shim has been removed.
-- **Phase 11 partially complete**: the dead production `store.js` has been deleted and its remaining legacy test-only harness moved into `apps/web/test/support.mjs`, but the transport/sync-store internals still carry `rollbackNotice` plumbing that can be simplified further.
+- **Phase 11 partially complete**: the dead production `store.js` has been deleted, its remaining legacy test-only harness has moved into `apps/web/test/support.mjs`, and failure UX no longer rides on `game.rollbackNotice` in the app layer. The remaining cleanup is internal simplification of the transport/sync-store failure-notice plumbing.
 - **Testing hardening complete for implemented phases**: the branch adds unit, integration, and E2E contract coverage for optimistic game IDs, optimistic revert flows, localized pending controls, history branching, and local-first history navigation so these behaviors are no longer dependent on manual verification.
 
 ### Still remaining
 
 - **Phase 6 not complete**: the app still has a broader `busy` architecture and does not yet implement the full pulsing-button / skeleton system across all remaining operations.
-- **Phase 11 not complete**: dead production store cleanup is done, but final simplification of the rollback-notice plumbing is still outstanding.
+- **Phase 11 not complete**: dead production store cleanup is done, and failure state is no longer attached to app-facing game view models, but final simplification of the internal transport/sync-store failure-notice plumbing is still outstanding.
 - **Phase 12 deferred**: offline support has not been reintroduced.
 
 ### Current practical milestone

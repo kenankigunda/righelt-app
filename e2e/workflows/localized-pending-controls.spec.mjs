@@ -113,3 +113,40 @@ test("joining through a delayed direct-link flow only pulses the clicked join bu
     await closeContextQuietly(guest.context);
   }
 });
+
+test("scenario update only pulses the clicked scenario button while the local write is pending", async ({ browser }) => {
+  const { context, page } = await createIsolatedPage(browser);
+
+  try {
+    await page.goto("/");
+    await expect(page.getByTestId("home-create-game")).toBeVisible();
+    await page.getByTestId("home-create-game").click();
+    await expect(page.getByTestId("game-shell")).toBeVisible();
+
+    await page.getByRole("button", { name: "Scenarios" }).click();
+    const updateButton = page.locator('[data-action="update-scenario"]').first();
+    const saveButton = page.locator('[data-action="save-scenario"]').first();
+    await expect(updateButton).toBeVisible();
+    await expect(saveButton).toBeVisible();
+
+    let releaseUpdate = null;
+    const updateReleased = new Promise((resolve) => {
+      releaseUpdate = resolve;
+    });
+    await page.route("**/scenarios/update", async (route) => {
+      await updateReleased;
+      await route.fallback();
+    });
+
+    await updateButton.click();
+
+    await expect(updateButton).toHaveAttribute("data-pending", "true");
+    await expect(updateButton).toHaveAttribute("aria-busy", "true");
+    await expect(updateButton).toHaveText("Update to match current board");
+    await expect(saveButton).not.toHaveAttribute("data-pending", "true");
+
+    releaseUpdate?.();
+  } finally {
+    await closeContextQuietly(context);
+  }
+});

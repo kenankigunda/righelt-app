@@ -96,9 +96,10 @@ test("game route live sync connection is not gated by participant role", () => {
     /const routeGameId =\s*shouldLiveSyncRoute\(currentRoute\)\s*&&/s,
   );
   assert.match(source, /syncStore\.setActiveGameId\(routeGameId\);/);
-  assert.match(syncStoreSource, /const isFailedCreateStub = \(game\) =>/);
+  assert.match(syncStoreSource, /const isFailedCreateStub = \(game, failureNotice = ""\) =>/);
+  assert.match(syncStoreSource, /const getFailureNotice = \(gameId\) =>/);
   assert.match(syncStoreSource, /const activeGame =/);
-  assert.match(syncStoreSource, /const desiredGameIds = isFailedCreateStub\(activeGame\) \? new Set\(\) : new Set\(\[activeGameId\]\);/);
+  assert.match(syncStoreSource, /const desiredGameIds = isFailedCreateStub\(activeGame, getFailureNotice\(activeGameId\)\) \? new Set\(\) : new Set\(\[activeGameId\]\);/);
   assert.match(syncStoreSource, /liveSync\.disconnectGame\(gameId\);/);
   assert.match(syncStoreSource, /liveSync\.connectGame\(gameId\);/);
 });
@@ -142,6 +143,18 @@ test("join, approval, and pending invite copy use localized button pending inste
   assert.doesNotMatch(source, /data-testid="invite-join-player"[^`]*busy \? "disabled" : ""/s);
   assert.doesNotMatch(source, /data-testid="invite-join-viewer"[^`]*busy \? "disabled" : ""/s);
   assert.doesNotMatch(source, /data-testid="copy-invite"[^`]*busy \? "disabled" : ""/s);
+});
+
+test("scenario actions use localized pending controls instead of ad hoc button locking", () => {
+  assert.match(source, /const SCENARIO_LOAD_PENDING_KEY = "scenario:load";/);
+  assert.match(source, /const SCENARIO_UPDATE_PENDING_KEY = "scenario:update";/);
+  assert.match(source, /const SCENARIO_SAVE_PENDING_KEY = "scenario:save";/);
+  assert.match(source, /data-action="load-scenario"[^`]*renderButtonStateAttributes\(\{\s*pendingKey: SCENARIO_LOAD_PENDING_KEY,/s);
+  assert.match(source, /data-action="update-scenario"[^`]*renderButtonStateAttributes\(\{\s*className: "secondary",\s*pendingKey: SCENARIO_UPDATE_PENDING_KEY,/s);
+  assert.match(source, /data-action="save-scenario"[^`]*renderButtonStateAttributes\(\{\s*className: "secondary",\s*pendingKey: SCENARIO_SAVE_PENDING_KEY,/s);
+  assert.match(source, /if \(action === "load-scenario"\) \{[\s\S]*await withPendingButton\(\s*SCENARIO_LOAD_PENDING_KEY,/s);
+  assert.match(source, /if \(action === "update-scenario" \|\| action === "save-scenario"\) \{[\s\S]*withPendingButton\(\s*SCENARIO_UPDATE_PENDING_KEY,/s);
+  assert.match(source, /if \(action === "update-scenario" \|\| action === "save-scenario"\) \{[\s\S]*withPendingButton\(\s*SCENARIO_SAVE_PENDING_KEY,/s);
 });
 
 test("home uses per-section pagination and renders the smoke section only in debug mode", () => {

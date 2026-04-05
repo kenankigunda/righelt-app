@@ -537,7 +537,7 @@ test("integration sync store keeps a failed create-game stub locally hydratable 
   const failedGame = await store.loadGame(createHandle.result.id, { openAsViewer: false });
   assert.equal(failedGame.id, createHandle.result.id);
   assert.equal(
-    failedGame.rollbackNotice,
+    store.getFailedOperations(createHandle.result.id)[0]?.error?.message,
     "Game creation failed. The server could not create this game. Return home and try again.",
   );
   assert.equal(failedGame.notifications[0], "Game creation failed");

@@ -34,8 +34,7 @@ const ROLLBACK_FAILURE_PREFIX = "rollback:";
 
 const clone = (value) => structuredClone(value);
 
-const isFailedCreateStub = (game) =>
-  Boolean(game && typeof game.rollbackNotice === "string" && game.rollbackNotice === GAME_CREATION_FAILED_BANNER);
+const isFailedCreateStub = (game, failureNotice = "") => Boolean(game && failureNotice === GAME_CREATION_FAILED_BANNER);
 
 const getRollbackFailureId = (gameId) => `${ROLLBACK_FAILURE_PREFIX}${gameId}`;
 const getRollbackFailureGameId = (operationId) =>
@@ -43,8 +42,8 @@ const getRollbackFailureGameId = (operationId) =>
     ? operationId.slice(ROLLBACK_FAILURE_PREFIX.length) || null
     : null;
 
-const createRollbackFailureHandle = (game) => {
-  const error = createOperationError(game.rollbackNotice || "The operation could not be completed.", "authoritative_rollback");
+const createRollbackFailureHandle = (game, failureNotice = "") => {
+  const error = createOperationError(failureNotice || "The operation could not be completed.", "authoritative_rollback");
   const committed = Promise.resolve(game);
   return {
     id: getRollbackFailureId(game.id),
@@ -892,14 +891,17 @@ export const createSyncStore = ({
     operationManager.fail(clientCommandId, error);
   };
 
+  const getFailureNotice = (gameId) =>
+    gameId && typeof transport.getFailureNotice === "function" ? transport.getFailureNotice(gameId).trim() : "";
+
   const getUnifiedFailedOperations = (gameId) => {
     const failedOperations = operationManager.getFailedOperations(gameId);
     const game = gameId ? transport.getGameViewModel(gameId) : null;
-    const rollbackNotice = typeof game?.rollbackNotice === "string" ? game.rollbackNotice.trim() : "";
-    if (!game || rollbackNotice.length === 0) {
+    const failureNotice = getFailureNotice(gameId);
+    if (!game || failureNotice.length === 0) {
       return failedOperations;
     }
-    return [createRollbackFailureHandle(game)];
+    return [createRollbackFailureHandle(game, failureNotice)];
   };
 
   const markGameCreationFailed = (gameId) => {
@@ -910,12 +912,12 @@ export const createSyncStore = ({
     const failedGame = {
       ...clone(game),
       syncStatus: "ready",
-      rollbackNotice: GAME_CREATION_FAILED_BANNER,
       notifications: ["Game creation failed", ...(Array.isArray(game.notifications) ? game.notifications : [])],
       pendingMoves: [],
       pendingCommandCount: 0,
     };
     transport.applyLiveGameUpdate({ game: failedGame });
+    transport.setFailureNotice?.(gameId, GAME_CREATION_FAILED_BANNER);
     syncActiveGame();
     clearPendingLocalGame(gameId);
   };
@@ -1017,7 +1019,7 @@ export const createSyncStore = ({
     }
     const activeGame =
       activeGameId && typeof transport.getGameViewModel === "function" ? transport.getGameViewModel(activeGameId) : null;
-    const desiredGameIds = isFailedCreateStub(activeGame) ? new Set() : new Set([activeGameId]);
+    const desiredGameIds = isFailedCreateStub(activeGame, getFailureNotice(activeGameId)) ? new Set() : new Set([activeGameId]);
     for (const gameId of liveSync.getDesiredGameIds()) {
       if (!desiredGameIds.has(gameId)) {
         liveSync.disconnectGame(gameId);
@@ -1044,7 +1046,8 @@ export const createSyncStore = ({
     loadGame: async (gameId, options = {}) => {
       const localPendingGame = transport.getGameViewModel(gameId) ?? getStoredPendingLocalGame(gameId);
       const hasPendingOperation = operationManager.getPendingOperations(gameId).length > 0;
-      const shouldHydrateLocalGame = Boolean(localPendingGame) && (hasPendingOperation || isFailedCreateStub(localPendingGame));
+      const shouldHydrateLocalGame =
+        Boolean(localPendingGame) && (hasPendingOperation || isFailedCreateStub(localPendingGame, getFailureNotice(gameId)));
       if (shouldHydrateLocalGame) {
         if (!transport.getGameViewModel(gameId)) {
           transport.applyLiveGameUpdate({ game: localPendingGame });
@@ -1058,7 +1061,7 @@ export const createSyncStore = ({
       } catch (error) {
         const fallbackPendingGame = getStoredPendingLocalGame(gameId);
         const fallbackGame = transport.getGameViewModel(gameId) ?? fallbackPendingGame;
-        if (fallbackGame && (fallbackPendingGame || hasPendingOperation || isFailedCreateStub(fallbackGame))) {
+        if (fallbackGame && (fallbackPendingGame || hasPendingOperation || isFailedCreateStub(fallbackGame, getFailureNotice(gameId)))) {
           if (!transport.getGameViewModel(gameId) && fallbackPendingGame) {
             transport.applyLiveGameUpdate({ game: fallbackPendingGame });
           }
@@ -1346,7 +1349,7 @@ export const createSyncStore = ({
       const handle = operationManager.getHandle(operationId);
       if (handle?.status === "failed") {
         if (handle.gameId) {
-          transport.clearRollbackNotice?.(handle.gameId);
+          transport.clearFailureNotice?.(handle.gameId);
         }
         operationManager.dismiss(operationId);
         return;
@@ -1356,7 +1359,7 @@ export const createSyncStore = ({
         for (const failedHandle of operationManager.getFailedOperations(rollbackGameId)) {
           operationManager.dismiss(failedHandle.id);
         }
-        transport.clearRollbackNotice?.(rollbackGameId);
+        transport.clearFailureNotice?.(rollbackGameId);
       }
     },
     dismissOperation: (operationId) => operationManager.dismiss(operationId),

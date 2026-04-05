@@ -137,7 +137,7 @@ export const createLiveTransportStore = ({
         pendingCommands: [],
         inflightCommandId: null,
         syncStatus: "ready",
-        rollbackNotice: "",
+        failureNotice: "",
         derivedGame: null,
         commandResults: new Map(),
         retryTimer: null,
@@ -166,7 +166,6 @@ export const createLiveTransportStore = ({
     next.pendingCommandCount = optimistic.pendingCommands.length;
     next.liveCurrentSnapshot = clone(next.liveCurrentSnapshot ?? next.board?.state ?? next.currentSnapshot ?? null);
     next.syncStatus = optimistic.syncStatus;
-    next.rollbackNotice = optimistic.rollbackNotice;
     return next;
   };
 
@@ -213,20 +212,30 @@ export const createLiveTransportStore = ({
     optimistic.inflightCommandId = null;
     optimistic.commandResults = new Map();
     optimistic.syncStatus = syncStatus;
-    optimistic.rollbackNotice = notice;
+    optimistic.failureNotice = notice;
     recalculateOptimisticGame(gameId);
     emitChange({ type: changeType, gameId, clientCommandId });
   };
 
-  const clearRollbackNotice = (gameId) => {
+  const clearFailureNotice = (gameId) => {
     const optimistic = getOptimisticState(gameId);
-    optimistic.rollbackNotice = "";
+    optimistic.failureNotice = "";
     if (optimistic.syncStatus !== "applying-update") {
       optimistic.syncStatus = "ready";
     }
     recalculateOptimisticGame(gameId);
-    emitChange({ type: "rollback_notice_cleared", gameId });
+    emitChange({ type: "failure_notice_cleared", gameId });
   };
+
+  const setFailureNotice = (gameId, notice, { syncStatus = "ready", changeType = "failure_notice_set" } = {}) => {
+    const optimistic = getOptimisticState(gameId);
+    optimistic.failureNotice = typeof notice === "string" ? notice : "";
+    optimistic.syncStatus = syncStatus;
+    recalculateOptimisticGame(gameId);
+    emitChange({ type: changeType, gameId });
+  };
+
+  const getFailureNotice = (gameId) => getOptimisticState(gameId).failureNotice;
 
   const upsertGame = (game) => {
     const next = clone(game);
@@ -505,7 +514,7 @@ export const createLiveTransportStore = ({
 
   const enqueueOptimisticCommand = ({ gameId, command }) => {
     const optimistic = getOptimisticState(gameId);
-    optimistic.rollbackNotice = "";
+    optimistic.failureNotice = "";
     optimistic.syncStatus = "applying-update";
     optimistic.pendingCommands.push(command);
     const recalculated = recalculateOptimisticGame(gameId);
@@ -569,7 +578,7 @@ export const createLiveTransportStore = ({
       body: JSON.stringify({ identityId, selfPlayMode, gameId }),
     });
     const body = await mustOk(response);
-    clearRollbackNotice(body.game.id);
+    clearFailureNotice(body.game.id);
     return upsertGame(body.game);
   };
 
@@ -878,7 +887,9 @@ export const createLiveTransportStore = ({
     getSyncMetrics,
     flushPendingCommands,
     discardPendingCommands,
-    clearRollbackNotice,
+    clearFailureNotice,
+    setFailureNotice,
+    getFailureNotice,
     listGames,
     getHomeGameCard,
     getGameViewModel,
