@@ -1265,12 +1265,12 @@ const renderTurnHistory = (game) => {
     const branchButton = game.inHistoryMode && game.historyIndex === move.index && move.undone !== true
       ? `<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${escapeHtml(
           String(move.index),
-        )}" ${busy ? "disabled" : ""}>Create new game at this move</button>`
+        )}">Create new game at this move</button>`
       : "";
     const revertButton = game.inHistoryMode && game.historyIndex === move.index && move.undone !== true
       ? `<button class="secondary mini-button history-branch-button" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(
           move.moveId || "",
-        )}" ${busy ? "disabled" : ""}>Undo back to this move</button>`
+        )}">Undo back to this move</button>`
       : "";
     return {
       undone: move.undone === true,
@@ -1288,7 +1288,9 @@ const renderTurnHistory = (game) => {
     };
   });
   const pendingRows = (Array.isArray(game.pendingMoves) ? game.pendingMoves : []).map(
-    (move) => `<li class="history-item history-item-pending ${playerToneClassForSide(move.actorSide || (move.turnIndex % 2 === 0 ? "P1" : "P2"))}" aria-disabled="true">
+    (move) => `<li class="history-item history-item-pending ${playerToneClassForSide(move.actorSide || (move.turnIndex % 2 === 0 ? "P1" : "P2"))}" data-action="jump-history" data-game-id="${escapeHtml(
+      game.id,
+    )}" data-move-index="${escapeHtml(String(move.index))}" data-testid="history-pending-move-item" aria-busy="true">
           <span class="history-move-line">Move ${escapeHtml(
             String(move.index + 1),
           )}: ${escapeHtml(move.notation)} · Pending</span>
@@ -1324,7 +1326,7 @@ const renderTurnHistory = (game) => {
     reverseChronologicalMoveRows.push(`
       <li class="history-item history-item-undone-group is-undone ${toneClass}${expanded ? " is-expanded" : ""}" data-action="toggle-undone-group" data-group-key="${escapeHtml(
         groupKey,
-      )}" aria-expanded="${expanded ? "true" : "false"}" ${busy ? 'aria-disabled="true"' : ""}>
+      )}" aria-expanded="${expanded ? "true" : "false"}">
         <span class="history-move-line">${count} move${count === 1 ? "" : "s"} undone</span>
       </li>`);
     if (expanded) {
@@ -1353,7 +1355,7 @@ const renderTurnHistory = (game) => {
   const emptyTurnItem = game.inHistoryMode
     ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(
         game.id,
-      )}" data-testid="history-return-live" ${busy ? "disabled" : ""}>Return to live view</button></li>`
+      )}" data-testid="history-return-live">Return to live view</button></li>`
     : liveStatusItem;
   const undoLastMoveItem =
     !game.inHistoryMode && game.canUndoLastMove && game.latestActiveMoveId
@@ -3636,6 +3638,28 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "jump-history") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
+    if (!gameId || !Number.isFinite(moveIndex)) return;
+    clearControlPress();
+    clearHistoryPress();
+    playHistoryReleaseBounce(actionEl);
+    await animateHistoryDeselection(actionEl);
+    transport.selectHistoryMove({ gameId, moveIndex });
+    return;
+  }
+
+  if (action === "return-live") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    clearHistoryPress();
+    playHistoryReleaseBounce(actionEl);
+    await animateHistoryDeselection(actionEl);
+    transport.returnToLive({ gameId });
+    return;
+  }
+
   await withBusy(async () => {
     if (action === "toggle-header-menu") {
       headerMenuOpen = !headerMenuOpen;
@@ -3737,30 +3761,6 @@ appEl.addEventListener("click", async (event) => {
         expandedUndoneGroups.add(groupKey);
       }
       render({ animatePanels: false, includeBoard: false });
-      return;
-    }
-
-    if (action === "jump-history") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
-      if (!gameId || !Number.isFinite(moveIndex)) return;
-      clearControlPress();
-      clearHistoryPress();
-      playHistoryReleaseBounce(actionEl);
-      await animateHistoryDeselection(actionEl);
-      await transport.selectHistoryMove({ gameId, moveIndex });
-      await syncRouteDataAndLiveChannels();
-      return;
-    }
-
-    if (action === "return-live") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      if (!gameId) return;
-      clearHistoryPress();
-      playHistoryReleaseBounce(actionEl);
-      await animateHistoryDeselection(actionEl);
-      await transport.returnToLive({ gameId });
-      await syncRouteDataAndLiveChannels();
       return;
     }
 

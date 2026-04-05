@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createSyncStore } from "../shell/sync-store.js";
 
+const clone = (value) => structuredClone(value);
+
 const createMemoryStorage = () => {
   const map = new Map();
   return {
@@ -96,6 +98,128 @@ const createRevertReadyGame = () => ({
       selectionSnapshot: { boardSize: 10, sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } },
     },
   ],
+});
+
+const createHistoryReadyGame = () => ({
+  ...createRevertReadyGame(),
+  id: "game-history",
+  currentSnapshot: {
+    boardSize: 10,
+    sideToMove: "P1",
+    turnIndex: 1,
+    pieces: [{ id: "U1", owner: "P1", row: 4, col: 4 }],
+    continuation: null,
+    outcome: { status: "ongoing" },
+  },
+  board: {
+    state: {
+      boardSize: 10,
+      sideToMove: "P1",
+      turnIndex: 1,
+      pieces: [{ id: "U1", owner: "P1", row: 4, col: 4 }],
+      continuation: null,
+      outcome: { status: "ongoing" },
+    },
+  },
+  turns: [
+    {
+      index: 0,
+      startedAt: "2026-04-03T00:00:00.000Z",
+      endedAt: "2026-04-03T00:00:02.000Z",
+      playerSeat: "Player 1",
+      status: "complete",
+      moveIndexes: [0],
+      lastMoveAt: "2026-04-03T00:00:02.000Z",
+    },
+    {
+      index: 1,
+      startedAt: "2026-04-03T00:00:03.000Z",
+      endedAt: null,
+      playerSeat: "Player 2",
+      status: "active",
+      moveIndexes: [1],
+      lastMoveAt: "2026-04-03T00:00:04.000Z",
+    },
+  ],
+  currentTurn: {
+    index: 1,
+    startedAt: "2026-04-03T00:00:03.000Z",
+    endedAt: null,
+    playerSeat: "Player 2",
+    status: "active",
+    moveIndexes: [1],
+    lastMoveAt: "2026-04-03T00:00:04.000Z",
+  },
+  turnOwnerSeat: "Player 2",
+  controlSeat: "Player 2",
+  control: "turn-owner",
+  legalActions: [{ type: "pass" }],
+  canRecordMove: true,
+  canEndTurn: true,
+  latestActiveMoveId: "move-2",
+  moves: [
+    {
+      ...createRevertReadyGame().moves[0],
+      index: 0,
+      moveId: "move-1",
+      displayMoveNumber: 1,
+      turnIndex: 0,
+      turnMoveIndex: 0,
+      actorSide: "P1",
+      notation: "M1",
+      at: "2026-04-03T00:00:02.000Z",
+      action: { type: "project", from: { row: 3, col: 6 }, to: { row: 5, col: 6 } },
+      selectionSnapshot: {
+        boardSize: 10,
+        sideToMove: "P2",
+        turnIndex: 0,
+        pieces: [{ id: "U1", owner: "P1", row: 3, col: 6 }],
+        continuation: null,
+        outcome: { status: "ongoing" },
+      },
+    },
+    {
+      ...createRevertReadyGame().moves[0],
+      index: 1,
+      moveId: "move-2",
+      displayMoveNumber: 2,
+      turnIndex: 1,
+      turnMoveIndex: 0,
+      actorSide: "P2",
+      notation: "M2",
+      at: "2026-04-03T00:00:04.000Z",
+      action: { type: "move", from: { row: 6, col: 4 }, to: { row: 5, col: 4 } },
+      selectionSnapshot: {
+        boardSize: 10,
+        sideToMove: "P1",
+        turnIndex: 1,
+        pieces: [{ id: "U1", owner: "P1", row: 4, col: 4 }],
+        continuation: null,
+        outcome: { status: "ongoing" },
+      },
+    },
+  ],
+  pendingMoves: [
+    {
+      index: 2,
+      displayMoveNumber: 3,
+      turnIndex: 1,
+      turnMoveIndex: 1,
+      actorSide: "P2",
+      notation: "M3",
+      at: "2026-04-03T00:00:05.000Z",
+      action: { type: "move", from: { row: 5, col: 4 }, to: { row: 4, col: 4 } },
+      selectionSnapshot: {
+        boardSize: 10,
+        sideToMove: "P1",
+        turnIndex: 1,
+        pieces: [{ id: "U1", owner: "P1", row: 5, col: 4 }],
+        continuation: null,
+        outcome: { status: "ongoing" },
+      },
+    },
+  ],
+  pendingCommandCount: 1,
 });
 
 test("sync store setActiveGameId manages live sync connections", () => {
@@ -630,6 +754,123 @@ test("sync store launches history branches with immediate local stubs", async ()
   const committed = await handle.committed;
   assert.equal(committed.game.id, handle.result.game.id);
   assert.equal(committed.game.notifications.at(-1), "History branch launched");
+});
+
+test("sync store selects history locally and keeps the selection latched while live updates append", async () => {
+  const { transport, games, listeners } = createTransportHarness();
+  const game = createHistoryReadyGame();
+  games.set(game.id, game);
+  let releaseHistorySync = null;
+  const historySyncReady = new Promise((resolve) => {
+    releaseHistorySync = resolve;
+  });
+
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      ...transport,
+      selectHistoryMove: async () => {
+        await historySyncReady;
+        return games.get(game.id);
+      },
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const handle = store.selectHistoryMove({ gameId: game.id, moveIndex: 2 });
+  assert.equal(handle.status, "committed");
+  assert.equal(handle.result.inHistoryMode, true);
+  assert.equal(handle.result.historyIndex, 2);
+  assert.deepEqual(handle.result.currentSnapshot, game.pendingMoves[0].selectionSnapshot);
+
+  const liveAppend = {
+    ...createHistoryReadyGame(),
+    pendingMoves: [],
+    pendingCommandCount: 0,
+    moves: [
+      ...createHistoryReadyGame().moves,
+      {
+        index: 2,
+        moveId: "move-3",
+        displayMoveNumber: 3,
+        turnIndex: 1,
+        turnMoveIndex: 1,
+        actorSide: "P2",
+        notation: "M3",
+        at: "2026-04-03T00:00:05.000Z",
+        action: { type: "move", from: { row: 5, col: 4 }, to: { row: 4, col: 4 } },
+        selectionSnapshot: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 1,
+          pieces: [{ id: "U1", owner: "P1", row: 5, col: 4 }],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+      },
+    ],
+  };
+  transport.applyLiveGameUpdate({ game: liveAppend });
+  for (const listener of listeners) {
+    listener({ type: "authoritative_update", gameId: game.id, clientCommandId: null });
+  }
+
+  const latchedView = store.getGameViewModel(game.id);
+  assert.equal(latchedView.inHistoryMode, true);
+  assert.equal(latchedView.historyIndex, 2);
+  assert.equal(latchedView.moves.length, 3);
+  assert.deepEqual(latchedView.currentSnapshot, game.pendingMoves[0].selectionSnapshot);
+
+  releaseHistorySync?.();
+});
+
+test("sync store returns to live immediately without waiting for server history sync", async () => {
+  const { transport, games } = createTransportHarness();
+  const game = createHistoryReadyGame();
+  games.set(game.id, {
+    ...game,
+    inHistoryMode: true,
+    historyIndex: 0,
+    historySelectionAction: clone(game.moves[0].action),
+    currentSnapshot: clone(game.moves[0].selectionSnapshot),
+    canRecordMove: false,
+    canEndTurn: false,
+  });
+  let releaseLiveSync = null;
+  const liveSyncReady = new Promise((resolve) => {
+    releaseLiveSync = resolve;
+  });
+
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      ...transport,
+      returnToLive: async () => {
+        await liveSyncReady;
+        return games.get(game.id);
+      },
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const handle = store.returnToLive({ gameId: game.id });
+  assert.equal(handle.status, "committed");
+  assert.equal(handle.result.inHistoryMode, false);
+  assert.equal(handle.result.historyIndex, null);
+  assert.deepEqual(handle.result.currentSnapshot, game.board.state);
+  assert.equal(store.getGameViewModel(game.id).inHistoryMode, false);
+
+  releaseLiveSync?.();
 });
 
 test("sync store falls back to a shared-storage branch stub when a second store loads before commit", async () => {

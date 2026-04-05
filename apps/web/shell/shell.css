@@ -629,9 +629,9 @@ button.button-release-bounce,
 }
 
 .history-item.history-item-pending {
-  cursor: default;
+  cursor: pointer;
   opacity: 0.52;
-  pointer-events: none;
+  animation: pulse 1.6s ease-in-out infinite;
 }
 
 .history-item.history-item-pending .history-move-line {

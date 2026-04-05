@@ -231,6 +231,8 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /data-action="revert-to-move"/);
   assert.match(source, /data-action="undo-last-move"/);
   assert.match(source, /class="history-item history-item-pending/);
+  assert.match(source, /data-testid="history-pending-move-item"/);
+  assert.match(source, /aria-busy="true"/);
   assert.match(source, /Pending<\/span>/);
   assert.match(source, /const liveContinuationText =[\s\S]*Live: Waiting for \$\{controlSeat \|\| "next player"\} to continue\.\.\./s);
   assert.match(source, /const liveWaitingText =[\s\S]*Live: Waiting on \$\{activeTurn\.playerSeat \|\| "next player"\} to move\.\.\./s);
@@ -313,6 +315,10 @@ test("history branch launch keeps the source tab stable while opening a new tab"
 test("history navigation skips the busy pre-render but still clears disabled state after completion", () => {
   assert.match(source, /const shouldRenderBusyStateStart =\s*action !== "copy-invite" &&[\s\S]*action !== "jump-history" &&[\s\S]*action !== "launch-history-branch" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "return-live"/s);
   assert.match(source, /const shouldRenderBusyStateEnd =\s*action !== "copy-invite" &&[\s\S]*action !== "toggle-undone-group" &&[\s\S]*action !== "tutorial-next" &&[\s\S]*action !== "tutorial-skip" &&[\s\S]*action !== "open-debug" &&[\s\S]*action !== "open-scenarios" &&[\s\S]*action !== "close-debug" &&[\s\S]*action !== "close-scenarios";/s);
+  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*transport\.selectHistoryMove\(\{ gameId, moveIndex \}\);[\s\S]*return;/s);
+  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*transport\.returnToLive\(\{ gameId \}\);[\s\S]*return;/s);
+  assert.doesNotMatch(source, /if \(action === "jump-history"\) \{[\s\S]*await transport\.selectHistoryMove/s);
+  assert.doesNotMatch(source, /if \(action === "return-live"\) \{[\s\S]*await transport\.returnToLive/s);
   assert.match(source, /\}, \{ renderStart: shouldRenderBusyStateStart, renderEnd: shouldRenderBusyStateEnd \}\);/);
 });
 
@@ -324,6 +330,7 @@ test("shell renders durable browser E2E selectors for core workflow surfaces", (
   assert.match(source, /data-testid="game-board"/);
   assert.match(source, /data-testid="history-list"/);
   assert.match(source, /data-testid="history-move-item"/);
+  assert.match(source, /data-testid="history-pending-move-item"/);
   assert.match(source, /data-testid="history-return-live"/);
   assert.match(source, /data-testid="approval-gate"/);
   assert.match(source, /data-testid="accept-request"/);

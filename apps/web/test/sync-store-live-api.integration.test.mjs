@@ -261,6 +261,78 @@ test("integration sync store exposes a pending game handle until optimistic crea
   assert.equal(store.getGameHandle(committedGame.id)?.result?.id, committedGame.id);
 });
 
+test("integration sync store enters and exits history locally before delayed server history sync resolves", async () => {
+  const env = createApiEnv();
+  const storage = createMemoryStorage();
+  let releaseHistory = null;
+  let releaseLive = null;
+  const historyReady = new Promise((resolve) => {
+    releaseHistory = resolve;
+  });
+  const liveReady = new Promise((resolve) => {
+    releaseLive = resolve;
+  });
+
+  const store = createSyncStore({
+    storage,
+    fetcher: async (url, init = {}) => {
+      if (String(url).includes("/history") && (init.method || "GET") === "POST") {
+        await historyReady;
+      }
+      if (String(url).includes("/live") && (init.method || "GET") === "POST") {
+        await liveReady;
+      }
+      return apiWorker.fetch(
+        new Request(toAbsoluteUrl(url), {
+          method: init.method || "GET",
+          headers: init.headers,
+          body: init.body,
+        }),
+        env,
+      );
+    },
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const createHandle = store.createGame({ selfPlayMode: false });
+  const game = await Promise.race([
+    createHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("create commit timed out")), 2_000)),
+  ]);
+
+  const action = game.legalActions.find((entry) => entry.type !== "pass") ?? game.legalActions[0];
+  const moveHandle = await store.applyGameAction({
+    gameId: game.id,
+    state: game.currentSnapshot,
+    action,
+  });
+  await Promise.race([
+    moveHandle.committed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("move commit timed out")), 2_000)),
+  ]);
+
+  const historyHandle = store.selectHistoryMove({ gameId: game.id, moveIndex: 0 });
+  assert.equal(historyHandle.status, "committed");
+  assert.equal(historyHandle.result.inHistoryMode, true);
+  assert.equal(store.getGameViewModel(game.id)?.inHistoryMode, true);
+
+  releaseHistory?.();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const liveHandle = store.returnToLive({ gameId: game.id });
+  assert.equal(liveHandle.status, "committed");
+  assert.equal(liveHandle.result.inHistoryMode, false);
+  assert.equal(store.getGameViewModel(game.id)?.inHistoryMode, false);
+
+  releaseLive?.();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
 test("integration sync store lets an already-created second store discover a pending history branch", async () => {
   const env = createApiEnv();
   const storage = createMemoryStorage();

@@ -61,9 +61,13 @@ test("game, join/invite, and history use shared section spacing structure", () =
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
 });
 
-test("history live-return control stays mounted during busy history navigation", () => {
+test("history live-return control stays mounted without blocking through the global busy gate", () => {
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
-  assert.match(source, /data-action="return-live"[^`]*\$\{busy \? "disabled" : ""\}/);
+  assert.doesNotMatch(source, /data-action="return-live"[^`]*\$\{busy \? "disabled" : ""\}/);
+  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*transport\.selectHistoryMove\(\{ gameId, moveIndex \}\);[\s\S]*return;/s);
+  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*transport\.returnToLive\(\{ gameId \}\);[\s\S]*return;/s);
+  assert.match(syncStoreSource, /selectHistoryMove: \(\{ gameId, moveIndex \}\) => \{/);
+  assert.match(syncStoreSource, /returnToLive: \(\{ gameId \}\) => \{/);
   assert.doesNotMatch(source, /if \(game\.inHistoryMode && activeTurn\.moveIndexes\.length > 0\) \{/);
 });
 

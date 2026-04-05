@@ -333,6 +333,58 @@ const buildCommittedEndTurnResult = ({ transport, gameId, fallback }) => {
   };
 };
 
+const buildHistoryViewProjection = (game, moveIndex) => {
+  const authoritativeMoves = Array.isArray(game?.moves) ? game.moves : [];
+  const pendingMoves = Array.isArray(game?.pendingMoves) ? game.pendingMoves : [];
+  const selectedMove =
+    authoritativeMoves.find((move) => move?.index === moveIndex) ?? pendingMoves.find((move) => move?.index === moveIndex) ?? null;
+  if (!selectedMove?.selectionSnapshot) {
+    return null;
+  }
+  const selectedSnapshot = clone(selectedMove.selectionSnapshot);
+  const selectedTurn =
+    (Array.isArray(game.turns) ? game.turns.find((turn) => turn?.index === selectedSnapshot.turnIndex) : null) ??
+    game.currentTurn ??
+    null;
+  const turnOwnerSeat = selectedTurn?.playerSeat ?? game.turnOwnerSeat ?? null;
+  const controlSeat = turnOwnerSeat ? getControlSeatForTurn(selectedSnapshot, turnOwnerSeat) : game.controlSeat ?? null;
+  return {
+    ...clone(game),
+    inHistoryMode: true,
+    historyIndex: moveIndex,
+    historySelectionAction: selectedMove.action ? clone(selectedMove.action) : null,
+    currentSnapshot: selectedSnapshot,
+    currentTurn: selectedTurn ? clone(selectedTurn) : game.currentTurn ? clone(game.currentTurn) : null,
+    turnOwnerSeat,
+    controlSeat,
+    control: controlSeat === turnOwnerSeat ? "turn-owner" : controlSeat ? "opponent" : game.control ?? "turn-owner",
+    canRecordMove: false,
+    canEndTurn: false,
+  };
+};
+
+const buildLiveViewProjection = (game) => {
+  const liveSnapshot = game?.board?.state ? clone(game.board.state) : game?.currentSnapshot ? clone(game.currentSnapshot) : null;
+  if (!liveSnapshot) {
+    return null;
+  }
+  const currentTurn =
+    (Array.isArray(game.turns) ? [...game.turns].reverse().find((turn) => turn?.status === "active") : null) ?? game.currentTurn ?? null;
+  return {
+    ...clone(game),
+    inHistoryMode: false,
+    historyIndex: null,
+    historySelectionAction: null,
+    currentSnapshot: liveSnapshot,
+    currentTurn: currentTurn ? clone(currentTurn) : game.currentTurn ? clone(game.currentTurn) : null,
+  };
+};
+
+const sameHistoryProjection = (currentGame, projectedGame) =>
+  currentGame?.inHistoryMode === true &&
+  currentGame?.historyIndex === projectedGame?.historyIndex &&
+  JSON.stringify(currentGame?.currentSnapshot ?? null) === JSON.stringify(projectedGame?.currentSnapshot ?? null);
+
 export const createSyncStore = ({
   storage,
   fetcher = fetch,
@@ -347,6 +399,7 @@ export const createSyncStore = ({
   const operationManager = createOperationManager();
   let pendingLocalGames = readPendingLocalGames(storage);
   let activeGameId = null;
+  const localHistorySelectionByGameId = new Map();
   const isPendingOptimisticGameCreation = (gameId) => {
     const createHandle = operationManager.getHandle(`create:${gameId}`);
     if (createHandle?.status === "pending") {
@@ -474,6 +527,7 @@ export const createSyncStore = ({
 
   transport.subscribe((change) => {
     const clientCommandId = typeof change?.clientCommandId === "string" ? change.clientCommandId : null;
+    const gameId = typeof change?.gameId === "string" ? change.gameId : null;
     if (change?.type === "authoritative_update" && clientCommandId) {
       confirmOperation(clientCommandId);
     }
@@ -488,6 +542,12 @@ export const createSyncStore = ({
         clientCommandId,
         createOperationError("Sync failed before the optimistic command could be confirmed.", "optimistic_desynced"),
       );
+    }
+    if (gameId && localHistorySelectionByGameId.has(gameId)) {
+      const projectedGame = buildHistoryViewProjection(transport.getGameViewModel(gameId), localHistorySelectionByGameId.get(gameId));
+      if (projectedGame && !sameHistoryProjection(transport.getGameViewModel(gameId), projectedGame)) {
+        transport.applyLiveGameUpdate({ game: projectedGame });
+      }
     }
   });
 
@@ -645,6 +705,36 @@ export const createSyncStore = ({
         id: response.clientCommandId,
         gameId,
         result: response,
+      });
+    },
+    selectHistoryMove: ({ gameId, moveIndex }) => {
+      const currentGame = transport.getGameViewModel(gameId);
+      const projectedGame = buildHistoryViewProjection(currentGame, moveIndex);
+      if (!projectedGame) {
+        throw createOperationError(`History move ${moveIndex} is not available for game ${gameId}.`, "move_not_found");
+      }
+      localHistorySelectionByGameId.set(gameId, moveIndex);
+      transport.applyLiveGameUpdate({ game: projectedGame });
+      void transport.selectHistoryMove({ gameId, moveIndex }).catch(onError);
+      return operationManager.createCommitted({
+        id: `history:${gameId}:${moveIndex}:${Date.now().toString(16)}`,
+        gameId,
+        result: projectedGame,
+      });
+    },
+    returnToLive: ({ gameId }) => {
+      const currentGame = transport.getGameViewModel(gameId);
+      const projectedGame = buildLiveViewProjection(currentGame);
+      if (!projectedGame) {
+        throw createOperationError(`Game ${gameId} is not loaded.`, "game_not_loaded");
+      }
+      localHistorySelectionByGameId.delete(gameId);
+      transport.applyLiveGameUpdate({ game: projectedGame });
+      void transport.returnToLive({ gameId }).catch(onError);
+      return operationManager.createCommitted({
+        id: `live:${gameId}:${Date.now().toString(16)}`,
+        gameId,
+        result: projectedGame,
       });
     },
     launchHistoryBranch: ({
