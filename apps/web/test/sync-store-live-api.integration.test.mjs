@@ -705,3 +705,71 @@ test("integration sync store keeps optimistic revert request ids aligned when ap
   assert.equal(committedGame.myPendingRevertRequest?.requestId, optimisticRequestId);
   assert.equal(committedGame.moves.at(-1)?.undone, undefined);
 });
+
+test("integration sync store exits history mode when the approver accepts an undo request", async () => {
+  const env = createApiEnv();
+  const ownerStorage = createMemoryStorage();
+  const guestStorage = createMemoryStorage();
+
+  const createStore = (storage) =>
+    createSyncStore({
+      storage,
+      fetcher: async (url, init = {}) =>
+        apiWorker.fetch(
+          new Request(toAbsoluteUrl(url), {
+            method: init.method || "GET",
+            headers: init.headers,
+            body: init.body,
+          }),
+          env,
+        ),
+      createSyncClient: () => ({
+        connectGame() {},
+        disconnectGame() {},
+        disconnectAll() {},
+        getDesiredGameIds: () => [],
+      }),
+    });
+
+  const ownerStore = createStore(ownerStorage);
+  const guestStore = createStore(guestStorage);
+
+  const createdGame = await ownerStore.createGame({ selfPlayMode: false }).committed;
+  const guestJoin = await guestStore.joinGame({ gameId: createdGame.id, mode: "player", inviteFromRole: null });
+  assert.equal(guestJoin.pendingApproval, true);
+
+  const ownerGameWithJoinRequest = await ownerStore.loadGame(createdGame.id, { openAsViewer: false });
+  const pendingRequester = ownerGameWithJoinRequest.pendingJoinRequests?.[0]?.identityId ?? null;
+  assert.ok(pendingRequester);
+  const approvedJoin = await ownerStore.approvePendingRequest({ gameId: createdGame.id, requesterIdentityId: pendingRequester });
+  assert.equal(approvedJoin.ok, true);
+
+  const refreshedOwnerGame = await ownerStore.loadGame(createdGame.id, { openAsViewer: false });
+  const action = refreshedOwnerGame.legalActions.find((entry) => entry.type !== "pass") ?? refreshedOwnerGame.legalActions[0];
+  const moveHandle = await ownerStore.applyGameAction({
+    gameId: refreshedOwnerGame.id,
+    state: refreshedOwnerGame.currentSnapshot,
+    action,
+  });
+  await moveHandle.committed;
+
+  const targetMoveId = ownerStore.getGameViewModel(createdGame.id).latestActiveMoveId;
+  const revertHandle = ownerStore.requestRevertToMove({
+    gameId: createdGame.id,
+    targetMoveId,
+  });
+  const requestedGame = await revertHandle.committed;
+  const requestId = requestedGame.pendingRevertRequest?.requestId ?? null;
+  assert.ok(requestId);
+
+  await guestStore.loadGame(createdGame.id, { openAsViewer: false });
+  const historyHandle = guestStore.selectHistoryMove({ gameId: createdGame.id, moveIndex: 0 });
+  assert.equal(historyHandle.result.inHistoryMode, true);
+  assert.equal(guestStore.getGameViewModel(createdGame.id)?.inHistoryMode, true);
+
+  const approved = await guestStore.approveRevertRequest({ gameId: createdGame.id, requestId }).committed;
+  assert.equal(approved.inHistoryMode, false);
+  assert.equal(approved.historyIndex, null);
+  assert.equal(guestStore.getGameViewModel(createdGame.id)?.inHistoryMode, false);
+  assert.equal(guestStore.getGameViewModel(createdGame.id)?.historyIndex, null);
+});

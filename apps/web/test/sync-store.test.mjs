@@ -772,6 +772,78 @@ test("sync store computes undo ownership for optimistic revert approval from the
   assert.equal(store.getGameViewModel("game-revert").canUndoLastMove, false);
 });
 
+test("sync store clears a latched history selection when undo approval returns the game to live view", async () => {
+  const listeners = new Set();
+  const games = new Map();
+  const game = {
+    ...createRevertReadyGame(),
+    pendingRevertRequest: {
+      requestId: "req-history-live",
+      requesterIdentityId: "id-peer",
+      targetMoveId: "move-1",
+      targetMoveIndex: 0,
+      requestedAt: "2026-04-03T00:00:03.000Z",
+      status: "pending",
+    },
+    approvableRevertRequest: {
+      requestId: "req-history-live",
+      requesterIdentityId: "id-peer",
+      targetMoveId: "move-1",
+      targetMoveIndex: 0,
+      requestedAt: "2026-04-03T00:00:03.000Z",
+      status: "pending",
+    },
+  };
+  games.set(game.id, game);
+
+  const transport = {
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    getIdentityId: () => "id-test",
+    getLastEventSeq: () => 0,
+    getGameViewModel: (gameId) => games.get(gameId) ?? null,
+    applyLiveGameUpdate: ({ game: nextGame, clientCommandId = null }) => {
+      games.set(nextGame.id, nextGame);
+      const changeType = clientCommandId ? "authoritative_update" : "history_mode_changed";
+      for (const listener of listeners) {
+        listener({ type: changeType, gameId: nextGame.id, clientCommandId });
+      }
+    },
+    selectHistoryMove: async () => {},
+    approveRevertRequest: async () => ({
+      ...clone(game),
+      pendingRevertRequest: null,
+      approvableRevertRequest: null,
+      myPendingRevertRequest: null,
+      inHistoryMode: false,
+      historyIndex: null,
+    }),
+  };
+
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => transport,
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  store.selectHistoryMove({ gameId: game.id, moveIndex: 0 });
+  assert.equal(store.getGameViewModel(game.id).inHistoryMode, true);
+
+  const handle = store.approveRevertRequest({ gameId: game.id, requestId: "req-history-live" });
+  assert.equal(store.getGameViewModel(game.id).inHistoryMode, false);
+
+  await handle.committed;
+  assert.equal(store.getGameViewModel(game.id).inHistoryMode, false);
+  assert.equal(store.getGameViewModel(game.id).historyIndex, null);
+});
+
 test("sync store launches history branches with immediate local stubs", async () => {
   const { transport, games } = createTransportHarness();
   games.set("game-source", {
@@ -859,6 +931,8 @@ test("sync store selects history locally and keeps the selection latched while l
 
   const liveAppend = {
     ...createHistoryReadyGame(),
+    inHistoryMode: true,
+    historyIndex: 2,
     pendingMoves: [],
     pendingCommandCount: 0,
     moves: [
@@ -896,6 +970,61 @@ test("sync store selects history locally and keeps the selection latched while l
   assert.deepEqual(latchedView.currentSnapshot, game.pendingMoves[0].selectionSnapshot);
 
   releaseHistorySync?.();
+});
+
+test("sync store only preserves a local history latch while the authoritative game remains in history mode", () => {
+  const makeStore = () => {
+    const { transport, games, listeners } = createTransportHarness();
+    const game = createHistoryReadyGame();
+    games.set(game.id, game);
+    const store = createSyncStore({
+      storage: createMemoryStorage(),
+      createTransportStore: () => ({
+        ...transport,
+        selectHistoryMove: async () => games.get(game.id),
+      }),
+      createSyncClient: () => ({
+        connectGame() {},
+        disconnectGame() {},
+        disconnectAll() {},
+        getDesiredGameIds: () => [],
+      }),
+    });
+    store.selectHistoryMove({ gameId: game.id, moveIndex: 0 });
+    return { game, games, listeners, store, transport };
+  };
+
+  {
+    const { game, listeners, store, transport } = makeStore();
+    transport.applyLiveGameUpdate({
+      game: {
+        ...createHistoryReadyGame(),
+        inHistoryMode: true,
+        historyIndex: 0,
+      },
+    });
+    for (const listener of listeners) {
+      listener({ type: "authoritative_update", gameId: game.id, clientCommandId: null });
+    }
+    assert.equal(store.getGameViewModel(game.id)?.inHistoryMode, true);
+    assert.equal(store.getGameViewModel(game.id)?.historyIndex, 0);
+  }
+
+  for (const changeType of ["authoritative_update", "history_mode_changed"]) {
+    const { game, listeners, store, transport } = makeStore();
+    transport.applyLiveGameUpdate({
+      game: {
+        ...createHistoryReadyGame(),
+        inHistoryMode: false,
+        historyIndex: null,
+      },
+    });
+    for (const listener of listeners) {
+      listener({ type: changeType, gameId: game.id, clientCommandId: null });
+    }
+    assert.equal(store.getGameViewModel(game.id)?.inHistoryMode, false);
+    assert.equal(store.getGameViewModel(game.id)?.historyIndex, null);
+  }
 });
 
 test("sync store returns to live immediately without waiting for server history sync", async () => {

@@ -1036,7 +1036,12 @@ export const createSyncStore = ({
       upsertRollbackFailure(gameId, failureNotice || "Sync failed before the optimistic command could be confirmed.");
     }
     if (gameId && localHistorySelectionByGameId.has(gameId)) {
-      const projectedGame = buildHistoryViewProjection(transport.getGameViewModel(gameId), localHistorySelectionByGameId.get(gameId));
+      const currentGame = transport.getGameViewModel(gameId);
+      if (currentGame?.inHistoryMode !== true || typeof currentGame?.historyIndex !== "number") {
+        localHistorySelectionByGameId.delete(gameId);
+        return;
+      }
+      const projectedGame = buildHistoryViewProjection(currentGame, localHistorySelectionByGameId.get(gameId));
       if (projectedGame && !sameHistoryProjection(transport.getGameViewModel(gameId), projectedGame)) {
         transport.applyLiveGameUpdate({ game: projectedGame });
       }
