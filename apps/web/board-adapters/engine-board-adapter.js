@@ -268,6 +268,17 @@ function findActionPiece(snapshot, action) {
   );
 }
 
+function findActionTargetPiece(snapshot, action) {
+  if (!snapshot || !action) {
+    return null;
+  }
+  return (
+    (action.to ? findPieceAt(snapshot, action.to.row, action.to.col) : null) ??
+    (typeof action.actorId === "string" ? findPieceById(snapshot, action.actorId) : null) ??
+    (action.from ? findPieceAt(snapshot, action.from.row, action.from.col) : null)
+  );
+}
+
 function findPreferredPieceAt(snapshot, row, col) {
   const pieces = findPiecesAt(snapshot, row, col);
   if (pieces.length === 0) {
@@ -723,7 +734,8 @@ export function createEngineBoardAdapter() {
 
     if (overlay?.mode === "recorded-action") {
       const action = overlay.recordedAction;
-      const piece = findActionPiece(snapshot, action);
+      const startPiece = overlay.recordedActionStartPiece ?? null;
+      const piece = findActionTargetPiece(snapshot, action) ?? startPiece;
       if (!action || !piece) {
         return;
       }
@@ -732,13 +744,26 @@ export function createEngineBoardAdapter() {
         applyGroupDecorations(snapshot, piece, cellByCoordinateKey);
       }
 
+      if (action.from && startPiece) {
+        const sourceCell = cellByCoordinateKey.get(coordKey(action.from));
+        if (sourceCell) {
+          const sourceToken = buildPieceToken(startPiece, action.type !== "project");
+          sourceToken.classList.add("recorded-action-source-piece");
+          if (action.type !== "project") {
+            sourceToken.classList.add("move-ghost");
+          }
+          sourceCell.appendChild(sourceToken);
+        }
+      }
+
       if (action.to) {
         if (action.type !== "project") {
-          drawArrowLine(action.from ?? piece.position, action.to, piece.owner, false, true);
+          drawArrowLine(action.from ?? startPiece?.position ?? piece.position, action.to, piece.owner, false, true);
         }
         const targetCell = cellByCoordinateKey.get(coordKey(action.to));
         if (targetCell) {
-          const ghost = buildPieceToken(action.previewPiece ?? piece, true);
+          const previewPiece = findActionTargetPiece(snapshot, action) ?? action.previewPiece ?? piece;
+          const ghost = buildPieceToken(previewPiece, true);
           ghost.classList.add("move-ghost");
           if (action.type === "project") {
             ghost.classList.add("preview-created");
@@ -1218,8 +1243,19 @@ export function createEngineBoardAdapter() {
             stack.appendChild(defenderToken);
             cell.appendChild(stack);
           } else {
-            const marker = cellPiece ? buildPieceToken(cellPiece) : document.createElement("span");
-            if (!cellPiece) {
+            const recordedActionStartPiece =
+              overlay?.mode === "recorded-action" && overlay?.recordedActionStartPiece
+                ? overlay.recordedActionStartPiece
+                : null;
+            const shouldRenderRecordedActionStartPiece =
+              overlay?.mode === "recorded-action" &&
+              recordedActionStartPiece &&
+              overlay?.recordedAction?.from?.row === row &&
+              overlay?.recordedAction?.from?.col === col &&
+              cellPiece?.id === recordedActionStartPiece.id;
+            const markerPiece = shouldRenderRecordedActionStartPiece ? recordedActionStartPiece : cellPiece;
+            const marker = markerPiece ? buildPieceToken(markerPiece) : document.createElement("span");
+            if (!markerPiece) {
               marker.className = "piece-empty";
               marker.setAttribute("aria-hidden", "true");
             }

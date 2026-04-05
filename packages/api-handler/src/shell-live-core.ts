@@ -834,7 +834,7 @@ export const withFullViewModel = (game: LiveGame, identityId: string) => {
   const inHistoryMode = typeof historyIndex === "number";
   const currentSnapshot =
     typeof historyIndex === "number" && moves[historyIndex]
-      ? moves[historyIndex].selectionSnapshot
+      ? moves[historyIndex].snapshot
       : game.board.state;
   const pendingScenarioSelection =
     game.pendingScenarioSelection &&

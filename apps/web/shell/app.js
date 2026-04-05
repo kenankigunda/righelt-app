@@ -2643,6 +2643,35 @@ const getHistoryDestroyedPieceOverlays = (game) => {
   }));
 };
 
+const findHistoryActionPiece = (snapshot, action) => {
+  if (!snapshot || !action) {
+    return null;
+  }
+  if (typeof action.actorId === "string") {
+    const pieceById = snapshot.pieces?.find((piece) => piece.id === action.actorId) ?? null;
+    if (pieceById) {
+      return pieceById;
+    }
+  }
+  if (!action.from) {
+    return null;
+  }
+  return snapshot.pieces?.find(
+    (piece) => piece.position?.row === action.from.row && piece.position?.col === action.from.col,
+  ) ?? null;
+};
+
+const getHistoryRecordedActionStartPiece = (game) => {
+  if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
+    return null;
+  }
+  const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
+  if (!move?.selectionSnapshot || !move?.action) {
+    return null;
+  }
+  return findHistoryActionPiece(move.selectionSnapshot, move.action);
+};
+
 const mountBoardForGame = (game) => {
   const boardEl = document.getElementById("shell-board");
   const overlayLinesEl = document.getElementById("shell-overlay-lines");
@@ -2686,11 +2715,13 @@ const mountBoardForGame = (game) => {
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
   const historyDestroyedPieces = getHistoryDestroyedPieceOverlays(game);
+  const historyRecordedActionStartPiece = getHistoryRecordedActionStartPiece(game);
   const forceClickTargetSelection = currentRoute.scenarios;
   const hydratedSelectionAction = scenarioSelectionHydration.selectionAction ?? initialSelectionHydration.selectionAction;
   const overlayKey = toStableKey({
     overlayMode,
     recordedAction: historySelectionAction,
+    recordedActionStartPiece: historyRecordedActionStartPiece,
     destroyedPieces: historyDestroyedPieces,
     selectionAction: hydratedSelectionAction,
     selectionState: scenarioSelectionHydration.selectionState,
@@ -2741,6 +2772,7 @@ const mountBoardForGame = (game) => {
       selectionState: scenarioSelectionHydration.selectionState,
       overlayMode,
       recordedAction: historySelectionAction,
+      recordedActionStartPiece: historyRecordedActionStartPiece,
       destroyedPieces: historyDestroyedPieces,
     });
     return;
@@ -2801,6 +2833,7 @@ const mountBoardForGame = (game) => {
     selectionState: scenarioSelectionHydration.selectionState,
     overlayMode,
     recordedAction: historySelectionAction,
+    recordedActionStartPiece: historyRecordedActionStartPiece,
     destroyedPieces: historyDestroyedPieces,
   });
 };

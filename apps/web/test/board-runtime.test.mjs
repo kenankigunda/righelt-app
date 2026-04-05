@@ -92,6 +92,14 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
     from: { row: 4, col: 2 },
     to: { row: 4, col: 3 },
   };
+  const recordedActionStartPiece = {
+    id: "A1",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 4, col: 2 },
+    supplied: false,
+    commanded: false,
+  };
 
   await runtime.loadSnapshot(
     {
@@ -105,12 +113,14 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
       legalActions: [],
       overlayMode: "recorded-action",
       recordedAction,
+      recordedActionStartPiece,
     },
   );
 
   assert.equal(summaryCalls, 0);
   assert.equal(renderCalls.at(-1)?.overlay?.mode, "recorded-action");
   assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedAction, recordedAction);
+  assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedActionStartPiece, recordedActionStartPiece);
   assert.equal(boardPreviewLabelEl.textContent, "Showing recorded move.");
 });
 

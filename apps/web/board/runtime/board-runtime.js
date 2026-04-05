@@ -75,6 +75,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let internalActionType = defaultActionType;
   let overlayMode = OVERLAY_MODE.INTERACTIVE;
   let recordedAction = null;
+  let recordedActionStartPiece = null;
   /** @type {Array<{row: number, col: number, ownerSeat?: "p1" | "p2" | null, kind?: "unit" | "commander" | null}>} */
   let destroyedPieces = [];
 
@@ -103,6 +104,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     mode: overlayMode,
     selection: overlayMode === OVERLAY_MODE.INTERACTIVE ? getCurrentSelection() : null,
     recordedAction: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedAction : null,
+    recordedActionStartPiece: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedActionStartPiece : null,
     destroyedPieces,
   });
 
@@ -1070,6 +1072,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       selectionState = null,
       overlayMode: nextOverlayMode = OVERLAY_MODE.INTERACTIVE,
       recordedAction: nextRecordedAction = null,
+      recordedActionStartPiece: nextRecordedActionStartPiece = null,
       destroyedPieces: nextDestroyedPieces = [],
     } = {},
   ) => {
@@ -1077,6 +1080,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     legalActions = Array.isArray(incomingLegalActions) ? incomingLegalActions : [];
     overlayMode = nextOverlayMode;
     recordedAction = nextRecordedAction ? structuredClone(nextRecordedAction) : null;
+    recordedActionStartPiece = nextRecordedActionStartPiece ? structuredClone(nextRecordedActionStartPiece) : null;
     destroyedPieces = Array.isArray(nextDestroyedPieces) ? structuredClone(nextDestroyedPieces) : [];
     const preserveRemovalEffects = resetSelection !== true && !selectionAction && removalEffects.length > 0;
     if (!preserveRemovalEffects) {

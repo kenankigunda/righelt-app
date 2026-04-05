@@ -532,8 +532,8 @@ test("recorded-action overlay shows move markers without supply, command, or non
       sideToMove: "P1",
       continuation: null,
       pieces: [
-        { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
-        { id: "A2", owner: "P1", kind: "unit", position: { row: 4, col: 4 }, supplied: true, commanded: true },
+        { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 3 }, supplied: true, commanded: true },
+        { id: "A2", owner: "P1", kind: "unit", position: { row: 4, col: 4 }, supplied: false, commanded: false },
       ],
       artifacts: {
         supply: [
@@ -569,6 +569,14 @@ test("recorded-action overlay shows move markers without supply, command, or non
       overlay: {
         mode: "recorded-action",
         recordedAction: { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } },
+        recordedActionStartPiece: {
+          id: "A1",
+          owner: "P1",
+          kind: "unit",
+          position: { row: 4, col: 2 },
+          supplied: false,
+          commanded: false,
+        },
       },
       legalActions: [],
       selectedPieceMoves: [],
@@ -580,6 +588,9 @@ test("recorded-action overlay shows move markers without supply, command, or non
 
     assert.equal(getCell(boardEl, 4, 2)?.classList.contains("source"), true);
     assert.equal(getCell(boardEl, 4, 3)?.classList.contains("target"), true);
+    assert.equal(getCell(boardEl, 4, 2)?.querySelector(".recorded-action-source-piece")?.classList.contains("inactive"), false);
+    assert.equal(getCell(boardEl, 4, 3)?.querySelector(".move-ghost")?.classList.contains("inactive"), false);
+    assert.equal(getCell(boardEl, 4, 4)?.querySelector(".piece-token")?.classList.contains("inactive"), true);
     assert.equal(boardEl.querySelectorAll(".group-member").length, 0);
     assert.equal(boardEl.querySelectorAll(".group-strength-badge").length, 0);
     assert.equal(overlayLinesEl.querySelectorAll("line").length, 1);
@@ -869,7 +880,9 @@ test("inactive pieces use the square fill color instead of transparency", () => 
 test("history destruction overlays render as dedicated struck-through board tokens", () => {
   assert.match(adapterSource, /const destroyedByCoordinateKey = new Map/);
   assert.match(adapterSource, /cell\.appendChild\(buildDestroyedPieceOverlayToken\(destroyedPiece\)\);/);
-  assert.match(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*opacity:\s*0\.42;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*opacity:\s*0\.46;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.96\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*width:\s*3px;/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*transform:\s*rotate\(-49deg\);/s);
 });
 

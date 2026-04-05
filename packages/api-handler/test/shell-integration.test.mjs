@@ -292,7 +292,7 @@ test("shell integration: history mode stays pinned while remote live updates app
     (game) => game.inHistoryMode === true && game.historyIndex === 0 && game.moves?.length === 2,
   );
   assert.equal(ownerHistoryAfterRemoteMove.currentTurn.index, 2);
-  assert.equal(ownerHistoryAfterRemoteMove.currentSnapshot.turnIndex, 0);
+  assert.deepEqual(ownerHistoryAfterRemoteMove.currentSnapshot, ownerHistoryAfterRemoteMove.moves[0].snapshot);
 
   const liveView = await owner.store.returnToLive({ gameId: created.id });
   assert.equal(liveView.inHistoryMode, false);

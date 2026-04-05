@@ -1210,7 +1210,7 @@ test("live transport store keeps authoritative history selectable while pending 
           inHistoryMode: true,
           historyIndex: 0,
           historySelectionAction: clone(baseGame.moves[0].action),
-          currentSnapshot: clone(baseGame.moves[0].selectionSnapshot),
+          currentSnapshot: clone(baseGame.moves[0].snapshot),
         },
       });
     }
@@ -1240,7 +1240,7 @@ test("live transport store keeps authoritative history selectable while pending 
   const historyView = await store.selectHistoryMove({ gameId: baseGame.id, moveIndex: 0 });
   assert.equal(historyView.inHistoryMode, true);
   assert.equal(historyView.pendingMoves.length, 1);
-  assert.deepEqual(historyView.currentSnapshot, baseGame.moves[0].selectionSnapshot);
+  assert.deepEqual(historyView.currentSnapshot, baseGame.moves[0].snapshot);
   assert.equal(changes.some((change) => change.type === "history_mode_changed" && change.gameId === baseGame.id), true);
 
   changes.length = 0;
