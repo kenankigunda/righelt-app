@@ -114,29 +114,12 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
   assert.equal(boardPreviewLabelEl.textContent, "Showing recorded move.");
 });
 
-test("board runtime shows destruction highlight chip in recorded-action mode", async () => {
-  let boardPreviewLabelValue = "";
-  const boardPreviewLabelEl = {
-    get textContent() {
-      return boardPreviewLabelValue;
-    },
-    set textContent(value) {
-      boardPreviewLabelValue = value;
-    },
-    get innerHTML() {
-      return boardPreviewLabelValue;
-    },
-    set innerHTML(value) {
-      boardPreviewLabelValue = value;
-    },
-    addEventListener: noop,
-    removeEventListener: noop,
-  };
-
+test("board runtime passes destroyed pieces through recorded-action overlay", async () => {
+  const renderCalls = [];
   const runtime = createBoardRuntime({
     boardAdapter: {
       mount: noop,
-      render: noop,
+      render: (payload) => renderCalls.push(payload),
       getSelectedPieceSummary: () => null,
       getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
       getPieceAt: (snapshot, coord) =>
@@ -158,7 +141,7 @@ test("board runtime shows destruction highlight chip in recorded-action mode", a
   runtime.bindElements({
     boardEl: {},
     overlayLinesEl: {},
-    boardPreviewLabelEl,
+    boardPreviewLabelEl: null,
     boardTurnIndicatorEl: null,
   });
 
@@ -179,14 +162,11 @@ test("board runtime shows destruction highlight chip in recorded-action mode", a
         from: { row: 4, col: 2 },
         to: { row: 4, col: 3 },
       },
+      destroyedPieces: [{ row: 9, col: 9, ownerSeat: "p2", kind: "unit" }],
     },
   );
 
-  runtime.setDestructionHighlight({ row: 9, col: 9 });
-
-  assert.match(boardPreviewLabelEl.innerHTML, /board-preview-coordinate-chip-destruction/);
-  assert.match(boardPreviewLabelEl.textContent, /Showing recorded move\./);
-  assert.match(boardPreviewLabelEl.textContent, /9,9/);
+  assert.deepEqual(renderCalls.at(-1)?.overlay?.destroyedPieces, [{ row: 9, col: 9, ownerSeat: "p2", kind: "unit" }]);
 });
 
 test("board runtime renders removal effects returned from shell apply actions", async () => {
@@ -2498,95 +2478,15 @@ test("board runtime emits turn-ended when applyAction returns a settled next-tur
 });
 
 // ---------------------------------------------------------------------------
-// U-10 — setDestructionHighlight / clearDestructionHighlight state management
-// Spec: §6, AC6
+// U-10 — history destroyed pieces live in overlay state, not snapshot state
 // ---------------------------------------------------------------------------
-test("U-10: setDestructionHighlight stores position; clearDestructionHighlight resets to null", () => {
+test("U-10: loadSnapshot keeps history destroyed pieces in overlay state only", async () => {
   const runtime = createBoardRuntime({
     boardAdapter: {
       mount: noop,
       render: noop,
       getSelectedPieceSummary: () => null,
       getPieceById: () => null,
-      getPieceAt: () => null,
-      nextSelectionForCell: () => ({
-        selection: { selectedPieceId: null, source: null, target: null },
-        nextActionType: "pass",
-      }),
-    },
-    host: {
-      applyAction: async () => ({ accepted: false }),
-      loadInitialState: async () => ({ state: null, legalActions: [] }),
-      loadLegalActions: async () => ({ state: null, legalActions: [] }),
-      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
-    },
-  });
-
-  // Initially null
-  assert.equal(runtime.getDestructionHighlight(), null);
-
-  // Set highlight
-  runtime.setDestructionHighlight({ row: 3, col: 4 });
-  assert.deepEqual(runtime.getDestructionHighlight(), { row: 3, col: 4 });
-
-  // Clear highlight
-  runtime.clearDestructionHighlight();
-  assert.equal(runtime.getDestructionHighlight(), null);
-});
-
-// ---------------------------------------------------------------------------
-// U-11 — loadSnapshot auto-clears destruction highlight
-// Spec: §6, AC6
-// ---------------------------------------------------------------------------
-test("U-11: loadSnapshot clears destruction highlight", async () => {
-  const runtime = createBoardRuntime({
-    boardAdapter: {
-      mount: noop,
-      render: noop,
-      getSelectedPieceSummary: () => null,
-      getPieceById: () => null,
-      getPieceAt: () => null,
-      nextSelectionForCell: () => ({
-        selection: { selectedPieceId: null, source: null, target: null },
-        nextActionType: "pass",
-      }),
-    },
-    host: {
-      applyAction: async () => ({ accepted: false }),
-      loadInitialState: async () => ({ state: null, legalActions: [] }),
-      loadLegalActions: async () => ({ state: null, legalActions: [] }),
-      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
-    },
-  });
-
-  runtime.setDestructionHighlight({ row: 2, col: 5 });
-  assert.deepEqual(runtime.getDestructionHighlight(), { row: 2, col: 5 });
-
-  await runtime.loadSnapshot(
-    {
-      sideToMove: "P1",
-      turnIndex: 0,
-      continuation: null,
-      outcome: null,
-      pieces: [],
-    },
-    { legalActions: [] },
-  );
-
-  assert.equal(runtime.getDestructionHighlight(), null, "loadSnapshot must clear the destruction highlight");
-});
-
-// ---------------------------------------------------------------------------
-// U-12 — destruction highlight does not mutate snapshot state returned by getState()
-// Spec: §6, AC6, AC9
-// ---------------------------------------------------------------------------
-test("U-12: setDestructionHighlight does not mutate snapshot state", async () => {
-  const runtime = createBoardRuntime({
-    boardAdapter: {
-      mount: noop,
-      render: noop,
-      getSelectedPieceSummary: () => null,
-      getPieceById: (snapshot, id) => snapshot?.pieces?.find((p) => p.id === id) ?? null,
       getPieceAt: () => null,
       nextSelectionForCell: () => ({
         selection: { selectedPieceId: null, source: null, target: null },
@@ -2614,26 +2514,28 @@ test("U-12: setDestructionHighlight does not mutate snapshot state", async () =>
   const stateBefore = runtime.getState();
   const keysBefore = Object.keys(stateBefore).sort();
 
-  runtime.setDestructionHighlight({ row: 3, col: 4 });
+  await runtime.loadSnapshot(snapshot, {
+    legalActions: [],
+    overlayMode: "recorded-action",
+    destroyedPieces: [{ row: 3, col: 4, ownerSeat: "p1", kind: "unit" }],
+  });
 
   const stateAfter = runtime.getState();
-  // The state object must not have any extra fields added by the highlight
   assert.deepEqual(
     Object.keys(stateAfter).sort(),
     keysBefore,
-    "getState() must not gain extra fields from setDestructionHighlight",
+    "getState() must not gain extra fields from history destroyed-piece overlays",
   );
-  // Core fields must be unchanged
   assert.equal(stateAfter.sideToMove, "P1");
   assert.equal(stateAfter.turnIndex, 1);
   assert.deepEqual(stateAfter.pieces, stateBefore.pieces);
+  assert.deepEqual(runtime.getOverlay().destroyedPieces, [{ row: 3, col: 4, ownerSeat: "p1", kind: "unit" }]);
 });
 
 // ---------------------------------------------------------------------------
-// UX-07 — destruction chip uses dedicated CSS role class, not continuation or selection classes
-// Spec: §4.6, §7.1, §1.1.4
+// U-11 — loading a new snapshot replaces history destroyed-piece overlays
 // ---------------------------------------------------------------------------
-test("UX-07: destruction highlight uses board-preview-coordinate-chip-destruction class and does not conflict with other chip roles", async () => {
+test("U-11: loadSnapshot replaces prior history destroyed-piece overlays", async () => {
   const runtime = createBoardRuntime({
     boardAdapter: {
       mount: noop,
@@ -2654,32 +2556,17 @@ test("UX-07: destruction highlight uses board-preview-coordinate-chip-destructio
     },
   });
 
-  // Initially no destruction highlight
-  assert.equal(runtime.getDestructionHighlight(), null);
-
-  // Set highlight — verify it is stored with the right shape
-  runtime.setDestructionHighlight({ row: 4, col: 7 });
-  const hl = runtime.getDestructionHighlight();
-  assert.deepEqual(hl, { row: 4, col: 7 }, "destruction highlight must store exact position");
-
-  // Clear and set a different position — prior value must not bleed through
-  runtime.clearDestructionHighlight();
-  assert.equal(runtime.getDestructionHighlight(), null);
-
-  runtime.setDestructionHighlight({ row: 0, col: 0 });
-  assert.deepEqual(runtime.getDestructionHighlight(), { row: 0, col: 0 });
-
-  // Subsequent loadSnapshot must clear it (no chip persists into the next snapshot)
   await runtime.loadSnapshot(
     { sideToMove: "P2", turnIndex: 2, continuation: null, outcome: null, pieces: [] },
-    { legalActions: [] },
-  );
-  assert.equal(
-    runtime.getDestructionHighlight(),
-    null,
-    "loadSnapshot must clear destruction highlight so the chip does not persist to a different board state",
+    { legalActions: [], overlayMode: "recorded-action", destroyedPieces: [{ row: 4, col: 7, ownerSeat: "p2", kind: "commander" }] },
   );
 
-  // Confirm clearDestructionHighlight is idempotent (no throw when already null)
-  assert.doesNotThrow(() => runtime.clearDestructionHighlight());
+  assert.deepEqual(runtime.getOverlay().destroyedPieces, [{ row: 4, col: 7, ownerSeat: "p2", kind: "commander" }]);
+
+  await runtime.loadSnapshot(
+    { sideToMove: "P1", turnIndex: 3, continuation: null, outcome: null, pieces: [] },
+    { legalActions: [], overlayMode: "recorded-action", destroyedPieces: [] },
+  );
+
+  assert.deepEqual(runtime.getOverlay().destroyedPieces, []);
 });

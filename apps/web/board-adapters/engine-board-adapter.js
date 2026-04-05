@@ -305,6 +305,19 @@ function buildPieceToken(piece, ghost = false) {
   return token;
 }
 
+const buildDestroyedPieceOverlayToken = (record) => {
+  const piece = {
+    owner: record?.ownerSeat === "p2" ? "P2" : "P1",
+    kind: record?.kind === "commander" ? "commander" : "unit",
+    supplied: true,
+    commanded: true,
+  };
+  const token = buildPieceToken(piece);
+  token.classList.add("history-destruction-piece");
+  token.setAttribute("aria-hidden", "true");
+  return token;
+};
+
 export function getInactiveSelectedPieceLabel(piece, snapshot) {
   const renderStatus = getPieceRenderStatus(piece);
   if (!piece || (renderStatus.supplied && renderStatus.commanded)) {
@@ -1054,6 +1067,9 @@ export function createEngineBoardAdapter() {
       const removalByCoordinateKey = new Map(
         (Array.isArray(removalEffects) ? removalEffects : []).map((effect) => [coordKey(effect.position), effect]),
       );
+      const destroyedByCoordinateKey = new Map(
+        (Array.isArray(overlay?.destroyedPieces) ? overlay.destroyedPieces : []).map((record) => [coordKey(record), record]),
+      );
 
       const continuationHighlight = deriveContinuationHighlightByPieceId(snapshot, legalActions);
       const isContinuationHighlightedSquare = (row, col) => {
@@ -1218,6 +1234,12 @@ export function createEngineBoardAdapter() {
               removalPiece.style.animationDelay = `-${animationDelayMs}ms`;
             }
             cell.appendChild(removalPiece);
+          }
+
+          const destroyedPiece = destroyedByCoordinateKey.get(`${row},${col}`);
+          if (destroyedPiece) {
+            cell.classList.add("history-destruction-cell");
+            cell.appendChild(buildDestroyedPieceOverlayToken(destroyedPiece));
           }
 
           if (isSupplyPoint(row, col)) {

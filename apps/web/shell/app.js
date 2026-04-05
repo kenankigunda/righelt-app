@@ -1258,7 +1258,7 @@ const renderTurnHistory = (game) => {
     const destructionSubBullets = destroyedPieces.length > 0
       ? `<ul class="history-destruction-list">${destroyedPieces.map((record) => {
           const ownerSideClass = playerToneClassForSide(record.ownerSeat === "p1" ? "P1" : record.ownerSeat === "p2" ? "P2" : "neutral");
-          return `<li class="history-destruction-item ${ownerSideClass}" data-action="jump-destruction" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}" data-position-row="${record.position.row}" data-position-col="${record.position.col}" data-testid="history-destruction-item">DESTROYED (${record.position.row},${record.position.col})</li>`;
+          return `<li class="history-destruction-item ${ownerSideClass}${move.undone === true ? " is-undone" : ""}" data-testid="history-destruction-item">DESTROYED (${record.position.row},${record.position.col})</li>`;
         }).join("")}</ul>`
       : "";
     return {
@@ -2629,6 +2629,20 @@ const renderNotFound = () => `
   </section>
 `;
 
+const getHistoryDestroyedPieceOverlays = (game) => {
+  if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
+    return [];
+  }
+  const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
+  const destroyedPieces = Array.isArray(move?.destroyedPieces) ? move.destroyedPieces : [];
+  return destroyedPieces.map((record) => ({
+    row: record.position.row,
+    col: record.position.col,
+    ownerSeat: record.ownerSeat ?? null,
+    kind: record.reason === "commander_unsupplied" ? "commander" : "unit",
+  }));
+};
+
 const mountBoardForGame = (game) => {
   const boardEl = document.getElementById("shell-board");
   const overlayLinesEl = document.getElementById("shell-overlay-lines");
@@ -2671,11 +2685,13 @@ const mountBoardForGame = (game) => {
 
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
+  const historyDestroyedPieces = getHistoryDestroyedPieceOverlays(game);
   const forceClickTargetSelection = currentRoute.scenarios;
   const hydratedSelectionAction = scenarioSelectionHydration.selectionAction ?? initialSelectionHydration.selectionAction;
   const overlayKey = toStableKey({
     overlayMode,
     recordedAction: historySelectionAction,
+    destroyedPieces: historyDestroyedPieces,
     selectionAction: hydratedSelectionAction,
     selectionState: scenarioSelectionHydration.selectionState,
     forceClickTargetSelection,
@@ -2725,6 +2741,7 @@ const mountBoardForGame = (game) => {
       selectionState: scenarioSelectionHydration.selectionState,
       overlayMode,
       recordedAction: historySelectionAction,
+      destroyedPieces: historyDestroyedPieces,
     });
     return;
   }
@@ -2784,6 +2801,7 @@ const mountBoardForGame = (game) => {
     selectionState: scenarioSelectionHydration.selectionState,
     overlayMode,
     recordedAction: historySelectionAction,
+    destroyedPieces: historyDestroyedPieces,
   });
 };
 
@@ -3384,7 +3402,6 @@ appEl.addEventListener("click", async (event) => {
   const shouldRenderBusyStateStart =
     action !== "copy-invite" &&
     action !== "jump-history" &&
-    action !== "jump-destruction" &&
     action !== "launch-history-branch" &&
     action !== "toggle-undone-group" &&
     action !== "return-live" &&
@@ -3674,36 +3691,18 @@ appEl.addEventListener("click", async (event) => {
       const gameId = actionEl.getAttribute("data-game-id");
       const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
       if (!gameId || !Number.isFinite(moveIndex)) return;
-      boardRuntime?.clearDestructionHighlight?.();
       clearControlPress();
       clearHistoryPress();
       playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
       await transport.selectHistoryMove({ gameId, moveIndex });
       await syncRouteDataAndLiveChannels();
-      return;
-    }
-
-    if (action === "jump-destruction") {
-      const gameId = actionEl.getAttribute("data-game-id");
-      const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
-      const row = Number.parseInt(actionEl.getAttribute("data-position-row") || "-1", 10);
-      const col = Number.parseInt(actionEl.getAttribute("data-position-col") || "-1", 10);
-      if (!gameId || !Number.isFinite(moveIndex) || !Number.isFinite(row) || !Number.isFinite(col)) return;
-      clearControlPress();
-      clearHistoryPress();
-      playHistoryReleaseBounce(actionEl);
-      await animateHistoryDeselection(actionEl);
-      await transport.selectHistoryMove({ gameId, moveIndex });
-      await syncRouteDataAndLiveChannels();
-      boardRuntime?.setDestructionHighlight?.({ row, col });
       return;
     }
 
     if (action === "return-live") {
       const gameId = actionEl.getAttribute("data-game-id");
       if (!gameId) return;
-      boardRuntime?.clearDestructionHighlight?.();
       clearHistoryPress();
       playHistoryReleaseBounce(actionEl);
       await animateHistoryDeselection(actionEl);
@@ -3954,7 +3953,7 @@ appEl.addEventListener("pointerdown", (event) => {
     return;
   }
   const action = actionEl.getAttribute("data-action");
-  if (action !== "jump-history" && action !== "jump-destruction" && action !== "return-live") {
+  if (action !== "jump-history" && action !== "return-live") {
     return;
   }
   startHistoryPress(actionEl);
@@ -3969,7 +3968,7 @@ window.addEventListener("pointerup", (event) => {
   if (target instanceof HTMLElement) {
     const actionEl = target.closest("[data-action]");
     const action = actionEl?.getAttribute("data-action");
-    if (action === "jump-history" || action === "jump-destruction" || action === "return-live") {
+    if (action === "jump-history" || action === "return-live") {
       return;
     }
   }

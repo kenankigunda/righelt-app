@@ -106,15 +106,12 @@ test("history trimming preserves contiguous move indexes and live turn controls 
 
 // U-13 — renderTurnHistory emits sub-bullets for moves with destroyedPieces
 test("U-13: renderTurnHistory source emits destruction sub-bullet HTML for moves with destroyedPieces", () => {
-  // Static source analysis: verify the rendering code produces the required attributes and text
+  // Static source analysis: verify the rendering code produces subordinate list content and text
   assert.match(appSource, /data-testid="history-destruction-item"/);
-  assert.match(appSource, /data-action="jump-destruction"/);
-  assert.match(appSource, /data-move-index="\$\{move\.index\}"/);
-  assert.match(appSource, /data-position-row="\$\{record\.position\.row\}"/);
-  assert.match(appSource, /data-position-col="\$\{record\.position\.col\}"/);
   assert.match(appSource, /DESTROYED \(\$\{record\.position\.row\},\$\{record\.position\.col\}\)/);
   assert.match(appSource, /history-destruction-list/);
   assert.match(appSource, /history-destruction-item/);
+  assert.doesNotMatch(appSource, /data-action="jump-destruction"/);
 });
 
 // U-13 (integration view): destroyedPieces flows through the view model
@@ -171,10 +168,10 @@ test("UX-03: shell.css contains destruction list indentation and no placeholder 
   const cssSrc = readFileSync(join(testDir, "..", "shell", "shell.css"), "utf8");
   assert.match(cssSrc, /\.history-destruction-list/);
   assert.match(cssSrc, /\.history-destruction-item/);
-  // Indented subordinate style (padding-left on the list)
-  assert.match(cssSrc, /\.history-destruction-list[\s\S]*?padding[:\s]/);
-  // No reserved height or min-height on the destruction list (no layout shift when absent)
+  assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*list-style:\s*disc;/s);
+  assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*padding:\s*0 0 0 0\.6rem;/s);
   assert.doesNotMatch(cssSrc, /\.history-destruction-list\s*\{[^}]*min-height/);
+  assert.doesNotMatch(cssSrc, /\.history-destruction-item::before/);
 });
 
 // UX-08 — sub-bullet is not rendered in the live board surface
@@ -198,64 +195,42 @@ test("UX-08: history-destruction-item elements are inside renderTurnHistory (his
   assert.doesNotMatch(boardRuntimeSrc, /history-destruction-item/);
 });
 
-// I-14 — jump-destruction handler navigates to the correct moveIndex snapshot
-test("I-14: jump-destruction handler source reads data-move-index and calls selectHistoryMove", () => {
-  // The handler must read data-move-index and call transport.selectHistoryMove with moveIndex
-  assert.match(appSource, /action === "jump-destruction"/);
-  assert.match(appSource, /getAttribute\("data-move-index"\)/);
-  assert.match(appSource, /transport\.selectHistoryMove\(\{[^}]*moveIndex/);
+test("I-14: history selection continues to be owned only by the parent move row", () => {
+  assert.match(appSource, /data-action="jump-history"/);
+  assert.doesNotMatch(appSource, /data-action="jump-destruction"/);
 });
 
-// I-14 (extended): jump-destruction handler reads data-game-id for transport call
-test("I-14 (game-id): jump-destruction handler reads data-game-id from the sub-bullet element", () => {
-  // The sub-bullet HTML must carry data-game-id; the handler reads it via getAttribute
-  assert.match(appSource, /data-game-id="\$\{escapeHtml\(game\.id\)\}"[^>]*data-action="jump-destruction"|data-action="jump-destruction"[^>]*data-game-id="\$\{escapeHtml\(game\.id\)\}"/);
-});
+test("I-15: history-mode view model prefers move snapshot over selection snapshot", async () => {
+  const { store } = createTestStore();
+  const game = await store.createGame();
+  store.addMove({
+    gameId: game.id,
+    notation: "M1",
+    snapshot: {
+      turnIndex: 0,
+      sideToMove: "P2",
+      continuation: null,
+      outcome: null,
+      pieces: [
+        {
+          id: "post-move-piece",
+          owner: "P2",
+          kind: "commander",
+          position: { row: 4, col: 4 },
+          supplied: false,
+          commanded: false,
+        },
+      ],
+    },
+  });
 
-// I-15 — jump-destruction click triggers setDestructionHighlight with the correct position
-test("I-15: jump-destruction handler source reads data-position-row/col and calls setDestructionHighlight", () => {
-  assert.match(appSource, /getAttribute\("data-position-row"\)/);
-  assert.match(appSource, /getAttribute\("data-position-col"\)/);
-  assert.match(appSource, /setDestructionHighlight\?\.\(\{[^}]*row[^}]*col[^}]*\}|setDestructionHighlight\(\{[^}]*row[^}]*col[^}]*\)/);
-
-  // setDestructionHighlight must be called AFTER syncRouteDataAndLiveChannels in the jump-destruction handler
-  const jumpDestructionIdx = appSource.indexOf('action === "jump-destruction"');
-  assert.ok(jumpDestructionIdx !== -1, "jump-destruction handler must exist");
-  const returnLiveIdx = appSource.indexOf('action === "return-live"', jumpDestructionIdx);
-  const blockSrc = appSource.slice(jumpDestructionIdx, returnLiveIdx === -1 ? jumpDestructionIdx + 2000 : returnLiveIdx);
-  const syncIdx = blockSrc.indexOf("syncRouteDataAndLiveChannels");
-  const highlightIdx = blockSrc.indexOf("setDestructionHighlight");
-  assert.ok(syncIdx !== -1, "syncRouteDataAndLiveChannels must be called in jump-destruction handler");
-  assert.ok(highlightIdx !== -1, "setDestructionHighlight must be called in jump-destruction handler");
-  assert.ok(
-    highlightIdx > syncIdx,
-    "setDestructionHighlight must be called AFTER syncRouteDataAndLiveChannels in jump-destruction handler",
-  );
-});
-
-// I-16 — return-live clears the destruction highlight
-test("I-16: return-live handler source calls clearDestructionHighlight before returning to live", () => {
-  // Locate the return-live handler and assert clearDestructionHighlight is called within it
-  const returnLiveIdx = appSource.indexOf('action === "return-live"');
-  assert.ok(returnLiveIdx !== -1, "return-live handler must exist");
-  // Find clearDestructionHighlight within the return-live block (before the next action block)
-  const nextActionIdx = appSource.indexOf('if (action === "launch-history-branch")', returnLiveIdx);
-  const blockSrc = appSource.slice(returnLiveIdx, nextActionIdx === -1 ? returnLiveIdx + 2000 : nextActionIdx);
-  assert.match(blockSrc, /clearDestructionHighlight/);
-});
-
-// I-17 — jump-history clears prior destruction highlight
-test("I-17: jump-history handler source calls clearDestructionHighlight before loading snapshot", () => {
-  const jumpHistoryIdx = appSource.indexOf('action === "jump-history"');
-  assert.ok(jumpHistoryIdx !== -1, "jump-history handler must exist");
-  // Find the end of the jump-history block (next handler)
-  const jumpDestructionIdx = appSource.indexOf('action === "jump-destruction"', jumpHistoryIdx);
-  const blockSrc = appSource.slice(jumpHistoryIdx, jumpDestructionIdx === -1 ? jumpHistoryIdx + 2000 : jumpDestructionIdx);
-  assert.match(blockSrc, /clearDestructionHighlight/);
-  // clearDestructionHighlight must appear before selectHistoryMove within this block
-  const clearIdx = blockSrc.indexOf("clearDestructionHighlight");
-  const selectIdx = blockSrc.indexOf("selectHistoryMove");
-  assert.ok(clearIdx < selectIdx, "clearDestructionHighlight must be called before selectHistoryMove in jump-history");
+  store.selectHistoryMove({ gameId: game.id, moveIndex: 0 });
+  const vm = store.getGameViewModel(game.id);
+  assert.equal(vm.currentSnapshot.pieces.length, 1);
+  assert.equal(vm.currentSnapshot.pieces[0].id, "post-move-piece");
+  assert.deepEqual(vm.currentSnapshot.pieces[0].position, { row: 4, col: 4 });
+  assert.equal(vm.currentSnapshot.pieces[0].supplied, false);
+  assert.equal(vm.currentSnapshot.pieces[0].commanded, false);
 });
 
 // I-18 — new move appended while pinned to earlier history: move list grows but historyIndex stays
@@ -291,37 +266,24 @@ test("I-18: new move appended while client is pinned to earlier history does not
 
 // UX-01 — sub-bullet hover state is gated behind data-hover-capability="hover"
 test("UX-01: shell.css gates destruction sub-bullet hover behind data-hover-capability=hover", () => {
-  assert.match(
-    shellCssSrc,
-    /\[data-hover-capability="hover"\]\s+\.history-destruction-item:hover/,
-  );
+  assert.doesNotMatch(shellCssSrc, /\[data-hover-capability="hover"\]\s+\.history-destruction-item:hover/);
 });
 
-// UX-02 — touch tap target meets minimum size (≥ 44px / 2.75rem)
-test("UX-02: shell.css sets min-height on history-destruction-item for touch tap target", () => {
-  // min-height must be set — 2.75rem ≈ 44px at 16px root font size
-  assert.match(shellCssSrc, /\.history-destruction-item\s*\{[^}]*min-height/);
+test("UX-02: shell.css keeps destruction rows visually subordinate to their parent move", () => {
+  assert.match(shellCssSrc, /\.history-destruction-item\s*\{[\s\S]*cursor:\s*inherit;/s);
+  assert.match(shellCssSrc, /\.history-destruction-item\s*\{[\s\S]*font-size:\s*0\.8em;/s);
+  assert.doesNotMatch(shellCssSrc, /\.history-destruction-item\s*\{[^}]*min-height/);
 });
 
-// UX-04 — no staggered animation: sub-bullets share the history-item-release animation class
-test("UX-04: shell.css applies history-item-release animation to history-destruction-item", () => {
-  assert.match(shellCssSrc, /\.history-destruction-item\.history-item-release/);
+test("UX-04: undone parent moves cross out destruction rows too", () => {
+  assert.match(shellCssSrc, /\.history-item\.is-undone \.history-destruction-item/);
 });
 
-// UX-05 — pressed state on sub-bullet uses is-pressing class
-test("UX-05: shell.css defines is-pressing style for history-destruction-item", () => {
-  assert.match(shellCssSrc, /\.history-destruction-item\.is-pressing/);
-});
-
-// UX-05 (source): pointerdown wires startHistoryPress for jump-destruction action
-test("UX-05 (source): pointerdown handler includes jump-destruction in startHistoryPress gating", () => {
-  // The pointerdown listener must include jump-destruction as a trigger for startHistoryPress
-  assert.match(appSource, /action !== "jump-destruction"/);
-  // And it appears alongside jump-history and return-live
+test("UX-05 (source): pointerdown history press gating no longer treats destruction rows as separate actions", () => {
+  assert.doesNotMatch(appSource, /jump-destruction/);
   const pdIdx = appSource.indexOf('startHistoryPress(actionEl)');
   assert.ok(pdIdx !== -1, "startHistoryPress must be called in pointerdown");
-  // Find the guard block just above startHistoryPress
   const guardStart = appSource.lastIndexOf('action !== "jump-history"', pdIdx);
   const guardSrc = appSource.slice(guardStart, pdIdx + 50);
-  assert.match(guardSrc, /jump-destruction/);
+  assert.doesNotMatch(guardSrc, /jump-destruction/);
 });

@@ -866,6 +866,13 @@ test("inactive pieces use the square fill color instead of transparency", () => 
   assert.match(styleSource, /\.cell\.retreat-piece\s*\{[\s\S]*--cell-fill:\s*#f3e7c5;/s);
 });
 
+test("history destruction overlays render as dedicated struck-through board tokens", () => {
+  assert.match(adapterSource, /const destroyedByCoordinateKey = new Map/);
+  assert.match(adapterSource, /cell\.appendChild\(buildDestroyedPieceOverlayToken\(destroyedPiece\)\);/);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*opacity:\s*0\.42;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*transform:\s*rotate\(-49deg\);/s);
+});
+
 test("rush blocker chip styling matches the dedicated board-square treatment", () => {
   assert.match(styleSource, /\.board-preview-coordinate-chip\.board-preview-coordinate-chip-rush-blocker\s*\{[\s\S]*background:\s*#f7ead4;[\s\S]*border-color:\s*#cf9542;[\s\S]*color:\s*#8a5712;/s);
   assert.match(adapterSource, /cellByCoordinateKey\.get\(coordKey\(rushBlocker\.position\)\)\?\.classList\.add\("rush-blocker"\);/);

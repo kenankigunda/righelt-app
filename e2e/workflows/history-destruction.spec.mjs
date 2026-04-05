@@ -186,9 +186,9 @@ test("E-01: destructive move shows DESTROYED sub-bullet in history panel", async
 });
 
 // ---------------------------------------------------------------------------
-// E-02 — Success path: click sub-bullet highlights the named square on board
+// E-02 — Success path: clicking a destruction line selects the parent move
 // ---------------------------------------------------------------------------
-test("E-02: clicking a DESTROYED sub-bullet navigates to the parent snapshot and highlights the square", async ({ browser, baseURL }) => {
+test("E-02: clicking a DESTROYED sub-bullet navigates to the parent snapshot and shows destruction markers on board", async ({ browser, baseURL }) => {
   const { context, page } = await createIsolatedPage(browser);
 
   try {
@@ -196,13 +196,7 @@ test("E-02: clicking a DESTROYED sub-bullet navigates to the parent snapshot and
 
     await expect(getDestructionItems(page).first()).toBeVisible();
     const destructionItem = getDestructionItems(page).first();
-
-    // Read the target position from the data attributes before clicking
-    const row = await destructionItem.getAttribute("data-position-row");
-    const col = await destructionItem.getAttribute("data-position-col");
-
-    expect(row).not.toBeNull();
-    expect(col).not.toBeNull();
+    const parentMoveItem = destructionItem.locator("xpath=ancestor::*[@data-testid='history-move-item'][1]");
 
     // Click the sub-bullet
     await destructionItem.click();
@@ -210,11 +204,11 @@ test("E-02: clicking a DESTROYED sub-bullet navigates to the parent snapshot and
     // The history-return-live button must be visible (we are now in history mode)
     await expect(page.getByTestId("history-return-live")).toBeVisible();
 
-    // The board preview label must show the dedicated destruction highlight chip
-    // for the clicked coordinate once the history snapshot is loaded.
-    const highlightChip = page.locator("#shell-board-preview-label .board-preview-coordinate-chip-destruction");
-    await expect(highlightChip).toBeVisible();
-    await expect(highlightChip).toHaveText(`${row},${col}`);
+    // The selected move should now show the recorded-action board state with a
+    // destruction marker rendered on the destroyed square.
+    const destroyedMarker = page.locator('[data-testid="game-board"] .cell[data-row="9"][data-col="9"] .history-destruction-piece');
+    await expect(destroyedMarker).toBeVisible();
+    await expect(parentMoveItem).toHaveClass(/is-selected/);
   } finally {
     await closeContextQuietly(context);
   }

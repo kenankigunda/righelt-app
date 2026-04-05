@@ -75,8 +75,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let internalActionType = defaultActionType;
   let overlayMode = OVERLAY_MODE.INTERACTIVE;
   let recordedAction = null;
-  /** @type {{row: number, col: number} | null} */
-  let destructionHighlight = null;
+  /** @type {Array<{row: number, col: number, ownerSeat?: "p1" | "p2" | null, kind?: "unit" | "commander" | null}>} */
+  let destroyedPieces = [];
 
   const getActionType = () => {
     const value = controls.getActionType?.();
@@ -103,6 +103,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     mode: overlayMode,
     selection: overlayMode === OVERLAY_MODE.INTERACTIVE ? getCurrentSelection() : null,
     recordedAction: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedAction : null,
+    destroyedPieces,
   });
 
   const getBoardPieceById = (pieceId) => {
@@ -329,11 +330,6 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return `board-preview-coordinate-chip-continuation-moved ${getContinuationSideChipClass()}`;
     }
 
-    const destructionChipClass = getDestructionHighlightChipClass(coord);
-    if (destructionChipClass) {
-      return destructionChipClass;
-    }
-
     return "board-preview-coordinate-chip-neutral";
   };
 
@@ -400,21 +396,6 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     return `Your piece at ${renderBoardPreviewCoordinate(pushedPiece.position)} has been pushed! ${escapeHtml(suffix)}`;
   };
 
-  /**
-   * Returns the CSS class for the destruction-highlight chip at `coord`, or null if
-   * `coord` does not match the current destructionHighlight position.
-   * The class is distinct from continuation/selection chip roles per §1.1.4.
-   */
-  const getDestructionHighlightChipClass = (coord) => {
-    if (!destructionHighlight || !coord) {
-      return null;
-    }
-    if (destructionHighlight.row === coord.row && destructionHighlight.col === coord.col) {
-      return "board-preview-coordinate-chip-destruction";
-    }
-    return null;
-  };
-
   const clearRemovalEffects = () => {
     removalEffects = [];
     if (removalEffectsTimer) {
@@ -478,11 +459,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
     if (overlayMode === OVERLAY_MODE.RECORDED_ACTION) {
       const recordedActionLabel = recordedAction?.from && recordedAction?.to ? "Showing recorded move." : "Showing history move.";
-      if (destructionHighlight) {
-        setBoardPreviewPromptHtml(`${escapeHtml(recordedActionLabel)} Highlighted square ${renderBoardPreviewCoordinate(destructionHighlight)}.`);
-      } else {
-        setBoardPreviewPrompt(recordedActionLabel);
-      }
+      setBoardPreviewPrompt(recordedActionLabel);
       return;
     }
 
@@ -1093,14 +1070,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       selectionState = null,
       overlayMode: nextOverlayMode = OVERLAY_MODE.INTERACTIVE,
       recordedAction: nextRecordedAction = null,
+      destroyedPieces: nextDestroyedPieces = [],
     } = {},
   ) => {
-    // Auto-clear destruction highlight on every snapshot load (per §6, AC6).
-    destructionHighlight = null;
     state = structuredClone(snapshot);
     legalActions = Array.isArray(incomingLegalActions) ? incomingLegalActions : [];
     overlayMode = nextOverlayMode;
     recordedAction = nextRecordedAction ? structuredClone(nextRecordedAction) : null;
+    destroyedPieces = Array.isArray(nextDestroyedPieces) ? structuredClone(nextDestroyedPieces) : [];
     const preserveRemovalEffects = resetSelection !== true && !selectionAction && removalEffects.length > 0;
     if (!preserveRemovalEffects) {
       clearRemovalEffects();
@@ -1191,31 +1168,6 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     return clearHoveredTarget();
   };
 
-  /**
-   * Set the destruction-highlight overlay to the given board position.
-   * Renders a visually distinct chip on that square (per §1.1.4, AC6).
-   * Does not mutate snapshot state.
-   * @param {{row: number, col: number}} position
-   */
-  const setDestructionHighlight = (position) => {
-    destructionHighlight = position ? { row: position.row, col: position.col } : null;
-    renderBoard();
-    renderStatus();
-  };
-
-  /**
-   * Clear the destruction-highlight overlay.
-   * No-op when no highlight is active.
-   */
-  const clearDestructionHighlight = () => {
-    if (destructionHighlight === null) {
-      return;
-    }
-    destructionHighlight = null;
-    renderBoard();
-    renderStatus();
-  };
-
   return {
     initialize,
     destroy,
@@ -1238,9 +1190,5 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     actionPreviewLabel,
     sameCoordinate,
     syncInteractionCapabilities,
-    setDestructionHighlight,
-    clearDestructionHighlight,
-    /** @returns {{row: number, col: number} | null} */
-    getDestructionHighlight: () => destructionHighlight,
   };
 }

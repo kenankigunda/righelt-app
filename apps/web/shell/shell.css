@@ -728,42 +728,25 @@ button.button-release-bounce,
 
 /* Destruction sub-bullets — §t-001.04, RIGHELT_WEB_APP_SPEC §7 and §1.1.5 */
 .history-destruction-list {
-  list-style: none;
-  margin: 0.18rem 0 0;
-  padding: 0 0 0 1rem;
+  list-style: disc;
+  margin: 0.04rem 0 0;
+  padding: 0 0 0 0.6rem;
   display: grid;
-  gap: 0.1rem;
+  gap: var(--section-item-gap);
 }
 
 .history-destruction-item {
-  cursor: pointer;
+  cursor: inherit;
   font-size: 0.8em;
-  min-height: 2.75rem; /* ≥ 44px tap target */
   opacity: 0.78;
-  padding: 0.5rem 0 0.5rem 0.9rem;
-  position: relative;
-  transform-origin: 50% 50%;
+  padding-left: 0;
+  list-style-position: outside;
 }
 
-.history-destruction-item::before {
-  content: "\25B8";
-  position: absolute;
-  left: 0.1rem;
-  top: 0.5rem;
-  color: currentColor;
-}
-
-.history-destruction-item.is-pressing {
-  transform: translateY(1px) scale(0.985);
-}
-
-.history-destruction-item.history-item-release {
-  animation: history-item-release 140ms cubic-bezier(0.18, 0.72, 0.24, 1);
-}
-
-[data-hover-capability="hover"] .history-destruction-item:hover {
-  opacity: 1;
-  font-weight: 500;
+.history-item.is-undone .history-destruction-item,
+.history-destruction-item.is-undone {
+  text-decoration: line-through;
+  opacity: 0.65;
 }
 
 [data-hover-capability="hover"] .history-item:hover .history-move-at,
@@ -835,8 +818,7 @@ button.button-release-bounce,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .history-item.history-item-release,
-  .history-destruction-item.history-item-release {
+  .history-item.history-item-release {
     animation: none;
   }
 
@@ -847,12 +829,10 @@ button.button-release-bounce,
   }
 
   .history-item.is-pressing,
-  .history-destruction-item.is-pressing,
   button.is-pressing,
   .button-link.is-pressing,
   .mini-board-card-link-surface.is-pressing,
-  .history-item:active,
-  .history-destruction-item:active {
+  .history-item:active {
     transform: none;
   }
 

@@ -729,6 +729,29 @@ button {
   pointer-events: none;
 }
 
+.piece-token.history-destruction-piece {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  opacity: 0.42;
+  pointer-events: none;
+}
+
+.piece-token.history-destruction-piece::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  bottom: 2px;
+  width: 2px;
+  height: 24px;
+  background: rgba(23, 42, 47, 0.82);
+  border-radius: 999px;
+  transform: rotate(-49deg);
+  transform-origin: bottom left;
+}
+
 @keyframes removal-piece-flash {
   from {
     opacity: 1;
