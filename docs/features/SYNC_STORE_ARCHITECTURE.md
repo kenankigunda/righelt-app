@@ -2,7 +2,7 @@
 
 ## Context
 
-Righelt's client currently has two active stores (`createLiveTransportStore` + `createLiveSyncClient`) and a dead one (`createShellStore`). The orchestrator `app.js` manually glues transport and WebSocket layers together, manages online/offline transitions across both, and routes different code paths for local vs live games. A global `busy` flag in `app.js` disables **all** buttons during **any** async operation, making the UI feel sluggish for operations like game creation, invites, join flows, history branching, scenario imports, and revert requests.
+Righelt's original client architecture had two active stores (`createLiveTransportStore` + `createLiveSyncClient`) and a dead one (`createShellStore`). The orchestrator `app.js` manually glued transport and WebSocket layers together, managed online/offline transitions across both, and routed different code paths for local vs live games. This branch replaces that split with `createSyncStore()` and removes the old global `busy`-wrapper behavior from the online-first shell path.
 
 The goal is to unify all client-server communication behind a single **sync store** that:
 
@@ -25,7 +25,7 @@ This document started as a forward-looking implementation plan. The branch now c
 - **Phase 3 complete**: optimistic client-generated IDs are implemented for create-game and history-branch flows, including stable route/API/request/response ID contracts and queueing of follow-up commands until creation commits.
 - **Phase 4 complete**: revert request / approve / reject / rescind flows now use optimistic local prediction through the sync store, including client-generated revert request ids, rollback on failure, and browser coverage for both auto-approve and approval-required cases.
 - **Phase 5 complete**: localized pulsing pending-button behavior now covers join-viewer, join-player, accept-invite variants, approve-request, play-as-both-players, and pending-game invite copy without blocking the rest of the shell UI.
-- **Phase 6 partially complete**: the global `busy` gate has been bypassed for create-game, history-branch, revert actions, and the localized pending-button operations that now own their own in-place loading state.
+- **Phase 6 complete for the online-first path**: the global `busy` wrapper is gone from `app.js`, and remaining async shell actions now use localized pending-button or skeleton state instead of freezing the whole UI.
 - **Phase 7 complete**: pending history rows now remain clickable while visually pending, and the history UI exposes localized busy state instead of disabling interaction through the global shell lock.
 - **Phase 8 complete**: failed-operation UX is now unified behind the sync-store failed-operation API, including rollback-notice-backed failures, dismiss/reset handling, and browser coverage for the failed create-game banner flow.
 - **Phase 9 complete**: history jump and return-to-live now project locally first and reconcile with the server in the background, including latching history selection while live updates append underneath.
@@ -35,7 +35,6 @@ This document started as a forward-looking implementation plan. The branch now c
 
 ### Still remaining
 
-- **Phase 6 not complete**: the app still has a broader `busy` architecture and does not yet implement the full pulsing-button / skeleton system across all remaining operations.
 - **Phase 11 not complete**: dead production store cleanup is done, and failure state is no longer attached to app-facing game view models, but final simplification of the internal transport/sync-store failure-notice plumbing is still outstanding.
 - **Phase 12 deferred**: offline support has not been reintroduced.
 
@@ -395,7 +394,7 @@ All return `OperationHandle` with `status: 'pending'`. If server rejects (e.g., 
 
 ## Phase 5: Optimistic invite flow
 
-**Status on this branch:** Not started
+**Status on this branch:** Complete
 
 Make invites feel responsive while ensuring the clipboard gets a valid (committed) link.
 
@@ -430,7 +429,7 @@ Make invites feel responsive while ensuring the clipboard gets a valid (committe
 
 ## Phase 6: Eliminate the global `busy` flag + add pulsing/skeletons
 
-**Status on this branch:** Partially complete
+**Status on this branch:** Complete for the online-first shell path
 
 Remove the `busy` flag and `withBusy()` pattern from `app.js`. Replace with localized pending states.
 
@@ -456,22 +455,21 @@ All pending states use a consistent **subtle pulse animation** (CSS `@keyframes 
 - `save-scenario`, `update-scenario` → instant local write, no busy
 - `copy-invite` (committed game) → instant clipboard, no busy
 
-Implemented so far on this branch:
+Implemented on this branch:
 - `create-game`
 - `launch-history-branch`
 - all revert operations
-
-Still remaining on this branch:
-- join/invite/player-request flows
-- scenario import skeletons
+- join / invite / player-request localized pending flows
+- scenario import skeletons and localized scenario-button pending
 - home pagination skeletons
-- removing the remaining global `busy` plumbing entirely
+- removal of the old global `busy` wrapper and `${busy ? "disabled" : ""}` rendering path
 
 **Pulsing button** (Tier 4 — specific button pulses, rest interactive):
 - `join-viewer`, `join-player`, `accept-invite-viewer`, `accept-invite-player` → join button pulses
 - `play-as-both-players` → button pulses
 - `approve-request`, `accept-request` → approve button pulses
 - `copy-invite` (pending game) → invite button pulses "Creating invite..."
+- `load-scenario`, `update-scenario`, `save-scenario` → only the clicked scenario control goes pending
 
 **Loading skeletons** (Tier 5 — view-level pulsing placeholders):
 - Route to `#/invite/{token}` → invite page skeleton (board placeholder, player info blocks, action button placeholders)
@@ -487,29 +485,24 @@ Still remaining on this branch:
 | Modify | `apps/web/shell/shell.css` | Add `@keyframes pulse` animation. Add `.button-pending` class. Add `.skeleton-pulse` class. Add skeleton layout rules for invite page, game view, home page cards, scenario panel. Keep `button:disabled` styling for semantic disabling only (game rules, not loading). |
 | Modify | `apps/web/shell/app.js` | Add skeleton rendering functions: `renderGameViewSkeleton()`, `renderInvitePageSkeleton()`, `renderHomeCardSkeleton()`, `renderScenarioImportSkeleton()`. These produce HTML with `.skeleton-pulse` blocks positioned to match the real content layout. |
 
-### What `busy ? "disabled" : ""` appears on currently (all to be removed)
-- "Start new game" button (line 1782) → no longer blocked
-- Invite copy button (line 1931) → localized pending if uncommitted
-- Accept invite player/viewer buttons (lines 2572-2580) → localized pulsing on clicked button
-- Various game action buttons → no longer blocked
+### What used to be `busy ? "disabled" : ""`
+- "Start new game" button → now immediate
+- Invite copy button → now localized pending if uncommitted
+- Accept invite player/viewer buttons → now localized pulsing on clicked button
+- Game action buttons → now optimistic or locally pending instead of globally blocked
 
 ### Verification
 - **Unit tests**: Confirm `busy` flag is removed; no button rendering references it
 - **Unit tests**: `.button-pending` class is applied/removed per operation lifecycle
 - **Unit tests**: Skeleton markup renders correct structure for each view type
 - **Integration test**: Multiple concurrent operations don't interfere
-- **Manual test**: click "Start new game" → instant, zero disabled buttons
-- **Manual test**: While game creation pending, all other buttons clickable
-- **Manual test**: Join game → only join button pulses
-- **Manual test**: Invite page load → skeleton matches layout → content replaces smoothly
-- **Manual test**: Home pagination → card skeletons → cards appear
-- **Manual test**: Scenario import → scenario panel pulses → board updates
+- Browser coverage now exists for loading skeletons, localized pending join/copy flows, and localized scenario-button pending isolation. Manual testing remains useful for polish, but this phase is no longer relying on manual verification to catch regressions.
 
 ---
 
 ## Phase 7: Pending/committed styling in history log
 
-**Status on this branch:** Not started
+**Status on this branch:** Complete
 
 Make pending moves visually distinct but fully interactable.
 
@@ -532,17 +525,7 @@ Make pending moves visually distinct but fully interactable.
 
 ## Phase 8: Failed operation UX — alert banner + reset
 
-**Status on this branch:** Partially complete
-
-Implemented so far on this branch:
-- failed optimistic create-game leaves the local stub mounted
-- failed create-game shows an alert banner instead of collapsing the route
-- dependent optimistic commands are failed and cleared when create/branch binding fails
-
-Still remaining on this branch:
-- unify all failed-operation surfaces behind a single failed-operation API
-- remove the older split between `rollbackNotice` and operation-manager-backed failures
-- add dismiss/reset behavior for all failed optimistic operations, not just creation-related failures
+**Status on this branch:** Complete at the app-facing UX layer
 
 Surface unrecoverable failures with a dismissible banner.
 
@@ -564,7 +547,7 @@ Surface unrecoverable failures with a dismissible banner.
 
 ## Phase 9: Make history navigation local-first
 
-**Status on this branch:** Not started
+**Status on this branch:** Complete
 
 History navigation (`selectHistoryMove`, `returnToLive`) executes instantly with no server dependency.
 
@@ -591,7 +574,7 @@ History navigation (`selectHistoryMove`, `returnToLive`) executes instantly with
 
 ## Phase 10: Internalize WebSocket layer
 
-**Status on this branch:** Not started
+**Status on this branch:** Complete
 
 Absorb `live-sync.js` fully into the sync store.
 
@@ -613,7 +596,7 @@ Absorb `live-sync.js` fully into the sync store.
 
 ## Phase 11: Cleanup
 
-**Status on this branch:** Not started
+**Status on this branch:** Partially complete
 
 ### Files
 
