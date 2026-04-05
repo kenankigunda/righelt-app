@@ -10,6 +10,8 @@
   --section-item-gap: 0.75rem;
   --history-entry-row-gap: 0.16rem;
   --history-entry-section-gap: 0.42rem;
+  --history-marker-slot-width: 0.56rem;
+  --history-marker-gap: 0.24rem;
   --shell-main-max-width: 1200px;
   --shell-flyout-wide-width: min(34rem, 36vw);
   --shell-flyout-content-gap: 1rem;
@@ -589,14 +591,19 @@ button.button-release-bounce,
 .history-item {
   cursor: pointer;
   display: grid;
+  grid-template-columns: var(--history-marker-slot-width) minmax(0, 1fr);
+  column-gap: var(--history-marker-gap);
   gap: var(--history-entry-row-gap);
   transform-origin: 50% 50%;
-  position: relative;
-  padding-left: 1rem;
 }
 
 .history-item.history-item-has-actions {
   gap: var(--history-entry-section-gap);
+}
+
+.history-item > * {
+  grid-column: 2;
+  min-width: 0;
 }
 
 .history-item-info,
@@ -611,10 +618,13 @@ button.button-release-bounce,
 
 .history-item::before {
   content: "\2022";
-  position: absolute;
-  left: 0.12rem;
-  top: 0;
   color: currentColor;
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: center;
+  align-self: start;
+  line-height: 1;
+  transform: translateY(0.08rem);
 }
 
 .history-item:active {
@@ -670,14 +680,15 @@ button.button-release-bounce,
 
 .history-item.history-item-undone-group::before {
   content: "";
-  position: absolute;
-  left: 0.12rem;
-  top: 0.42rem;
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: center;
+  align-self: start;
   width: 0.36rem;
   height: 0.36rem;
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
-  transform: rotate(-45deg);
+  transform: translateY(0.42rem) rotate(-45deg);
   transform-origin: 58% 58%;
   transition: transform 170ms ease;
 }
@@ -693,7 +704,7 @@ button.button-release-bounce,
 }
 
 .history-item.history-item-undone-group.is-expanded::before {
-  transform: rotate(45deg);
+  transform: translateY(0.42rem) rotate(45deg);
 }
 
 .history-item.history-item-undone-group.is-undone .history-move-line {
@@ -744,19 +755,39 @@ button.button-release-bounce,
 
 /* Destruction sub-bullets — §t-001.04, RIGHELT_WEB_APP_SPEC §7 and §1.1.5 */
 .history-destruction-list {
-  list-style: disc;
+  list-style: none;
   margin: 0;
-  padding: 0 0 0 0.6rem;
+  padding: 0 0 0 0.28rem;
   display: grid;
   gap: var(--history-entry-row-gap);
 }
 
 .history-destruction-item {
   cursor: inherit;
+  display: grid;
+  grid-template-columns: var(--history-marker-slot-width) minmax(0, 1fr);
+  column-gap: var(--history-marker-gap);
+  align-items: center;
   font-size: 0.8em;
   opacity: 0.78;
-  padding-left: 0;
-  list-style-position: outside;
+  list-style: none;
+}
+
+.history-destruction-item::before {
+  content: "";
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: center;
+  width: 0.46rem;
+  height: 0.28rem;
+  background: currentColor;
+  opacity: 0.9;
+  clip-path: polygon(0 38%, 54% 38%, 54% 12%, 100% 50%, 54% 88%, 54% 62%, 0 62%);
+}
+
+.history-destruction-label {
+  grid-column: 2;
+  min-width: 0;
 }
 
 .history-item.is-undone .history-destruction-item,

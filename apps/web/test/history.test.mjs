@@ -165,6 +165,7 @@ test("U-16: renderTurnHistory source maps all destroyedPieces entries to sub-bul
 
 test("UX-09: selected history rows render destruction sub-bullets before action buttons", () => {
   assert.match(appSource, /<div class="history-item-info">[\s\S]*history-move-at small[\s\S]*\$\{destructionSubBullets\}[\s\S]*<\/div>[\s\S]*<div class="history-item-actions">\$\{revertButton\}\$\{branchButton\}<\/div>/);
+  assert.match(appSource, /history-destruction-item"[^>]*><span class="history-destruction-label">DESTROYED/);
 });
 
 // UX-03 — sub-bullet indentation uses minimal gutter (CSS structural check)
@@ -172,18 +173,25 @@ test("UX-03: shell.css contains destruction list indentation and no placeholder 
   const cssSrc = readFileSync(join(testDir, "..", "shell", "shell.css"), "utf8");
   assert.match(cssSrc, /\.history-destruction-list/);
   assert.match(cssSrc, /\.history-destruction-item/);
-  assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*list-style:\s*disc;/s);
+  assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*list-style:\s*none;/s);
+  assert.match(cssSrc, /--history-marker-slot-width:\s*0\.56rem;/);
+  assert.match(cssSrc, /--history-marker-gap:\s*0\.24rem;/);
   assert.match(cssSrc, /--history-entry-row-gap:\s*0\.16rem;/);
   assert.match(cssSrc, /--history-entry-section-gap:\s*0\.42rem;/);
-  assert.match(cssSrc, /\.history-item\s*\{[\s\S]*gap:\s*var\(--history-entry-row-gap\);/s);
+  assert.match(cssSrc, /\.history-item\s*\{[\s\S]*grid-template-columns:\s*var\(--history-marker-slot-width\)\s*minmax\(0,\s*1fr\);[\s\S]*column-gap:\s*var\(--history-marker-gap\);[\s\S]*gap:\s*var\(--history-entry-row-gap\);/s);
   assert.match(cssSrc, /\.history-item\.history-item-has-actions\s*\{[\s\S]*gap:\s*var\(--history-entry-section-gap\);/s);
+  assert.match(cssSrc, /\.history-item > \*\s*\{[\s\S]*grid-column:\s*2;/s);
   assert.match(cssSrc, /\.history-item-info,\s*\.history-item-actions\s*\{[\s\S]*gap:\s*var\(--history-entry-row-gap\);/s);
-  assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*padding:\s*0 0 0 0\.6rem;/s);
+  assert.match(cssSrc, /\.history-item::before\s*\{[\s\S]*grid-column:\s*1;[\s\S]*justify-self:\s*center;[\s\S]*align-self:\s*start;/s);
+  assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*padding:\s*0 0 0 0\.28rem;/s);
   assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*margin:\s*0;/s);
   assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*gap:\s*var\(--history-entry-row-gap\);/s);
   assert.match(cssSrc, /\.history-branch-button\s*\{[\s\S]*margin-top:\s*0;/s);
+  assert.match(cssSrc, /\.history-destruction-item\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*var\(--history-marker-slot-width\)\s*minmax\(0,\s*1fr\);[\s\S]*column-gap:\s*var\(--history-marker-gap\);/s);
   assert.doesNotMatch(cssSrc, /\.history-destruction-list\s*\{[^}]*min-height/);
-  assert.doesNotMatch(cssSrc, /\.history-destruction-item::before/);
+  assert.match(cssSrc, /\.history-destruction-item::before\s*\{[\s\S]*grid-column:\s*1;[\s\S]*justify-self:\s*center;[\s\S]*width:\s*0\.46rem;[\s\S]*height:\s*0\.28rem;/s);
+  assert.match(cssSrc, /\.history-destruction-item::before\s*\{[\s\S]*background:\s*currentColor;[\s\S]*clip-path:\s*polygon\(0 38%, 54% 38%, 54% 12%, 100% 50%, 54% 88%, 54% 62%, 0 62%\);/s);
+  assert.match(cssSrc, /\.history-destruction-label\s*\{[\s\S]*grid-column:\s*2;/s);
 });
 
 // UX-08 — sub-bullet is not rendered in the live board surface

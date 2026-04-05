@@ -1258,7 +1258,7 @@ const renderTurnHistory = (game) => {
     const destructionSubBullets = destroyedPieces.length > 0
       ? `<ul class="history-destruction-list">${destroyedPieces.map((record) => {
           const ownerSideClass = playerToneClassForSide(record.ownerSeat === "p1" ? "P1" : record.ownerSeat === "p2" ? "P2" : "neutral");
-          return `<li class="history-destruction-item ${ownerSideClass}${move.undone === true ? " is-undone" : ""}" data-testid="history-destruction-item">DESTROYED (${record.position.row},${record.position.col})</li>`;
+          return `<li class="history-destruction-item ${ownerSideClass}${move.undone === true ? " is-undone" : ""}" data-testid="history-destruction-item"><span class="history-destruction-label">DESTROYED (${record.position.row},${record.position.col})</span></li>`;
         }).join("")}</ul>`
       : "";
     const actionSection = revertButton || branchButton
