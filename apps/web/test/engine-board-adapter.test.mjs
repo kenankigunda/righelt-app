@@ -599,6 +599,50 @@ test("recorded-action overlay shows move markers without supply, command, or non
   });
 });
 
+test("recorded-action project overlay decorates the existing history target piece instead of duplicating it", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl, overlayLinesEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P2",
+      continuation: null,
+      pieces: [
+        { id: "A1", owner: "P1", kind: "commander", position: { row: 6, col: 5 }, supplied: true, commanded: true },
+        { id: "A2", owner: "P1", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true },
+      ],
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: {
+        mode: "recorded-action",
+        recordedAction: { type: "project", actorId: "A1", from: { row: 6, col: 5 }, to: { row: 5, col: 5 } },
+        recordedActionStartPiece: {
+          id: "A1",
+          owner: "P1",
+          kind: "commander",
+          position: { row: 6, col: 5 },
+          supplied: true,
+          commanded: true,
+        },
+      },
+      legalActions: [],
+      selectedPieceMoves: [],
+      selectedPieceMovePreviews: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "project",
+    });
+
+    const targetCell = getCell(boardEl, 5, 5);
+    assert.equal(targetCell?.querySelectorAll(".piece-token").length, 1);
+    assert.equal(targetCell?.querySelector(".piece-token")?.classList.contains("preview-created"), true);
+    assert.equal(targetCell?.querySelector(".move-ghost"), null);
+    assert.equal(overlayLinesEl.querySelectorAll("line").length, 0);
+    assert.equal(overlayLinesEl.querySelectorAll("path").length, 0);
+  });
+});
+
 test("recorded-action push overlay keeps push group highlight and count", async () => {
   await withFakeDocument(async () => {
     const { adapter, boardEl } = createMountedAdapter();
@@ -916,8 +960,9 @@ test("project previews use a plus badge while move-style previews use lightweigh
     /drawArrowLine\(\s*piece\.position,\s*action\.to,\s*piece\.owner,\s*false,\s*isSelectedTarget,\s*\)/s,
   );
   assert.doesNotMatch(adapterSource, /drawPath\(\[piece\.position, action\.to\], "#8b5ec0", "5 5"\)/);
+  assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*const existingToken = findRenderablePieceToken\(targetCell\);[\s\S]*existingToken\.classList\.add\("preview-created"\);[\s\S]*return;[\s\S]*\}/s);
   assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*ghost\.classList\.add\("preview-created"\);\s*\}/s);
-  assert.match(styleSource, /\.piece-token\.move-ghost\.preview-created::after\s*\{[\s\S]*content:\s*"\+";[\s\S]*top:\s*-7px;[\s\S]*right:\s*-8px;/s);
+  assert.match(styleSource, /\.piece-token\.preview-created::after\s*\{[\s\S]*content:\s*"\+";[\s\S]*top:\s*-7px;[\s\S]*right:\s*-8px;[\s\S]*z-index:\s*3;/s);
   assert.match(styleSource, /:root\s*\{[\s\S]*--player-p1:\s*#c2452f;[\s\S]*--player-p2:\s*#2d67c7;/s);
   assert.match(styleSource, /\.piece-token\.p1\s*\{[\s\S]*background:\s*var\(--player-p1\);[\s\S]*border-color:\s*var\(--player-p1\);/s);
   assert.match(styleSource, /\.piece-token\.p2\s*\{[\s\S]*background:\s*var\(--player-p2\);[\s\S]*border-color:\s*var\(--player-p2\);/s);

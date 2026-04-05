@@ -316,6 +316,21 @@ function buildPieceToken(piece, ghost = false) {
   return token;
 }
 
+const findRenderablePieceToken = (cell) => {
+  if (!cell || !Array.isArray(cell.children)) {
+    return null;
+  }
+  return (
+    cell.children.find(
+      (child) =>
+        child?.classList?.contains("piece-token") &&
+        !child.classList.contains("move-ghost") &&
+        !child.classList.contains("history-destruction-piece") &&
+        !child.classList.contains("removal-piece"),
+    ) ?? null
+  );
+};
+
 const buildDestroyedPieceOverlayToken = (record) => {
   const piece = {
     owner: record?.ownerSeat === "p2" ? "P2" : "P1",
@@ -765,6 +780,13 @@ export function createEngineBoardAdapter() {
         }
         const targetCell = cellByCoordinateKey.get(coordKey(action.to));
         if (targetCell) {
+          if (action.type === "project") {
+            const existingToken = findRenderablePieceToken(targetCell);
+            if (existingToken) {
+              existingToken.classList.add("preview-created");
+              return;
+            }
+          }
           const previewPiece = findActionTargetPiece(snapshot, action) ?? action.previewPiece ?? piece;
           const ghost = buildPieceToken(previewPiece, true);
           ghost.classList.add("move-ghost");

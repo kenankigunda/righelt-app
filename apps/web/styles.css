@@ -540,11 +540,12 @@ button {
   z-index: 0;
 }
 
-.piece-token.move-ghost.preview-created::after {
+.piece-token.preview-created::after {
   content: "+";
   position: absolute;
   top: -7px;
   right: -8px;
+  z-index: 3;
   width: 12px;
   height: 12px;
   display: inline-flex;
@@ -557,6 +558,7 @@ button {
   font-size: 0.62rem;
   font-weight: 900;
   line-height: 1;
+  pointer-events: none;
 }
 
 .overlay-key {
