@@ -2,6 +2,59 @@ import { test, expect } from "@playwright/test";
 
 import { buildAppUrl, closeContextQuietly, createGamesViaApi, createIsolatedPage } from "../support/app.mjs";
 
+const expectInviteLanding = async (page) => {
+  await expect(page.getByRole("heading", { name: "Choose how to enter this game" })).toBeVisible();
+  await expect(page.getByTestId("invite-join-viewer")).toBeVisible();
+};
+
+const getInviteTokenForGame = async (page, gameId) =>
+  page.evaluate(async ({ targetGameId }) => {
+    const identityId = window.localStorage.getItem("righelt.identity.id.v1");
+    if (!identityId) {
+      throw new Error("Expected identity id in local storage before loading invite metadata");
+    }
+
+    const response = await fetch(
+      `/api/shell/games/${encodeURIComponent(targetGameId)}?identityId=${encodeURIComponent(identityId)}`,
+    );
+    const body = await response.json();
+    if (!response.ok || !body?.game?.inviteToken) {
+      throw new Error(`Invite token lookup failed: ${response.status} ${JSON.stringify(body)}`);
+    }
+    return body.game.inviteToken;
+  }, { targetGameId: gameId });
+
+const deferRequest = async (context, predicate) => {
+  let releaseRequest = null;
+  const allowRequest = new Promise((resolve) => {
+    releaseRequest = resolve;
+  });
+  let seen = false;
+
+  await context.route("**/api/shell/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (!predicate({ method: request.method(), url })) {
+      await route.fallback();
+      return;
+    }
+    seen = true;
+    await allowRequest;
+    await route.fallback();
+  });
+
+  return {
+    release: () => releaseRequest?.(),
+    waitUntilSeen: async () => {
+      await expect
+        .poll(() => seen, {
+          message: "Expected the cold-load API request to hit the deferred route",
+        })
+        .toBe(true);
+    },
+  };
+};
+
 test("game route shows a skeleton while the initial game load is still in flight", async ({ browser, baseURL }) => {
   const { context: ownerContext, page } = await createIsolatedPage(browser);
   let delayedContext = null;
@@ -12,39 +65,19 @@ test("game route shows a skeleton while the initial game load is still in flight
     await closeContextQuietly(ownerContext);
     delayedContext = await browser.newContext();
     const delayedPage = await delayedContext.newPage();
-    await delayedPage.addInitScript(({ targetPath }) => {
-      const originalFetch = window.fetch.bind(window);
-      let release;
-      const gate = new Promise((resolve) => {
-        release = resolve;
-      });
-      window.__righeltTestFetchSeen = false;
-      window.__righeltTestReleaseFetch = () => release();
-      window.fetch = async (input, init) => {
-        const requestUrl =
-          typeof input === "string" || input instanceof URL ? String(input) : typeof input?.url === "string" ? input.url : String(input);
-        const url = new URL(requestUrl, window.location.origin);
-        const method =
-          (init?.method ??
-            (typeof input === "object" && input && "method" in input ? input.method : null) ??
-            "GET")
-            .toString()
-            .toUpperCase();
-        if (method === "GET" && url.pathname === targetPath) {
-          window.__righeltTestFetchSeen = true;
-          await gate;
-        }
-        return originalFetch(input, init);
-      };
-    }, { targetPath: `/api/shell/games/${gameId}` });
+    const deferredRequest = await deferRequest(
+      delayedContext,
+      ({ method, url }) => method === "GET" && url.pathname === `/api/shell/games/${gameId}`,
+    );
 
     const navigation = delayedPage.goto(buildAppUrl(baseURL, gameHash));
     await delayedPage.waitForLoadState("domcontentloaded");
+    await deferredRequest.waitUntilSeen();
     await delayedPage.waitForSelector('[data-testid="game-view-skeleton"]', { state: "visible" });
-    await delayedPage.evaluate(() => window.__righeltTestReleaseFetch());
+    deferredRequest.release();
 
     await navigation;
-    await expect(delayedPage.getByTestId("invite-gate")).toBeVisible();
+    await expectInviteLanding(delayedPage);
   } finally {
     await closeContextQuietly(delayedContext);
     await closeContextQuietly(ownerContext);
@@ -57,42 +90,23 @@ test("invite route shows a skeleton while invite resolution is pending", async (
 
   try {
     const [gameId] = await createGamesViaApi(page, 1);
+    const inviteToken = await getInviteTokenForGame(page, gameId);
     await closeContextQuietly(ownerContext);
     inviteContext = await browser.newContext();
     const invitePage = await inviteContext.newPage();
-    await invitePage.addInitScript(({ targetPath }) => {
-      const originalFetch = window.fetch.bind(window);
-      let release;
-      const gate = new Promise((resolve) => {
-        release = resolve;
-      });
-      window.__righeltTestFetchSeen = false;
-      window.__righeltTestReleaseFetch = () => release();
-      window.fetch = async (input, init) => {
-        const requestUrl =
-          typeof input === "string" || input instanceof URL ? String(input) : typeof input?.url === "string" ? input.url : String(input);
-        const url = new URL(requestUrl, window.location.origin);
-        const method =
-          (init?.method ??
-            (typeof input === "object" && input && "method" in input ? input.method : null) ??
-            "GET")
-            .toString()
-            .toUpperCase();
-        if (method === "GET" && url.pathname === targetPath) {
-          window.__righeltTestFetchSeen = true;
-          await gate;
-        }
-        return originalFetch(input, init);
-      };
-    }, { targetPath: `/api/shell/invites/${gameId}` });
+    const deferredRequest = await deferRequest(
+      inviteContext,
+      ({ method, url }) => method === "GET" && url.pathname === `/api/shell/invites/${inviteToken}`,
+    );
 
-    const navigation = invitePage.goto(buildAppUrl(baseURL, `#/invite/${encodeURIComponent(gameId)}`));
+    const navigation = invitePage.goto(buildAppUrl(baseURL, `#/invite/${encodeURIComponent(inviteToken)}`));
     await invitePage.waitForLoadState("domcontentloaded");
+    await deferredRequest.waitUntilSeen();
     await invitePage.waitForSelector('[data-testid="invite-view-skeleton"]', { state: "visible" });
-    await invitePage.evaluate(() => window.__righeltTestReleaseFetch());
+    deferredRequest.release();
 
     await navigation;
-    await expect(invitePage.getByTestId("invite-gate")).toBeVisible();
+    await expectInviteLanding(invitePage);
   } finally {
     await closeContextQuietly(inviteContext);
   }

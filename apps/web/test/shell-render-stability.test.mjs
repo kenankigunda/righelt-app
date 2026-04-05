@@ -394,6 +394,10 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   assert.match(source, /startRouteSync\(\{ renderStart: false \}\);/);
   assert.match(source, /renderGameViewSkeleton\(\)/);
   assert.match(source, /renderInvitePageSkeleton\(\)/);
+  assert.match(
+    source,
+    /else if \(currentRoute\.name === "invite"\) \{\s*if \(!routeHydrated\) \{\s*body = renderInvitePageSkeleton\(\);/s,
+  );
   assert.match(source, /renderHomeSectionSkeleton/);
   assert.match(
     source,

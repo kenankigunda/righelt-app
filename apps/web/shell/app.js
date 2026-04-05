@@ -3211,9 +3211,15 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     const inviteContext = getInviteContextForGame(game, "game");
     body = inviteContext ? renderInviteLanding(inviteContext) : renderGame(currentRoute.gameId, currentRoute.inviteFromRole);
   } else if (currentRoute.name === "invite") {
-    const game = resolvedInvite?.gameId ? transport.getGameViewModel(resolvedInvite.gameId) : null;
-    const inviteContext = getInviteContextForGame(game, "invite");
-    body = inviteContext ? renderInviteLanding(inviteContext) : renderGame(resolvedInvite?.gameId || null, resolvedInvite?.inviteFromRole || null, resolvedInvite?.inviteToken || null);
+    if (!routeHydrated) {
+      body = renderInvitePageSkeleton();
+    } else {
+      const game = resolvedInvite?.gameId ? transport.getGameViewModel(resolvedInvite.gameId) : null;
+      const inviteContext = getInviteContextForGame(game, "invite");
+      body = inviteContext
+        ? renderInviteLanding(inviteContext)
+        : renderGame(resolvedInvite?.gameId || null, resolvedInvite?.inviteFromRole || null, resolvedInvite?.inviteToken || null);
+    }
   } else if (currentRoute.name === "tutorial") {
     body = renderTutorial(currentRoute.gameId);
   } else {
