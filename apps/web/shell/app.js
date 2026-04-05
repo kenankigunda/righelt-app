@@ -2635,12 +2635,27 @@ const getHistoryDestroyedPieceOverlays = (game) => {
   }
   const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
   const destroyedPieces = Array.isArray(move?.destroyedPieces) ? move.destroyedPieces : [];
-  return destroyedPieces.map((record) => ({
-    row: record.position.row,
-    col: record.position.col,
-    ownerSeat: record.ownerSeat ?? null,
-    kind: record.reason === "commander_unsupplied" ? "commander" : "unit",
-  }));
+  const preActionPieces = Array.isArray(move?.selectionSnapshot?.pieces) ? move.selectionSnapshot.pieces : [];
+  return destroyedPieces.map((record) => {
+    const preActionPiece =
+      preActionPieces.find(
+        (piece) =>
+          piece?.position?.row === record.position.row &&
+          piece?.position?.col === record.position.col,
+      ) ?? null;
+    return {
+      row: record.position.row,
+      col: record.position.col,
+      ownerSeat:
+        record.ownerSeat ??
+        (preActionPiece?.owner === "P1" ? "p1" : preActionPiece?.owner === "P2" ? "p2" : null),
+      kind:
+        preActionPiece?.kind ??
+        (record.reason === "commander_unsupplied" ? "commander" : "unit"),
+      supplied: preActionPiece ? preActionPiece.supplied !== false : record.supplied ?? true,
+      commanded: preActionPiece ? preActionPiece.commanded !== false : record.commanded ?? true,
+    };
+  });
 };
 
 const findHistoryActionPiece = (snapshot, action) => {

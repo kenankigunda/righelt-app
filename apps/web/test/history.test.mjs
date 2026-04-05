@@ -240,6 +240,13 @@ test("I-15: history-mode view model prefers move snapshot over selection snapsho
   assert.equal(vm.currentSnapshot.pieces[0].commanded, false);
 });
 
+test("I-16: history destruction overlays derive inactive render state from the move selection snapshot", () => {
+  assert.match(appSource, /const preActionPieces = Array\.isArray\(move\?\.selectionSnapshot\?\.pieces\) \? move\.selectionSnapshot\.pieces : \[\];/);
+  assert.match(appSource, /const preActionPiece =[\s\S]*piece\?\.position\?\.row === record\.position\.row[\s\S]*piece\?\.position\?\.col === record\.position\.col/s);
+  assert.match(appSource, /supplied:\s*preActionPiece \? preActionPiece\.supplied !== false : record\.supplied \?\? true,/);
+  assert.match(appSource, /commanded:\s*preActionPiece \? preActionPiece\.commanded !== false : record\.commanded \?\? true,/);
+});
+
 // I-18 — new move appended while pinned to earlier history: move list grows but historyIndex stays
 test("I-18: new move appended while client is pinned to earlier history does not change historyIndex", async () => {
   const { store } = createTestStore();
