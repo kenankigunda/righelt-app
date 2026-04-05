@@ -1275,8 +1275,8 @@ const renderTurnHistory = (game) => {
             <span class="history-move-line">Move ${escapeHtml(
               String(move.displayMoveNumber ?? move.index + 1),
             )}: ${escapeHtml(move.notation)}</span>
-            <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
             ${destructionSubBullets}
+            <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
           </div>
           ${actionSection}
         </li>`,
