@@ -189,8 +189,8 @@ test("UX-03: shell.css contains destruction list indentation and no placeholder 
   assert.match(cssSrc, /\.history-branch-button\s*\{[\s\S]*margin-top:\s*0;/s);
   assert.match(cssSrc, /\.history-destruction-item\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*var\(--history-marker-slot-width\)\s*minmax\(0,\s*1fr\);[\s\S]*column-gap:\s*var\(--history-marker-gap\);/s);
   assert.doesNotMatch(cssSrc, /\.history-destruction-list\s*\{[^}]*min-height/);
-  assert.match(cssSrc, /\.history-destruction-item::before\s*\{[\s\S]*grid-column:\s*1;[\s\S]*justify-self:\s*center;[\s\S]*width:\s*0\.46rem;[\s\S]*height:\s*0\.28rem;/s);
-  assert.match(cssSrc, /\.history-destruction-item::before\s*\{[\s\S]*background:\s*currentColor;[\s\S]*clip-path:\s*polygon\(0 38%, 54% 38%, 54% 12%, 100% 50%, 54% 88%, 54% 62%, 0 62%\);/s);
+  assert.match(cssSrc, /\.history-destruction-item::before\s*\{[\s\S]*grid-column:\s*1;[\s\S]*justify-self:\s*center;[\s\S]*width:\s*0\.5rem;[\s\S]*height:\s*0\.34rem;/s);
+  assert.match(cssSrc, /\.history-destruction-item::before\s*\{[\s\S]*background:\s*currentColor;[\s\S]*clip-path:\s*polygon\(0 32%, 52% 32%, 52% 8%, 100% 50%, 52% 92%, 52% 68%, 0 68%\);/s);
   assert.match(cssSrc, /\.history-destruction-label\s*\{[\s\S]*grid-column:\s*2;/s);
 });
 

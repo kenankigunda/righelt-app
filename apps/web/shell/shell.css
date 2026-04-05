@@ -778,11 +778,11 @@ button.button-release-bounce,
   grid-column: 1;
   grid-row: 1;
   justify-self: center;
-  width: 0.46rem;
-  height: 0.28rem;
+  width: 0.5rem;
+  height: 0.34rem;
   background: currentColor;
   opacity: 0.9;
-  clip-path: polygon(0 38%, 54% 38%, 54% 12%, 100% 50%, 54% 88%, 54% 62%, 0 62%);
+  clip-path: polygon(0 32%, 52% 32%, 52% 8%, 100% 50%, 52% 92%, 52% 68%, 0 68%);
 }
 
 .history-destruction-label {
