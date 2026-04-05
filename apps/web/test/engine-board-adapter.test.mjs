@@ -881,11 +881,18 @@ test("inactive pieces use the square fill color instead of transparency", () => 
 test("history destruction overlays render as dedicated struck-through board tokens", () => {
   assert.match(adapterSource, /const destroyedByCoordinateKey = new Map/);
   assert.match(adapterSource, /cell\.appendChild\(buildDestroyedPieceOverlayToken\(destroyedPiece\)\);/);
-  assert.match(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*opacity:\s*0\.46;/s);
-  assert.match(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*overflow:\s*hidden;/s);
-  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.98\);/s);
-  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*width:\s*4px;/s);
-  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*transform:\s*rotate\(45deg\);/s);
+  assert.doesNotMatch(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*opacity:\s*0\.46;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*0\.46\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.p1\s*\{[\s\S]*background:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);[\s\S]*border-color:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.p2\s*\{[\s\S]*background:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);[\s\S]*border-color:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);/s);
+  assert.doesNotMatch(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*overflow:\s*hidden;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*background:\s*#ffffff;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*z-index:\s*4;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*left:\s*50%;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*top:\s*50%;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*width:\s*5px;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*height:\s*34px;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*transform:\s*translate\(-50%,\s*-50%\)\s*rotate\(45deg\);/s);
 });
 
 test("rush blocker chip styling matches the dedicated board-square treatment", () => {

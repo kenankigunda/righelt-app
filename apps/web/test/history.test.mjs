@@ -163,6 +163,10 @@ test("U-16: renderTurnHistory source maps all destroyedPieces entries to sub-bul
   assert.match(appSource, /destroyedPieces\.map\(\(record\)/);
 });
 
+test("UX-09: selected history rows render destruction sub-bullets before action buttons", () => {
+  assert.match(appSource, /history-move-at small[\s\S]*\$\{destructionSubBullets\}[\s\S]*\$\{revertButton\}[\s\S]*\$\{branchButton\}/);
+});
+
 // UX-03 — sub-bullet indentation uses minimal gutter (CSS structural check)
 test("UX-03: shell.css contains destruction list indentation and no placeholder space", () => {
   const cssSrc = readFileSync(join(testDir, "..", "shell", "shell.css"), "utf8");
