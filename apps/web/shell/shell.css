@@ -757,36 +757,19 @@ button.button-release-bounce,
 .history-destruction-list {
   list-style: none;
   margin: 0;
-  padding: 0 0 0 0.28rem;
+  padding: 0 0 0 10px;
   display: grid;
   gap: var(--history-entry-row-gap);
 }
 
 .history-destruction-item {
   cursor: inherit;
-  display: grid;
-  grid-template-columns: var(--history-marker-slot-width) minmax(0, 1fr);
-  column-gap: var(--history-marker-gap);
-  align-items: center;
   font-size: 0.8em;
   opacity: 0.78;
   list-style: none;
 }
 
-.history-destruction-item::before {
-  content: "";
-  grid-column: 1;
-  grid-row: 1;
-  justify-self: center;
-  width: 0.5rem;
-  height: 0.34rem;
-  background: currentColor;
-  opacity: 0.9;
-  clip-path: polygon(0 32%, 52% 32%, 52% 8%, 100% 50%, 52% 92%, 52% 68%, 0 68%);
-}
-
 .history-destruction-label {
-  grid-column: 2;
   min-width: 0;
 }
 
