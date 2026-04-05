@@ -29,7 +29,7 @@ Status meanings:
 | Presence indicators and reconnect role restore | `partial` | `present` | `present` | Browser proof is currently indirect through reconnect workflows; direct browser assertions for participant presence badges are still light. |
 | History navigation and return to live | `present` | `present` | `present` | Includes live appends while pinned to history and explicit return-to-live restoration. |
 | Identity and role persistence across reload | `present` | `present` | `present` | Covered for approved participant reload and transport refresh after missed updates. |
-| Revert / undo request lifecycle | `present` | `partial` | `present` | Browser proof now covers optimistic undo with both auto-approve and approval-required paths, plus returning history viewers to live mode after approval; reject/rescind remain deeper in integration than in dedicated browser flows. |
+| Revert / undo request lifecycle | `present` | `partial` | `present` | Browser proof now covers optimistic undo with both auto-approve and approval-required paths, plus returning history viewers to live mode after approval; integration now also covers approve/reject/rescind interactions while clients are already in history mode, while dedicated browser reject/rescind flows are still absent. |
 
 ## Extended Shell Workflows
 

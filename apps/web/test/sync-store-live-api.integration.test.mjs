@@ -773,3 +773,138 @@ test("integration sync store exits history mode when the approver accepts an und
   assert.equal(guestStore.getGameViewModel(createdGame.id)?.inHistoryMode, false);
   assert.equal(guestStore.getGameViewModel(createdGame.id)?.historyIndex, null);
 });
+
+test("integration sync store keeps the approver in history mode when an undo request is rejected", async () => {
+  const env = createApiEnv();
+  const ownerStorage = createMemoryStorage();
+  const guestStorage = createMemoryStorage();
+
+  const createStore = (storage) =>
+    createSyncStore({
+      storage,
+      fetcher: async (url, init = {}) =>
+        apiWorker.fetch(
+          new Request(toAbsoluteUrl(url), {
+            method: init.method || "GET",
+            headers: init.headers,
+            body: init.body,
+          }),
+          env,
+        ),
+      createSyncClient: () => ({
+        connectGame() {},
+        disconnectGame() {},
+        disconnectAll() {},
+        getDesiredGameIds: () => [],
+      }),
+    });
+
+  const ownerStore = createStore(ownerStorage);
+  const guestStore = createStore(guestStorage);
+
+  const createdGame = await ownerStore.createGame({ selfPlayMode: false }).committed;
+  const guestJoin = await guestStore.joinGame({ gameId: createdGame.id, mode: "player", inviteFromRole: null });
+  assert.equal(guestJoin.pendingApproval, true);
+
+  const ownerGameWithJoinRequest = await ownerStore.loadGame(createdGame.id, { openAsViewer: false });
+  const pendingRequester = ownerGameWithJoinRequest.pendingJoinRequests?.[0]?.identityId ?? null;
+  assert.ok(pendingRequester);
+  const approvedJoin = await ownerStore.approvePendingRequest({ gameId: createdGame.id, requesterIdentityId: pendingRequester });
+  assert.equal(approvedJoin.ok, true);
+
+  const refreshedOwnerGame = await ownerStore.loadGame(createdGame.id, { openAsViewer: false });
+  const action = refreshedOwnerGame.legalActions.find((entry) => entry.type !== "pass") ?? refreshedOwnerGame.legalActions[0];
+  const moveHandle = await ownerStore.applyGameAction({
+    gameId: refreshedOwnerGame.id,
+    state: refreshedOwnerGame.currentSnapshot,
+    action,
+  });
+  await moveHandle.committed;
+
+  const targetMoveId = ownerStore.getGameViewModel(createdGame.id).latestActiveMoveId;
+  const revertHandle = ownerStore.requestRevertToMove({
+    gameId: createdGame.id,
+    targetMoveId,
+  });
+  const requestedGame = await revertHandle.committed;
+  const requestId = requestedGame.pendingRevertRequest?.requestId ?? null;
+  assert.ok(requestId);
+
+  await guestStore.loadGame(createdGame.id, { openAsViewer: false });
+  const historyHandle = guestStore.selectHistoryMove({ gameId: createdGame.id, moveIndex: 0 });
+  assert.equal(historyHandle.result.inHistoryMode, true);
+
+  const rejected = await guestStore.rejectRevertRequest({ gameId: createdGame.id, requestId }).committed;
+  assert.equal(rejected.inHistoryMode, true);
+  assert.equal(rejected.historyIndex, 0);
+  assert.equal(rejected.pendingRevertRequest, null);
+  assert.equal(guestStore.getGameViewModel(createdGame.id)?.inHistoryMode, true);
+  assert.equal(guestStore.getGameViewModel(createdGame.id)?.historyIndex, 0);
+});
+
+test("integration sync store keeps the requester in history mode when an undo request is rescinded", async () => {
+  const env = createApiEnv();
+  const ownerStorage = createMemoryStorage();
+  const guestStorage = createMemoryStorage();
+
+  const createStore = (storage) =>
+    createSyncStore({
+      storage,
+      fetcher: async (url, init = {}) =>
+        apiWorker.fetch(
+          new Request(toAbsoluteUrl(url), {
+            method: init.method || "GET",
+            headers: init.headers,
+            body: init.body,
+          }),
+          env,
+        ),
+      createSyncClient: () => ({
+        connectGame() {},
+        disconnectGame() {},
+        disconnectAll() {},
+        getDesiredGameIds: () => [],
+      }),
+    });
+
+  const ownerStore = createStore(ownerStorage);
+  const guestStore = createStore(guestStorage);
+
+  const createdGame = await ownerStore.createGame({ selfPlayMode: false }).committed;
+  const guestJoin = await guestStore.joinGame({ gameId: createdGame.id, mode: "player", inviteFromRole: null });
+  assert.equal(guestJoin.pendingApproval, true);
+
+  const ownerGameWithJoinRequest = await ownerStore.loadGame(createdGame.id, { openAsViewer: false });
+  const pendingRequester = ownerGameWithJoinRequest.pendingJoinRequests?.[0]?.identityId ?? null;
+  assert.ok(pendingRequester);
+  const approvedJoin = await ownerStore.approvePendingRequest({ gameId: createdGame.id, requesterIdentityId: pendingRequester });
+  assert.equal(approvedJoin.ok, true);
+
+  const refreshedOwnerGame = await ownerStore.loadGame(createdGame.id, { openAsViewer: false });
+  const action = refreshedOwnerGame.legalActions.find((entry) => entry.type !== "pass") ?? refreshedOwnerGame.legalActions[0];
+  const moveHandle = await ownerStore.applyGameAction({
+    gameId: refreshedOwnerGame.id,
+    state: refreshedOwnerGame.currentSnapshot,
+    action,
+  });
+  await moveHandle.committed;
+
+  const targetMoveId = ownerStore.getGameViewModel(createdGame.id).latestActiveMoveId;
+  const revertHandle = ownerStore.requestRevertToMove({
+    gameId: createdGame.id,
+    targetMoveId,
+  });
+  const requestedGame = await revertHandle.committed;
+  const requestId = requestedGame.pendingRevertRequest?.requestId ?? null;
+  assert.ok(requestId);
+
+  const historyHandle = ownerStore.selectHistoryMove({ gameId: createdGame.id, moveIndex: 0 });
+  assert.equal(historyHandle.result.inHistoryMode, true);
+
+  const rescinded = await ownerStore.rescindRevertRequest({ gameId: createdGame.id, requestId }).committed;
+  assert.equal(rescinded.inHistoryMode, true);
+  assert.equal(rescinded.historyIndex, 0);
+  assert.equal(rescinded.pendingRevertRequest, null);
+  assert.equal(ownerStore.getGameViewModel(createdGame.id)?.inHistoryMode, true);
+  assert.equal(ownerStore.getGameViewModel(createdGame.id)?.historyIndex, 0);
+});
