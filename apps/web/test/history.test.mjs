@@ -164,7 +164,7 @@ test("U-16: renderTurnHistory source maps all destroyedPieces entries to sub-bul
 });
 
 test("UX-09: selected history rows render destruction sub-bullets before action buttons", () => {
-  assert.match(appSource, /history-move-at small[\s\S]*\$\{destructionSubBullets\}[\s\S]*\$\{revertButton\}[\s\S]*\$\{branchButton\}/);
+  assert.match(appSource, /<div class="history-item-info">[\s\S]*history-move-at small[\s\S]*\$\{destructionSubBullets\}[\s\S]*<\/div>[\s\S]*<div class="history-item-actions">\$\{revertButton\}\$\{branchButton\}<\/div>/);
 });
 
 // UX-03 — sub-bullet indentation uses minimal gutter (CSS structural check)
@@ -173,9 +173,14 @@ test("UX-03: shell.css contains destruction list indentation and no placeholder 
   assert.match(cssSrc, /\.history-destruction-list/);
   assert.match(cssSrc, /\.history-destruction-item/);
   assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*list-style:\s*disc;/s);
-  assert.match(cssSrc, /\.history-item\s*\{[\s\S]*gap:\s*0\.16rem;/s);
+  assert.match(cssSrc, /--history-entry-row-gap:\s*0\.16rem;/);
+  assert.match(cssSrc, /--history-entry-section-gap:\s*0\.42rem;/);
+  assert.match(cssSrc, /\.history-item\s*\{[\s\S]*gap:\s*var\(--history-entry-row-gap\);/s);
+  assert.match(cssSrc, /\.history-item\.history-item-has-actions\s*\{[\s\S]*gap:\s*var\(--history-entry-section-gap\);/s);
+  assert.match(cssSrc, /\.history-item-info,\s*\.history-item-actions\s*\{[\s\S]*gap:\s*var\(--history-entry-row-gap\);/s);
   assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*padding:\s*0 0 0 0\.6rem;/s);
   assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*margin:\s*0;/s);
+  assert.match(cssSrc, /\.history-destruction-list\s*\{[\s\S]*gap:\s*var\(--history-entry-row-gap\);/s);
   assert.match(cssSrc, /\.history-branch-button\s*\{[\s\S]*margin-top:\s*0;/s);
   assert.doesNotMatch(cssSrc, /\.history-destruction-list\s*\{[^}]*min-height/);
   assert.doesNotMatch(cssSrc, /\.history-destruction-item::before/);

@@ -1261,19 +1261,24 @@ const renderTurnHistory = (game) => {
           return `<li class="history-destruction-item ${ownerSideClass}${move.undone === true ? " is-undone" : ""}" data-testid="history-destruction-item">DESTROYED (${record.position.row},${record.position.col})</li>`;
         }).join("")}</ul>`
       : "";
+    const actionSection = revertButton || branchButton
+      ? `<div class="history-item-actions">${revertButton}${branchButton}</div>`
+      : "";
+    const sectionClass = actionSection ? " history-item-has-actions" : "";
     return {
       undone: move.undone === true,
       actorSide: move.actorSide || null,
-      html: `<li class="history-item ${playerToneClassForSide(move.actorSide || "P1")}${selectedClass}${undoneClass}" data-action="jump-history" data-game-id="${escapeHtml(
+      html: `<li class="history-item${sectionClass} ${playerToneClassForSide(move.actorSide || "P1")}${selectedClass}${undoneClass}" data-action="jump-history" data-game-id="${escapeHtml(
         game.id,
       )}" data-move-index="${move.index}" data-testid="history-move-item">
-          <span class="history-move-line">Move ${escapeHtml(
-            String(move.displayMoveNumber ?? move.index + 1),
-          )}: ${escapeHtml(move.notation)}</span>
-          <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
-          ${destructionSubBullets}
-          ${revertButton}
-          ${branchButton}
+          <div class="history-item-info">
+            <span class="history-move-line">Move ${escapeHtml(
+              String(move.displayMoveNumber ?? move.index + 1),
+            )}: ${escapeHtml(move.notation)}</span>
+            <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
+            ${destructionSubBullets}
+          </div>
+          ${actionSection}
         </li>`,
     };
   });

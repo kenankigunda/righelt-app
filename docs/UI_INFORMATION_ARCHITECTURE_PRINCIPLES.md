@@ -27,6 +27,17 @@ This document defines shared information-architecture rules for compact UI surfa
 - Optional rows must join the same spacing rhythm as always-present rows instead of adding one-off top or bottom margins.
 - State changes such as selected, expanded, undone, annotated, or pending should preserve the baseline spacing rhythm unless the state is intentionally introducing a new visual grouping.
 
+## Section Break Rhythm Principle
+
+- Use spacing to express hierarchy with the Gestalt proximity rule: items that belong to the same conceptual section should sit closer together than items that belong to adjacent sections.
+- In repeated records, use at least three intentional rhythm levels when needed:
+  - within-section spacing for tightly related rows
+  - between-section spacing for distinct clusters inside one record
+  - between-record spacing for sibling records in the list
+- Keep these levels ordered consistently so `within-section < between-section < between-record`, unless a deliberate visual interruption calls for something stronger.
+- Section breaks should be container-owned, usually by wrapping each section and letting the parent record define the gap between sections, rather than by stacking ad hoc child margins.
+- When reviewing a UI iteration, compare the section-break gap not only against the rows around it, but also against the existing distance between sibling records so the list hierarchy still scans cleanly.
+
 ## Horizontal Rhythm Principle
 
 - Within a repeated UI row or cluster, horizontal spacing should be owned by the parent layout rather than by ad hoc child offsets.
@@ -40,6 +51,13 @@ This document defines shared information-architecture rules for compact UI surfa
 - Avoid stacking child-specific margins on top of container spacing inside repeated records, because those local adjustments tend to drift apart as optional content and stateful controls are added.
 - If a child needs an exception, treat it as an explicit hierarchy break and document why it should not follow the shared rhythm.
 - During review, check whether spacing is being defined once at the container level or being recreated piecemeal by descendants.
+
+## Repeated Record Grouping Rule
+
+- When a record mixes informational content and controls, treat those as separate sections even when they appear inside the same card or list row.
+- Keep the internal rhythm of the informational stack and the controls stack consistent within themselves, then use a slightly larger section break to show the conceptual handoff from "what this is" to "what you can do here."
+- Do not let action controls float on the same spacing cadence as descriptive metadata unless the controls are intentionally being presented as peer content rather than follow-up actions.
+- Apply the same grouping logic across cards, side panels, flyouts, and inspector rows so interaction affordances feel predictably attached to the content they act on.
 
 ## Mobile Screen Real Estate Principle
 
