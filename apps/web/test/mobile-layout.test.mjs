@@ -111,6 +111,33 @@ test("shell main layout transitions width when docked flyouts open or close", ()
     shellStylesSource,
     /\.shell-game-alerts:empty,\s*#shell-game-alerts:empty\s*\{[\s\S]*display:\s*none;/s,
   );
+  assert.match(
+    shellStylesSource,
+    /\.shell-route-transition-layer\s*\{[\s\S]*position:\s*fixed;[\s\S]*inset:\s*0;[\s\S]*pointer-events:\s*none;[\s\S]*opacity:\s*0;[\s\S]*visibility:\s*hidden;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-route-transition-layer-swipe\s*\{[\s\S]*var\(--player-p1\)[\s\S]*var\(--player-p2\)/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-route-transition-layer\[data-phase="covering"\]\s+\.shell-route-transition-layer-swipe\s*\{[\s\S]*animation:\s*shell-game-entry-swipe-in var\(--shell-game-entry-cover-ms,\s*160ms\)/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-route-transition-layer\[data-phase="revealing"\]\s+\.shell-route-transition-layer-swipe\s*\{[\s\S]*animation:\s*shell-game-entry-swipe-out var\(--shell-game-entry-reveal-ms,\s*200ms\)/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-transition-active="true"\]\[data-shell-transition="game-entry"\]\[data-shell-transition-phase="revealing"\]\[data-shell-route="game"\]\s+\.shell-main-content\s*\{[\s\S]*animation:\s*shell-game-entry-content-reveal var\(--shell-game-entry-reveal-ms,\s*200ms\)/s,
+  );
+});
+
+test("create-game handoff disables branded motion when reduced motion is requested", () => {
+  assert.match(
+    shellStylesSource,
+    /@media \(prefers-reduced-motion: reduce\) \{\s*[\s\S]*\.shell-route-transition-layer-backdrop,\s*\.shell-route-transition-layer-swipe,[\s\S]*animation:\s*none;[\s\S]*\.shell-route-transition-layer\s*\{[\s\S]*display:\s*none;/s,
+  );
 });
 
 test("wide-screen shell sticky columns only target the left and board stacks", () => {

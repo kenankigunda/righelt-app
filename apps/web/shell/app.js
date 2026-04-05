@@ -53,7 +53,25 @@ const ensureShellStylesheet = () => {
   document.head.appendChild(link);
 };
 
+const ensureRouteTransitionLayer = () => {
+  let layerEl = document.getElementById("shell-route-transition-layer");
+  if (layerEl instanceof HTMLElement) {
+    return layerEl;
+  }
+  layerEl = document.createElement("div");
+  layerEl.id = "shell-route-transition-layer";
+  layerEl.className = "shell-route-transition-layer";
+  layerEl.setAttribute("data-active", "false");
+  layerEl.setAttribute("data-transition", "none");
+  layerEl.setAttribute("data-phase", "idle");
+  layerEl.setAttribute("aria-hidden", "true");
+  layerEl.innerHTML = '<div class="shell-route-transition-layer-backdrop"></div><div class="shell-route-transition-layer-swipe"></div>';
+  document.body.append(layerEl);
+  return layerEl;
+};
+
 ensureShellStylesheet();
+const routeTransitionLayerEl = ensureRouteTransitionLayer();
 if (appEl) {
   appEl.hidden = false;
   appEl.setAttribute("data-shell-layout-mode", "narrow");
@@ -120,9 +138,13 @@ let lastRenderedMainMarkup = "";
 let lastRenderedFlyoutMarkup = "";
 let lastRenderedRouteKey = "";
 let lastRenderedBaseRouteKey = "";
+let lastRenderedTransitionPhaseKey = "idle";
 let routeSyncRequestId = 0;
 const HISTORY_SELECTION_EXIT_MS = 56;
 const HISTORY_RELEASE_BOUNCE_MS = 140;
+const GAME_ENTRY_ROUTE_TRANSITION_MS = 320;
+const GAME_ENTRY_ROUTE_TRANSITION_COVER_MS = 160;
+const GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS = 200;
 const HOME_SECTION_SERVER_PAGE_SIZE = 4;
 const HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT = 3;
 const HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE = 4;
@@ -137,6 +159,9 @@ let stickyLayoutFrame = 0;
 let homeSectionResizeFrame = 0;
 let activePanelSwipe = null;
 let panelTransitionResetTimer = null;
+let routeTransition = null;
+let routeTransitionCoverTimer = null;
+let routeTransitionRevealTimer = null;
 let headerMenuOpen = false;
 const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;
 const SHELL_VIEWPORT_GUTTER_PX = 16;
@@ -814,6 +839,131 @@ const renderFeedbackReveal = (message) => `
   </div>
 `;
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+const getRouteTransitionRenderKey = () =>
+  routeTransition ? `${routeTransition.type}:${routeTransition.fromRoute}:${routeTransition.toRoute}:${routeTransition.gameId}` : "none";
+const getRouteTransitionPhaseKey = () => routeTransition?.phase || "idle";
+const isGameEntryRouteTransitionActive = (route = currentRoute) =>
+  routeTransition?.type === "game-entry" && route?.name === "game" && route?.gameId === routeTransition.gameId;
+const syncRouteTransitionLayer = () => {
+  if (!(routeTransitionLayerEl instanceof HTMLElement)) {
+    return;
+  }
+  routeTransitionLayerEl.style.setProperty("--shell-game-entry-transition-ms", `${GAME_ENTRY_ROUTE_TRANSITION_MS}ms`);
+  routeTransitionLayerEl.style.setProperty("--shell-game-entry-cover-ms", `${GAME_ENTRY_ROUTE_TRANSITION_COVER_MS}ms`);
+  routeTransitionLayerEl.style.setProperty("--shell-game-entry-reveal-ms", `${GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS}ms`);
+  routeTransitionLayerEl.setAttribute("data-active", routeTransition ? "true" : "false");
+  routeTransitionLayerEl.setAttribute("data-transition", routeTransition?.type || "none");
+  routeTransitionLayerEl.setAttribute("data-phase", routeTransition?.phase || "idle");
+};
+const clearRouteTransitionTimers = () => {
+  if (routeTransitionCoverTimer) {
+    window.clearTimeout(routeTransitionCoverTimer);
+    routeTransitionCoverTimer = null;
+  }
+  if (routeTransitionRevealTimer) {
+    window.clearTimeout(routeTransitionRevealTimer);
+    routeTransitionRevealTimer = null;
+  }
+};
+const clearRouteTransition = ({ renderNow = true } = {}) => {
+  clearRouteTransitionTimers();
+  if (!routeTransition) {
+    syncRouteTransitionLayer();
+    return;
+  }
+  routeTransition = null;
+  syncRouteTransitionLayer();
+  if (renderNow) {
+    render({ animatePanels: false, includeBoard: false });
+  }
+};
+const finishRouteTransitionReveal = (gameId) => {
+  if (!routeTransition || routeTransition.gameId !== gameId || routeTransition.phase !== "revealing") {
+    return;
+  }
+  routeTransition = null;
+  syncRouteTransitionLayer();
+  render({ animatePanels: false, includeBoard: false });
+};
+const beginRouteTransitionReveal = (gameId) => {
+  if (!routeTransition || routeTransition.gameId !== gameId || routeTransition.phase === "revealing") {
+    return;
+  }
+  routeTransition.phase = "revealing";
+  syncRouteTransitionLayer();
+  render({ animatePanels: false, includeBoard: false });
+  if (routeTransitionRevealTimer) {
+    window.clearTimeout(routeTransitionRevealTimer);
+  }
+  routeTransitionRevealTimer = window.setTimeout(() => {
+    routeTransitionRevealTimer = null;
+    finishRouteTransitionReveal(gameId);
+  }, GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS);
+};
+const settleRouteTransitionCover = (gameId) => {
+  if (!routeTransition || routeTransition.gameId !== gameId || routeTransition.phase !== "covering") {
+    return;
+  }
+  routeTransition.phase = "covered";
+  syncRouteTransitionLayer();
+  if (isGameEntryRouteTransitionActive() && routeHydrated) {
+    beginRouteTransitionReveal(gameId);
+  } else {
+    render({ animatePanels: false, includeBoard: false });
+  }
+};
+const scheduleRouteTransitionCoverSettle = (gameId) => {
+  if (routeTransitionCoverTimer) {
+    window.clearTimeout(routeTransitionCoverTimer);
+  }
+  routeTransitionCoverTimer = window.setTimeout(() => {
+    routeTransitionCoverTimer = null;
+    settleRouteTransitionCover(gameId);
+  }, GAME_ENTRY_ROUTE_TRANSITION_COVER_MS);
+};
+const startGameEntryRouteTransition = (gameId, fromRoute = currentRoute?.name || "unknown") => {
+  if (!gameId || prefersReducedMotion()) {
+    clearRouteTransition({ renderNow: false });
+    return;
+  }
+  clearRouteTransitionTimers();
+  routeTransition = {
+    type: "game-entry",
+    fromRoute,
+    toRoute: "game",
+    gameId,
+    phase: "covering",
+  };
+  syncRouteTransitionLayer();
+  if (routeTransitionLayerEl instanceof HTMLElement) {
+    routeTransitionLayerEl.classList.remove("is-running");
+    void routeTransitionLayerEl.offsetHeight;
+    routeTransitionLayerEl.classList.add("is-running");
+  }
+  scheduleRouteTransitionCoverSettle(gameId);
+};
+const syncRouteTransitionForCurrentRoute = () => {
+  if (!routeTransition) {
+    syncRouteTransitionLayer();
+    return;
+  }
+  if (prefersReducedMotion() || !isGameEntryRouteTransitionActive(currentRoute)) {
+    clearRouteTransition({ renderNow: false });
+    return;
+  }
+  syncRouteTransitionLayer();
+};
+const maybeRevealRouteTransition = () => {
+  if (!routeTransition || !isGameEntryRouteTransitionActive(currentRoute) || !routeHydrated) {
+    return;
+  }
+  if (routeTransition.phase === "covering") {
+    return;
+  }
+  if (routeTransition.phase === "covered") {
+    beginRouteTransitionReveal(routeTransition.gameId);
+  }
+};
 const delay = (ms) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, ms);
@@ -848,7 +998,7 @@ const getBaseRouteRenderKey = (route = currentRoute) => {
   return String(route.name || "unknown");
 };
 const getRouteRenderKey = (route = currentRoute) =>
-  `${getBaseRouteRenderKey(route)}|panel:${route?.name === "game" ? getGamePanel(route) : ""}|${FLYOUT_KEYS.map((key) => `${key}:${route?.[key] === true}`).join("|")}`;
+  `${getBaseRouteRenderKey(route)}|panel:${route?.name === "game" ? getGamePanel(route) : ""}|${FLYOUT_KEYS.map((key) => `${key}:${route?.[key] === true}`).join("|")}|transition:${getRouteTransitionRenderKey()}`;
 const isFlyoutOnlyRouteChange = (previousRoute, nextRoute) =>
   getBaseRouteRenderKey(previousRoute) === getBaseRouteRenderKey(nextRoute) &&
   getRouteRenderKey(previousRoute) !== getRouteRenderKey(nextRoute);
@@ -1069,6 +1219,9 @@ const syncShellLayoutMode = () => {
   if (appEl instanceof HTMLElement) {
     appEl.setAttribute("data-shell-layout-mode", layoutMode);
     appEl.setAttribute("data-shell-route", currentRoute?.name || "unknown");
+    appEl.setAttribute("data-shell-transition", routeTransition?.type || "none");
+    appEl.setAttribute("data-shell-transition-active", isGameEntryRouteTransitionActive() ? "true" : "false");
+    appEl.setAttribute("data-shell-transition-phase", getRouteTransitionPhaseKey());
     const activeGamePanel = getGamePanel();
     appEl.setAttribute("data-shell-game-panel", activeGamePanel);
     appEl.style.setProperty("--shell-game-panel-index", String(getGamePanelIndex(activeGamePanel)));
@@ -2376,6 +2529,7 @@ const updateMountedFlyouts = () => {
 };
 const shouldPatchMountedFlyouts = (routeKey = getRouteRenderKey(), baseRouteKey = getBaseRouteRenderKey()) =>
   routeKey !== lastRenderedRouteKey &&
+  getRouteTransitionPhaseKey() === lastRenderedTransitionPhaseKey &&
   baseRouteKey === lastRenderedBaseRouteKey &&
   appEl instanceof HTMLElement &&
   appEl.querySelector(".shell-main-content") instanceof HTMLElement &&
@@ -2387,6 +2541,7 @@ const syncRenderedMarkupSnapshot = () => {
   lastRenderedMarkup = `<div class="shell-page-shell">${lastRenderedMainMarkup}${lastRenderedFlyoutMarkup}</div>`;
   lastRenderedRouteKey = getRouteRenderKey();
   lastRenderedBaseRouteKey = getBaseRouteRenderKey();
+  lastRenderedTransitionPhaseKey = getRouteTransitionPhaseKey();
 };
 
 const reconcileMiniBoardPreviews = () => {
@@ -3181,6 +3336,7 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   document.title = getDocumentTitle();
+  syncRouteTransitionForCurrentRoute();
   const routeKey = getRouteRenderKey();
   const baseRouteKey = getBaseRouteRenderKey();
   const shouldPatchFlyoutsOnly = shouldPatchMountedFlyouts(routeKey, baseRouteKey);
@@ -3207,6 +3363,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   const mountedGameShell = getMountedGameShellRoot();
   if (
     shouldUseIncrementalGameShell() &&
+    getRouteTransitionPhaseKey() === lastRenderedTransitionPhaseKey &&
     mountedGameShell?.getAttribute("data-game-id") === currentRoute.gameId
   ) {
     updateMountedHeader();
@@ -3251,6 +3408,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     lastRenderedFlyoutMarkup = renderFlyouts();
     lastRenderedRouteKey = routeKey;
     lastRenderedBaseRouteKey = baseRouteKey;
+    lastRenderedTransitionPhaseKey = getRouteTransitionPhaseKey();
     if (animatePanels) {
       animatePanelHeightChanges(previousPanelHeights);
       animateFlyoutPositionChanges(previousFlyoutRects);
@@ -3259,6 +3417,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (nextMarkup === lastRenderedMarkup) {
     lastRenderedRouteKey = routeKey;
     lastRenderedBaseRouteKey = baseRouteKey;
+    lastRenderedTransitionPhaseKey = getRouteTransitionPhaseKey();
   }
   syncFlyoutAwareLinks();
   syncCopyInviteLinks();
@@ -3358,6 +3517,7 @@ const startRouteSync = ({ renderStart = true } = {}) => {
       }
       routeHydrated = true;
       render({ animatePanels: false, includeBoard: false });
+      maybeRevealRouteTransition();
     }
   })();
 };
@@ -3367,6 +3527,7 @@ const syncRouteDataPassive = async () => {
     await syncRouteDataAndLiveChannels();
     routeHydrated = true;
     render({ animatePanels: false, includeBoard: false });
+    maybeRevealRouteTransition();
   } catch (error) {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
   }
@@ -3480,6 +3641,7 @@ window.addEventListener("hashchange", () => {
   closeHeaderMenu();
   const parsedRoute = parseRouteFromHash(window.location.hash);
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
+  syncRouteTransitionForCurrentRoute();
   const normalizedHash = buildHashForRoute(currentRoute);
   if (window.location.hash !== normalizedHash) {
     window.location.hash = normalizedHash;
@@ -3490,6 +3652,7 @@ window.addEventListener("hashchange", () => {
     routeHydrated = true;
     syncLiveChannels();
     render();
+    maybeRevealRouteTransition();
     return;
   }
   if (isFlyoutOnlyRouteChange(previousRoute, currentRoute)) {
@@ -3517,6 +3680,23 @@ appEl.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
     return;
+  }
+
+  const gameLinkEl = target.closest(".mini-board-card-link-surface[data-game-id]");
+  if (
+    gameLinkEl instanceof HTMLAnchorElement &&
+    currentRoute.name === "home" &&
+    event.button === 0 &&
+    !event.defaultPrevented &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey
+  ) {
+    const gameId = gameLinkEl.getAttribute("data-game-id");
+    if (gameId) {
+      startGameEntryRouteTransition(gameId, "home");
+    }
   }
 
   if (target.closest("[data-header-menu-close='true']")) {
@@ -3590,6 +3770,7 @@ appEl.addEventListener("click", async (event) => {
 
   if (action === "create-game") {
     const handle = transport.createGame({ selfPlayMode: false });
+    startGameEntryRouteTransition(handle.result.id, "home");
     navigateTo(buildGameHash(handle.result.id, null, getCurrentFlyoutState()));
     return;
   }

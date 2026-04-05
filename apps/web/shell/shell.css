@@ -64,6 +64,146 @@ body {
     max-width 180ms ease;
 }
 
+.shell-route-transition-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.shell-route-transition-layer[data-active="true"] {
+  opacity: 1;
+  visibility: visible;
+}
+
+.shell-route-transition-layer-backdrop,
+.shell-route-transition-layer-swipe {
+  position: absolute;
+  inset: 0;
+}
+
+.shell-route-transition-layer-backdrop {
+  opacity: 0;
+  background: linear-gradient(180deg, rgba(244, 241, 232, 0.16) 0%, rgba(244, 241, 232, 0.72) 100%);
+  backdrop-filter: blur(0px);
+}
+
+.shell-route-transition-layer-swipe {
+  top: -10%;
+  bottom: -10%;
+  left: -38%;
+  width: 176%;
+  inset-inline: auto;
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--player-p1) 72%, transparent) 0%,
+      color-mix(in srgb, var(--player-p1) 38%, transparent) 18%,
+      color-mix(in srgb, #fff 18%, transparent) 36%,
+      color-mix(in srgb, var(--player-p2) 34%, transparent) 58%,
+      color-mix(in srgb, var(--player-p2) 70%, transparent) 100%
+    ),
+    radial-gradient(circle at 28% 58%, color-mix(in srgb, var(--player-p1) 26%, transparent) 0%, transparent 28%),
+    radial-gradient(circle at 72% 42%, color-mix(in srgb, var(--player-p2) 28%, transparent) 0%, transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(244, 241, 232, 0.32) 100%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 24px 56px rgba(29, 45, 53, 0.14);
+  transform: translateX(-74%) skewX(-14deg);
+}
+
+.shell-route-transition-layer[data-phase="covering"] .shell-route-transition-layer-backdrop {
+  animation: shell-game-entry-backdrop-in var(--shell-game-entry-cover-ms, 160ms) cubic-bezier(0.22, 0.72, 0.2, 1) forwards;
+}
+
+.shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-backdrop {
+  opacity: 0.94;
+  backdrop-filter: blur(6px);
+}
+
+.shell-route-transition-layer[data-phase="revealing"] .shell-route-transition-layer-backdrop {
+  animation: shell-game-entry-backdrop-out var(--shell-game-entry-reveal-ms, 200ms) cubic-bezier(0.18, 0.72, 0.24, 1) forwards;
+}
+
+.shell-route-transition-layer[data-phase="covering"] .shell-route-transition-layer-swipe {
+  animation: shell-game-entry-swipe-in var(--shell-game-entry-cover-ms, 160ms) cubic-bezier(0.18, 0.72, 0.24, 1) forwards;
+}
+
+.shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe {
+  transform: translateX(10%) skewX(-12deg);
+}
+
+.shell-route-transition-layer[data-phase="revealing"] .shell-route-transition-layer-swipe {
+  animation: shell-game-entry-swipe-out var(--shell-game-entry-reveal-ms, 200ms) cubic-bezier(0.18, 0.72, 0.24, 1) forwards;
+}
+
+#app[data-shell-transition-active="true"][data-shell-transition="game-entry"][data-shell-transition-phase="revealing"][data-shell-route="game"] .shell-main-content {
+  animation: shell-game-entry-content-reveal var(--shell-game-entry-reveal-ms, 200ms) cubic-bezier(0.18, 0.72, 0.24, 1);
+}
+
+#app[data-shell-transition-active="true"][data-shell-transition="game-entry"][data-shell-transition-phase="revealing"][data-shell-route="game"] .game-shell-frame,
+#app[data-shell-transition-active="true"][data-shell-transition="game-entry"][data-shell-transition-phase="revealing"][data-shell-route="game"] .layout-grid,
+#app[data-shell-transition-active="true"][data-shell-transition="game-entry"][data-shell-transition-phase="revealing"][data-shell-route="game"] .invite-gate {
+  animation: shell-game-entry-content-reveal var(--shell-game-entry-reveal-ms, 200ms) cubic-bezier(0.2, 0.72, 0.2, 1);
+}
+
+@keyframes shell-game-entry-backdrop-in {
+  0% {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  100% {
+    opacity: 0.94;
+    backdrop-filter: blur(6px);
+  }
+}
+
+@keyframes shell-game-entry-backdrop-out {
+  0% {
+    opacity: 0.94;
+    backdrop-filter: blur(6px);
+  }
+  100% {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+}
+
+@keyframes shell-game-entry-swipe-in {
+  0% {
+    opacity: 0.92;
+    transform: translateX(-74%) skewX(-14deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(10%) skewX(-12deg);
+  }
+}
+
+@keyframes shell-game-entry-swipe-out {
+  0% {
+    opacity: 1;
+    transform: translateX(10%) skewX(-12deg);
+  }
+  100% {
+    opacity: 0.88;
+    transform: translateX(84%) skewX(-10deg);
+  }
+}
+
+@keyframes shell-game-entry-content-reveal {
+  0% {
+    opacity: 0.72;
+    transform: translateX(24px) scale(0.992);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
 .shell-header {
   display: flex;
   justify-content: space-between;
@@ -1573,6 +1713,19 @@ textarea:focus-visible {
 
   .shell-header-menu-panel {
     transition: none;
+  }
+
+  .shell-route-transition-layer-backdrop,
+  .shell-route-transition-layer-swipe,
+  #app[data-shell-transition-active="true"][data-shell-transition="game-entry"][data-shell-transition-phase="revealing"][data-shell-route="game"] .shell-main-content,
+  #app[data-shell-transition-active="true"][data-shell-transition="game-entry"][data-shell-transition-phase="revealing"][data-shell-route="game"] .game-shell-frame,
+  #app[data-shell-transition-active="true"][data-shell-transition="game-entry"][data-shell-transition-phase="revealing"][data-shell-route="game"] .layout-grid,
+  #app[data-shell-transition-active="true"][data-shell-transition="game-entry"][data-shell-transition-phase="revealing"][data-shell-route="game"] .invite-gate {
+    animation: none;
+  }
+
+  .shell-route-transition-layer {
+    display: none;
   }
 }
 
