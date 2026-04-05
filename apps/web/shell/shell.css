@@ -86,7 +86,7 @@ body {
 
 .shell-route-transition-layer-backdrop {
   opacity: 0;
-  background: linear-gradient(180deg, rgba(244, 241, 232, 0.16) 0%, rgba(244, 241, 232, 0.72) 100%);
+  background: linear-gradient(180deg, rgba(244, 241, 232, 0.1) 0%, rgba(244, 241, 232, 0.52) 100%);
   backdrop-filter: blur(0px);
 }
 
@@ -99,18 +99,18 @@ body {
   background:
     linear-gradient(
       100deg,
-      color-mix(in srgb, var(--player-p1) 72%, transparent) 0%,
-      color-mix(in srgb, var(--player-p1) 38%, transparent) 18%,
-      color-mix(in srgb, #fff 18%, transparent) 36%,
-      color-mix(in srgb, var(--player-p2) 34%, transparent) 58%,
-      color-mix(in srgb, var(--player-p2) 70%, transparent) 100%
+      color-mix(in srgb, var(--player-p1) 46%, transparent) 0%,
+      color-mix(in srgb, var(--player-p1) 24%, transparent) 18%,
+      color-mix(in srgb, #fff 12%, transparent) 36%,
+      color-mix(in srgb, var(--player-p2) 22%, transparent) 58%,
+      color-mix(in srgb, var(--player-p2) 44%, transparent) 100%
     ),
-    radial-gradient(circle at 28% 58%, color-mix(in srgb, var(--player-p1) 26%, transparent) 0%, transparent 28%),
-    radial-gradient(circle at 72% 42%, color-mix(in srgb, var(--player-p2) 28%, transparent) 0%, transparent 30%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(244, 241, 232, 0.32) 100%);
+    radial-gradient(circle at 28% 58%, color-mix(in srgb, var(--player-p1) 14%, transparent) 0%, transparent 28%),
+    radial-gradient(circle at 72% 42%, color-mix(in srgb, var(--player-p2) 15%, transparent) 0%, transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(244, 241, 232, 0.18) 100%);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.12),
-    0 24px 56px rgba(29, 45, 53, 0.14);
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 18px 36px rgba(29, 45, 53, 0.08);
   transform: translateX(-74%) skewX(-14deg);
 }
 
@@ -119,8 +119,8 @@ body {
 }
 
 .shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-backdrop {
-  opacity: 0.94;
-  backdrop-filter: blur(6px);
+  opacity: 0.76;
+  backdrop-filter: blur(4px);
 }
 
 .shell-route-transition-layer[data-phase="revealing"] .shell-route-transition-layer-backdrop {
@@ -155,15 +155,15 @@ body {
     backdrop-filter: blur(0px);
   }
   100% {
-    opacity: 0.94;
-    backdrop-filter: blur(6px);
+    opacity: 0.76;
+    backdrop-filter: blur(4px);
   }
 }
 
 @keyframes shell-game-entry-backdrop-out {
   0% {
-    opacity: 0.94;
-    backdrop-filter: blur(6px);
+    opacity: 0.76;
+    backdrop-filter: blur(4px);
   }
   100% {
     opacity: 0;
@@ -173,30 +173,30 @@ body {
 
 @keyframes shell-game-entry-swipe-in {
   0% {
-    opacity: 0.92;
+    opacity: 0.78;
     transform: translateX(-74%) skewX(-14deg);
   }
   100% {
-    opacity: 1;
+    opacity: 0.9;
     transform: translateX(10%) skewX(-12deg);
   }
 }
 
 @keyframes shell-game-entry-swipe-out {
   0% {
-    opacity: 1;
+    opacity: 0.9;
     transform: translateX(10%) skewX(-12deg);
   }
   100% {
-    opacity: 0.88;
+    opacity: 0.7;
     transform: translateX(84%) skewX(-10deg);
   }
 }
 
 @keyframes shell-game-entry-content-reveal {
   0% {
-    opacity: 0.72;
-    transform: translateX(24px) scale(0.992);
+    opacity: 0.84;
+    transform: translateX(12px) scale(0.996);
   }
   100% {
     opacity: 1;
