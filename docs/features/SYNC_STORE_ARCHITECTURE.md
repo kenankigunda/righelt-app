@@ -30,12 +30,11 @@ This document started as a forward-looking implementation plan. The branch now c
 - **Phase 8 complete**: failed-operation UX is now unified behind the sync-store failed-operation API, including rollback-notice-backed failures, dismiss/reset handling, and browser coverage for the failed create-game banner flow.
 - **Phase 9 complete**: history jump and return-to-live now project locally first and reconcile with the server in the background, including latching history selection while live updates append underneath.
 - **Phase 10 complete**: the live-sync/WebSocket client is owned directly by `sync-store.js`, and the old `live-sync.js` compatibility shim has been removed.
-- **Phase 11 partially complete**: the dead production `store.js` has been deleted, its remaining legacy test-only harness has moved into `apps/web/test/support.mjs`, and failure UX no longer rides on `game.rollbackNotice` in the app layer. The remaining cleanup is internal simplification of the transport/sync-store failure-notice plumbing.
+- **Phase 11 complete**: the dead production `store.js` has been deleted, its remaining legacy test-only harness has moved into `apps/web/test/support.mjs`, and failure UX now flows entirely through failed `OperationHandle`s instead of `game.rollbackNotice` or transport-side failure-notice state.
 - **Testing hardening complete for implemented phases**: the branch adds unit, integration, and E2E contract coverage for optimistic game IDs, optimistic revert flows, localized pending controls, history branching, and local-first history navigation so these behaviors are no longer dependent on manual verification.
 
 ### Still remaining
 
-- **Phase 11 not complete**: dead production store cleanup is done, and failure state is no longer attached to app-facing game view models, but final simplification of the internal transport/sync-store failure-notice plumbing is still outstanding.
 - **Phase 12 deferred**: offline support has not been reintroduced.
 
 ### Current practical milestone
@@ -127,11 +126,11 @@ CI checks split into parallel lanes with JUnit output. No impact on the sync sto
 ### Current file sizes
 - `live-transport.js`: **~839 lines** (down from ~1420 after offline removal)
 - `app.js`: **~4033 lines**
-- `live-sync.js`: ~416 lines (unchanged)
+- `live-sync.js`: deleted in Phase 10
 - `optimistic-live.js`: **~220 lines** (down from ~250 after turn settlement extraction)
 - `shell-host.js`: ~88 lines (unchanged, now sole board host after playground-host.js deletion)
 - `persistence.js`: ~41 lines (keys now exported)
-- `store.js`: ~432 lines (dead code, now includes `normalizeGame()` for legacy migration)
+- `store.js`: deleted in Phase 11 (legacy test harness moved to `apps/web/test/support.mjs`)
 - `selection-hydration.js`: ~32 lines (new — one-shot selection replay guard)
 - `shell-live-turn.js` (shared-types): ~50 lines (new — shared turn settlement helpers)
 
@@ -596,7 +595,7 @@ Absorb `live-sync.js` fully into the sync store.
 
 ## Phase 11: Cleanup
 
-**Status on this branch:** Partially complete
+**Status on this branch:** Complete
 
 ### Files
 
@@ -605,7 +604,8 @@ Absorb `live-sync.js` fully into the sync store.
 | Delete | `apps/web/shell/store.js` | Dead code (only imported by test files) |
 | Modify | `apps/web/test/join.test.mjs` | Migrate from `createShellStore` to `createSyncStore` |
 | Modify | `apps/web/test/support.mjs` | Migrate from `createShellStore` to `createSyncStore` |
-| Modify | `apps/web/shell/sync-store.js` | Remove `rollbackNotice`/`clearRollbackNotice`. Clean up pass-through methods. |
+| Modify | `apps/web/shell/live-transport.js` | Stop storing failure-notice side-channel state; emit failure notices only as rollback/desync change payloads. |
+| Modify | `apps/web/shell/sync-store.js` | Replace `rollbackNotice`/transport failure-notice plumbing with failed `OperationHandle`s and unified dismiss/reset behavior. |
 
 ### Final state (after Phase 11)
 - `sync-store.js` — unified sync store (sole client-server interface)

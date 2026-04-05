@@ -215,9 +215,9 @@ test("sync store manages subscriptions through the active route game id", () => 
   assert.match(source, /syncStore\.setActiveGameId\(routeGameId\);/);
   assert.match(syncStoreSource, /let activeGameId = null;/);
   assert.match(syncStoreSource, /const isFailedCreateStub = \(game, failureNotice = ""\) =>/);
-  assert.match(syncStoreSource, /const getFailureNotice = \(gameId\) =>/);
+  assert.match(syncStoreSource, /const getRollbackFailureHandle = \(gameId\) =>/);
   assert.match(syncStoreSource, /const activeGame =/);
-  assert.match(syncStoreSource, /const desiredGameIds = isFailedCreateStub\(activeGame, getFailureNotice\(activeGameId\)\) \? new Set\(\) : new Set\(\[activeGameId\]\);/);
+  assert.match(syncStoreSource, /const desiredGameIds =[\s\S]*isFailedCreateStub\(activeGame, getRollbackFailureHandle\(activeGameId\)\?\.error\?\.message \?\? ""\)/);
   assert.match(syncStoreSource, /for \(const gameId of liveSync\.getDesiredGameIds\(\)\) \{/);
   assert.match(syncStoreSource, /liveSync\.disconnectGame\(gameId\);/);
   assert.match(syncStoreSource, /liveSync\.connectGame\(gameId\);/);

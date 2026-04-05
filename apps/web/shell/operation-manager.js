@@ -59,6 +59,18 @@ export const createOperationManager = () => {
     return record.handle;
   };
 
+  const createFailed = ({ id, gameId = null, result = null, error }) => {
+    const existing = getHandle(id);
+    if (existing) {
+      return existing;
+    }
+    const nextError = cloneError(error);
+    const record = createHandle({ id, gameId, result, status: "failed", error: nextError });
+    record.deferred.reject(nextError);
+    recordsById.set(id, record);
+    return record.handle;
+  };
+
   const confirm = (id, finalResult = getHandle(id)?.result ?? null) => {
     const record = recordsById.get(id);
     if (!record || record.handle.status === "committed") {
@@ -100,6 +112,7 @@ export const createOperationManager = () => {
   return {
     enqueue,
     createCommitted,
+    createFailed,
     confirm,
     fail,
     dismiss,

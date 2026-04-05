@@ -826,6 +826,35 @@ export const createSyncStore = ({
   let pendingLocalGames = readPendingLocalGames(storage);
   let activeGameId = null;
   const localHistorySelectionByGameId = new Map();
+  const getRollbackFailureHandle = (gameId) => {
+    if (!gameId) {
+      return null;
+    }
+    const handle = operationManager.getHandle(getRollbackFailureId(gameId));
+    return handle?.status === "failed" ? handle : null;
+  };
+  const dismissRollbackFailure = (gameId) => {
+    const rollbackHandle = getRollbackFailureHandle(gameId);
+    if (rollbackHandle) {
+      operationManager.dismiss(rollbackHandle.id);
+    }
+  };
+  const upsertRollbackFailure = (gameId, message) => {
+    if (!gameId || typeof message !== "string" || message.trim().length === 0) {
+      return null;
+    }
+    const game = transport.getGameViewModel(gameId);
+    if (!game) {
+      return null;
+    }
+    dismissRollbackFailure(gameId);
+    return operationManager.createFailed({
+      id: getRollbackFailureId(gameId),
+      gameId,
+      result: game,
+      error: createOperationError(message, "authoritative_rollback"),
+    });
+  };
   const isPendingOptimisticGameCreation = (gameId) => {
     const createHandle = operationManager.getHandle(`create:${gameId}`);
     if (createHandle?.status === "pending") {
@@ -891,17 +920,9 @@ export const createSyncStore = ({
     operationManager.fail(clientCommandId, error);
   };
 
-  const getFailureNotice = (gameId) =>
-    gameId && typeof transport.getFailureNotice === "function" ? transport.getFailureNotice(gameId).trim() : "";
-
   const getUnifiedFailedOperations = (gameId) => {
-    const failedOperations = operationManager.getFailedOperations(gameId);
-    const game = gameId ? transport.getGameViewModel(gameId) : null;
-    const failureNotice = getFailureNotice(gameId);
-    if (!game || failureNotice.length === 0) {
-      return failedOperations;
-    }
-    return [createRollbackFailureHandle(game, failureNotice)];
+    const rollbackHandle = getRollbackFailureHandle(gameId);
+    return rollbackHandle ? [rollbackHandle] : operationManager.getFailedOperations(gameId);
   };
 
   const markGameCreationFailed = (gameId) => {
@@ -917,7 +938,7 @@ export const createSyncStore = ({
       pendingCommandCount: 0,
     };
     transport.applyLiveGameUpdate({ game: failedGame });
-    transport.setFailureNotice?.(gameId, GAME_CREATION_FAILED_BANNER);
+    upsertRollbackFailure(gameId, GAME_CREATION_FAILED_BANNER);
     syncActiveGame();
     clearPendingLocalGame(gameId);
   };
@@ -967,20 +988,26 @@ export const createSyncStore = ({
   transport.subscribe((change) => {
     const clientCommandId = typeof change?.clientCommandId === "string" ? change.clientCommandId : null;
     const gameId = typeof change?.gameId === "string" ? change.gameId : null;
+    const failureNotice = typeof change?.failureNotice === "string" ? change.failureNotice.trim() : "";
     if (change?.type === "authoritative_update" && clientCommandId) {
       confirmOperation(clientCommandId);
+    }
+    if (change?.type === "optimistic_enqueue" && gameId) {
+      dismissRollbackFailure(gameId);
     }
     if (change?.type === "optimistic_rollback" && clientCommandId) {
       failOperation(
         clientCommandId,
         createOperationError("Predicted move was rejected by the authoritative game state.", "optimistic_rollback"),
       );
+      upsertRollbackFailure(gameId, failureNotice || "Predicted move was rejected by the authoritative game state.");
     }
     if (change?.type === "optimistic_desynced" && clientCommandId) {
       failOperation(
         clientCommandId,
         createOperationError("Sync failed before the optimistic command could be confirmed.", "optimistic_desynced"),
       );
+      upsertRollbackFailure(gameId, failureNotice || "Sync failed before the optimistic command could be confirmed.");
     }
     if (gameId && localHistorySelectionByGameId.has(gameId)) {
       const projectedGame = buildHistoryViewProjection(transport.getGameViewModel(gameId), localHistorySelectionByGameId.get(gameId));
@@ -1019,7 +1046,8 @@ export const createSyncStore = ({
     }
     const activeGame =
       activeGameId && typeof transport.getGameViewModel === "function" ? transport.getGameViewModel(activeGameId) : null;
-    const desiredGameIds = isFailedCreateStub(activeGame, getFailureNotice(activeGameId)) ? new Set() : new Set([activeGameId]);
+    const desiredGameIds =
+      isFailedCreateStub(activeGame, getRollbackFailureHandle(activeGameId)?.error?.message ?? "") ? new Set() : new Set([activeGameId]);
     for (const gameId of liveSync.getDesiredGameIds()) {
       if (!desiredGameIds.has(gameId)) {
         liveSync.disconnectGame(gameId);
@@ -1047,7 +1075,8 @@ export const createSyncStore = ({
       const localPendingGame = transport.getGameViewModel(gameId) ?? getStoredPendingLocalGame(gameId);
       const hasPendingOperation = operationManager.getPendingOperations(gameId).length > 0;
       const shouldHydrateLocalGame =
-        Boolean(localPendingGame) && (hasPendingOperation || isFailedCreateStub(localPendingGame, getFailureNotice(gameId)));
+        Boolean(localPendingGame) &&
+        (hasPendingOperation || isFailedCreateStub(localPendingGame, getRollbackFailureHandle(gameId)?.error?.message ?? ""));
       if (shouldHydrateLocalGame) {
         if (!transport.getGameViewModel(gameId)) {
           transport.applyLiveGameUpdate({ game: localPendingGame });
@@ -1061,7 +1090,10 @@ export const createSyncStore = ({
       } catch (error) {
         const fallbackPendingGame = getStoredPendingLocalGame(gameId);
         const fallbackGame = transport.getGameViewModel(gameId) ?? fallbackPendingGame;
-        if (fallbackGame && (fallbackPendingGame || hasPendingOperation || isFailedCreateStub(fallbackGame, getFailureNotice(gameId)))) {
+        if (
+          fallbackGame &&
+          (fallbackPendingGame || hasPendingOperation || isFailedCreateStub(fallbackGame, getRollbackFailureHandle(gameId)?.error?.message ?? ""))
+        ) {
           if (!transport.getGameViewModel(gameId) && fallbackPendingGame) {
             transport.applyLiveGameUpdate({ game: fallbackPendingGame });
           }
@@ -1349,7 +1381,12 @@ export const createSyncStore = ({
       const handle = operationManager.getHandle(operationId);
       if (handle?.status === "failed") {
         if (handle.gameId) {
-          transport.clearFailureNotice?.(handle.gameId);
+          const rollbackFailureId = getRollbackFailureId(handle.gameId);
+          for (const failedHandle of operationManager.getFailedOperations(handle.gameId)) {
+            if (failedHandle.id !== handle.id && (failedHandle.id === rollbackFailureId || operationId === rollbackFailureId)) {
+              operationManager.dismiss(failedHandle.id);
+            }
+          }
         }
         operationManager.dismiss(operationId);
         return;
@@ -1359,7 +1396,6 @@ export const createSyncStore = ({
         for (const failedHandle of operationManager.getFailedOperations(rollbackGameId)) {
           operationManager.dismiss(failedHandle.id);
         }
-        transport.clearFailureNotice?.(rollbackGameId);
       }
     },
     dismissOperation: (operationId) => operationManager.dismiss(operationId),

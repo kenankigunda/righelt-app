@@ -16,11 +16,9 @@ const createMemoryStorage = () => {
 const createTransportHarness = () => {
   const listeners = new Set();
   const games = new Map();
-  const failureNoticeByGameId = new Map();
   return {
     listeners,
     games,
-    failureNoticeByGameId,
     transport: {
       subscribe: (listener) => {
         listeners.add(listener);
@@ -32,9 +30,6 @@ const createTransportHarness = () => {
       applyLiveGameUpdate: ({ game }) => {
         games.set(game.id, game);
       },
-      clearFailureNotice: (gameId) => failureNoticeByGameId.delete(gameId),
-      setFailureNotice: (gameId, notice) => failureNoticeByGameId.set(gameId, notice),
-      getFailureNotice: (gameId) => failureNoticeByGameId.get(gameId) ?? "",
     },
   };
 };
@@ -535,15 +530,11 @@ test("sync store dismisses failed operations and clears the visible rollback not
 });
 
 test("sync store exposes rollback notices through the shared failed-operation API", () => {
-  const { transport, games, failureNoticeByGameId } = createTransportHarness();
+  const { transport, games, listeners } = createTransportHarness();
   games.set("game-rollback", {
     ...createRevertReadyGame(),
     id: "game-rollback",
   });
-  failureNoticeByGameId.set(
-    "game-rollback",
-    "Move sync failed before confirmation. The board was restored to the last authoritative state.",
-  );
 
   const store = createSyncStore({
     storage: createMemoryStorage(),
@@ -556,6 +547,15 @@ test("sync store exposes rollback notices through the shared failed-operation AP
     }),
   });
 
+  for (const listener of listeners) {
+    listener({
+      type: "optimistic_desynced",
+      gameId: "game-rollback",
+      clientCommandId: "game-rollback:id-test:cmd",
+      failureNotice: "Move sync failed before confirmation. The board was restored to the last authoritative state.",
+    });
+  }
+
   const failedOperations = store.getFailedOperations("game-rollback");
   assert.equal(failedOperations.length, 1);
   assert.equal(failedOperations[0]?.id, "rollback:game-rollback");
@@ -567,7 +567,6 @@ test("sync store exposes rollback notices through the shared failed-operation AP
   store.dismissFailedOperation("rollback:game-rollback");
 
   assert.deepEqual(store.getFailedOperations("game-rollback"), []);
-  assert.equal(transport.getFailureNotice("game-rollback"), "");
 });
 
 test("sync store requests reverts optimistically with a stable client request id", async () => {
