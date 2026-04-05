@@ -65,6 +65,8 @@ test("U-01: collectDestroyedPieceRecords — no-retreat removal (piece.pushed = 
   assert.deepEqual(result[0], {
     position: { row: 3, col: 4 },
     ownerSeat: "p2",
+    supplied: true,
+    commanded: true,
     reason: "no_retreat",
   });
 });
@@ -79,6 +81,8 @@ test("U-01b: collectDestroyedPieceRecords — no-retreat removal (action type = 
   assert.equal(result.length, 1);
   assert.equal(result[0].reason, "no_retreat");
   assert.equal(result[0].ownerSeat, "p1");
+  assert.equal(result[0].supplied, true);
+  assert.equal(result[0].commanded, true);
   assert.deepEqual(result[0].position, { row: 2, col: 2 });
 });
 
@@ -92,6 +96,8 @@ test("U-01c: collectDestroyedPieceRecords — no-retreat removal (action type = 
   const result = collectDestroyedPieceRecords(before, afterApply, afterStability, retreatAction);
   assert.equal(result.length, 1);
   assert.equal(result[0].reason, "no_retreat");
+  assert.equal(result[0].supplied, true);
+  assert.equal(result[0].commanded, true);
 });
 
 // ---------------------------------------------------------------------------
@@ -109,6 +115,8 @@ test("U-02: collectDestroyedPieceRecords — loss-of-supply removal (present aft
   assert.deepEqual(result[0], {
     position: { row: 4, col: 4 },
     ownerSeat: "p1",
+    supplied: true,
+    commanded: true,
     reason: "loss_of_supply",
   });
 });
@@ -128,6 +136,8 @@ test("U-03: collectDestroyedPieceRecords — commander_unsupplied (p2_win: P1 co
   assert.deepEqual(result[0], {
     position: { row: 3, col: 6 },
     ownerSeat: "p1",
+    supplied: true,
+    commanded: true,
     reason: "commander_unsupplied",
   });
 });
@@ -144,6 +154,8 @@ test("U-03b: collectDestroyedPieceRecords — commander_unsupplied (p1_win: P2 c
   assert.deepEqual(result[0], {
     position: { row: 6, col: 3 },
     ownerSeat: "p2",
+    supplied: true,
+    commanded: true,
     reason: "commander_unsupplied",
   });
 });
@@ -168,6 +180,10 @@ test("U-04: collectDestroyedPieceRecords — draw: both commanders removed, two 
   assert.ok(p2Record, "P2 commander record present");
   assert.equal(p1Record.reason, "commander_unsupplied");
   assert.equal(p2Record.reason, "commander_unsupplied");
+  assert.equal(p1Record.supplied, true);
+  assert.equal(p2Record.supplied, true);
+  assert.equal(p1Record.commanded, true);
+  assert.equal(p2Record.commanded, true);
   assert.deepEqual(p1Record.position, { row: 3, col: 6 });
   assert.deepEqual(p2Record.position, { row: 6, col: 3 });
 });
@@ -195,8 +211,29 @@ test("U-05: collectDestroyedPieceRecords — multiple units removed, one notice 
   assert.ok(u3Record, "unit3 record present");
   assert.equal(u1Record.reason, "no_retreat");
   assert.equal(u1Record.ownerSeat, "p1");
+  assert.equal(u1Record.supplied, true);
+  assert.equal(u1Record.commanded, true);
   assert.equal(u3Record.reason, "loss_of_supply");
   assert.equal(u3Record.ownerSeat, "p1");
+  assert.equal(u3Record.supplied, true);
+  assert.equal(u3Record.commanded, true);
+});
+
+test("U-05b: collectDestroyedPieceRecords preserves inactive render state for destroyed pieces", () => {
+  const unit = makePiece({ id: "u-dead", owner: "P2", kind: "unit", position: { row: 7, col: 2 }, supplied: false, commanded: false });
+  const before = makeState([unit]);
+  const afterApply = makeState([]);
+  const afterStability = makeState([]);
+
+  const result = collectDestroyedPieceRecords(before, afterApply, afterStability, moveAction);
+  assert.equal(result.length, 1);
+  assert.deepEqual(result[0], {
+    position: { row: 7, col: 2 },
+    ownerSeat: "p2",
+    supplied: false,
+    commanded: false,
+    reason: "loss_of_supply",
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -222,7 +259,7 @@ test("U-17: parity — TS and JS collectDestroyedPieceRecords produce identical 
 
   const tsResult = collectDestroyedPieceRecords(before, afterApply, afterStability, moveAction);
   assert.equal(tsResult.length, 1);
-  assert.deepEqual(tsResult[0], { position: { row: 3, col: 4 }, ownerSeat: "p2", reason: "no_retreat" });
+  assert.deepEqual(tsResult[0], { position: { row: 3, col: 4 }, ownerSeat: "p2", supplied: true, commanded: true, reason: "no_retreat" });
 });
 
 test("U-17: parity — TS and JS collectDestroyedPieceRecords produce identical results for loss_of_supply", () => {
@@ -233,7 +270,7 @@ test("U-17: parity — TS and JS collectDestroyedPieceRecords produce identical 
 
   const tsResult = collectDestroyedPieceRecords(before, afterApply, afterStability, passAction);
   assert.equal(tsResult.length, 1);
-  assert.deepEqual(tsResult[0], { position: { row: 2, col: 3 }, ownerSeat: "p1", reason: "loss_of_supply" });
+  assert.deepEqual(tsResult[0], { position: { row: 2, col: 3 }, ownerSeat: "p1", supplied: true, commanded: true, reason: "loss_of_supply" });
 });
 
 test("U-17: parity — TS and JS collectDestroyedPieceRecords produce identical results for commander_unsupplied", () => {
@@ -244,7 +281,7 @@ test("U-17: parity — TS and JS collectDestroyedPieceRecords produce identical 
 
   const tsResult = collectDestroyedPieceRecords(before, afterApply, afterStability, passAction);
   assert.equal(tsResult.length, 1);
-  assert.deepEqual(tsResult[0], { position: { row: 3, col: 6 }, ownerSeat: "p1", reason: "commander_unsupplied" });
+  assert.deepEqual(tsResult[0], { position: { row: 3, col: 6 }, ownerSeat: "p1", supplied: true, commanded: true, reason: "commander_unsupplied" });
 });
 
 test("U-17: parity — empty array for no removal", () => {

@@ -73,7 +73,7 @@ const collectRemovedPieceNotices = (before, afterApply, afterStability, action) 
  * @param {object} afterApply - Board state immediately after applying the action.
  * @param {object} afterStability - Board state after full stability resolution.
  * @param {object} action - The action that was applied.
- * @returns {Array<{position: {row: number, col: number}, ownerSeat: "p1"|"p2", reason: "no_retreat"|"loss_of_supply"|"commander_unsupplied"}>}
+ * @returns {Array<{position: {row: number, col: number}, ownerSeat: "p1"|"p2", supplied: boolean, commanded: boolean, reason: "no_retreat"|"loss_of_supply"|"commander_unsupplied"}>}
  */
 const collectDestroyedPieceRecords = (before, afterApply, afterStability, action) => {
   const afterApplyIds = new Set(afterApply.pieces.map((piece) => piece.id));
@@ -91,6 +91,8 @@ const collectDestroyedPieceRecords = (before, afterApply, afterStability, action
       records.push({
         position: { ...piece.position },
         ownerSeat: piece.owner === "P1" ? "p1" : "p2",
+        supplied: piece.supplied !== false,
+        commanded: piece.commanded !== false,
         reason,
       });
     }
@@ -102,6 +104,8 @@ const collectDestroyedPieceRecords = (before, afterApply, afterStability, action
       records.push({
         position: { ...piece.position },
         ownerSeat: piece.owner === "P1" ? "p1" : "p2",
+        supplied: piece.supplied !== false,
+        commanded: piece.commanded !== false,
         reason,
       });
     }

@@ -161,6 +161,8 @@ export type RemovedPieceNotice = {
 export type DestroyedPieceRecord = {
   position: { row: number; col: number };
   ownerSeat: "p1" | "p2";
+  supplied: boolean;
+  commanded: boolean;
   reason: "no_retreat" | "loss_of_supply" | "commander_unsupplied";
 };
 
@@ -1014,6 +1016,8 @@ export const collectDestroyedPieceRecords = (
       records.push({
         position: { ...piece.position },
         ownerSeat: piece.owner === "P1" ? "p1" : "p2",
+        supplied: piece.supplied !== false,
+        commanded: piece.commanded !== false,
         reason,
       });
     }
@@ -1026,6 +1030,8 @@ export const collectDestroyedPieceRecords = (
       records.push({
         position: { ...piece.position },
         ownerSeat: piece.owner === "P1" ? "p1" : "p2",
+        supplied: piece.supplied !== false,
+        commanded: piece.commanded !== false,
         reason,
       });
     }

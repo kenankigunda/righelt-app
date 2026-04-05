@@ -925,10 +925,15 @@ test("inactive pieces use the square fill color instead of transparency", () => 
 test("history destruction overlays render as dedicated struck-through board tokens", () => {
   assert.match(adapterSource, /const destroyedByCoordinateKey = new Map/);
   assert.match(adapterSource, /cell\.appendChild\(buildDestroyedPieceOverlayToken\(destroyedPiece\)\);/);
+  assert.match(adapterSource, /supplied:\s*record\?\.supplied !== false,/);
+  assert.match(adapterSource, /commanded:\s*record\?\.commanded !== false,/);
   assert.doesNotMatch(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*opacity:\s*0\.46;/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*0\.46\);/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece\.p1\s*\{[\s\S]*background:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);[\s\S]*border-color:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece\.p2\s*\{[\s\S]*background:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);[\s\S]*border-color:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.inactive\s*\{[\s\S]*background:\s*var\(--cell-fill, #fbf8f0\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.inactive\.p1\s*\{[\s\S]*border-color:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.inactive\.p2\s*\{[\s\S]*border-color:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);/s);
   assert.doesNotMatch(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*overflow:\s*hidden;/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*background:\s*#ffffff;/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*z-index:\s*4;/s);

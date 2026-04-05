@@ -335,8 +335,8 @@ const buildDestroyedPieceOverlayToken = (record) => {
   const piece = {
     owner: record?.ownerSeat === "p2" ? "P2" : "P1",
     kind: record?.kind === "commander" ? "commander" : "unit",
-    supplied: true,
-    commanded: true,
+    supplied: record?.supplied !== false,
+    commanded: record?.commanded !== false,
   };
   const token = buildPieceToken(piece);
   token.classList.add("history-destruction-piece");

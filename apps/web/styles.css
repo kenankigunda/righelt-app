@@ -751,6 +751,18 @@ button {
   border-color: rgba(45, 103, 199, 0.46);
 }
 
+.piece-token.history-destruction-piece.inactive {
+  background: var(--cell-fill, #fbf8f0);
+}
+
+.piece-token.history-destruction-piece.inactive.p1 {
+  border-color: rgba(194, 69, 47, 0.46);
+}
+
+.piece-token.history-destruction-piece.inactive.p2 {
+  border-color: rgba(45, 103, 199, 0.46);
+}
+
 .piece-token.history-destruction-piece.commander {
   border-color: rgba(246, 229, 141, 0.46);
 }

@@ -172,11 +172,11 @@ test("board runtime passes destroyed pieces through recorded-action overlay", as
         from: { row: 4, col: 2 },
         to: { row: 4, col: 3 },
       },
-      destroyedPieces: [{ row: 9, col: 9, ownerSeat: "p2", kind: "unit" }],
+      destroyedPieces: [{ row: 9, col: 9, ownerSeat: "p2", kind: "unit", supplied: false, commanded: false }],
     },
   );
 
-  assert.deepEqual(renderCalls.at(-1)?.overlay?.destroyedPieces, [{ row: 9, col: 9, ownerSeat: "p2", kind: "unit" }]);
+  assert.deepEqual(renderCalls.at(-1)?.overlay?.destroyedPieces, [{ row: 9, col: 9, ownerSeat: "p2", kind: "unit", supplied: false, commanded: false }]);
 });
 
 test("board runtime renders removal effects returned from shell apply actions", async () => {
