@@ -11,9 +11,13 @@ const syncStoreSource = readFileSync(join(testDir, "..", "shell", "sync-store.js
 test("shell render patches same-route game updates without replacing the board panel", () => {
   assert.match(source, /FLYOUT_KEYS,/);
   assert.match(source, /let lastRenderedMarkup = "";/);
+  assert.match(source, /let lastRenderedTransitionPhaseKey = "idle";/);
   assert.match(source, /let stickyLayoutFrame = 0;/);
   assert.match(source, /const SHELL_WIDE_SCREEN_MIN_WIDTH = 901;/);
   assert.match(source, /const FLYOUT_MOTION_MS = 180;/);
+  assert.match(source, /const GAME_ENTRY_ROUTE_TRANSITION_MS = 320;/);
+  assert.match(source, /const GAME_ENTRY_ROUTE_TRANSITION_COVER_MS = 160;/);
+  assert.match(source, /const GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS = 200;/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", "narrow"\);/);
   assert.match(source, /const renderGameShellFrame = \(game\) =>/);
   assert.match(source, /const renderScenarioFlyout = \(\) =>/);
@@ -78,6 +82,12 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const getCurrentGameHashState = \(panel = getGamePanel\(\)\) => \(\{\s*\.\.\.getCurrentFlyoutState\(\),\s*panel,\s*\}\);/s);
   assert.match(source, /const getBaseRouteRenderKey = \(route = currentRoute\) => \{/);
   assert.match(source, /const getRouteRenderKey = \(route = currentRoute\) =>/);
+  assert.match(source, /const getRouteTransitionPhaseKey = \(\) => routeTransition\?\.phase \|\| "idle";/);
+  assert.match(source, /const getRouteTransitionRenderKey = \(\) =>/);
+  assert.match(source, /const isGameEntryRouteTransitionActive = \(route = currentRoute\) =>/);
+  assert.match(source, /const startGameEntryRouteTransition = \(gameId, fromRoute = currentRoute\?\.name \|\| "unknown"\) => \{/);
+  assert.match(source, /const maybeRevealRouteTransition = \(\) => \{/);
+  assert.match(source, /const syncRouteTransitionForCurrentRoute = \(\) => \{/);
   assert.match(source, /const isFlyoutOnlyRouteChange = \(previousRoute, nextRoute\) =>/);
   assert.match(source, /let flyoutRenderOrder = FLYOUT_KEYS\.filter\(\(key\) => currentRoute\[key\] === true\);/);
   assert.match(source, /const syncFlyoutRenderOrder = \(route = currentRoute\) => \{/);
@@ -97,6 +107,9 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const syncShellLayoutMode = \(\) => \{/);
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", layoutMode\);/);
   assert.match(source, /appEl\.setAttribute\("data-shell-route", currentRoute\?\.name \|\| "unknown"\);/);
+  assert.match(source, /appEl\.setAttribute\("data-shell-transition", routeTransition\?\.type \|\| "none"\);/);
+  assert.match(source, /appEl\.setAttribute\("data-shell-transition-active", isGameEntryRouteTransitionActive\(\) \? "true" : "false"\);/);
+  assert.match(source, /appEl\.setAttribute\("data-shell-transition-phase", getRouteTransitionPhaseKey\(\)\);/);
   assert.match(source, /appEl\.style\.setProperty\("--shell-game-panel-index", String\(getGamePanelIndex\(activeGamePanel\)\)\);/);
   assert.match(source, /FLYOUT_KEYS\.forEach\(\(key\) => \{\s*appEl\.setAttribute\(`data-\$\{key\}-open`, currentRoute\[key\] \? "true" : "false"\);\s*\}\);/s);
   assert.match(source, /appEl\.setAttribute\("data-flyout-count", String\(getOpenFlyoutCount\(\)\)\);/);
@@ -145,7 +158,18 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const syncCopyInviteLinks = \(\) => \{/);
   assert.match(source, /const updateMountedFlyouts = \(\) => \{/);
   assert.match(source, /const shouldPatchMountedFlyouts = \(routeKey = getRouteRenderKey\(\), baseRouteKey = getBaseRouteRenderKey\(\)\) =>/);
+  assert.match(source, /getRouteTransitionPhaseKey\(\) === lastRenderedTransitionPhaseKey/);
   assert.match(source, /const syncRenderedMarkupSnapshot = \(\) => \{/);
+  assert.match(source, /lastRenderedMarkup = `<div class="shell-page-shell">\$\{lastRenderedMainMarkup\}\$\{lastRenderedFlyoutMarkup\}<\/div>`;/);
+  assert.match(source, /lastRenderedTransitionPhaseKey = getRouteTransitionPhaseKey\(\);/);
+  assert.match(source, /const ensureRouteTransitionLayer = \(\) => \{/);
+  assert.match(source, /const routeTransitionLayerEl = ensureRouteTransitionLayer\(\);/);
+  assert.match(source, /routeTransitionLayerEl\.setAttribute\("data-active", routeTransition \? "true" : "false"\);/);
+  assert.match(source, /routeTransitionLayerEl\.setAttribute\("data-transition", routeTransition\?\.type \|\| "none"\);/);
+  assert.match(source, /routeTransitionLayerEl\.setAttribute\("data-phase", routeTransition\?\.phase \|\| "idle"\);/);
+  assert.match(source, /routeTransitionLayerEl\.style\.setProperty\("--shell-game-entry-transition-ms", `\$\{GAME_ENTRY_ROUTE_TRANSITION_MS\}ms`\);/);
+  assert.match(source, /routeTransitionLayerEl\.style\.setProperty\("--shell-game-entry-cover-ms", `\$\{GAME_ENTRY_ROUTE_TRANSITION_COVER_MS\}ms`\);/);
+  assert.match(source, /routeTransitionLayerEl\.style\.setProperty\("--shell-game-entry-reveal-ms", `\$\{GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS\}ms`\);/);
   assert.match(source, /const FLYOUT_RENDERERS = \{/);
   assert.match(source, /const renderFlyoutBodyByKey = \(flyoutKey\) => \{/);
   assert.match(source, /scenarios:\s*\(\) => renderScenarioFlyout\(\)/);
@@ -186,7 +210,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">\$\{renderHeader\(\)\}\$\{body\}<\/div>\$\{renderFlyouts\(\)\}<\/div>`;/);
   assert.match(source, /document\.title = getDocumentTitle\(\);/);
   assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*syncMountedGameShellPanelUi\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
-  assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*syncScenarioAuthoringControls\(\);\s*updateMountedGameShell\(/s);
+  assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*getRouteTransitionPhaseKey\(\) === lastRenderedTransitionPhaseKey[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*syncScenarioAuthoringControls\(\);\s*updateMountedGameShell\(/s);
   assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.match(source, /data-flyout-link="home"/);
@@ -269,7 +293,7 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*\}\);/s);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
   assert.match(source, /const game = transport\.getGameViewModel\(gameId\);\s*if \(!routeHydrated && !game\) \{/s);
-  assert.match(source, /if \(canHydrateRouteFromLocalState\(currentRoute\)\) \{\s*routeHydrated = true;\s*syncLiveChannels\(\);\s*render\(\);\s*return;\s*\}/s);
+  assert.match(source, /if \(canHydrateRouteFromLocalState\(currentRoute\)\) \{\s*routeHydrated = true;\s*syncLiveChannels\(\);\s*render\(\);\s*maybeRevealRouteTransition\(\);\s*return;\s*\}/s);
 });
 
 test("scenario selector labels use titles without visible ids", () => {

@@ -106,10 +106,18 @@ test("game route live sync connection is not gated by participant role", () => {
 
 test("optimistic game creation and history branch actions bypass the blocking busy wrapper", () => {
   assert.match(source, /if \(action === "create-game"\) \{\s*const handle = transport\.createGame\(\{ selfPlayMode: false \}\);/s);
+  assert.match(source, /startGameEntryRouteTransition\(handle\.result\.id, "home"\);/);
   assert.match(source, /navigateTo\(buildGameHash\(handle\.result\.id, null, getCurrentFlyoutState\(\)\)\);/);
   assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*const handle = transport\.launchHistoryBranch\(/s);
   assert.match(source, /const nextHash = buildGameHash\(handle\.result\.game\.id, null, \{/s);
   assert.doesNotMatch(source, /if \(action === "create-game"\) \{[\s\S]*await transport\.createGame/s);
+});
+
+test("home game-card links trigger the branded game-entry transition before same-tab navigation", () => {
+  assert.match(source, /const gameLinkEl = target\.closest\("\.mini-board-card-link-surface\[data-game-id\]"\);/);
+  assert.match(source, /gameLinkEl instanceof HTMLAnchorElement/);
+  assert.match(source, /currentRoute\.name === "home"/);
+  assert.match(source, /startGameEntryRouteTransition\(gameId, "home"\);/);
 });
 
 test("revert actions bypass the blocking busy wrapper and use optimistic sync-store handles", () => {
