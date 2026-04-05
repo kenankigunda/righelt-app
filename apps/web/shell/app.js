@@ -1247,6 +1247,11 @@ const getActivePendingRevertRequest = (game) => {
   return request;
 };
 
+const getFailedOperationsKey = (gameId) =>
+  (transport.getFailedOperations?.(gameId) ?? [])
+    .map((operation) => `${operation.id}:${operation.status}`)
+    .join("|");
+
 const renderTurnHistory = (game) => {
   if (!Array.isArray(game.turns) || game.turns.length === 0) {
     return "<li class=\"small\">No turns yet.</li>";
@@ -2865,7 +2870,7 @@ const mountBoardForGame = (game) => {
     mountedOverlayKey = overlayKey;
     mountedSyncStatusKey = toStableKey({
       syncStatus: game.syncStatus ?? "ready",
-      rollbackNotice: game.rollbackNotice ?? "",
+      failedOperationsKey: getFailedOperationsKey(game.id),
     });
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
     boardRuntime.syncInteractionCapabilities?.();
@@ -2883,13 +2888,14 @@ const mountBoardForGame = (game) => {
     return;
   }
 
+  const failedOperationsKey = getFailedOperationsKey(game.id);
   const syncStatusKey = toStableKey({
     syncStatus: game.syncStatus ?? "ready",
-    rollbackNotice: game.rollbackNotice ?? "",
+    failedOperationsKey,
   });
   const resetSelection =
     mountedHistoryMoveIndex !== historyMoveIndex ||
-    (mountedSyncStatusKey !== syncStatusKey && Boolean(game.rollbackNotice)) ||
+    (mountedSyncStatusKey !== syncStatusKey && failedOperationsKey.length > 0) ||
     shouldResetBoardSelection({
       currentSnapshot: boardRuntime.getState?.() ?? null,
       nextSnapshot: snapshot,

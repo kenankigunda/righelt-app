@@ -48,9 +48,13 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Live Sync<\/h2>[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
   assert.match(source, /const getDocumentTitle = \(\) => \{\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;\s*\}\s*return "Righelt";\s*\};/s);
   assert.match(source, /const failedOperations = transport\.getFailedOperations\?\.\(game\.id\) \?\? \[\];/);
+  assert.match(source, /const getFailedOperationsKey = \(gameId\) =>/);
+  assert.match(source, /failedOperationsKey: getFailedOperationsKey\(game\.id\)/);
+  assert.match(source, /const failedOperationsKey = getFailedOperationsKey\(game\.id\);/);
   assert.match(source, /data-testid="sync-failure-banner"/);
   assert.match(source, /data-action="dismiss-failed-operation"/);
   assert.doesNotMatch(source, /failedOperations\.length === 0 && game\.rollbackNotice/);
+  assert.doesNotMatch(source, /rollbackNotice: game\.rollbackNotice/);
   assert.match(source, /return \[failedOperationBanners,\s*liveSyncBanner,\s*undoRequestBanner\]\.filter\(Boolean\)\.join\(""\);/);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
