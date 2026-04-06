@@ -48,3 +48,7 @@ Thumbs.db
 
 # Cloudflare local state
 .wrangler/
+
+# Backlog and ticket docs live in the sibling righelt-backlog repo
+backlog/
+docs/tickets/

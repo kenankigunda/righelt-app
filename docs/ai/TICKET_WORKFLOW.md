@@ -15,8 +15,22 @@ Use this workflow for any ticket in `backlog/tasks/` that has been assigned to a
 
 ## Backlog Hygiene
 
-- Prefer Backlog MCP or the local `backlog` CLI for task creation, edits, archival, and status changes so filenames and metadata stay canonical.
-- If MCP is unavailable, use the local `backlog` CLI before considering direct edits to `backlog/tasks/*.md`.
+The backlog lives in the **sibling `righelt-backlog` repo** (not tracked by this repo). All task files and ticket documents (spec, eng-plan, test-plan, coordination-log) live there. Before any write, pull; after any write, push:
+
+```
+./scripts/backlog-git.sh pull --rebase origin main   # before write
+./scripts/backlog-git.sh push origin main            # after write
+```
+
+Write path priority (same pull/push bookends for all):
+
+| Priority | When to use |
+|----------|-------------|
+| 1 — Backlog MCP | Always preferred |
+| 2 — `backlog` CLI | When MCP is unavailable |
+| 3 — Direct file edit | Last resort; must also commit manually: `./scripts/backlog-git.sh commit -am "chore(backlog): ..."` |
+
+- If MCP is unavailable, use the local `backlog` CLI before considering direct edits.
 - Edit task files directly only when both MCP and the `backlog` CLI are unavailable or cannot perform the required operation.
 - When creating or renaming task files manually, match the CLI filename convention: `backlog/tasks/t-### - <CLI slug>.md` for parents and `backlog/tasks/t-###.NN - <CLI slug>.md` for subtasks.
 - The `<CLI slug>` should mirror CLI output rather than the literal title:
@@ -44,17 +58,19 @@ Use this workflow for any ticket in `backlog/tasks/` that has been assigned to a
 - **Ready for execution**: spec and eng plan are complete; the ticket can be autonomously implemented without further human input.
 - **Ready for acceptance**: all implementation, local validation, and CI have passed; a human must review and either accept (→ `Done`) or provide feedback for further work.
 
-Only the Lead calls `task_edit` to advance status. All intermediate working state lives in `docs/tickets/t-###/coordination-log.md`.
+Only the Lead calls `task_edit` to advance status. All intermediate working state lives in `<backlog-repo>/docs/tickets/t-###/coordination-log.md`.
 
 ## Document Structure Per Ticket
 
-Rich documentation lives in `docs/tickets/t-###/` (mirroring the `docs/features/` pattern):
+Rich documentation lives in the **backlog repo** under `docs/tickets/t-###/`:
 - `spec.md` — written by PO (features + some bugs)
 - `eng-plan.md` — written by Architect
 - `test-plan.md` — written by Tester (during Architect phase, saved once)
 - `coordination-log.md` — maintained by Lead; single working-state document
 
-The backlog task file (`backlog/tasks/t-### - Title.md`) links to these via the `references` field. Subtasks use IDs `t-###.01`, `t-###.02`, etc. with `parent_task_id: t-###`.
+Authoring templates are in the backlog repo at `docs/SPEC_TEMPLATE.md` and `docs/ENG_PLAN_TEMPLATE.md`.
+
+When agents write these files, they write to the backlog repo (not the main repo). `<backlog-repo>` resolves to the sibling `righelt-backlog` directory — use `scripts/backlog-git.sh` to operate on it. The backlog task file links to these docs via the `references` field using paths relative to the backlog repo root (e.g. `docs/tickets/t-###/spec.md`). Subtasks use IDs `t-###.01`, `t-###.02`, etc. with `parent_task_id: t-###`.
 
 ## Lead Execution Loop
 
@@ -62,13 +78,13 @@ The backlog task file (`backlog/tasks/t-### - Title.md`) links to these via the 
 Human creates ticket via `task_create` MCP or `backlog task create` CLI: title, label (`feature`/`improvement`/`bug`), priority, brief description. Status: `To Do`.
 
 ### Step 1 — Assignment
-Lead calls `task_view` to read label and route. Calls `task_edit`: set assignee, status → `Spec` (feature/bug) or `Planning` (improvement). Creates `docs/tickets/t-###/coordination-log.md`. Updates `references` field.
+Lead calls `task_view` to read label and route. Calls `task_edit`: set assignee, status → `Spec` (feature/bug) or `Planning` (improvement). Creates `<backlog-repo>/docs/tickets/t-###/coordination-log.md`. Updates `references` field.
 
 ### Step 2 — Product Owner (feature and bug tickets only)
 Lead spawns `product-owner` agent with the ticket ID. PO:
 1. Calls `task_view`; reads focused reference docs per its role file
 2. **Human checkpoint**: asks all questions needed to eliminate ambiguity (features: uncapped; bugs: only if behavior/scope is genuinely unclear)
-3. Drafts `docs/tickets/t-###/spec.md` from `docs/tickets/SPEC_TEMPLATE.md`
+3. Drafts `<backlog-repo>/docs/tickets/t-###/spec.md` from `<backlog-repo>/docs/SPEC_TEMPLATE.md`
    - Features: full spec
    - Bugs: lightweight (§1, §3, §4, §8) unless novel UX; includes rationale line
 4. Calls `task_edit` to update `references` and Acceptance Criteria
@@ -80,15 +96,20 @@ Lead spawns `architect` agent with the ticket ID. Architect:
 1. Calls `task_view`; reads spec if present; reads `docs/TESTING_STRATEGY.md`, `docs/WORKFLOW_COVERAGE.md`, one existing `plan.yaml`
 2. Evaluates approach: ≥2 options with tradeoffs for non-trivial features; one clear approach with rationale for bugs/improvements
 3. **Human checkpoint**: asks all questions needed to resolve genuine tradeoffs (may skip if approach is unambiguous — last human-in-the-loop point before autonomous execution)
-4. **Consults Tester once** via `Agent` tool: passes design → receives test plan → saves as `docs/tickets/t-###/test-plan.md`
-5. Drafts `docs/tickets/t-###/eng-plan.md` from `docs/tickets/ENG_PLAN_TEMPLATE.md`
+4. **Consults Tester once** via `Agent` tool: passes design → receives test plan → saves as `<backlog-repo>/docs/tickets/t-###/test-plan.md`
+5. Drafts `<backlog-repo>/docs/tickets/t-###/eng-plan.md` from `<backlog-repo>/docs/ENG_PLAN_TEMPLATE.md`
 6. Creates subtasks via `task_create` with `parentTaskId: t-###`; sets `depends_on` and WIP limit
 7. Calls `task_edit` on parent to add `eng-plan.md` and `test-plan.md` to `references`; populates **Implementation Plan** (3–5 bullet summary of approach + link to `eng-plan.md`) and **Definition of Done** (technical checklist from acceptance checks) — all in one call.
 
 Lead appends to coordination-log.md. Calls `task_edit` status → `Ready for execution`.
 
 ### Step 4 — Eng (implementation)
-Lead picks up a `Ready for execution` ticket and calls `task_edit` status → `In Progress`, then fans out unblocked subtasks (respecting `depends_on` and WIP limit) to `eng` agents. Each Eng:
+Lead picks up a `Ready for execution` ticket and calls `task_edit` status → `In Progress`, sets `branch` and `worktree` fields on the parent task to record where work is active:
+```yaml
+branch: "<current-branch>"    # e.g. claude/funny-mayer
+worktree: "<worktree-name>"   # e.g. funny-mayer
+```
+Then fans out unblocked subtasks (respecting `depends_on` and WIP limit) to `eng` agents. Each Eng:
 1. Calls `task_view` on its subtask; reads relevant `test-plan.md` rows
 2. Calls `task_edit` subtask status → `In Progress`
 3. Implements in isolated worktree/branch; commits scoped by acceptance criterion (AGENTS.md §5)
@@ -106,7 +127,7 @@ Once all subtasks are `Done`: Lead calls `task_edit` status → `Review`, also p
 
 **5c — CI**: Lead monitors CI on the PR. If CI fails, Lead delegates to an `eng` teammate to diagnose and resolve the failure; the subtask follows the same Eng loop (Steps 4.3–4.6). Lead does not advance until CI is green.
 
-**5d — Advance**: Once local validation passes AND CI is green, Lead calls `task_edit` status → `Ready for acceptance`, including a **Final Summary** (PR-style paragraph: what was built, what changed, what was deferred) — same content as the coordination-log.md final entry, routed to the task field as well. The ticket now awaits human acceptance. The human is responsible for either moving it to `Done` or providing feedback for further work.
+**5d — Advance**: Once local validation passes AND CI is green, Lead calls `task_edit` status → `Ready for acceptance`, including a **Final Summary** (PR-style paragraph: what was built, what changed, what was deferred) — same content as the coordination-log.md final entry, routed to the task field as well. Also clears the `branch` and `worktree` fields (or leaves them as an audit trail). The ticket now awaits human acceptance. The human is responsible for either moving it to `Done` or providing feedback for further work.
 
 ## Merge Gates and Coordination
 

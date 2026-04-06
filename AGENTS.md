@@ -102,11 +102,43 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 
 ## 7) Backlog
 
+The backlog lives in a **separate sibling repo** (`../righelt-backlog` relative to this repo), always on `main`. It is the single source of truth for all task files, ticket docs (spec, eng-plan, test-plan, coordination-log), and authoring templates. It is not tracked by this repo's git history.
+
 This project uses Backlog.md MCP for task management. Before creating tasks or when uncertain about the workflow, load the instructions: read `backlog://workflow/overview` (MCP resource), or call `get_backlog_instructions()` if resources aren't available. Full ticket workflow: `docs/ai/TICKET_WORKFLOW.md`.
 
+**Write path (preference order — same sync bookends for all three):**
+
+| Priority | Path | When to use |
+|----------|------|-------------|
+| 1 | Backlog MCP tool call | Always preferred |
+| 2 | `backlog` CLI | When MCP is unavailable |
+| 3 | Direct file edit in backlog repo | Last resort only |
+
+Before any backlog write, pull the latest from the shared repo. After any write, push so other worktrees see the change:
+```
+./scripts/backlog-git.sh pull --rebase origin main   # before write
+./scripts/backlog-git.sh push origin main            # after write
+```
+For direct file edits (path 3), also commit manually before pushing:
+```
+./scripts/backlog-git.sh commit -am "chore(backlog): update t-### <reason>"
+```
+The `scripts/backlog-git.sh` helper runs git commands against the shared backlog repo from any worktree. The MCP is started via `scripts/backlog-mcp-start.sh` which resolves the repo path dynamically (no hardcoded paths).
+
+**Conflict policy:** task files are one file per ID — concurrent writes to different tickets never conflict. If two agents write the same task concurrently, the second push fails; that agent should `pull --rebase` and re-attempt.
+
+**Branch and worktree tracking:** when a ticket moves to In Progress, the Lead sets these optional frontmatter fields on the parent task:
+```yaml
+branch: "claude/funny-mayer"
+worktree: "funny-mayer"
+```
+Clear (or leave as audit trail) when the ticket moves to Ready for acceptance.
+
+**Ticket documents** (spec, eng-plan, test-plan, coordination-log) are stored in the backlog repo under `docs/tickets/t-###/`. Authoring templates are at `docs/SPEC_TEMPLATE.md` and `docs/ENG_PLAN_TEMPLATE.md` in the backlog repo. When agents write these files, they write to the backlog repo path, not to the main repo.
+
 - Prefer Backlog MCP or the local `backlog` CLI for all task creation, editing, archiving, and status updates so task files, metadata, and filenames stay consistent.
-- Prefer the local CLI over manual file edits whenever MCP is unavailable. Edit `backlog/tasks/*.md` directly only when both Backlog MCP and the `backlog` CLI are unavailable or cannot perform the required operation.
-- When using the CLI locally, prefer `backlog task create`, `backlog task edit`, `backlog task archive`, and `backlog task view` over hand-editing task files.
+- Prefer the local CLI over manual file edits whenever MCP is unavailable. Edit task files directly only when both Backlog MCP and the `backlog` CLI are unavailable or cannot perform the required operation.
+- When using the CLI locally, prefer `backlog task create`, `backlog task edit`, `backlog task archive`, and `backlog task view` over hand-editing task files. Run the CLI with `--cwd /path/to/righelt-backlog` or from within the backlog repo.
 - Canonical active task filenames follow `backlog/tasks/t-### - <CLI slug>.md`. Subtasks follow `t-###.NN - <CLI slug>.md`.
 - The `<CLI slug>` is not the raw title. Match the CLI naming shape:
   - replace spaces with `-`

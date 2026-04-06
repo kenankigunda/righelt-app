@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# backlog-mcp-start.sh
+#
+# Starts the Backlog.md MCP server pointed at the shared righelt-backlog repo.
+# Works correctly from the main repo root or any worktree — no hardcoded paths.
+#
+# Usage: registered via `claude mcp add backlog -- /path/to/scripts/backlog-mcp-start.sh`
+
+set -euo pipefail
+
+# git-common-dir points to the main repo's .git regardless of whether we're
+# in the main repo or a worktree.
+GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null)
+
+if [[ "$GIT_COMMON" == ".git" ]]; then
+  # Running from the main repo root
+  MAIN_REPO="$(git rev-parse --show-toplevel)"
+else
+  # Running from a worktree — strip the trailing /.git to get the main repo root
+  MAIN_REPO="${GIT_COMMON%/.git}"
+fi
+
+BACKLOG_CWD="$(dirname "$MAIN_REPO")/righelt-backlog"
+
+if [[ ! -d "$BACKLOG_CWD" ]]; then
+  echo "ERROR: Shared backlog repo not found at $BACKLOG_CWD" >&2
+  echo "Run the setup from docs/tickets/t-083/eng-plan.md to initialise it." >&2
+  exit 1
+fi
+
+exec backlog mcp start --cwd "$BACKLOG_CWD" "$@"
