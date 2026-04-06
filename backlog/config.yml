@@ -1,6 +1,6 @@
 project_name: "Righelt"
 default_status: "To Do"
-statuses: ["To Do", "Spec", "Planning", "In Progress", "Blocked", "Review", "Done"]
+statuses: ["To Do", "Spec", "Planning", "Ready for execution", "In Progress", "Blocked", "Review", "Ready for acceptance", "Done"]
 labels: ["feature", "improvement", "bug"]
 date_format: yyyy-mm-dd
 max_column_width: 20
