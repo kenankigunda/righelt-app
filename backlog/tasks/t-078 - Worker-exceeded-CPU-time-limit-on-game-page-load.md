@@ -4,7 +4,7 @@ title: Worker exceeded CPU time limit on game page load
 status: To Do
 assignee: []
 created_date: '2026-04-04 06:43'
-updated_date: '2026-04-06 02:14'
+updated_date: '2026-04-06 03:24'
 labels:
   - bug
 dependencies: []
@@ -147,3 +147,9 @@ Error: {
   "id": 1
 }
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Likely overlap with `T-084` (scenario import hangs and fails with Durable Object CPU limit). A newly observed reproduction shows that importing a simple scenario such as `Cannot project into unsupplied area` succeeds, while importing the more complex scenario `Push vs. project strategy endgame` hits the CPU-limit failure. That suggests the underlying performance issue may be tied to game/scenario complexity and especially the number of moves or size of processed history/state, rather than being unique to one entry path.
+<!-- SECTION:NOTES:END -->
