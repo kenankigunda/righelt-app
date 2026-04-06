@@ -31,6 +31,20 @@ test("catalog includes a scenario where capturing the supply point wins by unsup
   assert.equal(scenario.resultingState.pieces.some((piece) => piece.id === "U1-7" && piece.position?.row === 9 && piece.position?.col === 0), true);
 });
 
+test("runtime scenario catalog preserves the commander push no-retreat scenario", () => {
+  const scenario = catalog.scenarios.find((entry) => entry.id === "7f0cf8bd-8af9-4f6d-9caf-7e6617d6c32d");
+
+  assert.ok(scenario);
+  assert.equal(scenario.title, "Commander push with no retreat");
+  assert.equal(scenario.expectedOutcome, "ongoing");
+  assert.deepEqual(scenario.savedSelection, {
+    source: { row: 7, col: 4 },
+    target: { row: 6, col: 4 },
+    actorSide: "P1",
+    turnIndex: 20,
+  });
+});
+
 test("shell debug UI uses scenario terminology", () => {
   assert.match(shellAppSource, /Scenarios/);
   assert.match(shellAppSource, /Load a scenario/);
