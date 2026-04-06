@@ -1,10 +1,10 @@
 ---
 id: T-020
 title: Client sync store for immediate responsiveness
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-04-04'
-updated_date: '2026-04-05 17:12'
+updated_date: '2026-04-06 02:00'
 labels:
   - feature
 dependencies: []
@@ -36,3 +36,11 @@ Unify all client-server communication behind a single sync store that returns im
 - Independent implementation: worktree/branch `claude/fervent-allen`
 - Deferred follow-up: `T-079`
 <!-- SECTION:DESCRIPTION:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The online-first sync-store migration is now merged to `main` via PR #63 (`2e0fbbe`). The shipped work covers the Phase 1–11 scope captured in this task: unified client/server communication through the sync store, optimistic local creation and revert flows, localized pending/loading states, local-first history navigation, unified failure handling, live-sync absorption, cleanup of the old store path, and regression coverage across unit, integration, and E2E layers.
+
+Phase 12 offline support was intentionally split out and remains tracked separately in the dedicated offline-support follow-up task, so this parent ticket can now be considered complete on `main`.
+<!-- SECTION:FINAL_SUMMARY:END -->

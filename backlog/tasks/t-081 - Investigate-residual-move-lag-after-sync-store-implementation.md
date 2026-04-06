@@ -4,12 +4,14 @@ title: Investigate residual move lag after sync store implementation
 status: To Do
 assignee: []
 created_date: '2026-04-06 01:51'
+updated_date: '2026-04-06 02:05'
 labels:
   - bug
 dependencies: []
 references:
   - >-
     backlog/assets/example-of-move-with-lag-that-cause-browser-slowdown-popup.png
+  - backlog/assets/post_move_lag.png
 priority: high
 ---
 
@@ -40,3 +42,9 @@ Investigation prompts to consider include, but are not limited to:
 - [ ] #4 Implement a fix or set of fixes that makes optimistic move creation feel consistently responsive for the investigated lag cases.
 - [ ] #5 Add or update regression coverage and validation for the affected move-initiation path, and document any remaining known risks or unknowns.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Merged prior backlog report `T-041` into this ticket so residual move-lag investigation lives in one place. The older screenshot report remains relevant as another example of the same class of responsiveness issue.
+<!-- SECTION:NOTES:END -->

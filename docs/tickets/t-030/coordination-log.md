@@ -26,6 +26,6 @@
 - Round 3: t-030.05, then t-030.06 ∥ t-030.07
 - Round 4: t-030.08
 
-**Followup**: T-079 created — background job to hard-delete games soft-deleted for N+ days (P1, improvement).
+**Followup**: T-082 created — background job to hard-delete games soft-deleted for N+ days (P1, improvement).
 
 **Next**: Awaiting `Es` (execution sprint) or `Tke t-030` to fan out Eng subtasks.
