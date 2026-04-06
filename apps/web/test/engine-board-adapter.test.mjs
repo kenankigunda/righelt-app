@@ -974,7 +974,7 @@ test("history destruction overlays render as dedicated struck-through board toke
   assert.match(adapterSource, /supplied:\s*record\?\.supplied !== false,/);
   assert.match(adapterSource, /commanded:\s*record\?\.commanded !== false,/);
   assert.doesNotMatch(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*opacity:\s*0\.46;/s);
-  assert.match(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*0\.46\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*0\.46\);[\s\S]*animation:\s*history-destruction-pulse 1\.6s ease-in-out infinite;/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece\.p1\s*\{[\s\S]*--destroyed-cut-border:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);[\s\S]*background:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);[\s\S]*border-color:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece\.p2\s*\{[\s\S]*--destroyed-cut-border:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);[\s\S]*background:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);[\s\S]*border-color:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece\.inactive\s*\{[\s\S]*background:\s*var\(--cell-fill, #fbf8f0\);/s);
@@ -991,6 +991,7 @@ test("history destruction overlays render as dedicated struck-through board toke
   assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*width:\s*5px;/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*height:\s*34px;/s);
   assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*transform:\s*translate\(-50%,\s*-50%\)\s*rotate\(45deg\);/s);
+  assert.match(styleSource, /@keyframes history-destruction-pulse\s*\{[\s\S]*0%,[\s\S]*100%\s*\{[\s\S]*opacity:\s*1;[\s\S]*transform:\s*translate\(-50%,\s*-50%\)\s*scale\(1\);[\s\S]*50%\s*\{[\s\S]*opacity:\s*0\.76;[\s\S]*transform:\s*translate\(-50%,\s*-50%\)\s*scale\(0\.965\);/s);
 });
 
 test("rush blocker chip styling matches the dedicated board-square treatment", () => {

@@ -738,6 +738,7 @@ button {
   transform: translate(-50%, -50%);
   z-index: 2;
   color: rgba(255, 255, 255, 0.46);
+  animation: history-destruction-pulse 1.6s ease-in-out infinite;
   pointer-events: none;
 }
 
@@ -807,6 +808,19 @@ button {
 
   to {
     opacity: 0.08;
+  }
+}
+
+@keyframes history-destruction-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  50% {
+    opacity: 0.76;
+    transform: translate(-50%, -50%) scale(0.965);
   }
 }
 
