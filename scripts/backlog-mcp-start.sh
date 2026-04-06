@@ -28,4 +28,5 @@ if [[ ! -d "$BACKLOG_CWD" ]]; then
   exit 1
 fi
 
-exec backlog mcp start --cwd "$BACKLOG_CWD" "$@"
+BACKLOG_BIN="${BACKLOG_BIN:-$(command -v backlog 2>/dev/null || echo /opt/homebrew/bin/backlog)}"
+exec "$BACKLOG_BIN" mcp start --cwd "$BACKLOG_CWD" "$@"
