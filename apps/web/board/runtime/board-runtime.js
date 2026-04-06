@@ -1140,7 +1140,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     overlayMode = nextOverlayMode;
     recordedAction = nextRecordedAction ? structuredClone(nextRecordedAction) : null;
     recordedActionStartPiece = nextRecordedActionStartPiece ? structuredClone(nextRecordedActionStartPiece) : null;
-    const preserveRemovalEffects = resetSelection !== true && !selectionAction && removalEffects.length > 0;
+    const preserveRemovalEffects =
+      nextOverlayMode === OVERLAY_MODE.INTERACTIVE &&
+      !selectionAction &&
+      removalEffects.length > 0;
     if (!preserveRemovalEffects) {
       clearRemovalEffects();
     }

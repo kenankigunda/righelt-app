@@ -801,6 +801,137 @@ test("board runtime preserves in-progress removal effects across snapshot reload
   }
 });
 
+test("board runtime preserves in-progress removal effects across interactive turn handoff reloads", async () => {
+  const renderCalls = [];
+  const scheduledTimers = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalDateNow = Date.now;
+
+  globalThis.setTimeout = (fn, delay) => {
+    const handle = { fn, delay };
+    scheduledTimers.push(handle);
+    return handle;
+  };
+  globalThis.clearTimeout = () => {};
+  Date.now = () => 5000;
+
+  try {
+    const runtime = createBoardRuntime({
+      boardAdapter: {
+        mount: noop,
+        render: (payload) => renderCalls.push(payload),
+        getSelectedPieceSummary: () => null,
+        getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+        getPieceAt: (snapshot, coord) =>
+          snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+        nextSelectionForCell: () => ({
+          selection: { selectedPieceId: null, source: null, target: null },
+          nextActionType: "pass",
+        }),
+      },
+      host: {
+        applyAction: async () => ({
+          accepted: true,
+          state: {
+            sideToMove: "P2",
+            turnIndex: 1,
+            continuation: null,
+            outcome: null,
+            pieces: [],
+          },
+          legalActions: [{ type: "move", actorId: "B1", from: { row: 9, col: 9 }, to: { row: 8, col: 9 } }],
+          removedPieces: [
+            {
+              pieceId: "A1",
+              position: { row: 4, col: 2 },
+              reason: "loss_of_supply",
+              message: "Piece at (4, 2) destroyed due to loss of supply",
+            },
+          ],
+        }),
+        loadInitialState: async () => ({ state: null, legalActions: [] }),
+        loadLegalActions: async () => ({ state: null, legalActions: [] }),
+        loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+        canInteract: () => true,
+      },
+    });
+
+    runtime.bindElements({
+      boardEl: {},
+      overlayLinesEl: {},
+      boardPreviewLabelEl: null,
+      boardTurnIndicatorEl: null,
+    });
+
+    await runtime.loadSnapshot(
+      {
+        sideToMove: "P1",
+        turnIndex: 0,
+        continuation: {
+          type: "push",
+          owner: "P1",
+          phase: "follow",
+          source: { row: 4, col: 1 },
+          target: { row: 4, col: 2 },
+        },
+        outcome: null,
+        pieces: [
+          {
+            id: "A1",
+            owner: "P1",
+            kind: "unit",
+            position: { row: 4, col: 2 },
+            supplied: false,
+            commanded: false,
+          },
+        ],
+      },
+      {
+        legalActions: [{ type: "follow", actorId: "A1", from: { row: 4, col: 1 }, to: { row: 4, col: 2 } }],
+      },
+    );
+
+    await runtime.submitCurrentAction({
+      type: "follow",
+      actorId: "A1",
+      from: { row: 4, col: 1 },
+      to: { row: 4, col: 2 },
+    });
+
+    const renderWithRemoval = renderCalls.find((payload) => Array.isArray(payload.removalEffects) && payload.removalEffects.length === 1);
+    assert.ok(renderWithRemoval);
+    const originalStartedAt = renderWithRemoval.removalEffects[0].startedAt;
+    assert.equal(originalStartedAt, 5000);
+
+    renderCalls.length = 0;
+
+    await runtime.loadSnapshot(
+      {
+        sideToMove: "P2",
+        turnIndex: 1,
+        continuation: null,
+        outcome: null,
+        pieces: [],
+      },
+      {
+        legalActions: [{ type: "move", actorId: "B1", from: { row: 9, col: 9 }, to: { row: 8, col: 9 } }],
+        resetSelection: true,
+      },
+    );
+
+    const preservedRender = renderCalls.find((payload) => Array.isArray(payload.removalEffects) && payload.removalEffects.length === 1);
+    assert.ok(preservedRender);
+    assert.equal(preservedRender.removalEffects[0].startedAt, originalStartedAt);
+    assert.equal(runtime.getOverlay().mode, "interactive");
+    assert.equal(scheduledTimers.length, 1);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    Date.now = originalDateNow;
+  }
+});
+
 test("board runtime does not submit retreat continuation while interaction is locked to the other player", async () => {
   let applyCount = 0;
   const runtime = createBoardRuntime({

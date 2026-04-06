@@ -177,6 +177,14 @@ const createHistoryReadyGame = () => ({
         continuation: null,
         outcome: { status: "ongoing" },
       },
+      snapshot: {
+        boardSize: 10,
+        sideToMove: "P2",
+        turnIndex: 0,
+        pieces: [{ id: "U1", owner: "P1", row: 5, col: 6 }],
+        continuation: null,
+        outcome: { status: "ongoing" },
+      },
     },
     {
       ...createRevertReadyGame().moves[0],
@@ -197,6 +205,14 @@ const createHistoryReadyGame = () => ({
         continuation: null,
         outcome: { status: "ongoing" },
       },
+      snapshot: {
+        boardSize: 10,
+        sideToMove: "P1",
+        turnIndex: 1,
+        pieces: [{ id: "U1", owner: "P1", row: 5, col: 4 }],
+        continuation: null,
+        outcome: { status: "ongoing" },
+      },
     },
   ],
   pendingMoves: [
@@ -214,6 +230,14 @@ const createHistoryReadyGame = () => ({
         sideToMove: "P1",
         turnIndex: 1,
         pieces: [{ id: "U1", owner: "P1", row: 5, col: 4 }],
+        continuation: null,
+        outcome: { status: "ongoing" },
+      },
+      snapshot: {
+        boardSize: 10,
+        sideToMove: "P1",
+        turnIndex: 1,
+        pieces: [{ id: "U1", owner: "P1", row: 4, col: 4 }],
         continuation: null,
         outcome: { status: "ongoing" },
       },
@@ -927,7 +951,7 @@ test("sync store selects history locally and keeps the selection latched while l
   assert.equal(handle.status, "committed");
   assert.equal(handle.result.inHistoryMode, true);
   assert.equal(handle.result.historyIndex, 2);
-  assert.deepEqual(handle.result.currentSnapshot, game.pendingMoves[0].selectionSnapshot);
+  assert.deepEqual(handle.result.currentSnapshot, game.pendingMoves[0].snapshot);
 
   const liveAppend = {
     ...createHistoryReadyGame(),
@@ -955,6 +979,14 @@ test("sync store selects history locally and keeps the selection latched while l
           continuation: null,
           outcome: { status: "ongoing" },
         },
+        snapshot: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 1,
+          pieces: [{ id: "U1", owner: "P1", row: 4, col: 4 }],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
       },
     ],
   };
@@ -967,9 +999,34 @@ test("sync store selects history locally and keeps the selection latched while l
   assert.equal(latchedView.inHistoryMode, true);
   assert.equal(latchedView.historyIndex, 2);
   assert.equal(latchedView.moves.length, 3);
-  assert.deepEqual(latchedView.currentSnapshot, game.pendingMoves[0].selectionSnapshot);
+  assert.deepEqual(latchedView.currentSnapshot, game.pendingMoves[0].snapshot);
 
   releaseHistorySync?.();
+});
+
+test("sync store local history projection prefers the selected move snapshot over selectionSnapshot", () => {
+  const { transport, games } = createTransportHarness();
+  const game = createHistoryReadyGame();
+  games.set(game.id, game);
+
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      ...transport,
+      selectHistoryMove: async () => games.get(game.id),
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const handle = store.selectHistoryMove({ gameId: game.id, moveIndex: 0 });
+  assert.equal(handle.result.inHistoryMode, true);
+  assert.deepEqual(handle.result.currentSnapshot, game.moves[0].snapshot);
+  assert.notDeepEqual(handle.result.currentSnapshot, game.moves[0].selectionSnapshot);
 });
 
 test("sync store only preserves a local history latch while the authoritative game remains in history mode", () => {

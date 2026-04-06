@@ -767,10 +767,11 @@ const buildHistoryViewProjection = (game, moveIndex) => {
   const pendingMoves = Array.isArray(game?.pendingMoves) ? game.pendingMoves : [];
   const selectedMove =
     authoritativeMoves.find((move) => move?.index === moveIndex) ?? pendingMoves.find((move) => move?.index === moveIndex) ?? null;
-  if (!selectedMove?.selectionSnapshot) {
+  const selectedSnapshotSource = selectedMove?.snapshot ?? selectedMove?.selectionSnapshot ?? null;
+  if (!selectedSnapshotSource) {
     return null;
   }
-  const selectedSnapshot = clone(selectedMove.selectionSnapshot);
+  const selectedSnapshot = clone(selectedSnapshotSource);
   const selectedTurn =
     (Array.isArray(game.turns) ? game.turns.find((turn) => turn?.index === selectedSnapshot.turnIndex) : null) ??
     game.currentTurn ??
