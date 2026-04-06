@@ -268,6 +268,17 @@ function findActionPiece(snapshot, action) {
   );
 }
 
+function findActionTargetPiece(snapshot, action) {
+  if (!snapshot || !action) {
+    return null;
+  }
+  return (
+    (action.to ? findPieceAt(snapshot, action.to.row, action.to.col) : null) ??
+    (typeof action.actorId === "string" ? findPieceById(snapshot, action.actorId) : null) ??
+    (action.from ? findPieceAt(snapshot, action.from.row, action.from.col) : null)
+  );
+}
+
 function findPreferredPieceAt(snapshot, row, col) {
   const pieces = findPiecesAt(snapshot, row, col);
   if (pieces.length === 0) {
@@ -304,6 +315,38 @@ function buildPieceToken(piece, ghost = false) {
   token.textContent = piece.kind === "commander" ? "C" : "";
   return token;
 }
+
+const findRenderablePieceToken = (cell) => {
+  if (!cell?.querySelectorAll) {
+    return null;
+  }
+  const tokens = Array.from(cell.querySelectorAll(".piece-token"));
+  const renderableTokens = tokens.filter(
+    (child) =>
+      child?.classList &&
+      !child.classList.contains("move-ghost") &&
+      !child.classList.contains("history-destruction-piece") &&
+      !child.classList.contains("removal-piece"),
+  );
+  return (
+    renderableTokens.find((child) => child.classList.contains("stacked-top")) ??
+    renderableTokens[0] ??
+    null
+  );
+};
+
+const buildDestroyedPieceOverlayToken = (record) => {
+  const piece = {
+    owner: record?.ownerSeat === "p2" ? "P2" : "P1",
+    kind: record?.kind === "commander" ? "commander" : "unit",
+    supplied: record?.supplied !== false,
+    commanded: record?.commanded !== false,
+  };
+  const token = buildPieceToken(piece);
+  token.classList.add("history-destruction-piece");
+  token.setAttribute("aria-hidden", "true");
+  return token;
+};
 
 export function getInactiveSelectedPieceLabel(piece, snapshot) {
   const renderStatus = getPieceRenderStatus(piece);
@@ -710,7 +753,8 @@ export function createEngineBoardAdapter() {
 
     if (overlay?.mode === "recorded-action") {
       const action = overlay.recordedAction;
-      const piece = findActionPiece(snapshot, action);
+      const startPiece = overlay.recordedActionStartPiece ?? null;
+      const piece = findActionTargetPiece(snapshot, action) ?? startPiece;
       if (!action || !piece) {
         return;
       }
@@ -719,13 +763,36 @@ export function createEngineBoardAdapter() {
         applyGroupDecorations(snapshot, piece, cellByCoordinateKey);
       }
 
+      if (action.from && startPiece) {
+        const sourceSnapshotPiece = findPieceAt(snapshot, action.from.row, action.from.col);
+        const sourceCell = cellByCoordinateKey.get(coordKey(action.from));
+        const shouldAppendSourceToken =
+          !sourceSnapshotPiece || (typeof sourceSnapshotPiece.id === "string" && sourceSnapshotPiece.id !== startPiece.id);
+        if (sourceCell && shouldAppendSourceToken) {
+          const sourceToken = buildPieceToken(startPiece, action.type !== "project");
+          sourceToken.classList.add("recorded-action-source-piece");
+          if (action.type !== "project") {
+            sourceToken.classList.add("move-ghost");
+          }
+          sourceCell.appendChild(sourceToken);
+        }
+      }
+
       if (action.to) {
         if (action.type !== "project") {
-          drawArrowLine(action.from ?? piece.position, action.to, piece.owner, false, true);
+          drawArrowLine(action.from ?? startPiece?.position ?? piece.position, action.to, piece.owner, false, true);
         }
         const targetCell = cellByCoordinateKey.get(coordKey(action.to));
         if (targetCell) {
-          const ghost = buildPieceToken(action.previewPiece ?? piece, true);
+          if (action.type === "project") {
+            const existingToken = findRenderablePieceToken(targetCell);
+            if (existingToken) {
+              existingToken.classList.add("preview-created");
+              return;
+            }
+          }
+          const previewPiece = findActionTargetPiece(snapshot, action) ?? action.previewPiece ?? piece;
+          const ghost = buildPieceToken(previewPiece, true);
           ghost.classList.add("move-ghost");
           if (action.type === "project") {
             ghost.classList.add("preview-created");
@@ -1054,6 +1121,9 @@ export function createEngineBoardAdapter() {
       const removalByCoordinateKey = new Map(
         (Array.isArray(removalEffects) ? removalEffects : []).map((effect) => [coordKey(effect.position), effect]),
       );
+      const destroyedByCoordinateKey = new Map(
+        (Array.isArray(overlay?.destroyedPieces) ? overlay.destroyedPieces : []).map((record) => [coordKey(record), record]),
+      );
 
       const continuationHighlight = deriveContinuationHighlightByPieceId(snapshot, legalActions);
       const isContinuationHighlightedSquare = (row, col) => {
@@ -1114,8 +1184,10 @@ export function createEngineBoardAdapter() {
           }
           const removalEffect = removalByCoordinateKey.get(`${row},${col}`);
           if (removalEffect) {
-            cell.classList.add("removal-effect");
-            cell.setAttribute("data-removal-label", removalEffect.message);
+            if (removalEffect.reason !== "history_destroyed") {
+              cell.classList.add("removal-effect");
+              cell.setAttribute("data-removal-label", removalEffect.message);
+            }
           }
 
           const isSource =
@@ -1202,8 +1274,19 @@ export function createEngineBoardAdapter() {
             stack.appendChild(defenderToken);
             cell.appendChild(stack);
           } else {
-            const marker = cellPiece ? buildPieceToken(cellPiece) : document.createElement("span");
-            if (!cellPiece) {
+            const recordedActionStartPiece =
+              overlay?.mode === "recorded-action" && overlay?.recordedActionStartPiece
+                ? overlay.recordedActionStartPiece
+                : null;
+            const shouldRenderRecordedActionStartPiece =
+              overlay?.mode === "recorded-action" &&
+              recordedActionStartPiece &&
+              overlay?.recordedAction?.from?.row === row &&
+              overlay?.recordedAction?.from?.col === col &&
+              cellPiece?.id === recordedActionStartPiece.id;
+            const markerPiece = shouldRenderRecordedActionStartPiece ? recordedActionStartPiece : cellPiece;
+            const marker = markerPiece ? buildPieceToken(markerPiece) : document.createElement("span");
+            if (!markerPiece) {
               marker.className = "piece-empty";
               marker.setAttribute("aria-hidden", "true");
             }
@@ -1218,6 +1301,12 @@ export function createEngineBoardAdapter() {
               removalPiece.style.animationDelay = `-${animationDelayMs}ms`;
             }
             cell.appendChild(removalPiece);
+          }
+
+          const destroyedPiece = destroyedByCoordinateKey.get(`${row},${col}`);
+          if (destroyedPiece) {
+            cell.classList.add("history-destruction-cell");
+            cell.appendChild(buildDestroyedPieceOverlayToken(destroyedPiece));
           }
 
           if (isSupplyPoint(row, col)) {

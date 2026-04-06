@@ -1,7 +1,8 @@
 /**
  * @typedef {{ row: number, col: number }} BoardCoord
  * @typedef {{ selectedPieceId: string | null, source: BoardCoord | null, target: BoardCoord | null }} BoardSelection
- * @typedef {{ mode: "interactive" | "recorded-action" | "none", selection?: BoardSelection | null, recordedAction?: unknown | null }} BoardOverlay
+ * @typedef {{ row: number, col: number, ownerSeat?: "p1" | "p2" | null, kind?: "unit" | "commander" | null, supplied?: boolean | null, commanded?: boolean | null }} DestroyedPieceOverlay
+ * @typedef {{ mode: "interactive" | "recorded-action" | "none", selection?: BoardSelection | null, recordedAction?: unknown | null, recordedActionStartPiece?: unknown | null, destroyedPieces?: DestroyedPieceOverlay[] | null }} BoardOverlay
  *
  * Runtime contract for pluggable board adapters.
  * The app shell depends only on this surface.

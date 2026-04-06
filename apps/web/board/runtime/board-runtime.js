@@ -42,6 +42,7 @@ const OVERLAY_MODE = {
   NONE: "none",
   RECORDED_ACTION: "recorded-action",
 };
+const REMOVAL_EFFECT_DURATION_MS = 2400;
 
 const shouldUseCompactBoardPreviewCta = () =>
   globalThis.window?.matchMedia?.(MOBILE_BOARD_PREVIEW_BREAKPOINT_QUERY)?.matches === true;
@@ -75,6 +76,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let internalActionType = defaultActionType;
   let overlayMode = OVERLAY_MODE.INTERACTIVE;
   let recordedAction = null;
+  let recordedActionStartPiece = null;
+  /** @type {Array<{row: number, col: number, ownerSeat?: "p1" | "p2" | null, kind?: "unit" | "commander" | null, piece?: unknown | null}>} */
+  let destroyedPieces = [];
+  let pendingHistoryDestroyedPieces = [];
+  let removalEffectsOnComplete = null;
 
   const getActionType = () => {
     const value = controls.getActionType?.();
@@ -101,6 +107,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     mode: overlayMode,
     selection: overlayMode === OVERLAY_MODE.INTERACTIVE ? getCurrentSelection() : null,
     recordedAction: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedAction : null,
+    recordedActionStartPiece: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedActionStartPiece : null,
+    destroyedPieces,
   });
 
   const getBoardPieceById = (pieceId) => {
@@ -395,6 +403,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
   const clearRemovalEffects = () => {
     removalEffects = [];
+    pendingHistoryDestroyedPieces = [];
+    removalEffectsOnComplete = null;
     if (removalEffectsTimer) {
       clearTimeout(removalEffectsTimer);
       removalEffectsTimer = null;
@@ -686,25 +696,79 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     renderStatus();
   };
 
-  const showRemovalEffects = (effects, previousState) => {
+  const showRemovalEffects = (effects, previousState, { onComplete = null } = {}) => {
     clearRemovalEffects();
     const startedAt = Date.now();
     removalEffects = Array.isArray(effects)
       ? effects.map((effect) => ({
           ...effect,
           startedAt,
-          piece: previousState?.pieces?.find((piece) => piece.id === effect.pieceId) ?? null,
+          piece: effect?.piece ?? previousState?.pieces?.find((piece) => piece.id === effect.pieceId) ?? null,
         }))
       : [];
     if (removalEffects.length === 0) {
+      if (typeof onComplete === "function") {
+        onComplete();
+      }
       return;
     }
+    removalEffectsOnComplete = typeof onComplete === "function" ? onComplete : null;
     renderBoard();
     removalEffectsTimer = setTimeout(() => {
       removalEffects = [];
       removalEffectsTimer = null;
+      const completion = removalEffectsOnComplete;
+      removalEffectsOnComplete = null;
+      completion?.();
       renderBoard();
-    }, 2400);
+    }, REMOVAL_EFFECT_DURATION_MS);
+  };
+
+  const buildHistoryRemovalEffects = (records) =>
+    (Array.isArray(records) ? records : []).map((record) => {
+      const piece =
+        record?.piece && typeof record.piece === "object"
+          ? {
+              ...record.piece,
+              position: record.piece.position
+                ? {
+                    row: record.piece.position.row,
+                    col: record.piece.position.col,
+                  }
+                : { row: record.row, col: record.col },
+            }
+          : {
+              id: null,
+              owner: record?.ownerSeat === "p2" ? "P2" : "P1",
+              kind: record?.kind === "commander" ? "commander" : "unit",
+              position: { row: record.row, col: record.col },
+              supplied: record?.supplied !== false,
+              commanded: record?.commanded !== false,
+            };
+      return {
+        pieceId: piece.id,
+        position: { row: record.row, col: record.col },
+        reason: "history_destroyed",
+        message: `Piece at (${record.row}, ${record.col}) destroyed.`,
+        piece,
+      };
+    });
+
+  const startHistoryDestructionTransition = (records) => {
+    const nextDestroyedPieces = Array.isArray(records) ? structuredClone(records) : [];
+    if (nextDestroyedPieces.length === 0) {
+      destroyedPieces = [];
+      pendingHistoryDestroyedPieces = [];
+      return;
+    }
+    destroyedPieces = [];
+    showRemovalEffects(buildHistoryRemovalEffects(nextDestroyedPieces), null, {
+      onComplete: () => {
+        destroyedPieces = pendingHistoryDestroyedPieces;
+        pendingHistoryDestroyedPieces = [];
+      },
+    });
+    pendingHistoryDestroyedPieces = nextDestroyedPieces;
   };
 
   const setResult = (value) => {
@@ -1067,15 +1131,24 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       selectionState = null,
       overlayMode: nextOverlayMode = OVERLAY_MODE.INTERACTIVE,
       recordedAction: nextRecordedAction = null,
+      recordedActionStartPiece: nextRecordedActionStartPiece = null,
+      destroyedPieces: nextDestroyedPieces = [],
     } = {},
   ) => {
     state = structuredClone(snapshot);
     legalActions = Array.isArray(incomingLegalActions) ? incomingLegalActions : [];
     overlayMode = nextOverlayMode;
     recordedAction = nextRecordedAction ? structuredClone(nextRecordedAction) : null;
+    recordedActionStartPiece = nextRecordedActionStartPiece ? structuredClone(nextRecordedActionStartPiece) : null;
     const preserveRemovalEffects = resetSelection !== true && !selectionAction && removalEffects.length > 0;
     if (!preserveRemovalEffects) {
       clearRemovalEffects();
+    }
+    if (nextOverlayMode === OVERLAY_MODE.RECORDED_ACTION && Array.isArray(nextDestroyedPieces) && nextDestroyedPieces.length > 0) {
+      startHistoryDestructionTransition(nextDestroyedPieces);
+    } else {
+      pendingHistoryDestroyedPieces = [];
+      destroyedPieces = Array.isArray(nextDestroyedPieces) ? structuredClone(nextDestroyedPieces) : [];
     }
     if (resetSelection) {
       clearSelection();

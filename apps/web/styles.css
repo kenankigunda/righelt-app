@@ -198,6 +198,15 @@ body {
   color: #8a5712;
 }
 
+/* Destruction-highlight chip: dark crimson palette, distinct from continuation (player-toned)
+   and selection chips (teal/green). Used for the square where a piece was destroyed.
+   Per RIGHELT_WEB_APP_SPEC §1.1.4: new square-highlight role → matching coordinate chip treatment. */
+.board-preview-coordinate-chip.board-preview-coordinate-chip-destruction {
+  background: #f5e6e6;
+  border-color: #b03030;
+  color: #7a1a1a;
+}
+
 .board-preview-inline-button {
   display: inline-block;
   margin: 0 0 0.1rem;
@@ -531,11 +540,12 @@ button {
   z-index: 0;
 }
 
-.piece-token.move-ghost.preview-created::after {
+.piece-token.preview-created::after {
   content: "+";
   position: absolute;
   top: -7px;
   right: -8px;
+  z-index: 3;
   width: 12px;
   height: 12px;
   display: inline-flex;
@@ -548,6 +558,7 @@ button {
   font-size: 0.62rem;
   font-weight: 900;
   line-height: 1;
+  pointer-events: none;
 }
 
 .overlay-key {
@@ -715,9 +726,78 @@ button {
   top: 50%;
   transform: translate(-50%, -50%);
   z-index: 2;
-  animation: removal-piece-flash 0.36s ease-in-out 5 alternate;
+  animation: removal-piece-flash 0.48s ease-in-out 5 alternate;
   animation-fill-mode: forwards;
   pointer-events: none;
+}
+
+.piece-token.history-destruction-piece {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  color: rgba(255, 255, 255, 0.46);
+  pointer-events: none;
+}
+
+.piece-token.history-destruction-piece.p1 {
+  --destroyed-cut-border: rgba(194, 69, 47, 0.46);
+  background: rgba(194, 69, 47, 0.46);
+  border-color: rgba(194, 69, 47, 0.46);
+}
+
+.piece-token.history-destruction-piece.p2 {
+  --destroyed-cut-border: rgba(45, 103, 199, 0.46);
+  background: rgba(45, 103, 199, 0.46);
+  border-color: rgba(45, 103, 199, 0.46);
+}
+
+.piece-token.history-destruction-piece.inactive {
+  background: var(--cell-fill, #fbf8f0);
+}
+
+.piece-token.history-destruction-piece.inactive.p1 {
+  border-color: rgba(194, 69, 47, 0.46);
+}
+
+.piece-token.history-destruction-piece.inactive.p2 {
+  border-color: rgba(45, 103, 199, 0.46);
+}
+
+.piece-token.history-destruction-piece.commander {
+  border-color: rgba(246, 229, 141, 0.46);
+}
+
+.piece-token.history-destruction-piece::before {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 50%;
+  width: 1.5px;
+  height: 36px;
+  background: var(--destroyed-cut-border, transparent);
+  border-radius: 999px;
+  box-shadow:
+    -3.5px 0 0 var(--destroyed-cut-border, transparent),
+    3.5px 0 0 var(--destroyed-cut-border, transparent);
+  transform: translate(-50%, -50%) rotate(45deg);
+  transform-origin: center;
+}
+
+.piece-token.history-destruction-piece::after {
+  content: "";
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 34px;
+  background: #ffffff;
+  border-radius: 999px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  transform-origin: center;
 }
 
 @keyframes removal-piece-flash {

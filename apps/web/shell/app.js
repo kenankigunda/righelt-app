@@ -1280,7 +1280,7 @@ const playHistoryReleaseBounce = (actionEl) => {
     boardWrapEl.classList.add("history-board-release");
   }
 
-  if (actionEl instanceof HTMLElement && actionEl.classList.contains("history-item")) {
+  if (actionEl instanceof HTMLElement && (actionEl.classList.contains("history-item") || actionEl.classList.contains("history-destruction-item"))) {
     actionEl.classList.remove("history-item-release");
     void actionEl.offsetWidth;
     actionEl.classList.add("history-item-release");
@@ -1334,7 +1334,7 @@ const startHistoryPress = (actionEl) => {
     boardWrapEl.classList.add("history-board-pressing");
   }
 
-  if (actionEl.classList.contains("history-item")) {
+  if (actionEl.classList.contains("history-item") || actionEl.classList.contains("history-destruction-item")) {
     actionEl.classList.add("is-pressing");
     pressedHistoryActionEl = actionEl;
   }
@@ -1448,18 +1448,31 @@ const renderTurnHistory = (game) => {
           move.moveId || "",
         )}">Undo back to this move</button>`
       : "";
+    const destroyedPieces = Array.isArray(move.destroyedPieces) ? move.destroyedPieces : [];
+    const destructionSubBullets = destroyedPieces.length > 0
+      ? `<ul class="history-destruction-list">${destroyedPieces.map((record) => {
+          const ownerSideClass = playerToneClassForSide(record.ownerSeat === "p1" ? "P1" : record.ownerSeat === "p2" ? "P2" : "neutral");
+          return `<li class="history-destruction-item ${ownerSideClass}${move.undone === true ? " is-undone" : ""}" data-testid="history-destruction-item"><span class="history-destruction-label">DESTROYED (${record.position.row},${record.position.col})</span></li>`;
+        }).join("")}</ul>`
+      : "";
+    const actionSection = revertButton || branchButton
+      ? `<div class="history-item-actions">${revertButton}${branchButton}</div>`
+      : "";
+    const sectionClass = actionSection ? " history-item-has-actions" : "";
     return {
       undone: move.undone === true,
       actorSide: move.actorSide || null,
-      html: `<li class="history-item ${playerToneClassForSide(move.actorSide || "P1")}${selectedClass}${undoneClass}" data-action="jump-history" data-game-id="${escapeHtml(
+      html: `<li class="history-item${sectionClass} ${playerToneClassForSide(move.actorSide || "P1")}${selectedClass}${undoneClass}" data-action="jump-history" data-game-id="${escapeHtml(
         game.id,
       )}" data-move-index="${move.index}" data-testid="history-move-item">
-          <span class="history-move-line">Move ${escapeHtml(
-            String(move.displayMoveNumber ?? move.index + 1),
-          )}: ${escapeHtml(move.notation)}</span>
-          <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
-          ${revertButton}
-          ${branchButton}
+          <div class="history-item-info">
+            <span class="history-move-line">Move ${escapeHtml(
+              String(move.displayMoveNumber ?? move.index + 1),
+            )}: ${escapeHtml(move.notation)}</span>
+            ${destructionSubBullets}
+            <span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span>
+          </div>
+          ${actionSection}
         </li>`,
     };
   });
@@ -2956,6 +2969,78 @@ const renderNotFound = () => `
   </section>
 `;
 
+const getHistoryDestroyedPieceOverlays = (game) => {
+  if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
+    return [];
+  }
+  const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
+  const destroyedPieces = Array.isArray(move?.destroyedPieces) ? move.destroyedPieces : [];
+  const preActionPieces = Array.isArray(move?.selectionSnapshot?.pieces) ? move.selectionSnapshot.pieces : [];
+  return destroyedPieces.map((record) => {
+    const preActionPiece =
+      preActionPieces.find(
+        (piece) =>
+          piece?.position?.row === record.position.row &&
+          piece?.position?.col === record.position.col,
+      ) ?? null;
+    return {
+      row: record.position.row,
+      col: record.position.col,
+      ownerSeat:
+        record.ownerSeat ??
+        (preActionPiece?.owner === "P1" ? "p1" : preActionPiece?.owner === "P2" ? "p2" : null),
+      kind:
+        preActionPiece?.kind ??
+        (record.reason === "commander_unsupplied" ? "commander" : "unit"),
+      supplied: preActionPiece ? preActionPiece.supplied !== false : record.supplied ?? true,
+      commanded: preActionPiece ? preActionPiece.commanded !== false : record.commanded ?? true,
+      piece: preActionPiece
+        ? {
+            id: preActionPiece.id ?? null,
+            owner: preActionPiece.owner,
+            kind: preActionPiece.kind,
+            position: {
+              row: preActionPiece.position.row,
+              col: preActionPiece.position.col,
+            },
+            supplied: preActionPiece.supplied !== false,
+            commanded: preActionPiece.commanded !== false,
+            pushed: preActionPiece.pushed === true,
+          }
+        : null,
+    };
+  });
+};
+
+const findHistoryActionPiece = (snapshot, action) => {
+  if (!snapshot || !action) {
+    return null;
+  }
+  if (typeof action.actorId === "string") {
+    const pieceById = snapshot.pieces?.find((piece) => piece.id === action.actorId) ?? null;
+    if (pieceById) {
+      return pieceById;
+    }
+  }
+  if (!action.from) {
+    return null;
+  }
+  return snapshot.pieces?.find(
+    (piece) => piece.position?.row === action.from.row && piece.position?.col === action.from.col,
+  ) ?? null;
+};
+
+const getHistoryRecordedActionStartPiece = (game) => {
+  if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
+    return null;
+  }
+  const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
+  if (!move?.selectionSnapshot || !move?.action) {
+    return null;
+  }
+  return findHistoryActionPiece(move.selectionSnapshot, move.action);
+};
+
 const mountBoardForGame = (game) => {
   const boardEl = document.getElementById("shell-board");
   const overlayLinesEl = document.getElementById("shell-overlay-lines");
@@ -2998,11 +3083,15 @@ const mountBoardForGame = (game) => {
 
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
+  const historyDestroyedPieces = getHistoryDestroyedPieceOverlays(game);
+  const historyRecordedActionStartPiece = getHistoryRecordedActionStartPiece(game);
   const forceClickTargetSelection = currentRoute.scenarios;
   const hydratedSelectionAction = scenarioSelectionHydration.selectionAction ?? initialSelectionHydration.selectionAction;
   const overlayKey = toStableKey({
     overlayMode,
     recordedAction: historySelectionAction,
+    recordedActionStartPiece: historyRecordedActionStartPiece,
+    destroyedPieces: historyDestroyedPieces,
     selectionAction: hydratedSelectionAction,
     selectionState: scenarioSelectionHydration.selectionState,
     forceClickTargetSelection,
@@ -3052,6 +3141,8 @@ const mountBoardForGame = (game) => {
       selectionState: scenarioSelectionHydration.selectionState,
       overlayMode,
       recordedAction: historySelectionAction,
+      recordedActionStartPiece: historyRecordedActionStartPiece,
+      destroyedPieces: historyDestroyedPieces,
     });
     return;
   }
@@ -3112,6 +3203,8 @@ const mountBoardForGame = (game) => {
     selectionState: scenarioSelectionHydration.selectionState,
     overlayMode,
     recordedAction: historySelectionAction,
+    recordedActionStartPiece: historyRecordedActionStartPiece,
+    destroyedPieces: historyDestroyedPieces,
   });
 };
 

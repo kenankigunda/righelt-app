@@ -532,8 +532,8 @@ test("recorded-action overlay shows move markers without supply, command, or non
       sideToMove: "P1",
       continuation: null,
       pieces: [
-        { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true },
-        { id: "A2", owner: "P1", kind: "unit", position: { row: 4, col: 4 }, supplied: true, commanded: true },
+        { id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 3 }, supplied: true, commanded: true },
+        { id: "A2", owner: "P1", kind: "unit", position: { row: 4, col: 4 }, supplied: false, commanded: false },
       ],
       artifacts: {
         supply: [
@@ -569,6 +569,14 @@ test("recorded-action overlay shows move markers without supply, command, or non
       overlay: {
         mode: "recorded-action",
         recordedAction: { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } },
+        recordedActionStartPiece: {
+          id: "A1",
+          owner: "P1",
+          kind: "unit",
+          position: { row: 4, col: 2 },
+          supplied: false,
+          commanded: false,
+        },
       },
       legalActions: [],
       selectedPieceMoves: [],
@@ -580,10 +588,150 @@ test("recorded-action overlay shows move markers without supply, command, or non
 
     assert.equal(getCell(boardEl, 4, 2)?.classList.contains("source"), true);
     assert.equal(getCell(boardEl, 4, 3)?.classList.contains("target"), true);
+    assert.equal(getCell(boardEl, 4, 2)?.querySelectorAll(".piece-token").length, 1);
+    assert.equal(getCell(boardEl, 4, 2)?.querySelector(".recorded-action-source-piece")?.classList.contains("inactive"), false);
+    assert.equal(getCell(boardEl, 4, 3)?.querySelector(".move-ghost")?.classList.contains("inactive"), false);
+    assert.equal(getCell(boardEl, 4, 4)?.querySelector(".piece-token")?.classList.contains("inactive"), true);
     assert.equal(boardEl.querySelectorAll(".group-member").length, 0);
     assert.equal(boardEl.querySelectorAll(".group-strength-badge").length, 0);
     assert.equal(overlayLinesEl.querySelectorAll("line").length, 1);
     assert.equal(overlayLinesEl.querySelectorAll("path").length, 1);
+  });
+});
+
+test("recorded-action project overlay decorates the existing history target piece instead of duplicating it", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl, overlayLinesEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P2",
+      continuation: null,
+      pieces: [
+        { id: "A1", owner: "P1", kind: "commander", position: { row: 6, col: 5 }, supplied: true, commanded: true },
+        { id: "A2", owner: "P1", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true },
+      ],
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: {
+        mode: "recorded-action",
+        recordedAction: { type: "project", actorId: "A1", from: { row: 6, col: 5 }, to: { row: 5, col: 5 } },
+        recordedActionStartPiece: {
+          id: "A1",
+          owner: "P1",
+          kind: "commander",
+          position: { row: 6, col: 5 },
+          supplied: true,
+          commanded: true,
+        },
+      },
+      legalActions: [],
+      selectedPieceMoves: [],
+      selectedPieceMovePreviews: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "project",
+    });
+
+    const targetCell = getCell(boardEl, 5, 5);
+    assert.equal(targetCell?.querySelectorAll(".piece-token").length, 1);
+    assert.equal(targetCell?.querySelector(".piece-token")?.classList.contains("preview-created"), true);
+    assert.equal(targetCell?.querySelector(".move-ghost"), null);
+    assert.equal(overlayLinesEl.querySelectorAll("line").length, 0);
+    assert.equal(overlayLinesEl.querySelectorAll("path").length, 0);
+  });
+});
+
+test("recorded-action project overlay decorates the visible top token when the history target is stacked", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl, overlayLinesEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P2",
+      continuation: null,
+      pieces: [
+        { id: "A1", owner: "P1", kind: "commander", position: { row: 6, col: 5 }, supplied: true, commanded: true },
+        { id: "A2", owner: "P1", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true },
+        { id: "B1", owner: "P1", kind: "commander", position: { row: 5, col: 5 }, supplied: true, commanded: true },
+      ],
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: {
+        mode: "recorded-action",
+        recordedAction: { type: "project", actorId: "A1", from: { row: 6, col: 5 }, to: { row: 5, col: 5 } },
+        recordedActionStartPiece: {
+          id: "A1",
+          owner: "P1",
+          kind: "commander",
+          position: { row: 6, col: 5 },
+          supplied: true,
+          commanded: true,
+        },
+      },
+      legalActions: [],
+      selectedPieceMoves: [],
+      selectedPieceMovePreviews: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "project",
+    });
+
+    const targetCell = getCell(boardEl, 5, 5);
+    const stackTokens = targetCell?.querySelectorAll(".piece-stack .piece-token") ?? [];
+    const cellTokens = targetCell?.querySelectorAll(".piece-token") ?? [];
+    assert.equal(targetCell?.querySelectorAll(".move-ghost").length, 0);
+    assert.equal((stackTokens.length > 0 || cellTokens.length > 0), true);
+    assert.equal(Array.from(cellTokens).some((token) => token.classList.contains("preview-created")), true);
+    assert.equal(overlayLinesEl.querySelectorAll("line").length, 0);
+    assert.equal(overlayLinesEl.querySelectorAll("path").length, 0);
+  });
+});
+
+test("history destruction removal effects do not attach live tooltip labels", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl, overlayLinesEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P1",
+      continuation: null,
+      pieces: [],
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: {
+        mode: "recorded-action",
+        recordedAction: { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } },
+      },
+      legalActions: [],
+      selectedPieceMoves: [],
+      selectedPieceMovePreviews: [],
+      removalEffects: [{
+        pieceId: "A1",
+        position: { row: 4, col: 3 },
+        reason: "history_destroyed",
+        message: "Piece at (4, 3) destroyed.",
+        piece: {
+          id: "A1",
+          owner: "P1",
+          kind: "unit",
+          position: { row: 4, col: 3 },
+          supplied: true,
+          commanded: true,
+        },
+      }],
+      allowFreeSelection: false,
+      currentActionType: "move",
+    });
+
+    const targetCell = getCell(boardEl, 4, 3);
+    assert.equal(targetCell?.classList.contains("removal-effect"), false);
+    assert.equal(targetCell?.getAttribute("data-removal-label") ?? null, null);
+    assert.equal(targetCell?.querySelector(".removal-piece") !== null, true);
+    assert.equal(overlayLinesEl.querySelectorAll("line").length >= 0, true);
   });
 });
 
@@ -866,6 +1014,35 @@ test("inactive pieces use the square fill color instead of transparency", () => 
   assert.match(styleSource, /\.cell\.retreat-piece\s*\{[\s\S]*--cell-fill:\s*#f3e7c5;/s);
 });
 
+test("history destruction overlays render as dedicated struck-through board tokens", () => {
+  assert.match(adapterSource, /const destroyedByCoordinateKey = new Map/);
+  assert.match(adapterSource, /cell\.appendChild\(buildDestroyedPieceOverlayToken\(destroyedPiece\)\);/);
+  assert.match(adapterSource, /supplied:\s*record\?\.supplied !== false,/);
+  assert.match(adapterSource, /commanded:\s*record\?\.commanded !== false,/);
+  assert.doesNotMatch(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*opacity:\s*0\.46;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*color:\s*rgba\(255,\s*255,\s*255,\s*0\.46\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.p1\s*\{[\s\S]*--destroyed-cut-border:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);[\s\S]*background:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);[\s\S]*border-color:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.p2\s*\{[\s\S]*--destroyed-cut-border:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);[\s\S]*background:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);[\s\S]*border-color:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.inactive\s*\{[\s\S]*background:\s*var\(--cell-fill, #fbf8f0\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.inactive\.p1\s*\{[\s\S]*border-color:\s*rgba\(194,\s*69,\s*47,\s*0\.46\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece\.inactive\.p2\s*\{[\s\S]*border-color:\s*rgba\(45,\s*103,\s*199,\s*0\.46\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::before\s*\{[\s\S]*z-index:\s*3;[\s\S]*width:\s*1\.5px;[\s\S]*height:\s*36px;[\s\S]*background:\s*var\(--destroyed-cut-border, transparent\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::before\s*\{[\s\S]*box-shadow:[\s\S]*-3\.5px 0 0 var\(--destroyed-cut-border, transparent\),[\s\S]*3\.5px 0 0 var\(--destroyed-cut-border, transparent\);/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::before\s*\{[\s\S]*transform:\s*translate\(-50%,\s*-50%\)\s*rotate\(45deg\);/s);
+  assert.doesNotMatch(styleSource, /\.piece-token\.history-destruction-piece\s*\{[\s\S]*overflow:\s*hidden;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*background:\s*#ffffff;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*z-index:\s*4;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*left:\s*50%;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*top:\s*50%;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*width:\s*5px;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*height:\s*34px;/s);
+  assert.match(styleSource, /\.piece-token\.history-destruction-piece::after\s*\{[\s\S]*transform:\s*translate\(-50%,\s*-50%\)\s*rotate\(45deg\);/s);
+});
+
+test("removal-piece animation timing stays aligned with the runtime settle window", () => {
+  assert.match(styleSource, /\.piece-token\.removal-piece\s*\{[\s\S]*animation:\s*removal-piece-flash 0\.48s ease-in-out 5 alternate;/s);
+});
+
 test("rush blocker chip styling matches the dedicated board-square treatment", () => {
   assert.match(styleSource, /\.board-preview-coordinate-chip\.board-preview-coordinate-chip-rush-blocker\s*\{[\s\S]*background:\s*#f7ead4;[\s\S]*border-color:\s*#cf9542;[\s\S]*color:\s*#8a5712;/s);
   assert.match(adapterSource, /cellByCoordinateKey\.get\(coordKey\(rushBlocker\.position\)\)\?\.classList\.add\("rush-blocker"\);/);
@@ -887,8 +1064,11 @@ test("project previews use a plus badge while move-style previews use lightweigh
     /drawArrowLine\(\s*piece\.position,\s*action\.to,\s*piece\.owner,\s*false,\s*isSelectedTarget,\s*\)/s,
   );
   assert.doesNotMatch(adapterSource, /drawPath\(\[piece\.position, action\.to\], "#8b5ec0", "5 5"\)/);
+  assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*const existingToken = findRenderablePieceToken\(targetCell\);[\s\S]*existingToken\.classList\.add\("preview-created"\);[\s\S]*return;[\s\S]*\}/s);
+  assert.match(adapterSource, /const tokens = Array\.from\(cell\.querySelectorAll\("\.piece-token"\)\);/);
+  assert.match(adapterSource, /renderableTokens\.find\(\(child\) => child\.classList\.contains\("stacked-top"\)\) \?\?[\s\S]*renderableTokens\[0\]/s);
   assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*ghost\.classList\.add\("preview-created"\);\s*\}/s);
-  assert.match(styleSource, /\.piece-token\.move-ghost\.preview-created::after\s*\{[\s\S]*content:\s*"\+";[\s\S]*top:\s*-7px;[\s\S]*right:\s*-8px;/s);
+  assert.match(styleSource, /\.piece-token\.preview-created::after\s*\{[\s\S]*content:\s*"\+";[\s\S]*top:\s*-7px;[\s\S]*right:\s*-8px;[\s\S]*z-index:\s*3;/s);
   assert.match(styleSource, /:root\s*\{[\s\S]*--player-p1:\s*#c2452f;[\s\S]*--player-p2:\s*#2d67c7;/s);
   assert.match(styleSource, /\.piece-token\.p1\s*\{[\s\S]*background:\s*var\(--player-p1\);[\s\S]*border-color:\s*var\(--player-p1\);/s);
   assert.match(styleSource, /\.piece-token\.p2\s*\{[\s\S]*background:\s*var\(--player-p2\);[\s\S]*border-color:\s*var\(--player-p2\);/s);
