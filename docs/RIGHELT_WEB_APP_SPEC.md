@@ -409,6 +409,17 @@ Tutorial restart:
   - a tooltip with the supplied player-facing explanation
 - Removal notices are informational only and must not alter deterministic engine state or replay artifacts.
 
+### 12.4 Persistent Destruction Records
+
+- In addition to the transient `removedPieces` path (§12.3), each stored `MoveEntry` carries a `destroyedPieces` field: a persistent record of pieces removed during that move's resolution.
+- Each `DestroyedPieceRecord` includes:
+  - `position` — the piece's coordinates at removal time
+  - `ownerSeat` — `"p1"` or `"p2"`
+  - `reason` — one of `"no_retreat"`, `"loss_of_supply"`, or `"commander_unsupplied"`
+- The `commander_unsupplied` reason is used for Commander removals exclusively. **Invariant**: A Commander removal always produces a terminal outcome (`p1_win`, `p2_win`, or `draw`); a move with an `ongoing` outcome cannot contain a Commander removal.
+- Destruction records are used by the history panel to render `DESTROYED (row,col)` sub-bullets beneath the triggering move entry (see §7 and §1.1.5).
+- Pre-deploy moves without `destroyedPieces` default to `[]` on normalization; no sub-bullets are shown for those moves.
+
 ## 13. Notifications and Prompts
 
 - Prompt text/content may vary, but these state prompts are required:

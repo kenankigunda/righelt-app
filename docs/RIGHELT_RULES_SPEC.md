@@ -215,6 +215,8 @@ The game ends immediately when a player’s Commander is unsupplied after resolu
 
 No other win condition exists in v1 spec.
 
+**Invariant**: A Commander removal always produces a terminal outcome (`p1_win`, `p2_win`, or `draw`). A move whose outcome status is `ongoing` cannot contain a Commander removal. This invariant is relied upon by the history destruction record system to classify Commander removals as `commander_unsupplied` without further engine-side tagging.
+
 ## 9. Determinism Requirements
 
 - Rules evaluation must be deterministic from current state and chosen action.
