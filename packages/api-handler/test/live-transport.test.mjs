@@ -1068,6 +1068,7 @@ test("live transport: join approval flow and presence/history/move transitions",
   const historyBody = await history.json();
   assert.equal(historyBody.game.inHistoryMode, true);
   assert.equal(historyBody.game.historyIndex, 0);
+  assert.deepEqual(historyBody.game.currentSnapshot, historyBody.game.moves[0].snapshot);
 
   const joinerViewDuringHistory = await handleApiRequest(
     req(`/api/shell/games/${gameId}?identityId=id-joiner`, "GET"),

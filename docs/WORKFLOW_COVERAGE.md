@@ -27,7 +27,7 @@ Status meanings:
 | Synchronized live updates across participants | `present` | `present` | `present` | Includes reconnect catch-up and authoritative refresh after missed updates. |
 | Move reflected in all active browsers | `present` | `present` | `present` | Transport layer also covers stale apply rejection, optimistic/authoritative reconciliation, and turn-end semantics. |
 | Presence indicators and reconnect role restore | `present` | `present` | `present` | Browser coverage now proves visible `Connected`/`Disconnected` participant badge transitions alongside reconnect role restore. |
-| History navigation and return to live | `present` | `present` | `present` | Includes live appends while pinned to history and explicit return-to-live restoration. |
+| History navigation and return to live | `present` | `present` | `present` | Includes live appends while pinned to history and explicit return-to-live restoration. E2E specs E-01–E-06 (`history-destruction.spec.mjs`) cover DESTROYED sub-bullet display, parent-move-owned history selection, recorded-action destruction overlays, page-reload persistence, late-join viewer sync, layout stability, and both player-colour variants. |
 | Identity and role persistence across reload | `present` | `present` | `present` | Covered for approved participant reload and transport refresh after missed updates. |
 | Revert / undo request lifecycle | `present` | `present` | `present` | Browser proof covers optimistic undo with both auto-approve and approval-required paths, returning history viewers to live mode after approval, and the reject/rescind history-mode variants; integration also covers approve/reject/rescind interactions while clients are already in history mode. |
 

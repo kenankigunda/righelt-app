@@ -363,6 +363,7 @@ test("shell renders durable browser E2E selectors for core workflow surfaces", (
   assert.match(source, /data-testid="history-list"/);
   assert.match(source, /data-testid="history-move-item"/);
   assert.match(source, /data-testid="history-pending-move-item"/);
+  assert.match(source, /data-testid="history-destruction-item"/);
   assert.match(source, /data-testid="history-return-live"/);
   assert.match(source, /data-testid="approval-gate"/);
   assert.match(source, /data-testid="accept-request"/);
@@ -474,4 +475,5 @@ test("history navigation uses pointer-down press state with a single mouseup rel
   assert.match(source, /currentSelected\.classList\.add\("is-deselecting"\);/);
   assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearControlPress\(\);[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
   assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);/s);
+  assert.doesNotMatch(source, /jump-destruction/);
 });

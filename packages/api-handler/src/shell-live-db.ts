@@ -5,6 +5,7 @@ import {
   createInviteToken,
   nextMoveId,
   now,
+  type DestroyedPieceRecord,
   type JoinRequest,
   type LiveGame,
   type Participant,
@@ -173,7 +174,13 @@ const condenseRepairMismatches = (mismatches: PersistedGameMismatch[]): Persiste
       entry.field.endsWith("].displayMoveNumber") &&
       entry.repair === "derived_from_active_history",
   ).length;
-  const shouldCondense = generatedMoveIdCount + derivedDisplayMoveNumberCount >= 8;
+  const defaultedDestroyedPiecesCount = mismatches.filter(
+    (entry) =>
+      entry.field.startsWith("moves[") &&
+      entry.field.endsWith("].destroyedPieces") &&
+      entry.repair === "defaulted_to_empty_array",
+  ).length;
+  const shouldCondense = generatedMoveIdCount + derivedDisplayMoveNumberCount + defaultedDestroyedPiecesCount >= 8;
   if (!shouldCondense) {
     return mismatches;
   }
@@ -183,7 +190,10 @@ const condenseRepairMismatches = (mismatches: PersistedGameMismatch[]): Persiste
         (entry.field.startsWith("moves[") && entry.field.endsWith("].moveId") && entry.repair === "generated_move_id") ||
         (entry.field.startsWith("moves[") &&
           entry.field.endsWith("].displayMoveNumber") &&
-          entry.repair === "derived_from_active_history")
+          entry.repair === "derived_from_active_history") ||
+        (entry.field.startsWith("moves[") &&
+          entry.field.endsWith("].destroyedPieces") &&
+          entry.repair === "defaulted_to_empty_array")
       ),
   );
   if (generatedMoveIdCount > 0) {
@@ -202,6 +212,15 @@ const condenseRepairMismatches = (mismatches: PersistedGameMismatch[]): Persiste
       actualType: "summary",
       actualSummary: `${derivedDisplayMoveNumberCount} move entries missing displayMoveNumber`,
       repair: "derived_from_active_history",
+    });
+  }
+  if (defaultedDestroyedPiecesCount > 0) {
+    condensed.push({
+      field: "moves[*].destroyedPieces",
+      expected: "DestroyedPieceRecord[]",
+      actualType: "summary",
+      actualSummary: `${defaultedDestroyedPiecesCount} move entries missing destroyedPieces (pre-deploy moves)`,
+      repair: "defaulted_to_empty_array",
     });
   }
   return condensed;
@@ -443,6 +462,18 @@ const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): Li
       if (!undone) {
         activeMoveCounter += 1;
       }
+      const destroyedPieces: DestroyedPieceRecord[] = Array.isArray(move.destroyedPieces)
+        ? (move.destroyedPieces as DestroyedPieceRecord[])
+        : [];
+      if (!Array.isArray(move.destroyedPieces)) {
+        recordMismatch(
+          mismatches,
+          `moves[${index}].destroyedPieces`,
+          "DestroyedPieceRecord[]",
+          move.destroyedPieces,
+          "defaulted_to_empty_array",
+        );
+      }
       const next = {
         ...(entry as LiveGame["moves"][number]),
         moveId: typeof move.moveId === "string" && move.moveId.length > 0 ? move.moveId : nextMoveId(),
@@ -451,6 +482,7 @@ const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): Li
           typeof move.displayMoveNumber === "number" && Number.isFinite(move.displayMoveNumber)
             ? move.displayMoveNumber
             : activeMoveCounter,
+        destroyedPieces,
       } satisfies LiveGame["moves"][number];
       if (typeof move.moveId !== "string" || move.moveId.length === 0) {
         recordMismatch(mismatches, `moves[${index}].moveId`, "non-empty string", move.moveId, "generated_move_id");

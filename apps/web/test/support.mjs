@@ -382,7 +382,7 @@ export const createShellStore = ({
       inHistoryMode: typeof game.historyIndex === "number",
       currentSnapshot:
         typeof game.historyIndex === "number" && game.moves[game.historyIndex]
-          ? game.moves[game.historyIndex].selectionSnapshot || game.moves[game.historyIndex].snapshot
+          ? game.moves[game.historyIndex].snapshot || game.moves[game.historyIndex].selectionSnapshot
           : game.board.state,
       historySelectionAction:
         typeof game.historyIndex === "number" && game.moves[game.historyIndex]

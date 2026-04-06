@@ -92,6 +92,14 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
     from: { row: 4, col: 2 },
     to: { row: 4, col: 3 },
   };
+  const recordedActionStartPiece = {
+    id: "A1",
+    owner: "P1",
+    kind: "unit",
+    position: { row: 4, col: 2 },
+    supplied: false,
+    commanded: false,
+  };
 
   await runtime.loadSnapshot(
     {
@@ -105,13 +113,103 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
       legalActions: [],
       overlayMode: "recorded-action",
       recordedAction,
+      recordedActionStartPiece,
     },
   );
 
   assert.equal(summaryCalls, 0);
   assert.equal(renderCalls.at(-1)?.overlay?.mode, "recorded-action");
   assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedAction, recordedAction);
+  assert.deepEqual(renderCalls.at(-1)?.overlay?.recordedActionStartPiece, recordedActionStartPiece);
   assert.equal(boardPreviewLabelEl.textContent, "Showing recorded move.");
+});
+
+test("board runtime starts history destruction in the removal-effects layer before the settled overlay appears", async () => {
+  const renderCalls = [];
+  const scheduledTimers = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+
+  globalThis.setTimeout = (fn, delay) => {
+    const handle = { fn, delay };
+    scheduledTimers.push(handle);
+    return handle;
+  };
+  globalThis.clearTimeout = () => {};
+
+  try {
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: (payload) => renderCalls.push(payload),
+      getSelectedPieceSummary: () => null,
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      canInteract: () => false,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: null,
+    boardTurnIndicatorEl: null,
+  });
+
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      outcome: null,
+      pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true }],
+    },
+    {
+      legalActions: [],
+      overlayMode: "recorded-action",
+      recordedAction: {
+        type: "move",
+        actorId: "A1",
+        from: { row: 4, col: 2 },
+        to: { row: 4, col: 3 },
+      },
+      destroyedPieces: [{
+        row: 9,
+        col: 9,
+        ownerSeat: "p2",
+        kind: "unit",
+        supplied: false,
+        commanded: false,
+        piece: {
+          id: "Z9",
+          owner: "P2",
+          kind: "unit",
+          position: { row: 9, col: 9 },
+          supplied: false,
+          commanded: false,
+        },
+      }],
+    },
+  );
+
+  assert.deepEqual(renderCalls.at(-1)?.overlay?.destroyedPieces, []);
+  assert.equal(renderCalls.at(-1)?.removalEffects?.[0]?.piece?.id, "Z9");
+  assert.equal(scheduledTimers.length, 1);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
 });
 
 test("board runtime renders removal effects returned from shell apply actions", async () => {
@@ -695,6 +793,137 @@ test("board runtime preserves in-progress removal effects across snapshot reload
     const preservedRender = renderCalls.find((payload) => Array.isArray(payload.removalEffects) && payload.removalEffects.length === 1);
     assert.ok(preservedRender);
     assert.equal(preservedRender.removalEffects[0].startedAt, originalStartedAt);
+    assert.equal(scheduledTimers.length, 1);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    Date.now = originalDateNow;
+  }
+});
+
+test("board runtime preserves in-progress removal effects across interactive turn handoff reloads", async () => {
+  const renderCalls = [];
+  const scheduledTimers = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalDateNow = Date.now;
+
+  globalThis.setTimeout = (fn, delay) => {
+    const handle = { fn, delay };
+    scheduledTimers.push(handle);
+    return handle;
+  };
+  globalThis.clearTimeout = () => {};
+  Date.now = () => 5000;
+
+  try {
+    const runtime = createBoardRuntime({
+      boardAdapter: {
+        mount: noop,
+        render: (payload) => renderCalls.push(payload),
+        getSelectedPieceSummary: () => null,
+        getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+        getPieceAt: (snapshot, coord) =>
+          snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+        nextSelectionForCell: () => ({
+          selection: { selectedPieceId: null, source: null, target: null },
+          nextActionType: "pass",
+        }),
+      },
+      host: {
+        applyAction: async () => ({
+          accepted: true,
+          state: {
+            sideToMove: "P2",
+            turnIndex: 1,
+            continuation: null,
+            outcome: null,
+            pieces: [],
+          },
+          legalActions: [{ type: "move", actorId: "B1", from: { row: 9, col: 9 }, to: { row: 8, col: 9 } }],
+          removedPieces: [
+            {
+              pieceId: "A1",
+              position: { row: 4, col: 2 },
+              reason: "loss_of_supply",
+              message: "Piece at (4, 2) destroyed due to loss of supply",
+            },
+          ],
+        }),
+        loadInitialState: async () => ({ state: null, legalActions: [] }),
+        loadLegalActions: async () => ({ state: null, legalActions: [] }),
+        loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+        canInteract: () => true,
+      },
+    });
+
+    runtime.bindElements({
+      boardEl: {},
+      overlayLinesEl: {},
+      boardPreviewLabelEl: null,
+      boardTurnIndicatorEl: null,
+    });
+
+    await runtime.loadSnapshot(
+      {
+        sideToMove: "P1",
+        turnIndex: 0,
+        continuation: {
+          type: "push",
+          owner: "P1",
+          phase: "follow",
+          source: { row: 4, col: 1 },
+          target: { row: 4, col: 2 },
+        },
+        outcome: null,
+        pieces: [
+          {
+            id: "A1",
+            owner: "P1",
+            kind: "unit",
+            position: { row: 4, col: 2 },
+            supplied: false,
+            commanded: false,
+          },
+        ],
+      },
+      {
+        legalActions: [{ type: "follow", actorId: "A1", from: { row: 4, col: 1 }, to: { row: 4, col: 2 } }],
+      },
+    );
+
+    await runtime.submitCurrentAction({
+      type: "follow",
+      actorId: "A1",
+      from: { row: 4, col: 1 },
+      to: { row: 4, col: 2 },
+    });
+
+    const renderWithRemoval = renderCalls.find((payload) => Array.isArray(payload.removalEffects) && payload.removalEffects.length === 1);
+    assert.ok(renderWithRemoval);
+    const originalStartedAt = renderWithRemoval.removalEffects[0].startedAt;
+    assert.equal(originalStartedAt, 5000);
+
+    renderCalls.length = 0;
+
+    await runtime.loadSnapshot(
+      {
+        sideToMove: "P2",
+        turnIndex: 1,
+        continuation: null,
+        outcome: null,
+        pieces: [],
+      },
+      {
+        legalActions: [{ type: "move", actorId: "B1", from: { row: 9, col: 9 }, to: { row: 8, col: 9 } }],
+        resetSelection: true,
+      },
+    );
+
+    const preservedRender = renderCalls.find((payload) => Array.isArray(payload.removalEffects) && payload.removalEffects.length === 1);
+    assert.ok(preservedRender);
+    assert.equal(preservedRender.removalEffects[0].startedAt, originalStartedAt);
+    assert.equal(runtime.getOverlay().mode, "interactive");
     assert.equal(scheduledTimers.length, 1);
   } finally {
     globalThis.setTimeout = originalSetTimeout;
@@ -2420,4 +2649,193 @@ test("board runtime emits turn-ended when applyAction returns a settled next-tur
     accepted: true,
     outcome: null,
   });
+});
+
+// ---------------------------------------------------------------------------
+// U-10 — history destroyed pieces animate via transient removal effects before settling into overlay state
+// ---------------------------------------------------------------------------
+test("U-10: loadSnapshot starts a history destruction transition before exposing the settled overlay", async () => {
+  const renderCalls = [];
+  const scheduledTimers = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalDateNow = Date.now;
+
+  globalThis.setTimeout = (fn, delay) => {
+    const handle = { fn, delay };
+    scheduledTimers.push(handle);
+    return handle;
+  };
+  globalThis.clearTimeout = () => {};
+  Date.now = () => 5000;
+
+  try {
+    const runtime = createBoardRuntime({
+      boardAdapter: {
+        mount: noop,
+        render: (payload) => renderCalls.push(payload),
+        getSelectedPieceSummary: () => null,
+        getPieceById: () => null,
+        getPieceAt: () => null,
+        nextSelectionForCell: () => ({
+          selection: { selectedPieceId: null, source: null, target: null },
+          nextActionType: "pass",
+        }),
+      },
+      host: {
+        applyAction: async () => ({ accepted: false }),
+        loadInitialState: async () => ({ state: null, legalActions: [] }),
+        loadLegalActions: async () => ({ state: null, legalActions: [] }),
+        loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      },
+    });
+
+    runtime.bindElements({
+      boardEl: {},
+      overlayLinesEl: {},
+      boardPreviewLabelEl: null,
+      boardTurnIndicatorEl: null,
+    });
+
+    const snapshot = {
+      sideToMove: "P1",
+      turnIndex: 1,
+      continuation: null,
+      outcome: null,
+      pieces: [{ id: "X1", owner: "P1", kind: "unit", position: { row: 3, col: 4 }, supplied: true, commanded: true }],
+    };
+
+    await runtime.loadSnapshot(snapshot, { legalActions: [] });
+
+    const stateBefore = runtime.getState();
+    const keysBefore = Object.keys(stateBefore).sort();
+
+    await runtime.loadSnapshot(snapshot, {
+      legalActions: [],
+      overlayMode: "recorded-action",
+      destroyedPieces: [{
+        row: 3,
+        col: 4,
+        ownerSeat: "p1",
+        kind: "unit",
+        supplied: true,
+        commanded: true,
+        piece: {
+          id: "X1",
+          owner: "P1",
+          kind: "unit",
+          position: { row: 3, col: 4 },
+          supplied: true,
+          commanded: true,
+        },
+      }],
+    });
+
+    const stateAfter = runtime.getState();
+    assert.deepEqual(
+      Object.keys(stateAfter).sort(),
+      keysBefore,
+      "getState() must not gain extra fields from history destroyed-piece overlays",
+    );
+    assert.equal(stateAfter.sideToMove, "P1");
+    assert.equal(stateAfter.turnIndex, 1);
+    assert.deepEqual(stateAfter.pieces, stateBefore.pieces);
+    assert.deepEqual(runtime.getOverlay().destroyedPieces, []);
+    const animatedRender = renderCalls.find((payload) => Array.isArray(payload.removalEffects) && payload.removalEffects.length === 1);
+    assert.ok(animatedRender);
+    assert.equal(animatedRender.removalEffects[0].piece?.id, "X1");
+    assert.equal(animatedRender.removalEffects[0].startedAt, 5000);
+    assert.equal(animatedRender.overlay?.destroyedPieces?.length ?? 0, 0);
+    assert.equal(scheduledTimers.length, 1);
+    assert.equal(scheduledTimers[0].delay, 2400);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    Date.now = originalDateNow;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// U-11 — the history destruction transition settles into overlay state and clears on a later load
+// ---------------------------------------------------------------------------
+test("U-11: history destruction transition settles into overlay state and clears on the next load", async () => {
+  const renderCalls = [];
+  const scheduledTimers = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+
+  globalThis.setTimeout = (fn, delay) => {
+    const handle = { fn, delay };
+    scheduledTimers.push(handle);
+    return handle;
+  };
+  globalThis.clearTimeout = () => {};
+
+  try {
+    const runtime = createBoardRuntime({
+      boardAdapter: {
+        mount: noop,
+        render: (payload) => renderCalls.push(payload),
+        getSelectedPieceSummary: () => null,
+        getPieceById: () => null,
+        getPieceAt: () => null,
+        nextSelectionForCell: () => ({
+          selection: { selectedPieceId: null, source: null, target: null },
+          nextActionType: "pass",
+        }),
+      },
+      host: {
+        applyAction: async () => ({ accepted: false }),
+        loadInitialState: async () => ({ state: null, legalActions: [] }),
+        loadLegalActions: async () => ({ state: null, legalActions: [] }),
+        loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      },
+    });
+
+    runtime.bindElements({
+      boardEl: {},
+      overlayLinesEl: {},
+      boardPreviewLabelEl: null,
+      boardTurnIndicatorEl: null,
+    });
+
+    const destroyedRecord = {
+      row: 4,
+      col: 7,
+      ownerSeat: "p2",
+      kind: "commander",
+      piece: {
+        id: "C2",
+        owner: "P2",
+        kind: "commander",
+        position: { row: 4, col: 7 },
+        supplied: true,
+        commanded: true,
+      },
+    };
+
+    await runtime.loadSnapshot(
+      { sideToMove: "P2", turnIndex: 2, continuation: null, outcome: null, pieces: [] },
+      { legalActions: [], overlayMode: "recorded-action", destroyedPieces: [destroyedRecord] },
+    );
+
+    assert.deepEqual(runtime.getOverlay().destroyedPieces, []);
+    assert.equal(scheduledTimers.length, 1);
+    scheduledTimers[0].fn();
+
+    assert.deepEqual(runtime.getOverlay().destroyedPieces, [destroyedRecord]);
+    const settledRender = renderCalls.at(-1);
+    assert.deepEqual(settledRender?.overlay?.destroyedPieces, [destroyedRecord]);
+    assert.deepEqual(settledRender?.removalEffects, []);
+
+    await runtime.loadSnapshot(
+      { sideToMove: "P1", turnIndex: 3, continuation: null, outcome: null, pieces: [] },
+      { legalActions: [], overlayMode: "recorded-action", destroyedPieces: [] },
+    );
+
+    assert.deepEqual(runtime.getOverlay().destroyedPieces, []);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
 });

@@ -1263,7 +1263,7 @@ test("live transport store keeps authoritative history selectable while pending 
           inHistoryMode: true,
           historyIndex: 0,
           historySelectionAction: clone(baseGame.moves[0].action),
-          currentSnapshot: clone(baseGame.moves[0].selectionSnapshot),
+          currentSnapshot: clone(baseGame.moves[0].snapshot),
         },
       });
     }
@@ -1293,7 +1293,7 @@ test("live transport store keeps authoritative history selectable while pending 
   const historyView = await store.selectHistoryMove({ gameId: baseGame.id, moveIndex: 0 });
   assert.equal(historyView.inHistoryMode, true);
   assert.equal(historyView.pendingMoves.length, 1);
-  assert.deepEqual(historyView.currentSnapshot, baseGame.moves[0].selectionSnapshot);
+  assert.deepEqual(historyView.currentSnapshot, baseGame.moves[0].snapshot);
   assert.equal(changes.some((change) => change.type === "history_mode_changed" && change.gameId === baseGame.id), true);
 
   changes.length = 0;
@@ -1465,4 +1465,115 @@ test("live transport store posts revert lifecycle endpoints", async () => {
   assert.equal(rejectCall.body.requestId, "req-1");
   assert.equal(rescindCall.body.identityId, "id-revert");
   assert.equal(rescindCall.body.requestId, "req-1");
+});
+
+// ---------------------------------------------------------------------------
+// I-11 — Optimistic move response includes destroyedPieces
+// ---------------------------------------------------------------------------
+// The optimistic path (applyGameAction before the authoritative response
+// returns) must surface destroyedPieces on the returned result so that
+// the shell can render DESTROYED sub-bullets immediately without waiting
+// for the server ack.
+test("I-11: applyGameAction optimistic result carries destroyedPieces array", async () => {
+  const baseGame = buildLiveGame();
+  const nextAction = baseGame.legalActions.find((a) => a.type !== "pass") ?? baseGame.legalActions[0];
+
+  // Fetcher keeps the apply response pending so we can inspect the optimistic state
+  const store = createLiveTransportStore({
+    storage: createMemoryStorage(),
+    fetcher: async (url, init = {}) => {
+      if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+        return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+      }
+      if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
+        // Never resolves — keeps command pending so we observe the optimistic state
+        return new Promise(() => {});
+      }
+      return Response.json({ ok: true, games: [] });
+    },
+    random: () => 0.77777,
+  });
+
+  await store.loadGame(baseGame.id);
+  const result = await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
+
+  // The transport return value must carry destroyedPieces (may be empty for a
+  // move that doesn't remove pieces, but the field must exist and be an array).
+  assert.equal(result.accepted, true, "action was optimistically accepted");
+  assert.ok(
+    Object.prototype.hasOwnProperty.call(result, "destroyedPieces"),
+    "I-11: optimistic result must carry destroyedPieces field",
+  );
+  assert.ok(Array.isArray(result.destroyedPieces), "I-11: destroyedPieces must be an array");
+});
+
+// ---------------------------------------------------------------------------
+// I-12 — Multi-client: P2 receives identical destroyedPieces in game snapshot
+// ---------------------------------------------------------------------------
+// When P1 records a destructive move and the server broadcasts the result,
+// the P2 store (loaded as a separate identity) must receive the same
+// destroyedPieces on the affected move as P1 sees.
+test("I-12: two client stores receive identical destroyedPieces on the same move via applyLiveGameUpdate", async () => {
+  const baseGame = buildLiveGame();
+  const acknowledgedGame = buildAcknowledgedGame(baseGame, baseGame.legalActions[0]);
+
+  // Inject a synthetic destroyedPieces array onto the acknowledged game's new move
+  // to simulate a destructive move coming back from the server.
+  const destroyedPieces = [
+    { position: { row: 3, col: 4 }, ownerSeat: "p2", reason: "no_retreat" },
+  ];
+  const lastMoveIndex = acknowledgedGame.moves.length - 1;
+  acknowledgedGame.moves[lastMoveIndex] = {
+    ...acknowledgedGame.moves[lastMoveIndex],
+    destroyedPieces,
+  };
+
+  // Store A (P1 — the actor)
+  const storeA = createLiveTransportStore({
+    storage: createMemoryStorage(),
+    fetcher: async (url) => {
+      if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`)) {
+        return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+      }
+      return Response.json({ ok: true, games: [] });
+    },
+    random: () => 0.11111,
+  });
+
+  // Store B (P2 — the observer; different identity via separate MemoryStorage)
+  const storageB = createMemoryStorage();
+  const storeB = createLiveTransportStore({
+    storage: storageB,
+    fetcher: async (url) => {
+      if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`)) {
+        // P2's initial load returns the base game
+        return Response.json({ ok: true, game: { ...clone(baseGame), myRole: "Player 2" }, eventSeq: 1 });
+      }
+      return Response.json({ ok: true, games: [] });
+    },
+    random: () => 0.22222,
+  });
+
+  await storeA.loadGame(baseGame.id);
+  await storeB.loadGame(baseGame.id);
+
+  // Simulate the server broadcasting the authoritative move to both stores
+  storeA.applyLiveGameUpdate({ game: acknowledgedGame, eventSeq: 2 });
+  storeB.applyLiveGameUpdate({ game: { ...clone(acknowledgedGame), myRole: "Player 2" }, eventSeq: 2 });
+
+  const viewA = storeA.getGameViewModel(baseGame.id);
+  const viewB = storeB.getGameViewModel(baseGame.id);
+
+  const moveA = viewA?.moves?.find((m) => m.index === lastMoveIndex);
+  const moveB = viewB?.moves?.find((m) => m.index === lastMoveIndex);
+
+  assert.ok(moveA, "I-12: store A must have the new move");
+  assert.ok(moveB, "I-12: store B must have the new move");
+  assert.ok(Array.isArray(moveA.destroyedPieces), "I-12: P1 store move must carry destroyedPieces");
+  assert.ok(Array.isArray(moveB.destroyedPieces), "I-12: P2 store move must carry destroyedPieces");
+  assert.deepEqual(
+    moveA.destroyedPieces,
+    moveB.destroyedPieces,
+    "I-12: both stores must have identical destroyedPieces on the same move",
+  );
 });
