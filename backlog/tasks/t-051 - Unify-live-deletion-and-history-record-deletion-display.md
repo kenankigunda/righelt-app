@@ -4,7 +4,7 @@ title: Unify live deletion and history record deletion display
 status: Done
 assignee: []
 created_date: '2026-04-05'
-updated_date: '2026-04-06 02:01'
+updated_date: '2026-04-06 02:14'
 labels:
   - feature
 dependencies:

@@ -4,7 +4,7 @@ title: Worker exceeded CPU time limit on game page load
 status: To Do
 assignee: []
 created_date: '2026-04-04 06:43'
-updated_date: '2026-04-04 06:43'
+updated_date: '2026-04-06 02:14'
 labels:
   - bug
 dependencies: []

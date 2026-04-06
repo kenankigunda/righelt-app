@@ -104,6 +104,20 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 
 This project uses Backlog.md MCP for task management. Before creating tasks or when uncertain about the workflow, load the instructions: read `backlog://workflow/overview` (MCP resource), or call `get_backlog_instructions()` if resources aren't available. Full ticket workflow: `docs/ai/TICKET_WORKFLOW.md`.
 
+- Prefer Backlog MCP or the local `backlog` CLI for all task creation, editing, archiving, and status updates so task files, metadata, and filenames stay consistent.
+- Prefer the local CLI over manual file edits whenever MCP is unavailable. Edit `backlog/tasks/*.md` directly only when both Backlog MCP and the `backlog` CLI are unavailable or cannot perform the required operation.
+- When using the CLI locally, prefer `backlog task create`, `backlog task edit`, `backlog task archive`, and `backlog task view` over hand-editing task files.
+- Canonical active task filenames follow `backlog/tasks/t-### - <CLI slug>.md`. Subtasks follow `t-###.NN - <CLI slug>.md`.
+- The `<CLI slug>` is not the raw title. Match the CLI naming shape:
+  - replace spaces with `-`
+  - remove separator punctuation such as `/`, `:`, commas, apostrophes, brackets, and parentheses instead of preserving them as spaces
+  - preserve meaningful token characters the CLI keeps, such as `.` inside names like `Backlog.md`
+  - collapse repeated hyphens and trim leading/trailing hyphens
+- Manual filename examples that match the CLI:
+  - `History destruction record` → `t-001 - History-destruction-record.md`
+  - `Use team agents + Backlog.md for more robust development` → `t-047 - Use-team-agents-Backlog.md-for-more-robust-development.md`
+  - `Allow piece selection for non-active situations with limited info (historical move / viewer / non-active player)` → `t-014 - Allow-piece-selection-for-non-active-situations-with-limited-info-historical-move-viewer-non-active-player.md`
+
 
 ## 7) Scope of This File
 

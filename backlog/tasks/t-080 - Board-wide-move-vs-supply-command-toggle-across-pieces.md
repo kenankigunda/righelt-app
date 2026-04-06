@@ -4,6 +4,7 @@ title: Board-wide move vs supply/command toggle across pieces
 status: To Do
 assignee: []
 created_date: '2026-04-06 01:43'
+updated_date: '2026-04-06 02:14'
 labels:
   - feature
 dependencies: []

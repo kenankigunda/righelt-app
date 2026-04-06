@@ -4,7 +4,7 @@ title: Investigate residual move lag after sync store implementation
 status: To Do
 assignee: []
 created_date: '2026-04-06 01:51'
-updated_date: '2026-04-06 02:05'
+updated_date: '2026-04-06 02:14'
 labels:
   - bug
 dependencies: []

@@ -13,6 +13,22 @@ Use this workflow for any ticket in `backlog/tasks/` that has been assigned to a
 - Call `get_backlog_instructions()` before any backlog MCP tool operations.
 - If a referenced skill or role file is missing: state the issue briefly, fall back to AGENTS.md defaults, avoid blocking unless strictly required.
 
+## Backlog Hygiene
+
+- Prefer Backlog MCP or the local `backlog` CLI for task creation, edits, archival, and status changes so filenames and metadata stay canonical.
+- If MCP is unavailable, use the local `backlog` CLI before considering direct edits to `backlog/tasks/*.md`.
+- Edit task files directly only when both MCP and the `backlog` CLI are unavailable or cannot perform the required operation.
+- When creating or renaming task files manually, match the CLI filename convention: `backlog/tasks/t-### - <CLI slug>.md` for parents and `backlog/tasks/t-###.NN - <CLI slug>.md` for subtasks.
+- The `<CLI slug>` should mirror CLI output rather than the literal title:
+  - replace spaces with `-`
+  - remove separator punctuation such as `/`, `:`, commas, apostrophes, brackets, and parentheses
+  - preserve token characters the CLI keeps, such as `.` inside `Backlog.md`
+  - collapse repeated hyphens and trim them from the ends
+- Examples:
+  - `History destruction record` → `t-001 - History-destruction-record.md`
+  - `Use team agents + Backlog.md for more robust development` → `t-047 - Use-team-agents-Backlog.md-for-more-robust-development.md`
+  - `Allow piece selection for non-active situations with limited info (historical move / viewer / non-active player)` → `t-014 - Allow-piece-selection-for-non-active-situations-with-limited-info-historical-move-viewer-non-active-player.md`
+
 ## Ticket Types and Routing
 
 | Label | PO Step | Architect Step |
@@ -43,7 +59,7 @@ The backlog task file (`backlog/tasks/t-### - Title.md`) links to these via the 
 ## Lead Execution Loop
 
 ### Step 0 — Ticket Creation
-Human creates ticket via `task_create` MCP or `backlog task add` CLI: title, label (`feature`/`improvement`/`bug`), priority, brief description. Status: `To Do`.
+Human creates ticket via `task_create` MCP or `backlog task create` CLI: title, label (`feature`/`improvement`/`bug`), priority, brief description. Status: `To Do`.
 
 ### Step 1 — Assignment
 Lead calls `task_view` to read label and route. Calls `task_edit`: set assignee, status → `Spec` (feature/bug) or `Planning` (improvement). Creates `docs/tickets/t-###/coordination-log.md`. Updates `references` field.
