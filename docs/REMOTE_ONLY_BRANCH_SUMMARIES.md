@@ -23,5 +23,13 @@ When a remote-only branch is listed here, `Audit branches` should prefer this cu
 | `codex/action-transmission-fixes` | Hardens shell action-transmission recovery across live transport, durable-object live state, and related tests |
 | `codex/client-history-local-nav` | Refactors client history reconciliation across shell transport, optimistic live state, durable-object live state, and related tests |
 | `codex/computer-player` | Adds `docs/RIGHELT_COMPUTER_PLAYER_PLAN.md` with the computer-player implementation plan |
+| `codex/db-utilization-regression-fix` | Fix compact live-state rehydration regressions across `packages/api-handler/src/shell-live-db.ts` and `packages/api-handler/test/live-transport.test.mjs` |
+| `codex/history-destruction-flat-indent` | Flattens history destruction rows across the board adapter contract, engine board adapter, and board runtime |
+| `codex/history-destruction-pulse` | Adds pulsing history destruction overlays across the board adapter contract, engine board adapter, and board runtime |
+| `codex/history-destruction-pulse-v2` | Adds a subtler history destruction pulse across the board adapter contract, engine board adapter, and board runtime |
+| `codex/home-page-paging-animation` | Smooths home page carousel transitions across shell app, shell CSS, and mobile layout coverage |
+| `codex/manual-scenario` | Fixes commander forced-move scenario history across the catalog scenario data and live transport integration paths |
 | `codex/playground-workflow-game-authority-adapter` | Experiments with player-turn correction across shell host/transport, durable-object live state, and authority-adapter tests |
 | `codex/scenario-management-improvements-home-card-width-cap` | Caps home game card width in shell CSS and the mobile layout test |
+| `codex/supply-command-sequences-fix` | Adds live-sync diagnostics and local fallback across client move generation, API routing, and generated engine output |
+| `codex/tutorial-mode` | Adds `docs/features/tutorial-mode/EXECUTION_PLAN.md` with the tutorial-mode execution plan |
