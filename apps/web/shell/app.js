@@ -4255,6 +4255,7 @@ appEl.addEventListener("click", async (event) => {
           }
           navigateTo(nextHash);
         } catch (error) {
+          setSelectedScenarioFeedback("Failed to load scenario.");
           window.__righeltLastError = error instanceof Error ? error.message : String(error);
         }
       },

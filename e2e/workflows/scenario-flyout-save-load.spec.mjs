@@ -465,3 +465,237 @@ test("scenario flyout saves history-authored scenarios from the selected pre-mov
     await closeContextQuietly(context);
   }
 });
+
+test("scenario flyout updates an existing scenario from the selected history pre-move snapshot", async ({ browser, baseURL }) => {
+  const { context, page } = await createIsolatedPage(browser);
+
+  try {
+    const scenarioId = "11111111-1111-4111-8111-111111111111";
+    let savedScenario = {
+      ...RUSH_CAN_END_SCENARIO,
+      id: scenarioId,
+      title: "History scenario to update",
+      description: "Will be updated from a selected history move.",
+      savedSelection: null,
+    };
+
+    await page.route("**/scenarios/catalog.json", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "S",
+          title: "Saved Scenarios",
+          scenarios: [savedScenario],
+        }),
+      });
+    });
+
+    await page.route("**/scenarios/update", async (route) => {
+      savedScenario = route.request().postDataJSON()?.scenario ?? savedScenario;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          catalog: {
+            id: "S",
+            title: "Saved Scenarios",
+            scenarios: [savedScenario],
+          },
+        }),
+      });
+    });
+
+    await page.goto("/");
+    await expect(page.getByTestId("home-create-game")).toBeVisible();
+    const gameId = await createSelfPlayGameViaApi(page);
+    await importScenarioIntoExistingGame(page, RUSH_CAN_END_SCENARIO, gameId);
+    await page.goto(`${baseURL}#/game/${encodeURIComponent(gameId)}`);
+    await expect(page.getByTestId("game-shell")).toBeVisible();
+
+    const historyMove = page.getByTestId("history-move-item").filter({ hasText: "Move 5: PROJECT (3,4) -> (5,4)" });
+    await historyMove.click();
+
+    await page.getByRole("button", { name: "Scenarios" }).click();
+    await expect(page.locator("#scenario-select")).toBeVisible();
+    await expect(page.locator('[data-scenario-editable="title"]')).toContainText("History scenario to update");
+    await page.locator('[data-action="update-scenario"]').click();
+
+    await expect
+      .poll(() => savedScenario?.resultingState ?? null, {
+        message: "Expected the scenario update to capture the selected pre-move history snapshot",
+      })
+      .not.toBeNull();
+    expect(savedScenario.id).toBe(scenarioId);
+    expect(savedScenario.moves).toHaveLength(4);
+    expect(savedScenario.resultingState.sideToMove).toBe("P1");
+    expect(savedScenario.resultingState.turnIndex).toBe(4);
+    expect(savedScenario.savedSelection).toEqual({
+      source: { row: 3, col: 4 },
+      target: { row: 5, col: 4 },
+      actorSide: "P1",
+      turnIndex: 4,
+    });
+
+    await page.goto("/");
+    await expect(page.getByTestId("home-create-game")).toBeVisible();
+    await page.getByTestId("home-create-game").click();
+    await expect(page.getByTestId("game-shell")).toBeVisible();
+
+    await page.getByRole("button", { name: "Scenarios" }).click();
+    await expect(page.locator('[data-scenario-editable="title"]')).toContainText("History scenario to update");
+    await page.locator('[data-action="load-scenario"]').click();
+
+    await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
+    await expect(page.locator("#shell-board-turn-indicator")).toContainText("Player 1 to play");
+    await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 5,4");
+    await expect
+      .poll(async () => getHistoryMoveCount(page), {
+        message: "Expected loading the updated scenario to replay only the moves before the selected history action",
+      })
+      .toBe(savedScenario.moves.length);
+    await expect
+      .poll(async () => cellHasClass(getBoardCell(page, savedScenario.savedSelection.source), "source"), {
+        message: "Expected the updated history-authored scenario to rehydrate the saved source selection",
+      })
+      .toBe(true);
+    await expect
+      .poll(async () => cellHasClass(getBoardCell(page, savedScenario.savedSelection.target), "target"), {
+        message: "Expected the updated history-authored scenario to rehydrate the saved destination selection",
+      })
+      .toBe(true);
+  } finally {
+    await closeContextQuietly(context);
+  }
+});
+
+test("scenario authoring surfaces local writer failures for save and update without leaving controls stuck pending", async ({
+  browser,
+}) => {
+  const { context, page } = await createIsolatedPage(browser);
+
+  try {
+    const scenarioId = "22222222-2222-4222-8222-222222222222";
+    let updateRequests = 0;
+    let saveRequests = 0;
+
+    await page.route("**/scenarios/catalog.json", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "S",
+          title: "Saved Scenarios",
+          scenarios: [
+            {
+              ...RUSH_CAN_END_SCENARIO,
+              id: scenarioId,
+              title: "Scenario that fails to update",
+              description: "Used to prove local writer error handling.",
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.route("**/scenarios/save", async (route) => {
+      saveRequests += 1;
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: false, error: "save_failed" }),
+      });
+    });
+
+    await page.route("**/scenarios/update", async (route) => {
+      updateRequests += 1;
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: false, error: "update_failed" }),
+      });
+    });
+
+    await createGameFromHome(page);
+    await makeAnyLegalMove(page, "p1");
+
+    await page.getByRole("button", { name: "Scenarios" }).click();
+    await expect(page.locator("#scenario-select")).toBeVisible();
+
+    await page.locator('[data-scenario-save-field="title"]').fill("Save failure scenario");
+    await page.locator('[data-scenario-save-field="description"]').fill("Should stay editable after a failed local save.");
+    await page.locator('[data-action="save-scenario"]').click();
+
+    await expect
+      .poll(() => saveRequests, {
+        message: "Expected the save button to attempt a local writer request",
+      })
+      .toBe(1);
+    await expect(page.locator(".scenario-panel-create .debug-pre")).toContainText("Failed to save scenario locally.");
+    await expect(page.locator('[data-action="save-scenario"]')).toBeEnabled();
+    await expect(page.locator('[data-scenario-save-field="title"]')).toHaveValue("Save failure scenario");
+    await expect(page.locator('[data-scenario-save-field="description"]')).toHaveValue(
+      "Should stay editable after a failed local save.",
+    );
+
+    await page.locator('[data-action="update-scenario"]').click();
+
+    await expect
+      .poll(() => updateRequests, {
+        message: "Expected the update button to attempt a local writer request",
+      })
+      .toBe(1);
+    await expect(page.locator(".scenario-panel-load .debug-pre")).toContainText("Failed to update scenario locally.");
+    await expect(page.locator('[data-action="update-scenario"]')).toBeEnabled();
+    await expect(page.locator('[data-scenario-editable="title"]')).toContainText("Scenario that fails to update");
+  } finally {
+    await closeContextQuietly(context);
+  }
+});
+
+test("scenario load surfaces import failures without leaving the flyout stuck pending", async ({ browser }) => {
+  const { context, page } = await createIsolatedPage(browser);
+
+  try {
+    await page.route("**/scenarios/catalog.json", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "S",
+          title: "Saved Scenarios",
+          scenarios: [RUSH_CAN_END_SCENARIO],
+        }),
+      });
+    });
+
+    let importRequests = 0;
+    await page.route("**/api/shell/scenarios/import", async (route) => {
+      importRequests += 1;
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: false, error: "import_failed" }),
+      });
+    });
+
+    await page.goto("/");
+    await expect(page.getByTestId("home-create-game")).toBeVisible();
+    await page.getByTestId("home-create-game").click();
+    await expect(page.getByTestId("game-shell")).toBeVisible();
+
+    await page.getByRole("button", { name: "Scenarios" }).click();
+    await expect(page.locator("#scenario-select")).toBeVisible();
+    await expect(page.locator('[data-scenario-editable="title"]')).toContainText(RUSH_CAN_END_SCENARIO.title);
+
+    await page.locator('[data-action="load-scenario"]').click();
+
+    await expect
+      .poll(() => importRequests, {
+        message: "Expected loading the scenario to attempt the import request",
+      })
+      .toBe(1);
+    await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
+    await expect(page.locator(".scenario-panel-load .debug-pre")).toContainText("Failed to load scenario.");
+    await expect(page.locator('[data-action="load-scenario"]')).toBeEnabled();
+    await expect(page.locator("#scenario-select")).toBeVisible();
+  } finally {
+    await closeContextQuietly(context);
+  }
+});
