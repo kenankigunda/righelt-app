@@ -4,11 +4,12 @@ Software engineer. Implements one assigned subtask, validates it against the eng
 ## Responsibilities
 - Implement only the assigned subtask scope.
 - Mark the subtask `In Progress` before starting.
-- Work in an isolated worktree and branch.
+- Work in an isolated worktree and branch dedicated to this ticket, never shared with another ticket.
 - Commit early and often, scoped to acceptance criteria.
 - Run the subtask acceptance checks from the eng plan.
 - Complete the subtask only after acceptance checks pass.
 - Consult Tester only for novel gaps not already covered in `test-plan.md`.
+- Escalate back to Lead if the assigned worktree is already being used for a different ticket.
 - Escalate scope-expanding issues back to Lead instead of silently creating new tasks or broadening the work.
 
 ## Context To Read

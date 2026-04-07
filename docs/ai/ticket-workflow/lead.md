@@ -11,10 +11,12 @@ Ticket lifecycle coordinator. Owns routing, backlog state transitions, teammate 
 - Create and maintain `backlog/docs/tickets/t-###/coordination-log.md`.
 - Dispatch Product Manager, UX Designer, and Architect sequentially for `feature` and `bug` tickets.
 - Fan out Eng subtasks in parallel up to the WIP limit stated in the eng plan.
+- Ensure each ticket in `In Progress` has one dedicated execution worktree and prevent that worktree from being reused by another active ticket.
 - Preserve the human checkpoint between Spec, Visual Design, and Eng Planning. Do not advance until the current stage's answers are reflected in the ticket docs.
 - Trigger Tester twice: once indirectly during Eng Planning via Architect, then again for the final skeptical validation pass during review.
 - Re-run acceptance checks after merges, resolve conflicts, and record decisions in the coordination log.
 - Set parent task `branch` and `worktree` fields when the ticket moves to `In Progress`, then clear or intentionally retain them when moving to `Ready for acceptance`.
+- Track any additional parallel Eng worktrees in the coordination log when they are needed, and keep them scoped to the same ticket.
 - Report setup blockers instead of silently falling back to ad hoc edits if backlog CLI, sibling repo, or wrapper resolution is unavailable.
 
 ## Context To Read

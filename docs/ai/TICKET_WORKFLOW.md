@@ -67,6 +67,15 @@ Write path priority:
 
 Only the Lead advances status. All intermediate working state lives in `backlog/docs/tickets/t-###/coordination-log.md`.
 
+## Execution Worktree Invariant
+
+When a ticket moves to `In Progress`, the Lead must establish one dedicated execution worktree for that ticket. Reusing an existing worktree is allowed only when that worktree is already dedicated to the same ticket.
+
+- The parent task `worktree` field is the canonical execution worktree for the ticket.
+- The parent task `branch` field points to the ticket's execution branch.
+- No other ticket may execute from that worktree until the ticket reaches `Ready for acceptance` or `Done`.
+- Parallel Eng subtasks may use additional isolated worktrees, but only when those worktrees are created specifically for the same ticket.
+
 ## Document Structure Per Ticket
 
 Rich documentation lives in the backlog repo under `backlog/docs/tickets/t-###/`:
@@ -122,12 +131,12 @@ Lead spawns the Architect with the ticket ID. Architect:
 Lead appends to the coordination log and advances status → `Ready for execution`.
 
 ### Step 5 — Eng Implementation
-Lead picks up a `Ready for execution` ticket and sets status → `In Progress`, along with the parent task `branch` and `worktree` fields.
+Lead picks up a `Ready for execution` ticket, establishes the ticket's dedicated execution worktree, and sets status → `In Progress`, along with the parent task `branch` and `worktree` fields. The parent `worktree` field is the canonical execution worktree for the ticket, not just a convenience note.
 
 Lead fans out unblocked subtasks to Eng teammates. Each Eng:
 1. Reads the subtask plus relevant eng-plan and test-plan context.
 2. Sets subtask status → `In Progress`.
-3. Implements only the assigned scope in its isolated worktree and branch.
+3. Implements only the assigned scope in an isolated worktree and branch dedicated to this ticket.
 4. Runs the subtask acceptance checks.
 5. Consults Tester only for novel gaps not already covered in `test-plan.md`.
 6. Reports completion in the shared report shape and marks the subtask complete only after acceptance checks pass.
@@ -191,7 +200,7 @@ An execution sprint drives tickets from `Ready for execution` to `Ready for acce
 
 **Process**:
 1. Lead lists all `Ready for execution` tickets, sorted by priority.
-2. For each ticket in priority order, Lead runs Steps 5 and 6 of the ticket workflow.
+2. For each ticket in priority order, Lead confirms that a dedicated execution worktree exists for that ticket, then runs Steps 5 and 6 of the ticket workflow.
 3. Before starting each ticket, output:
    `Sprint progress: [N/Total] — starting <ticket title> (t-###)`
 4. Lead fans out Eng subtasks, monitors progress, resolves conflicts, opens the PR, runs final validation, and waits for green CI.

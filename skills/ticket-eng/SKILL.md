@@ -13,6 +13,7 @@ Use this skill for `Tke` fan-out or any Lead-dispatched execution subtask.
 
 ## Codex-specific instructions
 - Use a worker-style subagent when Lead fans out implementation.
+- Use only a worktree dedicated to the current ticket; return to Lead if the assigned worktree is shared with another ticket.
 - Read the subtask acceptance checks and embedded test-plan rows before editing code.
 - Consult `ticket-tester` only for novel gaps not already covered by the test plan.
 - Report progress in the exact shared output shape and return blockers to Lead instead of expanding scope.
