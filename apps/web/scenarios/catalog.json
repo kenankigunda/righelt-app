@@ -22546,8 +22546,8 @@
       "incorrect": false,
       "initialState": {
         "boardSize": 10,
-        "sideToMove": "P2",
-        "turnIndex": 1,
+        "sideToMove": "P1",
+        "turnIndex": 0,
         "pieces": [
           {
             "id": "C1",
@@ -22560,24 +22560,7 @@
             "supplied": true,
             "commanded": true,
             "displaySupplied": true,
-            "displayCommanded": true,
-            "shifted": false,
-            "pushed": false
-          },
-          {
-            "id": "U1-1",
-            "owner": "P1",
-            "kind": "unit",
-            "position": {
-              "row": 5,
-              "col": 6
-            },
-            "supplied": true,
-            "commanded": true,
-            "displaySupplied": true,
-            "displayCommanded": true,
-            "shifted": false,
-            "pushed": false
+            "displayCommanded": true
           },
           {
             "id": "C2",
@@ -22590,9 +22573,7 @@
             "supplied": true,
             "commanded": true,
             "displaySupplied": true,
-            "displayCommanded": true,
-            "shifted": false,
-            "pushed": false
+            "displayCommanded": true
           }
         ],
         "continuation": null,
@@ -22605,8 +22586,7 @@
             {
               "player": "P1",
               "reachability": [
-                "C1",
-                "U1-1"
+                "C1"
               ],
               "shortestPathByPieceId": {
                 "C1": [
@@ -22638,49 +22618,10 @@
                     "row": 0,
                     "col": 9
                   }
-                ],
-                "U1-1": [
-                  {
-                    "row": 5,
-                    "col": 6
-                  },
-                  {
-                    "row": 4,
-                    "col": 6
-                  },
-                  {
-                    "row": 3,
-                    "col": 6
-                  },
-                  {
-                    "row": 2,
-                    "col": 6
-                  },
-                  {
-                    "row": 1,
-                    "col": 6
-                  },
-                  {
-                    "row": 0,
-                    "col": 6
-                  },
-                  {
-                    "row": 0,
-                    "col": 7
-                  },
-                  {
-                    "row": 0,
-                    "col": 8
-                  },
-                  {
-                    "row": 0,
-                    "col": 9
-                  }
                 ]
               },
               "distanceByPieceId": {
-                "C1": 6,
-                "U1-1": 8
+                "C1": 6
               }
             },
             {
@@ -22726,25 +22667,11 @@
             }
           ],
           "command": {
-            "candidateEdges": [
-              "C1|U1-1"
-            ],
+            "candidateEdges": [],
             "cutEdges": [],
-            "activeEdges": [
-              "C1|U1-1"
-            ],
+            "activeEdges": [],
             "shortestPathToCommanderByPieceId": {
               "C1": [
-                {
-                  "row": 3,
-                  "col": 6
-                }
-              ],
-              "U1-1": [
-                {
-                  "row": 5,
-                  "col": 6
-                },
                 {
                   "row": 3,
                   "col": 6
@@ -22761,8 +22688,7 @@
           "groups": {
             "componentByPieceId": {
               "C1": "P1:C1",
-              "C2": "P2:C2",
-              "U1-1": "P1:U1-1"
+              "C2": "P2:C2"
             },
             "membersByComponentId": {
               "P1:C1": [
@@ -22770,15 +22696,11 @@
               ],
               "P2:C2": [
                 "C2"
-              ],
-              "P1:U1-1": [
-                "U1-1"
               ]
             },
             "strengthByComponentId": {
               "P1:C1": 1,
-              "P2:C2": 1,
-              "P1:U1-1": 1
+              "P2:C2": 1
             }
           }
         }
@@ -22786,8 +22708,8 @@
       "moves": [],
       "resultingState": {
         "boardSize": 10,
-        "sideToMove": "P2",
-        "turnIndex": 1,
+        "sideToMove": "P1",
+        "turnIndex": 0,
         "pieces": [
           {
             "id": "C1",
@@ -22800,24 +22722,7 @@
             "supplied": true,
             "commanded": true,
             "displaySupplied": true,
-            "displayCommanded": true,
-            "shifted": false,
-            "pushed": false
-          },
-          {
-            "id": "U1-1",
-            "owner": "P1",
-            "kind": "unit",
-            "position": {
-              "row": 5,
-              "col": 6
-            },
-            "supplied": true,
-            "commanded": true,
-            "displaySupplied": true,
-            "displayCommanded": true,
-            "shifted": false,
-            "pushed": false
+            "displayCommanded": true
           },
           {
             "id": "C2",
@@ -22830,9 +22735,7 @@
             "supplied": true,
             "commanded": true,
             "displaySupplied": true,
-            "displayCommanded": true,
-            "shifted": false,
-            "pushed": false
+            "displayCommanded": true
           }
         ],
         "continuation": null,
@@ -22845,8 +22748,7 @@
             {
               "player": "P1",
               "reachability": [
-                "C1",
-                "U1-1"
+                "C1"
               ],
               "shortestPathByPieceId": {
                 "C1": [
@@ -22878,49 +22780,10 @@
                     "row": 0,
                     "col": 9
                   }
-                ],
-                "U1-1": [
-                  {
-                    "row": 5,
-                    "col": 6
-                  },
-                  {
-                    "row": 4,
-                    "col": 6
-                  },
-                  {
-                    "row": 3,
-                    "col": 6
-                  },
-                  {
-                    "row": 2,
-                    "col": 6
-                  },
-                  {
-                    "row": 1,
-                    "col": 6
-                  },
-                  {
-                    "row": 0,
-                    "col": 6
-                  },
-                  {
-                    "row": 0,
-                    "col": 7
-                  },
-                  {
-                    "row": 0,
-                    "col": 8
-                  },
-                  {
-                    "row": 0,
-                    "col": 9
-                  }
                 ]
               },
               "distanceByPieceId": {
-                "C1": 6,
-                "U1-1": 8
+                "C1": 6
               }
             },
             {
@@ -22966,25 +22829,11 @@
             }
           ],
           "command": {
-            "candidateEdges": [
-              "C1|U1-1"
-            ],
+            "candidateEdges": [],
             "cutEdges": [],
-            "activeEdges": [
-              "C1|U1-1"
-            ],
+            "activeEdges": [],
             "shortestPathToCommanderByPieceId": {
               "C1": [
-                {
-                  "row": 3,
-                  "col": 6
-                }
-              ],
-              "U1-1": [
-                {
-                  "row": 5,
-                  "col": 6
-                },
                 {
                   "row": 3,
                   "col": 6
@@ -23001,8 +22850,7 @@
           "groups": {
             "componentByPieceId": {
               "C1": "P1:C1",
-              "C2": "P2:C2",
-              "U1-1": "P1:U1-1"
+              "C2": "P2:C2"
             },
             "membersByComponentId": {
               "P1:C1": [
@@ -23010,20 +22858,16 @@
               ],
               "P2:C2": [
                 "C2"
-              ],
-              "P1:U1-1": [
-                "U1-1"
               ]
             },
             "strengthByComponentId": {
               "P1:C1": 1,
-              "P2:C2": 1,
-              "P1:U1-1": 1
+              "P2:C2": 1
             }
           }
         }
       },
-      "expectedFinalStateHash": "470618a0a72f332ca7eac46604e4595049f4b71a8f244d2c7fc6d5cf885feba0",
+      "expectedFinalStateHash": "36028976d856483282b6616c48b2c9a638c13d5070bbe6321049af4f5917da76",
       "expectedOutcome": "ongoing",
       "savedSelection": {
         "source": {
@@ -23034,8 +22878,8 @@
           "row": 5,
           "col": 6
         },
-        "actorSide": "P2",
-        "turnIndex": 1
+        "actorSide": "P1",
+        "turnIndex": 0
       }
     },
     {
@@ -30092,6 +29936,1139 @@
         "actorSide": "P2",
         "turnIndex": 7
       }
+    },
+    {
+      "formatVersion": 2,
+      "id": "303e04bc-9aa0-4604-98be-894a8b04d55f",
+      "title": "Short replay",
+      "description": "A legal sequence that's easy to scrub through and covers many game scenarios: Project, Destroy, Rush, Push + Retreat + Follow, etc.",
+      "incorrect": false,
+      "initialState": {
+        "boardSize": 10,
+        "sideToMove": "P1",
+        "turnIndex": 0,
+        "pieces": [
+          {
+            "id": "C1",
+            "owner": "P1",
+            "kind": "commander",
+            "position": {
+              "row": 3,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true
+          },
+          {
+            "id": "C2",
+            "owner": "P2",
+            "kind": "commander",
+            "position": {
+              "row": 6,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true
+          }
+        ],
+        "continuation": null,
+        "outcome": {
+          "status": "ongoing"
+        },
+        "artifacts": {
+          "mode": "full",
+          "supply": [
+            {
+              "player": "P1",
+              "reachability": [
+                "C1"
+              ],
+              "shortestPathByPieceId": {
+                "C1": [
+                  {
+                    "row": 3,
+                    "col": 6
+                  },
+                  {
+                    "row": 2,
+                    "col": 6
+                  },
+                  {
+                    "row": 1,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C1": 6
+              }
+            },
+            {
+              "player": "P2",
+              "reachability": [
+                "C2"
+              ],
+              "shortestPathByPieceId": {
+                "C2": [
+                  {
+                    "row": 6,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 2
+                  },
+                  {
+                    "row": 6,
+                    "col": 1
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C2": 6
+              }
+            }
+          ],
+          "command": {
+            "candidateEdges": [],
+            "cutEdges": [],
+            "activeEdges": [],
+            "shortestPathToCommanderByPieceId": {
+              "C1": [
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "C2": [
+                {
+                  "row": 6,
+                  "col": 3
+                }
+              ]
+            }
+          },
+          "groups": {
+            "componentByPieceId": {
+              "C1": "P1:C1",
+              "C2": "P2:C2"
+            },
+            "membersByComponentId": {
+              "P1:C1": [
+                "C1"
+              ],
+              "P2:C2": [
+                "C2"
+              ]
+            },
+            "strengthByComponentId": {
+              "P1:C1": 1,
+              "P2:C2": 1
+            }
+          }
+        }
+      },
+      "moves": [
+        {
+          "turnIndex": 0,
+          "turnMoveIndex": 0,
+          "actorSide": "P1",
+          "notation": "PROJECT (3,6) -> (5,6)",
+          "action": {
+            "type": "project",
+            "actorId": "C1",
+            "from": {
+              "row": 3,
+              "col": 6
+            },
+            "to": {
+              "row": 5,
+              "col": 6
+            }
+          }
+        },
+        {
+          "turnIndex": 1,
+          "turnMoveIndex": 0,
+          "actorSide": "P2",
+          "notation": "PROJECT (6,3) -> (4,3)",
+          "action": {
+            "type": "project",
+            "actorId": "C2",
+            "from": {
+              "row": 6,
+              "col": 3
+            },
+            "to": {
+              "row": 4,
+              "col": 3
+            }
+          }
+        },
+        {
+          "turnIndex": 2,
+          "turnMoveIndex": 0,
+          "actorSide": "P1",
+          "notation": "PROJECT (3,6) -> (3,4)",
+          "action": {
+            "type": "project",
+            "actorId": "C1",
+            "from": {
+              "row": 3,
+              "col": 6
+            },
+            "to": {
+              "row": 3,
+              "col": 4
+            }
+          }
+        },
+        {
+          "turnIndex": 3,
+          "turnMoveIndex": 0,
+          "actorSide": "P2",
+          "notation": "PROJECT (4,3) -> (4,5)",
+          "action": {
+            "type": "project",
+            "actorId": "U2-1",
+            "from": {
+              "row": 4,
+              "col": 3
+            },
+            "to": {
+              "row": 4,
+              "col": 5
+            }
+          }
+        },
+        {
+          "turnIndex": 4,
+          "turnMoveIndex": 0,
+          "actorSide": "P1",
+          "notation": "PROJECT (3,4) -> (5,4)",
+          "action": {
+            "type": "project",
+            "actorId": "U1-2",
+            "from": {
+              "row": 3,
+              "col": 4
+            },
+            "to": {
+              "row": 5,
+              "col": 4
+            }
+          }
+        },
+        {
+          "turnIndex": 5,
+          "turnMoveIndex": 0,
+          "actorSide": "P2",
+          "notation": "RUSH (4,3) -> (5,3)",
+          "action": {
+            "type": "rush",
+            "actorId": "U2-1",
+            "from": {
+              "row": 4,
+              "col": 3
+            },
+            "to": {
+              "row": 5,
+              "col": 3
+            }
+          }
+        },
+        {
+          "turnIndex": 6,
+          "turnMoveIndex": 0,
+          "actorSide": "P1",
+          "notation": "PROJECT (3,4) -> (3,2)",
+          "action": {
+            "type": "project",
+            "actorId": "U1-2",
+            "from": {
+              "row": 3,
+              "col": 4
+            },
+            "to": {
+              "row": 3,
+              "col": 2
+            }
+          }
+        },
+        {
+          "turnIndex": 7,
+          "turnMoveIndex": 0,
+          "actorSide": "P2",
+          "notation": "PUSH (5,3) -> (5,4)",
+          "action": {
+            "type": "push",
+            "actorId": "U2-1",
+            "from": {
+              "row": 5,
+              "col": 3
+            },
+            "to": {
+              "row": 5,
+              "col": 4
+            }
+          }
+        },
+        {
+          "turnIndex": 7,
+          "turnMoveIndex": 1,
+          "actorSide": "P1",
+          "notation": "RETREAT (5,4) -> (4,4)",
+          "action": {
+            "type": "retreat",
+            "actorId": "U1-3",
+            "from": {
+              "row": 5,
+              "col": 4
+            },
+            "to": {
+              "row": 4,
+              "col": 4
+            }
+          }
+        },
+        {
+          "turnIndex": 7,
+          "turnMoveIndex": 2,
+          "actorSide": "P2",
+          "notation": "FOLLOW (6,3) -> (5,3)",
+          "action": {
+            "type": "follow",
+            "actorId": "C2",
+            "from": {
+              "row": 6,
+              "col": 3
+            },
+            "to": {
+              "row": 5,
+              "col": 3
+            }
+          }
+        },
+        {
+          "turnIndex": 8,
+          "turnMoveIndex": 0,
+          "actorSide": "P1",
+          "notation": "PROJECT (3,2) -> (5,2)",
+          "action": {
+            "type": "project",
+            "actorId": "U1-4",
+            "from": {
+              "row": 3,
+              "col": 2
+            },
+            "to": {
+              "row": 5,
+              "col": 2
+            }
+          }
+        },
+        {
+          "turnIndex": 9,
+          "turnMoveIndex": 0,
+          "actorSide": "P2",
+          "notation": "PROJECT (5,3) -> (3,3)",
+          "action": {
+            "type": "project",
+            "actorId": "C2",
+            "from": {
+              "row": 5,
+              "col": 3
+            },
+            "to": {
+              "row": 3,
+              "col": 3
+            }
+          }
+        },
+        {
+          "turnIndex": 10,
+          "turnMoveIndex": 0,
+          "actorSide": "P1",
+          "notation": "RUSH (4,4) -> (4,3)",
+          "action": {
+            "type": "rush",
+            "actorId": "U1-3",
+            "from": {
+              "row": 4,
+              "col": 4
+            },
+            "to": {
+              "row": 4,
+              "col": 3
+            }
+          }
+        }
+      ],
+      "resultingState": {
+        "boardSize": 10,
+        "sideToMove": "P2",
+        "turnIndex": 11,
+        "pieces": [
+          {
+            "id": "C1",
+            "owner": "P1",
+            "kind": "commander",
+            "position": {
+              "row": 3,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-1",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-2",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 3,
+              "col": 4
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-3",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-4",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 3,
+              "col": 2
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-5",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 2
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "C2",
+            "owner": "P2",
+            "kind": "commander",
+            "position": {
+              "row": 5,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-1",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 4
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-2",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 3,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": false,
+            "displaySupplied": true,
+            "displayCommanded": false,
+            "shifted": false,
+            "pushed": false
+          }
+        ],
+        "continuation": null,
+        "outcome": {
+          "status": "ongoing"
+        },
+        "artifacts": {
+          "mode": "full",
+          "supply": [
+            {
+              "player": "P1",
+              "reachability": [
+                "C1",
+                "U1-1",
+                "U1-2",
+                "U1-3",
+                "U1-4",
+                "U1-5"
+              ],
+              "shortestPathByPieceId": {
+                "C1": [
+                  {
+                    "row": 3,
+                    "col": 6
+                  },
+                  {
+                    "row": 2,
+                    "col": 6
+                  },
+                  {
+                    "row": 1,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-1": [
+                  {
+                    "row": 5,
+                    "col": 6
+                  },
+                  {
+                    "row": 4,
+                    "col": 6
+                  },
+                  {
+                    "row": 3,
+                    "col": 6
+                  },
+                  {
+                    "row": 2,
+                    "col": 6
+                  },
+                  {
+                    "row": 1,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-2": [
+                  {
+                    "row": 3,
+                    "col": 4
+                  },
+                  {
+                    "row": 2,
+                    "col": 4
+                  },
+                  {
+                    "row": 1,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 5
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-3": [
+                  {
+                    "row": 4,
+                    "col": 3
+                  },
+                  {
+                    "row": 4,
+                    "col": 4
+                  },
+                  {
+                    "row": 3,
+                    "col": 4
+                  },
+                  {
+                    "row": 2,
+                    "col": 4
+                  },
+                  {
+                    "row": 1,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 5
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-4": [
+                  {
+                    "row": 3,
+                    "col": 2
+                  },
+                  {
+                    "row": 2,
+                    "col": 2
+                  },
+                  {
+                    "row": 1,
+                    "col": 2
+                  },
+                  {
+                    "row": 0,
+                    "col": 2
+                  },
+                  {
+                    "row": 0,
+                    "col": 3
+                  },
+                  {
+                    "row": 0,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 5
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-5": [
+                  {
+                    "row": 5,
+                    "col": 2
+                  },
+                  {
+                    "row": 4,
+                    "col": 2
+                  },
+                  {
+                    "row": 3,
+                    "col": 2
+                  },
+                  {
+                    "row": 2,
+                    "col": 2
+                  },
+                  {
+                    "row": 1,
+                    "col": 2
+                  },
+                  {
+                    "row": 0,
+                    "col": 2
+                  },
+                  {
+                    "row": 0,
+                    "col": 3
+                  },
+                  {
+                    "row": 0,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 5
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C1": 6,
+                "U1-1": 8,
+                "U1-2": 8,
+                "U1-3": 10,
+                "U1-4": 10,
+                "U1-5": 12
+              }
+            },
+            {
+              "player": "P2",
+              "reachability": [
+                "C2",
+                "U2-1",
+                "U2-2"
+              ],
+              "shortestPathByPieceId": {
+                "C2": [
+                  {
+                    "row": 5,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 2
+                  },
+                  {
+                    "row": 6,
+                    "col": 1
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-1": [
+                  {
+                    "row": 5,
+                    "col": 4
+                  },
+                  {
+                    "row": 5,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 2
+                  },
+                  {
+                    "row": 6,
+                    "col": 1
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-2": [
+                  {
+                    "row": 3,
+                    "col": 3
+                  },
+                  {
+                    "row": 2,
+                    "col": 3
+                  },
+                  {
+                    "row": 2,
+                    "col": 2
+                  },
+                  {
+                    "row": 2,
+                    "col": 1
+                  },
+                  {
+                    "row": 2,
+                    "col": 0
+                  },
+                  {
+                    "row": 3,
+                    "col": 0
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C2": 7,
+                "U2-1": 8,
+                "U2-2": 11
+              }
+            }
+          ],
+          "command": {
+            "candidateEdges": [
+              "C1|U1-1",
+              "C1|U1-2",
+              "C2|U2-1",
+              "U1-2|U1-3",
+              "U1-3|U1-4",
+              "U1-3|U1-5",
+              "U1-4|U1-5"
+            ],
+            "cutEdges": [],
+            "activeEdges": [
+              "C1|U1-1",
+              "C1|U1-2",
+              "C2|U2-1",
+              "U1-2|U1-3",
+              "U1-3|U1-4",
+              "U1-3|U1-5",
+              "U1-4|U1-5"
+            ],
+            "shortestPathToCommanderByPieceId": {
+              "C1": [
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "U1-1": [
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "U1-2": [
+                {
+                  "row": 3,
+                  "col": 4
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "U1-3": [
+                {
+                  "row": 4,
+                  "col": 3
+                },
+                {
+                  "row": 3,
+                  "col": 4
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "U1-4": [
+                {
+                  "row": 3,
+                  "col": 2
+                },
+                {
+                  "row": 4,
+                  "col": 3
+                },
+                {
+                  "row": 3,
+                  "col": 4
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "U1-5": [
+                {
+                  "row": 5,
+                  "col": 2
+                },
+                {
+                  "row": 4,
+                  "col": 3
+                },
+                {
+                  "row": 3,
+                  "col": 4
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "C2": [
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-1": [
+                {
+                  "row": 5,
+                  "col": 4
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ]
+            }
+          },
+          "groups": {
+            "componentByPieceId": {
+              "C1": "P1:C1",
+              "C2": "P2:C2",
+              "U2-1": "P2:C2",
+              "U1-1": "P1:U1-1",
+              "U1-2": "P1:U1-2",
+              "U1-3": "P1:U1-3",
+              "U1-4": "P1:U1-4",
+              "U1-5": "P1:U1-5",
+              "U2-2": "P2:U2-2"
+            },
+            "membersByComponentId": {
+              "P1:C1": [
+                "C1"
+              ],
+              "P2:C2": [
+                "C2",
+                "U2-1"
+              ],
+              "P1:U1-1": [
+                "U1-1"
+              ],
+              "P1:U1-2": [
+                "U1-2"
+              ],
+              "P1:U1-3": [
+                "U1-3"
+              ],
+              "P1:U1-4": [
+                "U1-4"
+              ],
+              "P1:U1-5": [
+                "U1-5"
+              ],
+              "P2:U2-2": [
+                "U2-2"
+              ]
+            },
+            "strengthByComponentId": {
+              "P1:C1": 1,
+              "P2:C2": 2,
+              "P1:U1-1": 1,
+              "P1:U1-2": 1,
+              "P1:U1-3": 1,
+              "P1:U1-4": 1,
+              "P1:U1-5": 1,
+              "P2:U2-2": 1
+            }
+          }
+        }
+      },
+      "expectedFinalStateHash": "899141efdd2fcfaba04762f1b816945fa3f53e85793829abf9da32a0d46d74ef",
+      "expectedOutcome": "ongoing",
+      "savedSelection": null
     }
   ]
 }
