@@ -369,3 +369,99 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
     await closeContextQuietly(context);
   }
 });
+
+test("scenario flyout saves history-authored scenarios from the selected pre-move snapshot", async ({ browser, baseURL }) => {
+  const { context, page } = await createIsolatedPage(browser);
+
+  try {
+    const scenarioTitle = `History export scenario ${Date.now()}`;
+    const scenarioDescription = "Saved from a history entry and loaded back into a fresh game.";
+    let savedScenario = null;
+
+    await page.route("**/scenarios/catalog.json", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "S",
+          title: "Saved Scenarios",
+          scenarios: savedScenario ? [savedScenario] : [],
+        }),
+      });
+    });
+
+    await page.route("**/scenarios/save", async (route) => {
+      savedScenario = route.request().postDataJSON()?.scenario ?? null;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          catalog: {
+            id: "S",
+            title: "Saved Scenarios",
+            scenarios: savedScenario ? [savedScenario] : [],
+          },
+        }),
+      });
+    });
+
+    await page.goto("/");
+    await expect(page.getByTestId("home-create-game")).toBeVisible();
+    const gameId = await createSelfPlayGameViaApi(page);
+    await importScenarioIntoExistingGame(page, RUSH_CAN_END_SCENARIO, gameId);
+    await page.goto(`${baseURL}#/game/${encodeURIComponent(gameId)}`);
+    await expect(page.getByTestId("game-shell")).toBeVisible();
+
+    const historyMove = page.getByTestId("history-move-item").filter({ hasText: "Move 5: PROJECT (3,4) -> (5,4)" });
+    await historyMove.click();
+
+    await page.getByRole("button", { name: "Scenarios" }).click();
+    await expect(page.locator("#scenario-select")).toBeVisible();
+    await page.locator('[data-scenario-save-field="title"]').fill(scenarioTitle);
+    await page.locator('[data-scenario-save-field="description"]').fill(scenarioDescription);
+    await page.locator('[data-action="save-scenario"]').click();
+
+    await expect
+      .poll(() => savedScenario?.resultingState ?? null, {
+        message: "Expected the history-authored scenario save to capture the selected pre-move snapshot",
+      })
+      .not.toBeNull();
+    expect(savedScenario.moves).toHaveLength(4);
+    expect(savedScenario.resultingState.sideToMove).toBe("P1");
+    expect(savedScenario.resultingState.turnIndex).toBe(4);
+    expect(savedScenario.savedSelection).toEqual({
+      source: { row: 3, col: 4 },
+      target: { row: 5, col: 4 },
+      actorSide: "P1",
+      turnIndex: 4,
+    });
+
+    await page.goto("/");
+    await expect(page.getByTestId("home-create-game")).toBeVisible();
+    await page.getByTestId("home-create-game").click();
+    await expect(page.getByTestId("game-shell")).toBeVisible();
+
+    await page.getByRole("button", { name: "Scenarios" }).click();
+    await expect(page.locator('[data-scenario-editable="title"]')).toContainText(scenarioTitle);
+    await page.locator('[data-action="load-scenario"]').click();
+
+    await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
+    await expect(page.locator("#shell-board-turn-indicator")).toContainText("Player 1 to play");
+    await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 5,4");
+    await expect
+      .poll(async () => getHistoryMoveCount(page), {
+        message: "Expected loading the history-authored scenario to replay only the moves before the selected history action",
+      })
+      .toBe(savedScenario.moves.length);
+    await expect
+      .poll(async () => cellHasClass(getBoardCell(page, savedScenario.savedSelection.source), "source"), {
+        message: "Expected the loaded history-authored scenario to rehydrate the saved source selection",
+      })
+      .toBe(true);
+    await expect
+      .poll(async () => cellHasClass(getBoardCell(page, savedScenario.savedSelection.target), "target"), {
+        message: "Expected the loaded history-authored scenario to rehydrate the saved destination selection",
+      })
+      .toBe(true);
+  } finally {
+    await closeContextQuietly(context);
+  }
+});

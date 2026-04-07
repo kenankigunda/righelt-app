@@ -13,6 +13,7 @@ import {
   buildScenarioFromGame,
   canAuthorScenariosLocally,
   loadScenarioCatalog,
+  resolveHistoryScenarioExportContext,
   tryLocalScenarioWrite,
 } from "./scenarios.js";
 import { buildStaticGameCardFromScenario } from "./static-game-cards.js";
@@ -473,11 +474,13 @@ const syncScenarioAuthoringControls = () => {
   }
 };
 const getScenarioExportContext = (game) => {
+  const historyExportContext = resolveHistoryScenarioExportContext(game);
+  if (historyExportContext) {
+    return historyExportContext;
+  }
   const currentSnapshot = game?.currentSnapshot ?? game?.board?.state ?? null;
-  const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex : game?.moves?.length ?? 0;
-  const savedSelection = game?.inHistoryMode
-    ? buildSavedSelectionFromAction(game.historySelectionAction ?? null, currentSnapshot)
-    : buildSavedSelectionFromRuntimeSelection(boardRuntime?.getSelection?.() ?? null, currentSnapshot);
+  const moveLimit = game?.moves?.length ?? 0;
+  const savedSelection = buildSavedSelectionFromRuntimeSelection(boardRuntime?.getSelection?.() ?? null, currentSnapshot);
   return {
     currentSnapshot,
     moveLimit,

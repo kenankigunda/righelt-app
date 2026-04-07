@@ -5,6 +5,7 @@ import {
   buildScenarioFromGame,
   getScenarioWriterBaseUrl,
   loadScenarioCatalog,
+  resolveHistoryScenarioExportContext,
 } from "../shell/scenarios.js";
 import { computeScenarioStateHash } from "../scenario-adapters/engine-scenario-adapter.js";
 
@@ -509,6 +510,92 @@ test("buildHistoryBranchSeedFromGame uses human move numbers in descriptions whe
 
   assert.equal(seed.title, "Branch from game-branch move 2");
   assert.equal(seed.scenario.description, "Replay through move 2 and open before move 3.");
+});
+
+test("resolveHistoryScenarioExportContext uses the selected move pre-action snapshot and selection", () => {
+  const historyContext = resolveHistoryScenarioExportContext({
+    inHistoryMode: true,
+    historyIndex: 1,
+    moves: [
+      {
+        index: 0,
+        turnIndex: 0,
+        turnMoveIndex: 0,
+        actorSide: "P1",
+        notation: "M1",
+        action: { type: "project", actorId: "C1", from: { row: 3, col: 6 }, to: { row: 5, col: 6 } },
+        selectionSnapshot: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 0,
+          pieces: [{ id: "C1", owner: "P1", kind: "commander", position: { row: 3, col: 6 } }],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        snapshot: {
+          boardSize: 10,
+          sideToMove: "P2",
+          turnIndex: 1,
+          pieces: [
+            { id: "C1", owner: "P1", kind: "commander", position: { row: 3, col: 6 } },
+            { id: "U1-1", owner: "P1", kind: "unit", position: { row: 5, col: 6 } },
+          ],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+      },
+      {
+        index: 1,
+        turnIndex: 4,
+        turnMoveIndex: 0,
+        actorSide: "P1",
+        notation: "M2",
+        action: { type: "project", actorId: "U1-3", from: { row: 5, col: 4 }, to: { row: 7, col: 4 } },
+        selectionSnapshot: {
+          boardSize: 10,
+          sideToMove: "P1",
+          turnIndex: 4,
+          pieces: [{ id: "U1-3", owner: "P1", kind: "unit", position: { row: 5, col: 4 } }],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+        snapshot: {
+          boardSize: 10,
+          sideToMove: "P2",
+          turnIndex: 5,
+          pieces: [{ id: "U1-3", owner: "P1", kind: "unit", position: { row: 7, col: 4 } }],
+          continuation: null,
+          outcome: { status: "ongoing" },
+        },
+      },
+    ],
+    currentSnapshot: {
+      boardSize: 10,
+      sideToMove: "P2",
+      turnIndex: 5,
+      pieces: [{ id: "U1-3", owner: "P1", kind: "unit", position: { row: 7, col: 4 } }],
+      continuation: null,
+      outcome: { status: "ongoing" },
+    },
+  });
+
+  assert.deepEqual(historyContext, {
+    currentSnapshot: {
+      boardSize: 10,
+      sideToMove: "P1",
+      turnIndex: 4,
+      pieces: [{ id: "U1-3", owner: "P1", kind: "unit", position: { row: 5, col: 4 } }],
+      continuation: null,
+      outcome: { status: "ongoing" },
+    },
+    moveLimit: 1,
+    savedSelection: {
+      source: { row: 5, col: 4 },
+      target: { row: 7, col: 4 },
+      actorSide: "P1",
+      turnIndex: 4,
+    },
+  });
 });
 
 test("loadScenarioCatalog normalizes legacy scenario fields and catalog defaults", async () => {
