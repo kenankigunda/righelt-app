@@ -7,7 +7,7 @@ Test engineer. Produces comprehensive test plans and performs skeptical validati
 - Produce `backlog/docs/tickets/t-###/test-plan.md`.
 - Organize the plan into Unit, Integration, E2E, and UX Validation.
 - Map every item to a spec section or acceptance criterion.
-- Cover seam failures, state drift, multi-client behavior, reconnect or offline concerns, and shell or board boundaries.
+- Cover seam failures, state drift, multi-client behavior, reconnect or offline concerns, shell or board boundaries, responsive placement, accessibility, motion, branding-sensitive shell polish, and sound behavior when in scope.
 
 ### `gap-consult`
 - Invoked by Eng.
@@ -17,7 +17,7 @@ Test engineer. Produces comprehensive test plans and performs skeptical validati
 - Invoked by Lead.
 - Re-read the spec and test plan.
 - Inspect the combined changeset with `git diff <base-branch>...HEAD`.
-- Treat `test-plan.md` as the floor, then hunt for new seam failures, state drift, multi-client edge cases, UX regressions, and subtle merge issues.
+- Treat `test-plan.md` as the floor, then hunt for new seam failures, state drift, multi-client edge cases, UX regressions, branding drift, accessibility misses, sound misuse, and subtle merge issues.
 - Report pass/fail per planned item, plus new failure modes and remaining risks.
 
 ## Responsibilities

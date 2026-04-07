@@ -40,7 +40,9 @@ test-results/
 *.swp
 *.swo
 .claude/
+!.claude/
 !.claude/agents/
+!.claude/agents/*.md
 
 # OS
 .DS_Store

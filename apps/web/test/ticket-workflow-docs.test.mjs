@@ -16,7 +16,8 @@ const agentsDoc = readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
 
 const roles = [
   { slug: "lead", skill: "ticket-lead", claude: "lead" },
-  { slug: "product-owner", skill: "ticket-product-owner", claude: "product-owner" },
+  { slug: "product-manager", skill: "ticket-product-manager", claude: "product-manager" },
+  { slug: "ux-designer", skill: "ticket-ux-designer", claude: "ux-designer" },
   { slug: "architect", skill: "ticket-architect", claude: "architect" },
   { slug: "eng", skill: "ticket-eng", claude: "eng" },
   { slug: "tester", skill: "ticket-tester", claude: "tester" },
@@ -25,6 +26,8 @@ const roles = [
 test("ticket workflow doc points both Claude and Codex at the shared canon", () => {
   assert.match(workflowDoc, /docs\/ai\/ticket-workflow\/README\.md/);
   assert.match(workflowDoc, /docs\/ai\/ticket-workflow\/lead\.md/);
+  assert.match(workflowDoc, /docs\/ai\/ticket-workflow\/product-manager\.md/);
+  assert.match(workflowDoc, /docs\/ai\/ticket-workflow\/ux-designer\.md/);
   assert.match(workflowDoc, /skills\/ticket-lead\/SKILL\.md/);
   assert.match(workflowDoc, /node scripts\/check-ticket-workflow-setup\.mjs/);
   assert.match(workflowDoc, /scripts\/backlog\.sh/);
@@ -35,6 +38,17 @@ test("AGENTS backlog guidance makes Codex workflow setup explicit", () => {
   assert.match(agentsDoc, /Codex implementations should use the shared canon in `docs\/ai\/ticket-workflow\/`/);
   assert.match(agentsDoc, /node scripts\/check-ticket-workflow-setup\.mjs/);
   assert.match(agentsDoc, /`\.\/scripts\/backlog\.sh` CLI wrapper \| Always preferred/);
+  assert.match(agentsDoc, /`Tkpm \[t-###\]`/);
+  assert.match(agentsDoc, /`Tkuxd \[t-###\]`/);
+  assert.doesNotMatch(agentsDoc, /`Tkpo \[t-###\]`/);
+});
+
+test("ticket workflow stages and routing reflect PM, UXD, and Architect planning", () => {
+  assert.match(workflowDoc, /`To Do` → `Spec` → `Visual Design` → `Eng Planning` → `Ready for execution`/);
+  assert.match(workflowDoc, /\| `feature` \| PM \| UXD \| Architect \|/);
+  assert.match(workflowDoc, /\| `bug` \| PM \| UXD \| Architect \|/);
+  assert.match(workflowDoc, /\| `improvement` \| \*\*Skipped\*\* \| \*\*Skipped\*\* \| Architect \|/);
+  assert.doesNotMatch(workflowDoc, /product-owner/);
 });
 
 for (const role of roles) {

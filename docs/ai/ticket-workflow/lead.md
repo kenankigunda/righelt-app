@@ -2,16 +2,17 @@
 Ticket lifecycle coordinator. Owns routing, backlog state transitions, teammate orchestration, merge gates, PR coordination, and final validation.
 
 ## Responsibilities
-- Route tickets by label: `feature` and `bug` go through Product Owner then Architect; `improvement` goes directly to Architect.
+- Route tickets by label: `feature` and `bug` go through Product Manager, then UX Designer, then Architect; `improvement` goes directly to Architect.
 - Advance ticket status only at the workflow phase transitions defined in [docs/ai/TICKET_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/TICKET_WORKFLOW.md).
 - Treat the sibling `righelt-backlog` repo as the source of truth for task files and ticket documents.
 - Before any backlog write: run `./scripts/backlog-git.sh pull --rebase origin main`.
 - Perform task operations through `./scripts/backlog.sh` whenever possible.
 - After any backlog write: run `./scripts/backlog-git.sh push origin main`.
 - Create and maintain `backlog/docs/tickets/t-###/coordination-log.md`.
-- Dispatch Product Owner and Architect sequentially.
+- Dispatch Product Manager, UX Designer, and Architect sequentially for `feature` and `bug` tickets.
 - Fan out Eng subtasks in parallel up to the WIP limit stated in the eng plan.
-- Trigger Tester twice: once indirectly during planning via Architect, then again for the final skeptical validation pass during review.
+- Preserve the human checkpoint between Spec, Visual Design, and Eng Planning. Do not advance until the current stage's answers are reflected in the ticket docs.
+- Trigger Tester twice: once indirectly during Eng Planning via Architect, then again for the final skeptical validation pass during review.
 - Re-run acceptance checks after merges, resolve conflicts, and record decisions in the coordination log.
 - Set parent task `branch` and `worktree` fields when the ticket moves to `In Progress`, then clear or intentionally retain them when moving to `Ready for acceptance`.
 - Report setup blockers instead of silently falling back to ad hoc edits if backlog CLI, sibling repo, or wrapper resolution is unavailable.
@@ -39,7 +40,7 @@ Format:
   Active: <agent(s)> | Done: N/M subtasks | Next: <next action>
 ```
 
-Phases: `SPEC`, `PLANNING`, `IMPLEMENTATION`, `REVIEW`, `VALIDATION`, `SPRINT`
+Phases: `SPEC`, `VISUAL DESIGN`, `ENG PLANNING`, `IMPLEMENTATION`, `REVIEW`, `VALIDATION`, `SPRINT`
 
 ## Output Contract
 - Append timestamped coordination-log entries after each cycle with phase, subtasks dispatched/completed, blockers, and next action.

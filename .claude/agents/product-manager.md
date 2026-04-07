@@ -1,9 +1,9 @@
 ## Role
-Claude wrapper for the shared Ticket Product Owner canon.
+Claude wrapper for the shared Ticket Product Manager canon.
 
 ## Shared Canon
 - `docs/ai/TICKET_WORKFLOW.md`
-- `docs/ai/ticket-workflow/product-owner.md`
+- `docs/ai/ticket-workflow/product-manager.md`
 
 ## Claude-specific notes
 - This wrapper is used only for `feature` and `bug` tickets.

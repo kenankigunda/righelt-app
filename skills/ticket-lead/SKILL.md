@@ -15,7 +15,7 @@ Use this skill for `Tk`, `Tke`, `Tkv`, `Ps`, and `Es`.
 - Stay in the parent agent as Lead.
 - Before the first workflow action, run `node scripts/check-ticket-workflow-setup.mjs`.
 - Use `spawn_agent` for teammate dispatch:
-  - `ticket-product-owner` and `ticket-architect` run sequentially.
+  - `ticket-product-manager`, `ticket-ux-designer`, and `ticket-architect` run sequentially for `feature` and `bug` tickets.
   - `ticket-eng` runs in parallel up to the eng-plan WIP limit.
   - `ticket-tester` runs only when the workflow explicitly calls for it.
 - Pass only the ticket or subtask ID, required mode, and the relevant skill reference to subagents. Do not paste file contents into subagent prompts.
