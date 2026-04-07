@@ -14,6 +14,7 @@ Righelt is organized around formal specs, implementation packages, and test lane
 - `db/` contains D1 migrations and database operations runbooks.
 - `docs/` contains product specs, testing strategy, execution plans, and operational runbooks.
 - `archive/` preserves legacy implementation material for reference only.
+- The task backlog lives in the companion [righelt-backlog](https://github.com/kenankigunda/righelt-backlog) repo — a shared, always-on-main store visible to all branches and worktrees.
 
 ## Getting Started
 
