@@ -55,7 +55,7 @@ These are not always “user workflows,” but regressions here directly damage 
 | --- | --- | --- | --- | --- |
 | Routing correctness across home / game / invite / tutorial / flyout states | `n/a` | `n/a` | `present` | Route parsing/building and flyout-state collapse are covered at the unit layer. |
 | Runtime sync preserves board selection correctly across authoritative updates | `n/a` | `n/a` | `present` | Shell runtime-sync tests cover selection reset/preservation rules that strongly affect perceived polish. |
-| Board runtime interaction polish and continuation rendering | `n/a` | `n/a` | `present` | Extensive board-runtime and adapter coverage exists for hover/click semantics, continuation prompts, overlays, and removal feedback. |
+| Board runtime interaction polish and continuation rendering | `partial` | `n/a` | `present` | Extensive board-runtime and adapter coverage exists for hover/click semantics, continuation prompts, overlays, and removal feedback. Playwright now also proves the lone auto-selected push preview stays visible in the real browser, while the broader action matrix remains owned below the browser layer. |
 | Pages proxy behavior and local-dev fallback | `n/a` | `n/a` | `present` | Proxy coverage includes service binding, local fallback, suffixed ports, and stable failure behavior. |
 | Bootstrap determinism, cache policy, and startup-path stability | `n/a` | `n/a` | `present` | Bootstrap/cache/startup tests are strong and should remain a hard gate because startup regressions hurt every workflow. |
 | Live websocket replay vs state-sync fallback | `n/a` | `n/a` | `present` | Durable-object websocket tests plus live-sync tests cover replay/fallback behavior beneath the browser layer. |
