@@ -6,6 +6,12 @@ This document captures the non-default workflow for ticket-driven development us
 
 Use this workflow for any ticket in `backlog/tasks/` that has been assigned to a Lead. Invoke with `Tk t-###` (or a step-specific shorthand) from AGENTS.md §6.1.
 
+## Terminology
+
+- In ticket specs, eng plans, test plans, and coordination logs, `scenario` means a catalog entry from `apps/web/scenarios/catalog.json`.
+- Do not use `scenario` as shorthand for golden fixtures or other legacy fixture datasets.
+- If a ticket touches historical fixture cleanup, name those artifacts explicitly as legacy fixtures rather than scenarios.
+
 ## Skills Contract
 
 - Re-mention required skills in each turn where they should apply.

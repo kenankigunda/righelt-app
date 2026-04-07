@@ -58,6 +58,15 @@ This file defines repo-specific operating rules for AI coding agents working in 
 - Do not duplicate shared constants across app, API, scripts, and tests when consumers can import the authoritative source safely.
 - Exception: tests may keep literal values when they are asserting an external/public contract and importing the implementation constant would make the test tautological.
 
+## 5.2) Scenario Terminology
+
+- In this repo, `scenario` means a scenario record from `apps/web/scenarios/catalog.json`.
+- Do not use `scenario` to refer to engine golden fixtures, parity fixture sets, or other legacy fixture artifacts.
+- If older code or docs mention golden fixtures, treat that as legacy terminology and translate it mentally to either:
+  - catalog-backed scenarios, if the context is current runtime/debug UX
+  - legacy test artifacts, if the context is historical cleanup work
+- When adding new code, docs, tests, or backlog tasks, use `catalog scenario` or just `scenario` for `catalog.json` entries and use `legacy fixture artifact` if you must mention the old data at all.
+
 ## 6) Communication Expectations
 
 - State assumptions explicitly when inputs are incomplete.
