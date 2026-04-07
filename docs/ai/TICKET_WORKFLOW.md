@@ -33,6 +33,8 @@ The backlog lives in the **sibling `righelt-backlog` repo** (not tracked by this
 ./scripts/backlog-git.sh push origin main            # after write
 ```
 
+If a task or ticket doc depends on a screenshot, mock, or other reference artifact, copy that artifact into the backlog repo first (normally under `backlog/assets/`), reference the repo-backed path from the task/doc, and push the artifact in the same backlog update. Do not rely on untracked local files or filename-only mentions.
+
 Write path priority (same pull/push bookends for all):
 
 | Priority | When to use |
@@ -81,6 +83,8 @@ Rich documentation lives in the **backlog repo** under `backlog/docs/tickets/t-#
 Authoring templates are in the backlog repo at `backlog/docs/SPEC_TEMPLATE.md` and `backlog/docs/ENG_PLAN_TEMPLATE.md`.
 
 When agents write these files, they write to the backlog repo (not the main repo). `<backlog-repo>` resolves to the sibling `righelt-backlog` directory — use `scripts/backlog-git.sh` to operate on it. The backlog task file links to these docs via the `references` field using paths relative to the backlog repo root (e.g. `backlog/docs/tickets/t-###/spec.md`). Subtasks use IDs `t-###.01`, `t-###.02`, etc. with `parent_task_id: t-###`.
+
+Reference artifacts for those docs should also live in the backlog repo, typically under `backlog/assets/`, and be cited with stable repo-relative paths.
 
 ## Lead Execution Loop
 

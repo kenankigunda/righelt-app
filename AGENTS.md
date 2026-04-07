@@ -135,6 +135,8 @@ For direct file edits (path 2), also commit manually before pushing:
 ```
 `scripts/backlog.sh` wraps the `backlog` CLI and resolves the repo path dynamically (no hardcoded paths). `scripts/backlog-git.sh` runs git commands against the shared backlog repo from any worktree.
 
+**Reference artifacts:** when a backlog task or ticket doc mentions a screenshot, mock, or other reference artifact, copy that file into the backlog repo (typically `backlog/assets/`) before or alongside the task/doc write, reference the repo-backed path from the markdown/task metadata, and include the artifact in the same push. Do not leave task descriptions pointing only at ad hoc local paths or unattached filenames.
+
 **Conflict policy:** task files are one file per ID — concurrent writes to different tickets never conflict. If two agents write the same task concurrently, the second push fails; that agent should `pull --rebase` and re-attempt.
 
 **Branch and worktree tracking:** when a ticket moves to In Progress, the Lead sets these optional frontmatter fields on the parent task:
