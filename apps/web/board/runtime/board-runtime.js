@@ -177,6 +177,20 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const autoSelectedTarget = deriveAutoSelectedTarget(actions);
     if (autoSelectedTarget) {
       setSelectedTarget(autoSelectedTarget, origin);
+      syncActionTypeForSelectedTarget(actions);
+    }
+  };
+
+  const syncActionTypeForSelectedTarget = (actions = selectedPieceMovePreviews) => {
+    if (!selectedTarget) {
+      return;
+    }
+    const actionsAtTarget = (Array.isArray(actions) ? actions : []).filter(
+      (action) => action.to && action.to.row === selectedTarget.row && action.to.col === selectedTarget.col,
+    );
+    const preferredActionType = pickBestActionTypeForTarget(actionsAtTarget, getActionType());
+    if (preferredActionType && preferredActionType !== getActionType()) {
+      setActionType(preferredActionType);
     }
   };
 
@@ -646,6 +660,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       lastPhaseInitializedForPieceId = selectedPieceId;
     }
     maybeAutoSelectTarget(selectedPieceMoves);
+    syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
   };
 
   const applyForcedContinuationSelection = () => {
@@ -693,6 +708,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
     selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
     maybeAutoSelectTarget(selectedPieceMoves);
+    syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
     renderBoard();
     renderStatus();
   };

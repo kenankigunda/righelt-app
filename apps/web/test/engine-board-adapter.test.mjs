@@ -942,6 +942,58 @@ test("push continuation badge counts only preserved members still present on the
   });
 });
 
+test("selected push target renders defender nudge preview even when the incoming action type is stale", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P2",
+      continuation: null,
+      pieces: [
+        { id: "A1", owner: "P2", kind: "unit", position: { row: 6, col: 1 }, supplied: true, commanded: true },
+        { id: "D1", owner: "P1", kind: "unit", position: { row: 6, col: 2 }, supplied: true, commanded: true },
+        { id: "A2", owner: "P2", kind: "unit", position: { row: 5, col: 1 }, supplied: true, commanded: true },
+      ],
+      artifacts: {
+        groups: {
+          componentByPieceId: { A1: "G1", A2: "G1", D1: "G2" },
+          membersByComponentId: { G1: ["A1", "A2"], G2: ["D1"] },
+          strengthByComponentId: { G1: 2, G2: 1 },
+        },
+      },
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: "A1", source: { row: 6, col: 1 }, target: { row: 6, col: 2 } },
+      overlay: {
+        mode: "interactive",
+        selection: { selectedPieceId: "A1", source: { row: 6, col: 1 }, target: { row: 6, col: 2 } },
+      },
+      legalActions: [{ type: "push", actorId: "A1", from: { row: 6, col: 1 }, to: { row: 6, col: 2 } }],
+      selectedPieceMoves: [{ type: "push", actorId: "A1", from: { row: 6, col: 1 }, to: { row: 6, col: 2 } }],
+      selectedPieceMovePreviews: [{ type: "push", actorId: "A1", from: { row: 6, col: 1 }, to: { row: 6, col: 2 }, legal: true }],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "move",
+      selectedPieceOverlayPhase: "actionPreviews",
+    });
+
+    const targetCell = getCell(boardEl, 6, 2);
+    const pushPreviewStack = targetCell?.children.find((child) => child.dataset?.pushPreviewStack === "1") ?? null;
+    assert.equal(pushPreviewStack !== null, true);
+    assert.equal(
+      pushPreviewStack?.children.some(
+        (child) => child.classList.contains("stacked-underlay") && child.classList.contains("stacked-pushed"),
+      ) ?? false,
+      true,
+    );
+    assert.equal(
+      pushPreviewStack?.children.some((child) => child.classList.contains("stacked-top")) ?? false,
+      false,
+    );
+  });
+});
+
 test("rush blocker square receives the dedicated rush-blocker highlight", async () => {
   await withFakeDocument(async () => {
     const { adapter, boardEl } = createMountedAdapter();
