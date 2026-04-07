@@ -17,8 +17,10 @@ import {
   tryLocalScenarioWrite,
 } from "./scenarios.js";
 import { buildStaticGameCardFromScenario } from "./static-game-cards.js";
+import { buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./history-preview.js";
 import { resolveInitialSelectionHydration } from "./selection-hydration.js";
 import { shouldResetBoardSelection, shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
+import { buildScenarioStaticPreviewModel } from "./static-preview-model.js";
 import {
   DEFAULT_GAME_PANEL,
   FLYOUT_KEYS,
@@ -374,21 +376,61 @@ const formatClientDateTime = (value) => {
   }).format(new Date(timestamp));
 };
 
-const registerMiniBoardPreview = ({ previewId, snapshot, selection = null, previewKey, sizeVariant = "compact" }) => {
+const registerMiniBoardPreview = ({
+  previewId,
+  snapshot,
+  selection = null,
+  overlay = { mode: "none" },
+  legalActions = [],
+  selectedPieceId = null,
+  selectedPieceMoves = [],
+  selectedPieceMovePreviews = [],
+  currentActionType = "pass",
+  selectedPieceOverlayPhase = "actionPreviews",
+  previewKey,
+  sizeVariant = "compact",
+}) => {
   renderedMiniBoardPreviewPayloads.set(previewId, {
     snapshot: snapshot ?? null,
     selection: selection ?? null,
+    overlay,
+    legalActions,
+    selectedPieceId,
+    selectedPieceMoves,
+    selectedPieceMovePreviews,
+    currentActionType,
+    selectedPieceOverlayPhase,
     previewKey,
     sizeVariant,
   });
   return previewId;
 };
 
-const renderMiniBoardPreviewRoot = ({ previewId, snapshot, selection = null, previewKey, sizeVariant = "compact" }) => {
+const renderMiniBoardPreviewRoot = ({
+  previewId,
+  snapshot,
+  selection = null,
+  overlay = { mode: "none" },
+  legalActions = [],
+  selectedPieceId = null,
+  selectedPieceMoves = [],
+  selectedPieceMovePreviews = [],
+  currentActionType = "pass",
+  selectedPieceOverlayPhase = "actionPreviews",
+  previewKey,
+  sizeVariant = "compact",
+}) => {
   const stablePreviewId = registerMiniBoardPreview({
     previewId,
     snapshot,
     selection,
+    overlay,
+    legalActions,
+    selectedPieceId,
+    selectedPieceMoves,
+    selectedPieceMovePreviews,
+    currentActionType,
+    selectedPieceOverlayPhase,
     previewKey,
     sizeVariant,
   });
@@ -424,6 +466,17 @@ const getStaticCardPreviewSelection = (card) =>
         target: card.previewSelection.target ?? null,
       }
     : null;
+const getStaticCardPreviewPayload = (card) => ({
+  snapshot: getStaticCardPreviewSnapshot(card),
+  selection: getStaticCardPreviewSelection(card),
+  overlay: { mode: "none" },
+  legalActions: [],
+  selectedPieceId: null,
+  selectedPieceMoves: [],
+  selectedPieceMovePreviews: [],
+  currentActionType: "pass",
+  selectedPieceOverlayPhase: "actionPreviews",
+});
 const buildSavedSelectionFromAction = (action, snapshot) => {
   if (!action?.from) {
     return null;
@@ -1611,6 +1664,8 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
   const selectedScenario = getSelectedScenario();
   const scenarioLoadPending = isButtonPending(SCENARIO_LOAD_PENDING_KEY);
   const scenarioCard = selectedScenario ? buildStaticGameCardFromScenario(selectedScenario) : null;
+  const scenarioPreviewPayload = selectedScenario ? buildScenarioStaticPreviewModel(selectedScenario) : null;
+  const scenarioPreviewSnapshot = scenarioPreviewPayload?.snapshot ?? getStaticCardPreviewSnapshot(scenarioCard);
   const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex : game?.moves?.length ?? 0;
   const canAuthorScenarios = Boolean(game) && canAuthorScenariosLocally();
   const canLoadIntoCurrentGame = Boolean(game && Array.isArray(game.moves) && game.moves.length === 0 && selectedScenario);
@@ -1660,15 +1715,15 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
       ${
         selectedScenario
           ? renderStaticMiniBoardCard({
-              card: scenarioCard,
+              card: { ...scenarioCard, previewPayload: scenarioPreviewPayload },
               variant: "scenario",
               header: "",
               meta: `<div class="mini-board-card-meta">
                   <span class="small">${escapeHtml(`${scenarioCard.moveCount} move(s)`)}</span>
                   <span class="small">${escapeHtml(`Expected ${formatOutcomeStatus(selectedScenario.expectedOutcome)}`)}</span>
                 </div>`,
-              statusText: getStaticCardPreviewSnapshot(scenarioCard)
-                ? formatSideToMoveLabel(getStaticCardPreviewSnapshot(scenarioCard))
+              statusText: scenarioPreviewSnapshot
+                ? formatSideToMoveLabel(scenarioPreviewSnapshot)
                 : "Snapshot unavailable",
             })
           : ""
@@ -1945,9 +2000,18 @@ const getInviteContextForGame = (game, routeName = currentRoute.name) => {
 };
 
 const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyoutLink = null, gameId = null, header, meta, statusText }) => {
-  const snapshot = getStaticCardPreviewSnapshot(card);
-  const previewSelection = getStaticCardPreviewSelection(card);
-  const previewKey = toStableKey({ snapshot, previewSelection });
+  const previewPayload = card?.previewPayload ?? getStaticCardPreviewPayload(card);
+  const previewKey = toStableKey({
+    snapshot: previewPayload.snapshot,
+    selection: previewPayload.selection,
+    overlay: previewPayload.overlay,
+    legalActions: previewPayload.legalActions,
+    selectedPieceId: previewPayload.selectedPieceId,
+    selectedPieceMoves: previewPayload.selectedPieceMoves,
+    selectedPieceMovePreviews: previewPayload.selectedPieceMovePreviews,
+    currentActionType: previewPayload.currentActionType,
+    selectedPieceOverlayPhase: previewPayload.selectedPieceOverlayPhase,
+  });
   const body = `<div class="mini-board-card-header">
       ${header}
     </div>
@@ -1956,8 +2020,15 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
     </div>
     ${renderMiniBoardPreviewRoot({
       previewId: `${variant}:${card.id}`,
-      snapshot,
-      selection: previewSelection,
+      snapshot: previewPayload.snapshot,
+      selection: previewPayload.selection,
+      overlay: previewPayload.overlay,
+      legalActions: previewPayload.legalActions,
+      selectedPieceId: previewPayload.selectedPieceId,
+      selectedPieceMoves: previewPayload.selectedPieceMoves,
+      selectedPieceMovePreviews: previewPayload.selectedPieceMovePreviews,
+      currentActionType: previewPayload.currentActionType,
+      selectedPieceOverlayPhase: previewPayload.selectedPieceOverlayPhase,
       previewKey,
       sizeVariant: "compact",
     })}
@@ -2578,6 +2649,13 @@ const reconcileMiniBoardPreviews = () => {
         rootEl,
         snapshot: payload.snapshot,
         selection: payload.selection,
+        overlay: payload.overlay,
+        legalActions: payload.legalActions,
+        selectedPieceId: payload.selectedPieceId,
+        selectedPieceMoves: payload.selectedPieceMoves,
+        selectedPieceMovePreviews: payload.selectedPieceMovePreviews,
+        currentActionType: payload.currentActionType,
+        selectedPieceOverlayPhase: payload.selectedPieceOverlayPhase,
         previewKey: payload.previewKey,
         sizeVariant: payload.sizeVariant,
       };
@@ -2977,60 +3055,10 @@ const getHistoryDestroyedPieceOverlays = (game) => {
     return [];
   }
   const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
-  const destroyedPieces = Array.isArray(move?.destroyedPieces) ? move.destroyedPieces : [];
-  const preActionPieces = Array.isArray(move?.selectionSnapshot?.pieces) ? move.selectionSnapshot.pieces : [];
-  return destroyedPieces.map((record) => {
-    const preActionPiece =
-      preActionPieces.find(
-        (piece) =>
-          piece?.position?.row === record.position.row &&
-          piece?.position?.col === record.position.col,
-      ) ?? null;
-    return {
-      row: record.position.row,
-      col: record.position.col,
-      ownerSeat:
-        record.ownerSeat ??
-        (preActionPiece?.owner === "P1" ? "p1" : preActionPiece?.owner === "P2" ? "p2" : null),
-      kind:
-        preActionPiece?.kind ??
-        (record.reason === "commander_unsupplied" ? "commander" : "unit"),
-      supplied: preActionPiece ? preActionPiece.supplied !== false : record.supplied ?? true,
-      commanded: preActionPiece ? preActionPiece.commanded !== false : record.commanded ?? true,
-      piece: preActionPiece
-        ? {
-            id: preActionPiece.id ?? null,
-            owner: preActionPiece.owner,
-            kind: preActionPiece.kind,
-            position: {
-              row: preActionPiece.position.row,
-              col: preActionPiece.position.col,
-            },
-            supplied: preActionPiece.supplied !== false,
-            commanded: preActionPiece.commanded !== false,
-            pushed: preActionPiece.pushed === true,
-          }
-        : null,
-    };
+  return buildDestroyedPieceOverlays({
+    destroyedPieceRecords: move?.destroyedPieces ?? [],
+    preActionSnapshot: move?.selectionSnapshot ?? null,
   });
-};
-
-const findHistoryActionPiece = (snapshot, action) => {
-  if (!snapshot || !action) {
-    return null;
-  }
-  if (typeof action.actorId === "string") {
-    const pieceById = snapshot.pieces?.find((piece) => piece.id === action.actorId) ?? null;
-    if (pieceById) {
-      return pieceById;
-    }
-  }
-  if (!action.from) {
-    return null;
-  }
-  return snapshot.pieces?.find(
-    (piece) => piece.position?.row === action.from.row && piece.position?.col === action.from.col,
-  ) ?? null;
 };
 
 const getHistoryRecordedActionStartPiece = (game) => {
@@ -3041,7 +3069,7 @@ const getHistoryRecordedActionStartPiece = (game) => {
   if (!move?.selectionSnapshot || !move?.action) {
     return null;
   }
-  return findHistoryActionPiece(move.selectionSnapshot, move.action);
+  return findRecordedActionStartPiece(move.selectionSnapshot, move.action);
 };
 
 const mountBoardForGame = (game) => {
