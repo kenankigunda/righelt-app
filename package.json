@@ -31,6 +31,7 @@
     "dev:all:c:auto": "node scripts/dev-web-auto.mjs 8791 --with-api --watch-backend",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check:web-engine-generated": "node scripts/check-web-engine-generated.mjs",
+    "check:ticket-workflow": "node scripts/check-ticket-workflow-setup.mjs",
     "test": "pnpm typecheck && pnpm check:web-engine-generated && pnpm test:unit && pnpm test:integration && pnpm test:e2e",
     "test:unit": "pnpm test:engine:unit && pnpm test:web:unit",
     "test:integration": "pnpm test:engine:integration && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web:integration",

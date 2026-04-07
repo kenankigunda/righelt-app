@@ -21,6 +21,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "shell-render-stability.test.mjs",
   "sync-store.test.mjs",
   "syntax-smoke.test.mjs",
+  "ticket-workflow-docs.test.mjs",
   "test-layers.test.mjs",
   "tutorial.test.mjs",
   "ui-guards.test.mjs",

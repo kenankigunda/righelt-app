@@ -40,6 +40,7 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.equal(scripts["dev:all:b"], "node scripts/dev-web-auto.mjs 8790 --with-api");
   assert.equal(scripts["dev:all:c"], "node scripts/dev-web-auto.mjs 8791 --with-api");
   assert.equal(scripts["check:web-engine-generated"], "node scripts/check-web-engine-generated.mjs");
+  assert.equal(scripts["check:ticket-workflow"], "node scripts/check-ticket-workflow-setup.mjs");
   assert.match(scripts.test, /^pnpm typecheck && pnpm check:web-engine-generated && /);
   assert.equal(scripts["test:unit"], "pnpm test:engine:unit && pnpm test:web:unit");
   assert.equal(scripts["test:integration"], "pnpm test:engine:integration && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web:integration");

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ticket Tester"
+  short_description: "Plan and validate ticket correctness."
+  default_prompt: "Use $ticket-tester to produce a ticket test plan or a skeptical final-validation report."

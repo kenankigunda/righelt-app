@@ -9,7 +9,13 @@ Use this workflow for any ticket in `backlog/tasks/` that has been assigned to a
 ## Skills Contract
 
 - Re-mention required skills in each turn where they should apply.
-- Role definitions live in `.claude/agents/` (authoritative).
+- Shared role definitions live in `docs/ai/ticket-workflow/` (authoritative shared canon).
+- Shared canon index: `docs/ai/ticket-workflow/README.md`.
+- Example role canon: `docs/ai/ticket-workflow/lead.md`.
+- Claude adapters live in `.claude/agents/`.
+- Codex adapters live in `skills/ticket-*/SKILL.md`.
+- Example Codex adapter: `skills/ticket-lead/SKILL.md`.
+- Before `Tk`, `Tkpo`, `Tka`, `Tke`, `Tkv`, `Ps`, or `Es`, run `node scripts/check-ticket-workflow-setup.mjs` so setup blockers are surfaced before the workflow starts.
 - If a referenced skill or role file is missing: state the issue briefly, fall back to AGENTS.md defaults, avoid blocking unless strictly required.
 
 ## Backlog Hygiene
@@ -29,6 +35,7 @@ Write path priority (same pull/push bookends for all):
 | 2 — Direct file edit | Last resort; must also commit manually: `./scripts/backlog-git.sh commit -am "chore(backlog): ..."` |
 
 - Edit task files directly only when the `backlog` CLI is unavailable or cannot perform the required operation.
+- Workflow implementations should report a setup blocker if the sibling backlog repo, `backlog` CLI, or wrapper resolution is unavailable rather than silently falling back to ad hoc edits.
 - When creating or renaming task files manually, match the CLI filename convention: `backlog/tasks/t-### - <CLI slug>.md` for parents and `backlog/tasks/t-###.NN - <CLI slug>.md` for subtasks.
 - The `<CLI slug>` should mirror CLI output rather than the literal title:
   - replace spaces with `-`
@@ -190,3 +197,4 @@ An execution sprint drives tickets from `Ready for execution` to `Ready for acce
 - Architect's `eng-plan.md` feeds `plan.yaml` + stream briefs when multi-stream execution is warranted (`ORCHESTRATION_WORKFLOW.md`)
 - Tester's work extends `FRAGILITY_HARDENING_WORKFLOW.md` — Tester uses that workflow as part of its toolkit
 - Backlog CLI: use `./scripts/backlog.sh` for all task operations; see `AGENTS.md §7` for the full protocol
+- Shared canon: role ownership lives in `docs/ai/ticket-workflow/`; Claude and Codex wrappers should stay thin and point back to that canon

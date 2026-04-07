@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ticket Eng"
+  short_description: "Implement one planned ticket subtask."
+  default_prompt: "Use $ticket-eng to execute a scoped ticket subtask against its acceptance checks."

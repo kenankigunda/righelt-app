@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ticket Architect"
+  short_description: "Plan implementation and split subtasks."
+  default_prompt: "Use $ticket-architect to turn a ticket into an eng plan, test plan, and backlog subtasks."

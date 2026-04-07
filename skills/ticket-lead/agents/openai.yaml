@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ticket Lead"
+  short_description: "Coordinate backlog-driven ticket delivery."
+  default_prompt: "Use $ticket-lead to run the ticket workflow or sprint flow against the shared backlog repo."

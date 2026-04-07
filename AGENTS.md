@@ -96,6 +96,7 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
   - `Tka [t-###]` = run only the Architect step (spec must already exist, or ticket is an improvement)
   - `Tke [t-###]` = fan out Eng subtasks from an existing eng plan
   - `Tkv [t-###]` = run the Lead's final end-to-end Tester validation pass
+  - Codex implementations should use the shared canon in `docs/ai/ticket-workflow/`, the `skills/ticket-*/SKILL.md` adapters, and the backlog wrapper scripts rather than MCP-only assumptions
 - Sprint flows — uses the workflow in `docs/ai/TICKET_WORKFLOW.md`:
   - `Ps [type]` = **P**lanning **S**print: drive all tickets of the given type (e.g. `feature`, `bug`, `improvement`) that are not yet `Ready for execution` through spec + planning to `Ready for execution`
   - `Es` = **E**xecution **S**print: drive all `Ready for execution` tickets through implementation + review to `Ready for acceptance`
@@ -105,6 +106,7 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 The backlog lives in a **separate sibling repo** (`../righelt-backlog` relative to this repo), always on `main`. It is the single source of truth for all task files, ticket docs (spec, eng-plan, test-plan, coordination-log), and authoring templates. It is not tracked by this repo's git history.
 
 Full ticket workflow: `docs/ai/TICKET_WORKFLOW.md`.
+Codex workflow setup check: `node scripts/check-ticket-workflow-setup.mjs`.
 
 **Write path (preference order — same sync bookends for both):**
 
