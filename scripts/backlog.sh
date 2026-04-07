@@ -11,15 +11,23 @@
 
 set -euo pipefail
 
-# Derive paths from the script's own location — reliable regardless of CWD,
-# since agents may invoke this from any directory.
-#
-# Layout assumption:
-#   <parent>/
-#     righelt/scripts/backlog.sh   (this file)
-#     righelt-backlog/backlog/     (backlog root, where config.yml lives)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MAIN_REPO="$(dirname "$SCRIPT_DIR")"          # righelt/
+# Resolve the main repo root via git — works from the main checkout or any worktree.
+# git-common-dir points to the shared .git directory; strip the trailing /.git to
+# get the main repo root regardless of how deeply nested the worktree is.
+GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null || true)
+
+if [[ -z "$GIT_COMMON" ]]; then
+  echo "ERROR: Not inside a git repository. Cannot resolve backlog path." >&2
+  exit 1
+fi
+
+if [[ "$GIT_COMMON" == ".git" ]]; then
+  MAIN_REPO="$(git rev-parse --show-toplevel)"
+else
+  # Worktree: git-common-dir is an absolute path like /path/to/repo/.git
+  MAIN_REPO="${GIT_COMMON%/.git}"
+fi
+
 BACKLOG_CWD="$(dirname "$MAIN_REPO")/righelt-backlog/backlog"
 
 if [[ ! -d "$BACKLOG_CWD" ]]; then
