@@ -118,6 +118,20 @@ const parseCommandMetadata = (body: Record<string, unknown>): CommandMetadata =>
 const parseLaunchParticipantCopyMode = (value: unknown): LaunchParticipantCopyMode | null =>
   value === "copy_source_participants" || value === "viewer_as_side_to_move" ? value : null;
 
+const shouldReconcileImportedScenarioResultingState = (
+  preserveMode: unknown,
+  currentTurnIndex: number,
+  resultingTurnIndex: number,
+) => {
+  if (preserveMode === true || preserveMode === "always") {
+    return true;
+  }
+  if (preserveMode === "if_not_behind") {
+    return resultingTurnIndex >= currentTurnIndex;
+  }
+  return false;
+};
+
 const getProcessEnvFlag = (key: string) => {
   const processLike = (globalThis as { process?: { env?: Record<string, unknown> } }).process;
   const raw = processLike?.env?.[key];
@@ -244,13 +258,19 @@ export class GameRoomDO {
         this.game.selfPlayMode = body.selfPlayMode === true || body.playgroundMode === true;
       }
       applyScenarioToGame(this.game, scenario);
-      if (body.preserveResultingState === true) {
+      if (
+        shouldReconcileImportedScenarioResultingState(
+          body.preserveResultingState,
+          Number(this.game.board.state?.turnIndex ?? 0),
+          Number(scenario.resultingState?.turnIndex ?? 0),
+        )
+      ) {
         reconcileGameToScenarioResultingState(this.game, scenario);
-      } else if (participantCopyMode !== "copy_source_participants") {
-        assignIdentityToScenarioSeat(this.game, identityId, getSeatForSide(this.game.board.state.sideToMove));
       }
       if (sourceGame && participantCopyMode && participantCopyMode !== "copy_source_participants") {
         applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
+      } else if (participantCopyMode !== "copy_source_participants") {
+        assignIdentityToScenarioSeat(this.game, identityId, getSeatForSide(this.game.board.state.sideToMove));
       }
       this.game.initialSelectionAction = initialSelectionAction ? clone(initialSelectionAction) : null;
       this.eventSeq = 1;
@@ -795,6 +815,15 @@ export class GameRoomDO {
         return json({ ok: false, error: "role_not_allowed" }, 403);
       }
       applyScenarioToGame(game, scenario);
+      if (
+        shouldReconcileImportedScenarioResultingState(
+          "if_not_behind",
+          Number(game.board.state?.turnIndex ?? 0),
+          Number(scenario.resultingState?.turnIndex ?? 0),
+        )
+      ) {
+        reconcileGameToScenarioResultingState(game, scenario);
+      }
       game.updatedAt = now();
       await this.commit({
         type: "event_appended",

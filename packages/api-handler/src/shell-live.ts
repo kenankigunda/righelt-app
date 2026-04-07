@@ -340,6 +340,7 @@ export const handleLiveGameRequest = async (
         sourceGame: sourceProjection?.game ?? null,
         participantCopyMode,
         initialSelectionAction,
+        preserveResultingState: "if_not_behind",
       }),
     });
     return {
