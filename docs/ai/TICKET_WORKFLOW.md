@@ -58,19 +58,19 @@ Write path priority (same pull/push bookends for all):
 - **Ready for execution**: spec and eng plan are complete; the ticket can be autonomously implemented without further human input.
 - **Ready for acceptance**: all implementation, local validation, and CI have passed; a human must review and either accept (→ `Done`) or provide feedback for further work.
 
-Only the Lead calls `task_edit` to advance status. All intermediate working state lives in `<backlog-repo>/docs/tickets/t-###/coordination-log.md`.
+Only the Lead calls `task_edit` to advance status. All intermediate working state lives in `<backlog-repo>/backlog/docs/tickets/t-###/coordination-log.md`.
 
 ## Document Structure Per Ticket
 
-Rich documentation lives in the **backlog repo** under `docs/tickets/t-###/`:
+Rich documentation lives in the **backlog repo** under `backlog/docs/tickets/t-###/`:
 - `spec.md` — written by PO (features + some bugs)
 - `eng-plan.md` — written by Architect
 - `test-plan.md` — written by Tester (during Architect phase, saved once)
 - `coordination-log.md` — maintained by Lead; single working-state document
 
-Authoring templates are in the backlog repo at `docs/SPEC_TEMPLATE.md` and `docs/ENG_PLAN_TEMPLATE.md`.
+Authoring templates are in the backlog repo at `backlog/docs/SPEC_TEMPLATE.md` and `backlog/docs/ENG_PLAN_TEMPLATE.md`.
 
-When agents write these files, they write to the backlog repo (not the main repo). `<backlog-repo>` resolves to the sibling `righelt-backlog` directory — use `scripts/backlog-git.sh` to operate on it. The backlog task file links to these docs via the `references` field using paths relative to the backlog repo root (e.g. `docs/tickets/t-###/spec.md`). Subtasks use IDs `t-###.01`, `t-###.02`, etc. with `parent_task_id: t-###`.
+When agents write these files, they write to the backlog repo (not the main repo). `<backlog-repo>` resolves to the sibling `righelt-backlog` directory — use `scripts/backlog-git.sh` to operate on it. The backlog task file links to these docs via the `references` field using paths relative to the backlog repo root (e.g. `backlog/docs/tickets/t-###/spec.md`). Subtasks use IDs `t-###.01`, `t-###.02`, etc. with `parent_task_id: t-###`.
 
 ## Lead Execution Loop
 
@@ -78,13 +78,13 @@ When agents write these files, they write to the backlog repo (not the main repo
 Human creates ticket via `task_create` MCP or `backlog task create` CLI: title, label (`feature`/`improvement`/`bug`), priority, brief description. Status: `To Do`.
 
 ### Step 1 — Assignment
-Lead calls `task_view` to read label and route. Calls `task_edit`: set assignee, status → `Spec` (feature/bug) or `Planning` (improvement). Creates `<backlog-repo>/docs/tickets/t-###/coordination-log.md`. Updates `references` field.
+Lead calls `task_view` to read label and route. Calls `task_edit`: set assignee, status → `Spec` (feature/bug) or `Planning` (improvement). Creates `<backlog-repo>/backlog/docs/tickets/t-###/coordination-log.md`. Updates `references` field.
 
 ### Step 2 — Product Owner (feature and bug tickets only)
 Lead spawns `product-owner` agent with the ticket ID. PO:
 1. Calls `task_view`; reads focused reference docs per its role file
 2. **Human checkpoint**: asks all questions needed to eliminate ambiguity (features: uncapped; bugs: only if behavior/scope is genuinely unclear)
-3. Drafts `<backlog-repo>/docs/tickets/t-###/spec.md` from `<backlog-repo>/docs/SPEC_TEMPLATE.md`
+3. Drafts `<backlog-repo>/backlog/docs/tickets/t-###/spec.md` from `<backlog-repo>/backlog/docs/SPEC_TEMPLATE.md`
    - Features: full spec
    - Bugs: lightweight (§1, §3, §4, §8) unless novel UX; includes rationale line
 4. Calls `task_edit` to update `references` and Acceptance Criteria
@@ -96,8 +96,8 @@ Lead spawns `architect` agent with the ticket ID. Architect:
 1. Calls `task_view`; reads spec if present; reads `docs/TESTING_STRATEGY.md`, `docs/WORKFLOW_COVERAGE.md`, one existing `plan.yaml`
 2. Evaluates approach: ≥2 options with tradeoffs for non-trivial features; one clear approach with rationale for bugs/improvements
 3. **Human checkpoint**: asks all questions needed to resolve genuine tradeoffs (may skip if approach is unambiguous — last human-in-the-loop point before autonomous execution)
-4. **Consults Tester once** via `Agent` tool: passes design → receives test plan → saves as `<backlog-repo>/docs/tickets/t-###/test-plan.md`
-5. Drafts `<backlog-repo>/docs/tickets/t-###/eng-plan.md` from `<backlog-repo>/docs/ENG_PLAN_TEMPLATE.md`
+4. **Consults Tester once** via `Agent` tool: passes design → receives test plan → saves as `<backlog-repo>/backlog/docs/tickets/t-###/test-plan.md`
+5. Drafts `<backlog-repo>/backlog/docs/tickets/t-###/eng-plan.md` from `<backlog-repo>/backlog/docs/ENG_PLAN_TEMPLATE.md`
 6. Creates subtasks via `task_create` with `parentTaskId: t-###`; sets `depends_on` and WIP limit
 7. Calls `task_edit` on parent to add `eng-plan.md` and `test-plan.md` to `references`; populates **Implementation Plan** (3–5 bullet summary of approach + link to `eng-plan.md`) and **Definition of Done** (technical checklist from acceptance checks) — all in one call.
 

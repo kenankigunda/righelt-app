@@ -134,7 +134,7 @@ worktree: "funny-mayer"
 ```
 Clear (or leave as audit trail) when the ticket moves to Ready for acceptance.
 
-**Ticket documents** (spec, eng-plan, test-plan, coordination-log) are stored in the backlog repo under `docs/tickets/t-###/`. Authoring templates are at `docs/SPEC_TEMPLATE.md` and `docs/ENG_PLAN_TEMPLATE.md` in the backlog repo. When agents write these files, they write to the backlog repo path, not to the main repo.
+**Ticket documents** (spec, eng-plan, test-plan, coordination-log) are stored in the backlog repo under `backlog/docs/tickets/t-###/`. Authoring templates are at `backlog/docs/SPEC_TEMPLATE.md` and `backlog/docs/ENG_PLAN_TEMPLATE.md` in the backlog repo. When agents write these files, they write to the backlog repo path, not to the main repo.
 
 - Prefer Backlog MCP or the local `backlog` CLI for all task creation, editing, archiving, and status updates so task files, metadata, and filenames stay consistent.
 - Prefer the local CLI over manual file edits whenever MCP is unavailable. Edit task files directly only when both Backlog MCP and the `backlog` CLI are unavailable or cannot perform the required operation.
