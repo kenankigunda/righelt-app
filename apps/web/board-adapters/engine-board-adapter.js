@@ -1230,9 +1230,10 @@ export function createEngineBoardAdapter() {
               ? findPieceById(snapshot, effectiveSelection.selectedPieceId)
               : null;
           const legalPushToCell = legalAtCell.some((action) => action.type === "push");
+          const preferredActionTypeAtCell = pickBestActionTypeForTarget(previewsAtCell, currentActionType) ?? currentActionType;
           const showPushPreviewDefenderStack =
             isTarget &&
-            currentActionType === "push" &&
+            preferredActionTypeAtCell === "push" &&
             cellPieces.length === 1 &&
             cellPiece &&
             selectedActorForPushPreview &&

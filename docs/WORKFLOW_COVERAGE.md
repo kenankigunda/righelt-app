@@ -41,8 +41,8 @@ Status meanings:
 | Tutorial first-run trigger, skip/next progression, completion, and restart | `present` | `partial` | `partial` | Browser proof now covers tutorial route progression, skip, completion back into the game route, and reset-on-revisit; explicit first-run auto-entry and failure-path handling are still not browser-covered. |
 | Self-play / play-as-both activation and seat semantics | `missing` | `missing` | `present` | Transport and store coverage prove join restrictions and dual-seat behavior; browser flow coverage is still missing. |
 | Offline-local self-play creation, reload restore, and explicit `Go online` confirmation | `missing` | `missing` | `missing` | This remains the largest workflow gap relative to the web-app spec. Current tests only cover adjacent pieces like live-sync offline handling and legacy self-play normalization. |
-| Scenario import into a live game | `present` | `missing` | `present` | Browser coverage now includes both imported-scenario home-card rendering and the real scenario-flyout load flow into an empty live game. |
-| Scenario save/update authoring flow | `present` | `missing` | `partial` | Browser coverage now proves saving a scenario through the flyout and loading it back into a fresh game; dedicated browser proof for update and authoring error handling is still missing. |
+| Scenario import into a live game | `present` | `present` | `present` | Browser coverage now includes imported-scenario home-card rendering, the real scenario-flyout load flow into an empty live game, and the in-flyout recovery path when scenario import fails. |
+| Scenario save/update authoring flow | `present` | `present` | `present` | Browser coverage now proves saving and updating scenarios through the flyout, preserving clicked source/destination selections while the flyout is open, restoring hover selection after the flyout closes, round-tripping history-authored pre-move updates, and surfacing local-writer save/update failures without leaving controls stuck pending. |
 | History branch launch from selected move | `present` | `present` | `present` | Browser proof covers optimistic popup launch, stable route/request/response IDs, delayed-commit usability, the first immediate branched move, and branch-create failure handling in the popup shell. |
 | Notification and prompt quality across core shell states | `missing` | `missing` | `present` | Store coverage proves required categories exist, but browser proof for prompt timing, replacement, and non-janky transitions is still absent. |
 | Localized pending controls for join / approve / invite-copy | `present` | `partial` | `present` | Browser proof covers pulsing local pending state and pending-game invite copy waiting for commit; broader error-path polish for every button variant is still mostly owned below browser level. |
@@ -55,7 +55,7 @@ These are not always “user workflows,” but regressions here directly damage 
 | --- | --- | --- | --- | --- |
 | Routing correctness across home / game / invite / tutorial / flyout states | `n/a` | `n/a` | `present` | Route parsing/building and flyout-state collapse are covered at the unit layer. |
 | Runtime sync preserves board selection correctly across authoritative updates | `n/a` | `n/a` | `present` | Shell runtime-sync tests cover selection reset/preservation rules that strongly affect perceived polish. |
-| Board runtime interaction polish and continuation rendering | `n/a` | `n/a` | `present` | Extensive board-runtime and adapter coverage exists for hover/click semantics, continuation prompts, overlays, and removal feedback. |
+| Board runtime interaction polish and continuation rendering | `partial` | `n/a` | `present` | Extensive board-runtime and adapter coverage exists for hover/click semantics, continuation prompts, overlays, and removal feedback. Playwright now also proves the lone auto-selected push preview stays visible in the real browser, while the broader action matrix remains owned below the browser layer. |
 | Pages proxy behavior and local-dev fallback | `n/a` | `n/a` | `present` | Proxy coverage includes service binding, local fallback, suffixed ports, and stable failure behavior. |
 | Bootstrap determinism, cache policy, and startup-path stability | `n/a` | `n/a` | `present` | Bootstrap/cache/startup tests are strong and should remain a hard gate because startup regressions hurt every workflow. |
 | Live websocket replay vs state-sync fallback | `n/a` | `n/a` | `present` | Durable-object websocket tests plus live-sync tests cover replay/fallback behavior beneath the browser layer. |
@@ -69,11 +69,9 @@ The most important follow-up coverage still missing from the current repo is:
    the spec expects offline creation, local persistence, reload restore, disabled remote actions, visible offline state, and explicit `Go online` confirmation. The current automated evidence does not yet prove that workflow holistically.
 2. Home-page public-entry flow:
    entering a game from the home list as a non-participant should still be browser-proven to open the join decision flow rather than silently joining or routing incorrectly.
-3. Scenario update and authoring failure handling:
-   browser proof now exists for save + load, but update-in-place, validation failures, and local-writer failure states are still mostly covered below the browser layer.
-4. Tutorial first-run auto-entry:
+3. Tutorial first-run auto-entry:
    the browser suite now covers progression/completion/reset, but the true first-run trigger and any associated route handoff edge cases are still not proven.
-5. Prompt and explainer polish:
+4. Prompt and explainer polish:
    the app still has limited browser proof for waiting/your-turn prompts, disabled-action explainers, and notification replacement timing.
 
 ## Current Guidance

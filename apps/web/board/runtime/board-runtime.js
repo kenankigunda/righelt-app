@@ -75,6 +75,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let removalEffectsTimer = null;
   let internalActionType = defaultActionType;
   let overlayMode = OVERLAY_MODE.INTERACTIVE;
+  let lastUsesHoverTargetSelection = null;
   let recordedAction = null;
   let recordedActionStartPiece = null;
   /** @type {Array<{row: number, col: number, ownerSeat?: "p1" | "p2" | null, kind?: "unit" | "commander" | null, piece?: unknown | null}>} */
@@ -176,6 +177,20 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     const autoSelectedTarget = deriveAutoSelectedTarget(actions);
     if (autoSelectedTarget) {
       setSelectedTarget(autoSelectedTarget, origin);
+      syncActionTypeForSelectedTarget(actions);
+    }
+  };
+
+  const syncActionTypeForSelectedTarget = (actions = selectedPieceMovePreviews) => {
+    if (!selectedTarget) {
+      return;
+    }
+    const actionsAtTarget = (Array.isArray(actions) ? actions : []).filter(
+      (action) => action.to && action.to.row === selectedTarget.row && action.to.col === selectedTarget.col,
+    );
+    const preferredActionType = pickBestActionTypeForTarget(actionsAtTarget, getActionType());
+    if (preferredActionType && preferredActionType !== getActionType()) {
+      setActionType(preferredActionType);
     }
   };
 
@@ -645,6 +660,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       lastPhaseInitializedForPieceId = selectedPieceId;
     }
     maybeAutoSelectTarget(selectedPieceMoves);
+    syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
   };
 
   const applyForcedContinuationSelection = () => {
@@ -692,6 +708,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
     selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
     maybeAutoSelectTarget(selectedPieceMoves);
+    syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
     renderBoard();
     renderStatus();
   };
@@ -1233,10 +1250,18 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const syncInteractionCapabilities = () => {
-    if (getUsesHoverTargetSelection()) {
+    const usesHoverTargetSelection = getUsesHoverTargetSelection();
+    if (lastUsesHoverTargetSelection === usesHoverTargetSelection) {
       return false;
     }
-    return clearHoveredTarget();
+    lastUsesHoverTargetSelection = usesHoverTargetSelection;
+    const clearedHoverTarget = usesHoverTargetSelection ? false : clearHoveredTarget();
+    if (!state || !mounted) {
+      return clearedHoverTarget;
+    }
+    renderBoard();
+    renderStatus();
+    return true;
   };
 
   return {

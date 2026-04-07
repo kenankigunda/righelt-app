@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
 const appSource = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
+const historyPreviewSource = readFileSync(join(testDir, "..", "shell", "history-preview.js"), "utf8");
 const shellCssSrc = readFileSync(join(testDir, "..", "shell", "shell.css"), "utf8");
 
 test("history mode uses selected move snapshot and return-to-live clears history mode", async () => {
@@ -255,11 +256,12 @@ test("I-15: history-mode view model prefers move snapshot over selection snapsho
 });
 
 test("I-16: history destruction overlays derive inactive render state from the move selection snapshot", () => {
-  assert.match(appSource, /const preActionPieces = Array\.isArray\(move\?\.selectionSnapshot\?\.pieces\) \? move\.selectionSnapshot\.pieces : \[\];/);
-  assert.match(appSource, /const preActionPiece =[\s\S]*piece\?\.position\?\.row === record\.position\.row[\s\S]*piece\?\.position\?\.col === record\.position\.col/s);
-  assert.match(appSource, /supplied:\s*preActionPiece \? preActionPiece\.supplied !== false : record\.supplied \?\? true,/);
-  assert.match(appSource, /commanded:\s*preActionPiece \? preActionPiece\.commanded !== false : record\.commanded \?\? true,/);
-  assert.match(appSource, /piece:\s*preActionPiece[\s\S]*id:\s*preActionPiece\.id \?\? null,[\s\S]*owner:\s*preActionPiece\.owner,[\s\S]*kind:\s*preActionPiece\.kind,/s);
+  assert.match(appSource, /return buildDestroyedPieceOverlays\(\{[\s\S]*destroyedPieceRecords:\s*move\?\.destroyedPieces \?\? \[\],[\s\S]*preActionSnapshot:\s*move\?\.selectionSnapshot \?\? null,[\s\S]*\}\);/s);
+  assert.match(historyPreviewSource, /const preActionPieces = Array\.isArray\(preActionSnapshot\?\.pieces\) \? preActionSnapshot\.pieces : \[\];/);
+  assert.match(historyPreviewSource, /const preActionPiece =[\s\S]*sameCoordinate\(piece\?\.position, record\.position\)/s);
+  assert.match(historyPreviewSource, /supplied:\s*preActionPiece \? preActionPiece\.supplied !== false : record\.supplied \?\? true,/);
+  assert.match(historyPreviewSource, /commanded:\s*preActionPiece \? preActionPiece\.commanded !== false : record\.commanded \?\? true,/);
+  assert.match(historyPreviewSource, /piece:\s*preActionPiece[\s\S]*id:\s*preActionPiece\.id \?\? null,[\s\S]*owner:\s*preActionPiece\.owner,[\s\S]*kind:\s*preActionPiece\.kind,/s);
 });
 
 // I-18 — new move appended while pinned to earlier history: move list grows but historyIndex stays

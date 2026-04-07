@@ -2224,6 +2224,188 @@ test("board runtime keeps auto-selected lone targets on hover-capable devices un
   ]);
 });
 
+test("board runtime promotes lone auto-selected targets to the correct action type across action kinds", async () => {
+  const cases = [
+    {
+      type: "move",
+      trigger: "source-click",
+      snapshot: {
+        sideToMove: "P1",
+        turnIndex: 0,
+        continuation: null,
+        outcome: null,
+        pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true }],
+      },
+      action: { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } },
+    },
+    {
+      type: "project",
+      trigger: "source-click",
+      snapshot: {
+        sideToMove: "P1",
+        turnIndex: 0,
+        continuation: null,
+        outcome: null,
+        pieces: [{ id: "A1", owner: "P1", kind: "commander", position: { row: 4, col: 2 }, supplied: true, commanded: true }],
+      },
+      action: { type: "project", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } },
+    },
+    {
+      type: "rush",
+      trigger: "source-click",
+      snapshot: {
+        sideToMove: "P1",
+        turnIndex: 3,
+        continuation: null,
+        outcome: null,
+        pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 4, col: 2 }, supplied: true, commanded: true }],
+      },
+      action: { type: "rush", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 4 } },
+    },
+    {
+      type: "push",
+      trigger: "source-click",
+      snapshot: {
+        sideToMove: "P2",
+        turnIndex: 12,
+        continuation: null,
+        outcome: null,
+        pieces: [
+          { id: "A1", owner: "P2", kind: "unit", position: { row: 6, col: 1 }, supplied: true, commanded: true },
+          { id: "A2", owner: "P2", kind: "unit", position: { row: 5, col: 1 }, supplied: true, commanded: true },
+          { id: "D1", owner: "P1", kind: "unit", position: { row: 6, col: 2 }, supplied: true, commanded: true },
+        ],
+      },
+      action: { type: "push", actorId: "A1", from: { row: 6, col: 1 }, to: { row: 6, col: 2 } },
+    },
+    {
+      type: "follow",
+      trigger: "forced-selection",
+      snapshot: {
+        sideToMove: "P1",
+        turnIndex: 7,
+        continuation: { type: "push", phase: "follow", followGroupPieceIds: ["A1"] },
+        outcome: null,
+        pieces: [{ id: "A1", owner: "P1", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true }],
+      },
+      action: { type: "follow", actorId: "A1", from: { row: 5, col: 5 }, to: { row: 5, col: 4 } },
+    },
+    {
+      type: "retreat",
+      trigger: "forced-selection",
+      snapshot: {
+        sideToMove: "P2",
+        turnIndex: 9,
+        continuation: { type: "push", phase: "retreat", pushedPieceId: "A1" },
+        outcome: null,
+        pieces: [{ id: "A1", owner: "P2", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true }],
+      },
+      action: { type: "retreat", actorId: "A1", from: { row: 5, col: 5 }, to: { row: 6, col: 5 } },
+    },
+  ];
+
+  for (const testCase of cases) {
+    let onCellClick = null;
+    const appliedActions = [];
+
+    const runtime = createBoardRuntime({
+      boardAdapter: {
+        mount: ({ onCellClick: nextOnCellClick }) => {
+          onCellClick = nextOnCellClick;
+        },
+        render: noop,
+        getSelectedPieceSummary: ({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) => {
+          const selectedPiece = snapshot?.pieces?.find((piece) => piece.id === selectedPieceId) ?? null;
+          if (!selectedPiece) {
+            return null;
+          }
+          return {
+            details: { owner: selectedPiece.owner },
+            actions: selectedPieceMovePreviews ?? selectedPieceMoves,
+          };
+        },
+        getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+        getPieceAt: (snapshot, coord) =>
+          snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+        nextSelectionForCell: ({ snapshot, clickedCoord, currentActionType }) => {
+          const clickedPiece =
+            snapshot?.pieces?.find((piece) => piece.position.row === clickedCoord.row && piece.position.col === clickedCoord.col) ??
+            null;
+          if (!clickedPiece) {
+            return {
+              selection: {
+                selectedPieceId: "A1",
+                source: { ...testCase.action.from },
+                target: null,
+              },
+              nextActionType: currentActionType,
+            };
+          }
+          return {
+            selection: {
+              selectedPieceId: clickedPiece.id,
+              source: { ...clickedPiece.position },
+              target: null,
+            },
+            nextActionType: currentActionType,
+          };
+        },
+      },
+      host: {
+        applyAction: async (_state, action) => {
+          appliedActions.push(action);
+          return {
+            accepted: true,
+            state: { sideToMove: "P1", turnIndex: 0, continuation: null, outcome: null, pieces: [] },
+            legalActions: [],
+          };
+        },
+        loadInitialState: async () => ({ state: null, legalActions: [] }),
+        loadLegalActions: async () => ({ state: null, legalActions: [] }),
+        loadPieceMoves: async () => ({
+          state: null,
+          actions: [testCase.action],
+          previewActions: [{ ...testCase.action, legal: true }],
+        }),
+        endTurn: async (state) => ({ accepted: true, state, legalActions: [], outcome: state?.outcome ?? null }),
+        canInteract: () => true,
+      },
+      controls: {
+        getSupportsHover: () => true,
+      },
+    });
+
+    runtime.bindElements({
+      boardEl: {},
+      overlayLinesEl: {},
+      boardPreviewLabelEl: null,
+      boardTurnIndicatorEl: null,
+    });
+    await runtime.loadSnapshot(testCase.snapshot, {
+      legalActions: [testCase.action],
+    });
+
+    if (testCase.trigger === "source-click") {
+      onCellClick(testCase.action.from);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    assert.deepEqual(
+      runtime.getSelection(),
+      {
+        selectedPieceId: "A1",
+        source: { ...testCase.action.from },
+        target: { ...testCase.action.to },
+      },
+      `expected ${testCase.type} target to auto-select`,
+    );
+    assert.equal(runtime.getActionType(), testCase.type, `expected ${testCase.type} action type to sync from the lone target`);
+
+    onCellClick(testCase.action.to);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(appliedActions, [testCase.action], `expected ${testCase.type} confirmation to submit the synced action`);
+  }
+});
+
 test("board runtime clears transient hover targets when hover support turns off", async () => {
   let onCellClick = null;
   let onCellHoverStart = null;
@@ -2344,6 +2526,305 @@ test("board runtime clears transient hover targets when hover support turns off"
     selectedPieceId: "A1",
     source: { row: 4, col: 2 },
     target: null,
+  });
+});
+
+test("board runtime clears transient hover targets when click target selection becomes forced", async () => {
+  let onCellClick = null;
+  let onCellHoverStart = null;
+  let forceClickTargetSelection = false;
+  const appliedActions = [];
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: ({ onCellClick: nextOnCellClick, onCellHoverStart: nextOnCellHoverStart }) => {
+        onCellClick = nextOnCellClick;
+        onCellHoverStart = nextOnCellHoverStart;
+      },
+      render: noop,
+      getSelectedPieceSummary: ({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) => {
+        const selectedPiece = snapshot?.pieces?.find((piece) => piece.id === selectedPieceId) ?? null;
+        if (!selectedPiece) {
+          return null;
+        }
+        return {
+          details: { owner: selectedPiece.owner },
+          actions: selectedPieceMovePreviews ?? selectedPieceMoves,
+        };
+      },
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: ({ snapshot, clickedCoord, currentActionType, selection, selectedPieceMoves }) => {
+        const clickedPiece =
+          snapshot?.pieces?.find((piece) => piece.position.row === clickedCoord.row && piece.position.col === clickedCoord.col) ?? null;
+        if (clickedPiece) {
+          return {
+            selection: {
+              selectedPieceId: clickedPiece.id,
+              source: { ...clickedPiece.position },
+              target: null,
+            },
+            nextActionType: currentActionType,
+          };
+        }
+        const actionAtTarget = selectedPieceMoves.find(
+          (action) => action.to?.row === clickedCoord.row && action.to?.col === clickedCoord.col,
+        );
+        if (actionAtTarget) {
+          return {
+            selection: {
+              ...selection,
+              target: clickedCoord,
+            },
+            nextActionType: actionAtTarget.type,
+          };
+        }
+        return { selection, nextActionType: currentActionType };
+      },
+    },
+    host: {
+      applyAction: async (_state, action) => {
+        appliedActions.push(action);
+        return {
+          accepted: true,
+          state: { sideToMove: "P2", turnIndex: 1, continuation: null, outcome: null, pieces: [] },
+          legalActions: [],
+        };
+      },
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({
+        state: null,
+        actions: [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }],
+        previewActions: [{ type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 }, legal: true }],
+      }),
+      endTurn: async (state) => ({ accepted: true, state, legalActions: [], outcome: state?.outcome ?? null }),
+      canInteract: () => true,
+    },
+    controls: {
+      getSupportsHover: () => true,
+      getForceClickTargetSelection: () => forceClickTargetSelection,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: null,
+    boardTurnIndicatorEl: null,
+  });
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      outcome: null,
+      pieces: [
+        {
+          id: "A1",
+          owner: "P1",
+          kind: "unit",
+          position: { row: 4, col: 2 },
+          supplied: true,
+          commanded: true,
+        },
+      ],
+    },
+    {
+      legalActions: [
+        { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } },
+        { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 5, col: 2 } },
+      ],
+    },
+  );
+
+  onCellClick({ row: 4, col: 2 });
+  onCellHoverStart({ row: 4, col: 3 });
+  assert.deepEqual(runtime.getSelection(), {
+    selectedPieceId: "A1",
+    source: { row: 4, col: 2 },
+    target: { row: 4, col: 3 },
+  });
+
+  forceClickTargetSelection = true;
+  assert.equal(runtime.syncInteractionCapabilities(), true);
+  assert.deepEqual(runtime.getSelection(), {
+    selectedPieceId: "A1",
+    source: { row: 4, col: 2 },
+    target: null,
+  });
+
+  onCellHoverStart({ row: 4, col: 3 });
+  assert.deepEqual(runtime.getSelection(), {
+    selectedPieceId: "A1",
+    source: { row: 4, col: 2 },
+    target: null,
+  });
+
+  onCellClick({ row: 4, col: 3 });
+  assert.deepEqual(runtime.getSelection(), {
+    selectedPieceId: "A1",
+    source: { row: 4, col: 2 },
+    target: { row: 4, col: 3 },
+  });
+
+  onCellClick({ row: 4, col: 3 });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(appliedActions, [
+    {
+      type: "move",
+      actorId: "A1",
+      from: { row: 4, col: 2 },
+      to: { row: 4, col: 3 },
+    },
+  ]);
+});
+
+test("board runtime restores hover target selection when click target selection stops being forced", async () => {
+  let onCellClick = null;
+  let onCellHoverStart = null;
+  let forceClickTargetSelection = true;
+  let boardPreviewLabelValue = "";
+
+  const boardPreviewLabelEl = {
+    get textContent() {
+      return boardPreviewLabelValue;
+    },
+    set textContent(next) {
+      boardPreviewLabelValue = next;
+    },
+    get innerHTML() {
+      return boardPreviewLabelValue;
+    },
+    set innerHTML(next) {
+      boardPreviewLabelValue = next;
+    },
+    addEventListener: noop,
+    removeEventListener: noop,
+  };
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: ({ onCellClick: nextOnCellClick, onCellHoverStart: nextOnCellHoverStart }) => {
+        onCellClick = nextOnCellClick;
+        onCellHoverStart = nextOnCellHoverStart;
+      },
+      render: noop,
+      getSelectedPieceSummary: ({ snapshot, selectedPieceId, selectedPieceMoves, selectedPieceMovePreviews }) => {
+        const selectedPiece = snapshot?.pieces?.find((piece) => piece.id === selectedPieceId) ?? null;
+        if (!selectedPiece) {
+          return null;
+        }
+        return {
+          details: { owner: selectedPiece.owner },
+          actions: selectedPieceMovePreviews ?? selectedPieceMoves,
+        };
+      },
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: ({ snapshot, clickedCoord, currentActionType, selection, selectedPieceMoves }) => {
+        const clickedPiece =
+          snapshot?.pieces?.find((piece) => piece.position.row === clickedCoord.row && piece.position.col === clickedCoord.col) ?? null;
+        if (clickedPiece) {
+          return {
+            selection: {
+              selectedPieceId: clickedPiece.id,
+              source: { ...clickedPiece.position },
+              target: null,
+            },
+            nextActionType: currentActionType,
+          };
+        }
+        const actionAtTarget = selectedPieceMoves.find(
+          (action) => action.to?.row === clickedCoord.row && action.to?.col === clickedCoord.col,
+        );
+        if (actionAtTarget) {
+          return {
+            selection: {
+              ...selection,
+              target: clickedCoord,
+            },
+            nextActionType: actionAtTarget.type,
+          };
+        }
+        return { selection, nextActionType: currentActionType };
+      },
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({
+        state: null,
+        actions: [
+          { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } },
+          { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 5, col: 2 } },
+        ],
+        previewActions: [
+          { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 }, legal: true },
+          { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 5, col: 2 }, legal: true },
+        ],
+      }),
+      canInteract: () => true,
+    },
+    controls: {
+      getSupportsHover: () => true,
+      getForceClickTargetSelection: () => forceClickTargetSelection,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl,
+    boardTurnIndicatorEl: null,
+  });
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P1",
+      turnIndex: 0,
+      continuation: null,
+      outcome: null,
+      pieces: [
+        {
+          id: "A1",
+          owner: "P1",
+          kind: "unit",
+          position: { row: 4, col: 2 },
+          supplied: true,
+          commanded: true,
+        },
+      ],
+    },
+    {
+      legalActions: [
+        { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } },
+        { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 5, col: 2 } },
+      ],
+    },
+  );
+
+  onCellClick({ row: 4, col: 2 });
+  onCellClick({ row: 4, col: 3 });
+  assert.deepEqual(runtime.getSelection(), {
+    selectedPieceId: "A1",
+    source: { row: 4, col: 2 },
+    target: { row: 4, col: 3 },
+  });
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Click again to"), true);
+
+  forceClickTargetSelection = false;
+  assert.equal(runtime.syncInteractionCapabilities(), true);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Click to"), true);
+
+  onCellHoverStart({ row: 5, col: 2 });
+  assert.deepEqual(runtime.getSelection(), {
+    selectedPieceId: "A1",
+    source: { row: 4, col: 2 },
+    target: { row: 5, col: 2 },
   });
 });
 

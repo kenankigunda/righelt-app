@@ -169,3 +169,52 @@ test("mini board preview forwards selection overlays to the adapter", async () =
     });
   });
 });
+
+test("mini board preview forwards optional rich render inputs to the adapter", async () => {
+  await withFakeDom(async () => {
+    const registry = new Map();
+    const renderCalls = [];
+
+    syncMiniBoardPreviews({
+      previews: [
+        {
+          rootEl: new FakeElement("div"),
+          snapshot: { sideToMove: "P2", pieces: [] },
+          selection: {
+            selectedPieceId: "P2-1",
+            source: { row: 5, col: 4 },
+            target: { row: 7, col: 4 },
+          },
+          overlay: {
+            mode: "recorded-action",
+            recordedAction: { type: "project", actorId: "P2-1", from: { row: 5, col: 4 }, to: { row: 7, col: 4 } },
+            recordedActionStartPiece: { id: "P2-1" },
+            destroyedPieces: [{ row: 4, col: 4 }],
+          },
+          legalActions: [{ type: "project", actorId: "P2-1", from: { row: 5, col: 4 }, to: { row: 7, col: 4 } }],
+          selectedPieceId: "P2-1",
+          selectedPieceMoves: [{ type: "project", actorId: "P2-1", from: { row: 5, col: 4 }, to: { row: 7, col: 4 } }],
+          selectedPieceMovePreviews: [{ type: "project", actorId: "P2-1", from: { row: 5, col: 4 }, to: { row: 7, col: 4 } }],
+          currentActionType: "project",
+          selectedPieceOverlayPhase: "actionPreviews",
+          previewKey: "rich:1",
+        },
+      ],
+      registry,
+      createAdapter: () => ({
+        mount() {},
+        render(options) {
+          renderCalls.push(options);
+        },
+        unmount() {},
+      }),
+    });
+
+    assert.equal(renderCalls[0]?.overlay?.mode, "recorded-action");
+    assert.equal(renderCalls[0]?.currentActionType, "project");
+    assert.equal(renderCalls[0]?.selectedPieceId, "P2-1");
+    assert.deepEqual(renderCalls[0]?.selectedPieceMoves, [
+      { type: "project", actorId: "P2-1", from: { row: 5, col: 4 }, to: { row: 7, col: 4 } },
+    ]);
+  });
+});

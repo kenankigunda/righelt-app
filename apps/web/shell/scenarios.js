@@ -182,6 +182,33 @@ export const buildScenarioFromGame = async (
   });
 };
 
+const toSavedSelectionFromAction = (action, actorSide, turnIndex) => {
+  if (!action?.from || actorSide == null || !Number.isFinite(Number(turnIndex))) {
+    return null;
+  }
+  return normalizeSavedSelection({
+    source: action.from,
+    target: action.to ?? null,
+    actorSide,
+    turnIndex: Number(turnIndex),
+  });
+};
+
+export const resolveHistoryScenarioExportContext = (game) => {
+  if (!game?.inHistoryMode || !Number.isInteger(game?.historyIndex)) {
+    return null;
+  }
+  const move = Array.isArray(game?.moves) ? game.moves[game.historyIndex] : null;
+  if (!move?.selectionSnapshot || !move?.action) {
+    return null;
+  }
+  return {
+    currentSnapshot: structuredClone(move.selectionSnapshot),
+    moveLimit: game.historyIndex,
+    savedSelection: toSavedSelectionFromAction(move.action, move.actorSide, move.turnIndex),
+  };
+};
+
 export const buildHistoryBranchSeedFromGame = (game, moveIndex) => {
   const move = Array.isArray(game?.moves) ? game.moves[moveIndex] : null;
   if (!move?.selectionSnapshot || !move?.action) {

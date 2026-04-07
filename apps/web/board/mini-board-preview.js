@@ -1,3 +1,6 @@
+const DEFAULT_SELECTION = { selectedPieceId: null, source: null, target: null };
+const DEFAULT_OVERLAY = { mode: "none" };
+
 const createPreviewElements = ({ rootEl, sizeVariant = "compact" }) => {
   rootEl.replaceChildren();
   rootEl.classList.add("mini-board-preview-root");
@@ -21,7 +24,20 @@ const createPreviewElements = ({ rootEl, sizeVariant = "compact" }) => {
   return { boardEl, overlayLinesEl };
 };
 
-export const createMiniBoardPreview = ({ rootEl, snapshot, selection = null, previewKey, createAdapter, sizeVariant = "compact" }) => {
+const normalizePreviewPayload = (payload) => ({
+  snapshot: payload?.snapshot ?? null,
+  selection: payload?.selection ?? DEFAULT_SELECTION,
+  overlay: payload?.overlay ?? DEFAULT_OVERLAY,
+  legalActions: Array.isArray(payload?.legalActions) ? payload.legalActions : [],
+  selectedPieceId: payload?.selectedPieceId ?? payload?.selection?.selectedPieceId ?? null,
+  selectedPieceMoves: Array.isArray(payload?.selectedPieceMoves) ? payload.selectedPieceMoves : [],
+  selectedPieceMovePreviews: Array.isArray(payload?.selectedPieceMovePreviews) ? payload.selectedPieceMovePreviews : [],
+  currentActionType: payload?.currentActionType ?? "pass",
+  selectedPieceOverlayPhase: payload?.selectedPieceOverlayPhase ?? "actionPreviews",
+  previewKey: payload?.previewKey ?? "null",
+});
+
+export const createMiniBoardPreview = ({ rootEl, preview, createAdapter, sizeVariant = "compact" }) => {
   if (!(rootEl instanceof HTMLElement)) {
     throw new Error("Mini board preview root must be an element");
   }
@@ -40,36 +56,40 @@ export const createMiniBoardPreview = ({ rootEl, snapshot, selection = null, pre
     onCellClick: () => {},
   });
 
-  const renderPreview = (nextSnapshot, nextSelection, nextPreviewKey) => {
-    if (!nextSnapshot) {
+  const renderPreview = (nextPreview) => {
+    const normalized = normalizePreviewPayload(nextPreview);
+    if (!normalized.snapshot) {
       elements.boardEl.replaceChildren();
       elements.overlayLinesEl.replaceChildren();
-      lastPreviewKey = nextPreviewKey;
+      lastPreviewKey = normalized.previewKey;
       return;
     }
     adapter.render({
-      snapshot: nextSnapshot,
-      selection: nextSelection ?? { selectedPieceId: null, source: null, target: null },
-      overlay: { mode: "none" },
-      legalActions: [],
-      selectedPieceMoves: [],
-      selectedPieceMovePreviews: [],
+      snapshot: normalized.snapshot,
+      selection: normalized.selection,
+      overlay: normalized.overlay,
+      legalActions: normalized.legalActions,
+      selectedPieceId: normalized.selectedPieceId,
+      selectedPieceMoves: normalized.selectedPieceMoves,
+      selectedPieceMovePreviews: normalized.selectedPieceMovePreviews,
       removalEffects: [],
       allowFreeSelection: false,
-      currentActionType: "pass",
+      currentActionType: normalized.currentActionType,
+      selectedPieceOverlayPhase: normalized.selectedPieceOverlayPhase,
       interactionMode: "static",
     });
-    lastPreviewKey = nextPreviewKey;
+    lastPreviewKey = normalized.previewKey;
   };
 
-  renderPreview(snapshot, selection, previewKey);
+  renderPreview(preview);
 
   return {
-    update(nextSnapshot, nextSelection, nextPreviewKey) {
-      if (nextPreviewKey === lastPreviewKey) {
+    update(nextPreview) {
+      const normalized = normalizePreviewPayload(nextPreview);
+      if (normalized.previewKey === lastPreviewKey) {
         return;
       }
-      renderPreview(nextSnapshot, nextSelection, nextPreviewKey);
+      renderPreview(normalized);
     },
     destroy() {
       adapter.unmount();
@@ -91,7 +111,7 @@ export const syncMiniBoardPreviews = ({ previews, registry, createAdapter }) => 
 
     const existing = registry.get(preview.rootEl);
     if (existing) {
-      existing.update(preview.snapshot ?? null, preview.selection ?? null, preview.previewKey ?? "null");
+      existing.update(preview);
       continue;
     }
 
@@ -99,9 +119,7 @@ export const syncMiniBoardPreviews = ({ previews, registry, createAdapter }) => 
       preview.rootEl,
       createMiniBoardPreview({
         rootEl: preview.rootEl,
-        snapshot: preview.snapshot ?? null,
-        selection: preview.selection ?? null,
-        previewKey: preview.previewKey ?? "null",
+        preview,
         createAdapter,
         sizeVariant: preview.sizeVariant ?? "compact",
       }),

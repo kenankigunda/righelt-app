@@ -376,11 +376,13 @@ test("shell renders durable browser E2E selectors for core workflow surfaces", (
 test("shell renders and reconciles mini board previews for home and debug surfaces", () => {
   assert.match(source, /const miniBoardPreviewRegistry = new Map\(\);/);
   assert.match(source, /const renderedMiniBoardPreviewPayloads = new Map\(\);/);
-  assert.match(source, /const renderMiniBoardPreviewRoot = \(\{ previewId, snapshot, selection = null, previewKey, sizeVariant = "compact" \}\) => \{/);
+  assert.match(source, /const renderMiniBoardPreviewRoot = \(\{[\s\S]*previewId,[\s\S]*snapshot,[\s\S]*selection = null,[\s\S]*previewKey,[\s\S]*sizeVariant = "compact"[\s\S]*\}\) => \{/);
   assert.match(source, /data-mini-board-preview data-preview-id=/);
   assert.match(source, /const reconcileMiniBoardPreviews = \(\) => \{/);
   assert.match(source, /syncMiniBoardPreviews\(\{/);
   assert.match(source, /const getStaticCardPreviewSnapshot = \(card\) => card\?\.previewSnapshot \?\? null;/);
+  assert.match(source, /const getStaticCardPreviewPayload = \(card\) => \(\{/);
+  assert.match(source, /const scenarioPreviewPayload = selectedScenario \? buildScenarioStaticPreviewModel\(selectedScenario\) : null;/);
   assert.match(source, /previewId: `\$\{variant\}:\$\{card\.id\}`/);
   assert.match(source, /class="mini-board-card"/);
   assert.match(source, /class="mini-board-card-link-surface"[\s\S]*href=/);
@@ -455,7 +457,11 @@ test("app uses route skeleton sync and localized loading instead of a global bus
 test("scenario flyout alone forces click target selection on hover-capable boards", () => {
   assert.match(source, /const forceClickTargetSelection = currentRoute\.scenarios;/);
   assert.match(source, /selectionState: scenarioSelectionHydration\.selectionState,[\s\S]*forceClickTargetSelection,[\s\S]*\}\);/s);
-  assert.match(source, /getForceClickTargetSelection: \(\) => forceClickTargetSelection,/);
+  assert.match(source, /getForceClickTargetSelection: \(\) => Boolean\(currentRoute\.scenarios\),/);
+  assert.match(
+    source,
+    /if \(shouldPatchFlyoutsOnly\) \{[\s\S]*if \(includeBoard\) \{[\s\S]*if \(currentRoute\.name === "game"\) \{[\s\S]*mountBoardForGame\(transport\.getGameViewModel\(currentRoute\.gameId\)\);[\s\S]*\} else if \(currentRoute\.name === "invite" && resolvedInvite\?\.gameId\) \{[\s\S]*mountBoardForGame\(transport\.getGameViewModel\(resolvedInvite\.gameId\)\);[\s\S]*\}[\s\S]*\}[\s\S]*return;/s,
+  );
 });
 
 test("history navigation uses pointer-down press state with a single mouseup release bounce", () => {

@@ -471,7 +471,7 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
     },
   ];
   game.historyIndexByIdentity = {};
-  game.pendingScenarioSelection = clone(scenario.savedSelection);
+  game.pendingScenarioSelection = null;
   game.pendingRevertRequest = null;
   game.lastMoveAt = null;
   game.initialSelectionAction = null;
@@ -492,6 +492,7 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
   }
 
   renumberImportedHistory(game);
+  game.pendingScenarioSelection = clone(scenario.savedSelection);
   game.updatedAt = moveTimes[moveTimes.length - 1] ?? game.updatedAt;
   game.lastMoveAt = moveTimes[moveTimes.length - 1] ?? null;
   addNotification(game, `Scenario loaded: ${scenario.title}`);

@@ -13,6 +13,7 @@ const SCENARIO_UUIDS = {
   projectEndsTurn: "7cf5de75-0500-4f33-ac8d-8036935ab445",
   savedSelection: "c01a536c-4eff-47f4-b4ad-2c6fd2ecc40e",
   importerBecomesPlayer2: "9eb170a3-0372-4f17-a651-43d0262a51f7",
+  rushEndTurnSettlement: "2f8018f4-164c-4799-9e68-1f0c32a557ca",
 };
 
 const env = {
@@ -27,6 +28,102 @@ const req = (path, method = "GET", body = null) =>
     headers: body ? { "content-type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
+
+const buildPiece = (id, owner, kind, row, col) => ({
+  id,
+  owner,
+  kind,
+  position: { row, col },
+  supplied: true,
+  commanded: true,
+});
+
+const buildRushEndTurnSettlementScenario = () => ({
+  formatVersion: 2,
+  id: SCENARIO_UUIDS.rushEndTurnSettlement,
+  title: "Rush settlement round-trip",
+  description: "Replay ends on a rush, but the saved scenario preserves the settled next-turn board after ending the rush chain.",
+  incorrect: false,
+  initialState: {
+    boardSize: 10,
+    sideToMove: "P1",
+    turnIndex: 0,
+    pieces: [
+      buildPiece("C1", "P1", "commander", 3, 6),
+      buildPiece("C2", "P2", "commander", 6, 3),
+    ],
+    continuation: null,
+    outcome: { status: "ongoing" },
+  },
+  moves: [
+    {
+      turnIndex: 0,
+      turnMoveIndex: 0,
+      actorSide: "P1",
+      notation: "PROJECT (3,6) -> (5,6)",
+      action: { type: "project", actorId: "C1", from: { row: 3, col: 6 }, to: { row: 5, col: 6 } },
+    },
+    {
+      turnIndex: 1,
+      turnMoveIndex: 0,
+      actorSide: "P2",
+      notation: "PROJECT (6,3) -> (4,3)",
+      action: { type: "project", actorId: "C2", from: { row: 6, col: 3 }, to: { row: 4, col: 3 } },
+    },
+    {
+      turnIndex: 2,
+      turnMoveIndex: 0,
+      actorSide: "P1",
+      notation: "PROJECT (3,6) -> (3,4)",
+      action: { type: "project", actorId: "C1", from: { row: 3, col: 6 }, to: { row: 3, col: 4 } },
+    },
+    {
+      turnIndex: 3,
+      turnMoveIndex: 0,
+      actorSide: "P2",
+      notation: "PROJECT (6,3) -> (6,5)",
+      action: { type: "project", actorId: "C2", from: { row: 6, col: 3 }, to: { row: 6, col: 5 } },
+    },
+    {
+      turnIndex: 4,
+      turnMoveIndex: 0,
+      actorSide: "P1",
+      notation: "PROJECT (3,4) -> (5,4)",
+      action: { type: "project", actorId: "U1-2", from: { row: 3, col: 4 }, to: { row: 5, col: 4 } },
+    },
+    {
+      turnIndex: 5,
+      turnMoveIndex: 0,
+      actorSide: "P2",
+      notation: "RUSH (4,3) -> (5,3)",
+      action: { type: "rush", actorId: "U2-1", from: { row: 4, col: 3 }, to: { row: 5, col: 3 } },
+    },
+  ],
+  resultingState: {
+    boardSize: 10,
+    sideToMove: "P1",
+    turnIndex: 6,
+    pieces: [
+      buildPiece("C1", "P1", "commander", 3, 6),
+      buildPiece("U1-1", "P1", "unit", 5, 6),
+      buildPiece("U1-2", "P1", "unit", 3, 4),
+      buildPiece("U1-3", "P1", "unit", 5, 4),
+      buildPiece("C2", "P2", "commander", 6, 3),
+      buildPiece("U2-1", "P2", "unit", 5, 3),
+      buildPiece("U2-2", "P2", "unit", 6, 5),
+    ],
+    continuation: null,
+    outcome: { status: "ongoing" },
+  },
+  expectedFinalStateHash: "hash-placeholder",
+  expectedOutcome: "ongoing",
+  savedSelection: {
+    source: { row: 5, col: 4 },
+    target: { row: 7, col: 4 },
+    actorSide: "P1",
+    turnIndex: 6,
+  },
+});
 
 const captureConsoleEvents = () => {
   const warnings = [];
@@ -439,6 +536,65 @@ test("live transport: scenario import exposes pending saved selection and accept
   const applied = applyServerAction(localGame, acceptedAction, undefined, null);
   assert.equal(applied.ok, true);
   assert.equal(localGame.pendingScenarioSelection, null);
+});
+
+test("live transport: scenario import preserves resultingState settlement after a rush-ended history", async () => {
+  const scenarioImport = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-a",
+      scenario: buildRushEndTurnSettlementScenario(),
+    }),
+    env,
+  );
+
+  const body = await scenarioImport.json();
+  assert.equal(scenarioImport.status, 200);
+  assert.equal(body.game.currentSnapshot.sideToMove, "P1");
+  assert.equal(body.game.currentSnapshot.turnIndex, 6);
+  assert.equal(body.game.currentSnapshot.continuation, null);
+  assert.equal(body.game.currentTurn.index, 6);
+  assert.equal(body.game.currentTurn.playerSeat, "Player 1");
+  assert.equal(body.game.player1?.identityId, "id-a");
+  assert.deepEqual(body.game.pendingScenarioSelection, {
+    source: { row: 5, col: 4 },
+    target: { row: 7, col: 4 },
+    actorSide: "P1",
+    turnIndex: 6,
+  });
+  assert.equal(body.game.moves.length, 6);
+});
+
+test("live transport: loading a scenario into an empty game preserves the saved resultingState settlement", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-a", selfPlayMode: false }),
+    env,
+  );
+  const createBody = await create.json();
+
+  const scenarioImport = await handleApiRequest(
+    req("/api/shell/scenarios/import", "POST", {
+      identityId: "id-a",
+      targetGameId: createBody.game.id,
+      scenario: buildRushEndTurnSettlementScenario(),
+    }),
+    env,
+  );
+
+  const body = await scenarioImport.json();
+  assert.equal(scenarioImport.status, 200);
+  assert.equal(body.game.id, createBody.game.id);
+  assert.equal(body.game.currentSnapshot.sideToMove, "P1");
+  assert.equal(body.game.currentSnapshot.turnIndex, 6);
+  assert.equal(body.game.currentSnapshot.continuation, null);
+  assert.equal(body.game.currentTurn.index, 6);
+  assert.equal(body.game.currentTurn.playerSeat, "Player 1");
+  assert.deepEqual(body.game.pendingScenarioSelection, {
+    source: { row: 5, col: 4 },
+    target: { row: 7, col: 4 },
+    actorSide: "P1",
+    turnIndex: 6,
+  });
+  assert.equal(body.game.moves.length, 6);
 });
 
 test("live transport: create-from-scenario preserves copied player seats when the importer is already a player", async () => {
