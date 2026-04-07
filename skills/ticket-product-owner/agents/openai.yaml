@@ -1,4 +1,0 @@
-interface:
-  display_name: "Ticket Product Owner"
-  short_description: "Draft problem-first ticket specs."
-  default_prompt: "Use $ticket-product-owner to write a ticket spec in the shared backlog repo."

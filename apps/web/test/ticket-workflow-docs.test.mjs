@@ -28,10 +28,12 @@ test("ticket workflow doc points both Claude and Codex at the shared canon", () 
   assert.match(workflowDoc, /docs\/ai\/ticket-workflow\/lead\.md/);
   assert.match(workflowDoc, /docs\/ai\/ticket-workflow\/product-manager\.md/);
   assert.match(workflowDoc, /docs\/ai\/ticket-workflow\/ux-designer\.md/);
+  assert.match(workflowDoc, /docs\/ai\/UX_VALIDATION_WORKFLOW\.md/);
   assert.match(workflowDoc, /skills\/ticket-lead\/SKILL\.md/);
   assert.match(workflowDoc, /node scripts\/check-ticket-workflow-setup\.mjs/);
   assert.match(workflowDoc, /scripts\/backlog\.sh/);
   assert.match(workflowDoc, /scripts\/backlog-git\.sh/);
+  assert.match(workflowDoc, /backlog\/docs\/TEST_PLAN_TEMPLATE\.md/);
 });
 
 test("AGENTS backlog guidance makes Codex workflow setup explicit", () => {
@@ -49,6 +51,22 @@ test("ticket workflow stages and routing reflect PM, UXD, and Architect planning
   assert.match(workflowDoc, /\| `bug` \| PM \| UXD \| Architect \|/);
   assert.match(workflowDoc, /\| `improvement` \| \*\*Skipped\*\* \| \*\*Skipped\*\* \| Architect \|/);
   assert.doesNotMatch(workflowDoc, /product-owner/);
+});
+
+test("tester workflow documents automation-first UX validation expectations", () => {
+  const testerCanon = readFileSync(path.join(repoRoot, "docs", "ai", "ticket-workflow", "tester.md"), "utf8");
+  const uxValidationDoc = readFileSync(path.join(repoRoot, "docs", "ai", "UX_VALIDATION_WORKFLOW.md"), "utf8");
+  const testerSkill = readFileSync(path.join(repoRoot, "skills", "ticket-tester", "SKILL.md"), "utf8");
+
+  assert.match(testerCanon, /UX Proof Matrix/);
+  assert.match(testerCanon, /UX Principle Coverage/);
+  assert.match(testerCanon, /docs\/ai\/UX_VALIDATION_WORKFLOW\.md/);
+  assert.match(testerSkill, /UX Proof Matrix/);
+  assert.match(uxValidationDoc, /semantic proof/i);
+  assert.match(uxValidationDoc, /geometry proof/i);
+  assert.match(uxValidationDoc, /visual proof/i);
+  assert.match(uxValidationDoc, /stability and responsiveness proof/i);
+  assert.match(uxValidationDoc, /behavioral proof/i);
 });
 
 for (const role of roles) {

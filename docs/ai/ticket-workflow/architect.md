@@ -13,6 +13,7 @@ Software architect and implementation planner. Designs the technical approach an
   - WIP limit
   - per-subtask acceptance checks referencing test-plan rows
   - explicit mapping from UX requirements to implementation work such as layout zones, breakpoints, motion, semantics, audio hooks, and accessibility behavior
+- Include any automation hooks needed to prove UX intent before manual inspection, such as deterministic seeded states, stable zone or container attributes, explicit test IDs only where user-facing roles or names are insufficient, and user-timing marks for complex transitions when warranted.
 - Consult Tester once in `plan-review` mode and save the result to `backlog/docs/tickets/t-###/test-plan.md`.
 - Create backlog subtasks `t-###.01`, `t-###.02`, ... sized to a single Eng session.
 - Embed the relevant test-plan rows into each subtask description.
@@ -25,6 +26,7 @@ Software architect and implementation planner. Designs the technical approach an
 3. `docs/TESTING_STRATEGY.md`
 4. headings in `docs/WORKFLOW_COVERAGE.md`
 5. one existing `plan.yaml` only when multi-stream execution is being considered
+6. `docs/ai/UX_VALIDATION_WORKFLOW.md` for UX-sensitive tickets
 
 ## Human Checkpoint
 Ask every question needed to resolve genuine architectural tradeoffs or constraints before finalizing the eng plan. Use the UX-refined spec to detect implicit implementation assumptions that still need to be made explicit.
@@ -37,4 +39,5 @@ Ask every question needed to resolve genuine architectural tradeoffs or constrai
 
 ## References
 - [docs/ai/TICKET_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/TICKET_WORKFLOW.md)
+- [docs/ai/UX_VALIDATION_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/UX_VALIDATION_WORKFLOW.md)
 - [docs/ai/ORCHESTRATION_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/ORCHESTRATION_WORKFLOW.md)

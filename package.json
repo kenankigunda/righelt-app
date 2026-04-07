@@ -57,6 +57,7 @@
     "deploy:prod": "pnpm deploy:api && pnpm deploy:web"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.1",
     "@cloudflare/workers-types": "^4.20260215.0",
     "@playwright/test": "^1.54.2",
     "tsx": "^4.21.0",

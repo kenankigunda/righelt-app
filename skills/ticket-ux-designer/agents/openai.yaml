@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ticket UX Designer"
+  short_description: "Refine UI and interaction intent in ticket specs."
+  default_prompt: "Use $ticket-ux-designer to refine a ticket spec with explicit UI, interaction, and visual-design details."

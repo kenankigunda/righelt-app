@@ -8,6 +8,12 @@ This inventory tracks which app surfaces have:
 
 It covers both direct user workflows and support surfaces that materially affect correctness, resilience, or perceived polish.
 
+For UX-heavy workflows, the `Notes` column should also call out whether the current automated proof includes:
+- semantic or accessibility proof
+- geometry or responsive placement proof
+- curated visual proof
+- stability or responsiveness proof
+
 Status meanings:
 
 - `present` = intentional automated coverage exists in that lane
@@ -78,4 +84,5 @@ The most important follow-up coverage still missing from the current repo is:
 
 - Keep required Playwright focused on representative user-visible success and recovery proof.
 - Keep transport-backed integration responsible for multi-client coordination, stale-state recovery, revert lifecycles, and deep workflow variants.
+- For UX-heavy workflows, record which proof lanes currently exist in automation so the map reflects not just whether coverage exists, but how UX intent is being enforced.
 - When adding new features, update this map only after checking whether the behavior is a primary workflow, an extended shell workflow, or a platform/polish safeguard so ownership stays clear.

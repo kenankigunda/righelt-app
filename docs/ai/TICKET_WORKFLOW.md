@@ -75,7 +75,7 @@ Rich documentation lives in the backlog repo under `backlog/docs/tickets/t-###/`
 - `test-plan.md` — written by Tester during Eng Planning
 - `coordination-log.md` — maintained by Lead
 
-Authoring templates are in the backlog repo at `backlog/docs/SPEC_TEMPLATE.md` and `backlog/docs/ENG_PLAN_TEMPLATE.md`.
+Authoring templates are in the backlog repo at `backlog/docs/SPEC_TEMPLATE.md`, `backlog/docs/ENG_PLAN_TEMPLATE.md`, and `backlog/docs/TEST_PLAN_TEMPLATE.md`.
 
 When agents write these files, they write to the backlog repo, not the main repo. The backlog task file links to these docs via the `references` field using paths relative to the backlog repo root.
 
@@ -115,7 +115,7 @@ Lead spawns the Architect with the ticket ID. Architect:
 2. Evaluates approach: at least 2 options with tradeoffs for non-trivial work; one clear approach with rationale for straightforward bugs or improvements.
 3. Asks every remaining engineering or constraint question needed to make the ticket autonomous.
 4. Consults Tester once in `plan-review` mode; saves the result as `backlog/docs/tickets/t-###/test-plan.md`.
-5. Drafts `backlog/docs/tickets/t-###/eng-plan.md` from the backlog template.
+5. Drafts `backlog/docs/tickets/t-###/eng-plan.md` from the backlog template, including any automation hooks needed to prove UX goals before manual inspection.
 6. Creates subtasks via `task create`, sets `depends_on`, and sets the WIP limit.
 7. Updates parent references plus browser-visible Implementation Plan and Definition of Done in one task update.
 
@@ -160,6 +160,7 @@ All policies in AGENTS.md §4 apply within this workflow. Additionally:
 - Eng consults Tester only for novel gaps not already covered.
 - Final validation is a fresh skeptical pass rather than a checklist re-run.
 - When the ticket touches UX, final validation explicitly checks responsive placement, motion polish, accessibility, visual-identity consistency, and sound behavior when present.
+- For UX-sensitive tickets, Tester uses `docs/ai/UX_VALIDATION_WORKFLOW.md` to convert UX goals into explicit automated proof lanes before implementation starts.
 
 ## Sprint Flows
 
@@ -200,6 +201,7 @@ An execution sprint drives tickets from `Ready for execution` to `Ready for acce
 ## Connections to Other Workflows
 
 - Architect's `eng-plan.md` feeds `plan.yaml` plus stream briefs when multi-stream execution is warranted.
+- Tester's UX proof planning extends `UX_VALIDATION_WORKFLOW.md` for automation-first UX enforcement.
 - Tester's work extends `FRAGILITY_HARDENING_WORKFLOW.md`.
 - Backlog CLI usage stays rooted in `./scripts/backlog.sh`; see AGENTS.md §7 for the full protocol.
 - Shared canon remains in `docs/ai/ticket-workflow/`; Claude and Codex wrappers should stay thin and point back to that canon.
