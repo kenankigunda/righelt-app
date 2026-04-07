@@ -455,7 +455,11 @@ test("app uses route skeleton sync and localized loading instead of a global bus
 test("scenario flyout alone forces click target selection on hover-capable boards", () => {
   assert.match(source, /const forceClickTargetSelection = currentRoute\.scenarios;/);
   assert.match(source, /selectionState: scenarioSelectionHydration\.selectionState,[\s\S]*forceClickTargetSelection,[\s\S]*\}\);/s);
-  assert.match(source, /getForceClickTargetSelection: \(\) => forceClickTargetSelection,/);
+  assert.match(source, /getForceClickTargetSelection: \(\) => Boolean\(currentRoute\.scenarios\),/);
+  assert.match(
+    source,
+    /if \(shouldPatchFlyoutsOnly\) \{[\s\S]*if \(includeBoard\) \{[\s\S]*if \(currentRoute\.name === "game"\) \{[\s\S]*mountBoardForGame\(transport\.getGameViewModel\(currentRoute\.gameId\)\);[\s\S]*\} else if \(currentRoute\.name === "invite" && resolvedInvite\?\.gameId\) \{[\s\S]*mountBoardForGame\(transport\.getGameViewModel\(resolvedInvite\.gameId\)\);[\s\S]*\}[\s\S]*\}[\s\S]*return;/s,
+  );
 });
 
 test("history navigation uses pointer-down press state with a single mouseup release bounce", () => {

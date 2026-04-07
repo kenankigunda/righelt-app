@@ -75,6 +75,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let removalEffectsTimer = null;
   let internalActionType = defaultActionType;
   let overlayMode = OVERLAY_MODE.INTERACTIVE;
+  let lastUsesHoverTargetSelection = null;
   let recordedAction = null;
   let recordedActionStartPiece = null;
   /** @type {Array<{row: number, col: number, ownerSeat?: "p1" | "p2" | null, kind?: "unit" | "commander" | null, piece?: unknown | null}>} */
@@ -1233,10 +1234,18 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const syncInteractionCapabilities = () => {
-    if (getUsesHoverTargetSelection()) {
+    const usesHoverTargetSelection = getUsesHoverTargetSelection();
+    if (lastUsesHoverTargetSelection === usesHoverTargetSelection) {
       return false;
     }
-    return clearHoveredTarget();
+    lastUsesHoverTargetSelection = usesHoverTargetSelection;
+    const clearedHoverTarget = usesHoverTargetSelection ? false : clearHoveredTarget();
+    if (!state || !mounted) {
+      return clearedHoverTarget;
+    }
+    renderBoard();
+    renderStatus();
+    return true;
   };
 
   return {

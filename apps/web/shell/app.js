@@ -3114,7 +3114,7 @@ const mountBoardForGame = (game) => {
       controls: {
         getAllowFreeSelection: () => false,
         getSupportsHover: () => hoverCapability.getSupportsHover(),
-        getForceClickTargetSelection: () => forceClickTargetSelection,
+        getForceClickTargetSelection: () => Boolean(currentRoute.scenarios),
         onStateUpdated: ({ state, selectedPieceId }) => {
           applyCommandLegendSwatch(document.getElementById("shell-command-legend-swatch"), state, selectedPieceId);
         },
@@ -3444,6 +3444,13 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     updateHeaderFields();
     syncMountedGameShellPanelUi();
     reconcileMiniBoardPreviews();
+    if (includeBoard) {
+      if (currentRoute.name === "game") {
+        mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
+      } else if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
+        mountBoardForGame(transport.getGameViewModel(resolvedInvite.gameId));
+      }
+    }
     animateHomeSectionTransitions();
     syncScenarioAuthoringControls();
     if (animatePanels) {
