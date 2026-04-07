@@ -10,7 +10,6 @@ Use this workflow for any ticket in `backlog/tasks/` that has been assigned to a
 
 - Re-mention required skills in each turn where they should apply.
 - Role definitions live in `.claude/agents/` (authoritative).
-- Call `get_backlog_instructions()` before any backlog MCP tool operations.
 - If a referenced skill or role file is missing: state the issue briefly, fall back to AGENTS.md defaults, avoid blocking unless strictly required.
 
 ## Backlog Hygiene
@@ -26,12 +25,10 @@ Write path priority (same pull/push bookends for all):
 
 | Priority | When to use |
 |----------|-------------|
-| 1 — Backlog MCP | Always preferred |
-| 2 — `backlog` CLI | When MCP is unavailable |
-| 3 — Direct file edit | Last resort; must also commit manually: `./scripts/backlog-git.sh commit -am "chore(backlog): ..."` |
+| 1 — `./scripts/backlog.sh` CLI wrapper | Always preferred |
+| 2 — Direct file edit | Last resort; must also commit manually: `./scripts/backlog-git.sh commit -am "chore(backlog): ..."` |
 
-- If MCP is unavailable, use the local `backlog` CLI before considering direct edits.
-- Edit task files directly only when both MCP and the `backlog` CLI are unavailable or cannot perform the required operation.
+- Edit task files directly only when the `backlog` CLI is unavailable or cannot perform the required operation.
 - When creating or renaming task files manually, match the CLI filename convention: `backlog/tasks/t-### - <CLI slug>.md` for parents and `backlog/tasks/t-###.NN - <CLI slug>.md` for subtasks.
 - The `<CLI slug>` should mirror CLI output rather than the literal title:
   - replace spaces with `-`
@@ -192,4 +189,4 @@ An execution sprint drives tickets from `Ready for execution` to `Ready for acce
 
 - Architect's `eng-plan.md` feeds `plan.yaml` + stream briefs when multi-stream execution is warranted (`ORCHESTRATION_WORKFLOW.md`)
 - Tester's work extends `FRAGILITY_HARDENING_WORKFLOW.md` — Tester uses that workflow as part of its toolkit
-- Backlog MCP: see `backlog://workflow/overview` or call `get_backlog_instructions()` for the full Backlog.md usage protocol
+- Backlog CLI: use `./scripts/backlog.sh` for all task operations; see `AGENTS.md §7` for the full protocol
