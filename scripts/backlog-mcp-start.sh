@@ -20,10 +20,13 @@ else
   MAIN_REPO="${GIT_COMMON%/.git}"
 fi
 
-BACKLOG_CWD="$(dirname "$MAIN_REPO")/righelt-backlog"
+BACKLOG_REPO="$(dirname "$MAIN_REPO")/righelt-backlog"
+# The MCP's --cwd must point at the backlog/ subdirectory (where config.yml lives),
+# not the repo root. The CLI auto-discovers the subdir, but the MCP does not.
+BACKLOG_CWD="$BACKLOG_REPO/backlog"
 
 if [[ ! -d "$BACKLOG_CWD" ]]; then
-  echo "ERROR: Shared backlog repo not found at $BACKLOG_CWD" >&2
+  echo "ERROR: Shared backlog not found at $BACKLOG_CWD" >&2
   echo "Run the setup from docs/tickets/t-083/eng-plan.md to initialise it." >&2
   exit 1
 fi
