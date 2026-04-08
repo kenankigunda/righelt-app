@@ -13,6 +13,9 @@ External references that informed these principles include Apple Human Interface
 - Use polish to increase confidence and delight, not to show off animation or effects.
 - Preserve a distinctive Righelt personality so the product does not feel like default framework chrome.
 - Maintain accessibility as a first-class requirement, not a cleanup pass.
+- Favor clarity that feels confident and playful over enterprise-heavy density.
+- Make repeated use feel pleasant: interactions should feel composed, readable, and quietly rewarding over many sessions.
+- Build recognition through consistency so players can tell they are in Righelt from color, spacing, feedback, and shell tone alone.
 
 ## Core Information Architecture Principle
 
@@ -132,10 +135,21 @@ External references that informed these principles include Apple Human Interface
 - Righelt's core brand colors are the player colors: `red`, `blue`, and `purple`.
 - These colors should be reused intentionally across the shell so the product feels cohesive rather than arbitrarily themed page by page.
 - Build supporting palettes around those core hues with calm neutrals and restrained complementary accents.
+- Use those colors consistently enough to form memory, but not so aggressively that every surface feels saturated or competitive.
 - Use color to reinforce identity and meaning, but never as the only carrier of meaning.
 - Backgrounds, gradients, texture, and atmospheric effects should be subtle. They should make the page feel alive and pleasant without competing with gameplay.
+- Prefer layered, low-contrast atmosphere over flat emptiness: faint gradients, soft depth, and restrained loading treatments are welcome when they support calmness and legibility.
 - Loading states, chrome, shells, and notifications should feel like members of one family: consistent corner language, depth language, emphasis rules, and typography rhythm.
 - Avoid default framework-looking surfaces. If a component looks like unmodified generic UI, treat that as a design smell and decide what makes it unmistakably Righelt.
+
+## Modern Feel Principle
+
+- "Modern" for Righelt means clean, fast, and intentional, not interchangeable.
+- Prefer a small number of well-defined visual ideas repeated consistently over a grab bag of trendy effects.
+- Polished surfaces should feel lightweight and game-friendly, similar in usability spirit to the clearest casual game products, while still expressing Righelt's own brand.
+- Avoid bootstrap-like sameness: default cards, buttons, alerts, and forms should be treated as unfinished until they carry Righelt's own spacing, emphasis, and feedback language.
+- Small pleasant details matter when they do not distract: subtle hover depth, composed loading shimmer, quiet background atmosphere, and confident transition timing can all contribute to a memorable shell.
+- Personality should never come from noise. If an effect competes with turn-taking, move comprehension, or decision clarity, it is too much.
 
 ## Sound Principle
 
@@ -146,6 +160,7 @@ External references that informed these principles include Apple Human Interface
   - incoming move or turn handoff
   - incoming participant request or approval-needed state
 - Different event categories should have distinct tones, but the palette should stay small and recognizable.
+- The sound palette should feel deliberate and branded, not like a bag of unrelated stock effects.
 - Sound must always be paired with visible feedback.
 - Provide a clear path to mute or disable non-essential sound if sound is introduced.
 - Avoid novelty sounds, repeated ambient loops, or dense sound layering that would make the shell feel noisy or gamey in a cheap way.
@@ -162,5 +177,8 @@ External references that informed these principles include Apple Human Interface
 
 - UI-touching feature and bug tickets must make the intended user experience explicit before Eng Planning begins.
 - PM, UX Designer, and Architect should each ask proactive questions inside their domain to pull unspoken intent out of the human's head.
-- When UI truth is hard to describe, request screenshots, mockups, or comparable references and attach them to the backlog repo.
+- The default path is text-first clarification: ask focused questions and turn the answers into explicit UX decisions before asking for any reference artifact.
+- Do not ask the human to create new mocks for ticket planning.
+- If the referenced UI surface is ambiguous, ask for a screenshot of the current product as a fallback so the exact existing surface can be identified.
+- When screenshots or other reference artifacts are needed, attach them to the backlog repo.
 - If the intended experience depends on viewport-specific placement, animation feel, branding treatment, or sound, those details belong in the ticket spec and eng plan, not only in chat.

@@ -69,6 +69,19 @@ test("tester workflow documents automation-first UX validation expectations", ()
   assert.match(uxValidationDoc, /behavioral proof/i);
 });
 
+test("UX canon and UX designer guidance use the new UX principles doc and text-first clarification", () => {
+  const uxdCanon = readFileSync(path.join(repoRoot, "docs", "ai", "ticket-workflow", "ux-designer.md"), "utf8");
+  const uxdSkill = readFileSync(path.join(repoRoot, "skills", "ticket-ux-designer", "SKILL.md"), "utf8");
+  const uxPrinciplesDoc = readFileSync(path.join(repoRoot, "docs", "UX_PRINCIPLES.md"), "utf8");
+
+  assert.match(uxdCanon, /docs\/UX_PRINCIPLES\.md/);
+  assert.match(uxdSkill, /Do not request new mocks for ticket planning\./);
+  assert.match(uxdCanon, /text-first clarification/i);
+  assert.match(uxdCanon, /current product as a fallback/i);
+  assert.match(uxPrinciplesDoc, /Do not ask the human to create new mocks for ticket planning\./);
+  assert.match(uxPrinciplesDoc, /screenshot of the current product as a fallback/i);
+});
+
 for (const role of roles) {
   test(`${role.slug} Claude wrapper and Codex skill share the same canon`, () => {
     const canonPath = `docs/ai/ticket-workflow/${role.slug}.md`;

@@ -34,7 +34,7 @@ The backlog lives in the sibling `righelt-backlog` repo. All task files and tick
 ./scripts/backlog-git.sh push origin main
 ```
 
-If a task or ticket doc depends on a screenshot, mock, or other reference artifact, copy that artifact into the backlog repo first, normally under `backlog/assets/`, reference the repo-backed path from the task or doc, and push the artifact in the same backlog update.
+If a task or ticket doc depends on a screenshot from the current product or another reference artifact, copy that artifact into the backlog repo first, normally under `backlog/assets/`, reference the repo-backed path from the task or doc, and push the artifact in the same backlog update.
 
 Write path priority:
 
@@ -114,7 +114,7 @@ Lead spawns the UXD with the ticket ID. UXD:
 1. Reads the ticket and current `spec.md`.
 2. Asks proactive UX questions to surface UI, interaction, responsive, accessibility, branding, motion, sound, and reference-artifact details that are still implicit.
 3. Refines the same `backlog/docs/tickets/t-###/spec.md` until the intended user experience is explicit enough for implementation planning.
-4. Updates task references if new screenshots, mocks, or other artifacts were added.
+4. Updates task references if new screenshots or other artifacts were added.
 
 Lead appends to the coordination log and advances status → `Eng Planning`.
 

@@ -83,4 +83,4 @@ Final validation should report:
 ## References
 - [docs/TESTING_STRATEGY.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/TESTING_STRATEGY.md)
 - [docs/ai/FRAGILITY_HARDENING_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/FRAGILITY_HARDENING_WORKFLOW.md)
-- [docs/UI_INFORMATION_ARCHITECTURE_PRINCIPLES.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/UI_INFORMATION_ARCHITECTURE_PRINCIPLES.md)
+- [docs/UX_PRINCIPLES.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/UX_PRINCIPLES.md)

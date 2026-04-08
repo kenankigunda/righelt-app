@@ -18,7 +18,7 @@ Product manager. Produces the initial product spec that defines what we are buil
 2. relevant sections of `docs/RIGHELT_WEB_APP_SPEC.md`
 3. relevant sections of `docs/RIGHELT_RULES_SPEC.md` if game logic changes
 4. headings in `docs/WORKFLOW_COVERAGE.md`
-5. `docs/UI_INFORMATION_ARCHITECTURE_PRINCIPLES.md` for shared product and UX guardrails
+5. `docs/UX_PRINCIPLES.md` for shared product and UX guardrails
 
 ## Human Checkpoint
 - For `feature` and `bug` tickets, ask the human proactive questions before drafting. Treat unspoken intent as missing context to uncover, not as something to guess.
