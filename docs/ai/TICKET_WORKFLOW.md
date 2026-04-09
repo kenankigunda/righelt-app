@@ -74,6 +74,7 @@ When a ticket moves to `In Progress`, the Lead must establish one dedicated exec
 - The parent task `worktree` field is the canonical execution worktree for the ticket.
 - The parent task `branch` field points to the ticket's execution branch.
 - No other ticket may execute from that worktree until the ticket reaches `Ready for acceptance` or `Done`.
+- An execution sprint may run up to 3 top-level tickets in parallel, but each active top-level ticket must have its own dedicated execution worktree.
 - Parallel Eng subtasks may use additional isolated worktrees, but only when those worktrees are created specifically for the same ticket.
 
 ## Document Structure Per Ticket
@@ -202,11 +203,13 @@ An execution sprint drives tickets from `Ready for execution` to `Ready for acce
 
 **Process**:
 1. Lead lists all `Ready for execution` tickets, sorted by priority.
-2. For each ticket in priority order, Lead confirms that a dedicated execution worktree exists for that ticket, then runs Steps 5 and 6 of the ticket workflow.
-3. Before starting each ticket, output:
+2. Lead may run up to 3 top-level tickets in parallel during the sprint. Each active ticket must have its own dedicated execution worktree before implementation begins.
+3. Lead fills open execution slots in priority order. When one active ticket reaches `Ready for acceptance`, Lead may start the next highest-priority `Ready for execution` ticket.
+4. For each ticket that starts, Lead confirms that a dedicated execution worktree exists for that ticket, then runs Steps 5 and 6 of the ticket workflow.
+5. Before starting each ticket, output:
    `Sprint progress: [N/Total] — starting <ticket title> (t-###)`
-4. Lead fans out Eng subtasks, monitors progress, resolves conflicts, opens the PR, runs final validation, and waits for green CI.
-5. After the last ticket completes, output:
+6. Within each active ticket, Lead fans out Eng subtasks, monitors progress, resolves conflicts, opens the PR, runs final validation, and waits for green CI.
+7. After the last ticket completes, output:
    `Sprint complete: N tickets advanced to Ready for acceptance`
 
 ## Connections to Other Workflows

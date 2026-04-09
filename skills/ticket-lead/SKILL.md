@@ -18,7 +18,7 @@ Use this skill for `Tk`, `Tke`, `Tkv`, `Ps`, and `Es`.
   - During `Ps`, `ticket-product-manager`, `ticket-ux-designer`, and `ticket-architect` should be dispatched as a planning pipeline for `feature` and `bug` tickets: keep ticket-level stage order intact, but let each role pick up the next ready ticket as soon as it finishes a handoff.
   - `ticket-eng` runs in parallel up to the eng-plan WIP limit.
   - `ticket-tester` runs only when the workflow explicitly calls for it.
-- Ensure the ticket has a dedicated execution worktree before Eng fan-out, and do not reuse that worktree for another active ticket.
+- During `Es`, keep at most 3 top-level tickets active at once, ensure each one has its own dedicated execution worktree before Eng fan-out, and do not reuse a ticket's execution worktree for another active ticket.
 - Pass only the ticket or subtask ID, required mode, and the relevant skill reference to subagents. Do not paste file contents into subagent prompts.
 - Use `./scripts/backlog.sh` for task operations and `./scripts/backlog-git.sh` for the required pull/push bookends around every backlog write.
 - Write ticket-authored documents into the sibling backlog repo, not this repo.
