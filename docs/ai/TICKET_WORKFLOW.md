@@ -181,15 +181,17 @@ A planning sprint drives tickets from `To Do`, `Spec`, `Visual Design`, or `Eng 
 
 **Process**:
 1. Lead lists all tickets of the given type that are not yet `Ready for execution`, sorted by priority.
-2. For each ticket in priority order, Lead runs the applicable planning stages:
+2. Lead runs the sprint as a pipeline, not a full-ticket serial loop:
    - `feature` and `bug`: Assignment → PM → UXD → Architect
    - `improvement`: Assignment → Architect
-3. Before starting each ticket, output:
+3. Within a single ticket, stage order remains gated: UXD does not start until PM is complete for that ticket, and Architect does not start until UXD is complete for that ticket.
+4. Across the sprint, once one role finishes a ticket and hands it off, that role immediately starts the next highest-priority ticket that is ready for that role. Example: when PM finishes Ticket A and hands it to UXD, PM starts Ticket B while UXD works Ticket A.
+5. Before the first stage starts on a ticket, output:
    `Sprint progress: [N/Total] — starting <ticket title> (t-###)`
-4. Skip only stages that are already complete.
-5. PM, UXD, and Architect must each ask comprehensive, non-redundant questions that pull implicit intent into explicit docs.
-6. After Architect completes, Lead advances the ticket to `Ready for execution`.
-7. After the last ticket completes, output:
+6. Skip only stages that are already complete, and feed partially completed tickets into the earliest incomplete stage so they join the same pipeline.
+7. PM, UXD, and Architect must each ask comprehensive, non-redundant questions that pull implicit intent into explicit docs.
+8. After Architect completes a ticket, Lead advances that ticket to `Ready for execution` immediately, even while earlier-stage work continues on other tickets.
+9. After the last ticket completes, output:
    `Sprint complete: N tickets advanced to Ready for execution`
 
 ### Execution Sprint

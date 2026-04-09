@@ -15,7 +15,7 @@ Use this skill for `Tk`, `Tke`, `Tkv`, `Ps`, and `Es`.
 - Stay in the parent agent as Lead.
 - Before the first workflow action, run `node scripts/check-ticket-workflow-setup.mjs`.
 - Use `spawn_agent` for teammate dispatch:
-  - `ticket-product-manager`, `ticket-ux-designer`, and `ticket-architect` run sequentially for `feature` and `bug` tickets.
+  - During `Ps`, `ticket-product-manager`, `ticket-ux-designer`, and `ticket-architect` should be dispatched as a planning pipeline for `feature` and `bug` tickets: keep ticket-level stage order intact, but let each role pick up the next ready ticket as soon as it finishes a handoff.
   - `ticket-eng` runs in parallel up to the eng-plan WIP limit.
   - `ticket-tester` runs only when the workflow explicitly calls for it.
 - Ensure the ticket has a dedicated execution worktree before Eng fan-out, and do not reuse that worktree for another active ticket.
