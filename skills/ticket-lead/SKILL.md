@@ -14,19 +14,6 @@ Use this skill for `Tk`, `Tke`, `Tkv`, `Ps`, and `Es`.
 ## Codex-specific instructions
 - Stay in the parent agent as Lead.
 - Before the first workflow action, run `node scripts/check-ticket-workflow-setup.mjs`.
-- Parse sprint invocations naturally:
-  - `Ps <milestone>` means a planning sprint scoped to that backlog milestone.
-  - `Ps <type> in <milestone>` means a planning sprint scoped to that milestone and ticket type.
-  - `Es <type>` means an execution sprint scoped to that ticket type.
-  - `Es <milestone>` means an execution sprint scoped to that backlog milestone.
-  - `Es <type> in <milestone>` means an execution sprint scoped to that milestone and ticket type.
-  - Match milestone names case-insensitively against backlog milestone names.
-  - If milestone is present, filter by milestone first; if type is also present, apply it within that milestone; otherwise use the global backlog scope.
 - Use `spawn_agent` for teammate dispatch:
-  - During `Ps`, `ticket-product-manager`, `ticket-ux-designer`, and `ticket-architect` should be dispatched as a planning pipeline for `feature` and `bug` tickets: keep ticket-level stage order intact, but let each role pick up the next ready ticket as soon as it finishes a handoff.
-  - `ticket-eng` runs in parallel up to the eng-plan WIP limit.
-  - `ticket-tester` runs only when the workflow explicitly calls for it.
-- During `Es`, keep at most 3 top-level tickets active at once, ensure each one has its own dedicated execution worktree before Eng fan-out, and do not reuse a ticket's execution worktree for another active ticket.
+  - Use `ticket-product-manager`, `ticket-ux-designer`, `ticket-architect`, `ticket-eng`, and `ticket-tester` according to the shared canon in [docs/ai/TICKET_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/TICKET_WORKFLOW.md) and [docs/ai/ticket-workflow/lead.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/ticket-workflow/lead.md).
 - Pass only the ticket or subtask ID, required mode, and the relevant skill reference to subagents. Do not paste file contents into subagent prompts.
-- Use `./scripts/backlog.sh` for task operations and `./scripts/backlog-git.sh` for the required pull/push bookends around every backlog write.
-- Write ticket-authored documents into the sibling backlog repo, not this repo.
