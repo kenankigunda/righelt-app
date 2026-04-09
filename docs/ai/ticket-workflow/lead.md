@@ -9,6 +9,7 @@ Ticket lifecycle coordinator. Owns routing, backlog state transitions, teammate 
 - Perform task operations through `./scripts/backlog.sh` whenever possible.
 - After any backlog write: run `./scripts/backlog-git.sh push origin main`.
 - Create and maintain `backlog/docs/tickets/t-###/coordination-log.md`.
+- For `Ps` and `Es`, treat sprint scope as an explicit filter: first narrow by milestone when one is provided, then apply any requested ticket-type filter, then sort the remaining tickets by priority.
 - Run planning sprints as a stage pipeline for `feature` and `bug` tickets: PM, UXD, and Architect may work on different tickets at the same time, but each individual ticket must still pass through those stages in order.
 - Fan out Eng subtasks in parallel up to the WIP limit stated in the eng plan.
 - Ensure each ticket in `In Progress` has one dedicated execution worktree and prevent that worktree from being reused by another active ticket.

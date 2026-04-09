@@ -178,10 +178,23 @@ All policies in AGENTS.md §4 apply within this workflow. Additionally:
 
 A planning sprint drives tickets from `To Do`, `Spec`, `Visual Design`, or `Eng Planning` to `Ready for execution`. It does not touch implementation.
 
-**Invocation**: `Ps [type]`
+**Invocation**:
+- `Ps`
+- `Ps [type]`
+- `Ps [milestone]`
+- `Ps [type] in [milestone]`
+
+Where:
+- `[type]` may be `feature`, `features`, `bug`, `bugs`, `improvement`, or `improvements`.
+- `[milestone]` is a backlog milestone name such as `Friend play alpha`.
+- Milestone names should be matched case-insensitively from the backlog, so natural invocations like `Ps friend play alpha` are valid.
+- If both are provided, milestone filtering happens first and type filtering applies within that milestone.
+- If milestone is omitted, the sprint considers all matching tickets across the backlog.
 
 **Process**:
-1. Lead lists all tickets of the given type that are not yet `Ready for execution`, sorted by priority.
+1. Lead lists all tickets that match the requested sprint scope and are not yet `Ready for execution`, sorted by priority.
+   - If a milestone was specified, include only tickets assigned to that backlog milestone.
+   - If a type was specified, include only tickets of that type within the selected milestone or global scope.
 2. Lead runs the sprint as a pipeline, not a full-ticket serial loop:
    - `feature` and `bug`: Assignment → PM → UXD → Architect
    - `improvement`: Assignment → Architect
@@ -199,10 +212,23 @@ A planning sprint drives tickets from `To Do`, `Spec`, `Visual Design`, or `Eng 
 
 An execution sprint drives tickets from `Ready for execution` to `Ready for acceptance`. It does not touch spec, visual design, or eng planning.
 
-**Invocation**: `Es`
+**Invocation**:
+- `Es`
+- `Es [type]`
+- `Es [milestone]`
+- `Es [type] in [milestone]`
+
+Where:
+- `[type]` may be `feature`, `features`, `bug`, `bugs`, `improvement`, or `improvements`.
+- `[milestone]` is a backlog milestone name such as `Friend play alpha`.
+- Milestone names should be matched case-insensitively from the backlog.
+- If both are provided, milestone filtering happens first and type filtering applies within that milestone.
+- If milestone is omitted, the sprint considers all `Ready for execution` tickets across the backlog.
 
 **Process**:
-1. Lead lists all `Ready for execution` tickets, sorted by priority.
+1. Lead lists all `Ready for execution` tickets that match the requested sprint scope, sorted by priority.
+   - If a milestone was specified, include only tickets assigned to that backlog milestone.
+   - If a type was specified, include only tickets of that type within the selected milestone or global scope.
 2. Lead may run up to 3 top-level tickets in parallel during the sprint. Each active ticket must have its own dedicated execution worktree before implementation begins.
 3. Lead fills open execution slots in priority order. When one active ticket reaches `Ready for acceptance`, Lead may start the next highest-priority `Ready for execution` ticket.
 4. For each ticket that starts, Lead confirms that a dedicated execution worktree exists for that ticket, then runs Steps 5 and 6 of the ticket workflow.

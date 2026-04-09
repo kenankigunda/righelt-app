@@ -14,6 +14,14 @@ Use this skill for `Tk`, `Tke`, `Tkv`, `Ps`, and `Es`.
 ## Codex-specific instructions
 - Stay in the parent agent as Lead.
 - Before the first workflow action, run `node scripts/check-ticket-workflow-setup.mjs`.
+- Parse sprint invocations naturally:
+  - `Ps <milestone>` means a planning sprint scoped to that backlog milestone.
+  - `Ps <type> in <milestone>` means a planning sprint scoped to that milestone and ticket type.
+  - `Es <type>` means an execution sprint scoped to that ticket type.
+  - `Es <milestone>` means an execution sprint scoped to that backlog milestone.
+  - `Es <type> in <milestone>` means an execution sprint scoped to that milestone and ticket type.
+  - Match milestone names case-insensitively against backlog milestone names.
+  - If milestone is present, filter by milestone first; if type is also present, apply it within that milestone; otherwise use the global backlog scope.
 - Use `spawn_agent` for teammate dispatch:
   - During `Ps`, `ticket-product-manager`, `ticket-ux-designer`, and `ticket-architect` should be dispatched as a planning pipeline for `feature` and `bug` tickets: keep ticket-level stage order intact, but let each role pick up the next ready ticket as soon as it finishes a handoff.
   - `ticket-eng` runs in parallel up to the eng-plan WIP limit.
