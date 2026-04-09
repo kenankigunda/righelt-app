@@ -100,14 +100,15 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 - `Fp` = force push (`--force-with-lease`)
 - `Mmp` = merge to main and push
 - Ticket kick-off (`Tk` = **T**icket **K**ick-off) — uses the workflow in `docs/ai/TICKET_WORKFLOW.md`:
-  - `Tk [t-###]` = kick off ticket: assign Lead, route by label (feature → PO + Architect; bug → PO + Architect; improvement → Architect only), run through Eng and final Tester validation
-  - `Tkpo [t-###]` = run only the PO step for a ticket (spec must not yet exist)
-  - `Tka [t-###]` = run only the Architect step (spec must already exist, or ticket is an improvement)
+  - `Tk [t-###]` = kick off ticket: assign Lead, route by label (feature → PM + UXD + Architect; bug → PM + UXD + Architect; improvement → Architect only), run through Eng and final Tester validation
+  - `Tkpm [t-###]` = run only the PM step for a ticket (spec must not yet exist)
+  - `Tkuxd [t-###]` = run only the UXD step for a ticket (spec must already exist and still need visual-design refinement)
+  - `Tka [t-###]` = run only the Architect step (spec must already include UX refinement, or ticket is an improvement)
   - `Tke [t-###]` = fan out Eng subtasks from an existing eng plan
   - `Tkv [t-###]` = run the Lead's final end-to-end Tester validation pass
   - Codex implementations should use the shared canon in `docs/ai/ticket-workflow/`, the `skills/ticket-*/SKILL.md` adapters, and the backlog wrapper scripts rather than MCP-only assumptions
 - Sprint flows — uses the workflow in `docs/ai/TICKET_WORKFLOW.md`:
-  - `Ps [type]` = **P**lanning **S**print: drive all tickets of the given type (e.g. `feature`, `bug`, `improvement`) that are not yet `Ready for execution` through spec + planning to `Ready for execution`
+  - `Ps [type]` = **P**lanning **S**print: drive all tickets of the given type (e.g. `feature`, `bug`, `improvement`) that are not yet `Ready for execution` through spec + visual design + eng planning to `Ready for execution`
   - `Es` = **E**xecution **S**print: drive all `Ready for execution` tickets through implementation + review to `Ready for acceptance`
 
 ## 7) Backlog

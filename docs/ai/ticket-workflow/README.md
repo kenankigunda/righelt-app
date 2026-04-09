@@ -10,7 +10,8 @@ It is authoritative for teammate responsibilities across both supported clients:
 Use these role docs when updating the workflow:
 
 - `lead.md`
-- `product-owner.md`
+- `product-manager.md`
+- `ux-designer.md`
 - `architect.md`
 - `eng.md`
 - `tester.md`

@@ -41,7 +41,7 @@ The repo uses a few documents as the main source of truth, depending on what you
 
 ## Developer Notes
 
-- UI information architecture and frontend interaction conventions live in `docs/UI_INFORMATION_ARCHITECTURE_PRINCIPLES.md`.
+- UX principles and frontend interaction conventions live in `docs/UX_PRINCIPLES.md`.
 - Diagnostic and verbose logging toggles live in `docs/DEBUGGING_AND_DIAGNOSTICS.md`.
 - Repo-level AI collaboration rules and shorthand live in `AGENTS.md`.
 - Non-default AI workflows and runbooks live in `docs/ai/`.

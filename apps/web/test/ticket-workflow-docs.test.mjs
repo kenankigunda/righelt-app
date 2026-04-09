@@ -16,7 +16,8 @@ const agentsDoc = readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
 
 const roles = [
   { slug: "lead", skill: "ticket-lead", claude: "lead" },
-  { slug: "product-owner", skill: "ticket-product-owner", claude: "product-owner" },
+  { slug: "product-manager", skill: "ticket-product-manager", claude: "product-manager" },
+  { slug: "ux-designer", skill: "ticket-ux-designer", claude: "ux-designer" },
   { slug: "architect", skill: "ticket-architect", claude: "architect" },
   { slug: "eng", skill: "ticket-eng", claude: "eng" },
   { slug: "tester", skill: "ticket-tester", claude: "tester" },
@@ -25,16 +26,60 @@ const roles = [
 test("ticket workflow doc points both Claude and Codex at the shared canon", () => {
   assert.match(workflowDoc, /docs\/ai\/ticket-workflow\/README\.md/);
   assert.match(workflowDoc, /docs\/ai\/ticket-workflow\/lead\.md/);
+  assert.match(workflowDoc, /docs\/ai\/ticket-workflow\/product-manager\.md/);
+  assert.match(workflowDoc, /docs\/ai\/ticket-workflow\/ux-designer\.md/);
+  assert.match(workflowDoc, /docs\/ai\/UX_VALIDATION_WORKFLOW\.md/);
   assert.match(workflowDoc, /skills\/ticket-lead\/SKILL\.md/);
   assert.match(workflowDoc, /node scripts\/check-ticket-workflow-setup\.mjs/);
   assert.match(workflowDoc, /scripts\/backlog\.sh/);
   assert.match(workflowDoc, /scripts\/backlog-git\.sh/);
+  assert.match(workflowDoc, /backlog\/docs\/TEST_PLAN_TEMPLATE\.md/);
 });
 
 test("AGENTS backlog guidance makes Codex workflow setup explicit", () => {
   assert.match(agentsDoc, /Codex implementations should use the shared canon in `docs\/ai\/ticket-workflow\/`/);
   assert.match(agentsDoc, /node scripts\/check-ticket-workflow-setup\.mjs/);
   assert.match(agentsDoc, /`\.\/scripts\/backlog\.sh` CLI wrapper \| Always preferred/);
+  assert.match(agentsDoc, /`Tkpm \[t-###\]`/);
+  assert.match(agentsDoc, /`Tkuxd \[t-###\]`/);
+  assert.doesNotMatch(agentsDoc, /`Tkpo \[t-###\]`/);
+});
+
+test("ticket workflow stages and routing reflect PM, UXD, and Architect planning", () => {
+  assert.match(workflowDoc, /`To Do` → `Spec` → `Visual Design` → `Eng Planning` → `Ready for execution`/);
+  assert.match(workflowDoc, /\| `feature` \| PM \| UXD \| Architect \|/);
+  assert.match(workflowDoc, /\| `bug` \| PM \| UXD \| Architect \|/);
+  assert.match(workflowDoc, /\| `improvement` \| \*\*Skipped\*\* \| \*\*Skipped\*\* \| Architect \|/);
+  assert.doesNotMatch(workflowDoc, /product-owner/);
+});
+
+test("tester workflow documents automation-first UX validation expectations", () => {
+  const testerCanon = readFileSync(path.join(repoRoot, "docs", "ai", "ticket-workflow", "tester.md"), "utf8");
+  const uxValidationDoc = readFileSync(path.join(repoRoot, "docs", "ai", "UX_VALIDATION_WORKFLOW.md"), "utf8");
+  const testerSkill = readFileSync(path.join(repoRoot, "skills", "ticket-tester", "SKILL.md"), "utf8");
+
+  assert.match(testerCanon, /UX Proof Matrix/);
+  assert.match(testerCanon, /UX Principle Coverage/);
+  assert.match(testerCanon, /docs\/ai\/UX_VALIDATION_WORKFLOW\.md/);
+  assert.match(testerSkill, /UX Proof Matrix/);
+  assert.match(uxValidationDoc, /semantic proof/i);
+  assert.match(uxValidationDoc, /geometry proof/i);
+  assert.match(uxValidationDoc, /visual proof/i);
+  assert.match(uxValidationDoc, /stability and responsiveness proof/i);
+  assert.match(uxValidationDoc, /behavioral proof/i);
+});
+
+test("UX canon and UX designer guidance use the new UX principles doc and text-first clarification", () => {
+  const uxdCanon = readFileSync(path.join(repoRoot, "docs", "ai", "ticket-workflow", "ux-designer.md"), "utf8");
+  const uxdSkill = readFileSync(path.join(repoRoot, "skills", "ticket-ux-designer", "SKILL.md"), "utf8");
+  const uxPrinciplesDoc = readFileSync(path.join(repoRoot, "docs", "UX_PRINCIPLES.md"), "utf8");
+
+  assert.match(uxdCanon, /docs\/UX_PRINCIPLES\.md/);
+  assert.match(uxdSkill, /Do not request new mocks for ticket planning\./);
+  assert.match(uxdCanon, /text-first clarification/i);
+  assert.match(uxdCanon, /current product as a fallback/i);
+  assert.match(uxPrinciplesDoc, /Do not ask the human to create new mocks for ticket planning\./);
+  assert.match(uxPrinciplesDoc, /screenshot of the current product as a fallback/i);
 });
 
 for (const role of roles) {
