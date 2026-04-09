@@ -19,3 +19,4 @@ Use these role docs when updating the workflow:
 Client-specific adapters should stay thin. They may add only invocation details such as teammate tool usage, subagent wiring, or client-specific prompt scaffolding. They should not redefine workflow ownership, phase boundaries, status rules, or output contracts.
 
 When the workflow changes, update the shared canon in this directory and [docs/ai/TICKET_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/TICKET_WORKFLOW.md) first. Update client adapters only when the client-specific execution mechanics also change.
+Within the shared canon, keep cross-role workflow policy centralized in [docs/ai/TICKET_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/TICKET_WORKFLOW.md). Role docs should focus on role-specific responsibilities, checkpoints, and output contracts rather than re-listing the full workflow rules.
