@@ -13,7 +13,8 @@
       "Bash(./scripts/backlog-git.sh:*)",
       "Bash(./scripts/backlog.sh:*)",
       "Bash(./scripts/backlog-doc.sh:*)",
-      "Bash(backlog:*)"
+      "Bash(backlog:*)",
+      "Bash(gh:*)"
     ]
   },
   "sandbox": {
