@@ -13,6 +13,11 @@ import {
 const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 const workflowDoc = readFileSync(path.join(repoRoot, "docs", "ai", "TICKET_WORKFLOW.md"), "utf8");
 const agentsDoc = readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
+const workspaceSetupDoc = readFileSync(path.join(repoRoot, "docs", "ai", "WORKSPACE_SETUP.md"), "utf8");
+const workspaceAgentsTemplate = readFileSync(
+  path.join(repoRoot, "docs", "ai", "WORKSPACE_ROOT_AGENTS.template.md"),
+  "utf8",
+);
 
 const roles = [
   { slug: "lead", skill: "ticket-lead", claude: "lead" },
@@ -43,6 +48,15 @@ test("AGENTS backlog guidance makes Codex workflow setup explicit", () => {
   assert.match(agentsDoc, /`Tkpm \[t-###\]`/);
   assert.match(agentsDoc, /`Tkuxd \[t-###\]`/);
   assert.doesNotMatch(agentsDoc, /`Tkpo \[t-###\]`/);
+});
+
+test("workspace setup docs point at the tracked parent AGENTS template and setup script", () => {
+  assert.match(workspaceSetupDoc, /docs\/ai\/WORKSPACE_ROOT_AGENTS\.template\.md/);
+  assert.match(workspaceSetupDoc, /pnpm setup:workspace/);
+  assert.match(workspaceSetupDoc, /--clone-backlog/);
+  assert.match(workspaceAgentsTemplate, /This parent folder is a shared workspace container, not a git repo\./);
+  assert.match(workspaceAgentsTemplate, /__APP_REPO__/);
+  assert.match(workspaceAgentsTemplate, /__BACKLOG_REPO__/);
 });
 
 test("ticket workflow stages and routing reflect PM, UXD, and Architect planning", () => {

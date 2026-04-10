@@ -1,6 +1,11 @@
 # AGENTS.md
 
-This file defines repo-specific operating rules for AI coding agents working in `/Users/kenankigunda/Documents/righelt`.
+This file defines repo-specific operating rules for AI coding agents working in `/Users/kenankigunda/Documents/righelt/righelt-app`.
+
+If the parent workspace `/Users/kenankigunda/Documents/righelt` is what is currently opened in Codex or Claude, treat `righelt-app` as the default git-aware execution root unless the task explicitly targets the sibling backlog repo.
+
+The tracked source of truth for the parent workspace `AGENTS.md` lives in `docs/ai/WORKSPACE_ROOT_AGENTS.template.md`; refresh the actual parent file with `pnpm setup:workspace`.
+Whenever you change parent-workspace guidance, update `docs/ai/WORKSPACE_ROOT_AGENTS.template.md` in the repo and regenerate the parent `/Users/kenankigunda/Documents/righelt/AGENTS.md` in the same change so the live workspace file stays aligned with the tracked template.
 
 ## 1) Core Principles
 

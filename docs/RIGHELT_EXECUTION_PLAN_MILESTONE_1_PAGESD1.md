@@ -136,7 +136,7 @@ Deploy workflow is serialized (`concurrency` enabled) to prevent overlapping run
 4. Confirm direct Worker health:
    - `https://righelt-api.kenankigunda.workers.dev/api/health` returns the same binding payload.
 
-For split-stack operations and recovery, use [`docs/RIGHELT_PAGES_WORKER_SPLIT_RUNBOOK.md`](/Users/kenankigunda/Documents/righelt/docs/RIGHELT_PAGES_WORKER_SPLIT_RUNBOOK.md).
+For split-stack operations and recovery, use [`docs/RIGHELT_PAGES_WORKER_SPLIT_RUNBOOK.md`](/Users/kenankigunda/Documents/righelt/righelt-app/docs/RIGHELT_PAGES_WORKER_SPLIT_RUNBOOK.md).
 
 ## Notes for Future Milestones
 

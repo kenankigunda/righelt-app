@@ -18,15 +18,17 @@ Righelt is organized around formal specs, implementation packages, and test lane
 
 ## Getting Started
 
-1. Install dependencies with `pnpm install`.
-2. Start the default local stack with `pnpm dev:all`.
-3. Run the core non-watch validation flow with `pnpm test`.
+1. Run `pnpm setup:workspace` to validate the parent `righelt/` layout and refresh the workspace-root `AGENTS.md`.
+2. Install dependencies with `pnpm install`.
+3. Start the default local stack with `pnpm dev:all`.
+4. Run the core non-watch validation flow with `pnpm test`.
 
 Useful variants:
 
 - `pnpm dev:web` starts only the web app.
 - `pnpm dev:api` starts only the API worker.
 - `pnpm test:unit`, `pnpm test:integration`, and `pnpm test:e2e` run individual test lanes.
+- `pnpm setup:workspace -- --clone-backlog` also clones the sibling `righelt-backlog` repo when it is missing.
 
 ## Read This First
 
@@ -45,6 +47,7 @@ The repo uses a few documents as the main source of truth, depending on what you
 - Diagnostic and verbose logging toggles live in `docs/DEBUGGING_AND_DIAGNOSTICS.md`.
 - Repo-level AI collaboration rules and shorthand live in `AGENTS.md`.
 - Non-default AI workflows and runbooks live in `docs/ai/`.
+- Parent-workspace bootstrap guidance lives in `docs/ai/WORKSPACE_SETUP.md`.
 
 ## License
 
