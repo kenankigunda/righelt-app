@@ -40,6 +40,10 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const renderHeaderWideActions = \(\) =>/);
   assert.match(source, /const renderHeaderNarrowMenu = \(\) =>/);
   assert.match(source, /const renderHeaderAlertZone = \(\) => \{/);
+  assert.match(source, /const alertStackRotationByGameId = new Map\(\);/);
+  assert.match(source, /const getGameAlertItems = \(game\) => \{/);
+  assert.match(source, /const renderGameAlertStackCard = \(\{ gameId, item, stackIndex, totalAlerts \}\) => \{/);
+  assert.match(source, /data-action="cycle-game-alert-stack"/);
   assert.match(source, /const viewedGameId = getCurrentViewedGameId\(\);/);
   assert.match(source, /data-shell-alert-zone="\$\{gameAlerts \? "active" : "idle"\}"/);
   assert.match(source, /data-action="toggle-header-menu"/);
@@ -58,11 +62,12 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const getFailedOperationsKey = \(gameId\) =>/);
   assert.match(source, /failedOperationsKey: getFailedOperationsKey\(game\.id\)/);
   assert.match(source, /const failedOperationsKey = getFailedOperationsKey\(game\.id\);/);
-  assert.match(source, /data-testid="sync-failure-banner"/);
+  assert.match(source, /testId:\s*"sync-failure-banner"/);
   assert.match(source, /data-action="dismiss-failed-operation"/);
   assert.doesNotMatch(source, /failedOperations\.length === 0 && game\.rollbackNotice/);
   assert.doesNotMatch(source, /rollbackNotice: game\.rollbackNotice/);
-  assert.match(source, /return \[failedOperationBanners,\s*liveSyncBanner,\s*undoRequestBanner\]\.filter\(Boolean\)\.join\(""\);/);
+  assert.match(source, /const rotation = getAlertStackRotation\(game\.id,\s*items\.length\);/);
+  assert.match(source, /renderGameAlertStackCard\(\{/);
   assert.match(source, /<div class="shell-header-status" data-shell-alert-zone="\$\{gameAlerts \? "active" : "idle"\}">/);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
@@ -451,7 +456,15 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   );
   assert.match(
     source,
-    /window\.addEventListener\("keydown", \(event\) => \{[\s\S]*event\.key !== "Escape"[\s\S]*closeHeaderMenu\(\);[\s\S]*syncNarrowHeaderMenuDom\(\);/s,
+    /window\.addEventListener\("keydown", \(event\) => \{[\s\S]*target\.matches\('\[data-action="cycle-game-alert-stack"\]'\)[\s\S]*event\.key === "Enter" \|\| event\.key === " "[\s\S]*cycleGameAlertStack\(gameId, target\);[\s\S]*event\.key !== "Escape"[\s\S]*closeHeaderMenu\(\);[\s\S]*syncNarrowHeaderMenuDom\(\);/s,
+  );
+  assert.match(
+    source,
+    /const cycleGameAlertStack = \(gameId, actionEl = null\) => \{[\s\S]*const alertCount = getGameAlertItems\(game\)\.length;[\s\S]*refreshMountedAlertHeader\(gameId, actionEl\);/s,
+  );
+  assert.match(
+    source,
+    /const refreshMountedAlertHeader = \(gameId = null, actionEl = null\) => \{[\s\S]*render\(\{ animatePanels: false, includeBoard: false \}\);[\s\S]*syncRenderedMarkupSnapshot\(\);[\s\S]*focusCurrentAlertStackCard\(gameId\);/s,
   );
   assert.match(source, /const renderFeedbackReveal = \(message\) =>/);
   assert.match(source, /feedback-reveal\$\{message \? " is-visible" : ""\}/);

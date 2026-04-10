@@ -61,6 +61,39 @@ const expectStableShellAnchors = (before, after, label) => {
   expect(Math.abs(after.historyTop - before.historyTop), `${label}: history top should stay stable`).toBeLessThanOrEqual(2);
 };
 
+const readAlertStackState = async (page) =>
+  page.evaluate(() => {
+    const cards = Array.from(document.querySelectorAll("[data-alert-stack-card]"));
+    const items = cards.map((card) => ({
+      stackIndex: Number(card.getAttribute("data-stack-index") ?? "-1"),
+      active: card.classList.contains("is-active"),
+      text: card.textContent?.replace(/\s+/g, " ").trim() ?? "",
+    }));
+    const activeItem = items.find((item) => item.active) ?? null;
+    return {
+      count: items.length,
+      activeText: activeItem?.text ?? "",
+      stackSignature: items.map((item) => `${item.stackIndex}:${item.text}`).join("|"),
+    };
+  });
+
+const cycleAlertStack = async (page) => {
+  const activeCard = page.locator(".shell-game-alert-stack-card.is-active").first();
+  await expect(activeCard).toBeVisible();
+  await activeCard.click({ position: { x: 18, y: 18 } });
+};
+
+const bringFailureBannerToFront = async (page) => {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const activeText = (await readAlertStackState(page)).activeText;
+    if (activeText.includes("Sync failed")) {
+      return;
+    }
+    await cycleAlertStack(page);
+  }
+  throw new Error("Expected to rotate the sync failure banner to the front of the alert stack");
+};
+
 const runAlertLayoutCase = async ({ context, page, zone }) => {
   let failureCount = 0;
   let releaseBranchFailure = null;
@@ -88,6 +121,10 @@ const runAlertLayoutCase = async ({ context, page, zone }) => {
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await makeAnyLegalMove(page, "p1");
   const { popup, gameId } = await openPendingHistoryBranchFromMove(page, 0);
+  const popupViewport = page.viewportSize();
+  if (popupViewport) {
+    await popup.setViewportSize(popupViewport);
+  }
   await branchRequestSeen;
 
   await expect(popup.getByTestId("game-shell")).toBeVisible();
@@ -106,7 +143,26 @@ const runAlertLayoutCase = async ({ context, page, zone }) => {
   const afterAppear = await getShellAnchors(popup);
   expectStableShellAnchors(before, afterAppear, "after alert appearance");
 
-  await failureBanner.getByRole("button", { name: "Dismiss" }).click();
+  await expect
+    .poll(async () => (await readAlertStackState(popup)).count, {
+      message: "Expected the alert zone to keep multiple simultaneous notifications in a fixed-height stack",
+    })
+    .toBeGreaterThanOrEqual(2);
+  const beforeRotate = await readAlertStackState(popup);
+  await cycleAlertStack(popup);
+  await expect
+    .poll(async () => (await readAlertStackState(popup)).activeText, {
+      message: "Expected clicking the active notification to rotate the stack order",
+    })
+    .not.toBe(beforeRotate.activeText);
+  const afterRotate = await getShellAnchors(popup);
+  expectStableShellAnchors(before, afterRotate, "after alert rotation");
+  const afterRotateStack = await readAlertStackState(popup);
+  expect(afterRotateStack.stackSignature).not.toBe(beforeRotate.stackSignature);
+
+  await bringFailureBannerToFront(popup);
+
+  await popup.locator('.shell-game-alert-stack-card.is-active [data-action="dismiss-failed-operation"]').click();
   await expect(failureBanner).toHaveCount(0);
   const afterDismiss = await getShellAnchors(popup);
   expectStableShellAnchors(before, afterDismiss, "after alert dismissal");
@@ -120,7 +176,11 @@ test("alert layout stability keeps wide-view alerts in the header zone without s
 
   try {
     await page.setViewportSize({ width: 1440, height: 1100 });
-    await runAlertLayoutCase({ context, page, zone: "header-center" });
+    await runAlertLayoutCase({
+      context,
+      page,
+      zone: { unit: "percent", left: 0.02, top: 0, width: 0.96, height: 0.18 },
+    });
   } finally {
     await closeContextQuietly(context);
   }
