@@ -24,8 +24,8 @@ export const BOT_PERSONAS: Record<BotId, BotPersona> = {
     style: "defensive",
     theme: "tortoise",
     searchDepth: 2,
-    branchFactor: 12,
-    noiseScale: 0.06,
+    branchFactor: 16,
+    noiseScale: 0.02,
     forgiveness: 0.6,
     aggression: -0.2,
     defense: 1.4,
@@ -68,4 +68,3 @@ export function getBotPersona(personaId: BotId): BotPersona {
 export function listBotPersonas(): BotPersona[] {
   return Object.values(BOT_PERSONAS);
 }
-
