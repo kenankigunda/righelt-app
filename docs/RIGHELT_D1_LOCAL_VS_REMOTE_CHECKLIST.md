@@ -4,7 +4,7 @@ This document clarifies which D1 database the repo uses in local development ver
 
 ## Current Setup
 
-The API Worker binding is defined in [`apps/api/wrangler.toml`](/Users/kenankigunda/Documents/righelt/apps/api/wrangler.toml).
+The API Worker binding is defined in [`apps/api/wrangler.toml`](/Users/kenankigunda/Documents/righelt/righelt-app/apps/api/wrangler.toml).
 
 - Bound D1 name: `righelt-db-dev`
 - Binding name used by the app: `DB`
@@ -75,7 +75,7 @@ pnpm --dir apps/api exec wrangler d1 migrations list righelt-db-dev --config wra
 
 ## Deploy Workflow Behavior
 
-The deploy workflow in [`/.github/workflows/deploy.yml`](/Users/kenankigunda/Documents/righelt/.github/workflows/deploy.yml) applies remote D1 migrations before deploying `righelt-api`, then deploys Pages.
+The deploy workflow in [`.github/workflows/deploy.yml`](/Users/kenankigunda/Documents/righelt/righelt-app/.github/workflows/deploy.yml) applies remote D1 migrations before deploying `righelt-api`, then deploys Pages.
 
 Current behavior:
 
