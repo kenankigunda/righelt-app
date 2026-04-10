@@ -18,7 +18,7 @@ Righelt is organized around formal specs, implementation packages, and test lane
 
 ## Getting Started
 
-1. Run `pnpm setup:workspace` to validate the parent `righelt/` layout and refresh the workspace-root `AGENTS.md`.
+1. Run `pnpm setup:workspace` to validate the parent `righelt/` layout and refresh the workspace-root `AGENTS.md` and `CLAUDE.md`.
 2. Install dependencies with `pnpm install`.
 3. Start the default local stack with `pnpm dev:all`.
 4. Run the core non-watch validation flow with `pnpm test`.

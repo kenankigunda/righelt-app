@@ -9,13 +9,14 @@ The parent workspace exists so local AI tools can see and write both repos witho
 
 ## Canonical Source Of Truth
 
-The parent-level `AGENTS.md` file is intentionally not versioned directly because it lives outside `righelt-app`. Its tracked source of truth lives in:
+The parent-level `AGENTS.md` and `CLAUDE.md` files are intentionally not versioned directly because they live outside `righelt-app`. Their tracked sources of truth live in:
 
 - `docs/ai/WORKSPACE_ROOT_AGENTS.template.md`
+- `docs/ai/WORKSPACE_ROOT_CLAUDE.template.md`
 
 Agent rule:
 
-- If you edit guidance that belongs in the parent workspace `AGENTS.md`, make that edit in the tracked template first, then run `pnpm setup:workspace` to regenerate the live parent file before you finish the task.
+- If you edit guidance that belongs in the parent workspace instructions, update the tracked template first, then run `pnpm setup:workspace` to regenerate the live parent `AGENTS.md` and `CLAUDE.md` files before you finish the task.
 
 Generate or refresh the parent file with:
 
@@ -29,7 +30,7 @@ pnpm setup:workspace
 
 - validates that this repo is named `righelt-app`
 - validates or creates the parent workspace root
-- writes the parent `AGENTS.md` from the tracked template
+- writes the parent `AGENTS.md` and `CLAUDE.md` from the tracked templates
 - checks whether `../righelt-backlog` exists
 - optionally clones `righelt-backlog` if it is missing
 
@@ -37,7 +38,7 @@ It does not automatically move an existing checkout.
 
 ## Common Usage
 
-Refresh the parent `AGENTS.md` and validate layout:
+Refresh the parent `AGENTS.md` and `CLAUDE.md` files and validate layout:
 
 ```bash
 pnpm setup:workspace
