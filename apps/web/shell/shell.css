@@ -216,7 +216,7 @@ body {
   max-width: 100%;
   position: relative;
   border-radius: 14px;
-  padding: calc(0.9rem + var(--shell-alert-stack-height, 5.6rem) + 0.35rem) 1rem 0.9rem;
+  padding: 0.9rem 1rem 0.9rem;
 }
 
 .shell-header h1 {

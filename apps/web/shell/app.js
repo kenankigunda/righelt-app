@@ -2073,7 +2073,9 @@ const setInviteFeedback = (message) => {
 const setUndoRequestFeedback = (gameId, message) => {
   undoRequestFeedback = message;
   undoRequestFeedbackGameId = gameId || null;
-  render({ animatePanels: false, includeBoard: false });
+  if (!isBuildingGameAlerts) {
+    render({ animatePanels: false, includeBoard: false });
+  }
   if (undoRequestFeedbackTimer) {
     clearTimeout(undoRequestFeedbackTimer);
     undoRequestFeedbackTimer = null;
@@ -2102,6 +2104,8 @@ const maybeUpdateUndoRequestOutcomeFeedback = (game) => {
   seenUndoRequestOutcomeByGameId.set(game.id, latestNote);
   setUndoRequestFeedback(game.id, latestNote);
 };
+
+let isBuildingGameAlerts = false;
 
 const markInviteChoiceCommitted = (gameId) => {
   if (!gameId) {
@@ -2303,22 +2307,27 @@ const renderHome = () => {
 };
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
-  const items = getGameAlertItems(game);
-  if (items.length === 0) {
-    return "";
+  isBuildingGameAlerts = true;
+  try {
+    const items = getGameAlertItems(game);
+    if (items.length === 0) {
+      return "";
+    }
+    const rotation = getAlertStackRotation(game.id, items.length);
+    const orderedItems = items.map((_, index) => items[(rotation + index) % items.length]);
+    return orderedItems
+      .map((item, stackIndex) =>
+        renderGameAlertStackCard({
+          gameId: game.id,
+          item,
+          stackIndex,
+          totalAlerts: orderedItems.length,
+        }),
+      )
+      .join("");
+  } finally {
+    isBuildingGameAlerts = false;
   }
-  const rotation = getAlertStackRotation(game.id, items.length);
-  const orderedItems = items.map((_, index) => items[(rotation + index) % items.length]);
-  return orderedItems
-    .map((item, stackIndex) =>
-      renderGameAlertStackCard({
-        gameId: game.id,
-        item,
-        stackIndex,
-        totalAlerts: orderedItems.length,
-      }),
-    )
-    .join("");
 };
 
 const renderHomeCardSkeleton = () => `

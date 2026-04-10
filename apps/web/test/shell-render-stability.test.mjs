@@ -64,6 +64,9 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const failedOperationsKey = getFailedOperationsKey\(game\.id\);/);
   assert.match(source, /testId:\s*"sync-failure-banner"/);
   assert.match(source, /data-action="dismiss-failed-operation"/);
+  assert.match(source, /let isBuildingGameAlerts = false;/);
+  assert.match(source, /const renderGameAlertsHtml = \(game, inviteFromRole = null\) => \{[\s\S]*isBuildingGameAlerts = true;[\s\S]*finally \{\s*isBuildingGameAlerts = false;\s*\}/s);
+  assert.match(source, /if \(!isBuildingGameAlerts\) \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
   assert.doesNotMatch(source, /failedOperations\.length === 0 && game\.rollbackNotice/);
   assert.doesNotMatch(source, /rollbackNotice: game\.rollbackNotice/);
   assert.match(source, /const rotation = getAlertStackRotation\(game\.id,\s*items\.length\);/);
