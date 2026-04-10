@@ -42,6 +42,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /data-testid="left-game-gate"/);
   assert.match(source, /data-testid="rejoin-left-game"/);
   assert.match(source, /const leaveHomeGame = async \(gameId\) =>/);
+  assert.match(source, /const result = await transport\.leaveGame\(\{ gameId \}\);[\s\S]*await syncHomeSections\(\);/s);
   assert.match(source, /const leaveGamePagePlayer = async \(gameId\) =>/);
   assert.match(source, /const leaveGamePageViewer = async \(gameId\) =>/);
   assert.match(source, /const shouldAnimate = !prefersReducedMotion\(\);/);
@@ -148,7 +149,10 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const getCurrentFlyoutState = \(\) => \(\{\s*\.\.\.Object\.fromEntries\(FLYOUT_KEYS\.map\(\(key\) => \[key, currentRoute\[key\] === true\]\)\),\s*\}\);/s);
   assert.match(source, /const getCurrentGameHashState = \(panel = getGamePanel\(\)\) => \(\{\s*\.\.\.getCurrentFlyoutState\(\),\s*panel,\s*\}\);/s);
   assert.match(source, /const getBaseRouteRenderKey = \(route = currentRoute\) => \{/);
+  assert.match(source, /const getGameRoutePresentationKey = \(route = currentRoute\) => \{/);
+  assert.match(source, /if \(leftGameBannerByGameId\.get\(game\.id\) === true\) \{\s*return "left";\s*\}/s);
   assert.match(source, /const getRouteRenderKey = \(route = currentRoute\) =>/);
+  assert.match(source, /presentation:\$\{getGameRoutePresentationKey\(route\)\}/);
   assert.match(source, /const getRouteTransitionPhaseKey = \(\) => routeTransition\?\.phase \|\| "idle";/);
   assert.match(source, /const getRouteTransitionRenderKey = \(\) =>/);
   assert.match(source, /const isGameEntryRouteTransitionActive = \(route = currentRoute\) =>/);

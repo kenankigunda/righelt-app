@@ -1077,8 +1077,36 @@ const getBaseRouteRenderKey = (route = currentRoute) => {
   }
   return String(route.name || "unknown");
 };
+const getGameRoutePresentationKey = (route = currentRoute) => {
+  if (route?.name !== "game") {
+    return "";
+  }
+  if (!routeHydrated) {
+    return "loading";
+  }
+  const game = transport.getGameViewModel(route.gameId);
+  if (!game) {
+    return "loading";
+  }
+  if (game.deletedAt) {
+    return "deleted";
+  }
+  if (getActiveApprovalRequest(game)) {
+    return "approval";
+  }
+  if (getActiveRevertRequest(game)) {
+    return "revert-approval";
+  }
+  if (getActivePendingRevertRequest(game)) {
+    return "revert-waiting";
+  }
+  if (leftGameBannerByGameId.get(game.id) === true) {
+    return "left";
+  }
+  return "live";
+};
 const getRouteRenderKey = (route = currentRoute) =>
-  `${getBaseRouteRenderKey(route)}|panel:${route?.name === "game" ? getGamePanel(route) : ""}|${FLYOUT_KEYS.map((key) => `${key}:${route?.[key] === true}`).join("|")}|transition:${getRouteTransitionRenderKey()}`;
+  `${getBaseRouteRenderKey(route)}|panel:${route?.name === "game" ? getGamePanel(route) : ""}|presentation:${getGameRoutePresentationKey(route)}|${FLYOUT_KEYS.map((key) => `${key}:${route?.[key] === true}`).join("|")}|transition:${getRouteTransitionRenderKey()}`;
 const isFlyoutOnlyRouteChange = (previousRoute, nextRoute) =>
   getBaseRouteRenderKey(previousRoute) === getBaseRouteRenderKey(nextRoute) &&
   getRouteRenderKey(previousRoute) !== getRouteRenderKey(nextRoute);
@@ -2448,7 +2476,12 @@ const leaveHomeGame = async (gameId) => {
 
   try {
     const result = await transport.leaveGame({ gameId });
-    markLeftGameBanner(gameId, inviteFromRole);
+    if (result?.deleted) {
+      clearLeftGameBanner(gameId);
+    } else {
+      markLeftGameBanner(gameId, inviteFromRole);
+    }
+    await syncHomeSections();
     return result;
   } catch (error) {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
@@ -3533,17 +3566,6 @@ const renderTutorial = (gameId) => {
 const renderNotFound = () => `
   <section class="panel">
     <h2>Route not found</h2>
-    <a class="button-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Return home</a>
-  </section>
-`;
-
-const renderGameNotFound = () => `
-  <section class="shell-route-message panel shell-game-not-found">
-    <div class="shell-route-message-copy">
-      <p class="small shell-route-kicker">Game not found</p>
-      <h2>Game not found</h2>
-      <p>The game ID you opened no longer resolves to a live or deleted game.</p>
-    </div>
     <a class="button-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Return home</a>
   </section>
 `;
