@@ -15,6 +15,7 @@ import {
   applyServerAction,
   createComputerPlayerMetadata,
   createInitialGame,
+  toStaticGameCard,
   withFullViewModel,
 } from "../src/shell-live-core.ts";
 import { listLegalActions, resolveToStability } from "../../game-engine/src/index.ts";
@@ -254,4 +255,39 @@ test("T-021.01: full view model keeps viewer sharing but suppresses conflicting 
   assert.equal(view.canInvite, true);
   assert.equal(view.inviteToken, game.inviteTokens.viewer);
   assert.equal(view.showJoinActions, false);
+});
+
+test("T-021.01: static game cards preserve computer-player metadata for the home list", () => {
+  const game = createInitialGame({
+    gameId: "g-cp-03",
+    identityId: "id-cp-03",
+    selfPlayMode: false,
+    computerPlayer: createComputerPlayerMetadata({
+      botId: "babs-beginner",
+      displayName: "Babs the Beginner",
+      animal: "bunny",
+      skillLabel: "Light",
+      styleLabel: "Friendly",
+      humanSeat: "Player 1",
+      activeTurnKey: "turn-003",
+    }),
+  });
+
+  const card = toStaticGameCard(
+    {
+      ...game,
+      pendingJoinRequests: [],
+      historyIndexByIdentity: {},
+      pendingScenarioSelection: null,
+      moves: game.moves,
+      moveCount: game.moves.length,
+      previewSnapshot: game.board.state,
+    },
+    "id-cp-viewer",
+  );
+
+  assert.equal(card.computerPlayer?.displayName, "Babs the Beginner");
+  assert.equal(card.computerPlayer?.botSeat, "Player 2");
+  assert.equal(card.player1?.identityId, "id-cp-03");
+  assert.equal(card.canJoinAsPlayer, false);
 });

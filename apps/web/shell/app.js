@@ -374,11 +374,11 @@ const renderConnectionStatusIcon = (status, label) =>
 const renderPlayerSlotStatus = (seat, participant, { verbose = false, game = null } = {}) => {
   const computerSeat = getComputerPlayerSeat(game, seat);
   if (computerSeat) {
-    const statusLabel = `${seat} is controlled by ${computerSeat.displayName}`;
+    const statusLabel = `${seat} is ${computerSeat.displayName}`;
     if (!verbose) {
       return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)}${renderConnectionStatusIcon("connected", statusLabel)}</span>`;
     }
-    return `<span class="mini-board-card-connection-item"><span>${renderSeatLabel(seat)} is controlled by ${escapeHtml(
+    return `<span class="mini-board-card-connection-item"><span>${renderSeatLabel(seat)} is ${escapeHtml(
       computerSeat.displayName,
     )}</span>${renderConnectionStatusIcon("connected", statusLabel)}</span>`;
   }
@@ -415,7 +415,7 @@ const renderHomeRoleLine = (game) => {
     return `You are ${renderRoleLabel(game.myRole, game)}`;
   }
   if (isComputerGame(game) && (game?.myRole === "Player 1" || game?.myRole === "Player 2")) {
-    return `You are ${renderRoleLabel(game.myRole, game)} vs ${escapeHtml(game.computerPlayer.displayName)}`;
+    return `You are ${renderRoleLabel(game.myRole, game)}`;
   }
   if (game?.myRole === "Player 1") {
     return `You are ${renderRoleLabel(game.myRole, game)}`;

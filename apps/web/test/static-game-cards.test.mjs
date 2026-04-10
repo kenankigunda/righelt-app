@@ -14,6 +14,12 @@ test("static game cards normalize list payloads without requiring full game stat
     canJoinAsPlayer: true,
     player1: { identityId: "id-a", connected: true },
     player2: null,
+    computerPlayer: {
+      botId: "tau-tenacious",
+      displayName: "Tau the Tenacious",
+      humanSeat: "Player 1",
+      botSeat: "Player 2",
+    },
   });
 
   assert.equal(card.id, "game-card-1");
@@ -21,6 +27,9 @@ test("static game cards normalize list payloads without requiring full game stat
   assert.equal(card.previewSnapshot.sideToMove, "P2");
   assert.equal(card.canJoinAsPlayer, true);
   assert.equal(card.player1.identityId, "id-a");
+  assert.equal(card.computerPlayer.botId, "tau-tenacious");
+  assert.equal(card.computerPlayer.displayName, "Tau the Tenacious");
+  assert.equal(card.computerPlayer.botSeat, "Player 2");
 });
 
 test("static game cards derive scenario previews from resulting state and move count", () => {
@@ -49,7 +58,14 @@ test("static game cards derive home-card summaries from full live game views", (
     myRole: "Player 1",
     canJoinAsPlayer: false,
     player1: { identityId: "id-a", connected: true },
-    player2: { identityId: "id-b", connected: false },
+    player2: null,
+    computerPlayer: {
+      mode: "computer-player",
+      botId: "babs-beginner",
+      displayName: "Babs the Beginner",
+      humanSeat: "Player 1",
+      botSeat: "Player 2",
+    },
     syncStatus: "confirming",
   });
 
@@ -57,4 +73,6 @@ test("static game cards derive home-card summaries from full live game views", (
   assert.equal(card.previewSnapshot.turnIndex, 2);
   assert.equal(card.myRole, "Player 1");
   assert.equal(card.syncStatus, "confirming");
+  assert.equal(card.computerPlayer.displayName, "Babs the Beginner");
+  assert.equal(card.computerPlayer.botSeat, "Player 2");
 });
