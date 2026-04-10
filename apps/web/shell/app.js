@@ -364,6 +364,9 @@ const formatDisplayGameId = (gameId) => {
 };
 
 const getDocumentTitle = () => {
+  if (currentRoute.name === "game-not-found") {
+    return "Game not found | Righelt";
+  }
   const gameId = getCurrentViewedGameId();
   if (gameId) {
     return `${formatDisplayGameId(gameId)} | Righelt`;
@@ -1430,7 +1433,8 @@ const shouldHandleGamePanelSwipe = (target) =>
   getShellLayoutMode() === "narrow" &&
   target instanceof HTMLElement &&
   target.closest("[data-game-shell-root]") instanceof HTMLElement &&
-  !target.closest(".shell-mobile-tabbar");
+  !target.closest(".shell-mobile-tabbar") &&
+  !(transport.getGameViewModel(currentRoute.gameId)?.deletedAt);
 
 const getCurrentViewedGameId = () => {
   if (currentRoute.name === "game") {
@@ -2198,9 +2202,14 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
   </article>`;
 };
 
-const renderCardMenu = (game, { isOffline, myIdentityId }) => {
+const renderCardMenu = (game, { isOffline, myIdentityId, variant = "home" } = {}) => {
   const leaveDeleteLabel = computeLeaveDeleteLabel(game, myIdentityId);
-  const action = leaveDeleteLabel === "Delete" ? "delete-game" : "leave-game";
+  const action =
+    variant === "game" && game?.myRole === "Viewer"
+      ? "leave-viewer"
+      : leaveDeleteLabel === "Delete"
+        ? "delete-game"
+        : "leave-game";
   const menuId = `mini-board-card-menu-${escapeHtml(game.id)}`;
   const offlineNote = isOffline ? '<p class="small mini-board-card-menu-note">Not available offline.</p>' : "";
   return `
@@ -2387,6 +2396,39 @@ const leaveHomeGame = async (gameId) => {
     pendingHomeCardLeaveIds.delete(gameId);
     clearHomeGameCardLeaveAnimation(gameId);
     render({ animatePanels: false, includeBoard: false });
+  }
+};
+
+const leaveGamePagePlayer = async (gameId) => {
+  const game = transport.getGameViewModel(gameId) ?? transport.getHomeGameCard(gameId);
+  const inviteFromRole = game?.myRole === "Player 1" || game?.myRole === "Player 2" ? game.myRole : null;
+  try {
+    const result = await transport.leaveGame({ gameId });
+    if (result.deleted) {
+      clearLeftGameBanner(gameId);
+      render({ animatePanels: false, includeBoard: false });
+      return result;
+    }
+    markLeftGameBanner(gameId, inviteFromRole);
+    render({ animatePanels: false, includeBoard: false });
+    return result;
+  } catch (error) {
+    window.__righeltLastError = error instanceof Error ? error.message : String(error);
+    return null;
+  }
+};
+
+const leaveGamePageViewer = async (gameId) => {
+  const game = transport.getGameViewModel(gameId) ?? transport.getHomeGameCard(gameId);
+  try {
+    const result = await transport.leaveAsViewer({ gameId });
+    clearLeftGameBanner(gameId);
+    const inviteToken = result.game?.inviteToken || game?.inviteToken || gameId;
+    navigateTo(buildInviteHash(inviteToken, getCurrentFlyoutState()));
+    return result;
+  } catch (error) {
+    window.__righeltLastError = error instanceof Error ? error.message : String(error);
+    return null;
   }
 };
 
@@ -2592,21 +2634,31 @@ const renderInvitePageSkeleton = () => `
 
 const renderGameSummaryPanel = (game) => {
   const latestNote = game.notifications[0] || "Ready";
+  const gamePageMenu = renderCardMenu(game, {
+    isOffline: navigator.onLine === false,
+    myIdentityId: transport.getIdentityId(),
+    variant: "game",
+  });
   return `
-    <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
-    <div class="section-stack">
-      <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
-      <p class="small" data-testid="game-role">Role: ${renderRoleLabel(game.myRole, game)}</p>
-      <div class="section-followup">
-        <p class="small" data-testid="active-turn-label">Active turn: ${
-          game.currentTurn
-            ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderSeatLabel(game.currentTurn.playerSeat)} · ${escapeHtml(
-                String(game.currentTurn.moveIndexes.length),
-              )} move(s)`
-            : "n/a"
-        }</p>
-        <p class="small">Latest: ${colorizePlayerReferences(latestNote)}</p>
+    <div class="game-shell-summary-header">
+      <div class="game-shell-summary-copy">
+        <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
+        <div class="section-stack">
+          <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
+          <p class="small" data-testid="game-role">Role: ${renderRoleLabel(game.myRole, game)}</p>
+          <div class="section-followup">
+            <p class="small" data-testid="active-turn-label">Active turn: ${
+              game.currentTurn
+                ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderSeatLabel(game.currentTurn.playerSeat)} · ${escapeHtml(
+                    String(game.currentTurn.moveIndexes.length),
+                  )} move(s)`
+                : "n/a"
+            }</p>
+            <p class="small">Latest: ${colorizePlayerReferences(latestNote)}</p>
+          </div>
+        </div>
       </div>
+      <div class="game-shell-summary-menu">${gamePageMenu}</div>
     </div>
   `;
 };
@@ -2785,6 +2837,48 @@ const renderGameShellFrame = (game) => `
       ${renderGameShellPanelTab("board", "Board")}
       ${renderGameShellPanelTab("history", "History")}
     </nav>
+  </section>
+`;
+
+const renderGameDeletedGate = (game) => {
+  const canRestore = isPlayerRole(game?.myRole);
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(
+    game.inviteToken || game.id,
+    getCurrentFlyoutState(),
+  )}`;
+  const restoreButton = canRestore
+    ? `<div class="invite-choice-row">
+        <button data-action="restore-game" data-game-id="${escapeHtml(game.id)}" data-testid="restore-game">Restore</button>
+        <span class="small invite-choice-note">Restore the deleted game and return to the live board without a full reload.</span>
+      </div>`
+    : "";
+  return `
+    <section class="invite-gate game-deleted-gate" data-testid="game-deleted-gate">
+      <section class="panel invite-gate-modal game-deleted-modal">
+        <p class="small invite-gate-kicker">Game deleted</p>
+        <h2>Game deleted</h2>
+        <p>${canRestore ? "Restore the game to return to the live view." : "This game was deleted and can no longer be restored from this session."}</p>
+        <div class="invite-choice-list">
+          ${restoreButton}
+          <div class="invite-choice-row">
+            <a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Back home</a>
+            <span class="small invite-choice-note">Open the home page or copy the invite link below to re-enter if the game is restored.</span>
+          </div>
+        </div>
+        <p class="small">Invite link: <span class="mono">${escapeHtml(inviteLink)}</span></p>
+      </section>
+      <div class="invite-gate-content" aria-hidden="true">
+        ${renderGameContent(game.id)}
+      </div>
+    </section>
+  `;
+};
+
+const renderGameNotFound = () => `
+  <section class="panel game-not-found-state" data-testid="game-not-found">
+    <h2>Game not found</h2>
+    <p class="small">The game you opened no longer exists.</p>
+    <a class="button-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Return home</a>
   </section>
 `;
 
@@ -3092,6 +3186,9 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
   if (!game) {
     return false;
   }
+  if (game.deletedAt) {
+    return false;
+  }
   return !getActiveApprovalRequest(game) && !getActiveRevertRequest(game) && !getActivePendingRevertRequest(game) && doesMountedFlyoutStateMatchRoute();
 };
 
@@ -3240,6 +3337,10 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   const game = transport.getGameViewModel(gameId);
   if (!game) {
     return renderGameContent(gameId, inviteFromRole, inviteToken);
+  }
+  if (game.deletedAt) {
+    clearLeftGameBanner(game.id);
+    return renderGameDeletedGate(game);
   }
   const approvalRequest = getActiveApprovalRequest(game);
   if (approvalRequest) {
@@ -3778,6 +3879,8 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   const previousPanelHeights = animatePanels && !shouldPatchFlyoutsOnly ? capturePanelHeights() : [];
   const previousFlyoutRects = animatePanels ? captureFlyoutRects() : new Map();
   syncShellLayoutMode();
+  const currentGame = currentRoute.name === "game" ? transport.getGameViewModel(currentRoute.gameId) : null;
+  const isDeletedGameRoute = currentRoute.name === "game" && currentGame?.deletedAt != null;
   if (shouldPatchFlyoutsOnly) {
     updateMountedHeader();
     updateMountedFlyouts();
@@ -3787,14 +3890,20 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     syncMountedGameShellPanelUi();
     reconcileMiniBoardPreviews();
     if (includeBoard) {
-      if (currentRoute.name === "game") {
-        mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
+      if (currentRoute.name === "game" && !isDeletedGameRoute) {
+        mountBoardForGame(currentGame);
       } else if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
         mountBoardForGame(transport.getGameViewModel(resolvedInvite.gameId));
       }
     }
     animateHomeSectionTransitions();
     syncScenarioAuthoringControls();
+    if (currentRoute.name === "game" && isDeletedGameRoute) {
+      scheduleGameShellStickyLayout();
+      destroyMountedBoardRuntime();
+      syncRenderedMarkupSnapshot();
+      return;
+    }
     if (animatePanels) {
       animateFlyoutPositionChanges(previousFlyoutRects);
     }
@@ -3812,7 +3921,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     updateHeaderFields();
     syncScenarioAuthoringControls();
     updateMountedGameShell({
-      game: transport.getGameViewModel(currentRoute.gameId),
+      game: currentGame,
       inviteFromRole: currentRoute.inviteFromRole,
       includeBoard,
     });
@@ -3823,8 +3932,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (currentRoute.name === "home") {
     body = renderHome();
   } else if (currentRoute.name === "game") {
-    const game = transport.getGameViewModel(currentRoute.gameId);
-    const inviteContext = getInviteContextForGame(game, "game");
+    const inviteContext = getInviteContextForGame(currentGame, "game");
     body = inviteContext ? renderInviteLanding(inviteContext) : renderGame(currentRoute.gameId, currentRoute.inviteFromRole);
   } else if (currentRoute.name === "invite") {
     if (!routeHydrated) {
@@ -3836,6 +3944,8 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
         ? renderInviteLanding(inviteContext)
         : renderGame(resolvedInvite?.gameId || null, resolvedInvite?.inviteFromRole || null, resolvedInvite?.inviteToken || null);
     }
+  } else if (currentRoute.name === "game-not-found") {
+    body = renderGameNotFound();
   } else if (currentRoute.name === "tutorial") {
     body = renderTutorial(currentRoute.gameId);
   } else {
@@ -3868,6 +3978,11 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   reconcileMiniBoardPreviews();
   animateHomeSectionTransitions();
   syncScenarioAuthoringControls();
+  if (currentRoute.name === "game" && isDeletedGameRoute) {
+    scheduleGameShellStickyLayout();
+    destroyMountedBoardRuntime();
+    return;
+  }
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
@@ -3876,13 +3991,13 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (currentRoute.name === "game") {
     if (shouldUseIncrementalGameShell()) {
       updateMountedGameShell({
-        game: transport.getGameViewModel(currentRoute.gameId),
+        game: currentGame,
         inviteFromRole: currentRoute.inviteFromRole,
         includeBoard,
       });
       return;
     }
-    mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
+    mountBoardForGame(currentGame);
     scheduleGameShellStickyLayout();
   }
   if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
@@ -3919,7 +4034,22 @@ const syncRouteData = async () => {
   }
   if (currentRoute.name === "game") {
     resolvedInvite = null;
-    await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
+    try {
+      await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
+    } catch (error) {
+      if ((error?.code === "game_not_found" || error?.body?.error === "game_not_found") && currentRoute.gameId) {
+        currentRoute = normalizeRouteFlyoutState({
+          name: "game-not-found",
+          gameId: currentRoute.gameId,
+          debug: currentRoute.debug,
+          scenarios: currentRoute.scenarios,
+        });
+        syncFlyoutRenderOrder(currentRoute);
+        syncLiveChannels();
+        return;
+      }
+      throw error;
+    }
     return;
   }
   if (currentRoute.name === "invite") {
@@ -4277,6 +4407,19 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "restore-game") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) {
+      return;
+    }
+    void withPendingButton(`restore-game:${gameId}`, async () => {
+      await transport.restoreGame({ gameId });
+      clearLeftGameBanner(gameId);
+      render({ animatePanels: false, includeBoard: false });
+    });
+    return;
+  }
+
   if (action === "join-viewer" || action === "accept-invite-viewer") {
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) return;
@@ -4294,6 +4437,15 @@ appEl.addEventListener("click", async (event) => {
       }
       await syncRouteDataAndLiveChannels();
     });
+    return;
+  }
+
+  if (action === "leave-viewer") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) {
+      return;
+    }
+    void leaveGamePageViewer(gameId);
     return;
   }
 
@@ -4323,6 +4475,15 @@ appEl.addEventListener("click", async (event) => {
   if (action === "leave-game" || action === "delete-game") {
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) {
+      return;
+    }
+    const game = transport.getGameViewModel(gameId) ?? transport.getHomeGameCard(gameId);
+    if (currentRoute.name === "game" && game?.myRole === "Viewer") {
+      void leaveGamePageViewer(gameId);
+      return;
+    }
+    if (currentRoute.name === "game") {
+      void leaveGamePagePlayer(gameId);
       return;
     }
     void leaveHomeGame(gameId);

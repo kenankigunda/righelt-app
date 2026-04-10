@@ -61,6 +61,17 @@ test("game, join/invite, and history use shared section spacing structure", () =
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
 });
 
+test("game-page delete, restore, and viewer-leave controls stay on the game-shell path", () => {
+  assert.match(source, /const renderGameDeletedGate = \(game\) =>/);
+  assert.match(source, /data-testid="game-deleted-gate"/);
+  assert.match(source, /data-testid="restore-game"/);
+  assert.match(source, /const renderGameNotFound = \(\) =>/);
+  assert.match(source, /data-testid="game-not-found"/);
+  assert.match(source, /if \(action === "leave-viewer"\) \{[\s\S]*leaveGamePageViewer\(gameId\);[\s\S]*return;/s);
+  assert.match(source, /if \(action === "restore-game"\) \{[\s\S]*transport\.restoreGame\(\{ gameId \}\);/s);
+  assert.match(source, /if \(currentRoute\.name === "game" && isDeletedGameRoute\) \{[\s\S]*destroyMountedBoardRuntime\(\);[\s\S]*return;/s);
+});
+
 test("history live-return control stays mounted without blocking through the global busy gate", () => {
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
   assert.doesNotMatch(source, /data-action="return-live"[^`]*\$\{busy \? "disabled" : ""\}/);
@@ -82,7 +93,10 @@ test("invite choice commit suppresses repeat game-route invite gate and join act
   assert.match(source, /if \(routeName === "game" && inviteChoiceCommittedByGameId\.has\(game\.id\)\) \{\s*return null;\s*\}/s);
   assert.match(source, /if \(action === "join-viewer" \|\| action === "accept-invite-viewer"\)[\s\S]*?markInviteChoiceCommitted\(gameId\);/s);
   assert.match(source, /if \(action === "join-player" \|\| action === "accept-invite-player"\)[\s\S]*?markInviteChoiceCommitted\(gameId\);/s);
-  assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*resolvedInvite = null;\s*await transport\.loadGame\(currentRoute\.gameId, \{ openAsViewer: false \}\);\s*return;\s*\}/s);
+  assert.match(
+    source,
+    /if \(currentRoute\.name === "game"\) \{\s*resolvedInvite = null;\s*try \{\s*await transport\.loadGame\(currentRoute\.gameId, \{ openAsViewer: false \}\);\s*\} catch \(error\) \{\s*if \(\(error\?\.(?:code|body\?\.error) === "game_not_found" \|\| error\?\.body\?\.error === "game_not_found"\) && currentRoute\.gameId\) \{\s*currentRoute = normalizeRouteFlyoutState\(\{\s*name: "game-not-found",\s*gameId: currentRoute\.gameId,\s*debug: currentRoute\.debug,\s*scenarios: currentRoute\.scenarios,\s*\}\);\s*syncFlyoutRenderOrder\(currentRoute\);\s*syncLiveChannels\(\);\s*return;\s*\}\s*throw error;\s*\}\s*return;\s*\}/s,
+  );
   assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
   assert.match(source, /routeHydrated = false;\s*syncLiveChannels\(\);/s);
   assert.match(source, /const initialRender = async \(\) => \{\s*routeHydrated = false;\s*syncLiveChannels\(\);\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
