@@ -92,7 +92,8 @@ const runAlertLayoutCase = async ({ context, page, zone }) => {
 
   await expect(popup.getByTestId("game-shell")).toBeVisible();
   await expect(popup.getByTestId("game-role")).toContainText("Player 1");
-  await expect(popup.getByText("Latest: History branch pending sync")).toBeVisible();
+  const pendingSyncNotice = popup.getByText("Latest: History branch pending sync");
+  await expect(pendingSyncNotice).toBeVisible();
   await expect(popup).toHaveURL(new RegExp(`#\\/game\\/${gameId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
   await installUxMetricsCollector(popup);
   const before = await getShellAnchors(popup);
@@ -100,6 +101,7 @@ const runAlertLayoutCase = async ({ context, page, zone }) => {
 
   const failureBanner = popup.getByTestId("sync-failure-banner");
   await expect(failureBanner).toBeVisible();
+  await expect(pendingSyncNotice).toHaveCount(0);
   await expectLocatorInZone(popup, failureBanner, { zone, tolerancePx: 32 });
   const afterAppear = await getShellAnchors(popup);
   expectStableShellAnchors(before, afterAppear, "after alert appearance");
