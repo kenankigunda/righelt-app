@@ -8,6 +8,7 @@ test("static game cards normalize list payloads without requiring full game stat
     createdAt: "2026-02-26T00:00:00.000Z",
     lastMoveAt: "2026-02-26T00:00:02.000Z",
     updatedAt: "2026-02-26T00:00:02.000Z",
+    deletedAt: "2026-02-26T00:00:04.000Z",
     moveCount: 2,
     previewSnapshot: { sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } },
     myRole: "Guest",
@@ -20,6 +21,7 @@ test("static game cards normalize list payloads without requiring full game stat
   assert.equal(card.moveCount, 2);
   assert.equal(card.previewSnapshot.sideToMove, "P2");
   assert.equal(card.canJoinAsPlayer, true);
+  assert.equal(card.deletedAt, "2026-02-26T00:00:04.000Z");
   assert.equal(card.player1.identityId, "id-a");
 });
 
@@ -44,6 +46,7 @@ test("static game cards derive home-card summaries from full live game views", (
     createdAt: "2026-02-26T00:00:00.000Z",
     lastMoveAt: "2026-02-26T00:00:03.000Z",
     updatedAt: "2026-02-26T00:00:03.000Z",
+    deletedAt: "2026-02-26T00:00:05.000Z",
     moves: [{}, {}],
     currentSnapshot: { sideToMove: "P1", turnIndex: 2, pieces: [], continuation: null, outcome: { status: "ongoing" } },
     myRole: "Player 1",
@@ -55,6 +58,7 @@ test("static game cards derive home-card summaries from full live game views", (
 
   assert.equal(card.moveCount, 2);
   assert.equal(card.previewSnapshot.turnIndex, 2);
+  assert.equal(card.deletedAt, "2026-02-26T00:00:05.000Z");
   assert.equal(card.myRole, "Player 1");
   assert.equal(card.syncStatus, "confirming");
 });

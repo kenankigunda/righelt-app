@@ -4,12 +4,14 @@
  * Covers test plan rows:
  *   U-08 — normalization: missing destroyedPieces defaults to []
  *   U-09 — normalization: existing destroyedPieces is preserved
+ *   U-24 — normalizePersistedGame round-trips deletedAt
+ *   U-25 — StaticGameCard projection includes deletedAt
  *   I-08 — destroyedPieces survives a full persist → normalize → serve round-trip
  *   I-19 — schema normalization mismatch logging: absence is logged but not fatal
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadGameProjection, persistGameState } from "../src/shell-live-db.ts";
+import { listHomeSectionStaticGameCardPage, loadGameProjection, persistGameState } from "../src/shell-live-db.ts";
 import { createInitialGame } from "../src/shell-live-core.ts";
 import { createFakeD1 } from "./support/fake-d1.mjs";
 
@@ -291,4 +293,42 @@ test("I-19c: mixed legacy and modern moves — both handled correctly in same ga
   assert.equal(projection.game.moves.length, 2);
   assert.deepEqual(projection.game.moves[0].destroyedPieces, [], "legacy move defaults to []");
   assert.deepEqual(projection.game.moves[1].destroyedPieces, destroyedPieces, "modern move is preserved");
+});
+
+test("U-24: normalizePersistedGame round-trips deletedAt when present and when absent", async () => {
+  const env = makeEnv();
+  const deletedGame = createInitialGame({ gameId: "g-u24-deleted", identityId: "id-u24", selfPlayMode: false });
+  deletedGame.deletedAt = "2026-04-09T12:00:00.000Z";
+  await persistGameState(env, deletedGame, 1);
+
+  const deletedProjection = await loadGameProjection(env, deletedGame.id);
+  assert.ok(deletedProjection);
+  assert.equal(deletedProjection.kind, "ok");
+  assert.equal(deletedProjection.game.deletedAt, "2026-04-09T12:00:00.000Z");
+
+  const activeGame = createInitialGame({ gameId: "g-u24-active", identityId: "id-u24", selfPlayMode: false });
+  await persistGameState(env, activeGame, 2);
+
+  const activeProjection = await loadGameProjection(env, activeGame.id);
+  assert.ok(activeProjection);
+  assert.equal(activeProjection.kind, "ok");
+  assert.equal(activeProjection.game.deletedAt, null);
+});
+
+test("U-25: static game card projections include deletedAt", async () => {
+  const env = makeEnv();
+  const game = createInitialGame({ gameId: "g-u25", identityId: "id-u25", selfPlayMode: false });
+  game.deletedAt = "2026-04-09T12:00:00.000Z";
+  await persistGameState(env, game, 1);
+
+  const page = await listHomeSectionStaticGameCardPage(env, {
+    identityId: "id-u25",
+    section: "my",
+    page: 0,
+    pageSize: 10,
+    debug: false,
+  });
+
+  assert.equal(page.games.length, 1);
+  assert.equal(page.games[0].deletedAt, "2026-04-09T12:00:00.000Z");
 });

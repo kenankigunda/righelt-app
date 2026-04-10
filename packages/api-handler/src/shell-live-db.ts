@@ -84,6 +84,7 @@ type PersistedGameRow = {
   game_id: string;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
   state_json: string;
   event_seq: number;
 };
@@ -579,6 +580,7 @@ const normalizePersistedGame = (
     createdAt: typeof parsed.createdAt === "string" && parsed.createdAt ? parsed.createdAt : row.created_at || row.updated_at || now(),
     lastMoveAt: typeof parsed.lastMoveAt === "string" ? parsed.lastMoveAt : null,
     updatedAt: typeof parsed.updatedAt === "string" && parsed.updatedAt ? parsed.updatedAt : row.updated_at || row.created_at || now(),
+    deletedAt: typeof parsed.deletedAt === "string" ? parsed.deletedAt : null,
     selfPlayMode: parsed.selfPlayMode === true || parsed.playgroundMode === true,
     board: { state: boardState },
     player1: normalizeParticipant(parsed.player1, "player1", mismatches),
@@ -683,6 +685,7 @@ const normalizePersistedStaticGameCard = (
       createdAt: typeof parsed.createdAt === "string" && parsed.createdAt ? parsed.createdAt : row.created_at || row.updated_at || now(),
       lastMoveAt: typeof parsed.lastMoveAt === "string" ? parsed.lastMoveAt : null,
       updatedAt: typeof parsed.updatedAt === "string" && parsed.updatedAt ? parsed.updatedAt : row.updated_at || row.created_at || now(),
+      deletedAt: typeof parsed.deletedAt === "string" ? parsed.deletedAt : null,
       selfPlayMode: parsed.selfPlayMode === true || parsed.playgroundMode === true,
       board: { state: boardState },
       player1: normalizeParticipant(parsed.player1, "player1", mismatches),
@@ -823,6 +826,7 @@ export const saveProjection = async (
        game_id,
        created_at,
        updated_at,
+       deleted_at,
        latest_activity_at,
        player1_identity_id,
        player2_identity_id,
@@ -830,9 +834,10 @@ export const saveProjection = async (
        state_json,
        event_seq
      )
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
      ON CONFLICT(game_id) DO UPDATE SET
        updated_at = excluded.updated_at,
+       deleted_at = excluded.deleted_at,
        latest_activity_at = excluded.latest_activity_at,
        player1_identity_id = excluded.player1_identity_id,
        player2_identity_id = excluded.player2_identity_id,
@@ -844,6 +849,7 @@ export const saveProjection = async (
       game.id,
       game.createdAt,
       game.updatedAt,
+      game.deletedAt,
       game.lastMoveAt || game.updatedAt || game.createdAt,
       game.player1?.identityId ?? null,
       game.player2?.identityId ?? null,

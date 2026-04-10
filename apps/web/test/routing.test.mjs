@@ -5,6 +5,7 @@ import {
   buildHashForRoute,
   buildHomeHash,
   buildInviteHash,
+  buildTrashHash,
   buildTutorialHash,
   isShellRootHash,
   isShellRouteHash,
@@ -44,6 +45,9 @@ test("routing resolves game path with inviter role and URL-tracked scenarios fla
 test("routing resolves tutorial path and unknown routes", () => {
   assert.deepEqual(parseRouteFromHash("#/tutorial"), { name: "tutorial", gameId: null, debug: false, scenarios: false });
   assert.equal(buildTutorialHash("abc", { debug: true, scenarios: true }), "#/tutorial/abc?scenarios=1");
+  assert.deepEqual(parseRouteFromHash("#/trash"), { name: "trash", debug: false, scenarios: false });
+  assert.equal(buildTrashHash(), "#/trash");
+  assert.equal(buildTrashHash({ scenarios: true }), "#/trash?scenarios=1");
   assert.deepEqual(parseRouteFromHash("#/nope"), { name: "not-found", debug: false, scenarios: false });
 });
 
@@ -64,6 +68,7 @@ test("routing distinguishes live sync routes from passive refresh routes", () =>
   assert.equal(shouldLiveSyncRoute({ name: "tutorial" }), false);
 
   assert.equal(shouldPassiveRefreshRoute({ name: "home" }), true);
+  assert.equal(shouldPassiveRefreshRoute({ name: "trash" }), true);
   assert.equal(shouldPassiveRefreshRoute({ name: "game", gameId: "game-1" }), false);
   assert.equal(shouldPassiveRefreshRoute({ name: "invite", inviteToken: "token-123" }), false);
   assert.equal(shouldPassiveRefreshRoute({ name: "not-found" }), false);
@@ -79,6 +84,7 @@ test("routing identifies shell hashes and toggles scenarios state without changi
   assert.equal(isShellRouteHash("#/game/game-1?scenarios=1"), true);
   assert.equal(isShellRouteHash("#/invite/token-1"), true);
   assert.equal(isShellRouteHash("#/tutorial"), true);
+  assert.equal(isShellRouteHash("#/trash"), true);
   assert.equal(isShellRouteHash("#/home"), false);
   assert.equal(toggleScenariosHash("#/game/game-1"), "#/game/game-1?scenarios=1");
   assert.equal(toggleScenariosHash("#/game/game-1?debug=1"), "#/game/game-1?scenarios=1");
@@ -98,6 +104,8 @@ test("routing can collapse flyouts when stacking is disabled", () => {
     buildHashForRoute({ name: "game", gameId: "game-1", inviteFromRole: null, panel: "players", debug: false, scenarios: true }),
     "#/game/game-1?panel=players&scenarios=1",
   );
+  assert.equal(buildHashForRoute({ name: "trash", debug: false, scenarios: true }), "#/trash?scenarios=1");
+  assert.equal(buildHashForRoute({ name: "game-not-found", gameId: "missing-1", debug: false, scenarios: true }), "#/game/missing-1?scenarios=1");
 });
 
 test("routing rejects removed legacy aliases", () => {

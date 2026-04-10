@@ -106,6 +106,7 @@ export type LiveGame = {
   createdAt: string;
   lastMoveAt: string | null;
   updatedAt: string;
+  deletedAt: string | null;
   selfPlayMode: boolean;
   board: {
     state: GameState;
@@ -133,6 +134,7 @@ export type StaticGameCard = {
   createdAt: string;
   lastMoveAt: string | null;
   updatedAt: string;
+  deletedAt: string | null;
   moveCount: number;
   previewSnapshot: GameState | null;
   previewSelection: ScenarioSavedSelection | null;
@@ -337,6 +339,7 @@ export const createInitialGame = ({
     createdAt,
     lastMoveAt: null,
     updatedAt: createdAt,
+    deletedAt: null,
     selfPlayMode,
     board: { state: initial },
     player1: {
@@ -735,6 +738,18 @@ export const promoteIdentityToSeat = (
   }
 };
 
+export const applySoftDelete = (game: LiveGame, at = now()) => {
+  game.deletedAt = at;
+  game.updatedAt = at;
+  return game.deletedAt;
+};
+
+export const applyRestore = (game: LiveGame, at = now()) => {
+  game.deletedAt = null;
+  game.updatedAt = at;
+  return game.deletedAt;
+};
+
 export const dismissCompetingJoinRequests = (game: LiveGame, acceptedIdentityId: string) => {
   game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.identityId === acceptedIdentityId);
 };
@@ -763,7 +778,7 @@ const getJoinAsViewerDisabledReason = (game: LiveGame, myRole: string) => {
 };
 
 export const toStaticGameCard = (
-  game: Pick<LiveGame, "id" | "createdAt" | "lastMoveAt" | "updatedAt" | "selfPlayMode" | "board" | "player1" | "player2" | "viewers"> & {
+  game: Pick<LiveGame, "id" | "createdAt" | "lastMoveAt" | "updatedAt" | "deletedAt" | "selfPlayMode" | "board" | "player1" | "player2" | "viewers"> & {
     pendingJoinRequests?: LiveGame["pendingJoinRequests"];
     historyIndexByIdentity?: LiveGame["historyIndexByIdentity"];
     pendingScenarioSelection?: LiveGame["pendingScenarioSelection"];
@@ -793,6 +808,7 @@ export const toStaticGameCard = (
     createdAt: game.createdAt,
     lastMoveAt: game.lastMoveAt,
     updatedAt: game.updatedAt,
+    deletedAt: game.deletedAt ?? null,
     moveCount:
       typeof game.moveCount === "number" && Number.isFinite(game.moveCount)
         ? game.moveCount

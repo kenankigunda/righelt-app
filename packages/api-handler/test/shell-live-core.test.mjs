@@ -12,6 +12,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyRestore,
+  applySoftDelete,
   applyServerAction,
   createInitialGame,
 } from "../src/shell-live-core.ts";
@@ -188,4 +190,24 @@ test("I-10: removedPieces (transient) still returned alongside destroyedPieces a
   );
   assert.ok(Array.isArray(moved.removedPieces), "removedPieces must be an array");
   assert.ok(Array.isArray(moved.destroyedPieces), "destroyedPieces must be an array");
+});
+
+test("U-18: applySoftDelete sets deletedAt to a non-null ISO timestamp", () => {
+  const game = createInitialGame({ gameId: "g-u18", identityId: "id-u18", selfPlayMode: false });
+  assert.equal(game.deletedAt, null);
+
+  const deletedAt = "2026-04-09T12:00:00.000Z";
+  assert.equal(applySoftDelete(game, deletedAt), deletedAt);
+  assert.equal(game.deletedAt, deletedAt);
+  assert.equal(game.updatedAt, deletedAt);
+});
+
+test("U-19: applyRestore clears deletedAt back to null", () => {
+  const game = createInitialGame({ gameId: "g-u19", identityId: "id-u19", selfPlayMode: false });
+  applySoftDelete(game, "2026-04-09T12:00:00.000Z");
+
+  const restoredAt = "2026-04-09T12:05:00.000Z";
+  assert.equal(applyRestore(game, restoredAt), null);
+  assert.equal(game.deletedAt, null);
+  assert.equal(game.updatedAt, restoredAt);
 });
