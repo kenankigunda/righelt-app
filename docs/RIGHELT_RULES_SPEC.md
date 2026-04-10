@@ -42,9 +42,9 @@ For UI rendering, implementations may also expose live display status that answe
 
 ## 4. Turn Structure
 
-On a normal turn, the active player may do exactly one of:
-- `Pass`
-- one legal piece action (`Move`, `Project`, `Rush`, or `Push`)
+On a normal turn, the active player may make exactly one legal piece action (`Move`, `Project`, `Rush`, or `Push`).
+When the turn can legally close without another board action, the shipped client uses `End turn` semantics instead of exposing a standalone `Pass` control.
+The engine may still represent that closure internally with `Pass`, but that internal action is not a player-facing move entry in the current web UX.
 
 Some actions open a temporary continuation phase:
 - `Push` opens a push sequence with two ordered sub-phases:
@@ -65,10 +65,11 @@ A turn ends when no continuation is active and control passes to opponent.
 
 ## 5. Legal Actions
 
-## 5.1 Pass
+## 5.1 Internal Pass / Turn Closure
 
-- Active player performs no board change.
-- Turn immediately passes to opponent.
+- The engine may use `Pass` internally to represent a legal turn closure with no additional board change.
+- In the shipped web client, that closure is surfaced as `End turn`, not as a standalone `Pass` move.
+- A player-facing `PASS` history row must not be created when the turn is simply closing.
 
 ## 5.2 Move (Commander only)
 
@@ -100,8 +101,9 @@ A turn ends when no continuation is active and control passes to opponent.
   - A currently pushed piece cannot diagonal-rush.
 - Rush enters rush continuation state; normal turn-end is deferred until continuation is closed.
 - During rush continuation:
-  - Legal actions are `Rush` and `Pass`.
-  - Additional rushes are optional, but `Pass` is legal only when the current rush chain is already supplied in the live end-now position.
+  - Legal continuations are additional `Rush` actions plus legal closure of the continuation.
+  - The engine represents that closure with `Pass`, but the shipped web client surfaces it as `End turn`.
+  - Additional rushes are optional, but closure is legal only when the current rush chain is already supplied in the live end-now position.
   - Any single piece may rush at most once in that continuation sequence.
   - The rushing player continues to use the command/supply state frozen at the start of the rush sequence for the duration of that sequence.
   - UI may show a rushing piece as currently unsupplied/uncommanded if live end-now evaluation says so, but that alone does not remove its continuation eligibility.
@@ -150,7 +152,7 @@ Post-action command loss does not invalidate those actions; command is evaluated
 - If that forced actor has exactly one legal follow destination, that destination is forced.
 - Light UI highlighting may indicate all pieces in the connectivity-constrained follow group; this is representational and not a separate rule.
 - When no follow action remains legal:
-  - if `Pass` is the only legal action for the attacker, the push continuation closes automatically,
+  - if internal `Pass` is the only remaining legal closure for the attacker, the push continuation closes automatically with no visible `PASS` move,
   - control passes to opponent for a normal turn.
 
 ## 6. Connectivity Systems

@@ -36,13 +36,13 @@ Important:
 
 On your turn, you normally do one of the following:
 
-- **Pass**
 - **Move** (Commander only)
 - **Project** (create a new unit)
 - **Rush**
 - **Push**
 
 Some actions (especially Push and Rush) can create short continuation sequences before turn control fully passes.
+When a continuation can legally close without another board action, the current web client uses **End turn** instead of showing a separate **Pass** move.
 
 During those continuation sequences, a piece that started the sequence able to act can still finish that sequence even if the board position has already cut its live supply or command.
 The interface may show that piece as it would look if the sequence stopped immediately, but it remains usable for the continuation while that sequence is still open.
@@ -50,9 +50,9 @@ What matters is whether the whole sequence can still finish with the required fr
 
 ## 4. Actions
 
-## 4.1 Pass
+## 4.1 End turn / close the sequence
 
-Do nothing and end your turn.
+If the turn can legally close without another board action, the interface ends the turn directly instead of logging a separate `PASS` move.
 
 ## 4.2 Move (Commander only)
 
@@ -135,7 +135,7 @@ After retreat finishes, play immediately returns to the pushing player.
 - If only one piece can make the next required follow, that piece is effectively forced.
 - If that forced piece has only one follow square, that move is effectively forced.
 - When no more follow moves are possible, the push sequence ends.
-- If that means only `Pass` would remain, the turn ends automatically and normal play continues with the other player.
+- If that means the sequence can simply close, the turn ends automatically and normal play continues with the other player.
 
 ## 5. Networks: Supply and Command
 
@@ -176,4 +176,4 @@ You win when, after all effects of a move settle, your opponent’s Commander ha
 - Build layered networks; single-route structures are fragile.
 - Push is strongest when prepared by formation, not played alone.
 - Cutting one key link can collapse both command and supply efficiency.
-- Sometimes passing is correct to avoid overextending your own network.
+- Sometimes the right choice is to stop extending the sequence and end the turn once closure is legal.

@@ -208,8 +208,15 @@ function searchState(
 function prepareLegalActions(state: GameState, legalActions?: Action[]) {
   const provided = legalActions ?? listLegalActions(state);
   const filtered = provided.filter((action: Action) => validateAction(state, action).ok);
+  const actionsForBot =
+    state.continuation?.type === "rush"
+      ? filtered
+      : (() => {
+          const nonPassActions = filtered.filter((action) => action.type !== "pass");
+          return nonPassActions.length > 0 ? nonPassActions : filtered;
+        })();
   const deduped = new Map<string, Action>();
-  for (const action of filtered) {
+  for (const action of actionsForBot) {
     deduped.set(canonicalizeAction(action).key, action);
   }
   return [...deduped.values()].sort(compareCanonicalActionKeys);

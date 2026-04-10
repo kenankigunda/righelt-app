@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createInitialState, applyAction, resolveToStability } from "../../game-engine/src/index";
+import { createInitialState, applyAction, listLegalActions, resolveToStability } from "../../game-engine/src/index";
 import {
   canonicalizeAction,
   canonicalizeState,
@@ -68,4 +68,33 @@ test("CP-003 selectMove returns a legal deterministic action and diagnostics", (
 
   const applied = applyAction(state, first.action);
   assert.equal(applied.state.sideToMove, "P2");
+  assert.notEqual(first.action.type, "pass");
+});
+
+test("CP-004 selectMove keeps pass available when it is the only provided legal action", () => {
+  const response = selectMove({
+    personaId: "babs",
+    state: createInitialState(),
+    legalActions: [{ type: "pass" }],
+    seed: 7,
+  });
+
+  assert.equal(response.action.type, "pass");
+  assert.equal(response.diagnostics.selectedAction.key, "pass|-|-|-|-");
+});
+
+test("CP-005 selectMove ignores pass when a non-pass action is also legal", () => {
+  const state = createInitialState();
+  const firstPlayableAction = listLegalActions(state).find((action) => action.type !== "pass");
+  assert.ok(firstPlayableAction, "expected at least one non-pass legal action");
+
+  const response = selectMove({
+    personaId: "babs",
+    state,
+    legalActions: [{ type: "pass" }, firstPlayableAction],
+    seed: 11,
+  });
+
+  assert.notEqual(response.action.type, "pass");
+  assert.notEqual(response.diagnostics.selectedAction.key, "pass|-|-|-|-");
 });

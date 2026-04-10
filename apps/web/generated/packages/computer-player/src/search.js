@@ -156,8 +156,14 @@ function searchState(state, rootSide, persona, depth, branchFactor, explored) {
 function prepareLegalActions(state, legalActions) {
     const provided = legalActions ?? listLegalActions(state);
     const filtered = provided.filter((action) => validateAction(state, action).ok);
+    const actionsForBot = state.continuation?.type === "rush"
+        ? filtered
+        : (() => {
+            const nonPassActions = filtered.filter((action) => action.type !== "pass");
+            return nonPassActions.length > 0 ? nonPassActions : filtered;
+        })();
     const deduped = new Map();
-    for (const action of filtered) {
+    for (const action of actionsForBot) {
         deduped.set(canonicalizeAction(action).key, action);
     }
     return [...deduped.values()].sort(compareCanonicalActionKeys);

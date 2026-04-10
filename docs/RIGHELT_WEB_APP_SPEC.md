@@ -110,16 +110,16 @@ For the current board implementation:
   - when follow sequence is complete, board emits `turnEnded`
   - shell then advances to next turn and updates turn-owner
 
-### 1.1.1.4 Pass vs End Turn (Current Board Behavior)
+### 1.1.1.4 Internal Pass vs End Turn (Current Board Behavior)
 
-- `Pass` is a board action type.
-  - It is submitted through normal board action flow.
-  - It appears in move history as a move entry.
+- The current web client does not expose `Pass` as a standalone player-facing move.
 - `End turn` is not a board action type.
   - It is a board-to-shell semantic message (`turnEnded`) and corresponding board command.
   - It must not appear as a move entry in move history.
+- The engine may still use `Pass` internally as a closure primitive.
+  - When that happens, the shell must surface the result as `End turn`, not as a visible `PASS` move.
 - Board decides when to emit `turnEnded` for this game implementation.
-  - Board auto-emits `turnEnded` when the turn should close (for example after `project`, after `pass`, or after other non-continuation commits).
+  - Board auto-emits `turnEnded` when the turn should close (for example after `project`, after internal closure, or after other non-continuation commits).
 - Board may emit `turnEnded` early during optional continuation windows only when closure is currently legal (for example during rush after the rush chain is already resupplied).
 - When a rush continuation cannot end yet because the rush chain is still unsupplied, the board preview label must instruct the player to continue rushing and name one blocking piece with a coordinate chip.
 - If multiple rush-chain pieces are still blocking closure, the named piece must be:

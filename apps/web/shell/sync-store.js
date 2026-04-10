@@ -40,6 +40,7 @@ const createGameIdMismatchError = (operationLabel, expectedGameId, actualGameId)
 const GAME_CREATION_FAILED_BANNER = "Game creation failed. The server could not create this game. Return home and try again.";
 const ROLLBACK_FAILURE_PREFIX = "rollback:";
 const BOT_COMMAND_PREFIX = "bot:";
+const MAX_COMPUTER_PLAYER_AUTO_RECOVERY_RETRIES = 2;
 const defaultNow = () => Date.now();
 const defaultSetTimeout = (...args) => globalThis.setTimeout(...args);
 const defaultClearTimeout = (...args) => globalThis.clearTimeout(...args);
@@ -1072,6 +1073,10 @@ export const createSyncStore = ({
       message: typeof error === "string" && error ? error : "The computer player could not produce a move.",
     };
   };
+  const isComputerPlayerAutomaticRecoveryError = (error) => {
+    const code = typeof error?.code === "string" ? error.code : null;
+    return code === "computer_player_rejected" || code === "computer_player_desynced";
+  };
   const stampComputerPlayerRuntime = (game, runtimeState = null) => {
     if (!game || !isComputerPlayerGame(game)) {
       return game;
@@ -1165,6 +1170,30 @@ export const createSyncStore = ({
     }
     return true;
   };
+  const shouldAutoRecoverComputerPlayerTurn = (game, runtimeState = getComputerPlayerRuntimeState(game?.id)) => {
+    if (!runtimeState || runtimeState.status !== "failed") {
+      return false;
+    }
+    if (!shouldAutoRunComputerPlayerTurn(game, { retry: true })) {
+      return false;
+    }
+    if (!isComputerPlayerAutomaticRecoveryError(runtimeState.error)) {
+      return false;
+    }
+    return (runtimeState.retryCount ?? 0) <= MAX_COMPUTER_PLAYER_AUTO_RECOVERY_RETRIES;
+  };
+  const maybeScheduleAutomaticComputerPlayerRecovery = (gameId) => {
+    if (!gameId || gameId !== activeGameId) {
+      return false;
+    }
+    const game = transport.getGameViewModel(gameId);
+    const runtimeState = getComputerPlayerRuntimeState(gameId);
+    if (!shouldAutoRecoverComputerPlayerTurn(game, runtimeState)) {
+      return false;
+    }
+    scheduleComputerPlayerSync(gameId, { retry: true });
+    return true;
+  };
   const updateComputerPlayerGameViewModel = (gameId, runtimeState) => {
     const game = transport.getGameViewModel(gameId);
     if (!game) {
@@ -1247,6 +1276,7 @@ export const createSyncStore = ({
     handle.clientCommandId = response.clientCommandId;
     return handle;
   };
+  const shouldSubmitComputerPlayerEndTurn = (game, action) => action?.type === "pass" && game?.canEndTurn === true;
   const scheduleComputerPlayerSync = (gameId, { retry = false } = {}) => {
     if (!gameId || computerPlayerInFlightByGameId.has(gameId) || typeof transport.getGameViewModel !== "function") {
       return;
@@ -1289,6 +1319,8 @@ export const createSyncStore = ({
       return;
     }
     const runtimeState = getComputerPlayerRuntimeState(gameId);
+    const selectionState = clone(game.currentSnapshot);
+    const selectionLegalActions = Array.isArray(game.legalActions) ? clone(game.legalActions) : listLegalActions(selectionState);
     const startedAtMs = now();
     const baseThinkMs = getComputerPlayerThinkTargetMs({ botId: turnState.botId });
     const thinkingStartedAtMs =
@@ -1314,12 +1346,13 @@ export const createSyncStore = ({
     const turnKey = turnState.turnKey;
     const botId = turnState.botId;
     const seed = buildComputerPlayerSeed(turnKey, botId);
+    let shouldScheduleAutomaticRecovery = false;
     computerPlayerInFlightByGameId.set(gameId, turnKey);
     try {
       const response = await computerPlayerRuntime.selectMove({
         personaId: botId,
-        state: clone(game.currentSnapshot),
-        legalActions: Array.isArray(game.legalActions) ? clone(game.legalActions) : listLegalActions(game.currentSnapshot),
+        state: selectionState,
+        legalActions: selectionLegalActions,
         seed,
         trace: false,
       });
@@ -1352,28 +1385,41 @@ export const createSyncStore = ({
         return;
       }
 
-      const actionKey = response?.diagnostics?.selectedAction?.key ?? "select";
-      const clientCommandId = buildComputerPlayerCommandId(currentGame, actionKey);
-      const handle = await submitGameAction({
-        gameId,
-        state: currentGame.currentSnapshot,
-        action: response.action,
-        clientCommandId,
-      });
+      const submitAsEndTurn = shouldSubmitComputerPlayerEndTurn(currentGame, response?.action);
+      const actionKey = submitAsEndTurn ? "end-turn" : response?.diagnostics?.selectedAction?.key ?? "select";
+      const clientCommandId = `${buildComputerPlayerCommandId(currentGame, actionKey)}:attempt-${updatedThinkingState.retryCount ?? 0}`;
+      const handle = submitAsEndTurn
+        ? await submitGameEndTurn({
+            gameId,
+            clientCommandId,
+          })
+        : await submitGameAction({
+            gameId,
+            state: selectionState,
+            action: response.action,
+            clientCommandId,
+          });
 
       if (!handle?.accepted) {
-        markComputerPlayerFailure(
+        const failure = markComputerPlayerFailure(
           gameId,
           createOperationError("The computer player move was rejected.", "computer_player_rejected"),
           updatedThinkingState,
         );
+        shouldScheduleAutomaticRecovery = shouldAutoRecoverComputerPlayerTurn(transport.getGameViewModel(gameId), failure);
         return;
       }
 
       try {
         await handle.committed;
       } catch (error) {
-        markComputerPlayerFailure(gameId, error, updatedThinkingState);
+        const existingRuntimeState = getComputerPlayerRuntimeState(gameId);
+        if (shouldAutoRecoverComputerPlayerTurn(transport.getGameViewModel(gameId), existingRuntimeState)) {
+          shouldScheduleAutomaticRecovery = true;
+          return;
+        }
+        const failure = markComputerPlayerFailure(gameId, error, updatedThinkingState);
+        shouldScheduleAutomaticRecovery = shouldAutoRecoverComputerPlayerTurn(transport.getGameViewModel(gameId), failure);
         return;
       }
       const nextGame = transport.getGameViewModel(gameId);
@@ -1391,9 +1437,13 @@ export const createSyncStore = ({
         reconcileComputerPlayerRuntimeState(gameId);
         return;
       }
-      markComputerPlayerFailure(gameId, error, getComputerPlayerTurnState(currentGame) ?? thinkingState);
+      const failure = markComputerPlayerFailure(gameId, error, getComputerPlayerTurnState(currentGame) ?? thinkingState);
+      shouldScheduleAutomaticRecovery = shouldAutoRecoverComputerPlayerTurn(currentGame, failure);
     } finally {
       computerPlayerInFlightByGameId.delete(gameId);
+      if (shouldScheduleAutomaticRecovery && gameId === activeGameId) {
+        scheduleComputerPlayerSync(gameId, { retry: true });
+      }
     }
   }
 
@@ -1556,6 +1606,7 @@ export const createSyncStore = ({
             "computer_player_rejected",
           ),
         );
+        maybeScheduleAutomaticComputerPlayerRecovery(gameId);
       }
     }
     if (change?.type === "optimistic_desynced" && clientCommandId) {
@@ -1572,6 +1623,7 @@ export const createSyncStore = ({
             "computer_player_desynced",
           ),
         );
+        maybeScheduleAutomaticComputerPlayerRecovery(gameId);
       }
     }
     if (gameId) {
@@ -1665,6 +1717,7 @@ export const createSyncStore = ({
         }
         const runtimeState = reconcileComputerPlayerRuntimeState(gameId) ?? getComputerPlayerRuntimeState(gameId);
         updateComputerPlayerGameViewModel(gameId, runtimeState);
+        maybeScheduleAutomaticComputerPlayerRecovery(gameId);
         if (gameId === activeGameId && shouldAutoRunComputerPlayerTurn(transport.getGameViewModel(gameId))) {
           scheduleComputerPlayerSync(gameId);
         }
@@ -1675,6 +1728,7 @@ export const createSyncStore = ({
         clearPendingLocalGame(gameId);
         const runtimeState = reconcileComputerPlayerRuntimeState(gameId) ?? getComputerPlayerRuntimeState(gameId);
         updateComputerPlayerGameViewModel(gameId, runtimeState);
+        maybeScheduleAutomaticComputerPlayerRecovery(gameId);
         if (gameId === activeGameId && shouldAutoRunComputerPlayerTurn(loadedGame)) {
           scheduleComputerPlayerSync(gameId);
         }
@@ -1688,6 +1742,7 @@ export const createSyncStore = ({
           }
           const runtimeState = reconcileComputerPlayerRuntimeState(gameId) ?? getComputerPlayerRuntimeState(gameId);
           updateComputerPlayerGameViewModel(gameId, runtimeState);
+          maybeScheduleAutomaticComputerPlayerRecovery(gameId);
           if (gameId === activeGameId && shouldAutoRunComputerPlayerTurn(transport.getGameViewModel(gameId) ?? fallbackGame)) {
             scheduleComputerPlayerSync(gameId);
           }
@@ -1964,6 +2019,7 @@ export const createSyncStore = ({
         const currentGame = transport.getGameViewModel(activeGameId);
         const runtimeState = reconcileComputerPlayerRuntimeState(activeGameId) ?? getComputerPlayerRuntimeState(activeGameId);
         updateComputerPlayerGameViewModel(activeGameId, runtimeState);
+        maybeScheduleAutomaticComputerPlayerRecovery(activeGameId);
         if (shouldAutoRunComputerPlayerTurn(currentGame)) {
           scheduleComputerPlayerSync(activeGameId);
         }
