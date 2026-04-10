@@ -7,8 +7,8 @@ usage() {
 Usage: scripts/setup-workspace.sh [--clone-backlog] [--backlog-url URL] [--help]
 
 Validates the expected parent workspace layout for this repo, writes the parent
-AGENTS.md from the tracked template, and optionally clones righelt-backlog if it
-is missing.
+AGENTS.md and CLAUDE.md from tracked templates, and optionally clones
+righelt-backlog if it is missing.
 
 Options:
   --clone-backlog      Clone the sibling backlog repo if it does not exist
@@ -24,7 +24,9 @@ WORKSPACE_ROOT="$(dirname "$APP_REPO")"
 WORKSPACE_NAME="$(basename "$WORKSPACE_ROOT")"
 BACKLOG_REPO="$WORKSPACE_ROOT/righelt-backlog"
 ROOT_AGENTS_PATH="$WORKSPACE_ROOT/AGENTS.md"
-TEMPLATE_PATH="$APP_REPO/docs/ai/WORKSPACE_ROOT_AGENTS.template.md"
+ROOT_CLAUDE_PATH="$WORKSPACE_ROOT/CLAUDE.md"
+AGENTS_TEMPLATE_PATH="$APP_REPO/docs/ai/WORKSPACE_ROOT_AGENTS.template.md"
+CLAUDE_TEMPLATE_PATH="$APP_REPO/docs/ai/WORKSPACE_ROOT_CLAUDE.template.md"
 CLONE_BACKLOG=0
 BACKLOG_URL="${BACKLOG_URL:-https://github.com/kenankigunda/righelt-backlog.git}"
 
@@ -60,14 +62,19 @@ if [[ "$APP_NAME" != "righelt-app" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$TEMPLATE_PATH" ]]; then
-  echo "ERROR: Missing tracked workspace AGENTS template at $TEMPLATE_PATH" >&2
+if [[ ! -f "$AGENTS_TEMPLATE_PATH" ]]; then
+  echo "ERROR: Missing tracked workspace AGENTS template at $AGENTS_TEMPLATE_PATH" >&2
+  exit 1
+fi
+
+if [[ ! -f "$CLAUDE_TEMPLATE_PATH" ]]; then
+  echo "ERROR: Missing tracked workspace CLAUDE template at $CLAUDE_TEMPLATE_PATH" >&2
   exit 1
 fi
 
 if [[ "$WORKSPACE_NAME" != "righelt" ]]; then
   echo "WARNING: Expected parent workspace folder to be named righelt, got: $WORKSPACE_NAME" >&2
-  echo "The generated parent AGENTS.md will still target: $WORKSPACE_ROOT" >&2
+  echo "The generated parent workspace instructions will still target: $WORKSPACE_ROOT" >&2
 fi
 
 mkdir -p "$WORKSPACE_ROOT"
@@ -78,9 +85,13 @@ BACKLOG_REPO_ESCAPED=${BACKLOG_REPO//\//\\/}
 sed \
   -e "s/__APP_REPO__/$APP_REPO_ESCAPED/g" \
   -e "s/__BACKLOG_REPO__/$BACKLOG_REPO_ESCAPED/g" \
-  "$TEMPLATE_PATH" > "$ROOT_AGENTS_PATH"
+  "$AGENTS_TEMPLATE_PATH" > "$ROOT_AGENTS_PATH"
 
 echo "Wrote parent AGENTS.md: $ROOT_AGENTS_PATH"
+
+cp "$CLAUDE_TEMPLATE_PATH" "$ROOT_CLAUDE_PATH"
+
+echo "Wrote parent CLAUDE.md: $ROOT_CLAUDE_PATH"
 
 if [[ -d "$BACKLOG_REPO/.git" ]]; then
   echo "Found sibling backlog repo: $BACKLOG_REPO"

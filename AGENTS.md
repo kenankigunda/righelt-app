@@ -4,8 +4,9 @@ This file defines repo-specific operating rules for AI coding agents working in 
 
 If the parent workspace `/Users/kenankigunda/Documents/righelt` is what is currently opened in Codex or Claude, treat `righelt-app` as the default git-aware execution root unless the task explicitly targets the sibling backlog repo.
 
-The tracked source of truth for the parent workspace `AGENTS.md` lives in `docs/ai/WORKSPACE_ROOT_AGENTS.template.md`; refresh the actual parent file with `pnpm setup:workspace`.
-Whenever you change parent-workspace guidance, update `docs/ai/WORKSPACE_ROOT_AGENTS.template.md` in the repo and regenerate the parent `/Users/kenankigunda/Documents/righelt/AGENTS.md` in the same change so the live workspace file stays aligned with the tracked template.
+The tracked sources of truth for the parent workspace bootstrap files live in `docs/ai/WORKSPACE_ROOT_AGENTS.template.md` and `docs/ai/WORKSPACE_ROOT_CLAUDE.template.md`; refresh the actual parent files with `pnpm setup:workspace`.
+Whenever you change parent-workspace guidance or discoverability, update the relevant tracked template(s) in the repo and regenerate the parent `/Users/kenankigunda/Documents/righelt/AGENTS.md` and `/Users/kenankigunda/Documents/righelt/CLAUDE.md` in the same change so the live workspace files stay aligned with the tracked templates.
+The parent workspace files must make it obvious that `/Users/kenankigunda/Documents/righelt/righelt-app/AGENTS.md` contains the full repo operating manual, including team shorthands, testing policy, branch/worktree rules, and backlog workflow instructions.
 
 ## 1) Core Principles
 
@@ -163,6 +164,7 @@ Clear (or leave as audit trail) when the ticket moves to Ready for acceptance.
 - Use `./scripts/backlog.sh task create`, `task edit`, `task archive`, and `task view` for all task operations so filenames and metadata stay consistent.
 - Edit task files directly only when the `backlog` CLI is unavailable or cannot perform the required operation.
 - Canonical active task filenames follow `backlog/tasks/t-### - <CLI slug>.md`. Subtasks follow `t-###.NN - <CLI slug>.md`.
+- **Completed/archived tasks** are moved to `backlog/completed/` by `task archive`. If a ticket ID referenced in dependencies or other docs cannot be found in `backlog/tasks/`, check `backlog/completed/` before concluding it does not exist.
 - The `<CLI slug>` is not the raw title. Match the CLI naming shape:
   - replace spaces with `-`
   - remove separator punctuation such as `/`, `:`, commas, apostrophes, brackets, and parentheses instead of preserving them as spaces
