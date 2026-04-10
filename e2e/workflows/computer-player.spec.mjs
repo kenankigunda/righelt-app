@@ -33,6 +33,8 @@ const installInlineComputerPlayerHook = async (page, { failFirstTurn = false } =
           selectedAction: {
             key: action?.type === "pass" ? "pass" : "playwright-first-legal",
           },
+          exploredNodes: 120,
+          legalActionCount: 4,
         },
       };
     };
@@ -77,11 +79,11 @@ test("computer-player games use the staged picker, narrow full-page flyout, and 
     await expect(owner.page.getByTestId("game-shell")).toBeVisible();
 
     await expect(owner.page.getByTestId("game-role")).toContainText("Player 2");
-    await expect
-      .poll(async () => getHistoryMoveCount(owner.page), {
-        message: "Expected the opening computer-player move to appear in history",
-      })
-      .toBeGreaterThanOrEqual(1);
+    await expect(owner.page.getByTestId("computer-player-thinking")).toBeVisible();
+    await owner.page.waitForTimeout(300);
+    expect(await getHistoryMoveCount(owner.page)).toBe(0);
+    await expect(owner.page.getByTestId("active-turn-label")).toContainText("Player 2");
+    await expect(owner.page.getByTestId("computer-player-thinking")).toHaveCount(0);
 
     const copyInviteButton = owner.page.getByTestId("copy-invite");
     await expect(copyInviteButton).toBeVisible();
@@ -105,17 +107,21 @@ test("computer-player failures stay recoverable and retry inline", async ({ brow
     await installInlineComputerPlayerHook(page, { failFirstTurn: true });
     await openComputerGameFromHome(page, { seat: "Player 2", opponentBotId: "babs" });
 
+    await expect(page.getByTestId("computer-player-thinking")).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(await getHistoryMoveCount(page)).toBe(0);
     const failureBanner = page.getByTestId("computer-player-failure");
     await expect(failureBanner).toContainText("could not move");
+    await expect(page.getByTestId("computer-player-thinking")).toHaveCount(0);
     expect(await getHistoryMoveCount(page)).toBe(0);
 
     await failureBanner.getByRole("button", { name: "Retry move" }).click();
     await expect(failureBanner).toHaveCount(0);
-    await expect
-      .poll(async () => getHistoryMoveCount(page), {
-        message: "Expected retrying the failed computer-player turn to recover inline",
-      })
-      .toBeGreaterThanOrEqual(1);
+    await expect(page.getByTestId("computer-player-thinking")).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(await getHistoryMoveCount(page)).toBe(0);
+    await expect(page.getByTestId("active-turn-label")).toContainText("Player 2");
+    await expect(page.getByTestId("computer-player-thinking")).toHaveCount(0);
   } finally {
     await closeContextQuietly(context);
   }

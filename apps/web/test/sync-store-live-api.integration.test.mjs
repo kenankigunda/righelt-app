@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createSyncStore } from "../shell/sync-store.js";
+import { buildComputerPlayerDerivedTurnKey } from "../shell/computer-player-runtime.js";
+import { LIVE_TRANSPORT_STATE_KEY } from "../shell/persistence.js";
 import { buildHistoryBranchSeedFromGame } from "../shell/scenarios.js";
 import apiWorker from "../../api/index.js";
 import { createFakeD1 } from "../../../packages/api-handler/test/support/fake-d1.mjs";
@@ -27,9 +29,61 @@ const createApiEnv = () => {
 
 const toAbsoluteUrl = (url) => (String(url).startsWith("http") ? String(url) : `https://example.test${String(url)}`);
 
-const createTrackedSyncStore = ({ createComputerPlayerRuntime } = {}) => {
-  const env = createApiEnv();
-  const storage = createMemoryStorage();
+const createFakeClock = ({ startMs = Date.parse("2026-04-03T00:00:00.000Z") } = {}) => {
+  let currentMs = startMs;
+  let nextTimerId = 1;
+  const timers = new Map();
+
+  const flushMicrotasks = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+
+  const runDueTimers = async () => {
+    while (true) {
+      const dueTimers = [...timers.entries()]
+        .filter(([, timer]) => timer.at <= currentMs)
+        .sort((left, right) => left[1].at - right[1].at || left[0] - right[0]);
+      if (dueTimers.length === 0) {
+        break;
+      }
+      const [timerId, timer] = dueTimers[0];
+      timers.delete(timerId);
+      timer.callback();
+      await flushMicrotasks();
+    }
+  };
+
+  return {
+    now: () => currentMs,
+    setTimeout: (callback, delay = 0) => {
+      const timerId = nextTimerId;
+      nextTimerId += 1;
+      timers.set(timerId, {
+        callback,
+        at: currentMs + Math.max(0, Number(delay) || 0),
+      });
+      return timerId;
+    },
+    clearTimeout: (timerId) => {
+      timers.delete(timerId);
+    },
+    advanceBy: async (delayMs) => {
+      currentMs += Math.max(0, Number(delayMs) || 0);
+      await runDueTimers();
+    },
+  };
+};
+
+const createTrackedSyncStore = ({
+  env = createApiEnv(),
+  storage = createMemoryStorage(),
+  createComputerPlayerRuntime,
+  now,
+  setTimeout,
+  clearTimeout,
+} = {}) => {
   const requests = [];
   const store = createSyncStore({
     storage,
@@ -55,6 +109,9 @@ const createTrackedSyncStore = ({ createComputerPlayerRuntime } = {}) => {
       disconnectAll() {},
       getDesiredGameIds: () => [],
     }),
+    ...(now ? { now } : {}),
+    ...(setTimeout ? { setTimeout } : {}),
+    ...(clearTimeout ? { clearTimeout } : {}),
     ...(createComputerPlayerRuntime ? { createComputerPlayerRuntime } : {}),
   });
   return { env, storage, requests, store };
@@ -921,14 +978,22 @@ test("integration sync store keeps the requester in history mode when an undo re
 });
 
 test("integration sync store auto-runs the opening computer-player turn for Player 2 starts", async () => {
+  const clock = createFakeClock();
   const runtimeRequests = [];
   const { requests, store } = createTrackedSyncStore({
+    now: clock.now,
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
     createComputerPlayerRuntime: () => ({
       async selectMove(request) {
         runtimeRequests.push(request);
         return {
           action: { type: "pass" },
-          diagnostics: { selectedAction: { key: "pass" } },
+          diagnostics: {
+            selectedAction: { key: "pass" },
+            exploredNodes: 120,
+            legalActionCount: 4,
+          },
         };
       },
       destroy() {},
@@ -950,6 +1015,21 @@ test("integration sync store auto-runs the opening computer-player turn for Play
   const createdGame = await createHandle.committed;
 
   store.setActiveGameId(createdGame.id);
+  await clock.advanceBy(0);
+  assert.equal(store.getComputerPlayerRuntimeState(createdGame.id)?.status, "thinking");
+  assert.equal(
+    requests.some((entry) => entry.url === `/api/shell/games/${createdGame.id}/apply` && entry.method === "POST"),
+    false,
+  );
+
+  await clock.advanceBy(599);
+  assert.equal(store.getComputerPlayerRuntimeState(createdGame.id)?.status, "thinking");
+  assert.equal(
+    requests.some((entry) => entry.url === `/api/shell/games/${createdGame.id}/apply` && entry.method === "POST"),
+    false,
+  );
+
+  await clock.advanceBy(1);
   await waitFor(() => (store.getGameViewModel(createdGame.id)?.moves.length ?? 0) === 1);
 
   const game = store.getGameViewModel(createdGame.id);
@@ -961,8 +1041,12 @@ test("integration sync store auto-runs the opening computer-player turn for Play
 });
 
 test("integration sync store keeps computer-player failures recoverable and retries inline", async () => {
+  const clock = createFakeClock();
   let attempts = 0;
   const { requests, store } = createTrackedSyncStore({
+    now: clock.now,
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
     createComputerPlayerRuntime: () => ({
       async selectMove() {
         attempts += 1;
@@ -973,7 +1057,11 @@ test("integration sync store keeps computer-player failures recoverable and retr
         }
         return {
           action: { type: "pass" },
-          diagnostics: { selectedAction: { key: "pass" } },
+          diagnostics: {
+            selectedAction: { key: "pass" },
+            exploredNodes: 120,
+            legalActionCount: 4,
+          },
         };
       },
       destroy() {},
@@ -995,7 +1083,12 @@ test("integration sync store keeps computer-player failures recoverable and retr
   const createdGame = await createHandle.committed;
 
   store.setActiveGameId(createdGame.id);
-  await waitFor(() => store.getComputerPlayerRuntimeState(createdGame.id)?.status === "failed");
+  await clock.advanceBy(0);
+  assert.equal(store.getComputerPlayerRuntimeState(createdGame.id)?.status, "thinking");
+  await clock.advanceBy(799);
+  assert.equal(store.getComputerPlayerRuntimeState(createdGame.id)?.status, "thinking");
+  await clock.advanceBy(1);
+  assert.equal(store.getComputerPlayerRuntimeState(createdGame.id)?.status, "failed");
 
   assert.equal(
     requests.some((entry) => entry.url === `/api/shell/games/${createdGame.id}/apply` && entry.method === "POST"),
@@ -1004,8 +1097,92 @@ test("integration sync store keeps computer-player failures recoverable and retr
   assert.equal(store.getComputerPlayerRuntimeState(createdGame.id)?.error?.message, "Worker unavailable");
 
   store.retryComputerPlayerTurn({ gameId: createdGame.id });
+  await clock.advanceBy(0);
+  assert.equal(store.getComputerPlayerRuntimeState(createdGame.id)?.status, "thinking");
+  await clock.advanceBy(799);
+  assert.equal((store.getGameViewModel(createdGame.id)?.moves.length ?? 0), 0);
+  await clock.advanceBy(1);
   await waitFor(() => (store.getGameViewModel(createdGame.id)?.moves.length ?? 0) === 1);
 
   assert.equal(attempts, 2);
   assert.equal(store.getComputerPlayerRuntimeState(createdGame.id), null);
+});
+
+test("integration sync store resumes a persisted computer-player think deadline after reload", async () => {
+  const env = createApiEnv();
+  const storage = createMemoryStorage();
+  const firstStore = createTrackedSyncStore({ env, storage }).store;
+  const createHandle = firstStore.createGame({
+    computerPlayer: {
+      botId: "babs",
+      botSchemaVersion: 1,
+      displayName: "Babs the Beginner",
+      animal: "bunny",
+      skillLabel: "Beginner",
+      styleLabel: "Balanced",
+      humanSeat: "Player 2",
+      botSeat: "Player 1",
+    },
+  });
+  const createdGame = await createHandle.committed;
+  const thinkingStartedAt = "2026-04-03T00:00:00.000Z";
+  const minimumVisibleUntil = "2026-04-03T00:00:00.600Z";
+  storage.setItem(
+    LIVE_TRANSPORT_STATE_KEY,
+    JSON.stringify({
+      games: [],
+      warningCode: null,
+      pendingMutationsByGameId: {},
+      computerPlayerRuntimeByGameId: {
+        [createdGame.id]: {
+          activeTurnKey: buildComputerPlayerDerivedTurnKey(createdGame),
+          status: "thinking",
+          error: null,
+          retryCount: 0,
+          updatedAt: thinkingStartedAt,
+          thinkingStartedAt,
+          minimumVisibleUntil,
+        },
+      },
+    }),
+  );
+
+  const clock = createFakeClock({ startMs: Date.parse("2026-04-03T00:00:00.200Z") });
+  const runtimeRequests = [];
+  const { requests, store } = createTrackedSyncStore({
+    env,
+    storage,
+    now: clock.now,
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    createComputerPlayerRuntime: () => ({
+      async selectMove(request) {
+        runtimeRequests.push(request);
+        return {
+          action: { type: "pass" },
+          diagnostics: {
+            selectedAction: { key: "pass" },
+            exploredNodes: 120,
+            legalActionCount: 4,
+          },
+        };
+      },
+      destroy() {},
+    }),
+  });
+
+  await store.loadGame(createdGame.id);
+  store.setActiveGameId(createdGame.id);
+  await clock.advanceBy(0);
+  assert.equal(store.getComputerPlayerRuntimeState(createdGame.id)?.minimumVisibleUntil, minimumVisibleUntil);
+
+  await clock.advanceBy(399);
+  assert.equal(
+    requests.some((entry) => entry.url === `/api/shell/games/${createdGame.id}/apply` && entry.method === "POST"),
+    false,
+  );
+
+  await clock.advanceBy(1);
+  await waitFor(() => (store.getGameViewModel(createdGame.id)?.moves.length ?? 0) === 1);
+  assert.equal(runtimeRequests.length, 1);
 });

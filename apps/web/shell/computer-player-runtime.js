@@ -3,6 +3,12 @@ import { selectMove } from "../generated/packages/computer-player/src/index.js";
 const TURN_KEY_DELIMITER = "|";
 const DEFAULT_SELECT_MOVE_TIMEOUT_MS = 4_000;
 const COMPUTER_PLAYER_WORKER_MODULE_URL = new URL("../generated/packages/computer-player/src/index.js", import.meta.url).href;
+const PERSONA_MINIMUM_THINK_MS = Object.freeze({
+  babs: 600,
+  tau: 800,
+  sev: 800,
+  horus: 1200,
+});
 
 const createRuntimeError = (message, code) => {
   const error = new Error(message);
@@ -22,6 +28,20 @@ const getMoveCount = (game) => {
   return moveIndexes.length;
 };
 
+export const buildComputerPlayerDerivedTurnKey = (game) => {
+  if (!game?.id || !game?.currentTurn) {
+    return null;
+  }
+  const controlSeat = getControlSeat(game);
+  return [
+    game.id,
+    `turn:${game.currentTurn.index}`,
+    `moves:${getMoveCount(game)}`,
+    `owner:${game.currentTurn.playerSeat}`,
+    `control:${controlSeat ?? "unknown"}`,
+  ].join(TURN_KEY_DELIMITER);
+};
+
 export const buildComputerPlayerTurnKey = (game) => {
   if (!game?.id || !game?.currentTurn) {
     return null;
@@ -33,14 +53,7 @@ export const buildComputerPlayerTurnKey = (game) => {
   if (explicitTurnKey) {
     return explicitTurnKey;
   }
-  const controlSeat = getControlSeat(game);
-  return [
-    game.id,
-    `turn:${game.currentTurn.index}`,
-    `moves:${getMoveCount(game)}`,
-    `owner:${game.currentTurn.playerSeat}`,
-    `control:${controlSeat ?? "unknown"}`,
-  ].join(TURN_KEY_DELIMITER);
+  return buildComputerPlayerDerivedTurnKey(game);
 };
 
 export const buildComputerPlayerCommandId = (game, actionKey) => {
@@ -58,6 +71,23 @@ export const buildComputerPlayerSeed = (turnKey, botId) => {
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return hash >>> 0;
+};
+
+export const getComputerPlayerThinkTargetMs = ({ botId, diagnostics = null } = {}) => {
+  const minimumMs = PERSONA_MINIMUM_THINK_MS[botId] ?? PERSONA_MINIMUM_THINK_MS.tau;
+  const legalActionCount =
+    typeof diagnostics?.legalActionCount === "number" && Number.isFinite(diagnostics.legalActionCount) ? diagnostics.legalActionCount : 0;
+  const exploredNodes =
+    typeof diagnostics?.exploredNodes === "number" && Number.isFinite(diagnostics.exploredNodes) ? diagnostics.exploredNodes : 0;
+
+  let complexityBonusMs = 0;
+  if (exploredNodes >= 700 || legalActionCount >= 16) {
+    complexityBonusMs = 300;
+  } else if (exploredNodes >= 250 || legalActionCount >= 10) {
+    complexityBonusMs = 150;
+  }
+
+  return minimumMs + complexityBonusMs;
 };
 
 export const runComputerPlayerSelectMove = async (request) => Promise.resolve().then(() => getSelectMoveImplementation()(request));

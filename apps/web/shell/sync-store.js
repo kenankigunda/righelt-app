@@ -3,9 +3,10 @@ import { buildLocalApiWsHost, isLocalDevHost } from "../local-dev-ports.js";
 import { loadJson, saveJson, LIVE_TRANSPORT_STATE_KEY } from "./persistence.js";
 import {
   buildComputerPlayerCommandId,
+  buildComputerPlayerDerivedTurnKey,
   createComputerPlayerRuntime,
   buildComputerPlayerSeed,
-  buildComputerPlayerTurnKey,
+  getComputerPlayerThinkTargetMs,
 } from "./computer-player-runtime.js";
 import { createLiveTransportStore } from "./live-transport.js";
 import { createOperationManager } from "./operation-manager.js";
@@ -39,8 +40,19 @@ const createGameIdMismatchError = (operationLabel, expectedGameId, actualGameId)
 const GAME_CREATION_FAILED_BANNER = "Game creation failed. The server could not create this game. Return home and try again.";
 const ROLLBACK_FAILURE_PREFIX = "rollback:";
 const BOT_COMMAND_PREFIX = "bot:";
+const defaultNow = () => Date.now();
+const defaultSetTimeout = (...args) => globalThis.setTimeout(...args);
+const defaultClearTimeout = (...args) => globalThis.clearTimeout(...args);
 
 const clone = (value) => structuredClone(value);
+const toIsoTimestamp = (value) => new Date(value).toISOString();
+const parseTimestampMs = (value) => {
+  if (typeof value !== "string" || !value) {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 const getLocalFailureMessage = (game) =>
   typeof game?.localFailureMessage === "string" ? game.localFailureMessage.trim() : "";
@@ -753,7 +765,14 @@ const getComputerPlayerRuntimeStateFromStorage = (storage) => {
     pendingMutationsByGameId: {},
     computerPlayerRuntimeByGameId: {},
   });
-  return persisted && typeof persisted.computerPlayerRuntimeByGameId === "object" ? persisted.computerPlayerRuntimeByGameId : {};
+  if (!persisted || typeof persisted.computerPlayerRuntimeByGameId !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(persisted.computerPlayerRuntimeByGameId)
+      .map(([gameId, value]) => [gameId, normalizeComputerPlayerRuntimeState(value)])
+      .filter(([, value]) => value),
+  );
 };
 
 const saveComputerPlayerRuntimeStateToStorage = (storage, runtimeByGameId) => {
@@ -772,15 +791,44 @@ const saveComputerPlayerRuntimeStateToStorage = (storage, runtimeByGameId) => {
   });
 };
 
-const normalizeComputerPlayerRuntimeState = (value) => ({
-  status: value?.status === "thinking" || value?.status === "failed" ? value.status : "idle",
-  turnKey: typeof value?.turnKey === "string" && value.turnKey ? value.turnKey : null,
-  lastCompletedTurnKey:
-    typeof value?.lastCompletedTurnKey === "string" && value.lastCompletedTurnKey ? value.lastCompletedTurnKey : null,
-  errorMessage: typeof value?.errorMessage === "string" ? value.errorMessage : "",
-  retryCount: typeof value?.retryCount === "number" && Number.isFinite(value.retryCount) ? value.retryCount : 0,
-  updatedAt: typeof value?.updatedAt === "string" && value.updatedAt ? value.updatedAt : null,
-});
+const normalizeComputerPlayerRuntimeState = (value) => {
+  const status = value?.status === "thinking" || value?.status === "failed" ? value.status : null;
+  if (!status) {
+    return null;
+  }
+  const activeTurnKey =
+    typeof value?.activeTurnKey === "string" && value.activeTurnKey
+      ? value.activeTurnKey
+      : typeof value?.turnKey === "string" && value.turnKey
+        ? value.turnKey
+        : null;
+  return {
+    activeTurnKey,
+    status,
+    error:
+      value?.error && typeof value.error === "object"
+        ? {
+            code: typeof value.error.code === "string" && value.error.code ? value.error.code : "computer_player_failed",
+            message:
+              typeof value.error.message === "string" && value.error.message
+                ? value.error.message
+                : typeof value.errorMessage === "string" && value.errorMessage
+                  ? value.errorMessage
+                  : "The computer player could not produce a move.",
+          }
+        : typeof value?.errorMessage === "string" && value.errorMessage
+          ? {
+              code: "computer_player_failed",
+              message: value.errorMessage,
+            }
+          : null,
+    retryCount: typeof value?.retryCount === "number" && Number.isFinite(value.retryCount) ? value.retryCount : 0,
+    updatedAt: typeof value?.updatedAt === "string" && value.updatedAt ? value.updatedAt : null,
+    thinkingStartedAt: typeof value?.thinkingStartedAt === "string" && value.thinkingStartedAt ? value.thinkingStartedAt : null,
+    minimumVisibleUntil:
+      typeof value?.minimumVisibleUntil === "string" && value.minimumVisibleUntil ? value.minimumVisibleUntil : null,
+  };
+};
 
 const isComputerPlayerCommandId = (value) => typeof value === "string" && value.startsWith(BOT_COMMAND_PREFIX);
 
@@ -867,6 +915,9 @@ export const createSyncStore = ({
   storage,
   fetcher = fetch,
   random = Math.random,
+  now = defaultNow,
+  setTimeout: setTimeoutFn = defaultSetTimeout,
+  clearTimeout: clearTimeoutFn = defaultClearTimeout,
   onEvent = () => {},
   onError = () => {},
   onStatus = () => {},
@@ -951,17 +1002,63 @@ export const createSyncStore = ({
     }
     computerPlayerRuntimeByGameId = {
       ...computerPlayerRuntimeByGameId,
-      [gameId]: nextState,
+      [gameId]: normalizeComputerPlayerRuntimeState(nextState),
     };
     persistComputerPlayerRuntimeState();
-    return nextState;
+    return computerPlayerRuntimeByGameId[gameId];
   };
   const clearComputerPlayerSyncTimer = (gameId) => {
     const timer = computerPlayerSyncTimers.get(gameId) ?? null;
     if (timer) {
-      clearTimeout(timer);
+      clearTimeoutFn(timer);
       computerPlayerSyncTimers.delete(gameId);
     }
+  };
+  const waitForThinkDelay = (delayMs) =>
+    new Promise((resolve) => {
+      if (!(delayMs > 0)) {
+        resolve();
+        return;
+      }
+      const timeoutId = setTimeoutFn(() => {
+        clearTimeoutFn(timeoutId);
+        resolve();
+      }, delayMs);
+    });
+  const getComputerPlayerThinkDeadlineMs = (runtimeState) => parseTimestampMs(runtimeState?.minimumVisibleUntil);
+  const getComputerPlayerThinkingStartedAtMs = (runtimeState) => parseTimestampMs(runtimeState?.thinkingStartedAt);
+  const getCurrentControlSeat = (game) => game?.controlSeat ?? game?.currentTurn?.playerSeat ?? null;
+  const hasComputerPlayerTurnAdvanced = (game, runtimeState) => {
+    if (!game || !runtimeState?.activeTurnKey || !isComputerPlayerGame(game)) {
+      return true;
+    }
+    if (getCurrentControlSeat(game) !== game.computerPlayer.botSeat) {
+      return true;
+    }
+    const currentDerivedTurnKey = buildComputerPlayerDerivedTurnKey(game);
+    return currentDerivedTurnKey !== runtimeState.activeTurnKey;
+  };
+  const reconcileComputerPlayerRuntimeState = (gameId) => {
+    const runtimeState = getComputerPlayerRuntimeState(gameId);
+    if (!runtimeState) {
+      return null;
+    }
+    const game = transport.getGameViewModel(gameId);
+    if (runtimeState.status !== "thinking" && runtimeState.status !== "failed") {
+      return runtimeState;
+    }
+    if (!hasComputerPlayerTurnAdvanced(game, runtimeState)) {
+      return runtimeState;
+    }
+    setComputerPlayerRuntimeState(gameId, null);
+    if (runtimeState.status === "failed") {
+      for (const failedHandle of operationManager.getFailedOperations(gameId)) {
+        if (isComputerPlayerCommandId(String(failedHandle.id))) {
+          operationManager.dismiss(failedHandle.id);
+        }
+      }
+    }
+    return null;
   };
   const getComputerPlayerTurnRetryError = (error) => {
     if (error instanceof Error) {
@@ -981,6 +1078,10 @@ export const createSyncStore = ({
     }
     const nextGame = clone(game);
     if (!runtimeState) {
+      nextGame.computerPlayer = {
+        ...nextGame.computerPlayer,
+        activeTurnKey: null,
+      };
       if (nextGame.computerPlayer && Object.hasOwn(nextGame.computerPlayer, "runtime")) {
         delete nextGame.computerPlayer.runtime;
       }
@@ -995,11 +1096,33 @@ export const createSyncStore = ({
         error: runtimeState.error ? { ...runtimeState.error } : null,
         updatedAt: runtimeState.updatedAt,
         retryCount: runtimeState.retryCount ?? 0,
+        thinkingStartedAt: runtimeState.thinkingStartedAt ?? null,
+        minimumVisibleUntil: runtimeState.minimumVisibleUntil ?? null,
       },
     };
     return nextGame;
   };
-  const getComputerPlayerTurnKey = (game) => buildComputerPlayerTurnKey(game);
+  const sameComputerPlayerRuntimeState = (game, runtimeState) => {
+    const currentRuntime = normalizeComputerPlayerRuntimeState({
+      ...(game?.computerPlayer?.runtime ?? {}),
+      activeTurnKey: game?.computerPlayer?.runtime?.activeTurnKey ?? game?.computerPlayer?.activeTurnKey ?? null,
+    });
+    const nextRuntime = normalizeComputerPlayerRuntimeState(runtimeState);
+    const currentActiveTurnKey =
+      typeof game?.computerPlayer?.activeTurnKey === "string" && game.computerPlayer.activeTurnKey ? game.computerPlayer.activeTurnKey : null;
+    const nextActiveTurnKey = nextRuntime?.activeTurnKey ?? null;
+    return (
+      currentActiveTurnKey === nextActiveTurnKey &&
+      (currentRuntime?.status ?? null) === (nextRuntime?.status ?? null) &&
+      (currentRuntime?.retryCount ?? 0) === (nextRuntime?.retryCount ?? 0) &&
+      (currentRuntime?.updatedAt ?? null) === (nextRuntime?.updatedAt ?? null) &&
+      (currentRuntime?.thinkingStartedAt ?? null) === (nextRuntime?.thinkingStartedAt ?? null) &&
+      (currentRuntime?.minimumVisibleUntil ?? null) === (nextRuntime?.minimumVisibleUntil ?? null) &&
+      (currentRuntime?.error?.code ?? null) === (nextRuntime?.error?.code ?? null) &&
+      (currentRuntime?.error?.message ?? null) === (nextRuntime?.error?.message ?? null)
+    );
+  };
+  const getComputerPlayerTurnKey = (game) => buildComputerPlayerDerivedTurnKey(game);
   const getComputerPlayerTurnState = (game) => {
     if (!isComputerPlayerGame(game)) {
       return null;
@@ -1047,6 +1170,9 @@ export const createSyncStore = ({
     if (!game) {
       return null;
     }
+    if (sameComputerPlayerRuntimeState(game, runtimeState)) {
+      return game;
+    }
     const nextGame = stampComputerPlayerRuntime(game, runtimeState);
     transport.applyLiveGameUpdate({ game: nextGame });
     return nextGame;
@@ -1065,8 +1191,10 @@ export const createSyncStore = ({
       activeTurnKey,
       status: "failed",
       error: getComputerPlayerTurnRetryError(error),
-      updatedAt: new Date().toISOString(),
+      updatedAt: toIsoTimestamp(now()),
       retryCount: (turnState.runtime?.retryCount ?? turnState.retryCount ?? 0) + 1,
+      thinkingStartedAt: turnState.runtime?.thinkingStartedAt ?? null,
+      minimumVisibleUntil: turnState.runtime?.minimumVisibleUntil ?? null,
     };
     setComputerPlayerRuntimeState(gameId, failure);
     updateComputerPlayerGameViewModel(gameId, failure);
@@ -1131,7 +1259,7 @@ export const createSyncStore = ({
       clearTimeout(existingTimer);
       computerPlayerSyncTimers.delete(gameId);
     }
-    const timer = setTimeout(() => {
+    const timer = setTimeoutFn(() => {
       computerPlayerSyncTimers.delete(gameId);
       void runComputerPlayerSync(gameId, { retry });
     }, 0);
@@ -1161,14 +1289,24 @@ export const createSyncStore = ({
       return;
     }
     const runtimeState = getComputerPlayerRuntimeState(gameId);
-
-    const startedAt = new Date().toISOString();
+    const startedAtMs = now();
+    const baseThinkMs = getComputerPlayerThinkTargetMs({ botId: turnState.botId });
+    const thinkingStartedAtMs =
+      runtimeState?.status === "thinking" && runtimeState.activeTurnKey === turnState.turnKey
+        ? getComputerPlayerThinkingStartedAtMs(runtimeState) ?? startedAtMs
+        : startedAtMs;
+    const minimumVisibleUntilMs =
+      runtimeState?.status === "thinking" && runtimeState.activeTurnKey === turnState.turnKey
+        ? Math.max(getComputerPlayerThinkDeadlineMs(runtimeState) ?? 0, thinkingStartedAtMs + baseThinkMs)
+        : thinkingStartedAtMs + baseThinkMs;
     const thinkingState = {
       activeTurnKey: turnState.turnKey,
       status: "thinking",
       error: null,
-      updatedAt: startedAt,
+      updatedAt: toIsoTimestamp(startedAtMs),
       retryCount: runtimeState?.activeTurnKey === turnState.turnKey ? runtimeState.retryCount ?? 0 : 0,
+      thinkingStartedAt: toIsoTimestamp(thinkingStartedAtMs),
+      minimumVisibleUntil: toIsoTimestamp(minimumVisibleUntilMs),
     };
     setComputerPlayerRuntimeState(gameId, thinkingState);
     updateComputerPlayerGameViewModel(gameId, thinkingState);
@@ -1185,9 +1323,32 @@ export const createSyncStore = ({
         seed,
         trace: false,
       });
+      const targetThinkMs = getComputerPlayerThinkTargetMs({
+        botId,
+        diagnostics: response?.diagnostics ?? null,
+      });
+      const targetVisibleUntilMs = Math.max(minimumVisibleUntilMs, thinkingStartedAtMs + targetThinkMs);
+      const updatedThinkingState =
+        targetVisibleUntilMs === minimumVisibleUntilMs
+          ? thinkingState
+          : {
+              ...thinkingState,
+              updatedAt: toIsoTimestamp(now()),
+              minimumVisibleUntil: toIsoTimestamp(targetVisibleUntilMs),
+            };
+      if (updatedThinkingState !== thinkingState) {
+        setComputerPlayerRuntimeState(gameId, updatedThinkingState);
+        updateComputerPlayerGameViewModel(gameId, updatedThinkingState);
+      }
+      await waitForThinkDelay(Math.max(0, targetVisibleUntilMs - now()));
       const currentGame = transport.getGameViewModel(gameId);
-      const currentTurnKey = getComputerPlayerTurnKey(currentGame);
-      if (!currentGame || currentTurnKey !== turnKey || computerPlayerInFlightByGameId.get(gameId) !== turnKey) {
+      const currentRuntimeState = reconcileComputerPlayerRuntimeState(gameId) ?? getComputerPlayerRuntimeState(gameId);
+      if (
+        !currentGame ||
+        hasComputerPlayerTurnAdvanced(currentGame, { activeTurnKey: turnKey }) ||
+        currentRuntimeState?.activeTurnKey !== turnKey ||
+        computerPlayerInFlightByGameId.get(gameId) !== turnKey
+      ) {
         return;
       }
 
@@ -1201,17 +1362,18 @@ export const createSyncStore = ({
       });
 
       if (!handle?.accepted) {
-        markComputerPlayerFailure(gameId, createOperationError("The computer player move was rejected.", "computer_player_rejected"), thinkingState);
+        markComputerPlayerFailure(
+          gameId,
+          createOperationError("The computer player move was rejected.", "computer_player_rejected"),
+          updatedThinkingState,
+        );
         return;
       }
-
-      setComputerPlayerRuntimeState(gameId, null);
-      updateComputerPlayerGameViewModel(gameId, null);
 
       try {
         await handle.committed;
       } catch (error) {
-        markComputerPlayerFailure(gameId, error, thinkingState);
+        markComputerPlayerFailure(gameId, error, updatedThinkingState);
         return;
       }
       const nextGame = transport.getGameViewModel(gameId);
@@ -1219,7 +1381,17 @@ export const createSyncStore = ({
         scheduleComputerPlayerSync(gameId);
       }
     } catch (error) {
-      markComputerPlayerFailure(gameId, error, thinkingState);
+      await waitForThinkDelay(Math.max(0, minimumVisibleUntilMs - now()));
+      const currentGame = transport.getGameViewModel(gameId);
+      if (
+        !currentGame ||
+        hasComputerPlayerTurnAdvanced(currentGame, { activeTurnKey: turnKey }) ||
+        computerPlayerInFlightByGameId.get(gameId) !== turnKey
+      ) {
+        reconcileComputerPlayerRuntimeState(gameId);
+        return;
+      }
+      markComputerPlayerFailure(gameId, error, getComputerPlayerTurnState(currentGame) ?? thinkingState);
     } finally {
       computerPlayerInFlightByGameId.delete(gameId);
     }
@@ -1402,24 +1574,30 @@ export const createSyncStore = ({
         );
       }
     }
-      if (gameId && localHistorySelectionByGameId.has(gameId)) {
-        const currentGame = transport.getGameViewModel(gameId);
-        if (currentGame?.inHistoryMode !== true || typeof currentGame?.historyIndex !== "number") {
-          localHistorySelectionByGameId.delete(gameId);
-          return;
+    if (gameId) {
+      const currentRuntimeState = reconcileComputerPlayerRuntimeState(gameId) ?? getComputerPlayerRuntimeState(gameId);
+      if (transport.getGameViewModel(gameId) && isComputerPlayerGame(transport.getGameViewModel(gameId))) {
+        updateComputerPlayerGameViewModel(gameId, currentRuntimeState);
+      }
+    }
+    if (gameId && localHistorySelectionByGameId.has(gameId)) {
+      const currentGame = transport.getGameViewModel(gameId);
+      if (currentGame?.inHistoryMode !== true || typeof currentGame?.historyIndex !== "number") {
+        localHistorySelectionByGameId.delete(gameId);
+        return;
       }
       const projectedGame = buildHistoryViewProjection(currentGame, localHistorySelectionByGameId.get(gameId));
       if (projectedGame && !sameHistoryProjection(transport.getGameViewModel(gameId), projectedGame)) {
         transport.applyLiveGameUpdate({ game: projectedGame });
       }
     }
-      if (gameId === activeGameId) {
-        const currentGame = transport.getGameViewModel(gameId);
-        if (shouldAutoRunComputerPlayerTurn(currentGame)) {
-          scheduleComputerPlayerSync(gameId);
-        }
+    if (gameId === activeGameId) {
+      const currentGame = transport.getGameViewModel(gameId);
+      if (shouldAutoRunComputerPlayerTurn(currentGame)) {
+        scheduleComputerPlayerSync(gameId);
       }
-    });
+    }
+  });
 
   const liveSync = createSyncClient({
     identityId: transport.getIdentityId(),
@@ -1485,10 +1663,8 @@ export const createSyncStore = ({
         if (!transport.getGameViewModel(gameId)) {
           transport.applyLiveGameUpdate({ game: localPendingGame });
         }
-        const runtimeState = getComputerPlayerRuntimeState(gameId);
-        if (runtimeState) {
-          updateComputerPlayerGameViewModel(gameId, runtimeState);
-        }
+        const runtimeState = reconcileComputerPlayerRuntimeState(gameId) ?? getComputerPlayerRuntimeState(gameId);
+        updateComputerPlayerGameViewModel(gameId, runtimeState);
         if (gameId === activeGameId && shouldAutoRunComputerPlayerTurn(transport.getGameViewModel(gameId))) {
           scheduleComputerPlayerSync(gameId);
         }
@@ -1497,10 +1673,8 @@ export const createSyncStore = ({
       try {
         const loadedGame = await transport.loadGame(gameId, options);
         clearPendingLocalGame(gameId);
-        const runtimeState = getComputerPlayerRuntimeState(gameId);
-        if (runtimeState) {
-          updateComputerPlayerGameViewModel(gameId, runtimeState);
-        }
+        const runtimeState = reconcileComputerPlayerRuntimeState(gameId) ?? getComputerPlayerRuntimeState(gameId);
+        updateComputerPlayerGameViewModel(gameId, runtimeState);
         if (gameId === activeGameId && shouldAutoRunComputerPlayerTurn(loadedGame)) {
           scheduleComputerPlayerSync(gameId);
         }
@@ -1512,10 +1686,8 @@ export const createSyncStore = ({
           if (fallbackPendingGame) {
             transport.applyLiveGameUpdate({ game: fallbackPendingGame });
           }
-          const runtimeState = getComputerPlayerRuntimeState(gameId);
-          if (runtimeState) {
-            updateComputerPlayerGameViewModel(gameId, runtimeState);
-          }
+          const runtimeState = reconcileComputerPlayerRuntimeState(gameId) ?? getComputerPlayerRuntimeState(gameId);
+          updateComputerPlayerGameViewModel(gameId, runtimeState);
           if (gameId === activeGameId && shouldAutoRunComputerPlayerTurn(transport.getGameViewModel(gameId) ?? fallbackGame)) {
             scheduleComputerPlayerSync(gameId);
           }
@@ -1790,10 +1962,8 @@ export const createSyncStore = ({
       syncActiveGame();
       if (activeGameId && typeof transport.getGameViewModel === "function") {
         const currentGame = transport.getGameViewModel(activeGameId);
-        const runtimeState = getComputerPlayerRuntimeState(activeGameId);
-        if (runtimeState) {
-          updateComputerPlayerGameViewModel(activeGameId, runtimeState);
-        }
+        const runtimeState = reconcileComputerPlayerRuntimeState(activeGameId) ?? getComputerPlayerRuntimeState(activeGameId);
+        updateComputerPlayerGameViewModel(activeGameId, runtimeState);
         if (shouldAutoRunComputerPlayerTurn(currentGame)) {
           scheduleComputerPlayerSync(activeGameId);
         }

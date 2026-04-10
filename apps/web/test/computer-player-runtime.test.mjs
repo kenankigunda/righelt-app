@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   buildComputerPlayerCommandId,
+  buildComputerPlayerDerivedTurnKey,
+  getComputerPlayerThinkTargetMs,
   buildComputerPlayerTurnKey,
   runComputerPlayerSelectMove,
 } from "../shell/computer-player-runtime.js";
@@ -23,7 +25,37 @@ test("computer-player runtime prefers an explicit activeTurnKey and keeps comman
   };
 
   assert.equal(buildComputerPlayerTurnKey(game), "turn-live-001");
+  assert.equal(buildComputerPlayerDerivedTurnKey(game), "game-cp-1|turn:4|moves:2|owner:Player 1|control:Player 2");
   assert.equal(buildComputerPlayerCommandId(game, "select"), "bot:game-cp-1:turn-live-001:tau-tenacious:select");
+});
+
+test("computer-player think target uses persona floors and deterministic complexity bonuses", () => {
+  assert.equal(getComputerPlayerThinkTargetMs({ botId: "babs" }), 600);
+  assert.equal(getComputerPlayerThinkTargetMs({ botId: "tau" }), 800);
+  assert.equal(getComputerPlayerThinkTargetMs({ botId: "sev" }), 800);
+  assert.equal(getComputerPlayerThinkTargetMs({ botId: "horus" }), 1200);
+
+  assert.equal(
+    getComputerPlayerThinkTargetMs({
+      botId: "babs",
+      diagnostics: { legalActionCount: 10, exploredNodes: 50 },
+    }),
+    750,
+  );
+  assert.equal(
+    getComputerPlayerThinkTargetMs({
+      botId: "tau",
+      diagnostics: { legalActionCount: 6, exploredNodes: 700 },
+    }),
+    1100,
+  );
+  assert.equal(
+    getComputerPlayerThinkTargetMs({
+      botId: "horus",
+      diagnostics: { legalActionCount: 8, exploredNodes: 0 },
+    }),
+    1200,
+  );
 });
 
 test("computer-player runtime can be overridden without changing the browser contract", async () => {
