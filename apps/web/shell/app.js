@@ -1267,6 +1267,16 @@ const renderHeaderNarrowMenu = () => {
     </div>
   `;
 };
+const renderHeaderAlertZone = () => {
+  const viewedGameId = getCurrentViewedGameId();
+  const viewedGame = viewedGameId ? transport.getGameViewModel(viewedGameId) : null;
+  const gameAlerts = viewedGame ? renderGameAlertsHtml(viewedGame) : "";
+  return `
+    <div class="shell-header-status" data-shell-alert-zone="${gameAlerts ? "active" : "idle"}">
+      <div id="shell-game-alerts">${gameAlerts}</div>
+    </div>
+  `;
+};
 const syncShellLayoutMode = () => {
   const layoutMode = getShellLayoutMode();
   if (layoutMode === "wide" && headerMenuOpen) {
@@ -1617,6 +1627,7 @@ const renderHeader = () => `
     <div class="shell-header-main">
       <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Righelt</a></h1>
     </div>
+    ${renderHeaderAlertZone()}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
         ${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
@@ -2448,7 +2459,6 @@ const renderGameShellPanelTab = (panelKey, label) => `
 `;
 
 const renderGameShellFrame = (game) => `
-  <div id="shell-game-alerts"></div>
   <section class="game-shell-frame" data-game-shell-root data-game-id="${escapeHtml(game.id)}" data-testid="game-shell">
     <div class="game-shell-track-wrap">
       <section class="layout-grid game-shell-track" data-game-shell-track>
@@ -2796,10 +2806,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
     game.inviteToken || inviteToken || game.id,
     getCurrentFlyoutState(),
   )}`;
-
-  const gameAlerts = renderGameAlertsHtml(game, inviteFromRole);
   return `
-    ${gameAlerts ? `<div class="shell-game-alerts">${gameAlerts}</div>` : ""}
     <section class="layout-grid">
       <div class="stack" data-shell-sticky-target="left" data-sticky-enabled="false">
         <section class="panel">${renderGameSummaryPanel(game)}</section>
