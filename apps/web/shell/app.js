@@ -2189,6 +2189,9 @@ const getInviteContextForGame = (game, routeName = currentRoute.name) => {
   if (!game || game.myRole !== "Guest") {
     return null;
   }
+  if (routeName === "game" && leftGameBannerByGameId.get(game.id) === true) {
+    return null;
+  }
   if (routeName === "game" && inviteChoiceCommittedByGameId.has(game.id)) {
     return null;
   }
@@ -2293,7 +2296,8 @@ const renderCardMenu = (game, { isOffline, myIdentityId, mode = "home", variant 
       </details>
     `;
   }
-  const leaveDeleteLabel = computeLeaveDeleteLabel(game, myIdentityId);
+  const isSameIdentitySelfPlay = game?.player1?.identityId === myIdentityId && game?.player2?.identityId === myIdentityId;
+  const leaveDeleteLabel = computeLeaveDeleteLabel(game, myIdentityId) === "Leave" && isSameIdentitySelfPlay ? "Delete" : computeLeaveDeleteLabel(game, myIdentityId);
   const action =
     variant === "game" && game?.myRole === "Viewer"
       ? "leave-viewer"
@@ -3131,6 +3135,7 @@ const shouldPatchMountedFlyouts = (routeKey = getRouteRenderKey(), baseRouteKey 
   routeKey !== lastRenderedRouteKey &&
   getRouteTransitionPhaseKey() === lastRenderedTransitionPhaseKey &&
   baseRouteKey === lastRenderedBaseRouteKey &&
+  (currentRoute.name !== "game" || getGameRoutePresentationKey() === "live") &&
   appEl instanceof HTMLElement &&
   appEl.querySelector(".shell-main-content") instanceof HTMLElement &&
   getMountedShellPageEl() instanceof HTMLElement;
@@ -3294,7 +3299,7 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
   if (!game) {
     return false;
   }
-  if (game.deletedAt) {
+  if (game.deletedAt || leftGameBannerByGameId.get(game.id) === true) {
     return false;
   }
   return !getActiveApprovalRequest(game) && !getActiveRevertRequest(game) && !getActivePendingRevertRequest(game) && doesMountedFlyoutStateMatchRoute();
@@ -4356,6 +4361,14 @@ window.addEventListener("resize", () => {
   scheduleGameShellStickyLayout();
   scheduleResponsiveHomeSectionPageSizes();
 });
+
+const handleConnectivityChange = () => {
+  syncLiveChannels();
+  render({ animatePanels: false });
+};
+
+window.addEventListener("online", handleConnectivityChange);
+window.addEventListener("offline", handleConnectivityChange);
 
 window.addEventListener("load", () => {
   scheduleGameShellStickyLayout();
