@@ -21,14 +21,23 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /appEl\.setAttribute\("data-shell-layout-mode", "narrow"\);/);
   assert.match(source, /const renderGameShellFrame = \(game\) =>/);
   assert.match(source, /import \{ computeLeaveDeleteLabel \} from "\.\/live-transport\.js";/);
+  assert.match(source, /buildTrashHash,/);
   assert.match(source, /const HOME_CARD_LEAVE_COLLAPSE_MS = 180;/);
   assert.match(source, /const pendingHomeCardLeaveIds = new Set\(\);/);
   assert.match(source, /const leftGameBannerByGameId = new Map\(\);/);
   assert.match(source, /const leftGameInviteFromRoleByGameId = new Map\(\);/);
-  assert.match(source, /const renderCardMenu = \(game, \{ isOffline, myIdentityId, variant = "home" \} = \{\}\) =>/);
+  assert.match(source, /const renderCardMenu = \(game, \{ isOffline, myIdentityId, mode = "home", variant = mode \} = \{\}\) =>/);
+  assert.match(source, /const HOME_SECTION_KEYS = \["my", "other", "smoke", "trash-my", "trash-other"\];/);
+  assert.match(source, /"trash-my": createHomeSectionState\("My deleted games"\),/);
+  assert.match(source, /"trash-other": createHomeSectionState\("Other games"\),/);
+  assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \{/);
+  assert.match(source, /if \(route\?\.name === "trash"\) \{\s*return \["trash-my", "trash-other"\];\s*\}/s);
   assert.match(source, /data-card-menu data-game-id=/);
   assert.match(source, /data-action="\$\{escapeHtml\(action\)\}"/);
   assert.match(source, /Not available offline\./);
+  assert.match(source, /if \(mode === "trash"\) \{/);
+  assert.match(source, /data-action="restore-game"/);
+  assert.match(source, /data-testid="restore-game"/);
   assert.match(source, /const renderLeftGameBanner = \(game\) =>/);
   assert.match(source, /data-testid="left-game-gate"/);
   assert.match(source, /data-testid="rejoin-left-game"/);
@@ -66,6 +75,8 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /aria-pressed="\$\{currentRoute\.debug \? "true" : "false"\}"/);
   assert.match(source, /title: "Debug mode"/);
   assert.match(source, /Scenarios/);
+  assert.match(source, /body = renderTrash\(\);/);
+  assert.match(source, /body = renderGameNotFound\(\);/);
   assert.match(source, /<h1><a class="shell-header-title-link" href="\$\{buildHomeHash\(getCurrentFlyoutState\(\)\)\}" data-flyout-link="home">Righelt<\/a><\/h1>/);
   assert.match(source, /const renderHeaderWideActions = \(\) =>/);
   assert.match(source, /const renderHeaderNarrowMenu = \(\) =>/);
@@ -80,6 +91,13 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /: 'aria-hidden="true" tabindex="-1"'/);
   assert.match(source, /const viewedGameId = getCurrentViewedGameId\(\);/);
   assert.match(source, /data-shell-alert-zone="\$\{gameAlerts \? "active" : "idle"\}"/);
+  assert.match(source, /data-action="open-trash"/);
+  assert.match(source, />Trash<\/button>/);
+  assert.match(source, /const renderTrash = \(\) =>/);
+  assert.match(source, /const renderGameNotFound = \(\) =>/);
+  assert.match(source, /const renderHomeGameSection = \(sectionKey, \{ alwaysRender = sectionKey === "my", menuMode = currentRoute\.name === "trash" \? "trash" : "home" \} = \{\}\) =>/);
+  assert.match(source, /const renderHomeGameCard = \(game, \{ menuMode = "home" \} = \{\}\) =>/);
+  assert.match(source, /mode: menuMode/);
   assert.match(source, /data-action="toggle-header-menu"/);
   assert.match(source, /data-header-menu-open="\$\{headerMenuOpen \? "true" : "false"\}"/);
   assert.match(source, /const menuId = "shell-header-menu";/);
@@ -91,7 +109,10 @@ test("shell render patches same-route game updates without replacing the board p
   assert.doesNotMatch(source, /renderHeaderHomeAction/);
   assert.doesNotMatch(source, />Home<\/(?:a|span)>/);
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Live Sync<\/h2>[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
-  assert.match(source, /const getDocumentTitle = \(\) => \{\s*if \(currentRoute\.name === "game-not-found"\) \{\s*return "Game not found \| Righelt";\s*\}\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;\s*\}\s*return "Righelt";\s*\};/s);
+  assert.match(
+    source,
+    /const getDocumentTitle = \(\) => \{\s*if \(currentRoute\.name === "game-not-found"\) \{\s*return "Game not found \| Righelt";\s*\}\s*if \(currentRoute\?\.name === "trash"\) \{\s*return "Trash bin \| Righelt";\s*\}\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;/s,
+  );
   assert.match(source, /const failedOperations = transport\.getFailedOperations\?\.\(game\.id\) \?\? \[\];/);
   assert.match(source, /const getFailedOperationsKey = \(gameId\) =>/);
   assert.match(source, /failedOperationsKey: getFailedOperationsKey\(game\.id\)/);
@@ -334,6 +355,7 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /transport\.subscribe\(\(change\) => \{\s*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);\s*\}\);/s);
   assert.match(source, /const canHydrateRouteFromLocalState = \(route = currentRoute\) => \{/);
   assert.match(source, /return Boolean\(transport\.getGameViewModel\(route\.gameId\)\);/);
+  assert.match(source, /if \(currentRoute\.name === "trash"\) \{\s*await syncHomeSections\(\);\s*return;\s*\}/s);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
   assert.match(source, /if \(game\.deletedAt\) \{\s*return false;\s*\}/s);
   assert.match(source, /return !getActiveApprovalRequest\(game\) && !getActiveRevertRequest\(game\) && !getActivePendingRevertRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
@@ -378,6 +400,7 @@ test("debug flyout persists locally while scenario-created games close the scena
   assert.match(source, /return \{\s*\.\.\.routeWithPersistedPreferences,\s*\.\.\.resolveFlyoutState\(routeWithPersistedPreferences,/s);
   assert.doesNotMatch(source, /toggleDebugHash/);
   assert.match(source, /if \(action === "open-debug"\) \{[\s\S]*saveDebugFlyoutOpen\(storage, true\);[\s\S]*currentRoute = normalizeRouteFlyoutState\(\{ \.\.\.currentRoute, debug: true \}, \{ preferredFlyoutKey: "debug" \}\);[\s\S]*(startRouteSync\(\{ renderStart: false \}\)|render\(\{ animatePanels: false, includeBoard: false \}\));/s);
+  assert.match(source, /if \(action === "open-trash"\) \{\s*if \(currentRoute\.name !== "trash"\) \{\s*navigateTo\(buildTrashHash\(getCurrentFlyoutState\(\)\)\);\s*\}\s*return;\s*\}/s);
   assert.match(source, /if \(action === "close-debug"\) \{[\s\S]*saveDebugFlyoutOpen\(storage, false\);[\s\S]*currentRoute = normalizeRouteFlyoutState\(\{ \.\.\.currentRoute, debug: false \}\);[\s\S]*(startRouteSync\(\{ renderStart: false \}\)|render\(\{ animatePanels: false, includeBoard: false \}\));/s);
   assert.match(source, /if \(action === "close-scenarios"\) \{[\s\S]*navigateTo\(toggleScenariosHash\(window\.location\.hash\)\);[\s\S]*\}/s);
   assert.match(source, /const nextHash = buildGameHash\(result\.game\.id, null, \{\s*\.\.\.getCurrentFlyoutState\(\),\s*scenarios: false,\s*\}\);/s);

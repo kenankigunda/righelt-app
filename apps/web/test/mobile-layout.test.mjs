@@ -41,6 +41,14 @@ test("shell header stacks cleanly on narrow screens", () => {
     shellStylesSource,
     /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-menu-root\s*\{[\s\S]*display:\s*block;/s,
   );
+  assert.match(
+    shellStylesSource,
+    /\.shell-route-message\s*\{[\s\S]*width:\s*min\(100%, 32rem\);[\s\S]*justify-items:\s*center;[\s\S]*text-align:\s*center;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-route-message-copy\s*\{[\s\S]*display:\s*grid;[\s\S]*justify-items:\s*center;/s,
+  );
 });
 
 test("shell header separates layout spacing from panel chrome", () => {

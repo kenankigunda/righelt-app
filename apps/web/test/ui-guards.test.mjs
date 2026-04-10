@@ -190,13 +190,18 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /my: createHomeSectionState\("My games"\),/);
   assert.match(source, /other: createHomeSectionState\("Other games"\),/);
   assert.match(source, /smoke: createHomeSectionState\("Deploy smoke player"\),/);
+  assert.match(source, /"trash-my": createHomeSectionState\("My deleted games"\),/);
+  assert.match(source, /"trash-other": createHomeSectionState\("Other games"\),/);
   assert.match(source, /serverPage:\s*0,/);
   assert.match(source, /serverTotalPages:\s*0,/);
   assert.match(source, /serverPageGameIds:\s*\[\],/);
   assert.match(source, /serverPageGameIdsByPage:\s*\{\},/);
   assert.match(source, /visiblePageSize:\s*HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,/);
   assert.match(source, /visibleColumnCount:\s*1,/);
-  assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \(route\?\.debug \? \["my", "other", "smoke"\] : \["my", "other"\]\);/);
+  assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \{/);
+  assert.match(source, /if \(route\?\.name === "trash"\) \{\s*return \["trash-my", "trash-other"\];\s*\}/s);
+  assert.match(source, /if \(route\?\.name !== "home"\) \{\s*return \[\];\s*\}/s);
+  assert.match(source, /return route\?\.debug \? \["my", "other", "smoke"\] : \["my", "other"\];/);
   assert.match(source, /const getHomeSectionCardMinWidthPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_MIN_WIDTH_REM;/);
   assert.match(source, /const getHomeSectionCardGapPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_GAP_REM;/);
   assert.match(source, /const carouselEl = appEl\?\.querySelector\?\.\(`\[data-home-carousel="\$\{sectionKey\}"\]`\);/);
@@ -223,7 +228,7 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /const renderHomeStartButton = \(\) =>/);
   assert.match(source, /data-action="create-game"/);
   assert.match(source, /home-games-section-controls home-games-section-controls-\$\{escapeHtml\(placement\)\}/);
-  assert.match(source, /const shouldAlwaysRender = sectionKey === "my";/);
+  assert.match(source, /const renderHomeGameSection = \(sectionKey, \{ alwaysRender = sectionKey === "my", menuMode = currentRoute\.name === "trash" \? "trash" : "home" \} = \{\}\) =>/);
   assert.match(source, /const showEmptyState = section\.totalGames === 0;/);
   assert.match(source, /const showHeaderPaging = showPaging && section\.visibleColumnCount > 1;/);
   assert.match(source, /const showFooterPaging = showPaging && section\.visibleColumnCount === 1;/);

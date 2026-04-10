@@ -29,6 +29,7 @@ import {
   buildGameHash,
   buildHomeHash,
   buildInviteHash,
+  buildTrashHash,
   buildTutorialHash,
   isShellRootHash,
   parseRouteFromHash,
@@ -196,10 +197,13 @@ const createHomeSectionState = (title) => ({
   slideDirection: "none",
   animationToken: 0,
 });
+const HOME_SECTION_KEYS = ["my", "other", "smoke", "trash-my", "trash-other"];
 let homeSections = {
   my: createHomeSectionState("My games"),
   other: createHomeSectionState("Other games"),
   smoke: createHomeSectionState("Deploy smoke player"),
+  "trash-my": createHomeSectionState("My deleted games"),
+  "trash-other": createHomeSectionState("Other games"),
 };
 const getPersistedDebugFlyoutOpen = () => loadDebugFlyoutOpen(storage);
 
@@ -366,6 +370,9 @@ const formatDisplayGameId = (gameId) => {
 const getDocumentTitle = () => {
   if (currentRoute.name === "game-not-found") {
     return "Game not found | Righelt";
+  }
+  if (currentRoute?.name === "trash") {
+    return "Trash bin | Righelt";
   }
   const gameId = getCurrentViewedGameId();
   if (gameId) {
@@ -660,7 +667,15 @@ const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
 };
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
 const canControlLiveBoard = (game) => Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
-const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "other", "smoke"] : ["my", "other"]);
+const getVisibleHomeSectionKeys = (route = currentRoute) => {
+  if (route?.name === "trash") {
+    return ["trash-my", "trash-other"];
+  }
+  if (route?.name !== "home") {
+    return [];
+  }
+  return route?.debug ? ["my", "other", "smoke"] : ["my", "other"];
+};
 const getHomeSection = (sectionKey) => homeSections[sectionKey] ?? createHomeSectionState(sectionKey);
 const setHomeSection = (sectionKey, nextState) => {
   homeSections = {
@@ -1220,6 +1235,12 @@ const syncNarrowHeaderMenuDom = () => {
 };
 const renderHeaderWideActions = () => `
   <button
+    class="secondary${currentRoute.name === "trash" ? " is-active" : ""}"
+    type="button"
+    data-action="open-trash"
+    aria-pressed="${currentRoute.name === "trash" ? "true" : "false"}"
+  >Trash</button>
+  <button
     class="secondary${currentRoute.scenarios ? " is-active" : ""}"
     type="button"
     data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
@@ -1256,6 +1277,14 @@ const renderHeaderNarrowMenu = () => {
         data-header-menu-panel
         aria-hidden="${headerMenuOpen ? "false" : "true"}"
       >
+        <button
+          class="secondary shell-header-menu-item${currentRoute.name === "trash" ? " is-active" : ""}"
+          type="button"
+          data-action="open-trash"
+          data-header-menu-close="true"
+          aria-pressed="${currentRoute.name === "trash" ? "true" : "false"}"
+          tabindex="${headerMenuOpen ? "0" : "-1"}"
+        >Trash</button>
         <button
           class="secondary shell-header-menu-item${currentRoute.scenarios ? " is-active" : ""}"
           type="button"
@@ -2202,7 +2231,40 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
   </article>`;
 };
 
-const renderCardMenu = (game, { isOffline, myIdentityId, variant = "home" } = {}) => {
+const renderCardMenu = (game, { isOffline, myIdentityId, mode = "home", variant = mode } = {}) => {
+  const menuId = `mini-board-card-menu-${escapeHtml(game.id)}`;
+  const offlineNote = isOffline ? '<p class="small mini-board-card-menu-note">Not available offline.</p>' : "";
+  if (mode === "trash") {
+    if (!isPlayerRole(game?.myRole)) {
+      return "";
+    }
+    return `
+      <details class="mini-board-card-menu" data-card-menu data-game-id="${escapeHtml(game.id)}">
+        <summary
+          class="secondary mini-board-card-menu-button"
+          aria-label="Restore game actions"
+          aria-controls="${menuId}"
+        >
+          <span class="mini-board-card-menu-icon" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+        </summary>
+        <div class="mini-board-card-menu-panel" id="${menuId}">
+          <button
+            class="secondary mini-board-card-menu-item"
+            data-action="restore-game"
+            data-game-id="${escapeHtml(game.id)}"
+            data-testid="restore-game"
+            ${isOffline ? "disabled" : ""}
+            aria-disabled="${isOffline ? "true" : "false"}"
+          >Restore</button>
+          ${offlineNote}
+        </div>
+      </details>
+    `;
+  }
   const leaveDeleteLabel = computeLeaveDeleteLabel(game, myIdentityId);
   const action =
     variant === "game" && game?.myRole === "Viewer"
@@ -2210,8 +2272,6 @@ const renderCardMenu = (game, { isOffline, myIdentityId, variant = "home" } = {}
       : leaveDeleteLabel === "Delete"
         ? "delete-game"
         : "leave-game";
-  const menuId = `mini-board-card-menu-${escapeHtml(game.id)}`;
-  const offlineNote = isOffline ? '<p class="small mini-board-card-menu-note">Not available offline.</p>' : "";
   return `
     <details class="mini-board-card-menu" data-card-menu data-game-id="${escapeHtml(game.id)}">
       <summary
@@ -2240,7 +2300,7 @@ const renderCardMenu = (game, { isOffline, myIdentityId, variant = "home" } = {}
   `;
 };
 
-const renderHomeGameCard = (game) => {
+const renderHomeGameCard = (game, { menuMode = "home" } = {}) => {
   const snapshot = getStaticCardPreviewSnapshot(game);
   const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
   const moveLabel = `Move ${game.moveCount + 1}`;
@@ -2250,6 +2310,7 @@ const renderHomeGameCard = (game) => {
   const homeCardMenu = renderCardMenu(game, {
     isOffline: navigator.onLine === false,
     myIdentityId: transport.getIdentityId(),
+    mode: menuMode,
   });
   const leaving = pendingHomeCardLeaveIds.has(game.id);
   const cardClassName = `mini-board-card${leaving ? " is-leaving" : ""}`;
@@ -2453,14 +2514,13 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
 const renderHomeStartButton = () =>
   `<button class="home-start-button" data-action="create-game" data-testid="home-create-game">Start new game</button>`;
 
-const renderHomeGameSection = (sectionKey) => {
+const renderHomeGameSection = (sectionKey, { alwaysRender = sectionKey === "my", menuMode = currentRoute.name === "trash" ? "trash" : "home" } = {}) => {
   const section = getHomeSection(sectionKey);
   if (isHomeSectionPending(sectionKey)) {
     return renderHomeSectionSkeleton(section.title, { showStartButton: sectionKey === "my" });
   }
   const games = section.gameIds.map((gameId) => transport.getHomeGameCard(gameId)).filter(Boolean);
-  const shouldAlwaysRender = sectionKey === "my";
-  if (!Array.isArray(games) || (!shouldAlwaysRender && (games.length === 0 || section.totalGames === 0))) {
+  if (!Array.isArray(games) || (!alwaysRender && (games.length === 0 || section.totalGames === 0))) {
     return "";
   }
   const showEmptyState = section.totalGames === 0;
@@ -2485,7 +2545,7 @@ const renderHomeGameSection = (sectionKey) => {
       ? `<p class="small home-games-empty">No games yet.</p>`
       : `<div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
       <div class="home-games-carousel-track" data-home-carousel-track="${escapeHtml(sectionKey)}">
-        <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
+        <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game, { menuMode })).join("")}</div>
       </div>
     </div>`}
     ${showFooterPaging ? renderHomeSectionControls(sectionKey, section, { placement: "footer" }) : ""}
@@ -2520,6 +2580,21 @@ const renderHome = () => {
   return `
     <section class="stack">
       ${listHtml}
+    </section>
+  `;
+};
+
+const renderTrash = () => {
+  if (!routeHydrated) {
+    return `
+      <section class="stack">
+        ${getVisibleHomeSectionKeys().map((sectionKey) => renderHomeSectionSkeleton(getHomeSection(sectionKey).title)).join("")}
+      </section>
+    `;
+  }
+  return `
+    <section class="stack">
+      ${getVisibleHomeSectionKeys().map((sectionKey) => renderHomeGameSection(sectionKey, { alwaysRender: true, menuMode: "trash" })).join("")}
     </section>
   `;
 };
@@ -3462,6 +3537,17 @@ const renderNotFound = () => `
   </section>
 `;
 
+const renderGameNotFound = () => `
+  <section class="shell-route-message panel shell-game-not-found">
+    <div class="shell-route-message-copy">
+      <p class="small shell-route-kicker">Game not found</p>
+      <h2>Game not found</h2>
+      <p>The game ID you opened no longer resolves to a live or deleted game.</p>
+    </div>
+    <a class="button-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Return home</a>
+  </section>
+`;
+
 const getHistoryDestroyedPieceOverlays = (game) => {
   if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
     return [];
@@ -3832,7 +3918,7 @@ const syncHomeSections = async () => {
       await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
     }),
   );
-  const hiddenSectionKeys = ["my", "other", "smoke"].filter((sectionKey) => !visibleSectionKeys.includes(sectionKey));
+  const hiddenSectionKeys = HOME_SECTION_KEYS.filter((sectionKey) => !visibleSectionKeys.includes(sectionKey));
   hiddenSectionKeys.forEach((sectionKey) => {
     const section = getHomeSection(sectionKey);
     setHomeSection(sectionKey, {
@@ -3931,6 +4017,8 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   let body = "";
   if (currentRoute.name === "home") {
     body = renderHome();
+  } else if (currentRoute.name === "trash") {
+    body = renderTrash();
   } else if (currentRoute.name === "game") {
     const inviteContext = getInviteContextForGame(currentGame, "game");
     body = inviteContext ? renderInviteLanding(inviteContext) : renderGame(currentRoute.gameId, currentRoute.inviteFromRole);
@@ -4029,6 +4117,10 @@ const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd
 
 const syncRouteData = async () => {
   if (currentRoute.name === "home") {
+    await syncHomeSections();
+    return;
+  }
+  if (currentRoute.name === "trash") {
     await syncHomeSections();
     return;
   }
@@ -4620,6 +4712,12 @@ appEl.addEventListener("click", async (event) => {
         return;
       }
       render({ animatePanels: false, includeBoard: false });
+    }
+    return;
+  }
+  if (action === "open-trash") {
+    if (currentRoute.name !== "trash") {
+      navigateTo(buildTrashHash(getCurrentFlyoutState()));
     }
     return;
   }
