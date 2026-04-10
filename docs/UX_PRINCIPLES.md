@@ -42,6 +42,28 @@ External references that informed these principles include Apple Human Interface
 - Game-state comprehension beats decorative density. Any added styling must preserve quick understanding of whose turn it is, what changed, and what the player can do next.
 - Prefer concise, high-signal UI copy over verbose helper text. When extra explanation is needed, stage it behind the primary path instead of forcing it into the main flow.
 
+## Approachable Copy Principle
+
+- Write all user-facing text as if speaking to a first-time player who just wants to play. Technical accuracy is not an excuse for jargon.
+- Prefer showing state through UI treatment (color, position, icons, visual hierarchy) over telling the player about state in text. If the UI already communicates something, the text is redundant — remove it.
+- Use natural, first-person phrasing ("You are Player 1") over label-colon-value patterns ("Role: Player 1"). The player is a person in a game, not a row in a database.
+- Empty states should be invisible, not narrated. When there are no items in a list, show nothing rather than printing "No pending X" or "None."
+- Error and recovery messages should describe what is happening for the player, not what the system is doing internally. Avoid words like "sync," "optimistic," "authoritative," "server," "route," "snapshot," or "live state." Technical error details (stack traces, error codes, operation IDs) should be logged to the browser console for debugging, never shown in the UI.
+- Explainer text attached to actions should be short enough to read in one breath. If an explanation needs multiple clauses, simplify the action surface so less explanation is needed.
+- Section headings should feel like natural wayfinding, not database table names. Prefer conversational headings ("Players & Viewers") over clinical ones ("Participants," "Join / Invite").
+- Never show raw system identifiers (device IDs, operation IDs) to players. Use human-readable names. If friendly names are not yet available, design the surface to work without showing the raw identifier.
+
+Examples illustrating the spirit:
+
+| Before | After | Why |
+|---|---|---|
+| `Role: both players` | Fold into Players & Viewers section: "You are both players" | Remove label-colon pattern; use natural first-person phrasing |
+| `Active turn: 1 · Player 1 · 3 move(s)` | Convey through board turn indicator styling + "your turn" / "their turn" chip on player rows | The board already shows whose turn it is; the text line is system telemetry |
+| `No pending join requests` | *(show nothing)* | Narrating emptiness adds noise |
+| `Connected` / `Disconnected` text chips | Green dot / gray dot with aria-label | Use visual state, not text |
+| `Live sync is recovering. The board is showing the last authoritative state.` | `Reconnecting. Your board will update shortly.` | Describe the player's experience, not the system's internals |
+| `Sync failed. <raw error message>` | `Something went wrong.` (log error to console) | Error details belong in dev tools, not the player's screen |
+
 ## Vertical Rhythm Principle
 
 - Within a repeated UI record, vertical spacing should be owned by the parent stack rather than by individual child rows.

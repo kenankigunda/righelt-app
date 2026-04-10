@@ -55,6 +55,9 @@ The parent workspace files must make it obvious that `/Users/kenankigunda/Docume
 - Never use destructive git/file operations unless explicitly requested.
 - Do not revert unrelated user changes in a dirty tree.
 - Prefer non-interactive git commands.
+- Prefer direct command invocation with stable argv shapes over shell-wrapper commands such as `/bin/zsh -lc ...` whenever possible.
+- Use repo wrappers such as `./scripts/git-app.sh`, `./scripts/backlog-sync.sh`, `./scripts/backlog-git.sh`, `./scripts/backlog.sh`, and `./scripts/backlog-doc.sh` to keep repeated workflows stable across sessions and worktrees.
+- Treat shell wrappers as a last resort for commands that genuinely require shell features or login-shell environment setup.
 - Keep commits/changes scoped to the active task and acceptance criteria.
 
 ## 5.1) Shared Constants Policy
@@ -147,6 +150,9 @@ For direct file edits (path 2), also commit manually before pushing:
 ./scripts/backlog-git.sh commit -am "chore(backlog): update t-### <reason>"
 ```
 `scripts/backlog.sh` wraps the `backlog` CLI and resolves the repo path dynamically (no hardcoded paths). `scripts/backlog-git.sh` runs git commands against the shared backlog repo from any worktree.
+`scripts/backlog-sync.sh` provides the stable documented backlog `pull`, `push`, and `commit` bookends without requiring ad hoc shell strings.
+`scripts/backlog-doc.sh` resolves canonical ticket doc paths in the backlog repo for `spec`, `eng-plan`, `test-plan`, and `coordination-log`.
+`scripts/git-app.sh` runs git commands against the current app checkout or worktree.
 
 **Reference artifacts:** when a backlog task or ticket doc mentions a screenshot, mock, or other reference artifact, copy that file into the backlog repo (typically `backlog/assets/`) before or alongside the task/doc write, reference the repo-backed path from the markdown/task metadata, and include the artifact in the same push. Do not leave task descriptions pointing only at ad hoc local paths or unattached filenames.
 

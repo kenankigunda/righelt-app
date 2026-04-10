@@ -56,4 +56,5 @@ After setup:
 
 - the opened top-level folder should be the parent `righelt` workspace
 - git-aware product work should still run from `righelt-app`
-- backlog operations from `righelt-app/scripts/backlog.sh` and `righelt-app/scripts/backlog-git.sh` should resolve to the sibling `righelt-backlog` repo
+- prefer direct commands like `./scripts/git-app.sh ...`, `./scripts/backlog-sync.sh ...`, `./scripts/backlog-git.sh ...`, `./scripts/backlog.sh ...`, and `./scripts/backlog-doc.sh ...` over shell-wrapper command strings
+- backlog operations from `righelt-app/scripts/backlog.sh`, `righelt-app/scripts/backlog-git.sh`, `righelt-app/scripts/backlog-sync.sh`, and `righelt-app/scripts/backlog-doc.sh` should resolve to the sibling `righelt-backlog` repo
