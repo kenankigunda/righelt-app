@@ -98,7 +98,35 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
+    /\.mini-board-card\s*\{[\s\S]*position:\s*relative;[\s\S]*overflow:\s*clip;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card\[data-home-game-card\] \.mini-board-card-link-surface\s*\{[\s\S]*padding-top:\s*3rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*0\.55rem;[\s\S]*right:\s*0\.55rem;[\s\S]*z-index:\s*3;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-button\s*\{[\s\S]*display:\s*inline-flex;[\s\S]*min-width:\s*2\.75rem;[\s\S]*min-height:\s*2\.75rem;[\s\S]*border-radius:\s*999px;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-panel\s*\{[\s\S]*width:\s*min\(14rem,\s*calc\(100vw\s*-\s*3rem\)\);[\s\S]*box-shadow:\s*var\(--shell-elevated-shadow\);/s,
+  );
+  assert.match(
+    shellStylesSource,
     /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-menu-panel\s*\{[\s\S]*width:\s*calc\(100vw\s*-\s*3\.5rem\);[\s\S]*max-width:\s*calc\(100vw\s*-\s*3\.5rem\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.mini-board-card-menu-button\s*\{[\s\S]*min-width:\s*3\.75rem;[\s\S]*min-height:\s*3\.75rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.mini-board-card-menu-panel\s*\{[\s\S]*width:\s*min\(15rem,\s*calc\(100vw\s*-\s*3rem\)\);/s,
   );
 });
 
@@ -134,6 +162,10 @@ test("shell main layout transitions width when docked flyouts open or close", ()
   assert.match(
     shellStylesSource,
     /\.shell-game-alert-copy\s*\{[\s\S]*-webkit-line-clamp:\s*2;[\s\S]*overflow:\s*hidden;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.left-game-banner\s*\{[\s\S]*box-shadow:\s*0 18px 40px rgba\(29, 45, 53, 0\.12\);/s,
   );
   assert.match(
     shellStylesSource,

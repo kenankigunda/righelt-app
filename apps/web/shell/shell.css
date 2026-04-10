@@ -1223,6 +1223,11 @@ button.button-release-bounce,
     animation: none;
   }
 
+  .mini-board-card,
+  .mini-board-card-menu-panel {
+    transition: none;
+  }
+
   .history-item.is-pressing,
   button.is-pressing,
   .button-link.is-pressing,
@@ -1271,6 +1276,7 @@ button.button-release-bounce,
 }
 
 .mini-board-card {
+  position: relative;
   display: grid;
   width: 100%;
   gap: 0.65rem;
@@ -1278,6 +1284,14 @@ button.button-release-bounce,
   border-radius: 12px;
   background: linear-gradient(180deg, #fffefb 0%, #f8f3e8 100%);
   overflow: clip;
+}
+
+.mini-board-card[data-home-game-card] .mini-board-card-link-surface {
+  padding-top: 3rem;
+}
+
+.mini-board-card.is-leaving {
+  pointer-events: none;
 }
 
 .mini-board-card-link-surface {
@@ -1309,6 +1323,106 @@ button.button-release-bounce,
 
 .mini-board-card-link-surface.button-release-bounce {
   animation: history-item-release 140ms cubic-bezier(0.18, 0.72, 0.24, 1);
+}
+
+.mini-board-card-menu {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  z-index: 3;
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.mini-board-card-menu > summary {
+  list-style: none;
+}
+
+.mini-board-card-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.mini-board-card-menu-button {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  align-self: start;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: none;
+  align-items: center;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease;
+}
+
+.mini-board-card-menu-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(13, 122, 90, 0.18);
+}
+
+.mini-board-card-menu-button:active {
+  transform: translateY(1px);
+}
+
+.mini-board-card-menu-icon {
+  display: grid;
+  gap: 0.15rem;
+  justify-items: center;
+}
+
+.mini-board-card-menu-icon span {
+  width: 0.25rem;
+  height: 0.25rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.mini-board-card-menu-panel {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  width: min(14rem, calc(100vw - 3rem));
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.55rem;
+  border: 1px solid var(--shell-elevated-border);
+  border-radius: 12px;
+  background: var(--shell-elevated-surface);
+  box-shadow: var(--shell-elevated-shadow);
+}
+
+.mini-board-card-menu-item {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 2.75rem;
+}
+
+.mini-board-card-menu-note {
+  margin: 0;
+  padding-inline: 0.2rem;
+  color: var(--muted);
+}
+
+[data-hover-capability="hover"] .mini-board-card-menu:hover > .mini-board-card-menu-button:not(:disabled),
+[data-hover-capability="hover"] .mini-board-card-menu-button:not(:disabled):hover,
+[data-hover-capability="hover"] .mini-board-card-menu[open] > .mini-board-card-menu-button:not(:disabled) {
+  border-color: var(--danger);
+  box-shadow:
+    0 0 0 2px rgba(182, 67, 47, 0.15),
+    inset 0 0 0 1px rgba(182, 67, 47, 0.36);
 }
 
 .home-games-section + .home-games-section {
@@ -1401,6 +1515,10 @@ button.button-release-bounce,
   margin: 0;
 }
 
+
+.left-game-banner {
+  box-shadow: 0 18px 40px rgba(29, 45, 53, 0.12);
+}
 
 .mini-board-card-header,
 .mini-board-card-meta {
@@ -2045,5 +2163,19 @@ textarea:focus-visible {
   .shell-header-menu-panel {
     width: calc(100vw - 3.5rem);
     max-width: calc(100vw - 3.5rem);
+  }
+
+  .mini-board-card-menu {
+    top: 0.5rem;
+    right: 0.5rem;
+  }
+
+  .mini-board-card-menu-button {
+    min-width: 3.75rem;
+    min-height: 3.75rem;
+  }
+
+  .mini-board-card-menu-panel {
+    width: min(15rem, calc(100vw - 3rem));
   }
 }

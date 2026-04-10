@@ -36,6 +36,7 @@ import {
   shouldLiveSyncRoute,
   toggleScenariosHash,
 } from "./routes.js";
+import { computeLeaveDeleteLabel } from "./live-transport.js";
 import { createTutorialController } from "./tutorial.js";
 
 const appEl = document.getElementById("app");
@@ -96,6 +97,7 @@ const hoverCapability = ensureHoverCapabilityController();
 assertGameBoardAdapter(boardAdapter);
 const liveSyncMetricCounts = Object.create(null);
 window.__righeltLiveSyncMetrics = liveSyncMetricCounts;
+const HOME_CARD_LEAVE_COLLAPSE_MS = 180;
 
 const toStableKey = (value) => {
   if (value === null || typeof value === "undefined") {
@@ -137,6 +139,9 @@ const ignoredRevertRequests = new Set();
 const expandedUndoneGroups = new Set();
 const pendingButtonKeys = new Set();
 const pendingHomeSectionKeys = new Set();
+const pendingHomeCardLeaveIds = new Set();
+const leftGameBannerByGameId = new Map();
+const leftGameInviteFromRoleByGameId = new Map();
 let lastRenderedMarkup = "";
 let lastRenderedMainMarkup = "";
 let lastRenderedFlyoutMarkup = "";
@@ -2181,7 +2186,7 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
   if (!href) {
     return `<div class="mini-board-card mini-board-card-${escapeHtml(variant)}">${body}</div>`;
   }
-  return `<article class="mini-board-card">
+  return `<article class="mini-board-card" data-game-id="${escapeHtml(gameId || card.id || "")}">
     <a
       class="mini-board-card-link-surface"
       href="${href}"
@@ -2193,6 +2198,39 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
   </article>`;
 };
 
+const renderCardMenu = (game, { isOffline, myIdentityId }) => {
+  const leaveDeleteLabel = computeLeaveDeleteLabel(game, myIdentityId);
+  const action = leaveDeleteLabel === "Delete" ? "delete-game" : "leave-game";
+  const menuId = `mini-board-card-menu-${escapeHtml(game.id)}`;
+  const offlineNote = isOffline ? '<p class="small mini-board-card-menu-note">Not available offline.</p>' : "";
+  return `
+    <details class="mini-board-card-menu" data-card-menu data-game-id="${escapeHtml(game.id)}">
+      <summary
+        class="secondary mini-board-card-menu-button"
+        aria-label="${escapeHtml(`${leaveDeleteLabel} game actions`)}"
+        aria-controls="${menuId}"
+      >
+        <span class="mini-board-card-menu-icon" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </span>
+      </summary>
+      <div class="mini-board-card-menu-panel" id="${menuId}">
+        <button
+          class="secondary danger mini-board-card-menu-item"
+          data-action="${escapeHtml(action)}"
+          data-game-id="${escapeHtml(game.id)}"
+          data-testid="${escapeHtml(action)}"
+          ${isOffline ? "disabled" : ""}
+          aria-disabled="${isOffline ? "true" : "false"}"
+        >${escapeHtml(leaveDeleteLabel)}</button>
+        ${offlineNote}
+      </div>
+    </details>
+  `;
+};
+
 const renderHomeGameCard = (game) => {
   const snapshot = getStaticCardPreviewSnapshot(game);
   const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
@@ -2200,23 +2238,156 @@ const renderHomeGameCard = (game) => {
   const recoveryChip =
     game.syncStatus === "desynced" || game.syncStatus === "confirming" ? '<span class="status-chip">Recovering</span>' : "";
   const seatConnectionLine = renderHomeSeatConnectionLine(game);
-  return renderStaticMiniBoardCard({
-    card: game,
-    href: buildGameHash(game.id, null, getCurrentFlyoutState()),
-    flyoutLink: "game",
-    gameId: game.id,
-    header: `<div>
-        <span class="mini-board-card-link">${escapeHtml(formatDisplayGameId(game.id))}</span>
-        <p class="small mini-board-card-subtitle">Last move on ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
-      </div>
-      ${recoveryChip}`,
-    meta: `<div class="mini-board-card-meta mini-board-card-meta-primary">
-        <span>${renderHomeRoleLine(game)}</span>
-        <span class="small">${escapeHtml(moveLabel)}</span>
-      </div>
-      ${seatConnectionLine}`,
-    statusText,
+  const homeCardMenu = renderCardMenu(game, {
+    isOffline: navigator.onLine === false,
+    myIdentityId: transport.getIdentityId(),
   });
+  const leaving = pendingHomeCardLeaveIds.has(game.id);
+  const cardClassName = `mini-board-card${leaving ? " is-leaving" : ""}`;
+  return `<article class="${cardClassName}" data-home-game-card="${escapeHtml(game.id)}" data-game-id="${escapeHtml(game.id)}">
+    ${homeCardMenu}
+    <a
+      class="mini-board-card-link-surface"
+      href="${buildGameHash(game.id, null, getCurrentFlyoutState())}"
+      data-flyout-link="game"
+      data-game-id="${escapeHtml(game.id)}"
+    >
+      <div class="mini-board-card-header">
+        <div>
+          <span class="mini-board-card-link">${escapeHtml(formatDisplayGameId(game.id))}</span>
+          <p class="small mini-board-card-subtitle">Last move on ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
+        </div>
+        ${recoveryChip}
+      </div>
+      <div class="mini-board-card-copy">
+        <div class="mini-board-card-meta mini-board-card-meta-primary">
+          <span>${renderHomeRoleLine(game)}</span>
+          <span class="small">${escapeHtml(moveLabel)}</span>
+        </div>
+        ${seatConnectionLine}
+      </div>
+      ${renderMiniBoardPreviewRoot({
+        previewId: `home:${game.id}`,
+        snapshot,
+        selection: null,
+        overlay: null,
+        legalActions: [],
+        selectedPieceId: null,
+        selectedPieceMoves: [],
+        selectedPieceMovePreviews: [],
+        currentActionType: null,
+        selectedPieceOverlayPhase: null,
+        previewKey: toStableKey({ snapshot, selection: null, overlay: null, legalActions: [], selectedPieceId: null, selectedPieceMoves: [], selectedPieceMovePreviews: [], currentActionType: null, selectedPieceOverlayPhase: null }),
+        sizeVariant: "compact",
+      })}
+      <p class="small mini-board-preview-status">${escapeHtml(statusText)}</p>
+    </a>
+  </article>`;
+};
+
+const getLeftGameBannerRole = (game) =>
+  leftGameInviteFromRoleByGameId.get(game.id) ||
+  (game?.myRole === "Player 1" || game?.myRole === "Player 2" ? game.myRole : null);
+
+const renderLeftGameBanner = (game) => {
+  const inviteFromRole = getLeftGameBannerRole(game);
+  const inviteRoleText = inviteFromRole ? ` Your previous seat was ${renderRoleLabel(inviteFromRole, game)}.` : "";
+  return `
+    <section class="invite-gate" data-testid="left-game-gate">
+      <section class="panel invite-gate-modal left-game-banner">
+        <p class="small invite-gate-kicker">You have left the game</p>
+        <h2>You have left the game</h2>
+        <p>You are no longer seated in this game.${inviteRoleText}</p>
+        <div class="invite-choice-list">
+          <div class="invite-choice-row">
+            <button
+              data-action="rejoin-left-game"
+              data-game-id="${escapeHtml(game.id)}"
+              data-testid="rejoin-left-game"
+            >Rejoin as player</button>
+            <span class="small invite-choice-note">You will rejoin immediately without an approval prompt.</span>
+          </div>
+        </div>
+      </section>
+      <div class="invite-gate-content" aria-hidden="true">
+        ${renderGameContent(game.id)}
+      </div>
+    </section>
+  `;
+};
+
+const markLeftGameBanner = (gameId, inviteFromRole = null) => {
+  leftGameBannerByGameId.set(gameId, true);
+  if (inviteFromRole) {
+    leftGameInviteFromRoleByGameId.set(gameId, inviteFromRole);
+  }
+};
+
+const clearLeftGameBanner = (gameId) => {
+  leftGameBannerByGameId.delete(gameId);
+  leftGameInviteFromRoleByGameId.delete(gameId);
+};
+
+const animateHomeGameCardLeave = async (gameId) => {
+  const cardEl = appEl?.querySelector?.(`[data-home-game-card="${gameId}"]`);
+  if (!(cardEl instanceof HTMLElement) || prefersReducedMotion()) {
+    return;
+  }
+
+  const currentHeight = cardEl.getBoundingClientRect().height;
+  if (!Number.isFinite(currentHeight) || currentHeight <= 0) {
+    return;
+  }
+
+  cardEl.style.overflow = "hidden";
+  cardEl.style.height = `${currentHeight}px`;
+  cardEl.style.opacity = "1";
+  cardEl.style.transform = "translateY(0)";
+  cardEl.style.transition = "height 180ms ease, opacity 180ms ease, transform 180ms ease, margin 180ms ease";
+  void cardEl.offsetHeight;
+  cardEl.style.height = "0px";
+  cardEl.style.opacity = "0";
+  cardEl.style.transform = "translateY(-0.35rem)";
+  cardEl.style.marginBlockEnd = "0";
+  await delay(HOME_CARD_LEAVE_COLLAPSE_MS);
+};
+
+const clearHomeGameCardLeaveAnimation = (gameId) => {
+  const cardEl = appEl?.querySelector?.(`[data-home-game-card="${gameId}"]`);
+  if (!(cardEl instanceof HTMLElement)) {
+    return;
+  }
+  cardEl.style.transition = "";
+  cardEl.style.height = "";
+  cardEl.style.opacity = "";
+  cardEl.style.transform = "";
+  cardEl.style.overflow = "";
+  cardEl.style.marginBlockEnd = "";
+};
+
+const leaveHomeGame = async (gameId) => {
+  const game = transport.getGameViewModel(gameId) ?? transport.getHomeGameCard(gameId);
+  const inviteFromRole = game?.myRole === "Player 1" || game?.myRole === "Player 2" ? game.myRole : null;
+  const shouldAnimate = !prefersReducedMotion();
+
+  if (shouldAnimate) {
+    pendingHomeCardLeaveIds.add(gameId);
+    render({ animatePanels: false, includeBoard: false });
+    await animateHomeGameCardLeave(gameId);
+  }
+
+  try {
+    const result = await transport.leaveGame({ gameId });
+    markLeftGameBanner(gameId, inviteFromRole);
+    return result;
+  } catch (error) {
+    window.__righeltLastError = error instanceof Error ? error.message : String(error);
+    return null;
+  } finally {
+    pendingHomeCardLeaveIds.delete(gameId);
+    clearHomeGameCardLeaveAnimation(gameId);
+    render({ animatePanels: false, includeBoard: false });
+  }
 };
 
 const renderHomeSectionControls = (sectionKey, section, { placement } = { placement: "header" }) => `<div
@@ -3081,6 +3252,9 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   const pendingRevertRequest = getActivePendingRevertRequest(game);
   if (pendingRevertRequest) {
     return renderRevertWaitingGate(game, pendingRevertRequest);
+  }
+  if (currentRoute.name === "game" && leftGameBannerByGameId.get(game.id) === true) {
+    return renderLeftGameBanner(game);
   }
   if (currentRoute.name === "game") {
     return renderGameShellFrame(game);
@@ -4142,6 +4316,34 @@ appEl.addEventListener("click", async (event) => {
         return;
       }
       await syncRouteDataAndLiveChannels();
+    });
+    return;
+  }
+
+  if (action === "leave-game" || action === "delete-game") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) {
+      return;
+    }
+    void leaveHomeGame(gameId);
+    return;
+  }
+
+  if (action === "rejoin-left-game") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) {
+      return;
+    }
+    const inviteFromRole = leftGameInviteFromRoleByGameId.get(gameId) || null;
+    void withPendingButton(getJoinButtonKey("player", gameId), async () => {
+      await transport.joinGame({
+        gameId,
+        mode: "player",
+        inviteFromRole,
+        inviteToken: null,
+      });
+      clearLeftGameBanner(gameId);
+      render({ animatePanels: false, includeBoard: false });
     });
     return;
   }
