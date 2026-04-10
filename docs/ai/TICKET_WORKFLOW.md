@@ -74,6 +74,7 @@ When a ticket moves to `In Progress`, the Lead must establish one dedicated exec
 - The parent task `worktree` field is the canonical execution worktree for the ticket.
 - The parent task `branch` field points to the ticket's execution branch.
 - No other ticket may execute from that worktree until the ticket reaches `Ready for acceptance` or `Done`.
+- An execution sprint may run up to 3 top-level tickets in parallel, but each active top-level ticket must have its own dedicated execution worktree.
 - Parallel Eng subtasks may use additional isolated worktrees, but only when those worktrees are created specifically for the same ticket.
 
 ## Document Structure Per Ticket
@@ -177,34 +178,64 @@ All policies in AGENTS.md §4 apply within this workflow. Additionally:
 
 A planning sprint drives tickets from `To Do`, `Spec`, `Visual Design`, or `Eng Planning` to `Ready for execution`. It does not touch implementation.
 
-**Invocation**: `Ps [type]`
+**Invocation**:
+- `Ps`
+- `Ps [type]`
+- `Ps [milestone]`
+- `Ps [type] in [milestone]`
+
+Where:
+- `[type]` may be `feature`, `features`, `bug`, `bugs`, `improvement`, or `improvements`.
+- `[milestone]` is a backlog milestone name such as `Friend play alpha`.
+- Milestone names should be matched case-insensitively from the backlog, so natural invocations like `Ps friend play alpha` are valid.
+- If both are provided, milestone filtering happens first and type filtering applies within that milestone.
+- If milestone is omitted, the sprint considers all matching tickets across the backlog.
 
 **Process**:
-1. Lead lists all tickets of the given type that are not yet `Ready for execution`, sorted by priority.
-2. For each ticket in priority order, Lead runs the applicable planning stages:
+1. Lead lists all tickets that match the requested sprint scope and are not yet `Ready for execution`, sorted by priority.
+   - If a milestone was specified, include only tickets assigned to that backlog milestone.
+   - If a type was specified, include only tickets of that type within the selected milestone or global scope.
+2. Lead runs the sprint as a pipeline, not a full-ticket serial loop:
    - `feature` and `bug`: Assignment → PM → UXD → Architect
    - `improvement`: Assignment → Architect
-3. Before starting each ticket, output:
+3. Within a single ticket, stage order remains gated: UXD does not start until PM is complete for that ticket, and Architect does not start until UXD is complete for that ticket.
+4. Across the sprint, once one role finishes a ticket and hands it off, that role immediately starts the next highest-priority ticket that is ready for that role. Example: when PM finishes Ticket A and hands it to UXD, PM starts Ticket B while UXD works Ticket A.
+5. Before the first stage starts on a ticket, output:
    `Sprint progress: [N/Total] — starting <ticket title> (t-###)`
-4. Skip only stages that are already complete.
-5. PM, UXD, and Architect must each ask comprehensive, non-redundant questions that pull implicit intent into explicit docs.
-6. After Architect completes, Lead advances the ticket to `Ready for execution`.
-7. After the last ticket completes, output:
+6. Skip only stages that are already complete, and feed partially completed tickets into the earliest incomplete stage so they join the same pipeline.
+7. PM, UXD, and Architect must each ask comprehensive, non-redundant questions that pull implicit intent into explicit docs.
+8. After Architect completes a ticket, Lead advances that ticket to `Ready for execution` immediately, even while earlier-stage work continues on other tickets.
+9. After the last ticket completes, output:
    `Sprint complete: N tickets advanced to Ready for execution`
 
 ### Execution Sprint
 
 An execution sprint drives tickets from `Ready for execution` to `Ready for acceptance`. It does not touch spec, visual design, or eng planning.
 
-**Invocation**: `Es`
+**Invocation**:
+- `Es`
+- `Es [type]`
+- `Es [milestone]`
+- `Es [type] in [milestone]`
+
+Where:
+- `[type]` may be `feature`, `features`, `bug`, `bugs`, `improvement`, or `improvements`.
+- `[milestone]` is a backlog milestone name such as `Friend play alpha`.
+- Milestone names should be matched case-insensitively from the backlog.
+- If both are provided, milestone filtering happens first and type filtering applies within that milestone.
+- If milestone is omitted, the sprint considers all `Ready for execution` tickets across the backlog.
 
 **Process**:
-1. Lead lists all `Ready for execution` tickets, sorted by priority.
-2. For each ticket in priority order, Lead confirms that a dedicated execution worktree exists for that ticket, then runs Steps 5 and 6 of the ticket workflow.
-3. Before starting each ticket, output:
+1. Lead lists all `Ready for execution` tickets that match the requested sprint scope, sorted by priority.
+   - If a milestone was specified, include only tickets assigned to that backlog milestone.
+   - If a type was specified, include only tickets of that type within the selected milestone or global scope.
+2. Lead may run up to 3 top-level tickets in parallel during the sprint. Each active ticket must have its own dedicated execution worktree before implementation begins.
+3. Lead fills open execution slots in priority order. When one active ticket reaches `Ready for acceptance`, Lead may start the next highest-priority `Ready for execution` ticket.
+4. For each ticket that starts, Lead confirms that a dedicated execution worktree exists for that ticket, then runs Steps 5 and 6 of the ticket workflow.
+5. Before starting each ticket, output:
    `Sprint progress: [N/Total] — starting <ticket title> (t-###)`
-4. Lead fans out Eng subtasks, monitors progress, resolves conflicts, opens the PR, runs final validation, and waits for green CI.
-5. After the last ticket completes, output:
+6. Within each active ticket, Lead fans out Eng subtasks, monitors progress, resolves conflicts, opens the PR, runs final validation, and waits for green CI.
+7. After the last ticket completes, output:
    `Sprint complete: N tickets advanced to Ready for acceptance`
 
 ## Connections to Other Workflows

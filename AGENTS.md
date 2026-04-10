@@ -108,8 +108,14 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
   - `Tkv [t-###]` = run the Lead's final end-to-end Tester validation pass
   - Codex implementations should use the shared canon in `docs/ai/ticket-workflow/`, the `skills/ticket-*/SKILL.md` adapters, and the backlog wrapper scripts rather than MCP-only assumptions
 - Sprint flows — uses the workflow in `docs/ai/TICKET_WORKFLOW.md`:
-  - `Ps [type]` = **P**lanning **S**print: drive all tickets of the given type (e.g. `feature`, `bug`, `improvement`) that are not yet `Ready for execution` through spec + visual design + eng planning to `Ready for execution`
+  - `Ps` = **P**lanning **S**print: drive all eligible tickets that are not yet `Ready for execution` through spec + visual design + eng planning to `Ready for execution`
+  - `Ps [type]` = planning sprint filtered to a ticket type such as `feature`, `bug`, or `improvement`
+  - `Ps [milestone]` = planning sprint filtered to a backlog milestone such as `Friend play alpha`
+  - `Ps [type] in [milestone]` = planning sprint filtered to both ticket type and backlog milestone, such as `Ps features in friend play alpha`
   - `Es` = **E**xecution **S**print: drive all `Ready for execution` tickets through implementation + review to `Ready for acceptance`
+  - `Es [type]` = execution sprint filtered to a ticket type such as `feature`, `bug`, or `improvement`
+  - `Es [milestone]` = execution sprint filtered to a backlog milestone such as `Friend play alpha`
+  - `Es [type] in [milestone]` = execution sprint filtered to both ticket type and backlog milestone
 
 ## 7) Backlog
 
