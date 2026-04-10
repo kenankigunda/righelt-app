@@ -272,6 +272,79 @@ test("live transport: paged home sections include debug timings only when reques
   assert.equal(typeof debugBody.timing.totalMs, "number");
 });
 
+test("live transport: leave frees the seat when another player remains and restore clears deletedAt", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", selfPlayMode: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+
+  await handleApiRequest(
+    req(`/api/shell/games/${gameId}/join`, "POST", { identityId: "id-opponent", mode: "player", inviteFromRole: "Player 1" }),
+    env,
+  );
+
+  const leave = await handleApiRequest(req(`/api/shell/games/${gameId}/leave`, "POST", { identityId: "id-owner" }), env);
+  assert.equal(leave.status, 200);
+  const leaveBody = await leave.json();
+  assert.equal(leaveBody.deleted, false);
+  assert.equal(leaveBody.game.player1, null);
+  assert.equal(leaveBody.game.deletedAt, null);
+  assert.equal(leaveBody.game.notifications[0], "Player left");
+
+  env.DB.overwriteGameState(gameId, (game) => ({ ...game, deletedAt: "2026-04-09T12:10:00.000Z" }));
+  env.GAME_ROOMS.restart(gameId);
+  const restore = await handleApiRequest(req(`/api/shell/games/${gameId}/restore`, "POST", { identityId: "id-opponent" }), env);
+  assert.equal(restore.status, 200);
+  const restoreBody = await restore.json();
+  assert.equal(restoreBody.game.deletedAt, null);
+});
+
+test("live transport: leave soft-deletes the last player game and trash sections split my vs other", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", selfPlayMode: false }),
+    env,
+  );
+  const createBody = await create.json();
+  const gameId = createBody.game.id;
+
+  await handleApiRequest(req(`/api/shell/games/${gameId}/join`, "POST", { identityId: "id-viewer", mode: "viewer" }), env);
+
+  const leave = await handleApiRequest(req(`/api/shell/games/${gameId}/leave`, "POST", { identityId: "id-owner" }), env);
+  const leaveBody = await leave.json();
+  assert.equal(leaveBody.deleted, true);
+  assert.equal(typeof leaveBody.game.deletedAt, "string");
+  assert.equal(leaveBody.game.notifications[0], "Game deleted");
+
+  const myList = await handleApiRequest(req("/api/shell/games?identityId=id-owner&section=my&page=0&pageSize=6&debug=0"), env);
+  const myListBody = await myList.json();
+  assert.equal(myListBody.games.some((entry) => entry.id === gameId), false);
+
+  const trashMy = await handleApiRequest(req("/api/shell/games?identityId=id-owner&section=trash-my&page=0&pageSize=6&debug=0"), env);
+  const trashMyBody = await trashMy.json();
+  assert.deepEqual(trashMyBody.games.map((entry) => entry.id), [gameId]);
+
+  const trashOther = await handleApiRequest(req("/api/shell/games?identityId=id-viewer&section=trash-other&page=0&pageSize=6&debug=0"), env);
+  const trashOtherBody = await trashOther.json();
+  assert.deepEqual(trashOtherBody.games.map((entry) => entry.id), [gameId]);
+});
+
+test("live transport: leave-viewer removes the viewer without notifications", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", { identityId: "id-owner", selfPlayMode: false }),
+    env,
+  );
+  const gameId = (await create.json()).game.id;
+
+  await handleApiRequest(req(`/api/shell/games/${gameId}/join`, "POST", { identityId: "id-viewer", mode: "viewer" }), env);
+  const leaveViewer = await handleApiRequest(req(`/api/shell/games/${gameId}/leave-viewer`, "POST", { identityId: "id-viewer" }), env);
+  assert.equal(leaveViewer.status, 200);
+  const leaveViewerBody = await leaveViewer.json();
+  assert.equal(leaveViewerBody.redirectTarget, "join");
+  assert.equal(leaveViewerBody.game.viewers.some((viewer) => viewer.identityId === "id-viewer"), false);
+  assert.equal(leaveViewerBody.game.notifications.includes("Player left"), false);
+});
+
 test("live transport: paged home sections log structured timings even when no games are returned", async () => {
   const originalInfo = console.info;
   const infoCalls = [];

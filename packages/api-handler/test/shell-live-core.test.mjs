@@ -12,6 +12,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyLeavePlayer,
   applyRestore,
   applySoftDelete,
   applyServerAction,
@@ -210,4 +211,32 @@ test("U-19: applyRestore clears deletedAt back to null", () => {
   assert.equal(applyRestore(game, restoredAt), null);
   assert.equal(game.deletedAt, null);
   assert.equal(game.updatedAt, restoredAt);
+});
+
+test("U-16: applyLeavePlayer frees the seat and records Player left when another player remains", () => {
+  const game = createInitialGame({ gameId: "g-u16", identityId: "id-u16-a", selfPlayMode: false });
+  game.player2 = {
+    identityId: "id-u16-b",
+    connected: true,
+    joinedAt: "2026-04-09T12:00:00.000Z",
+    lastHeartbeatAt: "2026-04-09T12:00:00.000Z",
+    sessionCount: 1,
+  };
+
+  const result = applyLeavePlayer(game, "id-u16-a", "2026-04-09T12:05:00.000Z");
+  assert.deepEqual(result, { deleted: false, role: "Player 1" });
+  assert.equal(game.player1, null);
+  assert.equal(game.player2?.identityId, "id-u16-b");
+  assert.equal(game.deletedAt, null);
+  assert.equal(game.notifications[0], "Player left");
+});
+
+test("U-17: applyLeavePlayer soft-deletes the game when no other player remains", () => {
+  const game = createInitialGame({ gameId: "g-u17", identityId: "id-u17-a", selfPlayMode: false });
+
+  const result = applyLeavePlayer(game, "id-u17-a", "2026-04-09T12:05:00.000Z");
+  assert.deepEqual(result, { deleted: true, role: "Player 1" });
+  assert.equal(game.player1?.identityId, "id-u17-a");
+  assert.equal(game.deletedAt, "2026-04-09T12:05:00.000Z");
+  assert.equal(game.notifications[0], "Game deleted");
 });

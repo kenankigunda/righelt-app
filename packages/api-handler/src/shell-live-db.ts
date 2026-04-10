@@ -89,7 +89,7 @@ type PersistedGameRow = {
   event_seq: number;
 };
 
-export type HomeSectionKey = "my" | "other" | "smoke";
+export type HomeSectionKey = "my" | "other" | "smoke" | "trash-my" | "trash-other";
 
 type HomeSectionCountRow = {
   total_games: number;
@@ -723,7 +723,7 @@ export const loadGameProjection = async (env: LiveGameEnv, gameId: string): Prom
   return normalizePersistedGame(row, "single");
 };
 
-const getHomeSectionWhereClause = ({ identityId, section, debug }: Omit<HomeSectionPageParams, "page" | "pageSize">) => {
+export const getHomeSectionWhereClause = ({ identityId, section, debug }: Omit<HomeSectionPageParams, "page" | "pageSize">) => {
   if (section === "smoke") {
     return {
       sql: "WHERE has_smoke_identity = 1",
@@ -735,15 +735,70 @@ const getHomeSectionWhereClause = ({ identityId, section, debug }: Omit<HomeSect
   const sectionSql = section === "my" ? playerMatchSql : `NOT ${playerMatchSql}`;
   const smokeSql = debug ? "AND has_smoke_identity = 0" : "AND has_smoke_identity = 0";
   return {
-    sql: `WHERE ${sectionSql} ${smokeSql}`,
+    sql: `WHERE deleted_at IS NULL AND ${sectionSql} ${smokeSql}`,
     params: [identityId] as unknown[],
   };
+};
+
+export const getTrashSectionWhereClause = ({ identityId }: { identityId: string }) => {
+  const playerMatchSql = "(COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)";
+  return {
+    my: {
+      sql: `WHERE deleted_at IS NOT NULL AND ${playerMatchSql}`,
+      params: [identityId] as unknown[],
+    },
+    other: {
+      sql: `WHERE deleted_at IS NOT NULL AND NOT ${playerMatchSql}`,
+      params: [identityId] as unknown[],
+    },
+  };
+};
+
+const matchesTrashSectionCard = (game: StaticGameCard, section: HomeSectionKey) => {
+  if (section === "trash-my") {
+    return game.myRole === "Player 1" || game.myRole === "Player 2";
+  }
+  if (section === "trash-other") {
+    return game.myRole === "Viewer";
+  }
+  return true;
+};
+
+const listTrashSectionStaticGameCardCandidates = async (
+  env: LiveGameEnv,
+  identityId: string,
+  section: "trash-my" | "trash-other",
+) => {
+  const where = getTrashSectionWhereClause({ identityId });
+  const result = await env.DB.prepare(
+    `SELECT game_id, created_at, updated_at, state_json, event_seq FROM ${LIVE_GAMES_TABLE}
+     ${section === "trash-my" ? where.my.sql : where.other.sql}
+     ORDER BY latest_activity_at DESC, created_at DESC`,
+  )
+    .bind(...(section === "trash-my" ? where.my.params : where.other.params))
+    .all<PersistedGameRow>();
+  let parseMs = 0;
+  let cardModelMs = 0;
+  const games = (result.results ?? []).flatMap((row) => {
+    const normalized = normalizePersistedStaticGameCard(row, identityId, "list");
+    parseMs += normalized.parseMs;
+    cardModelMs += normalized.cardModelMs;
+    if (normalized.projection.kind !== "ok" || !matchesTrashSectionCard(normalized.projection.game, section)) {
+      return [];
+    }
+    return [normalized.projection.game];
+  });
+  return { games, parseMs, cardModelMs };
 };
 
 export const countHomeSectionGames = async (
   env: LiveGameEnv,
   { identityId, section, debug }: Omit<HomeSectionPageParams, "page" | "pageSize">,
 ): Promise<number> => {
+  if (section === "trash-my" || section === "trash-other") {
+    const candidates = await listTrashSectionStaticGameCardCandidates(env, identityId, section);
+    return candidates.games.length;
+  }
   if (section === "smoke" && !debug) {
     return 0;
   }
@@ -758,6 +813,9 @@ export const listHomeSectionGameProjectionPage = async (
   env: LiveGameEnv,
   { identityId, section, page, pageSize, debug }: HomeSectionPageParams,
 ): Promise<LiveGame[]> => {
+  if (section === "trash-my" || section === "trash-other") {
+    return [];
+  }
   if (section === "smoke" && !debug) {
     return [];
   }
@@ -782,6 +840,15 @@ export const listHomeSectionStaticGameCardPage = async (
   env: LiveGameEnv,
   { identityId, section, page, pageSize, debug }: HomeSectionPageParams,
 ): Promise<{ games: StaticGameCard[]; parseMs: number; cardModelMs: number }> => {
+  if (section === "trash-my" || section === "trash-other") {
+    const candidates = await listTrashSectionStaticGameCardCandidates(env, identityId, section);
+    const offset = page * pageSize;
+    return {
+      games: candidates.games.slice(offset, offset + pageSize),
+      parseMs: candidates.parseMs,
+      cardModelMs: candidates.cardModelMs,
+    };
+  }
   if (section === "smoke" && !debug) {
     return { games: [], parseMs: 0, cardModelMs: 0 };
   }

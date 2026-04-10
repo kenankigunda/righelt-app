@@ -750,6 +750,43 @@ export const applyRestore = (game: LiveGame, at = now()) => {
   return game.deletedAt;
 };
 
+export const applyLeavePlayer = (
+  game: LiveGame,
+  identityId: string,
+  at = now(),
+): { deleted: boolean; role: "Player 1" | "Player 2" } => {
+  const role = findRoleForIdentity(game, identityId);
+  if (role !== "Player 1" && role !== "Player 2") {
+    throw new Error("role_not_allowed");
+  }
+
+  if (game.selfPlayMode) {
+    applySoftDelete(game, at);
+    addNotification(game, "Game deleted");
+    return { deleted: true, role };
+  }
+
+  const otherPlayerRemains =
+    (role === "Player 1" && Boolean(game.player2)) ||
+    (role === "Player 2" && Boolean(game.player1));
+
+  if (!otherPlayerRemains) {
+    applySoftDelete(game, at);
+    addNotification(game, "Game deleted");
+    return { deleted: true, role };
+  }
+
+  if (role === "Player 1") {
+    game.player1 = null;
+  } else {
+    game.player2 = null;
+  }
+  game.updatedAt = at;
+
+  addNotification(game, "Player left");
+  return { deleted: false, role };
+};
+
 export const dismissCompetingJoinRequests = (game: LiveGame, acceptedIdentityId: string) => {
   game.pendingJoinRequests = game.pendingJoinRequests.filter((request) => request.identityId === acceptedIdentityId);
 };

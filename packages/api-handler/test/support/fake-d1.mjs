@@ -53,22 +53,44 @@ export const createFakeD1 = () => {
 
   const filterRowsForHomeQuery = (normalized, params) => {
     const rows = [...shellGames.values()];
-    if (normalized.includes("WHERE has_smoke_identity = 1")) {
-      return rows.filter((row) => row.has_smoke_identity === 1);
+    const playerMatchSql = "(COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)";
+    if (normalized.includes("has_smoke_identity = 1")) {
+      return rows.filter(
+        (row) => row.has_smoke_identity === 1 && (!normalized.includes("deleted_at IS NULL") || row.deleted_at == null),
+      );
     }
-    if (normalized.includes("WHERE (COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)")) {
+    if (normalized.includes(`deleted_at IS NOT NULL AND ${playerMatchSql}`)) {
       const identityId = params[0];
       return rows.filter(
         (row) =>
-          row.has_smoke_identity === 0 &&
+          row.deleted_at != null &&
           (row.player1_identity_id === identityId || row.player2_identity_id === identityId),
       );
     }
-    if (normalized.includes("WHERE NOT (COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)")) {
+    if (normalized.includes(`deleted_at IS NOT NULL AND NOT ${playerMatchSql}`)) {
+      const identityId = params[0];
+      return rows.filter(
+        (row) =>
+          row.deleted_at != null &&
+          row.player1_identity_id !== identityId &&
+          row.player2_identity_id !== identityId,
+      );
+    }
+    if (normalized.includes(playerMatchSql) && !normalized.includes(`NOT ${playerMatchSql}`)) {
       const identityId = params[0];
       return rows.filter(
         (row) =>
           row.has_smoke_identity === 0 &&
+          row.deleted_at == null &&
+          (row.player1_identity_id === identityId || row.player2_identity_id === identityId),
+      );
+    }
+    if (normalized.includes(`NOT ${playerMatchSql}`)) {
+      const identityId = params[0];
+      return rows.filter(
+        (row) =>
+          row.has_smoke_identity === 0 &&
+          row.deleted_at == null &&
           row.player1_identity_id !== identityId &&
           row.player2_identity_id !== identityId,
       );

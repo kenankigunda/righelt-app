@@ -10,8 +10,10 @@ import type {
 import { listLegalActions } from "../../game-engine/src/legal";
 import {
   addNotification,
+  applyLeavePlayer,
   assignIdentityToScenarioSeat,
   applyScenarioToGame,
+  applyRestore,
   applyServerActionWithExpectedState,
   applyServerMove,
   applyRevertToMove,
@@ -406,6 +408,52 @@ export class GameRoomDO {
         game,
       });
       return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+    }
+
+    if (request.method === "POST" && path === "/leave") {
+      const role = findRoleForIdentity(game, identityId);
+      if (role !== "Player 1" && role !== "Player 2") {
+        return json({ ok: false, error: "role_not_allowed" }, 403);
+      }
+      if (game.deletedAt) {
+        return json({ ok: false, error: "game_already_deleted" }, 409);
+      }
+      const result = applyLeavePlayer(game, identityId);
+      await this.commit({
+        type: "event_appended",
+        reason: result.deleted ? "game_deleted" : "player_left",
+        game,
+      });
+      return json({ ok: true, deleted: result.deleted, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+    }
+
+    if (request.method === "POST" && path === "/restore") {
+      const role = findRoleForIdentity(game, identityId);
+      if (role !== "Player 1" && role !== "Player 2") {
+        return json({ ok: false, error: "role_not_allowed" }, 403);
+      }
+      if (!game.deletedAt) {
+        return json({ ok: false, error: "game_not_deleted" }, 409);
+      }
+      applyRestore(game);
+      await this.commit({
+        type: "event_appended",
+        reason: "game_restored",
+        game,
+      });
+      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+    }
+
+    if (request.method === "POST" && path === "/leave-viewer") {
+      const role = findRoleForIdentity(game, identityId);
+      if (role !== "Viewer") {
+        return json({ ok: false, error: "role_not_allowed" }, 403);
+      }
+      removeViewer(game, identityId);
+      game.updatedAt = now();
+      this.eventSeq += 1;
+      await persistGameState(this.env, game, this.eventSeq, null);
+      return json({ ok: true, redirectTarget: "join", game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/revert-request") {

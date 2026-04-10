@@ -39,7 +39,7 @@ const GAME_ROOMS_BINDING_ERROR = "server_misconfigured_game_rooms_binding";
 const INVALID_PERSISTED_GAME_ERROR = "invalid_persisted_game";
 const nowMs = () => Date.now();
 
-type HomeSectionKey = "my" | "other" | "smoke";
+type HomeSectionKey = "my" | "other" | "smoke" | "trash-my" | "trash-other";
 
 const json = (body: unknown, status = 200, cacheControl = CACHE_NO_STORE): Response =>
   new Response(JSON.stringify(body), {
@@ -106,7 +106,7 @@ const fetchGameRoom = async (
 };
 
 const parseHomeSectionKey = (value: string | null): HomeSectionKey | null =>
-  value === "my" || value === "other" || value === "smoke" ? value : null;
+  value === "my" || value === "other" || value === "smoke" || value === "trash-my" || value === "trash-other" ? value : null;
 
 const parseNonNegativeInt = (value: string | null) => {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -476,6 +476,9 @@ export const handleLiveGameRequest = async (
       route.length === 3 &&
       [
         "approve",
+        "leave",
+        "restore",
+        "leave-viewer",
         "moves",
         "apply",
         "end-turn",
