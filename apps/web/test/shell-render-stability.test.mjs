@@ -361,7 +361,7 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /return Boolean\(transport\.getGameViewModel\(route\.gameId\)\);/);
   assert.match(source, /if \(currentRoute\.name === "trash"\) \{\s*await syncHomeSections\(\);\s*return;\s*\}/s);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
-  assert.match(source, /if \(game\.deletedAt\) \{\s*return false;\s*\}/s);
+  assert.match(source, /if \(game\.deletedAt\s*\|\|\s*leftGameBannerByGameId\.get\(game\.id\) === true\) \{\s*return false;\s*\}/s);
   assert.match(source, /return !getActiveApprovalRequest\(game\) && !getActiveRevertRequest\(game\) && !getActivePendingRevertRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
   assert.match(source, /updateMountedGameShell\(\{\s*game: currentGame,[\s\S]*includeBoard,\s*\}\);/s);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
