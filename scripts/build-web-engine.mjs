@@ -14,6 +14,10 @@ const sources = [
     root: path.join(repoRoot, "packages", "game-engine", "src"),
     outDir: path.join(outputRoot, "packages", "game-engine", "src"),
   },
+  {
+    root: path.join(repoRoot, "packages", "computer-player", "src"),
+    outDir: path.join(outputRoot, "packages", "computer-player", "src"),
+  },
 ];
 
 const compilerOptions = {

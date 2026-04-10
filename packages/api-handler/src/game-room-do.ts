@@ -42,6 +42,7 @@ import {
   now,
   promoteIdentityToSeat,
   removeViewer,
+  type ComputerPlayerGameInput,
   type JoinRequest,
   type LaunchParticipantCopyMode,
   type LiveGame,
@@ -117,6 +118,51 @@ const parseCommandMetadata = (body: Record<string, unknown>): CommandMetadata =>
 
 const parseLaunchParticipantCopyMode = (value: unknown): LaunchParticipantCopyMode | null =>
   value === "copy_source_participants" || value === "viewer_as_side_to_move" ? value : null;
+
+const canIdentityActForSeat = (game: LiveGame, identityId: string, seat: "Player 1" | "Player 2") => {
+  const seatIdentity = getSeatIdentity(game, seat);
+  if (seatIdentity === identityId) {
+    return true;
+  }
+  if (!game.computerPlayer || seat !== game.computerPlayer.botSeat) {
+    return false;
+  }
+  const humanIdentity = getSeatIdentity(game, game.computerPlayer.humanSeat);
+  return Boolean(humanIdentity) && humanIdentity === identityId;
+};
+
+const parseComputerPlayer = (value: unknown): ComputerPlayerGameInput | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  const botId = asIdentity(candidate.botId);
+  const displayName = typeof candidate.displayName === "string" && candidate.displayName.trim() ? candidate.displayName.trim() : null;
+  const animal = typeof candidate.animal === "string" && candidate.animal.trim() ? candidate.animal.trim() : null;
+  const skillLabel = typeof candidate.skillLabel === "string" && candidate.skillLabel.trim() ? candidate.skillLabel.trim() : null;
+  const styleLabel = typeof candidate.styleLabel === "string" && candidate.styleLabel.trim() ? candidate.styleLabel.trim() : null;
+  const humanSeat = candidate.humanSeat === "Player 1" || candidate.humanSeat === "Player 2" ? candidate.humanSeat : null;
+  const botSeat = candidate.botSeat === "Player 1" || candidate.botSeat === "Player 2" ? candidate.botSeat : undefined;
+  const botSchemaVersion =
+    typeof candidate.botSchemaVersion === "number" && Number.isInteger(candidate.botSchemaVersion) && candidate.botSchemaVersion > 0
+      ? candidate.botSchemaVersion
+      : undefined;
+  const activeTurnKey = typeof candidate.activeTurnKey === "string" && candidate.activeTurnKey.trim() ? candidate.activeTurnKey.trim() : null;
+  if (!botId || !displayName || !animal || !skillLabel || !styleLabel || !humanSeat) {
+    return null;
+  }
+  return {
+    botId,
+    botSchemaVersion,
+    displayName,
+    animal,
+    skillLabel,
+    styleLabel,
+    humanSeat,
+    botSeat,
+    activeTurnKey,
+  };
+};
 
 const shouldReconcileImportedScenarioResultingState = (
   preserveMode: unknown,
@@ -214,13 +260,18 @@ export class GameRoomDO {
       const body = await parseBody(request);
       const identityId = asIdentity(body.identityId);
       const gameId = asIdentity(body.gameId);
+      const computerPlayer = typeof body.computerPlayer === "undefined" ? null : parseComputerPlayer(body.computerPlayer);
       if (!identityId || !gameId) {
         return json({ ok: false, error: "invalid_identity" }, 400);
+      }
+      if (typeof body.computerPlayer !== "undefined" && body.computerPlayer !== null && !computerPlayer) {
+        return json({ ok: false, error: "invalid_computer_player_payload" }, 400);
       }
       this.game = createInitialGame({
         gameId,
         identityId,
-        selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
+        selfPlayMode: computerPlayer ? false : body.selfPlayMode === true || body.playgroundMode === true,
+        computerPlayer,
       });
       this.eventSeq = 1;
       await persistGameState(this.env, this.game, this.eventSeq, null);
@@ -596,8 +647,7 @@ export class GameRoomDO {
         }
       }
       const sideToMoveSeat = getSideToMoveSeat(game);
-      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
-      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
+      if (!canIdentityActForSeat(game, identityId, sideToMoveSeat)) {
         return json({ ok: false, error: "not_your_turn" }, 409);
       }
       const notation = typeof body.notation === "string" ? body.notation : undefined;
@@ -655,8 +705,7 @@ export class GameRoomDO {
         }
       }
       const sideToMoveSeat = getSideToMoveSeat(game);
-      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
-      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
+      if (!canIdentityActForSeat(game, identityId, sideToMoveSeat)) {
         return json({ ok: false, error: "not_your_turn" }, 409);
       }
       const bodyState = asGameState(body.state);
@@ -746,8 +795,7 @@ export class GameRoomDO {
           });
         }
       }
-      const turnOwnerIdentity = getSeatIdentity(game, activeTurn.playerSeat);
-      if (!turnOwnerIdentity || turnOwnerIdentity !== identityId) {
+      if (!canIdentityActForSeat(game, identityId, activeTurn.playerSeat)) {
         return json({ ok: false, error: "not_your_turn" }, 409);
       }
       const ended = endServerTurn(game);

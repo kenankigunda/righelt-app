@@ -13,7 +13,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   applyServerAction,
+  createComputerPlayerMetadata,
   createInitialGame,
+  withFullViewModel,
 } from "../src/shell-live-core.ts";
 import { listLegalActions, resolveToStability } from "../../game-engine/src/index.ts";
 
@@ -188,4 +190,68 @@ test("I-10: removedPieces (transient) still returned alongside destroyedPieces a
   );
   assert.ok(Array.isArray(moved.removedPieces), "removedPieces must be an array");
   assert.ok(Array.isArray(moved.destroyedPieces), "destroyedPieces must be an array");
+});
+
+// ---------------------------------------------------------------------------
+// T-021.01 — computer-player metadata and view-model contract
+// ---------------------------------------------------------------------------
+
+test("T-021.01: createInitialGame normalizes computer-player metadata and places the human seat", () => {
+  const game = createInitialGame({
+    gameId: "g-cp-01",
+    identityId: "id-cp-01",
+    selfPlayMode: true,
+    computerPlayer: {
+      botId: "tau-tenacious",
+      botSchemaVersion: 3,
+      displayName: "Tau the Tenacious",
+      animal: "tortoise",
+      skillLabel: "Strong",
+      styleLabel: "Methodical",
+      humanSeat: "Player 2",
+      botSeat: "Player 2",
+      activeTurnKey: "turn-001",
+    },
+  });
+
+  assert.equal(game.selfPlayMode, false);
+  assert.deepEqual(game.computerPlayer, {
+    mode: "computer-player",
+    botId: "tau-tenacious",
+    botSchemaVersion: 3,
+    displayName: "Tau the Tenacious",
+    animal: "tortoise",
+    skillLabel: "Strong",
+    styleLabel: "Methodical",
+    humanSeat: "Player 2",
+    botSeat: "Player 1",
+    activeTurnKey: "turn-001",
+  });
+  assert.equal(game.player1, null);
+  assert.equal(game.player2?.identityId, "id-cp-01");
+});
+
+test("T-021.01: full view model keeps viewer sharing but suppresses conflicting join affordances", () => {
+  const game = createInitialGame({
+    gameId: "g-cp-02",
+    identityId: "id-cp-02",
+    selfPlayMode: false,
+    computerPlayer: createComputerPlayerMetadata({
+      botId: "babs-beginner",
+      displayName: "Babs the Beginner",
+      animal: "badger",
+      skillLabel: "Light",
+      styleLabel: "Friendly",
+      humanSeat: "Player 1",
+      activeTurnKey: "turn-002",
+    }),
+  });
+
+  const view = withFullViewModel(game, "id-cp-guest");
+  assert.deepEqual(view.computerPlayer, game.computerPlayer);
+  assert.equal(view.canJoinAsPlayer, false);
+  assert.equal(view.canPlayAsBothPlayers, false);
+  assert.equal(view.canInvite, true);
+  assert.equal(view.inviteToken, game.inviteTokens.viewer);
+  assert.equal(view.showJoinActions, false);
 });

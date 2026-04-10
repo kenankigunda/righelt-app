@@ -117,6 +117,7 @@ let wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
 let lastWsStatusKey = toStableKey(wsStatus);
 let wsLastEvent = "none";
 let inviteFeedback = "";
+let inviteFeedbackAction = null;
 let inviteFeedbackTimer = null;
 let undoRequestFeedback = "";
 let undoRequestFeedbackGameId = null;
@@ -195,6 +196,69 @@ let homeSections = {
   other: createHomeSectionState("Other games"),
   smoke: createHomeSectionState("Deploy smoke player"),
 };
+const START_GAME_STAGE_MODE_SELECT = "mode-select";
+const START_GAME_STAGE_COMPUTER_OPPONENT = "computer-opponent";
+const DEFAULT_COMPUTER_SEAT = "Player 1";
+const COMPUTER_PLAYER_SCHEMA_VERSION = 1;
+const START_GAME_MODE_CARDS = [
+  {
+    mode: "friend",
+    title: "Play with a friend",
+    description: "Create a standard game, copy the invite, and jump straight in together.",
+    diagramLabel: "1 human + open seat",
+    action: "start-friend-game",
+  },
+  {
+    mode: "computer",
+    title: "Play a computer",
+    description: "Pick an opponent, choose your seat, and start a solo practice game.",
+    diagramLabel: "1 human + 1 computer",
+    action: "open-computer-opponents",
+  },
+  {
+    mode: "self",
+    title: "Play as both players",
+    description: "Start a self-play game immediately to explore both sides yourself.",
+    diagramLabel: "1 human controlling both",
+    action: "start-self-play-game",
+  },
+];
+const COMPUTER_OPPONENTS = [
+  {
+    botId: "babs",
+    displayName: "Babs the Beginner",
+    animal: "bunny",
+    skillLabel: "Beginner",
+    styleLabel: "Balanced",
+    summary: "Forgiving and approachable for quick practice games.",
+  },
+  {
+    botId: "tau",
+    displayName: "Tau the Tenacious",
+    animal: "tortoise",
+    skillLabel: "Medium",
+    styleLabel: "Defensive",
+    summary: "Prefers sturdy, patient play and safer structures.",
+  },
+  {
+    botId: "sev",
+    displayName: "Sev the Sneakster",
+    animal: "fox",
+    skillLabel: "Medium",
+    styleLabel: "Aggressive",
+    summary: "Looks for pressure lines and tactical scrambles.",
+  },
+  {
+    botId: "horus",
+    displayName: "Horus the Sage",
+    animal: "owl",
+    skillLabel: "Hard",
+    styleLabel: "Balanced",
+    summary: "The strongest shipped opponent with sharper conversion play.",
+  },
+];
+let startGamePickerStage = START_GAME_STAGE_MODE_SELECT;
+let startGameSeat = DEFAULT_COMPUTER_SEAT;
 const getPersistedDebugFlyoutOpen = () => loadDebugFlyoutOpen(storage);
 
 const escapeHtml = (value) =>
@@ -244,6 +308,42 @@ const renderPendingStateAttributes = ({ className = "", pending = false, disable
 const formatStatus = (connected) =>
   connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip disconnected">Disconnected</span>';
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
+const isComputerGame = (game) => Boolean(game?.computerPlayer?.botId);
+const getComputerOpponentById = (botId) => COMPUTER_OPPONENTS.find((opponent) => opponent.botId === botId) ?? null;
+const getComputerSeatRoleLabel = (seat) => (seat === "Player 1" ? "opens the game" : "responds after the opening move");
+const buildComputerPlayerConfig = (botId, humanSeat = DEFAULT_COMPUTER_SEAT) => {
+  const opponent = getComputerOpponentById(botId);
+  if (!opponent) {
+    return null;
+  }
+  return {
+    botId: opponent.botId,
+    botSchemaVersion: COMPUTER_PLAYER_SCHEMA_VERSION,
+    displayName: opponent.displayName,
+    animal: opponent.animal,
+    skillLabel: opponent.skillLabel,
+    styleLabel: opponent.styleLabel,
+    humanSeat,
+    botSeat: getNextSeat(humanSeat),
+  };
+};
+const getComputerPlayerSeat = (game, seat) =>
+  isComputerGame(game) && game?.computerPlayer?.botSeat === seat ? game.computerPlayer : null;
+const getComputerPlayerRuntimeState = (game) =>
+  (game?.id ? transport.getComputerPlayerRuntimeState?.(game.id) : null) ?? game?.computerPlayer?.runtime ?? null;
+const resetStartGamePicker = () => {
+  startGamePickerStage = START_GAME_STAGE_MODE_SELECT;
+  startGameSeat = DEFAULT_COMPUTER_SEAT;
+};
+const getInviteLinkForGame = (gameId, inviteToken) =>
+  `${window.location.origin}${window.location.pathname}${buildInviteHash(inviteToken || gameId, getCurrentFlyoutState())}`;
+const copyTextToClipboard = async (text) => {
+  if (!navigator.clipboard?.writeText) {
+    return false;
+  }
+  await navigator.clipboard.writeText(text);
+  return true;
+};
 const getControlSeatForTurn = (state, turnOwnerSeat) => {
   const continuation = state?.continuation;
   if (!continuation) {
@@ -271,7 +371,17 @@ const renderRoleLabel = (role, game = null) => {
 };
 const renderConnectionStatusIcon = (status, label) =>
   `<span class="connection-status-icon is-${escapeHtml(status)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
-const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => {
+const renderPlayerSlotStatus = (seat, participant, { verbose = false, game = null } = {}) => {
+  const computerSeat = getComputerPlayerSeat(game, seat);
+  if (computerSeat) {
+    const statusLabel = `${seat} is controlled by ${computerSeat.displayName}`;
+    if (!verbose) {
+      return `<span class="mini-board-card-connection-item">${renderSeatLabel(seat)}${renderConnectionStatusIcon("connected", statusLabel)}</span>`;
+    }
+    return `<span class="mini-board-card-connection-item"><span>${renderSeatLabel(seat)} is controlled by ${escapeHtml(
+      computerSeat.displayName,
+    )}</span>${renderConnectionStatusIcon("connected", statusLabel)}</span>`;
+  }
   if (!verbose) {
     if (!participant) {
       const statusLabel = `${seat} is open for someone to join`;
@@ -304,6 +414,9 @@ const renderHomeRoleLine = (game) => {
   if (isDualSeatIdentity(game) && isPlayerRole(game?.myRole)) {
     return `You are ${renderRoleLabel(game.myRole, game)}`;
   }
+  if (isComputerGame(game) && (game?.myRole === "Player 1" || game?.myRole === "Player 2")) {
+    return `You are ${renderRoleLabel(game.myRole, game)} vs ${escapeHtml(game.computerPlayer.displayName)}`;
+  }
   if (game?.myRole === "Player 1") {
     return `You are ${renderRoleLabel(game.myRole, game)}`;
   }
@@ -331,7 +444,7 @@ const renderHomeConnectionSummary = (game) => {
     return "";
   }
   return filteredSlots
-    .map((entry) => renderPlayerSlotStatus(entry.seat, entry.participant, { verbose: shouldUseVerboseHomeConnectionCopy(game) }))
+    .map((entry) => renderPlayerSlotStatus(entry.seat, entry.participant, { verbose: shouldUseVerboseHomeConnectionCopy(game), game }))
     .join('<span class="mini-board-card-connection-separator">·</span>');
 };
 const renderHomeSeatConnectionLine = (game) => {
@@ -887,10 +1000,17 @@ const animatePanelHeightChanges = (previousPanelHeights) => {
     animatePanelHeightChange(panelEl, fromHeight);
   });
 };
-const renderFeedbackReveal = (message) => `
+const renderFeedbackReveal = (message, action = null) => `
   <div class="feedback-reveal${message ? " is-visible" : ""}" aria-live="polite">
     <div class="feedback-reveal-body">
       ${message ? `<p class="small">${escapeHtml(message)}</p>` : ""}
+      ${action?.copyText
+        ? `<button
+            class="secondary"
+            data-action="copy-invite-feedback"
+            data-copy-text="${escapeHtml(action.copyText)}"
+          >${escapeHtml(action.label || "Copy invite link")}</button>`
+        : ""}
     </div>
   </div>
 `;
@@ -1842,6 +1962,98 @@ const renderFlyout = ({ title, variant, closeAction, body }) => `
   </aside>
 `;
 
+const renderStartModeDiagram = (label) => `
+  <div class="start-game-mode-diagram" aria-hidden="true">
+    <span class="start-game-mode-diagram-pill">${escapeHtml(label)}</span>
+  </div>
+`;
+
+const renderStartModeCards = () => `
+  <section class="start-game-picker start-game-picker-modes" data-testid="start-game-picker">
+    <div class="section-stack">
+      <p class="small">Choose how you want to start this game.</p>
+    </div>
+    <div class="start-game-mode-grid">
+      ${START_GAME_MODE_CARDS.map(
+        (card) => `
+          <article class="panel start-game-mode-card" data-testid="start-mode-${escapeHtml(card.mode)}">
+            ${renderStartModeDiagram(card.diagramLabel)}
+            <div class="section-stack">
+              <h3>${escapeHtml(card.title)}</h3>
+              <p class="small">${escapeHtml(card.description)}</p>
+            </div>
+            <button data-action="${escapeHtml(card.action)}">${escapeHtml(card.title)}</button>
+          </article>
+        `,
+      ).join("")}
+    </div>
+  </section>
+`;
+
+const renderComputerSeatChoice = () => `
+  <section class="panel start-game-seat-panel" data-testid="computer-seat-choice">
+    <div class="section-stack">
+      <h3>Choose your seat</h3>
+      <p class="small">Default is Player 1. If you choose Player 2, the computer makes the opening move as soon as the game is ready.</p>
+    </div>
+    <div class="row section-actions">
+      ${["Player 1", "Player 2"].map((seat) => `
+        <button
+          class="secondary${startGameSeat === seat ? " is-active" : ""}"
+          data-action="select-computer-seat"
+          data-seat="${escapeHtml(seat)}"
+          aria-pressed="${startGameSeat === seat ? "true" : "false"}"
+        >${escapeHtml(seat)}</button>
+      `).join("")}
+    </div>
+    <p class="small">Human seat: ${escapeHtml(startGameSeat)}. ${escapeHtml(getComputerSeatRoleLabel(startGameSeat))}.</p>
+  </section>
+`;
+
+const renderComputerOpponentCards = () => `
+  <section class="start-game-picker start-game-picker-computer" data-testid="computer-opponent-picker">
+    <div class="section-stack">
+      <div class="row section-actions">
+        <button class="secondary" data-action="back-start-game-modes">Back</button>
+      </div>
+      <p class="small">Pick a named opponent for a local practice game.</p>
+    </div>
+    ${renderComputerSeatChoice()}
+    <div class="start-game-opponent-list">
+      ${COMPUTER_OPPONENTS.map(
+        (opponent) => `
+          <article class="panel start-game-opponent-card" data-testid="computer-opponent-${escapeHtml(opponent.botId)}">
+            <div class="section-stack">
+              <div class="start-game-opponent-heading">
+                <div>
+                  <h3>${escapeHtml(opponent.displayName)}</h3>
+                  <p class="small">${escapeHtml(opponent.animal)} · ${escapeHtml(opponent.skillLabel)} · ${escapeHtml(opponent.styleLabel)}</p>
+                </div>
+              </div>
+              <p class="small">${escapeHtml(opponent.summary)}</p>
+            </div>
+            <button data-action="start-computer-game" data-bot-id="${escapeHtml(opponent.botId)}">Start game</button>
+          </article>
+        `,
+      ).join("")}
+    </div>
+  </section>
+`;
+
+const renderStartGameFlyout = () => {
+  if (!currentRoute.start) {
+    return "";
+  }
+  const body =
+    startGamePickerStage === START_GAME_STAGE_COMPUTER_OPPONENT ? renderComputerOpponentCards() : renderStartModeCards();
+  return renderFlyout({
+    title: "Start new game",
+    variant: "start",
+    closeAction: "close-start",
+    body,
+  });
+};
+
 const renderScenarioFlyout = () => {
   if (!currentRoute.scenarios) {
     return "";
@@ -1869,10 +2081,14 @@ const renderDebugFlyout = () => {
   });
 };
 const FLYOUT_RENDERERS = {
+  start: () => renderStartGameFlyout(),
   scenarios: () => renderScenarioFlyout(),
   debug: () => renderDebugFlyout(),
 };
 const renderFlyoutBodyByKey = (flyoutKey) => {
+  if (flyoutKey === "start") {
+    return startGamePickerStage === START_GAME_STAGE_COMPUTER_OPPONENT ? renderComputerOpponentCards() : renderStartModeCards();
+  }
   if (flyoutKey === "scenarios") {
     const route = currentRoute;
     const scenarioGameId = route.name === "game" ? route.gameId : route.name === "invite" ? resolvedInvite?.gameId || null : null;
@@ -1919,19 +2135,50 @@ const updateHeaderFields = () => {
   }
 };
 
-const setInviteFeedback = (message) => {
+const setInviteFeedback = (message, { autoDismissMs = 1800, action = null } = {}) => {
   inviteFeedback = message;
+  inviteFeedbackAction = action;
   render({ animatePanels: false, includeBoard: false });
   if (inviteFeedbackTimer) {
     clearTimeout(inviteFeedbackTimer);
     inviteFeedbackTimer = null;
   }
-  if (message) {
+  if (message && autoDismissMs > 0) {
     inviteFeedbackTimer = setTimeout(() => {
       inviteFeedback = "";
+      inviteFeedbackAction = null;
       render();
-    }, 1800);
+    }, autoDismissMs);
   }
+};
+
+const navigateToCreatedGame = (handle, fromRoute = currentRoute?.name || "home") => {
+  startGameEntryRouteTransition(handle.result.id, fromRoute);
+  navigateTo(buildGameHash(handle.result.id, null, getCurrentFlyoutState()));
+};
+
+const scheduleInviteCopyFeedback = (handle) => {
+  void handle.committed
+    .then(async (game) => {
+      const inviteLink = getInviteLinkForGame(game?.id || handle.result.id, game?.inviteToken || handle.result.id);
+      try {
+        const copied = await copyTextToClipboard(inviteLink);
+        if (copied) {
+          setInviteFeedback("Invite link copied to clipboard");
+          return;
+        }
+      } catch {
+        // Fall through to the manual-copy affordance.
+      }
+      setInviteFeedback("Clipboard unavailable. Copy the invite link manually instead.", {
+        autoDismissMs: 0,
+        action: {
+          label: "Copy invite link",
+          copyText: inviteLink,
+        },
+      });
+    })
+    .catch(() => {});
 };
 
 const setUndoRequestFeedback = (gameId, message) => {
@@ -2093,7 +2340,7 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
 </div>`;
 
 const renderHomeStartButton = () =>
-  `<button class="home-start-button" data-action="create-game" data-testid="home-create-game">Start new game</button>`;
+  `<button class="home-start-button" data-action="open-start-game" data-testid="home-create-game">Start new game</button>`;
 
 const renderHomeGameSection = (sectionKey) => {
   const section = getHomeSection(sectionKey);
@@ -2168,19 +2415,29 @@ const renderHome = () => {
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
   const failedOperations = transport.getFailedOperations?.(game.id) ?? [];
+  const computerPlayerRuntime = isComputerGame(game) ? getComputerPlayerRuntimeState(game) : null;
+  const visibleFailedOperations = failedOperations.filter(
+    (operation) => !(typeof operation.id === "string" && operation.id.startsWith("bot:")),
+  );
   maybeUpdateUndoRequestOutcomeFeedback(game);
-  const failedOperationBanners = failedOperations
+  const failedOperationBanners = visibleFailedOperations
     .map(
-      (operation) => `<div class="alert danger shell-game-alert sync-failure-banner" data-testid="sync-failure-banner">
+      (operation) => {
+        const canRetry = typeof operation.id === "string" && operation.id.startsWith("bot:");
+        const actionButton = canRetry
+          ? `<button class="secondary mini-button" data-action="retry-failed-operation" data-operation-id="${escapeHtml(operation.id)}">Retry</button>`
+          : `<button class="secondary mini-button" data-action="dismiss-failed-operation" data-operation-id="${escapeHtml(operation.id)}">Dismiss</button>`;
+        return `<div class="alert danger shell-game-alert sync-failure-banner" data-testid="sync-failure-banner">
         <div class="sync-failure-copy">
           <strong>Sync failed.</strong> ${escapeHtml(operation.error?.message || "The operation could not be completed.")}
         </div>
-        <button class="secondary mini-button" data-action="dismiss-failed-operation" data-operation-id="${escapeHtml(operation.id)}">Dismiss</button>
-      </div>`,
+        ${actionButton}
+      </div>`;
+      },
     )
     .join("");
   const liveSyncBanner =
-    failedOperations.length === 0 && game.syncStatus === "confirming"
+    visibleFailedOperations.length === 0 && computerPlayerRuntime?.status !== "failed" && game.syncStatus === "confirming"
         ? `<div class="alert warn shell-game-alert">Move confirmation is retrying. The board stays optimistic until the server confirms.</div>`
       : game.syncStatus === "desynced"
         ? `<div class="alert warn shell-game-alert">Live sync is recovering. The board is showing the last authoritative state.</div>`
@@ -2191,7 +2448,21 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
       ? `<div class="alert shell-game-alert">${escapeHtml(undoRequestFeedback)}</div>`
       : "";
 
-  return [failedOperationBanners, liveSyncBanner, undoRequestBanner].filter(Boolean).join("");
+  const computerPlayerBanner =
+    computerPlayerRuntime?.status === "thinking"
+      ? `<div class="alert shell-game-alert" data-testid="computer-player-thinking" role="status" aria-live="polite">${escapeHtml(game.computerPlayer.displayName)} is thinking...</div>`
+      : computerPlayerRuntime?.status === "failed"
+        ? `<div class="alert danger shell-game-alert" data-testid="computer-player-failure" role="alert" aria-live="assertive">
+        <div class="sync-failure-copy">
+          <strong>${escapeHtml(game.computerPlayer.displayName)} could not move.</strong> ${escapeHtml(
+            computerPlayerRuntime.error?.message || "The computer move failed. Retry to continue the game.",
+          )}
+        </div>
+        <button class="secondary mini-button" data-action="retry-computer-player" data-game-id="${escapeHtml(game.id)}">Retry move</button>
+      </div>`
+        : "";
+
+  return [failedOperationBanners, liveSyncBanner, undoRequestBanner, computerPlayerBanner].filter(Boolean).join("");
 };
 
 const renderHomeCardSkeleton = () => `
@@ -2285,6 +2556,7 @@ const renderGameSummaryPanel = (game) => {
     <div class="section-stack">
       <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
       <p class="small" data-testid="game-role">Role: ${renderRoleLabel(game.myRole, game)}</p>
+      ${isComputerGame(game) ? `<p class="small" data-testid="computer-opponent-summary">Opponent: ${escapeHtml(game.computerPlayer.displayName)}</p>` : ""}
       <div class="section-followup">
         <p class="small" data-testid="active-turn-label">Active turn: ${
           game.currentTurn
@@ -2304,6 +2576,9 @@ const renderJoinInvitePanel = (game, inviteLink) => {
   const joinPlayerButtonKey = getJoinButtonKey("player", game.id);
   const playAsBothButtonKey = getPlayAsBothButtonKey(game.id);
   const copyInviteButtonKey = getCopyInviteButtonKey(game.id);
+  const computerStatusNotice = isComputerGame(game)
+    ? `<div class="alert" data-testid="computer-game-notice">${escapeHtml(game.computerPlayer.displayName)} controls ${game.computerPlayer.botSeat}. Viewer sharing stays available, but the bot seat is not claimable in this game.</div>`
+    : "";
   const pendingSeatNotice = game.pendingPlayerRequestSeat
     ? `<div class="alert" data-testid="pending-player-request-notice">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
     : "";
@@ -2353,9 +2628,10 @@ const renderJoinInvitePanel = (game, inviteLink) => {
 
   return `
     <h2 data-testid="join-invite-heading">Join / Invite</h2>
+    ${computerStatusNotice}
     ${pendingSeatNotice}
     ${joinInviteActions}
-    ${renderFeedbackReveal(inviteFeedback)}
+    ${renderFeedbackReveal(inviteFeedback, inviteFeedbackAction)}
     <div class="section-followup">
       <ul class="participant-list">${pendingRows}</ul>
     </div>
@@ -2370,6 +2646,10 @@ const renderParticipantsPanel = (game) => {
 
   const participantRows = participants
     .map((entry) => {
+      const computerSeat = getComputerPlayerSeat(game, entry.label);
+      if (computerSeat) {
+        return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: <span class="small">${escapeHtml(computerSeat.displayName)} (computer opponent)</span></li>`;
+      }
       if (!entry.value) {
         return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: <span class="small">Open seat</span></li>`;
       }
@@ -3899,10 +4179,84 @@ appEl.addEventListener("click", async (event) => {
     }, 0);
   };
 
-  if (action === "create-game") {
+  if (action === "open-start-game") {
+    resetStartGamePicker();
+    setFlyoutOpenState("start", true);
+    currentRoute = normalizeRouteFlyoutState({ ...currentRoute, start: true }, { preferredFlyoutKey: "start" });
+    if (currentRoute.name === "home") {
+      render({ animatePanels: false, includeBoard: false });
+      return;
+    }
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
+
+  if (action === "close-start") {
+    if (currentRoute.start) {
+      await animateFlyoutClose("start", () => {
+        resetStartGamePicker();
+        currentRoute = normalizeRouteFlyoutState({ ...currentRoute, start: false });
+      });
+      render({ animatePanels: false, includeBoard: false });
+    }
+    return;
+  }
+
+  if (action === "back-start-game-modes") {
+    startGamePickerStage = START_GAME_STAGE_MODE_SELECT;
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
+
+  if (action === "open-computer-opponents") {
+    startGamePickerStage = START_GAME_STAGE_COMPUTER_OPPONENT;
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
+
+  if (action === "select-computer-seat") {
+    const seat = actionEl.getAttribute("data-seat");
+    if (seat === "Player 1" || seat === "Player 2") {
+      startGameSeat = seat;
+      render({ animatePanels: false, includeBoard: false });
+    }
+    return;
+  }
+
+  if (action === "start-friend-game") {
     const handle = transport.createGame({ selfPlayMode: false });
-    startGameEntryRouteTransition(handle.result.id, "home");
-    navigateTo(buildGameHash(handle.result.id, null, getCurrentFlyoutState()));
+    resetStartGamePicker();
+    scheduleInviteCopyFeedback(handle);
+    navigateToCreatedGame(handle, "home");
+    return;
+  }
+
+  if (action === "start-self-play-game") {
+    const handle = transport.createGame({ selfPlayMode: true });
+    resetStartGamePicker();
+    navigateToCreatedGame(handle, "home");
+    return;
+  }
+
+  if (action === "start-computer-game") {
+    const botId = actionEl.getAttribute("data-bot-id");
+    const computerPlayer = buildComputerPlayerConfig(botId, startGameSeat);
+    if (!computerPlayer) {
+      return;
+    }
+    const handle = transport.createGame({ selfPlayMode: false, computerPlayer });
+    resetStartGamePicker();
+    navigateToCreatedGame(handle, "home");
+    return;
+  }
+
+  if (action === "retry-computer-player") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) {
+      return;
+    }
+    transport.retryComputerPlayerTurn?.({ gameId });
+    render({ animatePanels: false, includeBoard: false });
     return;
   }
 
@@ -4042,15 +4396,26 @@ appEl.addEventListener("click", async (event) => {
         await gameHandle.committed;
       }
       const game = transport.getGameViewModel(gameId);
-      const inviteToken = game?.inviteToken || resolvedInvite?.inviteToken || gameId;
-      const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(inviteToken, getCurrentFlyoutState())}`;
+      const inviteLink = getInviteLinkForGame(gameId, game?.inviteToken || resolvedInvite?.inviteToken || gameId);
       let copied = false;
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(inviteLink);
-        copied = true;
+      try {
+        copied = await copyTextToClipboard(inviteLink);
+      } catch {
+        copied = false;
       }
       window.__righeltLastInvite = inviteLink;
-      setInviteFeedback(copied ? "Invite link copied to clipboard" : "Clipboard unavailable");
+      setInviteFeedback(
+        copied ? "Invite link copied to clipboard" : "Clipboard unavailable. Copy the invite link manually instead.",
+        copied
+          ? {}
+          : {
+              autoDismissMs: 0,
+              action: {
+                label: "Copy invite link",
+                copyText: inviteLink,
+              },
+            },
+      );
     };
     if (gameHandle?.status === "pending") {
       void withPendingButton(getCopyInviteButtonKey(gameId), copyInvite);
@@ -4060,12 +4425,50 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "copy-invite-feedback") {
+    const copyText = actionEl.getAttribute("data-copy-text");
+    if (!copyText) {
+      return;
+    }
+    try {
+      const copied = await copyTextToClipboard(copyText);
+      setInviteFeedback(copied ? "Invite link copied to clipboard" : "Clipboard unavailable. Copy the invite link manually instead.", {
+        autoDismissMs: copied ? 1800 : 0,
+        action: copied
+          ? null
+          : {
+              label: "Copy invite link",
+              copyText,
+            },
+      });
+    } catch {
+      setInviteFeedback("Clipboard unavailable. Copy the invite link manually instead.", {
+        autoDismissMs: 0,
+        action: {
+          label: "Copy invite link",
+          copyText,
+        },
+      });
+    }
+    return;
+  }
+
   if (action === "dismiss-failed-operation") {
     const operationId = actionEl.getAttribute("data-operation-id");
     if (!operationId) {
       return;
     }
     transport.dismissFailedOperation?.(operationId);
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
+
+  if (action === "retry-failed-operation") {
+    const operationId = actionEl.getAttribute("data-operation-id");
+    if (!operationId) {
+      return;
+    }
+    transport.retryComputerPlayerTurn?.({ operationId });
     render({ animatePanels: false, includeBoard: false });
     return;
   }

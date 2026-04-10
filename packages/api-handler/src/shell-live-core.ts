@@ -20,6 +20,30 @@ export type Participant = {
 export type Viewer = Participant;
 export type IdentityRole = "Player 1" | "Player 2" | "Viewer";
 export type LaunchParticipantCopyMode = "copy_source_participants" | "viewer_as_side_to_move";
+export type ComputerPlayerSeat = "Player 1" | "Player 2";
+export type ComputerPlayerGameMetadata = {
+  mode: "computer-player";
+  botId: string;
+  botSchemaVersion: number;
+  displayName: string;
+  animal: string;
+  skillLabel: string;
+  styleLabel: string;
+  humanSeat: ComputerPlayerSeat;
+  botSeat: ComputerPlayerSeat;
+  activeTurnKey: string | null;
+};
+export type ComputerPlayerGameInput = {
+  botId: string;
+  botSchemaVersion?: number;
+  displayName: string;
+  animal: string;
+  skillLabel: string;
+  styleLabel: string;
+  humanSeat: ComputerPlayerSeat;
+  botSeat?: ComputerPlayerSeat;
+  activeTurnKey?: string | null;
+};
 
 export type JoinRequest = {
   identityId: string;
@@ -107,6 +131,7 @@ export type LiveGame = {
   lastMoveAt: string | null;
   updatedAt: string;
   selfPlayMode: boolean;
+  computerPlayer: ComputerPlayerGameMetadata | null;
   board: {
     state: GameState;
   };
@@ -138,6 +163,7 @@ export type StaticGameCard = {
   previewSelection: ScenarioSavedSelection | null;
   myRole: "Player 1" | "Player 2" | "Viewer" | "Guest";
   canJoinAsPlayer: boolean;
+  computerPlayer: ComputerPlayerGameMetadata | null;
   player1: Participant | null;
   player2: Participant | null;
 };
@@ -188,6 +214,24 @@ export const getNextSeat = (seat: "Player 1" | "Player 2"): "Player 1" | "Player
 export const getSideForSeat = (seat: "Player 1" | "Player 2"): GameState["sideToMove"] => (seat === "Player 1" ? "P1" : "P2");
 export const getSideToMoveSeat = (game: LiveGame): "Player 1" | "Player 2" =>
   game.board.state.sideToMove === "P1" ? "Player 1" : "Player 2";
+const isComputerPlayerSeat = (value: unknown): value is ComputerPlayerSeat => value === "Player 1" || value === "Player 2";
+const isComputerPlayerGame = (game: Pick<LiveGame, "computerPlayer">) => game.computerPlayer?.mode === "computer-player";
+export const createComputerPlayerMetadata = (input: ComputerPlayerGameInput): ComputerPlayerGameMetadata => {
+  const humanSeat = input.humanSeat;
+  const botSeat = input.botSeat === humanSeat ? getNextSeat(humanSeat) : input.botSeat ?? getNextSeat(humanSeat);
+  return {
+    mode: "computer-player",
+    botId: input.botId,
+    botSchemaVersion: Number.isInteger(input.botSchemaVersion) && (input.botSchemaVersion ?? 0) > 0 ? input.botSchemaVersion! : 1,
+    displayName: input.displayName,
+    animal: input.animal,
+    skillLabel: input.skillLabel,
+    styleLabel: input.styleLabel,
+    humanSeat,
+    botSeat,
+    activeTurnKey: input.activeTurnKey ?? null,
+  };
+};
 export const getActiveTurn = (game: LiveGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
 const isMoveUndone = (move: MoveEntry | null | undefined) => move?.undone === true;
 const getActiveMoves = (game: LiveGame) => game.moves.filter((move) => !isMoveUndone(move));
@@ -325,36 +369,61 @@ export const createInitialGame = ({
   gameId,
   identityId,
   selfPlayMode,
+  computerPlayer,
 }: {
   gameId: string;
   identityId: string;
   selfPlayMode: boolean;
+  computerPlayer?: ComputerPlayerGameInput | null;
 }): LiveGame => {
   const initial = resolveToStability(createInitialState(), { artifactMode: "full" });
   const createdAt = now();
+  const computerPlayerMetadata = computerPlayer ? createComputerPlayerMetadata(computerPlayer) : null;
+  const humanSeat = computerPlayerMetadata?.humanSeat ?? "Player 1";
   return {
     id: gameId,
     createdAt,
     lastMoveAt: null,
     updatedAt: createdAt,
-    selfPlayMode,
+    selfPlayMode: computerPlayerMetadata ? false : selfPlayMode,
+    computerPlayer: computerPlayerMetadata,
     board: { state: initial },
-    player1: {
-      identityId,
-      connected: true,
-      joinedAt: createdAt,
-      lastHeartbeatAt: createdAt,
-      sessionCount: 0,
-    },
-    player2: selfPlayMode
-      ? {
-          identityId,
-          connected: true,
-          joinedAt: createdAt,
-          lastHeartbeatAt: createdAt,
-          sessionCount: 0,
-        }
-      : null,
+    player1:
+      humanSeat === "Player 1"
+        ? {
+            identityId,
+            connected: true,
+            joinedAt: createdAt,
+            lastHeartbeatAt: createdAt,
+            sessionCount: 0,
+          }
+        : selfPlayMode && !computerPlayerMetadata
+          ? {
+              identityId,
+              connected: true,
+              joinedAt: createdAt,
+              lastHeartbeatAt: createdAt,
+              sessionCount: 0,
+            }
+          : null,
+    player2:
+      humanSeat === "Player 2"
+        ? {
+            identityId,
+            connected: true,
+            joinedAt: createdAt,
+            lastHeartbeatAt: createdAt,
+            sessionCount: 0,
+          }
+        : selfPlayMode && !computerPlayerMetadata
+          ? {
+              identityId,
+              connected: true,
+              joinedAt: createdAt,
+              lastHeartbeatAt: createdAt,
+              sessionCount: 0,
+            }
+          : null,
     viewers: [],
     pendingJoinRequests: [],
     pendingRevertRequest: null,
@@ -372,7 +441,7 @@ export const createInitialGame = ({
     moves: [],
     historyIndexByIdentity: {},
     pendingScenarioSelection: null,
-    notifications: ["Game created", selfPlayMode ? "Self-play mode active" : "Invite a second player"],
+    notifications: ["Game created", computerPlayerMetadata ? "Computer player mode active" : selfPlayMode ? "Self-play mode active" : "Invite a second player"],
     inviteTokens: {
       viewer: createInviteToken(),
       player1: createInviteToken(),
@@ -538,6 +607,7 @@ export const reconcileGameToScenarioResultingState = (game: LiveGame, scenario: 
 
 export const copyParticipantsBetweenGames = (source: LiveGame, target: LiveGame) => {
   target.selfPlayMode = source.selfPlayMode;
+  target.computerPlayer = source.computerPlayer ? clone(source.computerPlayer) : null;
   target.player1 = cloneParticipant(source.player1);
   target.player2 = cloneParticipant(source.player2);
   target.viewers = source.viewers.map((viewer) => cloneParticipant(viewer)).filter(Boolean) as Viewer[];
@@ -660,6 +730,9 @@ export const getSeatIdentity = (game: LiveGame, seat: "Player 1" | "Player 2"): 
   seat === "Player 1" ? game.player1?.identityId ?? null : game.player2?.identityId ?? null;
 
 export const getClaimableDualSeat = (game: LiveGame, identityId: string): "Player 1" | "Player 2" | null => {
+  if (isComputerPlayerGame(game)) {
+    return null;
+  }
   if (game.player1?.identityId === identityId && !game.player2) {
     return "Player 2";
   }
@@ -740,6 +813,9 @@ export const dismissCompetingJoinRequests = (game: LiveGame, acceptedIdentityId:
 };
 
 const getJoinAsPlayerDisabledReason = (game: LiveGame, myRole: string) => {
+  if (isComputerPlayerGame(game)) {
+    return "Computer player games do not accept player joins.";
+  }
   if (myRole === "Player 1" || myRole === "Player 2") {
     return "You are already joined as a player.";
   }
@@ -763,7 +839,7 @@ const getJoinAsViewerDisabledReason = (game: LiveGame, myRole: string) => {
 };
 
 export const toStaticGameCard = (
-  game: Pick<LiveGame, "id" | "createdAt" | "lastMoveAt" | "updatedAt" | "selfPlayMode" | "board" | "player1" | "player2" | "viewers"> & {
+  game: Pick<LiveGame, "id" | "createdAt" | "lastMoveAt" | "updatedAt" | "selfPlayMode" | "computerPlayer" | "board" | "player1" | "player2" | "viewers"> & {
     pendingJoinRequests?: LiveGame["pendingJoinRequests"];
     historyIndexByIdentity?: LiveGame["historyIndexByIdentity"];
     pendingScenarioSelection?: LiveGame["pendingScenarioSelection"];
@@ -784,10 +860,11 @@ export const toStaticGameCard = (
       pendingRevertRequest: null,
       notifications: [],
       inviteTokens: { viewer: "", player1: "", player2: "" },
+      computerPlayer: game.computerPlayer ?? null,
     },
     identityId,
   );
-  const canJoinAsPlayer = myRole !== "Player 1" && myRole !== "Player 2" && !game.selfPlayMode && (!game.player1 || !game.player2);
+  const canJoinAsPlayer = myRole !== "Player 1" && myRole !== "Player 2" && !game.selfPlayMode && !game.computerPlayer && (!game.player1 || !game.player2);
   return {
     id: game.id,
     createdAt: game.createdAt,
@@ -803,6 +880,7 @@ export const toStaticGameCard = (
     previewSelection: game.pendingScenarioSelection ?? null,
     myRole,
     canJoinAsPlayer,
+    computerPlayer: game.computerPlayer ?? null,
     player1: game.player1 ?? null,
     player2: game.player2 ?? null,
   };
@@ -900,13 +978,7 @@ export const withFullViewModel = (game: LiveGame, identityId: string) => {
     joinAsPlayerDisabledReason,
     joinAsViewerDisabledReason,
     canInvite: true,
-    inviteToken:
-      myRole === "Player 1"
-        ? inviteTokens.player1
-        : myRole === "Player 2"
-          ? inviteTokens.player2
-          : inviteTokens.viewer,
-    showJoinActions: true,
+    inviteToken: game.computerPlayer ? inviteTokens.viewer : myRole === "Player 1" ? inviteTokens.player1 : myRole === "Player 2" ? inviteTokens.player2 : inviteTokens.viewer,
     canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
     legalActions: legalNow,
     canEndTurn:
@@ -928,6 +1000,7 @@ export const withFullViewModel = (game: LiveGame, identityId: string) => {
     approvableRevertRequest,
     canUndoLastMove,
     latestActiveMoveId: latestActiveMove?.moveId ?? null,
+    showJoinActions: !game.computerPlayer,
   };
 };
 

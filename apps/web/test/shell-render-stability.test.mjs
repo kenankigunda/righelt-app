@@ -57,9 +57,12 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const failedOperationsKey = getFailedOperationsKey\(game\.id\);/);
   assert.match(source, /data-testid="sync-failure-banner"/);
   assert.match(source, /data-action="dismiss-failed-operation"/);
+  assert.match(source, /data-testid="computer-player-thinking"/);
+  assert.match(source, /data-testid="computer-player-failure"/);
+  assert.match(source, /data-action="retry-computer-player"/);
   assert.doesNotMatch(source, /failedOperations\.length === 0 && game\.rollbackNotice/);
   assert.doesNotMatch(source, /rollbackNotice: game\.rollbackNotice/);
-  assert.match(source, /return \[failedOperationBanners,\s*liveSyncBanner,\s*undoRequestBanner\]\.filter\(Boolean\)\.join\(""\);/);
+  assert.match(source, /return \[failedOperationBanners,\s*liveSyncBanner,\s*undoRequestBanner,\s*computerPlayerBanner\]\.filter\(Boolean\)\.join\(""\);/);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
   assert.match(source, /data-game-shell-track/);
@@ -395,7 +398,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /const isDualSeatIdentity = \(game\) =>/);
   assert.match(source, /return '<strong class="player-tone-both">both players<\/strong>';/);
   assert.match(source, /const renderConnectionStatusIcon = \(status, label\) =>/);
-  assert.match(source, /const renderPlayerSlotStatus = \(seat, participant, \{ verbose = false \} = \{\}\) =>/);
+  assert.match(source, /const renderPlayerSlotStatus = \(seat, participant, \{ verbose = false, game = null \} = \{\}\) =>/);
   assert.match(source, /return `<span class="mini-board-card-connection-item">\$\{renderSeatLabel\(seat\)\}\$\{renderConnectionStatusIcon\(\s*"open",\s*statusLabel,\s*\)\}<\/span>`;/s);
   assert.match(source, /const shouldUseVerboseHomeConnectionCopy = \(game\) =>/);
   assert.match(source, /const renderHomeRoleLine = \(game\) =>/);
@@ -408,7 +411,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /const seatConnectionLine = renderHomeSeatConnectionLine\(game\);/);
   assert.match(source, /const renderHomeConnectionSummary = \(game\) =>/);
   assert.match(source, /const filteredSlots = isDualSeatIdentity\(game\) && isPlayerRole\(game\?\.myRole\)/);
-  assert.match(source, /renderPlayerSlotStatus\(entry\.seat, entry\.participant, \{ verbose: shouldUseVerboseHomeConnectionCopy\(game\) \}\)/);
+  assert.match(source, /renderPlayerSlotStatus\(entry\.seat, entry\.participant, \{ verbose: shouldUseVerboseHomeConnectionCopy\(game\), game \}\)/);
   assert.match(source, /<div class="mini-board-card-copy">/);
   assert.match(source, /<div class="mini-board-card-meta mini-board-card-meta-primary">/);
   assert.match(source, /<span>\$\{renderHomeRoleLine\(game\)\}<\/span>/);
@@ -449,9 +452,9 @@ test("app uses route skeleton sync and localized loading instead of a global bus
     source,
     /window\.addEventListener\("keydown", \(event\) => \{[\s\S]*event\.key !== "Escape"[\s\S]*closeHeaderMenu\(\);[\s\S]*syncNarrowHeaderMenuDom\(\);/s,
   );
-  assert.match(source, /const renderFeedbackReveal = \(message\) =>/);
+  assert.match(source, /const renderFeedbackReveal = \(message, action = null\) =>/);
   assert.match(source, /feedback-reveal\$\{message \? " is-visible" : ""\}/);
-  assert.match(source, /const setInviteFeedback = \(message\) => \{\s*inviteFeedback = message;\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
+  assert.match(source, /const setInviteFeedback = \(message, \{ autoDismissMs = 1800, action = null \} = \{\}\) => \{\s*inviteFeedback = message;\s*inviteFeedbackAction = action;\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
 });
 
 test("scenario flyout alone forces click target selection on hover-capable boards", () => {

@@ -1,5 +1,5 @@
 const HOME_ROUTE = { name: "home" };
-export const FLYOUT_KEYS = ["debug", "scenarios"];
+export const FLYOUT_KEYS = ["start", "debug", "scenarios"];
 const URL_FLYOUT_KEYS = ["scenarios"];
 export const GAME_PANEL_KEYS = ["players", "board", "history"];
 export const DEFAULT_GAME_PANEL = "board";
@@ -10,6 +10,7 @@ const getFlyoutState = (query) =>
   {
     const urlFlyouts = Object.fromEntries(URL_FLYOUT_KEYS.map((key) => [key, query.get(key) === "1"]));
     return {
+      start: false,
       debug: false,
       ...urlFlyouts,
     };
@@ -21,7 +22,7 @@ const withFlyoutState = (route, query) => ({
 
 export const parseRouteFromHash = (hash) => {
   if (!hash || hash === "#" || hash === "#/" || hash === "") {
-    return { ...HOME_ROUTE, debug: false, scenarios: false };
+    return { ...HOME_ROUTE, start: false, debug: false, scenarios: false };
   }
 
   const raw = hash.startsWith("#") ? hash.slice(1) : hash;

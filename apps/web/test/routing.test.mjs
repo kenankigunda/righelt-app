@@ -16,10 +16,10 @@ import {
 } from "../shell/routes.js";
 
 test("routing resolves home hash variants with URL-tracked scenarios state only", () => {
-  assert.deepEqual(parseRouteFromHash(""), { name: "home", debug: false, scenarios: false });
-  assert.deepEqual(parseRouteFromHash("#/"), { name: "home", debug: false, scenarios: false });
-  assert.deepEqual(parseRouteFromHash("#/?debug=1"), { name: "home", debug: false, scenarios: false });
-  assert.deepEqual(parseRouteFromHash("#/?scenarios=1"), { name: "home", debug: false, scenarios: true });
+  assert.deepEqual(parseRouteFromHash(""), { name: "home", start: false, debug: false, scenarios: false });
+  assert.deepEqual(parseRouteFromHash("#/"), { name: "home", start: false, debug: false, scenarios: false });
+  assert.deepEqual(parseRouteFromHash("#/?debug=1"), { name: "home", start: false, debug: false, scenarios: false });
+  assert.deepEqual(parseRouteFromHash("#/?scenarios=1"), { name: "home", start: false, debug: false, scenarios: true });
   assert.equal(buildHomeHash(), "#/");
   assert.equal(buildHomeHash({ debug: true, scenarios: true }), "#/?scenarios=1");
 });
@@ -42,15 +42,16 @@ test("routing resolves game path with inviter role and URL-tracked scenarios fla
 });
 
 test("routing resolves tutorial path and unknown routes", () => {
-  assert.deepEqual(parseRouteFromHash("#/tutorial"), { name: "tutorial", gameId: null, debug: false, scenarios: false });
+  assert.deepEqual(parseRouteFromHash("#/tutorial"), { name: "tutorial", gameId: null, start: false, debug: false, scenarios: false });
   assert.equal(buildTutorialHash("abc", { debug: true, scenarios: true }), "#/tutorial/abc?scenarios=1");
-  assert.deepEqual(parseRouteFromHash("#/nope"), { name: "not-found", debug: false, scenarios: false });
+  assert.deepEqual(parseRouteFromHash("#/nope"), { name: "not-found", start: false, debug: false, scenarios: false });
 });
 
 test("routing resolves opaque invite path", () => {
   assert.deepEqual(parseRouteFromHash("#/invite/token-123"), {
     name: "invite",
     inviteToken: "token-123",
+    start: false,
     debug: false,
     scenarios: false,
   });
@@ -88,11 +89,11 @@ test("routing identifies shell hashes and toggles scenarios state without changi
 test("routing can collapse flyouts when stacking is disabled", () => {
   assert.deepEqual(
     resolveFlyoutState({ debug: true, scenarios: true }, { allowStacking: false }),
-    { debug: false, scenarios: true },
+    { start: false, debug: false, scenarios: true },
   );
   assert.deepEqual(
     resolveFlyoutState({ debug: true, scenarios: true }, { allowStacking: false, preferredKey: "debug" }),
-    { debug: true, scenarios: false },
+    { start: false, debug: true, scenarios: false },
   );
   assert.equal(
     buildHashForRoute({ name: "game", gameId: "game-1", inviteFromRole: null, panel: "players", debug: false, scenarios: true }),
@@ -101,9 +102,9 @@ test("routing can collapse flyouts when stacking is disabled", () => {
 });
 
 test("routing rejects removed legacy aliases", () => {
-  assert.deepEqual(parseRouteFromHash("#/home"), { name: "not-found", debug: false, scenarios: false });
-  assert.deepEqual(parseRouteFromHash("#/shell/home"), { name: "not-found", debug: false, scenarios: false });
-  assert.deepEqual(parseRouteFromHash("#/shell/game/game-1"), { name: "not-found", debug: false, scenarios: false });
-  assert.deepEqual(parseRouteFromHash("#/shell/invite/token-1"), { name: "not-found", debug: false, scenarios: false });
-  assert.deepEqual(parseRouteFromHash("#/shell/tutorial"), { name: "not-found", debug: false, scenarios: false });
+  assert.deepEqual(parseRouteFromHash("#/home"), { name: "not-found", start: false, debug: false, scenarios: false });
+  assert.deepEqual(parseRouteFromHash("#/shell/home"), { name: "not-found", start: false, debug: false, scenarios: false });
+  assert.deepEqual(parseRouteFromHash("#/shell/game/game-1"), { name: "not-found", start: false, debug: false, scenarios: false });
+  assert.deepEqual(parseRouteFromHash("#/shell/invite/token-1"), { name: "not-found", start: false, debug: false, scenarios: false });
+  assert.deepEqual(parseRouteFromHash("#/shell/tutorial"), { name: "not-found", start: false, debug: false, scenarios: false });
 });

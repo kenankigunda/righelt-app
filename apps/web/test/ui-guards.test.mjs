@@ -104,13 +104,18 @@ test("game route live sync connection is not gated by participant role", () => {
   assert.match(syncStoreSource, /liveSync\.connectGame\(gameId\);/);
 });
 
-test("optimistic game creation and history branch actions bypass the blocking busy wrapper", () => {
-  assert.match(source, /if \(action === "create-game"\) \{\s*const handle = transport\.createGame\(\{ selfPlayMode: false \}\);/s);
-  assert.match(source, /startGameEntryRouteTransition\(handle\.result\.id, "home"\);/);
-  assert.match(source, /navigateTo\(buildGameHash\(handle\.result\.id, null, getCurrentFlyoutState\(\)\)\);/);
+test("staged start flow keeps game creation optimistic and non-blocking", () => {
+  assert.match(source, /if \(action === "open-start-game"\) \{/);
+  assert.match(source, /const navigateToCreatedGame = \(handle, fromRoute = currentRoute\?\.name \|\| "home"\) => \{/);
+  assert.match(source, /if \(action === "start-friend-game"\) \{\s*const handle = transport\.createGame\(\{ selfPlayMode: false \}\);/s);
+  assert.match(source, /scheduleInviteCopyFeedback\(handle\);/);
+  assert.match(source, /if \(action === "start-self-play-game"\) \{\s*const handle = transport\.createGame\(\{ selfPlayMode: true \}\);/s);
+  assert.match(source, /if \(action === "start-computer-game"\) \{[\s\S]*const computerPlayer = buildComputerPlayerConfig\(botId, startGameSeat\);[\s\S]*transport\.createGame\(\{ selfPlayMode: false, computerPlayer \}\);/s);
+  assert.match(source, /if \(action === "open-computer-opponents"\) \{\s*startGamePickerStage = START_GAME_STAGE_COMPUTER_OPPONENT;/s);
+  assert.match(source, /if \(action === "select-computer-seat"\) \{/);
   assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*const handle = transport\.launchHistoryBranch\(/s);
   assert.match(source, /const nextHash = buildGameHash\(handle\.result\.game\.id, null, \{/s);
-  assert.doesNotMatch(source, /if \(action === "create-game"\) \{[\s\S]*await transport\.createGame/s);
+  assert.doesNotMatch(source, /if \(action === "start-friend-game"\) \{[\s\S]*await transport\.createGame/s);
 });
 
 test("home game-card links trigger the branded game-entry transition before same-tab navigation", () => {
@@ -207,7 +212,10 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /data-home-section-root="\$\{escapeHtml\(sectionKey\)\}"/);
   assert.match(source, /const renderHomeSectionControls = \(sectionKey, section, \{ placement \} = \{ placement: "header" \}\) =>/);
   assert.match(source, /const renderHomeStartButton = \(\) =>/);
-  assert.match(source, /data-action="create-game"/);
+  assert.match(source, /data-action="open-start-game"/);
+  assert.match(source, /const renderStartGameFlyout = \(\) => \{/);
+  assert.match(source, /data-testid="start-game-picker"/);
+  assert.match(source, /data-testid="computer-opponent-picker"/);
   assert.match(source, /home-games-section-controls home-games-section-controls-\$\{escapeHtml\(placement\)\}/);
   assert.match(source, /const shouldAlwaysRender = sectionKey === "my";/);
   assert.match(source, /const showEmptyState = section\.totalGames === 0;/);

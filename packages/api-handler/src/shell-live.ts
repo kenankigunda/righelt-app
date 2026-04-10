@@ -278,6 +278,7 @@ export const handleLiveGameRequest = async (
         identityId,
         gameId,
         selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
+        computerPlayer: body.computerPlayer ?? null,
       }),
     });
     return {

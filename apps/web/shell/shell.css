@@ -1619,6 +1619,52 @@ textarea:focus-visible {
   margin: 0;
 }
 
+.start-game-picker {
+  display: grid;
+  gap: 1rem;
+}
+
+.start-game-mode-grid,
+.start-game-opponent-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.start-game-mode-card,
+.start-game-opponent-card,
+.start-game-seat-panel {
+  margin: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.start-game-mode-diagram {
+  min-height: 5rem;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.start-game-mode-diagram-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 253, 248, 0.98);
+  font-size: 0.9rem;
+}
+
+.start-game-opponent-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
 .shell-flyout-stack {
   position: fixed;
   top: 0;
@@ -1882,10 +1928,10 @@ textarea:focus-visible {
 
   .shell-flyout {
     width: 100%;
-    height: auto;
-    max-height: 50vh;
-    flex: 0 1 50vh;
-    min-height: 0;
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: none;
+    flex: 1 1 auto;
     transform: translateY(calc(100% + 1rem));
     border-left: 0;
     border-right: 0;

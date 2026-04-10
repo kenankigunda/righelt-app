@@ -548,11 +548,11 @@ export const createLiveTransportStore = ({
     return getGameViewModel(gameId);
   };
 
-  const createGame = async ({ selfPlayMode = false, gameId = null } = {}) => {
+  const createGame = async ({ selfPlayMode = false, computerPlayer = null, gameId = null } = {}) => {
     const response = await fetcher("/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, selfPlayMode, gameId }),
+      body: JSON.stringify({ identityId, selfPlayMode, computerPlayer, gameId }),
     });
     const body = await mustOk(response);
     return upsertGame(body.game);
@@ -675,10 +675,10 @@ export const createLiveTransportStore = ({
     return body;
   };
 
-  const applyGameAction = async ({ gameId, state, action }) => {
+  const applyGameAction = async ({ gameId, state, action, clientCommandId = null }) => {
     const command = {
       kind: "apply",
-      clientCommandId: createClientCommandId({ gameId, identityId, random }),
+      clientCommandId: typeof clientCommandId === "string" && clientCommandId ? clientCommandId : createClientCommandId({ gameId, identityId, random }),
       action: clone(action),
       state: clone(state),
       notation: defaultNotationForAction(action),
@@ -704,11 +704,11 @@ export const createLiveTransportStore = ({
     };
   };
 
-  const endTurn = async ({ gameId }) => {
+  const endTurn = async ({ gameId, clientCommandId = null }) => {
     const current = getGameViewModel(gameId);
     const command = {
       kind: "end-turn",
-      clientCommandId: createClientCommandId({ gameId, identityId, random }),
+      clientCommandId: typeof clientCommandId === "string" && clientCommandId ? clientCommandId : createClientCommandId({ gameId, identityId, random }),
       queuedAt: new Date().toISOString(),
     };
     const optimistic = enqueueOptimisticCommand({ gameId, command });

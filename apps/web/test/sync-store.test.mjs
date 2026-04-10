@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createSyncStore } from "../shell/sync-store.js";
+import { buildComputerPlayerSeed, buildComputerPlayerTurnKey } from "../shell/computer-player-runtime.js";
 
 const clone = (value) => structuredClone(value);
 
@@ -31,6 +32,183 @@ const createTransportHarness = () => {
         games.set(game.id, game);
       },
     },
+  };
+};
+
+const waitFor = async (predicate, timeoutMs = 2_000) => {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error("Timed out waiting for test condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+};
+
+const buildComputerPlayerGame = ({
+  gameId = "game-bot",
+  humanSeat = "Player 2",
+  botSeat = "Player 1",
+  botId = "tau",
+  activeTurnKey = null,
+  myRole = humanSeat,
+} = {}) => {
+  const sideToMove = botSeat === "Player 1" ? "P1" : "P2";
+  const snapshot = {
+    boardSize: 10,
+    sideToMove,
+    turnIndex: 0,
+    pieces: [],
+    continuation: null,
+    outcome: { status: "ongoing" },
+  };
+  const currentTurn = {
+    index: 0,
+    startedAt: "2026-04-03T00:00:00.000Z",
+    endedAt: null,
+    playerSeat: botSeat,
+    status: "active",
+    moveIndexes: [],
+    lastMoveAt: null,
+  };
+  const computerPlayer = {
+    mode: "computer-player",
+    botId,
+    botSchemaVersion: 1,
+    displayName: botId === "tau" ? "Tau the Tenacious" : "Babs the Beginner",
+    animal: botId === "tau" ? "tortoise" : "bunny",
+    skillLabel: botId === "tau" ? "Medium" : "Beginner",
+    styleLabel: botId === "tau" ? "Defensive" : "Balanced",
+    humanSeat,
+    botSeat,
+    activeTurnKey,
+  };
+  return {
+    id: gameId,
+    createdAt: "2026-04-03T00:00:00.000Z",
+    lastMoveAt: null,
+    updatedAt: "2026-04-03T00:00:00.000Z",
+    selfPlayMode: false,
+    computerPlayer,
+    board: { state: clone(snapshot) },
+    player1: humanSeat === "Player 1" ? { identityId: "id-human-test", connected: true } : null,
+    player2: humanSeat === "Player 2" ? { identityId: "id-human-test", connected: true } : null,
+    viewers: [],
+    pendingJoinRequests: [],
+    pendingRevertRequest: null,
+    turns: [clone(currentTurn)],
+    moves: [],
+    notifications: ["Computer player ready"],
+    myRole,
+    inHistoryMode: false,
+    historyIndex: null,
+    currentSnapshot: clone(snapshot),
+    currentTurn: clone(currentTurn),
+    turnOwnerSeat: botSeat,
+    controlSeat: botSeat,
+    control: "turn-owner",
+    legalActions: [{ type: "pass" }],
+    canRecordMove: true,
+    canEndTurn: false,
+    canJoinAsPlayer: false,
+    canJoinAsViewer: false,
+    showJoinActions: false,
+    canInvite: true,
+  };
+};
+
+const createComputerPlayerTransportHarness = (initialGame) => {
+  const listeners = new Set();
+  const appliedCommandIds = [];
+  let currentGame = clone(initialGame);
+  const emit = (change) => {
+    for (const listener of listeners) {
+      listener(change);
+    }
+  };
+  const advanceToHumanTurn = (sourceGame, clientCommandId) => {
+    const nextGame = clone(sourceGame);
+    nextGame.lastMoveAt = "2026-04-03T00:00:01.000Z";
+    nextGame.updatedAt = "2026-04-03T00:00:01.000Z";
+    nextGame.computerPlayer = {
+      ...nextGame.computerPlayer,
+      activeTurnKey: null,
+    };
+    nextGame.currentSnapshot = {
+      ...nextGame.currentSnapshot,
+      sideToMove: nextGame.computerPlayer.botSeat === "Player 1" ? "P2" : "P1",
+      turnIndex: 1,
+    };
+    nextGame.board = { state: clone(nextGame.currentSnapshot) };
+    nextGame.currentTurn = {
+      ...nextGame.currentTurn,
+      playerSeat: nextGame.computerPlayer.humanSeat,
+      moveIndexes: [0],
+      lastMoveAt: "2026-04-03T00:00:01.000Z",
+    };
+    nextGame.turns = [
+      {
+        ...clone(sourceGame.currentTurn),
+        status: "complete",
+        endedAt: "2026-04-03T00:00:01.000Z",
+        moveIndexes: [0],
+        lastMoveAt: "2026-04-03T00:00:01.000Z",
+      },
+      {
+        ...clone(sourceGame.currentTurn),
+        index: 1,
+        playerSeat: nextGame.computerPlayer.humanSeat,
+        startedAt: "2026-04-03T00:00:01.000Z",
+        endedAt: null,
+        status: "active",
+        moveIndexes: [],
+        lastMoveAt: null,
+      },
+    ];
+    nextGame.turnOwnerSeat = nextGame.computerPlayer.humanSeat;
+    nextGame.controlSeat = nextGame.computerPlayer.humanSeat;
+    nextGame.control = "turn-owner";
+    nextGame.legalActions = [{ type: "pass" }];
+    nextGame.canRecordMove = true;
+    nextGame.canEndTurn = false;
+    currentGame = nextGame;
+    queueMicrotask(() => emit({ type: "authoritative_update", gameId: currentGame.id, clientCommandId }));
+    return nextGame;
+  };
+  return {
+    listeners,
+    transport: {
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      getIdentityId: () => "id-human-test",
+      getLastEventSeq: () => 0,
+      getGameViewModel: () => currentGame,
+      applyLiveGameUpdate: ({ game }) => {
+        currentGame = clone(game);
+        return currentGame;
+      },
+      applyGameAction: async ({ clientCommandId }) => {
+        appliedCommandIds.push(clientCommandId);
+        return {
+          ok: true,
+          accepted: true,
+          clientCommandId,
+          game: advanceToHumanTurn(currentGame, clientCommandId),
+          state: currentGame.currentSnapshot,
+          legalActions: currentGame.legalActions,
+        };
+      },
+      endTurn: async ({ clientCommandId }) => ({
+        ok: true,
+        clientCommandId,
+        turn: currentGame.currentTurn,
+        game: currentGame,
+      }),
+    },
+    getGame: () => currentGame,
+    getAppliedCommandIds: () => [...appliedCommandIds],
   };
 };
 
@@ -286,6 +464,86 @@ test("sync store setActiveGameId manages live sync connections", () => {
     ["connect", "game-2"],
     ["disconnectAll"],
   ]);
+});
+
+test("sync store auto-runs computer-player turns for the active human-controlled seat", async () => {
+  const initialGame = buildComputerPlayerGame({ humanSeat: "Player 2", botSeat: "Player 1", botId: "tau" });
+  const { transport, getGame, getAppliedCommandIds } = createComputerPlayerTransportHarness(initialGame);
+  const requests = [];
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => transport,
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+    createComputerPlayerRuntime: () => ({
+      async selectMove(request) {
+        requests.push(request);
+        return {
+          action: { type: "pass" },
+          diagnostics: { selectedAction: { key: "pass" } },
+        };
+      },
+      destroy() {},
+    }),
+  });
+
+  store.setActiveGameId(initialGame.id);
+  await waitFor(() => getGame().currentTurn.playerSeat === "Player 2");
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].personaId, "tau");
+  assert.equal(requests[0].seed, buildComputerPlayerSeed(buildComputerPlayerTurnKey(initialGame), "tau"));
+  assert.equal(store.getComputerPlayerRuntimeState(initialGame.id), null);
+  assert.match(getAppliedCommandIds()[0], /^bot:game-bot:/);
+});
+
+test("sync store exposes a recoverable computer-player failure and retries inline", async () => {
+  const initialGame = buildComputerPlayerGame({ humanSeat: "Player 2", botSeat: "Player 1", botId: "babs" });
+  const { transport, getGame, getAppliedCommandIds } = createComputerPlayerTransportHarness(initialGame);
+  let attempts = 0;
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => transport,
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+    createComputerPlayerRuntime: () => ({
+      async selectMove() {
+        attempts += 1;
+        if (attempts === 1) {
+          const error = new Error("Worker exploded");
+          error.code = "computer_player_worker_error";
+          throw error;
+        }
+        return {
+          action: { type: "pass" },
+          diagnostics: { selectedAction: { key: "pass" } },
+        };
+      },
+      destroy() {},
+    }),
+  });
+
+  store.setActiveGameId(initialGame.id);
+  await waitFor(() => store.getComputerPlayerRuntimeState(initialGame.id)?.status === "failed");
+
+  const failedState = store.getComputerPlayerRuntimeState(initialGame.id);
+  assert.equal(failedState?.error?.message, "Worker exploded");
+  assert.equal(getAppliedCommandIds().length, 0);
+
+  store.retryComputerPlayerTurn({ gameId: initialGame.id });
+  await waitFor(() => getGame().currentTurn.playerSeat === "Player 2");
+
+  assert.equal(attempts, 2);
+  assert.equal(store.getComputerPlayerRuntimeState(initialGame.id), null);
+  assert.equal(getAppliedCommandIds().length, 1);
 });
 
 test("sync store applies authoritative live payloads before forwarding events", () => {
@@ -1553,4 +1811,142 @@ test("sync store fails history branch and queued optimistic commands when the se
     `apply-deferred:${branchHandle.result.game.id}`,
     `discard:${branchHandle.result.game.id}`,
   ]);
+});
+
+test("sync store auto-runs a bot turn once and stamps the persisted runtime turn key", async () => {
+  const originalSelectMove = globalThis.__RIGHELT_COMPUTER_PLAYER_SELECT_MOVE__;
+  const requests = [];
+  let releaseSelectMove = null;
+  const selectMoveGate = new Promise((resolve) => {
+    releaseSelectMove = resolve;
+  });
+  globalThis.__RIGHELT_COMPUTER_PLAYER_SELECT_MOVE__ = async (request) => {
+    requests.push(request);
+    await selectMoveGate;
+    return {
+      action: request.legalActions[0],
+      diagnostics: {
+        selectedAction: { key: "pass" },
+      },
+    };
+  };
+
+  try {
+    const game = buildComputerPlayerGame();
+    const { transport } = createComputerPlayerTransportHarness(game);
+    const store = createSyncStore({
+      storage: createMemoryStorage(),
+      createTransportStore: () => transport,
+      createSyncClient: () => ({
+        connectGame() {},
+        disconnectGame() {},
+        disconnectAll() {},
+        getDesiredGameIds() {
+          return [];
+        },
+      }),
+    });
+
+    store.setActiveGameId(game.id);
+    await waitFor(() => requests.length === 1);
+
+    const thinkingGame = store.getGameViewModel(game.id);
+    assert.equal(thinkingGame?.computerPlayer?.runtime?.status, "thinking");
+    assert.equal(thinkingGame?.computerPlayer?.runtime?.activeTurnKey, buildComputerPlayerTurnKey(game));
+    assert.equal(requests[0].personaId, "tau");
+
+    releaseSelectMove?.();
+    await waitFor(() => store.getGameViewModel(game.id)?.currentTurn?.playerSeat === "Player 2");
+
+    const committedGame = store.getGameViewModel(game.id);
+    assert.equal(committedGame?.computerPlayer?.runtime, undefined);
+    assert.equal(store.getFailedOperations(game.id).filter((entry) => String(entry.id).startsWith("bot:")).length, 0);
+    assert.equal(requests.length, 1);
+  } finally {
+    globalThis.__RIGHELT_COMPUTER_PLAYER_SELECT_MOVE__ = originalSelectMove;
+  }
+});
+
+test("sync store keeps a failed bot turn recoverable across reload and requires retry to resume", async () => {
+  const originalSelectMove = globalThis.__RIGHELT_COMPUTER_PLAYER_SELECT_MOVE__;
+  const storage = createMemoryStorage();
+  const failureGame = buildComputerPlayerGame({ gameId: "game-bot-failure" });
+  const firstHarness = createComputerPlayerTransportHarness(failureGame);
+  const firstCalls = [];
+  globalThis.__RIGHELT_COMPUTER_PLAYER_SELECT_MOVE__ = (request) => {
+    firstCalls.push(request);
+    throw Object.assign(new Error("computer_player_timeout"), { code: "computer_player_timeout" });
+  };
+
+  try {
+    const firstStore = createSyncStore({
+      storage,
+      createTransportStore: () => firstHarness.transport,
+      createSyncClient: () => ({
+        connectGame() {},
+        disconnectGame() {},
+        disconnectAll() {},
+        getDesiredGameIds() {
+          return [];
+        },
+      }),
+    });
+
+    firstStore.setActiveGameId(failureGame.id);
+    await waitFor(() => firstStore.getGameViewModel(failureGame.id)?.computerPlayer?.runtime?.status === "failed");
+
+    const failedGame = firstStore.getGameViewModel(failureGame.id);
+    const failedOperation = firstStore.getFailedOperations(failureGame.id).find((entry) => String(entry.id).startsWith("bot:"));
+    assert.ok(failedOperation);
+    assert.equal(failedGame?.computerPlayer?.runtime?.status, "failed");
+    assert.equal(failedGame?.computerPlayer?.runtime?.error?.code, "computer_player_timeout");
+    assert.equal(firstCalls.length, 1);
+
+    const secondGame = buildComputerPlayerGame({ gameId: "game-bot-failure" });
+    const secondHarness = createComputerPlayerTransportHarness(secondGame);
+    const secondCalls = [];
+    let releaseRetry = null;
+    const retryGate = new Promise((resolve) => {
+      releaseRetry = resolve;
+    });
+    globalThis.__RIGHELT_COMPUTER_PLAYER_SELECT_MOVE__ = async (request) => {
+      secondCalls.push(request);
+      await retryGate;
+      return {
+        action: request.legalActions[0],
+        diagnostics: {
+          selectedAction: { key: "pass" },
+        },
+      };
+    };
+
+    const secondStore = createSyncStore({
+      storage,
+      createTransportStore: () => secondHarness.transport,
+      createSyncClient: () => ({
+        connectGame() {},
+        disconnectGame() {},
+        disconnectAll() {},
+        getDesiredGameIds() {
+          return [];
+        },
+      }),
+    });
+
+    secondStore.setActiveGameId(secondGame.id);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(secondCalls.length, 0);
+    assert.equal(secondStore.getGameViewModel(secondGame.id)?.computerPlayer?.runtime?.status, "failed");
+
+    secondStore.retryComputerPlayerTurn({ gameId: secondGame.id });
+    await waitFor(() => secondCalls.length === 1);
+    releaseRetry?.();
+    await waitFor(() => secondStore.getGameViewModel(secondGame.id)?.currentTurn?.playerSeat === "Player 2");
+
+    assert.equal(secondStore.getGameViewModel(secondGame.id)?.computerPlayer?.runtime, undefined);
+    assert.equal(secondStore.getFailedOperations(secondGame.id).filter((entry) => String(entry.id).startsWith("bot:")).length, 0);
+    assert.equal(secondCalls.length, 1);
+  } finally {
+    globalThis.__RIGHELT_COMPUTER_PLAYER_SELECT_MOVE__ = originalSelectMove;
+  }
 });

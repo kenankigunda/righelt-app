@@ -2,10 +2,12 @@ import type { ServerEvent } from "../../shared-types/src/events";
 import {
   asAction,
   asGameState,
+  createComputerPlayerMetadata,
   createInviteToken,
   nextMoveId,
   now,
   type DestroyedPieceRecord,
+  type ComputerPlayerGameMetadata,
   type JoinRequest,
   type LiveGame,
   type Participant,
@@ -426,6 +428,95 @@ const normalizeInviteTokens = (value: unknown, mismatches: PersistedGameMismatch
   };
 };
 
+const isComputerPlayerSeat = (value: unknown): value is "Player 1" | "Player 2" => value === "Player 1" || value === "Player 2";
+
+const normalizeComputerPlayer = (
+  value: unknown,
+  mismatches: PersistedGameMismatch[],
+): ComputerPlayerGameMetadata | null => {
+  if (value == null) {
+    return null;
+  }
+  if (!isRecord(value)) {
+    recordMismatch(mismatches, "computerPlayer", "computer-player metadata", value, "defaulted_to_repaired_metadata");
+    return createComputerPlayerMetadata({
+      botId: "unknown-bot",
+      botSchemaVersion: 1,
+      displayName: "Unknown Bot",
+      animal: "unknown",
+      skillLabel: "unknown",
+      styleLabel: "unknown",
+      humanSeat: "Player 1",
+      activeTurnKey: null,
+    });
+  }
+
+  const botId = typeof value.botId === "string" && value.botId.trim() ? value.botId.trim() : "unknown-bot";
+  if (typeof value.botId !== "string" || !value.botId.trim()) {
+    recordMismatch(mismatches, "computerPlayer.botId", "non-empty string", value.botId, "defaulted_to_unknown_bot");
+  }
+  const botSchemaVersion = typeof value.botSchemaVersion === "number" && Number.isInteger(value.botSchemaVersion) && value.botSchemaVersion > 0
+    ? value.botSchemaVersion
+    : 1;
+  if (!(typeof value.botSchemaVersion === "number" && Number.isInteger(value.botSchemaVersion) && value.botSchemaVersion > 0)) {
+    recordMismatch(mismatches, "computerPlayer.botSchemaVersion", "positive integer", value.botSchemaVersion, "defaulted_to_one");
+  }
+  const displayName = typeof value.displayName === "string" && value.displayName.trim() ? value.displayName.trim() : botId;
+  if (typeof value.displayName !== "string" || !value.displayName.trim()) {
+    recordMismatch(mismatches, "computerPlayer.displayName", "non-empty string", value.displayName, "defaulted_to_botId");
+  }
+  const animal = typeof value.animal === "string" && value.animal.trim() ? value.animal.trim() : "unknown";
+  if (typeof value.animal !== "string" || !value.animal.trim()) {
+    recordMismatch(mismatches, "computerPlayer.animal", "non-empty string", value.animal, "defaulted_to_unknown");
+  }
+  const skillLabel = typeof value.skillLabel === "string" && value.skillLabel.trim() ? value.skillLabel.trim() : "unknown";
+  if (typeof value.skillLabel !== "string" || !value.skillLabel.trim()) {
+    recordMismatch(mismatches, "computerPlayer.skillLabel", "non-empty string", value.skillLabel, "defaulted_to_unknown");
+  }
+  const styleLabel = typeof value.styleLabel === "string" && value.styleLabel.trim() ? value.styleLabel.trim() : "unknown";
+  if (typeof value.styleLabel !== "string" || !value.styleLabel.trim()) {
+    recordMismatch(mismatches, "computerPlayer.styleLabel", "non-empty string", value.styleLabel, "defaulted_to_unknown");
+  }
+  const humanSeat = isComputerPlayerSeat(value.humanSeat)
+    ? value.humanSeat
+    : isComputerPlayerSeat(value.botSeat)
+      ? value.botSeat === "Player 1"
+        ? "Player 2"
+        : "Player 1"
+      : "Player 1";
+  if (!isComputerPlayerSeat(value.humanSeat)) {
+    recordMismatch(mismatches, "computerPlayer.humanSeat", "\"Player 1\" | \"Player 2\"", value.humanSeat, "defaulted_from_botSeat_or_player1");
+  }
+  const botSeat = isComputerPlayerSeat(value.botSeat)
+    ? value.botSeat
+    : humanSeat === "Player 1"
+      ? "Player 2"
+      : "Player 1";
+  if (!isComputerPlayerSeat(value.botSeat) || botSeat === humanSeat) {
+    recordMismatch(mismatches, "computerPlayer.botSeat", "\"Player 1\" | \"Player 2\"", value.botSeat, "defaulted_to_opposite_of_humanSeat");
+  }
+  const repairedBotSeat = botSeat === humanSeat ? (humanSeat === "Player 1" ? "Player 2" : "Player 1") : botSeat;
+  const activeTurnKey = typeof value.activeTurnKey === "string" && value.activeTurnKey.trim() ? value.activeTurnKey.trim() : null;
+  if (typeof value.activeTurnKey !== "undefined" && value.activeTurnKey !== null && activeTurnKey === null) {
+    recordMismatch(mismatches, "computerPlayer.activeTurnKey", "non-empty string | null", value.activeTurnKey, "defaulted_to_null");
+  }
+  const mode = value.mode === "computer-player" || typeof value.mode === "undefined" ? "computer-player" : null;
+  if (!mode) {
+    recordMismatch(mismatches, "computerPlayer.mode", "\"computer-player\"", value.mode, "defaulted_to_computer-player");
+  }
+  return createComputerPlayerMetadata({
+    botId,
+    botSchemaVersion,
+    displayName,
+    animal,
+    skillLabel,
+    styleLabel,
+    humanSeat,
+    botSeat: repairedBotSeat,
+    activeTurnKey,
+  });
+};
+
 const normalizeHistoryIndexByIdentity = (value: unknown, mismatches: PersistedGameMismatch[]) => {
   if (!isRecord(value)) {
     recordMismatch(mismatches, "historyIndexByIdentity", "record<string, number>", value, "defaulted_to_empty_object");
@@ -573,13 +664,19 @@ const normalizePersistedGame = (
   if (Array.isArray(parsed.notifications) && notifications.length !== parsed.notifications.length) {
     recordMismatch(mismatches, "notifications", "string[]", parsed.notifications, "dropped_non_string_entries");
   }
+  const computerPlayer = normalizeComputerPlayer(parsed.computerPlayer, mismatches);
+  const parsedSelfPlayMode = parsed.selfPlayMode === true || parsed.playgroundMode === true;
+  if (computerPlayer && parsedSelfPlayMode) {
+    recordMismatch(mismatches, "selfPlayMode", "false for computer-player games", parsed.selfPlayMode, "defaulted_to_false");
+  }
 
   const game: LiveGame = {
     id: typeof parsed.id === "string" && parsed.id ? parsed.id : row.game_id,
     createdAt: typeof parsed.createdAt === "string" && parsed.createdAt ? parsed.createdAt : row.created_at || row.updated_at || now(),
     lastMoveAt: typeof parsed.lastMoveAt === "string" ? parsed.lastMoveAt : null,
     updatedAt: typeof parsed.updatedAt === "string" && parsed.updatedAt ? parsed.updatedAt : row.updated_at || row.created_at || now(),
-    selfPlayMode: parsed.selfPlayMode === true || parsed.playgroundMode === true,
+    selfPlayMode: computerPlayer ? false : parsedSelfPlayMode,
+    computerPlayer,
     board: { state: boardState },
     player1: normalizeParticipant(parsed.player1, "player1", mismatches),
     player2: normalizeParticipant(parsed.player2, "player2", mismatches),
@@ -677,13 +774,15 @@ const normalizePersistedStaticGameCard = (
   const moves = Array.isArray(parsed.moves) ? parsed.moves : [];
   const parseMs = Date.now() - parseStart;
   const cardStart = Date.now();
+  const computerPlayer = normalizeComputerPlayer(parsed.computerPlayer, mismatches);
   const game = toStaticGameCard(
     {
       id: typeof parsed.id === "string" && parsed.id ? parsed.id : row.game_id,
       createdAt: typeof parsed.createdAt === "string" && parsed.createdAt ? parsed.createdAt : row.created_at || row.updated_at || now(),
       lastMoveAt: typeof parsed.lastMoveAt === "string" ? parsed.lastMoveAt : null,
       updatedAt: typeof parsed.updatedAt === "string" && parsed.updatedAt ? parsed.updatedAt : row.updated_at || row.created_at || now(),
-      selfPlayMode: parsed.selfPlayMode === true || parsed.playgroundMode === true,
+      selfPlayMode: computerPlayer ? false : parsed.selfPlayMode === true || parsed.playgroundMode === true,
+      computerPlayer,
       board: { state: boardState },
       player1: normalizeParticipant(parsed.player1, "player1", mismatches),
       player2: normalizeParticipant(parsed.player2, "player2", mismatches),

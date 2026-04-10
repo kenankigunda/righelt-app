@@ -27,7 +27,7 @@ const createApiEnv = () => {
 
 const toAbsoluteUrl = (url) => (String(url).startsWith("http") ? String(url) : `https://example.test${String(url)}`);
 
-const createTrackedSyncStore = () => {
+const createTrackedSyncStore = ({ createComputerPlayerRuntime } = {}) => {
   const env = createApiEnv();
   const storage = createMemoryStorage();
   const requests = [];
@@ -55,8 +55,19 @@ const createTrackedSyncStore = () => {
       disconnectAll() {},
       getDesiredGameIds: () => [],
     }),
+    ...(createComputerPlayerRuntime ? { createComputerPlayerRuntime } : {}),
   });
   return { env, storage, requests, store };
+};
+
+const waitFor = async (predicate, timeoutMs = 2_000) => {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error("Timed out waiting for integration condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
 };
 
 test("integration sync store keeps the optimistic game id when creating and immediately moving against the real API", async () => {
@@ -907,4 +918,94 @@ test("integration sync store keeps the requester in history mode when an undo re
   assert.equal(rescinded.pendingRevertRequest, null);
   assert.equal(ownerStore.getGameViewModel(createdGame.id)?.inHistoryMode, true);
   assert.equal(ownerStore.getGameViewModel(createdGame.id)?.historyIndex, 0);
+});
+
+test("integration sync store auto-runs the opening computer-player turn for Player 2 starts", async () => {
+  const runtimeRequests = [];
+  const { requests, store } = createTrackedSyncStore({
+    createComputerPlayerRuntime: () => ({
+      async selectMove(request) {
+        runtimeRequests.push(request);
+        return {
+          action: { type: "pass" },
+          diagnostics: { selectedAction: { key: "pass" } },
+        };
+      },
+      destroy() {},
+    }),
+  });
+
+  const createHandle = store.createGame({
+    computerPlayer: {
+      botId: "babs",
+      botSchemaVersion: 1,
+      displayName: "Babs the Beginner",
+      animal: "bunny",
+      skillLabel: "Beginner",
+      styleLabel: "Balanced",
+      humanSeat: "Player 2",
+      botSeat: "Player 1",
+    },
+  });
+  const createdGame = await createHandle.committed;
+
+  store.setActiveGameId(createdGame.id);
+  await waitFor(() => (store.getGameViewModel(createdGame.id)?.moves.length ?? 0) === 1);
+
+  const game = store.getGameViewModel(createdGame.id);
+  assert.equal(runtimeRequests.length, 1);
+  assert.equal(game.currentTurn.playerSeat, "Player 2");
+  const applyRequest = requests.find((entry) => entry.url === `/api/shell/games/${createdGame.id}/apply` && entry.method === "POST");
+  assert.ok(applyRequest);
+  assert.match(applyRequest.body.clientCommandId, /^bot:/);
+});
+
+test("integration sync store keeps computer-player failures recoverable and retries inline", async () => {
+  let attempts = 0;
+  const { requests, store } = createTrackedSyncStore({
+    createComputerPlayerRuntime: () => ({
+      async selectMove() {
+        attempts += 1;
+        if (attempts === 1) {
+          const error = new Error("Worker unavailable");
+          error.code = "computer_player_worker_unavailable";
+          throw error;
+        }
+        return {
+          action: { type: "pass" },
+          diagnostics: { selectedAction: { key: "pass" } },
+        };
+      },
+      destroy() {},
+    }),
+  });
+
+  const createHandle = store.createGame({
+    computerPlayer: {
+      botId: "tau",
+      botSchemaVersion: 1,
+      displayName: "Tau the Tenacious",
+      animal: "tortoise",
+      skillLabel: "Medium",
+      styleLabel: "Defensive",
+      humanSeat: "Player 2",
+      botSeat: "Player 1",
+    },
+  });
+  const createdGame = await createHandle.committed;
+
+  store.setActiveGameId(createdGame.id);
+  await waitFor(() => store.getComputerPlayerRuntimeState(createdGame.id)?.status === "failed");
+
+  assert.equal(
+    requests.some((entry) => entry.url === `/api/shell/games/${createdGame.id}/apply` && entry.method === "POST"),
+    false,
+  );
+  assert.equal(store.getComputerPlayerRuntimeState(createdGame.id)?.error?.message, "Worker unavailable");
+
+  store.retryComputerPlayerTurn({ gameId: createdGame.id });
+  await waitFor(() => (store.getGameViewModel(createdGame.id)?.moves.length ?? 0) === 1);
+
+  assert.equal(attempts, 2);
+  assert.equal(store.getComputerPlayerRuntimeState(createdGame.id), null);
 });

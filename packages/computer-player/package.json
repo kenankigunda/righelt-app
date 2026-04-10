@@ -1,0 +1,12 @@
+{
+  "name": "@righelt/computer-player",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@righelt/game-engine": "workspace:*"
+  }
+}

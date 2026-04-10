@@ -10,7 +10,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { loadGameProjection, persistGameState } from "../src/shell-live-db.ts";
-import { createInitialGame } from "../src/shell-live-core.ts";
+import { createComputerPlayerMetadata, createInitialGame } from "../src/shell-live-core.ts";
 import { createFakeD1 } from "./support/fake-d1.mjs";
 
 // ---------------------------------------------------------------------------
@@ -70,6 +70,25 @@ const modernMoveWithDestroyedPieces = (destroyedPieces) => ({
   moveId: "move-modern-001",
   destroyedPieces,
 });
+
+const makeComputerPlayerGame = () => {
+  const game = createInitialGame({
+    gameId: "g-cp-db-test",
+    identityId: "id-cp-db-test",
+    selfPlayMode: true,
+    computerPlayer: createComputerPlayerMetadata({
+      botId: "tau-tenacious",
+      botSchemaVersion: 2,
+      displayName: "Tau the Tenacious",
+      animal: "tortoise",
+      skillLabel: "Steady",
+      styleLabel: "Methodical",
+      humanSeat: "Player 2",
+      activeTurnKey: "turn-db-001",
+    }),
+  });
+  return game;
+};
 
 // ---------------------------------------------------------------------------
 // U-08 — normalization: missing destroyedPieces defaults to []
@@ -169,6 +188,21 @@ test("I-08: destroyedPieces survives full persist → normalize → serve round-
   assert.ok(secondProjection);
   assert.equal(secondProjection.kind, "ok");
   assert.deepEqual(secondProjection.game.moves[0].destroyedPieces, destroyedPieces);
+});
+
+test("T-021.01: computer-player metadata survives persist → normalize → serve round-trip", async () => {
+  const env = makeEnv();
+  const game = makeComputerPlayerGame();
+
+  await persistGameState(env, game, 1);
+
+  const projection = await loadGameProjection(env, game.id);
+  assert.ok(projection);
+  assert.equal(projection.kind, "ok");
+  assert.deepEqual(projection.game.computerPlayer, game.computerPlayer);
+  assert.equal(projection.game.selfPlayMode, false);
+  assert.equal(projection.game.player1, null);
+  assert.equal(projection.game.player2?.identityId, "id-cp-db-test");
 });
 
 // ---------------------------------------------------------------------------

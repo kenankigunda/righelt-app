@@ -187,6 +187,96 @@ test("live transport: create/paged-list/get game lifecycle is server-backed", as
   assert.equal(directBody.game.canJoinAsPlayer, true);
 });
 
+test("live transport: computer-player creation keeps viewer sharing and suppresses player claim affordances", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", {
+      identityId: "id-cp-owner",
+      computerPlayer: {
+        botId: "babs-beginner",
+        botSchemaVersion: 4,
+        displayName: "Babs the Beginner",
+        animal: "badger",
+        skillLabel: "Light",
+        styleLabel: "Friendly",
+        humanSeat: "Player 2",
+        activeTurnKey: "turn-live-001",
+      },
+    }),
+    env,
+  );
+  assert.equal(create.status, 200);
+  const body = await create.json();
+  const gameId = body.game.id;
+
+  assert.deepEqual(body.game.computerPlayer, {
+    mode: "computer-player",
+    botId: "babs-beginner",
+    botSchemaVersion: 4,
+    displayName: "Babs the Beginner",
+    animal: "badger",
+    skillLabel: "Light",
+    styleLabel: "Friendly",
+    humanSeat: "Player 2",
+    botSeat: "Player 1",
+    activeTurnKey: "turn-live-001",
+  });
+  assert.equal(body.game.canJoinAsPlayer, false);
+  assert.equal(body.game.canPlayAsBothPlayers, false);
+  assert.equal(body.game.canInvite, true);
+  assert.equal(body.game.showJoinActions, false);
+
+  const inviteResolve = await handleApiRequest(req(`/api/shell/invites/${body.game.inviteToken}`), env);
+  const inviteBody = await inviteResolve.json();
+  assert.equal(inviteBody.gameId, gameId);
+  assert.equal(inviteBody.inviteFromRole, "Viewer");
+
+  const directOpen = await handleApiRequest(req(`/api/shell/games/${gameId}?identityId=id-cp-guest`), env);
+  const directBody = await directOpen.json();
+  assert.equal(directBody.game.canJoinAsPlayer, false);
+  assert.equal(directBody.game.canPlayAsBothPlayers, false);
+  assert.equal(directBody.game.canInvite, true);
+  assert.equal(directBody.game.showJoinActions, false);
+  assert.equal(directBody.game.inviteToken, body.game.inviteToken);
+});
+
+test("live transport: the human owner can submit the bot-owned opening turn for a computer-player game", async () => {
+  const create = await handleApiRequest(
+    req("/api/shell/games", "POST", {
+      identityId: "id-cp-owner-apply",
+      computerPlayer: {
+        botId: "babs",
+        botSchemaVersion: 1,
+        displayName: "Babs the Beginner",
+        animal: "bunny",
+        skillLabel: "Beginner",
+        styleLabel: "Balanced",
+        humanSeat: "Player 2",
+        botSeat: "Player 1",
+      },
+    }),
+    env,
+  );
+  const createBody = await create.json();
+  const gameId = createBody.game.id;
+  const action = createBody.game.legalActions.find((entry) => entry.type === "pass") ?? createBody.game.legalActions[0];
+
+  const apply = await handleApiRequest(
+    req(`/api/shell/games/${gameId}/apply`, "POST", {
+      identityId: "id-cp-owner-apply",
+      clientCommandId: "bot:test-opening-pass",
+      state: createBody.game.currentSnapshot,
+      action,
+    }),
+    env,
+  );
+  assert.equal(apply.status, 200);
+  const applyBody = await apply.json();
+  assert.equal(applyBody.ok, true);
+  assert.equal(applyBody.accepted, true);
+  assert.equal(applyBody.game.currentTurn.playerSeat, "Player 2");
+  assert.equal(applyBody.game.moves.length, 1);
+});
+
 test("live transport: legacy playgroundMode create payload is normalized to selfPlayMode", async () => {
   const create = await handleApiRequest(
     req("/api/shell/games", "POST", { identityId: "id-a", playgroundMode: true }),

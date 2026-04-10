@@ -211,7 +211,7 @@ test("wide-screen shell sticky columns only target the left and board stacks", (
   );
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-flyout\s*\{[\s\S]*width:\s*100%;[\s\S]*max-height:\s*50vh;[\s\S]*flex:\s*0 1 50vh;[\s\S]*border-left:\s*0;[\s\S]*border-right:\s*0;[\s\S]*border-bottom:\s*0;/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-flyout\s*\{[\s\S]*width:\s*100%;[\s\S]*height:\s*100dvh;[\s\S]*min-height:\s*100dvh;[\s\S]*max-height:\s*none;[\s\S]*flex:\s*1 1 auto;[\s\S]*border-left:\s*0;[\s\S]*border-right:\s*0;[\s\S]*border-bottom:\s*0;/s,
   );
   assert.match(
     shellStylesSource,
