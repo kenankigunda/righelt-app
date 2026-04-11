@@ -108,6 +108,18 @@ cp "$SETTINGS_LOCAL_TEMPLATE_PATH" "$ROOT_SETTINGS_LOCAL_PATH"
 
 echo "Wrote parent .claude/settings.local.json: $ROOT_SETTINGS_LOCAL_PATH"
 
+# Symlink parent scripts/ → app scripts/ so ./scripts/* works from the parent workspace cwd
+PARENT_SCRIPTS_LINK="$WORKSPACE_ROOT/scripts"
+if [[ -L "$PARENT_SCRIPTS_LINK" ]]; then
+  rm "$PARENT_SCRIPTS_LINK"
+fi
+if [[ -e "$PARENT_SCRIPTS_LINK" ]]; then
+  echo "WARNING: $PARENT_SCRIPTS_LINK exists and is not a symlink — skipping symlink creation." >&2
+else
+  ln -s "$APP_REPO/scripts" "$PARENT_SCRIPTS_LINK"
+  echo "Linked parent scripts/: $PARENT_SCRIPTS_LINK → $APP_REPO/scripts"
+fi
+
 if [[ -d "$BACKLOG_REPO/.git" ]]; then
   echo "Found sibling backlog repo: $BACKLOG_REPO"
 elif [[ -e "$BACKLOG_REPO" ]]; then

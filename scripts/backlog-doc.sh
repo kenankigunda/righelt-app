@@ -29,15 +29,17 @@ case "$TICKET_ID" in
 esac
 
 GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null || true)
-if [[ -z "$GIT_COMMON" ]]; then
-  echo "ERROR: Not inside a git repository. Cannot resolve backlog path." >&2
-  exit 1
-fi
 
-if [[ "$GIT_COMMON" == ".git" ]]; then
-  MAIN_REPO="$(git rev-parse --show-toplevel)"
+if [[ -n "$GIT_COMMON" ]]; then
+  if [[ "$GIT_COMMON" == ".git" ]]; then
+    MAIN_REPO="$(git rev-parse --show-toplevel)"
+  else
+    MAIN_REPO="${GIT_COMMON%/.git}"
+  fi
 else
-  MAIN_REPO="${GIT_COMMON%/.git}"
+  # Not inside a git repo — resolve relative to the script's real location (parent symlink case)
+  REAL_SCRIPT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || realpath "${BASH_SOURCE[0]}")")" && pwd)"
+  MAIN_REPO="$(cd "$REAL_SCRIPT/.." && pwd)"
 fi
 
 TICKET_DIR="$(dirname "$MAIN_REPO")/righelt-backlog/backlog/docs/tickets/$TICKET_ID"
