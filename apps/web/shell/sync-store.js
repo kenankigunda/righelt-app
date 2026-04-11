@@ -1151,10 +1151,7 @@ export const createSyncStore = ({
     if (!game || !isComputerPlayerGame(game) || !isPlayerRole(game.myRole) || game.inHistoryMode) {
       return false;
     }
-    if (game.syncStatus === "applying-update" || game.syncStatus === "confirming") {
-      return false;
-    }
-    if ((game.pendingCommandCount ?? 0) > 0 || operationManager.getPendingOperations(game.id).length > 0) {
+    if (game.syncStatus === "desynced" || isFailedLocalStub(game) || isPendingOptimisticGameCreation(game.id)) {
       return false;
     }
     if (Array.isArray(game.pendingJoinRequests) && game.pendingJoinRequests.length > 0 && game.myRole === "Guest") {
@@ -1182,18 +1179,6 @@ export const createSyncStore = ({
     }
     return (runtimeState.retryCount ?? 0) <= MAX_COMPUTER_PLAYER_AUTO_RECOVERY_RETRIES;
   };
-  const maybeScheduleAutomaticComputerPlayerRecovery = (gameId) => {
-    if (!gameId || gameId !== activeGameId) {
-      return false;
-    }
-    const game = transport.getGameViewModel(gameId);
-    const runtimeState = getComputerPlayerRuntimeState(gameId);
-    if (!shouldAutoRecoverComputerPlayerTurn(game, runtimeState)) {
-      return false;
-    }
-    scheduleComputerPlayerSync(gameId, { retry: true });
-    return true;
-  };
   const updateComputerPlayerGameViewModel = (gameId, runtimeState) => {
     const game = transport.getGameViewModel(gameId);
     if (!game) {
@@ -1202,7 +1187,15 @@ export const createSyncStore = ({
     if (sameComputerPlayerRuntimeState(game, runtimeState)) {
       return game;
     }
-    const nextGame = stampComputerPlayerRuntime(game, runtimeState);
+    if (typeof transport.setComputerPlayerRuntimeOverlay === "function") {
+      return transport.setComputerPlayerRuntimeOverlay(gameId, runtimeState);
+    }
+    const authoritativeGame =
+      typeof transport.getAuthoritativeGame === "function" ? transport.getAuthoritativeGame(gameId) : transport.getGameViewModel(gameId);
+    if (!authoritativeGame) {
+      return null;
+    }
+    const nextGame = stampComputerPlayerRuntime(authoritativeGame, runtimeState);
     transport.applyLiveGameUpdate({ game: nextGame });
     return nextGame;
   };
@@ -1346,7 +1339,6 @@ export const createSyncStore = ({
     const turnKey = turnState.turnKey;
     const botId = turnState.botId;
     const seed = buildComputerPlayerSeed(turnKey, botId);
-    let shouldScheduleAutomaticRecovery = false;
     computerPlayerInFlightByGameId.set(gameId, turnKey);
     try {
       const response = await computerPlayerRuntime.selectMove({
@@ -1401,12 +1393,11 @@ export const createSyncStore = ({
           });
 
       if (!handle?.accepted) {
-        const failure = markComputerPlayerFailure(
+        markComputerPlayerFailure(
           gameId,
           createOperationError("The computer player move was rejected.", "computer_player_rejected"),
           updatedThinkingState,
         );
-        shouldScheduleAutomaticRecovery = shouldAutoRecoverComputerPlayerTurn(transport.getGameViewModel(gameId), failure);
         return;
       }
 
@@ -1415,11 +1406,9 @@ export const createSyncStore = ({
       } catch (error) {
         const existingRuntimeState = getComputerPlayerRuntimeState(gameId);
         if (shouldAutoRecoverComputerPlayerTurn(transport.getGameViewModel(gameId), existingRuntimeState)) {
-          shouldScheduleAutomaticRecovery = true;
           return;
         }
-        const failure = markComputerPlayerFailure(gameId, error, updatedThinkingState);
-        shouldScheduleAutomaticRecovery = shouldAutoRecoverComputerPlayerTurn(transport.getGameViewModel(gameId), failure);
+        markComputerPlayerFailure(gameId, error, updatedThinkingState);
         return;
       }
       const nextGame = transport.getGameViewModel(gameId);
@@ -1437,13 +1426,9 @@ export const createSyncStore = ({
         reconcileComputerPlayerRuntimeState(gameId);
         return;
       }
-      const failure = markComputerPlayerFailure(gameId, error, getComputerPlayerTurnState(currentGame) ?? thinkingState);
-      shouldScheduleAutomaticRecovery = shouldAutoRecoverComputerPlayerTurn(currentGame, failure);
+      markComputerPlayerFailure(gameId, error, getComputerPlayerTurnState(currentGame) ?? thinkingState);
     } finally {
       computerPlayerInFlightByGameId.delete(gameId);
-      if (shouldScheduleAutomaticRecovery && gameId === activeGameId) {
-        scheduleComputerPlayerSync(gameId, { retry: true });
-      }
     }
   }
 
@@ -1585,6 +1570,11 @@ export const createSyncStore = ({
   transport.subscribe((change) => {
     const clientCommandId = typeof change?.clientCommandId === "string" ? change.clientCommandId : null;
     const gameId = typeof change?.gameId === "string" ? change.gameId : null;
+    const clearedClientCommandIds = Array.isArray(change?.clearedClientCommandIds)
+      ? change.clearedClientCommandIds.filter((value) => typeof value === "string" && value)
+      : clientCommandId
+        ? [clientCommandId]
+        : [];
     const failureNotice = typeof change?.failureNotice === "string" ? change.failureNotice.trim() : "";
     if (change?.type === "authoritative_update" && clientCommandId) {
       confirmOperation(clientCommandId);
@@ -1592,13 +1582,23 @@ export const createSyncStore = ({
     if (change?.type === "optimistic_enqueue" && gameId) {
       dismissRollbackFailure(gameId);
     }
-    if (change?.type === "optimistic_rollback" && clientCommandId) {
-      failOperation(
-        clientCommandId,
-        createOperationError("Predicted move was rejected by the authoritative game state.", "optimistic_rollback"),
-      );
+    if (change?.type === "optimistic_rollback" && gameId) {
+      for (const clearedClientCommandId of clearedClientCommandIds) {
+        failOperation(
+          clearedClientCommandId,
+          createOperationError("Predicted move was rejected by the authoritative game state.", "optimistic_rollback"),
+        );
+      }
       upsertRollbackFailure(gameId, failureNotice || "Predicted move was rejected by the authoritative game state.");
-      if (gameId && isComputerPlayerCommandId(clientCommandId)) {
+      const currentGame = transport.getGameViewModel(gameId);
+      const currentRuntimeState = getComputerPlayerRuntimeState(gameId);
+      const restoredBotTurn =
+        currentGame &&
+        isComputerPlayerGame(currentGame) &&
+        getCurrentControlSeat(currentGame) === currentGame.computerPlayer.botSeat &&
+        (clearedClientCommandIds.some((id) => isComputerPlayerCommandId(id)) ||
+          currentRuntimeState?.activeTurnKey === getComputerPlayerTurnKey(currentGame));
+      if (restoredBotTurn) {
         markComputerPlayerFailure(
           gameId,
           createOperationError(
@@ -1606,16 +1606,25 @@ export const createSyncStore = ({
             "computer_player_rejected",
           ),
         );
-        maybeScheduleAutomaticComputerPlayerRecovery(gameId);
       }
     }
-    if (change?.type === "optimistic_desynced" && clientCommandId) {
-      failOperation(
-        clientCommandId,
-        createOperationError("Sync failed before the optimistic command could be confirmed.", "optimistic_desynced"),
-      );
+    if (change?.type === "optimistic_desynced" && gameId) {
+      for (const clearedClientCommandId of clearedClientCommandIds) {
+        failOperation(
+          clearedClientCommandId,
+          createOperationError("Sync failed before the optimistic command could be confirmed.", "optimistic_desynced"),
+        );
+      }
       upsertRollbackFailure(gameId, failureNotice || "Sync failed before the optimistic command could be confirmed.");
-      if (gameId && isComputerPlayerCommandId(clientCommandId)) {
+      const currentGame = transport.getGameViewModel(gameId);
+      const currentRuntimeState = getComputerPlayerRuntimeState(gameId);
+      const restoredBotTurn =
+        currentGame &&
+        isComputerPlayerGame(currentGame) &&
+        getCurrentControlSeat(currentGame) === currentGame.computerPlayer.botSeat &&
+        (clearedClientCommandIds.some((id) => isComputerPlayerCommandId(id)) ||
+          currentRuntimeState?.activeTurnKey === getComputerPlayerTurnKey(currentGame));
+      if (restoredBotTurn) {
         markComputerPlayerFailure(
           gameId,
           createOperationError(
@@ -1623,7 +1632,6 @@ export const createSyncStore = ({
             "computer_player_desynced",
           ),
         );
-        maybeScheduleAutomaticComputerPlayerRecovery(gameId);
       }
     }
     if (gameId) {
@@ -1717,7 +1725,6 @@ export const createSyncStore = ({
         }
         const runtimeState = reconcileComputerPlayerRuntimeState(gameId) ?? getComputerPlayerRuntimeState(gameId);
         updateComputerPlayerGameViewModel(gameId, runtimeState);
-        maybeScheduleAutomaticComputerPlayerRecovery(gameId);
         if (gameId === activeGameId && shouldAutoRunComputerPlayerTurn(transport.getGameViewModel(gameId))) {
           scheduleComputerPlayerSync(gameId);
         }
@@ -1728,7 +1735,6 @@ export const createSyncStore = ({
         clearPendingLocalGame(gameId);
         const runtimeState = reconcileComputerPlayerRuntimeState(gameId) ?? getComputerPlayerRuntimeState(gameId);
         updateComputerPlayerGameViewModel(gameId, runtimeState);
-        maybeScheduleAutomaticComputerPlayerRecovery(gameId);
         if (gameId === activeGameId && shouldAutoRunComputerPlayerTurn(loadedGame)) {
           scheduleComputerPlayerSync(gameId);
         }
@@ -1742,7 +1748,6 @@ export const createSyncStore = ({
           }
           const runtimeState = reconcileComputerPlayerRuntimeState(gameId) ?? getComputerPlayerRuntimeState(gameId);
           updateComputerPlayerGameViewModel(gameId, runtimeState);
-          maybeScheduleAutomaticComputerPlayerRecovery(gameId);
           if (gameId === activeGameId && shouldAutoRunComputerPlayerTurn(transport.getGameViewModel(gameId) ?? fallbackGame)) {
             scheduleComputerPlayerSync(gameId);
           }
@@ -2019,7 +2024,6 @@ export const createSyncStore = ({
         const currentGame = transport.getGameViewModel(activeGameId);
         const runtimeState = reconcileComputerPlayerRuntimeState(activeGameId) ?? getComputerPlayerRuntimeState(activeGameId);
         updateComputerPlayerGameViewModel(activeGameId, runtimeState);
-        maybeScheduleAutomaticComputerPlayerRecovery(activeGameId);
         if (shouldAutoRunComputerPlayerTurn(currentGame)) {
           scheduleComputerPlayerSync(activeGameId);
         }
@@ -2069,6 +2073,25 @@ export const createSyncStore = ({
     getPendingOperations: (gameId) => operationManager.getPendingOperations(gameId),
     getFailedOperations: (gameId) => getUnifiedFailedOperations(gameId),
     dismissFailedOperation: (operationId) => {
+      const rollbackGameId = getRollbackFailureGameId(operationId);
+      if (rollbackGameId) {
+        const game = transport.getGameViewModel(rollbackGameId);
+        const runtimeState = getComputerPlayerRuntimeState(rollbackGameId);
+        if (isFailedLocalStub(game)) {
+          const nextGame = clone(game);
+          delete nextGame.localFailureMessage;
+          transport.applyLiveGameUpdate({ game: nextGame });
+          clearPendingLocalGame(rollbackGameId);
+        }
+        for (const failedHandle of operationManager.getFailedOperations(rollbackGameId)) {
+          operationManager.dismiss(failedHandle.id);
+        }
+        if (shouldAutoRecoverComputerPlayerTurn(transport.getGameViewModel(rollbackGameId), runtimeState)) {
+          clearComputerPlayerFailure(rollbackGameId);
+          scheduleComputerPlayerSync(rollbackGameId, { retry: true });
+        }
+        return;
+      }
       const handle = operationManager.getHandle(operationId);
       if (handle?.status === "failed") {
         if (handle.gameId) {
@@ -2081,19 +2104,6 @@ export const createSyncStore = ({
         }
         operationManager.dismiss(operationId);
         return;
-      }
-      const rollbackGameId = getRollbackFailureGameId(operationId);
-      if (rollbackGameId) {
-        const game = transport.getGameViewModel(rollbackGameId);
-        if (isFailedLocalStub(game)) {
-          const nextGame = clone(game);
-          delete nextGame.localFailureMessage;
-          transport.applyLiveGameUpdate({ game: nextGame });
-          clearPendingLocalGame(rollbackGameId);
-        }
-        for (const failedHandle of operationManager.getFailedOperations(rollbackGameId)) {
-          operationManager.dismiss(failedHandle.id);
-        }
       }
     },
     dismissOperation: (operationId) => operationManager.dismiss(operationId),

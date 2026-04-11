@@ -10,6 +10,28 @@ import { LIVE_TRANSPORT_STATE_KEY } from "../shell/persistence.js";
 
 const clone = (value) => structuredClone(value);
 
+const stampComputerPlayerRuntime = (game, runtimeState = null) => {
+  if (!game || game?.computerPlayer?.mode !== "computer-player") {
+    return clone(game);
+  }
+  const nextGame = clone(game);
+  nextGame.computerPlayer = { ...nextGame.computerPlayer };
+  if (!runtimeState) {
+    nextGame.computerPlayer.activeTurnKey = null;
+    if (Object.hasOwn(nextGame.computerPlayer, "runtime")) {
+      delete nextGame.computerPlayer.runtime;
+    }
+    return nextGame;
+  }
+  const activeTurnKey = runtimeState.activeTurnKey ?? nextGame.computerPlayer.activeTurnKey ?? null;
+  nextGame.computerPlayer.activeTurnKey = activeTurnKey;
+  nextGame.computerPlayer.runtime = {
+    ...clone(runtimeState),
+    activeTurnKey,
+  };
+  return nextGame;
+};
+
 const createMemoryStorage = () => {
   const map = new Map();
   return {
@@ -22,6 +44,14 @@ const createMemoryStorage = () => {
 const createTransportHarness = () => {
   const listeners = new Set();
   const games = new Map();
+  const runtimeOverlayByGameId = new Map();
+  const getDecoratedGame = (gameId) => {
+    const authoritativeGame = games.get(gameId) ?? null;
+    if (!authoritativeGame) {
+      return null;
+    }
+    return stampComputerPlayerRuntime(authoritativeGame, runtimeOverlayByGameId.get(gameId) ?? null);
+  };
   return {
     listeners,
     games,
@@ -32,9 +62,14 @@ const createTransportHarness = () => {
       },
       getIdentityId: () => "id-test",
       getLastEventSeq: () => 0,
-      getGameViewModel: (gameId) => games.get(gameId) ?? null,
+      getGameViewModel: (gameId) => getDecoratedGame(gameId),
+      getAuthoritativeGame: (gameId) => clone(games.get(gameId) ?? null),
+      setComputerPlayerRuntimeOverlay: (gameId, runtimeState = null) => {
+        runtimeOverlayByGameId.set(gameId, runtimeState ? clone(runtimeState) : null);
+        return getDecoratedGame(gameId);
+      },
       applyLiveGameUpdate: ({ game }) => {
-        games.set(game.id, game);
+        games.set(game.id, clone(game));
       },
     },
   };
@@ -258,6 +293,8 @@ const createComputerPlayerTransportHarness = (initialGame) => {
   const appliedCommandIds = [];
   const endedTurnCommandIds = [];
   let currentGame = clone(initialGame);
+  let runtimeOverlay = null;
+  const getDecoratedGame = () => stampComputerPlayerRuntime(currentGame, runtimeOverlay);
   const emit = (change) => {
     for (const listener of listeners) {
       listener(change);
@@ -376,10 +413,15 @@ const createComputerPlayerTransportHarness = (initialGame) => {
       },
       getIdentityId: () => "id-human-test",
       getLastEventSeq: () => 0,
-      getGameViewModel: () => currentGame,
+      getGameViewModel: () => getDecoratedGame(),
+      getAuthoritativeGame: () => clone(currentGame),
+      setComputerPlayerRuntimeOverlay: (_gameId, runtimeState = null) => {
+        runtimeOverlay = runtimeState ? clone(runtimeState) : null;
+        return getDecoratedGame();
+      },
       applyLiveGameUpdate: ({ game }) => {
         currentGame = clone(game);
-        return currentGame;
+        return getDecoratedGame();
       },
       applyGameAction: async ({ clientCommandId, action }) => {
         appliedCommandIds.push(clientCommandId);
@@ -403,7 +445,7 @@ const createComputerPlayerTransportHarness = (initialGame) => {
         };
       },
     },
-    getGame: () => currentGame,
+    getGame: () => getDecoratedGame(),
     getAppliedCommandIds: () => [...appliedCommandIds],
     getEndedTurnCommandIds: () => [...endedTurnCommandIds],
   };
@@ -414,9 +456,11 @@ const createDelayedComputerPlayerTransportHarness = (initialGame, { rejectImmedi
   const appliedCommandIds = [];
   const submittedStates = [];
   let currentGame = clone(initialGame);
+  let runtimeOverlay = null;
   let pendingClientCommandId = null;
   let pendingAction = null;
   let remainingImmediateRejects = rejectImmediateAttempts;
+  const getDecoratedGame = () => stampComputerPlayerRuntime(currentGame, runtimeOverlay);
   const emit = (change) => {
     for (const listener of listeners) {
       listener(change);
@@ -490,10 +534,15 @@ const createDelayedComputerPlayerTransportHarness = (initialGame, { rejectImmedi
       },
       getIdentityId: () => "id-human-test",
       getLastEventSeq: () => 0,
-      getGameViewModel: () => currentGame,
+      getGameViewModel: () => getDecoratedGame(),
+      getAuthoritativeGame: () => clone(currentGame),
+      setComputerPlayerRuntimeOverlay: (_gameId, runtimeState = null) => {
+        runtimeOverlay = runtimeState ? clone(runtimeState) : null;
+        return getDecoratedGame();
+      },
       applyLiveGameUpdate: ({ game }) => {
         currentGame = clone(game);
-        return currentGame;
+        return getDecoratedGame();
       },
       applyGameAction: async ({ clientCommandId, action, state }) => {
         appliedCommandIds.push(clientCommandId);
@@ -541,17 +590,29 @@ const createDelayedComputerPlayerTransportHarness = (initialGame, { rejectImmedi
       pendingAction = null;
       advanceToHumanTurn(currentGame, clientCommandId, action);
     },
-    rejectPendingMove: ({ changeType = "optimistic_rollback", failureNotice = "Predicted move was rejected by the authoritative game state." } = {}) => {
+    rejectPendingMove: ({
+      changeType = "optimistic_rollback",
+      failureNotice = "Predicted move was rejected by the authoritative game state.",
+      clearedClientCommandIds = null,
+    } = {}) => {
       if (!pendingClientCommandId) {
         return;
       }
       const clientCommandId = pendingClientCommandId;
       pendingClientCommandId = null;
       pendingAction = null;
-      queueMicrotask(() => emit({ type: changeType, gameId: currentGame.id, clientCommandId, failureNotice }));
+      queueMicrotask(() =>
+        emit({
+          type: changeType,
+          gameId: currentGame.id,
+          clientCommandId,
+          clearedClientCommandIds,
+          failureNotice,
+        }),
+      );
     },
     emitChange: emit,
-    getGame: () => currentGame,
+    getGame: () => getDecoratedGame(),
     getAppliedCommandIds: () => [...appliedCommandIds],
     getSubmittedStates: () => submittedStates.map((entry) => clone(entry)),
   };
@@ -878,6 +939,80 @@ test("sync store auto-runs computer-player turns for the active human-controlled
   assert.match(getAppliedCommandIds()[0], /^bot:game-bot:/);
 });
 
+test("sync store keeps computer-player runtime in a client-only overlay instead of mutating the authoritative game", async () => {
+  const initialGame = buildComputerPlayerGame({ humanSeat: "Player 2", botSeat: "Player 1", botId: "tau" });
+  const clock = createFakeClock();
+  const { transport, games } = createTransportHarness();
+  games.set(initialGame.id, clone(initialGame));
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => transport,
+    now: clock.now,
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+    createComputerPlayerRuntime: () => ({
+      async selectMove() {
+        return new Promise(() => {});
+      },
+      destroy() {},
+    }),
+  });
+
+  store.setActiveGameId(initialGame.id);
+  await clock.advanceBy(0);
+
+  const authoritativeGame = transport.getAuthoritativeGame(initialGame.id);
+  const renderedGame = store.getGameViewModel(initialGame.id);
+  assert.equal(authoritativeGame?.computerPlayer?.runtime ?? null, null);
+  assert.equal(authoritativeGame?.computerPlayer?.activeTurnKey ?? null, null);
+  assert.equal(renderedGame?.computerPlayer?.runtime?.status, "thinking");
+  assert.equal(renderedGame?.computerPlayer?.activeTurnKey?.length > 0, true);
+});
+
+test("sync store still auto-runs computer-player turns while earlier optimistic work is pending", async () => {
+  const initialGame = {
+    ...buildComputerPlayerGame({ humanSeat: "Player 2", botSeat: "Player 1", botId: "tau" }),
+    syncStatus: "confirming",
+    pendingCommandCount: 1,
+  };
+  const clock = createFakeClock();
+  const { transport, games } = createTransportHarness();
+  games.set(initialGame.id, clone(initialGame));
+  const runtimeRequests = [];
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => transport,
+    now: clock.now,
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+    createComputerPlayerRuntime: () => ({
+      async selectMove(request) {
+        runtimeRequests.push(request);
+        return new Promise(() => {});
+      },
+      destroy() {},
+    }),
+  });
+
+  store.setActiveGameId(initialGame.id);
+  await clock.advanceBy(0);
+
+  assert.equal(runtimeRequests.length, 1);
+  assert.equal(store.getComputerPlayerRuntimeState(initialGame.id)?.status, "thinking");
+});
+
 test("sync store closes computer-player rush continuations with endTurn instead of logging pass", async () => {
   const initialGame = buildComputerPlayerRushClosureGame({ humanSeat: "Player 2", botSeat: "Player 1", botId: "tau" });
   const { transport, getGame, getAppliedCommandIds, getEndedTurnCommandIds } = createComputerPlayerTransportHarness(initialGame);
@@ -1129,7 +1264,7 @@ test("sync store resumes an existing computer-player think deadline from persist
   assert.equal(getAppliedCommandIds().length, 1);
 });
 
-test("sync store automatically recovers a persisted retryable computer-player failure on reload", async () => {
+test("sync store keeps a persisted retryable computer-player failure paused until the rollback notice is dismissed", async () => {
   const initialGame = buildComputerPlayerGame({ humanSeat: "Player 2", botSeat: "Player 1", botId: "tau" });
   const clock = createFakeClock();
   const storage = createMemoryStorage();
@@ -1191,10 +1326,8 @@ test("sync store automatically recovers a persisted retryable computer-player fa
   transport.applyLiveGameUpdate({ game: initialGame });
   store.setActiveGameId(initialGame.id);
   await clock.advanceBy(0);
-  assert.equal(store.getComputerPlayerRuntimeState(initialGame.id)?.status, "thinking");
-  await clock.advanceBy(800);
-  assert.equal(getAppliedCommandIds().length, 1);
-  assert.match(getAppliedCommandIds()[0], /:attempt-1$/);
+  assert.equal(store.getComputerPlayerRuntimeState(initialGame.id)?.status, "failed");
+  assert.equal(getAppliedCommandIds().length, 0);
 });
 
 test("sync store submits the computer-player move against the original selection snapshot", async () => {
@@ -1259,7 +1392,7 @@ test("sync store submits the computer-player move against the original selection
   assert.deepEqual(getSubmittedStates()[0].state, originalSnapshot);
 });
 
-test("sync store automatically retries retryable computer-player rollbacks on the same turn", async () => {
+test("sync store retries retryable computer-player rollbacks after the rollback notice is dismissed", async () => {
   const initialGame = buildComputerPlayerGame({ humanSeat: "Player 2", botSeat: "Player 1", botId: "tau" });
   const clock = createFakeClock();
   const { transport, rejectPendingMove, commitPendingMove, getAppliedCommandIds, getGame } =
@@ -1306,13 +1439,15 @@ test("sync store automatically retries retryable computer-player rollbacks on th
 
   rejectPendingMove();
   await clock.flush();
-  await clock.advanceBy(0);
-  await clock.advanceBy(0);
+  assert.equal(store.getComputerPlayerRuntimeState(initialGame.id)?.status, "failed");
+  assert.equal(store.getFailedOperations(initialGame.id).some((operation) => operation.id === `rollback:${initialGame.id}`), true);
 
+  store.dismissFailedOperation(`rollback:${initialGame.id}`);
+  await clock.advanceBy(0);
   assert.equal(store.getComputerPlayerRuntimeState(initialGame.id)?.status, "thinking");
+
   await clock.advanceBy(800);
   assert.equal(getAppliedCommandIds().length, 2);
-  assert.match(getAppliedCommandIds()[1], /:attempt-1$/);
 
   commitPendingMove();
   await clock.flush();
@@ -1322,7 +1457,7 @@ test("sync store automatically retries retryable computer-player rollbacks on th
   assert.equal(store.getComputerPlayerRuntimeState(initialGame.id), null);
 });
 
-test("sync store automatically retries server-rejected computer-player moves on the same turn", async () => {
+test("sync store retries immediately rejected computer-player moves from the explicit retry action", async () => {
   const initialGame = buildComputerPlayerGame({ humanSeat: "Player 2", botSeat: "Player 1", botId: "tau" });
   const clock = createFakeClock();
   const { transport, commitPendingMove, getAppliedCommandIds, getGame } =
@@ -1368,12 +1503,15 @@ test("sync store automatically retries server-rejected computer-player moves on 
   assert.match(getAppliedCommandIds()[0], /:attempt-0$/);
 
   await clock.flush();
+  assert.equal(store.getComputerPlayerRuntimeState(initialGame.id)?.status, "failed");
+  assert.equal(store.getFailedOperations(initialGame.id).some((operation) => String(operation.id).startsWith("bot:")), true);
+
+  store.retryComputerPlayerTurn({ gameId: initialGame.id });
   await clock.advanceBy(0);
   assert.equal(store.getComputerPlayerRuntimeState(initialGame.id)?.status, "thinking");
 
   await clock.advanceBy(800);
   assert.equal(getAppliedCommandIds().length, 2);
-  assert.match(getAppliedCommandIds()[1], /:attempt-1$/);
 
   commitPendingMove();
   await clock.flush();
@@ -1687,6 +1825,59 @@ test("sync store exposes rollback notices through the shared failed-operation AP
   store.dismissFailedOperation("rollback:game-rollback");
 
   assert.deepEqual(store.getFailedOperations("game-rollback"), []);
+});
+
+test("sync store fails every cleared optimistic handle when a rollback drops the whole suffix", async () => {
+  const { transport, games, listeners } = createTransportHarness();
+  games.set("game-suffix", {
+    ...createRevertReadyGame(),
+    id: "game-suffix",
+  });
+
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      ...transport,
+      applyGameAction: async () => ({
+        ok: true,
+        accepted: true,
+        clientCommandId: "cmd-apply",
+        state: { sideToMove: "P2" },
+        legalActions: [{ type: "pass" }],
+        game: transport.getGameViewModel("game-suffix"),
+      }),
+      endTurn: async () => ({
+        ok: true,
+        clientCommandId: "cmd-end-turn",
+        turn: { index: 0 },
+        game: transport.getGameViewModel("game-suffix"),
+      }),
+    }),
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  const actionHandle = await store.applyGameAction({ gameId: "game-suffix", state: {}, action: { type: "pass" } });
+  const endTurnHandle = await store.endTurn({ gameId: "game-suffix" });
+
+  for (const listener of listeners) {
+    listener({
+      type: "optimistic_rollback",
+      gameId: "game-suffix",
+      clientCommandId: "cmd-apply",
+      clearedClientCommandIds: ["cmd-apply", "cmd-end-turn"],
+      failureNotice: "Predicted move was rejected by the authoritative game state.",
+    });
+  }
+
+  await assert.rejects(actionHandle.committed, /Predicted move was rejected/);
+  await assert.rejects(endTurnHandle.committed, /Predicted move was rejected/);
+  assert.equal(actionHandle.status, "failed");
+  assert.equal(endTurnHandle.status, "failed");
 });
 
 test("sync store requests reverts optimistically with a stable client request id", async () => {

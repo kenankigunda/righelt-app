@@ -52,6 +52,7 @@ Status meanings:
 | History branch launch from selected move | `present` | `present` | `present` | Browser proof covers optimistic popup launch, stable route/request/response IDs, delayed-commit usability, the first immediate branched move, and branch-create failure handling in the popup shell. |
 | Notification and prompt quality across core shell states | `missing` | `missing` | `present` | Store coverage proves required categories exist, but browser proof for prompt timing, replacement, and non-janky transitions is still absent. |
 | Localized pending controls for join / approve / invite-copy | `present` | `partial` | `present` | Browser proof covers pulsing local pending state and pending-game invite copy waiting for commit; broader error-path polish for every button variant is still mostly owned below browser level. |
+| Computer-player optimistic sequencing across human and bot turns | `present` | `present` | `present` | Browser proof covers bot opening requests, human-to-bot request chaining, and retry-after-dismiss on rollback. Integration covers optimistic suffix chaining, delayed head-command confirmation, and rollback recovery against the real API transport stack. |
 
 ## Platform And Polish Safeguards
 

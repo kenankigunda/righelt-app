@@ -80,6 +80,7 @@ export const createLiveTransportStore = ({
   let games = [];
   let gameById = new Map();
   let homeGameCardById = new Map();
+  const computerPlayerRuntimeOverlayByGameId = new Map();
   const lastEventSeqByGameId = new Map();
   const optimisticStateByGameId = new Map();
   const listeners = new Set();
@@ -158,9 +159,34 @@ export const createLiveTransportStore = ({
     optimistic.confirmDeadlineAt = 0;
   };
 
+  const applyComputerPlayerRuntimeOverlay = (game, gameId) => {
+    const next = clone(game);
+    if (!computerPlayerRuntimeOverlayByGameId.has(gameId) || !next?.computerPlayer) {
+      return next;
+    }
+
+    const runtimeState = computerPlayerRuntimeOverlayByGameId.get(gameId);
+    next.computerPlayer = { ...next.computerPlayer };
+    if (!runtimeState) {
+      next.computerPlayer.activeTurnKey = null;
+      if (Object.hasOwn(next.computerPlayer, "runtime")) {
+        delete next.computerPlayer.runtime;
+      }
+      return next;
+    }
+
+    const activeTurnKey = runtimeState.activeTurnKey ?? next.computerPlayer.activeTurnKey ?? null;
+    next.computerPlayer.activeTurnKey = activeTurnKey;
+    next.computerPlayer.runtime = {
+      ...clone(runtimeState),
+      activeTurnKey,
+    };
+    return next;
+  };
+
   const decorateGameWithSync = (game, gameId) => {
     const optimistic = getOptimisticState(gameId);
-    const next = clone(game);
+    const next = applyComputerPlayerRuntimeOverlay(game, gameId);
     next.pendingMoves = Array.isArray(next.pendingMoves) ? next.pendingMoves : [];
     next.pendingCommandCount = optimistic.pendingCommands.length;
     next.liveCurrentSnapshot = clone(next.liveCurrentSnapshot ?? next.board?.state ?? next.currentSnapshot ?? null);
@@ -203,16 +229,33 @@ export const createLiveTransportStore = ({
 
   const clearOptimisticQueue = (
     gameId,
-    { notice = "", syncStatus = "ready", changeType = "optimistic_queue_cleared", clientCommandId = null } = {},
+    {
+      notice = "",
+      syncStatus = "ready",
+      changeType = "optimistic_queue_cleared",
+      clientCommandId = null,
+      failedClientCommandId = null,
+      clearedClientCommandIds = null,
+    } = {},
   ) => {
     const optimistic = getOptimisticState(gameId);
+    const clearedIds = Array.isArray(clearedClientCommandIds)
+      ? [...clearedClientCommandIds]
+      : optimistic.pendingCommands.map((command) => command.clientCommandId).filter(Boolean);
     clearRetryState(optimistic);
     optimistic.pendingCommands = [];
     optimistic.inflightCommandId = null;
     optimistic.commandResults = new Map();
     optimistic.syncStatus = syncStatus;
     recalculateOptimisticGame(gameId);
-    emitChange({ type: changeType, gameId, clientCommandId, failureNotice: notice });
+    emitChange({
+      type: changeType,
+      gameId,
+      clientCommandId,
+      failedClientCommandId: failedClientCommandId ?? clientCommandId ?? clearedIds[0] ?? null,
+      clearedClientCommandIds: clearedIds,
+      failureNotice: notice,
+    });
   };
 
   const upsertGame = (game) => {
@@ -293,6 +336,7 @@ export const createLiveTransportStore = ({
         notice: "Predicted move no longer matched the authoritative game. The board was restored.",
         syncStatus: "ready",
         changeType: "optimistic_rollback",
+        failedClientCommandId: optimistic.pendingCommands[0]?.clientCommandId ?? null,
       });
     } else if (optimistic.pendingCommands.length > 0 && optimistic.syncStatus !== "confirming") {
       optimistic.syncStatus = "applying-update";
@@ -406,6 +450,7 @@ export const createLiveTransportStore = ({
           syncStatus: "ready",
           changeType: "optimistic_rollback",
           clientCommandId: command.clientCommandId,
+          failedClientCommandId: command.clientCommandId,
         });
         if (body.game) {
           upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
@@ -466,6 +511,7 @@ export const createLiveTransportStore = ({
             syncStatus: "ready",
             changeType: "optimistic_rollback",
             clientCommandId: command.clientCommandId,
+            failedClientCommandId: command.clientCommandId,
           });
           logDiagnostic("warn", "live_transport_confirmation_timeout_rollback", {
             gameId,
@@ -480,6 +526,7 @@ export const createLiveTransportStore = ({
           syncStatus: "desynced",
           changeType: "optimistic_desynced",
           clientCommandId: command.clientCommandId,
+          failedClientCommandId: command.clientCommandId,
         });
         logDiagnostic("error", "live_transport_desynced", {
           gameId,
@@ -822,6 +869,21 @@ export const createLiveTransportStore = ({
     return game;
   };
 
+  const getAuthoritativeGame = (gameId) => {
+    const game = gameById.get(gameId);
+    return game ? clone(game) : null;
+  };
+
+  const setComputerPlayerRuntimeOverlay = (gameId, runtimeState = null) => {
+    if (!gameId) {
+      return null;
+    }
+    computerPlayerRuntimeOverlayByGameId.set(gameId, runtimeState ? clone(runtimeState) : null);
+    recalculateOptimisticGame(gameId);
+    emitChange({ type: "local_runtime_overlay_updated", gameId });
+    return getGameViewModel(gameId);
+  };
+
   const getIdentityId = () => identityId;
   const getLastEventSeq = (gameId) => lastEventSeqByGameId.get(gameId) ?? 0;
   const getSyncMetrics = () => clone(syncMetrics);
@@ -866,6 +928,8 @@ export const createLiveTransportStore = ({
     listGames,
     getHomeGameCard,
     getGameViewModel,
+    getAuthoritativeGame,
+    setComputerPlayerRuntimeOverlay,
     getIdentityId,
     subscribe,
     unsubscribe,

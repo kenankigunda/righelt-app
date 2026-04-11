@@ -4,6 +4,7 @@ import {
   closeContextQuietly,
   createIsolatedPage,
   getHistoryMoveCount,
+  makeAnyLegalMove,
 } from "../support/app.mjs";
 
 const NARROW_VIEWPORT = { width: 850, height: 1100 };
@@ -102,12 +103,37 @@ const openComputerGameFromHome = async (page, { seat = "Player 2", opponentBotId
   await expect(page.getByTestId("game-shell")).toBeVisible();
 };
 
+const captureGameCommandRequests = (page) => {
+  const requests = [];
+  page.on("request", (request) => {
+    const method = request.method();
+    if (method !== "POST") {
+      return;
+    }
+    const url = new URL(request.url());
+    if (!/\/api\/shell\/games\/[^/]+\/(apply|end-turn)$/.test(url.pathname)) {
+      return;
+    }
+    let body = null;
+    try {
+      body = request.postDataJSON();
+    } catch {}
+    requests.push({
+      url: url.pathname,
+      method,
+      body,
+    });
+  });
+  return requests;
+};
+
 test("computer-player games use the staged picker, narrow full-page flyout, and retain viewer sharing", async ({ browser }) => {
   const owner = await createIsolatedPage(browser);
   const viewer = await createIsolatedPage(browser);
 
   try {
     await installInlineComputerPlayerHook(owner.page);
+    const requests = captureGameCommandRequests(owner.page);
     await owner.page.setViewportSize(NARROW_VIEWPORT);
     await owner.page.goto("/");
     await expect(owner.page.getByTestId("home-create-game")).toBeVisible();
@@ -134,6 +160,7 @@ test("computer-player games use the staged picker, narrow full-page flyout, and 
     await expect(owner.page.getByTestId("active-turn-label")).toContainText("Player 2");
     await expect(owner.page.getByTestId("computer-player-thinking")).toHaveCount(0);
     await expect(owner.page.getByTestId("history-list")).not.toContainText("PASS");
+    expect(requests.some((entry) => entry.url.endsWith("/apply") && entry.body?.clientCommandId?.startsWith("bot:"))).toBe(true);
 
     const copyInviteButton = owner.page.getByTestId("copy-invite");
     await expect(copyInviteButton).toBeVisible();
@@ -147,6 +174,28 @@ test("computer-player games use the staged picker, narrow full-page flyout, and 
   } finally {
     await closeContextQuietly(owner.context);
     await closeContextQuietly(viewer.context);
+  }
+});
+
+test("computer-player sends a bot command after a human move in the same live browser session", async ({ browser }) => {
+  const { context, page } = await createIsolatedPage(browser);
+
+  try {
+    await installInlineComputerPlayerHook(page);
+    const requests = captureGameCommandRequests(page);
+    await openComputerGameFromHome(page, { seat: "Player 1", opponentBotId: "tau" });
+
+    await expect(page.getByTestId("active-turn-label")).toContainText("Player 1");
+    await makeAnyLegalMove(page, "p1");
+    await expect(page.getByTestId("computer-player-thinking")).toBeVisible();
+    await expect.poll(() => requests.filter((entry) => entry.url.endsWith("/apply")).length).toBeGreaterThanOrEqual(2);
+    await expect.poll(() =>
+      requests.some((entry) => entry.url.endsWith("/apply") && entry.body?.clientCommandId?.startsWith("bot:")),
+    ).toBe(true);
+    await expect(page.getByTestId("computer-player-thinking")).toHaveCount(0);
+    await expect(page.getByTestId("history-list")).not.toContainText("Pending");
+  } finally {
+    await closeContextQuietly(context);
   }
 });
 
@@ -175,19 +224,28 @@ test("computer-player failures stay recoverable and retry inline", async ({ brow
   }
 });
 
-test("computer-player automatically recovers after the server rejects a predicted bot move", async ({ browser }) => {
+test("computer-player retries a rejected bot move after the sync-failed notice is dismissed", async ({ browser }) => {
   const { context, page } = await createIsolatedPage(browser);
 
   try {
     await installInlineComputerPlayerHook(page);
     await installFirstBotApplyRollback(page);
+    const requests = captureGameCommandRequests(page);
     await openComputerGameFromHome(page, { seat: "Player 2", opponentBotId: "babs" });
 
     await expect(page.getByTestId("computer-player-thinking")).toBeVisible();
-    await expect(page.getByTestId("computer-player-failure")).toHaveCount(0);
-    await expect(page.getByTestId("active-turn-label")).toContainText("Player 2");
+    const dismissButton = page.locator('[data-action="dismiss-failed-operation"]').first();
+    await expect(dismissButton).toBeVisible();
     await expect(page.getByTestId("computer-player-thinking")).toHaveCount(0);
+    expect(await getHistoryMoveCount(page)).toBe(0);
+    await dismissButton.click();
+    await expect(page.getByTestId("computer-player-thinking")).toBeVisible();
+    await expect.poll(() =>
+      requests.filter((entry) => entry.url.endsWith("/apply") && entry.body?.clientCommandId?.startsWith("bot:")).length,
+    ).toBeGreaterThanOrEqual(1);
+    await expect.poll(() => getHistoryMoveCount(page)).toBeGreaterThanOrEqual(1);
     await expect(page.getByTestId("history-list")).not.toContainText("PASS");
+    await expect(page.getByTestId("history-list")).not.toContainText("Pending");
   } finally {
     await closeContextQuietly(context);
   }

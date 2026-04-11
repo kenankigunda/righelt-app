@@ -83,26 +83,29 @@ const createTrackedSyncStore = ({
   now,
   setTimeout,
   clearTimeout,
+  wrapFetcher = null,
 } = {}) => {
   const requests = [];
+  const baseFetch = async (url, init = {}) => {
+    const parsedBody = typeof init.body === "string" ? JSON.parse(init.body) : null;
+    requests.push({
+      url: String(url),
+      method: init.method || "GET",
+      body: parsedBody,
+    });
+    return apiWorker.fetch(
+      new Request(toAbsoluteUrl(url), {
+        method: init.method || "GET",
+        headers: init.headers,
+        body: init.body,
+      }),
+      env,
+    );
+  };
+  const fetcher = wrapFetcher ? wrapFetcher(baseFetch, requests) : baseFetch;
   const store = createSyncStore({
     storage,
-    fetcher: async (url, init = {}) => {
-      const parsedBody = typeof init.body === "string" ? JSON.parse(init.body) : null;
-      requests.push({
-        url: String(url),
-        method: init.method || "GET",
-        body: parsedBody,
-      });
-      return apiWorker.fetch(
-        new Request(toAbsoluteUrl(url), {
-          method: init.method || "GET",
-          headers: init.headers,
-          body: init.body,
-        }),
-        env,
-      );
-    },
+    fetcher,
     createSyncClient: () => ({
       connectGame() {},
       disconnectGame() {},
@@ -1040,6 +1043,83 @@ test("integration sync store auto-runs the opening computer-player turn for Play
   assert.match(applyRequest.body.clientCommandId, /^bot:/);
 });
 
+test("integration sync store queues the bot move behind an unresolved human apply and sends it after the head command confirms", async () => {
+  const clock = createFakeClock();
+  let releaseFirstApply = null;
+  let applyCount = 0;
+  const { requests, store } = createTrackedSyncStore({
+    now: clock.now,
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    wrapFetcher: (baseFetch) => async (url, init = {}) => {
+      if (String(url).includes("/apply") && (init.method || "GET") === "POST") {
+        applyCount += 1;
+        if (applyCount === 1) {
+          return new Promise((resolve) => {
+            releaseFirstApply = () => resolve(baseFetch(url, init));
+          });
+        }
+      }
+      return baseFetch(url, init);
+    },
+    createComputerPlayerRuntime: () => ({
+      async selectMove(request) {
+        const legalActions = Array.isArray(request?.legalActions) ? request.legalActions : [];
+        const action = legalActions.find((entry) => entry.type !== "pass") ?? legalActions[0] ?? { type: "pass" };
+        return {
+          action,
+          diagnostics: {
+            selectedAction: { key: action.type === "pass" ? "pass" : "integration-first-legal" },
+            exploredNodes: 120,
+            legalActionCount: legalActions.length,
+          },
+        };
+      },
+      destroy() {},
+    }),
+  });
+
+  const createdGame = await store.createGame({
+    computerPlayer: {
+      botId: "tau",
+      botSchemaVersion: 1,
+      displayName: "Tau the Tenacious",
+      animal: "tortoise",
+      skillLabel: "Medium",
+      styleLabel: "Defensive",
+      humanSeat: "Player 1",
+      botSeat: "Player 2",
+    },
+  }).committed;
+
+  store.setActiveGameId(createdGame.id);
+  const humanAction = createdGame.legalActions.find((entry) => entry.type !== "pass") ?? createdGame.legalActions[0];
+  const moveHandle = await store.applyGameAction({
+    gameId: createdGame.id,
+    state: createdGame.currentSnapshot,
+    action: humanAction,
+  });
+
+  assert.equal(applyCount, 1);
+
+  await clock.advanceBy(0);
+  await clock.advanceBy(799);
+  assert.equal(store.getComputerPlayerRuntimeState(createdGame.id)?.status, "thinking");
+  assert.equal(store.getGameViewModel(createdGame.id)?.pendingCommandCount, 1);
+  assert.equal(applyCount, 1);
+
+  await clock.advanceBy(1);
+  assert.equal(store.getGameViewModel(createdGame.id)?.pendingCommandCount, 2);
+  assert.equal(applyCount, 1);
+
+  releaseFirstApply?.();
+  await moveHandle.committed;
+  await waitFor(
+    () => requests.filter((entry) => entry.url === `/api/shell/games/${createdGame.id}/apply` && entry.method === "POST").length === 2,
+  );
+  await waitFor(() => (store.getGameViewModel(createdGame.id)?.moves.length ?? 0) >= 2);
+});
+
 test("integration sync store keeps computer-player failures recoverable and retries inline", async () => {
   const clock = createFakeClock();
   let attempts = 0;
@@ -1106,6 +1186,90 @@ test("integration sync store keeps computer-player failures recoverable and retr
 
   assert.equal(attempts, 2);
   assert.equal(store.getComputerPlayerRuntimeState(createdGame.id), null);
+});
+
+test("integration sync store retries a rejected bot move after the rollback notice is dismissed", async () => {
+  const clock = createFakeClock();
+  let rejectedFirstBotApply = false;
+  let botApplyAttempts = 0;
+  const { requests, store } = createTrackedSyncStore({
+    now: clock.now,
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    wrapFetcher: (baseFetch) => async (url, init = {}) => {
+      const isBotApply =
+        String(url).includes("/apply") &&
+        (init.method || "GET") === "POST" &&
+        typeof init.body === "string" &&
+        JSON.parse(init.body)?.clientCommandId?.startsWith("bot:");
+      if (isBotApply) {
+        botApplyAttempts += 1;
+      }
+      if (
+        !rejectedFirstBotApply &&
+        isBotApply
+      ) {
+        rejectedFirstBotApply = true;
+        const requestBody = JSON.parse(init.body);
+        return Response.json({
+          ok: true,
+          accepted: false,
+          clientCommandId: requestBody.clientCommandId,
+        });
+      }
+      return baseFetch(url, init);
+    },
+    createComputerPlayerRuntime: () => ({
+      async selectMove(request) {
+        const legalActions = Array.isArray(request?.legalActions) ? request.legalActions : [];
+        const action = legalActions.find((entry) => entry.type !== "pass") ?? legalActions[0] ?? { type: "pass" };
+        return {
+          action,
+          diagnostics: {
+            selectedAction: { key: action.type === "pass" ? "pass" : "integration-first-legal" },
+            exploredNodes: 120,
+            legalActionCount: legalActions.length,
+          },
+        };
+      },
+      destroy() {},
+    }),
+  });
+
+  const createdGame = await store.createGame({
+    computerPlayer: {
+      botId: "babs",
+      botSchemaVersion: 1,
+      displayName: "Babs the Beginner",
+      animal: "bunny",
+      skillLabel: "Beginner",
+      styleLabel: "Balanced",
+      humanSeat: "Player 2",
+      botSeat: "Player 1",
+    },
+  }).committed;
+
+  store.setActiveGameId(createdGame.id);
+  await clock.advanceBy(0);
+  await clock.advanceBy(599);
+  await clock.advanceBy(1);
+
+  await waitFor(() => store.getComputerPlayerRuntimeState(createdGame.id)?.status === "failed");
+  await waitFor(() => store.getFailedOperations(createdGame.id).some((operation) => operation.id === `rollback:${createdGame.id}`));
+  assert.equal((store.getGameViewModel(createdGame.id)?.moves.length ?? 0), 0);
+
+  store.dismissFailedOperation(`rollback:${createdGame.id}`);
+  await clock.advanceBy(0);
+  assert.equal(store.getComputerPlayerRuntimeState(createdGame.id)?.status, "thinking");
+
+  await clock.advanceBy(599);
+  await clock.advanceBy(1);
+  await waitFor(() => (store.getGameViewModel(createdGame.id)?.moves.length ?? 0) === 1);
+
+  assert.equal(
+    botApplyAttempts >= 2,
+    true,
+  );
 });
 
 test("integration sync store resumes a persisted computer-player think deadline after reload", async () => {

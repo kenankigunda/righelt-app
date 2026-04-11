@@ -1163,6 +1163,92 @@ test("live transport store notifies subscribers when optimistic sync rolls back 
   }
 });
 
+test("live transport store keeps computer-player runtime in a client-only overlay", async () => {
+  const baseGame = {
+    ...buildLiveGame(),
+    id: "game-live-bot",
+    computerPlayer: {
+      mode: "computer-player",
+      botId: "tau",
+      humanSeat: "Player 2",
+      botSeat: "Player 1",
+      activeTurnKey: null,
+    },
+  };
+  const store = createLiveTransportStore({
+    storage: createMemoryStorage(),
+    fetcher: async (url, init = {}) => {
+      if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+        return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+      }
+      return Response.json({ ok: true, games: [] });
+    },
+  });
+
+  await store.loadGame(baseGame.id);
+  store.setComputerPlayerRuntimeOverlay(baseGame.id, {
+    activeTurnKey: "turn-key-1",
+    status: "thinking",
+    error: null,
+    retryCount: 0,
+    updatedAt: "2026-04-03T00:00:00.000Z",
+    thinkingStartedAt: "2026-04-03T00:00:00.000Z",
+    minimumVisibleUntil: "2026-04-03T00:00:00.800Z",
+  });
+
+  assert.equal(store.getAuthoritativeGame(baseGame.id)?.computerPlayer?.runtime ?? null, null);
+  assert.equal(store.getGameViewModel(baseGame.id)?.computerPlayer?.runtime?.status, "thinking");
+});
+
+test("live transport store clears the full optimistic suffix when the head command is rejected", async () => {
+  const baseGame = buildLiveGame();
+  const changes = [];
+  let resolveApply = null;
+  const fetcher = async (url, init = {}) => {
+    if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
+      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
+      return new Promise((resolve) => {
+        resolveApply = resolve;
+      });
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
+  store.subscribe((change) => {
+    changes.push(change);
+  });
+  await store.loadGame(baseGame.id);
+
+  const firstAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
+  const firstPending = await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: firstAction });
+  const projectedAfterFirst = store.getGameViewModel(baseGame.id);
+  const secondAction = projectedAfterFirst.legalActions.find((action) => action.type !== "pass") ?? projectedAfterFirst.legalActions[0];
+  const secondPending = await store.applyGameAction({
+    gameId: baseGame.id,
+    state: projectedAfterFirst.currentSnapshot,
+    action: secondAction,
+  });
+
+  assert.equal(store.getGameViewModel(baseGame.id)?.pendingCommandCount, 2);
+
+  resolveApply?.(
+    Response.json({
+      ok: true,
+      accepted: false,
+      eventSeq: 2,
+      game: clone(baseGame),
+    }),
+  );
+  await tick();
+
+  const rollbackChange = changes.find((change) => change.type === "optimistic_rollback" && change.gameId === baseGame.id);
+  assert.deepEqual(rollbackChange?.clearedClientCommandIds, [firstPending.clientCommandId, secondPending.clientCommandId]);
+  assert.equal(store.getGameViewModel(baseGame.id)?.pendingCommandCount, 0);
+});
+
 test("live transport store clears pending command when ws confirms after transport failure", async () => {
   const baseGame = buildLiveGame();
   const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
