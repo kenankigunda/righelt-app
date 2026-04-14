@@ -209,13 +209,14 @@ body {
 }
 
 .shell-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 32rem) minmax(0, 1fr);
+  column-gap: 1rem;
   align-items: center;
   max-width: 100%;
+  position: relative;
   border-radius: 14px;
-  padding: 0.9rem 1rem;
+  padding: 0.9rem 1rem 0.9rem;
 }
 
 .shell-header h1 {
@@ -239,21 +240,45 @@ body {
 }
 
 .shell-header-main,
+.shell-header-status,
 .shell-header-actions {
   min-width: 0;
   max-width: 100%;
 }
 
 .shell-header-main {
-  flex: 1 1 28rem;
+  grid-column: 1;
+  position: relative;
+  z-index: 1;
 }
 
 .shell-header-actions {
-  flex: 1 1 24rem;
+  grid-column: 3;
   display: grid;
   gap: 0.5rem;
   justify-items: end;
   align-self: center;
+  position: relative;
+  z-index: 1;
+}
+
+.shell-header-status {
+  position: absolute;
+  top: 0.9rem;
+  left: 50%;
+  width: min(100%, 32rem);
+  max-width: calc(100% - 2rem);
+  min-height: var(--shell-alert-stack-height, 5.6rem);
+  height: var(--shell-alert-stack-height, 5.6rem);
+  display: flex;
+  align-items: flex-start;
+  transform: translateX(-50%);
+  z-index: 2;
+}
+
+.shell-header-status[data-shell-alert-zone="idle"] {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .nav-row {
@@ -750,10 +775,11 @@ button.button-pending,
 /* Game route banners: single surface, full width — avoids panel + alert “double frame”. */
 .shell-game-alerts,
 #shell-game-alerts {
-  display: grid;
-  gap: 0.65rem;
+  position: relative;
   width: 100%;
+  height: 100%;
   min-width: 0;
+  pointer-events: auto;
 }
 
 .shell-game-alerts:empty,
@@ -764,12 +790,88 @@ button.button-pending,
 .shell-game-alert {
   margin: 0;
   width: 100%;
+  height: 100%;
   min-width: 0;
   border-left-width: 0;
   border-radius: 14px;
   padding: 0.9rem 1rem;
   border: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
   box-sizing: border-box;
+  animation: shell-game-alert-reveal 180ms ease;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+}
+
+.shell-game-alert-stack-card {
+  position: absolute;
+  inset: 0;
+  transform-origin: top center;
+  transition:
+    transform 180ms ease,
+    opacity 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.shell-game-alert-stack-card.is-active {
+  z-index: 3;
+}
+
+.shell-game-alert-stack-card[data-stack-index="1"] {
+  z-index: 2;
+  transform: translateY(0.5rem) scale(0.982);
+  opacity: 0.92;
+}
+
+.shell-game-alert-stack-card[data-stack-index="2"] {
+  z-index: 1;
+  transform: translateY(0.95rem) scale(0.964);
+  opacity: 0.82;
+}
+
+.shell-game-alert-stack-card[data-stack-index]:not(.is-active):not([data-stack-index="1"]):not([data-stack-index="2"]) {
+  z-index: 0;
+  transform: translateY(1.2rem) scale(0.95);
+  opacity: 0;
+}
+
+.shell-game-alert-stack-card.is-interactive {
+  cursor: pointer;
+}
+
+.shell-game-alert-stack-card.is-interactive:focus-visible {
+  outline: none;
+}
+
+.shell-game-alert-stack-card.is-interactive:focus-visible .shell-game-alert {
+  box-shadow:
+    0 0 0 3px rgba(13, 122, 90, 0.18),
+    0 14px 28px rgba(27, 53, 79, 0.12);
+}
+
+.shell-game-alert-stack-card:not(.is-active) {
+  pointer-events: none;
+}
+
+.shell-game-alert-copy {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+@keyframes shell-game-alert-reveal {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .shell-game-alert.alert:not(.warn):not(.danger) {
@@ -796,6 +898,12 @@ button.button-pending,
 
 .sync-failure-copy {
   min-width: 0;
+  flex: 1 1 auto;
+}
+
+.sync-failure-banner .mini-button {
+  flex: 0 0 auto;
+  align-self: center;
 }
 
 .history-mode-banner {
@@ -1771,6 +1879,14 @@ textarea:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .shell-game-alert {
+    animation: none;
+  }
+
+  .shell-game-alert-stack-card {
+    transition: none;
+  }
+
   .app-root,
   .shell-main-content,
   .feedback-reveal {
@@ -1858,10 +1974,31 @@ textarea:focus-visible {
 
 @media (max-width: 900px) {
   .shell-header {
+    display: flex;
+    justify-content: space-between;
+    position: relative;
+    padding-top: 0.9rem;
+  }
+
+  .shell-header-status {
+    position: fixed;
+    left: 1rem;
+    right: 1rem;
+    top: 1rem;
+    width: auto;
+    max-width: none;
+    transform: none;
+    z-index: 20;
+    min-height: var(--shell-alert-stack-height-narrow, 6.2rem);
+    height: var(--shell-alert-stack-height-narrow, 6.2rem);
+  }
+
+  .shell-header {
     align-items: center;
   }
 
   .shell-header-main,
+  .shell-header-status,
   .shell-header-actions {
     flex: 0 1 auto;
   }

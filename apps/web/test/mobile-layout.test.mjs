@@ -23,7 +23,11 @@ test("shell header wraps long mobile status and identity tokens instead of widen
 test("shell header stacks cleanly on narrow screens", () => {
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header\s*\{[\s\S]*align-items:\s*center;[\s\S]*\}[\s\S]*\.shell-header-main,\s*\.shell-header-actions\s*\{[\s\S]*flex:\s*0 1 auto;/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-status\s*\{[\s\S]*position:\s*fixed;[\s\S]*top:\s*1rem;[\s\S]*z-index:\s*20;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header\s*\{[\s\S]*align-items:\s*center;[\s\S]*\}[\s\S]*\.shell-header-main,\s*\.shell-header-status,\s*\.shell-header-actions\s*\{[\s\S]*flex:\s*0 1 auto;/s,
   );
   assert.match(
     shellStylesSource,
@@ -54,7 +58,15 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header\s*\{[\s\S]*display:\s*flex;[\s\S]*align-items:\s*center;[\s\S]*border-radius:\s*14px;[\s\S]*padding:\s*0\.9rem 1rem;/s,
+    /\.shell-header\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(0,\s*32rem\)\s*minmax\(0,\s*1fr\);[\s\S]*align-items:\s*center;[\s\S]*position:\s*relative;[\s\S]*border-radius:\s*14px;[\s\S]*padding:\s*0\.9rem\s+1rem\s+0\.9rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-header-status\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*0\.9rem;[\s\S]*left:\s*50%;[\s\S]*width:\s*min\(100%,\s*32rem\);[\s\S]*max-width:\s*calc\(100% - 2rem\);[\s\S]*min-height:\s*var\(--shell-alert-stack-height,\s*5\.6rem\);[\s\S]*height:\s*var\(--shell-alert-stack-height,\s*5\.6rem\);[\s\S]*display:\s*flex;[\s\S]*align-items:\s*flex-start;[\s\S]*transform:\s*translateX\(-50%\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-header-status\[data-shell-alert-zone="idle"\]\s*\{[\s\S]*visibility:\s*hidden;[\s\S]*pointer-events:\s*none;/s,
   );
   assert.match(
     shellStylesSource,
@@ -113,6 +125,18 @@ test("shell main layout transitions width when docked flyouts open or close", ()
   );
   assert.match(
     shellStylesSource,
+    /\.shell-game-alert\s*\{[\s\S]*height:\s*100%;[\s\S]*animation:\s*shell-game-alert-reveal 180ms ease;[\s\S]*overflow:\s*hidden;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-game-alert-stack-card\s*\{[\s\S]*position:\s*absolute;[\s\S]*inset:\s*0;[\s\S]*transform-origin:\s*top center;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-game-alert-copy\s*\{[\s\S]*-webkit-line-clamp:\s*2;[\s\S]*overflow:\s*hidden;/s,
+  );
+  assert.match(
+    shellStylesSource,
     /\.shell-route-transition-layer\s*\{[\s\S]*position:\s*fixed;[\s\S]*inset:\s*0;[\s\S]*pointer-events:\s*none;[\s\S]*opacity:\s*0;[\s\S]*visibility:\s*hidden;/s,
   );
   assert.match(
@@ -136,7 +160,7 @@ test("shell main layout transitions width when docked flyouts open or close", ()
 test("create-game handoff disables branded motion when reduced motion is requested", () => {
   assert.match(
     shellStylesSource,
-    /@media \(prefers-reduced-motion: reduce\) \{\s*[\s\S]*\.shell-route-transition-layer-backdrop,\s*\.shell-route-transition-layer-swipe,[\s\S]*animation:\s*none;[\s\S]*\.shell-route-transition-layer\s*\{[\s\S]*display:\s*none;/s,
+    /@media \(prefers-reduced-motion: reduce\) \{\s*[\s\S]*\.shell-game-alert\s*\{[\s\S]*animation:\s*none;[\s\S]*\}[\s\S]*\.shell-game-alert-stack-card\s*\{[\s\S]*transition:\s*none;[\s\S]*\}[\s\S]*\.shell-route-transition-layer-backdrop,\s*\.shell-route-transition-layer-swipe,[\s\S]*animation:\s*none;[\s\S]*\.shell-route-transition-layer\s*\{[\s\S]*display:\s*none;/s,
   );
 });
 

@@ -121,6 +121,7 @@ let inviteFeedbackTimer = null;
 let undoRequestFeedback = "";
 let undoRequestFeedbackGameId = null;
 let undoRequestFeedbackTimer = null;
+const alertStackRotationByGameId = new Map();
 const seenUndoRequestOutcomeByGameId = new Map();
 let routeHydrated = false;
 let resolvedInvite = null;
@@ -1267,6 +1268,16 @@ const renderHeaderNarrowMenu = () => {
     </div>
   `;
 };
+const renderHeaderAlertZone = () => {
+  const viewedGameId = getCurrentViewedGameId();
+  const viewedGame = viewedGameId ? transport.getGameViewModel(viewedGameId) : null;
+  const gameAlerts = viewedGame ? renderGameAlertsHtml(viewedGame) : "";
+  return `
+    <div class="shell-header-status" data-shell-alert-zone="${gameAlerts ? "active" : "idle"}">
+      <div id="shell-game-alerts">${gameAlerts}</div>
+    </div>
+  `;
+};
 const syncShellLayoutMode = () => {
   const layoutMode = getShellLayoutMode();
   if (layoutMode === "wide" && headerMenuOpen) {
@@ -1463,6 +1474,135 @@ const getFailedOperationsKey = (gameId) =>
     .map((operation) => `${operation.id}:${operation.status}`)
     .join("|");
 
+const renderGameAlertCard = ({ tone = "", body = "", action = "", testId = "" } = {}) => {
+  const toneClass = tone ? ` ${tone}` : "";
+  const testIdAttr = testId ? ` data-testid="${escapeHtml(testId)}"` : "";
+  return `<div class="alert${toneClass} shell-game-alert${tone === "danger" ? " sync-failure-banner" : ""}"${testIdAttr}>
+      <div class="shell-game-alert-copy${tone === "danger" ? " sync-failure-copy" : ""}">
+        ${body}
+      </div>
+      ${action}
+    </div>`;
+};
+
+const getGameAlertItems = (game) => {
+  const failedOperations = transport.getFailedOperations?.(game.id) ?? [];
+  maybeUpdateUndoRequestOutcomeFeedback(game);
+
+  const items = failedOperations.map((operation) => ({
+    key: `failed:${operation.id}`,
+    html: renderGameAlertCard({
+      tone: "danger",
+      body: `<strong>Sync failed.</strong> ${escapeHtml(operation.error?.message || "The operation could not be completed.")}`,
+      action: `<button class="secondary mini-button" data-action="dismiss-failed-operation" data-operation-id="${escapeHtml(operation.id)}">Dismiss</button>`,
+      testId: "sync-failure-banner",
+    }),
+  }));
+
+  if (failedOperations.length === 0 && game.syncStatus === "confirming") {
+    items.push({
+      key: "live-sync:confirming",
+      html: renderGameAlertCard({
+        tone: "warn",
+        body: "Move confirmation is retrying. The board stays optimistic until the server confirms.",
+      }),
+    });
+  } else if (game.syncStatus === "desynced") {
+    items.push({
+      key: "live-sync:desynced",
+      html: renderGameAlertCard({
+        tone: "warn",
+        body: "Live sync is recovering. The board is showing the last authoritative state.",
+      }),
+    });
+  }
+
+  if (undoRequestFeedback && undoRequestFeedbackGameId === game.id) {
+    items.push({
+      key: `undo:${game.id}:${undoRequestFeedback}`,
+      html: renderGameAlertCard({
+        body: escapeHtml(undoRequestFeedback),
+      }),
+    });
+  }
+
+  return items;
+};
+
+const getAlertStackRotation = (gameId, alertCount) => {
+  if (!gameId || alertCount <= 1) {
+    return 0;
+  }
+  return (alertStackRotationByGameId.get(gameId) ?? 0) % alertCount;
+};
+
+const advanceAlertStackRotation = (gameId, alertCount) => {
+  if (!gameId || alertCount <= 1) {
+    return false;
+  }
+  const nextRotation = ((alertStackRotationByGameId.get(gameId) ?? 0) + 1) % alertCount;
+  alertStackRotationByGameId.set(gameId, nextRotation);
+  return true;
+};
+
+const focusCurrentAlertStackCard = (gameId) => {
+  if (!gameId) {
+    return;
+  }
+  const focusedCard = appEl?.querySelector?.(
+    `[data-action="cycle-game-alert-stack"][data-game-id="${gameId}"][tabindex="0"]`,
+  );
+  if (focusedCard instanceof HTMLElement) {
+    focusedCard.focus({ preventScroll: true });
+  }
+};
+
+const refreshMountedAlertHeader = (gameId = null, actionEl = null) => {
+  const shouldRefocus = actionEl instanceof HTMLElement && actionEl.contains(document.activeElement);
+  if (!updateMountedHeader()) {
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
+  syncRenderedMarkupSnapshot();
+  if (shouldRefocus && gameId) {
+    focusCurrentAlertStackCard(gameId);
+  }
+};
+
+const cycleGameAlertStack = (gameId, actionEl = null) => {
+  const game = gameId ? transport.getGameViewModel(gameId) : null;
+  if (!game) {
+    return;
+  }
+  const alertCount = getGameAlertItems(game).length;
+  if (!advanceAlertStackRotation(gameId, alertCount)) {
+    return;
+  }
+  refreshMountedAlertHeader(gameId, actionEl);
+};
+
+const renderGameAlertStackCard = ({ gameId, item, stackIndex, totalAlerts }) => {
+  const isActive = stackIndex === 0;
+  const interactive = totalAlerts > 1 && stackIndex === 0;
+  const ariaLabel = interactive
+    ? `Show next notification. ${stackIndex + 1} of ${totalAlerts} is active.`
+    : `Notification ${stackIndex + 1} of ${totalAlerts}.`;
+  return `<div
+      class="shell-game-alert-stack-card${isActive ? " is-active" : ""}${interactive ? " is-interactive" : ""}"
+      data-alert-stack-card
+      data-stack-index="${stackIndex}"
+      data-stack-count="${totalAlerts}"
+      ${interactive
+        ? `data-action="cycle-game-alert-stack" data-game-id="${escapeHtml(gameId)}" tabindex="0"`
+        : isActive
+          ? 'tabindex="-1"'
+          : 'aria-hidden="true" tabindex="-1"'}
+      aria-label="${escapeHtml(ariaLabel)}"
+    >
+      ${item.html}
+    </div>`;
+};
+
 const renderTurnHistory = (game) => {
   if (!Array.isArray(game.turns) || game.turns.length === 0) {
     return "<li class=\"small\">No turns yet.</li>";
@@ -1617,6 +1757,7 @@ const renderHeader = () => `
     <div class="shell-header-main">
       <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Righelt</a></h1>
     </div>
+    ${renderHeaderAlertZone()}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
         ${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
@@ -1937,7 +2078,9 @@ const setInviteFeedback = (message) => {
 const setUndoRequestFeedback = (gameId, message) => {
   undoRequestFeedback = message;
   undoRequestFeedbackGameId = gameId || null;
-  render({ animatePanels: false, includeBoard: false });
+  if (!isBuildingGameAlerts) {
+    render({ animatePanels: false, includeBoard: false });
+  }
   if (undoRequestFeedbackTimer) {
     clearTimeout(undoRequestFeedbackTimer);
     undoRequestFeedbackTimer = null;
@@ -1966,6 +2109,8 @@ const maybeUpdateUndoRequestOutcomeFeedback = (game) => {
   seenUndoRequestOutcomeByGameId.set(game.id, latestNote);
   setUndoRequestFeedback(game.id, latestNote);
 };
+
+let isBuildingGameAlerts = false;
 
 const markInviteChoiceCommitted = (gameId) => {
   if (!gameId) {
@@ -2167,31 +2312,27 @@ const renderHome = () => {
 };
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
-  const failedOperations = transport.getFailedOperations?.(game.id) ?? [];
-  maybeUpdateUndoRequestOutcomeFeedback(game);
-  const failedOperationBanners = failedOperations
-    .map(
-      (operation) => `<div class="alert danger shell-game-alert sync-failure-banner" data-testid="sync-failure-banner">
-        <div class="sync-failure-copy">
-          <strong>Sync failed.</strong> ${escapeHtml(operation.error?.message || "The operation could not be completed.")}
-        </div>
-        <button class="secondary mini-button" data-action="dismiss-failed-operation" data-operation-id="${escapeHtml(operation.id)}">Dismiss</button>
-      </div>`,
-    )
-    .join("");
-  const liveSyncBanner =
-    failedOperations.length === 0 && game.syncStatus === "confirming"
-        ? `<div class="alert warn shell-game-alert">Move confirmation is retrying. The board stays optimistic until the server confirms.</div>`
-      : game.syncStatus === "desynced"
-        ? `<div class="alert warn shell-game-alert">Live sync is recovering. The board is showing the last authoritative state.</div>`
-        : "";
-
-  const undoRequestBanner =
-    undoRequestFeedback && undoRequestFeedbackGameId === game.id
-      ? `<div class="alert shell-game-alert">${escapeHtml(undoRequestFeedback)}</div>`
-      : "";
-
-  return [failedOperationBanners, liveSyncBanner, undoRequestBanner].filter(Boolean).join("");
+  isBuildingGameAlerts = true;
+  try {
+    const items = getGameAlertItems(game);
+    if (items.length === 0) {
+      return "";
+    }
+    const rotation = getAlertStackRotation(game.id, items.length);
+    const orderedItems = items.map((_, index) => items[(rotation + index) % items.length]);
+    return orderedItems
+      .map((item, stackIndex) =>
+        renderGameAlertStackCard({
+          gameId: game.id,
+          item,
+          stackIndex,
+          totalAlerts: orderedItems.length,
+        }),
+      )
+      .join("");
+  } finally {
+    isBuildingGameAlerts = false;
+  }
 };
 
 const renderHomeCardSkeleton = () => `
@@ -2448,7 +2589,6 @@ const renderGameShellPanelTab = (panelKey, label) => `
 `;
 
 const renderGameShellFrame = (game) => `
-  <div id="shell-game-alerts"></div>
   <section class="game-shell-frame" data-game-shell-root data-game-id="${escapeHtml(game.id)}" data-testid="game-shell">
     <div class="game-shell-track-wrap">
       <section class="layout-grid game-shell-track" data-game-shell-track>
@@ -2796,10 +2936,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
     game.inviteToken || inviteToken || game.id,
     getCurrentFlyoutState(),
   )}`;
-
-  const gameAlerts = renderGameAlertsHtml(game, inviteFromRole);
   return `
-    ${gameAlerts ? `<div class="shell-game-alerts">${gameAlerts}</div>` : ""}
     <section class="layout-grid">
       <div class="stack" data-shell-sticky-target="left" data-sticky-enabled="false">
         <section class="panel">${renderGameSummaryPanel(game)}</section>
@@ -4070,6 +4207,15 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "cycle-game-alert-stack") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) {
+      return;
+    }
+    cycleGameAlertStack(gameId, actionEl);
+    return;
+  }
+
   if (action === "jump-history") {
     const gameId = actionEl.getAttribute("data-game-id");
     const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
@@ -4469,6 +4615,19 @@ window.addEventListener("click", (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
+  const target = event.target;
+  if (
+    target instanceof HTMLElement &&
+    target.matches('[data-action="cycle-game-alert-stack"]') &&
+    (event.key === "Enter" || event.key === " ")
+  ) {
+    event.preventDefault();
+    const gameId = target.getAttribute("data-game-id");
+    if (gameId) {
+      cycleGameAlertStack(gameId, target);
+    }
+    return;
+  }
   if (event.key !== "Escape" || !headerMenuOpen) {
     return;
   }
