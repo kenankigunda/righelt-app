@@ -55,7 +55,38 @@ The parent workspace files must make it obvious that `/Users/kenankigunda/Docume
 - Never use destructive git/file operations unless explicitly requested.
 - Do not revert unrelated user changes in a dirty tree.
 - Prefer non-interactive git commands.
+- Prefer direct command invocation with stable argv shapes over shell-wrapper commands such as `/bin/zsh -lc ...` whenever possible.
+- Use repo wrappers such as `./scripts/git-app.sh`, `./scripts/backlog-sync.sh`, `./scripts/backlog-git.sh`, `./scripts/backlog.sh`, and `./scripts/backlog-doc.sh` to keep repeated workflows stable across sessions and worktrees.
+- Treat shell wrappers as a last resort for commands that genuinely require shell features or login-shell environment setup.
 - Keep commits/changes scoped to the active task and acceptance criteria.
+
+### Pre-approved command prefixes
+
+The parent workspace permissions allow these command prefixes without interactive approval. Structure commands to start with one of these prefixes so workflows run uninterrupted:
+
+| Prefix | Covers |
+|---|---|
+| `git ...` | All git operations when cwd is already the target repo |
+| `./scripts/git-app.sh ...` | Git operations targeting the app repo from any cwd — use this instead of `cd <app-repo> && git ...` |
+| `./scripts/backlog-sync.sh ...` | Backlog pull/push/commit bookends — use instead of `./scripts/backlog-git.sh pull --rebase origin main` |
+| `./scripts/backlog-git.sh ...` | Raw git against the backlog repo |
+| `./scripts/backlog.sh ...` | Backlog CLI wrapper (task create/edit/view/archive) |
+| `./scripts/backlog-doc.sh ...` | Ticket doc path resolution |
+| `backlog ...` | Direct backlog CLI invocation |
+| `pnpm ...` | All pnpm scripts (dev, test, build, deploy, db, setup) |
+| `npx playwright ...` | Direct Playwright E2E runs |
+| `npx tsc ...` | Direct TypeScript type-checking |
+| `node scripts/ ...` | All project node scripts |
+| `gh ...` | GitHub CLI (PR creation, issue management, checks) |
+
+**Key patterns to avoid** (these will trigger approval prompts):
+- `cd <path> && git ...` — use `./scripts/git-app.sh ...` or `./scripts/backlog-git.sh ...` instead
+- `/bin/zsh -lc "..."` or `bash -c "..."` — invoke the underlying command directly
+- `./scripts/backlog-git.sh pull --rebase origin main` — use `./scripts/backlog-sync.sh pull` for the common case
+- `gh pr edit ... --body $'...'` — use `gh pr edit ... --body-file <file>` for multiline PR descriptions so `gh pr` stays the stable leading prefix
+- Piped or chained commands starting with a non-approved prefix — restructure so the approved command leads
+
+For Codex local approval persistence, prefer saving a stable wrapper prefix for app pushes such as `./scripts/git-app.sh push` or `./scripts/git-app.sh push origin`. Do not save branch-qualified variants such as `./scripts/git-app.sh push origin codex/<branch>` because they only auto-approve that one branch name.
 
 ## 5.1) Shared Constants Policy
 
@@ -139,14 +170,17 @@ Codex workflow setup check: `node scripts/check-ticket-workflow-setup.mjs`.
 
 Before any backlog write, pull the latest from the shared repo. After any write, push so other worktrees see the change:
 ```
-./scripts/backlog-git.sh pull --rebase origin main   # before write
-./scripts/backlog-git.sh push origin main            # after write
+./scripts/backlog-sync.sh pull                        # before write
+./scripts/backlog-sync.sh push                        # after write
 ```
 For direct file edits (path 2), also commit manually before pushing:
 ```
-./scripts/backlog-git.sh commit -am "chore(backlog): update t-### <reason>"
+./scripts/backlog-sync.sh commit -am "chore(backlog): update t-### <reason>"
 ```
 `scripts/backlog.sh` wraps the `backlog` CLI and resolves the repo path dynamically (no hardcoded paths). `scripts/backlog-git.sh` runs git commands against the shared backlog repo from any worktree.
+`scripts/backlog-sync.sh` provides the stable documented backlog `pull`, `push`, and `commit` bookends without requiring ad hoc shell strings.
+`scripts/backlog-doc.sh` resolves canonical ticket doc paths in the backlog repo for `spec`, `eng-plan`, `test-plan`, and `coordination-log`.
+`scripts/git-app.sh` runs git commands against the current app checkout or worktree.
 
 **Reference artifacts:** when a backlog task or ticket doc mentions a screenshot, mock, or other reference artifact, copy that file into the backlog repo (typically `backlog/assets/`) before or alongside the task/doc write, reference the repo-backed path from the markdown/task metadata, and include the artifact in the same push. Do not leave task descriptions pointing only at ad hoc local paths or unattached filenames.
 

@@ -27,6 +27,8 @@ ROOT_AGENTS_PATH="$WORKSPACE_ROOT/AGENTS.md"
 ROOT_CLAUDE_PATH="$WORKSPACE_ROOT/CLAUDE.md"
 AGENTS_TEMPLATE_PATH="$APP_REPO/docs/ai/WORKSPACE_ROOT_AGENTS.template.md"
 CLAUDE_TEMPLATE_PATH="$APP_REPO/docs/ai/WORKSPACE_ROOT_CLAUDE.template.md"
+SETTINGS_LOCAL_TEMPLATE_PATH="$APP_REPO/docs/ai/WORKSPACE_ROOT_SETTINGS_LOCAL.template.json"
+ROOT_SETTINGS_LOCAL_PATH="$WORKSPACE_ROOT/.claude/settings.local.json"
 CLONE_BACKLOG=0
 BACKLOG_URL="${BACKLOG_URL:-https://github.com/kenankigunda/righelt-backlog.git}"
 
@@ -72,6 +74,11 @@ if [[ ! -f "$CLAUDE_TEMPLATE_PATH" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$SETTINGS_LOCAL_TEMPLATE_PATH" ]]; then
+  echo "ERROR: Missing tracked workspace settings.local.json template at $SETTINGS_LOCAL_TEMPLATE_PATH" >&2
+  exit 1
+fi
+
 if [[ "$WORKSPACE_NAME" != "righelt" ]]; then
   echo "WARNING: Expected parent workspace folder to be named righelt, got: $WORKSPACE_NAME" >&2
   echo "The generated parent workspace instructions will still target: $WORKSPACE_ROOT" >&2
@@ -89,9 +96,29 @@ sed \
 
 echo "Wrote parent AGENTS.md: $ROOT_AGENTS_PATH"
 
-cp "$CLAUDE_TEMPLATE_PATH" "$ROOT_CLAUDE_PATH"
+sed \
+  -e "s/__APP_REPO__/$APP_REPO_ESCAPED/g" \
+  -e "s/__BACKLOG_REPO__/$BACKLOG_REPO_ESCAPED/g" \
+  "$CLAUDE_TEMPLATE_PATH" > "$ROOT_CLAUDE_PATH"
 
 echo "Wrote parent CLAUDE.md: $ROOT_CLAUDE_PATH"
+
+mkdir -p "$WORKSPACE_ROOT/.claude"
+cp "$SETTINGS_LOCAL_TEMPLATE_PATH" "$ROOT_SETTINGS_LOCAL_PATH"
+
+echo "Wrote parent .claude/settings.local.json: $ROOT_SETTINGS_LOCAL_PATH"
+
+# Symlink parent scripts/ → app scripts/ so ./scripts/* works from the parent workspace cwd
+PARENT_SCRIPTS_LINK="$WORKSPACE_ROOT/scripts"
+if [[ -L "$PARENT_SCRIPTS_LINK" ]]; then
+  rm "$PARENT_SCRIPTS_LINK"
+fi
+if [[ -e "$PARENT_SCRIPTS_LINK" ]]; then
+  echo "WARNING: $PARENT_SCRIPTS_LINK exists and is not a symlink — skipping symlink creation." >&2
+else
+  ln -s "$APP_REPO/scripts" "$PARENT_SCRIPTS_LINK"
+  echo "Linked parent scripts/: $PARENT_SCRIPTS_LINK → $APP_REPO/scripts"
+fi
 
 if [[ -d "$BACKLOG_REPO/.git" ]]; then
   echo "Found sibling backlog repo: $BACKLOG_REPO"

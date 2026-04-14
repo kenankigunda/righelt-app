@@ -37,7 +37,7 @@ test("ticket workflow doc points both Claude and Codex at the shared canon", () 
   assert.match(workflowDoc, /skills\/ticket-lead\/SKILL\.md/);
   assert.match(workflowDoc, /node scripts\/check-ticket-workflow-setup\.mjs/);
   assert.match(workflowDoc, /scripts\/backlog\.sh/);
-  assert.match(workflowDoc, /scripts\/backlog-git\.sh/);
+  assert.match(workflowDoc, /scripts\/backlog-sync\.sh/);
   assert.match(workflowDoc, /backlog\/docs\/TEST_PLAN_TEMPLATE\.md/);
 });
 

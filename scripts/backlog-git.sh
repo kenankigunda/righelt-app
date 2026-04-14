@@ -16,12 +16,18 @@
 
 set -euo pipefail
 
-GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null)
+GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null || true)
 
-if [[ "$GIT_COMMON" == ".git" ]]; then
-  MAIN_REPO="$(git rev-parse --show-toplevel)"
+if [[ -n "$GIT_COMMON" ]]; then
+  if [[ "$GIT_COMMON" == ".git" ]]; then
+    MAIN_REPO="$(git rev-parse --show-toplevel)"
+  else
+    MAIN_REPO="${GIT_COMMON%/.git}"
+  fi
 else
-  MAIN_REPO="${GIT_COMMON%/.git}"
+  # Not inside a git repo — resolve relative to the script's real location (parent symlink case)
+  REAL_SCRIPT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || realpath "${BASH_SOURCE[0]}")")" && pwd)"
+  MAIN_REPO="$(cd "$REAL_SCRIPT/.." && pwd)"
 fi
 
 BACKLOG_REPO="$(dirname "$MAIN_REPO")/righelt-backlog"

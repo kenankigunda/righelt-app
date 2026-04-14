@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Write",
+      "Bash(pnpm:*)",
+      "Bash(git:*)",
+      "Bash(npx playwright:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node scripts/:*)",
+      "Bash(./scripts/git-app.sh:*)",
+      "Bash(./scripts/backlog-sync.sh:*)",
+      "Bash(./scripts/backlog-git.sh:*)",
+      "Bash(./scripts/backlog.sh:*)",
+      "Bash(./scripts/backlog-doc.sh:*)",
+      "Bash(backlog:*)",
+      "Bash(gh:*)"
+    ]
+  },
+  "sandbox": {
+    "enabled": false,
+    "autoAllowBashIfSandboxed": true
+  }
+}

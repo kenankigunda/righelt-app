@@ -30,8 +30,8 @@ Use this workflow for any ticket in `backlog/tasks/` that has been assigned to a
 The backlog lives in the sibling `righelt-backlog` repo. All task files and ticket documents live there. Before any write, pull; after any write, push:
 
 ```bash
-./scripts/backlog-git.sh pull --rebase origin main
-./scripts/backlog-git.sh push origin main
+./scripts/backlog-sync.sh pull
+./scripts/backlog-sync.sh push
 ```
 
 If a task or ticket doc depends on a screenshot from the current product or another reference artifact, copy that artifact into the backlog repo first, normally under `backlog/assets/`, reference the repo-backed path from the task or doc, and push the artifact in the same backlog update.
@@ -41,10 +41,11 @@ Write path priority:
 | Priority | When to use |
 |---|---|
 | 1 — `./scripts/backlog.sh` CLI wrapper | Always preferred |
-| 2 — Direct file edit | Last resort; must also commit manually with `./scripts/backlog-git.sh commit -am "chore(backlog): ..."` |
+| 2 — Direct file edit | Last resort; must also commit manually with `./scripts/backlog-sync.sh commit -am "chore(backlog): ..."` |
 
 - Edit task files directly only when the `backlog` CLI is unavailable or cannot perform the required operation.
 - Report a setup blocker if the sibling backlog repo, `backlog` CLI, or wrapper resolution is unavailable rather than silently falling back to ad hoc edits.
+- Prefer direct command invocation for these wrappers. Use shell wrappers only when a command genuinely needs shell features such as redirection or command substitution.
 
 ## Ticket Types and Routing
 
