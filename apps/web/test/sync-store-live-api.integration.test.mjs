@@ -1062,6 +1062,64 @@ test("integration sync store auto-runs the opening computer-player turn for Play
   assert.match(applyRequest.body.clientCommandId, /^bot:/);
 });
 
+test("integration sync store does not schedule a computer-player move once the authoritative game is terminal", async () => {
+  const clock = createFakeClock();
+  const runtimeRequests = [];
+  const { store } = createTrackedSyncStore({
+    now: clock.now,
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    createComputerPlayerRuntime: () => ({
+      async selectMove(request) {
+        runtimeRequests.push(request);
+        return {
+          action: { type: "pass" },
+          diagnostics: {
+            selectedAction: { key: "pass" },
+            exploredNodes: 0,
+            legalActionCount: 0,
+          },
+        };
+      },
+      destroy() {},
+    }),
+  });
+
+  const createdGame = await store.createGame({
+    computerPlayer: {
+      botId: "tau",
+      botSchemaVersion: 1,
+      displayName: "Tau the Tenacious",
+      animal: "tortoise",
+      skillLabel: "Medium",
+      styleLabel: "Defensive",
+      humanSeat: "Player 2",
+      botSeat: "Player 1",
+    },
+  }).committed;
+
+  const terminalGame = {
+    ...createdGame,
+    currentSnapshot: {
+      ...createdGame.currentSnapshot,
+      outcome: { status: "p2_win", reason: "p1_commander_captured" },
+    },
+    board: {
+      state: {
+        ...createdGame.currentSnapshot,
+        outcome: { status: "p2_win", reason: "p1_commander_captured" },
+      },
+    },
+    notifications: ["Player 2 won the game"],
+  };
+  store.applyLiveGameUpdate({ game: terminalGame });
+  store.setActiveGameId(createdGame.id);
+  await clock.advanceBy(0);
+
+  assert.equal(runtimeRequests.length, 0);
+  assert.equal(store.getComputerPlayerRuntimeState(createdGame.id), null);
+});
+
 test("integration sync store lets a medium bot select past 12000ms when still inside the 21000ms budget", async () => {
   const originalWorker = globalThis.Worker;
   const clock = createFakeClock();

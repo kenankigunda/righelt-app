@@ -2,7 +2,7 @@ export const BOT_PERSONA_VERSION = "cp-persona-v1";
 export const BOT_MOVE_SELECTION_TIMEOUT_MS_BY_SKILL = Object.freeze({
     beginner: 12000,
     medium: 21000,
-    hard: 27000,
+    hard: 45000,
 });
 export const BOT_PERSONAS = {
     babs: {
@@ -54,7 +54,7 @@ export const BOT_PERSONAS = {
     style: "balanced",
     theme: "owl",
     searchDepth: 3,
-    branchFactor: 12,
+    branchFactor: 10,
     noiseScale: 0.01,
     forgiveness: 0.3,
     aggression: 0.6,

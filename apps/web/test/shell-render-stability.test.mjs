@@ -57,12 +57,15 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const failedOperationsKey = getFailedOperationsKey\(game\.id\);/);
   assert.match(source, /data-testid="sync-failure-banner"/);
   assert.match(source, /data-action="dismiss-failed-operation"/);
+  assert.match(source, /data-testid="game-outcome-banner"/);
   assert.match(source, /data-testid="computer-player-thinking"/);
   assert.match(source, /data-testid="computer-player-failure"/);
   assert.match(source, /data-action="retry-computer-player"/);
   assert.doesNotMatch(source, /failedOperations\.length === 0 && game\.rollbackNotice/);
   assert.doesNotMatch(source, /rollbackNotice: game\.rollbackNotice/);
-  assert.match(source, /return \[failedOperationBanners,\s*liveSyncBanner,\s*undoRequestBanner,\s*computerPlayerBanner\]\.filter\(Boolean\)\.join\(""\);/);
+  assert.match(source, /const renderGameOutcomeBanner = \(game\) => \{/);
+  assert.match(source, /const gameOutcomeBanner = renderGameOutcomeBanner\(game\);/);
+  assert.match(source, /return \[failedOperationBanners,\s*liveSyncBanner,\s*undoRequestBanner,\s*gameOutcomeBanner,\s*computerPlayerBanner\]\.filter\(Boolean\)\.join\(""\);/);
   assert.match(source, /id="shell-game-alerts"/);
   assert.match(source, /data-game-shell-root data-game-id=/);
   assert.match(source, /data-game-shell-track/);

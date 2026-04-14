@@ -68,6 +68,39 @@ class FakeWorker {
   terminate() {}
 }
 
+class SequencedWorker extends FakeWorker {
+  constructor({ clock, delaysMs = [] }) {
+    super();
+    this.clock = clock;
+    this.delaysMs = [...delaysMs];
+  }
+
+  postMessage(payload) {
+    const delayMs = this.delaysMs.length > 0 ? this.delaysMs.shift() : null;
+    if (!(delayMs >= 0)) {
+      return;
+    }
+    this.clock.setTimeout(() => {
+      const listeners = this.listeners.get("message") ?? [];
+      const event = {
+        data: {
+          type: "selectMove:result",
+          requestId: payload?.requestId ?? "cp-0",
+          response: {
+            action: { type: "pass" },
+            diagnostics: {
+              selectedAction: { key: "pass" },
+            },
+          },
+        },
+      };
+      for (const listener of listeners) {
+        listener(event);
+      }
+    }, delayMs);
+  }
+}
+
 test("computer-player runtime prefers an explicit activeTurnKey and keeps command ids stable", () => {
   const game = {
     id: "game-cp-1",
@@ -121,7 +154,7 @@ test("computer-player move-selection timeout uses difficulty-based budgets", () 
   assert.equal(getComputerPlayerMoveSelectionTimeoutMs({ botId: "babs" }), 12000);
   assert.equal(getComputerPlayerMoveSelectionTimeoutMs({ botId: "tau" }), 21000);
   assert.equal(getComputerPlayerMoveSelectionTimeoutMs({ botId: "sev" }), 21000);
-  assert.equal(getComputerPlayerMoveSelectionTimeoutMs({ botId: "horus" }), 27000);
+  assert.equal(getComputerPlayerMoveSelectionTimeoutMs({ botId: "horus" }), 45000);
   assert.equal(getComputerPlayerMoveSelectionTimeoutMs({ botId: "unknown-bot" }), 12000);
   assert.equal(getComputerPlayerMoveSelectionTimeoutMs({}), 12000);
 });
@@ -142,12 +175,12 @@ test("computer-player runtime timeout errors interpolate the effective persona t
       state: { sideToMove: "P1" },
       legalActions: [{ type: "pass" }],
     });
-    await clock.advanceBy(26999);
+    await clock.advanceBy(44999);
     await Promise.resolve();
     await clock.advanceBy(1);
     await assert.rejects(horusSelection, (error) => {
       assert.equal(error?.code, "computer_player_timeout");
-      assert.match(error?.message ?? "", /27000ms/);
+      assert.match(error?.message ?? "", /45000ms/);
       return true;
     });
 
@@ -162,6 +195,58 @@ test("computer-player runtime timeout errors interpolate the effective persona t
     await assert.rejects(tauSelection, (error) => {
       assert.equal(error?.code, "computer_player_timeout");
       assert.match(error?.message ?? "", /21000ms/);
+      return true;
+    });
+  } finally {
+    runtime.destroy();
+    globalThis.Worker = originalWorker;
+  }
+});
+
+test("computer-player runtime gives each sequential move selection a fresh timeout budget", async () => {
+  const originalWorker = globalThis.Worker;
+  globalThis.Worker = FakeWorker;
+  const clock = createFakeClock();
+  const worker = new SequencedWorker({ clock, delaysMs: [100] });
+  const runtime = createComputerPlayerRuntime({
+    createWorker: () => ({ worker, workerUrl: "blob:sequenced" }),
+    setTimeoutFn: clock.setTimeout,
+    clearTimeoutFn: clock.clearTimeout,
+  });
+
+  try {
+    const firstSelection = runtime.selectMove({
+      personaId: "horus",
+      state: { sideToMove: "P1" },
+      legalActions: [{ type: "pass" }],
+    });
+    await clock.advanceBy(100);
+    const firstResponse = await firstSelection;
+    assert.equal(firstResponse.action.type, "pass");
+
+    const secondSelection = runtime.selectMove({
+      personaId: "horus",
+      state: { sideToMove: "P1" },
+      legalActions: [{ type: "pass" }],
+    });
+    await clock.advanceBy(44999);
+    await Promise.resolve();
+    await Promise.resolve();
+    let settled = false;
+    void secondSelection.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    assert.equal(settled, false);
+
+    await clock.advanceBy(1);
+    await assert.rejects(secondSelection, (error) => {
+      assert.equal(error?.code, "computer_player_timeout");
+      assert.match(error?.message ?? "", /45000ms/);
       return true;
     });
   } finally {

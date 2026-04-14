@@ -4,7 +4,7 @@ export const BOT_PERSONA_VERSION = "cp-persona-v1" as const;
 export const BOT_MOVE_SELECTION_TIMEOUT_MS_BY_SKILL: Readonly<Record<BotSkill, number>> = Object.freeze({
   beginner: 12_000,
   medium: 21_000,
-  hard: 27_000,
+  hard: 45_000,
 });
 
 export const BOT_PERSONAS: Record<BotId, BotPersona> = {
@@ -57,7 +57,7 @@ export const BOT_PERSONAS: Record<BotId, BotPersona> = {
     style: "balanced",
     theme: "owl",
     searchDepth: 3,
-    branchFactor: 12,
+    branchFactor: 10,
     noiseScale: 0.01,
     forgiveness: 0.3,
     aggression: 0.6,

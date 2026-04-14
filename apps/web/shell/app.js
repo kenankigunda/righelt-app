@@ -560,6 +560,46 @@ const formatOutcomeStatus = (outcome) => {
   return "unknown";
 };
 
+const getGameOutcomeStatus = (game) => formatOutcomeStatus(game?.currentSnapshot?.outcome ?? game?.board?.state?.outcome ?? null);
+
+const getWinningSeatForOutcome = (outcomeStatus) => {
+  if (outcomeStatus === "p1_win") {
+    return "Player 1";
+  }
+  if (outcomeStatus === "p2_win") {
+    return "Player 2";
+  }
+  return null;
+};
+
+const renderGameOutcomeBanner = (game) => {
+  const outcomeStatus = getGameOutcomeStatus(game);
+  if (outcomeStatus === "ongoing" || outcomeStatus === "unknown") {
+    return "";
+  }
+  if (outcomeStatus === "draw") {
+    return `<div class="alert warn shell-game-alert" data-testid="game-outcome-banner" role="status" aria-live="polite">
+      <div class="sync-failure-copy">
+        <strong>Draw.</strong> The game has ended in a draw.
+      </div>
+    </div>`;
+  }
+
+  const winningSeat = getWinningSeatForOutcome(outcomeStatus);
+  if (!winningSeat) {
+    return "";
+  }
+  const isPlayerPerspective = game?.myRole === "Player 1" || game?.myRole === "Player 2";
+  const didWin = isPlayerPerspective && game.myRole === winningSeat;
+  const title = isPlayerPerspective ? (didWin ? "You win." : "You lose.") : "Game over.";
+  const variantClass = didWin ? "alert shell-game-alert" : "alert danger shell-game-alert";
+  return `<div class="${variantClass}" data-testid="game-outcome-banner" role="status" aria-live="polite">
+    <div class="sync-failure-copy">
+      <strong>${title}</strong> ${renderSeatLabel(winningSeat)} won the game.
+    </div>
+  </div>`;
+};
+
 const formatSideToMoveLabel = (snapshot) => {
   if (snapshot?.sideToMove === "P1") {
     return "Player 1 to play";
@@ -2447,6 +2487,7 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
     undoRequestFeedback && undoRequestFeedbackGameId === game.id
       ? `<div class="alert shell-game-alert">${escapeHtml(undoRequestFeedback)}</div>`
       : "";
+  const gameOutcomeBanner = renderGameOutcomeBanner(game);
 
   const computerPlayerBanner =
     computerPlayerRuntime?.status === "thinking"
@@ -2462,7 +2503,7 @@ const renderGameAlertsHtml = (game, inviteFromRole = null) => {
       </div>`
         : "";
 
-  return [failedOperationBanners, liveSyncBanner, undoRequestBanner, computerPlayerBanner].filter(Boolean).join("");
+  return [failedOperationBanners, liveSyncBanner, undoRequestBanner, gameOutcomeBanner, computerPlayerBanner].filter(Boolean).join("");
 };
 
 const renderHomeCardSkeleton = () => `

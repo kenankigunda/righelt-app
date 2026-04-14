@@ -1013,6 +1013,78 @@ test("sync store still auto-runs computer-player turns while earlier optimistic 
   assert.equal(store.getComputerPlayerRuntimeState(initialGame.id)?.status, "thinking");
 });
 
+test("sync store clears terminal computer-player runtime and does not ask the bot to move after game over", async () => {
+  const initialGame = buildComputerPlayerGame({ humanSeat: "Player 2", botSeat: "Player 1", botId: "tau" });
+  initialGame.currentSnapshot = {
+    ...initialGame.currentSnapshot,
+    outcome: { status: "p2_win", reason: "p1_commander_captured" },
+  };
+  initialGame.board = { state: clone(initialGame.currentSnapshot) };
+  initialGame.notifications = ["Player 2 won the game"];
+  const clock = createFakeClock();
+  const storage = createMemoryStorage();
+  storage.setItem(
+    LIVE_TRANSPORT_STATE_KEY,
+    JSON.stringify({
+      games: [],
+      warningCode: null,
+      pendingMutationsByGameId: {},
+      computerPlayerRuntimeByGameId: {
+        [initialGame.id]: {
+          activeTurnKey: buildComputerPlayerDerivedTurnKey(initialGame),
+          status: "failed",
+          error: {
+            code: "computer_player_failed",
+            message: "No legal actions available for Tau the Tenacious",
+          },
+          retryCount: 1,
+          updatedAt: "2026-04-03T00:00:00.000Z",
+          thinkingStartedAt: null,
+          minimumVisibleUntil: null,
+        },
+      },
+    }),
+  );
+  const { transport, games } = createTransportHarness();
+  games.set(initialGame.id, clone(initialGame));
+  let runtimeRequests = 0;
+  const store = createSyncStore({
+    storage,
+    createTransportStore: () => transport,
+    now: clock.now,
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    createSyncClient: () => ({
+      connectGame() {},
+      disconnectGame() {},
+      disconnectAll() {},
+      getDesiredGameIds: () => [],
+    }),
+    createComputerPlayerRuntime: () => ({
+      async selectMove() {
+        runtimeRequests += 1;
+        return {
+          action: { type: "pass" },
+          diagnostics: {
+            selectedAction: { key: "pass" },
+            exploredNodes: 0,
+            legalActionCount: 0,
+          },
+        };
+      },
+      destroy() {},
+    }),
+  });
+
+  store.setActiveGameId(initialGame.id);
+  await clock.advanceBy(0);
+
+  assert.equal(runtimeRequests, 0);
+  assert.equal(store.getComputerPlayerRuntimeState(initialGame.id), null);
+  assert.equal(store.getGameViewModel(initialGame.id)?.computerPlayer?.runtime ?? null, null);
+  assert.equal(store.getFailedOperations(initialGame.id).some((operation) => String(operation.id).startsWith("bot:")), false);
+});
+
 test("sync store closes computer-player rush continuations with endTurn instead of logging pass", async () => {
   const initialGame = buildComputerPlayerRushClosureGame({ humanSeat: "Player 2", botSeat: "Player 1", botId: "tau" });
   const { transport, getGame, getAppliedCommandIds, getEndedTurnCommandIds } = createComputerPlayerTransportHarness(initialGame);
