@@ -58,7 +58,10 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /data-testid="restore-game"/);
   assert.match(source, /const renderGameNotFound = \(\) =>/);
   assert.match(source, /data-testid="game-not-found"/);
-  assert.match(source, /game-shell-summary-header/);
+  assert.match(source, /game-shell-summary-shell/);
+  assert.match(source, /game-shell-summary-actions/);
+  assert.doesNotMatch(source, /game-shell-summary-header/);
+  assert.doesNotMatch(source, /game-shell-summary-menu/);
   assert.match(source, /renderCardMenu\(game, \{\s*isOffline: navigator\.onLine === false,\s*myIdentityId: transport\.getIdentityId\(\),\s*variant: "game",/s);
   assert.match(source, /const renderScenarioFlyout = \(\) =>/);
   assert.match(source, /const renderDebugFlyout = \(\) =>/);
@@ -80,6 +83,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /body = renderGameNotFound\(\);/);
   assert.match(source, /<h1><a class="shell-header-title-link" href="\$\{buildHomeHash\(getCurrentFlyoutState\(\)\)\}" data-flyout-link="home">Righelt<\/a><\/h1>/);
   assert.match(source, /const renderHeaderWideActions = \(\) =>/);
+  assert.match(source, /const renderHeaderTrashAction = \(\) =>/);
   assert.match(source, /const renderHeaderNarrowMenu = \(\) =>/);
   assert.match(source, /const renderHeaderAlertZone = \(\) => \{/);
   assert.match(source, /const alertStackRotationByGameId = new Map\(\);/);
@@ -92,12 +96,19 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /: 'aria-hidden="true" tabindex="-1"'/);
   assert.match(source, /const viewedGameId = getCurrentViewedGameId\(\);/);
   assert.match(source, /data-shell-alert-zone="\$\{gameAlerts \? "active" : "idle"\}"/);
+  assert.match(source, /shell-header-trash-link/);
+  assert.match(source, /data-flyout-link="trash"/);
   assert.match(source, /data-action="open-trash"/);
+  assert.match(source, />Trash<\/a>/);
   assert.match(source, />Trash<\/button>/);
+  assert.match(source, /const closeCardMenus = \(exceptMenu = null\) =>/);
+  assert.match(source, /details\[data-card-menu\]\[open\]/);
   assert.match(source, /const renderTrash = \(\) =>/);
   assert.match(source, /const renderGameNotFound = \(\) =>/);
   assert.match(source, /const renderHomeGameSection = \(sectionKey, \{ alwaysRender = sectionKey === "my", menuMode = currentRoute\.name === "trash" \? "trash" : "home" \} = \{\}\) =>/);
   assert.match(source, /const renderHomeGameCard = \(game, \{ menuMode = "home" \} = \{\}\) =>/);
+  assert.match(source, /mini-board-card-menu mini-board-card-menu-overlay/);
+  assert.match(source, /mini-board-card-menu mini-board-card-menu-game/);
   assert.match(source, /mode: menuMode/);
   assert.match(source, /data-action="toggle-header-menu"/);
   assert.match(source, /data-header-menu-open="\$\{headerMenuOpen \? "true" : "false"\}"/);
@@ -513,6 +524,11 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   );
   assert.match(
     source,
+    /if \(target instanceof HTMLElement\) \{\s*const cardMenuRoot = target\.closest\("details\[data-card-menu\]"\);\s*if \(cardMenuRoot instanceof HTMLElement\) \{\s*closeCardMenus\(cardMenuRoot\);\s*\} else \{\s*closeCardMenus\(\);\s*\}\s*\}/s,
+  );
+  assert.match(source, /appEl\.addEventListener\("toggle", \(event\) => \{[\s\S]*closeCardMenus\(target\);[\s\S]*\}/s);
+  assert.match(
+    source,
     /if \(action === "toggle-header-menu"\) \{\s*headerMenuOpen = !headerMenuOpen;\s*if \(isNarrowHeaderMode\(\)\) \{\s*syncNarrowHeaderMenuDom\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}\s*return;\s*\}/s,
   );
   assert.match(
@@ -521,7 +537,7 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   );
   assert.match(
     source,
-    /window\.addEventListener\("keydown", \(event\) => \{[\s\S]*target\.matches\('\[data-action="cycle-game-alert-stack"\]'\)[\s\S]*event\.key === "Enter" \|\| event\.key === " "[\s\S]*cycleGameAlertStack\(gameId, target\);[\s\S]*event\.key !== "Escape"[\s\S]*closeHeaderMenu\(\);[\s\S]*syncNarrowHeaderMenuDom\(\);/s,
+    /window\.addEventListener\("keydown", \(event\) => \{[\s\S]*target\.matches\('\[data-action="cycle-game-alert-stack"\]'\)[\s\S]*event\.key === "Enter" \|\| event\.key === " "[\s\S]*cycleGameAlertStack\(gameId, target\);[\s\S]*if \(event\.key !== "Escape"\) \{[\s\S]*closeCardMenus\(\);[\s\S]*if \(!headerMenuOpen\) \{[\s\S]*closeHeaderMenu\(\);[\s\S]*syncNarrowHeaderMenuDom\(\);/s,
   );
   assert.match(
     source,

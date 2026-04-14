@@ -250,6 +250,16 @@ body {
   grid-column: 1;
   position: relative;
   z-index: 1;
+  flex: 1 1 28rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.shell-header-main h1 {
+  flex: 0 0 auto;
 }
 
 .shell-header-actions {
@@ -279,6 +289,13 @@ body {
 .shell-header-status[data-shell-alert-zone="idle"] {
   visibility: hidden;
   pointer-events: none;
+}
+
+.shell-header-trash-link {
+  flex: 0 0 auto;
+  min-height: 2.75rem;
+  padding-inline: 0.85rem;
+  white-space: nowrap;
 }
 
 .nav-row {
@@ -1286,10 +1303,6 @@ button.button-release-bounce,
   overflow: clip;
 }
 
-.mini-board-card[data-home-game-card] .mini-board-card-link-surface {
-  padding-top: 3rem;
-}
-
 .mini-board-card.is-leaving {
   pointer-events: none;
 }
@@ -1326,13 +1339,22 @@ button.button-release-bounce,
 }
 
 .mini-board-card-menu {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.mini-board-card-menu-overlay {
   position: absolute;
   top: 0.55rem;
   right: 0.55rem;
   z-index: 3;
-  display: grid;
-  gap: 0.45rem;
-  margin: 0;
+}
+
+.mini-board-card-menu-game {
+  position: relative;
+  justify-items: end;
+  z-index: 1;
 }
 
 .mini-board-card-menu > summary {
@@ -1402,6 +1424,10 @@ button.button-release-bounce,
   border-radius: 12px;
   background: var(--shell-elevated-surface);
   box-shadow: var(--shell-elevated-shadow);
+}
+
+.mini-board-card-menu-game .mini-board-card-menu-panel {
+  top: calc(100% + 0.45rem);
 }
 
 .mini-board-card-menu-item {
@@ -1550,6 +1576,10 @@ button.button-release-bounce,
   justify-content: space-between;
   gap: 0.6rem;
   flex-wrap: wrap;
+}
+
+.mini-board-card[data-home-game-card] .mini-board-card-header {
+  padding-right: 3.4rem;
 }
 
 .mini-board-card-copy {
@@ -2098,11 +2128,11 @@ textarea:focus-visible {
   user-select: none;
 }
 
-.game-shell-summary-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 0.75rem;
+.game-shell-summary-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.85rem 1rem;
 }
 
 .game-shell-summary-copy {
@@ -2111,17 +2141,19 @@ textarea:focus-visible {
   gap: 0.5rem;
 }
 
-.game-shell-summary-menu {
-  flex: 0 0 auto;
+.game-shell-summary-actions {
+  justify-self: end;
   margin-top: 0.1rem;
+  position: relative;
+  z-index: 1;
 }
 
-#app[data-shell-layout-mode="narrow"] .game-shell-summary-header {
-  flex-direction: column;
+#app[data-shell-layout-mode="narrow"] .game-shell-summary-shell {
+  grid-template-columns: minmax(0, 1fr);
 }
 
-#app[data-shell-layout-mode="narrow"] .game-shell-summary-menu {
-  align-self: flex-end;
+#app[data-shell-layout-mode="narrow"] .game-shell-summary-actions {
+  justify-self: stretch;
   margin-top: 0;
 }
 
@@ -2248,7 +2280,7 @@ textarea:focus-visible {
     max-width: calc(100vw - 3.5rem);
   }
 
-  .mini-board-card-menu {
+  .mini-board-card-menu-overlay {
     top: 0.5rem;
     right: 0.5rem;
   }

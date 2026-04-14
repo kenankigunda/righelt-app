@@ -1203,6 +1203,17 @@ const isNarrowHeaderMode = () => getShellLayoutMode() === "narrow";
 const closeHeaderMenu = () => {
   headerMenuOpen = false;
 };
+const closeCardMenus = (exceptMenu = null) => {
+  if (!(appEl instanceof HTMLElement)) {
+    return;
+  }
+  appEl.querySelectorAll("details[data-card-menu][open]").forEach((menuEl) => {
+    if (!(menuEl instanceof HTMLElement) || menuEl === exceptMenu) {
+      return;
+    }
+    menuEl.removeAttribute("open");
+  });
+};
 const syncNarrowHeaderMenuDom = () => {
   if (!isNarrowHeaderMode() || !(appEl instanceof HTMLElement)) {
     return;
@@ -1263,12 +1274,6 @@ const syncNarrowHeaderMenuDom = () => {
 };
 const renderHeaderWideActions = () => `
   <button
-    class="secondary${currentRoute.name === "trash" ? " is-active" : ""}"
-    type="button"
-    data-action="open-trash"
-    aria-pressed="${currentRoute.name === "trash" ? "true" : "false"}"
-  >Trash</button>
-  <button
     class="secondary${currentRoute.scenarios ? " is-active" : ""}"
     type="button"
     data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
@@ -1280,6 +1285,14 @@ const renderHeaderWideActions = () => `
     data-action="${currentRoute.debug ? "close-debug" : "open-debug"}"
     aria-pressed="${currentRoute.debug ? "true" : "false"}"
   >Debug</button>
+`;
+const renderHeaderTrashAction = () => `
+  <a
+    class="button-link secondary shell-header-trash-link${currentRoute.name === "trash" ? " is-active" : ""}"
+    href="${buildTrashHash(getCurrentFlyoutState())}"
+    data-flyout-link="trash"
+    ${currentRoute.name === "trash" ? 'aria-current="page"' : ""}
+  >Trash</a>
 `;
 const renderHeaderNarrowMenu = () => {
   const menuId = "shell-header-menu";
@@ -1822,6 +1835,7 @@ const renderHeader = () => `
   <header class="shell-header">
     <div class="shell-header-main">
       <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Righelt</a></h1>
+      ${isNarrowHeaderMode() ? "" : renderHeaderTrashAction()}
     </div>
     ${renderHeaderAlertZone()}
     <div class="shell-header-actions">
@@ -2265,12 +2279,16 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
 const renderCardMenu = (game, { isOffline, myIdentityId, mode = "home", variant = mode } = {}) => {
   const menuId = `mini-board-card-menu-${escapeHtml(game.id)}`;
   const offlineNote = isOffline ? '<p class="small mini-board-card-menu-note">Not available offline.</p>' : "";
+  const menuClassName =
+    variant === "game"
+      ? "mini-board-card-menu mini-board-card-menu-game"
+      : "mini-board-card-menu mini-board-card-menu-overlay";
   if (mode === "trash") {
     if (!isPlayerRole(game?.myRole)) {
       return "";
     }
     return `
-      <details class="mini-board-card-menu" data-card-menu data-game-id="${escapeHtml(game.id)}">
+      <details class="${menuClassName}" data-card-menu data-game-id="${escapeHtml(game.id)}">
         <summary
           class="secondary mini-board-card-menu-button"
           aria-label="Restore game actions"
@@ -2305,7 +2323,7 @@ const renderCardMenu = (game, { isOffline, myIdentityId, mode = "home", variant 
         ? "delete-game"
         : "leave-game";
   return `
-    <details class="mini-board-card-menu" data-card-menu data-game-id="${escapeHtml(game.id)}">
+    <details class="${menuClassName}" data-card-menu data-game-id="${escapeHtml(game.id)}">
       <summary
         class="secondary mini-board-card-menu-button"
         aria-label="${escapeHtml(`${leaveDeleteLabel} game actions`)}"
@@ -2752,7 +2770,7 @@ const renderGameSummaryPanel = (game) => {
     variant: "game",
   });
   return `
-    <div class="game-shell-summary-header">
+    <div class="game-shell-summary-shell">
       <div class="game-shell-summary-copy">
         <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
         <div class="section-stack">
@@ -2770,7 +2788,7 @@ const renderGameSummaryPanel = (game) => {
           </div>
         </div>
       </div>
-      <div class="game-shell-summary-menu">${gamePageMenu}</div>
+      <div class="game-shell-summary-actions">${gamePageMenu}</div>
     </div>
   `;
 };
@@ -3074,6 +3092,9 @@ const getFlyoutAwareHref = (element) => {
   if (target === "game") {
     const gameId = element.getAttribute("data-game-id");
     return gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : "";
+  }
+  if (target === "trash") {
+    return buildTrashHash(getCurrentFlyoutState());
   }
   return "";
 };
@@ -5100,6 +5121,14 @@ window.addEventListener("pointercancel", () => {
 
 window.addEventListener("click", (event) => {
   const target = event.target;
+  if (target instanceof HTMLElement) {
+    const cardMenuRoot = target.closest("details[data-card-menu]");
+    if (cardMenuRoot instanceof HTMLElement) {
+      closeCardMenus(cardMenuRoot);
+    } else {
+      closeCardMenus();
+    }
+  }
   if (!headerMenuOpen || !(target instanceof HTMLElement)) {
     return;
   }
@@ -5124,11 +5153,26 @@ window.addEventListener("keydown", (event) => {
     }
     return;
   }
-  if (event.key !== "Escape" || !headerMenuOpen) {
+  if (event.key !== "Escape") {
+    return;
+  }
+  closeCardMenus();
+  if (!headerMenuOpen) {
     return;
   }
   closeHeaderMenu();
   syncNarrowHeaderMenuDom();
+});
+
+appEl.addEventListener("toggle", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLDetailsElement) || !target.matches("[data-card-menu]")) {
+    return;
+  }
+  if (!target.open) {
+    return;
+  }
+  closeCardMenus(target);
 });
 
 appEl.addEventListener("touchstart", (event) => {

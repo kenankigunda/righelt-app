@@ -29,7 +29,9 @@ const createSelfPlayGameViaApi = async (page) =>
 
 const openCardMenu = async (card, label) => {
   await expect(card).toBeVisible();
-  await card.locator(`summary[aria-label="${label}"]`).click();
+  const toggle = card.locator(`summary[aria-label="${label}"], [aria-label="${label}"]`).first();
+  await expect(toggle).toBeVisible();
+  await toggle.click();
 };
 
 const getGameIdFromUrl = (page) => {
@@ -181,6 +183,10 @@ test.describe("t-030 leave/delete/trash workflows", () => {
       });
 
       await openCardMenu(homeCard, "Leave game actions");
+      await expect(homeCard.getByTestId("leave-game")).toBeVisible();
+      await creatorPage.locator("h1").click();
+      await expect(homeCard.getByTestId("leave-game")).not.toBeVisible();
+      await openCardMenu(homeCard, "Leave game actions");
       await homeCard.getByTestId("leave-game").click();
 
       await expect(homeCard).toHaveClass(/is-leaving/);
@@ -210,6 +216,10 @@ test.describe("t-030 leave/delete/trash workflows", () => {
 
       const leaveGameMenu = creatorPage.locator('summary[aria-label="Leave game actions"]').first();
       await expect(leaveGameMenu).toBeVisible();
+      await leaveGameMenu.click();
+      await expect(creatorPage.getByTestId("leave-game")).toBeVisible();
+      await creatorPage.keyboard.press("Escape");
+      await expect(creatorPage.getByTestId("leave-game")).not.toBeVisible();
       await leaveGameMenu.click();
       await creatorPage.getByTestId("leave-game").click();
 
@@ -345,6 +355,64 @@ test.describe("t-030 leave/delete/trash workflows", () => {
       await expect(homeCard).toBeVisible();
       await openCardMenu(homeCard, "Delete game actions");
       await expect(homeCard.getByTestId("delete-game")).toHaveText("Delete");
+    } finally {
+      await closeContextQuietly(context);
+    }
+  });
+
+  test("E-23: trash lives in the header chrome and contextual menus close on outside click or Escape", async ({
+    browser,
+    baseURL,
+  }) => {
+    const { context, page } = await createIsolatedPage(browser);
+
+    try {
+      const { gameId, gameHash } = await createGameFromHome(page);
+      await page.goto("/");
+
+      const trashLink = page.getByRole("link", { name: "Trash" });
+      const headerActions = page.locator(".nav-row");
+      await expect(trashLink).toBeVisible();
+      const trashBox = await trashLink.boundingBox();
+      const actionsBox = await headerActions.boundingBox();
+      expect(trashBox).not.toBeNull();
+      expect(actionsBox).not.toBeNull();
+      expect(trashBox.x).toBeLessThan(actionsBox.x);
+
+      const homeCard = getHomeCard(page, gameId);
+      await openCardMenu(homeCard, "Delete game actions");
+      await expect(homeCard.locator("details[data-card-menu][open]")).toHaveCount(1);
+      await page.mouse.click(8, 8);
+      await expect(homeCard.locator("details[data-card-menu][open]")).toHaveCount(0);
+
+      await openCardMenu(homeCard, "Delete game actions");
+      await expect(homeCard.locator("details[data-card-menu][open]")).toHaveCount(1);
+      await page.keyboard.press("Escape");
+      await expect(homeCard.locator("details[data-card-menu][open]")).toHaveCount(0);
+
+      await trashLink.click();
+      await expect(page).toHaveURL(/#\/trash/);
+      await expect(page.getByText("My deleted games")).toBeVisible();
+
+      await page.goto(`${baseURL}${gameHash}`);
+      await page.waitForLoadState("domcontentloaded");
+      const summaryCopy = page.locator(".game-shell-summary-copy");
+      const summaryActions = page.locator(".game-shell-summary-actions");
+      await expect(summaryActions).toBeVisible();
+      const copyBox = await summaryCopy.boundingBox();
+      const summaryActionsBox = await summaryActions.boundingBox();
+      expect(copyBox).not.toBeNull();
+      expect(summaryActionsBox).not.toBeNull();
+      expect(summaryActionsBox.x).toBeGreaterThan(copyBox.x + copyBox.width - 16);
+
+      const gameMenu = summaryActions.locator(
+        'summary[aria-label="Leave game actions"], summary[aria-label="Delete game actions"]',
+      );
+      await expect(gameMenu).toBeVisible();
+      await gameMenu.click();
+      await expect(summaryActions.locator("details[data-card-menu][open]")).toHaveCount(1);
+      await page.mouse.click(8, 8);
+      await expect(summaryActions.locator("details[data-card-menu][open]")).toHaveCount(0);
     } finally {
       await closeContextQuietly(context);
     }

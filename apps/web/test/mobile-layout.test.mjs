@@ -78,6 +78,14 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
+    /\.shell-header-main\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-wrap:\s*wrap;[\s\S]*justify-content:\s*space-between;[\s\S]*gap:\s*0\.75rem 1rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-header-trash-link\s*\{[\s\S]*min-height:\s*2\.75rem;[\s\S]*white-space:\s*nowrap;/s,
+  );
+  assert.match(
+    shellStylesSource,
     /\.shell-header h1\s*\{[\s\S]*font-size:\s*2rem;/s,
   );
   assert.match(
@@ -108,13 +116,14 @@ test("shell header separates layout spacing from panel chrome", () => {
     shellStylesSource,
     /\.mini-board-card\s*\{[\s\S]*position:\s*relative;[\s\S]*overflow:\s*clip;/s,
   );
+  assert.doesNotMatch(shellStylesSource, /\.mini-board-card\[data-home-game-card\] \.mini-board-card-link-surface\s*\{[\s\S]*padding-top:\s*3rem;/s);
   assert.match(
     shellStylesSource,
-    /\.mini-board-card\[data-home-game-card\] \.mini-board-card-link-surface\s*\{[\s\S]*padding-top:\s*3rem;/s,
+    /\.mini-board-card\[data-home-game-card\] \.mini-board-card-header\s*\{[\s\S]*padding-right:\s*3\.4rem;/s,
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-menu\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*0\.55rem;[\s\S]*right:\s*0\.55rem;[\s\S]*z-index:\s*3;/s,
+    /\.mini-board-card-menu-overlay\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*0\.55rem;[\s\S]*right:\s*0\.55rem;[\s\S]*z-index:\s*3;/s,
   );
   assert.match(
     shellStylesSource,
@@ -122,11 +131,31 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
+    /\.mini-board-card-menu-game\s*\{[\s\S]*position:\s*relative;[\s\S]*justify-items:\s*end;[\s\S]*z-index:\s*1;/s,
+  );
+  assert.match(
+    shellStylesSource,
     /\.mini-board-card-menu-panel\s*\{[\s\S]*width:\s*min\(14rem,\s*calc\(100vw\s*-\s*3rem\)\);[\s\S]*box-shadow:\s*var\(--shell-elevated-shadow\);/s,
   );
   assert.match(
     shellStylesSource,
+    /\.game-shell-summary-shell\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;[\s\S]*align-items:\s*start;[\s\S]*gap:\s*0\.85rem 1rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.game-shell-summary-actions\s*\{[\s\S]*justify-self:\s*end;[\s\S]*margin-top:\s*0\.1rem;[\s\S]*position:\s*relative;[\s\S]*z-index:\s*1;/s,
+  );
+  assert.match(
+    shellStylesSource,
     /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-menu-panel\s*\{[\s\S]*width:\s*calc\(100vw\s*-\s*3\.5rem\);[\s\S]*max-width:\s*calc\(100vw\s*-\s*3\.5rem\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="narrow"\]\s+\.game-shell-summary-shell\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="narrow"\]\s+\.game-shell-summary-actions\s*\{[\s\S]*justify-self:\s*stretch;[\s\S]*margin-top:\s*0;/s,
   );
   assert.match(
     shellStylesSource,
