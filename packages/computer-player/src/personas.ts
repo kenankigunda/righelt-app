@@ -57,7 +57,7 @@ export const BOT_PERSONAS: Record<BotId, BotPersona> = {
     style: "balanced",
     theme: "owl",
     searchDepth: 3,
-    branchFactor: 16,
+    branchFactor: 12,
     noiseScale: 0.01,
     forgiveness: 0.3,
     aggression: 0.6,
