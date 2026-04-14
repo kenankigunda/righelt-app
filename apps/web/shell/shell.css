@@ -898,6 +898,12 @@ button.button-pending,
 
 .sync-failure-copy {
   min-width: 0;
+  flex: 1 1 auto;
+}
+
+.sync-failure-banner .mini-button {
+  flex: 0 0 auto;
+  align-self: center;
 }
 
 .history-mode-banner {

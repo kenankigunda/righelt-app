@@ -43,7 +43,11 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const alertStackRotationByGameId = new Map\(\);/);
   assert.match(source, /const getGameAlertItems = \(game\) => \{/);
   assert.match(source, /const renderGameAlertStackCard = \(\{ gameId, item, stackIndex, totalAlerts \}\) => \{/);
+  assert.match(source, /const isActive = stackIndex === 0;/);
   assert.match(source, /data-action="cycle-game-alert-stack"/);
+  assert.doesNotMatch(source, /data-action="cycle-game-alert-stack" data-game-id="\$\{escapeHtml\(gameId\)\}" role="button" tabindex="0"/);
+  assert.match(source, /: isActive\s*\? 'tabindex="-1"'/);
+  assert.match(source, /: 'aria-hidden="true" tabindex="-1"'/);
   assert.match(source, /const viewedGameId = getCurrentViewedGameId\(\);/);
   assert.match(source, /data-shell-alert-zone="\$\{gameAlerts \? "active" : "idle"\}"/);
   assert.match(source, /data-action="toggle-header-menu"/);

@@ -1582,16 +1582,21 @@ const cycleGameAlertStack = (gameId, actionEl = null) => {
 };
 
 const renderGameAlertStackCard = ({ gameId, item, stackIndex, totalAlerts }) => {
+  const isActive = stackIndex === 0;
   const interactive = totalAlerts > 1 && stackIndex === 0;
   const ariaLabel = interactive
     ? `Show next notification. ${stackIndex + 1} of ${totalAlerts} is active.`
     : `Notification ${stackIndex + 1} of ${totalAlerts}.`;
   return `<div
-      class="shell-game-alert-stack-card${stackIndex === 0 ? " is-active" : ""}${interactive ? " is-interactive" : ""}"
+      class="shell-game-alert-stack-card${isActive ? " is-active" : ""}${interactive ? " is-interactive" : ""}"
       data-alert-stack-card
       data-stack-index="${stackIndex}"
       data-stack-count="${totalAlerts}"
-      ${interactive ? `data-action="cycle-game-alert-stack" data-game-id="${escapeHtml(gameId)}" role="button" tabindex="0"` : 'aria-hidden="true" tabindex="-1"'}
+      ${interactive
+        ? `data-action="cycle-game-alert-stack" data-game-id="${escapeHtml(gameId)}" tabindex="0"`
+        : isActive
+          ? 'tabindex="-1"'
+          : 'aria-hidden="true" tabindex="-1"'}
       aria-label="${escapeHtml(ariaLabel)}"
     >
       ${item.html}
