@@ -85,6 +85,8 @@ The parent workspace permissions allow these command prefixes without interactiv
 - `./scripts/backlog-git.sh pull --rebase origin main` — use `./scripts/backlog-sync.sh pull` for the common case
 - Piped or chained commands starting with a non-approved prefix — restructure so the approved command leads
 
+For Codex local approval persistence, prefer saving a stable wrapper prefix for app pushes such as `./scripts/git-app.sh push` or `./scripts/git-app.sh push origin`. Do not save branch-qualified variants such as `./scripts/git-app.sh push origin codex/<branch>` because they only auto-approve that one branch name.
+
 ## 5.1) Shared Constants Policy
 
 - Any constant that defines shared runtime behavior, protocol semantics, cache policy, validation rules, game invariants, or other cross-module behavior must have a single source of truth.
