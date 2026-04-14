@@ -1,6 +1,11 @@
-import type { BotId, BotPersona } from "./types";
+import type { BotId, BotPersona, BotSkill } from "./types";
 
 export const BOT_PERSONA_VERSION = "cp-persona-v1" as const;
+export const BOT_MOVE_SELECTION_TIMEOUT_MS_BY_SKILL: Readonly<Record<BotSkill, number>> = Object.freeze({
+  beginner: 12_000,
+  medium: 21_000,
+  hard: 27_000,
+});
 
 export const BOT_PERSONAS: Record<BotId, BotPersona> = {
   babs: {
@@ -67,4 +72,9 @@ export function getBotPersona(personaId: BotId): BotPersona {
 
 export function listBotPersonas(): BotPersona[] {
   return Object.values(BOT_PERSONAS);
+}
+
+export function getBotMoveSelectionTimeoutMs(personaId: BotId | null | undefined): number {
+  const skill = personaId ? BOT_PERSONAS[personaId]?.skill : null;
+  return BOT_MOVE_SELECTION_TIMEOUT_MS_BY_SKILL[skill ?? "beginner"] ?? BOT_MOVE_SELECTION_TIMEOUT_MS_BY_SKILL.beginner;
 }

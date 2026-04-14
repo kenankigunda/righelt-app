@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { createComputerPlayerRuntime } from "../shell/computer-player-runtime.js";
 import { createSyncStore } from "../shell/sync-store.js";
 import { buildComputerPlayerDerivedTurnKey } from "../shell/computer-player-runtime.js";
 import { LIVE_TRANSPORT_STATE_KEY } from "../shell/persistence.js";
@@ -75,6 +76,24 @@ const createFakeClock = ({ startMs = Date.parse("2026-04-03T00:00:00.000Z") } = 
     },
   };
 };
+
+class FakeWorker {
+  constructor() {
+    this.listeners = new Map();
+  }
+
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  postMessage(payload) {
+    void payload;
+  }
+
+  terminate() {}
+}
 
 const createTrackedSyncStore = ({
   env = createApiEnv(),
@@ -1041,6 +1060,85 @@ test("integration sync store auto-runs the opening computer-player turn for Play
   const applyRequest = requests.find((entry) => entry.url === `/api/shell/games/${createdGame.id}/apply` && entry.method === "POST");
   assert.ok(applyRequest);
   assert.match(applyRequest.body.clientCommandId, /^bot:/);
+});
+
+test("integration sync store lets a medium bot select past 12000ms when still inside the 21000ms budget", async () => {
+  const originalWorker = globalThis.Worker;
+  const clock = createFakeClock();
+
+  class DelayedSelectMoveWorker extends FakeWorker {
+    constructor() {
+      super();
+      this.delayMs = 12_500;
+    }
+
+    postMessage(payload) {
+      clock.setTimeout(() => {
+        const legalActions = Array.isArray(payload?.request?.legalActions) ? payload.request.legalActions : [];
+        const action = legalActions.find((entry) => entry.type !== "pass") ?? legalActions[0] ?? { type: "pass" };
+        const listeners = this.listeners.get("message") ?? [];
+        const event = {
+          data: {
+            type: "selectMove:result",
+            requestId: payload?.requestId ?? "cp-0",
+            response: {
+              action,
+              diagnostics: {
+                selectedAction: { key: action.type === "pass" ? "pass" : "integration-delayed-medium" },
+                exploredNodes: 120,
+                legalActionCount: legalActions.length,
+              },
+            },
+          },
+        };
+        for (const listener of listeners) {
+          listener(event);
+        }
+      }, this.delayMs);
+    }
+  }
+
+  globalThis.Worker = DelayedSelectMoveWorker;
+  try {
+    const { store } = createTrackedSyncStore({
+      now: clock.now,
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout,
+      createComputerPlayerRuntime: () =>
+        createComputerPlayerRuntime({
+          createWorker: () => ({ worker: new DelayedSelectMoveWorker(), workerUrl: "blob:delayed-medium" }),
+          setTimeoutFn: clock.setTimeout,
+          clearTimeoutFn: clock.clearTimeout,
+        }),
+    });
+
+    const createdGame = await store.createGame({
+      computerPlayer: {
+        botId: "tau",
+        botSchemaVersion: 1,
+        displayName: "Tau the Tenacious",
+        animal: "tortoise",
+        skillLabel: "Medium",
+        styleLabel: "Defensive",
+        humanSeat: "Player 2",
+        botSeat: "Player 1",
+      },
+    }).committed;
+
+    store.setActiveGameId(createdGame.id);
+    await clock.advanceBy(0);
+    assert.equal(store.getComputerPlayerRuntimeState(createdGame.id)?.status, "thinking");
+
+    await clock.advanceBy(12_000);
+    assert.equal(store.getComputerPlayerRuntimeState(createdGame.id)?.status, "thinking");
+    assert.equal((store.getGameViewModel(createdGame.id)?.moves.length ?? 0), 0);
+
+    await clock.advanceBy(500);
+    await waitFor(() => (store.getGameViewModel(createdGame.id)?.moves.length ?? 0) === 1);
+    assert.equal(store.getComputerPlayerRuntimeState(createdGame.id), null);
+  } finally {
+    globalThis.Worker = originalWorker;
+  }
 });
 
 test("integration sync store queues the bot move behind an unresolved human apply and sends it after the head command confirms", async () => {

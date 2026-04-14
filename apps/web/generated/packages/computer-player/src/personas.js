@@ -1,4 +1,9 @@
 export const BOT_PERSONA_VERSION = "cp-persona-v1";
+export const BOT_MOVE_SELECTION_TIMEOUT_MS_BY_SKILL = Object.freeze({
+    beginner: 12000,
+    medium: 21000,
+    hard: 27000,
+});
 export const BOT_PERSONAS = {
     babs: {
         id: "babs",
@@ -62,4 +67,8 @@ export function getBotPersona(personaId) {
 }
 export function listBotPersonas() {
     return Object.values(BOT_PERSONAS);
+}
+export function getBotMoveSelectionTimeoutMs(personaId) {
+    const skill = personaId ? BOT_PERSONAS[personaId]?.skill : null;
+    return BOT_MOVE_SELECTION_TIMEOUT_MS_BY_SKILL[skill ?? "beginner"] ?? BOT_MOVE_SELECTION_TIMEOUT_MS_BY_SKILL.beginner;
 }

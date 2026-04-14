@@ -1,7 +1,9 @@
-import { selectMove } from "../generated/packages/computer-player/src/index.js";
+import {
+  getBotMoveSelectionTimeoutMs,
+  selectMove,
+} from "../generated/packages/computer-player/src/index.js";
 
 const TURN_KEY_DELIMITER = "|";
-const DEFAULT_SELECT_MOVE_TIMEOUT_MS = 4_000;
 const COMPUTER_PLAYER_WORKER_MODULE_URL = new URL("../generated/packages/computer-player/src/index.js", import.meta.url).href;
 const PERSONA_MINIMUM_THINK_MS = Object.freeze({
   babs: 600,
@@ -90,6 +92,8 @@ export const getComputerPlayerThinkTargetMs = ({ botId, diagnostics = null } = {
   return minimumMs + complexityBonusMs;
 };
 
+export const getComputerPlayerMoveSelectionTimeoutMs = ({ botId } = {}) => getBotMoveSelectionTimeoutMs(botId ?? null);
+
 export const runComputerPlayerSelectMove = async (request) => Promise.resolve().then(() => getSelectMoveImplementation()(request));
 
 export const createInlineComputerPlayerRuntime = () => ({
@@ -133,8 +137,10 @@ const createWorkerRecord = () => {
 };
 
 export const createComputerPlayerRuntime = ({
-  timeoutMs = DEFAULT_SELECT_MOVE_TIMEOUT_MS,
+  timeoutMs = null,
   createWorker = createWorkerRecord,
+  setTimeoutFn = (...args) => globalThis.setTimeout(...args),
+  clearTimeoutFn = (...args) => globalThis.clearTimeout(...args),
 } = {}) => {
   if (typeof Worker !== "function") {
     return createInlineComputerPlayerRuntime();
@@ -151,7 +157,7 @@ export const createComputerPlayerRuntime = ({
     }
     pendingRequests.delete(requestId);
     if (pending.timeoutId) {
-      clearTimeout(pending.timeoutId);
+      clearTimeoutFn(pending.timeoutId);
     }
     return pending;
   };
@@ -227,18 +233,22 @@ export const createComputerPlayerRuntime = ({
     kind: "worker",
     selectMove(request) {
       const worker = ensureWorker();
+      const effectiveTimeoutMs =
+        typeof timeoutMs === "number" && Number.isFinite(timeoutMs)
+          ? timeoutMs
+          : getComputerPlayerMoveSelectionTimeoutMs({ botId: request?.personaId });
       const requestId = `cp-${nextRequestId}`;
       nextRequestId += 1;
       return new Promise((resolve, reject) => {
-        const timeoutId = setTimeout(() => {
+        const timeoutId = setTimeoutFn(() => {
           cleanupPendingRequest(requestId);
           reject(
             createRuntimeError(
-              `Computer-player move selection exceeded ${timeoutMs}ms.`,
+              `Computer-player move selection exceeded ${effectiveTimeoutMs}ms.`,
               "computer_player_timeout",
             ),
           );
-        }, timeoutMs);
+        }, effectiveTimeoutMs);
         pendingRequests.set(requestId, { resolve, reject, timeoutId });
         worker.postMessage({
           type: "selectMove",
