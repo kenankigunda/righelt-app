@@ -13,7 +13,7 @@ const getHistoryMoveCount = async (page) => page.getByTestId("history-move-item"
 
 const applyAnyLegalMoveViaApi = async (page) => {
   const startingCount = await getHistoryMoveCount(page);
-  await page.evaluate(async () => {
+  const action = await page.evaluate(async () => {
     const identityId = window.localStorage.getItem("righelt.identity.id.v1");
     const match = new URL(window.location.href).hash.match(/^#\/game\/([^?]+)/);
     if (!identityId || !match) {
@@ -22,9 +22,18 @@ const applyAnyLegalMoveViaApi = async (page) => {
     const gameId = decodeURIComponent(match[1]);
     const gameResponse = await fetch(`/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}`);
     const gameBody = await gameResponse.json();
-    const action = (Array.isArray(gameBody?.game?.legalActions) ? gameBody.game.legalActions : []).find(
-      (candidate) => candidate?.from && candidate?.to,
-    );
+    const snapshotPieces = Array.isArray(gameBody?.game?.currentSnapshot?.pieces) ? gameBody.game.currentSnapshot.pieces : [];
+    const legalActions = Array.isArray(gameBody?.game?.legalActions) ? gameBody.game.legalActions : [];
+    const action =
+      legalActions.find(
+        (candidate) =>
+          candidate?.from &&
+          candidate?.to &&
+          !snapshotPieces.some(
+            (piece) => piece?.position?.row === candidate.to.row && piece?.position?.col === candidate.to.col,
+          ),
+      ) ??
+      legalActions.find((candidate) => candidate?.from && candidate?.to);
     if (!action) {
       throw new Error("No legal move available for replay E2E move");
     }
@@ -42,15 +51,24 @@ const applyAnyLegalMoveViaApi = async (page) => {
     if (!applyResponse.ok || applyBody?.accepted !== true) {
       throw new Error(`Replay E2E move rejected: ${JSON.stringify(applyBody)}`);
     }
+    return action;
   });
   await expect
     .poll(async () => getHistoryMoveCount(page), {
       message: "Expected replay E2E move to appear in the history list",
     })
     .toBeGreaterThan(startingCount);
+  return action;
 };
 
-test("viewer replays unseen incoming human moves after browser focus returns", async ({ browser, baseURL }) => {
+const getRenderableTokenCountAt = async (page, coord, { ghosts = false } = {}) =>
+  page.locator(
+    `[data-testid="game-board"] .cell[data-row="${coord.row}"][data-col="${coord.col}"] .piece-token${
+      ghosts ? ".move-ghost" : ':not(.move-ghost):not(.history-destruction-piece):not(.removal-piece)'
+    }`,
+  ).count();
+
+test("viewer replays incoming moves without focused-start flicker and still shows baseline after refocus", async ({ browser, baseURL }) => {
   const owner = await createIsolatedPage(browser);
   const opponent = await createIsolatedPage(browser);
   const viewer = await createIsolatedPage(browser);
@@ -99,12 +117,50 @@ test("viewer replays unseen incoming human moves after browser focus returns", a
     await joinAsViewer(viewer.page);
     await expect(viewer.page.getByTestId("game-role")).toContainText("Viewer");
 
+    const firstAction = await applyAnyLegalMoveViaApi(owner.page);
+    await expect(opponent.page.getByTestId("active-turn-label")).toContainText("Player 2");
+    await expect
+      .poll(
+        () =>
+          viewer.page.evaluate((activeGameId) => globalThis.__righeltIncomingMoveReplay?.getReplayState?.(activeGameId), gameId),
+        { timeout: 10_000 },
+      )
+      .toMatchObject({ actorSeat: "Player 1", phase: "armed", moveIndex: 0 });
+    await expect(viewer.page.locator("#shell-board-preview-label")).not.toContainText("Incoming move");
+    await expect(viewer.page.locator("#shell-board-turn-indicator")).not.toContainText("Replaying");
+    await expect.poll(() => getRenderableTokenCountAt(viewer.page, firstAction.to)).toBe(0);
+    await expect.poll(() => getRenderableTokenCountAt(viewer.page, firstAction.to, { ghosts: true })).toBe(0);
+
+    await expect
+      .poll(
+        () =>
+          viewer.page.evaluate((activeGameId) => globalThis.__righeltIncomingMoveReplay?.getActiveReplay?.(activeGameId), gameId),
+        { timeout: 10_000 },
+      )
+      .toMatchObject({ actorSeat: "Player 1", phase: "preview", moveIndex: 0 });
+    await expect(viewer.page.locator("#shell-board-turn-indicator")).toContainText("Replaying Player 1 move");
+    await expect(viewer.page.locator("#shell-board-preview-label")).toContainText("Incoming move.");
+    await expect.poll(() => getRenderableTokenCountAt(viewer.page, firstAction.to, { ghosts: true })).toBeGreaterThan(0);
+    await expect
+      .poll(
+        () =>
+          viewer.page.evaluate((activeGameId) => globalThis.__righeltIncomingMoveReplay?.getActiveReplay?.(activeGameId), gameId),
+        { timeout: 10_000 },
+      )
+      .toMatchObject({ actorSeat: "Player 1", phase: "settle", moveIndex: 0 });
+    await expect.poll(() => getRenderableTokenCountAt(viewer.page, firstAction.to)).toBeGreaterThan(0);
+    await expect
+      .poll(
+        () =>
+          viewer.page.evaluate((activeGameId) => globalThis.__righeltIncomingMoveReplay?.getReplayState?.(activeGameId), gameId),
+        { timeout: 10_000 },
+      )
+      .toBeNull();
+
     await viewer.page.evaluate(() => globalThis.__setReplayFocusState(false));
     await expect.poll(() => viewer.page.evaluate(() => document.hasFocus())).toBe(false);
 
-    await applyAnyLegalMoveViaApi(owner.page);
-    await expect(opponent.page.getByTestId("active-turn-label")).toContainText("Player 2");
-    await applyAnyLegalMoveViaApi(opponent.page);
+    const secondAction = await applyAnyLegalMoveViaApi(opponent.page);
     await expect(owner.page.getByTestId("active-turn-label")).toContainText("Player 1");
     await expect
       .poll(
@@ -112,27 +168,24 @@ test("viewer replays unseen incoming human moves after browser focus returns", a
           viewer.page.evaluate((activeGameId) => globalThis.__righeltIncomingMoveReplay?.getQueuedMoveIndexes?.(activeGameId)?.length ?? 0, gameId),
         { timeout: 10_000 },
       )
-      .toBe(2);
-
-    await expect(viewer.page.locator("#shell-board-preview-label")).not.toContainText("Incoming move");
+      .toBe(1);
 
     await viewer.page.evaluate(() => globalThis.__setReplayFocusState(true));
     await expect.poll(() => viewer.page.evaluate(() => document.hasFocus())).toBe(true);
     await expect
       .poll(
         () =>
-          viewer.page.evaluate((activeGameId) => globalThis.__righeltIncomingMoveReplay?.getActiveReplay?.(activeGameId)?.actorSeat ?? null, gameId),
+          viewer.page.evaluate((activeGameId) => globalThis.__righeltIncomingMoveReplay?.getActiveReplay?.(activeGameId), gameId),
         { timeout: 10_000 },
       )
-      .toBe("Player 1");
-    await expect(viewer.page.locator("#shell-board-turn-indicator")).toContainText("Replaying Player 1 move");
-    await expect(viewer.page.locator("#shell-board-preview-label")).toContainText("Incoming move 1 of 2.");
+      .toMatchObject({ actorSeat: "Player 2", phase: "baseline", moveIndex: 1 });
+    await expect.poll(() => getRenderableTokenCountAt(viewer.page, secondAction.to)).toBe(0);
     await expect
       .poll(async () => viewer.page.locator("#shell-board-turn-indicator").textContent(), {
-        timeout: 2_500,
+        timeout: 5_000,
       })
       .toContain("Replaying Player 2 move");
-    await expect(viewer.page.locator("#shell-board-preview-label")).toContainText("Incoming move 2 of 2.");
+    await expect(viewer.page.locator("#shell-board-preview-label")).toContainText("Incoming move.");
   } finally {
     await closeContextQuietly(owner.context);
     await closeContextQuietly(opponent.context);

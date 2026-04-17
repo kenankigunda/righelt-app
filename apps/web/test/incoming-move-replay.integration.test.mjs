@@ -90,7 +90,7 @@ const createFakeClock = () => {
   };
 };
 
-test("incoming replay controller and board runtime show the replay label while interaction is paused", async () => {
+test("incoming replay keeps the focused live board stable until preview begins while interaction is paused", async () => {
   const clock = createFakeClock();
   let currentGame = createGame();
   const previewLabelEl = {
@@ -108,14 +108,6 @@ test("incoming replay controller and board runtime show the replay label while i
   };
   let renderPayload = null;
   let interactionAllowed = true;
-
-  const controller = createIncomingMoveReplayController({
-    getGame: () => currentGame,
-    setTimeoutFn: (fn, delay) => clock.setTimeout(fn, delay),
-    clearTimeoutFn: (handle) => clock.clearTimeout(handle),
-    isDocumentVisible: () => true,
-    isWindowFocused: () => true,
-  });
 
   const runtime = createBoardRuntime({
     boardAdapter: {
@@ -148,35 +140,56 @@ test("incoming replay controller and board runtime show the replay label while i
     boardTurnIndicatorEl: turnIndicatorEl,
   });
 
+  const controller = createIncomingMoveReplayController({
+    getGame: () => currentGame,
+    isBaselinePresentationSatisfied: ({ selectionSnapshot }) =>
+      JSON.stringify(runtime.getState?.() ?? null) === JSON.stringify(selectionSnapshot),
+    setTimeoutFn: (fn, delay) => clock.setTimeout(fn, delay),
+    clearTimeoutFn: (handle) => clock.clearTimeout(handle),
+    isDocumentVisible: () => true,
+    isWindowFocused: () => true,
+  });
+
   controller.setRouteState({ gameId: currentGame.id, replayEnabled: true });
   controller.primeGame(currentGame);
-  currentGame = createGame([createMove()]);
+  const move = createMove();
+  await runtime.loadSnapshot(move.selectionSnapshot, {
+    legalActions: [],
+    resetSelection: true,
+    overlayMode: "interactive",
+    recordedAction: null,
+    recordedActionStartPiece: null,
+    destroyedPieces: [],
+    replay: null,
+  });
+  const preReplayLabel = previewLabelEl.textContent;
+  const preReplayTurnIndicator = turnIndicatorEl.textContent;
+  currentGame = createGame([move]);
   controller.observeAuthoritativeGame(currentGame);
-  clock.flushNext(180);
-  clock.flushNext(0);
 
-  const replay = controller.getActiveReplay(currentGame.id);
-  assert.ok(replay);
+  assert.equal(controller.getActiveReplay(currentGame.id), null);
+  assert.equal(controller.getReplayState(currentGame.id)?.phase, "armed");
   interactionAllowed = !controller.isReplayActiveForGame(currentGame.id);
+  assert.equal(previewLabelEl.textContent, preReplayLabel);
+  assert.equal(turnIndicatorEl.textContent, preReplayTurnIndicator);
+  assert.equal(interactionAllowed, false);
 
-  await runtime.loadSnapshot(replay.snapshot, {
+  clock.flushNext(180);
+  const previewReplay = controller.getActiveReplay(currentGame.id);
+  assert.equal(previewReplay?.phase, "preview");
+  await runtime.loadSnapshot(previewReplay.snapshot, {
     legalActions: [],
     resetSelection: true,
     overlayMode: "recorded-action",
-    recordedAction: replay.recordedAction,
-    recordedActionStartPiece: replay.recordedActionStartPiece,
-    destroyedPieces: replay.destroyedPieces,
-    replay: {
-      kind: "incoming-move",
-      actorSeat: replay.actorSeat,
-      actorSide: replay.actorSide,
-      stepIndex: replay.stepIndex,
-      totalSteps: replay.totalSteps,
-    },
+    recordedAction: previewReplay.recordedAction,
+    recordedActionStartPiece: previewReplay.recordedActionStartPiece,
+    destroyedPieces: previewReplay.destroyedPieces,
+    replay: previewReplay,
   });
 
   assert.equal(previewLabelEl.textContent, "Incoming move.");
   assert.equal(turnIndicatorEl.textContent, "Replaying Player 2 move");
   assert.equal(renderPayload?.overlay?.replay?.kind, "incoming-move");
-  assert.equal(interactionAllowed, false);
+  assert.equal(renderPayload?.overlay?.mode, "recorded-action");
+  assert.equal(renderPayload?.overlay?.replay?.phase, "preview");
 });

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   createIncomingMoveReplayController,
@@ -122,11 +123,44 @@ test("incoming move replay waits for focus return before starting", () => {
   assert.deepEqual(controller.getQueuedMoveIndexes(currentGame.id), [0]);
 
   controller.setWindowFocused(true);
+  assert.equal(controller.getActiveReplay(currentGame.id)?.phase, "baseline");
+  assert.deepEqual(controller.getActiveReplay(currentGame.id)?.snapshot, currentGame.moves[0].selectionSnapshot);
   assert.deepEqual(clock.getPendingDelays(), [350]);
   clock.flushNext(350);
+  assert.equal(controller.getActiveReplay(currentGame.id)?.phase, "preview");
   assert.equal(controller.getActiveReplay(currentGame.id)?.actorSeat, "Player 2");
-  clock.flushNext(0);
-  assert.deepEqual(clock.getPendingDelays(), [900]);
+  clock.flushNext(450);
+  assert.equal(controller.getActiveReplay(currentGame.id)?.phase, "settle");
+  assert.deepEqual(controller.getActiveReplay(currentGame.id)?.snapshot, currentGame.moves[0].snapshot);
+  clock.flushNext(450);
+  assert.equal(controller.getActiveReplay(currentGame.id), null);
+});
+
+test("incoming move replay hides the baseline override when the current board already matches the move snapshot", () => {
+  const clock = createFakeClock();
+  let currentGame = createGame({ moves: [] });
+  const controller = createIncomingMoveReplayController({
+    getGame: () => currentGame,
+    isBaselinePresentationSatisfied: () => true,
+    setTimeoutFn: (fn, delay) => clock.setTimeout(fn, delay),
+    clearTimeoutFn: (handle) => clock.clearTimeout(handle),
+    isDocumentVisible: () => true,
+    isWindowFocused: () => true,
+  });
+
+  controller.setRouteState({ gameId: currentGame.id, replayEnabled: true });
+  controller.primeGame(currentGame);
+
+  currentGame = createGame({ moves: [createMove({ actorSide: "P2", index: 0 })] });
+  controller.observeAuthoritativeGame(currentGame);
+
+  assert.equal(controller.getActiveReplay(currentGame.id), null);
+  assert.equal(controller.getReplayState(currentGame.id)?.phase, "armed");
+  assert.equal(controller.isReplayActiveForGame(currentGame.id), true);
+  assert.deepEqual(clock.getPendingDelays(), [180]);
+
+  clock.flushNext(180);
+  assert.equal(controller.getActiveReplay(currentGame.id)?.phase, "preview");
 });
 
 test("incoming move replay skips locally controlled seats and viewer mode replays all seats", () => {
@@ -174,15 +208,40 @@ test("incoming move replay replays all unseen moves in order and uses static ste
   });
   controller.observeAuthoritativeGame(currentGame);
 
+  const baselineReplay = controller.getActiveReplay(currentGame.id);
+  assert.equal(baselineReplay?.moveIndex, 0);
+  assert.equal(baselineReplay?.phase, "baseline");
+  assert.deepEqual(baselineReplay?.snapshot, currentGame.moves[0].selectionSnapshot);
   clock.flushNext(180);
   const firstReplay = controller.getActiveReplay(currentGame.id);
+  assert.equal(firstReplay?.phase, "preview");
   assert.equal(firstReplay?.moveIndex, 0);
   assert.equal(firstReplay?.animated, false);
-  clock.flushNext(0);
-  clock.flushNext(900);
-  assert.equal(controller.getActiveReplay(currentGame.id), null);
+  clock.flushNext(450);
+  const firstSettle = controller.getActiveReplay(currentGame.id);
+  assert.equal(firstSettle?.phase, "settle");
+  assert.deepEqual(firstSettle?.snapshot, currentGame.moves[0].snapshot);
+  clock.flushNext(450);
+  assert.equal(controller.getActiveReplay(currentGame.id)?.phase, "settle");
   clock.flushNext(150);
+  const secondBaseline = controller.getActiveReplay(currentGame.id);
+  assert.equal(secondBaseline?.phase, "baseline");
+  assert.deepEqual(secondBaseline?.snapshot, currentGame.moves[1].selectionSnapshot);
+  clock.flushNext(180);
   const secondReplay = controller.getActiveReplay(currentGame.id);
+  assert.equal(secondReplay?.phase, "preview");
   assert.equal(secondReplay?.moveIndex, 1);
   assert.equal(secondReplay?.animated, false);
+});
+
+test("incoming move replay source emphasis stays fully opaque at animation start", () => {
+  const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+  assert.match(
+    css,
+    /@keyframes incoming-move-replay-source \{\s*from \{\s*opacity: 1;\s*transform: scale\(1\);/s,
+  );
+  assert.doesNotMatch(
+    css,
+    /@keyframes incoming-move-replay-source \{\s*from \{\s*opacity:\s*0\.\d+/s,
+  );
 });

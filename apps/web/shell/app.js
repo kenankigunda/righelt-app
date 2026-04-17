@@ -1059,6 +1059,12 @@ const renderFeedbackReveal = (message, action = null) => `
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
 const incomingMoveReplay = createIncomingMoveReplayController({
   getGame: (gameId) => transport?.getGameViewModel?.(gameId) ?? null,
+  isBaselinePresentationSatisfied: ({ gameId, selectionSnapshot }) => {
+    if (mountedBoardGameId !== gameId || !boardRuntime?.getState || !selectionSnapshot) {
+      return false;
+    }
+    return toStableKey(boardRuntime.getState()) === toStableKey(selectionSnapshot);
+  },
   onStateChanged: () => {
     render({ animatePanels: false, includeBoard: true });
   },
@@ -3439,13 +3445,20 @@ const mountBoardForGame = (game) => {
   }
 
   incomingMoveReplay.primeGame(game);
-  const liveReplay = game.inHistoryMode ? null : incomingMoveReplay.getActiveReplay(game.id);
+  const replayState = game.inHistoryMode ? null : incomingMoveReplay.getReplayState(game.id);
+  const armedReplay = replayState?.phase === "armed" ? replayState : null;
+  const liveReplay = replayState?.phase === "armed" ? null : replayState;
   const replayKey = liveReplay ? toStableKey(liveReplay) : "null";
-  const snapshot = liveReplay?.snapshot ?? game.currentSnapshot ?? null;
+  const snapshot =
+    liveReplay?.snapshot ??
+    (armedReplay && mountedBoardGameId === game.id && boardRuntime?.getState?.()
+      ? boardRuntime.getState()
+      : game.currentSnapshot ?? null);
   const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
   const historySelectionAction = liveReplay?.recordedAction ?? (game.inHistoryMode ? game.historySelectionAction ?? null : null);
-  const overlayMode = game.inHistoryMode || liveReplay ? "recorded-action" : "interactive";
-  const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode && !liveReplay ? game.legalActions : [];
+  const overlayMode = game.inHistoryMode || liveReplay?.phase === "preview" ? "recorded-action" : "interactive";
+  const effectiveLegalActions =
+    Array.isArray(game.legalActions) && !game.inHistoryMode && !liveReplay && !armedReplay ? game.legalActions : [];
   const scenarioSelectionHydration = resolvePendingScenarioHydration({
     game,
     snapshot,
@@ -3467,7 +3480,7 @@ const mountBoardForGame = (game) => {
 
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
-  const historyDestroyedPieces = liveReplay?.destroyedPieces ?? getHistoryDestroyedPieceOverlays(game);
+  const historyDestroyedPieces = liveReplay ? liveReplay.destroyedPieces ?? [] : getHistoryDestroyedPieceOverlays(game);
   const historyRecordedActionStartPiece = liveReplay?.recordedActionStartPiece ?? getHistoryRecordedActionStartPiece(game);
   const forceClickTargetSelection = currentRoute.scenarios;
   const hydratedSelectionAction = scenarioSelectionHydration.selectionAction ?? initialSelectionHydration.selectionAction;

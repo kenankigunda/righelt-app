@@ -110,7 +110,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     selection: overlayMode === OVERLAY_MODE.INTERACTIVE ? getCurrentSelection() : null,
     recordedAction: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedAction : null,
     recordedActionStartPiece: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedActionStartPiece : null,
-    replay: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? overlayReplay : null,
+    replay: overlayReplay,
     destroyedPieces,
   });
 
@@ -453,7 +453,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
 
     if (elements.boardTurnIndicatorEl) {
-      if (overlayMode === OVERLAY_MODE.RECORDED_ACTION && overlayReplay?.kind === "incoming-move" && overlayReplay.actorSeat) {
+      if (overlayReplay?.kind === "incoming-move" && overlayReplay.actorSeat) {
         elements.boardTurnIndicatorEl.textContent = `Replaying ${overlayReplay.actorSeat} move`;
         setPlayerTone(elements.boardTurnIndicatorEl, overlayReplay.actorSide ?? state.sideToMove);
       } else {
@@ -486,15 +486,20 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       formatCoordinate,
     });
 
+    if (overlayReplay?.kind === "incoming-move") {
+      const recordedActionLabel =
+        overlayReplay.totalSteps > 1
+          ? `Incoming move ${overlayReplay.stepIndex + 1} of ${overlayReplay.totalSteps}.`
+          : "Incoming move.";
+      setBoardPreviewPrompt(recordedActionLabel);
+      return;
+    }
+
     if (overlayMode === OVERLAY_MODE.RECORDED_ACTION) {
       const recordedActionLabel =
-        overlayReplay?.kind === "incoming-move"
-          ? overlayReplay.totalSteps > 1
-            ? `Incoming move ${overlayReplay.stepIndex + 1} of ${overlayReplay.totalSteps}.`
-            : "Incoming move."
-          : recordedAction?.from && recordedAction?.to
-            ? "Showing recorded move."
-            : "Showing history move.";
+        recordedAction?.from && recordedAction?.to
+          ? "Showing recorded move."
+          : "Showing history move.";
       setBoardPreviewPrompt(recordedActionLabel);
       return;
     }

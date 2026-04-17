@@ -553,17 +553,17 @@ button {
 }
 
 .piece-token.incoming-move-replay-source {
-  animation: incoming-move-replay-source 260ms cubic-bezier(0.18, 0.72, 0.24, 1);
+  animation: incoming-move-replay-source 160ms cubic-bezier(0.18, 0.72, 0.24, 1);
 }
 
 .piece-token.incoming-move-replay-target {
-  animation: incoming-move-replay-target 260ms cubic-bezier(0.2, 0.72, 0.24, 1);
+  animation: incoming-move-replay-target 200ms cubic-bezier(0.2, 0.72, 0.24, 1) 90ms both;
 }
 
 .incoming-move-replay-arrow {
   stroke-dasharray: 64;
   stroke-dashoffset: 64;
-  animation: incoming-move-replay-arrow 240ms cubic-bezier(0.18, 0.72, 0.24, 1) forwards;
+  animation: incoming-move-replay-arrow 180ms cubic-bezier(0.18, 0.72, 0.24, 1) 40ms both forwards;
 }
 
 .piece-token.preview-created::after {
@@ -838,20 +838,28 @@ button {
 
 @keyframes incoming-move-replay-source {
   from {
-    opacity: 0.18;
-    transform: scale(0.84);
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+
+  55% {
+    opacity: 1;
+    transform: scale(1.08);
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.22);
   }
 
   to {
     opacity: 1;
     transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
   }
 }
 
 @keyframes incoming-move-replay-target {
   from {
-    opacity: 0.18;
-    transform: scale(0.9);
+    opacity: 0;
+    transform: scale(0.88);
   }
 
   60% {
