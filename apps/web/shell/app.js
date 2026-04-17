@@ -2275,7 +2275,7 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
 
 const renderCardMenu = (game, { isOffline, myIdentityId, mode = "home", variant = mode } = {}) => {
   const menuId = `mini-board-card-menu-${escapeHtml(game.id)}`;
-  const offlineNote = isOffline ? '<p class="small mini-board-card-menu-note">Not available offline.</p>' : "";
+  const offlineNote = isOffline ? '<p class="small mini-board-card-action-note">Not available offline.</p>' : "";
   const menuClassName =
     variant === "game"
       ? "mini-board-card-menu mini-board-card-menu-game"
@@ -2297,15 +2297,17 @@ const renderCardMenu = (game, { isOffline, myIdentityId, mode = "home", variant 
             <span></span>
           </span>
         </summary>
-        <div class="mini-board-card-menu-panel" id="${menuId}">
-          <button
-            class="secondary mini-board-card-menu-item"
-            data-action="restore-game"
-            data-game-id="${escapeHtml(game.id)}"
-            data-testid="restore-game"
-            ${isOffline ? "disabled" : ""}
-            aria-disabled="${isOffline ? "true" : "false"}"
-          >Restore</button>
+        <div class="mini-board-card-action-body" id="${menuId}">
+          <div class="mini-board-card-action-capsule">
+            <button
+              class="secondary mini-board-card-menu-item"
+              data-action="restore-game"
+              data-game-id="${escapeHtml(game.id)}"
+              data-testid="restore-game"
+              ${isOffline ? "disabled" : ""}
+              aria-disabled="${isOffline ? "true" : "false"}"
+            >Restore</button>
+          </div>
           ${offlineNote}
         </div>
       </details>
@@ -2333,15 +2335,17 @@ const renderCardMenu = (game, { isOffline, myIdentityId, mode = "home", variant 
           <span></span>
         </span>
       </summary>
-      <div class="mini-board-card-menu-panel" id="${menuId}">
-        <button
-          class="${actionButtonClassName}"
-          data-action="${escapeHtml(action)}"
-          data-game-id="${escapeHtml(game.id)}"
-          data-testid="${escapeHtml(action)}"
-          ${isOffline ? "disabled" : ""}
-          aria-disabled="${isOffline ? "true" : "false"}"
-        >${escapeHtml(leaveDeleteLabel)}</button>
+      <div class="mini-board-card-action-body" id="${menuId}">
+        <div class="mini-board-card-action-capsule">
+          <button
+            class="${actionButtonClassName}"
+            data-action="${escapeHtml(action)}"
+            data-game-id="${escapeHtml(game.id)}"
+            data-testid="${escapeHtml(action)}"
+            ${isOffline ? "disabled" : ""}
+            aria-disabled="${isOffline ? "true" : "false"}"
+          >${escapeHtml(leaveDeleteLabel)}</button>
+        </div>
         ${offlineNote}
       </div>
     </details>

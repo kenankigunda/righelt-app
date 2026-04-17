@@ -35,6 +35,9 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /data-card-menu data-game-id=/);
   assert.match(source, /data-action="\$\{escapeHtml\(action\)\}"/);
   assert.match(source, /Not available offline\./);
+  assert.match(source, /mini-board-card-action-body/);
+  assert.match(source, /mini-board-card-action-capsule/);
+  assert.match(source, /mini-board-card-action-note/);
   assert.match(source, /if \(mode === "trash"\) \{/);
   assert.match(source, /data-action="restore-game"/);
   assert.match(source, /data-testid="restore-game"/);

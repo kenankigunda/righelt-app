@@ -34,6 +34,30 @@ const openCardMenu = async (card, label) => {
   await toggle.click();
 };
 
+const expectAttachedCardAction = async (scope, actionTestId, { maxWidth = 160 } = {}) => {
+  const details = scope.locator("details[data-card-menu][open]").first();
+  const summary = details.locator("summary").first();
+  const actionBody = details.locator(".mini-board-card-action-body");
+  const capsule = details.locator(".mini-board-card-action-capsule");
+  const actionButton = details.getByTestId(actionTestId);
+
+  await expect(actionBody).toBeVisible();
+  await expect(capsule).toBeVisible();
+  await expect(actionButton).toBeVisible();
+  await expect.poll(async () => actionButton.evaluate((el) => getComputedStyle(el).textAlign)).toBe("right");
+
+  const summaryBox = await summary.boundingBox();
+  const actionBodyBox = await actionBody.boundingBox();
+  const capsuleBox = await capsule.boundingBox();
+  expect(summaryBox).not.toBeNull();
+  expect(actionBodyBox).not.toBeNull();
+  expect(capsuleBox).not.toBeNull();
+
+  expect(Math.abs(actionBodyBox.y - (summaryBox.y + summaryBox.height - 1))).toBeLessThanOrEqual(2);
+  expect(Math.abs(capsuleBox.x + capsuleBox.width - (summaryBox.x + summaryBox.width))).toBeLessThanOrEqual(2);
+  expect(capsuleBox.width).toBeLessThan(maxWidth);
+};
+
 const getGameIdFromUrl = (page) => {
   const url = new URL(page.url());
   const match = url.hash.match(/^#\/game\/([^?]+)/);
@@ -244,6 +268,7 @@ test.describe("t-030 leave/delete/trash workflows", () => {
     browser,
     baseURL,
   }) => {
+    test.slow();
     const { context: creatorContext, page: creatorPage } = await createIsolatedPage(browser);
     const { context: viewerContext, page: viewerPage } = await createIsolatedPage(browser);
 
@@ -270,7 +295,13 @@ test.describe("t-030 leave/delete/trash workflows", () => {
         await route.fulfill({ response });
       });
 
+      const statusBefore = await homeCard.locator(".mini-board-preview-status").boundingBox();
       await openCardMenu(homeCard, "Delete game actions");
+      await expectAttachedCardAction(homeCard, "delete-game", { maxWidth: 144 });
+      const statusAfter = await homeCard.locator(".mini-board-preview-status").boundingBox();
+      expect(statusBefore).not.toBeNull();
+      expect(statusAfter).not.toBeNull();
+      expect(Math.abs(statusAfter.y - statusBefore.y)).toBeLessThanOrEqual(1);
       await homeCard.getByTestId("delete-game").click();
 
       await expect(homeCard).toHaveClass(/is-leaving/);
@@ -289,6 +320,7 @@ test.describe("t-030 leave/delete/trash workflows", () => {
       await expect(trashCard).toHaveClass(/is-trash-card/);
       await expect.poll(async () => Number(await trashCard.evaluate((el) => getComputedStyle(el).opacity))).toBeLessThan(1);
       await openCardMenu(trashCard, "Restore game actions");
+      await expectAttachedCardAction(trashCard, "restore-game", { maxWidth: 160 });
       await expect(trashCard.getByTestId("restore-game")).toBeVisible();
       await trashCard.getByTestId("restore-game").click();
 
@@ -454,6 +486,8 @@ test.describe("t-030 leave/delete/trash workflows", () => {
       await expect(gameMenu).toBeVisible();
       await gameMenu.click();
       await expect(summaryActions.locator("details[data-card-menu][open]")).toHaveCount(1);
+      const actionTestId = (await summaryActions.getByTestId("delete-game").count()) > 0 ? "delete-game" : "leave-game";
+      await expectAttachedCardAction(summaryActions, actionTestId, { maxWidth: 144 });
       await page.mouse.click(8, 8);
       await expect(summaryActions.locator("details[data-card-menu][open]")).toHaveCount(0);
     } finally {

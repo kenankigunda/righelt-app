@@ -364,7 +364,7 @@ button.secondary.mini-board-card-menu-button {
 .mini-board-card-menu[open] > .mini-board-card-menu-button {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
-  border-bottom-color: color-mix(in srgb, var(--shell-elevated-border) 72%, var(--line));
+  border-bottom-color: transparent;
 }
 
 .shell-header-menu-icon,
@@ -379,6 +379,7 @@ button.secondary.mini-board-card-menu-button {
 }
 
 .mini-board-card-menu-icon {
+  width: 0.95rem;
   gap: 0.24rem;
 }
 
@@ -391,14 +392,12 @@ button.secondary.mini-board-card-menu-button {
   background: currentColor;
 }
 
-.shell-header-menu-panel,
-.mini-board-card-menu-panel {
+.shell-header-menu-panel {
   display: grid;
   gap: 0;
   padding: 0;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--shell-elevated-border) 82%, var(--line));
-  border-top: 0;
   border-radius: 0 0 14px 14px;
   background: var(--shell-elevated-surface);
   box-shadow: var(--shell-elevated-shadow);
@@ -406,7 +405,7 @@ button.secondary.mini-board-card-menu-button {
 
 .shell-header-menu-panel {
   position: absolute;
-  top: calc(100% - 1px);
+  top: 100%;
   right: 0;
   z-index: 5;
   width: min(17rem, calc(100vw - 3.5rem));
@@ -425,19 +424,7 @@ button.secondary.mini-board-card-menu-button {
   pointer-events: auto;
 }
 
-.mini-board-card-menu-panel {
-  position: absolute;
-  top: calc(100% - 1px);
-  right: 0;
-  width: min(14rem, calc(100vw - 3rem));
-}
-
-.mini-board-card-menu-game .mini-board-card-menu-panel {
-  top: calc(100% - 1px);
-}
-
-.shell-header-menu-panel button.secondary.shell-header-menu-item,
-.mini-board-card-menu-item {
+.shell-header-menu-panel button.secondary.shell-header-menu-item {
   width: 100%;
   min-height: 3rem;
   justify-content: flex-start;
@@ -449,8 +436,7 @@ button.secondary.mini-board-card-menu-button {
   font-weight: 600;
 }
 
-.shell-header-menu-panel > * + *,
-.mini-board-card-menu-panel > * + * {
+.shell-header-menu-panel > * + * {
   border-top: 1px solid color-mix(in srgb, var(--shell-elevated-border) 76%, var(--line));
 }
 
@@ -1303,7 +1289,7 @@ button.button-release-bounce,
   }
 
   .mini-board-card,
-  .mini-board-card-menu-panel {
+  .mini-board-card-action-capsule {
     transition: none;
   }
 
@@ -1423,20 +1409,25 @@ button.button-release-bounce,
 
 .mini-board-card-menu {
   display: grid;
-  gap: 0.45rem;
+  gap: 0;
+  justify-items: end;
+  align-content: start;
+  width: max-content;
   margin: 0;
 }
 
 .mini-board-card-menu-overlay {
   position: absolute;
-  top: 0.55rem;
-  right: 0.55rem;
+  top: 0.45rem;
+  right: 0.45rem;
   z-index: 3;
 }
 
 .mini-board-card-menu-game {
   position: relative;
   justify-items: end;
+  align-content: start;
+  width: max-content;
   z-index: 1;
 }
 
@@ -1449,9 +1440,64 @@ button.button-release-bounce,
 }
 
 .mini-board-card-menu-note {
+  display: none;
+}
+
+.mini-board-card-menu-button {
+  min-width: 2.2rem;
+  min-height: 2.2rem;
+  padding: 0.36rem;
+  position: relative;
+  z-index: 2;
+}
+
+.mini-board-card-menu-icon {
+  width: 0.9rem;
+  gap: 0.22rem;
+}
+
+.mini-board-card-action-body {
+  display: grid;
+  justify-items: end;
+  gap: 0.25rem;
+  width: max-content;
+  margin-top: -1px;
+}
+
+.mini-board-card-action-capsule {
+  display: grid;
+  width: max-content;
+  max-width: calc(100vw - 3rem);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--shell-elevated-border) 82%, var(--line));
+  border-top-color: color-mix(in srgb, var(--shell-elevated-border) 92%, var(--line));
+  border-radius: 0 0 14px 14px;
+  background: var(--shell-elevated-surface);
+  box-shadow: var(--shell-elevated-shadow);
+}
+
+.mini-board-card-menu-item {
+  width: auto;
+  min-width: max-content;
+  min-height: 2.85rem;
+  justify-content: flex-end;
+  padding: 0.8rem 1.15rem 0.8rem 1.55rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.mini-board-card-action-note {
   margin: 0;
-  padding: 0.15rem 0.1rem 0.35rem;
+  padding: 0 0.15rem 0;
   color: var(--muted);
+  text-align: right;
+  justify-self: end;
+  max-width: 12rem;
 }
 
 .home-games-section + .home-games-section {
@@ -1651,7 +1697,7 @@ button.button-release-bounce,
 }
 
 .mini-board-card[data-home-game-card] .mini-board-card-header {
-  padding-right: 3.4rem;
+  padding-right: 2.9rem;
 }
 
 .mini-board-card-copy {
@@ -2226,6 +2272,8 @@ textarea:focus-visible {
 
 .game-shell-summary-actions {
   justify-self: end;
+  align-self: start;
+  width: max-content;
   margin-top: 0.1rem;
   position: relative;
   z-index: 1;
@@ -2369,11 +2417,12 @@ textarea:focus-visible {
   }
 
   .mini-board-card-menu-button {
-    min-width: 3.75rem;
-    min-height: 3.75rem;
+    min-width: 3.2rem;
+    min-height: 3.2rem;
+    padding: 0.62rem;
   }
 
-  .mini-board-card-menu-panel {
-    width: min(15rem, calc(100vw - 3rem));
+  .mini-board-card-action-capsule {
+    max-width: calc(100vw - 3rem);
   }
 }

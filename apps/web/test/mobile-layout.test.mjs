@@ -103,11 +103,11 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel,\s*\.mini-board-card-menu-panel\s*\{[\s\S]*gap:\s*0;[\s\S]*padding:\s*0;[\s\S]*overflow:\s*hidden;[\s\S]*border-top:\s*0;/s,
+    /\.shell-header-menu-panel\s*\{[\s\S]*gap:\s*0;[\s\S]*padding:\s*0;[\s\S]*overflow:\s*hidden;[\s\S]*border:\s*1px solid color-mix\(in srgb, var\(--shell-elevated-border\) 82%, var\(--line\)\);/s,
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*calc\(100% - 1px\);[\s\S]*right:\s*0;[\s\S]*width:\s*min\(17rem,\s*calc\(100vw\s*-\s*3\.5rem\)\);[\s\S]*transform-origin:\s*top right;[\s\S]*transform:\s*translateY\(-0\.2rem\) scale\(0\.98\);[\s\S]*opacity:\s*0;[\s\S]*pointer-events:\s*none;[\s\S]*transition:\s*[\s\S]*transform 180ms ease,[\s\S]*opacity 180ms ease;/s,
+    /\.shell-header-menu-panel\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*100%;[\s\S]*right:\s*0;[\s\S]*width:\s*min\(17rem,\s*calc\(100vw\s*-\s*3\.5rem\)\);[\s\S]*transform-origin:\s*top right;[\s\S]*transform:\s*translateY\(-0\.2rem\) scale\(0\.98\);[\s\S]*opacity:\s*0;[\s\S]*pointer-events:\s*none;[\s\S]*transition:\s*[\s\S]*transform 180ms ease,[\s\S]*opacity 180ms ease;/s,
   );
   assert.match(
     shellStylesSource,
@@ -115,11 +115,11 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel button\.secondary\.shell-header-menu-item,\s*\.mini-board-card-menu-item\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*3rem;[\s\S]*justify-content:\s*flex-start;[\s\S]*padding:\s*0\.85rem 1rem;[\s\S]*border:\s*none;[\s\S]*border-radius:\s*0;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/s,
+    /\.shell-header-menu-panel button\.secondary\.shell-header-menu-item\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*3rem;[\s\S]*justify-content:\s*flex-start;[\s\S]*padding:\s*0\.85rem 1rem;[\s\S]*border:\s*none;[\s\S]*border-radius:\s*0;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/s,
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel > \* \+ \*,\s*\.mini-board-card-menu-panel > \* \+ \*\s*\{[\s\S]*border-top:\s*1px solid color-mix\(in srgb, var\(--shell-elevated-border\) 76%, var\(--line\)\);/s,
+    /\.shell-header-menu-panel > \* \+ \*\s*\{[\s\S]*border-top:\s*1px solid color-mix\(in srgb, var\(--shell-elevated-border\) 76%, var\(--line\)\);/s,
   );
   assert.match(
     shellStylesSource,
@@ -146,15 +146,19 @@ test("shell header separates layout spacing from panel chrome", () => {
   assert.doesNotMatch(shellStylesSource, /\.mini-board-card\[data-home-game-card\] \.mini-board-card-link-surface\s*\{[\s\S]*padding-top:\s*3rem;/s);
   assert.match(
     shellStylesSource,
-    /\.mini-board-card\[data-home-game-card\] \.mini-board-card-header\s*\{[\s\S]*padding-right:\s*3\.4rem;/s,
+    /\.mini-board-card\[data-home-game-card\] \.mini-board-card-header\s*\{[\s\S]*padding-right:\s*2\.9rem;/s,
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-menu-overlay\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*0\.55rem;[\s\S]*right:\s*0\.55rem;[\s\S]*z-index:\s*3;/s,
+    /\.mini-board-card-menu\s*\{[\s\S]*display:\s*grid;[\s\S]*gap:\s*0;[\s\S]*justify-items:\s*end;[\s\S]*align-content:\s*start;[\s\S]*width:\s*max-content;/s,
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-menu-button\s*\{[\s\S]*display:\s*inline-flex;[\s\S]*min-width:\s*2\.75rem;[\s\S]*min-height:\s*2\.75rem;[\s\S]*padding:\s*0\.55rem;[\s\S]*border-radius:\s*10px;[\s\S]*background:\s*#fffefa;[\s\S]*box-shadow:\s*inset 0 1px 0 rgba\(255, 255, 255, 0\.92\);/s,
+    /\.mini-board-card-menu-overlay\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*0\.45rem;[\s\S]*right:\s*0\.45rem;[\s\S]*z-index:\s*3;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-button\s*\{[\s\S]*min-width:\s*2\.2rem;[\s\S]*min-height:\s*2\.2rem;[\s\S]*padding:\s*0\.36rem;[\s\S]*position:\s*relative;[\s\S]*z-index:\s*2;/s,
   );
   assert.match(
     shellStylesSource,
@@ -162,7 +166,7 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-menu-icon\s*\{[\s\S]*gap:\s*0\.24rem;/s,
+    /\.mini-board-card-menu-icon\s*\{[\s\S]*width:\s*0\.9rem;[\s\S]*gap:\s*0\.22rem;/s,
   );
   assert.match(
     shellStylesSource,
@@ -170,15 +174,19 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-menu-game\s*\{[\s\S]*position:\s*relative;[\s\S]*justify-items:\s*end;[\s\S]*z-index:\s*1;/s,
+    /\.mini-board-card-menu-game\s*\{[\s\S]*position:\s*relative;[\s\S]*justify-items:\s*end;[\s\S]*align-content:\s*start;[\s\S]*width:\s*max-content;[\s\S]*z-index:\s*1;/s,
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-menu-panel\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*calc\(100% - 1px\);[\s\S]*width:\s*min\(14rem,\s*calc\(100vw\s*-\s*3rem\)\);/s,
+    /\.mini-board-card-action-body\s*\{[\s\S]*display:\s*grid;[\s\S]*justify-items:\s*end;[\s\S]*gap:\s*0\.25rem;[\s\S]*width:\s*max-content;[\s\S]*margin-top:\s*-1px;/s,
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-menu-item\s*\{[\s\S]*min-height:\s*3rem;[\s\S]*padding:\s*0\.85rem 1rem;[\s\S]*border-radius:\s*0;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/s,
+    /\.mini-board-card-action-capsule\s*\{[\s\S]*display:\s*grid;[\s\S]*width:\s*max-content;[\s\S]*max-width:\s*calc\(100vw\s*-\s*3rem\);[\s\S]*overflow:\s*hidden;[\s\S]*border:\s*1px solid color-mix\(in srgb, var\(--shell-elevated-border\) 82%, var\(--line\)\);[\s\S]*border-top-color:\s*color-mix\(in srgb, var\(--shell-elevated-border\) 92%, var\(--line\)\);[\s\S]*border-radius:\s*0 0 14px 14px;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-item\s*\{[\s\S]*width:\s*auto;[\s\S]*min-width:\s*max-content;[\s\S]*min-height:\s*2\.85rem;[\s\S]*justify-content:\s*flex-end;[\s\S]*padding:\s*0\.8rem 1\.15rem 0\.8rem 1\.55rem;[\s\S]*border:\s*none;[\s\S]*border-radius:\s*0;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;[\s\S]*font-weight:\s*600;[\s\S]*text-align:\s*right;[\s\S]*white-space:\s*nowrap;/s,
   );
   assert.match(
     shellStylesSource,
@@ -194,7 +202,7 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-menu-note\s*\{[\s\S]*padding:\s*0\.15rem 0\.1rem 0\.35rem;[\s\S]*color:\s*var\(--muted\);/s,
+    /\.mini-board-card-action-note\s*\{[\s\S]*padding:\s*0 0\.15rem 0;[\s\S]*color:\s*var\(--muted\);[\s\S]*text-align:\s*right;[\s\S]*justify-self:\s*end;[\s\S]*max-width:\s*12rem;/s,
   );
   assert.match(
     shellStylesSource,
@@ -202,7 +210,7 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.game-shell-summary-actions\s*\{[\s\S]*justify-self:\s*end;[\s\S]*margin-top:\s*0\.1rem;[\s\S]*position:\s*relative;[\s\S]*z-index:\s*1;/s,
+    /\.game-shell-summary-actions\s*\{[\s\S]*justify-self:\s*end;[\s\S]*align-self:\s*start;[\s\S]*width:\s*max-content;[\s\S]*margin-top:\s*0\.1rem;[\s\S]*position:\s*relative;[\s\S]*z-index:\s*1;/s,
   );
   assert.match(
     shellStylesSource,
@@ -218,11 +226,11 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 900px\)\s*\{[\s\S]*\.mini-board-card-menu-button\s*\{[\s\S]*min-width:\s*3\.75rem;[\s\S]*min-height:\s*3\.75rem;/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.mini-board-card-menu-button\s*\{[\s\S]*min-width:\s*3\.2rem;[\s\S]*min-height:\s*3\.2rem;[\s\S]*padding:\s*0\.62rem;/s,
   );
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 900px\)\s*\{[\s\S]*\.mini-board-card-menu-panel\s*\{[\s\S]*width:\s*min\(15rem,\s*calc\(100vw\s*-\s*3rem\)\);/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.mini-board-card-action-capsule\s*\{[\s\S]*max-width:\s*calc\(100vw\s*-\s*3rem\);/s,
   );
 });
 
