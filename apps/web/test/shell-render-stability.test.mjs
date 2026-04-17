@@ -60,7 +60,10 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const renderHomeDeletedGamesButton = \(\) =>/);
   assert.match(source, /data-testid="home-deleted-games"/);
   assert.match(source, /home-page-footer-actions/);
-  assert.match(source, /home-page-footer-actions-inner/);
+  assert.match(source, /home-deleted-games-tile/);
+  assert.match(source, /home-deleted-games-tile-kicker/);
+  assert.match(source, />Trash bin<\/span>/);
+  assert.match(source, />Deleted games<\/strong>/);
   assert.match(source, /const renderGameNotFound = \(\) =>/);
   assert.match(source, /data-testid="game-not-found"/);
   assert.match(source, /game-shell-summary-shell/);
@@ -100,16 +103,22 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /: 'aria-hidden="true" tabindex="-1"'/);
   assert.match(source, /const viewedGameId = getCurrentViewedGameId\(\);/);
   assert.match(source, /data-shell-alert-zone="\$\{gameAlerts \? "active" : "idle"\}"/);
+  assert.match(source, /data-action="open-home"/);
+  assert.match(source, />Home<\/button>/);
   assert.doesNotMatch(source, /shell-header-trash-link/);
   assert.doesNotMatch(source, />Trash<\/(?:a|button)>/);
   assert.match(source, /data-action="open-trash"/);
   assert.match(source, /const renderHomeDeletedGamesButton = \(\) =>/);
   assert.match(source, /data-testid="home-deleted-games"/);
-  assert.match(source, />Deleted games<\/button>/);
+  assert.match(source, /home-deleted-games-tile/);
+  assert.match(source, />Trash bin<\/span>/);
+  assert.match(source, />Deleted games<\/strong>/);
   assert.match(source, /const renderTrashBanner = \(trashSection = getHomeSection\("trash-my"\)\) =>/);
   assert.match(source, /data-testid="trash-bin-banner"/);
   assert.match(source, /class="panel trash-bin-banner"/);
-  assert.match(source, /class="status-chip trash-bin-banner-chip"/);
+  assert.match(source, /<p class="small shell-route-kicker">Trash bin<\/p>/);
+  assert.match(source, /<h2>Trash bin<\/h2>/);
+  assert.match(source, /Deleted games live in the trash bin for some period of time and can be restored if they are not yet permanently deleted\./);
   assert.match(source, /const closeCardMenus = \(exceptMenu = null\) =>/);
   assert.match(source, /details\[data-card-menu\]\[open\]/);
   assert.match(source, /const renderTrash = \(\) =>/);
@@ -134,7 +143,6 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /aria-hidden="\$\{headerMenuOpen \? "false" : "true"\}"/);
   assert.match(source, /tabindex="\$\{headerMenuOpen \? "0" : "-1"\}"/);
   assert.doesNotMatch(source, /renderHeaderHomeAction/);
-  assert.doesNotMatch(source, />Home<\/(?:a|span)>/);
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Live Sync<\/h2>[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
   assert.match(
     source,
@@ -545,6 +553,10 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   assert.match(
     source,
     /if \(action === "toggle-header-menu"\) \{\s*headerMenuOpen = !headerMenuOpen;\s*if \(isNarrowHeaderMode\(\)\) \{\s*syncNarrowHeaderMenuDom\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}\s*return;\s*\}/s,
+  );
+  assert.match(
+    source,
+    /if \(action === "open-home"\) \{\s*if \(currentRoute\.name !== "home"\) \{\s*navigateTo\(buildHomeHash\(getCurrentFlyoutState\(\)\)\);\s*return;\s*\}\s*if \(headerMenuOpen\) \{\s*closeHeaderMenu\(\);\s*\}\s*return;\s*\}/s,
   );
   assert.match(
     source,

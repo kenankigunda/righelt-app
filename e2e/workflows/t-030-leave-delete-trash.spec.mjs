@@ -378,18 +378,21 @@ test.describe("t-030 leave/delete/trash workflows", () => {
       const homeFooter = page.locator(".home-page-footer-actions");
       const homeStackChildren = page.locator("section.stack > *");
       const headerActions = page.locator(".nav-row");
+      const firstHomeSection = page.locator(".home-games-section").first();
       await expect(page.getByRole("link", { name: "Trash" })).toHaveCount(0);
       await expect(deletedGamesButton).toBeVisible();
       await expect(homeFooter).toHaveCSS("position", "static");
       await expect(homeStackChildren.last()).toHaveClass(/home-page-footer-actions/);
       const deletedGamesBox = await deletedGamesButton.boundingBox();
+      const firstHomeSectionBox = await firstHomeSection.boundingBox();
       const actionsBox = await headerActions.boundingBox();
       const viewport = page.viewportSize();
       expect(deletedGamesBox).not.toBeNull();
+      expect(firstHomeSectionBox).not.toBeNull();
       expect(actionsBox).not.toBeNull();
       expect(viewport).not.toBeNull();
-      if (deletedGamesBox && viewport) {
-        expect(Math.abs(deletedGamesBox.x + deletedGamesBox.width / 2 - viewport.width / 2)).toBeLessThan(24);
+      if (deletedGamesBox && firstHomeSectionBox) {
+        expect(Math.abs(deletedGamesBox.x - firstHomeSectionBox.x)).toBeLessThan(8);
       }
       if (deletedGamesBox && actionsBox) {
         expect(actionsBox.y).toBeLessThan(deletedGamesBox.y);
@@ -400,6 +403,7 @@ test.describe("t-030 leave/delete/trash workflows", () => {
       await expect(headerMenuButton).toBeVisible();
       await headerMenuButton.click();
       await expect(headerMenuPanel).toHaveClass(/is-open/);
+      await expect(page.getByRole("button", { name: "Home" }).last()).toBeVisible();
       const headerButtonBox = await headerMenuButton.boundingBox();
       const headerPanelBox = await headerMenuPanel.boundingBox();
       expect(headerButtonBox).not.toBeNull();
@@ -434,6 +438,7 @@ test.describe("t-030 leave/delete/trash workflows", () => {
       await page.goto(`${baseURL}${gameHash}`);
       await page.waitForLoadState("domcontentloaded");
       await expect(page.getByTestId("home-deleted-games")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Home" }).first()).toBeVisible();
       const summaryCopy = page.locator(".game-shell-summary-copy");
       const summaryActions = page.locator(".game-shell-summary-actions");
       await expect(summaryActions).toBeVisible();

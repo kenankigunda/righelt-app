@@ -1463,29 +1463,35 @@ button.button-release-bounce,
 
 .home-page-footer-actions {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   width: 100%;
   margin-top: 0.75rem;
+  margin-left: 0;
 }
 
-.home-page-footer-actions-inner {
-  display: flex;
-  justify-content: center;
-  width: min(18rem, 100%);
-  padding: 0.5rem;
-  border: 1px solid var(--shell-elevated-border);
-  border-radius: 999px;
+.home-deleted-games-tile {
+  width: min(13.5rem, 100%);
+  min-height: 6.75rem;
+  display: grid;
+  justify-items: start;
+  align-content: start;
+  gap: 0.3rem;
+  padding: 0.95rem 1rem 0.95rem 0.8rem;
+  border-radius: 18px;
+  border-color: var(--shell-elevated-border);
   background: var(--shell-elevated-surface);
   box-shadow: var(--shell-elevated-shadow);
-  backdrop-filter: blur(6px);
+  text-align: left;
 }
 
-.home-deleted-games-button {
-  width: 100%;
-  min-height: 3rem;
-  justify-content: center;
-  padding-inline: 1rem;
-  letter-spacing: 0.01em;
+.home-deleted-games-tile-kicker {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+[data-hover-capability="hover"] .home-deleted-games-tile:not(:disabled):hover {
+  background: linear-gradient(180deg, #fffefc 0%, #f5efe2 100%);
 }
 
 .home-games-section-header {
@@ -1569,9 +1575,9 @@ button.button-release-bounce,
 
 .trash-bin-banner {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.75rem 1rem;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
   border: 1px solid color-mix(in srgb, var(--danger) 18%, var(--line));
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--danger) 6%, #fffefb) 0%, color-mix(in srgb, var(--danger) 3%, #f8f3e8) 100%);
@@ -1587,13 +1593,6 @@ button.button-release-bounce,
 .trash-bin-banner h2,
 .trash-bin-banner p {
   margin: 0;
-}
-
-.trash-bin-banner-chip {
-  justify-self: end;
-  border-color: color-mix(in srgb, var(--danger) 20%, var(--line));
-  background: color-mix(in srgb, var(--danger) 8%, #fff);
-  color: var(--danger);
 }
 
 .shell-route-message {

@@ -1274,6 +1274,12 @@ const syncNarrowHeaderMenuDom = () => {
 };
 const renderHeaderWideActions = () => `
   <button
+    class="secondary${currentRoute.name === "home" ? " is-active" : ""}"
+    type="button"
+    data-action="open-home"
+    aria-pressed="${currentRoute.name === "home" ? "true" : "false"}"
+  >Home</button>
+  <button
     class="secondary${currentRoute.scenarios ? " is-active" : ""}"
     type="button"
     data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
@@ -1310,6 +1316,14 @@ const renderHeaderNarrowMenu = () => {
         data-header-menu-panel
         aria-hidden="${headerMenuOpen ? "false" : "true"}"
       >
+        <button
+          class="secondary shell-header-menu-item${currentRoute.name === "home" ? " is-active" : ""}"
+          type="button"
+          data-action="open-home"
+          data-header-menu-close="true"
+          aria-pressed="${currentRoute.name === "home" ? "true" : "false"}"
+          tabindex="${headerMenuOpen ? "0" : "-1"}"
+        >Home</button>
         <button
           class="secondary shell-header-menu-item${currentRoute.scenarios ? " is-active" : ""}"
           type="button"
@@ -2599,34 +2613,30 @@ const renderHomeGameSection = (sectionKey, { alwaysRender = sectionKey === "my",
 
 const renderHomeDeletedGamesButton = () => `
   <footer class="home-page-footer-actions">
-    <div class="home-page-footer-actions-inner">
-      <button
-        class="button-link secondary home-deleted-games-button"
-        type="button"
-        data-action="open-trash"
-        data-testid="home-deleted-games"
-      >Deleted games</button>
-    </div>
+    <button
+      class="secondary home-deleted-games-tile"
+      type="button"
+      data-action="open-trash"
+      data-testid="home-deleted-games"
+    >
+      <span class="home-deleted-games-tile-kicker small">Trash bin</span>
+      <strong>Deleted games</strong>
+    </button>
   </footer>
 `;
 
 const renderTrashBanner = (trashSection = getHomeSection("trash-my")) => {
-  const deletedGameCount = trashSection?.totalGames ?? 0;
   const loadingCopy = "Loading deleted games...";
-  const emptyCopy = "This bin is empty for now.";
-  const populatedCopy =
-    deletedGameCount === 1
-      ? "1 deleted game is ready to restore."
-      : `${deletedGameCount} deleted games are ready to restore.`;
-  const helperCopy = routeHydrated ? (deletedGameCount === 0 ? emptyCopy : populatedCopy) : loadingCopy;
+  const helperCopy = routeHydrated
+    ? "Deleted games live in the trash bin for some period of time and can be restored if they are not yet permanently deleted."
+    : loadingCopy;
   return `
     <section class="panel trash-bin-banner" data-testid="trash-bin-banner">
       <div class="trash-bin-banner-copy">
-        <p class="small shell-route-kicker">Deleted games bin</p>
-        <h2>Deleted games</h2>
+        <p class="small shell-route-kicker">Trash bin</p>
+        <h2>Trash bin</h2>
         <p class="small">${escapeHtml(helperCopy)}</p>
       </div>
-      <span class="status-chip trash-bin-banner-chip">${routeHydrated && deletedGameCount > 0 ? "Restorable" : "Bin"}</span>
     </section>
   `;
 };
@@ -4784,6 +4794,16 @@ appEl.addEventListener("click", async (event) => {
       syncNarrowHeaderMenuDom();
     } else {
       render({ animatePanels: false, includeBoard: false });
+    }
+    return;
+  }
+  if (action === "open-home") {
+    if (currentRoute.name !== "home") {
+      navigateTo(buildHomeHash(getCurrentFlyoutState()));
+      return;
+    }
+    if (headerMenuOpen) {
+      closeHeaderMenu();
     }
     return;
   }

@@ -51,7 +51,7 @@ test("shell header stacks cleanly on narrow screens", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.trash-bin-banner\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;[\s\S]*border:\s*1px solid color-mix\(in srgb, var\(--danger\) 18%, var\(--line\)\);[\s\S]*box-shadow:\s*0 10px 24px rgba\(29, 45, 53, 0\.08\);/s,
+    /\.trash-bin-banner\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);[\s\S]*gap:\s*0\.75rem;[\s\S]*align-items:\s*start;[\s\S]*border:\s*1px solid color-mix\(in srgb, var\(--danger\) 18%, var\(--line\)\);[\s\S]*box-shadow:\s*0 10px 24px rgba\(29, 45, 53, 0\.08\);/s,
   );
 });
 
@@ -86,7 +86,7 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.home-page-footer-actions\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*center;[\s\S]*margin-top:\s*0\.75rem;/s,
+    /\.home-page-footer-actions\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*flex-start;[\s\S]*width:\s*100%;[\s\S]*margin-top:\s*0\.75rem;/s,
   );
   assert.doesNotMatch(shellStylesSource, /\.shell-header-trash-link\s*\{/);
   assert.match(
@@ -119,12 +119,17 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.home-page-footer-actions-inner\s*\{[\s\S]*border:\s*1px solid var\(--shell-elevated-border\);[\s\S]*border-radius:\s*999px;[\s\S]*box-shadow:\s*var\(--shell-elevated-shadow\);/s,
+    /\.home-deleted-games-tile\s*\{[\s\S]*width:\s*min\(13\.5rem,\s*100%\);[\s\S]*min-height:\s*6\.75rem;[\s\S]*display:\s*grid;[\s\S]*justify-items:\s*start;[\s\S]*padding:\s*0\.95rem 1rem 0\.95rem 0\.8rem;[\s\S]*border-radius:\s*18px;[\s\S]*box-shadow:\s*var\(--shell-elevated-shadow\);[\s\S]*text-align:\s*left;/s,
   );
+  assert.match(
+    shellStylesSource,
+    /\.home-deleted-games-tile-kicker\s*\{[\s\S]*letter-spacing:\s*0\.08em;[\s\S]*text-transform:\s*uppercase;[\s\S]*color:\s*var\(--muted\);/s,
+  );
+  assert.doesNotMatch(shellStylesSource, /\.home-page-footer-actions-inner\s*\{/);
   assert.doesNotMatch(shellStylesSource, /\.home-page-footer-actions\s*\{[^}]*position:\s*fixed;/s);
   assert.match(
     shellStylesSource,
-    /\.home-deleted-games-button\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*3rem;[\s\S]*justify-content:\s*center;/s,
+    /\[data-hover-capability="hover"\] \.home-deleted-games-tile:not\(:disabled\):hover\s*\{[\s\S]*background:\s*linear-gradient\(180deg,\s*#fffefc 0%,\s*#f5efe2 100%\);/s,
   );
   assert.match(
     shellStylesSource,
