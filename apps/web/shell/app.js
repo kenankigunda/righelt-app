@@ -2619,8 +2619,10 @@ const renderHomeDeletedGamesButton = () => `
       data-action="open-trash"
       data-testid="home-deleted-games"
     >
-      <span class="home-deleted-games-tile-kicker small">Trash bin</span>
-      <strong>Deleted games</strong>
+      <span class="home-deleted-games-tile-content">
+        <span class="home-deleted-games-tile-kicker small">Trash bin</span>
+        <strong>Deleted games</strong>
+      </span>
     </button>
   </footer>
 `;
@@ -2634,7 +2636,7 @@ const renderTrashBanner = (trashSection = getHomeSection("trash-my")) => {
     <section class="panel trash-bin-banner" data-testid="trash-bin-banner">
       <div class="trash-bin-banner-copy">
         <p class="small shell-route-kicker">Trash bin</p>
-        <h2>Trash bin</h2>
+        <h2>Deleted games</h2>
         <p class="small">${escapeHtml(helperCopy)}</p>
       </div>
     </section>

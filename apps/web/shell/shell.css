@@ -394,8 +394,8 @@ button.secondary.mini-board-card-menu-button {
 .shell-header-menu-panel,
 .mini-board-card-menu-panel {
   display: grid;
-  gap: 0.15rem;
-  padding: 0.25rem;
+  gap: 0;
+  padding: 0;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--shell-elevated-border) 82%, var(--line));
   border-top: 0;
@@ -443,10 +443,15 @@ button.secondary.mini-board-card-menu-button {
   justify-content: flex-start;
   padding: 0.85rem 1rem;
   border: none;
-  border-radius: 10px;
+  border-radius: 0;
   background: transparent;
   box-shadow: none;
   font-weight: 600;
+}
+
+.shell-header-menu-panel > * + *,
+.mini-board-card-menu-panel > * + * {
+  border-top: 1px solid color-mix(in srgb, var(--shell-elevated-border) 76%, var(--line));
 }
 
 .shell-header-menu-panel button.secondary.shell-header-menu-item.is-active,
@@ -462,7 +467,6 @@ button.secondary.mini-board-card-menu-button {
 
 .mini-board-card-menu-item.destructive {
   color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 6%, transparent);
 }
 
 [data-hover-capability="hover"] .shell-header-menu-panel button.secondary.shell-header-menu-item:not(:disabled):hover,
@@ -471,7 +475,7 @@ button.secondary.mini-board-card-menu-button {
 }
 
 [data-hover-capability="hover"] .mini-board-card-menu-item.destructive:not(:disabled):hover {
-  background: color-mix(in srgb, var(--danger) 9%, #fff);
+  background: rgba(255, 255, 255, 0.86);
 }
 
 button,
@@ -1472,16 +1476,22 @@ button.button-release-bounce,
 .home-deleted-games-tile {
   width: min(13.5rem, 100%);
   min-height: 6.75rem;
-  display: grid;
-  justify-items: start;
-  align-content: start;
-  gap: 0.3rem;
-  padding: 0.95rem 1rem 0.95rem 0.8rem;
+  display: block;
+  padding: 0;
   border-radius: 18px;
   border-color: var(--shell-elevated-border);
   background: var(--shell-elevated-surface);
   box-shadow: var(--shell-elevated-shadow);
   text-align: left;
+}
+
+.home-deleted-games-tile-content {
+  display: grid;
+  justify-items: start;
+  align-content: start;
+  gap: 0.3rem;
+  min-height: 6.75rem;
+  padding: 1.2rem 1.1rem;
 }
 
 .home-deleted-games-tile-kicker {

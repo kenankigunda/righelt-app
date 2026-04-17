@@ -111,13 +111,14 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const renderHomeDeletedGamesButton = \(\) =>/);
   assert.match(source, /data-testid="home-deleted-games"/);
   assert.match(source, /home-deleted-games-tile/);
+  assert.match(source, /home-deleted-games-tile-content/);
   assert.match(source, />Trash bin<\/span>/);
   assert.match(source, />Deleted games<\/strong>/);
   assert.match(source, /const renderTrashBanner = \(trashSection = getHomeSection\("trash-my"\)\) =>/);
   assert.match(source, /data-testid="trash-bin-banner"/);
   assert.match(source, /class="panel trash-bin-banner"/);
   assert.match(source, /<p class="small shell-route-kicker">Trash bin<\/p>/);
-  assert.match(source, /<h2>Trash bin<\/h2>/);
+  assert.match(source, /<h2>Deleted games<\/h2>/);
   assert.match(source, /Deleted games live in the trash bin for some period of time and can be restored if they are not yet permanently deleted\./);
   assert.match(source, /const closeCardMenus = \(exceptMenu = null\) =>/);
   assert.match(source, /details\[data-card-menu\]\[open\]/);

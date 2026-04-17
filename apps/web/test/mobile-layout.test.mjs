@@ -103,7 +103,7 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel,\s*\.mini-board-card-menu-panel\s*\{[\s\S]*gap:\s*0\.15rem;[\s\S]*padding:\s*0\.25rem;[\s\S]*overflow:\s*hidden;[\s\S]*border-top:\s*0;/s,
+    /\.shell-header-menu-panel,\s*\.mini-board-card-menu-panel\s*\{[\s\S]*gap:\s*0;[\s\S]*padding:\s*0;[\s\S]*overflow:\s*hidden;[\s\S]*border-top:\s*0;/s,
   );
   assert.match(
     shellStylesSource,
@@ -115,11 +115,19 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel button\.secondary\.shell-header-menu-item,\s*\.mini-board-card-menu-item\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*3rem;[\s\S]*justify-content:\s*flex-start;[\s\S]*padding:\s*0\.85rem 1rem;[\s\S]*border:\s*none;[\s\S]*border-radius:\s*10px;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/s,
+    /\.shell-header-menu-panel button\.secondary\.shell-header-menu-item,\s*\.mini-board-card-menu-item\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*3rem;[\s\S]*justify-content:\s*flex-start;[\s\S]*padding:\s*0\.85rem 1rem;[\s\S]*border:\s*none;[\s\S]*border-radius:\s*0;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/s,
   );
   assert.match(
     shellStylesSource,
-    /\.home-deleted-games-tile\s*\{[\s\S]*width:\s*min\(13\.5rem,\s*100%\);[\s\S]*min-height:\s*6\.75rem;[\s\S]*display:\s*grid;[\s\S]*justify-items:\s*start;[\s\S]*padding:\s*0\.95rem 1rem 0\.95rem 0\.8rem;[\s\S]*border-radius:\s*18px;[\s\S]*box-shadow:\s*var\(--shell-elevated-shadow\);[\s\S]*text-align:\s*left;/s,
+    /\.shell-header-menu-panel > \* \+ \*,\s*\.mini-board-card-menu-panel > \* \+ \*\s*\{[\s\S]*border-top:\s*1px solid color-mix\(in srgb, var\(--shell-elevated-border\) 76%, var\(--line\)\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-deleted-games-tile\s*\{[\s\S]*width:\s*min\(13\.5rem,\s*100%\);[\s\S]*min-height:\s*6\.75rem;[\s\S]*display:\s*block;[\s\S]*padding:\s*0;[\s\S]*border-radius:\s*18px;[\s\S]*box-shadow:\s*var\(--shell-elevated-shadow\);[\s\S]*text-align:\s*left;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-deleted-games-tile-content\s*\{[\s\S]*display:\s*grid;[\s\S]*justify-items:\s*start;[\s\S]*align-content:\s*start;[\s\S]*gap:\s*0\.3rem;[\s\S]*min-height:\s*6\.75rem;[\s\S]*padding:\s*1\.2rem 1\.1rem;/s,
   );
   assert.match(
     shellStylesSource,
@@ -170,11 +178,15 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-menu-item\s*\{[\s\S]*min-height:\s*3rem;[\s\S]*padding:\s*0\.85rem 1rem;[\s\S]*border-radius:\s*10px;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/s,
+    /\.mini-board-card-menu-item\s*\{[\s\S]*min-height:\s*3rem;[\s\S]*padding:\s*0\.85rem 1rem;[\s\S]*border-radius:\s*0;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/s,
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-menu-item\.destructive\s*\{[\s\S]*color:\s*var\(--danger\);[\s\S]*background:\s*color-mix\(in srgb, var\(--danger\) 6%, transparent\);/s,
+    /\.mini-board-card-menu-item\.destructive\s*\{[\s\S]*color:\s*var\(--danger\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\[data-hover-capability="hover"\] \.mini-board-card-menu-item\.destructive:not\(:disabled\):hover\s*\{[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.86\);/s,
   );
   assert.match(
     shellStylesSource,
