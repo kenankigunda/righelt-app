@@ -77,7 +77,7 @@ class SequencedWorker extends FakeWorker {
 
   postMessage(payload) {
     const delayMs = this.delaysMs.length > 0 ? this.delaysMs.shift() : null;
-    if (!(delayMs >= 0)) {
+    if (!Number.isFinite(delayMs) || delayMs < 0) {
       return;
     }
     this.clock.setTimeout(() => {

@@ -1,8 +1,8 @@
 export const BOT_PERSONA_VERSION = "cp-persona-v1";
 export const BOT_MOVE_SELECTION_TIMEOUT_MS_BY_SKILL = Object.freeze({
-    beginner: 12000,
-    medium: 21000,
-    hard: 45000,
+    beginner: 12_000,
+    medium: 21_000,
+    hard: 45_000,
 });
 export const BOT_PERSONAS = {
     babs: {
@@ -47,18 +47,18 @@ export const BOT_PERSONAS = {
         defense: 0.2,
         conversion: 0.7,
     },
-  horus: {
-    id: "horus",
-    displayName: "Horus the Sage",
-    skill: "hard",
-    style: "balanced",
-    theme: "owl",
-    searchDepth: 3,
-    branchFactor: 10,
-    noiseScale: 0.01,
-    forgiveness: 0.3,
-    aggression: 0.6,
-    defense: 0.7,
+    horus: {
+        id: "horus",
+        displayName: "Horus the Sage",
+        skill: "hard",
+        style: "balanced",
+        theme: "owl",
+        searchDepth: 3,
+        branchFactor: 10,
+        noiseScale: 0.01,
+        forgiveness: 0.3,
+        aggression: 0.6,
+        defense: 0.7,
         conversion: 1.3,
     },
 };
