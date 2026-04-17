@@ -78,6 +78,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   let lastUsesHoverTargetSelection = null;
   let recordedAction = null;
   let recordedActionStartPiece = null;
+  let overlayReplay = null;
   /** @type {Array<{row: number, col: number, ownerSeat?: "p1" | "p2" | null, kind?: "unit" | "commander" | null, piece?: unknown | null}>} */
   let destroyedPieces = [];
   let pendingHistoryDestroyedPieces = [];
@@ -109,6 +110,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     selection: overlayMode === OVERLAY_MODE.INTERACTIVE ? getCurrentSelection() : null,
     recordedAction: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedAction : null,
     recordedActionStartPiece: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedActionStartPiece : null,
+    replay: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? overlayReplay : null,
     destroyedPieces,
   });
 
@@ -451,8 +453,13 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
 
     if (elements.boardTurnIndicatorEl) {
-      elements.boardTurnIndicatorEl.textContent = state.sideToMove === "P1" ? "Player 1 to play" : "Player 2 to play";
-      setPlayerTone(elements.boardTurnIndicatorEl, state.sideToMove);
+      if (overlayMode === OVERLAY_MODE.RECORDED_ACTION && overlayReplay?.kind === "incoming-move" && overlayReplay.actorSeat) {
+        elements.boardTurnIndicatorEl.textContent = `Replaying ${overlayReplay.actorSeat} move`;
+        setPlayerTone(elements.boardTurnIndicatorEl, overlayReplay.actorSide ?? state.sideToMove);
+      } else {
+        elements.boardTurnIndicatorEl.textContent = state.sideToMove === "P1" ? "Player 1 to play" : "Player 2 to play";
+        setPlayerTone(elements.boardTurnIndicatorEl, state.sideToMove);
+      }
     }
 
     const pieceSummary =
@@ -480,7 +487,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     });
 
     if (overlayMode === OVERLAY_MODE.RECORDED_ACTION) {
-      const recordedActionLabel = recordedAction?.from && recordedAction?.to ? "Showing recorded move." : "Showing history move.";
+      const recordedActionLabel =
+        overlayReplay?.kind === "incoming-move"
+          ? overlayReplay.totalSteps > 1
+            ? `Incoming move ${overlayReplay.stepIndex + 1} of ${overlayReplay.totalSteps}.`
+            : "Incoming move."
+          : recordedAction?.from && recordedAction?.to
+            ? "Showing recorded move."
+            : "Showing history move.";
       setBoardPreviewPrompt(recordedActionLabel);
       return;
     }
@@ -1149,6 +1163,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       overlayMode: nextOverlayMode = OVERLAY_MODE.INTERACTIVE,
       recordedAction: nextRecordedAction = null,
       recordedActionStartPiece: nextRecordedActionStartPiece = null,
+      replay: nextReplay = null,
       destroyedPieces: nextDestroyedPieces = [],
     } = {},
   ) => {
@@ -1157,6 +1172,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     overlayMode = nextOverlayMode;
     recordedAction = nextRecordedAction ? structuredClone(nextRecordedAction) : null;
     recordedActionStartPiece = nextRecordedActionStartPiece ? structuredClone(nextRecordedActionStartPiece) : null;
+    overlayReplay = nextReplay ? structuredClone(nextReplay) : null;
     const preserveRemovalEffects =
       nextOverlayMode === OVERLAY_MODE.INTERACTIVE &&
       !selectionAction &&

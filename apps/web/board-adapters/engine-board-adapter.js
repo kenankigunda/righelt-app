@@ -754,6 +754,9 @@ export function createEngineBoardAdapter() {
     if (overlay?.mode === "recorded-action") {
       const action = overlay.recordedAction;
       const startPiece = overlay.recordedActionStartPiece ?? null;
+      const replay = overlay.replay ?? null;
+      const shouldDecorateReplay = replay?.kind === "incoming-move";
+      const replayArrowClass = shouldDecorateReplay ? "incoming-move-replay-arrow" : "";
       const piece = findActionTargetPiece(snapshot, action) ?? startPiece;
       if (!action || !piece) {
         return;
@@ -774,13 +777,21 @@ export function createEngineBoardAdapter() {
           if (action.type !== "project") {
             sourceToken.classList.add("move-ghost");
           }
+          if (shouldDecorateReplay) {
+            sourceToken.classList.add("incoming-move-replay-source");
+          }
           sourceCell.appendChild(sourceToken);
+        } else if (sourceCell && shouldDecorateReplay) {
+          findRenderablePieceToken(sourceCell)?.classList.add("incoming-move-replay-source");
         }
       }
 
       if (action.to) {
         if (action.type !== "project") {
           drawArrowLine(action.from ?? startPiece?.position ?? piece.position, action.to, piece.owner, false, true);
+          if (replayArrowClass) {
+            overlayLinesEl?.children?.[overlayLinesEl.children.length - 1]?.classList?.add(replayArrowClass);
+          }
         }
         const targetCell = cellByCoordinateKey.get(coordKey(action.to));
         if (targetCell) {
@@ -788,6 +799,9 @@ export function createEngineBoardAdapter() {
             const existingToken = findRenderablePieceToken(targetCell);
             if (existingToken) {
               existingToken.classList.add("preview-created");
+              if (shouldDecorateReplay) {
+                existingToken.classList.add("incoming-move-replay-target");
+              }
               return;
             }
           }
@@ -796,6 +810,9 @@ export function createEngineBoardAdapter() {
           ghost.classList.add("move-ghost");
           if (action.type === "project") {
             ghost.classList.add("preview-created");
+          }
+          if (shouldDecorateReplay) {
+            ghost.classList.add("incoming-move-replay-target");
           }
           targetCell.appendChild(ghost);
         }

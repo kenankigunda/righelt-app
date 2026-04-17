@@ -124,6 +124,96 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
   assert.equal(boardPreviewLabelEl.textContent, "Showing recorded move.");
 });
 
+test("board runtime labels incoming replay overlays distinctly from history previews", async () => {
+  const renderCalls = [];
+  let boardPreviewLabelValue = "";
+  const boardPreviewLabelEl = {
+    get textContent() {
+      return boardPreviewLabelValue;
+    },
+    set textContent(value) {
+      boardPreviewLabelValue = value;
+    },
+    get innerHTML() {
+      return boardPreviewLabelValue;
+    },
+    set innerHTML(value) {
+      boardPreviewLabelValue = value;
+    },
+    addEventListener: noop,
+    removeEventListener: noop,
+  };
+  const boardTurnIndicatorEl = {
+    textContent: "",
+    classList: {
+      add: noop,
+      remove: noop,
+    },
+  };
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: (payload) => renderCalls.push(payload),
+      getSelectedPieceSummary: () => null,
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      canInteract: () => false,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl,
+    boardTurnIndicatorEl,
+  });
+
+  await runtime.loadSnapshot(
+    {
+      sideToMove: "P2",
+      turnIndex: 1,
+      continuation: null,
+      outcome: null,
+      pieces: [{ id: "A1", owner: "P2", kind: "unit", position: { row: 6, col: 3 }, supplied: true, commanded: true }],
+    },
+    {
+      legalActions: [],
+      overlayMode: "recorded-action",
+      replay: { kind: "incoming-move", actorSeat: "Player 2", actorSide: "P2", stepIndex: 0, totalSteps: 1 },
+      recordedAction: {
+        type: "move",
+        actorId: "A1",
+        from: { row: 6, col: 3 },
+        to: { row: 6, col: 5 },
+      },
+      recordedActionStartPiece: {
+        id: "A1",
+        owner: "P2",
+        kind: "unit",
+        position: { row: 6, col: 3 },
+        supplied: true,
+        commanded: true,
+      },
+    },
+  );
+
+  assert.equal(renderCalls.at(-1)?.overlay?.replay?.kind, "incoming-move");
+  assert.equal(boardPreviewLabelEl.textContent, "Incoming move.");
+  assert.equal(boardTurnIndicatorEl.textContent, "Replaying Player 2 move");
+});
+
 test("board runtime starts history destruction in the removal-effects layer before the settled overlay appears", async () => {
   const renderCalls = [];
   const scheduledTimers = [];

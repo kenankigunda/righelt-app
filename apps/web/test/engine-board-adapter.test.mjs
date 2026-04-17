@@ -599,6 +599,45 @@ test("recorded-action overlay shows move markers without supply, command, or non
   });
 });
 
+test("recorded-action incoming replay overlay adds animation hooks without changing geometry", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl, overlayLinesEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P2",
+      continuation: null,
+      pieces: [{ id: "A1", owner: "P2", kind: "unit", position: { row: 6, col: 3 }, supplied: true, commanded: true }],
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: {
+        mode: "recorded-action",
+        replay: { kind: "incoming-move", actorSeat: "Player 2", actorSide: "P2" },
+        recordedAction: { type: "move", actorId: "A1", from: { row: 6, col: 3 }, to: { row: 6, col: 5 } },
+        recordedActionStartPiece: {
+          id: "A1",
+          owner: "P2",
+          kind: "unit",
+          position: { row: 6, col: 3 },
+          supplied: true,
+          commanded: true,
+        },
+      },
+      legalActions: [],
+      selectedPieceMoves: [],
+      selectedPieceMovePreviews: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "move",
+    });
+
+    assert.equal(getCell(boardEl, 6, 3)?.querySelector(".incoming-move-replay-source") !== null, true);
+    assert.equal(getCell(boardEl, 6, 5)?.querySelector(".incoming-move-replay-target") !== null, true);
+    assert.equal(overlayLinesEl.querySelector(".incoming-move-replay-arrow") !== null, true);
+  });
+});
+
 test("recorded-action project overlay decorates the existing history target piece instead of duplicating it", async () => {
   await withFakeDocument(async () => {
     const { adapter, boardEl, overlayLinesEl } = createMountedAdapter();

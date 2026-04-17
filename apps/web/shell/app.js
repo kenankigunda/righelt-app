@@ -21,6 +21,7 @@ import { buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./his
 import { resolveInitialSelectionHydration } from "./selection-hydration.js";
 import { shouldResetBoardSelection, shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import { buildScenarioStaticPreviewModel } from "./static-preview-model.js";
+import { createIncomingMoveReplayController } from "./incoming-move-replay.js";
 import {
   DEFAULT_GAME_PANEL,
   FLYOUT_KEYS,
@@ -111,6 +112,7 @@ let mountedSnapshotKey = null;
 let mountedLegalActionsKey = null;
 let mountedOverlayKey = null;
 let mountedSyncStatusKey = null;
+let mountedReplayKey = null;
 let boardRuntime = null;
 const consumedInitialSelectionActionKeyByGameId = new Map();
 let wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
@@ -1055,6 +1057,29 @@ const renderFeedbackReveal = (message, action = null) => `
   </div>
 `;
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+const incomingMoveReplay = createIncomingMoveReplayController({
+  getGame: (gameId) => transport?.getGameViewModel?.(gameId) ?? null,
+  onStateChanged: () => {
+    render({ animatePanels: false, includeBoard: true });
+  },
+  prefersReducedMotion,
+});
+window.__righeltIncomingMoveReplay = incomingMoveReplay;
+
+const getIncomingReplayRouteState = () => {
+  if (currentRoute.name !== "game") {
+    return { gameId: null, replayEnabled: false };
+  }
+  const game = transport.getGameViewModel(currentRoute.gameId);
+  return {
+    gameId: currentRoute.gameId,
+    replayEnabled: game?.inHistoryMode !== true,
+  };
+};
+
+const syncIncomingMoveReplayRouteState = () => {
+  incomingMoveReplay.setRouteState(getIncomingReplayRouteState());
+};
 const getRouteTransitionRenderKey = () =>
   routeTransition ? `${routeTransition.type}:${routeTransition.fromRoute}:${routeTransition.toRoute}:${routeTransition.gameId}` : "none";
 const getRouteTransitionPhaseKey = () => routeTransition?.phase || "idle";
@@ -3405,6 +3430,7 @@ const mountBoardForGame = (game) => {
     mountedLegalActionsKey = null;
     mountedOverlayKey = null;
     mountedSyncStatusKey = null;
+    mountedReplayKey = null;
     if (boardRuntime) {
       boardRuntime.destroy();
       boardRuntime = null;
@@ -3412,11 +3438,14 @@ const mountBoardForGame = (game) => {
     return;
   }
 
-  const snapshot = game.currentSnapshot ?? null;
+  incomingMoveReplay.primeGame(game);
+  const liveReplay = game.inHistoryMode ? null : incomingMoveReplay.getActiveReplay(game.id);
+  const replayKey = liveReplay ? toStableKey(liveReplay) : "null";
+  const snapshot = liveReplay?.snapshot ?? game.currentSnapshot ?? null;
   const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
-  const historySelectionAction = game.inHistoryMode ? game.historySelectionAction ?? null : null;
-  const overlayMode = game.inHistoryMode ? "recorded-action" : "interactive";
-  const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode ? game.legalActions : [];
+  const historySelectionAction = liveReplay?.recordedAction ?? (game.inHistoryMode ? game.historySelectionAction ?? null : null);
+  const overlayMode = game.inHistoryMode || liveReplay ? "recorded-action" : "interactive";
+  const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode && !liveReplay ? game.legalActions : [];
   const scenarioSelectionHydration = resolvePendingScenarioHydration({
     game,
     snapshot,
@@ -3429,14 +3458,17 @@ const mountBoardForGame = (game) => {
     consumedActionKey: consumedInitialSelectionActionKeyByGameId.get(game.id) ?? null,
     toStableKey,
   });
+  const effectiveInitialSelectionHydration = liveReplay
+    ? { selectionAction: null, shouldConsume: false, nextConsumedActionKey: null }
+    : initialSelectionHydration;
   if (!snapshot) {
     return;
   }
 
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
-  const historyDestroyedPieces = getHistoryDestroyedPieceOverlays(game);
-  const historyRecordedActionStartPiece = getHistoryRecordedActionStartPiece(game);
+  const historyDestroyedPieces = liveReplay?.destroyedPieces ?? getHistoryDestroyedPieceOverlays(game);
+  const historyRecordedActionStartPiece = liveReplay?.recordedActionStartPiece ?? getHistoryRecordedActionStartPiece(game);
   const forceClickTargetSelection = currentRoute.scenarios;
   const hydratedSelectionAction = scenarioSelectionHydration.selectionAction ?? initialSelectionHydration.selectionAction;
   const overlayKey = toStableKey({
@@ -3444,6 +3476,7 @@ const mountBoardForGame = (game) => {
     recordedAction: historySelectionAction,
     recordedActionStartPiece: historyRecordedActionStartPiece,
     destroyedPieces: historyDestroyedPieces,
+    replay: liveReplay,
     selectionAction: hydratedSelectionAction,
     selectionState: scenarioSelectionHydration.selectionState,
     forceClickTargetSelection,
@@ -3460,7 +3493,7 @@ const mountBoardForGame = (game) => {
         gameId: game.id,
         canInteract: () => {
           const view = transport.getGameViewModel(game.id);
-          return canControlLiveBoard(view);
+          return canControlLiveBoard(view) && !incomingMoveReplay.isReplayActiveForGame(game.id);
         },
       }),
       controls: {
@@ -3481,10 +3514,11 @@ const mountBoardForGame = (game) => {
       syncStatus: game.syncStatus ?? "ready",
       failedOperationsKey: getFailedOperationsKey(game.id),
     });
+    mountedReplayKey = replayKey;
     boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
     boardRuntime.syncInteractionCapabilities?.();
-    if (initialSelectionHydration.shouldConsume) {
-      consumedInitialSelectionActionKeyByGameId.set(game.id, initialSelectionHydration.nextConsumedActionKey);
+    if (effectiveInitialSelectionHydration.shouldConsume) {
+      consumedInitialSelectionActionKeyByGameId.set(game.id, effectiveInitialSelectionHydration.nextConsumedActionKey);
     }
     void boardRuntime.loadSnapshot(snapshot, {
       legalActions: effectiveLegalActions,
@@ -3495,6 +3529,7 @@ const mountBoardForGame = (game) => {
       recordedAction: historySelectionAction,
       recordedActionStartPiece: historyRecordedActionStartPiece,
       destroyedPieces: historyDestroyedPieces,
+      replay: liveReplay,
     });
     return;
   }
@@ -3506,6 +3541,7 @@ const mountBoardForGame = (game) => {
   });
   const resetSelection =
     mountedHistoryMoveIndex !== historyMoveIndex ||
+    mountedReplayKey !== replayKey ||
     (mountedSyncStatusKey !== syncStatusKey && failedOperationsKey.length > 0) ||
     shouldResetBoardSelection({
       currentSnapshot: boardRuntime.getState?.() ?? null,
@@ -3545,8 +3581,9 @@ const mountBoardForGame = (game) => {
   mountedLegalActionsKey = legalActionsKey;
   mountedOverlayKey = overlayKey;
   mountedSyncStatusKey = syncStatusKey;
-  if (initialSelectionHydration.shouldConsume) {
-    consumedInitialSelectionActionKeyByGameId.set(game.id, initialSelectionHydration.nextConsumedActionKey);
+  mountedReplayKey = replayKey;
+  if (effectiveInitialSelectionHydration.shouldConsume) {
+    consumedInitialSelectionActionKeyByGameId.set(game.id, effectiveInitialSelectionHydration.nextConsumedActionKey);
   }
   void boardRuntime.loadSnapshot(snapshot, {
     legalActions: effectiveLegalActions,
@@ -3557,6 +3594,7 @@ const mountBoardForGame = (game) => {
     recordedAction: historySelectionAction,
     recordedActionStartPiece: historyRecordedActionStartPiece,
     destroyedPieces: historyDestroyedPieces,
+    replay: liveReplay,
   });
 };
 
@@ -3567,6 +3605,7 @@ const destroyMountedBoardRuntime = () => {
   mountedLegalActionsKey = null;
   mountedOverlayKey = null;
   mountedSyncStatusKey = null;
+  mountedReplayKey = null;
   if (boardRuntime) {
     boardRuntime.destroy();
     boardRuntime = null;
@@ -3878,6 +3917,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   reconcileMiniBoardPreviews();
   animateHomeSectionTransitions();
   syncScenarioAuthoringControls();
+  syncIncomingMoveReplayRouteState();
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
@@ -4042,6 +4082,15 @@ const syncStore = createSyncStore({
   },
 });
 const transport = syncStore;
+
+transport.subscribe((change) => {
+  if (change?.type === "authoritative_update" && typeof change.gameId === "string") {
+    const game = transport.getGameViewModel(change.gameId);
+    if (game) {
+      incomingMoveReplay.observeAuthoritativeGame(game);
+    }
+  }
+});
 
 transport.subscribe((change) => {
   render({
@@ -4898,6 +4947,18 @@ window.addEventListener("pointerup", (event) => {
 
 window.addEventListener("pointercancel", () => {
   clearHistoryPress();
+});
+
+document.addEventListener("visibilitychange", () => {
+  incomingMoveReplay.setDocumentVisible(!(document.hidden === true || document.visibilityState === "hidden"));
+});
+
+window.addEventListener("focus", () => {
+  incomingMoveReplay.setWindowFocused(true);
+});
+
+window.addEventListener("blur", () => {
+  incomingMoveReplay.setWindowFocused(false);
 });
 
 window.addEventListener("click", (event) => {
