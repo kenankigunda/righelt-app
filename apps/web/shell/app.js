@@ -669,7 +669,7 @@ const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
 const canControlLiveBoard = (game) => Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
 const getVisibleHomeSectionKeys = (route = currentRoute) => {
   if (route?.name === "trash") {
-    return ["trash-my", "trash-other"];
+    return ["trash-my"];
   }
   if (route?.name !== "home") {
     return [];
@@ -1286,14 +1286,6 @@ const renderHeaderWideActions = () => `
     aria-pressed="${currentRoute.debug ? "true" : "false"}"
   >Debug</button>
 `;
-const renderHeaderTrashAction = () => `
-  <a
-    class="button-link secondary shell-header-trash-link${currentRoute.name === "trash" ? " is-active" : ""}"
-    href="${buildTrashHash(getCurrentFlyoutState())}"
-    data-flyout-link="trash"
-    ${currentRoute.name === "trash" ? 'aria-current="page"' : ""}
-  >Trash</a>
-`;
 const renderHeaderNarrowMenu = () => {
   const menuId = "shell-header-menu";
   return `
@@ -1318,14 +1310,6 @@ const renderHeaderNarrowMenu = () => {
         data-header-menu-panel
         aria-hidden="${headerMenuOpen ? "false" : "true"}"
       >
-        <button
-          class="secondary shell-header-menu-item${currentRoute.name === "trash" ? " is-active" : ""}"
-          type="button"
-          data-action="open-trash"
-          data-header-menu-close="true"
-          aria-pressed="${currentRoute.name === "trash" ? "true" : "false"}"
-          tabindex="${headerMenuOpen ? "0" : "-1"}"
-        >Trash</button>
         <button
           class="secondary shell-header-menu-item${currentRoute.scenarios ? " is-active" : ""}"
           type="button"
@@ -1835,7 +1819,6 @@ const renderHeader = () => `
   <header class="shell-header">
     <div class="shell-header-main">
       <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Righelt</a></h1>
-      ${isNarrowHeaderMode() ? "" : renderHeaderTrashAction()}
     </div>
     ${renderHeaderAlertZone()}
     <div class="shell-header-actions">
@@ -2322,6 +2305,7 @@ const renderCardMenu = (game, { isOffline, myIdentityId, mode = "home", variant 
       : leaveDeleteLabel === "Delete"
         ? "delete-game"
         : "leave-game";
+  const actionButtonClassName = action === "delete-game" ? "secondary destructive mini-board-card-menu-item" : "secondary mini-board-card-menu-item";
   return `
     <details class="${menuClassName}" data-card-menu data-game-id="${escapeHtml(game.id)}">
       <summary
@@ -2337,7 +2321,7 @@ const renderCardMenu = (game, { isOffline, myIdentityId, mode = "home", variant 
       </summary>
       <div class="mini-board-card-menu-panel" id="${menuId}">
         <button
-          class="secondary danger mini-board-card-menu-item"
+          class="${actionButtonClassName}"
           data-action="${escapeHtml(action)}"
           data-game-id="${escapeHtml(game.id)}"
           data-testid="${escapeHtml(action)}"
@@ -2353,9 +2337,11 @@ const renderCardMenu = (game, { isOffline, myIdentityId, mode = "home", variant 
 const renderHomeGameCard = (game, { menuMode = "home" } = {}) => {
   const snapshot = getStaticCardPreviewSnapshot(game);
   const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
-  const moveLabel = `Move ${game.moveCount + 1}`;
+  const isTrashCard = menuMode === "trash";
+  const moveLabel = isTrashCard ? `Deleted on ${formatClientDateTime(game.deletedAt || game.lastMoveAt || game.createdAt)}` : `Move ${game.moveCount + 1}`;
   const recoveryChip =
     game.syncStatus === "desynced" || game.syncStatus === "confirming" ? '<span class="status-chip">Recovering</span>' : "";
+  const deletedChip = isTrashCard ? '<span class="status-chip trash-card-badge">Deleted</span>' : "";
   const seatConnectionLine = renderHomeSeatConnectionLine(game);
   const homeCardMenu = renderCardMenu(game, {
     isOffline: navigator.onLine === false,
@@ -2363,7 +2349,7 @@ const renderHomeGameCard = (game, { menuMode = "home" } = {}) => {
     mode: menuMode,
   });
   const leaving = pendingHomeCardLeaveIds.has(game.id);
-  const cardClassName = `mini-board-card${leaving ? " is-leaving" : ""}`;
+  const cardClassName = `mini-board-card${leaving ? " is-leaving" : ""}${isTrashCard ? " is-trash-card" : ""}`;
   return `<article class="${cardClassName}" data-home-game-card="${escapeHtml(game.id)}" data-game-id="${escapeHtml(game.id)}">
     ${homeCardMenu}
     <a
@@ -2375,9 +2361,12 @@ const renderHomeGameCard = (game, { menuMode = "home" } = {}) => {
       <div class="mini-board-card-header">
         <div>
           <span class="mini-board-card-link">${escapeHtml(formatDisplayGameId(game.id))}</span>
-          <p class="small mini-board-card-subtitle">Last move on ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
+          <p class="small mini-board-card-subtitle">${escapeHtml(moveLabel)}</p>
         </div>
-        ${recoveryChip}
+        <div class="mini-board-card-header-badges">
+          ${deletedChip}
+          ${recoveryChip}
+        </div>
       </div>
       <div class="mini-board-card-copy">
         <div class="mini-board-card-meta mini-board-card-meta-primary">
@@ -2579,6 +2568,7 @@ const renderHomeGameSection = (sectionKey, { alwaysRender = sectionKey === "my",
     return "";
   }
   const showEmptyState = section.totalGames === 0;
+  const emptyStateText = sectionKey.startsWith("trash-") ? "No deleted games yet." : "No games yet.";
   const showPaging = section.totalPages > 1;
   const showHeaderPaging = showPaging && section.visibleColumnCount > 1;
   const showFooterPaging = showPaging && section.visibleColumnCount === 1;
@@ -2597,7 +2587,7 @@ const renderHomeGameSection = (sectionKey, { alwaysRender = sectionKey === "my",
       </div>
     </div>
     ${showEmptyState
-      ? `<p class="small home-games-empty">No games yet.</p>`
+      ? `<p class="small home-games-empty">${escapeHtml(emptyStateText)}</p>`
       : `<div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
       <div class="home-games-carousel-track" data-home-carousel-track="${escapeHtml(sectionKey)}">
         <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game, { menuMode })).join("")}</div>
@@ -2605,6 +2595,40 @@ const renderHomeGameSection = (sectionKey, { alwaysRender = sectionKey === "my",
     </div>`}
     ${showFooterPaging ? renderHomeSectionControls(sectionKey, section, { placement: "footer" }) : ""}
   </section>`;
+};
+
+const renderHomeDeletedGamesButton = () => `
+  <footer class="home-page-footer-actions">
+    <div class="home-page-footer-actions-inner">
+      <button
+        class="button-link secondary home-deleted-games-button"
+        type="button"
+        data-action="open-trash"
+        data-testid="home-deleted-games"
+      >Deleted games</button>
+    </div>
+  </footer>
+`;
+
+const renderTrashBanner = (trashSection = getHomeSection("trash-my")) => {
+  const deletedGameCount = trashSection?.totalGames ?? 0;
+  const loadingCopy = "Loading deleted games...";
+  const emptyCopy = "This bin is empty for now.";
+  const populatedCopy =
+    deletedGameCount === 1
+      ? "1 deleted game is ready to restore."
+      : `${deletedGameCount} deleted games are ready to restore.`;
+  const helperCopy = routeHydrated ? (deletedGameCount === 0 ? emptyCopy : populatedCopy) : loadingCopy;
+  return `
+    <section class="panel trash-bin-banner" data-testid="trash-bin-banner">
+      <div class="trash-bin-banner-copy">
+        <p class="small shell-route-kicker">Deleted games bin</p>
+        <h2>Deleted games</h2>
+        <p class="small">${escapeHtml(helperCopy)}</p>
+      </div>
+      <span class="status-chip trash-bin-banner-chip">${routeHydrated && deletedGameCount > 0 ? "Restorable" : "Bin"}</span>
+    </section>
+  `;
 };
 
 const scrollHomeSectionToTop = (sectionKey) => {
@@ -2626,6 +2650,7 @@ const renderHome = () => {
     return `
       <section class="stack">
         ${getVisibleHomeSectionKeys().map((sectionKey) => renderHomeSectionSkeleton(getHomeSection(sectionKey).title, { showStartButton: sectionKey === "my" })).join("")}
+        ${renderHomeDeletedGamesButton()}
       </section>
     `;
   }
@@ -2635,21 +2660,25 @@ const renderHome = () => {
   return `
     <section class="stack">
       ${listHtml}
+      ${renderHomeDeletedGamesButton()}
     </section>
   `;
 };
 
 const renderTrash = () => {
+  const trashSection = getHomeSection("trash-my");
   if (!routeHydrated) {
     return `
       <section class="stack">
-        ${getVisibleHomeSectionKeys().map((sectionKey) => renderHomeSectionSkeleton(getHomeSection(sectionKey).title)).join("")}
+        ${renderTrashBanner(trashSection)}
+        ${renderHomeSectionSkeleton(trashSection.title)}
       </section>
     `;
   }
   return `
     <section class="stack">
-      ${getVisibleHomeSectionKeys().map((sectionKey) => renderHomeGameSection(sectionKey, { alwaysRender: true, menuMode: "trash" })).join("")}
+      ${renderTrashBanner(trashSection)}
+      ${renderHomeGameSection("trash-my", { alwaysRender: true, menuMode: "trash" })}
     </section>
   `;
 };

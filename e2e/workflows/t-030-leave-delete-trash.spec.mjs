@@ -281,10 +281,13 @@ test.describe("t-030 leave/delete/trash workflows", () => {
       await expect(viewerPage.getByTestId("restore-game")).toHaveCount(0);
 
       await creatorPage.goto("/#/trash");
+      await expect(creatorPage.getByTestId("trash-bin-banner")).toBeVisible();
       await expect(creatorPage.getByText("My deleted games")).toBeVisible();
-      await expect(creatorPage.getByText("Other games")).toBeVisible();
+      await expect(creatorPage.getByText("Other games")).toHaveCount(0);
       const trashCard = getHomeCard(creatorPage, gameId);
       await expect(trashCard).toBeVisible();
+      await expect(trashCard).toHaveClass(/is-trash-card/);
+      await expect.poll(async () => Number(await trashCard.evaluate((el) => getComputedStyle(el).opacity))).toBeLessThan(1);
       await openCardMenu(trashCard, "Restore game actions");
       await expect(trashCard.getByTestId("restore-game")).toBeVisible();
       await trashCard.getByTestId("restore-game").click();
@@ -360,24 +363,57 @@ test.describe("t-030 leave/delete/trash workflows", () => {
     }
   });
 
-  test("E-23: trash lives in the header chrome and contextual menus close on outside click or Escape", async ({
+  test("E-23: deleted games lives as a home-only bottom action and contextual menus close on outside click or Escape", async ({
     browser,
     baseURL,
   }) => {
     const { context, page } = await createIsolatedPage(browser);
 
     try {
+      await page.setViewportSize({ width: 390, height: 844 });
       const { gameId, gameHash } = await createGameFromHome(page);
       await page.goto("/");
 
-      const trashLink = page.getByRole("link", { name: "Trash" });
+      const deletedGamesButton = page.getByTestId("home-deleted-games");
+      const homeFooter = page.locator(".home-page-footer-actions");
+      const homeStackChildren = page.locator("section.stack > *");
       const headerActions = page.locator(".nav-row");
-      await expect(trashLink).toBeVisible();
-      const trashBox = await trashLink.boundingBox();
+      await expect(page.getByRole("link", { name: "Trash" })).toHaveCount(0);
+      await expect(deletedGamesButton).toBeVisible();
+      await expect(homeFooter).toHaveCSS("position", "static");
+      await expect(homeStackChildren.last()).toHaveClass(/home-page-footer-actions/);
+      const deletedGamesBox = await deletedGamesButton.boundingBox();
       const actionsBox = await headerActions.boundingBox();
-      expect(trashBox).not.toBeNull();
+      const viewport = page.viewportSize();
+      expect(deletedGamesBox).not.toBeNull();
       expect(actionsBox).not.toBeNull();
-      expect(trashBox.x).toBeLessThan(actionsBox.x);
+      expect(viewport).not.toBeNull();
+      if (deletedGamesBox && viewport) {
+        expect(Math.abs(deletedGamesBox.x + deletedGamesBox.width / 2 - viewport.width / 2)).toBeLessThan(24);
+      }
+      if (deletedGamesBox && actionsBox) {
+        expect(actionsBox.y).toBeLessThan(deletedGamesBox.y);
+      }
+
+      const headerMenuButton = page.locator('[data-action="toggle-header-menu"]');
+      const headerMenuPanel = page.locator(".shell-header-menu-panel");
+      await expect(headerMenuButton).toBeVisible();
+      await headerMenuButton.click();
+      await expect(headerMenuPanel).toHaveClass(/is-open/);
+      const headerButtonBox = await headerMenuButton.boundingBox();
+      const headerPanelBox = await headerMenuPanel.boundingBox();
+      expect(headerButtonBox).not.toBeNull();
+      expect(headerPanelBox).not.toBeNull();
+      if (headerButtonBox && headerPanelBox) {
+        expect(Math.abs(headerPanelBox.x + headerPanelBox.width - (headerButtonBox.x + headerButtonBox.width))).toBeLessThan(2);
+        expect(headerPanelBox.y).toBeLessThanOrEqual(headerButtonBox.y + headerButtonBox.height + 1);
+      }
+      await page.mouse.click(8, 8);
+      await expect(headerMenuPanel).not.toHaveClass(/is-open/);
+      await headerMenuButton.click();
+      await expect(headerMenuPanel).toHaveClass(/is-open/);
+      await page.keyboard.press("Escape");
+      await expect(headerMenuPanel).not.toHaveClass(/is-open/);
 
       const homeCard = getHomeCard(page, gameId);
       await openCardMenu(homeCard, "Delete game actions");
@@ -390,12 +426,14 @@ test.describe("t-030 leave/delete/trash workflows", () => {
       await page.keyboard.press("Escape");
       await expect(homeCard.locator("details[data-card-menu][open]")).toHaveCount(0);
 
-      await trashLink.click();
+      await deletedGamesButton.click();
       await expect(page).toHaveURL(/#\/trash/);
       await expect(page.getByText("My deleted games")).toBeVisible();
 
+      await page.setViewportSize({ width: 1280, height: 900 });
       await page.goto(`${baseURL}${gameHash}`);
       await page.waitForLoadState("domcontentloaded");
+      await expect(page.getByTestId("home-deleted-games")).toHaveCount(0);
       const summaryCopy = page.locator(".game-shell-summary-copy");
       const summaryActions = page.locator(".game-shell-summary-actions");
       await expect(summaryActions).toBeVisible();

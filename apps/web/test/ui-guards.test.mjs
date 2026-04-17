@@ -199,7 +199,7 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /visiblePageSize:\s*HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,/);
   assert.match(source, /visibleColumnCount:\s*1,/);
   assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \{/);
-  assert.match(source, /if \(route\?\.name === "trash"\) \{\s*return \["trash-my", "trash-other"\];\s*\}/s);
+  assert.match(source, /if \(route\?\.name === "trash"\) \{\s*return \["trash-my"\];\s*\}/s);
   assert.match(source, /if \(route\?\.name !== "home"\) \{\s*return \[\];\s*\}/s);
   assert.match(source, /return route\?\.debug \? \["my", "other", "smoke"\] : \["my", "other"\];/);
   assert.match(source, /const getHomeSectionCardMinWidthPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_MIN_WIDTH_REM;/);
@@ -229,6 +229,8 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /data-action="create-game"/);
   assert.match(source, /home-games-section-controls home-games-section-controls-\$\{escapeHtml\(placement\)\}/);
   assert.match(source, /const renderHomeGameSection = \(sectionKey, \{ alwaysRender = sectionKey === "my", menuMode = currentRoute\.name === "trash" \? "trash" : "home" \} = \{\}\) =>/);
+  assert.match(source, /const renderTrashBanner = \(trashSection = getHomeSection\("trash-my"\)\) =>/);
+  assert.match(source, /data-testid="trash-bin-banner"/);
   assert.match(source, /const showEmptyState = section\.totalGames === 0;/);
   assert.match(source, /const showHeaderPaging = showPaging && section\.visibleColumnCount > 1;/);
   assert.match(source, /const showFooterPaging = showPaging && section\.visibleColumnCount === 1;/);
@@ -251,7 +253,8 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\)/);
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "footer" \}\)/);
   assert.match(source, /hasHeaderAction \? renderHomeStartButton\(\) : ""/);
-  assert.match(source, /<p class="small home-games-empty">No games yet\.<\/p>/);
+  assert.match(source, /const emptyStateText = sectionKey\.startsWith\("trash-"\) \? "No deleted games yet\." : "No games yet\.";?/);
+  assert.match(source, /<p class="small home-games-empty">\$\{escapeHtml\(emptyStateText\)\}<\/p>/);
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
   assert.match(source, /if \(getShellLayoutMode\(\) !== "narrow" \|\| !\(appEl instanceof HTMLElement\)\) \{\s*return;\s*\}/s);
   assert.match(source, /sectionEl\.scrollIntoView\(\{\s*behavior: "smooth",\s*block: "start",\s*\}\);/s);

@@ -31,13 +31,14 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /"trash-my": createHomeSectionState\("My deleted games"\),/);
   assert.match(source, /"trash-other": createHomeSectionState\("Other games"\),/);
   assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \{/);
-  assert.match(source, /if \(route\?\.name === "trash"\) \{\s*return \["trash-my", "trash-other"\];\s*\}/s);
+  assert.match(source, /if \(route\?\.name === "trash"\) \{\s*return \["trash-my"\];\s*\}/s);
   assert.match(source, /data-card-menu data-game-id=/);
   assert.match(source, /data-action="\$\{escapeHtml\(action\)\}"/);
   assert.match(source, /Not available offline\./);
   assert.match(source, /if \(mode === "trash"\) \{/);
   assert.match(source, /data-action="restore-game"/);
   assert.match(source, /data-testid="restore-game"/);
+  assert.match(source, /const actionButtonClassName = action === "delete-game" \? "secondary destructive mini-board-card-menu-item" : "secondary mini-board-card-menu-item";/);
   assert.match(source, /const renderLeftGameBanner = \(game\) =>/);
   assert.match(source, /data-testid="left-game-gate"/);
   assert.match(source, /data-testid="rejoin-left-game"/);
@@ -56,6 +57,10 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const renderGameDeletedGate = \(game\) =>/);
   assert.match(source, /data-testid="game-deleted-gate"/);
   assert.match(source, /data-testid="restore-game"/);
+  assert.match(source, /const renderHomeDeletedGamesButton = \(\) =>/);
+  assert.match(source, /data-testid="home-deleted-games"/);
+  assert.match(source, /home-page-footer-actions/);
+  assert.match(source, /home-page-footer-actions-inner/);
   assert.match(source, /const renderGameNotFound = \(\) =>/);
   assert.match(source, /data-testid="game-not-found"/);
   assert.match(source, /game-shell-summary-shell/);
@@ -83,7 +88,6 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /body = renderGameNotFound\(\);/);
   assert.match(source, /<h1><a class="shell-header-title-link" href="\$\{buildHomeHash\(getCurrentFlyoutState\(\)\)\}" data-flyout-link="home">Righelt<\/a><\/h1>/);
   assert.match(source, /const renderHeaderWideActions = \(\) =>/);
-  assert.match(source, /const renderHeaderTrashAction = \(\) =>/);
   assert.match(source, /const renderHeaderNarrowMenu = \(\) =>/);
   assert.match(source, /const renderHeaderAlertZone = \(\) => \{/);
   assert.match(source, /const alertStackRotationByGameId = new Map\(\);/);
@@ -96,17 +100,28 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /: 'aria-hidden="true" tabindex="-1"'/);
   assert.match(source, /const viewedGameId = getCurrentViewedGameId\(\);/);
   assert.match(source, /data-shell-alert-zone="\$\{gameAlerts \? "active" : "idle"\}"/);
-  assert.match(source, /shell-header-trash-link/);
-  assert.match(source, /data-flyout-link="trash"/);
+  assert.doesNotMatch(source, /shell-header-trash-link/);
+  assert.doesNotMatch(source, />Trash<\/(?:a|button)>/);
   assert.match(source, /data-action="open-trash"/);
-  assert.match(source, />Trash<\/a>/);
-  assert.match(source, />Trash<\/button>/);
+  assert.match(source, /const renderHomeDeletedGamesButton = \(\) =>/);
+  assert.match(source, /data-testid="home-deleted-games"/);
+  assert.match(source, />Deleted games<\/button>/);
+  assert.match(source, /const renderTrashBanner = \(trashSection = getHomeSection\("trash-my"\)\) =>/);
+  assert.match(source, /data-testid="trash-bin-banner"/);
+  assert.match(source, /class="panel trash-bin-banner"/);
+  assert.match(source, /class="status-chip trash-bin-banner-chip"/);
   assert.match(source, /const closeCardMenus = \(exceptMenu = null\) =>/);
   assert.match(source, /details\[data-card-menu\]\[open\]/);
   assert.match(source, /const renderTrash = \(\) =>/);
   assert.match(source, /const renderGameNotFound = \(\) =>/);
   assert.match(source, /const renderHomeGameSection = \(sectionKey, \{ alwaysRender = sectionKey === "my", menuMode = currentRoute\.name === "trash" \? "trash" : "home" \} = \{\}\) =>/);
   assert.match(source, /const renderHomeGameCard = \(game, \{ menuMode = "home" \} = \{\}\) =>/);
+  assert.match(source, /const cardClassName = `mini-board-card\$\{leaving \? " is-leaving" : ""\}\$\{isTrashCard \? " is-trash-card" : ""\}`;/);
+  assert.match(
+    source,
+    /const moveLabel = isTrashCard \? `Deleted on \$\{formatClientDateTime\(game\.deletedAt \|\| game\.lastMoveAt \|\| game\.createdAt\)\}` : `Move \$\{game\.moveCount \+ 1\}`;/,
+  );
+  assert.match(source, /const deletedChip = isTrashCard \? '<span class="status-chip trash-card-badge">Deleted<\/span>' : "";/);
   assert.match(source, /mini-board-card-menu mini-board-card-menu-overlay/);
   assert.match(source, /mini-board-card-menu mini-board-card-menu-game/);
   assert.match(source, /mode: menuMode/);
@@ -472,7 +487,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /class="mini-board-card"/);
   assert.match(source, /class="mini-board-card-link-surface"[\s\S]*href=/);
   assert.match(source, /data-game-id="\$\{escapeHtml\(game\.id\)\}"/);
-  assert.match(source, /Last move on \$\{escapeHtml\(formatClientDateTime\(game\.lastMoveAt \|\| game\.createdAt\)\)\}/);
+  assert.match(source, /const moveLabel = isTrashCard \? `Deleted on \$\{formatClientDateTime\(game\.deletedAt \|\| game\.lastMoveAt \|\| game\.createdAt\)\}` : `Move \$\{game\.moveCount \+ 1\}`;/);
   assert.match(
     source,
     /const recoveryChip =[\s\S]*game\.syncStatus === "desynced" \|\| game\.syncStatus === "confirming"[\s\S]*'<span class="status-chip">Recovering<\/span>' : "";/,
@@ -498,7 +513,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(source, /<div class="mini-board-card-meta mini-board-card-meta-primary">/);
   assert.match(source, /<span>\$\{renderHomeRoleLine\(game\)\}<\/span>/);
   assert.match(source, /\$\{seatConnectionLine\}/);
-  assert.match(source, /const moveLabel = `Move \$\{game\.moveCount \+ 1\}`;/);
+  assert.match(source, /const moveLabel = isTrashCard \? `Deleted on \$\{formatClientDateTime\(game\.deletedAt \|\| game\.lastMoveAt \|\| game\.createdAt\)\}` : `Move \$\{game\.moveCount \+ 1\}`;/);
   assert.match(source, /reconcileMiniBoardPreviews\(\);\s*syncMountedGameShellPanelUi\(shellRoot\);\s*scheduleGameShellStickyLayout\(\);/);
 });
 

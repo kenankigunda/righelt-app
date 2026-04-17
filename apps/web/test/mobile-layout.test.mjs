@@ -49,6 +49,10 @@ test("shell header stacks cleanly on narrow screens", () => {
     shellStylesSource,
     /\.shell-route-message-copy\s*\{[\s\S]*display:\s*grid;[\s\S]*justify-items:\s*center;/s,
   );
+  assert.match(
+    shellStylesSource,
+    /\.trash-bin-banner\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;[\s\S]*border:\s*1px solid color-mix\(in srgb, var\(--danger\) 18%, var\(--line\)\);[\s\S]*box-shadow:\s*0 10px 24px rgba\(29, 45, 53, 0\.08\);/s,
+  );
 });
 
 test("shell header separates layout spacing from panel chrome", () => {
@@ -82,8 +86,9 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-trash-link\s*\{[\s\S]*min-height:\s*2\.75rem;[\s\S]*white-space:\s*nowrap;/s,
+    /\.home-page-footer-actions\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*center;[\s\S]*margin-top:\s*0\.75rem;/s,
   );
+  assert.doesNotMatch(shellStylesSource, /\.shell-header-trash-link\s*\{/);
   assert.match(
     shellStylesSource,
     /\.shell-header h1\s*\{[\s\S]*font-size:\s*2rem;/s,
@@ -94,15 +99,15 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*calc\(100%\s*\+\s*0\.45rem\);[\s\S]*right:\s*0;[\s\S]*width:\s*min\(17rem,\s*calc\(100vw\s*-\s*3\.5rem\)\);/s,
+    /\.shell-header-menu-button,\s*\.mini-board-card-menu-button\s*\{[\s\S]*border-radius:\s*10px;[\s\S]*background:\s*#fffefa;[\s\S]*box-shadow:\s*inset 0 1px 0 rgba\(255, 255, 255, 0\.92\);/s,
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel\s*\{[\s\S]*gap:\s*0;[\s\S]*padding:\s*0;[\s\S]*overflow:\s*hidden;/s,
+    /\.shell-header-menu-panel,\s*\.mini-board-card-menu-panel\s*\{[\s\S]*gap:\s*0\.15rem;[\s\S]*padding:\s*0\.25rem;[\s\S]*overflow:\s*hidden;[\s\S]*border-top:\s*0;/s,
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel\s*\{[\s\S]*transform-origin:\s*top right;[\s\S]*transform:\s*translateY\(-0\.35rem\) scale\(0\.78\);[\s\S]*opacity:\s*0;[\s\S]*pointer-events:\s*none;[\s\S]*transition:\s*[\s\S]*transform 180ms ease,[\s\S]*opacity 180ms ease;/s,
+    /\.shell-header-menu-panel\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*calc\(100% - 1px\);[\s\S]*right:\s*0;[\s\S]*width:\s*min\(17rem,\s*calc\(100vw\s*-\s*3\.5rem\)\);[\s\S]*transform-origin:\s*top right;[\s\S]*transform:\s*translateY\(-0\.2rem\) scale\(0\.98\);[\s\S]*opacity:\s*0;[\s\S]*pointer-events:\s*none;[\s\S]*transition:\s*[\s\S]*transform 180ms ease,[\s\S]*opacity 180ms ease;/s,
   );
   assert.match(
     shellStylesSource,
@@ -110,7 +115,16 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel button\.secondary\.shell-header-menu-item\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*3\.75rem;[\s\S]*border-radius:\s*0;[\s\S]*padding:\s*1rem 1\.1rem;/s,
+    /\.shell-header-menu-panel button\.secondary\.shell-header-menu-item,\s*\.mini-board-card-menu-item\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*3rem;[\s\S]*justify-content:\s*flex-start;[\s\S]*padding:\s*0\.85rem 1rem;[\s\S]*border:\s*none;[\s\S]*border-radius:\s*10px;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-page-footer-actions-inner\s*\{[\s\S]*border:\s*1px solid var\(--shell-elevated-border\);[\s\S]*border-radius:\s*999px;[\s\S]*box-shadow:\s*var\(--shell-elevated-shadow\);/s,
+  );
+  assert.doesNotMatch(shellStylesSource, /\.home-page-footer-actions\s*\{[^}]*position:\s*fixed;/s);
+  assert.match(
+    shellStylesSource,
+    /\.home-deleted-games-button\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*3rem;[\s\S]*justify-content:\s*center;/s,
   );
   assert.match(
     shellStylesSource,
@@ -127,7 +141,19 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-menu-button\s*\{[\s\S]*display:\s*inline-flex;[\s\S]*min-width:\s*2\.75rem;[\s\S]*min-height:\s*2\.75rem;[\s\S]*border-radius:\s*999px;/s,
+    /\.mini-board-card-menu-button\s*\{[\s\S]*display:\s*inline-flex;[\s\S]*min-width:\s*2\.75rem;[\s\S]*min-height:\s*2\.75rem;[\s\S]*padding:\s*0\.55rem;[\s\S]*border-radius:\s*10px;[\s\S]*background:\s*#fffefa;[\s\S]*box-shadow:\s*inset 0 1px 0 rgba\(255, 255, 255, 0\.92\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-header-menu-icon,\s*\.mini-board-card-menu-icon\s*\{[\s\S]*width:\s*1\.05rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-icon\s*\{[\s\S]*gap:\s*0\.24rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-icon span\s*\{[\s\S]*width:\s*100%;[\s\S]*height:\s*0\.12rem;/s,
   );
   assert.match(
     shellStylesSource,
@@ -135,7 +161,23 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.mini-board-card-menu-panel\s*\{[\s\S]*width:\s*min\(14rem,\s*calc\(100vw\s*-\s*3rem\)\);[\s\S]*box-shadow:\s*var\(--shell-elevated-shadow\);/s,
+    /\.mini-board-card-menu-panel\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*calc\(100% - 1px\);[\s\S]*width:\s*min\(14rem,\s*calc\(100vw\s*-\s*3rem\)\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-item\s*\{[\s\S]*min-height:\s*3rem;[\s\S]*padding:\s*0\.85rem 1rem;[\s\S]*border-radius:\s*10px;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-item\.destructive\s*\{[\s\S]*color:\s*var\(--danger\);[\s\S]*background:\s*color-mix\(in srgb, var\(--danger\) 6%, transparent\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card\.is-trash-card\s*\{[\s\S]*border-color:\s*color-mix\(in srgb, var\(--danger\) 18%, var\(--line\)\);[\s\S]*opacity:\s*0\.88;[\s\S]*filter:\s*saturate\(0\.88\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-note\s*\{[\s\S]*padding:\s*0\.15rem 0\.1rem 0\.35rem;[\s\S]*color:\s*var\(--muted\);/s,
   );
   assert.match(
     shellStylesSource,

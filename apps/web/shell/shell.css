@@ -291,13 +291,6 @@ body {
   pointer-events: none;
 }
 
-.shell-header-trash-link {
-  flex: 0 0 auto;
-  min-height: 2.75rem;
-  padding-inline: 0.85rem;
-  white-space: nowrap;
-}
-
 .nav-row {
   display: flex;
   flex-wrap: wrap;
@@ -322,50 +315,103 @@ body {
   position: relative;
 }
 
-.shell-header-menu-button {
-  min-width: 3rem;
-  min-height: 3rem;
+.shell-header-menu-button,
+.mini-board-card-menu-button {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  align-self: start;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
   padding: 0.55rem;
-}
-
-button.secondary.shell-header-menu-button {
   border-radius: 10px;
+  border: 1px solid var(--line);
   background: #fffefa;
   color: var(--ink);
-  border-color: var(--line);
+  font: inherit;
+  font-weight: 650;
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: none;
+  align-items: center;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease,
+    transform 140ms ease,
+    border-radius 140ms ease;
+}
+
+button.secondary.shell-header-menu-button,
+button.secondary.mini-board-card-menu-button {
+  color: var(--ink);
+}
+
+.shell-header-menu-button:focus-visible,
+.mini-board-card-menu-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(13, 122, 90, 0.18);
+}
+
+.shell-header-menu-button:active,
+.mini-board-card-menu-button:active {
+  transform: translateY(1px);
+}
+
+.shell-header-menu-root[data-header-menu-open="true"] > .shell-header-menu-button,
+.mini-board-card-menu[open] > .mini-board-card-menu-button {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-color: color-mix(in srgb, var(--shell-elevated-border) 72%, var(--line));
+}
+
+.shell-header-menu-icon,
+.mini-board-card-menu-icon {
+  display: grid;
+  justify-items: center;
+  width: 1.05rem;
 }
 
 .shell-header-menu-icon {
-  display: grid;
-  gap: 0.26rem;
-  width: 1.2rem;
+  gap: 0.24rem;
 }
 
-.shell-header-menu-icon > span {
+.mini-board-card-menu-icon {
+  gap: 0.24rem;
+}
+
+.shell-header-menu-icon > span,
+.mini-board-card-menu-icon span {
   display: block;
   width: 100%;
-  height: 2px;
+  height: 0.12rem;
   border-radius: 999px;
   background: currentColor;
 }
 
+.shell-header-menu-panel,
+.mini-board-card-menu-panel {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.25rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--shell-elevated-border) 82%, var(--line));
+  border-top: 0;
+  border-radius: 0 0 14px 14px;
+  background: var(--shell-elevated-surface);
+  box-shadow: var(--shell-elevated-shadow);
+}
+
 .shell-header-menu-panel {
   position: absolute;
-  top: calc(100% + 0.45rem);
+  top: calc(100% - 1px);
   right: 0;
   z-index: 5;
   width: min(17rem, calc(100vw - 3.5rem));
-  display: grid;
-  gap: 0;
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--shell-elevated-border) 82%, var(--line));
-  border-radius: 14px;
-  background: var(--shell-elevated-surface);
-  box-shadow: var(--shell-elevated-shadow);
   transform-origin: top right;
-  transform: translateY(-0.35rem) scale(0.78);
+  transform: translateY(-0.2rem) scale(0.98);
   opacity: 0;
   pointer-events: none;
   transition:
@@ -379,41 +425,53 @@ button.secondary.shell-header-menu-button {
   pointer-events: auto;
 }
 
-.shell-header-menu-panel button.secondary.shell-header-menu-item {
-  width: 100%;
-  min-height: 3.75rem;
-  border-radius: 0;
-  justify-content: flex-start;
-  padding: 1rem 1.1rem;
-  background: transparent;
-  border: none;
-  border-top: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
-  box-shadow: none;
-  font-weight: 650;
+.mini-board-card-menu-panel {
+  position: absolute;
+  top: calc(100% - 1px);
+  right: 0;
+  width: min(14rem, calc(100vw - 3rem));
 }
 
-.shell-header-menu-panel button.secondary.shell-header-menu-item:first-child {
-  border-top-width: 0;
+.mini-board-card-menu-game .mini-board-card-menu-panel {
+  top: calc(100% - 1px);
+}
+
+.shell-header-menu-panel button.secondary.shell-header-menu-item,
+.mini-board-card-menu-item {
+  width: 100%;
+  min-height: 3rem;
+  justify-content: flex-start;
+  padding: 0.85rem 1rem;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+  font-weight: 600;
+}
+
+.shell-header-menu-panel button.secondary.shell-header-menu-item.is-active,
+.shell-header-menu-panel button.secondary.shell-header-menu-item[aria-pressed="true"],
+.mini-board-card-menu-item.destructive {
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .shell-header-menu-panel button.secondary.shell-header-menu-item.is-active,
 .shell-header-menu-panel button.secondary.shell-header-menu-item[aria-pressed="true"] {
-  background: rgba(255, 255, 255, 0.92);
-  border: none;
-  border-top: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
-  box-shadow:
-    inset 4px 0 0 var(--accent),
-    inset 0 -1px 0 color-mix(in srgb, var(--line) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, #fffefa);
 }
 
-.shell-header-menu-panel button.secondary.shell-header-menu-item.is-active:first-child,
-.shell-header-menu-panel button.secondary.shell-header-menu-item[aria-pressed="true"]:first-child {
-  border-top: none;
-  box-shadow: inset 4px 0 0 var(--accent);
+.mini-board-card-menu-item.destructive {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
 }
 
-[data-hover-capability="hover"] .shell-header-menu-panel button.secondary.shell-header-menu-item:not(:disabled):hover {
-  background: #fcf8ee;
+[data-hover-capability="hover"] .shell-header-menu-panel button.secondary.shell-header-menu-item:not(:disabled):hover,
+[data-hover-capability="hover"] .mini-board-card-menu-item:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.86);
+}
+
+[data-hover-capability="hover"] .mini-board-card-menu-item.destructive:not(:disabled):hover {
+  background: color-mix(in srgb, var(--danger) 9%, #fff);
 }
 
 button,
@@ -1303,6 +1361,14 @@ button.button-release-bounce,
   overflow: clip;
 }
 
+.mini-board-card.is-trash-card {
+  border-color: color-mix(in srgb, var(--danger) 18%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--danger) 5%, #fffefb) 0%, color-mix(in srgb, var(--danger) 3%, #f8f3e8) 100%);
+  opacity: 0.88;
+  filter: saturate(0.88);
+}
+
 .mini-board-card.is-leaving {
   pointer-events: none;
 }
@@ -1328,6 +1394,19 @@ button.button-release-bounce,
 [data-hover-capability="hover"] .mini-board-card:hover {
   border-color: #c8bea8;
   box-shadow: 0 10px 24px rgba(40, 54, 60, 0.08);
+}
+
+.mini-board-card.is-trash-card .mini-board-card-link-surface {
+  opacity: 0.95;
+}
+
+[data-hover-capability="hover"] .mini-board-card.is-trash-card:hover {
+  border-color: color-mix(in srgb, var(--danger) 25%, var(--line));
+  box-shadow: 0 10px 24px rgba(182, 67, 47, 0.08);
+}
+
+[data-hover-capability="hover"] .mini-board-card.is-trash-card:hover .mini-board-card-link-surface {
+  transform: translateY(-0.5px);
 }
 
 .mini-board-card-link-surface.is-pressing {
@@ -1365,90 +1444,10 @@ button.button-release-bounce,
   display: none;
 }
 
-.mini-board-card-menu-button {
-  appearance: none;
-  -webkit-appearance: none;
-  display: inline-flex;
-  align-self: start;
-  justify-content: center;
-  min-width: 2.75rem;
-  min-height: 2.75rem;
-  padding: 0.35rem 0.4rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: #fff;
-  color: var(--ink);
-  font: inherit;
-  font-weight: 650;
-  line-height: 1.2;
-  cursor: pointer;
-  text-decoration: none;
-  align-items: center;
-  transition:
-    border-color 140ms ease,
-    box-shadow 140ms ease,
-    background-color 140ms ease;
-}
-
-.mini-board-card-menu-button:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(13, 122, 90, 0.18);
-}
-
-.mini-board-card-menu-button:active {
-  transform: translateY(1px);
-}
-
-.mini-board-card-menu-icon {
-  display: grid;
-  gap: 0.15rem;
-  justify-items: center;
-}
-
-.mini-board-card-menu-icon span {
-  width: 0.25rem;
-  height: 0.25rem;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.mini-board-card-menu-panel {
-  position: absolute;
-  top: calc(100% + 0.35rem);
-  right: 0;
-  width: min(14rem, calc(100vw - 3rem));
-  display: grid;
-  gap: 0.45rem;
-  padding: 0.55rem;
-  border: 1px solid var(--shell-elevated-border);
-  border-radius: 12px;
-  background: var(--shell-elevated-surface);
-  box-shadow: var(--shell-elevated-shadow);
-}
-
-.mini-board-card-menu-game .mini-board-card-menu-panel {
-  top: calc(100% + 0.45rem);
-}
-
-.mini-board-card-menu-item {
-  justify-content: flex-start;
-  width: 100%;
-  min-height: 2.75rem;
-}
-
 .mini-board-card-menu-note {
   margin: 0;
-  padding-inline: 0.2rem;
+  padding: 0.15rem 0.1rem 0.35rem;
   color: var(--muted);
-}
-
-[data-hover-capability="hover"] .mini-board-card-menu:hover > .mini-board-card-menu-button:not(:disabled),
-[data-hover-capability="hover"] .mini-board-card-menu-button:not(:disabled):hover,
-[data-hover-capability="hover"] .mini-board-card-menu[open] > .mini-board-card-menu-button:not(:disabled) {
-  border-color: var(--danger);
-  box-shadow:
-    0 0 0 2px rgba(182, 67, 47, 0.15),
-    inset 0 0 0 1px rgba(182, 67, 47, 0.36);
 }
 
 .home-games-section + .home-games-section {
@@ -1460,6 +1459,33 @@ button.button-release-bounce,
   min-height: 2.75rem;
   font-size: 0.98rem;
   padding-inline: 1.15rem;
+}
+
+.home-page-footer-actions {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
+.home-page-footer-actions-inner {
+  display: flex;
+  justify-content: center;
+  width: min(18rem, 100%);
+  padding: 0.5rem;
+  border: 1px solid var(--shell-elevated-border);
+  border-radius: 999px;
+  background: var(--shell-elevated-surface);
+  box-shadow: var(--shell-elevated-shadow);
+  backdrop-filter: blur(6px);
+}
+
+.home-deleted-games-button {
+  width: 100%;
+  min-height: 3rem;
+  justify-content: center;
+  padding-inline: 1rem;
+  letter-spacing: 0.01em;
 }
 
 .home-games-section-header {
@@ -1541,6 +1567,35 @@ button.button-release-bounce,
   margin: 0;
 }
 
+.trash-bin-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--danger) 18%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--danger) 6%, #fffefb) 0%, color-mix(in srgb, var(--danger) 3%, #f8f3e8) 100%);
+  box-shadow: 0 10px 24px rgba(29, 45, 53, 0.08);
+}
+
+.trash-bin-banner-copy {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.trash-bin-banner h2,
+.trash-bin-banner p {
+  margin: 0;
+}
+
+.trash-bin-banner-chip {
+  justify-self: end;
+  border-color: color-mix(in srgb, var(--danger) 20%, var(--line));
+  background: color-mix(in srgb, var(--danger) 8%, #fff);
+  color: var(--danger);
+}
+
 .shell-route-message {
   width: min(100%, 32rem);
   margin: 1rem auto 0;
@@ -1578,6 +1633,14 @@ button.button-release-bounce,
   flex-wrap: wrap;
 }
 
+.mini-board-card-header-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .mini-board-card[data-home-game-card] .mini-board-card-header {
   padding-right: 3.4rem;
 }
@@ -1585,6 +1648,17 @@ button.button-release-bounce,
 .mini-board-card-copy {
   display: grid;
   gap: 0.24rem;
+}
+
+.mini-board-card.is-trash-card .mini-board-card-link,
+.mini-board-card.is-trash-card .mini-board-preview-status {
+  color: var(--muted);
+}
+
+.mini-board-card.is-trash-card .trash-card-badge {
+  border-color: color-mix(in srgb, var(--danger) 16%, var(--line));
+  background: color-mix(in srgb, var(--danger) 10%, #fff);
+  color: var(--danger);
 }
 
 .mini-board-card-meta-primary {
