@@ -256,7 +256,10 @@ test("I-15: history-mode view model prefers move snapshot over selection snapsho
 });
 
 test("I-16: history destruction overlays derive inactive render state from the move selection snapshot", () => {
-  assert.match(appSource, /return buildDestroyedPieceOverlays\(\{[\s\S]*destroyedPieceRecords:\s*move\?\.destroyedPieces \?\? \[\],[\s\S]*preActionSnapshot:\s*move\?\.selectionSnapshot \?\? null,[\s\S]*\}\);/s);
+  assert.match(
+    appSource,
+    /return buildRecordedMovePresentation\(\{[\s\S]*action:\s*move\?\.action \?\? null,[\s\S]*preActionSnapshot:\s*move\?\.selectionSnapshot \?\? null,[\s\S]*destroyedPieceRecords:\s*move\?\.destroyedPieces \?\? \[\],[\s\S]*\}\);/s,
+  );
   assert.match(historyPreviewSource, /const preActionPieces = Array\.isArray\(preActionSnapshot\?\.pieces\) \? preActionSnapshot\.pieces : \[\];/);
   assert.match(historyPreviewSource, /const preActionPiece =[\s\S]*sameCoordinate\(piece\?\.position, record\.position\)/s);
   assert.match(historyPreviewSource, /supplied:\s*preActionPiece \? preActionPiece\.supplied !== false : record\.supplied \?\? true,/);

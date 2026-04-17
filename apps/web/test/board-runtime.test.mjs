@@ -191,7 +191,14 @@ test("board runtime labels incoming replay overlays distinctly from history prev
     {
       legalActions: [],
       overlayMode: "recorded-action",
-      replay: { kind: "incoming-move", actorSeat: "Player 2", actorSide: "P2", stepIndex: 0, totalSteps: 1 },
+      replay: {
+        kind: "incoming-move",
+        actorSeat: "Player 2",
+        actorSide: "P2",
+        stepIndex: 0,
+        totalSteps: 1,
+        showsReplayChrome: true,
+      },
       recordedAction: {
         type: "move",
         actorId: "A1",

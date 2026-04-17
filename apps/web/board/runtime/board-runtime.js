@@ -452,8 +452,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return;
     }
 
+    const shouldShowReplayChrome = overlayReplay?.kind === "incoming-move" && overlayReplay?.showsReplayChrome === true;
+
     if (elements.boardTurnIndicatorEl) {
-      if (overlayReplay?.kind === "incoming-move" && overlayReplay.actorSeat) {
+      if (shouldShowReplayChrome && overlayReplay?.actorSeat) {
         elements.boardTurnIndicatorEl.textContent = `Replaying ${overlayReplay.actorSeat} move`;
         setPlayerTone(elements.boardTurnIndicatorEl, overlayReplay.actorSide ?? state.sideToMove);
       } else {
@@ -486,7 +488,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       formatCoordinate,
     });
 
-    if (overlayReplay?.kind === "incoming-move") {
+    if (shouldShowReplayChrome) {
       const recordedActionLabel =
         overlayReplay.totalSteps > 1
           ? `Incoming move ${overlayReplay.stepIndex + 1} of ${overlayReplay.totalSteps}.`

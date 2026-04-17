@@ -17,7 +17,7 @@ import {
   tryLocalScenarioWrite,
 } from "./scenarios.js";
 import { buildStaticGameCardFromScenario } from "./static-game-cards.js";
-import { buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./history-preview.js";
+import { buildRecordedMovePresentation } from "./history-preview.js";
 import { resolveInitialSelectionHydration } from "./selection-hydration.js";
 import { shouldResetBoardSelection, shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import { buildScenarioStaticPreviewModel } from "./static-preview-model.js";
@@ -1059,12 +1059,6 @@ const renderFeedbackReveal = (message, action = null) => `
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
 const incomingMoveReplay = createIncomingMoveReplayController({
   getGame: (gameId) => transport?.getGameViewModel?.(gameId) ?? null,
-  isBaselinePresentationSatisfied: ({ gameId, selectionSnapshot }) => {
-    if (mountedBoardGameId !== gameId || !boardRuntime?.getState || !selectionSnapshot) {
-      return false;
-    }
-    return toStableKey(boardRuntime.getState()) === toStableKey(selectionSnapshot);
-  },
   onStateChanged: () => {
     render({ animatePanels: false, includeBoard: true });
   },
@@ -3402,26 +3396,16 @@ const renderNotFound = () => `
   </section>
 `;
 
-const getHistoryDestroyedPieceOverlays = (game) => {
+const getHistoryRecordedMovePresentation = (game) => {
   if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
-    return [];
+    return null;
   }
   const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
-  return buildDestroyedPieceOverlays({
-    destroyedPieceRecords: move?.destroyedPieces ?? [],
+  return buildRecordedMovePresentation({
+    action: move?.action ?? null,
     preActionSnapshot: move?.selectionSnapshot ?? null,
+    destroyedPieceRecords: move?.destroyedPieces ?? [],
   });
-};
-
-const getHistoryRecordedActionStartPiece = (game) => {
-  if (!game?.inHistoryMode || typeof game.historyIndex !== "number") {
-    return null;
-  }
-  const move = Array.isArray(game.moves) ? game.moves[game.historyIndex] : null;
-  if (!move?.selectionSnapshot || !move?.action) {
-    return null;
-  }
-  return findRecordedActionStartPiece(move.selectionSnapshot, move.action);
 };
 
 const mountBoardForGame = (game) => {
@@ -3446,19 +3430,15 @@ const mountBoardForGame = (game) => {
 
   incomingMoveReplay.primeGame(game);
   const replayState = game.inHistoryMode ? null : incomingMoveReplay.getReplayState(game.id);
-  const armedReplay = replayState?.phase === "armed" ? replayState : null;
-  const liveReplay = replayState?.phase === "armed" ? null : replayState;
-  const replayKey = liveReplay ? toStableKey(liveReplay) : "null";
-  const snapshot =
-    liveReplay?.snapshot ??
-    (armedReplay && mountedBoardGameId === game.id && boardRuntime?.getState?.()
-      ? boardRuntime.getState()
-      : game.currentSnapshot ?? null);
+  const replayKey = replayState ? toStableKey(replayState) : "null";
+  const snapshot = replayState?.snapshot ?? game.currentSnapshot ?? null;
   const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
-  const historySelectionAction = liveReplay?.recordedAction ?? (game.inHistoryMode ? game.historySelectionAction ?? null : null);
-  const overlayMode = game.inHistoryMode || liveReplay?.phase === "preview" ? "recorded-action" : "interactive";
-  const effectiveLegalActions =
-    Array.isArray(game.legalActions) && !game.inHistoryMode && !liveReplay && !armedReplay ? game.legalActions : [];
+  const recordedMovePresentation =
+    replayState?.recordedMovePresentation ?? getHistoryRecordedMovePresentation(game) ?? null;
+  const historySelectionAction =
+    recordedMovePresentation?.recordedAction ?? (game.inHistoryMode ? game.historySelectionAction ?? null : null);
+  const overlayMode = replayState?.overlayMode ?? (game.inHistoryMode ? "recorded-action" : "interactive");
+  const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode && !replayState ? game.legalActions : [];
   const scenarioSelectionHydration = resolvePendingScenarioHydration({
     game,
     snapshot,
@@ -3471,7 +3451,7 @@ const mountBoardForGame = (game) => {
     consumedActionKey: consumedInitialSelectionActionKeyByGameId.get(game.id) ?? null,
     toStableKey,
   });
-  const effectiveInitialSelectionHydration = liveReplay
+  const effectiveInitialSelectionHydration = replayState
     ? { selectionAction: null, shouldConsume: false, nextConsumedActionKey: null }
     : initialSelectionHydration;
   if (!snapshot) {
@@ -3480,8 +3460,8 @@ const mountBoardForGame = (game) => {
 
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
-  const historyDestroyedPieces = liveReplay ? liveReplay.destroyedPieces ?? [] : getHistoryDestroyedPieceOverlays(game);
-  const historyRecordedActionStartPiece = liveReplay?.recordedActionStartPiece ?? getHistoryRecordedActionStartPiece(game);
+  const historyDestroyedPieces = recordedMovePresentation?.destroyedPieces ?? [];
+  const historyRecordedActionStartPiece = recordedMovePresentation?.recordedActionStartPiece ?? null;
   const forceClickTargetSelection = currentRoute.scenarios;
   const hydratedSelectionAction = scenarioSelectionHydration.selectionAction ?? initialSelectionHydration.selectionAction;
   const overlayKey = toStableKey({
@@ -3489,7 +3469,7 @@ const mountBoardForGame = (game) => {
     recordedAction: historySelectionAction,
     recordedActionStartPiece: historyRecordedActionStartPiece,
     destroyedPieces: historyDestroyedPieces,
-    replay: liveReplay,
+    replay: replayState,
     selectionAction: hydratedSelectionAction,
     selectionState: scenarioSelectionHydration.selectionState,
     forceClickTargetSelection,
@@ -3542,7 +3522,7 @@ const mountBoardForGame = (game) => {
       recordedAction: historySelectionAction,
       recordedActionStartPiece: historyRecordedActionStartPiece,
       destroyedPieces: historyDestroyedPieces,
-      replay: liveReplay,
+      replay: replayState,
     });
     return;
   }
@@ -3607,7 +3587,7 @@ const mountBoardForGame = (game) => {
     recordedAction: historySelectionAction,
     recordedActionStartPiece: historyRecordedActionStartPiece,
     destroyedPieces: historyDestroyedPieces,
-    replay: liveReplay,
+    replay: replayState,
   });
 };
 

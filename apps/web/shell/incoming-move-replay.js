@@ -1,16 +1,15 @@
-import { buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./history-preview.js";
+import { buildRecordedMovePresentation } from "./history-preview.js";
 
 export const INCOMING_MOVE_REPLAY_TIMING = Object.freeze({
   focusedDelayMs: 180,
   refocusDelayMs: 350,
-  previewHoldMs: 450,
-  settleHoldMs: 450,
+  previewHoldMs: 320,
+  settleHoldMs: 220,
   gapMs: 150,
 });
 
 const REPLAY_PHASE = Object.freeze({
-  ARMED: "armed",
-  BASELINE: "baseline",
+  LEAD_IN: "lead-in",
   PREVIEW: "preview",
   SETTLE: "settle",
 });
@@ -21,6 +20,39 @@ const PLAYER_SEAT_BY_SIDE = Object.freeze({
 });
 
 const cloneValue = (value) => (value == null ? value : structuredClone(value));
+
+const emptyRecordedMovePresentation = () => ({
+  recordedAction: null,
+  recordedActionStartPiece: null,
+  destroyedPieces: [],
+});
+
+const getMoveReplayKey = (move) =>
+  JSON.stringify({
+    actorSide: move?.actorSide ?? null,
+    notation: typeof move?.notation === "string" ? move.notation : "",
+    action: move?.action ?? null,
+    selectionSnapshot: move?.selectionSnapshot ?? null,
+    snapshot: move?.snapshot ?? null,
+    destroyedPieces: move?.destroyedPieces ?? [],
+  });
+
+const getGameMoveReplayKeys = (game) => (Array.isArray(game?.moves) ? game.moves.map((move) => getMoveReplayKey(move)) : []);
+
+const findFirstDivergenceIndex = (previousKeys, nextKeys) => {
+  const previous = Array.isArray(previousKeys) ? previousKeys : [];
+  const next = Array.isArray(nextKeys) ? nextKeys : [];
+  const sharedLength = Math.min(previous.length, next.length);
+  for (let index = 0; index < sharedLength; index += 1) {
+    if (previous[index] !== next[index]) {
+      return index;
+    }
+  }
+  if (previous.length === next.length) {
+    return -1;
+  }
+  return sharedLength;
+};
 
 export const getSeatForActorSide = (actorSide) => PLAYER_SEAT_BY_SIDE[actorSide] ?? null;
 
@@ -42,12 +74,29 @@ export const isIncomingMoveReplayEligible = ({ game, move }) => {
   return !getControlledSeats(game).includes(actorSeat);
 };
 
-export const buildIncomingMoveReplayStep = ({
+const moveUsesVisibleSettle = (move) => move?.action?.type !== "project";
+
+const getReplayFrameSnapshot = (move, phase) => {
+  if (!move?.selectionSnapshot) {
+    return null;
+  }
+  if (phase === REPLAY_PHASE.SETTLE) {
+    return move.snapshot ?? move.selectionSnapshot;
+  }
+  if (phase === REPLAY_PHASE.PREVIEW && move.action?.type === "project") {
+    return move.snapshot ?? move.selectionSnapshot;
+  }
+  return move.selectionSnapshot;
+};
+
+const buildReplayFrame = ({
+  sequenceId,
   game,
   moveIndex,
   phase = REPLAY_PHASE.PREVIEW,
   stepIndex = 0,
   totalSteps = 1,
+  timing,
   animated = true,
 } = {}) => {
   const move = Array.isArray(game?.moves) ? game.moves[moveIndex] : null;
@@ -55,36 +104,153 @@ export const buildIncomingMoveReplayStep = ({
     return null;
   }
   const isPreviewPhase = phase === REPLAY_PHASE.PREVIEW;
-  const isSettlePhase = phase === REPLAY_PHASE.SETTLE;
-  const snapshotSource = isSettlePhase ? move.snapshot ?? move.selectionSnapshot : move.selectionSnapshot;
+  const replaySnapshot = getReplayFrameSnapshot(move, phase);
+  const recordedMovePresentation = isPreviewPhase
+    ? buildRecordedMovePresentation({
+        action: move.action,
+        preActionSnapshot: move.selectionSnapshot,
+      })
+    : phase === REPLAY_PHASE.SETTLE
+      ? buildRecordedMovePresentation({
+          preActionSnapshot: move.selectionSnapshot,
+          destroyedPieceRecords: move.destroyedPieces ?? [],
+        })
+      : emptyRecordedMovePresentation();
   return {
     kind: "incoming-move",
-    phase,
+    sequenceId,
     gameId: game.id,
     moveIndex,
     stepIndex,
     totalSteps,
-    animated: isPreviewPhase ? animated : false,
+    phase,
     actorSeat: getSeatForActorSide(move.actorSide),
     actorSide: move.actorSide ?? null,
     notation: typeof move.notation === "string" ? move.notation : "",
-    snapshot: cloneValue(snapshotSource),
-    recordedAction: isPreviewPhase ? cloneValue(move.action) : null,
-    recordedActionStartPiece: isPreviewPhase ? findRecordedActionStartPiece(move.selectionSnapshot, move.action) : null,
-    destroyedPieces: isSettlePhase
-      ? buildDestroyedPieceOverlays({
-          destroyedPieceRecords: move.destroyedPieces ?? [],
-          preActionSnapshot: move.selectionSnapshot,
-        })
-      : [],
+    overlayMode: isPreviewPhase ? "recorded-action" : "interactive",
+    interactionLocked: true,
+    showsReplayChrome: isPreviewPhase,
+    animated: isPreviewPhase ? animated : false,
+    durationMs:
+      phase === REPLAY_PHASE.PREVIEW
+        ? timing.previewHoldMs
+        : phase === REPLAY_PHASE.SETTLE
+          ? timing.settleHoldMs
+          : 0,
+    snapshot: cloneValue(replaySnapshot),
+    recordedMovePresentation,
+    moveKey: getMoveReplayKey(move),
   };
 };
+
+const buildReplayFramesForMove = ({ sequenceId, game, moveIndex, stepIndex, totalSteps, timing, animated }) => {
+  const previewFrame = buildReplayFrame({
+    sequenceId,
+    game,
+    moveIndex,
+    phase: REPLAY_PHASE.PREVIEW,
+    stepIndex,
+    totalSteps,
+    timing,
+    animated,
+  });
+  if (!previewFrame) {
+    return [];
+  }
+  const leadInFrame = buildReplayFrame({
+    sequenceId,
+    game,
+    moveIndex,
+    phase: REPLAY_PHASE.LEAD_IN,
+    stepIndex,
+    totalSteps,
+    timing,
+    animated: false,
+  });
+  const frames = leadInFrame ? [leadInFrame, previewFrame] : [previewFrame];
+  const move = Array.isArray(game?.moves) ? game.moves[moveIndex] : null;
+  if (!moveUsesVisibleSettle(move)) {
+    return frames;
+  }
+  const settleFrame = buildReplayFrame({
+    sequenceId,
+    game,
+    moveIndex,
+    phase: REPLAY_PHASE.SETTLE,
+    stepIndex,
+    totalSteps,
+    timing,
+    animated: false,
+  });
+  if (settleFrame) {
+    frames.push(settleFrame);
+  }
+  return frames;
+};
+
+const buildReplaySequence = ({ sequenceId, game, moveIndexes, timing, animated = true }) => {
+  const indexes = Array.isArray(moveIndexes) ? moveIndexes : [];
+  const totalSteps = indexes.length;
+  const frames = [];
+  const moveKeys = [];
+  indexes.forEach((moveIndex, stepIndex) => {
+    const move = Array.isArray(game?.moves) ? game.moves[moveIndex] : null;
+    if (!move?.selectionSnapshot || !move?.action) {
+      return;
+    }
+    moveKeys.push(getMoveReplayKey(move));
+    frames.push(
+      ...buildReplayFramesForMove({
+        sequenceId,
+        game,
+        moveIndex,
+        stepIndex,
+        totalSteps,
+        timing,
+        animated,
+      }),
+    );
+  });
+  if (frames.length === 0) {
+    return null;
+  }
+  return {
+    sequenceId,
+    gameId: game.id,
+    moveIndexes: [...indexes],
+    moveKeys,
+    frames,
+    currentFrameIndex: 0,
+    currentFrame: frames[0],
+    finalLandingSnapshot: cloneValue(game.currentSnapshot ?? null),
+    status: "running",
+  };
+};
+
+export const buildIncomingMoveReplayStep = ({
+  game,
+  moveIndex,
+  phase = REPLAY_PHASE.PREVIEW,
+  stepIndex = 0,
+  totalSteps = 1,
+  animated = true,
+  timing = INCOMING_MOVE_REPLAY_TIMING,
+} = {}) =>
+  buildReplayFrame({
+    sequenceId: "test-sequence",
+    game,
+    moveIndex,
+    phase,
+    stepIndex,
+    totalSteps,
+    timing,
+    animated,
+  });
 
 export const createIncomingMoveReplayController = ({
   getGame,
   onStateChanged = () => {},
   prefersReducedMotion = () => false,
-  isBaselinePresentationSatisfied = () => false,
   setTimeoutFn = globalThis.setTimeout?.bind(globalThis) ?? setTimeout,
   clearTimeoutFn = globalThis.clearTimeout?.bind(globalThis) ?? clearTimeout,
   isDocumentVisible = () =>
@@ -92,17 +258,20 @@ export const createIncomingMoveReplayController = ({
   isWindowFocused = () => (typeof document?.hasFocus === "function" ? document.hasFocus() : true),
   timing = INCOMING_MOVE_REPLAY_TIMING,
 } = {}) => {
-  const seenMoveCountByGameId = new Map();
+  const seenMoveKeysByGameId = new Map();
   let routeGameId = null;
   let replayEnabled = false;
-  let browserVisible = isDocumentVisible();
-  let browserFocused = isWindowFocused();
   let queuedMoveIndexes = [];
-  let armedStep = null;
-  let activeStep = null;
+  let activeSequence = null;
   let phaseTimer = null;
   let needsResumeDelay = false;
-  let stepCounter = 0;
+  let sequenceCounter = 0;
+
+  const emit = () => {
+    onStateChanged();
+  };
+
+  const isBrowserReady = () => isDocumentVisible() && isWindowFocused();
 
   const clearPhaseTimer = () => {
     if (!phaseTimer) {
@@ -112,92 +281,29 @@ export const createIncomingMoveReplayController = ({
     phaseTimer = null;
   };
 
-  const clearTimers = () => {
+  const clearReplay = ({ notify = true } = {}) => {
     clearPhaseTimer();
-  };
-
-  const emit = () => {
-    onStateChanged();
-  };
-
-  const isBrowserReady = () => browserVisible && browserFocused;
-
-  const pauseReplay = ({ preserveResumeDelay = true } = {}) => {
-    clearTimers();
-    if (preserveResumeDelay && (armedStep || activeStep || queuedMoveIndexes.length > 0)) {
-      needsResumeDelay = true;
+    activeSequence = null;
+    queuedMoveIndexes = [];
+    needsResumeDelay = false;
+    if (notify) {
+      emit();
     }
   };
 
-  const buildReplayMetadata = ({ game, moveIndex, phase, stepIndex = 0, totalSteps = 1 }) => {
-    const move = Array.isArray(game?.moves) ? game.moves[moveIndex] : null;
-    if (!game?.id || !move?.selectionSnapshot || !move?.action) {
+  const getSequenceFrame = () => activeSequence?.frames?.[activeSequence.currentFrameIndex] ?? null;
+
+  const setCurrentFrameIndex = (nextIndex) => {
+    if (!activeSequence) {
       return null;
     }
-    return {
-      kind: "incoming-move",
-      phase,
-      gameId: game.id,
-      moveIndex,
-      stepIndex,
-      totalSteps,
-      actorSeat: getSeatForActorSide(move.actorSide),
-      actorSide: move.actorSide ?? null,
-      notation: typeof move.notation === "string" ? move.notation : "",
-      snapshot: cloneValue(move.selectionSnapshot),
-    };
+    activeSequence.currentFrameIndex = nextIndex;
+    activeSequence.currentFrame = activeSequence.frames[nextIndex] ?? null;
+    return activeSequence.currentFrame;
   };
 
-  const armReplay = ({ game, moveIndex, stepIndex = 0, totalSteps = 1 }) => {
-    const step = buildReplayMetadata({
-      game,
-      moveIndex,
-      phase: REPLAY_PHASE.ARMED,
-      stepIndex,
-      totalSteps,
-    });
-    if (!step) {
-      return null;
-    }
-    armedStep = step;
-    return step;
-  };
-
-  const clearArmedReplay = () => {
-    armedStep = null;
-  };
-
-  const activateStep = ({ game, moveIndex, phase, stepIndex = 0, totalSteps = 1 }) => {
-    const step = buildIncomingMoveReplayStep({
-      game,
-      moveIndex,
-      phase,
-      stepIndex,
-      totalSteps,
-      animated: !prefersReducedMotion(),
-    });
-    if (!step) {
-      return null;
-    }
-    activeStep = step;
-    emit();
-    return step;
-  };
-
-  const clearActiveReplay = () => {
-    activeStep = null;
-    emit();
-  };
-
-  const scheduleNextPhase = (delayMs, fn) => {
+  const schedule = (delayMs, fn) => {
     clearPhaseTimer();
-    if (!routeGameId || !replayEnabled) {
-      return;
-    }
-    if (!isBrowserReady()) {
-      needsResumeDelay = true;
-      return;
-    }
     phaseTimer = setTimeoutFn(() => {
       phaseTimer = null;
       if (!routeGameId || !replayEnabled) {
@@ -211,139 +317,130 @@ export const createIncomingMoveReplayController = ({
     }, delayMs);
   };
 
-  const finishReplayMove = () => {
-    if (queuedMoveIndexes.length > 0) {
-      scheduleNextPhase(timing.gapMs, () => {
-        clearActiveReplay();
-        startNextQueuedReplay();
-      });
-      return;
-    }
-    clearActiveReplay();
-    needsResumeDelay = false;
-    stepCounter = 0;
-  };
-
-  const scheduleSettlePhase = (moveIndex) => {
-    const sequence = activeStep ?? armedStep;
-    scheduleNextPhase(timing.previewHoldMs, () => {
-      const settleGame = getGame?.(routeGameId) ?? null;
-      if (!settleGame) {
-        clearActiveReplay();
-        return;
-      }
-      const settle = activateStep({
-        game: settleGame,
-        moveIndex,
-        phase: REPLAY_PHASE.SETTLE,
-        stepIndex: sequence?.stepIndex ?? 0,
-        totalSteps: sequence?.totalSteps ?? 1,
-      });
-      if (!settle) {
-        clearActiveReplay();
-        startNextQueuedReplay();
-        return;
-      }
-      scheduleNextPhase(timing.settleHoldMs, finishReplayMove);
-    });
-  };
-
-  const schedulePreviewPhase = (moveIndex, delayMs) => {
-    const sequence = armedStep ?? activeStep;
-    scheduleNextPhase(delayMs, () => {
-      clearArmedReplay();
-      const latestGame = getGame?.(routeGameId) ?? null;
-      if (!latestGame) {
-        clearActiveReplay();
-        return;
-      }
-      const preview = activateStep({
-        game: latestGame,
-        moveIndex,
-        phase: REPLAY_PHASE.PREVIEW,
-        stepIndex: sequence?.stepIndex ?? 0,
-        totalSteps: sequence?.totalSteps ?? 1,
-      });
-      if (!preview) {
-        clearActiveReplay();
-        startNextQueuedReplay();
-        return;
-      }
-      scheduleSettlePhase(moveIndex);
-    });
-  };
-
-  const startVisibleBaselineReplay = ({ game, moveIndex, delayMs, stepIndex = 0, totalSteps = 1 }) => {
-    const baseline = activateStep({
-      game,
-      moveIndex,
-      phase: REPLAY_PHASE.BASELINE,
-      stepIndex,
-      totalSteps,
-    });
-    if (!baseline) {
+  const cancelStaleReplayFromIndex = (moveIndex) => {
+    const nextMoveIndex = Number.isInteger(moveIndex) ? moveIndex : 0;
+    const activeTouchesStaleMove =
+      activeSequence?.moveIndexes?.some((candidateMoveIndex) => candidateMoveIndex >= nextMoveIndex) === true;
+    if (!activeTouchesStaleMove) {
+      queuedMoveIndexes = queuedMoveIndexes.filter((candidateMoveIndex) => candidateMoveIndex < nextMoveIndex);
       return false;
     }
-    schedulePreviewPhase(moveIndex, delayMs);
+    clearPhaseTimer();
+    activeSequence = null;
+    queuedMoveIndexes = queuedMoveIndexes.filter((candidateMoveIndex) => candidateMoveIndex < nextMoveIndex);
+    needsResumeDelay = false;
+    emit();
     return true;
   };
 
-  const startNextQueuedReplay = ({ useResumeDelay = false } = {}) => {
-    const game = getGame?.(routeGameId) ?? null;
-    if (!game || !Array.isArray(game.moves)) {
-      queuedMoveIndexes = [];
-      needsResumeDelay = false;
-      stepCounter = 0;
-      clearArmedReplay();
+  const finishCurrentSequence = () => {
+    if (!activeSequence) {
       return;
     }
-    while (queuedMoveIndexes.length > 0) {
-      const moveIndex = queuedMoveIndexes.shift();
-      const move = game.moves[moveIndex] ?? null;
-      const stepIndex = stepCounter;
-      const totalSteps = stepIndex + queuedMoveIndexes.length + 1;
-      const shouldHideBaseline =
-        !useResumeDelay &&
-        isBrowserReady() &&
-        Boolean(move?.selectionSnapshot) &&
-        isBaselinePresentationSatisfied({
-          gameId: game.id,
-          moveIndex,
-          selectionSnapshot: move.selectionSnapshot,
-        });
-      if (shouldHideBaseline) {
-        const armed = armReplay({
-          game,
-          moveIndex,
-          stepIndex,
-          totalSteps,
-        });
-        if (!armed) {
-          continue;
-        }
-        schedulePreviewPhase(moveIndex, timing.focusedDelayMs);
-        stepCounter += 1;
-        return;
-      }
-      const started = startVisibleBaselineReplay({
-        game,
-        moveIndex,
-        delayMs: useResumeDelay ? timing.refocusDelayMs : timing.focusedDelayMs,
-        stepIndex,
-        totalSteps,
-      });
-      if (!started) {
-        continue;
-      }
-      stepCounter += 1;
+    if (queuedMoveIndexes.length === 0) {
+      activeSequence = null;
+      needsResumeDelay = false;
+      emit();
+      return;
+    }
+    const latestGame = getGame?.(routeGameId) ?? null;
+    if (!latestGame) {
+      activeSequence = null;
+      queuedMoveIndexes = [];
+      needsResumeDelay = false;
+      emit();
+      return;
+    }
+    const nextSequence = buildReplaySequence({
+      sequenceId: `${latestGame.id}:${sequenceCounter + 1}`,
+      game: latestGame,
+      moveIndexes: [...queuedMoveIndexes],
+      timing,
+      animated: !prefersReducedMotion(),
+    });
+    queuedMoveIndexes = [];
+    if (!nextSequence) {
+      activeSequence = null;
+      needsResumeDelay = false;
+      emit();
+      return;
+    }
+    sequenceCounter += 1;
+    schedule(timing.gapMs, () => {
+      activeSequence = nextSequence;
+      emit();
+      scheduleActiveFrame();
+    });
+  };
+
+  const advanceSequence = () => {
+    if (!activeSequence) {
+      return;
+    }
+    const nextIndex = activeSequence.currentFrameIndex + 1;
+    if (nextIndex >= activeSequence.frames.length) {
+      finishCurrentSequence();
+      return;
+    }
+    setCurrentFrameIndex(nextIndex);
+    emit();
+    scheduleActiveFrame();
+  };
+
+  function scheduleActiveFrame() {
+    const currentFrame = getSequenceFrame();
+    if (!currentFrame) {
+      finishCurrentSequence();
+      return;
+    }
+    if (!isBrowserReady()) {
+      needsResumeDelay = true;
+      return;
+    }
+    if (currentFrame.phase === REPLAY_PHASE.LEAD_IN) {
+      const leadInDelayMs = needsResumeDelay ? timing.refocusDelayMs : timing.focusedDelayMs;
+      needsResumeDelay = false;
+      schedule(leadInDelayMs, advanceSequence);
       return;
     }
     needsResumeDelay = false;
-    stepCounter = 0;
+    schedule(currentFrame.durationMs, advanceSequence);
+  }
+
+  const startNextSequence = ({ useResumeDelay = false } = {}) => {
+    if (!routeGameId || !replayEnabled || queuedMoveIndexes.length === 0) {
+      return;
+    }
+    const game = getGame?.(routeGameId) ?? null;
+    if (!game) {
+      clearReplay();
+      return;
+    }
+    if (!isBrowserReady()) {
+      needsResumeDelay = true;
+      return;
+    }
+    const nextSequence = buildReplaySequence({
+      sequenceId: `${game.id}:${sequenceCounter + 1}`,
+      game,
+      moveIndexes: [...queuedMoveIndexes],
+      timing,
+      animated: !prefersReducedMotion(),
+    });
+    queuedMoveIndexes = [];
+    if (!nextSequence) {
+      needsResumeDelay = false;
+      return;
+    }
+    sequenceCounter += 1;
+    activeSequence = nextSequence;
+    needsResumeDelay = useResumeDelay;
+    emit();
+    scheduleActiveFrame();
   };
 
   const maybeResume = () => {
-    if (!routeGameId || !replayEnabled || (!armedStep && !activeStep && queuedMoveIndexes.length === 0)) {
+    if (!routeGameId || !replayEnabled) {
       return;
     }
     if (!isBrowserReady()) {
@@ -353,92 +450,24 @@ export const createIncomingMoveReplayController = ({
     if (phaseTimer) {
       return;
     }
-    if (!armedStep && !activeStep) {
-      const useResumeDelay = needsResumeDelay;
-      needsResumeDelay = false;
-      startNextQueuedReplay({ useResumeDelay });
+    if (activeSequence) {
+      scheduleActiveFrame();
       return;
     }
-    if (armedStep) {
-      const latestGame = getGame?.(routeGameId) ?? null;
-      if (!latestGame) {
-        clearArmedReplay();
-        return;
-      }
-      const armedMoveIndex = armedStep.moveIndex;
-      const armedStepIndex = armedStep.stepIndex;
-      const armedTotalSteps = armedStep.totalSteps;
-      if (needsResumeDelay) {
-        clearArmedReplay();
-        needsResumeDelay = false;
-        startVisibleBaselineReplay({
-          game: latestGame,
-          moveIndex: armedMoveIndex,
-          delayMs: timing.refocusDelayMs,
-          stepIndex: armedStepIndex,
-          totalSteps: armedTotalSteps,
-        });
-        return;
-      }
-      schedulePreviewPhase(armedMoveIndex, timing.focusedDelayMs);
-      return;
-    }
-    const delayMs = needsResumeDelay ? timing.refocusDelayMs : 0;
-    needsResumeDelay = false;
-    if (activeStep.phase === REPLAY_PHASE.BASELINE) {
-      schedulePreviewPhase(activeStep.moveIndex, delayMs || timing.focusedDelayMs);
-      return;
-    }
-    if (activeStep.phase === REPLAY_PHASE.PREVIEW) {
-      scheduleSettlePhase(activeStep.moveIndex);
-      return;
-    }
-    scheduleNextPhase(delayMs || timing.settleHoldMs, finishReplayMove);
+    startNextSequence({ useResumeDelay: needsResumeDelay });
   };
 
   const resetRouteScopedReplay = ({ keepSeenCounts = true, notify = true } = {}) => {
-    clearTimers();
+    clearPhaseTimer();
+    activeSequence = null;
     queuedMoveIndexes = [];
-    clearArmedReplay();
-    activeStep = null;
     needsResumeDelay = false;
-    stepCounter = 0;
+    sequenceCounter = 0;
     if (!keepSeenCounts) {
-      seenMoveCountByGameId.clear();
+      seenMoveKeysByGameId.clear();
     }
     if (notify) {
       emit();
-    }
-  };
-
-  const clampSeenCount = (game) => {
-    const moveCount = Array.isArray(game?.moves) ? game.moves.length : 0;
-    const knownMoveCount = seenMoveCountByGameId.get(game?.id) ?? null;
-    if (knownMoveCount === null) {
-      seenMoveCountByGameId.set(game.id, moveCount);
-      return;
-    }
-    if (moveCount >= knownMoveCount) {
-      return;
-    }
-    seenMoveCountByGameId.set(game.id, moveCount);
-    if (game.id !== routeGameId) {
-      return;
-    }
-    const previousActiveMoveIndex = activeStep?.moveIndex ?? null;
-    queuedMoveIndexes = queuedMoveIndexes.filter((moveIndex) => moveIndex < moveCount);
-    if (previousActiveMoveIndex !== null && previousActiveMoveIndex >= moveCount) {
-      clearActiveReplay();
-      clearPhaseTimer();
-    }
-    const previousArmedMoveIndex = armedStep?.moveIndex ?? null;
-    if (previousArmedMoveIndex !== null && previousArmedMoveIndex >= moveCount) {
-      clearArmedReplay();
-      clearPhaseTimer();
-    }
-    if (!armedStep && !activeStep && queuedMoveIndexes.length === 0) {
-      stepCounter = 0;
-      needsResumeDelay = false;
     }
   };
 
@@ -452,7 +481,8 @@ export const createIncomingMoveReplayController = ({
         resetRouteScopedReplay({ notify: false });
       }
       if (!replayEnabled) {
-        pauseReplay({ preserveResumeDelay: true });
+        clearPhaseTimer();
+        needsResumeDelay = Boolean(activeSequence || queuedMoveIndexes.length > 0);
         return;
       }
       maybeResume();
@@ -461,79 +491,97 @@ export const createIncomingMoveReplayController = ({
       if (!game?.id) {
         return;
       }
-      clampSeenCount(game);
+      const nextMoveKeys = getGameMoveReplayKeys(game);
+      const knownMoveKeys = seenMoveKeysByGameId.get(game.id);
+      if (!Array.isArray(knownMoveKeys) || nextMoveKeys.length < knownMoveKeys.length) {
+        seenMoveKeysByGameId.set(game.id, nextMoveKeys);
+      }
     },
     observeAuthoritativeGame(game) {
       if (!game?.id) {
         return [];
       }
-      clampSeenCount(game);
-      const moveCount = Array.isArray(game.moves) ? game.moves.length : 0;
-      const knownMoveCount = seenMoveCountByGameId.get(game.id);
-      if (typeof knownMoveCount !== "number") {
-        seenMoveCountByGameId.set(game.id, moveCount);
+      const nextMoveKeys = getGameMoveReplayKeys(game);
+      const previousMoveKeys = seenMoveKeysByGameId.get(game.id);
+      if (!Array.isArray(previousMoveKeys)) {
+        seenMoveKeysByGameId.set(game.id, nextMoveKeys);
         return [];
       }
-      if (moveCount <= knownMoveCount) {
-        seenMoveCountByGameId.set(game.id, moveCount);
+
+      const firstDivergenceIndex = findFirstDivergenceIndex(previousMoveKeys, nextMoveKeys);
+      if (firstDivergenceIndex === -1) {
+        seenMoveKeysByGameId.set(game.id, nextMoveKeys);
         return [];
       }
+
+      const replayStartIndex =
+        firstDivergenceIndex < previousMoveKeys.length ? firstDivergenceIndex : previousMoveKeys.length;
+      seenMoveKeysByGameId.set(game.id, nextMoveKeys);
+
       const replayableMoveIndexes = [];
-      for (let index = knownMoveCount; index < moveCount; index += 1) {
+      for (let index = replayStartIndex; index < nextMoveKeys.length; index += 1) {
         if (game.id === routeGameId && isIncomingMoveReplayEligible({ game, move: game.moves[index] })) {
           replayableMoveIndexes.push(index);
         }
       }
-      seenMoveCountByGameId.set(game.id, moveCount);
-      if (game.id !== routeGameId || replayableMoveIndexes.length === 0) {
+
+      if (game.id !== routeGameId) {
         return replayableMoveIndexes;
       }
-      queuedMoveIndexes = [...queuedMoveIndexes, ...replayableMoveIndexes];
-      if (!activeStep && isBrowserReady()) {
-        const useResumeDelay = needsResumeDelay;
-        needsResumeDelay = false;
-        startNextQueuedReplay({ useResumeDelay });
+
+      if (firstDivergenceIndex < previousMoveKeys.length) {
+        cancelStaleReplayFromIndex(firstDivergenceIndex);
+      }
+
+      if (replayableMoveIndexes.length === 0) {
+        return [];
+      }
+
+      const dedupedQueuedIndexes = new Set(queuedMoveIndexes);
+      replayableMoveIndexes.forEach((moveIndex) => dedupedQueuedIndexes.add(moveIndex));
+      queuedMoveIndexes = [...dedupedQueuedIndexes].sort((left, right) => left - right);
+
+      if (!activeSequence && isBrowserReady()) {
+        startNextSequence({ useResumeDelay: needsResumeDelay });
       } else {
         maybeResume();
       }
       return replayableMoveIndexes;
     },
     setDocumentVisible(visible) {
-      browserVisible = visible !== false;
-      if (!browserVisible) {
-        pauseReplay({ preserveResumeDelay: true });
+      if (visible === false) {
+        clearPhaseTimer();
+        needsResumeDelay = Boolean(activeSequence || queuedMoveIndexes.length > 0);
         return;
       }
       maybeResume();
     },
     setWindowFocused(focused) {
-      browserFocused = focused !== false;
-      if (!browserFocused) {
-        pauseReplay({ preserveResumeDelay: true });
+      if (focused === false) {
+        clearPhaseTimer();
+        needsResumeDelay = Boolean(activeSequence || queuedMoveIndexes.length > 0);
         return;
       }
       maybeResume();
     },
     getActiveReplay(gameId) {
-      if (!activeStep || activeStep.gameId !== gameId) {
+      const currentFrame = getSequenceFrame();
+      if (!currentFrame || currentFrame.gameId !== gameId) {
         return null;
       }
-      return cloneValue(activeStep);
+      return cloneValue(currentFrame);
+    },
+    getReplaySequence(gameId) {
+      if (!activeSequence || activeSequence.gameId !== gameId) {
+        return null;
+      }
+      return cloneValue(activeSequence);
     },
     getReplayState(gameId) {
-      if (activeStep?.gameId === gameId) {
-        return cloneValue(activeStep);
-      }
-      if (armedStep?.gameId === gameId) {
-        return cloneValue(armedStep);
-      }
-      return null;
+      return this.getActiveReplay(gameId);
     },
     isReplayActiveForGame(gameId) {
-      return Boolean(
-        (activeStep && activeStep.gameId === gameId) ||
-          (armedStep && armedStep.gameId === gameId),
-      );
+      return Boolean(activeSequence?.gameId === gameId);
     },
     getQueuedMoveIndexes(gameId) {
       if (!gameId || gameId !== routeGameId) {
@@ -542,15 +590,13 @@ export const createIncomingMoveReplayController = ({
       return [...queuedMoveIndexes];
     },
     destroy() {
-      clearTimers();
+      clearPhaseTimer();
+      activeSequence = null;
       queuedMoveIndexes = [];
-      clearArmedReplay();
-      activeStep = null;
       routeGameId = null;
       replayEnabled = false;
       needsResumeDelay = false;
-      stepCounter = 0;
-      queuedStartDelayMs = null;
+      sequenceCounter = 0;
     },
   };
 };

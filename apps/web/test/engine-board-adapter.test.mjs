@@ -599,7 +599,7 @@ test("recorded-action overlay shows move markers without supply, command, or non
   });
 });
 
-test("recorded-action incoming replay overlay adds animation hooks without changing geometry", async () => {
+test("recorded-action incoming replay overlay reuses recorded arrow styling while adding replay timing hooks", async () => {
   await withFakeDocument(async () => {
     const { adapter, boardEl, overlayLinesEl } = createMountedAdapter();
     const snapshot = {
@@ -634,7 +634,7 @@ test("recorded-action incoming replay overlay adds animation hooks without chang
 
     assert.equal(getCell(boardEl, 6, 3)?.querySelector(".incoming-move-replay-source") !== null, true);
     assert.equal(getCell(boardEl, 6, 5)?.querySelector(".incoming-move-replay-target") !== null, true);
-    assert.equal(overlayLinesEl.querySelector(".incoming-move-replay-arrow") !== null, true);
+    assert.equal(overlayLinesEl.querySelector(".incoming-move-replay-arrow-animate") !== null, true);
   });
 });
 
@@ -676,6 +676,64 @@ test("recorded-action project overlay decorates the existing history target piec
     const targetCell = getCell(boardEl, 5, 5);
     assert.equal(targetCell?.querySelectorAll(".piece-token").length, 1);
     assert.equal(targetCell?.querySelector(".piece-token")?.classList.contains("preview-created"), true);
+    assert.equal(targetCell?.querySelector(".move-ghost"), null);
+    assert.equal(overlayLinesEl.querySelectorAll("line").length, 0);
+    assert.equal(overlayLinesEl.querySelectorAll("path").length, 0);
+  });
+});
+
+test("incoming replay project preview decorates the settled target piece instead of creating an intermediate ghost", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl, overlayLinesEl } = createMountedAdapter();
+    const snapshot = {
+      sideToMove: "P2",
+      continuation: null,
+      pieces: [
+        { id: "A1", owner: "P1", kind: "commander", position: { row: 6, col: 5 }, supplied: true, commanded: true },
+        {
+          id: "projected-A2",
+          owner: "P1",
+          kind: "unit",
+          position: { row: 5, col: 5 },
+          supplied: true,
+          commanded: true,
+        },
+      ],
+    };
+
+    adapter.render({
+      snapshot,
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: {
+        mode: "recorded-action",
+        recordedAction: { type: "project", actorId: "A1", from: { row: 6, col: 5 }, to: { row: 5, col: 5 } },
+        recordedActionStartPiece: {
+          id: "A1",
+          owner: "P1",
+          kind: "commander",
+          position: { row: 6, col: 5 },
+          supplied: true,
+          commanded: true,
+        },
+        replay: {
+          kind: "incoming-move",
+          phase: "preview",
+          actorSeat: "Player 1",
+          moveIndex: 0,
+        },
+      },
+      legalActions: [],
+      selectedPieceMoves: [],
+      selectedPieceMovePreviews: [],
+      removalEffects: [],
+      allowFreeSelection: false,
+      currentActionType: "project",
+    });
+
+    const targetCell = getCell(boardEl, 5, 5);
+    assert.equal(targetCell?.querySelectorAll(".piece-token").length, 1);
+    assert.equal(targetCell?.querySelector(".piece-token")?.classList.contains("preview-created"), true);
+    assert.equal(targetCell?.querySelector(".piece-token")?.classList.contains("incoming-move-replay-target"), true);
     assert.equal(targetCell?.querySelector(".move-ghost"), null);
     assert.equal(overlayLinesEl.querySelectorAll("line").length, 0);
     assert.equal(overlayLinesEl.querySelectorAll("path").length, 0);

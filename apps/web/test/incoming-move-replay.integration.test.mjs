@@ -6,12 +6,12 @@ import { createIncomingMoveReplayController } from "../shell/incoming-move-repla
 
 const noop = () => {};
 
-const createMove = () => ({
+const createMove = ({ actionType = "move" } = {}) => ({
   index: 0,
   actorSide: "P2",
-  notation: "PROJECT (6,3) -> (6,5)",
+  notation: `${actionType.toUpperCase()} (6,3) -> (6,5)`,
   action: {
-    type: "move",
+    type: actionType,
     actorId: "P2-A1",
     from: { row: 6, col: 3 },
     to: { row: 6, col: 5 },
@@ -39,7 +39,7 @@ const createMove = () => ({
     outcome: { status: "ongoing" },
     pieces: [
       {
-        id: "P2-A1",
+        id: actionType === "project" ? "P2-projected" : "P2-A1",
         owner: "P2",
         kind: "unit",
         position: { row: 6, col: 5 },
@@ -142,8 +142,6 @@ test("incoming replay keeps the focused live board stable until preview begins w
 
   const controller = createIncomingMoveReplayController({
     getGame: () => currentGame,
-    isBaselinePresentationSatisfied: ({ selectionSnapshot }) =>
-      JSON.stringify(runtime.getState?.() ?? null) === JSON.stringify(selectionSnapshot),
     setTimeoutFn: (fn, delay) => clock.setTimeout(fn, delay),
     clearTimeoutFn: (handle) => clock.clearTimeout(handle),
     isDocumentVisible: () => true,
@@ -167,8 +165,7 @@ test("incoming replay keeps the focused live board stable until preview begins w
   currentGame = createGame([move]);
   controller.observeAuthoritativeGame(currentGame);
 
-  assert.equal(controller.getActiveReplay(currentGame.id), null);
-  assert.equal(controller.getReplayState(currentGame.id)?.phase, "armed");
+  assert.equal(controller.getReplayState(currentGame.id)?.phase, "lead-in");
   interactionAllowed = !controller.isReplayActiveForGame(currentGame.id);
   assert.equal(previewLabelEl.textContent, preReplayLabel);
   assert.equal(turnIndicatorEl.textContent, preReplayTurnIndicator);
@@ -181,9 +178,9 @@ test("incoming replay keeps the focused live board stable until preview begins w
     legalActions: [],
     resetSelection: true,
     overlayMode: "recorded-action",
-    recordedAction: previewReplay.recordedAction,
-    recordedActionStartPiece: previewReplay.recordedActionStartPiece,
-    destroyedPieces: previewReplay.destroyedPieces,
+    recordedAction: previewReplay.recordedMovePresentation.recordedAction,
+    recordedActionStartPiece: previewReplay.recordedMovePresentation.recordedActionStartPiece,
+    destroyedPieces: previewReplay.recordedMovePresentation.destroyedPieces,
     replay: previewReplay,
   });
 
@@ -192,4 +189,189 @@ test("incoming replay keeps the focused live board stable until preview begins w
   assert.equal(renderPayload?.overlay?.replay?.kind, "incoming-move");
   assert.equal(renderPayload?.overlay?.mode, "recorded-action");
   assert.equal(renderPayload?.overlay?.replay?.phase, "preview");
+});
+
+test("incoming replay uses the settled snapshot for project previews so the target token is already present when the overlay appears", async () => {
+  const clock = createFakeClock();
+  let currentGame = createGame();
+  let renderPayload = null;
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: (payload) => {
+        renderPayload = payload;
+      },
+      getSelectedPieceSummary: () => null,
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      canInteract: () => true,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: { textContent: "", innerHTML: "", addEventListener: noop, removeEventListener: noop },
+    boardTurnIndicatorEl: { textContent: "", classList: { remove: noop, add: noop } },
+  });
+
+  const controller = createIncomingMoveReplayController({
+    getGame: () => currentGame,
+    setTimeoutFn: (fn, delay) => clock.setTimeout(fn, delay),
+    clearTimeoutFn: (handle) => clock.clearTimeout(handle),
+    isDocumentVisible: () => true,
+    isWindowFocused: () => true,
+  });
+
+  controller.setRouteState({ gameId: currentGame.id, replayEnabled: true });
+  controller.primeGame(currentGame);
+
+  const move = createMove({ actionType: "project" });
+  await runtime.loadSnapshot(move.selectionSnapshot, {
+    legalActions: [],
+    resetSelection: true,
+    overlayMode: "interactive",
+    recordedAction: null,
+    recordedActionStartPiece: null,
+    destroyedPieces: [],
+    replay: null,
+  });
+
+  currentGame = createGame([move]);
+  controller.observeAuthoritativeGame(currentGame);
+  clock.flushNext(180);
+
+  const previewReplay = controller.getActiveReplay(currentGame.id);
+  assert.equal(previewReplay?.phase, "preview");
+  assert.deepEqual(previewReplay?.snapshot, move.snapshot);
+
+  await runtime.loadSnapshot(previewReplay.snapshot, {
+    legalActions: [],
+    resetSelection: true,
+    overlayMode: "recorded-action",
+    recordedAction: previewReplay.recordedMovePresentation.recordedAction,
+    recordedActionStartPiece: previewReplay.recordedMovePresentation.recordedActionStartPiece,
+    destroyedPieces: previewReplay.recordedMovePresentation.destroyedPieces,
+    replay: previewReplay,
+  });
+
+  assert.equal(renderPayload?.overlay?.recordedAction?.type, "project");
+  assert.deepEqual(renderPayload?.snapshot, move.snapshot);
+});
+
+test("incoming replay labels are only shown during preview, not during hidden lead-in or after project preview completes", async () => {
+  const clock = createFakeClock();
+  let currentGame = createGame();
+  const previewLabelEl = {
+    textContent: "",
+    innerHTML: "",
+    addEventListener: noop,
+    removeEventListener: noop,
+  };
+  const turnIndicatorEl = {
+    textContent: "",
+    classList: {
+      remove: noop,
+      add: noop,
+    },
+  };
+
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      render: noop,
+      getSelectedPieceSummary: () => null,
+      getPieceById: (snapshot, pieceId) => snapshot?.pieces?.find((piece) => piece.id === pieceId) ?? null,
+      getPieceAt: (snapshot, coord) =>
+        snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
+      nextSelectionForCell: () => ({
+        selection: { selectedPieceId: null, source: null, target: null },
+        nextActionType: "pass",
+      }),
+    },
+    host: {
+      applyAction: async () => ({ accepted: false }),
+      loadInitialState: async () => ({ state: null, legalActions: [] }),
+      loadLegalActions: async () => ({ state: null, legalActions: [] }),
+      loadPieceMoves: async () => ({ state: null, actions: [], previewActions: [] }),
+      canInteract: () => true,
+    },
+  });
+
+  runtime.bindElements({
+    boardEl: {},
+    overlayLinesEl: {},
+    boardPreviewLabelEl: previewLabelEl,
+    boardTurnIndicatorEl: turnIndicatorEl,
+  });
+
+  const controller = createIncomingMoveReplayController({
+    getGame: () => currentGame,
+    setTimeoutFn: (fn, delay) => clock.setTimeout(fn, delay),
+    clearTimeoutFn: (handle) => clock.clearTimeout(handle),
+    isDocumentVisible: () => true,
+    isWindowFocused: () => true,
+  });
+
+  controller.setRouteState({ gameId: currentGame.id, replayEnabled: true });
+  controller.primeGame(currentGame);
+
+  const projectMove = createMove({ actionType: "project" });
+  currentGame = createGame([projectMove]);
+  controller.observeAuthoritativeGame(currentGame);
+
+  const leadInReplay = controller.getActiveReplay(currentGame.id);
+  assert.equal(leadInReplay?.phase, "lead-in");
+  await runtime.loadSnapshot(leadInReplay.snapshot, {
+    legalActions: [],
+    resetSelection: true,
+    overlayMode: "interactive",
+    recordedAction: null,
+    recordedActionStartPiece: null,
+    destroyedPieces: [],
+    replay: leadInReplay,
+  });
+  assert.equal(turnIndicatorEl.textContent, "Player 2 to play");
+  assert.equal(previewLabelEl.textContent, "Select a piece to see what it can do:");
+
+  clock.flushNext(180);
+  const previewReplay = controller.getActiveReplay(currentGame.id);
+  assert.equal(previewReplay?.phase, "preview");
+  await runtime.loadSnapshot(previewReplay.snapshot, {
+    legalActions: [],
+    resetSelection: true,
+    overlayMode: "recorded-action",
+    recordedAction: previewReplay.recordedMovePresentation.recordedAction,
+    recordedActionStartPiece: previewReplay.recordedMovePresentation.recordedActionStartPiece,
+    destroyedPieces: previewReplay.recordedMovePresentation.destroyedPieces,
+    replay: previewReplay,
+  });
+  assert.equal(turnIndicatorEl.textContent, "Replaying Player 2 move");
+  assert.equal(previewLabelEl.textContent, "Incoming move.");
+
+  clock.flushNext(320);
+  assert.equal(controller.getReplayState(currentGame.id), null);
+  await runtime.loadSnapshot(currentGame.currentSnapshot, {
+    legalActions: [],
+    resetSelection: true,
+    overlayMode: "interactive",
+    recordedAction: null,
+    recordedActionStartPiece: null,
+    destroyedPieces: [],
+    replay: null,
+  });
+  assert.equal(turnIndicatorEl.textContent, "Player 1 to play");
+  assert.equal(previewLabelEl.textContent, "Select a piece to see what it can do:");
 });

@@ -1,4 +1,5 @@
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
+const clone = (value) => (value == null ? value : structuredClone(value));
 
 export const findRecordedActionStartPiece = (snapshot, action) => {
   if (!snapshot || !action) {
@@ -50,3 +51,12 @@ export const buildDestroyedPieceOverlays = ({ destroyedPieceRecords, preActionSn
     };
   });
 };
+
+export const buildRecordedMovePresentation = ({ action = null, preActionSnapshot = null, destroyedPieceRecords = [] } = {}) => ({
+  recordedAction: clone(action),
+  recordedActionStartPiece: clone(findRecordedActionStartPiece(preActionSnapshot, action)),
+  destroyedPieces: buildDestroyedPieceOverlays({
+    destroyedPieceRecords,
+    preActionSnapshot,
+  }),
+});

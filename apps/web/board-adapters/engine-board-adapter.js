@@ -756,7 +756,6 @@ export function createEngineBoardAdapter() {
       const startPiece = overlay.recordedActionStartPiece ?? null;
       const replay = overlay.replay ?? null;
       const shouldDecorateReplay = replay?.kind === "incoming-move";
-      const replayArrowClass = shouldDecorateReplay ? "incoming-move-replay-arrow" : "";
       const piece = findActionTargetPiece(snapshot, action) ?? startPiece;
       if (!action || !piece) {
         return;
@@ -789,8 +788,8 @@ export function createEngineBoardAdapter() {
       if (action.to) {
         if (action.type !== "project") {
           drawArrowLine(action.from ?? startPiece?.position ?? piece.position, action.to, piece.owner, false, true);
-          if (replayArrowClass) {
-            overlayLinesEl?.children?.[overlayLinesEl.children.length - 1]?.classList?.add(replayArrowClass);
+          if (shouldDecorateReplay) {
+            overlayLinesEl?.children?.[overlayLinesEl.children.length - 1]?.classList?.add("incoming-move-replay-arrow-animate");
           }
         }
         const targetCell = cellByCoordinateKey.get(coordKey(action.to));
