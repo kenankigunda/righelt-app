@@ -1,6 +1,12 @@
 import { test, expect } from "@playwright/test";
 
-import { closeContextQuietly, createGameFromHome, createIsolatedPage, openDirectGameLink } from "../support/app.mjs";
+import {
+  closeContextQuietly,
+  createGameFromHome,
+  createIsolatedPage,
+  openDirectGameLink,
+  openStartGamePicker,
+} from "../support/app.mjs";
 
 test("copy invite waits for pending game creation and then copies the committed invite token", async ({ browser }) => {
   const { context, page } = await createIsolatedPage(browser);
@@ -33,15 +39,14 @@ test("copy invite waits for pending game creation and then copies the committed 
       await route.fulfill({ response });
     });
 
-    await page.goto("/");
-    await expect(page.getByTestId("home-create-game")).toBeVisible();
+    await openStartGamePicker(page);
 
     const createResponsePromise = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === "POST" && url.pathname === "/api/shell/games";
     });
 
-    await page.getByTestId("home-create-game").click();
+    await page.getByTestId("start-mode-friend").getByRole("button", { name: "Play with a friend" }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
     await expect(page.getByTestId("copy-invite")).toBeVisible();
 
@@ -118,9 +123,8 @@ test("scenario update only pulses the clicked scenario button while the local wr
   const { context, page } = await createIsolatedPage(browser);
 
   try {
-    await page.goto("/");
-    await expect(page.getByTestId("home-create-game")).toBeVisible();
-    await page.getByTestId("home-create-game").click();
+    await openStartGamePicker(page);
+    await page.getByTestId("start-mode-friend").getByRole("button", { name: "Play with a friend" }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
     await page.getByRole("button", { name: "Scenarios" }).click();

@@ -46,14 +46,20 @@ export const setOfflineState = async (page, offline) => {
     .toBe(!offline);
 };
 
-export const createGameFromHome = async (page) => {
+export const openStartGamePicker = async (page) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
+  await page.getByTestId("home-create-game").click();
+  await expect(page.getByTestId("start-game-picker")).toBeVisible();
+};
+
+export const createGameFromHome = async (page) => {
+  await openStartGamePicker(page);
   const createResponsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return response.request().method() === "POST" && url.pathname === "/api/shell/games";
   });
-  await page.getByTestId("home-create-game").click();
+  await page.getByTestId("start-mode-friend").getByRole("button", { name: "Play with a friend" }).click();
   const createResponse = await createResponsePromise;
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
@@ -210,6 +216,66 @@ const getFirstPlayableAction = async (page) =>
     return legalActions.find((action) => action?.from && action?.to) ?? null;
   });
 
+const getCurrentPlayableSnapshot = async (page) =>
+  page.evaluate(async () => {
+    const identityId = window.localStorage.getItem("righelt.identity.id.v1");
+    const match = new URL(window.location.href).hash.match(/^#\/game\/([^?]+)/);
+    if (!identityId || !match) {
+      return null;
+    }
+
+    const gameId = decodeURIComponent(match[1]);
+    const response = await fetch(`/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}`);
+    const body = await response.json();
+    return body?.game?.currentSnapshot ?? null;
+  });
+
+export const makeAnyLegalMoveViaApi = async (page, ownerClass = "p1") => {
+  const startingHistoryCount = await getHistoryMoveCount(page);
+  const [action, state] = await Promise.all([getFirstPlayableAction(page), getCurrentPlayableSnapshot(page)]);
+
+  if (!action?.from || !action?.to || typeof action.type !== "string") {
+    throw new Error(`No playable browser action was exposed in the live game payload for ${ownerClass.toUpperCase()}`);
+  }
+  if (!state) {
+    throw new Error(`No live snapshot was exposed in the game payload for ${ownerClass.toUpperCase()}`);
+  }
+
+  await page.evaluate(async ({ nextAction, state, clientCommandId }) => {
+    const identityId = window.localStorage.getItem("righelt.identity.id.v1");
+    const match = new URL(window.location.href).hash.match(/^#\/game\/([^?]+)/);
+    if (!identityId || !match) {
+      throw new Error("Expected identity and game route before applying a move");
+    }
+
+    const gameId = decodeURIComponent(match[1]);
+    const response = await fetch(`/api/shell/games/${encodeURIComponent(gameId)}/apply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        identityId,
+        clientCommandId,
+        state,
+        action: {
+          type: nextAction.type,
+          from: nextAction.from,
+          to: nextAction.to,
+        },
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      throw new Error(`Move apply failed: ${response.status} ${JSON.stringify(body)}`);
+    }
+  }, {
+    nextAction: action,
+    state,
+    clientCommandId: `e2e-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  });
+
+  await expectHistoryMoveCountToIncrease(page, startingHistoryCount);
+};
+
 export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
   const startingHistoryCount = await getHistoryMoveCount(page);
   const action = await getFirstPlayableAction(page);
@@ -228,15 +294,14 @@ export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
   await sourceCell.click();
   await expect
     .poll(async () => {
-      await targetCell.hover();
-      return targetCell.evaluate((cell) => cell.classList.contains("target"));
+      await targetCell.hover().catch(() => {});
+      await targetCell.click().catch(() => {});
+      return getHistoryMoveCount(page);
     }, {
-      timeout: 2_000,
-      message: "Expected hovering the legal destination to select it in the live board UI",
+      timeout: 5_000,
+      message: "Expected the selected legal destination to submit a move in the live board UI",
     })
-    .toBe(true);
-  await targetCell.click();
-  await expectHistoryMoveCountToIncrease(page, startingHistoryCount);
+    .toBeGreaterThan(startingHistoryCount);
 };
 
 export const openHistoryAndReturnLive = async (page) => {

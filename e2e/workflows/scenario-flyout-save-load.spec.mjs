@@ -7,6 +7,7 @@ import {
   getHistoryMoveCount,
   importScenarioGame,
   makeAnyLegalMove,
+  openStartGamePicker,
 } from "../support/app.mjs";
 
 const buildPiece = (id, owner, kind, row, col) => ({
@@ -216,9 +217,8 @@ test("scenario flyout can save the current board and load that scenario into a n
     await expect(page.locator('[data-scenario-editable="title"]')).toContainText(scenarioTitle);
     await expect(page.locator("#scenario-select")).toContainText(scenarioTitle);
 
-    await page.goto("/");
-    await expect(page.getByTestId("home-create-game")).toBeVisible();
-    await page.getByTestId("home-create-game").click();
+    await openStartGamePicker(page);
+    await page.getByTestId("start-mode-friend").getByRole("button", { name: "Play with a friend" }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
     const initialHistoryCount = await getHistoryMoveCount(page);
@@ -337,9 +337,8 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
       turnIndex: 6,
     });
 
-    await page.goto("/");
-    await expect(page.getByTestId("home-create-game")).toBeVisible();
-    await page.getByTestId("home-create-game").click();
+    await openStartGamePicker(page);
+    await page.getByTestId("start-mode-friend").getByRole("button", { name: "Play with a friend" }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
     await page.getByRole("button", { name: "Scenarios" }).click();
@@ -434,9 +433,8 @@ test("scenario flyout saves history-authored scenarios from the selected pre-mov
       turnIndex: 4,
     });
 
-    await page.goto("/");
-    await expect(page.getByTestId("home-create-game")).toBeVisible();
-    await page.getByTestId("home-create-game").click();
+    await openStartGamePicker(page);
+    await page.getByTestId("start-mode-friend").getByRole("button", { name: "Play with a friend" }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
     await page.getByRole("button", { name: "Scenarios" }).click();
@@ -535,9 +533,8 @@ test("scenario flyout updates an existing scenario from the selected history pre
       turnIndex: 4,
     });
 
-    await page.goto("/");
-    await expect(page.getByTestId("home-create-game")).toBeVisible();
-    await page.getByTestId("home-create-game").click();
+    await openStartGamePicker(page);
+    await page.getByTestId("start-mode-friend").getByRole("button", { name: "Play with a friend" }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
     await page.getByRole("button", { name: "Scenarios" }).click();
@@ -675,9 +672,8 @@ test("scenario load surfaces import failures without leaving the flyout stuck pe
       });
     });
 
-    await page.goto("/");
-    await expect(page.getByTestId("home-create-game")).toBeVisible();
-    await page.getByTestId("home-create-game").click();
+    await openStartGamePicker(page);
+    await page.getByTestId("start-mode-friend").getByRole("button", { name: "Play with a friend" }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
     await page.getByRole("button", { name: "Scenarios" }).click();

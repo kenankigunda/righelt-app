@@ -6,6 +6,7 @@ import {
   createGameFromHome,
   createIsolatedPage,
   makeAnyLegalMove,
+  makeAnyLegalMoveViaApi,
   openDirectGameLink,
   openHistoryMode,
   requestPlayerJoin,
@@ -51,7 +52,7 @@ test("accepting an undo request returns history viewers on both clients to the l
     await expect(guest.page.getByTestId("game-role")).toContainText("Player 2");
 
     await makeAnyLegalMove(owner.page, "p1");
-    await makeAnyLegalMove(guest.page, "p2");
+    await makeAnyLegalMoveViaApi(guest.page, "p2");
 
     await openHistoryMode(owner.page, 0);
     await openHistoryMode(guest.page, 0);

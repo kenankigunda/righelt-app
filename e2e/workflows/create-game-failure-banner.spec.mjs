@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-import { closeContextQuietly, createIsolatedPage } from "../support/app.mjs";
+import { closeContextQuietly, createIsolatedPage, openStartGamePicker } from "../support/app.mjs";
 
 test("create-game shows an alert banner when the server rejects the create response", async ({ browser }) => {
   const { context, page } = await createIsolatedPage(browser);
@@ -18,9 +18,8 @@ test("create-game shows an alert banner when the server rejects the create respo
       });
     });
 
-    await page.goto("/");
-    await expect(page.getByTestId("home-create-game")).toBeVisible();
-    await page.getByTestId("home-create-game").click();
+    await openStartGamePicker(page);
+    await page.getByTestId("start-mode-friend").getByRole("button", { name: "Play with a friend" }).click();
 
     const failureBanner = page.getByTestId("sync-failure-banner");
     await expect(page.getByTestId("game-shell")).toBeVisible();

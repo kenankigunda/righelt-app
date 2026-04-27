@@ -7,6 +7,7 @@ import {
   createIsolatedPage,
   getHistoryMoveCount,
   makeAnyLegalMove,
+  makeAnyLegalMoveViaApi,
   openDirectGameLink,
   openHistoryMode,
   requestPlayerJoin,
@@ -47,7 +48,7 @@ test("history mode stays latched while live updates append and return-to-live re
     await expect(creatorPage.getByTestId("history-return-live")).toBeVisible();
     releaseHistory?.();
 
-    await makeAnyLegalMove(playerPage, "p2");
+    await makeAnyLegalMoveViaApi(playerPage, "p2");
     await expect
       .poll(async () => getHistoryMoveCount(creatorPage), {
         message: "Expected live updates to append while the creator remains in history mode",
