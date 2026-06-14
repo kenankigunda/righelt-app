@@ -3577,7 +3577,7 @@ const renderInviteLanding = (inviteContext) => {
   const joinViewerButtonKey = getJoinButtonKey("viewer", game.id);
 
   return `
-    <section class="invite-gate">
+    <section class="invite-gate" data-testid="invite-gate">
       <section class="panel invite-gate-modal">
         <p class="small invite-gate-kicker">Invite received</p>
         <h2>Choose how to enter this game</h2>
