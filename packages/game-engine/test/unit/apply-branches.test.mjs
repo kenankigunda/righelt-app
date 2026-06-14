@@ -33,7 +33,12 @@ test("applyAction clears shifted flags when an action ends the turn", () => {
     ],
   });
 
-  const next = applyAction(state, { type: "pass" }).state;
+  const next = applyAction(state, {
+    type: "move",
+    actorId: "C1",
+    from: { row: 3, col: 6 },
+    to: { row: 3, col: 7 },
+  }).state;
   const shifted = next.pieces.find((piece) => piece.id === "U1-1");
   assert.equal(Boolean(shifted?.shifted), false);
 });

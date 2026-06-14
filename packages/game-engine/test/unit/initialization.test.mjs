@@ -43,7 +43,10 @@ test("A-001 standard setup", () => {
 
 test("A-002 deterministic replay", () => {
   const initial = createInitialState();
-  const actions = [{ type: "pass" }, { type: "pass" }];
+  const actions = [
+    { type: "project", actorId: "C1", from: { row: 3, col: 6 }, to: { row: 1, col: 6 } },
+    { type: "project", actorId: "C2", from: { row: 6, col: 3 }, to: { row: 8, col: 3 } },
+  ];
 
   const runA = replayActions(initial, actions, { includeTrace: true });
   const runB = replayActions(initial, actions, { includeTrace: true });
@@ -61,8 +64,9 @@ test("A-002 deterministic replay", () => {
 
 test("A-003 no hidden randomness", () => {
   const initial = createInitialState();
+  const action = { type: "project", actorId: "C1", from: { row: 3, col: 6 }, to: { row: 1, col: 6 } };
   const hashes = Array.from({ length: 5 }, () => {
-    const result = applyAction(initial, { type: "pass" });
+    const result = applyAction(initial, action);
     return deterministicStateHash(result.state);
   });
 

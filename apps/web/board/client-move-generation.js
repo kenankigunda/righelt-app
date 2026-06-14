@@ -1,7 +1,6 @@
 import { BOARD_SIZE, SUPPLY_POINTS } from "../generated/packages/game-engine/src/deterministic.js";
 import {
   buildContinuationSuccessorState,
-  canCloseContinuationNow,
   isContinuationCompletable,
 } from "../generated/packages/game-engine/src/continuation.js";
 
@@ -296,7 +295,7 @@ const buildHypotheticalPiecesForPreview = (state, action, actor) => {
 };
 
 const buildPreviewPiece = (state, action) => {
-  if (!state || action?.type === "pass" || !action?.to) {
+  if (!state || !action?.to) {
     return null;
   }
 
@@ -382,7 +381,7 @@ const validateContinuation = (state, action) => {
   }
 
   if (state.continuation.type === "rush") {
-    return action.type === "rush" || action.type === "pass" ? null : { code: "CONTINUATION_REQUIRED" };
+    return action.type === "rush" ? null : { code: "CONTINUATION_REQUIRED" };
   }
 
   return null;
@@ -405,13 +404,7 @@ const validateActionForPreview = (state, action) => {
   }
 
   if (action.type === "pass") {
-    if (state.continuation && state.continuation.type !== "rush") {
-      return { ok: false, code: "CONTINUATION_REQUIRED" };
-    }
-    if (state.continuation?.type === "rush" && !canCloseContinuationNow(state)) {
-      return { ok: false, code: "CONTINUATION_REQUIRED" };
-    }
-    return { ok: true };
+    return { ok: false, code: "RULE_VIOLATION" };
   }
 
   const actor = resolveActor(state, action);
@@ -594,7 +587,7 @@ export const listPieceMovesFromLegalActions = ({ state, legalActions, pieceId })
 
   return legalActions
     .filter((action) => {
-      if (!action || action.type === "pass") {
+      if (!action) {
         return false;
       }
       if (action.type === "push" && !allowPush) {

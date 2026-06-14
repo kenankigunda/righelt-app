@@ -37,6 +37,7 @@ import {
   toggleScenariosHash,
 } from "./routes.js";
 import { createTutorialController } from "./tutorial.js";
+import { DEFAULT_ACTION_TYPE } from "../interaction.js";
 
 const appEl = document.getElementById("app");
 const bootstrap = getBootstrapPayload();
@@ -385,7 +386,7 @@ const registerMiniBoardPreview = ({
   selectedPieceId = null,
   selectedPieceMoves = [],
   selectedPieceMovePreviews = [],
-  currentActionType = "pass",
+  currentActionType = DEFAULT_ACTION_TYPE,
   selectedPieceOverlayPhase = "actionPreviews",
   previewKey,
   sizeVariant = "compact",
@@ -415,7 +416,7 @@ const renderMiniBoardPreviewRoot = ({
   selectedPieceId = null,
   selectedPieceMoves = [],
   selectedPieceMovePreviews = [],
-  currentActionType = "pass",
+  currentActionType = DEFAULT_ACTION_TYPE,
   selectedPieceOverlayPhase = "actionPreviews",
   previewKey,
   sizeVariant = "compact",
@@ -474,7 +475,7 @@ const getStaticCardPreviewPayload = (card) => ({
   selectedPieceId: null,
   selectedPieceMoves: [],
   selectedPieceMovePreviews: [],
-  currentActionType: "pass",
+  currentActionType: DEFAULT_ACTION_TYPE,
   selectedPieceOverlayPhase: "actionPreviews",
 });
 const buildSavedSelectionFromAction = (action, snapshot) => {

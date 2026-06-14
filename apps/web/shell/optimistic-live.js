@@ -18,9 +18,6 @@ const getSeatIdentity = (game, seat) => (seat === "Player 1" ? game.player1?.ide
 const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "(?,?)");
 
 export const defaultNotationForAction = (action) => {
-  if (action?.type === "pass") {
-    return "PASS";
-  }
   return `${String(action?.type || "move").toUpperCase()} ${formatCoordinate(action?.from)} -> ${formatCoordinate(action?.to)}`;
 };
 

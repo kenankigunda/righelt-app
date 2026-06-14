@@ -67,10 +67,7 @@ export function applyAction(state, action) {
         next.continuation = null;
         clearShiftedFlags(next);
     };
-    if (action.type === "pass") {
-        endTurn();
-    }
-    else if (action.type === "move" && actor && action.to) {
+    if (action.type === "move" && actor && action.to) {
         actor.position = { ...action.to };
         endTurn();
     }

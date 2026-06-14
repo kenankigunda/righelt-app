@@ -1,4 +1,5 @@
 export const ACTION_PRIORITY = ["rush", "move", "project", "push", "follow", "retreat"];
+export const DEFAULT_ACTION_TYPE = "move";
 export const BLOCKED_PREVIEW_REASON = {
   SUPPLY_DESTINATION_UNSUPPLIED: "SUPPLY_DESTINATION_UNSUPPLIED",
   PUSH_STRENGTH_TOO_WEAK: "PUSH_STRENGTH_TOO_WEAK",
@@ -126,10 +127,6 @@ export function deriveAutoSelectedTarget(actions) {
 }
 
 export function buildActionPayload(type, source, target, actorId = null) {
-  if (type === "pass") {
-    return { type };
-  }
-
   return {
     type,
     actorId: actorId ?? undefined,
@@ -192,7 +189,7 @@ export function shouldSubmitOnEnter({ key, target, actionType, submitDisabled })
     return false;
   }
 
-  if (submitDisabled || actionType === "pass") {
+  if (submitDisabled || !actionType) {
     return false;
   }
 

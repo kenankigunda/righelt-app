@@ -24,7 +24,6 @@ test("client move generation includes unsupplied-blocked previews but not legal 
   const response = buildPieceMoveResponse({
     state,
     legalActions: [
-      { type: "pass" },
       { type: "move", actorId: "C1", from: { row: 4, col: 4 }, to: { row: 3, col: 4 } },
       { type: "move", actorId: "C1", from: { row: 4, col: 4 }, to: { row: 5, col: 4 } },
       { type: "move", actorId: "C1", from: { row: 4, col: 4 }, to: { row: 4, col: 3 } },
@@ -66,7 +65,7 @@ test("client move generation includes blocked push previews for inadequate group
 
   const response = buildPieceMoveResponse({
     state,
-    legalActions: [{ type: "pass" }],
+    legalActions: [],
     pieceId: "A1",
   });
 
@@ -105,7 +104,6 @@ test("client move generation omits push moves and previews when local group stre
   const response = buildPieceMoveResponse({
     state,
     legalActions: [
-      { type: "pass" },
       { type: "push", actorId: "A1", from: { row: 4, col: 3 }, to: { row: 5, col: 3 } },
     ],
     pieceId: "A1",

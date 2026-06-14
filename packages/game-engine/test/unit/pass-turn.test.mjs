@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { applyAction, createInitialState, validateAction } from "../../src/index.ts";
 import { commander, makeState } from "../helpers/state-builders.mjs";
 
-test("C-001 pass basic", () => {
+test("C-001 pass is rejected in the initial state", () => {
   const state = createInitialState();
-  const next = applyAction(state, { type: "pass" }).state;
-
-  assert.equal(next.sideToMove, "P2");
-  assert.equal(next.turnIndex, 1);
-  assert.deepEqual(next.pieces, state.pieces);
+  const result = validateAction(state, { type: "pass" });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.code, "RULE_VIOLATION");
+  }
 });
 
 test("C-002 pass illegal during forced continuation", () => {
@@ -30,15 +30,17 @@ test("C-002 pass illegal during forced continuation", () => {
   }
 });
 
-test("C-003 side alternation", () => {
+test("C-003 normal actions still alternate the side to move", () => {
   const state = createInitialState();
-  const afterOne = applyAction(state, { type: "pass" }).state;
-  const afterTwo = applyAction(afterOne, { type: "pass" }).state;
+  const firstAction = { type: "project", actorId: "C1", from: { row: 3, col: 6 }, to: { row: 1, col: 6 } };
+  const secondAction = { type: "project", actorId: "C2", from: { row: 6, col: 3 }, to: { row: 8, col: 3 } };
+  const afterOne = applyAction(state, firstAction).state;
+  const afterTwo = applyAction(afterOne, secondAction).state;
 
   assert.equal(afterTwo.sideToMove, state.sideToMove);
 });
 
-test("C-004 pass legal during rush continuation", () => {
+test("C-004 pass is rejected during rush continuation", () => {
   const state = makeState({
     continuation: {
       type: "rush",
@@ -50,5 +52,8 @@ test("C-004 pass legal during rush continuation", () => {
   });
 
   const result = validateAction(state, { type: "pass" });
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.code, "CONTINUATION_REQUIRED");
+  }
 });

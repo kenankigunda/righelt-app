@@ -186,7 +186,7 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 ### F-007 Rush destination may be temporarily unsupplied if the chain can be resupplied
 - Given: Rush destination is geometrically legal and empty, would be unsupplied if the sequence ended immediately, but a later legal rush in the same local rush chain restores supply before closure.
 - When: `Rush` attempted.
-- Then: Accepted; rush continuation remains open and `Pass` is still illegal until the rush chain is supplied.
+- Then: Accepted; rush continuation remains open and turn closure is still illegal until the rush chain is supplied.
 
 ## G. Push / Follow / Retreat
 
@@ -430,6 +430,9 @@ Status: Normative acceptance matrix for engine implementation against `RIGHELT_R
 - Then: Continuation context clears and side-to-move switches once.
 
 ### O-003 Premature turn-ending action rejected during continuation
+- Given: A continuation state that still has unresolved rush or push obligations.
+- When: A caller tries to close the turn early instead of completing the required continuation action.
+- Then: Rejected; the live shell must not model this as a standalone `Pass` move.
 - Given: Active continuation context (`push` or `rush`) with legal continuation steps available.
 - When: Player attempts non-continuation action (including another piece action type).
 - Then: Rejected; continuation context unchanged.

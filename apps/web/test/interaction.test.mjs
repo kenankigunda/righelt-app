@@ -71,11 +71,7 @@ test("pickBestActionTypeForTarget prefers rush over current move on the same tar
   assert.equal(result, "rush");
 });
 
-test("buildActionPayload returns pass shape for pass", () => {
-  assert.deepEqual(buildActionPayload("pass", { row: 3, col: 6 }, { row: 3, col: 7 }), { type: "pass" });
-});
-
-test("buildActionPayload returns targeted payload for non-pass", () => {
+test("buildActionPayload always returns a targeted action payload", () => {
   assert.deepEqual(
     buildActionPayload("move", { row: 3, col: 6 }, { row: 3, col: 7 }, "C1"),
     {
@@ -117,7 +113,7 @@ test("shouldSubmitOnEnter allows enter for actionable board context", () => {
     true,
   );
   assert.equal(
-    shouldSubmitOnEnter({ key: "Enter", target: boardTarget, actionType: "pass", submitDisabled: false }),
+    shouldSubmitOnEnter({ key: "Enter", target: boardTarget, actionType: "", submitDisabled: false }),
     false,
   );
   assert.equal(
@@ -300,7 +296,6 @@ test("deriveContinuationHighlightByPieceId marks rushed pieces as moved and lega
     [
       { type: "rush", actorId: "R1", to: { row: 4, col: 4 } },
       { type: "rush", actorId: "R2", to: { row: 4, col: 5 } },
-      { type: "pass" },
     ],
   );
 

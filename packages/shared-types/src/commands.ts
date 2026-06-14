@@ -1,5 +1,4 @@
 export type CommandType =
-  | "pass"
   | "move"
   | "project"
   | "rush"
@@ -21,4 +20,3 @@ export type ClientCommand = {
   payload?: Record<string, unknown>;
   clientCommandId?: string;
 };
-

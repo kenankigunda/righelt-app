@@ -86,9 +86,7 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
     clearShiftedFlags(next);
   };
 
-  if (action.type === "pass") {
-    endTurn();
-  } else if (action.type === "move" && actor && action.to) {
+  if (action.type === "move" && actor && action.to) {
     actor.position = { ...action.to };
     endTurn();
   } else if (action.type === "project" && actor && action.to) {

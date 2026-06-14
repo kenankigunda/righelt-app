@@ -1,4 +1,5 @@
 import {
+  DEFAULT_ACTION_TYPE,
   getBlockedPreviewLabel,
   buildActionPayload,
   deriveContinuationHighlightByPieceId,
@@ -29,7 +30,7 @@ const formatCoordinate = (coord) => (coord ? `(${coord.row},${coord.col})` : "un
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
 const MOBILE_BOARD_PREVIEW_BREAKPOINT_QUERY = "(max-width: 430px)";
 
-const defaultActionType = "pass";
+const defaultActionType = DEFAULT_ACTION_TYPE;
 const TARGET_ORIGIN = {
   AUTO: "auto",
   FORCED: "forced",
@@ -594,7 +595,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const actionMatchesSelectedPiece = (action, piece) => {
-    if (!action || !piece || action.type === "pass") {
+    if (!action || !piece) {
       return false;
     }
     if (typeof action.actorId === "string") {
@@ -924,7 +925,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       if (selectedPieceId && selectedPieceMovesLoading) {
         return;
       }
-      setActionType("pass");
+      setActionType(defaultActionType);
       clearSelection();
       refreshSelectionLabels();
       renderBoard();
@@ -1006,7 +1007,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!shouldResetSelectionOnDocumentClick(event.target)) {
       return;
     }
-    setActionType("pass");
+    setActionType(defaultActionType);
     clearSelection();
     refreshSelectionLabels();
     renderBoard();
@@ -1205,7 +1206,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
 
   const setSelectionFromAction = async (action) => {
     if (!action || !action.from || !action.to) {
-      setActionType(action?.type ?? "pass");
+      setActionType(action?.type ?? defaultActionType);
       clearSelection();
       refreshSelectionLabels();
       renderBoard();

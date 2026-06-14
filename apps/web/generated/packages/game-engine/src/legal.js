@@ -1,4 +1,4 @@
-import { buildContinuationSuccessorState, canCloseContinuationNow, isContinuationCompletable, } from "./continuation.js";
+import { buildContinuationSuccessorState, isContinuationCompletable, } from "./continuation.js";
 import { BOARD_SIZE, SUPPLY_POINTS } from "./deterministic.js";
 function outOfBounds(value) {
     if (!value) {
@@ -311,11 +311,11 @@ function validateContinuation(state, action) {
         return null;
     }
     if (state.continuation.type === "rush") {
-        if (action.type !== "rush" && action.type !== "pass") {
+        if (action.type !== "rush") {
             return {
                 ok: false,
                 code: "CONTINUATION_REQUIRED",
-                message: "Rush continuation requires rush or pass",
+                message: "Rush continuation requires rush",
             };
         }
     }
@@ -349,15 +349,11 @@ export function listLegalActions(state) {
                 }
                 return actions.filter((candidate) => validateAction(state, candidate).ok);
             });
-            const actions = [...rushActions];
-            if (validateAction(state, { type: "pass" }).ok) {
-                actions.push({ type: "pass" });
-            }
-            return actions;
+            return rushActions;
         }
         return state.continuation.phase === "retreat" ? getPushRetreatActions(state) : getPushFollowActions(state);
     }
-    const actions = [{ type: "pass" }];
+    const actions = [];
     const withTargets = ["move", "project", "rush", "push"];
     for (const piece of state.pieces.filter((candidate) => candidate.owner === state.sideToMove)) {
         for (const type of withTargets) {
@@ -405,21 +401,11 @@ export function validateAction(state, action) {
         return continuationValidation;
     }
     if (action.type === "pass") {
-        if (state.continuation && state.continuation.type !== "rush") {
-            return {
-                ok: false,
-                code: "CONTINUATION_REQUIRED",
-                message: "Pass is not legal while continuation is active",
-            };
-        }
-        if (state.continuation?.type === "rush" && !canCloseContinuationNow(state)) {
-            return {
-                ok: false,
-                code: "CONTINUATION_REQUIRED",
-                message: "Rush continuation must continue until the rush chain is resupplied",
-            };
-        }
-        return { ok: true };
+        return {
+            ok: false,
+            code: "RULE_VIOLATION",
+            message: "Pass is not a supported live action",
+        };
     }
     const actor = resolveActor(state, action);
     if (!actor) {

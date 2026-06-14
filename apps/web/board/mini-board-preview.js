@@ -1,3 +1,5 @@
+import { DEFAULT_ACTION_TYPE } from "../interaction.js";
+
 const DEFAULT_SELECTION = { selectedPieceId: null, source: null, target: null };
 const DEFAULT_OVERLAY = { mode: "none" };
 
@@ -32,7 +34,7 @@ const normalizePreviewPayload = (payload) => ({
   selectedPieceId: payload?.selectedPieceId ?? payload?.selection?.selectedPieceId ?? null,
   selectedPieceMoves: Array.isArray(payload?.selectedPieceMoves) ? payload.selectedPieceMoves : [],
   selectedPieceMovePreviews: Array.isArray(payload?.selectedPieceMovePreviews) ? payload.selectedPieceMovePreviews : [],
-  currentActionType: payload?.currentActionType ?? "pass",
+  currentActionType: payload?.currentActionType ?? DEFAULT_ACTION_TYPE,
   selectedPieceOverlayPhase: payload?.selectedPieceOverlayPhase ?? "actionPreviews",
   previewKey: payload?.previewKey ?? "null",
 });

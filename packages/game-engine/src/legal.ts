@@ -1,7 +1,6 @@
 import type { Action, GameState, Piece, ValidationResult } from "./types";
 import {
   buildContinuationSuccessorState,
-  canCloseContinuationNow,
   isContinuationCompletable,
 } from "./continuation";
 import { BOARD_SIZE, SUPPLY_POINTS } from "./deterministic";
@@ -416,11 +415,11 @@ function validateContinuation(state: GameState, action: Action): ValidationResul
   }
 
   if (state.continuation.type === "rush") {
-    if (action.type !== "rush" && action.type !== "pass") {
+    if (action.type !== "rush") {
       return {
         ok: false,
         code: "CONTINUATION_REQUIRED",
-        message: "Rush continuation requires rush or pass",
+        message: "Rush continuation requires rush",
       };
     }
   }
@@ -457,17 +456,13 @@ export function listLegalActions(state: GameState): Action[] {
           }
           return actions.filter((candidate) => validateAction(state, candidate).ok);
         });
-      const actions = [...rushActions];
-      if (validateAction(state, { type: "pass" }).ok) {
-        actions.push({ type: "pass" });
-      }
-      return actions;
+      return rushActions;
     }
 
     return state.continuation.phase === "retreat" ? getPushRetreatActions(state) : getPushFollowActions(state);
   }
 
-  const actions: Action[] = [{ type: "pass" }];
+  const actions: Action[] = [];
   const withTargets = ["move", "project", "rush", "push"] as const;
 
   for (const piece of state.pieces.filter((candidate) => candidate.owner === state.sideToMove)) {
@@ -522,21 +517,11 @@ export function validateAction(state: GameState, action: Action): ValidationResu
   }
 
   if (action.type === "pass") {
-    if (state.continuation && state.continuation.type !== "rush") {
-      return {
-        ok: false,
-        code: "CONTINUATION_REQUIRED",
-        message: "Pass is not legal while continuation is active",
-      };
-    }
-    if (state.continuation?.type === "rush" && !canCloseContinuationNow(state)) {
-      return {
-        ok: false,
-        code: "CONTINUATION_REQUIRED",
-        message: "Rush continuation must continue until the rush chain is resupplied",
-      };
-    }
-    return { ok: true };
+    return {
+      ok: false,
+      code: "RULE_VIOLATION",
+      message: "Pass is not a supported live action",
+    };
   }
 
   const actor = resolveActor(state, action);

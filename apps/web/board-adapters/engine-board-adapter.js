@@ -1,6 +1,7 @@
 import { BOARD_SIZE, SUPPLY_POINTS } from "../generated/packages/game-engine/src/deterministic.js";
 import { getRushContinuationBlockingPiece } from "../generated/packages/game-engine/src/continuation.js";
 import {
+  DEFAULT_ACTION_TYPE,
   deriveContinuationHighlightByPieceId,
   getBlockedPreviewLabel,
   pickBestActionTypeForTarget,
@@ -1032,7 +1033,7 @@ export function createEngineBoardAdapter() {
           actionsAtTarget: actionPreviewsAtTarget,
         })
       ) {
-        const suggestedAction = pickBestActionTypeForTarget(actionPreviewsAtTarget, currentActionType) ?? "pass";
+        const suggestedAction = pickBestActionTypeForTarget(actionPreviewsAtTarget, currentActionType) ?? DEFAULT_ACTION_TYPE;
         return {
           selection: {
             ...selection,
@@ -1070,7 +1071,7 @@ export function createEngineBoardAdapter() {
             ...selection,
             source: clickedCoord,
           },
-          nextActionType: "pass",
+          nextActionType: currentActionType || DEFAULT_ACTION_TYPE,
         };
       }
 
@@ -1084,7 +1085,7 @@ export function createEngineBoardAdapter() {
           nextActionType: currentActionType,
         };
       }
-      const suggestedAction = pickBestActionTypeForTarget(actionPreviewsAtTarget, currentActionType) ?? "pass";
+      const suggestedAction = pickBestActionTypeForTarget(actionPreviewsAtTarget, currentActionType) ?? DEFAULT_ACTION_TYPE;
 
       return {
         selection: {

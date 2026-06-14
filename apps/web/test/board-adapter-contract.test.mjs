@@ -23,7 +23,7 @@ test("assertGameBoardAdapter accepts valid adapter shape", () => {
       return null;
     },
     nextSelectionForCell() {
-      return { selection: { selectedPieceId: null, source: null, target: null }, nextActionType: "pass" };
+      return { selection: { selectedPieceId: null, source: null, target: null }, nextActionType: "move" };
     },
     render() {},
     getCommanderSupplySummary() {

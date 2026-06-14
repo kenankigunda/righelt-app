@@ -96,12 +96,7 @@ test("validation error code map is reachable for all defined variants", () => {
       state: makeState({
         pieces: [commander("C1", "P1", 3, 6), commander("C2", "P2", 6, 3)],
       }),
-      action: {
-        type: "move",
-        actorId: "C1",
-        from: { row: 3, col: 6 },
-        to: { row: 4, col: 7 },
-      },
+      action: { type: "pass" },
     },
     {
       code: "PUSH_STRENGTH_TOO_WEAK",

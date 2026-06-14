@@ -936,12 +936,8 @@ export const withViewModel = withFullViewModel;
 const formatCoordinate = (coord: { row: number; col: number } | null | undefined) =>
   coord ? `(${coord.row},${coord.col})` : "(?,?)";
 
-const defaultNotationForAction = (action: Action) => {
-  if (action.type === "pass") {
-    return "PASS";
-  }
-  return `${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`;
-};
+const defaultNotationForAction = (action: Action) =>
+  `${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`;
 
 const collectRemovedPieceNotices = (
   before: GameState,

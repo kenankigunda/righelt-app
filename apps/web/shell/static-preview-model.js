@@ -3,13 +3,11 @@ import {
   listLegalActions,
   resolveToStability,
 } from "../generated/packages/game-engine/src/index.js";
-import { pickBestActionTypeForTarget } from "../interaction.js";
+import { DEFAULT_ACTION_TYPE, pickBestActionTypeForTarget } from "../interaction.js";
 import { buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./history-preview.js";
 import { collectDestroyedPieceRecords } from "./optimistic-live.js";
 
 const clone = (value) => (value == null ? value : structuredClone(value));
-const DEFAULT_ACTION_TYPE = "pass";
-
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
 
 const toSelection = (savedSelection, selectedPieceId = null) =>
@@ -22,7 +20,7 @@ const toSelection = (savedSelection, selectedPieceId = null) =>
     : null;
 
 const actionMatchesSource = (action, sourcePiece, source) => {
-  if (!action || action.type === "pass") {
+  if (!action) {
     return false;
   }
   if (typeof action.actorId === "string" && sourcePiece?.id) {

@@ -14,7 +14,7 @@ test("board runtime keeps internal action type when external controls are absent
       getPieceAt: () => null,
       nextSelectionForCell: () => ({
         selection: { selectedPieceId: null, source: null, target: null },
-        nextActionType: "pass",
+        nextActionType: "move",
       }),
     },
     host: {
@@ -26,7 +26,7 @@ test("board runtime keeps internal action type when external controls are absent
     },
   });
 
-  assert.equal(runtime.getActionType(), "pass");
+  assert.equal(runtime.getActionType(), "move");
   runtime.setActionType("project");
   assert.equal(runtime.getActionType(), "project");
   runtime.setActionType("move");
@@ -67,7 +67,7 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
         snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
       nextSelectionForCell: () => ({
         selection: { selectedPieceId: null, source: null, target: null },
-        nextActionType: "pass",
+        nextActionType: "move",
       }),
     },
     host: {
@@ -148,7 +148,7 @@ test("board runtime starts history destruction in the removal-effects layer befo
         snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
       nextSelectionForCell: () => ({
         selection: { selectedPieceId: null, source: null, target: null },
-        nextActionType: "pass",
+        nextActionType: "move",
       }),
     },
     host: {
@@ -236,7 +236,7 @@ test("board runtime renders removal effects returned from shell apply actions", 
           snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
         nextSelectionForCell: () => ({
           selection: { selectedPieceId: null, source: null, target: null },
-          nextActionType: "pass",
+          nextActionType: "move",
         }),
       },
       host: {
@@ -330,7 +330,7 @@ test("board runtime shortens rush continuation CTA on narrow mobile viewports on
           snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
         nextSelectionForCell: () => ({
           selection: { selectedPieceId: null, source: null, target: null },
-          nextActionType: "pass",
+          nextActionType: "move",
         }),
       },
       host: {
@@ -388,7 +388,7 @@ test("board runtime shortens rush continuation CTA on narrow mobile viewports on
         ],
       },
       {
-        legalActions: [{ type: "pass", actorId: "A1", from: { row: 4, col: 4 } }],
+        legalActions: [],
       },
     );
 
@@ -412,7 +412,7 @@ test("board runtime omits end-turn CTA when the rush chain is not yet closable",
         snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
       nextSelectionForCell: () => ({
         selection: { selectedPieceId: null, source: null, target: null },
-        nextActionType: "pass",
+        nextActionType: "move",
       }),
     },
     host: {
@@ -542,7 +542,7 @@ test("board runtime rush blocker prompt prefers the most recently rushed unsuppl
         snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
       nextSelectionForCell: () => ({
         selection: { selectedPieceId: null, source: null, target: null },
-        nextActionType: "pass",
+        nextActionType: "move",
       }),
     },
     host: {
@@ -619,7 +619,7 @@ test("board runtime falls back to generic rush prompt when blocker lookup yields
         snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
       nextSelectionForCell: () => ({
         selection: { selectedPieceId: null, source: null, target: null },
-        nextActionType: "pass",
+        nextActionType: "move",
       }),
     },
     host: {
@@ -708,7 +708,7 @@ test("board runtime preserves in-progress removal effects across snapshot reload
           snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
         nextSelectionForCell: () => ({
           selection: { selectedPieceId: null, source: null, target: null },
-          nextActionType: "pass",
+          nextActionType: "move",
         }),
       },
       host: {
@@ -827,7 +827,7 @@ test("board runtime preserves in-progress removal effects across interactive tur
           snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
         nextSelectionForCell: () => ({
           selection: { selectedPieceId: null, source: null, target: null },
-          nextActionType: "pass",
+          nextActionType: "move",
         }),
       },
       host: {
@@ -944,7 +944,7 @@ test("board runtime does not submit retreat continuation while interaction is lo
         snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
       nextSelectionForCell: () => ({
         selection: { selectedPieceId: null, source: null, target: null },
-        nextActionType: "pass",
+        nextActionType: "move",
       }),
     },
     host: {
@@ -1120,7 +1120,7 @@ test("board preview source coordinate chip uses selected-piece styling", async (
         }
         return {
           selection: { selectedPieceId: null, source: null, target: null },
-          nextActionType: "pass",
+          nextActionType: "move",
         };
       },
     },
@@ -1251,7 +1251,7 @@ test("board runtime does not flash no-moves preview text while selected piece mo
         if (!piece) {
           return {
             selection: { selectedPieceId: null, source: null, target: null },
-            nextActionType: "pass",
+            nextActionType: "move",
           };
         }
         return {
@@ -1299,7 +1299,6 @@ test("board runtime does not flash no-moves preview text while selected piece mo
     },
     {
       legalActions: [
-        { type: "pass" },
         { type: "move", actorId: "C1", from: { row: 3, col: 3 }, to: { row: 2, col: 3 } },
       ],
     },
@@ -2848,7 +2847,7 @@ test("board runtime hydrates a source-only selection state and loads piece moves
         snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
       nextSelectionForCell: () => ({
         selection: { selectedPieceId: null, source: null, target: null },
-        nextActionType: "pass",
+        nextActionType: "move",
       }),
     },
     host: {
@@ -2911,7 +2910,7 @@ test("board runtime hydrates a source and target from a selection action", async
         snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
       nextSelectionForCell: () => ({
         selection: { selectedPieceId: null, source: null, target: null },
-        nextActionType: "pass",
+        nextActionType: "move",
       }),
     },
     host: {
@@ -3070,7 +3069,7 @@ test("board runtime emits turn-ended when applyAction returns a settled next-tur
         snapshot?.pieces?.find((piece) => piece.position.row === coord.row && piece.position.col === coord.col) ?? null,
       nextSelectionForCell: () => ({
         selection: { selectedPieceId: null, source: null, target: null },
-        nextActionType: "pass",
+        nextActionType: "move",
       }),
     },
     host: {
@@ -3160,7 +3159,7 @@ test("U-10: loadSnapshot starts a history destruction transition before exposing
         getPieceAt: () => null,
         nextSelectionForCell: () => ({
           selection: { selectedPieceId: null, source: null, target: null },
-          nextActionType: "pass",
+          nextActionType: "move",
         }),
       },
       host: {
@@ -3262,7 +3261,7 @@ test("U-11: history destruction transition settles into overlay state and clears
         getPieceAt: () => null,
         nextSelectionForCell: () => ({
           selection: { selectedPieceId: null, source: null, target: null },
-          nextActionType: "pass",
+          nextActionType: "move",
         }),
       },
       host: {
