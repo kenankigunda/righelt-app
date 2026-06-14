@@ -117,11 +117,21 @@ const requestPlayerJoin = async (page) => {
 
 const joinAsViewer = async (page) => {
   const gameId = getGameIdFromUrl(page);
-  const inviteViewerButton = page.getByTestId("invite-join-viewer");
-  try {
-    await expect(inviteViewerButton).toBeVisible({ timeout: 20_000 });
-    await inviteViewerButton.click();
-  } catch {
+  const inviteViewerButton = page.getByTestId("invite-join-viewer").first();
+  const joinViewerButton = page.getByTestId("join-viewer").first();
+  const clickViewerJoinButton = async () => {
+    if (await inviteViewerButton.isVisible().catch(() => false)) {
+      await inviteViewerButton.click();
+      return true;
+    }
+    if (await joinViewerButton.isVisible().catch(() => false)) {
+      await joinViewerButton.click();
+      return true;
+    }
+    return false;
+  };
+
+  if (!(await clickViewerJoinButton())) {
     await page.evaluate(
       async ({ gameId: currentGameId }) => {
         const identityId = window.localStorage.getItem("righelt.identity.id.v1");
