@@ -4608,6 +4608,7 @@ appEl.addEventListener("click", async (event) => {
     void withPendingButton(`restore-game:${gameId}`, async () => {
       await transport.restoreGame({ gameId });
       clearLeftGameBanner(gameId);
+      await syncHomeSections();
       render({ animatePanels: false, includeBoard: false });
     });
     return;
