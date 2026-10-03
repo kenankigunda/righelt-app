@@ -3397,7 +3397,8 @@ test("board runtime refreshes a preserved branch selection from the new legal ac
   await runtime.loadSnapshot(snapshot, { legalActions: [action], selectionAction: action });
   await runtime.loadSnapshot(snapshot, { legalActions: [action], resetSelection: false });
   click(action.to);
-  assert.deepEqual(submitted, [], "first activation previews the refreshed action");
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(submitted, [], "previewing the retained legal target must not submit");
   click(action.to);
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.deepEqual(submitted, [action], "the hydrated target remains actionable after the authoritative snapshot replaces the branch stub");

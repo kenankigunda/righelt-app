@@ -110,3 +110,24 @@ test("leaving opponent tutorial cancels its creation and permits a fresh attempt
   tutorial = "skipped";
   assert.equal((await coordinator.accept({ opponent: "babs", side: "p2" })).state, "started"); assert.equal(creates, 1);
 });
+
+test("story introduction resolves its current opponent trigger without redirecting in-game revisits", () => {
+  let returnTrigger;
+  let currentButton = { name: "initial Babs" };
+  const selectors = [];
+  const node = { textContent: "", disabled: false, hidden: false };
+  const element = { open: false, dataset: {}, querySelector: () => node, querySelectorAll: () => [], addEventListener() {} };
+  const document = { hidden: false, addEventListener() {}, removeEventListener() {}, querySelector(selector) { selectors.push(selector); return currentButton; } };
+  const createModal = ({ onClose }) => ({ element,
+    open(_html, _source, findTrigger) { element.open = true; returnTrigger = findTrigger; },
+    close(reason) { element.open = false; onClose(reason); }, destroy() { element.open = false; onClose(); },
+  });
+  const dialog = createOpponentStoryDialog({ createModal, document, getReadiness: () => ({ state: "unavailable" }) });
+  dialog.open("babs");
+  currentButton = { name: "replacement Babs" };
+  assert.equal(returnTrigger(), currentButton);
+  assert.deepEqual(selectors, ['button[data-opponent="babs"]']);
+  dialog.open("babs", { mode: "revisit", gameId: "game" });
+  assert.equal(returnTrigger, null);
+  dialog.destroy();
+});
