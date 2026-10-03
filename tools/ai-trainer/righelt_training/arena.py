@@ -1,4 +1,5 @@
 """Paired model evaluation. Completed games only; no old search opponent."""
+from .budget import effective_deadline
 import argparse
 import hashlib
 import json
@@ -193,10 +194,10 @@ def archive_game(directory,game):
 def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,player=play_game,experiment_root=None):
     directory=Path(run_directory)
     runtime=json.loads((directory/'runtime.json').read_text())
-    deadline=runtime['deadlineMonotonic']
+    deadline=effective_deadline(runtime)
     plan,digest=read_frozen_plan(plan_path)
     identity={'planSha256':digest,'manifestSha256':runtime['manifestSha256'],
-              'startedMonotonic':runtime['startedMonotonic'],'deadlineMonotonic':deadline}
+              'startedMonotonic':runtime['startedMonotonic'],'deadlineMonotonic':runtime['deadlineMonotonic']}
     output=directory/'evaluations'/digest;output.mkdir(parents=True,exist_ok=True)
     state_path=output/'state.json'
     if state_path.exists():
@@ -295,7 +296,7 @@ def main():
         runtime=json.loads((args.run_dir/'runtime.json').read_text())
         if runtime.get('supervisorPid')!=os.getppid() or runtime.get('command')!='arena' or os.getpgrp()!=os.getpid():
             raise ValueError('arena must run inside the original external supervisor')
-        if runtime['deadlineMonotonic']-time.monotonic()<40:raise ValueError('original evaluation budget expired')
+        if effective_deadline(runtime)-time.monotonic()<40:raise ValueError('original evaluation budget expired')
         plan,digest=read_frozen_plan(args.plan)
         if runtime.get('arenaPlanSha256')!=digest:raise ValueError('supervisor plan identity mismatch')
         if not torch.backends.mps.is_available():raise RuntimeError('MPS unavailable for arena')

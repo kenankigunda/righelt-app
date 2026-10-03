@@ -157,13 +157,13 @@ def main():
             raise ValueError('resume source, dependencies or stage changed')
         if runtime.get('bootTime')!=psutil.boot_time():raise ValueError('cannot reuse monotonic budget after reboot')
         digest=original['sha256'];started=runtime['startedMonotonic']
-        budget=Budget(started,runtime['deadlineMonotonic']-started)
+        budget=Budget(started,runtime['deadlineMonotonic']-started,runtime['deadlineWall'])
         if budget.remaining(time.monotonic())<=0:raise ValueError('original budget expired; no reset permitted')
     else:
         args.run_dir.mkdir(parents=True)
         digest=write_manifest(args.run_dir/'manifest.json',manifest)
-        started=time.monotonic();budget=Budget(started,manifest['seconds'])
-        runtime={'schema':1,'startedMonotonic':started,'deadlineMonotonic':started+budget.seconds,
+        started=time.monotonic();wall_started=time.time();budget=Budget(started,manifest['seconds'],wall_started+manifest['seconds'])
+        runtime={'schema':1,'startedMonotonic':started,'deadlineMonotonic':started+budget.seconds,'startedWall':wall_started,'deadlineWall':budget.wall_deadline,
                  'manifestSha256':digest,'stage':args.stage,'seed':args.seed,'bootTime':psutil.boot_time()}
     if args.resume:
         metadata=json.loads(args.resume.with_suffix('.json').read_text())
