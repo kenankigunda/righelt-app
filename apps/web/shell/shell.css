@@ -2191,6 +2191,19 @@ button:not(.secondary):not(.warn):not(.danger):not(:disabled):active,
 .story-modal select { display: block; width: 100%; min-height: 44px; margin: 8px 0 20px; }
 .story-modal fieldset { border: 1px solid var(--line); margin: 16px 0; }
 .story-modal fieldset label { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.rematch-modal fieldset { min-width: 0; }
+.rematch-modal fieldset input[type="radio"] {
+  appearance: auto;
+  -webkit-appearance: radio;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--action-color);
+}
 .game-result { border-radius: 0; clip-path: polygon(var(--corner-cut) 0, 100% 0, 100% calc(100% - var(--corner-cut)), calc(100% - var(--corner-cut)) 100%, 0 100%, 0 var(--corner-cut)); }
 
 /* Body-mounted account surfaces retain the shared paper and affiliation tokens. */

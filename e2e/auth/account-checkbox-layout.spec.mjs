@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
+import { layoutStyles } from '../support/layout-styles.mjs';
 
 // Component integration: use the shipped dialog and CSS, with account transport
 // stubbed so every browser/viewport checks the same recovery acknowledgment UI.
@@ -7,8 +8,7 @@ for (const width of [390, 768, 1440]) {
   test(`recovery checkbox preserves native geometry and keyboard behavior at ${width}px`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 900 });
     await page.setContent('<!doctype html><html><body></body></html>');
-    await page.addStyleTag({ content: await readFile('apps/web/styles.css', 'utf8') });
-    await page.addStyleTag({ content: await readFile('apps/web/shell/shell.css', 'utf8') });
+    await page.addStyleTag({ content: layoutStyles });
     const source = await readFile('apps/web/shell/account-dialog.js', 'utf8');
     await page.addScriptTag({ type: 'module', content: `${source}\nwindow.createAccountDialog = createAccountDialog;` });
     await page.evaluate(() => {
