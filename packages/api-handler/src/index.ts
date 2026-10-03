@@ -1,3 +1,4 @@
+import { handleAuthRequest, type AuthEnv } from './auth-handler';
 import type { ClientCommand, ServerEvent } from "../../shared-types/src";
 import { CACHE_NO_STORE } from "../../shared-types/src/http";
 import { GameRoomDO } from "./game-room-do";
@@ -54,6 +55,8 @@ const parseJsonBody = async (request: Request): Promise<Record<string, unknown>>
 
 export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<Response> => {
   const url = new URL(request.url);
+  const authResponse = await handleAuthRequest(request, env as unknown as AuthEnv);
+  if (authResponse) return authResponse;
   const websocketUpgrade = await handleLiveGameWebSocketUpgrade(request, env);
   if (websocketUpgrade) {
     return websocketUpgrade;
