@@ -29,11 +29,10 @@ test("home logo changes together while primary actions stay affiliated; game sup
   await expect(page.getByRole("link", { name: "Righelt", exact: true })).toBeVisible();
   const play = page.getByTestId("home-create-game");
   await expect(play).toHaveCSS("background-color", "rgb(180, 47, 54)");
-  const redButton = await play.evaluate((el) => getComputedStyle(el).backgroundColor);
   await page.clock.install();
   await page.clock.fastForward(9500);
   await expect(logo).toHaveAttribute("data-player", "blue");
-  expect(await play.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(redButton);
+  await expect(play).toHaveCSS("background-color", "rgb(180, 47, 54)");
   await testInfo.attach("blue-wordmark", { body: await logo.screenshot({ path: testInfo.outputPath("wordmark.png") }), contentType: "image/png" });
   await page.clock.resume();
   await createGameFromHome(page);
@@ -43,11 +42,14 @@ test("home logo changes together while primary actions stay affiliated; game sup
   await expect(blueSupply).toHaveAttribute("aria-label", "Player 2 supply point");
   await expect(page.getByRole("button", { name: "Row 0, column 9, Player 1 supply point, empty", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Row 9, column 0, Player 2 supply point, empty", exact: true })).toBeVisible();
-  const fill = (locator) => locator.evaluate((el) => getComputedStyle(el, "::before").backgroundColor);
-  const before = [await fill(redSupply), await fill(blueSupply)];
-  expect(before[0]).not.toBe(before[1]);
+  const supplyColors = () => page.evaluate(() => [".supply-point-p1", ".supply-point-p2"].map((selector) => {
+    const marker = document.querySelector(`[data-testid="game-shell"] ${selector}`);
+    return marker ? getComputedStyle(marker, "::before").backgroundColor : null;
+  }));
+  const expectedSupplyColors = ["rgb(180, 47, 54)", "rgb(36, 94, 155)"];
+  await expect.poll(supplyColors).toEqual(expectedSupplyColors);
   await makeAnyLegalMove(page, "p1");
-  expect([await fill(redSupply), await fill(blueSupply)]).toEqual(before);
+  await expect.poll(supplyColors).toEqual(expectedSupplyColors);
   await expect(logo).toHaveAttribute("data-player", "red");
   await expect(page.locator("#app")).toHaveAttribute("data-action-affiliation", "red");
 });
@@ -63,7 +65,7 @@ test("Player 2 actions remain blue during Player 1's turn and home returns to re
     };
     const created = await post("/api/shell/games", { identityId: `foundation-${crypto.randomUUID()}` });
     await post(`/api/shell/games/${created.game.id}/join`, {
-      identityId: localStorage.getItem("righelt.identity.id.v1"), mode: "player", inviteFromRole: "Player 1",
+      protocolVersion: 2, identityId: localStorage.getItem("righelt.identity.id.v1"), mode: "player", inviteFromRole: "Player 1",
     });
     return created.game.id;
   });

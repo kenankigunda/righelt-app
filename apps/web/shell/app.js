@@ -139,9 +139,14 @@ const account = createAccountController({ storage,
 const accountDialog = createAccountDialog({ controller: account, onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
   onComplete: async intent => {
     const generation = account.snapshot().generation;
-    await syncRouteDataAndLiveChannels().catch(() => {});
+    const hash = window.location.hash;
+    try { await syncRouteDataAndLiveChannels(); } catch { return; }
+    if (generation !== account.snapshot().generation || hash !== window.location.hash) return;
+    // This read has hydrated the current route even if the transport reset's
+    // independent background read is still pending. Render the actual action.
+    routeHydrated = true;
     render({ animatePanels: false });
-    if (!intent || generation !== account.snapshot().generation || !account.canPlay() || intent.hash !== window.location.hash) return;
+    if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
     if (intent.action === "start-opponent") { homeSide = intent.side; startPersonalGame(intent); return; }
     const selector = `[data-action="${CSS.escape(intent.action)}"]${intent.gameId ? `[data-game-id="${CSS.escape(intent.gameId)}"]` : ""}${intent.moveIndex ? `[data-move-index="${CSS.escape(intent.moveIndex)}"]` : ""}`;
     appEl.querySelector(selector)?.click();
@@ -4277,6 +4282,29 @@ window.addEventListener("load", () => {
   scheduleResponsiveHomeSectionPageSizes();
 });
 
+// The first click may arrive while the initial cookie is still being read.
+// Resolve that session before choosing login versus recovery acknowledgment.
+const waitForAccountGate = async () => {
+  const hash = window.location.hash;
+  let awaitedLogout = false;
+  try {
+    if (!account.snapshot().ready) await account.start();
+    if (account.snapshot().pendingLogout) {
+      awaitedLogout = true;
+      await account.hydrate();
+    }
+  } catch { return false; }
+  const state = account.snapshot();
+  return hash === window.location.hash && state.ready && !state.pendingLogout
+    && (!awaitedLogout || !state.session.authenticated);
+};
+const openBoardAccountGate = async source => {
+  if (!await waitForAccountGate()) return;
+  const state = account.snapshot();
+  if (state.available === false || state.maintenance || account.canPlay() || accountDialog.isOpen()) return;
+  accountDialog.open(state.session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, source);
+};
+
 const startPersonalGame = ({ opponent, side }) => {
   if (!account.canPlay() || !isPersonalSide(side)) return;
   if (isComputerOpponent(opponent)) { homeStartStatus = getComputerReadiness(opponent).message; render(); return; }
@@ -4295,21 +4323,19 @@ appEl.addEventListener("change", (event) => {
 appEl.addEventListener("keydown", event => {
   if (event.target.closest?.("#shell-board") && (event.key === "Enter" || event.key === " ") && !account.canPlay()) {
     event.preventDefault(); event.stopImmediatePropagation();
-    accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, event.target);
+    void openBoardAccountGate(event.target);
   }
 }, true);
 appEl.addEventListener("pointerdown", event => {
   if (event.target.closest?.("#shell-board") && !account.canPlay()) {
     event.preventDefault();event.stopImmediatePropagation();
-    if (!account.snapshot().available || account.snapshot().maintenance) return;
-    accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, event.target.closest?.("button, [tabindex]"));
+    void openBoardAccountGate(event.target.closest?.("button, [tabindex]"));
   }
 }, true);
 appEl.addEventListener("click", event => {
   if (event.target.closest?.("#shell-board") && !account.canPlay()) {
     event.preventDefault();event.stopImmediatePropagation();
-    if (!account.snapshot().available || account.snapshot().maintenance) return;
-    if (!accountDialog.isOpen()) accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, event.target.closest?.("button, [tabindex]"));
+    void openBoardAccountGate(event.target.closest?.("button, [tabindex]"));
   }
 }, true);
 appEl.addEventListener("click", async (event) => {
@@ -4349,6 +4375,7 @@ appEl.addEventListener("click", async (event) => {
   }
 
   const action = actionEl.getAttribute("data-action");
+  const startIntent = { hash: window.location.hash, opponent: actionEl.getAttribute("data-opponent"), side: homeSide };
   if (action === "retry-game-route") { startRouteSync(); return; }
   if (["toggle-explain", "collapse-help", "expand-help"].includes(action)) {
     const gameId = getCurrentViewedGameId();
@@ -4379,10 +4406,14 @@ appEl.addEventListener("click", async (event) => {
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") { accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
   const accountGatedActions = new Set(["start-opponent","create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
+  if (accountGatedActions.has(action) && (!account.snapshot().ready || account.snapshot().pendingLogout)) {
+    event.preventDefault();
+    if (!await waitForAccountGate()) return;
+  }
   if (accountGatedActions.has(action) && !account.canPlay()) {
     event.preventDefault();
     if (!account.snapshot().available || account.snapshot().maintenance) return;
-    const intent = safeAccountIntent({ hash: window.location.hash, action, opponent: actionEl.getAttribute("data-opponent"), side: homeSide, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });
+    const intent = safeAccountIntent({ ...startIntent, action, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });
     accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", intent, actionEl);
     return;
   }
@@ -4443,7 +4474,7 @@ appEl.addEventListener("click", async (event) => {
     }, 0);
   };
 
-  if (action === "start-opponent") { startPersonalGame({ opponent: actionEl.getAttribute("data-opponent"), side: homeSide }); return; }
+  if (action === "start-opponent") { startPersonalGame(startIntent); return; }
   if (action === "resume-page" || action === "retry-resume") { await loadResumePage(action === "resume-page" ? Number(actionEl.dataset.page) : resumeSection.page, { renderPending: true }); if (currentRoute.name === "home") render(); return; }
 
   if (action === "create-game") {

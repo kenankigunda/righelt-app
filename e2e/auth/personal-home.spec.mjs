@@ -125,3 +125,50 @@ test("blue self-play keeps its selected affiliation after reload", async ({ page
   await expect(page.locator("#shell-board")).toBeVisible();
   await expect(page.locator("#app")).toHaveAttribute("data-action-affiliation", "blue");
 });
+
+test("Explain activation survives an account response arriving during its press", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/");
+  await page.getByTestId("home-create-game").click();
+  await finishRegistration(page); await acknowledge(page);
+  const explain = page.getByRole("button", { name: "Explain", exact: true });
+  await expect(explain).toBeVisible();
+  let release, intercepted;
+  const held = new Promise(resolve => { intercepted = resolve; });
+  await page.route("**/api/auth/session", async route => {
+    const response = await route.fetch();
+    await new Promise(resolve => { release = resolve; intercepted(); });
+    await route.fulfill({ response });
+  }, { times: 1 });
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await held;
+  await explain.scrollIntoViewIfNeeded();
+  const box = await explain.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  release();
+  await page.waitForResponse(response => new URL(response.url()).pathname === "/api/auth/session");
+  await page.mouse.up();
+  await expect(explain).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => page.evaluate(async () => (await (await fetch("/api/auth/session")).json()).account.preferences.view)).toBe("explanatory");
+});
+
+test("an initial session wait preserves the side chosen when play was requested", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("account-open")).toBeVisible();
+  let release, arrived;
+  const held = new Promise(resolve => { arrived = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route("**/api/auth/session", async route => {
+    const response = await route.fetch(); arrived(); await gate; await route.fulfill({ response });
+  }, { times: 1 });
+  try {
+    await page.reload(); await held;
+    await page.getByRole("radio", { name: "Player 2 · Blue" }).check();
+    await page.getByTestId("home-create-game").click();
+    await page.getByRole("radio", { name: "Player 1 · Red" }).check();
+    release();
+    await finishRegistration(page); await acknowledge(page);
+    await expect(page.getByTestId("game-role")).toContainText("Player 2");
+  } finally { release(); await page.unrouteAll({ behavior: "wait" }); }
+});

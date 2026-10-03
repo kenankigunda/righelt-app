@@ -270,7 +270,7 @@ test("integration shell rerender invalidates an old preview when scenarios close
   assert.deepEqual(harness.runtime.getSelection(), {
     selectedPieceId: "A1",
     source: SOURCE,
-    target: TARGET_A,
+    target: TARGET_B,
   });
   assert.equal(String(harness.boardPreviewLabelEl.textContent).includes("Activate this destination again"), false);
 });

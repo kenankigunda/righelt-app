@@ -1304,3 +1304,18 @@ test("late optimistic undo failure cannot overwrite newer server state or a newe
   assert.deepEqual(store.getGameViewModel("game-revert"),before);
  }
 });
+
+test("blue self-play keeps its side in pending storage before server acknowledgment", async () => {
+  const storage = createMemoryStorage();
+  const { transport, games } = createTransportHarness();
+  let release;
+  const store = createSyncStore({ storage,
+    createTransportStore: () => ({ ...transport, createGame: payload => new Promise(resolve => { release = () => resolve(games.get(payload.gameId)); }) }),
+    createSyncClient: () => ({ connectGame() {}, disconnectGame() {}, disconnectAll() {}, getDesiredGameIds: () => [] }),
+  });
+  const handle = store.createGame({ selfPlayMode: true, creatorSide: "p2" });
+  assert.equal(handle.result.selfPlayStartSide, "p2");
+  const persisted = JSON.parse(storage.getItem("righelt.pendingLocalGames"));
+  assert.equal(persisted[handle.result.id].selfPlayStartSide, "p2");
+  release(); await handle.committed;
+});

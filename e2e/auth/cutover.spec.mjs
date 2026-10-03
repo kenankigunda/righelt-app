@@ -3,13 +3,13 @@ import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
 const password = "A cutover account test password 482";
 const dialog = page => page.getByTestId("account-dialog");
 async function control(action) {
-  expect((await fetch(`http://127.0.0.1:10088/${action}`, { method: "POST" })).status).toBe(200);
+  expect((await fetch(`http://127.0.0.1:${Number(process.env.RIGHELT_AUTH_E2E_WEB_PORT || 9988) + 100}/${action}`, { method: "POST" })).status).toBe(200);
 }
 test.beforeEach(async () => { await control("maintenance-off"); await control("reset-limits"); });
 test.afterEach(async () => control("maintenance-off"));
 async function register(page, username, play = false) {
   await page.goto("/");
-  await page.getByRole("button", { name: play ? "Start new game" : "Sign in", exact: true }).click();
+  await (play ? page.getByTestId("home-create-game") : page.getByRole("button", { name: "Sign in", exact: true })).click();
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
   await dialog(page).getByLabel("Username", { exact: true }).fill(username);
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);

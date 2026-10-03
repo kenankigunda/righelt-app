@@ -31,7 +31,7 @@ test("shell header stacks cleanly on narrow screens", () => {
   );
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-main\s*\{[\s\S]*flex:\s*1 1 auto;/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-main\s*\{[\s\S]*flex:\s*1 1 0;/s,
   );
   assert.match(
     shellStylesSource,

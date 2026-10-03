@@ -330,11 +330,11 @@ export const createAccountController = ({
       available = result.accountsAvailable !== false;
       maintenance = result.maintenance === true;
       siteKey = result.turnstileSiteKey || null;
-      ready = true;
       if (enabled && available) await hydrate(controller.signal);
       else retire({ authenticated: false });
       if (controller.signal.aborted || destroyed)
         throw failure("session_changed");
+      ready = true;
       publish();
       return snapshot();
     };
