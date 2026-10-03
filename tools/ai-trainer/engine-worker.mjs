@@ -3,8 +3,8 @@ import { createInterface } from 'node:readline';
 import { writeFileSync, renameSync } from 'node:fs';
 import { searchRecovery } from './search-recovery.mjs';
 import { createHash } from 'node:crypto';
-import { createInitialState, deterministicStateHash, normalizeState, resolveToStability } from '../../packages/game-engine/src/index.ts';
-import { encodeState, legalActionMap, transition, selectMove, seededRandom, experimentConfig } from '../../packages/computer-player/src/index.ts';
+import { createInitialState, deterministicStateHash, normalizeState, resolveToStability, withEngineComputationGuard } from '../../packages/game-engine/src/index.ts';
+import { encodeState, selectMove, seededRandom, experimentConfig, legalActionMap as engineLegalActionMap, transition as engineTransition } from '../../packages/computer-player/src/index.ts';
 
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity })[Symbol.asyncIterator]();
 const read = async () => {
@@ -50,13 +50,28 @@ export function ruleFingerprint(state) {
   return createHash('sha256').update(JSON.stringify(canonical(normalized))).digest('hex');
 }
 
-class BudgetExpired extends Error {}
+class BudgetExpired extends Error { constructor(reason='deadline') { super(reason); this.reason=reason; } }
 async function main() {
   const job = await read();
   const budgetMs = job.budgetMs ?? 600_000;
   if (!Number.isFinite(budgetMs) || budgetMs <= 0 || budgetMs > 600_000) throw new Error('Invalid job bound');
   const deadline = performance.now() + budgetMs;
   const check = () => { if (performance.now() >= deadline) throw new BudgetExpired(); };
+  const bounded = operation => {
+    let expansions=0;
+    return withEngineComputationGuard(expansion=>{
+      check();
+      if(expansion && ++expansions>experimentConfig.search.maxNodes) throw new BudgetExpired('node-limit');
+    },operation);
+  };
+  const legalActionMap = state => bounded(()=>engineLegalActionMap(state));
+  const transition = (state,action) => bounded(()=>engineTransition(state,action));
+  const diagnose = (state,phase,decision,seed,profile) => {
+    if(!job.diagnosticPath)return;
+    const temporary=`${job.diagnosticPath}.tmp`;
+    writeFileSync(temporary,JSON.stringify({schema:1,jobId:job.id,modelVersion:job.modelVersion,phase,decision,seed,profile,state}));
+    renameSync(temporary,job.diagnosticPath);
+  };
   if (job.command === 'search') {
     let requestId=0;
     const result=await selectMove({state:job.state,seed:job.seed,...searchOptions(job.profile),deadlineMs:deadline},async encoded=>{
@@ -125,7 +140,7 @@ async function main() {
   if (job.kind === 'continuation') {
     const random = seededRandom(job.seed);
     for (let step = 0; !state.continuation && step < 48; step++) {
-      check();
+      check();diagnose(state,'continuation-warmup',step,job.seed);
       const legal = [...legalActionMap(state).values()];
       const forcing = legal.filter(action => action.type === 'push' || action.type === 'rush');
       const choices = forcing.length ? forcing : legal;
@@ -154,11 +169,7 @@ async function main() {
       const seed = (job.seed + n) >>> 0;
       const decisionController=state.sideToMove;
       const profile=arena ? job.profiles[decisionController] : {simulations:experimentConfig.search.selfPlaySimulations,temperature:1,maxValueGap:.1};
-      if (job.diagnosticPath) {
-        const temporary = `${job.diagnosticPath}.tmp`;
-        writeFileSync(temporary, JSON.stringify({schema:1, jobId:job.id, modelVersion:job.modelVersion, decision:n, seed, profile, state}));
-        renameSync(temporary, job.diagnosticPath);
-      }
+      diagnose(state,'search',n,seed,profile);
       const result = await selectMove({ state, seed, ...searchOptions(profile), deadlineMs: deadline }, async encoded => {
         const id = ++requestId;
         send({ type: 'evaluate', id, modelSeat:decisionController, input: Array.from(encoded) });
@@ -179,7 +190,7 @@ async function main() {
     }
   } catch (error) {
     if (!(error instanceof BudgetExpired)) throw error;
-    send({ type: 'unfinished', id: job.id, reason: 'budget', decisions: decisions.length }); return;
+    send({ type: 'unfinished', id: job.id, reason: error.reason, decisions: decisions.length }); return;
   }
   send({ type: 'game', game: { schema: 1, id: job.id, familyId: job.familyId, partition: job.partition, kind: job.kind,
     seed: job.seed, modelVersion: job.modelVersion, rootState, warmupActions, initialState, decisions,
@@ -187,7 +198,7 @@ async function main() {
     termination, truncationReason, outcome: state.outcome, finalHash: deterministicStateHash(state) } });
 }
 main().catch(error => {
-  send({ type: error instanceof BudgetExpired ? 'unfinished' : 'error', message: error.message });
+  send({ type: error instanceof BudgetExpired ? 'unfinished' : 'error', message: error.message, ...(error instanceof BudgetExpired ? {reason:error.reason} : {}) });
   if (!(error instanceof BudgetExpired)) process.exitCode = 1;
 })
   .finally(() => process.stdin.destroy());
