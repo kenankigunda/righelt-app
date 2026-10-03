@@ -87,9 +87,14 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 1100, height: 800 
     await page.clock.fastForward(20000);
     await expect(logo).toHaveAttribute("data-player", "red");
     await expect(logo).toHaveAttribute("data-cell", "0");
-    const bounds = await logo.boundingBox();
-    expect(bounds.width).toBeGreaterThan(160);
-    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
+    // A live refresh may replace the node between locator resolution and a
+    // geometry read. Sample the current DOM and bounds together.
+    await expect.poll(() => page.evaluate((width) => {
+      const logos = document.querySelectorAll("[data-brand-wordmark]");
+      const bounds = logos[0]?.getBoundingClientRect();
+      return logos.length === 1 && Boolean(bounds && bounds.width > 160 &&
+        bounds.height > 0 && bounds.x >= 0 && bounds.right <= width);
+    }, viewport.width)).toBe(true);
     const result = await runScopedAxeScan({ page, include: [".shell-header"], testInfo });
     expect(result.violations).toEqual([]);
     await testInfo.attach(`foundation-${viewport.width}`, { body: await page.screenshot({ path: testInfo.outputPath("foundation.png") }), contentType: "image/png" });
