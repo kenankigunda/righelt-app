@@ -277,8 +277,21 @@ test("interrupted registration resumes with a replacement recovery code and an e
   await expect(dialog(page)).toBeVisible();
   expect(new URL(page.url()).hash).not.toContain("game/");
   await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  let releaseSession, heldSession;
+  const sessionHeld = new Promise(resolve => { heldSession = resolve; });
+  const sessionReleased = new Promise(resolve => { releaseSession = resolve; });
+  const holdSession = async route => {
+    const response = await route.fetch();
+    heldSession();
+    await sessionReleased;
+    await route.fulfill({ response });
+  };
+  await page.route("**/api/auth/session", holdSession);
   await page.reload();
+  await sessionHeld;
   await page.getByRole("button", { name: "Start new game", exact: true }).click();
+  releaseSession();
+  await page.unrouteAll({ behavior: "wait" });
   await expect(dialog(page).getByRole("heading", { name: "Replace recovery code" })).toBeVisible();
   await dialog(page).getByLabel("Current password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Prepare replacement code", exact: true }).click();
@@ -389,6 +402,7 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
     await released;
     await route.fulfill({ response });
   });
+  try {
   await page.goto("/");
   const trigger = page.getByRole("button", { name: "Sign in", exact: true });
   await expect(trigger).toBeVisible();
@@ -402,6 +416,10 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
   if (gesture === "pointer") await page.mouse.up();
   else await page.keyboard.up("Space");
   await expect(dialog(page)).toBeVisible();
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
 });
 
 test("a stalled startup read recovers without granting guest play", async ({ page }) => {
@@ -501,9 +519,13 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
   await register(page, second);
   await account(page);
   await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
+  await expect(dialog(page)).not.toBeVisible();
   await register(page, first);
   await account(page);
   await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
+  await expect(dialog(page)).not.toBeVisible();
   const sibling = await page.context().newPage();
   let creates = 0;
   page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates++; });
@@ -534,7 +556,7 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
     expect(creates).toBe(0);
     expect(new URL(page.url()).hash).not.toContain("game/");
   } finally {
-    await page.evaluate(() => window.__heldAccountLists.splice(0).forEach(resolve => resolve()));
+    if (!page.isClosed()) await page.evaluate(() => window.__heldAccountLists.splice(0).forEach(resolve => resolve()));
     await sibling.close();
   }
 });

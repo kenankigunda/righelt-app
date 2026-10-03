@@ -875,3 +875,25 @@ test("only the initiating local credential operation owns its session transition
     assert.equal(fixture.transitionSources.at(-1).owner, null);
   } finally { fixture.client.destroy(); }
 });
+test("startup is not ready until the cookie session has been hydrated", async () => {
+  let release, entered;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const held = new Promise(resolve => { release = resolve; });
+  const controller = createAccountController({ storage: storage(), eventTarget: new EventTarget(), fetcher: async route => {
+    if (route === "/api/shell/bootstrap") return Response.json({ authProtocolVersion: 1, accountsRequired: true });
+    entered();
+    await held;
+    return Response.json({ ...state(), recoveryAcknowledgmentRequired: true });
+  } });
+  try {
+    const started = controller.start();
+    await waiting;
+    assert.equal(controller.snapshot().ready, false);
+    await assert.rejects(controller.act("login", {}), error => error.code === "auth_not_ready");
+    release();
+    await started;
+    assert.equal(controller.snapshot().ready, true);
+    assert.equal(controller.snapshot().session.recoveryAcknowledgmentRequired, true);
+    assert.equal(controller.canPlay(), false);
+  } finally { release(); controller.destroy(); }
+});

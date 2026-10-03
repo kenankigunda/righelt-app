@@ -135,9 +135,14 @@ const account = createAccountController({ storage,
 const accountDialog = createAccountDialog({ controller: account, onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
   onComplete: async intent => {
     const generation = account.snapshot().generation;
-    await syncRouteDataAndLiveChannels().catch(() => {});
+    const hash = window.location.hash;
+    try { await syncRouteDataAndLiveChannels(); } catch { return; }
+    if (generation !== account.snapshot().generation || hash !== window.location.hash) return;
+    // This read has hydrated the current route even if the transport reset's
+    // independent background read is still pending. Render the actual action.
+    routeHydrated = true;
     render({ animatePanels: false });
-    if (!intent || generation !== account.snapshot().generation || !account.canPlay() || intent.hash !== window.location.hash) return;
+    if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
     const selector = `[data-action="${CSS.escape(intent.action)}"]${intent.gameId ? `[data-game-id="${CSS.escape(intent.gameId)}"]` : ""}${intent.moveIndex ? `[data-move-index="${CSS.escape(intent.moveIndex)}"]` : ""}`;
     appEl.querySelector(selector)?.click();
   },
@@ -4067,16 +4072,39 @@ window.addEventListener("load", () => {
   scheduleResponsiveHomeSectionPageSizes();
 });
 
+// The first click may arrive while the initial cookie is still being read.
+// Resolve that session before choosing login versus recovery acknowledgment.
+const waitForAccountGate = async () => {
+  const hash = window.location.hash;
+  let awaitedLogout = false;
+  try {
+    if (!account.snapshot().ready) await account.start();
+    if (account.snapshot().pendingLogout) {
+      awaitedLogout = true;
+      await account.hydrate();
+    }
+  } catch { return false; }
+  const state = account.snapshot();
+  return hash === window.location.hash && state.ready && !state.pendingLogout
+    && (!awaitedLogout || !state.session.authenticated);
+};
+const openBoardAccountGate = async source => {
+  if (!await waitForAccountGate()) return;
+  const state = account.snapshot();
+  if (state.available === false || state.maintenance || account.canPlay() || accountDialog.isOpen()) return;
+  accountDialog.open(state.session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, source);
+};
+
 appEl.addEventListener("pointerdown", event => {
   if (event.target.closest?.("#shell-board") && !account.canPlay()) {
     event.preventDefault();event.stopImmediatePropagation();
-    accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, event.target.closest?.("button, [tabindex]"));
+    void openBoardAccountGate(event.target.closest?.("button, [tabindex]"));
   }
 }, true);
 appEl.addEventListener("click", event => {
   if (event.target.closest?.("#shell-board") && !account.canPlay()) {
     event.preventDefault();event.stopImmediatePropagation();
-    if (!accountDialog.isOpen()) accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, event.target.closest?.("button, [tabindex]"));
+    void openBoardAccountGate(event.target.closest?.("button, [tabindex]"));
   }
 }, true);
 appEl.addEventListener("click", async (event) => {
@@ -4120,6 +4148,10 @@ appEl.addEventListener("click", async (event) => {
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") { accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
   const accountGatedActions = new Set(["create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
+  if (accountGatedActions.has(action) && (!account.snapshot().ready || account.snapshot().pendingLogout)) {
+    event.preventDefault();
+    if (!await waitForAccountGate()) return;
+  }
   if (accountGatedActions.has(action) && !account.canPlay()) {
     event.preventDefault();
     const intent = safeAccountIntent({ hash: window.location.hash, action, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });

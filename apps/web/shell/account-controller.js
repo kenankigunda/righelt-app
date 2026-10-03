@@ -320,11 +320,11 @@ export const createAccountController = ({
         throw failure("upgrade_required");
       enabled = result.accountsRequired;
       siteKey = result.turnstileSiteKey || null;
-      ready = true;
       if (enabled) await hydrate(controller.signal);
       else retire({ authenticated: false });
       if (controller.signal.aborted || destroyed)
         throw failure("session_changed");
+      ready = true;
       publish();
       return snapshot();
     };
