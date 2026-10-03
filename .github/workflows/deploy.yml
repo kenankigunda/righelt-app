@@ -66,6 +66,7 @@ jobs:
           TURNSTILE_SECRET: ${{ secrets.TURNSTILE_SECRET }}
           ACCOUNT_SMOKE_USERNAME: ${{ secrets.ACCOUNT_SMOKE_USERNAME }}
           ACCOUNT_SMOKE_PASSWORD: ${{ secrets.ACCOUNT_SMOKE_PASSWORD }}
+          ACCOUNT_SMOKE_LEGACY_GAME_ID: ${{ vars.ACCOUNT_SMOKE_LEGACY_GAME_ID }}
           PREPARE_ACCOUNTS: ${{ inputs.prepare_accounts || 'false' }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
@@ -109,6 +110,7 @@ jobs:
           TURNSTILE_SECRET: ${{ secrets.TURNSTILE_SECRET }}
           ACCOUNT_SMOKE_USERNAME: ${{ secrets.ACCOUNT_SMOKE_USERNAME }}
           ACCOUNT_SMOKE_PASSWORD: ${{ secrets.ACCOUNT_SMOKE_PASSWORD }}
+          ACCOUNT_SMOKE_LEGACY_GAME_ID: ${{ vars.ACCOUNT_SMOKE_LEGACY_GAME_ID }}
           PREPARE_ACCOUNTS: ${{ inputs.prepare_accounts || 'false' }}
         run: |
           node scripts/deploy-account-services.mjs
