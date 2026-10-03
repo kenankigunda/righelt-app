@@ -10,23 +10,7 @@ const wranglerRequire = createRequire(require.resolve("wrangler/package.json"));
 const { Miniflare } = wranglerRequire("miniflare");
 const { build } = wranglerRequire("esbuild");
 const root = path.resolve(import.meta.dirname, "../../..");
-const fixture = `import { GameRoomDO as ActualGameRoom } from './packages/api-handler/src/game-room-do.ts';
-export class GameRoomDO extends ActualGameRoom {
- constructor(state, env) {
-  let lose = false;
-  super(state, { ...env, DB: { prepare: (...args) => env.DB.prepare(...args), batch: async (...args) => {
-   const result = await env.DB.batch(...args);
-   if (lose) { lose = false; throw new Error('harness_lost_commit_response'); }
-   return result;
-  } } });
-  this.lose = () => { lose = true; };
- }
- fetch(request) { if (request.headers.get('x-harness-lose-response')) this.lose(); return super.fetch(request); }
-}
-export default { async fetch(request, env) {
- const gameId = request.headers.get('x-game-id');
- return env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName(gameId)).fetch(request);
-}};`;
+import { fixture } from "./fixture.mjs";
 
 test("R-01/R-02 actual Workers/D1 rollback, ordering, receipt restart and migration", { timeout: 120000 }, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "righelt-t114-runtime-"));
