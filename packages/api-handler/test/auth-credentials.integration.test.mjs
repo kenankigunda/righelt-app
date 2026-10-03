@@ -1048,3 +1048,129 @@ test("expired preparations and hash-service errors do not mutate credentials or 
     await f.close();
   }
 });
+
+test("account settings are guarded, public profile is minimal, and tutorial progress survives replay", async () => {
+  const f = await fixture();
+  try {
+    const a = new f.Browser(),
+      b = new f.Browser();
+    await a.register("ProfileUser");
+    await b.login("ProfileUser");
+    const before = (await a.session()).data;
+    const update = await a.call(
+      "/api/account",
+      {
+        displayName: "Cafe\u0301 👋",
+        preferences: { view: "explanatory", tutorial: "completed" },
+      },
+      { method: "PATCH" },
+    );
+    assert.equal(update.status, 200);
+    assert.equal(update.data.contextId, before.contextId);
+    assert.equal(update.data.account.displayName, "Café 👋");
+    assert.deepEqual((await b.session()).data.account.preferences, {
+      view: "explanatory",
+      tutorial: "completed",
+    });
+    await a.call(
+      "/api/account",
+      { preferences: { tutorial: "skipped" } },
+      { method: "PATCH" },
+    );
+    assert.equal(
+      (await a.session()).data.account.preferences.tutorial,
+      "completed",
+    );
+    const profile = await new f.Browser().call(
+      "/api/profiles/profileuser",
+      {},
+      { method: "GET" },
+    );
+    assert.deepEqual(Object.keys(profile.data).sort(), [
+      "displayName",
+      "joinedMonth",
+      "username",
+    ]);
+    assert.match(profile.data.joinedMonth, /^\d{4}-\d{2}$/);
+    assert.equal(profile.data.displayName, "Café 👋");
+    assert.equal(
+      (
+        await a.call(
+          "/api/account",
+          { preferences: { view: ["focused"] } },
+          { method: "PATCH" },
+        )
+      ).status,
+      400,
+    );
+    assert.equal(
+      (await a.call("/api/account", { username: "Other" }, { method: "PATCH" }))
+        .status,
+      400,
+    );
+    assert.equal(
+      (
+        await a.call(
+          "/api/account",
+          { displayName: "Changed" },
+          { method: "PATCH", headers: { Origin: "https://foreign.test" } },
+        )
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await a.call(
+          "/api/account",
+          { displayName: "Changed" },
+          { method: "PATCH", headers: { "X-Righelt-Session": "x" } },
+        )
+      ).status,
+      409,
+    );
+    await a.call("/api/auth/logout");
+    assert.equal(
+      (
+        await a.call(
+          "/api/account",
+          { displayName: "Changed" },
+          { method: "PATCH" },
+        )
+      ).status,
+      401,
+    );
+    await a.login("ProfileUser");
+    const guardedEnv = {
+      ...f.env,
+      DB: {
+        prepare: (sql) => f.db.prepare(sql),
+        batch: async (statements) => {
+          await f.db
+            .prepare(
+              "UPDATE account_sessions SET revoked_at=1 WHERE context_id=?",
+            )
+            .bind(a.context)
+            .run();
+          return f.db.batch(statements);
+        },
+      },
+    };
+    assert.equal(
+      (
+        await a.call(
+          "/api/account",
+          { displayName: "Race must rollback" },
+          { method: "PATCH", env: guardedEnv },
+        )
+      ).status,
+      409,
+    );
+    assert.equal(
+      (await b.call("/api/profiles/profileuser", {}, { method: "GET" })).data
+        .displayName,
+      "Café 👋",
+    );
+  } finally {
+    await f.close();
+  }
+});

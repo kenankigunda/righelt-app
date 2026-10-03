@@ -1,6 +1,7 @@
 import passwords from "../../shared-types/data/common-passwords.json";
 import {
   normalizeUsername,
+  validateAccountPatch,
   normalizePassword,
   normalizeDisplayName,
   isPasswordAllowed,
@@ -410,7 +411,12 @@ export async function handleAuthRequest(
   } = {},
 ): Promise<Response | null> {
   const path = new URL(request.url).pathname;
-  if (!path.startsWith("/api/auth/")) return null;
+  if (
+    !path.startsWith("/api/auth/") &&
+    path !== "/api/account" &&
+    !path.startsWith("/api/profiles/")
+  )
+    return null;
   if (rawEnv.AUTH_ENABLED !== "true")
     return json({ ok: false, error: "not_found" }, 404);
   try {
@@ -427,7 +433,31 @@ export async function handleAuthRequest(
         ok: true,
         ...sessionState(await authenticatedActor(request, env)),
       });
-    if (request.method !== "POST") throw new AuthProblem("invalid_input", 405);
+    if (request.method === "GET" && path.startsWith("/api/profiles/")) {
+      const name = normalizeUsername(
+        decodeURIComponent(path.slice("/api/profiles/".length)),
+      );
+      if (!name.ok) throw new AuthProblem("invalid_input");
+      const profile = await db
+        .prepare(
+          "SELECT username,display_name,created_at FROM accounts WHERE username_canonical=?",
+        )
+        .bind(name.value.canonical)
+        .first<{
+          username: string;
+          display_name: string;
+          created_at: number;
+        }>();
+      return profile
+        ? json({
+            username: profile.username,
+            displayName: profile.display_name,
+            joinedMonth: new Date(profile.created_at).toISOString().slice(0, 7),
+          })
+        : json({ ok: false, error: "not_found" }, 404);
+    }
+    if (request.method !== (path === "/api/account" ? "PATCH" : "POST"))
+      throw new AuthProblem("invalid_input", 405);
     const body = await authBody(request, env);
     const actor = await authenticatedActor(request, env);
     if (
@@ -451,6 +481,32 @@ export async function handleAuthRequest(
         completed.account_id !== actor.account_id
       )
         throw new AuthProblem("session_changed", 409);
+    }
+    if (path === "/api/account") {
+      const current = requireActor(actor),
+        parsed = validateAccountPatch(body, current.username);
+      if (!parsed.ok) throw new AuthProblem("invalid_input");
+      const patch = parsed.value,
+        id = randomToken();
+      await guarded(
+        db,
+        [sessionGuard(db, id, current.token_hash, current.context_id, false)],
+        [
+          db
+            .prepare(
+              "UPDATE accounts SET display_name=COALESCE(?,display_name),view_preference=COALESCE(?,view_preference),tutorial_state=CASE WHEN tutorial_state='completed' THEN tutorial_state ELSE COALESCE(?,tutorial_state) END WHERE account_id=?",
+            )
+            .bind(
+              patch.displayName ?? null,
+              patch.preferences?.view ?? null,
+              patch.preferences?.tutorial ?? null,
+              current.account_id,
+            ),
+          renewal(db, current.token_hash),
+        ],
+        [id],
+      );
+      return await sessionResponse(db, readAuthCookie(request)!);
     }
     const attempt = async (
       kind: "register" | "login" | "recovery" | "change",

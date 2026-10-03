@@ -67,6 +67,7 @@ export const createAccountController = ({
   const controllers = new Set(),
     network = new Set();
   let authorityLossPending = false;
+  let accountMetadataRevision = 0;
   let channel = null;
   try {
     channel = channelFactory?.();
@@ -151,6 +152,12 @@ export const createAccountController = ({
         }
       : { authenticated: false };
     if (
+      next.authenticated &&
+      session.authenticated &&
+      next.contextId === session.contextId
+    )
+      next.expiresAt = Math.max(next.expiresAt, session.expiresAt);
+    if (
       session.contextId !== next.contextId ||
       session.authenticated !== next.authenticated ||
       session.recoveryAcknowledgmentRequired !==
@@ -184,6 +191,15 @@ export const createAccountController = ({
       );
       expiryTimer.unref?.();
     }
+  };
+  const acceptObservedSession = (next, observedRevision) => {
+    if (
+      next.authenticated &&
+      next.contextId === session.contextId &&
+      observedRevision !== accountMetadataRevision
+    )
+      next = { ...next, account: session.account };
+    accept(next);
   };
   const request = async (
     path,
@@ -272,8 +288,9 @@ export const createAccountController = ({
       await finishLogout();
       return snapshot();
     }
+    const metadataRevision = accountMetadataRevision;
     const next = await request("/api/auth/session");
-    accept(next);
+    acceptObservedSession(next, metadataRevision);
     return snapshot();
   };
   const start = async () => {
@@ -302,10 +319,11 @@ export const createAccountController = ({
       return;
     if (!force && now() - lastActivity < ACTIVITY_THROTTLE_MS) return;
     lastActivity = now();
-    const epoch = generation;
+    const epoch = generation,
+      metadataRevision = accountMetadataRevision;
     try {
       const result = await request("/api/auth/activity", {});
-      accept(result);
+      acceptObservedSession(result, metadataRevision);
     } catch (error) {
       if (
         epoch === generation &&
@@ -422,6 +440,27 @@ export const createAccountController = ({
       controllers.delete(controller);
     }
   };
+  let accountUpdateQueue = Promise.resolve();
+  const updateAccount = (patch) => {
+    const epoch = generation;
+    accountMetadataRevision++;
+    const update = accountUpdateQueue.then(async () => {
+      if (epoch !== generation || destroyed) throw failure("session_changed");
+      const response = await authenticatedFetch("/api/account", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const result = await response.json();
+      if (!response.ok || result.ok === false)
+        throw failure(result.error || "temporarily_unavailable");
+      accountMetadataRevision++;
+      accept(result);
+      return result;
+    });
+    accountUpdateQueue = update.catch(() => {});
+    return update;
+  };
   const authorityLost = () => {
     if (readPending()) {
       void finishLogout().catch(() => publish());
@@ -502,6 +541,7 @@ export const createAccountController = ({
     fetch: authenticatedFetch,
     retire,
     authorityLost,
+    updateAccount,
     canPlay: () =>
       !enabled ||
       (session.authenticated &&

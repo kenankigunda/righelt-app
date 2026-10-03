@@ -1,3 +1,4 @@
+import { participantButton, participantName, createPublicProfileDialog } from './public-profile.js';
 import { createAccountController, safeAccountIntent } from './account-controller.js';
 import { createAccountDialog } from './account-dialog.js';
 import { recoveryMessage, sharedMutationActions } from "./recovery-view.js";
@@ -123,13 +124,14 @@ const createMemoryStorageFallback = () => {
 };
 
 const storage = (() => { try { return window.localStorage || createMemoryStorageFallback(); } catch { return createMemoryStorageFallback(); } })();
+const publicProfileDialog = createPublicProfileDialog();
 let accountInitialized = false;
 let accountStartupError = "";
 const account = createAccountController({ storage,
   onTransition: next => { if (accountInitialized) resetAccountTransport(next); },
-  onChange: () => { if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) render({ animatePanels: false, includeBoard: false }); },
+  onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); } },
 });
-const accountDialog = createAccountDialog({ controller: account, getSiteKey: () => account.snapshot().siteKey,
+const accountDialog = createAccountDialog({ controller: account, onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
   onComplete: async intent => {
     await syncRouteDataAndLiveChannels().catch(() => {});
     render({ animatePanels: false });
@@ -1976,7 +1978,7 @@ const renderDebugContent = () => {
       : route.name === "tutorial"
         ? {
             tutorial: tutorial.current(),
-            completed: bootstrap.tutorialCompleted ?? false,
+            completed: account.snapshot().session.account?.preferences?.tutorial === "completed",
           }
         : {
             route: route.name,
@@ -2505,7 +2507,7 @@ const renderJoinInvitePanel = (game, inviteLink) => {
             (request) => {
               const approveRequestButtonKey = getApproveRequestButtonKey(game.id, request.identityId);
               return `<li data-testid="pending-join-request" data-requester-id="${escapeHtml(request.identityId)}">
-              <span class="mono">${escapeHtml(request.identityId)}</span> requests ${renderSeatLabel(request.requestedSeat)}
+              ${participantButton(request)} requests ${renderSeatLabel(request.requestedSeat)}
               <button data-action="approve-request" data-game-id="${escapeHtml(game.id)}" data-requester-id="${escapeHtml(
                 request.identityId,
               )}" data-testid="approve-request-inline"${renderButtonStateAttributes({
@@ -2563,7 +2565,7 @@ const renderParticipantsPanel = (game) => {
       if (!entry.value) {
         return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: <span class="small">Open seat</span></li>`;
       }
-      return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: <span class="mono">${escapeHtml(entry.value.identityId)}</span> ${formatStatus(entry.value.connected)}</li>`;
+      return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: ${participantButton(entry.value)} ${formatStatus(entry.value.connected)}</li>`;
     })
     .join("");
 
@@ -2573,7 +2575,7 @@ const renderParticipantsPanel = (game) => {
       : game.viewers
           .map(
             (viewer) =>
-              `<li data-testid="participant-viewer">Viewer: <span class="mono">${escapeHtml(viewer.identityId)}</span> ${formatStatus(viewer.connected)}</li>`,
+              `<li data-testid="participant-viewer">Viewer: ${participantButton(viewer)} ${formatStatus(viewer.connected)}</li>`,
           )
           .join("");
   return `
@@ -2584,6 +2586,7 @@ const renderParticipantsPanel = (game) => {
 
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
+  const currentNames = [game.player1,game.player2].filter(person => person?.profile).map(participantName).join(" · ");
   const selectedMove = typeof game.historyIndex === "number" && Array.isArray(game.moves) ? game.moves[game.historyIndex] ?? null : null;
   const historyMoveNumber = typeof selectedMove?.displayMoveNumber === "number" ? String(selectedMove.displayMoveNumber) : "?";
   const hasHistoryMoves = Array.isArray(game.moves) && game.moves.length > 0;
@@ -2596,6 +2599,7 @@ const renderHistoryPanel = (game) => {
 
   return `
     <h2>History</h2>
+    ${currentNames ? `<p class="small" data-testid="history-player-names">${currentNames}</p>` : ""}
     <div class="section-followup">
       ${historyBanner}
       <ol class="history-list" data-testid="history-list">${historyRows}</ol>
@@ -3022,7 +3026,7 @@ const renderApprovalGate = (game, request) => {
       <section class="panel invite-gate-modal">
         <p class="small invite-gate-kicker">Approval required</p>
         <h2>Respond to this player request</h2>
-        <p><span class="mono">${escapeHtml(request.identityId)}</span> wants to join as ${renderSeatLabel(request.requestedSeat)}.</p>
+        <p>${participantButton(request)} wants to join as ${renderSeatLabel(request.requestedSeat)}.</p>
         <div class="invite-choice-list">
           <div class="invite-choice-row">
             <button
@@ -3232,6 +3236,7 @@ const renderTutorial = (gameId) => {
       <div class="row">
         <button data-action="tutorial-next">Next</button>
         <button class="secondary" data-action="tutorial-skip">Skip Step</button>
+        <button class="secondary" data-action="tutorial-skip-all" data-game-id="${escapeHtml(gameId || "")}">Skip tutorial</button>
         <button class="secondary" data-action="tutorial-complete" data-game-id="${escapeHtml(gameId || "")}">Finish Tutorial</button>
       </div>
     </section>
@@ -4089,6 +4094,7 @@ appEl.addEventListener("click", async (event) => {
 
   const action = actionEl.getAttribute("data-action");
   const actionGameId = actionEl.getAttribute("data-game-id") || currentRoute.gameId;
+  if (action === "public-profile") { void publicProfileDialog.open(actionEl.getAttribute("data-username"), actionEl); return; }
   if (action === "account-open") { accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
   const accountGatedActions = new Set(["create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
   if (accountGatedActions.has(action) && !account.canPlay()) {
@@ -4495,8 +4501,12 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
-  if (action === "tutorial-complete") {
-    saveTutorialCompleted(storage, true);
+  if (action === "tutorial-complete" || action === "tutorial-skip-all") {
+    if (account.snapshot().enabled && account.snapshot().session.authenticated) {
+      const epoch = account.snapshot().generation;
+      try { await account.updateAccount({ preferences: { tutorial: action === "tutorial-complete" ? "completed" : "skipped" } }); if (account.snapshot().generation !== epoch) return; }
+      catch { window.__righeltLastError = "Could not save tutorial progress. Try again."; return; }
+    } else if (!account.snapshot().enabled) saveTutorialCompleted(storage, true);
     tutorial.reset();
     const gameId = actionEl.getAttribute("data-game-id");
     navigateTo(gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : buildHomeHash(getCurrentFlyoutState()));

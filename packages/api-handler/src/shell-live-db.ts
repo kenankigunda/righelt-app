@@ -15,7 +15,7 @@ import {
   toStaticGameCard,
 } from "./shell-live-core";
 
-const LIVE_GAMES_TABLE = "live_games";
+export const LIVE_GAMES_TABLE = "live_games";
 const LIVE_INVITES_TABLE = "live_invites";
 const LIVE_EVENTS_TABLE = "live_events";
 

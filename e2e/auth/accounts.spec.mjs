@@ -301,3 +301,80 @@ test("interrupted registration resumes with a replacement recovery code and an e
   await dialog(page).getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
 });
+
+test("current public names and view preferences follow the account across browsers", async ({ page, browser }) => {
+  const username = uniqueName();
+  await register(page, username, { gate: true });
+  const gameUrl = page.url();
+  const separate = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const other = await separate.newPage();
+    await other.goto(gameUrl);
+    await signIn(other, username);
+    await account(other);
+    await expect(dialog(other).getByLabel("View preference")).toHaveValue("focused");
+    await dialog(other).getByRole("button", { name: "Cancel", exact: true }).click();
+    await account(page);
+    await dialog(page).getByLabel("Display name", { exact: true }).fill("Étoile 🌟");
+    await dialog(page).getByLabel("View preference").selectOption("explanatory");
+    await dialog(page).getByRole("button", { name: "Save account settings" }).click();
+    await expect(dialog(page).locator("[data-account-status]")).toHaveText("Account settings saved.");
+    await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(page.url()).toBe(gameUrl);
+    await other.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await account(other);
+    await expect(dialog(other).getByLabel("Display name", { exact: true })).toHaveValue("Étoile 🌟");
+    await expect(dialog(other).getByLabel("View preference")).toHaveValue("explanatory");
+    await dialog(other).getByRole("button", { name: "Cancel", exact: true }).click();
+    await other.reload();
+    await expect(other.getByTestId("participant-player-1")).toContainText("Étoile 🌟");
+    await expect(other.getByTestId("participant-player-1")).toContainText(`@${username}`);
+    await expect(other.getByTestId("history-player-names")).toContainText("Étoile 🌟");
+    const spectator = await browser.newContext({ ignoreHTTPSErrors: true });
+    try {
+      const guest = await spectator.newPage();
+      await guest.goto(gameUrl);
+      const person = guest.getByTestId("participant-player-1").getByRole("button");
+      await expect(person).toContainText("Étoile 🌟");
+      await person.click();
+      const profileDialog = guest.getByTestId("public-profile");
+      await expect(profileDialog.getByRole("heading", { name: "Player profile" })).toBeVisible();
+      await expect(profileDialog).toContainText(`@${username}`);
+      await expect(profileDialog).toContainText("Étoile 🌟");
+      await profileDialog.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(person).toBeFocused();
+      const publicResponse = await spectator.request.get(new URL(`/api/profiles/${username.toLowerCase()}`, gameUrl).href);
+      expect(publicResponse.headers()["cache-control"]).toBe("no-store");
+      const profile = await publicResponse.json();
+      expect(Object.keys(profile).sort()).toEqual(["displayName", "joinedMonth", "username"]);
+      expect(profile).toMatchObject({ username, displayName: "Étoile 🌟", joinedMonth: expect.stringMatching(/^\d{4}-\d{2}$/) });
+    } finally { await spectator.close(); }
+  } finally { await separate.close(); }
+});
+
+test("tutorial skipping and completion persist without manual replay resetting them", async ({ page, browser }) => {
+  const username = uniqueName();
+  await register(page, username);
+  await account(page);
+  await dialog(page).getByRole("button", { name: "Replay tutorial" }).click();
+  await page.getByRole("button", { name: "Skip tutorial", exact: true }).click();
+  await expect(page).toHaveURL(/#\/(?:\?|$)/);
+  await account(page);
+  await expect(page.getByTestId("tutorial-status")).toHaveText("Tutorial: skipped");
+  await dialog(page).getByRole("button", { name: "Replay tutorial" }).click();
+  await page.getByRole("button", { name: "Finish Tutorial", exact: true }).click();
+  await expect(page).toHaveURL(/#\/(?:\?|$)/);
+  const separate = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const other = await separate.newPage();
+    await other.goto(page.url());
+    await signIn(other, username);
+    await account(other);
+    await expect(other.getByTestId("tutorial-status")).toHaveText("Tutorial: completed");
+    await dialog(other).getByRole("button", { name: "Replay tutorial" }).click();
+    await other.getByRole("button", { name: "Skip tutorial", exact: true }).click();
+    await expect(other).toHaveURL(/#\/(?:\?|$)/);
+    await account(other);
+    await expect(other.getByTestId("tutorial-status")).toHaveText("Tutorial: completed");
+  } finally { await separate.close(); }
+});

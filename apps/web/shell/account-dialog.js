@@ -27,6 +27,7 @@ export const createAccountDialog = ({
   controller,
   document = globalThis.document,
   onComplete = () => {},
+  onTutorial = () => {},
   getSiteKey = () => null,
 } = {}) => {
   const dialog = document.createElement("dialog");
@@ -71,7 +72,7 @@ export const createAccountDialog = ({
     const session = controller.snapshot().session;
     let body = "";
     if (mode === "account")
-      body = `<p><bdi>${escapeHtml(session.account?.displayName)}</bdi> <span class="small">@${escapeHtml(session.account?.username)}</span></p><button type="button" data-mode="password">Change password</button><button type="button" data-mode="replacement">Replace recovery code</button><button type="button" data-mode="login">Switch account</button><button type="button" data-logout>Sign out</button>`;
+      body = `<p><bdi>${escapeHtml(session.account?.displayName)}</bdi> <span class="small">@${escapeHtml(session.account?.username)}</span></p><label for="account-displayName">Display name</label><input id="account-displayName" name="displayName" autocomplete="nickname" value="${escapeHtml(session.account?.displayName)}"><label for="account-view">View preference</label><select id="account-view" name="view"><option value="focused" ${session.account?.preferences?.view !== "explanatory" ? "selected" : ""}>Focused</option><option value="explanatory" ${session.account?.preferences?.view === "explanatory" ? "selected" : ""}>Explanatory</option></select><button type="submit">Save account settings</button><p data-testid="tutorial-status">Tutorial: ${escapeHtml(session.account?.preferences?.tutorial || "new")}</p><button type="button" data-tutorial>Replay tutorial</button><button type="button" data-mode="password">Change password</button><button type="button" data-mode="replacement">Replace recovery code</button><button type="button" data-mode="login">Switch account</button><button type="button" data-logout>Sign out</button>`;
     else if (mode === "code")
       body = `<p>Save this code somewhere private. It is the only way to recover your account without your password. If both are lost, we cannot promise account recovery.</p><output data-testid="recovery-code" class="account-recovery-code">${escapeHtml(code)}</output><div class="account-actions"><button type="button" data-copy>Copy recovery code</button><button type="button" data-download>Download recovery code</button></div><label class="account-check"><input type="checkbox" name="saved" required> I saved my recovery code</label><button type="submit">Continue</button>`;
     else {
@@ -142,7 +143,9 @@ export const createAccountDialog = ({
     // Safari does not focus pointer-clicked buttons before opening a dialog.
     trigger =
       source ||
-      (document.activeElement !== document.body ? document.activeElement : null);
+      (document.activeElement !== document.body
+        ? document.activeElement
+        : null);
     values = {};
     mode = next;
     const session = controller.snapshot().session;
@@ -299,6 +302,11 @@ export const createAccountDialog = ({
       }
       return;
     }
+    if (button.hasAttribute("data-tutorial")) {
+      close();
+      onTutorial();
+      return;
+    }
     if (button.hasAttribute("data-logout")) {
       await controller.logout();
       close();
@@ -322,6 +330,18 @@ export const createAccountDialog = ({
       let result;
       const token = challengeToken ? { challengeToken } : {};
       challengeToken = "";
+      if (mode === "account") {
+        result = await controller.updateAccount({
+          displayName: data.displayName,
+          preferences: { view: data.view },
+        });
+        if (marker === flow && dialog.open) {
+          render();
+          status("Account settings saved.");
+          onComplete(null);
+        }
+        return;
+      }
       if (mode === "code")
         result = await controller.act(finish, {
           saved: true,
@@ -397,5 +417,17 @@ export const createAccountDialog = ({
       if (marker === flow) buttons.forEach((b) => (b.disabled = false));
     }
   });
-  return { open, close, isOpen: () => dialog.open, element: dialog };
+  const refreshSession = () => {
+    if (!dialog.open || mode !== "account") return;
+    const node = dialog.querySelector('[data-testid="tutorial-status"]');
+    if (node)
+      node.textContent = `Tutorial: ${controller.snapshot().session.account?.preferences?.tutorial || "new"}`;
+  };
+  return {
+    open,
+    close,
+    refreshSession,
+    isOpen: () => dialog.open,
+    element: dialog,
+  };
 };

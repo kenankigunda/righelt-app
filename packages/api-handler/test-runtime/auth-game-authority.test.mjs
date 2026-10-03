@@ -200,10 +200,14 @@ test(
       assert.equal(create.status, 200, JSON.stringify(create.body));
       assert.equal(create.body.game.ownershipMode, "account_v1");
       assert.equal(create.body.game.inviteTokens, undefined);
+      assert.equal(create.body.game.player1.profile.username, 'alice');
+      await db.prepare("UPDATE accounts SET display_name='Current Alice' WHERE account_id='alice'").run();
+
       const state = () =>
         db.prepare("SELECT * FROM live_games WHERE game_id='g'").first();
       const read = await call("/api/shell/games/g?identityId=bobby", a2);
       assert.equal(read.status, 200);
+      assert.equal(read.body.game.player1.profile.displayName, "Current Alice");
       assert.ok(read.body.game.myRoles.includes("Player 1"));
       const anon = await call("/api/shell/games/g?identityId=alice", null);
       assert.equal(anon.body.game.inviteToken, null);
@@ -513,6 +517,8 @@ test(
       const player = await connect(a),
         spectator = await connect(null);
       assert.equal(player.messages[0].game.canRecordMove, false);
+      assert.equal(player.messages[0].game.player1.profile.displayName, "Current Alice");
+      assert.equal(spectator.messages[0].game.player1.profile.displayName, "Current Alice");
       await db
         .prepare(
           "UPDATE accounts SET recovery_acknowledged=1 WHERE account_id='alice'",

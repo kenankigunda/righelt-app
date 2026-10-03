@@ -1,3 +1,5 @@
+import { enrichAccountNames } from './account-profiles';
+import type { AuthDatabase } from './auth-db';
 import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
 import { authorizeGameRequest, authActive, authErrorResponse, currentGameAuthority, gameGuardStatements, registerSessionRoom, sanitizeGameResponse, type GameAuthority } from './auth-game';
 import { AuthProblem } from './auth-controls';
@@ -244,11 +246,11 @@ export class GameRoomDO {
           if (!authActive(this.env) || response.status === 101 || !response.headers.get("content-type")?.includes("application/json")) {
             return response;
           }
-          // Recheck before personalized output, including existing receipts.
+          const body = await enrichAccountNames(await response.json() as Record<string, unknown>, this.env.DB as unknown as AuthDatabase);
+          // Recheck after enrichment before personalized output, including existing receipts.
           if (this.requestAuthority && !await currentGameAuthority(this.env, this.requestAuthority)) {
             throw new AuthProblem("session_changed", 409);
           }
-          const body = await response.json() as Record<string, unknown>;
           return json(sanitizeGameResponse(body, this.requestAuthority), response.status);
         } finally {
           this.requestAuthority = null;
@@ -1153,6 +1155,7 @@ export class GameRoomDO {
   private async send(socket: WebSocket, payload: ServerEvent) {
     const session = this.sessions.get(socket);
     if (authActive(this.env)) {
+      payload = await enrichAccountNames(payload as unknown as Record<string, unknown>, this.env.DB as unknown as AuthDatabase) as unknown as ServerEvent;
       if (!session || !await this.authorizeSocket(session)) return;
       payload = sanitizeGameResponse(payload as unknown as Record<string, unknown>, session.authority ?? null) as unknown as ServerEvent;
     }

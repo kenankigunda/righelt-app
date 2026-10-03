@@ -1,3 +1,5 @@
+import { enrichAccountNames } from './account-profiles';
+import type { AuthDatabase } from './auth-db';
 import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
 import { authActive, readGameAuthority, sanitizeGameResponse, authErrorResponse, deliverRevocations } from './auth-game';
 import { authenticatedActor } from './auth-handler';
@@ -59,6 +61,7 @@ const handleApiRequestInternal = async (request: Request, env: ApiEnv): Promise<
   const initialAuthority = authActive(env) ? await readGameAuthority(request, env) : null;
   const liveResponse = await handleLiveGameRequest(request, env);
   if (liveResponse?.handled) {
+    if (authActive(env)) liveResponse.body = await enrichAccountNames(liveResponse.body, env.DB as unknown as AuthDatabase);
     const authority = authActive(env) ? await readGameAuthority(request, env) : null;
     if (initialAuthority && (!authority || authority.contextId !== initialAuthority.contextId)) throw new AuthProblem("session_changed", 409);
     const accountGame = (liveResponse.body.game as { ownershipMode?: string } | undefined)?.ownershipMode === "account_v1";

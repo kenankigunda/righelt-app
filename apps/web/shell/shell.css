@@ -2072,3 +2072,6 @@ textarea:focus-visible {
 @media (prefers-reduced-motion: reduce) { .account-dialog, .account-dialog * { scroll-behavior: auto; transition: none; animation: none; } }
 
 .shell-header > [data-action="account-open"] { width: auto; flex: 0 0 auto; justify-self: end; align-self: center; }
+
+.participant-profile { width: auto; text-align: start; }
+.account-dialog select { width: 100%; min-height: 44px; font: inherit; }

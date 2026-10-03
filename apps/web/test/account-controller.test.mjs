@@ -664,3 +664,142 @@ test("pending logout retries early online failure with capped backoff and cancel
   await settle();
   assert.equal(requests, after);
 });
+
+test("same-session settings serialize through response body without retiring the account generation", async () => {
+  let release,
+    starts = 0,
+    session = {
+      ...state(),
+      account: {
+        ...state().account,
+        preferences: { view: "focused", tutorial: "new" },
+      },
+    };
+  const held = new Promise((r) => (release = r));
+  const client = createAccountController({
+    storage: storage(),
+    eventTarget: null,
+    document: null,
+    fetcher: async (url, init) => {
+      if (url.endsWith("/bootstrap"))
+        return Response.json({
+          authProtocolVersion: 1,
+          accountsRequired: true,
+        });
+      if (url === "/api/account") {
+        starts++;
+        const patch = JSON.parse(init.body);
+        session = {
+          ...session,
+          account: { ...session.account, displayName: patch.displayName },
+        };
+        return starts === 1
+          ? { ok: true, json: () => held }
+          : Response.json(session);
+      }
+      return Response.json(session);
+    },
+  });
+  await client.start();
+  const generation = client.snapshot().generation;
+  const first = client.updateAccount({ displayName: "First" });
+  await new Promise((r) => setTimeout(r, 0));
+  const firstResult = structuredClone(session);
+  const second = client.updateAccount({ displayName: "Second" });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(starts, 1);
+  release(firstResult);
+  await Promise.all([first, second]);
+  assert.equal(client.snapshot().session.account.displayName, "Second");
+  assert.equal(client.snapshot().generation, generation);
+  client.destroy();
+});
+
+test("late hydration and activity metadata cannot replace newer account settings", async () => {
+  for (const source of ["hydrate", "activity"]) {
+    let hold = false,
+      release,
+      session = {
+        ...state(),
+        account: {
+          ...state().account,
+          preferences: { view: "focused", tutorial: "new" },
+        },
+      };
+    const delayed = new Promise((r) => (release = r));
+    const client = createAccountController({
+      storage: storage(),
+      eventTarget: null,
+      document: null,
+      fetcher: async (url) => {
+        if (url.endsWith("/bootstrap"))
+          return Response.json({
+            authProtocolVersion: 1,
+            accountsRequired: true,
+          });
+        if (url === "/api/account") {
+          session = {
+            ...session,
+            account: {
+              ...session.account,
+              preferences: { view: "explanatory", tutorial: "new" },
+            },
+          };
+          return Response.json(session);
+        }
+        return hold
+          ? { ok: true, json: () => delayed }
+          : Response.json(session);
+      },
+    });
+    await client.start();
+    const old = structuredClone(session);
+    hold = true;
+    const read =
+      source === "hydrate" ? client.hydrate() : client.activity(true);
+    await new Promise((r) => setTimeout(r, 0));
+    await client.updateAccount({ preferences: { view: "explanatory" } });
+    release({ ...old, expiresAt: old.expiresAt + 1000 });
+    await read;
+    assert.equal(
+      client.snapshot().session.account.preferences.view,
+      "explanatory",
+    );
+    assert.equal(client.snapshot().session.expiresAt, old.expiresAt + 1000);
+    client.destroy();
+  }
+});
+
+test("an older same-context session read cannot shorten a renewed session expiry", async () => {
+  let held = false,
+    release,
+    session = state();
+  const delayed = new Promise((r) => (release = r));
+  const client = createAccountController({
+    storage: storage(),
+    eventTarget: null,
+    document: null,
+    fetcher: async (url) => {
+      if (url.endsWith("/bootstrap"))
+        return Response.json({
+          authProtocolVersion: 1,
+          accountsRequired: true,
+        });
+      if (url === "/api/account") {
+        session = { ...session, expiresAt: session.expiresAt + 50000 };
+        return Response.json(session);
+      }
+      return held ? { ok: true, json: () => delayed } : Response.json(session);
+    },
+  });
+  await client.start();
+  const original = structuredClone(session);
+  held = true;
+  const pending = client.hydrate();
+  await new Promise((r) => setTimeout(r, 0));
+  await client.updateAccount({ preferences: { view: "focused" } });
+  release(original);
+  await pending;
+  assert.equal(client.snapshot().session.expiresAt, original.expiresAt + 50000);
+  client.destroy();
+});
