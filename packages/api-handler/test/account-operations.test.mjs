@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { boundarySmoke } from "../../../scripts/deploy-boundary-smoke.mjs";
 import { cutoverSql } from "../../../scripts/account-cutover.mjs";
 import { validateDeployment } from "../../../scripts/deploy-account-services.mjs";
@@ -139,6 +142,9 @@ test("account smoke proves distinct browser jars, guarded contexts, legacy prote
   });
   assert.equal(result.ok, true);
   assert.ok(result.checks.includes("legacy read-only"));
+  const legacyRead = fixture.calls.find((c) => c.route === "/api/shell/games/legacy");
+  assert.equal(legacyRead.headers.Cookie, "");
+  assert.ok(fixture.calls.some((c) => c.route === "/api/shell/games/legacy/live"));
   const reads = fixture.calls.filter((c) => c.route === "/api/auth/session");
   assert.ok(new Set(reads.map((c) => c.headers.Cookie)).size >= 2);
 });
@@ -191,4 +197,58 @@ test("deployment configuration fails before writes for missing credentials or in
       }),
     /secret/,
   );
+});
+
+
+test("account smoke rejects missing or blank legacy proof before any network calls", async () => {
+  for (const legacyGameId of [undefined, null, "", " ", "\t\n"]) {
+    const fixture = smokeFixture();
+    await assert.rejects(accountSmoke({
+      origin, username: "canary", password: "synthetic password",
+      legacyGameId, fetcher: fixture.fetcher,
+    }), /ACCOUNT_SMOKE_LEGACY_GAME_ID/);
+    assert.deepEqual(fixture.calls, []);
+  }
+});
+
+test("ordinary enabled deployment requires legacy proof; disabled and preparation remain valid", () => {
+  const env = {
+    RIGHELT_SITE_ORIGIN: origin, RIGHELT_AUTH_ENABLED: "true",
+    AUTH_HMAC_SECRET: "a".repeat(64), TURNSTILE_SECRET: "synthetic",
+    AUTH_TURNSTILE_SITE_KEY: "public", ACCOUNT_SMOKE_USERNAME: "canary",
+    ACCOUNT_SMOKE_PASSWORD: "synthetic password",
+  };
+  for (const ACCOUNT_SMOKE_LEGACY_GAME_ID of [undefined, "", " ", "\t\n"]) {
+    const candidate = { ...env, ACCOUNT_SMOKE_LEGACY_GAME_ID };
+    assert.throws(() => validateDeployment(candidate), /ACCOUNT_SMOKE_LEGACY_GAME_ID/);
+    assert.equal(validateDeployment({ ...candidate, PREPARE_ACCOUNTS: "true" }).enabled, "true");
+    assert.equal(validateDeployment({ ...candidate, RIGHELT_AUTH_ENABLED: "false" }).enabled, "false");
+  }
+  assert.equal(validateDeployment({ ...env, ACCOUNT_SMOKE_LEGACY_GAME_ID: "legacy" }).enabled, "true");
+});
+
+
+test("deployment CLI rejects absent legacy proof before invoking deployment tooling", () => {
+  for (const legacyGameId of [undefined, "", " ", "\t\n"]) {
+    const env = {
+      PATH: "", RIGHELT_SITE_ORIGIN: origin, RIGHELT_AUTH_ENABLED: "true",
+      AUTH_HMAC_SECRET: "a".repeat(64), TURNSTILE_SECRET: "synthetic",
+      AUTH_TURNSTILE_SITE_KEY: "public", ACCOUNT_SMOKE_USERNAME: "canary",
+      ACCOUNT_SMOKE_PASSWORD: "synthetic password",
+      ...(legacyGameId === undefined ? {} : { ACCOUNT_SMOKE_LEGACY_GAME_ID: legacyGameId }),
+    };
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL("../../../scripts/deploy-account-services.mjs", import.meta.url))], { env, encoding: "utf8" });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /ACCOUNT_SMOKE_LEGACY_GAME_ID/);
+    assert.doesNotMatch(result.stderr, /deployment command failed/);
+  }
+});
+
+test("deployment workflow supplies legacy proof to preflight, deploy and smoke", () => {
+  const workflow = readFileSync(new URL("../../../.github/workflows/deploy.yml", import.meta.url), "utf8");
+  for (const name of ["Preflight configuration check", "Deploy private authentication services and API", "Verify acknowledged canary account"]) {
+    const step = workflow.split(`- name: ${name}\n`)[1]?.split("\n      - name:")[0];
+    assert.ok(step, name);
+    assert.match(step, /ACCOUNT_SMOKE_LEGACY_GAME_ID: \$\{\{ vars\.ACCOUNT_SMOKE_LEGACY_GAME_ID \}\}/);
+  }
 });

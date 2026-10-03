@@ -1,4 +1,5 @@
 // Called only by the deployment workflow; never by tests or application code.
+import { requireLegacyGameId } from "./account-smoke.mjs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 const run = (args, input) => {
@@ -37,6 +38,8 @@ export function validateDeployment(env) {
     throw Error(
       "Acknowledged canary smoke credentials required before deployment",
     );
+  if (enabled === "true" && env.PREPARE_ACCOUNTS !== "true")
+    requireLegacyGameId(env.ACCOUNT_SMOKE_LEGACY_GAME_ID);
   return { enabled, origin };
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
