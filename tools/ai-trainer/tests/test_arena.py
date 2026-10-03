@@ -47,7 +47,7 @@ class ArenaTest(unittest.TestCase):
         path=Path(directory)/'plan.json';plan=self.plan(partition)
         plan['opponent']={**plan['opponent'],'checkpointSha256':'b'*64,'profileVersion':'opponent'}
         with patch('righelt_training.arena.engine_command',side_effect=[{'type':'opening-verified','initial':False,'fingerprint':str(i)} for i in range(50)]):freeze_plan(path,plan)
-        runtime={'manifestSha256':'manifest','startedMonotonic':time.monotonic(),'deadlineMonotonic':time.monotonic()+600}
+        runtime={'allocationId':'allocation','manifestSha256':'manifest','startedMonotonic':time.monotonic(),'deadlineMonotonic':time.monotonic()+600}
         (Path(directory)/'runtime.json').write_text(json.dumps(runtime))
         (Path(directory)/'allocation.json').write_text(json.dumps({'paused':False,'workers':2,'stop':False,'observedAt':time.time()}))
         return path,runtime
@@ -78,6 +78,10 @@ class ArenaTest(unittest.TestCase):
             self.assertTrue(result['statistics']['passed'])
             self.assertEqual(json.loads((Path(d)/'runtime.json').read_text()),runtime)
             runtime['deadlineMonotonic']+=1;(Path(d)/'runtime.json').write_text(json.dumps(runtime))
+            prior=len(resumed)
+            self.assertEqual(run_arena(path,d,models,'cpu',player=resume)['status'],'completed')
+            self.assertEqual(len(resumed),prior)
+            runtime['allocationId']='other';(Path(d)/'runtime.json').write_text(json.dumps(runtime))
             with self.assertRaises(ValueError):run_arena(path,d,models,'cpu',player=resume)
 
     def test_final_incomplete_partition_cannot_resume(self):

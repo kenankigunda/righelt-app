@@ -7,7 +7,7 @@ from righelt_training.stage import execute
 
 
 class StageTests(unittest.TestCase):
-    def run_case(self,fail=None,healthy=True,resume=False,repeat=False):
+    def run_case(self,fail=None,healthy=True,resume=False,repeat=False,incomplete_arena=False):
         with TemporaryDirectory() as tmp:
             root=Path(tmp);run=root/'run';calls=[]
             args=SimpleNamespace(run_dir=run,activity_file=root/'activity',gate_report=root/'gates',parity_corpus=root/'corpus',stage='initial',seed=107,resume=root/'old.pt' if resume else None)
@@ -20,7 +20,9 @@ class StageTests(unittest.TestCase):
                 (run/'latest.json').write_text(json.dumps({'checkpoint':str(run/'latest.pt')}))
                 (run/'trained-export-parity.json').write_text(json.dumps({'complete':True,'numericPassed':True}))
                 (run/'health-report.json').write_text(json.dumps({'complete':True,'healthy':healthy,'checkpoints':[{'path':str(run/'latest.pt'),'weightsSha256':'new'},{'path':str(run/'first.pt'),'weightsSha256':'old'}]}))
-                (run/'prepare-arena-result.json').write_text(json.dumps({'status':'completed','plan':str(run/'plan.json')}))
+                (run/'prepare-arena-result.json').write_text(json.dumps({'status':'completed','plan':str(run/'plan.json'),'planSha256':'frozen'}))
+                proof=run/'evaluations'/'frozen';proof.mkdir(parents=True,exist_ok=True)
+                (proof/'report.json').write_text(json.dumps({'status':'inconclusive' if incomplete_arena else 'completed','completePairs':99 if incomplete_arena else 100,'completedGames':198 if incomplete_arena else 200,'identity':{'planSha256':'frozen'}}))
             result=execute(args,invoke)
             if repeat:
                 calls.clear();result=execute(args,invoke)
@@ -57,3 +59,9 @@ class StageTests(unittest.TestCase):
         _,calls=self.run_case(fail=3,repeat=True)
         self.assertIn('--export-parity',calls[0])
         self.assertFalse(any('--canary' in command for command in calls))
+
+    def test_unfinished_arena_is_reentered(self):
+        result,calls=self.run_case(incomplete_arena=True,repeat=True)
+        self.assertEqual(result["status"],"inconclusive")
+        self.assertEqual(len(calls),1)
+        self.assertIn("--arena-plan",calls[0])

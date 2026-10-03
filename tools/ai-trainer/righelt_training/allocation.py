@@ -97,3 +97,26 @@ class Allocation:
         elapsed=max(0,time.time()-row['wall'])
         if row['boot']==psutil.boot_time():elapsed=max(elapsed,time.monotonic()-row['monotonic'])
         append(self.path,{'event':'finished','allocation':self.key,'id':attempt,'chargedSeconds':elapsed,'reason':reason,'observedAt':time.time()})
+
+
+def main():
+    import argparse,fcntl
+    parser=argparse.ArgumentParser()
+    parser.add_argument('command',choices=('reset','status'))
+    parser.add_argument('--archive',type=Path,required=True)
+    parser.add_argument('--target',type=Path,required=True)
+    parser.add_argument('--previous',type=Path)
+    parser.add_argument('--authorization')
+    parser.add_argument('--stage',choices=('initial','overnight'),default='initial')
+    args=parser.parse_args();args.archive.mkdir(parents=True,exist_ok=True)
+    with (args.archive/'supervisor.lock').open('a+') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        allocation=Allocation(args.archive,args.target)
+        if args.command=='reset':
+            if not args.previous or not args.authorization:parser.error('reset needs previous allocation and explicit authorization')
+            print(json.dumps(allocation.create(args.stage,reset_from=args.previous,reason=args.authorization)))
+        else:
+            created,charged,pending=allocation.accounting()
+            print(json.dumps({'limitSeconds':created['seconds'],'chargedSeconds':charged,'openIntervals':pending}))
+
+if __name__=='__main__':main()

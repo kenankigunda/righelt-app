@@ -1,5 +1,6 @@
 """Paired model evaluation. Completed games only; no old search opponent."""
 from .budget import effective_deadline
+from .runner_monitor import RunnerMonitor
 import argparse
 import hashlib
 import json
@@ -191,18 +192,17 @@ def archive_game(directory,game):
     return path,hashlib.sha256(raw).hexdigest()
 
 
-def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,player=play_game,experiment_root=None):
+def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,player=play_game,experiment_root=None,monitor=None):
     directory=Path(run_directory)
     runtime=json.loads((directory/'runtime.json').read_text())
     deadline=effective_deadline(runtime)
     plan,digest=read_frozen_plan(plan_path)
-    identity={'planSha256':digest,'manifestSha256':runtime['manifestSha256'],
-              'startedMonotonic':runtime['startedMonotonic'],'deadlineMonotonic':runtime['deadlineMonotonic']}
+    identity={'planSha256':digest,'allocationId':runtime.get('allocationId',runtime['manifestSha256']),'configSha256':CONFIG_SHA256}
     output=directory/'evaluations'/digest;output.mkdir(parents=True,exist_ok=True)
     state_path=output/'state.json'
     if state_path.exists():
         state=json.loads(state_path.read_text())
-        if state['identity']!=identity:raise ValueError('evaluation resume identity or original deadline changed')
+        if state['identity']!=identity:raise ValueError('evaluation allocation or frozen plan changed')
     else:state={'schema':1,'identity':identity,'records':{},'attempts':[]}
     expected={(pair['id'],seat):make_job(plan,pair,seat,digest) for pair in plan['pairs'] for seat in ('P1','P2')}
     for key,record in state['records'].items():
@@ -219,6 +219,8 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
     def persist():atomic_json(state_path,state)
     def allocation():return json.loads((directory/'allocation.json').read_text())
     def heartbeat():
+        if monitor is not None:
+            monitor.check();return
         amount=torch.mps.driver_allocated_memory() if str(device)=='mps' else 0
         atomic_json(directory/'device-memory.json',{'schema':1,'pid':os.getpid(),'observedAt':time.time(),'driverBytes':amount})
     heartbeat();persist();reason='complete'
@@ -242,7 +244,7 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
             if deadline-clock()<40:reason='budget';break
             if assigned.get('stop') or assigned['paused']:reason='resource-pause';break
             by_seat={seat:models['candidate'],('P2' if seat=='P1' else 'P1'):models['opponent']}
-            attempt={'pairId':pair['id'],'candidateSeat':seat,'startedMonotonic':clock(),'status':'running'}
+            attempt={'pairId':pair['id'],'candidateSeat':seat,'startedMonotonic':clock(),'status':'running','sourceManifest':runtime['manifestSha256'],'interval':runtime.get('allocationInterval')}
             state['attempts'].append(attempt);persist()
             orphan=output/'games'/(hashlib.sha256(job['id'].encode()).hexdigest()+'.json.gz')
             if orphan.exists():
@@ -302,8 +304,11 @@ def main():
         if not torch.backends.mps.is_available():raise RuntimeError('MPS unavailable for arena')
         signal.signal(signal.SIGUSR1,lambda *_:None)
         device=torch.device('mps');torch.set_num_threads(2)
-        models=load_frozen_models(plan,{'candidate':args.candidate_checkpoint,'opponent':args.opponent_checkpoint},device)
-        result=run_arena(args.plan,args.run_dir,models,device)
+        with RunnerMonitor(args.run_dir) as monitor:
+            with monitor.operation('arena-model-restoration',min(300,effective_deadline(runtime)-time.monotonic())):
+                models=load_frozen_models(plan,{'candidate':args.candidate_checkpoint,'opponent':args.opponent_checkpoint},device)
+            with monitor.operation('arena-evaluation',effective_deadline(runtime)-time.monotonic()):
+                result=run_arena(args.plan,args.run_dir,models,device,monitor=monitor)
         print(json.dumps({k:v for k,v in result.items() if k!='pairs'},indent=2))
 
 if __name__=='__main__':main()

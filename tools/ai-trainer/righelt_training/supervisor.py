@@ -13,7 +13,7 @@ import uuid
 import psutil
 
 from .budget import Budget
-from .checkpoint import atomic_json,inspect_checkpoint
+from .checkpoint import atomic_json
 from .config import CONFIG,CONFIG_SHA256,ROOT
 from .manifest import build_manifest,write_manifest,active_manifest,amend_manifest,manifest_hashes,dependency_inventory
 from .allocation import Allocation
@@ -254,13 +254,12 @@ def main():
         started=now-charged
         runtime.update(schema=2,startedMonotonic=started,deadlineMonotonic=now+remaining,startedWall=wall-charged,
                        deadlineWall=wall+remaining,manifestSha256=digest,stage=args.stage,seed=args.seed,
-                       bootTime=psutil.boot_time(),elapsedBefore=charged,allocationInterval=interval['id'])
+                       bootTime=psutil.boot_time(),elapsedBefore=charged,allocationInterval=interval['id'],allocationId=allocation.accounting()[0]['id'])
         if phase=='canary':runtime.update(deadlineMonotonic=now+min(600,remaining),deadlineWall=wall+min(600,remaining))
         if args.resume:
             metadata=json.loads(args.resume.with_suffix('.json').read_text())
             checkpoint_directory=args.resume.resolve().parent.parent
             if metadata['manifestSha256'] not in manifest_hashes(checkpoint_directory):raise ValueError('checkpoint lineage not authorized')
-            inspect_checkpoint(args.resume,manifest_sha256=metadata['manifestSha256'],require_recovery=True)
             if metadata['configSha256']!=CONFIG_SHA256:raise ValueError('resume checkpoint configuration changed')
             runtime['parentCheckpointManifestSha256']=metadata['manifestSha256']
             runtime['parentCheckpoint']=str(args.resume.resolve())
