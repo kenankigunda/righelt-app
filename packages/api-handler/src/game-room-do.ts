@@ -169,6 +169,8 @@ export class GameRoomDO {
   private game: LiveGame | null = null;
   private requestedGameId: string | null = null;
   private eventSeq = 0;
+  private mutationTail: Promise<unknown> = Promise.resolve();
+  private needsDurableReload = false;
   private readonly sessions = new Map<WebSocket, SessionRecord>();
 
   private logDiagnostic(level: "info" | "warn" | "error", event: string, payload: Record<string, unknown>, verboseOnly = false) {
@@ -192,13 +194,33 @@ export class GameRoomDO {
     this.env = env;
     this.restoreSessionsFromState();
     this.configureWebSocketAutoResponse();
-    void this.state.blockConcurrencyWhile?.(async () => {
+    const initialize = () => this.enqueue(async () => {
       await this.reconcileAllPresenceFromSessions();
       await this.syncSessionAlarm();
     });
+    if (this.state.blockConcurrencyWhile) void this.state.blockConcurrencyWhile(initialize);
+    else void initialize();
+  }
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationTail.then(async () => {
+      if (this.needsDurableReload) {
+        this.game = null;
+        this.eventSeq = 0;
+        await this.ensureLoaded();
+        this.needsDurableReload = false;
+      }
+      return operation();
+    });
+    this.mutationTail = result.catch(() => undefined);
+    return result;
   }
 
   async fetch(request: Request): Promise<Response> {
+    return this.enqueue(() => this.fetchQueued(request));
+  }
+
+  private async fetchQueued(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
     const headerGameId = asIdentity(request.headers.get("x-game-id"));
@@ -210,6 +232,10 @@ export class GameRoomDO {
       return this.handleWebSocket(url);
     }
 
+    if (request.method === "POST" && (path === "/create" || path === "/create-from-scenario")) {
+      if (await this.ensureLoaded()) return json({ ok: false, error: "game_already_exists" }, 409);
+    }
+
     if (request.method === "POST" && path === "/create") {
       const body = await parseBody(request);
       const identityId = asIdentity(body.identityId);
@@ -217,14 +243,13 @@ export class GameRoomDO {
       if (!identityId || !gameId) {
         return json({ ok: false, error: "invalid_identity" }, 400);
       }
-      this.game = createInitialGame({
+      const candidate = createInitialGame({
         gameId,
         identityId,
         selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
       });
-      this.eventSeq = 1;
-      await persistGameState(this.env, this.game, this.eventSeq, null);
-      return json({ ok: true, game: withViewModel(this.game, identityId), eventSeq: this.eventSeq });
+      await this.persistCandidate(candidate, null);
+      return json({ ok: true, game: withViewModel(candidate, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/create-from-scenario") {
@@ -237,7 +262,7 @@ export class GameRoomDO {
       if (!identityId || !gameId || !scenario || (hasInitialSelectionAction && !initialSelectionAction)) {
         return json({ ok: false, error: "invalid_scenario_payload" }, 400);
       }
-      this.game = createInitialGame({
+      const candidate = createInitialGame({
         gameId,
         identityId,
         selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
@@ -248,34 +273,33 @@ export class GameRoomDO {
         : null;
       if (sourceGame) {
         if (participantCopyMode === "copy_source_participants") {
-          applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
+          applyLaunchParticipantCopyMode(sourceGame, candidate, identityId, participantCopyMode);
         } else {
-          this.game.player1 = null;
-          this.game.player2 = null;
-          this.game.viewers = [];
-          this.game.pendingJoinRequests = [];
+          candidate.player1 = null;
+          candidate.player2 = null;
+          candidate.viewers = [];
+          candidate.pendingJoinRequests = [];
         }
-        this.game.selfPlayMode = body.selfPlayMode === true || body.playgroundMode === true;
+        candidate.selfPlayMode = body.selfPlayMode === true || body.playgroundMode === true;
       }
-      applyScenarioToGame(this.game, scenario);
+      applyScenarioToGame(candidate, scenario);
       if (
         shouldReconcileImportedScenarioResultingState(
           body.preserveResultingState,
-          Number(this.game.board.state?.turnIndex ?? 0),
+          Number(candidate.board.state?.turnIndex ?? 0),
           Number(scenario.resultingState?.turnIndex ?? 0),
         )
       ) {
-        reconcileGameToScenarioResultingState(this.game, scenario);
+        reconcileGameToScenarioResultingState(candidate, scenario);
       }
       if (sourceGame && participantCopyMode && participantCopyMode !== "copy_source_participants") {
-        applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
+        applyLaunchParticipantCopyMode(sourceGame, candidate, identityId, participantCopyMode);
       } else if (participantCopyMode !== "copy_source_participants") {
-        assignIdentityToScenarioSeat(this.game, identityId, getSeatForSide(this.game.board.state.sideToMove));
+        assignIdentityToScenarioSeat(candidate, identityId, getSeatForSide(candidate.board.state.sideToMove));
       }
-      this.game.initialSelectionAction = initialSelectionAction ? clone(initialSelectionAction) : null;
-      this.eventSeq = 1;
-      await persistGameState(this.env, this.game, this.eventSeq, null);
-      return json({ ok: true, game: withViewModel(this.game, identityId), eventSeq: this.eventSeq });
+      candidate.initialSelectionAction = initialSelectionAction ? clone(initialSelectionAction) : null;
+      await this.persistCandidate(candidate, null);
+      return json({ ok: true, game: withViewModel(candidate, identityId), eventSeq: this.eventSeq });
     }
 
     const body = await parseBody(request);
@@ -775,13 +799,13 @@ export class GameRoomDO {
         return json({ ok: false, error: "invalid_move_index" }, 400);
       }
       game.historyIndexByIdentity[identityId] = moveIndex;
-      await persistGameState(this.env, game, this.eventSeq, null);
+      await this.persistCandidate(game, null);
       return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/live") {
       delete game.historyIndexByIdentity[identityId];
-      await persistGameState(this.env, game, this.eventSeq, null);
+      await this.persistCandidate(game, null);
       return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
@@ -926,7 +950,7 @@ export class GameRoomDO {
         type: "state_sync",
         eventSeq: this.eventSeq,
         reason: replayEvents.length > 0 ? "replay_unavailable" : "connected",
-        game: clone(game),
+        game: clone(this.game ?? game),
       };
       this.send(server, eventForSession(syncEvent, identityId));
       this.logDiagnostic(
@@ -941,6 +965,10 @@ export class GameRoomDO {
   }
 
   async webSocketMessage(socket: WebSocket, message: ArrayBuffer | string) {
+    return this.enqueue(() => this.webSocketMessageQueued(socket, message));
+  }
+
+  private async webSocketMessageQueued(socket: WebSocket, message: ArrayBuffer | string) {
     const text = typeof message === "string" ? message : "";
     let payload: ClientSocketMessage | null = null;
     try {
@@ -968,6 +996,10 @@ export class GameRoomDO {
   }
 
   async webSocketClose(socket: WebSocket) {
+    return this.enqueue(() => this.webSocketCloseQueued(socket));
+  }
+
+  private async webSocketCloseQueued(socket: WebSocket) {
     const current = this.sessions.get(socket);
     if (!current) {
       return;
@@ -1002,6 +1034,10 @@ export class GameRoomDO {
   }
 
   async alarm() {
+    return this.enqueue(() => this.alarmQueued());
+  }
+
+  private async alarmQueued() {
     const cutoff = Date.now() - HEARTBEAT_TIMEOUT_MS;
     const expiredIdentityIds = new Set<string>();
     for (const [socket, session] of [...this.sessions.entries()]) {
@@ -1024,7 +1060,7 @@ export class GameRoomDO {
 
   private async ensureLoaded() {
     if (this.game) {
-      return this.game;
+      return clone(this.game);
     }
     const gameId = this.getLoadedGameId();
     if (!gameId) {
@@ -1036,7 +1072,7 @@ export class GameRoomDO {
     }
     this.game = projection.game;
     this.eventSeq = projection.eventSeq;
-    return this.game;
+    return clone(this.game);
   }
 
   private getLoadedGameId() {
@@ -1044,6 +1080,10 @@ export class GameRoomDO {
   }
 
   async setGameId(gameId: string) {
+    return this.enqueue(() => this.setGameIdQueued(gameId));
+  }
+
+  private async setGameIdQueued(gameId: string) {
     this.requestedGameId = gameId;
     if (!this.game) {
       const projection = await loadGameProjection(this.env, gameId);
@@ -1098,8 +1138,7 @@ export class GameRoomDO {
       connected,
       game: clone(game),
     };
-    this.eventSeq += 1;
-    await persistGameState(this.env, game, this.eventSeq, presenceEvent);
+    await this.persistCandidate(game, presenceEvent);
     this.broadcast(presenceEvent);
   }
 
@@ -1135,10 +1174,30 @@ export class GameRoomDO {
               game: clone(input.game),
             } satisfies JoinRequestResolvedEvent);
 
-    this.eventSeq += 1;
-    await persistGameState(this.env, input.game, this.eventSeq, event);
+    await this.persistCandidate(input.game, event);
     this.logDiagnostic("info", "live_server_commit_event", { type: event.type }, true);
     this.broadcast(event);
+  }
+
+  private async persistCandidate(game: LiveGame, event: (ServerEvent & { eventSeq: number }) | null) {
+    const base = this.eventSeq;
+    const gameplay = (value: LiveGame | null) => value ? JSON.stringify([value.board, value.moves, value.turns]) : null;
+    game.gameplayRevision = (this.game?.gameplayRevision ?? 0) + (this.game && gameplay(this.game) !== gameplay(game) ? 1 : 0);
+    event ??= { type: "state_sync", eventSeq: base + 1, reason: "projection_updated", game: clone(game) };
+    if ("game" in event) event.game = clone(game);
+    try {
+      await persistGameState(this.env, game, base + 1, event, { baseEventSeq: base });
+    } catch (error) {
+      // A rejected batch response may follow a durable commit. Force a durable read
+      // before any next mutation; never retain or acknowledge the speculative candidate.
+      this.needsDurableReload = true;
+      this.game = null;
+      this.eventSeq = 0;
+      try { await this.ensureLoaded(); this.needsDurableReload = false; } catch { /* Retry durable read before the next mutation. */ }
+      throw error;
+    }
+    this.game = clone(game);
+    this.eventSeq = base + 1;
   }
 
   private broadcast(event: ServerEvent) {
@@ -1154,8 +1213,10 @@ export class GameRoomDO {
       const session = this.sessions.get(socket);
       this.sessions.delete(socket);
       if (session) {
-        void this.setPresenceFromSessions(session.identityId);
-        void this.syncSessionAlarm();
+        void this.enqueue(async () => {
+          await this.setPresenceFromSessions(session.identityId);
+          await this.syncSessionAlarm();
+        }).catch((error) => this.logDiagnostic("error", "live_server_presence_cleanup_failed", { error: String(error) }));
       }
       this.logDiagnostic("warn", "live_server_socket_send_failed", { payloadType: payload.type });
     }

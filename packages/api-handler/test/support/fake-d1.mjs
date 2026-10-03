@@ -85,6 +85,7 @@ export const createFakeD1 = () => {
           const [gameId, createdAt, updatedAt, latestActivityAt, player1IdentityId, player2IdentityId, hasSmoke, stateJson, eventSeq = 0, gameplayRevision = 0, commitBaseEventSeq = null] =
             params;
           const old = shellGames.get(gameId);
+          if (!old && commitBaseEventSeq !== null && commitBaseEventSeq !== 0) throw new Error("missing_game_revision");
           if (old && commitBaseEventSeq !== null && (commitBaseEventSeq !== old.event_seq || eventSeq <= old.event_seq || gameplayRevision < (old.gameplay_revision ?? 0))) throw new Error("stale_game_revision");
           shellGames.set(
             gameId,

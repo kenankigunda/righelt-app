@@ -1,6 +1,12 @@
 -- Additive migration: deploy before hardened writers. Legacy writers leave the base NULL.
 ALTER TABLE live_games ADD COLUMN gameplay_revision INTEGER NOT NULL DEFAULT 0 CHECK (gameplay_revision >= 0);
 ALTER TABLE live_games ADD COLUMN commit_base_event_seq INTEGER;
+CREATE TRIGGER live_games_insert_guard BEFORE INSERT ON live_games
+WHEN NEW.commit_base_event_seq IS NOT NULL AND NEW.commit_base_event_seq != 0
+  AND NOT EXISTS (SELECT 1 FROM live_games WHERE game_id = NEW.game_id)
+BEGIN
+  SELECT RAISE(ABORT, 'missing_game_revision');
+END;
 CREATE TRIGGER live_games_revision_guard BEFORE UPDATE ON live_games
 WHEN NEW.commit_base_event_seq IS NOT NULL AND (
   NEW.commit_base_event_seq != OLD.event_seq OR NEW.event_seq <= OLD.event_seq OR

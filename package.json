@@ -40,6 +40,7 @@
     "test:engine:unit": "node scripts/run-node-tests.mjs packages/game-engine/test/unit",
     "test:engine:integration": "node scripts/run-node-tests.mjs packages/game-engine/test/integration",
     "test:api-handler": "node scripts/run-node-tests.mjs packages/api-handler/test",
+    "test:sync-runtime": "node --test packages/api-handler/test-runtime/*.test.mjs",
     "test:api-worker": "node scripts/run-node-tests.mjs apps/api/test",
     "test:web": "node apps/web/test/run-web-tests.mjs",
     "test:web:unit": "node apps/web/test/run-web-tests.mjs --layer unit",

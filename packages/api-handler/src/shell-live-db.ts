@@ -580,6 +580,7 @@ const normalizePersistedGame = (
     createdAt: typeof parsed.createdAt === "string" && parsed.createdAt ? parsed.createdAt : row.created_at || row.updated_at || now(),
     lastMoveAt: typeof parsed.lastMoveAt === "string" ? parsed.lastMoveAt : null,
     updatedAt: typeof parsed.updatedAt === "string" && parsed.updatedAt ? parsed.updatedAt : row.updated_at || row.created_at || now(),
+    gameplayRevision: Number.isSafeInteger(parsed.gameplayRevision) && Number(parsed.gameplayRevision) >= 0 ? Number(parsed.gameplayRevision) : 0,
     selfPlayMode: parsed.selfPlayMode === true || parsed.playgroundMode === true,
     board: { state: boardState },
     player1: normalizeParticipant(parsed.player1, "player1", mismatches),
@@ -814,12 +815,13 @@ const hasSmokeIdentity = (game: LiveGame) =>
   game.viewers.some((viewer) => viewer.identityId === "smoke-player") ||
   game.pendingJoinRequests.some((request) => request.identityId === "smoke-player");
 
-export const saveProjection = async (
+const projectionStatement = (
   env: LiveGameEnv,
   game: LiveGame,
   eventSeq: number,
+  baseEventSeq: number,
 ) => {
-  await env.DB.prepare(
+  return env.DB.prepare(
     `INSERT INTO ${LIVE_GAMES_TABLE} (
        game_id,
        created_at,
@@ -829,9 +831,9 @@ export const saveProjection = async (
        player2_identity_id,
        has_smoke_identity,
        state_json,
-       event_seq
+       event_seq, gameplay_revision, commit_base_event_seq
      )
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
      ON CONFLICT(game_id) DO UPDATE SET
        updated_at = excluded.updated_at,
        latest_activity_at = excluded.latest_activity_at,
@@ -839,7 +841,9 @@ export const saveProjection = async (
        player2_identity_id = excluded.player2_identity_id,
        has_smoke_identity = excluded.has_smoke_identity,
        state_json = excluded.state_json,
-       event_seq = excluded.event_seq`,
+       event_seq = excluded.event_seq,
+       gameplay_revision = excluded.gameplay_revision,
+       commit_base_event_seq = excluded.commit_base_event_seq`,
   )
     .bind(
       game.id,
@@ -851,29 +855,17 @@ export const saveProjection = async (
       hasSmokeIdentity(game) ? 1 : 0,
       JSON.stringify(game),
       eventSeq,
-    )
-    .run();
+      game.gameplayRevision ?? 0,
+      baseEventSeq,
+    );
 };
 
-export const saveInviteTokens = async (env: LiveGameEnv, game: LiveGame) => {
-  const entries = [
-    [game.inviteTokens.viewer, "Viewer"],
-    [game.inviteTokens.player1, "Player 1"],
-    [game.inviteTokens.player2, "Player 2"],
-  ] as const;
-  await Promise.all(
-    entries.map(([token, sharedByRole]) =>
-      env.DB.prepare(
-        `INSERT INTO ${LIVE_INVITES_TABLE} (token, game_id, shared_by_role)
-         VALUES (?1, ?2, ?3)
-         ON CONFLICT(token) DO UPDATE SET
-           game_id = excluded.game_id,
-           shared_by_role = excluded.shared_by_role`,
-      )
-        .bind(token, game.id, sharedByRole)
-        .run(),
-    ),
-  );
+const inviteStatements = (env: LiveGameEnv, game: LiveGame) => {
+  const entries = [[game.inviteTokens.viewer, "Viewer"], [game.inviteTokens.player1, "Player 1"], [game.inviteTokens.player2, "Player 2"]] as const;
+  return entries.map(([token, role]) => env.DB.prepare(
+    `INSERT INTO ${LIVE_INVITES_TABLE} (token, game_id, shared_by_role) VALUES (?1, ?2, ?3)
+     ON CONFLICT(token) DO UPDATE SET game_id = excluded.game_id, shared_by_role = excluded.shared_by_role`,
+  ).bind(token, game.id, role));
 };
 
 export const resolveInvite = async (
@@ -894,8 +886,8 @@ export const resolveInvite = async (
   };
 };
 
-export const appendEvent = async (env: LiveGameEnv, gameId: string, event: ServerEvent & { eventSeq: number }) => {
-  await env.DB.prepare(
+const eventStatement = (env: LiveGameEnv, gameId: string, event: ServerEvent & { eventSeq: number }) => {
+  return env.DB.prepare(
     `INSERT INTO ${LIVE_EVENTS_TABLE}
        (game_id, event_seq, payload_json)
      VALUES (?1, ?2, ?3)`,
@@ -904,8 +896,7 @@ export const appendEvent = async (env: LiveGameEnv, gameId: string, event: Serve
       gameId,
       event.eventSeq,
       JSON.stringify(event),
-    )
-    .run();
+    );
 };
 
 export const loadEventsAfter = async (env: LiveGameEnv, gameId: string, lastEventSeq: number): Promise<ServerEvent[]> => {
@@ -924,10 +915,14 @@ export const persistGameState = async (
   game: LiveGame,
   eventSeq: number,
   event?: (ServerEvent & { eventSeq: number }) | null,
+  options: { baseEventSeq?: number; statements?: D1Statement[] } = {},
 ) => {
-  await saveProjection(env, game, eventSeq);
-  await saveInviteTokens(env, game);
-  if (event) {
-    await appendEvent(env, game.id, event);
-  }
+  const base = options.baseEventSeq ?? eventSeq - 1;
+  if (!Number.isSafeInteger(base) || base < 0 || !Number.isSafeInteger(eventSeq) || eventSeq <= base) throw new Error("invalid_commit_revision");
+  if (event && event.eventSeq !== eventSeq) throw new Error("event_revision_mismatch");
+  const statements = [projectionStatement(env, game, eventSeq, base), ...inviteStatements(env, game)];
+  if (event) statements.push(eventStatement(env, game.id, event));
+  statements.push(...(options.statements ?? []));
+  const results = await env.DB.batch(statements);
+  if (results.length !== statements.length || results.some((result) => !result.success)) throw new Error("uncertain_commit_result");
 };
