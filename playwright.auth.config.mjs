@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 import { LOCAL_DEV_PORT_VARIANTS } from "./apps/web/local-dev-ports.js";
 const variant = LOCAL_DEV_PORT_VARIANTS.find(item => item.suffix === "auth-e2e");
-const baseURL = `https://127.0.0.1:${variant.webPort}`;
+const baseURL = `https://127.0.0.1:${process.env.RIGHELT_AUTH_E2E_WEB_PORT || variant.webPort}`;
 export default defineConfig({
   testDir: "./e2e/auth",
   fullyParallel: false,

@@ -22,6 +22,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "mobile-layout.test.mjs",
   "operation-manager.test.mjs",
   "play-view.test.mjs",
+  "personal-home.test.mjs",
   "optimistic-live.test.mjs",
   "routing.test.mjs",
   "shell-host.test.mjs",

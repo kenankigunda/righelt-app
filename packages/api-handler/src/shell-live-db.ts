@@ -105,6 +105,8 @@ type HomeSectionPageParams = {
   page: number;
   pageSize: number;
   debug: boolean;
+  unfinished?: boolean;
+  finished?: boolean;
 };
 
 const getActualType = (value: unknown) => {
@@ -733,7 +735,7 @@ export const loadGameProjection = async (env: LiveGameEnv, gameId: string): Prom
   return projection;
 };
 
-const getHomeSectionWhereClause = ({ identityId, section, debug }: Omit<HomeSectionPageParams, "page" | "pageSize">, accountMode = false) => {
+const getHomeSectionWhereClause = ({ identityId, section, debug, unfinished = false, finished = false }: Omit<HomeSectionPageParams, "page" | "pageSize">, accountMode = false) => {
   if (section === "smoke") {
     return {
       sql: "WHERE has_smoke_identity = 1",
@@ -745,19 +747,30 @@ const getHomeSectionWhereClause = ({ identityId, section, debug }: Omit<HomeSect
   const sectionSql = section === "my" ? `${playerMatchSql}${accountMode ? " AND ownership_mode = 'account_v1'" : ""}` : accountMode ? `(NOT ${playerMatchSql} OR ownership_mode = 'legacy_guest')` : `NOT ${playerMatchSql}`;
   const smokeSql = debug ? "AND has_smoke_identity = 0" : "AND has_smoke_identity = 0";
   return {
-    sql: `WHERE ${sectionSql} ${smokeSql}`,
+    sql: `WHERE ${sectionSql} ${smokeSql}${unfinished || finished ? ` AND json_extract(CASE WHEN json_valid(state_json) THEN state_json ELSE '{}' END, '$.board.state.outcome.status') ${finished ? '!=' : '='} 'ongoing'` : ""}`,
     params: [identityId] as unknown[],
   };
 };
 
+// Resume priority is applied before pagination. A retreat is controlled by the
+// opposing seat; all other decisions stay with the current turn owner.
+const homeOrderSql = (unfinished: boolean) => unfinished ? `
+  CASE WHEN (
+    CASE WHEN (
+      (json_extract(state_json, '$.turns[#-1].playerSeat') = 'Player 2') !=
+      (COALESCE(json_extract(state_json, '$.board.state.continuation.type'), '') = 'push' AND COALESCE(json_extract(state_json, '$.board.state.continuation.phase'), '') = 'retreat')
+    ) THEN player2_identity_id ELSE player1_identity_id END
+  ) = ?1 THEN 0 ELSE 1 END, latest_activity_at DESC, game_id ASC`
+  : "latest_activity_at DESC, created_at DESC, game_id ASC";
+
 export const countHomeSectionGames = async (
   env: LiveGameEnv,
-  { identityId, section, debug }: Omit<HomeSectionPageParams, "page" | "pageSize">,
+  { identityId, section, debug, unfinished = false, finished = false }: Omit<HomeSectionPageParams, "page" | "pageSize">,
 ): Promise<number> => {
   if (section === "smoke" && !debug) {
     return 0;
   }
-  const where = getHomeSectionWhereClause({ identityId, section, debug }, env.AUTH_ENABLED === "true");
+  const where = getHomeSectionWhereClause({ identityId, section, debug, unfinished, finished }, env.AUTH_ENABLED === "true");
   const row = await env.DB.prepare(`SELECT COUNT(*) AS total_games FROM ${LIVE_GAMES_TABLE} ${where.sql}`)
     .bind(...where.params)
     .first<HomeSectionCountRow>();
@@ -766,17 +779,17 @@ export const countHomeSectionGames = async (
 
 export const listHomeSectionGameProjectionPage = async (
   env: LiveGameEnv,
-  { identityId, section, page, pageSize, debug }: HomeSectionPageParams,
+  { identityId, section, page, pageSize, debug, unfinished = false, finished = false }: HomeSectionPageParams,
 ): Promise<LiveGame[]> => {
   if (section === "smoke" && !debug) {
     return [];
   }
-  const where = getHomeSectionWhereClause({ identityId, section, debug }, env.AUTH_ENABLED === "true");
+  const where = getHomeSectionWhereClause({ identityId, section, debug, unfinished, finished }, env.AUTH_ENABLED === "true");
   const offset = page * pageSize;
   const result = await env.DB.prepare(
     `SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision${env.AUTH_ENABLED === "true" ? ", ownership_mode" : ""} FROM ${LIVE_GAMES_TABLE}
      ${where.sql}
-     ORDER BY latest_activity_at DESC, created_at DESC
+     ORDER BY ${homeOrderSql(unfinished)}
      LIMIT ?${where.params.length + 1}
      OFFSET ?${where.params.length + 2}`,
   )
@@ -790,17 +803,17 @@ export const listHomeSectionGameProjectionPage = async (
 
 export const listHomeSectionStaticGameCardPage = async (
   env: LiveGameEnv,
-  { identityId, section, page, pageSize, debug }: HomeSectionPageParams,
+  { identityId, section, page, pageSize, debug, unfinished = false, finished = false }: HomeSectionPageParams,
 ): Promise<{ games: StaticGameCard[]; parseMs: number; cardModelMs: number }> => {
   if (section === "smoke" && !debug) {
     return { games: [], parseMs: 0, cardModelMs: 0 };
   }
-  const where = getHomeSectionWhereClause({ identityId, section, debug }, env.AUTH_ENABLED === "true");
+  const where = getHomeSectionWhereClause({ identityId, section, debug, unfinished, finished }, env.AUTH_ENABLED === "true");
   const offset = page * pageSize;
   const result = await env.DB.prepare(
     `SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision${env.AUTH_ENABLED === "true" ? ", ownership_mode" : ""} FROM ${LIVE_GAMES_TABLE}
      ${where.sql}
-     ORDER BY latest_activity_at DESC, created_at DESC
+     ORDER BY ${homeOrderSql(unfinished)}
      LIMIT ?${where.params.length + 1}
      OFFSET ?${where.params.length + 2}`,
   )

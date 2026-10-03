@@ -1,3 +1,4 @@
+import { PERSONAL_OPPONENTS, isPersonalSide, isComputerOpponent, getComputerReadiness, selectResumeGames, isAwaitingPlayer } from "./personal-home.js";
 import { createContextualHelp, gamePlayRevision, canRestoreGameView } from "./play-view.js";
 import { captureHeaderFocus, restoreHeaderFocus } from "./header-focus.js";
 import { createBrandController, renderWordmark, resolveActionAffiliation } from "./brand.js";
@@ -140,6 +141,7 @@ const accountDialog = createAccountDialog({ controller: account, onTutorial: () 
     await syncRouteDataAndLiveChannels().catch(() => {});
     render({ animatePanels: false });
     if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
+    if (intent.action === "start-opponent") { homeSide = intent.side; startPersonalGame(intent); return; }
     const selector = `[data-action="${CSS.escape(intent.action)}"]${intent.gameId ? `[data-game-id="${CSS.escape(intent.gameId)}"]` : ""}${intent.moveIndex ? `[data-move-index="${CSS.escape(intent.moveIndex)}"]` : ""}`;
     appEl.querySelector(selector)?.click();
   },
@@ -159,6 +161,10 @@ const toStableKey = (value) => {
 };
 
 let currentRoute = parseRouteFromHash(window.location.hash);
+let homeSide = "p1";
+let homeStartStatus = "";
+let resumeSection = { gameIds: [], page: 0, totalPages: 0, totalGames: 0, error: false };
+const selfPlayStartSides = new Map();
 const brandController = createBrandController();
 let mountedBoardGameId = null;
 let mountedHistoryMoveIndex = null;
@@ -253,7 +259,7 @@ const createHomeSectionState = (title) => ({
   animationToken: 0,
 });
 let homeSections = {
-  my: createHomeSectionState("My games"),
+  my: createHomeSectionState("Completed games"),
   other: createHomeSectionState("Other games"),
   smoke: createHomeSectionState("Deploy smoke player"),
 };
@@ -2311,8 +2317,28 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
   >&rarr;</button>
 </div>`;
 
-const renderHomeStartButton = () =>
-  `<button class="home-start-button" data-action="create-game" data-testid="home-create-game">Start new game</button>`;
+const renderHomeStartButton = () => "";
+const renderPersonalStart = () => `<section class="panel home-start" data-zone="home-start">
+  <h2>Start a game</h2><p>Choose who you would like to play.</p>
+  <div class="opponent-picker">${PERSONAL_OPPONENTS.map((opponent) => `<button class="opponent-choice" data-action="start-opponent" data-opponent="${opponent.id}" ${opponent.id === "friend" ? 'data-testid="home-create-game"' : ""}>
+    <strong>${opponent.name}</strong><span>${opponent.detail}</span>${isComputerOpponent(opponent.id) ? '<span class="opponent-availability">Computer play coming soon</span>' : ""}
+  </button>`).join("")}</div>
+  <fieldset class="home-side"><legend>Your side</legend>
+    <label><input type="radio" name="home-side" value="p1" ${homeSide === "p1" ? "checked" : ""}> Player 1 · Red</label>
+    <label><input type="radio" name="home-side" value="p2" ${homeSide === "p2" ? "checked" : ""}> Player 2 · Blue</label>
+  </fieldset>
+  <button class="secondary" data-action="start-opponent" data-opponent="self">Self-play</button>
+  <p class="home-start-status" role="status">${escapeHtml(homeStartStatus)}</p>
+</section>`;
+const renderResumeSection = () => {
+  if (resumeSection.error) return '<section class="panel" data-zone="home-resume"><p role="status">Your games could not be loaded.</p><button class="secondary" data-action="retry-resume">Try again</button></section>';
+  const games = selectResumeGames(resumeSection.gameIds.map((id) => transport.getHomeGameCard(id)).filter(Boolean), transport.getIdentityId());
+  if (!games.length) return "";
+  return `<section class="panel home-games-section" data-zone="home-resume"><h2>Continue playing</h2>
+    <div class="mini-board-card-list">${games.map((game) => `<div class="resume-game"><p class="resume-turn">${isAwaitingPlayer(game, transport.getIdentityId()) ? "Your turn" : "Waiting for the other player"}</p>${renderHomeGameCard(game)}</div>`).join("")}</div>
+    ${resumeSection.totalPages > 1 ? `<div class="resume-pagination"><button class="secondary" data-action="resume-page" data-page="${resumeSection.page - 1}" ${resumeSection.page === 0 ? "disabled" : ""}>Previous games</button><span>Page ${resumeSection.page + 1} of ${resumeSection.totalPages}</span><button class="secondary" data-action="resume-page" data-page="${resumeSection.page + 1}" ${resumeSection.page + 1 >= resumeSection.totalPages ? "disabled" : ""}>More games</button></div>` : ""}
+  </section>`;
+};
 
 const renderHomeGameSection = (sectionKey) => {
   const section = getHomeSection(sectionKey);
@@ -2320,7 +2346,7 @@ const renderHomeGameSection = (sectionKey) => {
     return renderHomeSectionSkeleton(section.title, { showStartButton: sectionKey === "my" });
   }
   const games = section.gameIds.map((gameId) => transport.getHomeGameCard(gameId)).filter(Boolean);
-  const shouldAlwaysRender = sectionKey === "my";
+  const shouldAlwaysRender = false;
   if (!Array.isArray(games) || (!shouldAlwaysRender && (games.length === 0 || section.totalGames === 0))) {
     return "";
   }
@@ -2371,15 +2397,18 @@ const renderHome = () => {
   if (!routeHydrated) {
     return `
       <section class="stack">
-        ${getVisibleHomeSectionKeys().map((sectionKey) => renderHomeSectionSkeleton(getHomeSection(sectionKey).title, { showStartButton: sectionKey === "my" })).join("")}
+        ${renderPersonalStart()}
+        ${getVisibleHomeSectionKeys().map((sectionKey) => renderHomeSectionSkeleton(getHomeSection(sectionKey).title)).join("")}
       </section>
     `;
   }
   const sectionHtml = getVisibleHomeSectionKeys().map((sectionKey) => renderHomeGameSection(sectionKey)).join("");
-  const listHtml = sectionHtml || `<section class="panel"><p class="small">No games yet.</p></section>`;
+  const listHtml = sectionHtml;
 
   return `
     <section class="stack">
+      ${renderResumeSection()}
+      ${renderPersonalStart()}
       ${listHtml}
     </section>
   `;
@@ -3578,6 +3607,7 @@ const loadHomeSectionServerPage = async (
     section: sectionKey,
     page: serverPage,
     pageSize: HOME_SECTION_SERVER_PAGE_SIZE,
+    finished: sectionKey === "my",
     debug: currentRoute.debug === true,
   });
   if (accountGeneration !== account.snapshot().generation) throw Object.assign(new Error("session_changed"), {code:"session_changed"});
@@ -3685,9 +3715,18 @@ const syncResponsiveHomeSectionPageSizes = async () => {
   return updated;
 };
 
+const loadResumePage = async (page = 0) => {
+  const generation = account.snapshot().generation;
+  try {
+    const response = await transport.loadGamesPage({ section: "my", page, pageSize: 4, unfinished: true });
+    if (generation !== account.snapshot().generation) return;
+    resumeSection = { gameIds: response.games.map((game) => game.id), page: response.page, totalPages: response.totalPages, totalGames: response.totalGames, error: false };
+  } catch { if (generation === account.snapshot().generation) resumeSection = { ...resumeSection, error: true }; }
+};
+
 const syncHomeSections = async () => {
   const visibleSectionKeys = getVisibleHomeSectionKeys();
-  await Promise.all(
+  await Promise.all([loadResumePage(resumeSection.page), ...
     visibleSectionKeys.map(async (sectionKey) => {
       const section = getHomeSection(sectionKey);
       setHomeSection(sectionKey, {
@@ -3705,7 +3744,7 @@ const syncHomeSections = async () => {
       });
       await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
     }),
-  );
+  ]);
   const hiddenSectionKeys = ["my", "other", "smoke"].filter((sectionKey) => !visibleSectionKeys.includes(sectionKey));
   hiddenSectionKeys.forEach((sectionKey) => {
     const section = getHomeSection(sectionKey);
@@ -3765,6 +3804,8 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   appEl.setAttribute("data-action-affiliation", resolveActionAffiliation({
     game: affiliationGameId ? transport.getGameViewModel(affiliationGameId) : null,
     identityId: transport.getIdentityId(),
+    pendingSide: currentRoute.name === "home" ? homeSide : null,
+    selfPlaySide: selfPlayStartSides.get(`${transport.getIdentityId()}:${affiliationGameId}`) ?? "p1",
   }));
   syncRouteTransitionForCurrentRoute();
   const routeKey = getRouteRenderKey();
@@ -4073,7 +4114,9 @@ function resetAccountTransport(next) {
   destroyMountedBoardRuntime();
   clearRouteTransition({ renderNow: false });
 
-  homeSections = { my: createHomeSectionState("My games"), other: createHomeSectionState("Other games"), smoke: createHomeSectionState("Deploy smoke player") };
+  resumeSection = { gameIds: [], page: 0, totalPages: 0, totalGames: 0, error: false };
+  homeStartStatus = "";
+  homeSections = { my: createHomeSectionState("Completed games"), other: createHomeSectionState("Other games"), smoke: createHomeSectionState("Deploy smoke player") };
   syncStore = makeAccountSyncStore(next);transport = syncStore;subscribeToTransport();
   if (visible) {
     for (const key of ['canRecordMove','canEndTurn','canInvite','canPlayAsBothPlayers','canUndoLastMove']) visible[key] = false;
@@ -4207,6 +4250,21 @@ window.addEventListener("load", () => {
   scheduleResponsiveHomeSectionPageSizes();
 });
 
+const startPersonalGame = ({ opponent, side }) => {
+  if (!account.canPlay() || !isPersonalSide(side)) return;
+  if (isComputerOpponent(opponent)) { homeStartStatus = getComputerReadiness(opponent).message; render(); return; }
+  if (opponent !== "friend" && opponent !== "self") return;
+  const handle = transport.createGame({ selfPlayMode: opponent === "self", creatorSide: side });
+  selfPlayStartSides.set(`${transport.getIdentityId()}:${handle.result.id}`, side);
+  startGameEntryRouteTransition(handle.result.id, "home");
+  navigateTo(buildGameHash(handle.result.id, null, getCurrentFlyoutState()));
+};
+appEl.addEventListener("change", (event) => {
+  if (event.target.name !== "home-side" || !isPersonalSide(event.target.value)) return;
+  homeSide = event.target.value;
+  appEl.setAttribute("data-action-affiliation", homeSide === "p2" ? "blue" : "red");
+});
+
 appEl.addEventListener("pointerdown", event => {
   if (event.target.closest?.("#shell-board") && !account.canPlay()) {
     event.preventDefault();event.stopImmediatePropagation();
@@ -4269,10 +4327,10 @@ appEl.addEventListener("click", async (event) => {
   if (action === "public-profile") { void publicProfileDialog.open(actionEl.getAttribute("data-username"), actionEl); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") { accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
-  const accountGatedActions = new Set(["create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
+  const accountGatedActions = new Set(["start-opponent","create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
   if (accountGatedActions.has(action) && !account.canPlay()) {
     event.preventDefault();
-    const intent = safeAccountIntent({ hash: window.location.hash, action, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });
+    const intent = safeAccountIntent({ hash: window.location.hash, action, opponent: actionEl.getAttribute("data-opponent"), side: homeSide, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });
     accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", intent, actionEl);
     return;
   }
@@ -4332,6 +4390,9 @@ appEl.addEventListener("click", async (event) => {
       clearCoordinatedFlyoutMotionStyles();
     }, 0);
   };
+
+  if (action === "start-opponent") { startPersonalGame({ opponent: actionEl.getAttribute("data-opponent"), side: homeSide }); return; }
+  if (action === "resume-page" || action === "retry-resume") { await loadResumePage(action === "resume-page" ? Number(actionEl.dataset.page) : resumeSection.page); if (currentRoute.name === "home") render(); return; }
 
   if (action === "create-game") {
     const handle = transport.createGame({ selfPlayMode: false });

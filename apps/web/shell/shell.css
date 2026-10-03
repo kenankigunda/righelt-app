@@ -2111,3 +2111,19 @@ button:not(.secondary):not(.warn):not(.danger):not(:disabled):active,
 
 .participant-profile { width: auto; text-align: start; }
 .account-dialog select { width: 100%; min-height: 44px; font: inherit; }
+
+.opponent-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.opponent-choice { min-height: 140px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: var(--space-2); padding: var(--space-4); text-align: left; }
+.opponent-choice strong { font-size: var(--type-heading); }
+.opponent-choice span { font-size: var(--type-secondary); font-weight: normal; }
+.opponent-availability { opacity: .95; }
+.home-side { border: 0; padding: 0; margin: var(--space-4) 0; display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.home-side legend { font-weight: 700; margin-bottom: var(--space-2); }
+.home-side label { min-height: 44px; display: flex; align-items: center; gap: var(--space-2); }
+.home-side input { width: 20px; height: 20px; accent-color: var(--action-color); }
+.home-start-status { min-height: 1.5em; margin-bottom: 0; }
+.resume-turn { font-weight: 700; margin: 0 0 var(--space-2); }
+.resume-game { min-width: 0; }
+.resume-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-4); }
+@media (min-width: 1200px) { .opponent-picker { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 400px) { .opponent-choice { padding: var(--space-3); } }

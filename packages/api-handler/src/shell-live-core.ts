@@ -327,10 +327,12 @@ export const createInitialGame = ({
   gameId,
   identityId,
   selfPlayMode,
+  creatorSide = "p1",
 }: {
   gameId: string;
   identityId: string;
   selfPlayMode: boolean;
+  creatorSide?: "p1" | "p2";
 }): LiveGame => {
   const initial = resolveToStability(createInitialState(), { artifactMode: "full" });
   const createdAt = now();
@@ -342,14 +344,14 @@ export const createInitialGame = ({
     updatedAt: createdAt,
     selfPlayMode,
     board: { state: initial },
-    player1: {
+    player1: selfPlayMode || creatorSide === "p1" ? {
       identityId,
       connected: true,
       joinedAt: createdAt,
       lastHeartbeatAt: createdAt,
       sessionCount: 0,
-    },
-    player2: selfPlayMode
+    } : null,
+    player2: selfPlayMode || creatorSide === "p2"
       ? {
           identityId,
           connected: true,

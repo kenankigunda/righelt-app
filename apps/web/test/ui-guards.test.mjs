@@ -173,7 +173,7 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /const HOME_SECTION_CARD_MIN_WIDTH_REM = 22;/);
   assert.match(source, /const HOME_SECTION_CARD_GAP_REM = 0\.85;/);
   assert.match(source, /let homeSections = \{/);
-  assert.match(source, /my: createHomeSectionState\("My games"\),/);
+  assert.match(source, /my: createHomeSectionState\("Completed games"\),/);
   assert.match(source, /other: createHomeSectionState\("Other games"\),/);
   assert.match(source, /smoke: createHomeSectionState\("Deploy smoke player"\),/);
   assert.match(source, /serverPage:\s*0,/);
@@ -209,7 +209,7 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /const renderHomeStartButton = \(\) =>/);
   assert.match(source, /data-action="create-game"/);
   assert.match(source, /home-games-section-controls home-games-section-controls-\$\{escapeHtml\(placement\)\}/);
-  assert.match(source, /const shouldAlwaysRender = sectionKey === "my";/);
+  assert.match(source, /const shouldAlwaysRender = false;/);
   assert.match(source, /const showEmptyState = section\.totalGames === 0;/);
   assert.match(source, /const showHeaderPaging = showPaging && section\.visibleColumnCount > 1;/);
   assert.match(source, /const showFooterPaging = showPaging && section\.visibleColumnCount === 1;/);

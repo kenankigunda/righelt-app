@@ -191,6 +191,8 @@ export const handleLiveGameRequest = async (
       return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
     }
     const section = parseHomeSectionKey(url.searchParams.get("section"));
+    const unfinished = section === "my" && url.searchParams.get("unfinished") === "1";
+    const finished = section === "my" && url.searchParams.get("finished") === "1";
     const pageParam = url.searchParams.get("page");
     const pageSizeParam = url.searchParams.get("pageSize");
     const page = parseNonNegativeInt(pageParam);
@@ -201,7 +203,7 @@ export const handleLiveGameRequest = async (
     if (authActive(env) && !authority && section === "my") return { handled: true, status: 200, body: { ok: true, section, page: 0, pageSize, totalGames: 0, totalPages: 0, games: [] }, cacheControl: CACHE_NO_STORE };
     const debug = !authActive(env) && url.searchParams.get("debug") === "1";
     const totalStart = nowMs();
-    const totalGames = await countHomeSectionGames(env, { identityId, section, debug });
+    const totalGames = await countHomeSectionGames(env, { identityId, section, debug, unfinished, finished });
     const countMs = nowMs() - totalStart;
     const totalPages = totalGames === 0 ? 0 : Math.ceil(totalGames / pageSize);
     const safePage = totalPages === 0 ? 0 : Math.min(page, totalPages - 1);
@@ -209,7 +211,7 @@ export const handleLiveGameRequest = async (
     const pagedGameResult =
       totalPages === 0
         ? { games: [], parseMs: 0, cardModelMs: 0 }
-        : await listHomeSectionStaticGameCardPage(env, { identityId, section, page: safePage, pageSize, debug });
+        : await listHomeSectionStaticGameCardPage(env, { identityId, section, page: safePage, pageSize, debug, unfinished, finished });
     const queryMs = nowMs() - queryStart;
     const pagedGames = pagedGameResult.games;
     const timing = {
@@ -288,6 +290,7 @@ export const handleLiveGameRequest = async (
     if (!identityId) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
     }
+    if (body.creatorSide !== undefined && body.creatorSide !== "p1" && body.creatorSide !== "p2") return { handled: true, status: 400, body: { ok: false, error: "invalid_creator_side" }, cacheControl: CACHE_NO_STORE };
     const gameId = requestedGameId ?? nextGameId();
     const response = await fetchGameRoom(request, env, gameId, "/create", {
       method: "POST",
@@ -296,6 +299,7 @@ export const handleLiveGameRequest = async (
         identityId,
         gameId,
         selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
+        creatorSide: body.creatorSide ?? "p1",
       }),
     });
     return {

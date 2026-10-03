@@ -7,7 +7,7 @@ const replacement = "A different browser test password 963";
 const dialog = page => page.getByTestId("account-dialog");
 const uniqueName = () => `User_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 const control = async action => {
-  const response = await fetch(`http://127.0.0.1:10088/${action}`, { method: "POST" });
+  const response = await fetch(`http://127.0.0.1:${Number(process.env.RIGHELT_AUTH_E2E_WEB_PORT || 9988) + 100}/${action}`, { method: "POST" });
   expect(response.status).toBe(200);
 };
 test.beforeEach(async () => control("reset-limits"));

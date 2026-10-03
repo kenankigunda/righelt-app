@@ -602,13 +602,15 @@ export const createLiveTransportStore = ({
     } catch (error) { blockStorage(gameId, error); throw error; }
   };
 
-  const loadGamesPage = async ({ section, page = 0, pageSize = 6, debug = false } = {}) => {
+  const loadGamesPage = async ({ section, page = 0, pageSize = 6, debug = false, unfinished = false, finished = false } = {}) => {
     const params = new URLSearchParams({
       identityId,
       section: String(section || ""),
       page: String(page),
       pageSize: String(pageSize),
       debug: debug ? "1" : "0",
+      ...(unfinished ? { unfinished: "1" } : {}),
+      ...(finished ? { finished: "1" } : {}),
     });
     const response = await fetcher(`/api/shell/games?${params.toString()}`, {
       method: "GET",
@@ -677,11 +679,11 @@ export const createLiveTransportStore = ({
     return getGameViewModel(gameId);
   };
 
-  const createGame = async ({ selfPlayMode = false, gameId = null } = {}) => {
+  const createGame = async ({ selfPlayMode = false, gameId = null, creatorSide = "p1" } = {}) => {
     const response = await fetcher("/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, selfPlayMode, gameId }),
+      body: JSON.stringify({ identityId, selfPlayMode, gameId, creatorSide }),
     });
     const body = await mustOk(response);
     return upsertGame(body.game);

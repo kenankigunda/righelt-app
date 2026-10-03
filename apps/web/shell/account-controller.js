@@ -1,3 +1,4 @@
+import { PERSONAL_OPPONENT_IDS, isPersonalSide } from "./personal-home.js";
 import { parseRouteFromHash } from "./routes.js";
 import {
   AUTH_PROTOCOL_VERSION,
@@ -26,6 +27,7 @@ export const safeAccountIntent = (value) => {
   }
   const allowed = [
     "create-game",
+    "start-opponent",
     "join-player",
     "accept-invite-player",
     "play-as-both-players",
@@ -34,9 +36,11 @@ export const safeAccountIntent = (value) => {
     "analysis",
   ];
   if (!allowed.includes(value.action)) return null;
+  if (value.action === "start-opponent" && (!PERSONAL_OPPONENT_IDS.includes(value.opponent) || !isPersonalSide(value.side))) return null;
   return {
     hash: value.hash,
     action: value.action,
+    ...(value.action === "start-opponent" ? { opponent: value.opponent, side: value.side } : {}),
     ...(typeof value.gameId === "string" ? { gameId: value.gameId } : {}),
     ...(typeof value.moveIndex === "string"
       ? { moveIndex: value.moveIndex }

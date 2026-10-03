@@ -9,7 +9,7 @@ import path from "node:path";
 import { LOCAL_DEV_PORT_VARIANTS, resolveLocalApiPort } from "../apps/web/local-dev-ports.js";
 
 const root = process.cwd();
-const webPort = String(LOCAL_DEV_PORT_VARIANTS.find(variant => variant.suffix === "auth-e2e").webPort);
+const webPort = String(process.env.RIGHELT_AUTH_E2E_WEB_PORT || LOCAL_DEV_PORT_VARIANTS.find(variant => variant.suffix === "auth-e2e").webPort);
 const apiPort = String(resolveLocalApiPort(webPort));
 const origin = `https://127.0.0.1:${webPort}`;
 const temporary = await mkdtemp(path.join(os.tmpdir(), "righelt-auth-e2e-"));

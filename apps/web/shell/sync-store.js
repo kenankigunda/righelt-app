@@ -1254,12 +1254,12 @@ export const createSyncStore = ({
         throw error;
       }
     },
-    createGame: ({ selfPlayMode = false } = {}) => {
+    createGame: ({ selfPlayMode = false, creatorSide = "p1" } = {}) => {
       const gameId = createGameId();
       const createdAt = new Date().toISOString();
       const identityId = transport.getIdentityId();
-      const player1 = createParticipant(identityId, createdAt);
-      const player2 = selfPlayMode ? createParticipant(identityId, createdAt) : null;
+      const player1 = selfPlayMode || creatorSide === "p1" ? createParticipant(identityId, createdAt) : null;
+      const player2 = selfPlayMode || creatorSide === "p2" ? createParticipant(identityId, createdAt) : null;
       const stubGame = buildLocalGameView({
         gameId,
         identityId,
@@ -1268,7 +1268,7 @@ export const createSyncStore = ({
         selfPlayMode,
         player1,
         player2,
-        myRole: "Player 1",
+        myRole: creatorSide === "p2" && !selfPlayMode ? "Player 2" : "Player 1",
         notifications: ["Game creation pending sync"],
       });
       transport.applyLiveGameUpdate({ game: stubGame });
@@ -1281,7 +1281,7 @@ export const createSyncStore = ({
       });
 
       void transport
-        .createGame({ selfPlayMode, gameId })
+        .createGame({ selfPlayMode, gameId, creatorSide })
         .then((game) => {
           if (game?.id !== gameId) {
             const mismatchError = createGameIdMismatchError("Game creation", gameId, game?.id ?? "unknown");
