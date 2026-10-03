@@ -26,3 +26,15 @@ Both approved stages begin at two self-play workers and a 16 GiB experiment ceil
 The activity bridge is a local JSON file with `schema: 1`, `observedAt` (Unix seconds), and `developmentActive` (boolean). A coordinator must refresh this from actual task status; a stale `false` never authorizes more resources. System CPU and memory telemetry must independently permit escalation. Every observation and allocation is appended to the experiment record.
 
 Throttling and paused time count against the six-hour or twelve-hour deadline. Resuming the same run cannot reset that deadline. Setup/unit tests do not consume the experiment budget. The launch supervisor rejects missing/stale correctness or full export-parity proof. Synthetic preflight output cannot authorize a run.
+
+## Supervised phases
+
+`pnpm ai:run --run-dir .ai-runs/initial --activity-file /path/activity.json --gate-report /path/gates.json --stage initial --seed 107` launches only after the frozen-source correctness and export gates pass. It claims the single approved initial allocation. Use a separate overnight directory only after genuine health and a published progress report; source and dependency identities remain frozen.
+
+Reserve the final one-sixth of the stage for validation and reporting. The coordinator writes `handoff-request.json` in the run directory with `schema: 1`, a unique `id`, `reason: "validation"`, and the current `manifestSha256`. The runner checkpoints between bounded operations, records the handoff and exits. This does not restart or extend the deadline.
+
+Resume the same supervisor arguments with `--resume /path/checkpoint.pt --health` to audit exact archived replays, distinct trained weights, optimizer recovery and unresolved prior attempt failures. Health runs under the original external watchdog. Repeated checkpoint files containing the same weights count once. A later successful phase cannot erase a failed earlier attempt.
+
+`pnpm ai:arena freeze input-plan.json frozen-plan.json` verifies and freezes the 100 seat-swapped pairs, split identities, checkpoint checksums and profiles. Run them by adding `--arena-plan frozen-plan.json --candidate-checkpoint /path/candidate.pt --opponent-checkpoint /path/opponent.pt` to a same-run supervisor resume. Missing time, resource interruption or incomplete pairs remain inconclusive. Validation can resume completed immutable games; final families are claimed once across the experiment archive, independent of filename or model/profile changes. Separate final comparisons need distinct unopened families.
+
+`pnpm ai:replay archive.json.gz` independently checks a complete game with a bounded authoritative-engine child. `pnpm ai:arena report pairs.json report.json --seed 107 --purpose incumbent` produces deterministic whole-pair bootstrap statistics. These diagnostic commands do not start training, reserve extra compute, open final data or promote models. Run experiment evaluation/reporting within its original approved deadline.
