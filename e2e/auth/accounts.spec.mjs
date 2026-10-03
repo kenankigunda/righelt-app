@@ -301,3 +301,47 @@ test("interrupted registration resumes with a replacement recovery code and an e
   await dialog(page).getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
 });
+
+for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load during a ${gesture} gesture does not swallow the account click`, async ({ page }) => {
+  let release, held;
+  const waiting = new Promise(resolve => { held = resolve; });
+  const released = new Promise(resolve => { release = resolve; });
+  await page.route(/\/api\/shell\/games(?:\?|$)/, async route => {
+    const response = await route.fetch();
+    held();
+    await released;
+    await route.fulfill({ response });
+  });
+  await page.goto("/");
+  const trigger = page.getByRole("button", { name: "Sign in", exact: true });
+  await expect(trigger).toBeVisible();
+  await waiting;
+  if (gesture === "pointer") { await trigger.hover(); await page.mouse.down(); }
+  else { await trigger.focus(); await page.keyboard.down("Space"); }
+  const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/shell/games");
+  release();
+  await refreshed;
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  if (gesture === "pointer") await page.mouse.up();
+  else await page.keyboard.up("Space");
+  await expect(dialog(page)).toBeVisible();
+});
+
+test("a stalled startup read recovers without granting guest play", async ({ page }) => {
+  let requests = 0, release;
+  const held = new Promise(resolve => { release = resolve; });
+  await page.route("**/api/shell/bootstrap", async route => {
+    if (++requests === 1) {
+      await held;
+      await route.abort().catch(() => {});
+    } else await route.continue();
+  });
+  try {
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+    expect(requests).toBeGreaterThanOrEqual(2);
+    await page.getByRole("button", { name: "Start new game", exact: true }).click();
+    await expect(dialog(page)).toBeVisible();
+    await expect(page).not.toHaveURL(/#\/game\//);
+  } finally { release(); }
+});

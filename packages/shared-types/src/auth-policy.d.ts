@@ -1,4 +1,5 @@
 export const AUTH_PROTOCOL_VERSION: 1;
+export const AUTH_BOOTSTRAP_TIMEOUT_MS: number;
 export const SESSION_COOKIE: '__Host-righelt_session';
 export const FLOW_COOKIE: '__Host-righelt_recovery';
 export const SESSION_IDLE_MS: number;

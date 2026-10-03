@@ -1,6 +1,7 @@
 import { parseRouteFromHash } from "./routes.js";
 import {
   AUTH_PROTOCOL_VERSION,
+  AUTH_BOOTSTRAP_TIMEOUT_MS,
   AUTH_PROTOCOL_HEADER,
   AUTH_REQUEST_HEADER,
   SESSION_CONTEXT_HEADER,
@@ -50,6 +51,7 @@ export const createAccountController = ({
   now = Date.now,
   locks = globalThis.navigator?.locks,
   retryTimers = globalThis,
+  bootstrapTimers = globalThis,
   channelFactory = globalThis.window && globalThis.BroadcastChannel
     ? () => new BroadcastChannel("righelt.accounts.v1")
     : null,
@@ -215,7 +217,8 @@ export const createAccountController = ({
         }),
       );
       const result = await response.json();
-      if (epoch !== generation || destroyed) throw failure("session_changed");
+      if (epoch !== generation || destroyed || controller.signal.aborted)
+        throw failure("session_changed");
       if (!response.ok || result.ok === false)
         throw Object.assign(
           failure(result.error || "temporarily_unavailable"),
@@ -266,30 +269,58 @@ export const createAccountController = ({
       });
     return logoutFlight;
   };
-  const hydrate = async () => {
+  const hydrate = async (signal) => {
     if (!enabled || destroyed || busy) return snapshot();
     if (readPending()) {
       await finishLogout();
       return snapshot();
     }
-    const next = await request("/api/auth/session");
+    const next = await request("/api/auth/session", undefined, { signal });
     accept(next);
     return snapshot();
   };
-  const start = async () => {
-    const result = await request("/api/shell/bootstrap");
-    if (
-      result.authProtocolVersion !== AUTH_PROTOCOL_VERSION ||
-      typeof result.accountsRequired !== "boolean"
-    )
-      throw failure("upgrade_required");
-    enabled = result.accountsRequired;
-    siteKey = result.turnstileSiteKey || null;
-    ready = true;
-    if (enabled) await hydrate();
-    else retire({ authenticated: false });
-    publish();
-    return snapshot();
+  let startFlight = null;
+  const start = () => {
+    if (startFlight) return startFlight;
+    const controller = new AbortController(),
+      epoch = generation;
+    let timer;
+    const deadline = new Promise((resolve, reject) => {
+      timer = bootstrapTimers.setTimeout(() => {
+        controller.abort();
+        reject(failure("temporarily_unavailable"));
+      }, AUTH_BOOTSTRAP_TIMEOUT_MS);
+      timer?.unref?.();
+    });
+    const load = async () => {
+      const result = await request("/api/shell/bootstrap", undefined, {
+        signal: controller.signal,
+      });
+      if (
+        result.authProtocolVersion !== AUTH_PROTOCOL_VERSION ||
+        typeof result.accountsRequired !== "boolean"
+      )
+        throw failure("upgrade_required");
+      enabled = result.accountsRequired;
+      siteKey = result.turnstileSiteKey || null;
+      ready = true;
+      if (enabled) await hydrate(controller.signal);
+      else retire({ authenticated: false });
+      if (controller.signal.aborted || destroyed)
+        throw failure("session_changed");
+      publish();
+      return snapshot();
+    };
+    startFlight = Promise.race([load(), deadline])
+      .catch((error) => {
+        if (epoch === generation) ready = false;
+        throw error;
+      })
+      .finally(() => {
+        bootstrapTimers.clearTimeout(timer);
+        startFlight = null;
+      });
+    return startFlight;
   };
   const activity = async (force = false) => {
     if (
@@ -377,7 +408,8 @@ export const createAccountController = ({
     });
     if (init.signal?.aborted) controller.abort();
     const check = () => {
-      if (epoch !== generation || destroyed) throw failure("session_changed");
+      if (epoch !== generation || destroyed || controller.signal.aborted)
+        throw failure("session_changed");
     };
     try {
       check();
