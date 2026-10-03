@@ -2,7 +2,7 @@
 
 ## Notification setup
 
-The local recipient lives in ~/.config/righelt/validation.json, outside Git and shared across worktrees. Verify connector availability and profile at startup. This environment's requested recipient is kenankigunda@gmail.com, but use saved configuration rather than hardcoding it into other environments.
+The local recipient lives in ~/.config/righelt/validation.json, outside Git and shared across worktrees. Verify connector availability and profile at startup. Use the saved configuration; never hardcode a personal recipient into repository guidance or artifacts.
 
 Send consolidated digests when a coherent end-to-end set is ready, materially changed, or reaches final readiness. Do not send on every upload/check/repair. Include PR links and rows with readiness, authorization, waiting conditions, action owner, plus immutable evidence and stable review URLs. State whether a response is needed. Blocking product/structural decisions require prompt email with a recommendation and alternatives. Email does not block continued independent work.
 

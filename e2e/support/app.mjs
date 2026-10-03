@@ -234,7 +234,8 @@ export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
     await expect(targetCell.locator('.move-ghost')).toBeVisible();
     // Touch selects a destination before confirming it. A sole legal destination
     // can already be selected, so never blindly send two confirmation taps.
-    if (!(await targetCell.evaluate(cell => cell.classList.contains('target')))) {
+    const hoverCapable = await page.locator('html').getAttribute('data-hover-capability') === 'hover';
+    if (!hoverCapable && !(await targetCell.evaluate(cell => cell.classList.contains('target')))) {
       await targetCell.tap();
       await expect(targetCell).toHaveClass(/\btarget\b/);
     }
