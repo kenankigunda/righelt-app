@@ -4,6 +4,7 @@ import {readFile,writeFile} from 'node:fs/promises';
 import {candidateCapabilities} from '../scripts/validation/capabilities.mjs';
 import {proof} from '../scripts/validation/proof.mjs';
 import {proveLegacyMutationDenied} from '../scripts/validation/legacy-account-proof.mjs';
+import {proveResultsRematch} from '../scripts/validation/results-proof.mjs';
 import {FRESH_ACCOUNT_WORKFLOW,RETAINED_ACCOUNT_WORKFLOW} from '../scripts/validation/account-evidence.mjs';
 
 const root=process.env.RIGHELT_VALIDATION_TARGET_ROOT||process.cwd();
@@ -148,6 +149,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
       expect(creates).toBe(priorCreates);expect((await session(page)).account.preferences.introducedOpponents).toBe(0);
     }
   }
+  if(capabilities.results)await proveResultsRematch({page,info,root});
   if(process.env.RIGHELT_LEGACY_CONTINUITY_INPUT){
     const legacy=JSON.parse(await readFile(process.env.RIGHELT_LEGACY_CONTINUITY_INPUT,'utf8'));
     await page.goto(`/${legacy.hash}`);
