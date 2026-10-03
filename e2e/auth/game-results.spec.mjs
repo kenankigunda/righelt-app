@@ -38,6 +38,18 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
     await page.setViewportSize(viewport);
     await page.screenshot({ path: testInfo.outputPath(`result-${viewport.width}.png`) });
   }
+  // Landscape starts above the actions; verify the real scroll can reveal each
+  // control rather than treating a heading-only screenshot as complete proof.
+  const result = page.getByTestId("game-result");
+  for (const action of [review, result.getByRole("button", { name: "Play again", exact: true }), result.getByRole("link", { name: "Home", exact: true })]) {
+    await action.scrollIntoViewIfNeeded();
+    await expect(action).toBeInViewport({ ratio: 1 });
+    expect(await action.evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+    })).toBe(true);
+  }
+  await page.screenshot({ path: testInfo.outputPath("result-812-actions-reachable.png") });
   await page.setViewportSize({ width: 375, height: 812 });
   const home = page.getByTestId("game-result").getByRole("link", { name: "Home", exact: true });
   await home.focus();
