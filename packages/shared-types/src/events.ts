@@ -1,3 +1,4 @@
+import type { HeartbeatAck } from "./sync-protocol";
 export type LiveGamePayload = Record<string, unknown>;
 
 export type StateSyncEvent = {
@@ -49,6 +50,7 @@ export type ErrorEvent = {
 };
 
 export type ServerEvent =
+  | HeartbeatAck
   | StateSyncEvent
   | EventAppendedEvent
   | PresenceChangedEvent

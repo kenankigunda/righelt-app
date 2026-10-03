@@ -1,3 +1,4 @@
+import { readSyncBody, SyncBodyError } from "./sync-body";
 import { listLegalActions } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import { CACHE_BOOTSTRAP_SHORT, CACHE_NO_STORE } from "../../shared-types/src/http";
@@ -305,7 +306,7 @@ export const handleLiveGameRequest = async (
       const response = await fetchGameRoom(env, targetGameId, "/load-scenario", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ identityId, scenario }),
+        body: JSON.stringify({ identityId, scenario, protocolVersion: body.protocolVersion }),
       });
       return {
         handled: true,
@@ -403,6 +404,17 @@ export const handleLiveGameRequest = async (
 
   if (route.length >= 2 && route[0] === "games") {
     const gameId = route[1];
+    if (request.method === "POST" && route.length === 3 && ["moves", "apply", "end-turn", "reconcile"].includes(route[2])) {
+      let syncBody;
+      try { syncBody = await readSyncBody(request); }
+      catch (error) {
+        if (error instanceof SyncBodyError) return { handled: true, status: error.status, body: { ok: false, error: error.message }, cacheControl: CACHE_NO_STORE };
+        throw error;
+      }
+      if (!hasGameRoomsBinding(env)) return { handled: true, status: 500, body: { ok: false, error: GAME_ROOMS_BINDING_ERROR }, cacheControl: CACHE_NO_STORE };
+      const response = await fetchGameRoom(env, gameId, `/${route[2]}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(syncBody) });
+      return { handled: true, status: response.status, body: await response.json() as Record<string, unknown>, cacheControl: CACHE_NO_STORE };
+    }
     const projection = await loadGameProjection(env, gameId);
     if (!projection) {
       return { handled: true, status: 404, body: { ok: false, error: "game_not_found" }, cacheControl: CACHE_NO_STORE };
@@ -425,7 +437,7 @@ export const handleLiveGameRequest = async (
       return {
         handled: true,
         status: 200,
-        body: { ok: true, game: withFullViewModel(game, identityId), eventSeq: projection.eventSeq },
+        body: { ok: true, protocolVersion: 2, game: withFullViewModel(game, identityId), eventSeq: projection.eventSeq },
         cacheControl: CACHE_NO_STORE,
       };
     }
@@ -461,6 +473,7 @@ export const handleLiveGameRequest = async (
         body: JSON.stringify({
           identityId,
           mode: body.mode,
+          protocolVersion: body.protocolVersion,
           inviteFromRole,
         }),
       });
@@ -478,6 +491,7 @@ export const handleLiveGameRequest = async (
         "approve",
         "moves",
         "apply",
+        "reconcile",
         "end-turn",
         "history",
         "live",

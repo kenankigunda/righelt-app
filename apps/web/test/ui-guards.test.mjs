@@ -66,8 +66,8 @@ test("history live-return control stays mounted without blocking through the glo
   assert.doesNotMatch(source, /data-action="return-live"[^`]*\$\{busy \? "disabled" : ""\}/);
   assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*transport\.selectHistoryMove\(\{ gameId, moveIndex \}\);[\s\S]*return;/s);
   assert.match(source, /if \(action === "return-live"\) \{[\s\S]*transport\.returnToLive\(\{ gameId \}\);[\s\S]*return;/s);
-  assert.match(syncStoreSource, /selectHistoryMove: \(\{ gameId, moveIndex \}\) => \{/);
-  assert.match(syncStoreSource, /returnToLive: \(\{ gameId \}\) => \{/);
+  assert.match(syncStoreSource, /selectHistoryMove: \(\{ gameId, moveIndex \}\) => operationManager.createCommitted/);
+  assert.match(syncStoreSource, /returnToLive: \(\{ gameId \}\) => operationManager.createCommitted/);
   assert.doesNotMatch(source, /if \(game\.inHistoryMode && activeTurn\.moveIndexes\.length > 0\) \{/);
 });
 
