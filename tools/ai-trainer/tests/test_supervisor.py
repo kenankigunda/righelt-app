@@ -83,6 +83,16 @@ class SupervisorTest(unittest.TestCase):
             result=supervise(process,Budget(0,600,1600),AdaptivePolicy(),QuietTelemetry(),Path(d),clock=lambda:100,runtime=runtime)
             self.assertEqual(result,'validation-handoff-timeout')
 
+    def test_fresh_heartbeat_cannot_hide_stalled_operation(self):
+        from unittest.mock import Mock,patch
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/'operation-status.json').write_text(json.dumps({'pid':123,'status':'running','deadlineMonotonic':90}))
+            process=Mock(pid=123);process.poll.return_value=None
+            with patch('righelt_training.supervisor.stop_group') as stopped:
+                reason=supervise(process,Budget(0,600),AdaptivePolicy(),QuietTelemetry(),root,clock=lambda:100)
+            self.assertEqual(reason,'operation-timeout');self.assertTrue(stopped.called)
+
     def test_arena_cannot_claim_fresh_budget_or_external_checkpoint(self):
         from argparse import Namespace
         from unittest.mock import patch
@@ -146,6 +156,8 @@ class SupervisorTest(unittest.TestCase):
         report={'sourceRevision':'rev','configSha256':CONFIG_SHA256,'checks':{k:{'passed':True,'evidence':'test'} for k in ('coreTests','trainerTests','exactReplay','exportParity')}}
         with self.assertRaises(ValueError):validate_gate_report(report,'rev','initial')
         report['checks']['exportParity'].update(heldoutStates=1000,legalMasksPassed=True,tacticalParityPassed=True)
+        from righelt_training.manifest import dependency_inventory
+        report['proofDependencies']=dependency_inventory()
         validate_gate_report(report,'rev','initial')
         with self.assertRaises(ValueError):validate_gate_report(report,'changed','initial')
         with self.assertRaises(ValueError):validate_gate_report(report,'rev','overnight')

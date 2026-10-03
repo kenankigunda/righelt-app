@@ -11,7 +11,9 @@ import signal
 import subprocess
 import threading
 import torch
-from .checkpoint import atomic_json, load_checkpoint
+from .checkpoint import atomic_json, load_checkpoint,inspect_checkpoint
+from .manifest import active_manifest,manifest_hashes
+from .repair import resolved_failures
 from .config import ROOT,CONFIG_SHA256
 from .model import PolicyValueNet
 from .replay import partition_for_family
@@ -38,13 +40,15 @@ def check_attempt_history(directory):
         if target is None or row['id'] in target:raise ValueError('invalid supervisor attempt journal')
         target[row['id']]=row
     if not starts or not set(ends)<=set(starts):raise ValueError('incomplete supervisor attempt journal')
+    resolved=resolved_failures(directory)
     unfinished=[]
     for identity,start in starts.items():
         end=ends.get(identity)
+        if identity in resolved:continue
         if end is None:
             if start['phase']=='health' and start['pid']==os.getppid():continue
             raise ValueError('unresolved interrupted supervisor attempt')
-        if end['reason'] in ('runner-failed','telemetry-failed'):raise ValueError('unresolved prior supervisor failure')
+        if end['reason'] in ('runner-failed','telemetry-failed','operation-timeout','interrupted','setup-failed'):raise ValueError('unresolved prior supervisor failure')
         if end['reason']=='validation-handoff-timeout':unfinished.append({'id':identity,'phase':start['phase'],'reason':end['reason']})
     return unfinished
 
@@ -80,12 +84,16 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
         latest=json.loads((directory/'latest.json').read_text())
         path=Path(latest['checkpoint']).resolve()
         if not path.is_relative_to(directory):raise ValueError('checkpoint outside run')
+        allowed=manifest_hashes(directory)
+        meta=json.loads(path.with_suffix('.json').read_text())
+        if meta['manifestSha256'] not in allowed:raise ValueError('checkpoint source lineage not authorized')
+        inspect_checkpoint(path,manifest_sha256=meta['manifestSha256'],require_recovery=True)
         companion=json.loads(path.with_suffix('.runner.json').read_text())
         if companion['checkpointSha256']!=latest['sha256'] or hashlib.sha256(path.read_bytes()).hexdigest()!=latest['sha256']:
             raise ValueError('latest checkpoint identity mismatch')
         state=companion['state'];seen=set()
         if state['updates']!=latest['updates']:raise ValueError('latest update count mismatch')
-        manifest_record=json.loads((directory/'manifest.json').read_text())
+        manifest_record=active_manifest(directory)
         manifest=manifest_record['sha256']
         result['trainedExportParityPassed']=trained_export_proof(directory,latest,manifest_record)
         for name in state['archives']:
@@ -107,7 +115,8 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
             if clock()>=deadline-2:raise TimeoutError('checkpoint recovery audit unfinished within stage budget')
             meta=json.loads(checkpoint.with_suffix('.json').read_text())
             model=PolicyValueNet();optimizer=torch.optim.AdamW(model.parameters())
-            data=load_checkpoint(checkpoint,model,optimizer,manifest_sha256=manifest)
+            if meta['manifestSha256'] not in allowed:raise ValueError('checkpoint source lineage not authorized')
+            data=load_checkpoint(checkpoint,model,optimizer,manifest_sha256=meta['manifestSha256'],require_recovery=True)
             if data['updates']!=meta['updates'] or not finite_tree(data['model']) or not finite_tree(data['optimizer']):
                 raise ValueError('invalid checkpoint parameters or optimizer state')
             if data['updates']<=0:continue
@@ -122,9 +131,6 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
             if len(weights)>=2:break
         result['distinctRecoverableTrainedCheckpoints']=len(weights)
         result['finiteNonzeroUpdates']=bool(weights) and state['updates']>0 and state['nonzeroUpdates']==state['updates']
-        supervisor=directory/'supervisor-result.json'
-        if supervisor.exists() and json.loads(supervisor.read_text())['reason'] in ('runner-failed','telemetry-failed'):
-            raise ValueError('unresolved supervisor failure')
         result['complete']=True
         result['healthy']=(result['terminalGames']>=100 and len(weights)>=2 and result['finiteNonzeroUpdates']
                            and result['trainedExportParityPassed'] and not result['unfinishedAttempts'])

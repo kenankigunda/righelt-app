@@ -13,10 +13,11 @@ import uuid
 import psutil
 
 from .budget import Budget
-from .checkpoint import atomic_json
+from .checkpoint import atomic_json,inspect_checkpoint
 from .config import CONFIG,CONFIG_SHA256,ROOT
-from .manifest import build_manifest,write_manifest
-from .processes import start_group,stop_group,install_stop_handlers
+from .manifest import build_manifest,write_manifest,active_manifest,amend_manifest,manifest_hashes,dependency_inventory
+from .allocation import Allocation
+from .processes import start_group,stop_group,install_stop_handlers,register_owned,cleanup_owned
 from .resources import AdaptivePolicy
 from .telemetry import Telemetry,read_device_memory
 
@@ -28,6 +29,7 @@ def validate_gate_report(report, source_revision, stage):
         gate=report.get('checks',{}).get(name,{})
         if gate.get('passed') is not True or not gate.get('evidence'):
             raise ValueError(f'launch gate missing: {name}')
+    if report.get('proofDependencies')!=dependency_inventory():raise ValueError('proof dependency inventory missing or changed')
     parity=report['checks']['exportParity']
     if parity.get('heldoutStates',0)<1000 or parity.get('legalMasksPassed') is not True or parity.get('tacticalParityPassed') is not True:
         raise ValueError('export parity acceptance proof is incomplete')
@@ -85,6 +87,11 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
             if budget.remaining(now)<=0:
                 stop_group(process)
                 return 'budget-expired'
+            operation=Path(run_dir)/'operation-status.json'
+            if operation.exists():
+                state=json.loads(operation.read_text())
+                if state.get('pid')==process.pid and (state.get('status') in ('timed-out','monitor-failed') or (state.get('status')=='running' and now>=state['deadlineMonotonic'])):
+                    stop_group(process);return 'operation-timeout'
             if runtime is not None:request_validation_handoff(run_dir,runtime,now)
             if runtime is not None and runtime.get('command')=='training' and now>=validation_boundary(runtime,now)+60:
                 stop_group(process)
@@ -110,7 +117,7 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
                         # The runner checkpoints between bounded operations. A blocked runner
                         # cannot defeat this external watchdog or extend the run budget.
                         try:
-                            if read_device_memory(Path(run_dir)/'device-memory.json',process.pid,time.time())[1]:
+                            if read_device_memory(Path(run_dir)/'device-memory.json',process.pid)[1]:
                                 os.kill(process.pid,signal.SIGUSR1)
                         except ProcessLookupError:pass
                     elif now-paused_since>=sample_seconds:
@@ -153,13 +160,30 @@ def arena_arguments(args,artifact_root):
 
 
 def parity_arguments(args,artifact_root):
+    if getattr(args,'canary',False):
+        if not args.parity_corpus or not args.parity_corpus.resolve().is_relative_to(artifact_root.resolve()):raise ValueError('canary requires archived parity corpus')
+        return hashlib.sha256(args.parity_corpus.read_bytes()).hexdigest()
     if not args.export_parity:
-        if args.parity_corpus:raise ValueError('parity corpus requires export-parity phase')
+        if args.parity_corpus and not getattr(args,'canary',False):raise ValueError('parity corpus requires export-parity phase')
         return None
     if args.arena_plan or args.prepare_arena or args.health:raise ValueError('export parity is an exclusive phase')
     if not args.resume or not args.run_dir.exists():raise ValueError('export parity requires original run and trained checkpoint resume')
     if not args.parity_corpus or not args.parity_corpus.resolve().is_relative_to(artifact_root.resolve()):raise ValueError('parity corpus must be under experiment archive')
     return hashlib.sha256(args.parity_corpus.read_bytes()).hexdigest()
+
+
+def validate_overnight_checkpoint(checkpoint,gate):
+    if checkpoint is None:raise ValueError('overnight requires audited initial checkpoint')
+    checkpoint=Path(checkpoint).resolve();directory=checkpoint.parent.parent
+    manifest=active_manifest(directory)
+    health=json.loads((directory/'health-report.json').read_text())
+    latest=json.loads((directory/'latest.json').read_text())
+    if manifest['manifest']['stage']!='initial' or health.get('healthy') is not True or gate.get('health')!={**health,'progressReportPublished':True}:
+        raise ValueError('overnight health must bind to its initial run')
+    if str(checkpoint)!=latest['checkpoint'] or hashlib.sha256(checkpoint.read_bytes()).hexdigest()!=latest['sha256']:
+        raise ValueError('overnight checkpoint differs from audited latest')
+    if not any(row['sha256']==latest['sha256'] for row in health['checkpoints']):raise ValueError('checkpoint not audited')
+    return latest
 
 
 def record_attempt(directory,event):
@@ -179,6 +203,7 @@ def main():
     parser.add_argument('--resume',type=Path)
     parser.add_argument('--arena-plan',type=Path)
     parser.add_argument('--health',action='store_true')
+    parser.add_argument('--canary',action='store_true')
     parser.add_argument('--prepare-arena',action='store_true')
     parser.add_argument('--export-parity',action='store_true')
     parser.add_argument('--parity-corpus',type=Path)
@@ -200,68 +225,93 @@ def main():
     fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     manifest=build_manifest(args.seed,args.stage)
     validate_gate_report(json.loads(args.gate_report.read_text()),manifest['sourceRevision'],args.stage)
-    if args.resume and not args.run_dir.exists() and args.stage!='overnight':
-        raise ValueError('initial-stage resume must retain its original directory and budget')
+    phase='canary' if args.canary else 'export-parity' if args.export_parity else 'prepare-arena' if args.prepare_arena else 'health' if args.health else 'arena' if arena_digest else 'training'
+    if args.canary and (args.resume or args.export_parity or args.prepare_arena or args.health or args.arena_plan):raise ValueError('canary is exclusive')
+    allocation=Allocation(artifact_root,args.run_dir)
+    if args.stage=='overnight' and not args.run_dir.exists():
+        validate_overnight_checkpoint(args.resume,json.loads(args.gate_report.read_text()))
+    allocation.create(args.stage)
+    allocation.recover_abandoned(cleanup_owned)
     runtime_path=args.run_dir/'runtime.json'
-    if args.run_dir.exists():
-        if not args.resume:raise ValueError('existing run requires an explicit checkpoint resume')
-        original=json.loads((args.run_dir/'manifest.json').read_text())
-        runtime=json.loads(runtime_path.read_text())
-        old=original['manifest']
-        if any(old[k]!=manifest[k] for k in ('sourceRevision','configSha256','seed','stage','dependencies','lockHashes')):
-            raise ValueError('resume source, dependencies or stage changed')
-        if runtime.get('bootTime')!=psutil.boot_time():raise ValueError('cannot reuse monotonic budget after reboot')
-        digest=original['sha256'];started=runtime['startedMonotonic']
-        budget=Budget(started,runtime['deadlineMonotonic']-started,runtime['deadlineWall'])
-        if budget.remaining(time.monotonic())<=0:raise ValueError('original budget expired; no reset permitted')
+    manifest_path=args.run_dir/'manifest.json'
+    if manifest_path.exists():
+        original=active_manifest(args.run_dir)
+        if any(original['manifest'][key]!=manifest[key] for key in ('sourceRevision','configSha256','seed','stage','dependencies','lockHashes')):
+            original=amend_manifest(args.run_dir,manifest,json.loads(args.gate_report.read_text()).get('repair',{}))
+        digest=original['sha256']
+        runtime=json.loads(runtime_path.read_text()) if runtime_path.exists() else {}
+        if phase=='training' and (args.run_dir/'latest.json').exists() and not args.resume:raise ValueError('trained state requires explicit verified checkpoint resume')
     else:
-        args.run_dir.mkdir(parents=True)
-        digest=write_manifest(args.run_dir/'manifest.json',manifest)
-        started=time.monotonic();wall_started=time.time();budget=Budget(started,manifest['seconds'],wall_started+manifest['seconds'])
-        runtime={'schema':1,'startedMonotonic':started,'deadlineMonotonic':started+budget.seconds,'startedWall':wall_started,'deadlineWall':budget.wall_deadline,
-                 'manifestSha256':digest,'stage':args.stage,'seed':args.seed,'bootTime':psutil.boot_time()}
-    if args.resume:
-        metadata=json.loads(args.resume.with_suffix('.json').read_text())
-        if metadata['configSha256']!=CONFIG_SHA256:raise ValueError('resume checkpoint configuration changed')
-        runtime['parentCheckpointManifestSha256']=metadata['manifestSha256']
-        runtime['parentCheckpoint']=str(args.resume.resolve())
-    runtime['supervisorPid']=os.getpid()
-    runtime['command']='export-parity' if args.export_parity else 'prepare-arena' if args.prepare_arena else 'health' if args.health else 'arena' if arena_digest else 'training'
-    validate_training_window(runtime,time.monotonic())
-    if parity_digest:
-        runtime['parityCorpusSha256']=parity_digest
-        runtime['parityCorpusPath']=str(args.parity_corpus.resolve())
-    runtime['supervisorAttempt']=uuid.uuid4().hex
-    if arena_digest:runtime['arenaPlanSha256']=arena_digest
-    else:runtime.pop('arenaPlanSha256',None)
-    atomic_json(runtime_path,runtime)
-    atomic_json(args.run_dir/'allocation.json',{'workers':CONFIG['resources']['minWorkers'],
-                'memory_gib':CONFIG['resources']['minMemoryGiB'],'paused':False,'stop':False,
-                'reason':'initial-conservative','observedAt':time.time()})
-    claim_stage(artifact_root,args.stage,args.run_dir)
-    if args.export_parity:
-        argv=[sys.executable,'-m','righelt_training.export_parity','--run-dir',str(args.run_dir.resolve()),
-              '--checkpoint',str(args.resume.resolve()),'--corpus',str(args.parity_corpus.resolve())]
-    elif args.prepare_arena:
-        argv=[sys.executable,'-m','righelt_training.prepare_arena','--run-dir',str(args.run_dir.resolve()),
-              '--candidate-checkpoint',str(args.candidate_checkpoint.resolve()),'--opponent-checkpoint',str(args.opponent_checkpoint.resolve())]
-    elif args.health:
-        argv=[sys.executable,'-m','righelt_training.health','--run-dir',str(args.run_dir.resolve())]
-    elif arena_digest:
-        argv=[sys.executable,'-m','righelt_training.arena','run','--run-dir',str(args.run_dir.resolve()),
-              '--plan',str(args.arena_plan.resolve()),'--candidate-checkpoint',str(args.candidate_checkpoint.resolve()),
-              '--opponent-checkpoint',str(args.opponent_checkpoint.resolve())]
-    else:
-        argv=[sys.executable,'-m','righelt_training.runner','--run-dir',str(args.run_dir.resolve()),'--seed',str(args.seed),'--stage',args.stage]
-        if args.resume:argv+=['--resume',str(args.resume.resolve())]
-    env={**os.environ,'PYTHONPATH':str(ROOT/'tools/ai-trainer')}
-    record_attempt(args.run_dir,{'event':'started','id':runtime['supervisorAttempt'],'phase':runtime['command'],'pid':os.getpid()})
-    with (args.run_dir/'runner.log').open('a') as log:
-        process=start_group(['/usr/bin/nice','-n','10',*argv],cwd=ROOT,env=env,stdout=log,stderr=log)
-        reason=supervise(process,budget,AdaptivePolicy(),Telemetry(artifact_root,args.activity_file,args.run_dir/'device-memory.json',process.pid),args.run_dir,runtime=runtime)
-    record_attempt(args.run_dir,{'event':'finished','id':runtime['supervisorAttempt'],'phase':runtime['command'],'reason':reason})
-    atomic_json(args.run_dir/'supervisor-result.json',{'reason':reason,'runnerReturncode':process.returncode,
-                'elapsedSeconds':time.monotonic()-started,'budgetSeconds':budget.seconds,'productionPromotion':False})
-    print(json.dumps({'reason':reason,'runDir':str(args.run_dir)}))
+        args.run_dir.mkdir(parents=True,exist_ok=True)
+        digest=write_manifest(manifest_path,manifest);runtime={}
+    interval,remaining,charged=allocation.begin(phase)
+    reason='setup-failed'
+    try:
+        now=time.monotonic();wall=time.time()
+        total=manifest['seconds']
+        budget=Budget(now-charged,total,wall+remaining)
+        if phase=='canary':budget=Budget(now,min(600,remaining),wall+min(600,remaining))
+        started=now-charged
+        runtime.update(schema=2,startedMonotonic=started,deadlineMonotonic=now+remaining,startedWall=wall-charged,
+                       deadlineWall=wall+remaining,manifestSha256=digest,stage=args.stage,seed=args.seed,
+                       bootTime=psutil.boot_time(),elapsedBefore=charged,allocationInterval=interval['id'])
+        if phase=='canary':runtime.update(deadlineMonotonic=now+min(600,remaining),deadlineWall=wall+min(600,remaining))
+        if args.resume:
+            metadata=json.loads(args.resume.with_suffix('.json').read_text())
+            checkpoint_directory=args.resume.resolve().parent.parent
+            if metadata['manifestSha256'] not in manifest_hashes(checkpoint_directory):raise ValueError('checkpoint lineage not authorized')
+            inspect_checkpoint(args.resume,manifest_sha256=metadata['manifestSha256'],require_recovery=True)
+            if metadata['configSha256']!=CONFIG_SHA256:raise ValueError('resume checkpoint configuration changed')
+            runtime['parentCheckpointManifestSha256']=metadata['manifestSha256']
+            runtime['parentCheckpoint']=str(args.resume.resolve())
+        runtime['supervisorPid']=os.getpid()
+        runtime['command']=phase
+        validate_training_window(runtime,time.monotonic())
+        if parity_digest:
+            runtime['parityCorpusSha256']=parity_digest
+            runtime['parityCorpusPath']=str(args.parity_corpus.resolve())
+        runtime['supervisorAttempt']=uuid.uuid4().hex
+        if arena_digest:runtime['arenaPlanSha256']=arena_digest
+        else:runtime.pop('arenaPlanSha256',None)
+        atomic_json(runtime_path,runtime)
+        atomic_json(args.run_dir/'allocation.json',{'workers':CONFIG['resources']['minWorkers'],
+                    'memory_gib':CONFIG['resources']['minMemoryGiB'],'paused':False,'stop':False,
+                    'reason':'initial-conservative','observedAt':time.time()})
+        if args.canary:
+            argv=[sys.executable,'-m','righelt_training.canary','--run-dir',str(args.run_dir.resolve()),'--corpus',str(args.parity_corpus.resolve())]
+        elif args.export_parity:
+            argv=[sys.executable,'-m','righelt_training.export_parity','--run-dir',str(args.run_dir.resolve()),
+                  '--checkpoint',str(args.resume.resolve()),'--corpus',str(args.parity_corpus.resolve())]
+        elif args.prepare_arena:
+            argv=[sys.executable,'-m','righelt_training.prepare_arena','--run-dir',str(args.run_dir.resolve()),
+                  '--candidate-checkpoint',str(args.candidate_checkpoint.resolve()),'--opponent-checkpoint',str(args.opponent_checkpoint.resolve())]
+        elif args.health:
+            argv=[sys.executable,'-m','righelt_training.health','--run-dir',str(args.run_dir.resolve())]
+        elif arena_digest:
+            argv=[sys.executable,'-m','righelt_training.arena','run','--run-dir',str(args.run_dir.resolve()),
+                  '--plan',str(args.arena_plan.resolve()),'--candidate-checkpoint',str(args.candidate_checkpoint.resolve()),
+                  '--opponent-checkpoint',str(args.opponent_checkpoint.resolve())]
+        else:
+            argv=[sys.executable,'-m','righelt_training.runner','--run-dir',str(args.run_dir.resolve()),'--seed',str(args.seed),'--stage',args.stage]
+            if args.resume:argv+=['--resume',str(args.resume.resolve())]
+        env={**os.environ,'PYTHONPATH':str(ROOT/'tools/ai-trainer')}
+        record_attempt(args.run_dir,{'event':'started','id':runtime['supervisorAttempt'],'phase':runtime['command'],'pid':os.getpid()})
+        with (args.run_dir/'runner.log').open('a') as log:
+            process=start_group(['/usr/bin/nice','-n','10',*argv],cwd=ROOT,env=env,stdout=log,stderr=log)
+            reason='interrupted'
+            try:
+                register_owned(args.run_dir,process)
+                reason=supervise(process,budget,AdaptivePolicy(),Telemetry(artifact_root,args.activity_file,args.run_dir/'device-memory.json',process.pid),args.run_dir,runtime=runtime)
+            finally:
+                stop_group(process)
+                cleanup_owned(args.run_dir)
+                allocation.finish(interval['id'],reason=reason)
+        record_attempt(args.run_dir,{'event':'finished','id':runtime['supervisorAttempt'],'phase':runtime['command'],'reason':reason})
+        atomic_json(args.run_dir/'supervisor-result.json',{'reason':reason,'runnerReturncode':process.returncode,
+                    'elapsedSeconds':time.monotonic()-started,'budgetSeconds':budget.seconds,'productionPromotion':False})
+        print(json.dumps({'reason':reason,'runDir':str(args.run_dir)}))
+    finally:
+        cleanup_owned(args.run_dir)
+        allocation.finish(interval['id'],reason=reason)
 
 if __name__=='__main__':main()

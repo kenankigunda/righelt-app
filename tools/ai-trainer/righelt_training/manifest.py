@@ -25,3 +25,60 @@ def write_manifest(path,data):
     digest=hashlib.sha256(json.dumps(data,sort_keys=True,allow_nan=False).encode()).hexdigest()
     atomic_json(path,{'manifest':data,'sha256':digest})
     return digest
+
+
+def active_manifest(directory):
+    directory=Path(directory)
+    pointer=directory/'active-manifest.json'
+    from .allocation import rows
+    amendments=rows(directory/'source-amendments.jsonl')
+    if not amendments:return json.loads((directory/'manifest.json').read_text())
+    digest=amendments[-1]['newManifest']
+    record=json.loads((directory/'manifests'/f'{digest}.json').read_text())
+    if record['sha256']!=digest or hashlib.sha256(json.dumps(record['manifest'],sort_keys=True,allow_nan=False).encode()).hexdigest()!=digest:
+        raise ValueError('active manifest checksum mismatch')
+    return record
+
+
+def manifest_hashes(directory):
+    directory=Path(directory)
+    from .allocation import rows
+    initial=json.loads((directory/'manifest.json').read_text())['sha256']
+    result={initial};previous=initial
+    for change in rows(directory/'source-amendments.jsonl'):
+        if change['oldManifest']!=previous:raise ValueError('broken source amendment chain')
+        result.add(change['newManifest']);previous=change['newManifest']
+    if active_manifest(directory)['sha256']!=previous:raise ValueError('active manifest not in source amendment chain')
+    return result
+
+
+def amend_manifest(directory,manifest,repair):
+    from .allocation import append
+    directory=Path(directory);prior=active_manifest(directory)
+    if prior['manifest']==manifest:return prior
+    for key in ('configSha256','seed','stage','seconds'):
+        if prior['manifest'][key]!=manifest[key]:raise ValueError('repair changes approved experiment contract')
+    for key in ('cause','regressionEvidence','artifactDisposition','reviewEvidence'):
+        if not repair.get(key):raise ValueError(f'source amendment missing {key}')
+    digest=hashlib.sha256(json.dumps(manifest,sort_keys=True,allow_nan=False).encode()).hexdigest()
+    path=directory/'manifests'/f'{digest}.json'
+    if path.exists():raise ValueError('source amendment already exists; investigate interrupted amendment')
+    write_manifest(path,manifest)
+    append(directory/'source-amendments.jsonl',{'oldManifest':prior['sha256'],'newManifest':digest,**repair})
+    atomic_json(directory/'active-manifest.json',{'sha256':digest})
+    return active_manifest(directory)
+
+
+PROOF_PATHS=('packages/game-engine/src','packages/computer-player/src','packages/shared-types/src')
+
+def dependency_inventory(revision=None):
+    """Exact tracked source inventory; missing paths can never imply no changes."""
+    inventory={}
+    for name in PROOF_PATHS:
+        if not (ROOT/name).exists():raise ValueError(f'proof dependency missing: {name}')
+        files=subprocess.check_output(['git','ls-tree','-r','--name-only',revision or 'HEAD','--',name],cwd=ROOT,text=True).splitlines()
+        if not files:raise ValueError(f'empty proof dependency: {name}')
+        for filename in files:
+            data=subprocess.check_output(['git','show',f'{revision}:{filename}'],cwd=ROOT) if revision else (ROOT/filename).read_bytes()
+            inventory[filename]=hashlib.sha256(data).hexdigest()
+    return inventory

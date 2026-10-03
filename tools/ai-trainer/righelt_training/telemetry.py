@@ -7,9 +7,12 @@ import time
 import psutil
 from .resources import Sample
 
-def read_device_memory(path, runner_pid, now):
+def read_device_memory(path, runner_pid, now=None):
     try:
         gpu=json.loads(Path(path).read_text());value=gpu['driverBytes']
+        # A runner may publish while CPU/pressure telemetry is being collected.
+        # Compare with time after this read, not the start of the whole sample.
+        now=time.time() if now is None else now
         if (gpu.get('schema')==1 and gpu.get('pid')==runner_pid
             and isinstance(value,int) and value>=0 and 0<=now-gpu['observedAt']<=30):
             return value,True
@@ -54,7 +57,7 @@ class Telemetry:
         # RSS may overlap these bytes, so this sum is intentionally conservative.
         device_known=self.device_memory_file is None
         if self.device_memory_file:
-            amount,device_known=read_device_memory(self.device_memory_file,self.runner_pid,now)
+            amount,device_known=read_device_memory(self.device_memory_file,self.runner_pid)
             rss+=amount
         size=sum(p.stat().st_size for p in self.artifacts.rglob('*') if p.is_file())
         return Sample(now,observed,active,max(0,psutil.cpu_percent()*psutil.cpu_count()-owned_cpu),pressure,rss,
