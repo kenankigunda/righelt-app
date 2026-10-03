@@ -75,7 +75,7 @@ test("resume loading reserves Start position without blocking it", async ({ page
 });
 
 test("dismissed rule help survives reload and respects the hydrated manual preference", async ({ page }) => {
-  await register(page); await page.getByRole("button", { name: "Self-play", exact: true }).click(); await expect(page.getByTestId("game-shell")).toBeVisible();
+  await register(page); await page.getByTestId("home-create-game").click(); await expect(page.getByTestId("game-shell")).toBeVisible();
   const source = await page.evaluate(async () => {
     const session = await (await fetch("/api/auth/session")).json();
     const id = decodeURIComponent(location.hash.match(/^#\/game\/([^?]+)/)[1]);
@@ -83,6 +83,7 @@ test("dismissed rule help survives reload and respects the hydrated manual prefe
     return game.legalActions.find(action => action.from && action.to).from;
   });
   const triggerRule = async () => {
+    await expect(page.locator(".shell-route-transition-layer")).toHaveAttribute("data-active", "false");
     await page.locator(`#shell-board .cell[data-row="${source.row}"][data-col="${source.col}"]`).click();
     await page.locator('#shell-board .cell[data-row="4"][data-col="9"]').click();
   };
@@ -93,5 +94,8 @@ test("dismissed rule help survives reload and respects the hydrated manual prefe
   await expect(page.locator('[data-zone="game-help"]')).toHaveAttribute("data-expanded", "false");
   await page.getByTestId("account-open").click(); await page.getByLabel("View preference").selectOption("explanatory");
   await page.getByRole("button", { name: "Save account settings", exact: true }).click();
+  await expect(page.getByTestId("account-dialog").getByText("Account settings saved.", { exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(async () => (await (await fetch("/api/auth/session")).json()).account.preferences.view)).toBe("explanatory");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.reload(); await expect(page.getByRole("button", { name: "Explain", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
