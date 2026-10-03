@@ -1,0 +1,34 @@
+{
+  "runId": "29bf2371-dbed-431d-b3c5-2b3d56630584",
+  "retrievedAt": "2026-10-03T11:04:05.958Z",
+  "resources": [
+    {
+      "id": "6308e5bb98684a019d5ce43d74e77f46",
+      "name": "righelt-t108-hash-engine_HashProbe",
+      "script": "righelt-t108-hash-engine",
+      "class": "HashProbe",
+      "use_sqlite": true
+    },
+    {
+      "id": "8c443d7d68c046c59f7b65c1ba278cce",
+      "name": "righelt-t108-hash-feasibility_AdmissionProbe",
+      "script": "righelt-t108-hash-feasibility",
+      "class": "AdmissionProbe",
+      "use_sqlite": true
+    }
+  ],
+  "query": "{viewer{accounts(filter:{accountTag:\"8e4ab8325d9b60266b6d5c997beffca2\"}){\n  invocations:durableObjectsInvocationsAdaptiveGroups(limit:100,filter:{datetime_geq:\"2026-10-03T10:58:57.737Z\",datetime_leq:\"2026-10-03T11:04:05.958Z\",namespaceId_in:[\"6308e5bb98684a019d5ce43d74e77f46\",\"8c443d7d68c046c59f7b65c1ba278cce\"]}){dimensions{namespaceId status} sum{requests errors} quantiles{cpuTimeP95}}\n  periodic:durableObjectsPeriodicGroups(limit:100,filter:{datetime_geq:\"2026-10-03T10:58:57.737Z\",datetime_leq:\"2026-10-03T11:04:05.958Z\",namespaceId_in:[\"6308e5bb98684a019d5ce43d74e77f46\",\"8c443d7d68c046c59f7b65c1ba278cce\"]}){dimensions{namespaceId} sum{duration exceededCpuErrors exceededMemoryErrors fatalInternalErrors} quantiles{memoryUsageBytesP999}}\n}}}",
+  "metrics": {
+    "data": {
+      "viewer": {
+        "accounts": [
+          {
+            "invocations": [],
+            "periodic": []
+          }
+        ]
+      }
+    },
+    "errors": null
+  }
+}

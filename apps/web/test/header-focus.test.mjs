@@ -49,3 +49,18 @@ test("still-connected, hidden and removed controls never steal focus", () => {
   restoreHeaderFocus(f.header, saved, f.document);
   assert.equal(f.focused(), 0);
 });
+
+
+test("account header control survives replacement without stealing dialog focus", () => {
+  const f = fixture();
+  const attributes = { "data-action": "account-open" };
+  f.old.getAttribute = f.next.getAttribute = key => attributes[key] ?? null;
+  const saved = captureHeaderFocus(f.header, f.old);
+  assert.equal(saved.attribute, "data-action");
+  assert.equal(saved.value, "account-open");
+  restoreHeaderFocus(f.header, saved, f.document);
+  assert.equal(f.focused(), 1);
+  f.document.activeElement = { name: "account-password" };
+  restoreHeaderFocus(f.header, saved, f.document);
+  assert.equal(f.focused(), 1);
+});

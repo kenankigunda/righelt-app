@@ -99,7 +99,7 @@ test("lone auto-selected push targets render the nudge preview and submit the pu
     await targetCell.click();
 
     const applyRequest = await applyRequestPromise;
-    expect(applyRequest.postDataJSON()?.action).toEqual({
+    expect(applyRequest.postDataJSON()?.payload?.action).toEqual({
       type: "push",
       actorId: "U1-2",
       from: source,

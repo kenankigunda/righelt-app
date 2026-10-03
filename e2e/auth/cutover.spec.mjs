@@ -1,0 +1,105 @@
+import { test, expect } from "@playwright/test";
+import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
+const password = "A cutover account test password 482";
+const dialog = page => page.getByTestId("account-dialog");
+async function control(action) {
+  expect((await fetch(`http://127.0.0.1:10088/${action}`, { method: "POST" })).status).toBe(200);
+}
+test.beforeEach(async () => { await control("maintenance-off"); await control("reset-limits"); });
+test.afterEach(async () => control("maintenance-off"));
+async function register(page, username, play = false) {
+  await page.goto("/");
+  await page.getByRole("button", { name: play ? "Start new game" : "Sign in", exact: true }).click();
+  await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
+  await dialog(page).getByLabel("Username", { exact: true }).fill(username);
+  await dialog(page).getByLabel("Password", { exact: true }).fill(password);
+  await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
+  await expect(page.getByTestId("recovery-code")).toBeVisible();
+  await dialog(page).getByLabel("I saved my recovery code").check();
+  await dialog(page).getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(dialog(page)).not.toBeVisible();
+  if (play) await expect(page.getByTestId("game-role")).toContainText("Player 1");
+}
+async function canary(page) {
+  await page.goto("/");
+  const exists = (await page.request.get(new URL("/api/profiles/cutover_canary", page.url()).href)).ok();
+  if (!exists) return register(page, "cutover_canary");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await dialog(page).getByLabel("Username", { exact: true }).fill("cutover_canary");
+  await dialog(page).getByLabel("Password", { exact: true }).fill(password);
+  await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(dialog(page)).not.toBeVisible();
+}
+async function request(page, path, body) {
+  return page.evaluate(async ({ path, body }) => {
+    const session = await (await fetch("/api/auth/session")).json();
+    const response = await fetch(path, { method: body === undefined ? "GET" : "POST", headers: {
+      "Content-Type": "application/json", "X-Righelt-Auth": "1", "X-Righelt-Auth-Version": "1",
+      ...(session.contextId ? { "X-Righelt-Session": session.contextId } : {}),
+    }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    return { status: response.status, body: await response.json() };
+  }, { path, body });
+}
+
+test("an old guest invite stays view-only and offers a fresh account game", async ({ page }) => {
+  await page.goto("/#/invite/cutover-legacy-invite");
+  await expect(page.getByTestId("game-board")).toBeVisible();
+  await expect(page.getByText("This older guest game is view-only.", { exact: false })).toBeVisible();
+  const url = page.url();
+  await page.getByRole("button", { name: "Start new game", exact: true }).click();
+  await expect(dialog(page)).toBeVisible();
+  await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(page.url()).toBe(url);
+  await register(page, `Legacy_${Date.now().toString(36)}`);
+  await page.goto(url);
+  await expect(page.getByTestId("game-board")).toBeVisible();
+  const legacy = await request(page, "/api/shell/games/cutover-legacy-fixture");
+  expect(legacy.status).toBe(200);
+  expect(legacy.body.game.ownershipMode).toBe("legacy_guest");
+  expect(legacy.body.game.canRecordMove).toBe(false);
+  expect(legacy.body.game.myRoles).toEqual([]);
+  const denied = await request(page, "/api/shell/games/cutover-legacy-fixture/join", { mode: "player" });
+  expect(denied.body.error).toBe("legacy_read_only");
+  await page.getByRole("button", { name: "Start new game", exact: true }).click();
+  await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  expect(page.url()).not.toBe(url);
+});
+
+test("cutover maintenance preserves public boards and confines smoke writes to the canary", async ({ page, browser }) => {
+  await register(page, `Cutover_${Date.now().toString(36)}`, true);
+  const gameUrl = page.url();
+  const gameId = decodeURIComponent(new URL(gameUrl).hash.match(/^#\/game\/([^?]+)/)[1]);
+  const before = await getHistoryMoveCount(page);
+  const isolated = await browser.newContext({ ignoreHTTPSErrors: true });
+  const spectator = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const smoke = await isolated.newPage();
+    await canary(smoke);
+    await control("activate-cutover");
+    await page.reload();
+    await expect(page.getByTestId("game-board")).toBeVisible();
+    await expect(page.getByTestId("game-shell").getByText("Play is temporarily paused. You can still browse and watch games.", { exact: true })).toBeVisible();
+    await page.locator("#shell-board button").first().press("Enter");
+    await expect(dialog(page)).not.toBeVisible();
+    const blocked = await request(page, "/api/shell/games", { selfPlayMode: true });
+    expect(blocked.status).toBe(503);
+    expect(blocked.body.error).toBe("temporarily_unavailable");
+    const guest = await spectator.newPage();
+    await guest.goto(gameUrl);
+    await expect(guest.getByTestId("game-board")).toBeVisible();
+    await expect(dialog(guest)).not.toBeVisible();
+    const accepted = await request(smoke, "/api/shell/games", { selfPlayMode: true });
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.game.ownershipMode).toBe("account_v1");
+    expect(accepted.body.game.myRoles.sort()).toEqual(["Player 1", "Player 2"]);
+    await control("maintenance-off");
+    await page.reload();
+    await expect(page.getByTestId("game-role")).toContainText("Player 1");
+    const fresh = await request(page, `/api/shell/games/${gameId}`);
+    expect(fresh.body.game.canRecordMove).toBe(true);
+    const action = fresh.body.game.legalActions.find(item => item.from && item.to);
+    expect(action).toBeTruthy();
+    await submitPlayableAction(page, action);
+    await expect.poll(() => getHistoryMoveCount(page)).toBeGreaterThan(before);
+  } finally { await isolated.close(); await spectator.close(); }
+});

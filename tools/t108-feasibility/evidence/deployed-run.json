@@ -1,0 +1,1136 @@
+{
+  "schemaVersion": 1,
+  "runId": "29bf2371-dbed-431d-b3c5-2b3d56630584",
+  "runtime": "deployed",
+  "startedAt": "2026-10-03T10:59:57.737Z",
+  "vectors": [
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 1459.730542,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "unicode",
+      "status": 200,
+      "elapsedMs": 408.2376250000002,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "long",
+      "status": 200,
+      "elapsedMs": 439.6382920000001,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    }
+  ],
+  "sequential": [
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 1165.7544580000003,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 448.4174159999998,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 592.1695419999996,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 407.0919589999994,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 788.2225420000004,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 393.42033400000037,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 383.4305829999994,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 365.48004200000014,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 420.8537919999999,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 377.3855829999993,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 400.0987500000001,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 494.2256249999991,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 381.56466700000055,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 416.82574999999997,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 389.0479579999992,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 626.4197920000006,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 429.9052499999998,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 409.2848329999997,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 391.2208330000012,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 421.26295799999934,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 390.11325000000033,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 421.8634999999995,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 419.030041,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 393.70700000000033,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 400.9417090000006,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 393.83841700000085,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 469.1125000000011,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 418.92012499999873,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 457.14245800000026,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 395.27008299999943,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 451.4643329999999,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 351.5128330000007,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 422.6021249999976,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 389.60862500000076,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 436.15604099999837,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 366.166583000002,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 380.79662499999904,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 388.71074999999837,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 375.9749579999989,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 376.0687500000022,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 386.3165000000008,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 372.25633299999754,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 380.54862499999945,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 358.9212499999994,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 375.42625000000044,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 394.7847079999992,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 364.1861659999995,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 382.83937499999956,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 389.8210419999996,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 373.0421669999996,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 387.6362079999999,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 671.4925000000003,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 357.26708399999916,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 373.91162500000064,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 372.24962499999674,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 370.34308299999975,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 366.3635000000031,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 412.28666599999997,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 361.31483300000036,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 365.46216600000116,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 416.872374999999,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 375.4233329999988,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 361.5902500000011,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 371.0761249999996,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 362.7491250000021,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 386.8182080000006,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 342.2707499999997,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 331.1506249999984,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 345.11970799999835,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 319.99524999999994,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 338.13612499999726,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 344.6167080000014,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 323.2477089999993,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 340.53145799999766,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 342.82187500000146,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 329.4884999999995,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 322.4021250000005,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 340.0923330000005,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 322.2103750000024,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 340.0827500000014,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 324.55362500000047,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 316.9959579999995,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 317.0581249999959,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 336.12708399999974,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 327.62295900000026,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 320.736917000002,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 341.8475000000035,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 366.5348339999982,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 628.5570000000007,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 339.96337499999936,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 347.1330830000006,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 354.9496250000011,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 327.4577910000007,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 337.63674999999785,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 381.0699999999997,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 321.3852079999997,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 333.4612500000003,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 360.25450000000274,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 336.7821250000052,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 325.0528329999943,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    }
+  ],
+  "burst": [
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 341.2051250000004,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 177.68349999999919,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 162.5526669999963,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 618.6229999999996,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 182.6520410000012,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 178.734457999999,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 167.42216600000393,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 1202.7696250000008,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 171.7809169999964,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 169.0734999999986,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 168.9812910000037,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 168.91016699999454,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 902.4516250000015,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 200,
+      "elapsedMs": 1499.0709579999966,
+      "correct": true,
+      "incorrectRejected": true,
+      "retryAfter": null,
+      "workerWallMs": 0
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 168.89545799999905,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 163.1881659999999,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 173.57187500000146,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 214.89662500000122,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 210.36520900000323,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    },
+    {
+      "fixture": "ascii",
+      "status": 429,
+      "elapsedMs": 208.79624999999942,
+      "correct": false,
+      "incorrectRejected": false,
+      "retryAfter": "1",
+      "workerWallMs": null
+    }
+  ],
+  "finishedAt": "2026-10-03T11:00:41.538Z",
+  "transport": "Loopback Wrangler bridge with remote service binding to deployed private Workers",
+  "gate": {
+    "passed": false,
+    "failures": [
+      "Provider evidence must identify this run and its source",
+      "Verified Free plan required",
+      "Measured provider hash CPU p95 below 1 second required",
+      "Measured memory below 128 MiB with statistic/source required",
+      "CPU source and at least 103 invocation samples required",
+      "Provider evidence must cover exact run interval and isolated resources",
+      "Provider resource-limit failure count required",
+      "Measured cold-start evidence required",
+      "Measured free-tier consumption and allowance proof required"
+    ],
+    "sequentialP95Ms": 592.1695419999996
+  }
+}

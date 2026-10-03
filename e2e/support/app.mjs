@@ -76,6 +76,7 @@ export const createGameFromHome = async (page) => {
 export const createGamesViaApi = async (page, count) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
+  await waitForLegacyIdentity(page);
 
   return page.evaluate(async (gameCount) => {
     const identityId = window.localStorage.getItem("righelt.identity.id.v1");
@@ -109,9 +110,19 @@ export const getCurrentGameIdFromPage = async (page) => {
   return decodeURIComponent(match[1]);
 };
 
+// The home shell renders before startup decides whether legacy transport is
+// enabled. These general-suite API fixtures require that decision to finish.
+export const waitForLegacyIdentity = async (page) => {
+  await expect.poll(
+    () => page.evaluate(() => window.localStorage.getItem("righelt.identity.id.v1") ?? ""),
+    { message: "Expected legacy test identity after startup" },
+  ).toMatch(/\S/);
+};
+
 export const importScenarioGame = async (page, scenario, baseURL) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
+  await waitForLegacyIdentity(page);
 
   const { gameId } = await page.evaluate(async (payload) => {
     const identityId = window.localStorage.getItem("righelt.identity.id.v1");
@@ -210,6 +221,24 @@ const getFirstPlayableAction = async (page) =>
     return legalActions.find((action) => action?.from && action?.to) ?? null;
   });
 
+export const selectPlayableAction = async (page, action) => {
+  const cell = position => page.locator(`[data-testid="game-board"] .cell[data-row="${position.row}"][data-col="${position.col}"]`);
+  const target = cell(action.to);
+  await cell(action.from).click();
+  const supportsHover = await page.locator('html').getAttribute('data-hover-capability') === 'hover';
+  if (supportsHover) await target.hover();
+  else await target.click();
+  await expect(target, "The supported pointer interaction must select the legal destination before confirmation").toHaveClass(/(?:^|\s)target(?:\s|$)/, { timeout: 2000 });
+  return target;
+};
+
+export const submitPlayableAction = async (page, action) => {
+  const target = await selectPlayableAction(page, action);
+  await target.click();
+  await expect(page.locator("#shell-board-preview-label")).toContainText("Activate this destination again to play.");
+  await target.click();
+};
+
 export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
   const startingHistoryCount = await getHistoryMoveCount(page);
   const action = await getFirstPlayableAction(page);
@@ -218,25 +247,7 @@ export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
     throw new Error(`No playable browser action was exposed in the live game payload for ${ownerClass.toUpperCase()}`);
   }
 
-  const sourceCell = page.locator(
-    `[data-testid="game-board"] .cell[data-row="${action.from.row}"][data-col="${action.from.col}"]`,
-  );
-  const targetCell = page.locator(
-    `[data-testid="game-board"] .cell[data-row="${action.to.row}"][data-col="${action.to.col}"]`,
-  );
-
-  await sourceCell.click();
-  await expect
-    .poll(async () => {
-      await targetCell.hover();
-      return targetCell.evaluate((cell) => cell.classList.contains("target"));
-    }, {
-      timeout: 2_000,
-      message: "Expected hovering the legal destination to select it in the live board UI",
-    })
-    .toBe(true);
-  await targetCell.click();
-  await targetCell.click();
+  await submitPlayableAction(page, action);
   await expectHistoryMoveCountToIncrease(page, startingHistoryCount);
 };
 

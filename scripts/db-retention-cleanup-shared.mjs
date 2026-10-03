@@ -42,7 +42,13 @@ WHERE game_id IN (
   SELECT game_id
   FROM live_games
   WHERE ${staleCondition}
-);`;
+)
+UNION ALL
+SELECT 'live_command_receipts' AS table_name, COUNT(*) AS stale_row_count
+FROM live_command_receipts WHERE game_id IN (SELECT game_id FROM live_games WHERE ${staleCondition})
+UNION ALL
+SELECT 'live_legacy_command_tombstones' AS table_name, COUNT(*) AS stale_row_count
+FROM live_legacy_command_tombstones WHERE game_id IN (SELECT game_id FROM live_games WHERE ${staleCondition});`;
 };
 
 export const buildCleanupSql = (cleanupSqlTemplate, retentionHours) =>

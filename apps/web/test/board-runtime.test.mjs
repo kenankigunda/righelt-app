@@ -3359,3 +3359,63 @@ test("U-11: history destruction transition settles into overlay state and clears
     globalThis.clearTimeout = originalClearTimeout;
   }
 });
+
+test("board runtime refreshes a preserved branch selection from the new legal actions", async () => {
+  const action = { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } };
+  const snapshot = {
+    sideToMove: "P1", turnIndex: 0, continuation: null, outcome: null,
+    pieces: [{ id: "A1", owner: "P1", kind: "unit", position: action.from, supplied: true, commanded: true }],
+  };
+  let click;
+  const submitted = [];
+  let releaseOldMoves;
+  let holdPieceMoves = false;
+  const runtime = createBoardRuntime({
+    previewAction: state => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
+    boardAdapter: {
+      mount: ({ onCellClick }) => { click = onCellClick; },
+      render: noop,
+      getSelectedPieceSummary: ({ snapshot: current, selectedPieceId, selectedPieceMovePreviews }) => {
+        const piece = current.pieces.find(value => value.id === selectedPieceId);
+        return piece ? { details: { owner: piece.owner }, actions: selectedPieceMovePreviews } : null;
+      },
+      getPieceById: (state, id) => state.pieces.find(piece => piece.id === id),
+      getPieceAt: (state, coord) => state.pieces.find(piece => piece.position.row === coord.row && piece.position.col === coord.col),
+      nextSelectionForCell: () => ({ selection: { selectedPieceId: null, source: null, target: null }, nextActionType: "pass" }),
+    },
+    host: {
+      applyAction: async (_state, value) => { submitted.push(value); return { accepted: false }; },
+      loadInitialState: async () => ({ state: snapshot, legalActions: [action] }),
+      loadLegalActions: async () => ({ state: snapshot, legalActions: [action] }),
+      loadPieceMoves: async () => holdPieceMoves
+        ? new Promise(resolve => { releaseOldMoves = resolve; })
+        : { state: snapshot, actions: [action], previewActions: [action] },
+      canInteract: () => true,
+    },
+  });
+  runtime.bindElements({ boardEl: {}, overlayLinesEl: {}, boardPreviewLabelEl: null, boardTurnIndicatorEl: null });
+  await runtime.loadSnapshot(snapshot, { legalActions: [action], selectionAction: action });
+  await runtime.loadSnapshot(snapshot, { legalActions: [action], resetSelection: false });
+  click(action.to);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(submitted, [], "previewing the retained legal target must not submit");
+  click(action.to);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(submitted, [action], "the hydrated target remains actionable after the authoritative snapshot replaces the branch stub");
+
+  await runtime.loadSnapshot(snapshot, { legalActions: [action], selectionAction: action });
+  await runtime.loadSnapshot(snapshot, { legalActions: [], resetSelection: false });
+  click(action.to);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(submitted.length, 1, "a preserved visual target must not retain an action removed by the new snapshot");
+
+  await runtime.loadSnapshot(snapshot, { legalActions: [action], selectionAction: action });
+  holdPieceMoves = true;
+  const pendingSelection = runtime.setSelectionFromAction(action);
+  await runtime.loadSnapshot(snapshot, { legalActions: [], resetSelection: false });
+  releaseOldMoves({ state: snapshot, actions: [action], previewActions: [action] });
+  await pendingSelection;
+  click(action.to);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(submitted.length, 1, "late moves from the previous snapshot cannot revive a removed action");
+});

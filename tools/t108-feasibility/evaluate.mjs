@@ -1,0 +1,10 @@
+import {readFile,writeFile} from 'node:fs/promises';
+import {evaluate} from './core.mjs';
+const [reportPath,providerPath,outputPath] = process.argv.slice(2);
+if(!reportPath||!providerPath||!outputPath) throw new Error('Usage: node evaluate.mjs REPORT.json PROVIDER.json OUTPUT.json');
+const report=JSON.parse(await readFile(reportPath,'utf8'));
+const provider=JSON.parse(await readFile(providerPath,'utf8'));
+const result={...report,provider,gate:evaluate(report,provider)};
+await writeFile(outputPath,JSON.stringify(result,null,2)+'\n');
+console.log(JSON.stringify(result.gate));
+if(!result.gate.passed) process.exitCode=1;

@@ -1,0 +1,132 @@
+{
+  "query": "{viewer{accounts(filter:{accountTag:\"8e4ab8325d9b60266b6d5c997beffca2\"}){invocations:durableObjectsInvocationsAdaptiveGroups(limit:100,filter:{datetime_geq:\"2026-10-03T10:58:57.737Z\",datetime_leq:\"2026-10-03T11:03:41.538Z\",namespaceId_in:[\"6308e5bb98684a019d5ce43d74e77f46\",\"8c443d7d68c046c59f7b65c1ba278cce\"]}){dimensions{namespaceId status datetimeMinute type isPreview} avg{sampleInterval} sum{requests errors} quantiles{cpuTimeP95}} periodic:durableObjectsPeriodicGroups(limit:100,filter:{datetime_geq:\"2026-10-03T10:58:57.737Z\",datetime_leq:\"2026-10-03T11:03:41.538Z\",namespaceId_in:[\"6308e5bb98684a019d5ce43d74e77f46\",\"8c443d7d68c046c59f7b65c1ba278cce\"]}){dimensions{namespaceId datetimeMinute} sum{duration activeTime cpuTime exceededCpuErrors exceededMemoryErrors fatalInternalErrors} quantiles{memoryUsageBytesP999}}}}}",
+  "retrievedAt": "2026-10-03T11:08:11.397Z",
+  "body": {
+    "data": {
+      "viewer": {
+        "accounts": [
+          {
+            "invocations": [
+              {
+                "avg": {
+                  "sampleInterval": 1.2666666666666666
+                },
+                "dimensions": {
+                  "datetimeMinute": "2026-10-03T11:00:00Z",
+                  "isPreview": 0,
+                  "namespaceId": "8c443d7d68c046c59f7b65c1ba278cce",
+                  "status": "success",
+                  "type": "http"
+                },
+                "quantiles": {
+                  "cpuTimeP95": 1544
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 19
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "datetimeMinute": "2026-10-03T10:59:00Z",
+                  "isPreview": 0,
+                  "namespaceId": "8c443d7d68c046c59f7b65c1ba278cce",
+                  "status": "success",
+                  "type": "http"
+                },
+                "quantiles": {
+                  "cpuTimeP95": 604
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 2
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "datetimeMinute": "2026-10-03T10:59:00Z",
+                  "isPreview": 0,
+                  "namespaceId": "6308e5bb98684a019d5ce43d74e77f46",
+                  "status": "success",
+                  "type": "http"
+                },
+                "quantiles": {
+                  "cpuTimeP95": 322681
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 2
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1.0253164556962024
+                },
+                "dimensions": {
+                  "datetimeMinute": "2026-10-03T11:00:00Z",
+                  "isPreview": 0,
+                  "namespaceId": "6308e5bb98684a019d5ce43d74e77f46",
+                  "status": "success",
+                  "type": "http"
+                },
+                "quantiles": {
+                  "cpuTimeP95": 358653
+                },
+                "sum": {
+                  "errors": 0,
+                  "requests": 81
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "datetimeMinute": "2026-10-03T10:59:00Z",
+                  "isPreview": 0,
+                  "namespaceId": "8c443d7d68c046c59f7b65c1ba278cce",
+                  "status": "clientDisconnected",
+                  "type": "http"
+                },
+                "quantiles": {
+                  "cpuTimeP95": 993
+                },
+                "sum": {
+                  "errors": 2,
+                  "requests": 2
+                }
+              },
+              {
+                "avg": {
+                  "sampleInterval": 1
+                },
+                "dimensions": {
+                  "datetimeMinute": "2026-10-03T11:00:00Z",
+                  "isPreview": 0,
+                  "namespaceId": "8c443d7d68c046c59f7b65c1ba278cce",
+                  "status": "clientDisconnected",
+                  "type": "http"
+                },
+                "quantiles": {
+                  "cpuTimeP95": 554
+                },
+                "sum": {
+                  "errors": 179,
+                  "requests": 179
+                }
+              }
+            ],
+            "periodic": []
+          }
+        ]
+      }
+    },
+    "errors": null
+  }
+}

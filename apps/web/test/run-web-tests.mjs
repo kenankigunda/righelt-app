@@ -64,7 +64,7 @@ if (selected.length === 0) {
   process.exit(1);
 }
 
-const args = ["--import", "tsx", "--test"];
+const args = ["--import", "tsx", "--import", "fake-indexeddb/auto", "--test"];
 
 if (reporters.length === 0) {
   reporters.push("spec");

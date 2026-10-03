@@ -70,11 +70,19 @@ test("game route shows a skeleton while the initial game load is still in flight
       ({ method, url }) => method === "GET" && url.pathname === `/api/shell/games/${gameId}`,
     );
 
+    let releaseSnapshot;
+    let snapshotSeen = false;
+    const initialSnapshot = new Promise(resolve => { releaseSnapshot = resolve; });
+    await delayedPage.routeWebSocket(new RegExp(`/api/shell/games/${gameId}/ws`), socket => {
+      const server = socket.connectToServer();
+      server.onMessage(async message => { snapshotSeen = true; await initialSnapshot; socket.send(message); });
+    });
     const navigation = delayedPage.goto(buildAppUrl(baseURL, gameHash));
     await delayedPage.waitForLoadState("domcontentloaded");
-    await deferredRequest.waitUntilSeen();
+    await expect.poll(() => snapshotSeen).toBe(true);
     await delayedPage.waitForSelector('[data-testid="game-view-skeleton"]', { state: "visible" });
     deferredRequest.release();
+    releaseSnapshot();
 
     await navigation;
     await expectInviteLanding(delayedPage);

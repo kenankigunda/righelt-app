@@ -66,7 +66,13 @@ test("optimistic history branch keeps popup route id, server id, and first apply
     expect(branchBody?.game?.id).toBe(gameId);
     expect(await getCurrentGameIdFromPage(popup)).toBe(gameId);
 
-    await makeAnyLegalMove(popup, "p1");
+    // Confirm the branch's preselected move after its authoritative hydration.
+    // Clicking its source again would intentionally toggle the supply overlay.
+    await expect(popup.getByText("Latest: History branch pending sync")).not.toBeVisible();
+    await expect(popup.locator("#shell-board .selected-piece")).toHaveCount(1);
+    const branchTarget = popup.locator("#shell-board .cell.target");
+    await expect(branchTarget).toHaveCount(1);
+    await branchTarget.click();
 
     const applyRequest = await applyRequestPromise;
     expect(new URL(applyRequest.url()).pathname).toBe(`/api/shell/games/${gameId}/apply`);
@@ -117,7 +123,13 @@ test("optimistic history branch renders the popup shell before the branch respon
     releaseBranchResponse?.();
 
     await expect(popup.getByTestId("game-shell")).toBeVisible();
-    await makeAnyLegalMove(popup, "p1");
+    // Confirm the branch's preselected move after its authoritative hydration.
+    // Clicking its source again would intentionally toggle the supply overlay.
+    await expect(popup.getByText("Latest: History branch pending sync")).not.toBeVisible();
+    await expect(popup.locator("#shell-board .selected-piece")).toHaveCount(1);
+    const branchTarget = popup.locator("#shell-board .cell.target");
+    await expect(branchTarget).toHaveCount(1);
+    await branchTarget.click();
 
     const applyRequest = await applyRequestPromise;
     expect(new URL(applyRequest.url()).pathname).toBe(`/api/shell/games/${gameId}/apply`);

@@ -2,6 +2,8 @@ import { createLiveTransportStore } from "../../../../apps/web/shell/live-transp
 import { IDENTITY_KEY } from "../../../../apps/web/shell/persistence.js";
 import { buildGameHash, buildInviteHash, parseRouteFromHash } from "../../../../apps/web/shell/routes.js";
 import { handleApiRequest } from "../../src/index.ts";
+import { IDBFactory } from "fake-indexeddb";
+import { createCommandJournal } from "../../../../apps/web/shell/command-journal.js";
 import { __resetLiveGameStateForTests } from "../../src/shell-live.ts";
 import { createFakeD1 } from "./fake-d1.mjs";
 import { createFakeGameRooms } from "./fake-game-rooms.mjs";
@@ -45,6 +47,7 @@ export const createShellIntegrationHarness = () => {
   env.DB.reset();
   env.GAME_ROOMS.reset();
   const fetcher = createFetcher();
+  const indexedDB = new IDBFactory();
   const waitFor = async (predicate, attempts = 20) => {
     let remaining = attempts;
     while (remaining > 0) {
@@ -61,7 +64,7 @@ export const createShellIntegrationHarness = () => {
   const createClient = (identityId) => {
     const storage = createMemoryStorage();
     storage.setItem(IDENTITY_KEY, identityId);
-    const store = createLiveTransportStore({ storage, fetcher, random: () => 0.123456 });
+    const store = createLiveTransportStore({ storage, fetcher, commandJournal: createCommandJournal({ indexedDB }), random: () => 0.123456 });
     return { identityId, storage, store };
   };
 
