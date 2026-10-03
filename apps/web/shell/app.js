@@ -2738,7 +2738,6 @@ const updateGameHelp = (gameId, event = null) => {
 
 const renderResultLink = game => getGameResult(game, transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button>` : "";
 const renderBoardPanel = (game) => `
-  <div data-result-link>${renderResultLink(game)}</div>
   ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p class="alert" role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
   ${game.ownershipMode === "legacy_guest" && account.snapshot().enabled ? '<p class="alert" role="status">This older guest game is view-only. <button data-action="create-game">Start new game</button></p>' : ''}
   ${account.snapshot().enabled && account.snapshot().available && !account.snapshot().maintenance && !account.canPlay() ? '<p class="alert" role="status">Sign in to play or analyze. The board remains available to view.</p>' : ''}
@@ -2777,6 +2776,7 @@ const renderGameShellPanelTab = (panelKey, label) => `
 
 const renderGameShellFrame = (game) => `
   <section class="game-shell-frame" data-game-shell-root data-game-id="${escapeHtml(game.id)}" data-testid="game-shell">
+    <div data-result-link>${renderResultLink(game)}</div>
     <div class="game-shell-track-wrap">
       <section class="layout-grid game-shell-track" data-game-shell-track>
         <div class="stack game-shell-mobile-panel" data-mobile-panel="players" data-shell-sticky-target="left" data-sticky-enabled="false">
@@ -3120,7 +3120,8 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
   if (!game) {
     return false;
   }
-  return activeResultGameId !== gameId && !getActiveApprovalRequest(game) && !getActiveRevertRequest(game) && !getActivePendingRevertRequest(game) && doesMountedFlyoutStateMatchRoute();
+  if (activeResultGameId === gameId) return false;
+  return !getActiveApprovalRequest(game) && !getActiveRevertRequest(game) && !getActivePendingRevertRequest(game) && doesMountedFlyoutStateMatchRoute();
 };
 
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
@@ -3845,6 +3846,8 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   return preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
 };
 const renderContent = ({ animatePanels, includeBoard }) => {
+  const hadResultView = Boolean(appEl.querySelector(".game-result"));
+  const resultFocusAction = document.activeElement?.closest(".game-result") ? document.activeElement.getAttribute("data-action") : null;
   document.title = getDocumentTitle();
   brandController.setHome(currentRoute.name === "home");
   const affiliationGameId = getCurrentViewedGameId();
@@ -3949,6 +3952,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
       animateFlyoutPositionChanges(previousFlyoutRects);
     }
   }
+  if (resultFocusAction) appEl.querySelector(`.game-result [data-action="${CSS.escape(resultFocusAction)}"]`)?.focus({ preventScroll: true });
   if (nextMarkup === lastRenderedMarkup) {
     lastRenderedRouteKey = routeKey;
     lastRenderedBaseRouteKey = baseRouteKey;
@@ -3966,8 +3970,8 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     destroyMountedBoardRuntime();
     return;
   }
+  if (currentRoute.name === "game" && activeResultGameId === currentRoute.gameId) { destroyMountedBoardRuntime(); if (!hadResultView) appEl.querySelector(".game-result h1")?.focus({ preventScroll: true }); return; }
   if (currentRoute.name === "game") {
-    if (activeResultGameId === currentRoute.gameId) { destroyMountedBoardRuntime(); appEl.querySelector(".game-result h1")?.focus({ preventScroll: true }); return; }
     if (shouldUseIncrementalGameShell()) {
       updateMountedGameShell({
         game: transport.getGameViewModel(currentRoute.gameId),
@@ -4364,8 +4368,8 @@ const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: getCo
     return storyStart.accept(intent);
   }, onClose: reason => { if (reason !== "handoff") storyStart.cancel(); },
 });
-const rematchDialog = createRematchDialog({ createModal, onStart: async intent => {
-  if (!await waitForAccountGate()) return;
+const rematchDialog = createRematchDialog({ createModal, onStart: async (intent, { isCurrent }) => {
+  if (!await waitForAccountGate() || !isCurrent()) return;
   rematchDialog.close();
   if (!account.canPlay()) {
     accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", safeAccountIntent({ hash: window.location.hash, action: "start-opponent", ...intent }));

@@ -2,7 +2,8 @@ const terminal = new Set(["p1_win", "p2_win", "draw"]);
 export const getGameResult = (game, identityId) => {
   const outcome = game?.board?.state?.outcome;
   if (!terminal.has(outcome?.status)) return null;
-  const side = game.selfPlayMode ? game.selfPlayStartSide || "p1" : game.player1?.identityId === identityId ? "p1" : game.player2?.identityId === identityId ? "p2" : null;
+  const ownsSeat = game.player1?.identityId === identityId || game.player2?.identityId === identityId;
+  const side = game.selfPlayMode && ownsSeat ? game.selfPlayStartSide || "p1" : game.player1?.identityId === identityId ? "p1" : game.player2?.identityId === identityId ? "p2" : null;
   const winner = outcome.status === "draw" ? null : outcome.status.slice(0, 2);
   const title = !winner ? "Draw" : side ? winner === side ? "Win" : "Loss" : `Player ${winner === "p1" ? "1" : "2"} wins`;
   const reasons = { both_commanders_unsupplied: "Both commanders lost their supply.", p1_commander_unsupplied: "Player 1’s commander lost its supply.", p2_commander_unsupplied: "Player 2’s commander lost its supply." };
@@ -35,7 +36,7 @@ export const createRematchDialog = ({ createModal, document = globalThis.documen
     const request = session;
     busy = true; modal.element.querySelector("[data-rematch-start]").disabled = true;
     try {
-      await onStart({ opponent, side });
+      await onStart({ opponent, side }, { isCurrent: () => request === session && modal.element.open });
       if (request === session) modal.close();
     } catch {
       if (request !== session) return;

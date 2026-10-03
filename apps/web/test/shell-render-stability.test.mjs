@@ -59,7 +59,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /aria-hidden="\$\{headerMenuOpen \? "false" : "true"\}"/);
   assert.match(source, /tabindex="\$\{headerMenuOpen \? "0" : "-1"\}"/);
   assert.doesNotMatch(source, /renderHeaderHomeAction/);
-  assert.doesNotMatch(source, />Home<\/(?:a|span)>/);
+  assert.doesNotMatch(source.slice(source.indexOf("const renderHeader ="), source.indexOf("const setSelectedScenarioFeedback")), />Home<\/(?:a|span)>/);
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Live Sync<\/h2>[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
   assert.match(source, /const getDocumentTitle = \(\) => \{\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;\s*\}\s*return "Righelt";\s*\};/s);
   assert.match(source, /const failedOperations = transport\.getFailedOperations\?\.\(game\.id\) \?\? \[\];/);
@@ -163,7 +163,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /element\.style\.width = `\$\{toWidth\}px`;/);
   assert.match(source, /element\.style\.maxWidth = `\$\{toWidth\}px`;/);
   assert.match(source, /const capturePanelHeights = \(\) =>/);
-  assert.match(source, /const shouldPatchFlyoutsOnly = shouldPatchMountedFlyouts\(routeKey, baseRouteKey\);/);
+  assert.match(source, /const shouldPatchFlyoutsOnly = activeResultGameId !== currentRoute\.gameId && shouldPatchMountedFlyouts\(routeKey, baseRouteKey\);/);
   assert.match(source, /const previousPanelHeights = animatePanels && !shouldPatchFlyoutsOnly \? capturePanelHeights\(\) : \[\];/);
   assert.match(source, /const previousFlyoutRects = animatePanels \? captureFlyoutRects\(\) : new Map\(\);/);
   assert.match(source, /const animatePanelHeightChange = \(panelEl, fromHeight\) => \{/);

@@ -2,13 +2,13 @@ import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 const scenario = JSON.parse(readFileSync(new URL("../../apps/web/scenarios/catalog.json", import.meta.url))).scenarios.find(s => s.title === "Capture supply point to win by unsupplying the commander");
 test.beforeEach(async () => { expect((await fetch(`http://127.0.0.1:${Number(process.env.RIGHELT_AUTH_E2E_WEB_PORT || 9988)+100}/reset-limits`, { method: "POST" })).ok).toBe(true); });
-test("real terminal game has persistent result, gated review and swapped self-play rematch", async ({ page }, testInfo) => {
+for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game has persistent result, review and swapped rematch`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 375, height: 812 });
   let creationHeaders;
   page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creationHeaders = request.headers(); });
   await page.goto("/");
   await page.getByRole("radio", { name: "Player 2 · Blue" }).check();
-  await page.getByRole("button", { name: "Self-play", exact: true }).click();
+  await page.locator(`button[data-opponent="${opponent}"]`).click();
   const dialog = page.getByTestId("account-dialog");
   await dialog.getByRole("button", { name: "Create account", exact: true }).click();
   await dialog.getByLabel("Username", { exact: true }).fill(`Result_${Date.now().toString(36)}`);
@@ -25,6 +25,14 @@ test("real terminal game has persistent result, gated review and swapped self-pl
   expect(loaded.status, JSON.stringify(loaded.body)).toBe(200);
   await expect(page.getByTestId("game-result")).toBeVisible();
   await expect(page.getByTestId("game-result").getByRole("heading", { name: "Loss" })).toBeVisible();
+  const review = page.getByRole("button", { name: "Review game" });
+  await review.focus();
+  await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+  const reconnected = page.waitForEvent("websocket");
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  const socket = await reconnected;
+  await socket.waitForEvent("framereceived");
+  await expect(review).toBeFocused();
   await page.screenshot({ path: testInfo.outputPath("result-375.png") });
   await page.reload();
   await expect(page.getByTestId("game-shell")).toBeVisible();
@@ -35,9 +43,13 @@ test("real terminal game has persistent result, gated review and swapped self-pl
   await page.getByRole("button", { name: "View result" }).click();
   await page.getByRole("button", { name: "Play again" }).click();
   const rematch = page.getByRole("dialog", { name: "Play again" });
-  await expect(rematch.getByLabel("Opponent")).toHaveValue("self");
+  await expect(rematch.getByLabel("Opponent")).toHaveValue(opponent);
   await expect(rematch.getByRole("radio", { name: "Player 1 · Red" })).toBeChecked();
+  const created = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/shell/games");
   await rematch.getByRole("button", { name: "Start game" }).click();
+  const fresh = (await (await created).json()).game;
+  expect(fresh.selfPlayMode).toBe(opponent === "self");
+  if (opponent === "friend") expect(fresh.player2).toBeNull();
   await expect(page.getByTestId("game-shell")).not.toHaveAttribute("data-game-id", gameId);
   await expect(page.locator("#app")).toHaveAttribute("data-action-affiliation", "red");
 });
