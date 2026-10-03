@@ -2,7 +2,7 @@ import { PERSONAL_OPPONENTS, isPersonalSide, isComputerOpponent, getComputerRead
 import { createContextualHelp, gamePlayRevision, canRestoreGameView } from "./play-view.js";
 import { captureHeaderFocus, restoreHeaderFocus } from "./header-focus.js";
 import { createBrandController, renderWordmark, resolveActionAffiliation } from "./brand.js";
-import { createRenderGestureGate } from './render-gesture.js';
+import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js';
 import { participantButton, participantName, createPublicProfileDialog } from './public-profile.js';
 import { createAccountController, safeAccountIntent } from './account-controller.js';
 import { createAccountDialog } from './account-dialog.js';
@@ -133,12 +133,18 @@ const publicProfileDialog = createPublicProfileDialog();
 let accountInitialized = false;
 let accountStartupError = "";
 const account = createAccountController({ storage,
-  onTransition: next => { if (accountInitialized) resetAccountTransport(next); },
+  onTransition: (next, source) => { if (accountInitialized) { accountDialog.onTransition(source); resetAccountTransport(next); } },
   onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { syncAccountViewPreference(); accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); } },
 });
 const accountDialog = createAccountDialog({ controller: account, onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
   onComplete: async intent => {
-    await syncRouteDataAndLiveChannels().catch(() => {});
+    const generation = account.snapshot().generation;
+    const hash = window.location.hash;
+    try { await syncRouteDataAndLiveChannels(); } catch { return; }
+    if (generation !== account.snapshot().generation || hash !== window.location.hash) return;
+    // This read has hydrated the current route even if the transport reset's
+    // independent background read is still pending. Render the actual action.
+    routeHydrated = true;
     render({ animatePanels: false });
     if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
     if (intent.action === "start-opponent") { homeSide = intent.side; startPersonalGame(intent); return; }
@@ -719,7 +725,7 @@ const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
   return { selectionAction: matchingAction, selectionState: null };
 };
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
-const canControlLiveBoard = (game) => !game?.sharedMutationsBlocked && Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
+const canControlLiveBoard = (game) => account.canPlay() && !game?.sharedMutationsBlocked && Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
 const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "other", "smoke"] : ["my", "other"]);
 const getHomeSection = (sectionKey) => homeSections[sectionKey] ?? createHomeSectionState(sectionKey);
 const setHomeSection = (sectionKey, nextState) => {
@@ -1835,7 +1841,8 @@ const renderHeader = () => `
       <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">${renderWordmark(brandController.getState())}</a></h1>
     </div>
     ${renderHeaderAlertZone()}
-    ${account.snapshot().ready && account.snapshot().enabled ? `<button class="secondary" data-action="account-open" data-testid="account-open">${account.snapshot().session.authenticated ? "Account" : "Sign in"}</button>` : ""}
+    ${account.snapshot().ready && account.snapshot().enabled && account.snapshot().available ? `<button class="secondary" data-action="account-open" data-testid="account-open">${account.snapshot().session.authenticated ? "Account" : "Sign in"}</button>` : ""}
+    ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
     ${account.snapshot().pendingLogout ? '<span role="status">Sign-out pending</span>' : ''}
     ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p role="status">Connecting…</p>` : ""}
     <div class="shell-header-actions">
@@ -2725,8 +2732,9 @@ const updateGameHelp = (gameId, event = null) => {
 };
 
 const renderBoardPanel = (game) => `
+  ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p class="alert" role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
   ${game.ownershipMode === "legacy_guest" && account.snapshot().enabled ? '<p class="alert" role="status">This older guest game is view-only. <button data-action="create-game">Start new game</button></p>' : ''}
-  ${account.snapshot().enabled && !account.canPlay() ? '<p class="alert" role="status">Sign in to play or analyze. The board remains available to view.</p>' : ''}
+  ${account.snapshot().enabled && account.snapshot().available && !account.snapshot().maintenance && !account.canPlay() ? '<p class="alert" role="status">Sign in to play or analyze. The board remains available to view.</p>' : ''}
   <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span></h2>
   <p class="board-preview-label" id="shell-board-preview-label" aria-live="polite">Select a piece to preview moves; click it again for supply and command lines only:</p>
   <div class="board-wrap" data-testid="game-board-wrap">
@@ -3817,6 +3825,9 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (renderGesture.defer({ animatePanels, includeBoard })) return;
+  return preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
+};
+const renderContent = ({ animatePanels, includeBoard }) => {
   document.title = getDocumentTitle();
   brandController.setHome(currentRoute.name === "home");
   const affiliationGameId = getCurrentViewedGameId();
@@ -4271,6 +4282,29 @@ window.addEventListener("load", () => {
   scheduleResponsiveHomeSectionPageSizes();
 });
 
+// The first click may arrive while the initial cookie is still being read.
+// Resolve that session before choosing login versus recovery acknowledgment.
+const waitForAccountGate = async () => {
+  const hash = window.location.hash;
+  let awaitedLogout = false;
+  try {
+    if (!account.snapshot().ready) await account.start();
+    if (account.snapshot().pendingLogout) {
+      awaitedLogout = true;
+      await account.hydrate();
+    }
+  } catch { return false; }
+  const state = account.snapshot();
+  return hash === window.location.hash && state.ready && !state.pendingLogout
+    && (!awaitedLogout || !state.session.authenticated);
+};
+const openBoardAccountGate = async source => {
+  if (!await waitForAccountGate()) return;
+  const state = account.snapshot();
+  if (state.available === false || state.maintenance || account.canPlay() || accountDialog.isOpen()) return;
+  accountDialog.open(state.session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, source);
+};
+
 const startPersonalGame = ({ opponent, side }) => {
   if (!account.canPlay() || !isPersonalSide(side)) return;
   if (isComputerOpponent(opponent)) { homeStartStatus = getComputerReadiness(opponent).message; render(); return; }
@@ -4289,17 +4323,20 @@ appEl.addEventListener("change", (event) => {
 appEl.addEventListener("keydown", event => {
   if (event.target.closest?.("#shell-board") && (event.key === "Enter" || event.key === " ") && !account.canPlay()) {
     event.preventDefault(); event.stopImmediatePropagation();
-    accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, event.target);
+    void openBoardAccountGate(event.target);
   }
 }, true);
 appEl.addEventListener("pointerdown", event => {
   if (event.target.closest?.("#shell-board") && !account.canPlay()) {
     event.preventDefault();event.stopImmediatePropagation();
-    accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, event.target.closest?.("button, [tabindex]"));
+    void openBoardAccountGate(event.target.closest?.("button, [tabindex]"));
   }
 }, true);
 appEl.addEventListener("click", event => {
-  if (event.target.closest?.("#shell-board") && !account.canPlay()) { event.preventDefault();event.stopImmediatePropagation(); }
+  if (event.target.closest?.("#shell-board") && !account.canPlay()) {
+    event.preventDefault();event.stopImmediatePropagation();
+    void openBoardAccountGate(event.target.closest?.("button, [tabindex]"));
+  }
 }, true);
 appEl.addEventListener("click", async (event) => {
   const target = event.target;
@@ -4368,8 +4405,13 @@ appEl.addEventListener("click", async (event) => {
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") { accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
   const accountGatedActions = new Set(["start-opponent","create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
+  if (accountGatedActions.has(action) && (!account.snapshot().ready || account.snapshot().pendingLogout)) {
+    event.preventDefault();
+    if (!await waitForAccountGate()) return;
+  }
   if (accountGatedActions.has(action) && !account.canPlay()) {
     event.preventDefault();
+    if (!account.snapshot().available || account.snapshot().maintenance) return;
     const intent = safeAccountIntent({ hash: window.location.hash, action, opponent: actionEl.getAttribute("data-opponent"), side: homeSide, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });
     accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", intent, actionEl);
     return;

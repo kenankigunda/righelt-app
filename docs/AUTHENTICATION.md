@@ -4,13 +4,13 @@ T-108 adds first-party username/password accounts with a recovery code and no em
 
 ## Rollout boundary
 
-Credential endpoints are disabled unless `AUTH_ENABLED` is exactly `true`. Account-mode server authorization is implemented behind the same flag. This does not enable accounts in the deployed application. Do not enable it in production until the client and cutover stages of T-108 are complete. The synthetic hashing experiment has partial deployed measurements; its missing resource evidence remains recorded separately in `tools/t108-feasibility/evidence/RESULTS.md`.
+Credential endpoints are unavailable unless `AUTH_ENABLED` is exactly `true`. The durable cutover marker separately makes account authorization mandatory, even when credential services are unavailable. See [the cutover runbook](ACCOUNT_CUTOVER.md). This does not enable accounts in the deployed application. Do not enable it in production until the client and cutover stages of T-108 are complete. The synthetic hashing experiment has partial deployed measurements; its missing resource evidence remains recorded separately in `tools/t108-feasibility/evidence/RESULTS.md`.
 
 ## Runtime configuration
 
 | API binding or setting | Purpose |
 | --- | --- |
-| `DB` | D1 database with migration `0011_accounts.sql` applied. |
+| `DB` | D1 database with migrations through `0013_account_cutover.sql` applied. |
 | `HASH_SERVICE` | Private service binding to the admission Worker, `righelt-auth`. |
 | `AUTH_ENABLED` | Explicit credential-route activation. Unset means disabled. |
 | `AUTH_ALLOWED_ORIGINS` | Comma-separated exact origins, including scheme and any port. No wildcard or trailing slash. |
@@ -29,7 +29,7 @@ The opaque session cookie is Secure, HttpOnly, SameSite=Lax and host-only. Serve
 
 Registration returns a recovery code once and creates a restricted session. Saving and acknowledging that exact code version permits play once game authorization is integrated. Password login can resume an incomplete account; password-authenticated code replacement provides a new code if the first response was lost.
 
-Recovery preparation lasts ten minutes and does not change credentials. Acknowledgment atomically replaces the password and recovery code, revokes old sessions, and issues the recovering browser's session. Repeating a completed finish returns that same session only while it is still active and the credential generation matches. A narrow retry also handles the browser accepting the cookie but losing the response body. Logout, or successful login/registration with that browser's flow cookie, invalidates the flow on the server. Clearing a cookie alone is insufficient.
+Recovery preparation lasts ten minutes and does not change credentials. Each preparation returns a public `operationContext`; the form retains it alongside the displayed code and submits it on finish. The server requires it to match the flow cookie before both first completion and completed retries. A preparation in another tab cannot replace the code being acknowledged, even when the two preparations have the same recovery version. The context is domain-separated from the secret flow cookie and its stored digest; it never authenticates a request by itself. Acknowledgment atomically replaces the password and recovery code, revokes old sessions, and issues the recovering browser's session. Repeating a completed finish returns that same session only while it is still active and the credential generation matches. A narrow retry also handles the browser accepting the cookie but losing the response body. Logout, or successful login/registration with that browser's flow cookie, invalidates the flow on the server. Clearing a cookie alone is insufficient.
 
 An ordinary password change requires the current password, preserves the recovery code, and replaces sessions. Password-authenticated recovery-code replacement activates only on acknowledgment and preserves existing sessions. Failed credential transitions preserve the prior session and recovery flow.
 
@@ -55,7 +55,7 @@ The pinned local runtime delays some HTTP-triggered socket close handshakes by a
 
 `pnpm test:e2e:auth` starts a separate HTTPS Pages server on port 9988, the local API on 9987, and the real private admission/hash Workers. It applies migrations to a fresh temporary D1 database and uses synthetic credentials. No production configuration or remote database is changed. Playwright accepts the local self-signed certificate and runs the account workflows in Chromium, Firefox, and WebKit.
 
-The runner has a separate loopback-only fixture endpoint on port 10088. It accepts only two fixed operations: clear rate-limit counters between cases and expire test sessions. Browser-origin requests are rejected. These operations are absent from the application Worker and Pages routes. Hard limits remain enabled during each case.
+The runner has a separate loopback-only fixture endpoint on port 10088. It accepts fixed fixture operations to clear rate-limit counters, expire sessions, activate the immutable canary cutover and change maintenance. The cutover runbook lists their exact scope. Browser-origin requests are rejected. These operations are absent from the application Worker and Pages routes. Hard limits remain enabled during each case.
 
 The account suite runs separately from the existing guest-mode regression suite, and both are included in `pnpm test` and CI. Local runtime results do not establish deployed hashing resource use, actual Durable Object hibernation, or physical iPhone/in-app-browser acceptance.
 

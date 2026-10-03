@@ -55,8 +55,19 @@ async function fixture() {
   class Browser {
     cookies = new Map();
     context = null;
+    operationContext = null;
     ip = `192.0.2.${nextIp++}`;
     async call(path, body = {}, options = {}) {
+      // Each tab keeps the preparation context in its own form state. Cookies
+      // may be shared; never derive this confirmation value from the cookie.
+      if (
+        [
+          "/api/auth/recovery/finish",
+          "/api/auth/recovery-code/finish",
+        ].includes(path) &&
+        !Object.hasOwn(body, "operationContext")
+      )
+        body = { ...body, operationContext: this.operationContext };
       const headers = {
         "Content-Type": "application/json",
         Origin: origin,
@@ -77,6 +88,8 @@ async function fixture() {
       );
       const data = await response.json();
       if (!options.discardResponse) {
+        if (typeof data.operationContext === "string")
+          this.operationContext = data.operationContext;
         for (const cookie of response.headers.getSetCookie()) {
           const [kv] = cookie.split(";"),
             [name, value] = kv.split("=");
@@ -511,7 +524,7 @@ test("configured origins, request protections, expiry and session-context mismat
           { env: { ...f.env, AUTH_ENABLED: undefined } },
         )
       ).status,
-      404,
+      503,
     );
     for (const headers of [
       { Origin: "https://evil.test" },
@@ -865,6 +878,7 @@ test("logout racing a pending finish revokes its issued session even when logout
       newPassword,
     });
     finisher.cookies = new Map(logout.cookies);
+    finisher.operationContext = logout.operationContext;
     let release, entered;
     const barrier = new Promise((resolve) => (release = resolve)),
       started = new Promise((resolve) => (entered = resolve));
@@ -1174,3 +1188,403 @@ test("account settings are guarded, public profile is minimal, and tutorial prog
     await f.close();
   }
 });
+
+// Keep rate admission real, but inject only into the credential transaction.
+// Bound statements retain their SQL labels so this cannot accidentally prove
+// rollback of the earlier rate-counter batch instead of the operation under test.
+function credentialFaultDatabase(db, position, observed) {
+  const statements = new WeakMap();
+  function wrap(statement, sql) {
+    const wrapped = new Proxy(statement, {
+      get(target, key) {
+        if (key === "bind")
+          return (...values) => wrap(target.bind(...values), sql);
+        const value = Reflect.get(target, key);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    statements.set(wrapped, { statement, sql });
+    return wrapped;
+  }
+  return {
+    prepare: (sql) => wrap(db.prepare(sql), sql),
+    batch: (batch) => {
+      const entries = batch.map((statement) => {
+        assert.ok(
+          statements.has(statement),
+          "all batch statements are tracked",
+        );
+        return statements.get(statement);
+      });
+      const raw = entries.map(({ statement }) => statement);
+      if (entries.every(({ sql }) => sql.includes("account_rate_limits"))) {
+        return db.batch(raw);
+      }
+      observed.calls++;
+      observed.length = raw.length;
+      assert.ok(position <= raw.length, "fault lies within the transaction");
+      return db.batch([
+        ...raw.slice(0, position),
+        db.prepare(
+          "INSERT INTO account_transaction_guards(guard_id,valid) VALUES('injected-fault',0)",
+        ),
+        ...raw.slice(position),
+      ]);
+    },
+  };
+}
+async function credentialSnapshot(db) {
+  const tables = [
+    "accounts",
+    "account_sessions",
+    "account_operations",
+    "account_session_rooms",
+    "account_revocation_outbox",
+    "account_transaction_guards",
+  ];
+  const result = {};
+  for (const table of tables) {
+    result[table] = (
+      await db.prepare(`SELECT * FROM ${table} ORDER BY 1,2`).all()
+    ).results;
+  }
+  return result;
+}
+
+for (const operation of [
+  "register",
+  "login",
+  "logout",
+  "password",
+  "acknowledge",
+  "recovery/prepare",
+  "recovery/finish",
+  "recovery-code/prepare",
+  "recovery-code/finish",
+]) {
+  test(`${operation} rolls back at every credential batch boundary and permits a clean retry`, async () => {
+    const f = await fixture();
+    try {
+      const a = new f.Browser(),
+        peer = new f.Browser();
+      const registered = await a.register();
+      assert.equal(registered.status, 200);
+      assert.equal((await peer.login()).status, 200);
+      const accountId = registered.data.account.id;
+      if (operation === "login") {
+        assert.equal(
+          (await new f.Browser().register("OtherPlayer")).status,
+          200,
+        );
+      }
+      if (["register", "login", "recovery-code/finish"].includes(operation)) {
+        assert.equal(
+          (
+            await a.call("/api/auth/recovery-code/prepare", {
+              currentPassword: password,
+            })
+          ).status,
+          200,
+        );
+      }
+      // Completed flow plus its issued session makes logout's flow retirement
+      // and normal session revocation both observable, not empty SQL branches.
+      if (operation === "logout" || operation === "recovery/finish") {
+        assert.equal(
+          (
+            await a.call("/api/auth/recovery/prepare", {
+              username: "Kenan",
+              recoveryCode: registered.data.recoveryCode,
+              newPassword,
+            })
+          ).status,
+          200,
+        );
+      }
+      if (operation === "logout") {
+        assert.equal(
+          (
+            await a.call("/api/auth/recovery/finish", {
+              saved: true,
+              recoveryVersion: 2,
+            })
+          ).status,
+          200,
+        );
+      }
+      await f.db
+        .prepare(
+          "INSERT INTO account_session_rooms(session_hash,room_id) SELECT token_hash,'atomicity-room' FROM account_sessions",
+        )
+        .run();
+      const before = await credentialSnapshot(f.db);
+      const browserBefore = { cookies: [...a.cookies], context: a.context };
+      const bodies = {
+        register: { username: "FreshPlayer", password },
+        login: { username: "OtherPlayer", password },
+        logout: {},
+        password: { currentPassword: password, newPassword },
+        acknowledge: { saved: true, recoveryVersion: 1 },
+        "recovery/prepare": {
+          username: "Kenan",
+          recoveryCode: registered.data.recoveryCode,
+          newPassword,
+        },
+        "recovery/finish": { saved: true, recoveryVersion: 2 },
+        "recovery-code/prepare": { currentPassword: password },
+        "recovery-code/finish": { saved: true, recoveryVersion: 2 },
+      };
+      const path = `/api/auth/${operation === "acknowledge" ? "recovery-code/acknowledge" : operation}`;
+      let statementCount;
+      // Include the boundary AFTER the final statement: all writes and guard
+      // cleanup have executed when that fault proves the whole batch rolls back.
+      for (let position = 0; position <= (statementCount ?? 0); position++) {
+        await f.db.prepare("DELETE FROM account_rate_limits").run();
+        const observed = { calls: 0, length: 0 };
+        const result = await a.call(path, bodies[operation], {
+          env: {
+            ...f.env,
+            DB: credentialFaultDatabase(f.db, position, observed),
+          },
+        });
+        assert.equal(
+          observed.calls,
+          1,
+          `credential transaction reached at boundary ${position}`,
+        );
+        statementCount ??= observed.length;
+        assert.equal(observed.length, statementCount);
+        assert.equal(result.status, operation === "logout" ? 503 : 409);
+        assert.deepEqual(
+          await credentialSnapshot(f.db),
+          before,
+          `no partial state at boundary ${position}`,
+        );
+        assert.deepEqual(
+          { cookies: [...a.cookies], context: a.context },
+          browserBefore,
+        );
+        assert.deepEqual(result.response.headers.getSetCookie(), []);
+      }
+      assert.ok(statementCount >= 3);
+      await f.db.prepare("DELETE FROM account_rate_limits").run();
+      const retried = await a.call(path, bodies[operation]);
+      assert.equal(
+        retried.status,
+        200,
+        "same valid request succeeds after the fault is removed",
+      );
+      const after = await credentialSnapshot(f.db);
+      assert.equal(after.account_transaction_guards.length, 0);
+      const account = after.accounts.find(
+        (row) => row.account_id === accountId,
+      );
+      const liveSessions = after.account_sessions.filter(
+        (row) => row.revoked_at === null,
+      );
+      if (operation === "register" || operation === "login") {
+        assert.notEqual(retried.data.account.id, accountId);
+        assert.equal(
+          after.account_sessions.length,
+          before.account_sessions.length + 1,
+        );
+        assert.equal(after.account_operations.length, 0);
+        assert.equal(after.account_revocation_outbox.length, 1);
+        assert.equal((await peer.session()).data.authenticated, true);
+      } else if (operation === "logout") {
+        assert.equal(retried.data.authenticated, false);
+        assert.equal(liveSessions.length, 0);
+        assert.equal(after.account_operations.length, 0);
+        assert.equal(after.account_revocation_outbox.length, 1);
+        assert.equal(
+          (await a.call(path)).status,
+          200,
+          "logout remains idempotent",
+        );
+      } else if (operation === "password" || operation === "recovery/finish") {
+        assert.equal(account.credential_version, 2);
+        assert.equal(account.session_epoch, 2);
+        assert.equal(liveSessions.length, 1);
+        assert.equal(after.account_revocation_outbox.length, 2);
+        assert.equal((await peer.session()).data.authenticated, false);
+        assert.equal(verifyPassword(newPassword, account.password_hash), true);
+        if (operation === "recovery/finish") {
+          assert.equal(account.recovery_version, 2);
+          assert.equal(account.recovery_acknowledged, 1);
+          assert.notEqual(
+            account.recovery_hash,
+            before.accounts[0].recovery_hash,
+          );
+          assert.ok(after.account_operations[0].completed_at !== null);
+          assert.equal(
+            after.account_operations[0].issued_session_hash,
+            liveSessions[0].token_hash,
+          );
+          assert.equal(
+            after.account_sessions.length,
+            before.account_sessions.length + 1,
+          );
+          assert.equal(
+            (await a.call(path, bodies[operation])).status,
+            200,
+            "completed recovery retries safely",
+          );
+          assert.deepEqual(
+            await credentialSnapshot(f.db),
+            after,
+            "completed retry does not repeat mutations",
+          );
+        }
+      } else if (operation === "acknowledge") {
+        assert.equal(account.recovery_acknowledged, 1);
+        assert.equal(liveSessions.length, 2);
+      } else if (operation.endsWith("prepare")) {
+        assert.deepEqual(
+          after.accounts,
+          before.accounts,
+          "preparation leaves credentials unchanged",
+        );
+        assert.equal(after.account_operations.length, 1);
+        assert.equal(after.account_operations[0].completed_at, null);
+        assert.ok(retried.data.recoveryCode);
+        assert.equal(liveSessions.length, 2);
+      } else {
+        assert.equal(account.recovery_version, 2);
+        assert.notEqual(
+          account.recovery_hash,
+          before.accounts[0].recovery_hash,
+        );
+        assert.ok(after.account_operations[0].completed_at !== null);
+        assert.equal(liveSessions.length, 2);
+        assert.equal(
+          (await a.call(path, bodies[operation])).status,
+          200,
+          "completed receipt retries safely",
+        );
+      }
+    } finally {
+      await f.close();
+    }
+  });
+}
+
+for (const kind of ["replacement", "recovery", "cross-account recovery"]) {
+  test(`shared browser flow cookie cannot acknowledge another tab's ${kind} code`, async () => {
+    const f = await fixture();
+    try {
+      const firstOwner = new f.Browser(),
+        secondOwner = new f.Browser();
+      const firstAccount = await firstOwner.register("FirstOwner");
+      await firstOwner.call("/api/auth/recovery-code/acknowledge", {
+        saved: true,
+        recoveryVersion: 1,
+      });
+      const secondAccount = await secondOwner.register("SecondOwner");
+      await secondOwner.call("/api/auth/recovery-code/acknowledge", {
+        saved: true,
+        recoveryVersion: 1,
+      });
+      const shared = kind === "replacement" ? firstOwner : new f.Browser();
+      const prepare =
+        kind === "replacement"
+          ? "/api/auth/recovery-code/prepare"
+          : "/api/auth/recovery/prepare";
+      const finish =
+        kind === "replacement"
+          ? "/api/auth/recovery-code/finish"
+          : "/api/auth/recovery/finish";
+      const first = await shared.call(
+        prepare,
+        kind === "replacement"
+          ? { currentPassword: password }
+          : {
+              username: "FirstOwner",
+              recoveryCode: firstAccount.data.recoveryCode,
+              newPassword,
+            },
+      );
+      const firstFlowCookie = shared.cookies.get("__Host-righelt_recovery");
+      const second = await shared.call(
+        prepare,
+        kind === "replacement"
+          ? { currentPassword: password }
+          : {
+              username:
+                kind === "cross-account recovery"
+                  ? "SecondOwner"
+                  : "FirstOwner",
+              recoveryCode:
+                kind === "cross-account recovery"
+                  ? secondAccount.data.recoveryCode
+                  : firstAccount.data.recoveryCode,
+              newPassword: "another-synthetic-password-789",
+            },
+      );
+      assert.equal(first.status, 200);
+      assert.equal(second.status, 200);
+      assert.equal(first.data.recoveryVersion, second.data.recoveryVersion);
+      const before = await credentialSnapshot(f.db);
+      const missing = await shared.call(finish, {
+        saved: true,
+        recoveryVersion: first.data.recoveryVersion,
+        operationContext: undefined,
+      });
+      assert.equal(missing.status, 400);
+      const wrong = await shared.call(finish, {
+        saved: true,
+        recoveryVersion: first.data.recoveryVersion,
+        operationContext: first.data.operationContext,
+      });
+      assert.equal(wrong.status, 409);
+      assert.equal((await shared.call(finish,{saved:true,recoveryVersion:first.data.recoveryVersion,operationContext:null})).status,409);
+      assert.deepEqual(await credentialSnapshot(f.db), before);
+      assert.match(first.data.operationContext, /^[a-f0-9]{64}$/);
+      assert.notEqual(first.data.operationContext, firstFlowCookie);
+      assert.notEqual(
+        first.data.operationContext,
+        await tokenHash(firstFlowCookie),
+      );
+      assert.notEqual(
+        first.data.operationContext,
+        second.data.operationContext,
+      );
+      const right = {
+        saved: true,
+        recoveryVersion: second.data.recoveryVersion,
+        operationContext: second.data.operationContext,
+      };
+      const completed = await shared.call(finish, right);
+      assert.equal(completed.status, 200);
+      assert.equal(
+        completed.data.account.username,
+        kind === "cross-account recovery" ? "SecondOwner" : "FirstOwner",
+      );
+      const stored = await f.db
+        .prepare("SELECT recovery_hash FROM accounts WHERE username=?")
+        .bind(completed.data.account.username)
+        .first();
+      assert.equal(
+        stored.recovery_hash,
+        await tokenHash(second.data.recoveryCode.replaceAll("-", "")),
+      );
+      assert.notEqual(
+        stored.recovery_hash,
+        await tokenHash(first.data.recoveryCode.replaceAll("-", "")),
+      );
+      const completedSnapshot = await credentialSnapshot(f.db);
+      assert.equal(
+        (
+          await shared.call(finish, {
+            ...right,
+            operationContext: first.data.operationContext,
+          })
+        ).status,
+        409,
+      );
+      assert.deepEqual(await credentialSnapshot(f.db), completedSnapshot);
+      assert.equal((await shared.call(finish, right)).status, 200);
+    } finally {
+      await f.close();
+    }
+  });
+}

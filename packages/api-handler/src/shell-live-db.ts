@@ -1,3 +1,4 @@
+import type { CutoverPolicy } from './account-cutover';
 import type { ServerEvent } from "../../shared-types/src/events";
 import {
   asAction,
@@ -44,6 +45,8 @@ export type D1DatabaseLike = {
 
 export type LiveGameEnv = {
   AUTH_ENABLED?: string;
+  AUTH_REQUIRED?: string;
+  ACCOUNT_POLICY?: CutoverPolicy;
   AUTH_ALLOWED_ORIGINS?: string;
   DB: D1DatabaseLike;
 };
@@ -724,7 +727,7 @@ export const loadGameProjection = async (env: LiveGameEnv, gameId: string): Prom
   } catch (error) {
     // Only pre-migration guest deployments may lack the ownership column.
     // Any other database failure must fail closed, including account-enabled deployments.
-    if (env.AUTH_ENABLED === "true" || !/no such column: ownership_mode/i.test(String(error))) throw error;
+    if ((env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true") || !/no such column: ownership_mode/i.test(String(error))) throw error;
     row = await env.DB.prepare(`SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision FROM ${LIVE_GAMES_TABLE} WHERE game_id = ?1`).bind(gameId).first<PersistedGameRow>();
   }
   if (!row?.state_json) {
@@ -772,7 +775,7 @@ export const countHomeSectionGames = async (
   if (section === "smoke" && !debug) {
     return 0;
   }
-  const where = getHomeSectionWhereClause({ identityId, section, debug, unfinished, finished }, env.AUTH_ENABLED === "true");
+  const where = getHomeSectionWhereClause({ identityId, section, debug, unfinished, finished }, (env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true"));
   const row = await env.DB.prepare(`SELECT COUNT(*) AS total_games FROM ${LIVE_GAMES_TABLE} ${where.sql}`)
     .bind(...where.params)
     .first<HomeSectionCountRow>();
@@ -786,10 +789,10 @@ export const listHomeSectionGameProjectionPage = async (
   if (section === "smoke" && !debug) {
     return [];
   }
-  const where = getHomeSectionWhereClause({ identityId, section, debug, unfinished, finished }, env.AUTH_ENABLED === "true");
+  const where = getHomeSectionWhereClause({ identityId, section, debug, unfinished, finished }, (env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true"));
   const offset = page * pageSize;
   const result = await env.DB.prepare(
-    `SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision${env.AUTH_ENABLED === "true" ? ", ownership_mode" : ""} FROM ${LIVE_GAMES_TABLE}
+    `SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision${(env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true") ? ", ownership_mode" : ""} FROM ${LIVE_GAMES_TABLE}
      ${where.sql}
      ORDER BY ${homeOrderSql(unfinished)}
      LIMIT ?${where.params.length + 1}
@@ -810,10 +813,10 @@ export const listHomeSectionStaticGameCardPage = async (
   if (section === "smoke" && !debug) {
     return { games: [], parseMs: 0, cardModelMs: 0 };
   }
-  const where = getHomeSectionWhereClause({ identityId, section, debug, unfinished, finished }, env.AUTH_ENABLED === "true");
+  const where = getHomeSectionWhereClause({ identityId, section, debug, unfinished, finished }, (env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true"));
   const offset = page * pageSize;
   const result = await env.DB.prepare(
-    `SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision${env.AUTH_ENABLED === "true" ? ", ownership_mode" : ""} FROM ${LIVE_GAMES_TABLE}
+    `SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision${(env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true") ? ", ownership_mode" : ""} FROM ${LIVE_GAMES_TABLE}
      ${where.sql}
      ORDER BY ${homeOrderSql(unfinished)}
      LIMIT ?${where.params.length + 1}
@@ -824,7 +827,7 @@ export const listHomeSectionStaticGameCardPage = async (
   let parseMs = 0;
   let cardModelMs = 0;
   const games = (result.results ?? []).flatMap((row) => {
-    const normalized = normalizePersistedStaticGameCard(row, env.AUTH_ENABLED === "true" && row.ownership_mode !== "account_v1" ? "" : identityId, "list");
+    const normalized = normalizePersistedStaticGameCard(row, (env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true") && row.ownership_mode !== "account_v1" ? "" : identityId, "list");
     parseMs += normalized.parseMs;
     cardModelMs += normalized.cardModelMs;
     if (normalized.projection.kind !== "ok") {
@@ -857,9 +860,9 @@ const projectionStatement = (
        player2_identity_id,
        has_smoke_identity,
        state_json,
-       event_seq, gameplay_revision, commit_base_event_seq${env.AUTH_ENABLED === "true" ? ", ownership_mode" : ""}
+       event_seq, gameplay_revision, commit_base_event_seq${(env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true") ? ", ownership_mode" : ""}
      )
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11${env.AUTH_ENABLED === "true" ? ", ?12" : ""})
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11${(env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true") ? ", ?12" : ""})
      ON CONFLICT(game_id) DO UPDATE SET
        updated_at = excluded.updated_at,
        latest_activity_at = excluded.latest_activity_at,
@@ -878,12 +881,12 @@ const projectionStatement = (
       game.lastMoveAt || game.updatedAt || game.createdAt,
       game.player1?.identityId ?? null,
       game.player2?.identityId ?? null,
-      hasSmokeIdentity(game) ? 1 : 0,
+      (hasSmokeIdentity(game) || (env.ACCOUNT_POLICY?.canary_account_id && game.selfPlayMode && game.player1?.identityId === env.ACCOUNT_POLICY.canary_account_id && game.player2?.identityId === env.ACCOUNT_POLICY.canary_account_id)) ? 1 : 0,
       JSON.stringify(game),
       eventSeq,
       game.gameplayRevision ?? 0,
       baseEventSeq,
-      ...(env.AUTH_ENABLED === "true" ? [game.ownershipMode ?? "legacy_guest"] : []),
+      ...((env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true") ? [game.ownershipMode ?? "legacy_guest"] : []),
     );
 };
 
@@ -942,14 +945,14 @@ export const persistGameState = async (
   game: LiveGame,
   eventSeq: number,
   event?: (ServerEvent & { eventSeq: number }) | null,
-  options: { baseEventSeq?: number; statements?: D1Statement[] } = {},
+  options: { baseEventSeq?: number; statements?: D1Statement[]; before?: D1Statement[]; after?: D1Statement[] } = {},
 ) => {
   const base = options.baseEventSeq ?? eventSeq - 1;
   if (!Number.isSafeInteger(base) || base < 0 || !Number.isSafeInteger(eventSeq) || eventSeq <= base) throw new Error("invalid_commit_revision");
   if (event && event.eventSeq !== eventSeq) throw new Error("event_revision_mismatch");
-  const statements = [projectionStatement(env, game, eventSeq, base), ...inviteStatements(env, game)];
+  const statements = [...(options.before ?? []), projectionStatement(env, game, eventSeq, base), ...inviteStatements(env, game)];
   if (event) statements.push(eventStatement(env, game.id, event));
-  statements.push(...(options.statements ?? []));
+  statements.push(...(options.statements ?? []), ...(options.after ?? []));
   const results = await env.DB.batch(statements);
   if (results.length !== statements.length || results.some((result) => !result.success)) throw new Error("uncertain_commit_result");
 };

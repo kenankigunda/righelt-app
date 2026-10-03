@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeUsername, normalizeDisplayName, normalizePassword, isPasswordAllowed, safeContinuation } from '../../shared-types/src/auth.ts';
-import { authCookie, clearAuthCookie, readAuthCookie, randomToken, tokenHash, createRecoveryCode, normalizeRecoveryCode, sessionExpired, sessionExpiry, recoverySessionToken } from '../src/auth-security.ts';
+import { authCookie, clearAuthCookie, readAuthCookie, randomToken, tokenHash, createRecoveryCode, normalizeRecoveryCode, sessionExpired, sessionExpiry, recoverySessionToken, recoveryOperationContext } from '../src/auth-security.ts';
 import { hashPassword, verifyPassword, parseHash } from '../../../apps/auth-hash/hash.mjs';
 import { PasswordAdmissionDO } from '../../../apps/auth/index.mjs';
 
@@ -67,4 +67,15 @@ test('private admission queues four and releases work on upstream failure',async
   assert.deepEqual(await failed.json(),{error:'temporarily_unavailable'});
   assert.equal(results.filter(r=>r.status==='fulfilled'&&r.value.status===429).length,15);
   assert.equal(calls,5);assert.equal(admission.active,false);
+});
+
+test('public recovery confirmation contexts are stable, flow-specific and domain-separated',async()=>{
+  const flow=randomToken();
+  const context=await recoveryOperationContext(flow);
+  assert.match(context,/^[a-f0-9]{64}$/);
+  assert.equal(context,await recoveryOperationContext(flow));
+  assert.notEqual(context,flow);
+  assert.notEqual(context,await tokenHash(flow));
+  assert.notEqual(context,await recoveryOperationContext(randomToken()));
+  await assert.rejects(recoveryOperationContext('invalid'));
 });

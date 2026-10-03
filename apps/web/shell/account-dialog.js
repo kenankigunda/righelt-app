@@ -41,11 +41,13 @@ export const createAccountDialog = ({
     values = {},
     code = null,
     version = null,
+    operationContext = null,
     finish = null,
     username = "",
     challengeToken = "",
     widget = null,
-    flow = 0;
+    flow = 0,
+    owner = {};
   const status = (text) => {
     const target = dialog.querySelector("[data-account-status]");
     if (target) target.textContent = text;
@@ -118,10 +120,12 @@ export const createAccountDialog = ({
   };
   const close = () => {
     flow++;
+    owner = {};
     pending = null;
     values = {};
     code = null;
     version = null;
+    operationContext = null;
     finish = null;
     challengeToken = "";
     if (widget !== null) globalThis.turnstile?.remove(widget);
@@ -139,6 +143,7 @@ export const createAccountDialog = ({
   };
   const open = (next = "login", intent = null, source = null) => {
     flow++;
+    owner = {};
     pending = intent;
     // Safari does not focus pointer-clicked buttons before opening a dialog.
     trigger =
@@ -251,8 +256,10 @@ export const createAccountDialog = ({
     if (button.dataset.mode) {
       mode = button.dataset.mode;
       flow++;
+      owner = {};
       code = null;
       version = null;
+      operationContext = null;
       finish = null;
       values = {
         username:
@@ -318,6 +325,7 @@ export const createAccountDialog = ({
     const form = event.target;
     if (!form.reportValidity() || controller.snapshot().busy) return;
     const marker = flow,
+      operationOwner = owner,
       data = Object.fromEntries(new FormData(form));
     values = {
       username: data.username || values.username,
@@ -346,38 +354,39 @@ export const createAccountDialog = ({
         result = await controller.act(finish, {
           saved: true,
           recoveryVersion: version,
-        });
+          ...(finish !== "recovery-code/acknowledge" ? { operationContext } : {}),
+        }, operationOwner);
       else if (mode === "login")
         result = await controller.act("login", {
           username: data.username,
           password: data.password,
           ...token,
-        });
+        }, operationOwner);
       else if (mode === "register")
         result = await controller.act("register", {
           username: data.username,
           displayName: data.displayName,
           password: data.password,
           ...token,
-        });
+        }, operationOwner);
       else if (mode === "recovery")
         result = await controller.act("recovery/prepare", {
           username: data.username,
           recoveryCode: data.recoveryCode,
           newPassword: data.newPassword,
           ...token,
-        });
+        }, operationOwner);
       else if (mode === "password")
         result = await controller.act("password", {
           currentPassword: data.currentPassword,
           newPassword: data.newPassword,
           ...token,
-        });
+        }, operationOwner);
       else if (mode === "replacement")
         result = await controller.act("recovery-code/prepare", {
           currentPassword: data.currentPassword,
           ...token,
-        });
+        }, operationOwner);
       if (marker !== flow || !dialog.open) return;
       username =
         data.username ||
@@ -392,6 +401,7 @@ export const createAccountDialog = ({
               : "recovery-code/finish";
         code = result.recoveryCode;
         version = result.recoveryVersion;
+        operationContext = result.operationContext ?? null;
         mode = "code";
         render();
         return;
@@ -427,6 +437,11 @@ export const createAccountDialog = ({
     open,
     close,
     refreshSession,
+    onTransition: ({ owner: transitionOwner } = {}) => {
+      // Only the operation submitted by this exact dialog flow may carry it
+      // across a session replacement. Other tabs and revocation retire secrets.
+      if (dialog.open && transitionOwner !== owner) close();
+    },
     isOpen: () => dialog.open,
     element: dialog,
   };

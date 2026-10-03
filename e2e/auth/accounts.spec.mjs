@@ -277,8 +277,21 @@ test("interrupted registration resumes with a replacement recovery code and an e
   await expect(dialog(page)).toBeVisible();
   expect(new URL(page.url()).hash).not.toContain("game/");
   await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  let releaseSession, heldSession;
+  const sessionHeld = new Promise(resolve => { heldSession = resolve; });
+  const sessionReleased = new Promise(resolve => { releaseSession = resolve; });
+  const holdSession = async route => {
+    const response = await route.fetch();
+    heldSession();
+    await sessionReleased;
+    await route.fulfill({ response });
+  };
+  await page.route("**/api/auth/session", holdSession);
   await page.reload();
+  await sessionHeld;
   await page.getByTestId("home-create-game").click();
+  releaseSession();
+  await page.unrouteAll({ behavior: "wait" });
   await expect(dialog(page).getByRole("heading", { name: "Replace recovery code" })).toBeVisible();
   await dialog(page).getByLabel("Current password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Prepare replacement code", exact: true }).click();
@@ -389,6 +402,7 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
     await released;
     await route.fulfill({ response });
   });
+  try {
   await page.goto("/");
   const trigger = page.getByRole("button", { name: "Sign in", exact: true });
   await expect(trigger).toBeVisible();
@@ -402,6 +416,10 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
   if (gesture === "pointer") await page.mouse.up();
   else await page.keyboard.up("Space");
   await expect(dialog(page)).toBeVisible();
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
 });
 
 test("a stalled startup read recovers without granting guest play", async ({ page }) => {
@@ -421,4 +439,124 @@ test("a stalled startup read recovers without granting guest play", async ({ pag
     await expect(dialog(page)).toBeVisible();
     await expect(page).not.toHaveURL(/#\/game\//);
   } finally { release(); }
+});
+
+test("switching accounts in another tab retires the old settings form", async ({ page }) => {
+  const first = uniqueName(), second = uniqueName();
+  await register(page, second);
+  await account(page);
+  await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
+  await register(page, first);
+  const sibling = await page.context().newPage();
+  try {
+    await sibling.goto("/");
+    await expect(sibling.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+    await account(page);
+    await dialog(page).getByLabel("Display name", { exact: true }).fill("Unsaved first account name");
+    await account(sibling);
+    await dialog(sibling).getByRole("button", { name: "Switch account", exact: true }).click();
+    await dialog(sibling).getByLabel("Username", { exact: true }).fill(second);
+    await dialog(sibling).getByLabel("Password", { exact: true }).fill(password);
+    await dialog(sibling).getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(dialog(sibling)).not.toBeVisible();
+    await expect(dialog(page)).not.toBeVisible();
+    await account(page);
+    await expect(dialog(page)).toContainText(`@${second}`);
+    await expect(dialog(page).getByLabel("Display name", { exact: true })).toHaveValue(second);
+  } finally { await sibling.close(); }
+});
+
+test("keyboard board activation opens sign in without losing the board", async ({ page, browser }) => {
+  const username = uniqueName();
+  await register(page, username, { gate: true });
+  const gameUrl = page.url();
+  const otherContext = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const owner = await otherContext.newPage();
+    await owner.goto(gameUrl);
+    await signIn(owner, username);
+    await expect(owner.getByTestId("game-role")).toContainText("Player 1");
+    await account(page);
+    await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect(dialog(page)).not.toBeVisible();
+    await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+    const before = await getHistoryMoveCount(page);
+    const cell = page.locator("#shell-board button").first();
+    await expect(cell).toBeVisible();
+    await cell.focus();
+    // A real remote move replaces the board while the spectator is using its
+    // keyboard. Keep focus on the same coordinate before physical Enter.
+    await makeAccountMove(owner);
+    await expect.poll(() => getHistoryMoveCount(page)).toBeGreaterThan(before);
+    await expect(cell).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(dialog(page).getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
+    await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(page.url()).toBe(gameUrl);
+    await expect(page.getByTestId("game-board")).toBeVisible();
+  } finally { await otherContext.close(); }
+});
+
+test("a delayed play continuation is discarded after a cross-tab account switch", async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window);
+    window.__heldAccountLists = [];
+    window.fetch = async (...args) => {
+      const response = await original(...args);
+      if (window.__holdAccountLists && new URL(args[0], location.href).pathname === "/api/shell/games" && (!args[1]?.method || args[1].method === "GET")) {
+        const json = response.json.bind(response);
+        response.json = async () => {
+          const body = await json();
+          await new Promise(resolve => window.__heldAccountLists.push(resolve));
+          return body;
+        };
+      }
+      return response;
+    };
+  });
+  const first = uniqueName(), second = uniqueName();
+  await register(page, second);
+  await account(page);
+  await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
+  await expect(dialog(page)).not.toBeVisible();
+  await register(page, first);
+  await account(page);
+  await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
+  await expect(dialog(page)).not.toBeVisible();
+  const sibling = await page.context().newPage();
+  let creates = 0;
+  page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates++; });
+  try {
+    await sibling.goto("/");
+    await page.getByRole("button", { name: "Start new game", exact: true }).click();
+    await dialog(page).getByLabel("Username", { exact: true }).fill(first);
+    await dialog(page).getByLabel("Password", { exact: true }).fill(password);
+    await page.evaluate(() => { window.__holdAccountLists = true; });
+    await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(dialog(page)).not.toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.__heldAccountLists.length)).toBeGreaterThan(0);
+    await expect(sibling.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+    await account(sibling);
+    await dialog(sibling).getByRole("button", { name: "Switch account", exact: true }).click();
+    await dialog(sibling).getByLabel("Username", { exact: true }).fill(second);
+    await dialog(sibling).getByLabel("Password", { exact: true }).fill(password);
+    await dialog(sibling).getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(dialog(sibling)).not.toBeVisible();
+    await account(page);
+    await expect(dialog(page)).toContainText(`@${second}`);
+    await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.evaluate(async () => {
+      window.__holdAccountLists = false;
+      window.__heldAccountLists.splice(0).forEach(resolve => resolve());
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+    expect(creates).toBe(0);
+    expect(new URL(page.url()).hash).not.toContain("game/");
+  } finally {
+    if (!page.isClosed()) await page.evaluate(() => window.__heldAccountLists.splice(0).forEach(resolve => resolve()));
+    await sibling.close();
+  }
 });

@@ -31,6 +31,7 @@ import {
   clearAuthCookie,
   readAuthCookie,
   recoverySessionToken,
+  recoveryOperationContext,
   equalTokenDigests,
 } from "./auth-security";
 import {
@@ -417,22 +418,9 @@ export async function handleAuthRequest(
     !path.startsWith("/api/profiles/")
   )
     return null;
-  if (rawEnv.AUTH_ENABLED !== "true")
-    return json({ ok: false, error: "not_found" }, 404);
   try {
-    if (
-      !rawEnv.HASH_SERVICE ||
-      !/^[a-f0-9]{64}$/.test(rawEnv.AUTH_HMAC_SECRET ?? "") ||
-      !rawEnv.AUTH_ALLOWED_ORIGINS
-    )
-      throw new AuthProblem("temporarily_unavailable", 503);
     const env = rawEnv,
       db = primaryAuthDatabase(env.DB);
-    if (request.method === "GET" && path === "/api/auth/session")
-      return json({
-        ok: true,
-        ...sessionState(await authenticatedActor(request, env)),
-      });
     if (request.method === "GET" && path.startsWith("/api/profiles/")) {
       const name = normalizeUsername(
         decodeURIComponent(path.slice("/api/profiles/".length)),
@@ -456,6 +444,15 @@ export async function handleAuthRequest(
           })
         : json({ ok: false, error: "not_found" }, 404);
     }
+    if (rawEnv.AUTH_ENABLED !== "true")
+      throw new AuthProblem("temporarily_unavailable", 503);
+    if (
+      !rawEnv.HASH_SERVICE ||
+      !/^[a-f0-9]{64}$/.test(rawEnv.AUTH_HMAC_SECRET ?? "") ||
+      !rawEnv.AUTH_ALLOWED_ORIGINS
+    ) throw new AuthProblem("temporarily_unavailable", 503);
+    if (request.method === "GET" && path === "/api/auth/session")
+      return json({ ok: true, ...sessionState(await authenticatedActor(request, env)) });
     if (request.method !== (path === "/api/account" ? "PATCH" : "POST"))
       throw new AuthProblem("invalid_input", 405);
     const body = await authBody(request, env);
@@ -866,6 +863,7 @@ export async function handleAuthRequest(
           ok: true,
           recoveryCode: code,
           recoveryVersion: account.recovery_version + 1,
+          operationContext: await recoveryOperationContext(flowToken),
         },
         200,
         [
@@ -878,10 +876,12 @@ export async function handleAuthRequest(
       path === "/api/auth/recovery/finish" ||
       path === "/api/auth/recovery-code/finish"
     ) {
-      exactKeys(body, ["saved", "recoveryVersion"]);
+      exactKeys(body, ["saved", "recoveryVersion", "operationContext"]);
       if (body.saved !== true) throw new AuthProblem("invalid_input");
       const flowToken = readAuthCookie(request, "flow");
-      if (!flowToken) throw new AuthProblem("stale_operation", 409);
+      if (!flowToken || typeof body.operationContext !== "string" ||
+          !equalTokenDigests(body.operationContext, await recoveryOperationContext(flowToken)))
+        throw new AuthProblem("stale_operation", 409);
       const operation = await flowOperation(db, await tokenHash(flowToken));
       const recovery = path === "/api/auth/recovery/finish";
       if (

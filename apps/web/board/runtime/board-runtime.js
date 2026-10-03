@@ -1245,6 +1245,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, previewA
     }
     if (resetSelection) {
       clearSelection();
+    } else {
+      // A response calculated for the previous snapshot cannot refill this selection.
+      invalidateSelectedPieceMovesRequests();
     }
     selectedPieceMoves = [];
     selectedPieceMovePreviews = [];
@@ -1261,6 +1264,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, previewA
       selectedPieceMovePreviews = [structuredClone(selectionAction)];
       lastPhaseInitializedForPieceId = selectedPieceId;
       selectedPieceOverlayPhase = defaultOverlayPhaseForSelection();
+    } else if (!resetSelection && !selectionState && overlayMode === OVERLAY_MODE.INTERACTIVE) {
+      // Branch hydration and other refreshes preserve selection, not stale move data.
+      primeSelectedPieceMovesFromLegalActions();
     }
     refreshSelectionLabels();
     renderBoard();

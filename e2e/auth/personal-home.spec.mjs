@@ -126,7 +126,7 @@ test("blue self-play keeps its selected affiliation after reload", async ({ page
   await expect(page.locator("#app")).toHaveAttribute("data-action-affiliation", "blue");
 });
 
-test("Explain activation survives an account refresh completed during its press", async ({ page }) => {
+test("Explain activation survives an account response arriving during its press", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/");
   await page.getByTestId("home-create-game").click();

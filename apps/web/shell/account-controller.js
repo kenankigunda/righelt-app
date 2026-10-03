@@ -64,6 +64,8 @@ export const createAccountController = ({
 } = {}) => {
   let siteKey = null,
     enabled = true,
+    available = true,
+    maintenance = false,
     ready = false,
     session = { authenticated: false },
     generation = 0,
@@ -124,6 +126,8 @@ export const createAccountController = ({
   };
   const snapshot = () => ({
     enabled,
+    available,
+    maintenance,
     ready,
     siteKey,
     session: structuredClone(session),
@@ -134,12 +138,12 @@ export const createAccountController = ({
   const publish = () => {
     if (!destroyed) onChange(snapshot());
   };
-  const retire = (next = { authenticated: false }, broadcast = false) => {
+  const retire = (next = { authenticated: false }, broadcast = false, owner = null) => {
     generation++;
     clearTimeout(expiryTimer);
     for (const controller of controllers) controller.abort();
     controllers.clear();
-    onTransition({ ...snapshot(), session: structuredClone(next), generation });
+    onTransition({ ...snapshot(), session: structuredClone(next), generation }, { owner });
     session = next;
     if (broadcast) {
       write(AUTH_CHANGE_KEY, `${now()}:${Math.random()}`);
@@ -147,7 +151,7 @@ export const createAccountController = ({
     }
     publish();
   };
-  const accept = (input, broadcast = false) => {
+  const accept = (input, broadcast = false, owner = null) => {
     const next = input.authenticated
       ? {
           authenticated: true,
@@ -169,7 +173,7 @@ export const createAccountController = ({
       session.recoveryAcknowledgmentRequired !==
         next.recoveryAcknowledgmentRequired
     )
-      retire(next, broadcast);
+      retire(next, broadcast, owner);
     else {
       session = next;
       publish();
@@ -290,7 +294,7 @@ export const createAccountController = ({
     return logoutFlight;
   };
   const hydrate = async (signal) => {
-    if (!enabled || destroyed || busy) return snapshot();
+    if (!enabled || !available || destroyed || busy) return snapshot();
     if (readPending()) {
       await finishLogout();
       return snapshot();
@@ -323,12 +327,14 @@ export const createAccountController = ({
       )
         throw failure("upgrade_required");
       enabled = result.accountsRequired;
+      available = result.accountsAvailable !== false;
+      maintenance = result.maintenance === true;
       siteKey = result.turnstileSiteKey || null;
-      ready = true;
-      if (enabled) await hydrate(controller.signal);
+      if (enabled && available) await hydrate(controller.signal);
       else retire({ authenticated: false });
       if (controller.signal.aborted || destroyed)
         throw failure("session_changed");
+      ready = true;
       publish();
       return snapshot();
     };
@@ -367,7 +373,7 @@ export const createAccountController = ({
         authorityLost();
     }
   };
-  const act = async (operation, body) => {
+  const act = async (operation, body, owner = null) => {
     if (!ready) throw failure("auth_not_ready");
     if (readPending()) throw failure("logout_pending");
     if (busy) throw failure("operation_pending");
@@ -385,6 +391,7 @@ export const createAccountController = ({
           ["login", "register", "password", "recovery/finish"].includes(
             operation,
           ),
+          owner,
         );
       return result;
     } catch (error) {
@@ -580,7 +587,7 @@ export const createAccountController = ({
     updateAccount,
     canPlay: () =>
       !enabled ||
-      (session.authenticated &&
+      (available && !maintenance && session.authenticated &&
         !session.recoveryAcknowledgmentRequired &&
         !readPending()),
     destroy() {

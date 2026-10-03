@@ -11,6 +11,8 @@ on:
 
 jobs:
   cleanup:
+    # Retired by T-108: preserve legacy/account history; never bypass cutover triggers.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     environment: Dev
     permissions:

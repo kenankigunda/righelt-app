@@ -62,6 +62,12 @@ export type RecoveryPrepareInput = {
   challengeToken?: string;
 };
 export type SavedCodeInput = { saved: true; recoveryVersion: number };
+export type PreparedRecovery = {
+  recoveryCode: string;
+  recoveryVersion: number;
+  operationContext: string;
+};
+export type RecoveryFinishInput = SavedCodeInput & { operationContext: string };
 export type HashInput =
   | { operation: "hash"; password: string }
   | { operation: "verify"; password: string; encoded: string };

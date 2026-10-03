@@ -10,6 +10,7 @@ const env = {
         bind() {
           return this;
         },
+        async first() { return {activated_at:null,maintenance:0,canary_account_id:null}; },
         async run() {
           return { success: true, meta: { last_row_id: 1 } };
         },
@@ -20,14 +21,13 @@ const env = {
 };
 env.GAME_ROOMS = createFakeGameRooms(() => env);
 
-test("/api/shell/bootstrap is deterministic and uses bootstrap cache policy", async () => {
+test("/api/shell/bootstrap is deterministic and does not cache account cutover policy", async () => {
   const a = await handleApiRequest(new Request("https://example.test/api/shell/bootstrap"), env);
   const b = await handleApiRequest(new Request("https://example.test/api/shell/bootstrap"), env);
 
   assert.equal(a.status, 200);
   assert.equal(b.status, 200);
-  assert.match(a.headers.get("cache-control") || "", /s-maxage=60/);
-  assert.match(a.headers.get("cache-control") || "", /stale-while-revalidate=300/);
+  assert.equal(a.headers.get("cache-control"), "no-store");
 
   const bodyA = await a.json();
   const bodyB = await b.json();

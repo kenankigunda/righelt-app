@@ -27,6 +27,7 @@ const setup = () => {
     offline = false;
   const calls = [],
     transitions = [],
+    transitionSources = [],
     target = new EventTarget(),
     document = new EventTarget();
   document.visibilityState = "visible";
@@ -46,12 +47,13 @@ const setup = () => {
     storage: store,
     eventTarget: target,
     document,
-    onTransition: (s) => transitions.push(s),
+    onTransition: (s, source) => { transitions.push(s); transitionSources.push(source); },
   });
   return {
     client,
     calls,
     transitions,
+    transitionSources,
     store,
     target,
     document,
@@ -854,4 +856,58 @@ test("hung startup is bounded, aborted, and late bootstrap cannot overwrite a su
   assert.equal(client.snapshot().generation, accepted.generation);
   assert.equal(client.canPlay(), true);
   client.destroy();
+});
+
+
+test("only the initiating local credential operation owns its session transition", async () => {
+  const fixture = setup();
+  try {
+    await fixture.client.start();
+    const owner = {};
+    await fixture.client.act("login", { username: "alice", password: "example password" }, owner);
+    assert.equal(fixture.transitionSources.at(-1).owner, owner);
+    assert.equal("owner" in fixture.client.snapshot(), false);
+    const changed = new Event("storage");
+    changed.key = AUTH_CHANGE_KEY;
+    fixture.target.dispatchEvent(changed);
+    assert.equal(fixture.transitionSources.at(-1).owner, null);
+    await fixture.client.logout();
+    assert.equal(fixture.transitionSources.at(-1).owner, null);
+  } finally { fixture.client.destroy(); }
+});
+
+test('required but unavailable accounts hydrate public browsing without restoring guest play',async()=>{
+ const calls=[];
+ const controller=createAccountController({storage:storage(),eventTarget:new EventTarget(),fetcher:async route=>{
+  calls.push(route);assert.equal(route,'/api/shell/bootstrap');return Response.json({authProtocolVersion:1,accountsRequired:true,accountsAvailable:false,maintenance:true});
+ }});
+ try{await controller.start();assert.equal(controller.snapshot().ready,true);assert.equal(controller.snapshot().enabled,true);assert.equal(controller.snapshot().available,false);assert.equal(controller.canPlay(),false);await controller.hydrate();assert.equal(calls.length,1);}finally{controller.destroy();}
+});
+test('maintenance keeps an authenticated session but denies play',async()=>{
+ const controller=createAccountController({storage:storage(),eventTarget:new EventTarget(),fetcher:async route=>Response.json(route==='/api/shell/bootstrap'?{authProtocolVersion:1,accountsRequired:true,accountsAvailable:true,maintenance:true}:state())});
+ try{await controller.start();assert.equal(controller.snapshot().session.authenticated,true);assert.equal(controller.canPlay(),false);}finally{controller.destroy();}
+});
+
+
+test("startup is not ready until the cookie session has been hydrated", async () => {
+  let release, entered;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const held = new Promise(resolve => { release = resolve; });
+  const controller = createAccountController({ storage: storage(), eventTarget: new EventTarget(), fetcher: async route => {
+    if (route === "/api/shell/bootstrap") return Response.json({ authProtocolVersion: 1, accountsRequired: true });
+    entered();
+    await held;
+    return Response.json({ ...state(), recoveryAcknowledgmentRequired: true });
+  } });
+  try {
+    const started = controller.start();
+    await waiting;
+    assert.equal(controller.snapshot().ready, false);
+    await assert.rejects(controller.act("login", {}), error => error.code === "auth_not_ready");
+    release();
+    await started;
+    assert.equal(controller.snapshot().ready, true);
+    assert.equal(controller.snapshot().session.recoveryAcknowledgmentRequired, true);
+    assert.equal(controller.canPlay(), false);
+  } finally { release(); controller.destroy(); }
 });
