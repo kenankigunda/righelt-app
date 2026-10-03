@@ -79,6 +79,6 @@ export function coverage(files) {
 export function publicRun(run) {
   // Explicit allowlist: logs, connector envelopes, notes and recipient are never published.
   return {version:VERSION,id:run.id,startedAt:run.startedAt,base:run.base,revision:run.revision,fingerprint:run.fingerprint,harnessRevision:run.harnessRevision,harnessFingerprint:run.harnessFingerprint,
-    risks:run.risks??[], findings:run.findings??[], prs:(run.prs??[]).map(p=>({number:p.number,title:p.title,url:p.url,head:p.head,readiness:p.readiness,waiting:p.waiting,authorization:p.authorization?.state})),
+    risks:run.risks??[], findings:run.findings??[], prs:(run.prs??[]).map((p,index)=>{const stage=run.mode==='local'?run.stages?.[0]:run.stages?.find(s=>s.index===index+1);const current=readiness(p,stage,run.base);return {number:p.number,title:p.title,url:p.url,head:p.head,readiness:p.merged?'merged':current.status,waiting:p.merged?[]:current.waiting,authorization:p.authorization?.state};}),
     stages:(run.stages??[]).map(s=>({id:s.id,index:s.index,title:s.title,status:s.status,head:s.head,base:s.base,fingerprint:s.fingerprint,harnessRevision:s.harnessRevision,harnessFingerprint:s.harnessFingerprint,visualReviewed:s.visualReviewed,unmapped:s.unmapped??[],checks:(s.checks??[]).map(c=>({name:c.name,status:c.status,duration:c.duration})),items:s.items??[]}))};
 }
