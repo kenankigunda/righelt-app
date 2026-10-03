@@ -9,6 +9,7 @@ export async function candidateCapabilities(root) {
     profiles: await has('apps/web/shell/public-profile.js'),
     personalHome: await has('apps/web/shell/personal-home.js'),
     stories: await has('apps/web/shell/opponent-stories.js'),
+    results: await has('apps/web/shell/game-result.js'),
     movePreview: await has('apps/web/board/action-preview.js'),
     cutover: await has('db/migrations/0013_account_cutover.sql'),
     introductions: await has('db/migrations/0014_opponent_introductions.sql'),
