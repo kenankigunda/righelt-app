@@ -3,6 +3,7 @@ import AxeBuilder from '@axe-core/playwright';
 import {readFile,writeFile} from 'node:fs/promises';
 import {candidateCapabilities} from '../scripts/validation/capabilities.mjs';
 import {proof} from '../scripts/validation/proof.mjs';
+import {proveLegacyMutationDenied} from '../scripts/validation/legacy-account-proof.mjs';
 import {FRESH_ACCOUNT_WORKFLOW,RETAINED_ACCOUNT_WORKFLOW} from '../scripts/validation/account-evidence.mjs';
 
 const root=process.env.RIGHELT_VALIDATION_TARGET_ROOT||process.cwd();
@@ -17,14 +18,17 @@ async function submitPlayableAction(page,action,info){
   try{
   const cell=p=>page.locator(`[data-testid="game-board"] .cell[data-row="${p.row}"][data-col="${p.col}"]`);
   const target=cell(action.to);await cell(action.from).click();
-  if(await page.locator('html').getAttribute('data-hover-capability')==='hover')await target.hover();
-  else if(!/(?:^|\s)target(?:\s|$)/.test(await target.getAttribute('class')||''))await target.click();
-  await expect(target).toHaveClass(/(?:^|\s)target(?:\s|$)/);
-  expect(writes).toBe(0);
   if(capabilities.movePreview){
+    // Preview runtime: the first destination activation arms the preview on
+    // both pointer types; a touch click is not a separate selection step.
     await target.click();
+    await expect(page.locator('#shell-board-preview-label')).toBeVisible();
     expect(writes).toBe(0);expect(await count(page)).toBe(before);
     await proof(page,info,'move-preview-before-confirm',page.getByTestId('game-board'));
+  }else{
+    if(await page.locator('html').getAttribute('data-hover-capability')==='hover')await target.hover();
+    else if(!/(?:^|\s)target(?:\s|$)/.test(await target.getAttribute('class')||''))await target.click();
+    await expect(target).toHaveClass(/(?:^|\s)target(?:\s|$)/);expect(writes).toBe(0);
   }
   await target.click();await expect.poll(()=>count(page)).toBe(before+1);expect(writes).toBe(1);
   }finally{page.off('request',observe);}
@@ -130,6 +134,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   if(capabilities.personalHome){
     await page.getByRole('link',{name:'Righelt',exact:true}).click();
     await expect(page.locator('[data-zone="home-resume"]')).toContainText('Continue playing');
+    await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
     await fits(page,page.locator('[data-zone="home-start"]'));await proof(page,info,'returning-personal-home',page.locator('[data-zone="home-resume"]'));
     if(capabilities.stories){
       const priorCreates=creates;const babs=page.locator('button[data-opponent="babs"]');await babs.click();
@@ -156,6 +161,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
       return {status:r.status,body:await r.json()};
     });
     expect(denied.status).toBeGreaterThanOrEqual(400);expect(denied.body.error).toBe('legacy_read_only');
+    await proveLegacyMutationDenied({browser,legacy,oldGame});
     expect(await count(page)).toBe(legacy.count);
     await proof(page,info,'legacy-history-preserved-no-account-takeover',page.getByTestId('game-board'));
   }
