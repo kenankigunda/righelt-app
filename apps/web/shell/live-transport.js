@@ -610,11 +610,10 @@ export const createLiveTransportStore = ({
       pageSize: String(pageSize),
       debug: debug ? "1" : "0",
     });
-    const response = await fetcher(`/api/shell/games?${params.toString()}`, {
+    const body = await boundedRequest(`/api/shell/games?${params.toString()}`, {
       method: "GET",
       cache: "no-store",
     });
-    const body = await mustOk(response);
     const gamesPage = Array.isArray(body.games) ? body.games.map((game) => normalizeStaticGameCard(game)) : [];
     for (const game of gamesPage) {
       homeGameCardById.set(game.id, game);
@@ -731,11 +730,10 @@ export const createLiveTransportStore = ({
   };
 
   const resolveInvite = async (inviteToken) => {
-    const response = await fetcher(`/api/shell/invites/${encodeURIComponent(inviteToken)}`, {
+    return boundedRequest(`/api/shell/invites/${encodeURIComponent(inviteToken)}`, {
       method: "GET",
       cache: "no-store",
     });
-    return mustOk(response);
   };
 
   const joinGame = async ({ gameId, mode, inviteFromRole = null, inviteToken = null }) => {

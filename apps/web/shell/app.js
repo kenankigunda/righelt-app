@@ -1,3 +1,4 @@
+import { createRouteHydration } from './route-hydration.js';
 import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js';
 import { participantButton, participantName, createPublicProfileDialog } from './public-profile.js';
 import { createAccountController, safeAccountIntent } from './account-controller.js';
@@ -128,24 +129,15 @@ const storage = (() => { try { return window.localStorage || createMemoryStorage
 const publicProfileDialog = createPublicProfileDialog();
 let accountInitialized = false;
 let accountStartupError = "";
+let accountContinuation = null;
+let accountContinuationError = false;
+const hydrateRoute = createRouteHydration();
 const account = createAccountController({ storage,
   onTransition: (next, source) => { if (accountInitialized) { accountDialog.onTransition(source); resetAccountTransport(next); } },
   onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); } },
 });
 const accountDialog = createAccountDialog({ controller: account, onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
-  onComplete: async intent => {
-    const generation = account.snapshot().generation;
-    const hash = window.location.hash;
-    try { await syncRouteDataAndLiveChannels(); } catch { return; }
-    if (generation !== account.snapshot().generation || hash !== window.location.hash) return;
-    // This read has hydrated the current route even if the transport reset's
-    // independent background read is still pending. Render the actual action.
-    routeHydrated = true;
-    render({ animatePanels: false });
-    if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
-    const selector = `[data-action="${CSS.escape(intent.action)}"]${intent.gameId ? `[data-game-id="${CSS.escape(intent.gameId)}"]` : ""}${intent.moveIndex ? `[data-move-index="${CSS.escape(intent.moveIndex)}"]` : ""}`;
-    appEl.querySelector(selector)?.click();
-  },
+  onComplete: intent => { void completeAccountContinuation(intent); },
 });
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 const boardAdapter = createEngineBoardAdapter();
@@ -1814,6 +1806,7 @@ const renderHeader = () => `
     ${renderHeaderAlertZone()}
     ${account.snapshot().ready && account.snapshot().enabled ? `<button class="secondary" data-action="account-open" data-testid="account-open">${account.snapshot().session.authenticated ? "Account" : "Sign in"}</button>` : ""}
     ${account.snapshot().pendingLogout ? '<span role="status">Sign-out pending</span>' : ''}
+    ${accountContinuationError ? `<p role="alert">The page could not finish loading. Try again.</p><button class="secondary" data-action="retry-account-continuation">Try again</button>` : ""}
     ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p role="status">Connecting…</p>` : ""}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
@@ -3498,14 +3491,14 @@ const loadHomeSectionServerPage = async (
   } = {},
 ) => {
   const previous = getHomeSection(sectionKey);
-  const accountGeneration = account.snapshot().generation;
-  const response = await transport.loadGamesPage({
+  const read = captureRouteRead();
+  const response = await read.owner.loadGamesPage({
     section: sectionKey,
     page: serverPage,
     pageSize: HOME_SECTION_SERVER_PAGE_SIZE,
     debug: currentRoute.debug === true,
   });
-  if (accountGeneration !== account.snapshot().generation) throw Object.assign(new Error("session_changed"), {code:"session_changed"});
+  assertCurrentRouteRead(read);
   const normalizedServerPage = typeof response.page === "number" ? response.page : 0;
   const serverPageGameIds = Array.isArray(response.games) ? response.games.map((game) => game.id) : [];
   const nextSection = {
@@ -3534,6 +3527,7 @@ const loadHomeSectionPage = async (
     visibleColumnCount = getHomeSectionColumnCount(sectionKey),
   } = {},
 ) => {
+  const read = captureRouteRead();
   const previous = getHomeSection(sectionKey);
   let nextSection = {
     ...previous,
@@ -3562,6 +3556,7 @@ const loadHomeSectionPage = async (
     visiblePageSize,
   }) ?? [];
   const nextDirection = normalizedTotalPages > 1 && normalizedPage !== previous.page ? direction : "none";
+  assertCurrentRouteRead(read);
   setHomeSection(sectionKey, {
     ...nextSection,
     page: normalizedPage,
@@ -3611,6 +3606,7 @@ const syncResponsiveHomeSectionPageSizes = async () => {
 };
 
 const syncHomeSections = async () => {
+  const read = captureRouteRead();
   const visibleSectionKeys = getVisibleHomeSectionKeys();
   await Promise.all(
     visibleSectionKeys.map(async (sectionKey) => {
@@ -3631,6 +3627,7 @@ const syncHomeSections = async () => {
       await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
     }),
   );
+  assertCurrentRouteRead(read);
   const hiddenSectionKeys = ["my", "other", "smoke"].filter((sectionKey) => !visibleSectionKeys.includes(sectionKey));
   hiddenSectionKeys.forEach((sectionKey) => {
     const section = getHomeSection(sectionKey);
@@ -3831,26 +3828,72 @@ const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd
   }
 };
 
-const syncRouteData = async () => {
-  if (currentRoute.name === "home") {
-    await syncHomeSections();
-    return;
-  }
-  if (currentRoute.name === "game") {
-    resolvedInvite = null;
-    await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
-    return;
-  }
-  if (currentRoute.name === "invite") {
-    resolvedInvite = await transport.resolveInvite(currentRoute.inviteToken);
-    await transport.loadGame(resolvedInvite.gameId, { openAsViewer: false });
-    return;
-  }
+const captureRouteRead = () => ({
+  generation: account.snapshot().generation,
+  hash: window.location.hash,
+  owner: transport,
+  route: { ...currentRoute },
+  inputs: JSON.stringify(getVisibleHomeSectionKeys().map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])),
+});
+const routeReadIsCurrent = read => read.generation === account.snapshot().generation && read.hash === window.location.hash && read.owner === transport;
+const assertCurrentRouteRead = read => {
+  if (!routeReadIsCurrent(read)) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
+};
+const syncRouteDataAndLiveChannels = () => {
+  const read = captureRouteRead();
+  return hydrateRoute(read, async () => {
+    assertCurrentRouteRead(read);
+    if (read.route.name === "home") await syncHomeSections();
+    if (read.route.name === "game") {
+      resolvedInvite = null;
+      await read.owner.loadGame(read.route.gameId, { openAsViewer: false });
+    }
+    if (read.route.name === "invite") {
+      const invite = await read.owner.resolveInvite(read.route.inviteToken);
+      assertCurrentRouteRead(read);
+      await read.owner.loadGame(invite.gameId, { openAsViewer: false });
+      assertCurrentRouteRead(read);
+      resolvedInvite = invite;
+    }
+    assertCurrentRouteRead(read);
+    syncLiveChannels();
+  });
 };
 
-const syncRouteDataAndLiveChannels = async () => {
-  await syncRouteData();
-  syncLiveChannels();
+const retryAccountContinuation = async () => {
+  const pending = accountContinuation;
+  if (!pending || pending.running || !routeReadIsCurrent(pending)) return;
+  pending.running = true;
+  accountContinuationError = false;
+  render({ animatePanels: false, includeBoard: false });
+  try {
+    await syncRouteDataAndLiveChannels();
+  } catch {
+    if (accountContinuation === pending && routeReadIsCurrent(pending)) {
+      pending.running = false;
+      accountContinuationError = true;
+      render({ animatePanels: false, includeBoard: false });
+    }
+    return;
+  }
+  if (accountContinuation !== pending || !routeReadIsCurrent(pending)) return;
+  // Claim before invoking the original action. A failed write is never replayed.
+  accountContinuation = null;
+  accountContinuationError = false;
+  routeHydrated = true;
+  render({ animatePanels: false });
+  const intent = pending.intent;
+  if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
+  const selector = `[data-action="${CSS.escape(intent.action)}"]${intent.gameId ? `[data-game-id="${CSS.escape(intent.gameId)}"]` : ""}${intent.moveIndex ? `[data-move-index="${CSS.escape(intent.moveIndex)}"]` : ""}`;
+  appEl.querySelector(selector)?.click();
+};
+const completeAccountContinuation = async intent => {
+  accountContinuation = { ...captureRouteRead(), intent, running: false };
+  await retryAccountContinuation();
+};
+const clearAccountContinuation = () => {
+  accountContinuation = null;
+  accountContinuationError = false;
 };
 
 const canHydrateRouteFromLocalState = (route = currentRoute) => {
@@ -3975,6 +4018,7 @@ const subscribeToTransport = () => transport.subscribe((change) => {
 subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
+  clearAccountContinuation();
   const gameId = getCurrentViewedGameId();
   const visible = gameId ? transport.getAuthoritativeGame?.(gameId) : null;
   routeSyncRequestId++;
@@ -4009,6 +4053,7 @@ const syncLiveChannels = () => {
 };
 
 const navigateTo = (hash) => {
+  clearAccountContinuation();
   const parsedRoute = parseRouteFromHash(hash);
   const preferredFlyoutKey = FLYOUT_KEYS.find((key) => parsedRoute[key] && !currentRoute[key]) ?? null;
   const nextRoute = normalizeRouteFlyoutState(parsedRoute, { preferredFlyoutKey });
@@ -4033,6 +4078,7 @@ const navigateTo = (hash) => {
 };
 
 window.addEventListener("hashchange", () => {
+  clearAccountContinuation();
   const previousRoute = currentRoute;
   closeHeaderMenu();
   const parsedRoute = parseRouteFromHash(window.location.hash);
@@ -4145,6 +4191,7 @@ appEl.addEventListener("click", async (event) => {
   const action = actionEl.getAttribute("data-action");
   const actionGameId = actionEl.getAttribute("data-game-id") || currentRoute.gameId;
   if (action === "public-profile") { void publicProfileDialog.open(actionEl.getAttribute("data-username"), actionEl); return; }
+  if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") { accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
   const accountGatedActions = new Set(["create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
