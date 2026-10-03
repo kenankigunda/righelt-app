@@ -46,6 +46,7 @@ Independent combined review cleared the reviewed implementation and separately r
 - Snapshot refresh now rebuilds a preserved branch selection from current legal actions and invalidates delayed results from the prior snapshot. Tests reject removed actions and stale responses. Branch browser fixtures confirm the existing selected target after pending synchronization finishes.
 - Thirty affected account browser cases and nine repeated Chromium branch cases passed. The pre-cutover PR99 transplant separately passed 12 browser cases and its 23 controller tests. Combined repair web suites passed 310 unit and 224 integration tests; independent source and fixture reviews cleared.
 - One registration failure returned Wrangler's plain-text worker-restart response. No reload cause was recorded. It did not come from credential verification; no mutation retry, weaker hash or speculative infrastructure change was added.
+- The repaired full run passed all non-browser stages and 96 general browser cases, with two scenario-flyout fixture failures. The traces showed redundant clicks toggling the already-selected piece's supply overlay. The fixtures now assert retained source selection before selecting a target. Six repeated cases and twelve adjacent scenario/branch cases passed; independent review confirmed that all mode-switch and saved-coordinate assertions remain. Complete browser suites are being rerun on the combined change.
 
 ## Remaining external proof
 
