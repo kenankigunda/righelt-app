@@ -176,6 +176,18 @@ console.log(JSON.stringify({initialState,decisions,finalHash:deterministicStateH
                 self.assertGreater(len(diagnostic['state']['pieces']),0)
             finally:selector.close();stop_worker(process)
 
+    def test_continuation_warmup_is_bounded_and_records_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'warmup.json'
+            job=next(Curriculum(19).job(i,'test') for i in range(100) if Curriculum(19).job(i,'test')['kind']=='continuation')
+            job.update(command='prepare',budgetMs=5000,diagnosticPath=str(path))
+            script="import {experimentConfig} from './packages/computer-player/src/index.ts'; experimentConfig.search.maxNodes=1; await import('./tools/ai-trainer/engine-worker.mjs');"
+            process=subprocess.run(['node','--import','tsx','--input-type=module','-e',script],cwd=ROOT,input=json.dumps(job)+'\n',capture_output=True,text=True,timeout=7)
+            self.assertEqual(process.returncode,0,process.stderr)
+            result=json.loads(process.stdout)
+            self.assertEqual(result['type'],'unfinished');self.assertEqual(result['reason'],'node-limit')
+            self.assertEqual(json.loads(path.read_text())['phase'],'continuation-warmup')
+
     def test_generation_protocol_respects_persisted_round_count(self):
         with tempfile.TemporaryDirectory() as directory:
             worker = Path(directory)/'mock-engine.mjs'
