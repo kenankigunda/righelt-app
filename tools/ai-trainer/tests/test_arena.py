@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 import tempfile
 import time
@@ -7,12 +8,28 @@ from unittest.mock import patch
 from righelt_training.replay import partition_for_family
 from righelt_training.arena import freeze_plan,open_plan,run_arena,play_game
 from righelt_training.config import CONFIG_SHA256
+from righelt_training.curriculum import family_for_root, simple_root
 
 class ArenaTest(unittest.TestCase):
+    def setUp(self):
+        self.archive=tempfile.TemporaryDirectory();self.addCleanup(self.archive.cleanup)
+        self.root_patch=patch('righelt_training.arena.ROOT',Path(self.archive.name))
+        self.root_patch.start();self.addCleanup(self.root_patch.stop)
+
     def plan(self,partition='final'):
         entry={'checkpointSha256':'a'*64,'profileVersion':'test','profile':{'simulations':8,'temperature':0,'maxValueGap':0}}
+        roots=[]
+        for n in range(10000):
+            a,b=divmod(n,100)
+            if a==b:continue
+            root={'pieces':[{'owner':'P1','kind':'commander','position':{'row':a//10,'col':a%10}},
+                            {'owner':'P2','kind':'commander','position':{'row':b//10,'col':b%10}}]}
+            if partition_for_family(family_for_root(root))==partition:roots.append(root)
+            if len(roots)==50:break
+        seeds=[s for s in range(10000) if partition_for_family(f'normal:{s}')==partition][:100]
         return {'configSha256':CONFIG_SHA256,'partition':partition,'purpose':'difficulty','candidate':entry,'opponent':entry,
-                'pairs':[{'id':str(i),'seed':seed,'kind':'normal' if i<50 else 'heldout','initialState':{'placeholderForProtocolTest':True},'openingActions':[{'type':'pass'}]} for i,seed in enumerate([s for s in range(10000) if partition_for_family(f'normal:{s}')==partition][:100])]}
+                'pairs':[{'id':str(i),'seed':seed,'kind':'normal' if i<50 else 'heldout',
+                          'initialState':None if i<50 else roots[i-50],'openingActions':[{'type':'pass'}]} for i,seed in enumerate(seeds)]}
     def test_sealed_plan_cannot_be_reopened_or_changed(self):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/'plan.json'
@@ -32,7 +49,7 @@ class ArenaTest(unittest.TestCase):
         with patch('righelt_training.arena.engine_command',side_effect=[{'type':'opening-verified','initial':False,'fingerprint':str(i)} for i in range(50)]):freeze_plan(path,plan)
         runtime={'manifestSha256':'manifest','startedMonotonic':time.monotonic(),'deadlineMonotonic':time.monotonic()+600}
         (Path(directory)/'runtime.json').write_text(json.dumps(runtime))
-        (Path(directory)/'allocation.json').write_text(json.dumps({'paused':False,'workers':2,'stop':False}))
+        (Path(directory)/'allocation.json').write_text(json.dumps({'paused':False,'workers':2,'stop':False,'observedAt':time.time()}))
         return path,runtime
 
     def player(self,job,models,deadline,device,**kwargs):
@@ -86,6 +103,57 @@ class ArenaTest(unittest.TestCase):
             archive=next((Path(d)/'evaluations').glob('*/games/*.gz'))
             archive.write_bytes(archive.read_bytes()+b'tampered')
             with self.assertRaisesRegex(ValueError,'archive changed'):run_arena(path,d,models,'cpu',player=self.player)
+
+    def test_startup_pause_waits_before_consuming_final(self):
+        with tempfile.TemporaryDirectory() as d:
+            path,_=self.frozen(d,'final')
+            allocation=Path(d)/'allocation.json'
+            allocation.write_text(json.dumps({'paused':True,'workers':0,'reason':'device-memory-unknown','observedAt':time.time()}))
+            waits=[]
+            def ready(_):
+                ledger=json.loads((Path(self.archive.name)/'.ai-runs/evaluation-partitions.json').read_text())
+                self.assertFalse(any(record.get('consumedBy') for record in ledger['identities'].values()))
+                self.assertTrue((Path(d)/'device-memory.json').exists())
+                waits.append(True)
+                allocation.write_text(json.dumps({'paused':False,'workers':2,'observedAt':time.time(),
+                    'reason':'initial-conservative' if len(waits)==1 else 'usable'}))
+            with patch('righelt_training.arena.time.sleep',side_effect=ready) as sleep:
+                result=run_arena(path,d,{'candidate':None,'opponent':None},'cpu',player=lambda *a,**k:{'status':'unfinished','reason':'budget'})
+            self.assertEqual(sleep.call_count,2);self.assertEqual(result['reason'],'budget')
+            with self.assertRaises(FileExistsError):open_plan(path)
+
+    def test_expiry_before_startup_readiness_does_not_consume_final(self):
+        with tempfile.TemporaryDirectory() as d:
+            path,runtime=self.frozen(d,'final')
+            result=run_arena(path,d,{},'cpu',clock=lambda:runtime['deadlineMonotonic']+1)
+            self.assertEqual(result['status'],'inconclusive')
+            self.assertEqual(result['completedGames'],0)
+            open_plan(path)  # Still sealed and usable in a separately approved run.
+
+    def test_copy_or_refreeze_cannot_reopen_consumed_families(self):
+        with tempfile.TemporaryDirectory() as d:
+            path,_=self.frozen(d,'final');open_plan(path)
+            copied=Path(d)/'copied.json';shutil.copy(path,copied)
+            with self.assertRaises(FileExistsError):open_plan(copied)
+            plan=json.loads(path.read_text())['plan']
+            plan['candidate']['checkpointSha256']='c'*64
+            plan['candidate']['profileVersion']='changed';plan['candidate']['profile']['simulations']=16
+            altered=Path(d)/'changed-profile.json'
+            with patch('righelt_training.arena.engine_command',side_effect=[{'initial':False,'fingerprint':str(i)} for i in range(50)]):freeze_plan(altered,plan)
+            with self.assertRaises(FileExistsError):open_plan(altered)
+
+    def test_opening_family_cannot_use_unrelated_normal_seed_split(self):
+        with tempfile.TemporaryDirectory() as d:
+            plan=self.plan('validation')
+            train_root=next(simple_root(s) for s in range(1000) if partition_for_family(family_for_root(simple_root(s)))=='train')
+            plan['pairs'][50]['initialState']=train_root
+            with self.assertRaisesRegex(ValueError,'family belongs'):freeze_plan(Path(d)/'bad.json',plan)
+            # An authoritative fingerprint previously frozen for final cannot
+            # reappear in validation even if a defective provider returns it.
+            self.frozen(d,'final')
+            other=self.plan('validation')
+            with patch('righelt_training.arena.engine_command',side_effect=[{'initial':False,'fingerprint':str(i)} for i in range(50)]):
+                with self.assertRaisesRegex(ValueError,'across partitions'):freeze_plan(Path(d)/'validation.json',other)
 
     def test_expired_game_does_not_spawn_and_profile_cannot_override_deadline(self):
         with patch('righelt_training.arena.subprocess.Popen') as spawn:

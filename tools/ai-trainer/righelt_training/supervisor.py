@@ -8,6 +8,7 @@ from pathlib import Path
 import signal
 import sys
 import time
+import uuid
 import psutil
 
 from .budget import Budget
@@ -107,6 +108,12 @@ def arena_arguments(args,artifact_root):
     return digest
 
 
+def record_attempt(directory,event):
+    with (Path(directory)/'supervisor-attempts.jsonl').open('a') as stream:
+        stream.write(json.dumps({**event,'observedAt':time.time()},allow_nan=False)+'\n')
+        stream.flush();os.fsync(stream.fileno())
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--run-dir',type=Path,required=True)
@@ -116,11 +123,14 @@ def main():
     parser.add_argument('--seed',type=int,required=True)
     parser.add_argument('--resume',type=Path)
     parser.add_argument('--arena-plan',type=Path)
+    parser.add_argument('--health',action='store_true')
     parser.add_argument('--candidate-checkpoint',type=Path)
     parser.add_argument('--opponent-checkpoint',type=Path)
     args=parser.parse_args()
     artifact_root=ROOT/'.ai-runs'
     arena_digest=arena_arguments(args,artifact_root)
+    if args.health and (arena_digest or not args.run_dir.exists() or not args.resume):
+        raise ValueError('health requires an existing supervised allocation and cannot run alongside arena')
     if not args.run_dir.resolve().is_relative_to(artifact_root.resolve()):
         raise ValueError('run directories must be under .ai-runs for aggregate artifact accounting')
     if args.resume and not args.resume.resolve().is_relative_to(artifact_root.resolve()):
@@ -157,7 +167,8 @@ def main():
         runtime['parentCheckpointManifestSha256']=metadata['manifestSha256']
         runtime['parentCheckpoint']=str(args.resume.resolve())
     runtime['supervisorPid']=os.getpid()
-    runtime['command']='arena' if arena_digest else 'training'
+    runtime['command']='health' if args.health else 'arena' if arena_digest else 'training'
+    runtime['supervisorAttempt']=uuid.uuid4().hex
     if arena_digest:runtime['arenaPlanSha256']=arena_digest
     else:runtime.pop('arenaPlanSha256',None)
     atomic_json(runtime_path,runtime)
@@ -165,7 +176,9 @@ def main():
                 'memory_gib':CONFIG['resources']['minMemoryGiB'],'paused':False,'stop':False,
                 'reason':'initial-conservative','observedAt':time.time()})
     claim_stage(artifact_root,args.stage,args.run_dir)
-    if arena_digest:
+    if args.health:
+        argv=[sys.executable,'-m','righelt_training.health','--run-dir',str(args.run_dir.resolve())]
+    elif arena_digest:
         argv=[sys.executable,'-m','righelt_training.arena','run','--run-dir',str(args.run_dir.resolve()),
               '--plan',str(args.arena_plan.resolve()),'--candidate-checkpoint',str(args.candidate_checkpoint.resolve()),
               '--opponent-checkpoint',str(args.opponent_checkpoint.resolve())]
@@ -173,9 +186,11 @@ def main():
         argv=[sys.executable,'-m','righelt_training.runner','--run-dir',str(args.run_dir.resolve()),'--seed',str(args.seed),'--stage',args.stage]
         if args.resume:argv+=['--resume',str(args.resume.resolve())]
     env={**os.environ,'PYTHONPATH':str(ROOT/'tools/ai-trainer')}
+    record_attempt(args.run_dir,{'event':'started','id':runtime['supervisorAttempt'],'phase':runtime['command'],'pid':os.getpid()})
     with (args.run_dir/'runner.log').open('a') as log:
         process=start_group(['/usr/bin/nice','-n','10',*argv],cwd=ROOT,env=env,stdout=log,stderr=log)
         reason=supervise(process,budget,AdaptivePolicy(),Telemetry(artifact_root,args.activity_file,args.run_dir/'device-memory.json',process.pid),args.run_dir)
+    record_attempt(args.run_dir,{'event':'finished','id':runtime['supervisorAttempt'],'phase':runtime['command'],'reason':reason})
     atomic_json(args.run_dir/'supervisor-result.json',{'reason':reason,'runnerReturncode':process.returncode,
                 'elapsedSeconds':time.monotonic()-started,'budgetSeconds':budget.seconds,'productionPromotion':False})
     print(json.dumps({'reason':reason,'runDir':str(args.run_dir)}))

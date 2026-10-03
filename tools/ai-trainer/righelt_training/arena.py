@@ -5,6 +5,7 @@ import json
 import gzip
 import os
 import signal
+import fcntl
 from pathlib import Path
 import selectors
 import subprocess
@@ -16,9 +17,42 @@ from .evaluation import paired_report
 from .model import PolicyValueNet
 from .runner import stop_worker,verify_game,engine_command
 from .replay import partition_for_family
+from .curriculum import family_for_root
 
 
-def freeze_plan(path,plan):
+def partition_identities(plan):
+    identities=set()
+    for pair in plan['pairs']:
+        family=f"normal:{pair['seed']}" if pair['kind']=='normal' else family_for_root(pair['initialState'])
+        if pair.get('familyId')!=family or partition_for_family(family)!=plan['partition']:
+            raise ValueError('opening family partition mismatch')
+        identities.add('family:'+family)
+        if pair['kind']=='heldout':
+            if not pair.get('openingFingerprint'):raise ValueError('missing frozen opening fingerprint')
+            identities.add('opening:'+pair['openingFingerprint'])
+    return identities
+
+
+def register_partition(plan,digest,*,consume=False,experiment_root=None):
+    # One shared locked ledger, independent of plan path, profile, and model.
+    root=Path(experiment_root) if experiment_root is not None else ROOT/'.ai-runs'
+    root.mkdir(parents=True,exist_ok=True)
+    path=root/'evaluation-partitions.json'
+    with (root/'evaluation-partitions.lock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        ledger=json.loads(path.read_text()) if path.exists() else {'schema':1,'identities':{}}
+        keys=partition_identities(plan)
+        for key in keys:
+            prior=ledger['identities'].get(key)
+            if prior and prior['partition']!=plan['partition']:raise ValueError('opening reused across partitions')
+            if consume and prior and prior.get('consumedBy'):raise FileExistsError('final family/opening already consumed')
+        for key in keys:
+            record=ledger['identities'].setdefault(key,{'partition':plan['partition']})
+            if consume:record['consumedBy']=digest
+        atomic_json(path,ledger)
+
+
+def freeze_plan(path,plan,*,experiment_root=None):
     if plan.get('partition') not in ('validation','final') or plan.get('configSha256')!=CONFIG_SHA256:
         raise ValueError('invalid evaluation partition/configuration')
     if plan.get('purpose') not in ('difficulty','incumbent'):raise ValueError('invalid comparison purpose')
@@ -30,14 +64,17 @@ def freeze_plan(path,plan):
         if pair['id'] in ids or pair['seed'] in seeds:raise ValueError('duplicate evaluation pair or seed')
         ids.add(pair['id']);seeds.add(pair['seed'])
         if pair['kind'] not in kinds:raise ValueError('invalid start kind')
-        if partition_for_family(f"normal:{pair['seed']}")!=plan['partition']:
+        family=f"normal:{pair['seed']}" if pair['kind']=='normal' else family_for_root(pair['initialState'])
+        if partition_for_family(family)!=plan['partition']:
             raise ValueError('evaluation family belongs to another partition')
+        pair['familyId']=family
         kinds[pair['kind']]+=1
         if pair['kind']=='heldout':
             if not pair.get('initialState') or not pair.get('openingActions'):raise ValueError('held-out opening trajectory missing')
             proof=engine_command({'command':'validate-opening','state':pair['initialState'],'actions':pair['openingActions']},timeout=10)
             if proof['initial'] or proof['fingerprint'] in openings:raise ValueError('opening is initial or duplicated')
             openings.add(proof['fingerprint'])
+            pair['openingFingerprint']=proof['fingerprint']
     if kinds!={'normal':50,'heldout':50}:raise ValueError('incorrect opening mix')
     for who in ('candidate','opponent'):
         entry=plan[who]
@@ -50,19 +87,16 @@ def freeze_plan(path,plan):
             or not 0<=profile['temperature']<=1 or not 0<=profile['maxValueGap']<=2):
             raise ValueError('invalid frozen profile')
     digest=hashlib.sha256(json.dumps(plan,sort_keys=True,allow_nan=False).encode()).hexdigest()
+    register_partition(plan,digest,experiment_root=experiment_root)
     path=Path(path)
     with path.open('x') as f:json.dump({'sha256':digest,'plan':plan},f,sort_keys=True,allow_nan=False)
     return digest
 
 
-def open_plan(path):
-    path=Path(path);data=json.loads(path.read_text());plan=data['plan']
-    digest=hashlib.sha256(json.dumps(plan,sort_keys=True,allow_nan=False).encode()).hexdigest()
-    if digest!=data['sha256']:raise ValueError('frozen evaluation plan was altered')
+def open_plan(path,*,experiment_root=None):
+    plan,digest=read_frozen_plan(path)
     if plan['partition']=='final':
-        # A crash or an incomplete budget still consumes this sealed partition.
-        # Retests require a documented harness defect handled outside this command.
-        with path.with_suffix(path.suffix+'.opened').open('x') as f:f.write(digest+'\n')
+        register_partition(plan,digest,consume=True,experiment_root=experiment_root)
     return plan,digest
 
 
@@ -114,6 +148,7 @@ def read_frozen_plan(path):
     if digest!=data['sha256'] or data['plan']['configSha256']!=CONFIG_SHA256:raise ValueError('frozen plan mismatch')
     if len(data['plan']['pairs'])!=100 or data['plan']['partition'] not in ('validation','final'):
         raise ValueError('invalid frozen workload')
+    partition_identities(data['plan'])
     return data['plan'],digest
 
 
@@ -131,7 +166,7 @@ def load_frozen_models(plan,paths,device):
 
 def make_job(plan,pair,candidate_seat,digest):
     seats={candidate_seat:'candidate',('P2' if candidate_seat=='P1' else 'P1'):'opponent'}
-    return {'id':f"{digest}:{pair['id']}:{candidate_seat}",'familyId':f"normal:{pair['seed']}",
+    return {'id':f"{digest}:{pair['id']}:{candidate_seat}",'familyId':pair['familyId'],
             'seed':pair['seed'],'partition':plan['partition'],'kind':'normal' if pair['kind']=='normal' else 'simple',
             'initialState':None if pair['kind']=='normal' else pair['initialState'],
             'modelVersion':digest,'profiles':{seat:plan[who]['profile'] for seat,who in seats.items()},
@@ -150,7 +185,7 @@ def archive_game(directory,game):
     return path,hashlib.sha256(raw).hexdigest()
 
 
-def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,player=play_game):
+def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,player=play_game,experiment_root=None):
     directory=Path(run_directory)
     runtime=json.loads((directory/'runtime.json').read_text())
     deadline=runtime['deadlineMonotonic']
@@ -159,8 +194,6 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
               'startedMonotonic':runtime['startedMonotonic'],'deadlineMonotonic':deadline}
     output=directory/'evaluations'/digest;output.mkdir(parents=True,exist_ok=True)
     state_path=output/'state.json'
-    # Final partitions are one-shot, even if the earlier attempt was interrupted.
-    if plan['partition']=='final':open_plan(plan_path)
     if state_path.exists():
         state=json.loads(state_path.read_text())
         if state['identity']!=identity:raise ValueError('evaluation resume identity or original deadline changed')
@@ -183,7 +216,19 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
         amount=torch.mps.driver_allocated_memory() if str(device)=='mps' else 0
         atomic_json(directory/'device-memory.json',{'schema':1,'pid':os.getpid(),'observedAt':time.time(),'driverBytes':amount})
     heartbeat();persist();reason='complete'
+    # The supervisor first pauses until this process publishes fresh GPU memory.
+    # Do not expose/consume a sealed workload until it grants usable resources.
+    while True:
+        assigned=allocation();heartbeat()
+        if deadline-clock()<40:reason='budget';break
+        if assigned.get('stop'):reason='resource-stop';break
+        if (not assigned.get('paused',True) and assigned.get('workers',0)>0
+            and assigned.get('reason')!='initial-conservative'
+            and 0<=time.time()-assigned.get('observedAt',0)<=30):break
+        time.sleep(.1)
+    if reason=='complete' and plan['partition']=='final':open_plan(plan_path,experiment_root=experiment_root)
     for pair in plan['pairs']:
+        if reason!='complete':break
         for seat in ('P1','P2'):
             job=expected[(pair['id'],seat)]
             if job['id'] in state['records']:continue
