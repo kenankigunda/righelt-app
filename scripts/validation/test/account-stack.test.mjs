@@ -59,3 +59,37 @@ test('occupied ports are rejected without closing the other service', async () =
   try { await assert.rejects(assertPortsFree([server.address().port]), { code: 'EADDRINUSE' }); assert.equal(server.listening, true); }
   finally { await new Promise(resolve => server.close(resolve)); }
 });
+
+test('candidate-root conflict is rejected and shared validation root is honored', async () => {
+  const { resolveCandidateRoot } = await import('../account-stack.mjs');
+  assert.equal(resolveCandidateRoot({ RIGHELT_VALIDATION_TARGET_ROOT: '/candidate' }), '/candidate');
+  assert.equal(resolveCandidateRoot({ RIGHELT_VALIDATION_TARGET_ROOT: '/candidate', RIGHELT_ACCOUNT_CANDIDATE_ROOT: '/candidate/.' }), '/candidate');
+  assert.throws(() => resolveCandidateRoot({ RIGHELT_VALIDATION_TARGET_ROOT: '/candidate', RIGHELT_ACCOUNT_CANDIDATE_ROOT: '/other' }), /Conflicting/);
+});
+
+test('late successful readiness cannot create resources after shutdown', async () => {
+  const { assertRunning } = await import('../account-stack.mjs');
+  let stopping = false, release, created = false;
+  const readiness = new Promise(resolve => { release = resolve; });
+  const pending = (async () => { await readiness; assertRunning(stopping); created = true; })();
+  stopping = true; release(true);
+  await assert.rejects(pending, /shutdown requested/);
+  assert.equal(created, false);
+});
+
+test('cleanup escalates surviving group even when its leader has already exited', async () => {
+  const { terminateProcessGroup } = await import('../account-stack.mjs');
+  let clock = 0, alive = true;
+  const signals = [];
+  await terminateProcessGroup(123, {
+    now: () => clock, graceMs: 50, pause: async ms => { clock += ms; },
+    kill: (pid, signal) => {
+      assert.equal(pid, -123); signals.push(signal);
+      if (!alive) throw Object.assign(new Error('gone'), { code: 'ESRCH' });
+      if (signal === 'SIGKILL') alive = false;
+    },
+  });
+  assert.equal(signals[0], 'SIGTERM');
+  assert.ok(signals.includes('SIGKILL'));
+  assert.equal(signals.at(-1), 0);
+});

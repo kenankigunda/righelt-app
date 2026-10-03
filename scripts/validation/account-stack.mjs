@@ -60,7 +60,33 @@ export async function assertPortsFree(ports = Object.values(PORTS)) {
     }
   } finally { await Promise.all(held.map(server => new Promise(resolve => server.close(resolve)))); }
 }
-export async function startAccountStack({ root = process.env.RIGHELT_ACCOUNT_CANDIDATE_ROOT || process.cwd(), persistRoot = process.env.RIGHELT_ACCOUNT_PERSIST_ROOT, onStopReady = () => {} } = {}) {
+export function resolveCandidateRoot(env = process.env, cwd = process.cwd()) {
+  const account = env.RIGHELT_ACCOUNT_CANDIDATE_ROOT;
+  const target = env.RIGHELT_VALIDATION_TARGET_ROOT;
+  if (account && target && path.resolve(account) !== path.resolve(target)) throw new Error('Conflicting account and validation candidate roots');
+  return path.resolve(account || target || cwd);
+}
+export function assertRunning(stopping) {
+  if (stopping) throw new Error('Account fixture shutdown requested');
+}
+// Wait for the process group, not merely pnpm's leader. A child may outlive it.
+export async function terminateProcessGroup(pid, { kill = process.kill, pause = ms => new Promise(resolve => setTimeout(resolve, ms)), graceMs = 5000, now = Date.now } = {}) {
+  if (!Number.isInteger(pid) || pid <= 0) return;
+  const send = signal => { try { kill(-pid, signal); return true; } catch (error) { if (error.code === 'ESRCH') return false; throw error; } };
+  if (!send('SIGTERM')) return;
+  const deadline = now() + graceMs;
+  while (send(0)) {
+    if (now() >= deadline) {
+      send('SIGKILL');
+      // Keep the lock until the kernel reports the group gone.
+      const killedDeadline = now() + 5000;
+      while (send(0)) { if (now() >= killedDeadline) throw new Error(`Account fixture process group ${pid} did not exit`); await pause(25); }
+      return;
+    }
+    await pause(25);
+  }
+}
+export async function startAccountStack({ root = resolveCandidateRoot(), persistRoot = process.env.RIGHELT_ACCOUNT_PERSIST_ROOT, onStopReady = () => {} } = {}) {
   root = path.resolve(root);
   // Read capabilities from the candidate, rather than assuming the harness has account code.
   const sources = await Promise.all(['api', 'auth', 'auth-hash'].map(folder => readFile(path.join(root, 'apps', folder, 'wrangler.toml'), 'utf8')));
@@ -71,28 +97,26 @@ export async function startAccountStack({ root = process.env.RIGHELT_ACCOUNT_CAN
   await mkdir(lock); // Existing lock is never stolen, including stale locks.
   let state, control, stopping = false;
   const children = new Set();
+  const groups = new Set();
   let stopPromise;
   const stop = () => stopPromise ||= (async () => {
     stopping = true;
     if (control) { control.closeAllConnections(); await new Promise(resolve => control.close(resolve)); }
-    await Promise.all([...children].map(child => new Promise(resolve => {
-      const kill = signal => { try { process.kill(-child.pid, signal); } catch {} };
-      const timer = setTimeout(() => { kill('SIGKILL'); resolve(); }, 5000);
-      child.once('exit', () => { clearTimeout(timer); resolve(); }); kill('SIGTERM');
-    })));
+    await Promise.all([...groups].map(pid => terminateProcessGroup(pid)));
     await state?.cleanup();
     await rm(lock, { recursive: true, force: true });
   })();
   onStopReady(stop);
   const run = (args, { cwd = root, service = false, capture = false } = {}) => {
-    if (stopping) throw new Error('Account fixture shutdown requested');
+    assertRunning(stopping);
     const child = spawn('pnpm', args, { cwd, stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit', detached: true });
     children.add(child);
+    if (child.pid) groups.add(child.pid);
     let output = '', errors = '';
     child.stdout?.on('data', data => { output += data; }); child.stderr?.on('data', data => { errors += data; });
     const done = new Promise((resolve, reject) => {
       child.once('error', reject);
-      child.once('exit', code => { children.delete(child); code === 0 ? resolve(output) : reject(new Error(`Account fixture command exited ${code}: ${errors}`)); });
+      child.once('exit', code => { children.delete(child); if (!service && child.pid) groups.delete(child.pid); code === 0 ? resolve(output) : reject(new Error(`Account fixture command exited ${code}: ${errors}`)); });
     });
     if (service) { done.then(() => { if (!stopping) void stop().then(() => { process.exitCode = 1; }); }, error => { if (!stopping) { console.error(error); void stop().then(() => { process.exitCode = 1; }); } }); return child; }
     return done;
@@ -102,6 +126,7 @@ export async function startAccountStack({ root = process.env.RIGHELT_ACCOUNT_CAN
     while (!stopping && Date.now() < deadline) {
       try {
         const ok = url.startsWith('https:') ? await new Promise(resolve => { const request = get(url, { rejectUnauthorized: false }, response => { response.resume(); resolve(response.statusCode === 200); }); request.on('error', () => resolve(false)); request.setTimeout(1000, () => request.destroy()); }) : (await fetch(url, { signal: AbortSignal.timeout(1000) })).ok;
+        assertRunning(stopping);
         if (ok) return;
       } catch {}
       await new Promise(resolve => setTimeout(resolve, 250));
@@ -109,7 +134,7 @@ export async function startAccountStack({ root = process.env.RIGHELT_ACCOUNT_CAN
     throw new Error(`Account fixture not ready: ${url}`);
   };
   try {
-    if (stopping) throw new Error('Account fixture shutdown requested');
+    assertRunning(stopping);
     await writeFile(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, root, persistRoot }), { mode: 0o600 });
     await assertPortsFree();
     state = await prepareAccountState(persistRoot);
@@ -137,6 +162,7 @@ export async function startAccountStack({ root = process.env.RIGHELT_ACCOUNT_CAN
     if (seed) { const file = path.join(state.temporary, 'legacy.sql'); await writeFile(file, seed, { mode: 0o600 }); await run([...d1, 'execute', ...dbArgs, '--file', file]); }
     run(['exec', 'wrangler', 'dev', ...configs.flatMap(file => ['--config', file]), '--local', '--port', String(PORTS.api), '--inspector-port', String(PORTS.apiInspector), '--persist-to', state.persist], { service: true });
     await ready(`http://127.0.0.1:${PORTS.api}/api/health`);
+    assertRunning(stopping);
     let busy = false;
     control = createServer(async (request, response) => {
       if (request.method !== 'POST' || request.headers.origin || request.url !== '/reset-limits') { response.writeHead(404).end(); return; }
@@ -149,6 +175,7 @@ export async function startAccountStack({ root = process.env.RIGHELT_ACCOUNT_CAN
     await new Promise((resolve, reject) => { control.once('error', reject); control.listen(PORTS.control, '127.0.0.1', resolve); });
     run(['exec', 'wrangler', 'pages', 'dev', '.', '--port', String(PORTS.web), '--local-protocol', 'https', '--inspector-port', String(PORTS.webInspector)], { cwd: path.join(root, 'apps/web'), service: true });
     await ready(`https://127.0.0.1:${PORTS.web}`);
+    assertRunning(stopping);
     return { stop, origin: `https://127.0.0.1:${PORTS.web}`, persist: state.persist };
   } catch (error) { await stop(); await state?.cleanup(); throw error; }
 }
