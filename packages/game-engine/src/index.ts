@@ -9,3 +9,5 @@ export * from "./replay";
 export * from "./serialize";
 export * from "./resolve";
 export * from "./continuation";
+
+export * from "./computation-guard";

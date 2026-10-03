@@ -1,3 +1,4 @@
+import { checkEngineComputation } from "./computation-guard";
 import type { Action, GameState, Piece, ValidationResult } from "./types";
 import {
   buildContinuationSuccessorState,
@@ -492,6 +493,7 @@ export function listLegalActions(state: GameState): Action[] {
 }
 
 export function validateAction(state: GameState, action: Action): ValidationResult {
+  checkEngineComputation();
   if (state.outcome.status !== "ongoing") {
     return {
       ok: false,

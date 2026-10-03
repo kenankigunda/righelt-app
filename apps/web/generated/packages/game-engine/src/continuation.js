@@ -1,3 +1,4 @@
+import { checkEngineComputation } from "./computation-guard.js";
 import { BOARD_SIZE, SUPPLY_POINTS, normalizeState } from "./deterministic.js";
 function cloneState(state) {
     return {
@@ -482,6 +483,7 @@ function closePushContinuation(state, attackerOwner) {
     }
 }
 export function buildContinuationSuccessorState(state, action) {
+    checkEngineComputation(true);
     const next = cloneState(state);
     const actor = action.actorId ? next.pieces.find((piece) => piece.id === action.actorId) : undefined;
     if (action.type === "push" && actor && action.to) {
@@ -637,6 +639,7 @@ function continuationSearchKey(state) {
     });
 }
 export function isContinuationCompletable(state, memo = new Map()) {
+    checkEngineComputation(Boolean(state.continuation));
     if (!state.continuation) {
         return true;
     }
@@ -649,22 +652,29 @@ export function isContinuationCompletable(state, memo = new Map()) {
     if (existing === "failure" || existing === "visiting") {
         return false;
     }
-    memo.set(key, "visiting");
-    if (canCloseContinuationNow(normalized)) {
-        memo.set(key, "success");
-        return true;
-    }
-    const successors = buildSuccessorStates(normalized);
-    if (successors.length === 0) {
-        memo.set(key, "failure");
-        return false;
-    }
-    for (const successor of successors) {
-        if (isContinuationCompletable(successor, memo)) {
+    try {
+        memo.set(key, "visiting");
+        if (canCloseContinuationNow(normalized)) {
             memo.set(key, "success");
             return true;
         }
+        const successors = buildSuccessorStates(normalized);
+        if (successors.length === 0) {
+            memo.set(key, "failure");
+            return false;
+        }
+        for (const successor of successors) {
+            if (isContinuationCompletable(successor, memo)) {
+                memo.set(key, "success");
+                return true;
+            }
+        }
+        memo.set(key, "failure");
+        return false;
     }
-    memo.set(key, "failure");
-    return false;
+    catch (error) {
+        // Resource interruption proves nothing; never retain a visiting marker.
+        memo.delete(key);
+        throw error;
+    }
 }
