@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { legacyMutationContract, proveLegacyMutationDenied, LEGACY_IDENTITY_KEY } from '../legacy-account-proof.mjs';
-const legacy = { hash: '#/game/old%20game', storage: { origins: [{ origin: 'http://127.0.0.1:9888', localStorage: [{ name: LEGACY_IDENTITY_KEY, value: 'old-owner' }] }] } };
+const persistedGame = {id:'old game',moves:[{moveId:'retained-move',action:{type:'MOVE'},selectionSnapshot:{turnIndex:1},snapshot:{turnIndex:2}}],turns:[{index:1}],board:{state:{turnIndex:2}}};
+const legacy = { version:2,history:{version:1,gameId:persistedGame.id,moves:persistedGame.moves,turns:persistedGame.turns,board:persistedGame.board}, hash: '#/game/old%20game', storage: { origins: [{ origin: 'http://127.0.0.1:9888', localStorage: [{ name: LEGACY_IDENTITY_KEY, value: 'old-owner' }] }] } };
 test('legacy identity comes from retained storage and ambiguous or absent identity fails', () => {
   assert.deepEqual(legacyMutationContract(legacy), { gameId: 'old game', identityId: 'old-owner', mode: 'player', protocolVersion: 2 });
   assert.throws(() => legacyMutationContract({ hash: legacy.hash, storage: {} }), /one original/);
@@ -10,7 +11,7 @@ test('legacy identity comes from retained storage and ambiguous or absent identi
 });
 function fixture({ mutate = false, wrongDenial = false } = {}) {
   let posts = 0, closed = false;
-  const original = { eventSeq: 7, game: { ownershipMode: 'legacy_guest', moves: [{ id: 'retained-move' }], board: { state: 'retained' }, player1: { identityId: 'old-owner' }, player2: null } };
+  const original = { eventSeq: 7, game: { ...structuredClone(persistedGame), ownershipMode: 'legacy_guest', player1: { identityId: 'old-owner' }, player2: null } };
   const browser = { async newContext(options) {
     assert.deepEqual(options.storageState, { cookies: [], origins: [] });
     return { cookies: async () => [], close: async () => { closed = true; }, request: {
@@ -34,4 +35,13 @@ test('wrong authority denial or changed authoritative state fails and still clos
   for (const options of [{ mutate: true }, { wrongDenial: true }]) {
     const f = fixture(options); await assert.rejects(proveLegacyMutationDenied({ browser: f.browser, legacy })); assert.equal(f.closed, true);
   }
+});
+
+test('legacy proof rejects missing pre-upgrade evidence before any mutation', async () => {
+ const f=fixture();await assert.rejects(proveLegacyMutationDenied({browser:f.browser,legacy:{...legacy,history:undefined}}),/history snapshot/);assert.equal(f.closed,true);
+});
+test('same-length legacy history corruption across upgrade fails before mutation',async()=>{
+ const f=fixture(),prior=structuredClone(legacy);prior.history.moves[0].action.type='DIFFERENT';
+ await assert.rejects(proveLegacyMutationDenied({browser:f.browser,legacy:prior}),/changed across upgrade/);
+ assert.equal(f.closed,true);
 });

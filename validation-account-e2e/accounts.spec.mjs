@@ -3,6 +3,7 @@ import AxeBuilder from '@axe-core/playwright';
 import {readFile,writeFile} from 'node:fs/promises';
 import {candidateCapabilities} from '../scripts/validation/capabilities.mjs';
 import {proof} from '../scripts/validation/proof.mjs';
+import {historySnapshot,assertHistoryPreserved} from '../scripts/validation/history-continuity.mjs';
 import {proveLegacyMutationDenied} from '../scripts/validation/legacy-account-proof.mjs';
 import {proveResultsRematch} from '../scripts/validation/results-proof.mjs';
 import {FRESH_ACCOUNT_WORKFLOW,RETAINED_ACCOUNT_WORKFLOW} from '../scripts/validation/account-evidence.mjs';
@@ -180,10 +181,12 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   if(capabilities.results)await proveResultsRematch({page,info,root});
   if(process.env.RIGHELT_LEGACY_CONTINUITY_INPUT){
     const legacy=JSON.parse(await readFile(process.env.RIGHELT_LEGACY_CONTINUITY_INPUT,'utf8'));
+    expect(legacy.version,'Regenerate pre-upgrade guest evidence').toBe(2);
     await page.goto(`/${legacy.hash}`);
     await expect(page.getByTestId('game-board')).toBeVisible();
     await expect.poll(()=>count(page)).toBe(legacy.count);
     const oldGame=await gamePayload(page);
+    assertHistoryPreserved(oldGame,legacy.history);
     expect(oldGame.ownershipMode).toBe('legacy_guest');expect(oldGame.myRoles).toEqual([]);expect(oldGame.canRecordMove).toBe(false);
     const denied=await page.evaluate(async()=>{
       const s=await(await fetch('/api/auth/session')).json();
@@ -222,7 +225,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
     expect(retainedGame.myRoles.slice().sort()).toEqual(['Player 1','Player 2']);
     await page.goto(`/#/game/${encodeURIComponent(retainedGame.id)}`);await expect(page.getByTestId('game-board')).toBeVisible();
     const action=(await gamePayload(page)).legalActions.find(x=>x.from&&x.to);expect(action).toBeTruthy();await submitPlayableAction(page,action,info);
-    await writeFile(`${process.env.RIGHELT_CONTINUITY_FILE}.account-${info.project.name}`,JSON.stringify({version:1,username,password,gameURL:page.url(),historyCount:await count(page),account:savedSession.account,storage:await page.context().storageState()}),{mode:0o600});
+    await writeFile(`${process.env.RIGHELT_CONTINUITY_FILE}.account-${info.project.name}`,JSON.stringify({version:2,username,password,gameURL:page.url(),historyCount:await count(page),history:historySnapshot(await gamePayload(page)),account:savedSession.account,storage:await page.context().storageState()}),{mode:0o600});
   }
 });
 
@@ -230,6 +233,7 @@ test(RETAINED_ACCOUNT_WORKFLOW,async({browser},info)=>{
   const input=process.env.RIGHELT_ACCOUNT_CONTINUITY_INPUT;
   test.skip(!input,'First account-capable stage establishes retained account fixtures');
   const prior=JSON.parse(await readFile(`${input}.account-${info.project.name}`,'utf8'));
+  expect(prior.version,'Regenerate pre-upgrade account evidence').toBe(2);
   const context=await browser.newContext({...options(info),storageState:prior.storage});
   try{
     const page=await context.newPage();await page.goto(prior.gameURL);
@@ -239,7 +243,7 @@ test(RETAINED_ACCOUNT_WORKFLOW,async({browser},info)=>{
     for(const [key,value]of Object.entries(prior.account.preferences))expect(current.account.preferences[key],`Retained preference ${key}`).toEqual(value);
     if(capabilities.introductions&&!Object.hasOwn(prior.account.preferences,'introducedOpponents'))expect(current.account.preferences.introducedOpponents).toBe(0);
     await expect.poll(()=>count(page)).toBe(prior.historyCount);
-    const retained=await gamePayload(page);expect(retained.ownershipMode).toBe('account_v1');expect(retained.myRoles.slice().sort()).toEqual(['Player 1','Player 2']);
+    const retained=await gamePayload(page);assertHistoryPreserved(retained,prior.history);expect(retained.ownershipMode).toBe('account_v1');expect(retained.myRoles.slice().sort()).toEqual(['Player 1','Player 2']);
     const action=retained.legalActions.find(x=>x.from&&x.to);expect(action).toBeTruthy();await submitPlayableAction(page,action,info);
     await page.reload();await expect.poll(()=>count(page)).toBe(prior.historyCount+1);
     await page.getByTestId('game-board').scrollIntoViewIfNeeded();

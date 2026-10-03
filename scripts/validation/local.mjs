@@ -9,6 +9,7 @@ import {publish} from './publish.mjs';
 import {candidateCapabilities} from './capabilities.mjs';
 import {initializeAccountUpgrade} from './account-stack.mjs';
 import {verifyAccountEvidence} from './account-evidence.mjs';
+import {assertHistorySnapshot} from './history-continuity.mjs';
 export async function fingerprint(cwd){const tracked=await git(['ls-files','-z'],cwd);const untracked=await git(['ls-files','--others','--exclude-standard','-z'],cwd);const entries=[];for(const p of [...new Set((tracked+'\0'+untracked).split('\0').filter(Boolean))].sort()){try{entries.push([p,hash((await lstat(path.join(cwd,p))).isSymbolicLink()?await readlink(path.join(cwd,p)):await readFile(path.join(cwd,p)))]);}catch(e){if(e.code==='ENOENT')entries.push([p,'deleted']);else throw e;}}return hash(entries);}
 export async function verifyEvidenceImages(stages,site){
  for(const stage of stages)for(const item of stage.items??[])for(const image of item.images??[]){
@@ -38,7 +39,11 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
   const capabilities=await candidateCapabilities(cwd);
   if(accountContinuityInput&&!capabilities.accounts)throw Error('Account capability disappeared after retained account proof');
   if(capabilities.accounts){
-   if(accountContinuityInput)for(const name of ['mobile','mid-wide','full-wide'])await readFile(`${accountContinuityInput}.account-${name}`);
+   if(accountContinuityInput)for(const name of ['mobile','mid-wide','full-wide']){
+    const fixture=JSON.parse(await readFile(`${accountContinuityInput}.account-${name}`,'utf8'));
+    if(fixture.version!==2)throw Error('Regenerate pre-upgrade account evidence');
+    assertHistorySnapshot(fixture.history);
+   }
    Object.assign(env,{RIGHELT_ACCOUNT_CANDIDATE_ROOT:cwd,RIGHELT_ACCOUNT_PERSIST_ROOT:accountPersistRoot||await mkdtemp(path.join(dir,'fresh-account-')),...(accountContinuityInput?{RIGHELT_ACCOUNT_CONTINUITY_INPUT:accountContinuityInput}:{}),...((accountLegacyContinuityInput||(!accountContinuityInput&&continuityInput))?{RIGHELT_LEGACY_CONTINUITY_INPUT:accountLegacyContinuityInput||continuityInput}:{})});
    stage.accountContract={phase:accountContinuityInput?'retained':'introduced',legacy:env.RIGHELT_LEGACY_CONTINUITY_INPUT?'Prior guest history remains public; authenticated account cannot claim guest seats':'Fresh local legacy fixture',cutover:capabilities.cutover?'Permanent local activation with acknowledged synthetic canary':'Pre-activation account protocol'};
   }
@@ -57,7 +62,8 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
     verifyAccountEvidence(accountItems,{retained:Boolean(accountContinuityInput),capabilities,legacy:Boolean(env.RIGHELT_LEGACY_CONTINUITY_INPUT)});
     if(continuityOutput)for(const name of ['mobile','mid-wide','full-wide']){
      const fixture=JSON.parse(await readFile(`${continuityOutput}.account-${name}`,'utf8'));
-     if(fixture.version!==1||!fixture.account?.id||!fixture.storage||!fixture.gameURL)throw Error('Incomplete account continuity fixture');
+     if(fixture.version!==2||!fixture.account?.id||!fixture.storage||!fixture.gameURL)throw Error('Incomplete account continuity fixture');
+     assertHistorySnapshot(fixture.history);
     }
     stage.checks.push({name:'Account evidence completeness',status:'passed'});
    }catch(error){stage.checks.push({name:'Account evidence completeness',status:'failed'});await saveJSON(path.join(dir,`account-evidence-error-${stageIndex}.json`),{error:error.message});}

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {assertHistoryPreserved} from './history-continuity.mjs';
 
 export const LEGACY_IDENTITY_KEY = 'righelt.identity.id.v1';
 export function legacyMutationContract(legacy) {
@@ -26,7 +27,10 @@ export async function proveLegacyMutationDenied({ browser, legacy, baseURL = 'ht
       const response = await context.request.get(`${url}?identityId=${encodeURIComponent(body.identityId)}`);
       assert.equal(response.status(), 200); return response.json();
     };
-    const before = durableProjection(await read());
+    assert.equal(legacy.version, 2, 'Regenerate pre-upgrade guest evidence');
+    const original = await read();
+    assertHistoryPreserved(original.game, legacy.history);
+    const before = durableProjection(original);
     if (oldGame) assert.deepEqual(before.moves, oldGame.moves, 'Authenticated and guest public history agree');
     for (const [headers, status, error] of [
       [{}, 426, 'upgrade_required'],
