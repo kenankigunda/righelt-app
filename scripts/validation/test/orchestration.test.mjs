@@ -23,3 +23,13 @@ test('retained-state validation rejects candidate edits and a changed sequence h
   assert.equal(await readFile(e2eArtifact,'utf8'),'retained E2E failure','responsive checks must not erase earlier failure artifacts');assert.equal(result.stage.status,'stale');if(kind==='candidate')assert.equal(result.stage.sourceClean,false);else assert.equal(run.harnessFingerprint,'old');
  }
 });
+
+test('evidence integrity rejects replaced earlier-stage images and missing thumbnails',async()=>{
+ const {verifyEvidenceImages}=await import('../local.mjs');const {hash}=await import('../model.mjs');
+ const root=await mkdtemp(path.join(os.tmpdir(),'validation-images-'));await mkdir(path.join(root,'images'));
+ const image={src:'images/earlier.png',thumbnail:'images/thumb.png',digest:hash(Buffer.from('earlier screenshot'))};const stages=[{items:[{images:[image]}]}];
+ await writeFile(path.join(root,image.src),'earlier screenshot');await writeFile(path.join(root,image.thumbnail),'thumbnail');await verifyEvidenceImages(stages,root);
+ await writeFile(path.join(root,image.src),'later screenshot');await assert.rejects(verifyEvidenceImages(stages,root),/changed after capture/);
+ await writeFile(path.join(root,image.src),'earlier screenshot');await rm(path.join(root,image.thumbnail));await assert.rejects(verifyEvidenceImages(stages,root),/ENOENT/);
+ await assert.rejects(verifyEvidenceImages([{items:[{images:[{...image,src:'../private.log'}]}]}],root),/path is invalid/);
+});

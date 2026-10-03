@@ -7,6 +7,13 @@ import {hash,coverage,VERSION} from './model.mjs';
 import {renderReport} from './report.mjs';
 import {publish} from './publish.mjs';
 export async function fingerprint(cwd){const tracked=await git(['ls-files','-z'],cwd);const untracked=await git(['ls-files','--others','--exclude-standard','-z'],cwd);const entries=[];for(const p of [...new Set((tracked+'\0'+untracked).split('\0').filter(Boolean))].sort()){try{entries.push([p,hash((await lstat(path.join(cwd,p))).isSymbolicLink()?await readlink(path.join(cwd,p)):await readFile(path.join(cwd,p)))]);}catch(e){if(e.code==='ENOENT')entries.push([p,'deleted']);else throw e;}}return hash(entries);}
+export async function verifyEvidenceImages(stages,site){
+ for(const stage of stages)for(const item of stage.items??[])for(const image of item.images??[]){
+  if(!/^images\/[a-zA-Z0-9_.-]+$/.test(image.src)||!/^images\/[a-zA-Z0-9_.-]+$/.test(image.thumbnail??''))throw Error('Evidence image or thumbnail path is invalid');
+  if(hash(await readFile(path.join(site,image.src)))!==image.digest)throw Error(`Evidence changed after capture: ${image.src}`);
+  await readFile(path.join(site,image.thumbnail));
+ }
+}
 export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=false,config={},publishReport=true,run,stageIndex=0,persistRoot,continuityInput,continuityOutput,execute=command,lockPath=path.join(os.tmpdir(),'righelt-validation-9888.lock')}={}){
  cwd=path.resolve(cwd);
  const revision=await git(['rev-parse','HEAD'],cwd);const baseSha=await git(['rev-parse',base],cwd);
@@ -26,6 +33,7 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
   const checks=[['Typecheck',['pnpm','typecheck']],['Generated runtime',['pnpm','check:web-engine-generated']],['Unit',['pnpm','test:unit']],['Integration',['pnpm','test:integration']],['E2E',['pnpm','test:e2e',...(full?[]:selection.files)]],['Responsive proof',['node',path.join(harnessRoot,'node_modules/@playwright/test/cli.js'),'test','--config',path.join(harnessRoot,'playwright.validation.config.mjs')]],['Report viewer',['node',path.join(harnessRoot,'scripts/validation/test/report-browser.mjs')]]];
   for(const [name,argv]of checks){console.log(`[validation] ${stage.title}: ${name}`);const r=await execute(argv,{cwd,env:{...env,PLAYWRIGHT_OUTPUT_DIR:path.join(dir,`debug-${stageIndex}`,name.replaceAll(' ','-')),...(name==='E2E'?{CI:'1'}:{})},log:path.join(dir,`stage-${stageIndex}-${name.replaceAll(' ','-')}.log`),allowFailure:true});stage.checks.push({name,status:r.code?'failed':'passed',duration:r.duration});await save();}
   stage.items=[...await readJSON(env.RIGHELT_EVIDENCE_JSON,[]),...await readJSON(env.RIGHELT_EVIDENCE_JSON+'.ui',[])];
+  try{await verifyEvidenceImages(run.stages,site);stage.checks.push({name:'Evidence image integrity',status:'passed'});}catch(error){stage.checks.push({name:'Evidence image integrity',status:'failed'});await saveJSON(path.join(dir,`evidence-integrity-${stageIndex}.json`),{error:error.message});}
   stage.status=stage.checks.every(c=>c.status==='passed')&&stage.items.length>0&&!selection.unmapped.length?'passed':'failed';
  }catch(error){stage.status='failed';stage.checks.push({name:'Validation startup',status:'failed'});run.risks.push('Validation could not finish. Inspect the private startup log.');await saveJSON(path.join(dir,'startup-error.json'),{error:error.message});}
  finally{if(locked)await rm(lock,{recursive:true});}
