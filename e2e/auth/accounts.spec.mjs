@@ -576,3 +576,30 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
     await sibling.close();
   }
 });
+
+test('a failed continuation read preserves the play choice for explicit retry', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start new game', exact: true }).click();
+  await dialog(page).getByRole('button', { name: 'Create account', exact: true }).click();
+  await dialog(page).getByLabel('Username', { exact: true }).fill(uniqueName());
+  await dialog(page).getByLabel('Password', { exact: true }).fill(password);
+  await dialog(page).getByRole('button', { name: 'Create account', exact: true }).click();
+  await expect(dialog(page).getByRole('heading', { name: 'Save your recovery code' })).toBeVisible();
+  let denyReads = true;
+  let creates = 0;
+  page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/shell/games') creates++; });
+  await page.route('**/api/shell/games?**', async route => {
+    if (denyReads) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'temporarily_unavailable' }) });
+    else await route.continue();
+  });
+  await dialog(page).getByLabel('I saved my recovery code').check();
+  await dialog(page).getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(dialog(page)).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
+  expect(creates).toBe(0);
+  denyReads = false;
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page).toHaveURL(/#\/game\//);
+  await expect(page.getByTestId('game-role')).toContainText('Player 1');
+  expect(creates).toBe(1);
+});

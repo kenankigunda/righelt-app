@@ -76,6 +76,7 @@ export const createGameFromHome = async (page) => {
 export const createGamesViaApi = async (page, count) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
+  await waitForLegacyIdentity(page);
 
   return page.evaluate(async (gameCount) => {
     const identityId = window.localStorage.getItem("righelt.identity.id.v1");
@@ -109,9 +110,19 @@ export const getCurrentGameIdFromPage = async (page) => {
   return decodeURIComponent(match[1]);
 };
 
+// The home shell renders before startup decides whether legacy transport is
+// enabled. These general-suite API fixtures require that decision to finish.
+export const waitForLegacyIdentity = async (page) => {
+  await expect.poll(
+    () => page.evaluate(() => window.localStorage.getItem("righelt.identity.id.v1") ?? ""),
+    { message: "Expected legacy test identity after startup" },
+  ).toMatch(/\S/);
+};
+
 export const importScenarioGame = async (page, scenario, baseURL) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
+  await waitForLegacyIdentity(page);
 
   const { gameId } = await page.evaluate(async (payload) => {
     const identityId = window.localStorage.getItem("righelt.identity.id.v1");
