@@ -227,3 +227,10 @@ Examples illustrating the spirit:
 - Arrow keys move board focus. Enter and Space use the same preview and confirmation sequence as a pointer.
 - Back navigation reverses the entry sweep and restores the originating card and scroll position. Restore game panel/history position only when the account and actual game revision still match; otherwise show live play.
 - Older asynchronous requests cannot reveal a newer destination. Flyout changes retain hydration of the underlying route. Reduced motion skips the sweep.
+
+## Personal play alpha implementation defaults
+
+- Keep Start interactive while the independent resume list loads. A bounded region above it reserves `clamp(16rem, 42svh, 28rem)` for loading, retry, first-game guidance or unfinished games. Longer lists scroll within that region; loading cannot move the Start target.
+- Account, recovery, profile and story dialogs use the shared ivory paper, clipped corners and current action affiliation even when mounted outside the app root. Recovery forms retain their full-height narrow-screen layout and visible cancellation path.
+- Sound is a device-local setting, muted initially. Only unique confirmed live move/turn events can produce a short, quiet synthesized cue, with separate continuation and result pitches. Hydration, reconnect state, history, duplicate events and hidden tabs are silent. Returning to the foreground requires a new gesture before audio resumes. Audio and preference-storage failures never block play.
+- Browser emulation and CSS enlargement provide layout evidence; they do not replace physical iPhone, cellular performance or native browser zoom acceptance.

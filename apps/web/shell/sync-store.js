@@ -436,7 +436,7 @@ export const createLiveSyncClient = ({
         }
         if (!isAuthoritativeSyncEvent(payload) || !validSyncSnapshot(payload.game, gameId)
           || (payload.commandOutcome && (!isSyncRevision(payload.commandOutcome.eventSeq) || payload.commandOutcome.eventSeq > payload.eventSeq || !isSyncRevision(payload.commandOutcome.gameplayRevision) || payload.commandOutcome.gameplayRevision > payload.game.gameplayRevision))) throw new Error("invalid_socket_snapshot");
-        const applied = onEvent(payload, { gameId, generation });
+        const applied = onEvent(payload, { gameId, generation, initial: !connection.initialDone });
         if (!current()) return;
         if (applied === false) throw new Error("snapshot_not_applied");
         lastEventSeqByGameId.set(gameId, Math.max(lastEventSeqByGameId.get(gameId) ?? 0, payload.eventSeq));

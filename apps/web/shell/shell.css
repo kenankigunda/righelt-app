@@ -2166,3 +2166,15 @@ button:not(.secondary):not(.warn):not(.danger):not(:disabled):active,
 .story-modal fieldset { border: 1px solid var(--line); margin: 16px 0; }
 .story-modal fieldset label { display: flex; align-items: center; gap: 12px; min-height: 44px; }
 .game-result { border-radius: 0; clip-path: polygon(var(--corner-cut) 0, 100% 0, 100% calc(100% - var(--corner-cut)), calc(100% - var(--corner-cut)) 100%, 0 100%, 0 var(--corner-cut)); }
+
+/* Body-mounted account surfaces retain the shared paper and affiliation tokens. */
+.account-dialog { border: 1px solid var(--line); border-radius: 0; color: var(--ink); background: var(--paper); clip-path: polygon(var(--corner-cut) 0, 100% 0, 100% calc(100% - var(--corner-cut)), calc(100% - var(--corner-cut)) 100%, 0 100%, 0 var(--corner-cut)); }
+.account-dialog::backdrop { background: rgba(250, 247, 239, .94); backdrop-filter: blur(4px); }
+.account-recovery-code { color: var(--ink); background: var(--paper-deep, #f0ecdf); }
+.account-dialog [hidden] { display: none !important; }
+/* Keep Start reachable at a stable position while the independent resume read settles. */
+.home-resume-slot { height: clamp(16rem, 42svh, 28rem); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 2px; }
+.home-resume-slot > section { min-height: 100%; box-sizing: border-box; margin: 0; }
+.home-resume-slot .mini-board-card-list { align-items: start; }
+.home-first-game { display: flex; flex-direction: column; justify-content: center; }
+.resume-placeholder { height: 10rem; margin-top: 1rem; }

@@ -14,5 +14,5 @@ export const createModal = ({ document = globalThis.document, labelId, className
   };
   element.addEventListener("cancel", event => { event.preventDefault(); close(); });
   element.addEventListener("click", event => { if (event.target.closest("[data-modal-close]")) close(); });
-  return { element, close, open(html, source = document.activeElement) { trigger = source; element.innerHTML = html; if (!element.open) element.showModal(); element.querySelector("[autofocus], button")?.focus(); }, destroy() { close(); element.remove(); } };
+  return { element, close, open(html, source = document.activeElement) { trigger = source; element.dataset.actionAffiliation = document.querySelector("#app")?.dataset.actionAffiliation || "red"; element.innerHTML = html; if (!element.open) element.showModal(); element.querySelector("[autofocus], button")?.focus(); }, destroy() { close(); element.remove(); } };
 };

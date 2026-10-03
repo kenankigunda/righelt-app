@@ -1,3 +1,4 @@
+import { createGameSound } from "./sound.js";
 import { getGameResult, createResultTransitions, createRematchDialog } from "./game-result.js";
 import { createModal } from "./modal.js";
 import { createOpponentStoryDialog, shouldShowOpponentIntroduction, cancelAbandonedOpponentTutorial, createOpponentStartCoordinator } from "./opponent-stories.js";
@@ -139,7 +140,11 @@ const account = createAccountController({ storage,
   onTransition: (next, source) => { if (accountInitialized) { accountDialog.onTransition(source); resetAccountTransport(next); } },
   onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { syncAccountViewPreference(); accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); } },
 });
-const accountDialog = createAccountDialog({ controller: account, onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
+const gameSound = createGameSound({ storage });
+document.addEventListener("pointerdown", () => gameSound.gesture(), { passive: true });
+document.addEventListener("keydown", () => gameSound.gesture());
+document.addEventListener("visibilitychange", () => { if (document.hidden) gameSound.hide(); });
+const accountDialog = createAccountDialog({ controller: account, sound: gameSound, onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
   onComplete: async intent => {
     const generation = account.snapshot().generation;
     const hash = window.location.hash;
@@ -2343,6 +2348,11 @@ const renderPersonalStart = () => `<section class="panel home-start" data-zone="
   <button class="secondary" data-action="start-opponent" data-opponent="self">Self-play</button>
   <p class="home-start-status" role="status">${escapeHtml(homeStartStatus)}</p>
 </section>`;
+const renderResumeSlot = () => `<div class="home-resume-slot" data-testid="resume-slot" aria-label="Continue playing">${
+  !routeHydrated || resumeSection.pending && !resumeSection.gameIds.length
+    ? '<section class="panel" aria-busy="true"><h2>Continue playing</h2><p role="status">Loading your games…</p><div class="skeleton-pulse resume-placeholder" aria-hidden="true"></div></section>'
+    : renderResumeSection() || `<section class="panel home-first-game"><h2>Your next game</h2><p>${account.canPlay() ? "Choose an opponent below to start your first game." : "Choose an opponent below. Sign in to start playing."}</p></section>`
+}</div>`;
 const renderResumeSection = () => {
   if (resumeSection.error) return '<section class="panel" data-zone="home-resume"><p role="status">Your games could not be loaded.</p><button class="secondary" data-action="retry-resume">Try again</button></section>';
   const games = selectResumeGames(resumeSection.gameIds.map((id) => transport.getHomeGameCard(id)).filter(Boolean), transport.getIdentityId());
@@ -2411,6 +2421,7 @@ const renderHome = () => {
   if (!routeHydrated) {
     return `
       <section class="stack">
+        ${renderResumeSlot()}
         ${renderPersonalStart()}
         ${getVisibleHomeSectionKeys().map((sectionKey) => renderHomeSectionSkeleton(getHomeSection(sectionKey).title)).join("")}
       </section>
@@ -2421,7 +2432,7 @@ const renderHome = () => {
 
   return `
     <section class="stack">
-      ${renderResumeSection()}
+      ${renderResumeSlot()}
       ${renderPersonalStart()}
       ${listHtml}
     </section>
@@ -4102,7 +4113,8 @@ const makeAccountSyncStore = auth => createSyncStore({
   auth,
   fetcher: account.fetch,
   onAuthLost: () => account.authorityLost(),
-  onEvent: (payload) => {
+  onEvent: (payload, context) => {
+    gameSound.observe(payload, { initial: context?.initial, inHistory: transport.getGameViewModel(payload?.game?.id)?.inHistoryMode || currentRoute.name !== "game" });
     wsLastEvent = payload?.type
       ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
       : "unknown";
@@ -4165,6 +4177,7 @@ const subscribeToTransport = () => transport.subscribe((change) => {
 subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
+  gameSound.reset();
   resultTransitions.clear(); activeResultGameId = null; rematchDialog.close();
   storyStart.cancel();
   if (pendingOpponentTutorial) { pendingOpponentTutorial.reject(new Error("Account changed. Choose your opponent again.")); pendingOpponentTutorial = null; }

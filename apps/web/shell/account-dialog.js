@@ -29,6 +29,7 @@ export const createAccountDialog = ({
   onComplete = () => {},
   onTutorial = () => {},
   getSiteKey = () => null,
+  sound = null,
 } = {}) => {
   const dialog = document.createElement("dialog");
   dialog.className = "account-dialog";
@@ -113,6 +114,7 @@ export const createAccountDialog = ({
         body +=
           '<button type="button" class="secondary" data-mode="login">Back to sign in</button>';
     }
+    if (mode === "account" && sound) body += `<button type="button" data-device-sound aria-pressed="${sound.enabled()}">Sound on this device: ${sound.enabled() ? "On" : "Off"}</button>`;
     dialog.innerHTML = `<form class="account-form"><h2 id="account-title" tabindex="-1">${title()}</h2>${body}<p class="account-status" role="status" aria-live="polite" data-account-status></p><button type="button" class="secondary" data-cancel>Cancel</button></form>`;
     queueMicrotask(() =>
       dialog.querySelector("input, #account-title")?.focus(),
@@ -155,6 +157,7 @@ export const createAccountDialog = ({
     mode = next;
     const session = controller.snapshot().session;
     if (next === "account" && !session.authenticated) mode = "login";
+    dialog.dataset.actionAffiliation = document.querySelector("#app")?.dataset.actionAffiliation || "red";
     render();
     if (!dialog.open) dialog.showModal();
   };
@@ -249,6 +252,7 @@ export const createAccountDialog = ({
   dialog.addEventListener("click", async (event) => {
     const button = event.target.closest("button");
     if (!button) return;
+    if (button.hasAttribute("data-device-sound")) { const enabled = sound.toggle(); button.setAttribute("aria-pressed", String(enabled)); button.textContent = `Sound on this device: ${enabled ? "On" : "Off"}`; return; }
     if (button.hasAttribute("data-cancel")) {
       close();
       return;
