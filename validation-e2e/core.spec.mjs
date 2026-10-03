@@ -13,6 +13,7 @@ test('create, move, viewer live update, reload and reconnect',async({page,contex
   await page.getByRole('button',{name:'Play as both players',exact:true}).click();
   await expect(page.getByRole('button',{name:'Play as both players',exact:true})).toHaveCount(0);
   const board=page.locator('[data-action="switch-game-panel"][data-panel="board"]');if(await board.isVisible())await board.click();
+  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
   await geometry(page);await proof(page,info,'created',page.getByTestId('game-board'));
   if(info.project.use.hasTouch)expect(await page.evaluate(()=>navigator.maxTouchPoints>0&&!matchMedia('(any-hover: hover)').matches)).toBe(true);
   await openDirectGameLink(viewer,baseURL,gameHash);await joinAsViewer(viewer);const before=await getHistoryMoveCount(viewer);
