@@ -7,6 +7,7 @@ import {
   getHistoryMoveCount,
   importScenarioGame,
   makeAnyLegalMove,
+  waitForLegacyIdentity,
 } from "../support/app.mjs";
 
 const buildPiece = (id, owner, kind, row, col) => ({
@@ -131,8 +132,9 @@ const getLegalActions = async (page) =>
     return Array.isArray(body?.game?.legalActions) ? body.game.legalActions : [];
   });
 
-const createSelfPlayGameViaApi = async (page) =>
-  page.evaluate(async () => {
+const createSelfPlayGameViaApi = async (page) => {
+  await waitForLegacyIdentity(page);
+  return page.evaluate(async () => {
     const identityId = window.localStorage.getItem("righelt.identity.id.v1");
     if (!identityId) {
       throw new Error("Expected identity id in local storage before creating a self-play game");
@@ -149,6 +151,7 @@ const createSelfPlayGameViaApi = async (page) =>
     }
     return body.game.id;
   });
+};
 
 const importScenarioIntoExistingGame = async (page, scenario, targetGameId) =>
   page.evaluate(async ({ scenario: payload, targetGameId: gameId }) => {

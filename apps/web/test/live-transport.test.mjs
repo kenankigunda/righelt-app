@@ -1643,3 +1643,30 @@ test("discard preserves unknown submitted commands, their retry ownership, journ
  await new Promise(resolve=>setTimeout(resolve,70));
  assert.ok(reconciles>0);assert.equal(removed,1);assert.equal(store.getCommandOutcome(game.id,response.clientCommandId).outcome,"rejected");
 });
+
+test('home list reads abort at the shared request deadline without retrying', async () => {
+  let signal, calls = 0;
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), timing: { requestTimeoutMs: 20 }, fetcher: (_url, init) => {
+    calls++;
+    signal = init.signal;
+    return new Promise(() => {});
+  } });
+  const outcome = await Promise.race([store.loadGamesPage({ section: 'my' }).then(() => 'resolved', error => error.code), new Promise(resolve => setTimeout(() => resolve('unbounded'), 100))]);
+  assert.equal(outcome, 'request_timeout');
+  assert.equal(signal.aborted, true);
+  assert.equal(calls, 1);
+  store.retire();
+});
+
+test('invite reads bound response-body completion and never retry automatically', async () => {
+  let signal, calls = 0;
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), timing: { requestTimeoutMs: 20 }, fetcher: async (_url, init) => {
+    calls++;
+    signal = init.signal;
+    return { ok: true, json: () => new Promise(() => {}) };
+  } });
+  await assert.rejects(store.resolveInvite('held-invite'), { code: 'request_timeout' });
+  assert.equal(signal.aborted, true);
+  assert.equal(calls, 1);
+  store.retire();
+});

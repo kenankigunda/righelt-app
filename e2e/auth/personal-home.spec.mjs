@@ -26,7 +26,6 @@ test("a pending home list cannot delay or replace the chosen game after account 
   await page.goto("/");
   await page.getByRole("radio", { name: "Player 2 · Blue" }).check();
   await page.getByTestId("home-create-game").click();
-  await finishRegistration(page);
   let release;
   const gate = new Promise(resolve => { release = resolve; });
   let held = 0;
@@ -41,8 +40,9 @@ test("a pending home list cannot delay or replace the chosen game after account 
     await route.fulfill({ response });
   });
   try {
-    await acknowledge(page);
+    await finishRegistration(page);
     await expect.poll(() => held).toBeGreaterThan(0);
+    await acknowledge(page);
     await expect(page.getByTestId("game-role")).toContainText("Player 2");
     const gameUrl = page.url();
     expect(creates).toHaveLength(1);
