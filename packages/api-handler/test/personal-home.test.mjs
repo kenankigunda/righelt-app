@@ -62,3 +62,10 @@ test("real SQLite resume query filters finished games and orders before paginati
 
   } finally { sql.close(); }
 });
+
+test("blue self-play affiliation survives canonical storage and a fresh view", () => {
+  const game = createInitialGame({ gameId: "self-blue", identityId: "me", selfPlayMode: true, creatorSide: "p2" });
+  const stored = JSON.parse(JSON.stringify(game));
+  assert.equal(withViewModel(stored, "me").selfPlayStartSide, "p2");
+  assert.equal(stored.board.state.sideToMove, "P1");
+});

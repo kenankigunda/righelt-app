@@ -109,6 +109,7 @@ export type LiveGame = {
   lastMoveAt: string | null;
   updatedAt: string;
   selfPlayMode: boolean;
+  selfPlayStartSide?: "p1" | "p2";
   board: {
     state: GameState;
   };
@@ -343,6 +344,7 @@ export const createInitialGame = ({
     lastMoveAt: null,
     updatedAt: createdAt,
     selfPlayMode,
+    ...(selfPlayMode ? { selfPlayStartSide: creatorSide } : {}),
     board: { state: initial },
     player1: selfPlayMode || creatorSide === "p1" ? {
       identityId,

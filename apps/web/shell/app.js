@@ -3824,7 +3824,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     game: affiliationGameId ? transport.getGameViewModel(affiliationGameId) : null,
     identityId: transport.getIdentityId(),
     pendingSide: currentRoute.name === "home" ? homeSide : null,
-    selfPlaySide: selfPlayStartSides.get(`${transport.getIdentityId()}:${affiliationGameId}`) ?? "p1",
+    selfPlaySide: transport.getGameViewModel(affiliationGameId)?.selfPlayStartSide ?? selfPlayStartSides.get(`${transport.getIdentityId()}:${affiliationGameId}`) ?? "p1",
   }));
   syncRouteTransitionForCurrentRoute();
   const routeKey = getRouteRenderKey();

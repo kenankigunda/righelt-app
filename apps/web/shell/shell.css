@@ -2003,10 +2003,17 @@ textarea:focus-visible {
   }
 
   .shell-header-main {
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    width: 0;
+  }
+
+  .shell-header > [data-action="account-open"] {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .shell-header-actions {
+    flex: 0 0 auto;
     justify-self: end;
   }
 

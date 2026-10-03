@@ -113,3 +113,15 @@ for (const width of [320, 375, 1100, 1600]) test(`personal home fits ${width}px 
   await expect(page.locator('[data-opponent="babs"]')).toHaveCSS("background-color", "rgb(36, 94, 155)");
   await testInfo.attach(`personal-home-${width}`, { body: await page.screenshot({ path: testInfo.outputPath(`home-${width}.png`), fullPage: true }), contentType: "image/png" });
 });
+
+test("blue self-play keeps its selected affiliation after reload", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("radio", { name: "Player 2 · Blue" }).check();
+  await page.locator('[data-opponent="self"]').click();
+  await finishRegistration(page); await acknowledge(page);
+  await expect(page.locator("#shell-board")).toBeVisible();
+  await expect(page.locator("#app")).toHaveAttribute("data-action-affiliation", "blue");
+  await page.reload();
+  await expect(page.locator("#shell-board")).toBeVisible();
+  await expect(page.locator("#app")).toHaveAttribute("data-action-affiliation", "blue");
+});
