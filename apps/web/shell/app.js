@@ -2865,6 +2865,39 @@ const createMarkupRoot = (markup) => {
   template.innerHTML = markup.trim();
   return template.content.firstElementChild instanceof HTMLElement ? template.content.firstElementChild : null;
 };
+// Keep the enabled home control and its ancestor chain mounted while asynchronous
+// home sections update. Detaching a pressed/focused button loses native activation.
+const patchHomeAroundCreateControl = (markup) => {
+  const currentControl = appEl.querySelector('[data-testid="home-create-game"]');
+  const nextRoot = document.createElement("div");
+  nextRoot.innerHTML = markup;
+  const nextControl = nextRoot.querySelector('[data-testid="home-create-game"]');
+  if (!currentControl || !nextControl) return false;
+  const comparableControl = currentControl.cloneNode(true);
+  comparableControl.classList.remove("is-pressing");
+  if (!comparableControl.isEqualNode(nextControl)) return false;
+  const pathTo = (control, root) => {
+    const path = [];
+    for (let node = control; node && node !== root; node = node.parentElement) path.unshift(node);
+    return [root, ...path];
+  };
+  const currentPath = pathTo(currentControl, appEl), nextPath = pathTo(nextControl, nextRoot);
+  if (currentPath.length !== nextPath.length || currentPath.some((node, index) => index > 0 && node.tagName !== nextPath[index].tagName)) return false;
+  for (let index = 0; index < currentPath.length - 1; index++) {
+    const current = currentPath[index], next = nextPath[index], retained = currentPath[index + 1], replacement = nextPath[index + 1];
+    if (index > 0) {
+      for (const attribute of [...current.attributes]) if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+      for (const attribute of next.attributes) current.setAttribute(attribute.name, attribute.value);
+    }
+    for (const child of [...current.childNodes]) if (child !== retained) child.remove();
+    let after = false;
+    for (const child of next.childNodes) {
+      if (child === replacement) { after = true; continue; }
+      if (after) current.append(child.cloneNode(true)); else current.insertBefore(child.cloneNode(true), retained);
+    }
+  }
+  return true;
+};
 const updateMountedHeader = () => {
   const currentHeaderEl = getMountedHeaderEl();
   if (!(currentHeaderEl instanceof HTMLElement)) {
@@ -3945,7 +3978,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   if (nextMarkup !== lastRenderedMarkup) {
     const savedHomeFocus = currentRoute.name === "home" ? captureHomeFocus(appEl, document.activeElement) : null;
     const savedHeaderFocus = captureHeaderFocus(getMountedHeaderEl(), document.activeElement);
-    appEl.innerHTML = nextMarkup;
+    if (currentRoute.name !== "home" || !patchHomeAroundCreateControl(nextMarkup)) appEl.innerHTML = nextMarkup;
     restoreHeaderFocus(getMountedHeaderEl(), savedHeaderFocus, document);
     restoreHomeFocus(appEl, savedHomeFocus);
     lastRenderedMarkup = nextMarkup;
@@ -4020,14 +4053,14 @@ const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd
 };
 
 const captureRouteRead = () => ({
-  generation: account.snapshot().generation,
   navigation: navigationGeneration,
+  generation: account.snapshot().generation,
   hash: window.location.hash,
   owner: transport,
   route: { ...currentRoute },
   inputs: JSON.stringify([navigationGeneration, resumeSection.page, getVisibleHomeSectionKeys().map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])]),
 });
-const routeReadIsCurrent = read => read.generation === account.snapshot().generation && read.navigation === navigationGeneration && read.hash === window.location.hash && read.owner === transport;
+const routeReadIsCurrent = read => read.navigation === navigationGeneration && read.generation === account.snapshot().generation && read.hash === window.location.hash && read.owner === transport;
 const assertCurrentRouteRead = read => {
   if (!routeReadIsCurrent(read)) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
 };

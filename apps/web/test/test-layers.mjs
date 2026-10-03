@@ -20,6 +20,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "local-dev-ports.test.mjs",
   "local-dev-scripts.test.mjs",
   "mobile-layout.test.mjs",
+  "modal.test.mjs",
   "operation-manager.test.mjs",
   "play-view.test.mjs",
   "personal-home.test.mjs",

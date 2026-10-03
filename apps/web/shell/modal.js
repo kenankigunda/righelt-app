@@ -5,14 +5,16 @@ export const createModal = ({ document = globalThis.document, labelId, className
   element.setAttribute("aria-labelledby", labelId);
   document.body.append(element);
   let trigger = null;
+  let resolveTrigger = null;
   const close = (reason = "dismiss") => {
     if (!element.open) return;
     element.close();
     onClose(reason);
-    const target = trigger?.isConnected ? trigger : document.querySelector("main h1, main h2, .shell-header-title-link");
+    const replacement = !trigger?.isConnected ? resolveTrigger?.() : null;
+    const target = trigger?.isConnected ? trigger : replacement?.isConnected ? replacement : document.querySelector("main h1, main h2, .shell-header-title-link");
     if (target) { if (!target.matches("a, button, input, [tabindex]")) target.tabIndex = -1; target.focus({ preventScroll: true }); }
   };
   element.addEventListener("cancel", event => { event.preventDefault(); close(); });
   element.addEventListener("click", event => { if (event.target.closest("[data-modal-close]")) close(); });
-  return { element, close, open(html, source = document.activeElement) { trigger = source; element.dataset.actionAffiliation = document.querySelector("#app")?.dataset.actionAffiliation || "red"; element.innerHTML = html; if (!element.open) element.showModal(); element.querySelector("[autofocus], button")?.focus(); }, destroy() { close(); element.remove(); } };
+  return { element, close, open(html, source = document.activeElement, findTrigger = null) { trigger = source; resolveTrigger = findTrigger; element.dataset.actionAffiliation = document.querySelector("#app")?.dataset.actionAffiliation || "red"; element.innerHTML = html; if (!element.open) element.showModal(); element.querySelector("[autofocus], button")?.focus(); }, destroy() { close(); element.remove(); } };
 };

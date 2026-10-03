@@ -27,3 +27,13 @@ test('new generation, route, and transport never reuse old authority reads', asy
     assert.equal(await current, 'current');
   }
 });
+
+
+test('returning to the same hash never reuses a read from an earlier navigation', async () => {
+  const hydrate = createRouteHydration();
+  const owner = {};
+  const first = hydrate({ generation: 1, navigation: 1, hash: '#/game/a', owner }, () => new Promise(() => {}));
+  const current = hydrate({ generation: 1, navigation: 3, hash: '#/game/a', owner }, async () => 'current');
+  assert.notEqual(current, first);
+  assert.equal(await current, 'current');
+});

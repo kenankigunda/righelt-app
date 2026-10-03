@@ -3,7 +3,7 @@
 export const createRouteHydration = () => {
   let flight = null;
   return (key, read) => {
-    if (flight && flight.generation === key.generation && flight.hash === key.hash && flight.owner === key.owner && flight.inputs === key.inputs) return flight.promise;
+    if (flight && flight.navigation === key.navigation && flight.generation === key.generation && flight.hash === key.hash && flight.owner === key.owner && flight.inputs === key.inputs) return flight.promise;
     const current = { ...key };
     current.promise = Promise.resolve().then(read).finally(() => {
       if (flight === current) flight = null;

@@ -434,3 +434,10 @@ test("responsive home pagination avoids reload when 3-column and 1-column modes 
     },
   ]);
 });
+
+
+test("route reads retain account authority and navigation generation guards together", async () => {
+  assert.match(source, /const captureRouteRead = \(\) => \(\{\s*navigation: navigationGeneration,\s*generation: account.snapshot\(\).generation,/);
+  assert.match(source, /const routeReadIsCurrent = read => read.navigation === navigationGeneration && read.generation === account.snapshot\(\).generation && read.hash === window.location.hash && read.owner === transport;/);
+  assert.match(source, /return hydrateRoute\(read, async \(\) =>/);
+});
