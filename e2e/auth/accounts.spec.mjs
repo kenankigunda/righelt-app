@@ -422,3 +422,23 @@ test("a stalled startup read recovers without granting guest play", async ({ pag
     await expect(page).not.toHaveURL(/#\/game\//);
   } finally { release(); }
 });
+
+test("long profile names wrap inside participants without covering the board", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 900 });
+  await register(page, uniqueName(), { gate: true });
+  await account(page);
+  const displayName = "VeryLongUnbrokenDisplayName123456";
+  await dialog(page).getByLabel("Display name", { exact: true }).fill(displayName);
+  await dialog(page).getByRole("button", { name: "Save account settings" }).click();
+  await expect(dialog(page).locator("[data-account-status]")).toHaveText("Account settings saved.");
+  await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  const profile = page.getByTestId("participant-player-1").getByRole("button");
+  await expect(profile).toContainText(displayName);
+  const box = await profile.boundingBox();
+  const panel = await page.locator('[data-game-panel="participants"]').boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(panel.x);
+  expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width);
+  expect(await profile.evaluate(button => button.scrollWidth <= button.clientWidth + 1)).toBe(true);
+  await profile.click();
+  await expect(page.getByTestId("public-profile")).toContainText(displayName);
+});
