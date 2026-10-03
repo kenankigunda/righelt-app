@@ -33,8 +33,8 @@
     "check:web-engine-generated": "node scripts/check-web-engine-generated.mjs",
     "check:ticket-workflow": "node scripts/check-ticket-workflow-setup.mjs",
     "setup:workspace": "bash scripts/setup-workspace.sh",
-    "test": "pnpm typecheck && pnpm check:web-engine-generated && pnpm test:unit && pnpm test:integration && pnpm test:e2e",
-    "test:unit": "pnpm test:engine:unit && pnpm test:web:unit",
+    "test": "pnpm typecheck && pnpm check:web-engine-generated && pnpm test:unit && pnpm test:integration && pnpm test:e2e && pnpm test:responsive && node scripts/validation/test/report-browser.mjs",
+    "test:unit": "pnpm test:engine:unit && pnpm test:web:unit && pnpm test:validation",
     "test:integration": "pnpm test:engine:integration && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web:integration && pnpm test:sync-stress && pnpm test:sync-runtime",
     "test:engine": "node scripts/run-node-tests.mjs packages/game-engine/test",
     "test:engine:unit": "node scripts/run-node-tests.mjs packages/game-engine/test/unit",
@@ -57,7 +57,13 @@
     "deploy:api": "pnpm --dir apps/api exec wrangler deploy --config wrangler.toml",
     "deploy:web": "pnpm --dir apps/web exec wrangler pages deploy . --project-name ${CLOUDFLARE_PAGES_PROJECT:-righelt}",
     "deploy:prod": "pnpm deploy:api && pnpm deploy:web",
-    "test:sync-stress": "node scripts/run-node-tests.mjs packages/api-handler/test-stress"
+    "test:sync-stress": "node scripts/run-node-tests.mjs packages/api-handler/test-stress",
+    "validate:local": "node scripts/validation/cli.mjs local",
+    "validate:integrated": "node scripts/validation/cli.mjs integrated",
+    "validate:report": "node scripts/validation/cli.mjs report",
+    "validate:publish": "node scripts/validation/cli.mjs publish",
+    "test:validation": "node --test scripts/validation/test/*.test.mjs",
+    "test:responsive": "playwright test --config playwright.validation.config.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.1",
