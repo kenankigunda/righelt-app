@@ -75,6 +75,7 @@ export async function proveResultsRematch({ page, info, root }) {
     assert.equal(requests, 1, 'One rematch confirmation must issue exactly one creation');
     const confirmed = await request(page, `/api/shell/games/${encodeURIComponent(fresh.id)}`);
     assert.equal(confirmed.status, 200); assertFriendRematch(confirmed.body.game, id, created.accountId);
+    await page.getByTestId('game-board').scrollIntoViewIfNeeded();
     await proof(page, info, 'friend-rematch-created', page.getByTestId('game-board'));
   } finally { page.off('request', observesCreate); }
 }

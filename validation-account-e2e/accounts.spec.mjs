@@ -166,6 +166,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
     expect(denied.status).toBeGreaterThanOrEqual(400);expect(denied.body.error).toBe('legacy_read_only');
     await proveLegacyMutationDenied({browser,legacy,oldGame});
     expect(await count(page)).toBe(legacy.count);
+    await page.getByTestId('game-board').scrollIntoViewIfNeeded();
     await proof(page,info,'legacy-history-preserved-no-account-takeover',page.getByTestId('game-board'));
   }
   if(process.env.RIGHELT_CONTINUITY_FILE){
@@ -198,6 +199,7 @@ test(RETAINED_ACCOUNT_WORKFLOW,async({browser},info)=>{
     const retained=await gamePayload(page);expect(retained.ownershipMode).toBe('account_v1');expect(retained.myRoles.slice().sort()).toEqual(['Player 1','Player 2']);
     const action=retained.legalActions.find(x=>x.from&&x.to);expect(action).toBeTruthy();await submitPlayableAction(page,action,info);
     await page.reload();await expect.poll(()=>count(page)).toBe(prior.historyCount+1);
+    await page.getByTestId('game-board').scrollIntoViewIfNeeded();
     await fits(page,page.getByTestId('game-board'));await proof(page,info,'retained-account-upgrade',page.getByTestId('game-board'));
     await accountOpen(page);await dialog(page).getByRole('button',{name:'Sign out',exact:true}).click();
     await login(page,prior.username,prior.password);expect((await session(page)).account.id).toBe(prior.account.id);
