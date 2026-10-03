@@ -156,6 +156,7 @@ export const createFakeD1 = () => {
         if (
           normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq FROM live_games WHERE game_id = ?1") ||
           normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision FROM live_games WHERE game_id = ?1") ||
+          normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision, ownership_mode FROM live_games WHERE game_id = ?1") ||
           normalized.includes("SELECT state_json, event_seq FROM live_games WHERE game_id = ?1")
         ) {
           selectGameByIdCount += 1;

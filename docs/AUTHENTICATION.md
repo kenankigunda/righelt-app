@@ -4,7 +4,7 @@ T-108 adds first-party username/password accounts with a recovery code and no em
 
 ## Rollout boundary
 
-Credential endpoints are disabled unless `AUTH_ENABLED` is exactly `true`. This stage does not enable accounts in the deployed application or replace game authorization. Do not enable it in production until the game, client and cutover stages of T-108 are complete. The synthetic hashing experiment has partial deployed measurements; its missing resource evidence remains recorded separately in `tools/t108-feasibility/evidence/RESULTS.md`.
+Credential endpoints are disabled unless `AUTH_ENABLED` is exactly `true`. Account-mode server authorization is implemented behind the same flag. This does not enable accounts in the deployed application. Do not enable it in production until the client and cutover stages of T-108 are complete. The synthetic hashing experiment has partial deployed measurements; its missing resource evidence remains recorded separately in `tools/t108-feasibility/evidence/RESULTS.md`.
 
 ## Runtime configuration
 
@@ -33,10 +33,20 @@ Recovery preparation lasts ten minutes and does not change credentials. Acknowle
 
 An ordinary password change requires the current password, preserves the recovery code, and replaces sessions. Password-authenticated recovery-code replacement activates only on acknowledgment and preserves existing sessions. Failed credential transitions preserve the prior session and recovery flow.
 
+## Game authorization
+
+Account-mode game mutations additionally require `X-Righelt-Auth-Version: 1`. HTTP and socket actors come from the session cookie; supplied actor identities must match. `identity_mismatch` reports a rejected identity claim. An immutable T-114 command includes its originating `authContextId` in the fingerprint. Fresh same-account reconciliation can return an existing old-context outcome, but cannot execute an unknown command from that retired context.
+
+Migration `0012_game_account_authority.sql` gives existing games explicit `legacy_guest` ownership. New account-mode games use `account_v1`; the database prevents changing that ownership version. Account-owned games fail closed if the feature flag is subsequently disabled. This flag is not a rollback mechanism for restoring guest writers.
+
+Game writes check session validity in the same D1 transaction as state, events, invitations and receipts. Personalized socket output requires a fresh primary read. Durable revocation notifications prompt socket rechecks, while authorization remains correct if a notification is missed. See [the route audit](AUTHORIZATION_AUDIT.md) for the complete surface inventory.
+
 ## Validation and maintenance
 
 `packages/shared-types/data/README.md` records the pinned common-password source and license. Regenerate its runtime JSON with `node scripts/generate-auth-password-blocklist.mjs`; tests compare it to the vendored text. No network download occurs during authentication.
 
-Run `pnpm typecheck` and `pnpm test:api-handler` for credential changes. The suite includes isolated request-control tests, real local D1 transaction and concurrency tests, and private hashing-service runtime tests. Local tests do not satisfy the outstanding deployed resource measurements or physical-device acceptance.
+Run `pnpm typecheck` and `pnpm test:api-handler` for credential changes. The suite includes isolated request-control tests, real local D1 transaction and concurrency tests, and private hashing-service runtime tests. Run `pnpm test:sync-runtime` for the actual local D1/socket authorization and persistence checks. Local tests do not satisfy the outstanding deployed resource measurements or physical-device acceptance.
 
 Persistent abuse counters are checked before hashing. Expired counter rows are removed in bounded batches during admission. Challenges never bypass hard limits. Unavailable hashing or challenge services return a temporary failure without weakening verification.
+
+The pinned local runtime delays some HTTP-triggered socket close handshakes by approximately ten seconds, including over native TCP. Tests separately assert immediate server retirement/no protected output and eventual client closure. Explicit close-handshake echoing did not remove the measured delay; no production timeout was increased. Attachment reconstruction is tested locally, while actual deployed isolate hibernation and closure timing remain distinct acceptance checks.

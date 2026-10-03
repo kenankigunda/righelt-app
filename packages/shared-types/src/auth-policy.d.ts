@@ -12,3 +12,4 @@ export const SCRYPT_SALT_BYTES: number;
 export const HASH_MAX_WAITING: number;
 export const AUTH_REQUEST_HEADER: 'X-Righelt-Auth';
 export const SESSION_CONTEXT_HEADER: 'X-Righelt-Session';
+export const AUTH_PROTOCOL_HEADER: 'X-Righelt-Auth-Version';

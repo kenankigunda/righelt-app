@@ -1,3 +1,8 @@
+import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
+import { authActive, readGameAuthority, sanitizeGameResponse, authErrorResponse, deliverRevocations } from './auth-game';
+import { authenticatedActor } from './auth-handler';
+import { authCookie, readAuthCookie } from './auth-security';
+import { AuthProblem } from './auth-controls';
 import { handleAuthRequest, type AuthEnv } from './auth-handler';
 import type { ClientCommand, ServerEvent } from "../../shared-types/src";
 import { CACHE_NO_STORE } from "../../shared-types/src/http";
@@ -8,6 +13,8 @@ import type { D1DatabaseLike } from "./shell-live-db";
 export type { D1DatabaseLike } from "./shell-live-db";
 
 export type ApiEnv = {
+  AUTH_ENABLED?: string;
+  AUTH_ALLOWED_ORIGINS?: string;
   DB: D1DatabaseLike;
   GAME_ROOMS: {
     idFromName: (name: string) => { name?: string; toString?: () => string } | string;
@@ -38,17 +45,31 @@ const parseJsonBody = async (request: Request): Promise<Record<string, unknown>>
   }
 };
 
-export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<Response> => {
+const handleApiRequestInternal = async (request: Request, env: ApiEnv): Promise<Response> => {
   const url = new URL(request.url);
   const authResponse = await handleAuthRequest(request, env as unknown as AuthEnv);
-  if (authResponse) return authResponse;
+  if (authResponse) {
+    if (authActive(env)) { try { await deliverRevocations(env as unknown as Parameters<typeof deliverRevocations>[0]); } catch {} }
+    return authResponse;
+  }
   const websocketUpgrade = await handleLiveGameWebSocketUpgrade(request, env);
   if (websocketUpgrade) {
     return websocketUpgrade;
   }
+  const initialAuthority = authActive(env) ? await readGameAuthority(request, env) : null;
   const liveResponse = await handleLiveGameRequest(request, env);
   if (liveResponse?.handled) {
-    return json(liveResponse.body, liveResponse.status, liveResponse.cacheControl);
+    const authority = authActive(env) ? await readGameAuthority(request, env) : null;
+    if (initialAuthority && (!authority || authority.contextId !== initialAuthority.contextId)) throw new AuthProblem("session_changed", 409);
+    const accountGame = (liveResponse.body.game as { ownershipMode?: string } | undefined)?.ownershipMode === "account_v1";
+    const body = authActive(env) || accountGame ? sanitizeGameResponse(liveResponse.body, authority) : liveResponse.body;
+    if (authActive(env)) body.authProtocolVersion = AUTH_PROTOCOL_VERSION;
+    const response = json(body, liveResponse.status, liveResponse.cacheControl);
+    if (authActive(env) && request.method === 'POST' && response.status < 400) {
+      const actor = await authenticatedActor(request, env as unknown as AuthEnv), token = readAuthCookie(request);
+      if (actor && token) response.headers.append('Set-Cookie', authCookie(token, 'session', Math.max(0, Math.floor((actor.expires_at - actor.read_at) / 1000))));
+    }
+    return response;
   }
 
   if (request.method === "GET" && url.pathname === "/api/health") {
@@ -80,4 +101,8 @@ export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<R
   return jsonNoStore({ ok: false, error: "not_found" }, 404);
 };
 
+export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<Response> => {
+  try { return await handleApiRequestInternal(request, env); }
+  catch (error) { if (authActive(env) || error instanceof AuthProblem) return authErrorResponse(error); throw error; }
+};
 export { GameRoomDO };

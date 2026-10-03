@@ -1,7 +1,7 @@
 import { PASSWORD_MIN_CODE_POINTS, PASSWORD_MAX_CODE_POINTS } from './auth-policy.js';
 export * from './auth-policy.js';
 
-export type AuthErrorCode = 'invalid_input' | 'invalid_credentials' | 'username_unavailable' | 'recovery_acknowledgment_required' | 'stale_operation' | 'session_changed' | 'upgrade_required' | 'legacy_read_only' | 'rate_limited' | 'temporarily_unavailable';
+export type AuthErrorCode = 'invalid_input' | 'invalid_credentials' | 'username_unavailable' | 'recovery_acknowledgment_required' | 'stale_operation' | 'session_changed' | 'identity_mismatch' | 'upgrade_required' | 'legacy_read_only' | 'rate_limited' | 'temporarily_unavailable';
 export type AccountPreferences = { tutorial: 'new' | 'completed' | 'skipped'; view: 'focused' | 'explanatory' };
 export type PublicProfile = { username: string; displayName: string; joinedMonth: string };
 export type AuthenticatedAccount = PublicProfile & { id: string; preferences: AccountPreferences };
