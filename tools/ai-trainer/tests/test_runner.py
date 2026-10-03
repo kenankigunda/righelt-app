@@ -74,6 +74,33 @@ class RunnerTest(unittest.TestCase):
     def test_expired_engine_bound_cannot_launch(self):
         with self.assertRaises(TimeoutError): engine_command({'command': 'fingerprint'}, timeout=0)
 
+    def test_handoff_saves_recoverable_checkpoint_without_resetting_deadline(self):
+        torch.set_num_threads(1)
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Runner.__new__(Runner)
+            runner.device = torch.device('cpu'); runner.directory = Path(directory)
+            runner.started = time.monotonic(); runner.deadline = runner.started + 600
+            runner.runtime = {'deadlineMonotonic': runner.deadline}
+            runner.manifest_hash = 'test'
+            runner.model = PolicyValueNet(); runner.optimizer = make_optimizer(runner.model)
+            runner.buffer = ReplayBuffer(); runner.state = default_state()
+            runner.generate_round = Mock(side_effect=AssertionError('handoff must precede generation'))
+            atomic_json(runner.directory/'runtime.json', runner.runtime)
+            marker = {'schema': 1, 'id': 'initial-validation', 'reason': 'validation', 'manifestSha256': 'test'}
+            atomic_json(runner.directory/'handoff-request.json', marker)
+            runner.run()
+            checkpoint = Path(json.loads((runner.directory/'latest.json').read_text())['checkpoint'])
+            runner.state = default_state(); runner.restore(checkpoint)
+            self.assertEqual(runner.state['lastHandoffId'], marker['id'])
+            self.assertIsNone(runner.handoff_requested())
+            self.assertEqual(json.loads((runner.directory/'runtime.json').read_text()), runner.runtime)
+            self.assertEqual(json.loads((runner.directory/'runner-result.json').read_text())['reason'], 'validation-handoff')
+            events = [json.loads(line) for line in (runner.directory/'runner-events.jsonl').read_text().splitlines()]
+            self.assertEqual(next(event for event in events if event['type']=='checkpoint-handoff')['deadlineMonotonic'], runner.deadline)
+            marker['manifestSha256'] = 'another-run'
+            atomic_json(runner.directory/'handoff-request.json', marker)
+            with self.assertRaises(ValueError): runner.handoff_requested()
+
     def test_exact_replay_checks_truncation_cause_and_detects_tampering(self):
         script = '''
 import {createInitialState,resolveToStability,deterministicStateHash} from './packages/game-engine/src/index.ts';
