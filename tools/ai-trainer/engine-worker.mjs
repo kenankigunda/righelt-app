@@ -1,5 +1,6 @@
 // JSON-lines protocol. Parent owns inference, resource allocation and hard process termination.
 import { createInterface } from 'node:readline';
+import { searchRecovery } from './search-recovery.mjs';
 import { createHash } from 'node:crypto';
 import { createInitialState, deterministicStateHash, normalizeState, resolveToStability } from '../../packages/game-engine/src/index.ts';
 import { encodeState, legalActionMap, transition, selectMove, seededRandom, experimentConfig } from '../../packages/computer-player/src/index.ts';
@@ -159,10 +160,9 @@ async function main() {
         if (reply.type !== 'evaluation' || reply.id !== id) throw new Error('Inference response mismatch');
         return reply;
       });
-      if (result.status !== 'ready') {
-        if (result.stopped === 'deadline') throw new BudgetExpired();
-        throw new Error(`Generation recovery: ${result.reason}`);
-      }
+      const unfinished=searchRecovery(result,{schema:1,id:job.id,familyId:job.familyId,partition:job.partition,
+        initialState,decisions,finalHash:deterministicStateHash(state),outcome:state.outcome});
+      if(unfinished){send(unfinished);return;}
       const beforeHash = deterministicStateHash(state), controller = state.sideToMove;
       const encoded = Array.from(encodeState(state)), legal = [...legalActionMap(state).keys()];
       state = transition(state, result.action);

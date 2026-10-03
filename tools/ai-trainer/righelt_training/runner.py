@@ -1,6 +1,10 @@
 """Budgeted local experiment child. Supervisor owns permission and hard limits."""
 from .budget import effective_deadline
 import argparse
+from contextlib import nullcontext
+from .recovery import RecoveryLedger
+from .runner_monitor import RunnerMonitor
+from .manifest import active_manifest
 import gzip
 import hashlib
 import json
@@ -64,17 +68,19 @@ def verify_game(game, deadline):
 def default_state():
     return {'schema': 1, 'round': 0, 'updates': 0, 'nonzeroUpdates': 0, 'nextJob': 0,
             'phase': 'generation', 'trainingBatch': 0, 'checkpointSequence': 0,
-            'generationLaunched': 0, 'generationStartedMonotonic': None,
+            'generationLaunched': 0, 'generationStartedMonotonic': None,'generationElapsedSeconds':0.,
             'archives': [], 'completedGames': 0, 'terminalGames': 0, 'truncatedGames': 0,
             'unfinishedGames': 0, 'unavailableStarts': 0, 'curriculumSwitched': False,
             'replayChecks': 0, 'generationKinds': {'normal': 0, 'simple': 0, 'continuation': 0}}
 
 
 class Runner:
-    def __init__(self, directory, seed, stage, resume=None):
+    def __init__(self, directory, seed, stage, resume=None, monitor=None):
         self.directory = Path(directory)
+        self.monitor=monitor
+        self.ledger=RecoveryLedger(self.directory.parent)
         self.runtime = read_json(self.directory / 'runtime.json')
-        self.manifest = read_json(self.directory / 'manifest.json')
+        self.manifest = active_manifest(self.directory)
         if (self.runtime['seed'], self.runtime['stage']) != (seed, stage):
             raise ValueError('runner identity differs from supervisor')
         self.manifest_hash = self.runtime['manifestSha256']
@@ -109,19 +115,32 @@ class Runner:
         self.model.eval()
         self.report_device_memory()
 
+    def operation(self,name,seconds):
+        monitor=getattr(self,'monitor',None)
+        return monitor.operation(name,seconds) if monitor else nullcontext()
+
     def report_device_memory(self):
+        if getattr(self,'monitor',None):
+            self.monitor.check();return
         amount=torch.mps.driver_allocated_memory() if self.device.type=='mps' else 0
         atomic_json(self.directory/'device-memory.json', {'schema':1,'pid':os.getpid(),
                     'observedAt':time.time(),'driverBytes':amount})
 
     def restore(self, checkpoint):
+        with self.operation("restore-and-replay",300):return self._restore(checkpoint)
+
+    def _restore(self, checkpoint):
         parent_manifest = self.runtime.get('parentCheckpointManifestSha256', self.manifest_hash)
-        data = load_checkpoint(checkpoint, self.model, self.optimizer, manifest_sha256=parent_manifest)
+        data = load_checkpoint(checkpoint, self.model, self.optimizer, manifest_sha256=parent_manifest, require_recovery=True)
         companion = read_json(checkpoint.with_suffix('.runner.json'))
         if companion['checkpointSha256'] != hashlib.sha256(checkpoint.read_bytes()).hexdigest():
             raise ValueError('runner checkpoint mismatch')
         source_directory = checkpoint.parent.parent
-        self.state = companion['state']
+        self.state = data['recovery']['state']
+        if self.state['generationStartedMonotonic'] is not None:
+            elapsed=self.state['generationElapsedSeconds']
+            if not __import__('math').isfinite(elapsed) or elapsed<0:raise ValueError('invalid generation elapsed time')
+            self.state['generationStartedMonotonic']=time.monotonic()-elapsed
         if source_directory.resolve() != self.directory.resolve():
             # Overnight inherits optimizer, replay and random states, but gets a new
             # stage budget/counters and game IDs; elapsed time is never inherited.
@@ -158,11 +177,16 @@ class Runner:
             stream.write(json.dumps({'type': kind, 'monotonic': time.monotonic(), **fields}, allow_nan=False) + '\n')
 
     def checkpoint(self):
-        self.state['checkpointSequence'] += 1
+        with self.operation("checkpoint",120):return self._checkpoint()
+
+    def _checkpoint(self):
+        started=self.state['generationStartedMonotonic']
+        self.state['generationElapsedSeconds']=max(0,time.monotonic()-started) if started is not None else 0.
+        ledger=getattr(self,'ledger',None) or RecoveryLedger(self.directory)
+        self.state['checkpointSequence'] = ledger.checkpoint(self.state['checkpointSequence'])+1
         path = self.directory / 'checkpoints' / f"checkpoint-{self.state['checkpointSequence']:06d}.pt"
         digest = save_checkpoint(path, self.model, self.optimizer, round_index=self.state['round'],
-                                 updates=self.state['updates'], replay_ids=self.state['archives'], manifest_sha256=self.manifest_hash)
-        atomic_json(path.with_suffix('.runner.json'), {'schema': 1, 'checkpointSha256': digest, 'state': self.state})
+                                 updates=self.state['updates'], replay_ids=self.state['archives'], manifest_sha256=self.manifest_hash,recovery_state=self.state)
         atomic_json(self.directory / 'latest.json', {'checkpoint': str(path), 'sha256': digest, 'updates': self.state['updates']})
         self.model_version = digest
         self.last_checkpoint = time.monotonic()
@@ -175,6 +199,9 @@ class Runner:
             self.checkpoint()
 
     def infer(self, requests, deadline):
+        with self.operation("inference",30):return self._infer(requests,deadline)
+
+    def _infer(self, requests, deadline):
         if deadline - time.monotonic() < self.inference_bound:
             return False
         started = time.monotonic()
@@ -200,7 +227,8 @@ class Runner:
         verification_deadline = min(round_deadline, self.deadline - 10,
                                     self.last_checkpoint + CHECKPOINT_INTERVAL - 10)
         try:
-            verify_game(game, verification_deadline)
+            with self.operation("exact-replay",max(.1,verification_deadline-time.monotonic())):
+                verify_game(game, verification_deadline)
         except (TimeoutError, subprocess.TimeoutExpired):
             # Keep the complete compressed record for audit, but never sample or
             # count a game whose exact replay could not finish within its bound.
@@ -245,9 +273,11 @@ class Runner:
                     remaining = round_deadline - time.monotonic()
                     if remaining < 10:
                         break
-                    job = self.curriculum.job(self.state['nextJob'], self.model_version)
+                    ledger=getattr(self,'ledger',None) or RecoveryLedger(self.directory)
+                    index=ledger.job(self.stage,getattr(self,'seed',self.curriculum.seed),self.state['nextJob'])
+                    job = self.curriculum.job(index, self.model_version)
                     job['id'] = f"{self.stage}-{job['id']}"
-                    self.state['nextJob'] += 1
+                    self.state['nextJob'] = index+1
                     self.state['generationLaunched'] += 1
                     # Persist consumed seeds before spawning so restart never reuses IDs.
                     self.checkpoint()
@@ -373,7 +403,13 @@ def main():
     args = parser.parse_args()
     pending=[]
     signal.signal(signal.SIGUSR1, lambda *_: pending.append(True))
-    runner = Runner(args.run_dir, args.seed, args.stage, args.resume)
+    monitor=RunnerMonitor(args.run_dir)
+    monitor.__enter__()
+    try:
+        with monitor.operation('initialization',360):
+            runner = Runner(args.run_dir, args.seed, args.stage, args.resume,monitor=monitor)
+    except BaseException:
+        monitor.__exit__(None,None,None);raise
     runner.checkpoint_requested=bool(pending)
     signal.signal(signal.SIGUSR1, lambda *_: setattr(runner, 'checkpoint_requested', True))
     try:
@@ -382,6 +418,7 @@ def main():
         runner.event('failure', error=str(error))
         atomic_json(runner.directory / 'runner-result.json', {'status': 'failed', 'error': str(error), 'state': runner.state})
         raise
+    finally:monitor.__exit__(None,None,None)
 
 if __name__ == '__main__':
     main()
