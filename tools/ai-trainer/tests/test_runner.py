@@ -176,7 +176,7 @@ console.log(JSON.stringify({initialState,decisions,finalHash:deterministicStateH
                 self.assertGreater(len(diagnostic['state']['pieces']),0)
             finally:selector.close();stop_worker(process)
 
-    def test_continuation_warmup_is_bounded_and_records_state(self):
+    def test_continuation_warmup_has_separate_engine_budget_and_records_state(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'warmup.json'
             job=next(Curriculum(19).job(i,'test') for i in range(100) if Curriculum(19).job(i,'test')['kind']=='continuation')
@@ -185,7 +185,9 @@ console.log(JSON.stringify({initialState,decisions,finalHash:deterministicStateH
             process=subprocess.run(['node','--import','tsx','--input-type=module','-e',script],cwd=ROOT,input=json.dumps(job)+'\n',capture_output=True,text=True,timeout=7)
             self.assertEqual(process.returncode,0,process.stderr)
             result=json.loads(process.stdout)
-            self.assertEqual(result['type'],'unfinished');self.assertEqual(result['reason'],'node-limit')
+            self.assertEqual(result['type'],'prepared')
+            self.assertGreater(len(result['warmupActions']),0)
+            self.assertIn('pieces',result['initialState'])
             self.assertEqual(json.loads(path.read_text())['phase'],'continuation-warmup')
 
     def test_generation_protocol_respects_persisted_round_count(self):

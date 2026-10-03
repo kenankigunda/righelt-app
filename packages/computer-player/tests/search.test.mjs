@@ -153,14 +153,16 @@ test("soft deadline returns only earlier completed model evaluations", async () 
   assert.equal(result.actions.filter(item => item.visits > 0).length, 1);
 });
 
-test("recursive legal enumeration consumes the shared node bound and never publishes a partial root", async () => {
+test("internal legal enumeration has its own allowance without raising the search node ceiling", async () => {
   const { buildContinuationSuccessorState } = await import('../../game-engine/src/index.ts');
   const { commander, makeState, unit } = await import('../../game-engine/test/helpers/state-builders.mjs');
   const raw=makeState({pieces:[commander('C1','P1',3,6),commander('C2','P2',6,3),
     unit('A','P1',4,4),unit('B','P1',5,5),unit('E0','P2',0,4),unit('E1','P2',9,4),unit('E2','P2',4,2)]});
   const state=buildContinuationSuccessorState(raw,{type:'rush',actorId:'A',from:{row:4,col:4},to:{row:4,col:3}});
-  const result=await selectMove({state,seed:107,maxNodes:2},async()=>{throw new Error('partial legality must not reach model');});
+  const result=await selectMove({state,seed:107,maxNodes:2},uniform);
   assert.equal(result.status,'recovery');assert.equal(result.stopped,'node-limit');assert.equal(result.nodes,2);
-  assert.deepEqual(result.actions,[]);
+  assert.ok(result.actions.length>0);
+  assert.ok(result.engineBudget.peakExpansions>result.nodes);
+  assert.equal(result.engineBudget.perOperationLimit,16384);
   assert.ok(legalActionMap(state).size>0);
 });

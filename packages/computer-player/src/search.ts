@@ -1,4 +1,4 @@
-import { withEngineComputationGuard } from "../../game-engine/src/index";
+import { withEngineComputationGuard, MAX_ENGINE_OPERATION_EXPANSIONS } from "../../game-engine/src/index";
 import type { Action, GameState } from "../../shared-types/src/engine";
 import { encodeState, experimentConfig as config, legalActionMap } from "./representation";
 import { terminalValue, transition } from "./transition";
@@ -18,15 +18,16 @@ export type ActionReport = {
   immediate: "win" | "eligible" | "losing" | "incomplete";
   tactical: TacticalStatus;
 };
+type EngineBudget = { perOperationLimit: number; peakExpansions: number; totalExpansions: number; limitReached: boolean };
 export type SearchResult = {
   status: "ready"; action: Action; actionIndex: number; value: number;
   policy: { index: number; probability: number }[];
   actions: ActionReport[]; seed: number; nodes: number; simulations: number;
-  elapsedMs: number; stopped: "complete" | "deadline" | "node-limit";
+  elapsedMs: number; engineBudget: EngineBudget; stopped: "complete" | "deadline" | "node-limit";
   reason: "immediate-win" | "forced-win" | "search" | "unavoidable-loss";
 } | {
   status: "recovery"; reason: "terminal" | "no-legal-actions" | "incomplete-safety" | "no-completed-search";
-  actions: ActionReport[]; nodes: number; simulations: number; elapsedMs: number;
+  actions: ActionReport[]; nodes: number; simulations: number; elapsedMs: number; engineBudget: EngineBudget;
   stopped: "complete" | "deadline" | "node-limit";
 };
 
@@ -60,9 +61,11 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
       !Number.isSafeInteger(maxNodes) || maxNodes < 1 || maxNodes > config.search.maxNodes ||
       !Number.isFinite(temperature) || temperature < 0 || !Number.isFinite(valueGap) || valueGap < 0 ||
       (request.deadlineMs !== undefined && !Number.isFinite(request.deadlineMs))) throw new Error("Invalid search limits");
-  // One shared ceiling covers search nodes and synchronous continuation work;
-  // recursive legality cannot allocate an unbounded graph inside a single node.
+  // Actual PUCT/tree nodes retain the approved 2,048 ceiling. Internal rule
+  // enumeration has its own finite per-call allocation bound and same deadline.
   let nodes = 1;
+  const engineBudget: EngineBudget = { perOperationLimit: MAX_ENGINE_OPERATION_EXPANSIONS,
+    peakExpansions: 0, totalExpansions: 0, limitReached: false };
   let completed = 0;
   let stopped: "complete" | "deadline" | "node-limit" = "complete";
   const root: Node = { state: request.state, visits: 0, sum: 0 };
@@ -74,13 +77,19 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
       stopped = "deadline"; throw new SoftStop();
     }
   };
-  const engine = <T>(operation: () => T): T => withEngineComputationGuard(expansion => {
-    check();
-    if (expansion) {
-      if (nodes >= maxNodes) { stopped = "node-limit"; throw new SoftStop(); }
-      nodes++;
-    }
-  }, operation);
+  const engine = <T>(operation: () => T): T => {
+    let expansions = 0;
+    return withEngineComputationGuard(expansion => {
+      check();
+      if (expansion) {
+        if (expansions >= engineBudget.perOperationLimit) {
+          engineBudget.limitReached = true; stopped = "node-limit"; throw new SoftStop();
+        }
+        expansions++; engineBudget.totalExpansions++;
+        engineBudget.peakExpansions = Math.max(engineBudget.peakExpansions, expansions);
+      }
+    }, operation);
+  };
   const edges = (node: Node) => {
     check();
     if (!node.edges) node.edges = [...engine(() => legalActionMap(node.state))].map(([index, action]) => ({ index, action, prior: 0, visits: 0, sum: 0 }));
@@ -127,7 +136,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     }));
   }
   const recovery = (reason: Extract<SearchResult, { status: "recovery" }>["reason"]): SearchResult => ({
-    status: "recovery", reason, actions: reports(), nodes, simulations: completed, elapsedMs: performance.now() - started, stopped,
+    status: "recovery", reason, actions: reports(), nodes, simulations: completed, elapsedMs: performance.now() - started, engineBudget, stopped,
   });
   const sample = (choices: Edge[], score: (edge: Edge) => number): Edge => {
     const scores = choices.map(score);
@@ -148,7 +157,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
       value: chosen.visits ? chosen.sum / chosen.visits : root.value!,
       policy: candidates.map(edge => ({ index: edge.index, probability: total ? edge.visits / total : Number(edge === chosen) })),
       actions: reports(), seed: request.seed, nodes, simulations: completed,
-      elapsedMs: performance.now() - started, stopped, reason,
+      elapsedMs: performance.now() - started, engineBudget, stopped, reason,
     };
   };
   const rootSign = mover(root.state);
