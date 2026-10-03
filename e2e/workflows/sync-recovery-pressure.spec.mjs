@@ -87,7 +87,7 @@ test('E01 lost committed response and socket receipt converge automatically',asy
   await move(p.pages[0],p.gameId);
   await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Checking your move');
   p.faults[0].receive=false;p.faults[0].loseReply=false;const start=Date.now();
-  await converged(p.pages);await evidence(info,'lost-response',start,p.faults);
+  await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,'lost-response',start,p.faults);
   const ids=p.faults[0].commands.map(c=>c.clientCommandId);expect(new Set(ids).size).toBe(1);
  }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
 });
@@ -125,7 +125,7 @@ test('E04 reload unresolved journal then visibility resume preserves original ID
    Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'));
    Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'));
   });
-  await converged(p.pages);await evidence(info,'reload-resume',start,p.faults);
+  await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,'reload-resume',start,p.faults);
   expect(p.faults[0].commands.every(c=>c.clientCommandId===id)).toBe(true);
  }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
 });
@@ -139,6 +139,7 @@ test('E06 same identity tabs reconcile one journal without duplicating a committ
   await twin.reload();
   p.faults[0].receive=false;p.faults[0].loseReply=false;const start=Date.now();
   await converged(p.pages);await expect.poll(async()=>JSON.stringify(await digest(twin))).toBe(JSON.stringify(await digest(p.pages[0])));
+  expect((await digest(p.pages[0])).history).toHaveLength(1);
   await evidence(info,'same-identity-tabs',start,[...p.faults,tf]);
   expect(new Set([...p.faults[0].commands,...tf.commands].map(c=>c.clientCommandId)).size).toBe(1);
  }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
@@ -153,7 +154,7 @@ for(const phase of ['before','after'])test(`E03 actual Worker restart ${phase} c
   await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Checking');
   const response=await request.post(`http://127.0.0.1:${Number(new URL(baseURL).port)+100}/restart`);expect(response.ok()).toBe(true);
   p.faults[0].receive=false;p.faults[0].loseReply=false;p.faults[0].holdApply=false;const start=Date.now();
-  await converged(p.pages);await evidence(info,`worker-restart-${phase}-commit`,start,p.faults);
+  await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,`worker-restart-${phase}-commit`,start,p.faults);
  }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
 });
 
