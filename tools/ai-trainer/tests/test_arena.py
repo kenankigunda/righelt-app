@@ -168,4 +168,19 @@ class ArenaTest(unittest.TestCase):
             with patch('righelt_training.arena.engine_command',side_effect=[{'type':'opening-verified','initial':False,'fingerprint':str(i)} for i in range(50)]):
                 with self.assertRaises(ValueError):freeze_plan(Path(d)/'plan.json',plan)
 
+    def test_inference_operation_deadline_is_independent_of_heartbeat(self):
+        import torch
+        from righelt_training.arena import infer
+        from righelt_training.runner_monitor import RunnerMonitor
+        with tempfile.TemporaryDirectory() as d:
+            now=[0.]
+            monitor=RunnerMonitor(d,clock=lambda:now[0],query=lambda:0,expire=lambda:None)
+            def stalled_model(x):
+                status=json.loads((Path(d)/'operation-status.json').read_text())
+                self.assertEqual(status['name'],'arena-inference')
+                now[0]=31.;monitor.publish()
+                return torch.zeros(1,2801),torch.zeros(1,1)
+            with self.assertRaises(TimeoutError):infer(stalled_model,[0.]*4600,'cpu',monitor)
+            self.assertEqual(json.loads((Path(d)/'operation-status.json').read_text())['status'],'timed-out')
+
 if __name__=='__main__':unittest.main()

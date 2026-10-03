@@ -1,6 +1,7 @@
 """Paired model evaluation. Completed games only; no old search opponent."""
 from .budget import effective_deadline
 from .runner_monitor import RunnerMonitor
+from contextlib import nullcontext
 import argparse
 import hashlib
 import json
@@ -107,7 +108,16 @@ def open_plan(path,*,experiment_root=None):
     return plan,digest
 
 
-def play_game(job,models,deadline,device,*,allocation=lambda:{'paused':False,'workers':1},checkpoint=lambda:None):
+def infer(model,encoded,device,monitor=None):
+    # Include device transfers and synchronization inside the same hard bound.
+    with monitor.operation('arena-inference',30) if monitor else nullcontext():
+        x=torch.tensor(encoded,dtype=torch.float32,device=device).reshape(1,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
+        with torch.inference_mode():policy,value=model(x)
+        if not torch.isfinite(policy).all() or not torch.isfinite(value).all():raise ValueError('nonfinite arena inference')
+        return policy[0].cpu().tolist(),value[0].item()
+
+
+def play_game(job,models,deadline,device,*,allocation=lambda:{'paused':False,'workers':1},checkpoint=lambda:None,monitor=None):
     remaining=deadline-time.monotonic()
     if remaining<20:return {'status':'unfinished','reason':'budget'}
     game_deadline=min(deadline-10,time.monotonic()+600)
@@ -132,10 +142,8 @@ def play_game(job,models,deadline,device,*,allocation=lambda:{'paused':False,'wo
                         if game_deadline-time.monotonic()<30:return {'status':'unfinished','reason':'inference-budget'}
                         if message.get('modelSeat') not in models:raise ValueError('invalid model seat')
                         model=models[message['modelSeat']]
-                        x=torch.tensor(message['input'],dtype=torch.float32,device=device).reshape(1,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
-                        with torch.inference_mode():policy,value=model(x)
-                        if not torch.isfinite(policy).all() or not torch.isfinite(value).all():raise ValueError('nonfinite arena inference')
-                        response={'type':'evaluation','id':message['id'],'policyLogits':policy[0].cpu().tolist(),'value':value[0].item()}
+                        policy,value=infer(model,message['input'],device,monitor)
+                        response={'type':'evaluation','id':message['id'],'policyLogits':policy,'value':value}
                         process.stdin.write((json.dumps(response,allow_nan=False)+'\n').encode());process.stdin.flush()
                     elif message['type']=='game':
                         checkpoint()
@@ -253,7 +261,9 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
                 try:verify_game(game,min(deadline-10,clock()+20))
                 except (TimeoutError,subprocess.TimeoutExpired):result={'status':'unfinished','reason':'verification-budget'}
                 else:result={'status':'completed','game':game}
-            else:result=player(job,by_seat,deadline,device,allocation=allocation,checkpoint=heartbeat)
+            else:
+                with monitor.operation('arena-game',min(610,deadline-clock())) if monitor else nullcontext():
+                    result=player(job,by_seat,deadline,device,allocation=allocation,checkpoint=heartbeat,monitor=monitor)
             attempt.update(status=result['status'],finishedMonotonic=clock(),reason=result.get('reason'))
             if result['status']!='completed':reason=result.get('reason','unfinished');persist();break
             game=result['game']
