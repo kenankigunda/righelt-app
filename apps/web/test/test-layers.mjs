@@ -3,6 +3,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "api-proxy.test.mjs",
   "board-adapter-contract.test.mjs",
   "bootstrap.test.mjs",
+  "brand.test.mjs",
   "client-move-generation.test.mjs",
   "deploy-config.test.mjs",
   "engine-board-adapter.test.mjs",

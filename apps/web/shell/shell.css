@@ -1,9 +1,4 @@
 :root {
-  --bg: #f4f1e8;
-  --ink: #1d2d35;
-  --line: #d2ccb9;
-  --muted: #5b6a6f;
-  --accent: #0d7a5a;
   --warning: #a5630f;
   --danger: #b6432f;
   --info: #1a5ca1;
@@ -25,16 +20,12 @@
   --shell-mobile-tabbar-height: calc(4.4rem + env(safe-area-inset-bottom, 0px));
   --shell-mobile-panel-transition: 220ms cubic-bezier(0.22, 0.72, 0.2, 1);
   /* Shared with flyouts / cards so the narrow header menu feels like the same chrome. */
-  --shell-elevated-surface: linear-gradient(180deg, #fffefb 0%, #f8f3e8 100%);
-  --shell-elevated-border: #ddd5c4;
-  --shell-elevated-shadow: 0 18px 44px rgba(29, 45, 53, 0.12);
+  --shell-elevated-surface: var(--surface-raised);
+  --shell-elevated-border: var(--divider);
+  --shell-elevated-shadow: var(--shadow-raised);
 }
 
 body {
-  background:
-    radial-gradient(circle at 12% 8%, #fdf6e5 0%, transparent 30%),
-    radial-gradient(circle at 88% 92%, #e8eef9 0%, transparent 36%),
-    var(--bg);
   color: var(--ink);
 }
 
@@ -225,6 +216,10 @@ body {
 }
 
 .shell-header-title-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  width: min(100%, 330px);
   color: inherit;
   text-decoration: none;
   border-radius: 8px;
@@ -235,8 +230,9 @@ body {
 }
 
 .shell-header-title-link:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(13, 122, 90, 0.18);
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--paper);
 }
 
 .shell-header-main,
@@ -404,7 +400,8 @@ button,
   appearance: none;
   -webkit-appearance: none;
   border: 1px solid transparent;
-  background: var(--accent);
+  background: var(--action-color);
+  min-height: 44px;
   color: #fff;
   border-radius: 8px;
   padding: 0.55rem 0.8rem;
@@ -437,7 +434,7 @@ button.secondary,
 
 [data-hover-capability="hover"] :is(.shell-header, .shell-flyout, .panel:not([data-shell-panel="board"])) button:not(.secondary):not(.warn):not(.danger):not(:disabled):hover,
 [data-hover-capability="hover"] :is(.shell-header, .shell-flyout, .panel:not([data-shell-panel="board"])) .button-link:not(.secondary):not([aria-disabled="true"]):hover {
-  background: #0b6f52;
+  background: var(--action-hover);
   border-color: rgba(255, 255, 255, 0.72);
   box-shadow:
     0 1px 0 rgba(9, 55, 41, 0.26),
@@ -462,8 +459,8 @@ button.secondary[aria-pressed="true"],
 .button-link.secondary[aria-pressed="true"] {
   border-color: var(--accent);
   box-shadow:
-    0 0 0 2px rgba(13, 122, 90, 0.16),
-    inset 0 0 0 1px rgba(13, 122, 90, 0.4);
+    0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent),
+    inset 0 0 0 1px var(--accent);
 }
 
 button.secondary.is-active,
@@ -486,8 +483,8 @@ button:disabled,
 .button-link[aria-disabled="true"] {
   background: #d7d2c6;
   border-color: #c3bcab;
-  color: #7c7568;
-  opacity: 0.6;
+  color: var(--text-primary);
+  opacity: 1;
   cursor: not-allowed;
   box-shadow: none;
   pointer-events: none;
@@ -496,7 +493,7 @@ button:disabled,
 button.secondary:disabled {
   background: #f1eee6;
   border-color: #d6d0c2;
-  color: #8a8375;
+  color: var(--text-secondary);
 }
 
 @keyframes shell-button-pulse {
@@ -683,8 +680,8 @@ button.button-pending,
   background: #fff;
   color: var(--ink);
   box-shadow:
-    0 0 0 2px rgba(13, 122, 90, 0.16),
-    inset 0 0 0 1px rgba(13, 122, 90, 0.4);
+    0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent),
+    inset 0 0 0 1px var(--accent);
 }
 
 /* Very small viewports: reclaim horizontal space for the main board (game + invite previews). */
@@ -731,7 +728,7 @@ button.button-pending,
 
 .small {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: var(--type-secondary);
 }
 
 .status-chip {
@@ -1243,11 +1240,11 @@ button.button-release-bounce,
 }
 
 .player-tone-p1 {
-  color: #c2452f;
+  color: var(--player-p1);
 }
 
 .player-tone-p2 {
-  color: #2d67c7;
+  color: var(--player-p2);
 }
 
 .player-tone-both {
@@ -1274,10 +1271,12 @@ button.button-release-bounce,
   display: grid;
   width: 100%;
   gap: 0.65rem;
-  border: 1px solid #ddd5c4;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #fffefb 0%, #f8f3e8 100%);
-  overflow: clip;
+  position: relative;
+  isolation: isolate;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
 }
 
 .mini-board-card-link-surface {
@@ -1300,7 +1299,7 @@ button.button-release-bounce,
 
 [data-hover-capability="hover"] .mini-board-card:hover {
   border-color: #c8bea8;
-  box-shadow: 0 10px 24px rgba(40, 54, 60, 0.08);
+  box-shadow: var(--shadow-raised);
 }
 
 .mini-board-card-link-surface.is-pressing {
@@ -2046,4 +2045,19 @@ textarea:focus-visible {
     width: calc(100vw - 3.5rem);
     max-width: calc(100vw - 3.5rem);
   }
+}
+
+/* Press state is independent of the animated wordmark and opponent turn. */
+button:not(.secondary):not(.warn):not(.danger):not(:disabled):active,
+.button-link:not(.secondary):not([aria-disabled="true"]):active { background: var(--action-pressed); }
+
+/* Clip the decorative layer only; the link's keyboard outline remains outside it. */
+.mini-board-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--surface-raised);
+  clip-path: polygon(var(--corner-cut) 0, 100% 0, 100% calc(100% - var(--corner-cut)), calc(100% - var(--corner-cut)) 100%, 0 100%, 0 var(--corner-cut));
 }

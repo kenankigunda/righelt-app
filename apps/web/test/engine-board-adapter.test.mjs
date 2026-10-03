@@ -1121,7 +1121,9 @@ test("project previews use a plus badge while move-style previews use lightweigh
   assert.match(adapterSource, /renderableTokens\.find\(\(child\) => child\.classList\.contains\("stacked-top"\)\) \?\?[\s\S]*renderableTokens\[0\]/s);
   assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*ghost\.classList\.add\("preview-created"\);\s*\}/s);
   assert.match(styleSource, /\.piece-token\.preview-created::after\s*\{[\s\S]*content:\s*"\+";[\s\S]*top:\s*-7px;[\s\S]*right:\s*-8px;[\s\S]*z-index:\s*3;/s);
-  assert.match(styleSource, /:root\s*\{[\s\S]*--player-p1:\s*#c2452f;[\s\S]*--player-p2:\s*#2d67c7;/s);
+  const tokenSource = readFileSync(join(testDir, "..", "design-tokens.css"), "utf8");
+  assert.match(tokenSource, /--player-p1: var\(--player-red\);/);
+  assert.match(tokenSource, /--player-p2: var\(--player-blue\);/);
   assert.match(styleSource, /\.piece-token\.p1\s*\{[\s\S]*background:\s*var\(--player-p1\);[\s\S]*border-color:\s*var\(--player-p1\);/s);
   assert.match(styleSource, /\.piece-token\.p2\s*\{[\s\S]*background:\s*var\(--player-p2\);[\s\S]*border-color:\s*var\(--player-p2\);/s);
   assert.match(adapterSource, /const supplyPath = normalizeOverlayPath\(getSupplyPathForPiece\(snapshot, piece\)\);/);

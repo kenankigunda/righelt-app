@@ -1,3 +1,4 @@
+import { createBrandController, renderWordmark, resolveActionAffiliation } from "./brand.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter } from "../board-adapters/engine-board-adapter.js";
 import { syncMiniBoardPreviews } from "../board/mini-board-preview.js";
@@ -105,6 +106,7 @@ const toStableKey = (value) => {
 };
 
 let currentRoute = parseRouteFromHash(window.location.hash);
+const brandController = createBrandController();
 let mountedBoardGameId = null;
 let mountedHistoryMoveIndex = null;
 let mountedSnapshotKey = null;
@@ -1755,7 +1757,7 @@ const renderTurnHistory = (game) => {
 const renderHeader = () => `
   <header class="shell-header">
     <div class="shell-header-main">
-      <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Righelt</a></h1>
+      <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">${renderWordmark(brandController.getState())}</a></h1>
     </div>
     ${renderHeaderAlertZone()}
     <div class="shell-header-actions">
@@ -3597,6 +3599,12 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   document.title = getDocumentTitle();
+  brandController.setHome(currentRoute.name === "home");
+  const affiliationGameId = getCurrentViewedGameId();
+  appEl.setAttribute("data-action-affiliation", resolveActionAffiliation({
+    game: affiliationGameId ? transport.getGameViewModel(affiliationGameId) : null,
+    identityId: transport.getIdentityId(),
+  }));
   syncRouteTransitionForCurrentRoute();
   const routeKey = getRouteRenderKey();
   const baseRouteKey = getBaseRouteRenderKey();

@@ -6,6 +6,18 @@ Righelt should feel clean and easy to play at a glance, but also distinct. The g
 
 External references that informed these principles include Apple Human Interface Guidelines, Material responsive-layout guidance, Atlassian message design guidance, Carbon notification accessibility guidance, and the general product qualities seen in clean online game surfaces such as NYT Games. These are inputs, not a brand template to copy.
 
+## PPA foundation (T-087.01)
+
+These implemented defaults replace earlier cool-neutral, green-primary or text-only identity treatments. Larger PPA navigation, home, modal and help changes remain in their own implementation slices.
+
+- Use the shared `apps/web/design-tokens.css` palette: mineral ivory foundation, raised ivory, charcoal text and accessible red/blue player colors. Body text uses the system sans at 16px/1.5; secondary text is 14px, nonessential captions 12px, headings 24px and titles 32px. Use the shared 4/8/12/16/24/32/48px spacing scale.
+- White labels on both primary player colors, including hover/pressed variants, meet normal-text contrast. Disabled labels remain legible at full opacity. Focus has a 2px charcoal outline with an ivory separator; never clip focus rings to decorative corners. Press, selected and disabled states must remain recognizable without color alone.
+- Primary actions follow the user's affiliation, never the live opponent turn. Explicit pending start/rematch side wins; otherwise use the user's owned seat, then red when unknown. When the user owns both seats, retain their selected start side (red until that selection exists). Home cards do not recolor global actions. Use the shared selector rather than duplicating precedence.
+- The single vector wordmark has an outlined opposing-color R, charcoal i stem, current-color supply-diamond dot and angular h, and charcoal remaining letters. Its t cap base aligns exactly with its stem. Use one accessible Righelt name; decorative motif cells are hidden from assistive technology.
+- Home wordmark motion is silent: a round piece crosses diamond-oriented cells for 360ms, then rests for 9 seconds. Selected-cell outline, dot and h share the logo's turn color; the R uses the opposite color. Hidden documents suspend the timer. Reduced motion and in-game headers use a still red-turn state. Animation updates only the logo, not the game or page.
+- Real supply diamonds keep their owner's player color across turn changes and expose a Player 1/Player 2 supply-point label. A supply diamond is never replaced with a round piece.
+- The decorative diagonal grid is restrained and independent of the orthogonal game board. Surfaces stay nearly flat; use shallow shared shadows and reserve clipped corners for decorative outer layers, leaving interactive children and focus rings unobstructed.
+
 ## Core Experience Goals
 
 - Make primary play and decision-making feel immediate, legible, and low-friction.

@@ -36,7 +36,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /aria-pressed="\$\{currentRoute\.debug \? "true" : "false"\}"/);
   assert.match(source, /title: "Debug mode"/);
   assert.match(source, /Scenarios/);
-  assert.match(source, /<h1><a class="shell-header-title-link" href="\$\{buildHomeHash\(getCurrentFlyoutState\(\)\)\}" data-flyout-link="home">Righelt<\/a><\/h1>/);
+  assert.match(source, /<h1><a class="shell-header-title-link" href="\$\{buildHomeHash\(getCurrentFlyoutState\(\)\)\}" data-flyout-link="home">\$\{renderWordmark\(brandController\.getState\(\)\)\}<\/a><\/h1>/);
   assert.match(source, /const renderHeaderWideActions = \(\) =>/);
   assert.match(source, /const renderHeaderNarrowMenu = \(\) =>/);
   assert.match(source, /const renderHeaderAlertZone = \(\) => \{/);

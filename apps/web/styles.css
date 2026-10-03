@@ -1,17 +1,11 @@
+@import url("./design-tokens.css");
+
 * {
   box-sizing: border-box;
 }
 
 :root {
-  --bg: #f8f4ec;
-  --paper: #fffdf8;
-  --ink: #172a2f;
-  --muted: #4f6368;
-  --line: #d5d1c6;
-  --accent: #1f7a5a;
   --accent-2: #c94c33;
-  --player-p1: #c2452f;
-  --player-p2: #2d67c7;
   --player-both: #7b53ab;
   /* Blue-green complement to warm paper/cream; distinct from --accent (source/hover) and from P1/P2. */
   --move-selection-ring: #0d6b56;
@@ -20,11 +14,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
-  background:
-    radial-gradient(circle at 20% 10%, #fdf5df 0%, transparent 30%),
-    radial-gradient(circle at 85% 90%, #e8f0ff 0%, transparent 34%),
-    var(--bg);
+  font-family: var(--font-family);
   color: var(--ink);
 }
 
@@ -920,13 +910,13 @@ button {
   pointer-events: none;
 }
 
-/* Inner green diamond border */
+/* Owner-colored supply core, distinct from a round piece. */
 .supply-point-marker::before {
   width: 7px;
   height: 7px;
-  border: 2px solid #2f8e63;
+  border: 2px solid var(--supply-owner, var(--muted));
   box-sizing: border-box;
-  background: #2f8e63;
+  background: var(--supply-owner, var(--muted));
 }
 
 /* Outer owner-colored diamond border with a small gap. */
@@ -937,6 +927,9 @@ button {
   box-sizing: border-box;
   background: transparent;
 }
+
+.supply-point-marker.supply-point-p1 { --supply-owner: var(--player-p1); }
+.supply-point-marker.supply-point-p2 { --supply-owner: var(--player-p2); }
 
 .supply-point-marker.supply-point-p1::after {
   border-color: var(--player-p1);

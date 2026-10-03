@@ -1318,6 +1318,9 @@ export function createEngineBoardAdapter() {
             } else if (row === BOARD_SIZE - 1 && col === 0) {
               supplyMarker.classList.add("supply-point-p2");
             }
+            const owner = row === 0 ? "Player 1" : "Player 2";
+            supplyMarker.setAttribute("role", "img");
+            supplyMarker.setAttribute("aria-label", `${owner} supply point`);
             supplyMarker.textContent = "◆";
             cell.appendChild(supplyMarker);
           }
