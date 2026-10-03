@@ -11,8 +11,11 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
  await page.setViewportSize({width,height:1000});
  await page.emulateMedia({reducedMotion:"reduce"});
  const {gameId}=await createGameFromHome(page);
- await page.getByRole("button",{name:"Play as both players",exact:true}).dispatchEvent("click");
+ const useTabs=await page.getByRole("button",{name:"Players",exact:true}).isVisible();
+ if(useTabs) await page.getByRole("button",{name:"Players",exact:true}).click();
+ await page.getByRole("button",{name:"Play as both players",exact:true}).click();
  await expect(page.getByRole("button",{name:"Play as both players",exact:true})).toHaveCount(0);
+ if(useTabs) await page.getByRole("button",{name:"Board",exact:true}).click();
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  await makeAnyLegalMove(page);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
