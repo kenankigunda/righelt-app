@@ -3,10 +3,15 @@ import os
 import signal
 import subprocess
 import time
+import uuid
 
 
 def start_group(argv, **kwargs):
-    return subprocess.Popen(argv,start_new_session=True,**kwargs)
+    token=uuid.uuid4().hex
+    env=dict(kwargs.pop('env',os.environ));env['RIGHELT_COMPUTE_GROUP_TOKEN']=token
+    process=subprocess.Popen(argv,start_new_session=True,env=env,**kwargs)
+    process._righelt_group_token=token
+    return process
 
 
 def stop_group(process, grace_seconds=0):
@@ -30,7 +35,8 @@ def register_owned(directory,process):
     from .allocation import append,identity
     from pathlib import Path
     record=identity(process.pid)
-    append(Path(directory)/'process-ownership.jsonl',{**record,'group':os.getpgid(process.pid),'owner':os.getpid()})
+    append(Path(directory)/'process-ownership.jsonl',{**record,'group':os.getpgid(process.pid),'owner':os.getpid(),
+        'groupToken':getattr(process,'_righelt_group_token',None)})
     return record
 
 
@@ -39,18 +45,49 @@ def cleanup_owned(directory,owner=None):
     from pathlib import Path
     from .allocation import rows,alive
     records=rows(Path(directory)/'process-ownership.jsonl')
-    targets=[]
+    records=[record for record in records if owner is None or record.get('owner')==owner]
+    # A live, identity-matching leader is an ancestry witness even for legacy
+    # records. Keep these Process objects: psutil.kill checks their birth times.
+    witnessed={}
     for record in records:
-        if owner is not None and record.get('owner')!=owner:continue
         if not alive(record):continue
         try:
-            process=psutil.Process(record['pid'])
-            if os.getpgid(process.pid)!=record['group']:raise RuntimeError('owned process group changed')
-            # Capture identities before killing the group leader; wait/reap checks
-            # must not accidentally match a reused PID.
-            targets.extend(process.children(recursive=True));targets.append(process)
-            os.killpg(record['group'],signal.SIGKILL)
-        except ProcessLookupError:pass
-    _,live=psutil.wait_procs(targets,timeout=3)
-    if any(p.is_running() and p.status()!=psutil.STATUS_ZOMBIE for p in live):
-        raise RuntimeError('owned compute did not stop')
+            leader=psutil.Process(record['pid'])
+            if leader.create_time()!=record['created']:continue
+            if os.getpgid(leader.pid)!=record['group']:raise RuntimeError('owned process group changed')
+            for process in leader.children(recursive=True)+[leader]:
+                witnessed[(process.pid,process.create_time())]=process
+        except (ProcessLookupError,psutil.NoSuchProcess):pass
+    deadline=time.monotonic()+3
+    while True:
+        targets=dict(witnessed)
+        for process in psutil.process_iter():
+            try:
+                group=os.getpgid(process.pid)
+                relevant=[record for record in records if record['group']==group]
+                if not relevant:continue
+                birth=process.create_time()
+                if (process.pid,birth) in targets:continue
+                # Group/session numbers alone are insufficient after leader
+                # death: an unrelated later session can reuse the same PID.
+                if os.getsid(process.pid)!=group:continue
+                token=process.environ().get('RIGHELT_COMPUTE_GROUP_TOKEN')
+                if any(record.get('groupToken') and record['groupToken']==token for record in relevant):
+                    targets[(process.pid,birth)]=process
+            except (ProcessLookupError,psutil.NoSuchProcess):continue
+        live=[]
+        for identity,process in targets.items():
+            try:
+                if not process.is_running() or process.status()==psutil.STATUS_ZOMBIE:continue
+                # Process.kill verifies PID/create-time before signalling; never
+                # send killpg to a number whose original leader has disappeared.
+                process.kill();live.append(process)
+            except (ProcessLookupError,psutil.NoSuchProcess):pass
+        if not live:return
+        witnessed=targets
+        psutil.wait_procs(live,timeout=min(.1,max(0,deadline-time.monotonic())))
+        if time.monotonic()>=deadline:
+            if any(p.is_running() and p.status()!=psutil.STATUS_ZOMBIE for p in live):
+                raise RuntimeError('owned compute did not stop')
+            # One final scan catches children forked just before parent death.
+            deadline=time.monotonic()+.1
