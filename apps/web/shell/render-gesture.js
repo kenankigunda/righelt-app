@@ -40,3 +40,19 @@ export const createRenderGestureGate = ({
     },
   };
 };
+
+
+// A live snapshot may replace cells between keyboard focus and keydown. Restore
+// only that board coordinate, never focus deliberately moved into another control.
+export const preserveBoardFocus = ({ document, getGameId }, render) => {
+  const focused = document.activeElement;
+  const cell = focused?.matches?.("#shell-board button[data-row][data-col]") ? focused : null;
+  const gameId = getGameId();
+  const result = render();
+  if (cell && !cell.isConnected && document.activeElement === document.body && gameId && getGameId() === gameId) {
+    const replacement = [...document.querySelectorAll("#shell-board button[data-row][data-col]")]
+      .find(button => button.dataset.row === cell.dataset.row && button.dataset.col === cell.dataset.col && !button.disabled);
+    replacement?.focus({ preventScroll: true });
+  }
+  return result;
+};
