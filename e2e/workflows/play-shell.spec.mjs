@@ -1,3 +1,4 @@
+import { expectMobileDockClear } from "../support/mobile-dock.mjs";
 import { test, expect } from "@playwright/test";
 import { createGameFromHome, getHistoryMoveCount, makeAnyLegalMove, openHistoryMode } from "../support/app.mjs";
 
@@ -138,3 +139,26 @@ test("a late game response cannot replace the newer home destination", async ({ 
   await expect(page.locator(".shell-route-transition-layer")).toHaveAttribute("data-active", "false");
   await expect(page.getByRole("heading", { name: "Game unavailable" })).toHaveCount(0);
 });
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 375, height: 540 }]) {
+  test(`mobile help leaves navigation reachable after document scroll ${viewport.height}`, async ({ page }, info) => {
+    await page.setViewportSize(viewport);
+    await createGameFromHome(page);
+    await expect(page.locator(".shell-route-transition-layer")).toHaveAttribute("data-active", "false");
+    const help = page.locator(".game-help");
+    for (const expanded of [true, false]) {
+      const control = help.getByRole("button", { name: expanded ? "Expand" : "Collapse", exact: true });
+      if (await control.isVisible()) await control.click();
+      await expect(help).toHaveAttribute("data-expanded", String(expanded));
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
+      await expectMobileDockClear(page);
+      for (const panel of ["players", "history", "board"]) {
+        await page.locator(`.shell-mobile-tabbar [data-panel="${panel}"]`).click();
+        await expect(page.locator("#app")).toHaveAttribute("data-shell-game-panel", panel);
+        await expectMobileDockClear(page);
+      }
+    }
+    await info.attach("scrolled-mobile-docks", { body: await page.screenshot(), contentType: "image/png" });
+  });
+}
