@@ -35,7 +35,7 @@ export default defineConfig({
   webServer: {
     command: "node scripts/e2e-stack.mjs",
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !process.env.CI && !process.env.RIGHELT_VALIDATION,
     stdout: "pipe",
     stderr: "pipe",
     timeout: 180_000,

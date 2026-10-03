@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 const historyMoveItems = (page) => page.locator('[data-testid="history-move-item"]');
 
@@ -32,7 +32,8 @@ const getVisibleJoinSurface = async (page) => {
 export const buildAppUrl = (baseURL, hash = "#/") => `${baseURL}${hash}`;
 
 export const createIsolatedPage = async (browser) => {
-  const context = await browser.newContext();
+  const use = test.info().project.use;
+  const context = await browser.newContext({ baseURL: use.baseURL, viewport: use.viewport, isMobile: use.isMobile, hasTouch: use.hasTouch, deviceScaleFactor: use.deviceScaleFactor });
   const page = await context.newPage();
   return { context, page };
 };
@@ -225,6 +226,24 @@ export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
     `[data-testid="game-board"] .cell[data-row="${action.to.row}"][data-col="${action.to.col}"]`,
   );
 
+  // Read the actual client: describe-level and popup settings can differ from the project defaults.
+  if (await page.evaluate(() => navigator.maxTouchPoints > 0)) {
+    const boardTab = page.locator('[data-action="switch-game-panel"][data-panel="board"]');
+    if (await boardTab.isVisible()) await boardTab.tap();
+    await sourceCell.tap();
+    await expect(sourceCell).toHaveClass(/selected-piece/);
+    await expect(targetCell.locator('.move-ghost')).toBeVisible();
+    // Touch selects a destination before confirming it. A sole legal destination
+    // can already be selected, so never blindly send two confirmation taps.
+    const hoverCapable = await page.locator('html').getAttribute('data-hover-capability') === 'hover';
+    if (!hoverCapable && !(await targetCell.evaluate(cell => cell.classList.contains('target')))) {
+      await targetCell.tap();
+      await expect(targetCell).toHaveClass(/\btarget\b/);
+    }
+    await targetCell.tap();
+    await expectHistoryMoveCountToIncrease(page, startingHistoryCount);
+    return;
+  }
   await sourceCell.click();
   await expect
     .poll(async () => {
