@@ -105,6 +105,14 @@ export function legacySeedSql({ fixture, columns, cutover = null }) {
   for (const key of ['game_id', 'created_at', 'updated_at', 'state_json']) if (!keys.includes(key)) throw new Error(`Unsupported legacy schema: ${key}`);
   return `INSERT INTO live_games(${keys.join(',')}) SELECT ${keys.map(key => quote(values[key])).join(',')} WHERE NOT EXISTS(SELECT 1 FROM live_games WHERE game_id=${quote(fixture.id)});\nINSERT INTO live_invites(token,game_id,shared_by_role) SELECT 'cutover-legacy-invite',${quote(fixture.id)},'Player 1' WHERE NOT EXISTS(SELECT 1 FROM live_invites WHERE token='cutover-legacy-invite');`;
 }
+export function selectAccountControl({ method, url, origin, hasCutover }) {
+  if (method !== 'POST' || origin !== undefined) return { status: 404 };
+  if (url === '/reset-limits') return { status: 200, sql: 'DELETE FROM account_rate_limits' };
+  if (!['/activate-cutover', '/maintenance-off'].includes(url)) return { status: 404 };
+  if (!hasCutover) return { status: 409, message: 'Cutover schema unavailable' };
+  if (url === '/activate-cutover') return { status: 200, sql: "UPDATE account_cutover SET activated_at=COALESCE(activated_at,CAST(unixepoch('subsec')*1000 AS INTEGER)),maintenance=1,canary_account_id=COALESCE(canary_account_id,(SELECT account_id FROM accounts WHERE username_canonical='validation_canary' AND recovery_acknowledged=1)) WHERE singleton=1 AND EXISTS(SELECT 1 FROM accounts WHERE username_canonical='validation_canary' AND recovery_acknowledged=1 AND (account_cutover.canary_account_id IS NULL OR account_cutover.canary_account_id=accounts.account_id))" };
+  return { status: 200, sql: "UPDATE account_cutover SET maintenance=0 WHERE singleton=1 AND activated_at IS NOT NULL AND canary_account_id=(SELECT account_id FROM accounts WHERE username_canonical='validation_canary' AND recovery_acknowledged=1)" };
+}
 export async function assertPortsFree(ports = Object.values(PORTS)) {
   const held = [];
   try {
@@ -219,10 +227,18 @@ export async function startAccountStack({ root = resolveCandidateRoot(), persist
     assertRunning(stopping);
     let busy = false;
     control = createServer(async (request, response) => {
-      if (request.method !== 'POST' || request.headers.origin || request.url !== '/reset-limits') { response.writeHead(404).end(); return; }
+      const operation = selectAccountControl({ method: request.method, url: request.url, origin: request.headers.origin, hasCutover });
+      if (!operation.sql) { response.writeHead(operation.status).end(operation.message); return; }
       if (busy) { response.writeHead(409).end(); return; }
       busy = true;
-      try { await query('DELETE FROM account_rate_limits'); response.writeHead(200).end('done'); }
+      try {
+        await query(operation.sql);
+        if (request.url !== '/reset-limits') {
+          const row = (await query("SELECT activated_at,maintenance,(SELECT username_canonical FROM accounts WHERE account_id=canary_account_id) AS canary FROM account_cutover WHERE singleton=1"))[0];
+          if (!row || row.activated_at == null || row.canary !== 'validation_canary' || row.maintenance !== (request.url === '/activate-cutover' ? 1 : 0)) { response.writeHead(409).end('Acknowledged validation canary required'); return; }
+        }
+        response.writeHead(200).end('done');
+      }
       catch { response.writeHead(500).end('Local fixture operation failed'); }
       finally { busy = false; }
     });

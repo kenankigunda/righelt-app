@@ -121,3 +121,25 @@ test('upgrade clones only local D1 once, retains WAL, and privately records sour
     await assert.rejects(initializeAccountUpgrade({ sourcePersistRoot, accountPersistRoot: path.join(root, 'symlink-target') }), /Unexpected/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+
+test('cutover controls accept only fixed local POST operations with available schema', async () => {
+  const { selectAccountControl } = await import('../account-stack.mjs');
+  const choose = overrides => selectAccountControl({ method: 'POST', url: '/activate-cutover', hasCutover: true, ...overrides });
+  assert.equal(choose({ origin: 'https://127.0.0.1:9988' }).status, 404);
+  assert.equal(choose({ origin: '' }).status, 404);
+  assert.equal(choose({ method: 'GET' }).status, 404);
+  assert.equal(choose({ url: '/activate-cutover?canary=someone' }).status, 404);
+  assert.equal(choose({ url: '/execute' }).status, 404);
+  assert.equal(choose({ hasCutover: false }).status, 409);
+  assert.equal(choose({ url: '/maintenance-off', hasCutover: false }).status, 409);
+  assert.equal(choose({ url: '/reset-limits', hasCutover: false }).sql, 'DELETE FROM account_rate_limits');
+  assert.match(choose({}).sql, /username_canonical='validation_canary' AND recovery_acknowledged=1/);
+  assert.match(choose({}).sql, /activated_at=COALESCE\(activated_at,/);
+  assert.match(choose({}).sql, /account_cutover.canary_account_id=accounts.account_id/);
+  assert.match(choose({ url: '/maintenance-off' }).sql, /activated_at IS NOT NULL/);
+  const script = `import sqlite3,sys,json\ndb=sqlite3.connect(':memory:')\ndb.executescript("CREATE TABLE accounts(account_id TEXT,username_canonical TEXT,recovery_acknowledged INTEGER); CREATE TABLE account_cutover(singleton INTEGER,activated_at INTEGER,maintenance INTEGER,canary_account_id TEXT); INSERT INTO account_cutover VALUES(1,NULL,0,NULL);")\nsql=sys.stdin.read()\ndb.executescript(sql)\nassert db.execute('SELECT activated_at FROM account_cutover').fetchone()[0] is None\ndb.execute("INSERT INTO accounts VALUES('canary','validation_canary',1)")\ndb.executescript(sql)\nfirst=db.execute('SELECT activated_at,canary_account_id FROM account_cutover').fetchone()\ndb.executescript(sql)\nassert first==db.execute('SELECT activated_at,canary_account_id FROM account_cutover').fetchone()\nprint(first[1])`;
+  const result = spawnSync('python3', ['-c', script], { input: choose({}).sql.replace("CAST(unixepoch('subsec')*1000 AS INTEGER)", '12345'), encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'canary');
+});
