@@ -104,7 +104,9 @@ test("scenario flyout saves a selected source and destination after switching an
       })
       .toBe(false);
 
-    await sourceCell.click();
+    // The flyout clears only the hover target, preserving the selected source.
+    // Clicking that source again would intentionally show supply lines instead.
+    await expect(sourceCell).toHaveClass(/(?:^|\s)selected-piece(?:\s|$)/);
     await targetCell.click();
     await expect
       .poll(async () => cellHasClass(sourceCell, "source"), {
@@ -174,14 +176,14 @@ test("closing the scenarios flyout restores hover target selection on an already
       })
       .toBe(false);
 
-    await sourceCell.click();
+    await expect(sourceCell).toHaveClass(/(?:^|\s)selected-piece(?:\s|$)/);
     await firstTargetCell.click();
     await expect(page.locator("#shell-board-preview-label")).toContainText("Click again to");
 
     await page.getByRole("button", { name: "Scenarios" }).click();
     await expect(page.locator('[data-scenario-save-field="title"]')).toHaveCount(0);
 
-    await sourceCell.click();
+    await expect(sourceCell).toHaveClass(/(?:^|\s)selected-piece(?:\s|$)/);
     await secondTargetCell.hover();
     await expect
       .poll(async () => cellHasClass(secondTargetCell, "target"), {
