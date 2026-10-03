@@ -1,0 +1,36 @@
+name: Trained play foundations
+on:
+  pull_request:
+    paths:
+      - 'packages/computer-player/**'
+      - 'tools/ai-trainer/**'
+      - '.github/workflows/trained-play.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/computer-player/**'
+      - 'tools/ai-trainer/**'
+      - '.github/workflows/trained-play.yml'
+permissions:
+  contents: read
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Install CPU test environment
+        run: |
+          python -m venv tools/ai-trainer/.venv
+          tools/ai-trainer/.venv/bin/python -m pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+          tools/ai-trainer/.venv/bin/python -m pip install -r tools/ai-trainer/requirements.lock
+      - name: Model and experiment unit tests
+        env:
+          PYTHONPATH: tools/ai-trainer
+        run: tools/ai-trainer/.venv/bin/python -m unittest discover -s tools/ai-trainer/tests -v
+      - name: CPU export smoke test
+        env:
+          PYTHONPATH: tools/ai-trainer
+        run: tools/ai-trainer/.venv/bin/python -m righelt_training.preflight

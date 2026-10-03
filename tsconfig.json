@@ -7,6 +7,7 @@
     "apps/web/_worker.ts",
     "packages/api-handler/src/**/*.ts",
     "packages/shared-types/src/**/*.ts",
-    "packages/game-engine/src/**/*.ts"
+    "packages/game-engine/src/**/*.ts",
+    "packages/computer-player/src/**/*.ts"
   ]
 }

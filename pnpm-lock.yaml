@@ -33,6 +33,8 @@ importers:
 
   packages/api-handler: {}
 
+  packages/computer-player: {}
+
   packages/game-engine: {}
 
   packages/shared-types: {}

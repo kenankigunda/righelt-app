@@ -7,6 +7,7 @@ on:
       - "apps/web/**"
       - "packages/api-handler/**"
       - "packages/game-engine/**"
+      - "packages/computer-player/**"
       - "packages/shared-types/**"
       - "db/migrations/**"
       - "db/ops/**"
@@ -28,6 +29,7 @@ on:
       - "apps/web/**"
       - "packages/api-handler/**"
       - "packages/game-engine/**"
+      - "packages/computer-player/**"
       - "packages/shared-types/**"
       - "db/migrations/**"
       - "db/ops/**"
@@ -113,6 +115,9 @@ jobs:
 
       - name: Engine unit tests
         run: pnpm test:engine:unit -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/engine-unit/results.xml
+
+      - name: Trained search tests
+        run: pnpm test:computer-player
 
       - name: Upload engine unit JUnit
         if: always()
