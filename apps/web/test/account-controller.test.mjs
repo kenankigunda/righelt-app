@@ -586,3 +586,81 @@ test("online event drains an unfinished offline logout before retrying revocatio
   assert.equal(client.canPlay(), false);
   client.destroy();
 });
+
+test("pending logout retries early online failure with capped backoff and cancels on offline or destroy", async () => {
+  const target = new EventTarget(),
+    timers = new Map(),
+    delays = [];
+  let nextTimer = 0,
+    failing = false,
+    requests = 0,
+    session = state();
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  const client = createAccountController({
+    storage: storage(),
+    eventTarget: target,
+    document: null,
+    retryTimers: {
+      setTimeout(fn, delay) {
+        delays.push(delay);
+        timers.set(++nextTimer, fn);
+        return nextTimer;
+      },
+      clearTimeout(id) {
+        timers.delete(id);
+      },
+    },
+    fetcher: async (url) => {
+      if (url.endsWith("/bootstrap"))
+        return Response.json({
+          authProtocolVersion: 1,
+          accountsRequired: true,
+        });
+      requests++;
+      if (failing) throw new TypeError("network not ready");
+      if (url.endsWith("/logout")) session = { authenticated: false };
+      return Response.json(session);
+    },
+  });
+  await client.start();
+  failing = true;
+  target.dispatchEvent(new Event("offline"));
+  await client.logout();
+  assert.equal(timers.size, 0);
+  target.dispatchEvent(new Event("online"));
+  await settle();
+  assert.equal(client.snapshot().pendingLogout, true);
+  assert.equal(client.canPlay(), false);
+  assert.deepEqual(delays, [1000]);
+  const tick = async () => {
+    const [id, fn] = [...timers][0];
+    timers.delete(id);
+    fn();
+    await settle();
+  };
+  for (let i = 0; i < 6; i++) await tick();
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000, 30000, 30000]);
+  target.dispatchEvent(new Event("offline"));
+  assert.equal(timers.size, 0);
+  const before = requests;
+  await settle();
+  assert.equal(requests, before);
+  target.dispatchEvent(new Event("online"));
+  await settle();
+  assert.equal(delays.at(-1), 1000);
+  failing = false;
+  await tick();
+  assert.equal(client.snapshot().pendingLogout, false);
+  assert.equal(client.canPlay(), false);
+  assert.equal(timers.size, 0);
+  failing = true;
+  await client.logout();
+  assert.equal(timers.size, 1);
+  const stale = [...timers.values()][0];
+  client.destroy();
+  assert.equal(timers.size, 0);
+  const after = requests;
+  stale();
+  await settle();
+  assert.equal(requests, after);
+});

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { getHistoryMoveCount } from "../support/app.mjs";
+import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
 
 const password = "A long browser test password 482";
 const replacement = "A different browser test password 963";
@@ -50,14 +50,7 @@ async function makeAccountMove(page) {
     return body.game.legalActions.find(item => item.from && item.to);
   });
   expect(action).toBeTruthy();
-  const source = page.locator(`[data-testid="game-board"] .cell[data-row="${action.from.row}"][data-col="${action.from.col}"]`);
-  const target = page.locator(`[data-testid="game-board"] .cell[data-row="${action.to.row}"][data-col="${action.to.col}"]`);
-  await source.click();
-  const hover = await page.locator("html").getAttribute("data-hover-capability") === "hover";
-  if (hover) await target.hover();
-  else await target.click();
-  await expect(target).toHaveClass(/(?:^|\s)target(?:\s|$)/);
-  await target.click();
+  await submitPlayableAction(page, action);
 }
 async function account(page) {
   await page.getByRole("button", { name: "Account", exact: true }).click();
@@ -178,7 +171,22 @@ test("password change and browser logout revoke the correct sessions across tabs
   } finally { await sibling.close(); await separate.close(); }
 });
 
-test("offline logout blocks local authority until server revocation finishes", async ({ page }) => {
+test("offline logout blocks local authority until server revocation finishes", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    window.__accountConnectivity = [];
+    const record = data => window.__accountConnectivity.push({ ...data, time: performance.now(), online: navigator.onLine });
+    for (const type of ["online", "offline"]) window.addEventListener(type, () => record({ type }));
+    window.addEventListener("error", event => record({ type: "error", message: event.message }));
+    window.addEventListener("unhandledrejection", event => record({ type: "unhandledrejection", message: String(event.reason) }));
+    const original = window.fetch.bind(window);
+    window.fetch = async (...args) => {
+      const path = new URL(typeof args[0] === "string" ? args[0] : args[0].url, location.href).pathname;
+      if (!path.startsWith("/api/auth/")) return original(...args);
+      record({ type: "request", path });
+      try { const response = await original(...args); record({ type: "response", path, status: response.status }); return response; }
+      catch (error) { record({ type: "failure", path, error: error.name }); throw error; }
+    };
+  });
   const username = uniqueName();
   await register(page, username, { gate: true });
   const before = await getHistoryMoveCount(page);
@@ -189,7 +197,12 @@ test("offline logout blocks local authority until server revocation finishes", a
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
   await expect(page.getByTestId("game-board")).toBeVisible();
   await page.context().setOffline(false);
-  await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
+  try { await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible(); }
+  finally {
+    const events = await page.evaluate(() => window.__accountConnectivity);
+    await testInfo.attach("account-connectivity", { body: JSON.stringify(events, null, 2), contentType: "application/json" });
+    if (testInfo.status !== "passed") console.log("Account connectivity:", JSON.stringify(events));
+  }
   await page.reload();
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
   await signIn(page, username);

@@ -49,6 +49,7 @@ export const createAccountController = ({
   document = globalThis.document,
   now = Date.now,
   locks = globalThis.navigator?.locks,
+  retryTimers = globalThis,
   channelFactory = globalThis.window && globalThis.BroadcastChannel
     ? () => new BroadcastChannel("righelt.accounts.v1")
     : null,
@@ -98,6 +99,9 @@ export const createAccountController = ({
   };
   let pendingLogout = null,
     logoutFlight = null,
+    logoutRetryTimer = null,
+    logoutRetryDelay = 1000,
+    offline = globalThis.navigator?.onLine === false,
     expiryTimer = null;
   const readPending = () => {
     try {
@@ -222,6 +226,21 @@ export const createAccountController = ({
       controllers.delete(controller);
     }
   };
+  const clearLogoutRetry = () => {
+    retryTimers.clearTimeout(logoutRetryTimer);
+    logoutRetryTimer = null;
+  };
+  const scheduleLogoutRetry = () => {
+    if (destroyed || offline || !readPending() || logoutRetryTimer !== null)
+      return;
+    logoutRetryTimer = retryTimers.setTimeout(() => {
+      logoutRetryTimer = null;
+      if (!destroyed && !offline && readPending())
+        void finishLogout().catch(() => publish());
+    }, logoutRetryDelay);
+    logoutRetryTimer?.unref?.();
+    logoutRetryDelay = Math.min(logoutRetryDelay * 2, 30000);
+  };
   const finishLogout = () => {
     if (logoutFlight) return logoutFlight;
     if (!readPending()) return Promise.resolve();
@@ -231,13 +250,20 @@ export const createAccountController = ({
       const current = await request("/api/auth/session");
       await request("/api/auth/logout", {}, { context: current.contextId });
       pendingLogout = null;
+      clearLogoutRetry();
+      logoutRetryDelay = 1000;
       write(LOGOUT_PENDING_KEY, null);
       announce({ type: "logout-complete" });
       // Rebuild the anonymous transport with pendingLogout cleared.
       retire({ authenticated: false }, true);
-    })().finally(() => {
-      logoutFlight = null;
-    });
+    })()
+      .catch((error) => {
+        scheduleLogoutRetry();
+        throw error;
+      })
+      .finally(() => {
+        logoutFlight = null;
+      });
     return logoutFlight;
   };
   const hydrate = async () => {
@@ -443,7 +469,14 @@ export const createAccountController = ({
         .then(() => activity(true))
         .catch(() => publish());
   };
+  const onOffline = () => {
+    offline = true;
+    clearLogoutRetry();
+  };
   const onOnline = () => {
+    offline = false;
+    clearLogoutRetry();
+    logoutRetryDelay = 1000;
     // An offline attempt can still be settling when the online event arrives.
     // Drain it, then make the reconnect attempt rather than joining its failure.
     void (async () => {
@@ -455,6 +488,7 @@ export const createAccountController = ({
   const onInteraction = () => void activity();
   eventTarget?.addEventListener("storage", onStorage);
   eventTarget?.addEventListener("online", onOnline);
+  eventTarget?.addEventListener("offline", onOffline);
   document?.addEventListener("visibilitychange", onForeground);
   document?.addEventListener("pointerdown", onInteraction);
   document?.addEventListener("keydown", onInteraction);
@@ -475,11 +509,13 @@ export const createAccountController = ({
         !readPending()),
     destroy() {
       destroyed = true;
+      clearLogoutRetry();
       if (channel) channel.onmessage = null;
       channel?.close();
       retire();
       eventTarget?.removeEventListener("storage", onStorage);
       eventTarget?.removeEventListener("online", onOnline);
+      eventTarget?.removeEventListener("offline", onOffline);
       document?.removeEventListener("visibilitychange", onForeground);
       document?.removeEventListener("pointerdown", onInteraction);
       document?.removeEventListener("keydown", onInteraction);
