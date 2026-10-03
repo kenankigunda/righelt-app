@@ -803,3 +803,55 @@ test("an older same-context session read cannot shorten a renewed session expiry
   assert.equal(client.snapshot().session.expiresAt, original.expiresAt + 50000);
   client.destroy();
 });
+
+test("hung startup is bounded, aborted, and late bootstrap cannot overwrite a successful retry", async () => {
+  let timeout,
+    release,
+    calls = 0,
+    firstSignal;
+  const held = new Promise((r) => (release = r));
+  const client = createAccountController({
+    storage: storage(),
+    eventTarget: null,
+    document: null,
+    bootstrapTimers: {
+      setTimeout(fn, delay) {
+        assert.equal(delay, 5000);
+        timeout = fn;
+        return 1;
+      },
+      clearTimeout() {},
+    },
+    fetcher: async (url, init) => {
+      if (url.endsWith("/bootstrap")) {
+        calls++;
+        if (calls === 1) {
+          firstSignal = init.signal;
+          return held;
+        }
+        return Response.json({
+          authProtocolVersion: 1,
+          accountsRequired: true,
+        });
+      }
+      return Response.json(state());
+    },
+  });
+  const failed = client.start();
+  const rejected = assert.rejects(
+    failed,
+    /temporarily_unavailable|session_changed/,
+  );
+  timeout();
+  await rejected;
+  assert.equal(firstSignal.aborted, true);
+  assert.equal(client.snapshot().ready, false);
+  await client.start();
+  const accepted = client.snapshot();
+  release(Response.json({ authProtocolVersion: 1, accountsRequired: false }));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(client.snapshot().enabled, true);
+  assert.equal(client.snapshot().generation, accepted.generation);
+  assert.equal(client.canPlay(), true);
+  client.destroy();
+});

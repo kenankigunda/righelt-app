@@ -1,3 +1,4 @@
+import { createRenderGestureGate } from './render-gesture.js';
 import { participantButton, participantName, createPublicProfileDialog } from './public-profile.js';
 import { createAccountController, safeAccountIntent } from './account-controller.js';
 import { createAccountDialog } from './account-dialog.js';
@@ -1807,7 +1808,7 @@ const renderHeader = () => `
     ${renderHeaderAlertZone()}
     ${account.snapshot().ready && account.snapshot().enabled ? `<button class="secondary" data-action="account-open" data-testid="account-open">${account.snapshot().session.authenticated ? "Account" : "Sign in"}</button>` : ""}
     ${account.snapshot().pendingLogout ? '<span role="status">Sign-out pending</span>' : ''}
-    ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p>` : ""}
+    ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p role="status">Connecting…</p>` : ""}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
         ${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
@@ -3662,7 +3663,21 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
   });
 };
 
+const renderGesture = createRenderGestureGate({ render: options => render(options) });
+window.addEventListener("pointerdown", event => {
+  if (appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
+}, true);
+window.addEventListener("keydown", event => {
+  if (!event.repeat && (event.key === " " || event.key === "Enter") && appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
+}, true);
+window.addEventListener("keyup", event => { if (event.key === " " || event.key === "Enter") renderGesture.end(); }, true);
+for (const type of ["pointerup", "pointercancel", "touchcancel", "lostpointercapture", "click"])
+  window.addEventListener(type, () => renderGesture.end(), true);
+window.addEventListener("blur", event => { if (event.target === window) renderGesture.end(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") renderGesture.end(); });
+
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
+  if (renderGesture.defer({ animatePanels, includeBoard })) return;
   document.title = getDocumentTitle();
   syncRouteTransitionForCurrentRoute();
   const routeKey = getRouteRenderKey();
@@ -4095,6 +4110,7 @@ appEl.addEventListener("click", async (event) => {
   const action = actionEl.getAttribute("data-action");
   const actionGameId = actionEl.getAttribute("data-game-id") || currentRoute.gameId;
   if (action === "public-profile") { void publicProfileDialog.open(actionEl.getAttribute("data-username"), actionEl); return; }
+  if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") { accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
   const accountGatedActions = new Set(["create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
   if (accountGatedActions.has(action) && !account.canPlay()) {
@@ -4845,20 +4861,35 @@ window.addEventListener("touchcancel", () => {
   clearActivePanelSwipe();
 });
 
+let startupFlight = false, startupComplete = false, startupRetryTimer = null, startupRetryDelay = 1000;
 const initialRender = async () => {
+  if (startupFlight || startupComplete) return;
+  clearTimeout(startupRetryTimer);
+  startupFlight = true;
+  try {
   routeHydrated = false;
   render({ animatePanels: false, includeBoard: false });
   try {
     await account.start();
-    await account.activity(true);
+    void account.activity(true);
   } catch (error) {
     window.__righeltLastError = error.code || error.message;
     if (error.code === "upgrade_required") {
       try { const key="righelt.auth-refresh"; if(!window.sessionStorage.getItem(key)){window.sessionStorage.setItem(key,"1");window.location.reload();return;} } catch {}
       accountStartupError="Please refresh to update Righelt. Play is unavailable until the update completes.";render({animatePanels:false,includeBoard:false});
     }
+    if (error.code !== "upgrade_required") {
+      accountStartupError = "Could not connect. Retrying when the connection is available.";
+      render({animatePanels:false,includeBoard:false});
+      if (navigator.onLine !== false) {
+        startupRetryTimer = setTimeout(() => void initialRender(), startupRetryDelay);
+        startupRetryDelay = Math.min(startupRetryDelay * 2, 30000);
+      }
+    }
     return;
   }
+  startupComplete = true;
+  accountStartupError = "";
   syncLiveChannels();
   render({ animatePanels: false, includeBoard: false });
   const scenarioCatalogPromise = (async () => {
@@ -4876,6 +4907,9 @@ const initialRender = async () => {
   } catch (error) {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
   }
+  } finally { startupFlight = false; }
 };
+window.addEventListener("offline", () => clearTimeout(startupRetryTimer));
+window.addEventListener("online", () => { startupRetryDelay = 1000; if (!startupComplete) void initialRender(); });
 
 void initialRender();

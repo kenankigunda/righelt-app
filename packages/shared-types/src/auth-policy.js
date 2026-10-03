@@ -1,5 +1,6 @@
 // Shared by browser validation, API sessions and private hashing Workers.
 export const AUTH_PROTOCOL_VERSION = 1;
+export const AUTH_BOOTSTRAP_TIMEOUT_MS = 5000;
 export const SESSION_COOKIE = '__Host-righelt_session';
 export const FLOW_COOKIE = '__Host-righelt_recovery';
 export const SESSION_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
