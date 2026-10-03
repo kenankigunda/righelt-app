@@ -51,6 +51,12 @@ test("runtime previews real effects, re-arms after authority change and sends on
     click(action.to);
     assert.equal(calls, 0);
     assert.deepEqual(rendered.pieces.find((piece) => piece.id === action.actorId).position, action.to);
+    const alternate = legal.find((candidate) => candidate.type === "move" && candidate.actorId === action.actorId && JSON.stringify(candidate.to) !== JSON.stringify(action.to));
+    click(alternate.to);
+    assert.equal(calls, 0, "a different destination replaces the preview");
+    assert.deepEqual(rendered.pieces.find((piece) => piece.id === action.actorId).position, alternate.to);
+    click(action.to);
+    assert.equal(calls, 0);
     authority = "account-b";
     click(action.to);
     assert.equal(calls, 0, "an old preview cannot confirm under changed authority");

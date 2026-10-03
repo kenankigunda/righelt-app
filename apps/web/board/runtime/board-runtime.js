@@ -1135,6 +1135,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, previewA
   };
 
   const bindElements = (nextElements) => {
+    // Shell hosts load their own snapshots and do not call initialize().
+    // DOM bindings must include keyboard/document behavior for both host paths.
+    globalThis.document?.addEventListener?.("click", handleDocumentClick);
+    globalThis.document?.addEventListener?.("keydown", handleDocumentKeydown);
     const hadPreview = elements.boardPreviewLabelEl;
     const sameNodes =
       elements.boardEl === nextElements.boardEl &&
