@@ -95,14 +95,17 @@ def claim_stage(artifact_root, stage, run_directory):
 
 
 def arena_arguments(args,artifact_root):
-    if not args.arena_plan:
+    prepare=getattr(args,'prepare_arena',False)
+    if prepare and (args.arena_plan or getattr(args,'health',False)):raise ValueError('preparation is exclusive with arena and health')
+    if not args.arena_plan and not prepare:
         if args.candidate_checkpoint or args.opponent_checkpoint:raise ValueError('arena checkpoint paths require a frozen plan')
         return None
     if not args.run_dir.exists() or not args.resume:raise ValueError('arena reuses an existing supervised run and original deadline')
     if not args.candidate_checkpoint or not args.opponent_checkpoint:raise ValueError('both frozen arena checkpoints required')
-    if not args.arena_plan.resolve().is_relative_to(args.run_dir.resolve()):raise ValueError('arena plan must belong to this run')
+    if args.arena_plan and not args.arena_plan.resolve().is_relative_to(args.run_dir.resolve()):raise ValueError('arena plan must belong to this run')
     for path in (args.candidate_checkpoint,args.opponent_checkpoint):
         if not path.resolve().is_relative_to(artifact_root.resolve()):raise ValueError('arena checkpoints must remain in experiment archive')
+    if prepare:return None
     from .arena import read_frozen_plan
     _,digest=read_frozen_plan(args.arena_plan)
     return digest
@@ -124,6 +127,7 @@ def main():
     parser.add_argument('--resume',type=Path)
     parser.add_argument('--arena-plan',type=Path)
     parser.add_argument('--health',action='store_true')
+    parser.add_argument('--prepare-arena',action='store_true')
     parser.add_argument('--candidate-checkpoint',type=Path)
     parser.add_argument('--opponent-checkpoint',type=Path)
     args=parser.parse_args()
@@ -167,7 +171,7 @@ def main():
         runtime['parentCheckpointManifestSha256']=metadata['manifestSha256']
         runtime['parentCheckpoint']=str(args.resume.resolve())
     runtime['supervisorPid']=os.getpid()
-    runtime['command']='health' if args.health else 'arena' if arena_digest else 'training'
+    runtime['command']='prepare-arena' if args.prepare_arena else 'health' if args.health else 'arena' if arena_digest else 'training'
     runtime['supervisorAttempt']=uuid.uuid4().hex
     if arena_digest:runtime['arenaPlanSha256']=arena_digest
     else:runtime.pop('arenaPlanSha256',None)
@@ -176,7 +180,10 @@ def main():
                 'memory_gib':CONFIG['resources']['minMemoryGiB'],'paused':False,'stop':False,
                 'reason':'initial-conservative','observedAt':time.time()})
     claim_stage(artifact_root,args.stage,args.run_dir)
-    if args.health:
+    if args.prepare_arena:
+        argv=[sys.executable,'-m','righelt_training.prepare_arena','--run-dir',str(args.run_dir.resolve()),
+              '--candidate-checkpoint',str(args.candidate_checkpoint.resolve()),'--opponent-checkpoint',str(args.opponent_checkpoint.resolve())]
+    elif args.health:
         argv=[sys.executable,'-m','righelt_training.health','--run-dir',str(args.run_dir.resolve())]
     elif arena_digest:
         argv=[sys.executable,'-m','righelt_training.arena','run','--run-dir',str(args.run_dir.resolve()),
