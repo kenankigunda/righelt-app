@@ -36,3 +36,17 @@ test("automatic help suppresses a dismissed reason per game, while manual help s
   anotherGame.explain("supply", "Needs supply");
   assert.equal(anotherGame.getState().expanded, true);
 });
+
+test("dismissed rule help survives reload and preference hydration within its account/game only", () => {
+  const values = new Map(); const storage = { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value) };
+  const first = createContextualHelp({ storage, key: "account-a:game-1" });
+  first.explain("supply", "A supply rule"); first.dismiss();
+  const reload = createContextualHelp({ storage, key: "account-a:game-1" });
+  reload.setManual(false); reload.explain("supply", "A supply rule"); assert.equal(reload.getState().expanded, false);
+  reload.setManual(true); reload.explain("supply", "A supply rule"); assert.equal(reload.getState().expanded, true);
+  for (const key of ["account-b:game-1", "account-a:game-2"]) {
+    const other = createContextualHelp({ storage, key }); other.explain("supply", "A supply rule"); assert.equal(other.getState().expanded, true);
+  }
+  const blocked = createContextualHelp({ storage: { getItem() { throw Error(); }, setItem() { throw Error(); } }, key: "x" });
+  assert.doesNotThrow(() => { blocked.explain("supply", "Rule"); blocked.dismiss(); });
+});

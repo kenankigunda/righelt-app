@@ -1,16 +1,15 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 async function makeAnyLegalMove(page) {
-  const action = await page.evaluate(async () => {
+  const read = () => page.evaluate(async () => {
     const gameId = decodeURIComponent(location.hash.match(/^#\/game\/([^?]+)/)[1]);
     const session = await (await fetch("/api/auth/session")).json();
-    const body = await (await fetch(`/api/shell/games/${gameId}`, { headers: { "X-Righelt-Auth-Version": "1", "X-Righelt-Session": session.contextId } })).json();
-    return body.game.legalActions.find(action => action.from && action.to);
+    return (await (await fetch(`/api/shell/games/${gameId}`, { headers: { "X-Righelt-Auth-Version": "1", "X-Righelt-Session": session.contextId } })).json()).game;
   });
+  const before = await read(); const action = before.legalActions.find(action => action.from && action.to);
   const cell = position => page.locator(`#shell-board .cell[data-row="${position.row}"][data-col="${position.col}"]`);
-  await cell(action.from).click(); await cell(action.to).click();
-  const saved = page.waitForResponse(response => response.url().includes("/apply") && response.request().method() === "POST");
-  await cell(action.to).click(); expect((await saved).ok()).toBe(true);
+  await cell(action.from).click(); await cell(action.to).click(); await cell(action.to).click();
+  await expect.poll(async () => (await read()).moves.length).toBeGreaterThan(before.moves.length);
 }
 async function register(page) {
   await page.goto("/"); await page.getByTestId("account-open").click();
@@ -59,6 +58,10 @@ test("device sound is muted initially, confirms once, and reload stays silent", 
   await makeAnyLegalMove(page); await expect.poll(() => page.evaluate(() => window.__tones)).toBe(1);
   await page.reload(); await expect(page.getByTestId("game-shell")).toBeVisible(); expect(await page.evaluate(() => window.__tones)).toBe(0);
   await page.getByTestId("account-open").click(); await expect(page.getByRole("button", { name: "Sound on this device: On", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page.getByTestId("account-open").click();
+  await page.getByRole("button", { name: "Sound on this device: On", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Sound on this device: Off", exact: true })).toHaveAttribute("aria-pressed", "false");
 });
 test("resume loading reserves Start position without blocking it", async ({ page }) => {
   await register(page); await page.getByRole("button", { name: "Self-play", exact: true }).click(); await expect(page.getByTestId("game-shell")).toBeVisible();
@@ -69,4 +72,26 @@ test("resume loading reserves Start position without blocking it", async ({ page
   const before = await start.boundingBox(); release();
   await expect(page.locator('[data-zone="home-resume"]')).toHaveAttribute("aria-busy", "false");
   const after = await start.boundingBox(); expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+});
+
+test("dismissed rule help survives reload and respects the hydrated manual preference", async ({ page }) => {
+  await register(page); await page.getByRole("button", { name: "Self-play", exact: true }).click(); await expect(page.getByTestId("game-shell")).toBeVisible();
+  const source = await page.evaluate(async () => {
+    const session = await (await fetch("/api/auth/session")).json();
+    const id = decodeURIComponent(location.hash.match(/^#\/game\/([^?]+)/)[1]);
+    const game = (await (await fetch(`/api/shell/games/${id}`, { headers: { "X-Righelt-Auth-Version": "1", "X-Righelt-Session": session.contextId } })).json()).game;
+    return game.legalActions.find(action => action.from && action.to).from;
+  });
+  const triggerRule = async () => {
+    await page.locator(`#shell-board .cell[data-row="${source.row}"][data-col="${source.col}"]`).click();
+    await page.locator('#shell-board .cell[data-row="4"][data-col="9"]').click();
+  };
+  await triggerRule();
+  await expect(page.locator('[data-zone="game-help"]')).toHaveAttribute("data-expanded", "true");
+  await page.getByRole("button", { name: "Collapse", exact: true }).click();
+  await page.reload(); await expect(page.getByTestId("game-shell")).toBeVisible(); await triggerRule();
+  await expect(page.locator('[data-zone="game-help"]')).toHaveAttribute("data-expanded", "false");
+  await page.getByTestId("account-open").click(); await page.getByLabel("View preference").selectOption("explanatory");
+  await page.getByRole("button", { name: "Save account settings", exact: true }).click();
+  await page.reload(); await expect(page.getByRole("button", { name: "Explain", exact: true })).toHaveAttribute("aria-pressed", "true");
 });

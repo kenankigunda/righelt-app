@@ -2705,7 +2705,7 @@ function syncAccountViewPreference() {
 const getGameHelp = (gameId) => {
   const key = `${transport.getIdentityId()}:${gameId}`;
   if (!helpByGame.has(key)) {
-    const help = createContextualHelp();
+    const help = createContextualHelp({ storage, key: `righelt.ux.help-dismissed.${key}` });
     help.setManual(account.snapshot().session.account?.preferences?.view === "explanatory");
     helpByGame.set(key, help);
   }
@@ -3866,7 +3866,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
 };
 const renderContent = ({ animatePanels, includeBoard }) => {
   const hadResultView = Boolean(appEl.querySelector(".game-result"));
-  const resultFocusAction = document.activeElement?.closest(".game-result") ? document.activeElement.getAttribute("data-action") : null;
+  const resultFocus = document.activeElement?.closest(".game-result") ? { action: document.activeElement.getAttribute("data-action"), href: document.activeElement.getAttribute("href") } : null;
   document.title = getDocumentTitle();
   brandController.setHome(currentRoute.name === "home");
   const affiliationGameId = getCurrentViewedGameId();
@@ -3971,7 +3971,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
       animateFlyoutPositionChanges(previousFlyoutRects);
     }
   }
-  if (resultFocusAction) appEl.querySelector(`.game-result [data-action="${CSS.escape(resultFocusAction)}"]`)?.focus({ preventScroll: true });
+  if (resultFocus?.action || resultFocus?.href) appEl.querySelector(resultFocus.action ? `.game-result [data-action="${CSS.escape(resultFocus.action)}"]` : `.game-result a[href="${CSS.escape(resultFocus.href)}"]`)?.focus({ preventScroll: true });
   if (nextMarkup === lastRenderedMarkup) {
     lastRenderedRouteKey = routeKey;
     lastRenderedBaseRouteKey = baseRouteKey;

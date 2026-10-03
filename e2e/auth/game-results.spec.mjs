@@ -33,7 +33,18 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   const socket = await reconnected;
   await socket.waitForEvent("framereceived");
   await expect(review).toBeFocused();
-  await page.screenshot({ path: testInfo.outputPath("result-375.png") });
+  for (const viewport of [{ width: 375, height: 812 }, { width: 1100, height: 800 }, { width: 1600, height: 1000 }, { width: 812, height: 375 }]) {
+    await page.setViewportSize(viewport);
+    await page.screenshot({ path: testInfo.outputPath(`result-${viewport.width}.png`) });
+  }
+  await page.setViewportSize({ width: 375, height: 812 });
+  const home = page.getByTestId("game-result").getByRole("link", { name: "Home", exact: true });
+  await home.focus();
+  await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+  const reconnectedAgain = page.waitForEvent("websocket");
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await (await reconnectedAgain).waitForEvent("framereceived");
+  await expect(home).toBeFocused();
   await page.reload();
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await expect(page.getByTestId("game-result")).toHaveCount(0);

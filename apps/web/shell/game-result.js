@@ -29,6 +29,7 @@ export const createResultTransitions = () => {
 export const createRematchDialog = ({ createModal, document = globalThis.document, onStart }) => {
   let session = 0, busy = false;
   const modal = createModal({ document, labelId: "rematch-title", onClose: () => { session++; busy = false; } });
+  modal.element.addEventListener("change", event => { if (event.target.name === "rematch-side") modal.element.dataset.actionAffiliation = event.target.value === "p2" ? "blue" : "red"; });
   modal.element.addEventListener("click", async event => {
     if (!event.target.closest("[data-rematch-start]") || busy) return;
     const opponent = modal.element.querySelector("[name=rematch-opponent]").value;
