@@ -499,17 +499,17 @@ test("keyboard board activation opens sign in without losing the board", async (
   } finally { await otherContext.close(); }
 });
 
-test("a delayed play continuation is discarded after a cross-tab account switch", async ({ page }) => {
+test("a delayed legacy play continuation is discarded after a cross-tab account switch", async ({ page }) => {
   await page.addInitScript(() => {
     const original = window.fetch.bind(window);
-    window.__heldAccountLists = [];
+    window.__heldAccountGame = [];
     window.fetch = async (...args) => {
       const response = await original(...args);
-      if (window.__holdAccountLists && new URL(args[0], location.href).pathname === "/api/shell/games" && (!args[1]?.method || args[1].method === "GET")) {
+      if (window.__holdAccountGame && new URL(args[0], location.href).pathname === "/api/shell/invites/cutover-legacy-invite" && (!args[1]?.method || args[1].method === "GET")) {
         const json = response.json.bind(response);
         response.json = async () => {
           const body = await json();
-          await new Promise(resolve => window.__heldAccountLists.push(resolve));
+          await new Promise(resolve => window.__heldAccountGame.push(resolve));
           return body;
         };
       }
@@ -532,13 +532,16 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
   page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates++; });
   try {
     await sibling.goto("/");
-    await page.getByTestId("home-create-game").click();
+    await page.goto("/#/invite/cutover-legacy-invite");
+    await page.getByRole("button", { name: "Start new game", exact: true }).click();
     await dialog(page).getByLabel("Username", { exact: true }).fill(first);
     await dialog(page).getByLabel("Password", { exact: true }).fill(password);
-    await page.evaluate(() => { window.__holdAccountLists = true; });
+    await page.evaluate(() => { window.__holdAccountGame = true; });
     await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(dialog(page)).not.toBeVisible();
-    await expect.poll(() => page.evaluate(() => window.__heldAccountLists.length)).toBeGreaterThan(0);
+    await expect.poll(() => page.evaluate(() => window.__heldAccountGame.length)).toBeGreaterThan(0);
+    // Legacy actions still await the current invitation and game controls.
+    // Delay that relevant read, then retire its account before it can resume.
     await expect(sibling.getByRole("button", { name: "Account", exact: true })).toBeVisible();
     await account(sibling);
     await dialog(sibling).getByRole("button", { name: "Switch account", exact: true }).click();
@@ -550,14 +553,14 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
     await expect(dialog(page)).toContainText(`@${second}`);
     await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
     await page.evaluate(async () => {
-      window.__holdAccountLists = false;
-      window.__heldAccountLists.splice(0).forEach(resolve => resolve());
+      window.__holdAccountGame = false;
+      window.__heldAccountGame.splice(0).forEach(resolve => resolve());
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     });
     expect(creates).toBe(0);
-    expect(new URL(page.url()).hash).not.toContain("game/");
+    expect(new URL(page.url()).hash).toBe("#/invite/cutover-legacy-invite");
   } finally {
-    if (!page.isClosed()) await page.evaluate(() => window.__heldAccountLists.splice(0).forEach(resolve => resolve()));
+    if (!page.isClosed()) await page.evaluate(() => window.__heldAccountGame.splice(0).forEach(resolve => resolve()));
     await sibling.close();
   }
 });
