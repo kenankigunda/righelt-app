@@ -198,3 +198,19 @@ test("tampered restored journal records block replay without evicting unresolved
   assert.equal(reloaded.getGameViewModel(f.gameId).storageBlocked, true);
   assert.equal(f.requests.filter((entry) => entry.kind).length, 0);
 });
+
+test("unknown receipt recovery keeps shared changes locked after the socket itself recovers", async () => {
+  let command;
+  const f = await setup({ fault: (url, init, call) => {
+    if (url.endsWith("/apply")) { command = JSON.parse(init.body); return new Promise(() => {}); }
+    if (url.endsWith("/reconcile")) return Response.json({ protocolVersion: 2, gameId: command.gameId, eventSeq: 1, gameplayRevision: 0,
+      commandOutcomes: [{ gameId: command.gameId, identityId: command.identityId, clientCommandId: command.clientCommandId, fingerprint: command.fingerprint, outcome: "unknown", reason: "dependency_pending", eventSeq: 1, gameplayRevision: 0 }] });
+    return call();
+  } });
+  const handle = await f.move(); await until(() => command);
+  f.store.setConnectionRecovering(f.gameId, true);
+  await f.store.reconcileGame(f.gameId);
+  f.store.setConnectionRecovering(f.gameId, false);
+  assert.equal(handle.status, "pending"); assert.equal(f.store.getGameViewModel(f.gameId).sharedMutationsBlocked, true);
+  await assert.rejects(f.move(), /sync_recovering/);
+});

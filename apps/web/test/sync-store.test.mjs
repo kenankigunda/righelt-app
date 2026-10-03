@@ -1554,3 +1554,16 @@ test("sync store fails history branch and queued optimistic commands when the se
     `discard:${branchHandle.result.game.id}`,
   ]);
 });
+
+test("sync store propagates rejected socket snapshots without forwarding or acknowledging application", () => {
+  let receive;
+  let forwarded = 0;
+  createSyncStore({
+    storage: createMemoryStorage(),
+    onEvent: () => { forwarded++; },
+    createTransportStore: () => ({ subscribe: () => () => {}, getIdentityId: () => "id-test", getLastEventSeq: () => 1, applyLiveGameUpdate: () => null }),
+    createSyncClient: (options) => { receive = options.onEvent; return { connectGame() {}, disconnectGame() {}, disconnectAll() {}, getDesiredGameIds: () => [] }; },
+  });
+  assert.equal(receive({ type: "state_sync", eventSeq: 2, game: { id: "g" } }, { gameId: "g" }), false);
+  assert.equal(forwarded, 0);
+});

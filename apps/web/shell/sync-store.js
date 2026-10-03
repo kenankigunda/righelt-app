@@ -1,12 +1,14 @@
 import { createInitialState, listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
 import { buildLocalApiWsHost, isLocalDevHost } from "../local-dev-ports.js";
-import { createLiveTransportStore } from "./live-transport.js";
+import { createLiveTransportStore, validSyncSnapshot } from "./live-transport.js";
 import { createOperationManager } from "./operation-manager.js";
 
+import { SYNC_TIMING, isSyncRevision } from "../generated/packages/shared-types/src/sync-protocol.js";
+
 const PENDING_LOCAL_GAMES_KEY = "righelt.pendingLocalGames";
-const WS_RECONNECT_BASE_MS = 1_000;
-const WS_RECONNECT_MAX_MS = 30_000;
-const HEARTBEAT_MS = 45_000;
+const WS_RECONNECT_BASE_MS = SYNC_TIMING.retryDelaysMs[0];
+const WS_RECONNECT_MAX_MS = SYNC_TIMING.retryDelaysMs.at(-1);
+const HEARTBEAT_MS = SYNC_TIMING.heartbeatIntervalMs;
 const VISIBILITY_SUSPEND_GRACE_MS = 5_000;
 
 const isAuthoritativeSyncEvent = (payload) =>
@@ -71,6 +73,7 @@ const createWsUrl = ({ identityId, gameId, sessionId, lastEventSeq }) => {
     identityId,
     sessionId,
     lastEventSeq: String(lastEventSeq ?? 0),
+    protocolVersion: "2",
   });
   const host = isLocalDevHost(window.location.hostname) ? buildLocalApiWsHost(window.location.port) : window.location.host;
   return `${protocol}://${host}/api/shell/games/${encodeURIComponent(gameId)}/ws?${params.toString()}`;
@@ -91,6 +94,11 @@ export const createLiveSyncClient = ({
   reconnectBaseMs = WS_RECONNECT_BASE_MS,
   reconnectMaxMs = WS_RECONNECT_MAX_MS,
   heartbeatMs = HEARTBEAT_MS,
+  inboundTimeoutMs = SYNC_TIMING.inboundTimeoutMs,
+  initialSnapshotTimeoutMs = SYNC_TIMING.requestTimeoutMs,
+  onRecovery = () => {},
+  onReconcile = async () => {},
+  onReady = async () => {},
   visibilitySuspendGraceMs = VISIBILITY_SUSPEND_GRACE_MS,
 }) => {
   const sockets = new Map();
@@ -101,6 +109,11 @@ export const createLiveSyncClient = ({
   const sessionIdByGameId = new Map();
   const desiredGameIds = new Set();
   const closeReasonBySocket = new Map();
+  const generations = new Map();
+  const connectionState = new Map();
+  const repairOwners = new Map();
+  const reconnectGates = new Map();
+  const advertisedEventSeqByGameId = new Map();
   let visibilitySuspendTimer = null;
   let suspendedForInvisibility = false;
 
@@ -191,6 +204,7 @@ export const createLiveSyncClient = ({
       }
       return;
     }
+    if (closeReason.startsWith("intentional_suspend:") || closeReason === "network_offline" || closeReason === "pagehide") onRecovery({ gameId, reason: closeReason });
     if (closeReason.startsWith("intentional_suspend:")) {
       sendPresenceHint(gameId, "inactive");
     } else if (closeReason === "intentional_disconnect") {
@@ -199,12 +213,16 @@ export const createLiveSyncClient = ({
       sendPresenceHint(gameId, "disconnecting", { preferBeacon: true });
     }
     sockets.delete(gameId);
+    generations.set(gameId, (generations.get(gameId) ?? 0) + 1);
+    const connection = connectionState.get(gameId);
+    if (connection) { clearTimeout(connection.initialTimer); clearTimeout(connection.watchdog); connection.resolveInitial(); connectionState.delete(gameId); }
     closeReasonBySocket.set(socket, closeReason);
     try {
       socket.close();
     } catch {
       // ignore
     }
+    if (closeReason.startsWith("intentional_suspend:")) onStatus({ state: "suspended", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
     if (emitDisconnected) {
       onStatus({ state: "disconnected", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
     }
@@ -293,7 +311,7 @@ export const createLiveSyncClient = ({
     }
     clearReconnect(gameId);
     const reconnectAttempts = reconnectAttemptsByGameId.get(gameId) ?? 0;
-    const jitter = 0.85 + Math.random() * 0.3;
+    const jitter = 0.8 + Math.random() * 0.4;
     const delay = Math.round(Math.min(reconnectMaxMs, reconnectBaseMs * 2 ** reconnectAttempts) * jitter);
     reconnectAttemptsByGameId.set(gameId, reconnectAttempts + 1);
     recordMetric("reconnect_scheduled", { gameId, reconnectAttempts: reconnectAttempts + 1, delayMs: delay });
@@ -306,6 +324,28 @@ export const createLiveSyncClient = ({
         connect(gameId);
       }, delay),
     );
+  };
+
+  const repair = (gameId, reason) => {
+    if (!desiredGameIds.has(gameId)) return Promise.resolve();
+    if (repairOwners.has(gameId)) return repairOwners.get(gameId).promise;
+    const owner = {};
+    repairOwners.set(gameId, owner);
+    onRecovery({ gameId, reason });
+    recordMetric("recovery_started", { gameId, reason });
+    clearReconnect(gameId);
+    cleanupSocket(gameId, { closeReason: `recovery:${reason}` });
+    reconnectGates.get(gameId)?.resolve(); reconnectGates.delete(gameId);
+    owner.promise = Promise.resolve().then(() => onReconcile({ gameId, reason })).then(() => {
+      if (repairOwners.get(gameId) !== owner || !desiredGameIds.has(gameId)) return;
+      recordMetric("recovery_reconciled", { gameId, reason });
+      if (shouldKeepConnectionsActive()) connect(gameId);
+    }).catch((error) => {
+      if (repairOwners.get(gameId) !== owner) return;
+      onError(error);
+      scheduleReconnect(gameId);
+    }).finally(() => { if (repairOwners.get(gameId) === owner) repairOwners.delete(gameId); });
+    return owner.promise;
   };
 
   const connect = (gameId) => {
@@ -335,41 +375,88 @@ export const createLiveSyncClient = ({
     const sessionId = createSessionId();
     sessionIdByGameId.set(gameId, sessionId);
     lastEventSeqByGameId.set(gameId, lastEventSeq);
+    onRecovery({ gameId, reason: "connecting" });
     onStatus({ state: "connecting", gameId, reconnectAttempts });
 
     const ws = new WebSocket(createWsUrl({ identityId, gameId, sessionId, lastEventSeq }));
     sockets.set(gameId, ws);
+    const generation = (generations.get(gameId) ?? 0) + 1;
+    generations.set(gameId, generation);
+    const current = () => sockets.get(gameId) === ws && generations.get(gameId) === generation;
+    const connection = { generation, initialDone: false, lastInboundAt: Date.now() };
+    connection.initial = new Promise((resolve) => { connection.resolveInitial = resolve; });
+    connectionState.set(gameId, connection);
+    const reconnectGate = reconnectGates.get(gameId);
+    if (reconnectGate) void connection.initial.then(() => { reconnectGate.resolve(); if (reconnectGates.get(gameId) === reconnectGate) reconnectGates.delete(gameId); });
+    connection.initialTimer = setTimeout(() => { if (current()) void repair(gameId, "initial_snapshot_timeout"); }, initialSnapshotTimeoutMs);
+    connection.initialTimer.unref?.();
+    const refreshWatchdog = () => {
+      clearTimeout(connection.watchdog);
+      connection.lastInboundAt = Date.now();
+      connection.watchdog = setTimeout(() => { if (current() && shouldKeepConnectionsActive()) void repair(gameId, "inbound_timeout"); }, inboundTimeoutMs);
+      connection.watchdog.unref?.();
+    };
+    const finishInitial = () => {
+      if (connection.initialDone) return;
+      connection.initialDone = true;
+      clearTimeout(connection.initialTimer);
+      connection.resolveInitial();
+      void Promise.resolve(onReady({ gameId, generation, isCurrent: current })).catch(() => { if (current()) void repair(gameId, "reconciliation_failed"); });
+    };
     recordMetric("socket_opened", { gameId, reconnectAttempts });
 
     ws.addEventListener("open", () => {
+      if (!current()) return;
+      refreshWatchdog();
       reconnectAttemptsByGameId.set(gameId, 0);
       onStatus({ state: "connected", gameId, reconnectAttempts: 0 });
       refreshHeartbeatLoop(gameId);
     });
 
     ws.addEventListener("message", (event) => {
+      if (!current()) return;
       try {
         const payload = JSON.parse(typeof event.data === "string" ? event.data : "{}");
-        if (typeof payload?.eventSeq === "number") {
-          const nextLastEventSeq = Math.max(lastEventSeqByGameId.get(gameId) ?? 0, payload.eventSeq);
-          lastEventSeqByGameId.set(gameId, nextLastEventSeq);
+        if (payload.protocolVersion !== 2 || payload.gameId !== gameId || !isSyncRevision(payload.eventSeq)) throw new Error("invalid_socket_event");
+        if (payload.type === "heartbeat_ack") {
+          advertisedEventSeqByGameId.set(gameId, Math.max(advertisedEventSeqByGameId.get(gameId) ?? 0, payload.eventSeq));
+          refreshWatchdog();
+          const applied = Math.max(lastEventSeqByGameId.get(gameId) ?? 0, Number(getLastEventSeq(gameId) || 0));
+          if (payload.eventSeq > applied) { void repair(gameId, "behind_server"); return; }
+          finishInitial();
+          return;
         }
-        onEvent(payload, { gameId });
+        if (!isAuthoritativeSyncEvent(payload) || !validSyncSnapshot(payload.game, gameId)
+          || (payload.commandOutcome && (!isSyncRevision(payload.commandOutcome.eventSeq) || payload.commandOutcome.eventSeq > payload.eventSeq || !isSyncRevision(payload.commandOutcome.gameplayRevision) || payload.commandOutcome.gameplayRevision > payload.game.gameplayRevision))) throw new Error("invalid_socket_snapshot");
+        const applied = onEvent(payload, { gameId, generation });
+        if (!current()) return;
+        if (applied === false) throw new Error("snapshot_not_applied");
+        lastEventSeqByGameId.set(gameId, Math.max(lastEventSeqByGameId.get(gameId) ?? 0, payload.eventSeq));
+        refreshWatchdog();
+        finishInitial();
       } catch {
-        // ignore malformed events
+        void repair(gameId, "invalid_socket_event");
       }
     });
 
     ws.addEventListener("error", () => {
+      if (!current()) return;
+      void repair(gameId, "socket_error");
       recordMetric("socket_error", { gameId });
       onError(new Error("websocket_error"));
       onStatus({ state: "error", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
     });
 
     ws.addEventListener("close", () => {
+      if (!current()) { closeReasonBySocket.delete(ws); return; }
       const closeReason = closeReasonBySocket.get(ws) ?? "unexpected_close";
       closeReasonBySocket.delete(ws);
       clearHeartbeat(gameId);
+      clearTimeout(connection.initialTimer); clearTimeout(connection.watchdog); connection.resolveInitial(); connectionState.delete(gameId);
+      onRecovery({ gameId, reason: closeReason });
+      const reconnectGate = {};
+      reconnectGate.promise = new Promise((resolve) => { reconnectGate.resolve = resolve; });
+      reconnectGates.set(gameId, reconnectGate);
       if (sockets.get(gameId) === ws) {
         sockets.delete(gameId);
       }
@@ -396,6 +483,8 @@ export const createLiveSyncClient = ({
       return;
     }
     desiredGameIds.delete(gameId);
+    repairOwners.delete(gameId);
+    reconnectGates.get(gameId)?.resolve(); reconnectGates.delete(gameId);
     clearReconnect(gameId);
     cleanupSocket(gameId, { closeReason: "intentional_disconnect", emitDisconnected: true });
   };
@@ -405,6 +494,9 @@ export const createLiveSyncClient = ({
     suspendedForInvisibility = false;
     const gameIds = new Set([...desiredGameIds, ...sockets.keys()]);
     desiredGameIds.clear();
+    repairOwners.clear();
+    for (const gate of reconnectGates.values()) gate.resolve();
+    reconnectGates.clear();
     for (const gameId of gameIds) {
       clearReconnect(gameId);
       cleanupSocket(gameId, { closeReason: "intentional_disconnect", emitDisconnected: true });
@@ -422,6 +514,9 @@ export const createLiveSyncClient = ({
         refreshHeartbeatLoop(gameId);
       }
       resumeDesiredConnections();
+      for (const gameId of desiredGameIds) {
+        if (connectionState.get(gameId)?.initialDone) void repair(gameId, "visibility_resumed");
+      }
     });
   }
 
@@ -454,6 +549,15 @@ export const createLiveSyncClient = ({
 
   return {
     connectGame: (gameId) => connect(gameId),
+    waitForInitialSnapshot: (gameId) => {
+      const pending = connectionState.get(gameId)?.initial ?? reconnectGates.get(gameId)?.promise;
+      if (!pending) return Promise.resolve();
+      let timer;
+      return Promise.race([pending, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("initial_snapshot_wait_timeout")), initialSnapshotTimeoutMs);
+      })]).finally(() => clearTimeout(timer));
+    },
+    getAdvertisedEventSeq: (gameId) => advertisedEventSeqByGameId.get(gameId) ?? 0,
     disconnectGame,
     disconnectAll,
     disconnect: () => disconnectAll(),
@@ -875,6 +979,7 @@ export const createSyncStore = ({
     random,
     commandJournal,
     timing,
+    beforeReconcile: (gameId) => liveSync.waitForInitialSnapshot?.(gameId),
     shouldDeferCommandSend: (gameId, command) => {
       void command;
       return isPendingOptimisticGameCreation(gameId);
@@ -1056,17 +1161,28 @@ export const createSyncStore = ({
 
   const liveSync = createSyncClient({
     identityId: transport.getIdentityId(),
+    initialSnapshotTimeoutMs: timing?.requestTimeoutMs,
+    inboundTimeoutMs: timing?.inboundTimeoutMs,
+    heartbeatMs: timing?.heartbeatIntervalMs,
+    onRecovery: ({ gameId }) => transport.setConnectionRecovering?.(gameId, true),
+    onReconcile: ({ gameId }) => transport.reconcileGame?.(gameId),
+    onReady: async ({ gameId, isCurrent = () => true }) => {
+      if (transport.getGameViewModel(gameId)?.pendingCommandCount > 0) await transport.reconcileGame?.(gameId);
+      if (isCurrent()) transport.setConnectionRecovering?.(gameId, false);
+    },
     getLastEventSeq: (gameId) => (gameId ? transport.getLastEventSeq(gameId) : 0),
     onEvent: (payload, context = {}) => {
       if (isAuthoritativeSyncEvent(payload)) {
-        transport.applyLiveGameUpdate({
+        const applied = transport.applyLiveGameUpdate({
           game: payload.game,
           eventSeq: payload.eventSeq,
           clientCommandId: payload.clientCommandId ?? null,
           commandOutcome: payload.commandOutcome ?? null,
         });
+        if (applied === null) return false;
       }
       onEvent(payload, context);
+      return true;
     },
     onError,
     onStatus,

@@ -52,7 +52,7 @@ import {
   type LiveGame,
   withViewModel,
 } from "./shell-live-core";
-import { loadEventsAfter, loadGameProjection, persistGameState, type LiveGameEnv } from "./shell-live-db";
+import { loadGameProjection, persistGameState, type LiveGameEnv } from "./shell-live-db";
 
 const HEARTBEAT_TIMEOUT_MS = 95_000;
 
@@ -739,39 +739,15 @@ export class GameRoomDO {
     };
     this.sessions.set(server, session);
     this.persistSessionAttachment(server, session);
-    await this.setPresenceFromSessions(identityId);
+    await this.setPresenceFromSessions(identityId, server);
     await this.syncSessionAlarm();
 
-    const replayEvents = lastEventSeq > 0 ? await loadEventsAfter(this.env, game.id, lastEventSeq) : [];
-    if (
-      replayEvents.length > 0 &&
-      "eventSeq" in replayEvents[0] &&
-      (replayEvents[0] as { eventSeq: number }).eventSeq === lastEventSeq + 1 &&
-      (replayEvents[replayEvents.length - 1] as { eventSeq: number }).eventSeq === this.eventSeq
-    ) {
-      this.logDiagnostic(
-        "info",
-        "live_server_ws_replay_sent",
-        { identityId, lastEventSeq, replayCount: replayEvents.length },
-        true,
-      );
-      for (const event of replayEvents) {
-        this.send(server, eventForSession(event, identityId));
-      }
-    } else {
-      const syncEvent: StateSyncEvent = {
-        type: "state_sync",
-        eventSeq: this.eventSeq,
-        reason: replayEvents.length > 0 ? "replay_unavailable" : "connected",
-        game: clone(this.game ?? game),
-      };
+    // Recover from one current projection, never accumulated full-state events.
+    if (lastEventSeq !== this.eventSeq) {
+      const syncEvent: StateSyncEvent = { type: "state_sync", eventSeq: this.eventSeq, reason: "connected", game: clone(this.game ?? game) };
       this.send(server, eventForSession(syncEvent, identityId));
-      this.logDiagnostic(
-        "info",
-        "live_server_ws_state_sync_sent",
-        { identityId, lastEventSeq, reason: syncEvent.reason, replayCount: replayEvents.length },
-        true,
-      );
+    } else {
+      this.send(server, { type: "heartbeat_ack", protocolVersion: 2, gameId: game.id, eventSeq: this.eventSeq });
     }
 
     return new Response(null, { status: 101, webSocket: client } as any);
@@ -789,7 +765,7 @@ export class GameRoomDO {
     } catch {
       payload = null;
     }
-    if (!payload) {
+    if (!payload || !["heartbeat", "inactive", "disconnecting"].includes(payload.type) || !Number.isSafeInteger(payload.lastEventSeq) || payload.lastEventSeq < 0) {
       return;
     }
     const current = this.sessions.get(socket);
@@ -806,6 +782,7 @@ export class GameRoomDO {
     this.persistSessionAttachment(socket as HibernationWebSocket, current);
     await this.setPresenceFromSessions(payload.identityId);
     await this.syncSessionAlarm();
+    if (payload.type === "heartbeat") this.send(socket, { type: "heartbeat_ack", protocolVersion: 2, gameId: current.gameId, eventSeq: this.eventSeq });
   }
 
   async webSocketClose(socket: WebSocket) {
@@ -917,7 +894,7 @@ export class GameRoomDO {
     return count;
   }
 
-  private async setPresenceFromSessions(identityId: string) {
+  private async setPresenceFromSessions(identityId: string, excludedSocket?: WebSocket) {
     const game = await this.ensureLoaded();
     if (!game) {
       return;
@@ -952,7 +929,7 @@ export class GameRoomDO {
       game: clone(game),
     };
     await this.persistCandidate(game, presenceEvent);
-    this.broadcast(presenceEvent);
+    this.broadcast(presenceEvent, excludedSocket);
   }
 
   private async commit(
@@ -1098,15 +1075,16 @@ export class GameRoomDO {
     this.eventSeq = base + 1;
   }
 
-  private broadcast(event: ServerEvent) {
+  private broadcast(event: ServerEvent, excludedSocket?: WebSocket) {
     for (const session of this.sessions.values()) {
+      if (session.socket === excludedSocket) continue;
       this.send(session.socket, eventForSession(event, session.identityId));
     }
   }
 
   private send(socket: WebSocket, payload: ServerEvent) {
     try {
-      socket.send(JSON.stringify(payload));
+      socket.send(JSON.stringify({ ...payload, protocolVersion: 2, gameId: this.getLoadedGameId() }));
     } catch {
       const session = this.sessions.get(socket);
       this.sessions.delete(socket);
