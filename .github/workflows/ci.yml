@@ -299,6 +299,8 @@ jobs:
         run: pnpm test:e2e
 
       - name: Responsive app workflows
+        env:
+          PLAYWRIGHT_OUTPUT_DIR: test-results/e2e-responsive/artifacts
         run: pnpm test:responsive
 
       - name: Evidence report browser tests
@@ -321,7 +323,9 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: playwright-e2e-debug
-          path: test-results/e2e/artifacts
+          path: |
+            test-results/e2e/artifacts
+            test-results/e2e-responsive/artifacts
           if-no-files-found: ignore
 
   test-results:

@@ -228,8 +228,16 @@ export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
 
   if (test.info().project.use.hasTouch) {
     const boardTab = page.locator('[data-action="switch-game-panel"][data-panel="board"]');
-    if (await boardTab.isVisible()) await boardTab.click();
+    if (await boardTab.isVisible()) await boardTab.tap();
     await sourceCell.tap();
+    await expect(sourceCell).toHaveClass(/selected-piece/);
+    await expect(targetCell.locator('.move-ghost')).toBeVisible();
+    // Touch selects a destination before confirming it. A sole legal destination
+    // can already be selected, so never blindly send two confirmation taps.
+    if (!(await targetCell.evaluate(cell => cell.classList.contains('target')))) {
+      await targetCell.tap();
+      await expect(targetCell).toHaveClass(/\btarget\b/);
+    }
     await targetCell.tap();
     await expectHistoryMoveCountToIncrease(page, startingHistoryCount);
     return;
