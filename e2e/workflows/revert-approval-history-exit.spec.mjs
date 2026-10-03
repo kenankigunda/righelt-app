@@ -30,7 +30,7 @@ const requestUndoForFirstMoveViaApi = async (page) =>
     const revertResponse = await fetch(`/api/shell/games/${encodeURIComponent(gameId)}/revert-request`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, targetMoveId }),
+      body: JSON.stringify({ protocolVersion: 2, identityId, targetMoveId }),
     });
     const revertBody = await revertResponse.json();
     if (!revertResponse.ok) {

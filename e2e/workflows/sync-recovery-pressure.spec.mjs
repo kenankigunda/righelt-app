@@ -245,7 +245,7 @@ test('I10 browser reconnect transfers one current snapshot after205 moves and30 
  },gameId);
  const fault=await wire(page);const start=Date.now();await page.reload();await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
  await page.waitForTimeout(5500);
- // Initial GET owns current state; cursor-aware WebSocket acknowledges unchanged revision.
+ // Initial socket owns current state; reconciliation acknowledges unchanged revision.
  expect(fault.snapshots).toBe(1);
  await evidence(info,'long-history',start,[fault],{moves:205,duplicateSubmissions:result.duplicates.length});
 });

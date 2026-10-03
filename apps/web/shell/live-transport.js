@@ -280,7 +280,7 @@ export const createLiveTransportStore = ({
     return next;
   };
 
-  const upsertGameSnapshot = ({ game, eventSeq = null, clientCommandId = null, changeType = "authoritative_update" }) => {
+  const upsertGameSnapshot = ({ game, eventSeq = null, clientCommandId = null, changeType = "authoritative_update", publish = true }) => {
     if (!game) {
       return null;
     }
@@ -309,8 +309,7 @@ export const createLiveTransportStore = ({
       logDiagnostic("info", "live_transport_history_mode_changed", { gameId: game.id }, { verboseOnly: true });
     }
 
-    emitChange({ type: changeType, gameId: game.id });
-    void sendNextPendingCommand(game.id);
+    if (publish) { emitChange({ type: changeType, gameId: game.id }); void sendNextPendingCommand(game.id); }
     return authoritative;
   };
 
@@ -322,7 +321,7 @@ export const createLiveTransportStore = ({
     recalculateOptimisticGame(gameId);
     emitChange({ type: "journal_blocked", gameId, error });
   };
-  const settleOutcome = (gameId, outcome) => {
+  const settleOutcome = (gameId, outcome, notifications = null) => {
     const optimistic = getOptimisticState(gameId);
     const command = optimistic.pendingCommands.find((entry) => entry.clientCommandId === outcome?.clientCommandId);
     if (!command || !isCommandOutcome(outcome, command.envelope) || outcome.outcome === "unknown") return false;
@@ -338,8 +337,9 @@ export const createLiveTransportStore = ({
     optimistic.syncStatus = optimistic.pendingCommands.length ? optimistic.syncStatus : "ready";
     void commandJournal.remove(command.envelope).catch((error) => blockStorage(gameId, error));
     recalculateOptimisticGame(gameId);
-    emitChange({ type: outcome.outcome === "accepted" ? "authoritative_update" : "optimistic_rollback", gameId, clientCommandId: command.clientCommandId,
-      failureNotice: outcome.outcome === "rejected" ? "The game changed before your move could be completed. Check the board and try again." : "" });
+    const notification = { type: outcome.outcome === "accepted" ? "authoritative_update" : "optimistic_rollback", gameId, clientCommandId: command.clientCommandId,
+      failureNotice: outcome.outcome === "rejected" ? "The game changed before your move could be completed. Check the board and try again." : "" };
+    if (notifications) notifications.push(notification); else emitChange(notification);
     return true;
   };
   const applyLiveGameUpdate = ({ game, eventSeq = null, commandOutcome = null }) => {
@@ -357,11 +357,15 @@ export const createLiveTransportStore = ({
         return null;
       }
     }
+    const notifications = [];
     if (commandOutcome && game) {
       const confirming = getOptimisticState(game.id).syncStatus === "confirming";
-      if (settleOutcome(game.id, commandOutcome) && confirming) incrementSyncMetric("wsConfirmedAfterHttpFail", game.id);
+      if (settleOutcome(game.id, commandOutcome, notifications) && confirming) incrementSyncMetric("wsConfirmedAfterHttpFail", game.id);
     }
-    return upsertGameSnapshot({ game, eventSeq, changeType: "authoritative_update" });
+    const result = upsertGameSnapshot({ game, eventSeq, changeType: "authoritative_update", publish: false });
+    for (const notification of notifications) emitChange(notification);
+    if (game) { emitChange({ type: "authoritative_update", gameId: game.id }); void sendNextPendingCommand(game.id); }
+    return result;
   };
 
   const boundedRequest = async (url, init, controller = new AbortController()) => {
@@ -388,8 +392,12 @@ export const createLiveTransportStore = ({
   const processResponse = (gameId, body, envelopes) => {
     if (body?.protocolVersion === 1) { markUpgradeRequired(gameId); throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" }); }
     if (!isReconcileResponse(body, gameId, envelopes) || (body.game !== undefined && (!validSyncSnapshot(body.game, gameId) || body.game.gameplayRevision !== body.gameplayRevision))) throw new Error("invalid_confirmation");
-    for (const outcome of body.commandOutcomes) settleOutcome(gameId, outcome);
-    if (body.game) { upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }); }
+    const notifications = [];
+    for (const outcome of body.commandOutcomes) settleOutcome(gameId, outcome, notifications);
+    if (body.game) upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, publish: false });
+    for (const notification of notifications) emitChange(notification);
+    emitChange({ type: "authoritative_update", gameId });
+    void sendNextPendingCommand(gameId);
     return body;
   };
   const reconcileRequest = async (gameId, controller, isCurrent = () => true) => {
@@ -409,7 +417,7 @@ export const createLiveTransportStore = ({
 
   const sendNextPendingCommand = async (gameId, { retryAttempt = 0, reconcileFirst = false } = {}) => {
     const optimistic = getOptimisticState(gameId);
-    if (optimistic.attempt || optimistic.retryTimer || optimistic.storageBlocked) return;
+    if (optimistic.attempt || optimistic.retryTimer) return;
     const command = optimistic.pendingCommands[0];
     if (!command) {
       optimistic.syncStatus = "ready";
@@ -543,6 +551,10 @@ export const createLiveTransportStore = ({
   const retrySaving = async (gameId) => {
     const optimistic = getOptimisticState(gameId);
     try {
+      // Admission failures must not block recovery of already durable commands.
+      // Reconcile other games too: their receipts may release the identity-wide cap.
+      const outstanding = await commandJournal.list(identityId);
+      await Promise.allSettled([...new Set(outstanding.map((entry) => entry.gameId))].map((pendingGameId) => reconcileGame(pendingGameId)));
       // Retry cleanup by exact receipt identity, retaining unresolved records.
       const saved = await commandJournal.list(identityId, gameId);
       for (const envelope of saved) if (!isSyncCommand(envelope) || envelope.fingerprint !== await commandFingerprint(envelope)) throw new Error("invalid_saved_command");
@@ -1008,6 +1020,7 @@ export const createLiveTransportStore = ({
     listGames,
     getHomeGameCard,
     getGameViewModel,
+    getAuthoritativeGame: (gameId) => clone(gameById.get(gameId) ?? null),
     getIdentityId,
     subscribe,
     unsubscribe,

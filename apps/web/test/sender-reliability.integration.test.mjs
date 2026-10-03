@@ -10,13 +10,13 @@ import { createFakeGameRooms } from "../../../packages/api-handler/test/support/
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const until = async (predicate) => { for (let i = 0; i < 300; i++) { if (predicate()) return; await sleep(5); } assert.fail("condition did not converge"); };
 const memoryStorage = () => { const values = new Map(); return { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) }; };
-const setup = async ({ journal: override, fault = (url, init, call) => call() } = {}) => {
+const setup = async ({ journal: override, timing = {}, fault = (url, init, call) => call() } = {}) => {
   const env = { DB: createFakeD1() }; env.GAME_ROOMS = createFakeGameRooms(() => env);
   const storage = memoryStorage(), indexedDB = new IDBFactory();
   const journal = override ?? createCommandJournal({ indexedDB });
   const requests = [];
   const actual = (url, init = {}) => apiWorker.fetch(new Request(`https://test${url}`, init), env);
-  const create = () => createSyncStore({ storage, commandJournal: journal, timing: { ...SYNC_TIMING, requestTimeoutMs: 30, confirmationBudgetMs: 65, retryDelaysMs: [10], retryJitter: 0 },
+  const create = () => createSyncStore({ storage, commandJournal: journal, timing: { ...SYNC_TIMING, requestTimeoutMs: 30, confirmationBudgetMs: 65, retryDelaysMs: [10], retryJitter: 0, ...timing },
     fetcher: (url, init) => { if (init?.body) requests.push(JSON.parse(init.body)); return fault(url, init, () => actual(url, init)); },
     createSyncClient: () => ({ connectGame() {}, disconnectGame() {}, disconnectAll() {}, getDesiredGameIds: () => [] }),
   });
@@ -124,6 +124,9 @@ test("an out-of-order descendant receipt cannot reset the predecessor confirmati
   await until(() => f.store.getGameViewModel(f.gameId).confirmationOverdue);
   f.store.applyLiveGameUpdate({ game: firstBody.game, eventSeq: firstBody.eventSeq, commandOutcome: firstBody.commandOutcomes[0] });
   assert.equal(first.status, "committed"); assert.equal(f.store.getGameViewModel(f.gameId).moves.length, 2);
+  const lateResult = await first.committed;
+  assert.equal(lateResult.game.moves.length, 2);
+  assert.deepEqual(lateResult.state, body.game.board.state);
   releaseFirst(Response.json({}));
 });
 
@@ -213,4 +216,95 @@ test("unknown receipt recovery keeps shared changes locked after the socket itse
   f.store.setConnectionRecovering(f.gameId, false);
   assert.equal(handle.status, "pending"); assert.equal(f.store.getGameViewModel(f.gameId).sharedMutationsBlocked, true);
   await assert.rejects(f.move(), /sync_recovering/);
+});
+
+
+test("HTTP and socket commitment results include the accepted snapshot, retaining newer state", async () => {
+  for (const channel of ["http", "socket"]) {
+    let body, release;
+    const f = await setup({ fault: async (url, init, call) => {
+      const response = await call();
+      if (!url.endsWith("/apply")) return response;
+      body = await response.json();
+      return new Promise(resolve => { release = () => resolve(Response.json(body)); });
+    } });
+    const handle = await f.move(); await until(() => body);
+    if (channel === "socket") f.store.applyLiveGameUpdate({ game: body.game, eventSeq: body.eventSeq, commandOutcome: body.commandOutcomes[0] });
+    else release();
+    const result = await handle.committed;
+    assert.equal(result.game.moves.length, 1);
+    assert.equal(result.game.gameplayRevision, body.game.gameplayRevision);
+    assert.deepEqual(result.state, f.store.getGameViewModel(f.gameId).currentSnapshot);
+    release();
+  }
+});
+
+test("admission quota failure cannot block durable command recovery", async () => {
+  const actualJournal = createCommandJournal({ indexedDB: new IDBFactory() }); let calls = 0, fail = true, lost = true;
+  const journal = { ...actualJournal, admit: envelope => ++calls > 1 && fail ? Promise.reject(new Error("quota")) : actualJournal.admit(envelope) };
+  const f = await setup({ journal, timing: { requestTimeoutMs: 100 }, fault: async (url, init, call) => {
+    if (lost && url.endsWith("/apply")) { await call(); return new Promise(() => {}); }
+    if (lost && url.endsWith("/reconcile")) return new Promise(() => {});
+    return call();
+  } });
+  const handle = await f.move(); await assert.rejects(f.move(), /quota/);
+  lost = false; await f.store.reconcileGame(f.gameId); await until(() => handle.status === "committed");
+  assert.equal(f.store.getGameViewModel(f.gameId).storageBlocked, true);
+  assert.equal((await journal.list(f.store.getIdentityId())).length, 0);
+  fail = false; await f.store.retrySaving(f.gameId);
+  await until(() => f.env.DB.getGameState(f.gameId).moves.length === 2);
+});
+
+test("full game and identity journal caps drain durable receipts before retrying admission", async () => {
+  const { commandFingerprint } = await import("../generated/packages/shared-types/src/sync-protocol.js");
+  for (const cap of [16, 128]) {
+    let lost = true, unavailableGame;
+    const f = await setup({ timing: { requestTimeoutMs: 1000 }, fault: async (url, init, call) => {
+      if (unavailableGame && url.includes(unavailableGame) && url.endsWith("/reconcile")) return Response.json({ error: "not_found" }, { status: 404 });
+      if (lost && url.endsWith("/apply")) { await call(); return new Promise(() => {}); }
+      if (lost && url.endsWith("/reconcile")) return new Promise(() => {});
+      return call();
+    } });
+    const first = await f.move(); const [original] = await f.journal.list(f.store.getIdentityId());
+    const gameIds = [f.gameId];
+    for (let i = 1; i < cap / 16; i++) { const created = f.store.createGame({ selfPlayMode: true }); await created.committed; gameIds.push(created.gameId); }
+    for (let i = 1; i < cap; i++) {
+      const envelope = { ...original, gameId: gameIds[Math.floor(i / 16)], clientCommandId: `v2:cap-${cap}-${i}` };
+      envelope.fingerprint = await commandFingerprint(envelope); await f.journal.admit(envelope);
+    }
+    assert.equal((await f.journal.list(f.store.getIdentityId())).length, cap);
+    await assert.rejects(f.move(), /journal_limit/);
+    unavailableGame = cap === 128 ? gameIds[1] : null;
+    lost = false; await f.store.retrySaving(f.gameId);
+    await until(() => first.status === "committed");
+    await until(() => f.store.getGameViewModel(f.gameId).pendingCommandCount === 0);
+    assert.equal(f.store.getGameViewModel(f.gameId).storageBlocked, false);
+    assert.ok((await f.journal.list(f.store.getIdentityId())).length < cap);
+    if (unavailableGame) assert.equal((await f.journal.list(f.store.getIdentityId(), unavailableGame)).length, 16);
+  }
+});
+
+test("committed A excludes optimistic B and a late A receipt retains newer authoritative B", async () => {
+  let firstBody, secondBody, releaseFirst, releaseSecond;
+  const f = await setup({ timing: { requestTimeoutMs: 500 }, fault: async (url, init, call) => {
+    const response = await call(); if (!url.endsWith('/apply')) return response;
+    const body = await response.json();
+    if (!firstBody) { firstBody = body; return new Promise(resolve => { releaseFirst = () => resolve(Response.json(body)); }); }
+    secondBody = body; return new Promise(resolve => { releaseSecond = () => resolve(Response.json(body)); });
+  } });
+  const first = await f.move(); const second = await f.move(); await until(() => firstBody);
+  releaseFirst(); const result = await first.committed;
+  assert.equal(result.game.moves.length, 1);
+  assert.deepEqual(result.state, firstBody.game.board.state);
+  assert.equal(second.status, 'pending');
+  await until(() => secondBody);
+  f.store.selectHistoryMove({ gameId: f.gameId, moveIndex: 0 });
+  f.store.applyLiveGameUpdate({ game: secondBody.game, eventSeq: secondBody.eventSeq, commandOutcome: secondBody.commandOutcomes[0] });
+  const secondResult = await second.committed;
+  assert.equal(secondResult.game.moves.length, 2);
+  assert.deepEqual(secondResult.state, secondBody.game.board.state);
+  assert.equal(f.store.getGameViewModel(f.gameId).inHistoryMode, true);
+  f.store.applyLiveGameUpdate({ game: firstBody.game, eventSeq: firstBody.eventSeq, commandOutcome: firstBody.commandOutcomes[0] });
+  assert.equal(f.store.getGameViewModel(f.gameId).moves.length, 2);
+  releaseSecond();
 });

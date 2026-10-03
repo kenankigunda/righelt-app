@@ -848,28 +848,28 @@ const writePendingLocalGames = (storage, entries) => {
 };
 
 const buildCommittedActionResult = ({ transport, gameId, fallback }) => {
-  const game = transport.getGameViewModel(gameId);
+  const game = transport.getAuthoritativeGame?.(gameId) ?? transport.getGameViewModel(gameId);
   return {
     ...(fallback ?? {}),
     ok: true,
     accepted: true,
     game,
-    state: game?.currentSnapshot ?? fallback?.state ?? null,
+    state: game?.board?.state ?? game?.currentSnapshot ?? fallback?.state ?? null,
     legalActions: Array.isArray(game?.legalActions) ? game.legalActions : fallback?.legalActions ?? [],
   };
 };
 
 const buildCommittedEndTurnResult = ({ transport, gameId, fallback }) => {
-  const game = transport.getGameViewModel(gameId);
+  const game = transport.getAuthoritativeGame?.(gameId) ?? transport.getGameViewModel(gameId);
   return {
     ...(fallback ?? {}),
     ok: true,
     accepted: true,
     game,
-    state: game?.currentSnapshot ?? fallback?.state ?? null,
+    state: game?.board?.state ?? game?.currentSnapshot ?? fallback?.state ?? null,
     legalActions: Array.isArray(game?.legalActions) ? game.legalActions : fallback?.legalActions ?? [],
     turn: game?.currentTurn ?? fallback?.turn ?? null,
-    outcome: game?.currentSnapshot?.outcome ?? fallback?.outcome ?? null,
+    outcome: game?.board?.state?.outcome ?? game?.currentSnapshot?.outcome ?? fallback?.outcome ?? null,
   };
 };
 
