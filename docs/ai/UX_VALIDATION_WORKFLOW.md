@@ -84,3 +84,7 @@ Final validation should report:
 - [docs/TESTING_STRATEGY.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/TESTING_STRATEGY.md)
 - [docs/ai/FRAGILITY_HARDENING_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/FRAGILITY_HARDENING_WORKFLOW.md)
 - [docs/UX_PRINCIPLES.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/UX_PRINCIPLES.md)
+
+## Validation evidence and PR shepherding
+
+Use the repo skill `skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. Run `pnpm validate:local` before completion; use `pnpm validate:integrated --manifest FILE` for ordered PR sets. Inspect actual screenshots, repair source PRs, publish the evidence report, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.
