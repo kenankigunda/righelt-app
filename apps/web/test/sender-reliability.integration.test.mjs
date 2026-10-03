@@ -265,25 +265,29 @@ test("full game and identity journal caps drain durable receipts before retrying
       if (lost && url.endsWith("/reconcile")) return new Promise(() => {});
       return call();
     } });
-    // Fixture seeding must not spend the sender confirmation budget: this case
-    // tests journal capacity, while the budget has its own test above.
+    let first, gameIds;
+    // Filling IndexedDB is fixture work, not elapsed confirmation time. Freeze
+    // transport timers until the cap assertion, then use real receipt recovery.
     t.mock.timers.enable({ apis: ["setTimeout"] });
-    const first = await f.move(); const [original] = await f.journal.list(f.store.getIdentityId());
-    const gameIds = [f.gameId];
-    for (let i = 1; i < cap / 16; i++) { const created = f.store.createGame({ selfPlayMode: true }); await created.committed; gameIds.push(created.gameId); }
-    for (let i = 1; i < cap; i++) {
-      const envelope = { ...original, gameId: gameIds[Math.floor(i / 16)], clientCommandId: `v2:cap-${cap}-${i}` };
-      envelope.fingerprint = await commandFingerprint(envelope); await f.journal.admit(envelope);
+    try {
+      first = await f.move(); const [original] = await f.journal.list(f.store.getIdentityId());
+      gameIds = [f.gameId];
+      for (let i = 1; i < cap / 16; i++) { const created = f.store.createGame({ selfPlayMode: true }); await created.committed; gameIds.push(created.gameId); }
+      for (let i = 1; i < cap; i++) {
+        const envelope = { ...original, gameId: gameIds[Math.floor(i / 16)], clientCommandId: `v2:cap-${cap}-${i}` };
+        envelope.fingerprint = await commandFingerprint(envelope); await f.journal.admit(envelope);
+      }
+      assert.equal((await f.journal.list(f.store.getIdentityId())).length, cap);
+      await assert.rejects(f.move(), /journal_limit/);
+    } finally {
+      // Release the held request before restoring timers; receipt recovery
+      // must be able to await its finished attempt using real timers below.
+      lost = false;
+      t.mock.timers.tick(1000);
+      t.mock.timers.reset();
     }
-    assert.equal((await f.journal.list(f.store.getIdentityId())).length, cap);
-    await assert.rejects(f.move(), /journal_limit/);
     unavailableGame = cap === 128 ? gameIds[1] : null;
-    lost = false;
-    // Release the deliberately hung send through its real timeout path only
-    // after the cap assertion, then let receipt recovery use normal timers.
-    t.mock.timers.tick(1000);
-    t.mock.timers.reset();
-    await f.store.retrySaving(f.gameId);
+    lost = false; await f.store.retrySaving(f.gameId);
     await until(() => first.status === "committed");
     await until(() => f.store.getGameViewModel(f.gameId).pendingCommandCount === 0);
     assert.equal(f.store.getGameViewModel(f.gameId).storageBlocked, false);
