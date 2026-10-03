@@ -18,6 +18,7 @@ export type AuthErrorCode =
   | "temporarily_unavailable";
 export type AccountPreferences = {
   tutorial: "new" | "completed" | "skipped";
+  introducedOpponents?: number;
   view: "focused" | "explanatory";
 };
 export type PublicProfile = {
@@ -187,7 +188,7 @@ export function validateAccountPatch(
     if (
       !Object.keys(preferences).length ||
       Object.keys(preferences).some(
-        (key) => !["tutorial", "view"].includes(key),
+        (key) => !["tutorial", "view", "introducedOpponents"].includes(key),
       )
     )
       return invalid;
@@ -203,6 +204,7 @@ export function validateAccountPatch(
         !["focused", "explanatory"].includes(preferences.view))
     )
       return invalid;
+    if ("introducedOpponents" in preferences && (!Number.isInteger(preferences.introducedOpponents) || Number(preferences.introducedOpponents) < 0 || Number(preferences.introducedOpponents) > 7)) return invalid;
     result.preferences = preferences as Partial<AccountPreferences>;
   }
   return { ok: true, value: result };

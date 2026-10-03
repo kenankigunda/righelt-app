@@ -28,6 +28,7 @@ export type AccountRow = {
   recovery_version: number;
   session_epoch: number;
   recovery_acknowledged: number;
+  introduced_opponents?: number;
   tutorial_state: "new" | "completed" | "skipped";
   view_preference: "focused" | "explanatory";
 };

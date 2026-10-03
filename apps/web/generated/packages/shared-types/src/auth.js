@@ -78,7 +78,7 @@ export function validateAccountPatch(input, username) {
             return invalid;
         const preferences = body.preferences;
         if (!Object.keys(preferences).length ||
-            Object.keys(preferences).some((key) => !["tutorial", "view"].includes(key)))
+            Object.keys(preferences).some((key) => !["tutorial", "view", "introducedOpponents"].includes(key)))
             return invalid;
         if ("tutorial" in preferences &&
             (typeof preferences.tutorial !== "string" ||
@@ -87,6 +87,8 @@ export function validateAccountPatch(input, username) {
         if ("view" in preferences &&
             (typeof preferences.view !== "string" ||
                 !["focused", "explanatory"].includes(preferences.view)))
+            return invalid;
+        if ("introducedOpponents" in preferences && (!Number.isInteger(preferences.introducedOpponents) || Number(preferences.introducedOpponents) < 0 || Number(preferences.introducedOpponents) > 7))
             return invalid;
         result.preferences = preferences;
     }

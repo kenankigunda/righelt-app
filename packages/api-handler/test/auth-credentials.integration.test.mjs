@@ -13,7 +13,7 @@ const { Miniflare } = createRequire(require.resolve("wrangler/package.json"))(
 const schema = readFileSync(
   new URL("../../../db/migrations/0011_accounts.sql", import.meta.url),
   "utf8",
-).replace(/--[^\n]*/g, "");
+).replace(/--[^\n]*/g, "") + readFileSync(new URL("../../../db/migrations/0014_opponent_introductions.sql", import.meta.url), "utf8");
 const origin = "https://righelt.test",
   password = "synthetic-password-123",
   newPassword = "new-synthetic-password-456";
@@ -1071,6 +1071,7 @@ test("account settings are guarded, public profile is minimal, and tutorial prog
     assert.deepEqual((await b.session()).data.account.preferences, {
       view: "explanatory",
       tutorial: "completed",
+      introducedOpponents: 0,
     });
     await a.call(
       "/api/account",
@@ -1081,6 +1082,16 @@ test("account settings are guarded, public profile is minimal, and tutorial prog
       (await a.session()).data.account.preferences.tutorial,
       "completed",
     );
+    await Promise.all([
+      a.call("/api/account", { preferences: { introducedOpponents: 1 } }, { method: "PATCH" }),
+      b.call("/api/account", { preferences: { introducedOpponents: 2 } }, { method: "PATCH" }),
+    ]);
+    assert.equal((await a.session()).data.account.preferences.introducedOpponents, 3);
+    await a.call("/api/account", { preferences: { introducedOpponents: 0 } }, { method: "PATCH" });
+    assert.equal((await b.session()).data.account.preferences.introducedOpponents, 3);
+    for (const invalidMask of [-1, 8, 1.5, "1"]) {
+      assert.equal((await a.call("/api/account", { preferences: { introducedOpponents: invalidMask } }, { method: "PATCH" })).status, 400);
+    }
     const profile = await new f.Browser().call(
       "/api/profiles/profileuser",
       {},

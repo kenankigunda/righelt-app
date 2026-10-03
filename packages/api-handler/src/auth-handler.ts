@@ -102,6 +102,7 @@ function sessionState(actor: Actor | null): SessionState {
       joinedMonth: new Date(actor.created_at).toISOString().slice(0, 7),
       preferences: {
         tutorial: actor.tutorial_state,
+        introducedOpponents: actor.introduced_opponents ?? 0,
         view: actor.view_preference,
       },
     },
@@ -490,12 +491,13 @@ export async function handleAuthRequest(
         [
           db
             .prepare(
-              "UPDATE accounts SET display_name=COALESCE(?,display_name),view_preference=COALESCE(?,view_preference),tutorial_state=CASE WHEN tutorial_state='completed' THEN tutorial_state ELSE COALESCE(?,tutorial_state) END WHERE account_id=?",
+              "UPDATE accounts SET display_name=COALESCE(?,display_name),view_preference=COALESCE(?,view_preference),tutorial_state=CASE WHEN tutorial_state='completed' THEN tutorial_state ELSE COALESCE(?,tutorial_state) END,introduced_opponents=(introduced_opponents | ?) WHERE account_id=?",
             )
             .bind(
               patch.displayName ?? null,
               patch.preferences?.view ?? null,
               patch.preferences?.tutorial ?? null,
+              patch.preferences?.introducedOpponents ?? 0,
               current.account_id,
             ),
           renewal(db, current.token_hash),
