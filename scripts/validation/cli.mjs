@@ -16,13 +16,13 @@ try{
   if(!config.recipient&&!flags['no-email'])throw Error('Recipient not configured. Ask upfront, then run configure --recipient EMAIL, or explicitly use --no-email.');
   console.log('Email is connector-managed: the invoking skill must check availability and send the consolidated digest.');
   if(mode==='integrated'&&!flags.manifest)throw Error('Provide --manifest FILE');
-  const options={base:flags.base??'origin/main',dir:flags.out,full:Boolean(flags.full),config,publishReport:!flags['no-publish'],manifest:flags.manifest,resume:Boolean(flags.resume)};
+  const options={base:flags.base??'origin/main',dir:flags.out??path.join(process.cwd(),'test-results','validation',`${mode}-${Date.now()}-${process.pid}`),full:Boolean(flags.full),config,publishReport:!flags['no-publish'],manifest:flags.manifest,resume:Boolean(flags.resume)};
   if(mode==='local'&&flags.resume)options.dir=path.dirname(path.resolve(flags.resume));
   const execute=async()=>{
-   if(mode==='local'&&flags.resume){options.run=await readJSON(path.resolve(flags.resume));options.run.fingerprint=await fingerprint(process.cwd());options.run.revision=await git(['rev-parse','HEAD'],process.cwd());options.run.base=await git(['rev-parse',options.base],process.cwd());}
+   if(mode==='local'&&flags.resume){options.run=await readJSON(path.resolve(flags.resume));options.run.fingerprint=await fingerprint(process.cwd());options.run.revision=await git(['rev-parse','HEAD'],process.cwd());options.run.base=await git(['rev-parse',options.base],process.cwd());delete options.run.harnessRevision;delete options.run.harnessFingerprint;}
    return mode==='local'?localRun(options):integratedRun(options);
   };
-  const result=options.dir?await withRunLock(path.join(path.resolve(options.dir),'run.json'),execute):await execute();
+  const result=await withRunLock(path.join(path.resolve(options.dir),'run.json'),execute);
   process.exitCode=(mode!=='integrated'||result.run.complete===true)&&result.run.stages.length&&result.run.stages.every(s=>s.status==='passed')&&(!options.publishReport||result.run.publication?.status==='published')?0:1;
  }
  else if(['publish','report','review','reply','sync-replies','refresh','merge'].includes(mode)){

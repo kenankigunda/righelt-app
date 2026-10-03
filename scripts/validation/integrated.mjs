@@ -1,7 +1,7 @@
 import path from 'node:path';
 import {mkdir,cp,access} from 'node:fs/promises';
 import {git,command,readJSON,saveJSON} from './io.mjs';
-import {localRun} from './local.mjs';
+import {localRun,harnessRoot,fingerprint} from './local.mjs';
 import {renderReport} from './report.mjs';
 import {publish} from './publish.mjs';
 import {VERSION,hash} from './model.mjs';
@@ -9,6 +9,7 @@ export function validateManifest(m){
  if(m?.version!==VERSION||typeof m.repository!=='string'||! /^[\w.-]+\/[\w.-]+$/.test(m.repository)||typeof m.base!=='string'||!Array.isArray(m.prs)||!m.prs.length)throw Error('Expected version, owner/repo, base and ordered prs');
  const seen=new Set();for(const p of m.prs){if(!Number.isSafeInteger(p.number)||p.number<1||seen.has(p.number))throw Error('PR numbers must be positive and unique');for(const dep of p.dependsOn??[])if(!seen.has(dep))throw Error('Dependencies must occur earlier in merge order');seen.add(p.number);}return m;
 }
+export function inputSignature(repository,base,prs,harnessRevision,harnessFingerprint){return hash({repository,base,prs:prs.map(p=>({number:p.number,head:p.head,base:p.base,dependsOn:p.dependsOn??[]})),harnessRevision,harnessFingerprint});}
 export async function integratedRun({manifest,cwd=process.cwd(),dir,resume=false,config,publishReport=true}){
  const spec=validateManifest(await readJSON(manifest));
  await command(['git','fetch','origin',spec.base],{cwd});const base=await git(['rev-parse','FETCH_HEAD'],cwd);
@@ -16,11 +17,12 @@ export async function integratedRun({manifest,cwd=process.cwd(),dir,resume=false
  dir=path.resolve(dir??path.join(cwd,'test-results','validation',`integrated-${Date.now()}`));await mkdir(dir,{recursive:true});const file=path.join(dir,'run.json');
  let run=resume?await readJSON(file):{version:VERSION,id:`integrated-${Date.now()}`,mode:'integrated',repository:spec.repository,startedAt:new Date().toISOString(),stages:[],risks:[],prs:[],base};
  // Keep immutable prior attempts; rebuild from exact source heads, never reuse integration patches.
- const signature=hash({repository:spec.repository,base,prs:prs.map(p=>({number:p.number,head:p.head,base:p.base,dependsOn:p.dependsOn??[]}))});const previous=run.signature;
+ const harnessRevision=await git(['rev-parse','HEAD'],harnessRoot),harnessFingerprint=await fingerprint(harnessRoot);
+ const signature=inputSignature(spec.repository,base,prs,harnessRevision,harnessFingerprint);const previous=run.signature;
  if(resume&&previous===signature&&run.stages.length===prs.length+1&&run.stages.every(s=>s.status==='passed')){console.log('Matching stages already passed. Refresh PR gates and agent review before merging.');return {run,dir};}
  if(run.stages.length)(run.attempts??=[]).push({signature:previous,stages:run.stages});
  for(const p of prs){const old=run.prs.find(x=>x.number===p.number);if(old?.authorization)p.authorization={...old.authorization,state:old.base===p.base?old.authorization.state:'suspended'};}
- run.complete=false;run.base=base;run.prs=prs;run.signature=signature;run.stages=[];await saveJSON(file,run);
+ run.complete=false;run.base=base;run.prs=prs;run.signature=signature;run.harnessRevision=harnessRevision;run.harnessFingerprint=harnessFingerprint;run.stages=[];await saveJSON(file,run);
  const attempt=Date.now();const root=path.join(path.dirname(cwd),`righelt-validation-${attempt}`);await command(['git','worktree','add','--detach',root,base],{cwd});run.worktree=root;await saveJSON(file,run);
  try{
   await command(['pnpm','install','--frozen-lockfile','--ignore-scripts'],{cwd:root,log:path.join(dir,'install.log')});
@@ -41,6 +43,7 @@ export async function integratedRun({manifest,cwd=process.cwd(),dir,resume=false
  // Read heads again; a moving input invalidates evidence even if all checks passed.
  const remoteBase=await command(['git','ls-remote','origin',`refs/heads/${spec.base}`],{cwd});if(remoteBase.output.split(/\s/)[0]!==base)for(const s of run.stages)s.status='stale';
  for(let i=0;i<prs.length;i++){const fresh=await command(['gh','pr','view',String(prs[i].number),'--repo',spec.repository,'--json','headRefOid'],{cwd});if(JSON.parse(fresh.output).headRefOid!==prs[i].head)for(const s of run.stages)if(s.index>=i+1)s.status='stale';}
+ if(harnessRevision!==await git(['rev-parse','HEAD'],harnessRoot)||harnessFingerprint!==await fingerprint(harnessRoot)){for(const s of run.stages)s.status='stale';run.risks.push('Validation harness changed during the integrated sequence.');}
  run.complete=run.stages.length===prs.length+1&&run.stages.every(s=>s.status==='passed');
  await saveJSON(file,run);await renderReport(run,path.join(dir,'site'));
  if(publishReport){try{await publish(run,path.join(dir,'site'),config,{cwd});}catch(e){run.publication={status:'failed',error:e.message};}await saveJSON(file,run);}
