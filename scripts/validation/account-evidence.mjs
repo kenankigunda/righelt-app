@@ -7,7 +7,7 @@ export function verifyAccountEvidence(items,{retained=false,capabilities={},lega
   const matches=items.filter(item=>item.viewport===name&&item.title.split(' / ').at(-1)===row.title);
   if(matches.length!==1||matches[0].status!=='passed')throw Error(`Missing or duplicate account proof: ${name} / ${row.title}`);
   for(const label of row.labels)for(const kind of ['context','component']){
-   if(!matches[0].images?.some(image=>image.caption===`${label} · ${name} · ${kind}`&&image.src&&image.thumbnail&&image.digest))throw Error(`Missing account checkpoint: ${name} / ${label} / ${kind}`);
+   if(!matches[0].images?.some(image=>image.caption===`${label} · ${name} · ${kind}${kind==='component'?' (visible area)':''}`&&image.src&&image.thumbnail&&image.digest))throw Error(`Missing account checkpoint: ${name} / ${label} / ${kind}`);
   }
  }
 }
