@@ -56,7 +56,7 @@ export async function proveResultsRematch({ page, info, root }) {
   await page.getByRole('button', { name: 'View result', exact: true }).click();
   await page.getByRole('button', { name: 'Play again', exact: true }).click();
   const rematch = page.getByRole('dialog', { name: 'Play again', exact: true });
-  await expect(rematch.getByLabel('Opponent', { exact: true })).toHaveValue('friend');
+  await expect(rematch.getByRole('combobox', { name: 'Opponent', exact: true })).toHaveValue('friend');
   await expect(rematch.getByRole('radio', { name: 'Player 1 · Red', exact: true })).toBeChecked();
   await proof(page, info, 'friend-rematch-choice', rematch);
   let requests = 0;
