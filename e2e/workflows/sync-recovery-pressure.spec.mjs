@@ -1,6 +1,6 @@
 import {mkdir,writeFile} from 'node:fs/promises';
 import {test, expect} from '@playwright/test';
-import {createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,joinAsViewer,makeAnyLegalMove} from '../support/app.mjs';
+import {createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,joinAsViewer,makeAnyLegalMove,submitPlayableAction} from '../support/app.mjs';
 
 // Fault controls live at the browser transport boundary, never in production endpoints.
 async function wire(page) {
@@ -11,7 +11,7 @@ async function wire(page) {
    fault.bytes+=Buffer.byteLength(message);
    let data;try{data=JSON.parse(message);if(fault.legacy){delete data.protocolVersion;message=JSON.stringify(data);}}catch{}
    if(data?.game)fault.snapshots++;
-   if(!fault.receive){fault.lastInbound=Date.now();setTimeout(()=>socket.send(message),fault.latency);}
+   if(!fault.receive){setTimeout(()=>{fault.lastInbound=Date.now();socket.send(message);},fault.latency);}
   });
  });
  await page.route('**/api/shell/games/**',async route=>{
@@ -52,9 +52,7 @@ async function move(page,gameId) {
   const body=await (await fetch(`/api/shell/games/${gameId}?identityId=${identityId}`)).json();
   return body.game.legalActions.find(a=>a.from&&a.to);
  },gameId);
- await page.locator(`.cell[data-row="${action.from.row}"][data-col="${action.from.col}"]`).first().click();
- const target=page.locator(`.cell[data-row="${action.to.row}"][data-col="${action.to.col}"]`).first();
- await target.hover();await target.click();
+ await submitPlayableAction(page,action);
 }
 async function digest(page) {
  return page.evaluate(()=>({
@@ -100,9 +98,16 @@ test('E02 silent online receive loss triggers watchdog and survives interrupted 
  test.setTimeout(75000);const p=await party(browser,baseURL);try{
   await converged(p.pages);p.faults[1].receive=true;p.faults[1].http=true;
   expect(await p.pages[1].evaluate(()=>navigator.onLine)).toBe(true);
-  const loss=p.faults[1].lastInbound;await move(p.pages[0],p.gameId);
+  await p.pages[1].evaluate(()=>{
+   window.recoveryDetectedAt=null;
+   const observer=new MutationObserver(()=>{if(document.querySelector('[data-testid="sync-recovery-banner"]')?.textContent.includes('Reconnecting')){window.recoveryDetectedAt=Date.now();observer.disconnect();}});
+   observer.observe(document.body,{subtree:true,childList:true,characterData:true});
+  });
+  await move(p.pages[0],p.gameId);
   await expect(p.pages[1].getByTestId('sync-recovery-banner')).toContainText('Reconnecting',{timeout:17000});
-  const detectionMs=Date.now()-loss;expect(detectionMs).toBeLessThanOrEqual(16000);
+  const detectedAt=await p.pages[1].evaluate(()=>window.recoveryDetectedAt);
+  expect(Number.isFinite(detectedAt)).toBe(true);expect(detectedAt).toBeGreaterThan(0);
+  const detectionMs=detectedAt-p.faults[1].lastInbound;expect(detectionMs).toBeGreaterThanOrEqual(0);expect(detectionMs).toBeLessThanOrEqual(16000);
   p.faults[1].interruptNextRecovery=true;p.faults[1].http=false;
   await expect.poll(()=>p.faults[1].interruptedRecoveries||0,{timeout:10000}).toBe(1);
   await p.pages[1].waitForTimeout(1000);

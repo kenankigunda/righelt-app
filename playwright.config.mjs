@@ -34,7 +34,7 @@ export default defineConfig({
     },
     ...["firefox", "webkit"].map(name => ({
       name,
-      testMatch: /sync-recovery-(pressure|ux)\.spec\.mjs/,
+      testMatch: /(sync-recovery-(pressure|ux)|browser-move-input)\.spec\.mjs/,
       use: { ...devices[name === "firefox" ? "Desktop Firefox" : "Desktop Safari"],
         launchOptions: { executablePath: process.env[`RIGHELT_${name.toUpperCase()}_EXECUTABLE`] } },
     })),
