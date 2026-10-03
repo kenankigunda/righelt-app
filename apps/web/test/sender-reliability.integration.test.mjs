@@ -255,7 +255,7 @@ test("admission quota failure cannot block durable command recovery", async () =
   await until(() => f.env.DB.getGameState(f.gameId).moves.length === 2);
 });
 
-test("full game and identity journal caps drain durable receipts before retrying admission", async () => {
+test("full game and identity journal caps drain durable receipts before retrying admission", async (t) => {
   const { commandFingerprint } = await import("../generated/packages/shared-types/src/sync-protocol.js");
   for (const cap of [16, 128]) {
     let lost = true, unavailableGame;
@@ -265,15 +265,27 @@ test("full game and identity journal caps drain durable receipts before retrying
       if (lost && url.endsWith("/reconcile")) return new Promise(() => {});
       return call();
     } });
-    const first = await f.move(); const [original] = await f.journal.list(f.store.getIdentityId());
-    const gameIds = [f.gameId];
-    for (let i = 1; i < cap / 16; i++) { const created = f.store.createGame({ selfPlayMode: true }); await created.committed; gameIds.push(created.gameId); }
-    for (let i = 1; i < cap; i++) {
-      const envelope = { ...original, gameId: gameIds[Math.floor(i / 16)], clientCommandId: `v2:cap-${cap}-${i}` };
-      envelope.fingerprint = await commandFingerprint(envelope); await f.journal.admit(envelope);
+    let first, gameIds;
+    // Filling IndexedDB is fixture work, not elapsed confirmation time. Freeze
+    // transport timers until the cap assertion, then use real receipt recovery.
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      first = await f.move(); const [original] = await f.journal.list(f.store.getIdentityId());
+      gameIds = [f.gameId];
+      for (let i = 1; i < cap / 16; i++) { const created = f.store.createGame({ selfPlayMode: true }); await created.committed; gameIds.push(created.gameId); }
+      for (let i = 1; i < cap; i++) {
+        const envelope = { ...original, gameId: gameIds[Math.floor(i / 16)], clientCommandId: `v2:cap-${cap}-${i}` };
+        envelope.fingerprint = await commandFingerprint(envelope); await f.journal.admit(envelope);
+      }
+      assert.equal((await f.journal.list(f.store.getIdentityId())).length, cap);
+      await assert.rejects(f.move(), /journal_limit/);
+    } finally {
+      // Release the held request before restoring timers; receipt recovery
+      // must be able to await its finished attempt using real timers below.
+      lost = false;
+      t.mock.timers.tick(1000);
+      t.mock.timers.reset();
     }
-    assert.equal((await f.journal.list(f.store.getIdentityId())).length, cap);
-    await assert.rejects(f.move(), /journal_limit/);
     unavailableGame = cap === 128 ? gameIds[1] : null;
     lost = false; await f.store.retrySaving(f.gameId);
     await until(() => first.status === "committed");
