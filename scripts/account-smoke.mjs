@@ -6,6 +6,12 @@ import {
   SESSION_COOKIE,
 } from "../packages/shared-types/src/auth-policy.js";
 import { fileURLToPath } from "node:url";
+export function requireLegacyGameId(legacyGameId) {
+  if (typeof legacyGameId !== "string" || !legacyGameId.trim())
+    throw Error(
+      "ACCOUNT_SMOKE_LEGACY_GAME_ID must identify a preserved legacy game",
+    );
+}
 export async function accountSmoke({
   origin,
   username,
@@ -13,6 +19,7 @@ export async function accountSmoke({
   fetcher = fetch,
   legacyGameId,
 }) {
+  requireLegacyGameId(legacyGameId);
   const base = new URL(origin);
   if (
     base.protocol !== "https:" ||
@@ -109,27 +116,25 @@ export async function accountSmoke({
     );
     if (wrongContext.status !== 409)
       throw Error("Wrong session context accepted");
-    if (legacyGameId) {
-      const publicReader = browser();
-      const old = requireOk(
-        await publicReader.call(
-          `/api/shell/games/${encodeURIComponent(legacyGameId)}`,
-        ),
-        "Legacy public read",
-      ).game;
-      if (
-        old?.ownershipMode !== "legacy_guest" ||
-        old.canRecordMove ||
-        old.inviteTokens
-      )
-        throw Error("Legacy game is not public read-only");
-      const write = await a.call(
-        `/api/shell/games/${encodeURIComponent(legacyGameId)}/live`,
-        {},
-      );
-      if (write.status !== 409 || write.data.error !== "legacy_read_only")
-        throw Error("Legacy write not explicitly rejected");
-    }
+    const publicReader = browser();
+    const old = requireOk(
+      await publicReader.call(
+        `/api/shell/games/${encodeURIComponent(legacyGameId)}`,
+      ),
+      "Legacy public read",
+    ).game;
+    if (
+      old?.ownershipMode !== "legacy_guest" ||
+      old.canRecordMove ||
+      old.inviteTokens
+    )
+      throw Error("Legacy game is not public read-only");
+    const write = await a.call(
+      `/api/shell/games/${encodeURIComponent(legacyGameId)}/live`,
+      {},
+    );
+    if (write.status !== 409 || write.data.error !== "legacy_read_only")
+      throw Error("Legacy write not explicitly rejected");
     const spoof = await b.call("/api/shell/games", {
       identityId: "forged",
       selfPlayMode: true,
@@ -161,7 +166,7 @@ export async function accountSmoke({
         "cross-browser seat",
         "spoof rejection",
         "session context",
-        ...(legacyGameId ? ["legacy read-only"] : []),
+        "legacy read-only",
         "revocation",
         "logout",
       ],
