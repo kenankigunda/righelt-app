@@ -3,7 +3,7 @@ import sys
 import time
 from pathlib import Path
 import unittest
-from righelt_training.supervisor import supervise,validate_gate_report,claim_stage
+from righelt_training.supervisor import supervise,validate_gate_report,claim_stage,arena_arguments
 from righelt_training.processes import start_group
 from righelt_training.budget import Budget
 from righelt_training.resources import AdaptivePolicy,Sample,GIB
@@ -15,6 +15,18 @@ class QuietTelemetry:
         return Sample(now,None,None,0,'normal',GIB,40*GIB,500*GIB,0)
 
 class SupervisorTest(unittest.TestCase):
+    def test_arena_cannot_claim_fresh_budget_or_external_checkpoint(self):
+        from argparse import Namespace
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);run=root/'run';run.mkdir()
+            args=Namespace(arena_plan=run/'plan.json',run_dir=run,resume=None,candidate_checkpoint=root/'a.pt',opponent_checkpoint=root/'b.pt')
+            with self.assertRaises(ValueError):arena_arguments(args,root)
+            args.resume=root/'a.pt';args.opponent_checkpoint=Path('/outside/b.pt')
+            with self.assertRaises(ValueError):arena_arguments(args,root)
+            args.opponent_checkpoint=root/'b.pt'
+            with patch('righelt_training.arena.read_frozen_plan',return_value=({},'frozen')):
+                self.assertEqual(arena_arguments(args,root),'frozen')
     def test_fresh_directory_cannot_reset_approved_stage(self):
         with tempfile.TemporaryDirectory() as d:
             claim_stage(d,'initial',Path(d)/'first')

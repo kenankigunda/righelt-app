@@ -143,6 +143,15 @@ class Runner:
             raise ValueError('invalid allocation')
         return allocation
 
+    def handoff_requested(self):
+        path=self.directory/'handoff-request.json'
+        if not path.exists():return None
+        request=read_json(path)
+        if (request.get('schema')!=1 or request.get('manifestSha256')!=self.manifest_hash
+            or request.get('reason') not in ('validation','reporting') or not isinstance(request.get('id'),str)
+            or not request['id']):raise ValueError('invalid checkpoint handoff request')
+        return request if request['id']!=self.state.get('lastHandoffId') else None
+
     def event(self, kind, **fields):
         with (self.directory / 'runner-events.jsonl').open('a') as stream:
             stream.write(json.dumps({'type': kind, 'monotonic': time.monotonic(), **fields}, allow_nan=False) + '\n')
@@ -216,6 +225,7 @@ class Runner:
         try:
             while time.monotonic() < round_deadline:
                 self.maybe_checkpoint()
+                if self.handoff_requested():break
                 allocation = self.allocation()
                 if allocation.get('stop'):
                     break
@@ -300,7 +310,10 @@ class Runner:
 
     def run(self):
         self.checkpoint()
+        handoff=None
         while self.deadline - time.monotonic() >= 40:
+            handoff=self.handoff_requested()
+            if handoff:break
             allocation = self.allocation()
             if allocation.get('stop'):
                 break
@@ -312,6 +325,8 @@ class Runner:
                 self.event('curriculum-change', weights=CONFIG['training']['fallbackCurriculum'])
             if self.state['phase'] == 'generation':
                 self.generate_round()
+                handoff=self.handoff_requested()
+                if handoff:break
                 self.state['phase'] = 'training'
                 self.state['trainingBatch'] = 0
                 self.checkpoint()
@@ -324,11 +339,13 @@ class Runner:
                     self.maybe_checkpoint()
                 result = train_round(self.model, self.optimizer, list(self.buffer.positions), device=self.device,
                                      seed=self.seed + self.state['round'], deadline=self.deadline,
-                                     should_pause=lambda: self.allocation()['paused'], on_batch=after_batch,
+                                     should_pause=lambda: self.allocation()['paused'] or bool(self.handoff_requested()), on_batch=after_batch,
                                      start_batch=self.state['trainingBatch'])
                 self.event('training-round', result=result)
                 if result['stopped'] != 'complete':
                     self.checkpoint()
+                    handoff=self.handoff_requested()
+                    if handoff:break
                     if result['stopped'] == 'budget': break
                     continue
             self.state['phase'] = 'generation'
@@ -336,9 +353,13 @@ class Runner:
             self.state['generationLaunched'] = 0
             self.state['generationStartedMonotonic'] = None
             self.checkpoint()
+        if handoff:
+            self.state['lastHandoffId']=handoff['id']
+            self.event('checkpoint-handoff',reason=handoff['reason'],requestId=handoff['id'],deadlineMonotonic=self.deadline)
         self.checkpoint()
         atomic_json(self.directory / 'runner-result.json', {'schema': 1, 'state': self.state,
                     'status': 'stopped', 'elapsedSeconds': time.monotonic() - self.started,
+                    'reason':f"{handoff['reason']}-handoff" if handoff else 'budget-or-resource-stop',
                     'trainingHealthOnly': True, 'productionGatesPassed': False})
 
 

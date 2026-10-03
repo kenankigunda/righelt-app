@@ -93,6 +93,20 @@ def claim_stage(artifact_root, stage, run_directory):
     atomic_json(path,ledger)
 
 
+def arena_arguments(args,artifact_root):
+    if not args.arena_plan:
+        if args.candidate_checkpoint or args.opponent_checkpoint:raise ValueError('arena checkpoint paths require a frozen plan')
+        return None
+    if not args.run_dir.exists() or not args.resume:raise ValueError('arena reuses an existing supervised run and original deadline')
+    if not args.candidate_checkpoint or not args.opponent_checkpoint:raise ValueError('both frozen arena checkpoints required')
+    if not args.arena_plan.resolve().is_relative_to(args.run_dir.resolve()):raise ValueError('arena plan must belong to this run')
+    for path in (args.candidate_checkpoint,args.opponent_checkpoint):
+        if not path.resolve().is_relative_to(artifact_root.resolve()):raise ValueError('arena checkpoints must remain in experiment archive')
+    from .arena import read_frozen_plan
+    _,digest=read_frozen_plan(args.arena_plan)
+    return digest
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--run-dir',type=Path,required=True)
@@ -101,8 +115,12 @@ def main():
     parser.add_argument('--stage',choices=('initial','overnight'),required=True)
     parser.add_argument('--seed',type=int,required=True)
     parser.add_argument('--resume',type=Path)
+    parser.add_argument('--arena-plan',type=Path)
+    parser.add_argument('--candidate-checkpoint',type=Path)
+    parser.add_argument('--opponent-checkpoint',type=Path)
     args=parser.parse_args()
     artifact_root=ROOT/'.ai-runs'
+    arena_digest=arena_arguments(args,artifact_root)
     if not args.run_dir.resolve().is_relative_to(artifact_root.resolve()):
         raise ValueError('run directories must be under .ai-runs for aggregate artifact accounting')
     if args.resume and not args.resume.resolve().is_relative_to(artifact_root.resolve()):
@@ -138,15 +156,24 @@ def main():
         if metadata['configSha256']!=CONFIG_SHA256:raise ValueError('resume checkpoint configuration changed')
         runtime['parentCheckpointManifestSha256']=metadata['manifestSha256']
         runtime['parentCheckpoint']=str(args.resume.resolve())
+    runtime['supervisorPid']=os.getpid()
+    runtime['command']='arena' if arena_digest else 'training'
+    if arena_digest:runtime['arenaPlanSha256']=arena_digest
+    else:runtime.pop('arenaPlanSha256',None)
     atomic_json(runtime_path,runtime)
     atomic_json(args.run_dir/'allocation.json',{'workers':CONFIG['resources']['minWorkers'],
                 'memory_gib':CONFIG['resources']['minMemoryGiB'],'paused':False,'stop':False,
                 'reason':'initial-conservative','observedAt':time.time()})
     claim_stage(artifact_root,args.stage,args.run_dir)
-    argv=[sys.executable,'-m','righelt_training.runner','--run-dir',str(args.run_dir.resolve()),'--seed',str(args.seed),'--stage',args.stage]
-    if args.resume:argv+=['--resume',str(args.resume.resolve())]
+    if arena_digest:
+        argv=[sys.executable,'-m','righelt_training.arena','run','--run-dir',str(args.run_dir.resolve()),
+              '--plan',str(args.arena_plan.resolve()),'--candidate-checkpoint',str(args.candidate_checkpoint.resolve()),
+              '--opponent-checkpoint',str(args.opponent_checkpoint.resolve())]
+    else:
+        argv=[sys.executable,'-m','righelt_training.runner','--run-dir',str(args.run_dir.resolve()),'--seed',str(args.seed),'--stage',args.stage]
+        if args.resume:argv+=['--resume',str(args.resume.resolve())]
     env={**os.environ,'PYTHONPATH':str(ROOT/'tools/ai-trainer')}
-    with (args.run_dir/'runner.log').open('w') as log:
+    with (args.run_dir/'runner.log').open('a') as log:
         process=start_group(['/usr/bin/nice','-n','10',*argv],cwd=ROOT,env=env,stdout=log,stderr=log)
         reason=supervise(process,budget,AdaptivePolicy(),Telemetry(artifact_root,args.activity_file,args.run_dir/'device-memory.json',process.pid),args.run_dir)
     atomic_json(args.run_dir/'supervisor-result.json',{'reason':reason,'runnerReturncode':process.returncode,
