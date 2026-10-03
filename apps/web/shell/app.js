@@ -1,4 +1,5 @@
 import { createContextualHelp, gamePlayRevision, canRestoreGameView } from "./play-view.js";
+import { captureHeaderFocus, restoreHeaderFocus } from "./header-focus.js";
 import { createBrandController, renderWordmark, resolveActionAffiliation } from "./brand.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter } from "../board-adapters/engine-board-adapter.js";
@@ -2754,7 +2755,9 @@ const updateMountedHeader = () => {
   if (!(nextHeaderEl instanceof HTMLElement)) {
     return false;
   }
+  const savedFocus = captureHeaderFocus(currentHeaderEl, document.activeElement);
   currentHeaderEl.replaceWith(nextHeaderEl);
+  restoreHeaderFocus(nextHeaderEl, savedFocus, document);
   return true;
 };
 const getFlyoutAwareHref = (element) => {
@@ -3757,7 +3760,9 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
 
   const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderFlyouts()}</div>`;
   if (nextMarkup !== lastRenderedMarkup) {
+    const savedHeaderFocus = captureHeaderFocus(getMountedHeaderEl(), document.activeElement);
     appEl.innerHTML = nextMarkup;
+    restoreHeaderFocus(getMountedHeaderEl(), savedHeaderFocus, document);
     lastRenderedMarkup = nextMarkup;
     lastRenderedMainMarkup = `<div class="shell-main-content">${renderHeader()}${body}</div>`;
     lastRenderedFlyoutMarkup = renderFlyouts();

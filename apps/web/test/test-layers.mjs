@@ -9,6 +9,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "engine-board-adapter.test.mjs",
   "e2e-stack.test.mjs",
   "foundation-boundary.test.mjs",
+  "header-focus.test.mjs",
   "hover-capability.test.mjs",
   "interaction.test.mjs",
   "legend.test.mjs",
