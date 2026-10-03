@@ -8,10 +8,12 @@ import os from 'node:os';
 import { candidateConfig, prepareAccountState, legacySeedSql, assertPortsFree } from '../account-stack.mjs';
 
 test('candidate config retains bindings and resolves paths without touching candidate source', () => {
-  const source = 'name = "righelt-api"\nmain = "index.js"\n[vars]\nAUTH_ENABLED = "false"\n[[services]]\nbinding = "HASH_SERVICE"\nservice = "righelt-auth"\n[[d1_databases]]\nbinding = "DB"\ndatabase_id = "production"\nmigrations_dir = "../../db/migrations"\n';
+  const source = 'name = "righelt-api"\nmain = "index.js"\n[vars]\nAUTH_ENABLED = "false"\n[[services]]\nbinding = "HASH_SERVICE"\nservice = "righelt-auth"\n[[d1_databases]]\nbinding = "DB"\ndatabase_id = "production"\nmigrations_dir = "../../db/migrations"\n[[durable_objects.bindings]]\nname = "GAME_ROOMS"\nclass_name = "GameRoomDO"\n';
   const result = candidateConfig(source, { root: '/candidate with spaces', folder: 'api', role: 'api', secret: 'secret' });
   assert.match(result, /main = "\/candidate with spaces\/apps\/api\/index.js"/);
   assert.match(result, /migrations_dir = "\/candidate with spaces\/db\/migrations"/);
+  assert.match(result, /name = "GAME_ROOMS"/);
+  assert.match(result, /name = "righelt-validation-account-api"/);
   assert.match(result, /service = "righelt-validation-account-admission"/);
   assert.match(result, /database_id = "production"/);
   assert.match(result, /AUTH_ENABLED = "true"/);

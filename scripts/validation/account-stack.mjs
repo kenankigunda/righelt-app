@@ -17,7 +17,10 @@ function replaceOne(source, pattern, replacement, label) {
 }
 export function candidateConfig(source, { root, folder, role, secret }) {
   const names = { api: 'righelt-validation-account-api', auth: 'righelt-validation-account-admission', 'auth-hash': 'righelt-validation-account-hash' };
-  let result = replaceOne(source, /^name\s*=\s*"[^"]+"/m, `name = ${JSON.stringify(names[folder])}`, 'worker name');
+  const tableStart = source.search(/^\s*\[/m);
+  const prefix = tableStart < 0 ? source : source.slice(0, tableStart);
+  const tables = tableStart < 0 ? '' : source.slice(tableStart);
+  let result = replaceOne(prefix, /^name\s*=\s*"[^"]+"/m, `name = ${JSON.stringify(names[folder])}`, 'worker name') + tables;
   result = replaceOne(result, /^main\s*=\s*"([^"\n]+)"/m, (_, entry) => `main = ${JSON.stringify(path.resolve(root, 'apps', folder, entry))}`, 'entrypoint');
   result = result.replace(/^service\s*=\s*"righelt-auth-hash"/gm, `service = "${names['auth-hash']}"`).replace(/^service\s*=\s*"righelt-auth"/gm, `service = "${names.auth}"`);
   if (role === 'api') {
