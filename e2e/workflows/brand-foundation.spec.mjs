@@ -59,7 +59,7 @@ test("Player 2 actions remain blue during Player 1's turn and home returns to re
   await expect(page.getByTestId("home-create-game")).toBeVisible();
   const gameId = await page.evaluate(async () => {
     const post = async (path, data) => {
-      const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) });
+      const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...data, protocolVersion: 2 }) });
       if (!response.ok) throw new Error(`Fixture request failed: ${response.status}`);
       return response.json();
     };
