@@ -93,3 +93,21 @@ test("resume puts your older turn before a newer waiting game and retries a fail
   expect((await resume.boundingBox()).y).toBeLessThan((await page.locator('[data-zone="home-start"]').boundingBox()).y);
   await testInfo.attach("personal-home", { body: await page.screenshot({ path: testInfo.outputPath("personal-home.png"), fullPage: true }), contentType: "image/png" });
 });
+
+for (const width of [375, 1100, 1600]) test(`personal home fits ${width}px and keeps keyboard side choice visible`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 });
+  await page.goto("/");
+  const red = page.getByRole("radio", { name: "Player 1 · Red" });
+  await red.focus();
+  await page.keyboard.press("ArrowRight");
+  const blue = page.getByRole("radio", { name: "Player 2 · Blue" });
+  await expect(blue).toBeChecked();
+  await expect(blue).toBeFocused();
+  expect(await blue.evaluate(element => getComputedStyle(element).appearance)).not.toBe("none");
+  const babs = await page.locator('[data-opponent="babs"]').boundingBox();
+  const horus = await page.locator('[data-opponent="horus"]').boundingBox();
+  if (width >= 1200) expect(horus.y).toBe(babs.y);
+  else expect(horus.y).toBeGreaterThan(babs.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  await testInfo.attach(`personal-home-${width}`, { body: await page.screenshot({ path: testInfo.outputPath(`home-${width}.png`), fullPage: true }), contentType: "image/png" });
+});
