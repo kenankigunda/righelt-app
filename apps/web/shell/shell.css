@@ -2102,5 +2102,15 @@ button:not(.secondary):not(.warn):not(.danger):not(:disabled):active,
 
 .shell-header > [data-action="account-open"] { width: auto; flex: 0 0 auto; justify-self: end; align-self: center; }
 
-.participant-profile { width: auto; text-align: start; }
+/* Public names must wrap within their panel, including unbroken usernames. */
+.participant-list > li { min-width: 0; }
+.participant-profile {
+  display: inline-block;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .account-dialog select { width: 100%; min-height: 44px; font: inherit; }
