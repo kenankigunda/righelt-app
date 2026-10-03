@@ -140,6 +140,22 @@ console.log(JSON.stringify({initialState,decisions,finalHash:deterministicStateH
             self.assertEqual(runner.state['unfinishedGames'], 1)
             self.assertEqual(len(list((Path(directory)/'games').glob('*.gz'))), 1)
 
+    def test_completed_game_records_kind_and_remains_recoverable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runner=Runner.__new__(Runner);runner.directory=Path(directory)
+            runner.device=torch.device('cpu');runner.state=default_state();runner.buffer=ReplayBuffer()
+            runner.last_checkpoint=time.monotonic();runner.deadline=time.monotonic()+600
+            runner.checkpoint_requested=False
+            job=Curriculum(2).job(0,'test')
+            game={**job,'termination':'terminal','outcome':{'status':'p1_win'},'decisions':[]}
+            with patch('righelt_training.runner.verify_game'):
+                self.assertTrue(runner.accept_game(game,time.monotonic()+10))
+            event=json.loads((runner.directory/'runner-events.jsonl').read_text())
+            self.assertEqual(event['type'],'game');self.assertEqual(event['kind'],job['kind'])
+            self.assertEqual(runner.state['terminalGames'],1)
+            self.assertEqual(runner.buffer.game_ids,[game['id']])
+            self.assertTrue((runner.directory/runner.state['archives'][0]).exists())
+
     def test_generation_protocol_respects_persisted_round_count(self):
         with tempfile.TemporaryDirectory() as directory:
             worker = Path(directory)/'mock-engine.mjs'
