@@ -5,6 +5,14 @@ export async function refreshPR(run,number,{cwd=process.cwd(),execute=command}={
  const repo=run.repository;if(!/^[\w.-]+\/[\w.-]+$/.test(repo??''))throw Error('Run repository is required');
  const read=async n=>JSON.parse((await execute(['gh','pr','view',String(n),'--repo',repo,'--json','number,headRefOid,baseRefOid,baseRefName,state,isDraft,mergeable,reviewDecision,statusCheckRollup,mergedAt,mergeCommit'],{cwd})).output);
  const current=await read(number);
+ // Native stack merges can include predecessors. V1 authorizes individual PRs,
+ // so read membership from the primary resource and reject stacks explicitly.
+ const metadata=JSON.parse((await execute(['gh','api',`repos/${repo}/pulls/${number}`],{cwd})).output);
+ if(current.number!==number||metadata.number!==number||metadata.head?.sha!==current.headRefOid||metadata.base?.sha!==current.baseRefOid||metadata.base?.ref!==current.baseRefName)throw Error('PR revisions changed during gate reads; refresh before merging');
+ // GitHub omits stack for ordinary PRs; a present value must be null or an
+ // object. Every stack object is unsupported, regardless of its position.
+ if(Object.hasOwn(metadata,'stack')&&metadata.stack!==null&&(typeof metadata.stack!=='object'||Array.isArray(metadata.stack)))throw Error('Malformed native stack membership; cannot verify merge scope');
+ pr.nativeStack=metadata.stack??null;
  if(current.headRefOid!==pr.head){pr.head=current.headRefOid;for(const s of run.stages)if(s.index>=(run.prs.indexOf(pr)+1)||run.mode==='local'){s.status='stale';s.visualReviewed=false;}}
  if(pr.base!==current.baseRefName && pr.authorization)pr.authorization.state='suspended';
  pr.base=current.baseRefName;pr.open=current.state==='OPEN';pr.draft=current.isDraft;pr.conflicts=current.mergeable==='CONFLICTING'?true:current.mergeable==='MERGEABLE'?false:null;
