@@ -129,14 +129,15 @@ const publicProfileDialog = createPublicProfileDialog();
 let accountInitialized = false;
 let accountStartupError = "";
 const account = createAccountController({ storage,
-  onTransition: next => { if (accountInitialized) resetAccountTransport(next); },
+  onTransition: (next, source) => { if (accountInitialized) { accountDialog.onTransition(source); resetAccountTransport(next); } },
   onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); } },
 });
 const accountDialog = createAccountDialog({ controller: account, onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
   onComplete: async intent => {
+    const generation = account.snapshot().generation;
     await syncRouteDataAndLiveChannels().catch(() => {});
     render({ animatePanels: false });
-    if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
+    if (!intent || generation !== account.snapshot().generation || !account.canPlay() || intent.hash !== window.location.hash) return;
     const selector = `[data-action="${CSS.escape(intent.action)}"]${intent.gameId ? `[data-game-id="${CSS.escape(intent.gameId)}"]` : ""}${intent.moveIndex ? `[data-move-index="${CSS.escape(intent.moveIndex)}"]` : ""}`;
     appEl.querySelector(selector)?.click();
   },
@@ -4070,7 +4071,10 @@ appEl.addEventListener("pointerdown", event => {
   }
 }, true);
 appEl.addEventListener("click", event => {
-  if (event.target.closest?.("#shell-board") && !account.canPlay()) { event.preventDefault();event.stopImmediatePropagation(); }
+  if (event.target.closest?.("#shell-board") && !account.canPlay()) {
+    event.preventDefault();event.stopImmediatePropagation();
+    if (!accountDialog.isOpen()) accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, event.target.closest?.("button, [tabindex]"));
+  }
 }, true);
 appEl.addEventListener("click", async (event) => {
   const target = event.target;

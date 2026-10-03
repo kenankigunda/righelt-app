@@ -130,12 +130,12 @@ export const createAccountController = ({
   const publish = () => {
     if (!destroyed) onChange(snapshot());
   };
-  const retire = (next = { authenticated: false }, broadcast = false) => {
+  const retire = (next = { authenticated: false }, broadcast = false, owner = null) => {
     generation++;
     clearTimeout(expiryTimer);
     for (const controller of controllers) controller.abort();
     controllers.clear();
-    onTransition({ ...snapshot(), session: structuredClone(next), generation });
+    onTransition({ ...snapshot(), session: structuredClone(next), generation }, { owner });
     session = next;
     if (broadcast) {
       write(AUTH_CHANGE_KEY, `${now()}:${Math.random()}`);
@@ -143,7 +143,7 @@ export const createAccountController = ({
     }
     publish();
   };
-  const accept = (input, broadcast = false) => {
+  const accept = (input, broadcast = false, owner = null) => {
     const next = input.authenticated
       ? {
           authenticated: true,
@@ -165,7 +165,7 @@ export const createAccountController = ({
       session.recoveryAcknowledgmentRequired !==
         next.recoveryAcknowledgmentRequired
     )
-      retire(next, broadcast);
+      retire(next, broadcast, owner);
     else {
       session = next;
       publish();
@@ -363,7 +363,7 @@ export const createAccountController = ({
         authorityLost();
     }
   };
-  const act = async (operation, body) => {
+  const act = async (operation, body, owner = null) => {
     if (!ready) throw failure("auth_not_ready");
     if (readPending()) throw failure("logout_pending");
     if (busy) throw failure("operation_pending");
@@ -381,6 +381,7 @@ export const createAccountController = ({
           ["login", "register", "password", "recovery/finish"].includes(
             operation,
           ),
+          owner,
         );
       return result;
     } catch (error) {

@@ -27,6 +27,7 @@ const setup = () => {
     offline = false;
   const calls = [],
     transitions = [],
+    transitionSources = [],
     target = new EventTarget(),
     document = new EventTarget();
   document.visibilityState = "visible";
@@ -46,12 +47,13 @@ const setup = () => {
     storage: store,
     eventTarget: target,
     document,
-    onTransition: (s) => transitions.push(s),
+    onTransition: (s, source) => { transitions.push(s); transitionSources.push(source); },
   });
   return {
     client,
     calls,
     transitions,
+    transitionSources,
     store,
     target,
     document,
@@ -854,4 +856,22 @@ test("hung startup is bounded, aborted, and late bootstrap cannot overwrite a su
   assert.equal(client.snapshot().generation, accepted.generation);
   assert.equal(client.canPlay(), true);
   client.destroy();
+});
+
+
+test("only the initiating local credential operation owns its session transition", async () => {
+  const fixture = setup();
+  try {
+    await fixture.client.start();
+    const owner = {};
+    await fixture.client.act("login", { username: "alice", password: "example password" }, owner);
+    assert.equal(fixture.transitionSources.at(-1).owner, owner);
+    assert.equal("owner" in fixture.client.snapshot(), false);
+    const changed = new Event("storage");
+    changed.key = AUTH_CHANGE_KEY;
+    fixture.target.dispatchEvent(changed);
+    assert.equal(fixture.transitionSources.at(-1).owner, null);
+    await fixture.client.logout();
+    assert.equal(fixture.transitionSources.at(-1).owner, null);
+  } finally { fixture.client.destroy(); }
 });
