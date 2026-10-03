@@ -209,6 +209,68 @@ test(
       assert.equal(read.status, 200);
       assert.equal(read.body.game.player1.profile.displayName, "Current Alice");
       assert.ok(read.body.game.myRoles.includes("Player 1"));
+      // Two independent live sessions may own the same seat, but each command
+      // must still commit against the board revision that browser observed.
+      const concurrentGameId = "same-account-concurrent";
+      const concurrentCreated = await call(
+        "/direct/create", a,
+        { gameId: concurrentGameId, selfPlayMode: true },
+        { "x-game-id": concurrentGameId },
+      );
+      assert.equal(concurrentCreated.status, 200);
+      const initial = concurrentCreated.body.game;
+      const action = initial.legalActions.find(item => item.from && item.to);
+      assert.ok(action, "concurrent attempts use an actual legal board move");
+      const makeCommand = async (actor, game, id, action) => {
+        const command = {
+          protocolVersion: 2,
+          gameId: concurrentGameId,
+          identityId: "alice",
+          authContextId: actor.context,
+          clientCommandId: id,
+          kind: "action",
+          payload: { action },
+          expectedState: game.board.state,
+          expectedGameplayRevision: game.gameplayRevision,
+        };
+        return { ...command, fingerprint: await commandFingerprint(command) };
+      };
+      const attempts = await Promise.all([a, a2].map((actor, index) =>
+        makeCommand(actor, initial, `v2:same-account-${index}`, action),
+      ));
+      const concurrentResults = await Promise.all([a, a2].map((actor, index) =>
+        call(`/api/shell/games/${concurrentGameId}/apply`, actor, attempts[index]),
+      ));
+      for (const result of concurrentResults)
+        assert.equal(result.status, 200, JSON.stringify(result.body));
+      const outcomes = concurrentResults.map(result => result.body.commandOutcomes[0]);
+      assert.equal(outcomes.filter(outcome => outcome.outcome === "accepted").length, 1);
+      assert.equal(outcomes.filter(outcome => outcome.outcome === "rejected" && outcome.reason === "stale_state").length, 1);
+      const persisted = await db.prepare(
+        "SELECT gameplay_revision,state_json FROM live_games WHERE game_id=?",
+      ).bind(concurrentGameId).first();
+      assert.equal(persisted.gameplay_revision, initial.gameplayRevision + 1);
+      assert.equal(JSON.parse(persisted.state_json).moves.length, 1);
+      const receipts = (await db.prepare(
+        "SELECT outcome,reason FROM live_command_receipts WHERE game_id=?",
+      ).bind(concurrentGameId).all()).results;
+      assert.equal(receipts.length, 2);
+      assert.equal(receipts.filter(receipt => receipt.outcome === "accepted").length, 1);
+      assert.equal(receipts.filter(receipt => receipt.reason === "stale_state").length, 1);
+      // The losing browser is still authenticated and can play after refreshing;
+      // rejecting stale state must not revoke or replace its account session.
+      const loser = [a, a2][outcomes.findIndex(outcome => outcome.outcome === "rejected")];
+      const refreshed = await call(`/api/shell/games/${concurrentGameId}`, loser);
+      assert.equal(refreshed.status, 200);
+      assert.equal(refreshed.body.game.canRecordMove, true);
+      const nextAction = refreshed.body.game.legalActions.find(item => item.from && item.to);
+      assert.ok(nextAction);
+      const resumed = await call(`/api/shell/games/${concurrentGameId}/apply`, loser,
+        await makeCommand(loser, refreshed.body.game, "v2:same-account-refreshed", nextAction));
+      assert.equal(resumed.status, 200, JSON.stringify(resumed.body));
+      assert.equal(resumed.body.commandOutcomes[0].outcome, "accepted");
+      assert.equal(resumed.body.game.gameplayRevision, initial.gameplayRevision + 2);
+      assert.equal(resumed.body.game.moves.length, 2);
       const anon = await call("/api/shell/games/g?identityId=alice", null);
       assert.equal(anon.body.game.inviteToken, null);
       assert.deepEqual(anon.body.game.legalActions, []);
