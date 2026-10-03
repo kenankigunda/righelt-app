@@ -6,10 +6,24 @@ import subprocess
 import sys
 from .checkpoint import atomic_json
 from .config import ROOT
+from .processes import install_stop_handlers
 
 
 def read(path):
     return json.loads(Path(path).read_text())
+
+
+def invoke_supervisor(argv):
+    process=subprocess.Popen(argv,cwd=ROOT)
+    try:
+        code=process.wait()
+        if code:raise subprocess.CalledProcessError(code,argv)
+    except BaseException:
+        if process.poll() is None:
+            process.terminate()
+            try:process.wait(timeout=5)
+            except subprocess.TimeoutExpired:process.kill();process.wait(timeout=2)
+        raise
 
 
 def execute(args, invoke=None):
@@ -19,7 +33,7 @@ def execute(args, invoke=None):
             '--activity-file',str(args.activity_file.resolve()),'--gate-report',str(args.gate_report.resolve()),
             '--stage',args.stage,'--seed',str(args.seed)]
     if invoke is None:
-        invoke=lambda argv:subprocess.run(argv,cwd=ROOT,check=True)
+        invoke=invoke_supervisor
     def phase(name,flags):
         result['phase']=name
         if directory.exists():atomic_json(directory/'stage-result.json',result)
@@ -54,6 +68,7 @@ def execute(args, invoke=None):
 
 
 def main():
+    install_stop_handlers()
     parser=argparse.ArgumentParser()
     for name in ('run-dir','activity-file','gate-report','parity-corpus'):
         parser.add_argument('--'+name,type=Path,required=True)

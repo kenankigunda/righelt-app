@@ -69,6 +69,20 @@ class SupervisorTest(unittest.TestCase):
                 result=supervise(process,Budget(0,600),AdaptivePolicy(),QuietTelemetry(),Path(d),clock=lambda:560,runtime=runtime)
             self.assertEqual(result,'validation-handoff-timeout');self.assertTrue(stop.called)
 
+    def test_sleep_and_wall_changes_preserve_validation_reserve(self):
+        from unittest.mock import patch,Mock
+        from righelt_training.supervisor import validation_boundary,validate_training_window
+        runtime={'startedMonotonic':0,'deadlineMonotonic':600,'deadlineWall':1600,'command':'training','manifestSha256':'manifest'}
+        with patch('righelt_training.supervisor.time.time',return_value=1500):
+            self.assertEqual(validation_boundary(runtime,100),100)
+            with self.assertRaises(ValueError):validate_training_window(runtime,100)
+        with patch('righelt_training.supervisor.time.time',return_value=900):
+            self.assertEqual(validation_boundary(runtime,100),500)
+        with tempfile.TemporaryDirectory() as d, patch('righelt_training.supervisor.time.time',return_value=1560), patch('righelt_training.supervisor.stop_group'):
+            process=Mock(pid=123);process.poll.return_value=None
+            result=supervise(process,Budget(0,600,1600),AdaptivePolicy(),QuietTelemetry(),Path(d),clock=lambda:100,runtime=runtime)
+            self.assertEqual(result,'validation-handoff-timeout')
+
     def test_arena_cannot_claim_fresh_budget_or_external_checkpoint(self):
         from argparse import Namespace
         from unittest.mock import patch
