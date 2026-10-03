@@ -191,11 +191,16 @@ test("Explain activation survives an account response arriving during its press"
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await held;
   const box = await explain.boundingBox();
+  const heldExplain = await explain.elementHandle();
+  await explain.focus();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   const resumed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/auth/session");
   release();
-  await resumed;
+  await (await resumed).finished();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  expect(await heldExplain.evaluate(element => element.isConnected && element === document.activeElement)).toBe(true);
+  expect(await explain.evaluate((element, held) => element === held, heldExplain)).toBe(true);
   await page.mouse.up();
   await expect(explain).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => page.evaluate(async () => (await (await fetch("/api/auth/session")).json()).account.preferences.view)).toBe("explanatory");
