@@ -88,3 +88,7 @@ Implementation plans and PR summaries should identify:
 - the user workflow touched
 - whether `E2E` coverage was added, expanded, or intentionally left unchanged
 - which UX proof lanes were used when the change touches the user experience
+
+## Validation evidence and PR shepherding
+
+Use the repo skill `skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. Run `pnpm validate:local` before completion; use `pnpm validate:integrated --manifest FILE` for ordered PR sets. Inspect actual screenshots, repair source PRs, publish the evidence report, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.
