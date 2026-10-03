@@ -35,6 +35,12 @@ class ResourcesTest(unittest.TestCase):
         a=AdaptivePolicy().decide(self.sample(development_active=True,experiment_bytes=20*GIB))
         self.assertTrue(a.paused)
 
+    def test_unknown_gpu_allocation_prevents_work_or_escalation(self):
+        a=AdaptivePolicy().decide(self.sample(device_memory_known=False))
+        self.assertTrue(a.paused)
+        self.assertEqual(a.workers,0)
+        self.assertEqual(a.reason,'device-memory-unknown')
+
     def test_disk_artifact_and_invalid_stop(self):
         for kw in [{'disk_free_bytes':GIB},{'artifact_bytes':100*GIB},{'external_cpu_percent':float('nan')}]:
             self.assertTrue(AdaptivePolicy().decide(self.sample(**kw)).stop)

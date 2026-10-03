@@ -106,6 +106,12 @@ class Runner:
             self.restore(Path(resume))
         self.curriculum = Curriculum(seed, switched=self.state['curriculumSwitched'])
         self.model.eval()
+        self.report_device_memory()
+
+    def report_device_memory(self):
+        amount=torch.mps.driver_allocated_memory() if self.device.type=='mps' else 0
+        atomic_json(self.directory/'device-memory.json', {'schema':1,'pid':os.getpid(),
+                    'observedAt':time.time(),'driverBytes':amount})
 
     def restore(self, checkpoint):
         parent_manifest = self.runtime.get('parentCheckpointManifestSha256', self.manifest_hash)
@@ -154,6 +160,7 @@ class Runner:
         self.event('checkpoint', path=str(path), sha256=digest, updates=self.state['updates'])
 
     def maybe_checkpoint(self):
+        self.report_device_memory()
         if self.checkpoint_requested or time.monotonic() - self.last_checkpoint >= CHECKPOINT_INTERVAL:
             self.checkpoint()
 
@@ -170,6 +177,7 @@ class Runner:
             if not torch.isfinite(policy).all() or not torch.isfinite(value).all():
                 raise ValueError('nonfinite inference output')
             policies, values = policy.cpu().tolist(), value.cpu().tolist()
+        self.report_device_memory()
         for (worker, message), logits, scalar in zip(requests, policies, values):
             worker['process'].stdin.write((json.dumps({'type': 'evaluation', 'id': message['id'], 'policyLogits': logits, 'value': scalar}) + '\n').encode())
             worker['process'].stdin.flush()
@@ -341,7 +349,10 @@ def main():
     parser.add_argument('--stage', required=True, choices=['initial', 'overnight'])
     parser.add_argument('--resume')
     args = parser.parse_args()
+    pending=[]
+    signal.signal(signal.SIGUSR1, lambda *_: pending.append(True))
     runner = Runner(args.run_dir, args.seed, args.stage, args.resume)
+    runner.checkpoint_requested=bool(pending)
     signal.signal(signal.SIGUSR1, lambda *_: setattr(runner, 'checkpoint_requested', True))
     try:
         runner.run()

@@ -7,10 +7,21 @@ import time
 import psutil
 from .resources import Sample
 
+def read_device_memory(path, runner_pid, now):
+    try:
+        gpu=json.loads(Path(path).read_text());value=gpu['driverBytes']
+        if (gpu.get('schema')==1 and gpu.get('pid')==runner_pid
+            and isinstance(value,int) and value>=0 and 0<=now-gpu['observedAt']<=30):
+            return value,True
+    except (OSError,ValueError,KeyError,TypeError):pass
+    return 0,False
+
 class Telemetry:
-    def __init__(self, artifacts, activity_file):
+    def __init__(self, artifacts, activity_file, device_memory_file=None, runner_pid=None):
         self.artifacts=Path(artifacts);self.activity_file=Path(activity_file)
         self.process=psutil.Process();self.processes={}
+        self.device_memory_file=Path(device_memory_file) if device_memory_file else None
+        self.runner_pid=runner_pid
         psutil.cpu_percent()
 
     def sample(self):
@@ -39,11 +50,12 @@ class Telemetry:
             result=subprocess.run(['/usr/sbin/sysctl','-n','kern.memorystatus_vm_pressure_level'],capture_output=True,text=True,timeout=2,check=True)
             pressure={'1':'normal','2':'warning','4':'critical'}.get(result.stdout.strip(),'unknown')
         except (OSError,subprocess.SubprocessError):pass
-        # GPU driver memory is not fully represented in RSS. Count it conservatively.
-        try:
-            import torch
-            if torch.backends.mps.is_available():rss+=torch.mps.driver_allocated_memory()
-        except (ImportError,RuntimeError):pass
+        # GPU allocation is process-local; read the runner's own measurement.
+        # RSS may overlap these bytes, so this sum is intentionally conservative.
+        device_known=self.device_memory_file is None
+        if self.device_memory_file:
+            amount,device_known=read_device_memory(self.device_memory_file,self.runner_pid,now)
+            rss+=amount
         size=sum(p.stat().st_size for p in self.artifacts.rglob('*') if p.is_file())
         return Sample(now,observed,active,max(0,psutil.cpu_percent()*psutil.cpu_count()-owned_cpu),pressure,rss,
-                      psutil.virtual_memory().available,psutil.disk_usage(self.artifacts).free,size)
+                      psutil.virtual_memory().available,psutil.disk_usage(self.artifacts).free,size,device_known)

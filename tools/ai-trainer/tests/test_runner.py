@@ -53,6 +53,7 @@ class RunnerTest(unittest.TestCase):
         torch.set_num_threads(1)
         with tempfile.TemporaryDirectory() as directory:
             runner = Runner.__new__(Runner)
+            runner.device = torch.device("cpu")
             runner.directory = Path(directory)
             runner.runtime = {'parentCheckpointManifestSha256': 'test'}
             runner.manifest_hash = 'test'
@@ -97,6 +98,7 @@ console.log(JSON.stringify({initialState,decisions,finalHash:deterministicStateH
     def test_unfinished_verification_preserves_archive_without_training(self):
         with tempfile.TemporaryDirectory() as directory:
             runner = Runner.__new__(Runner)
+            runner.device = torch.device("cpu")
             runner.directory = Path(directory); runner.state = default_state(); runner.buffer = ReplayBuffer()
             runner.last_checkpoint = time.monotonic(); runner.deadline = time.monotonic()+600
             runner.checkpoint_requested = False
@@ -116,6 +118,7 @@ console.log(JSON.stringify({initialState,decisions,finalHash:deterministicStateH
             worker = Path(directory)/'mock-engine.mjs'
             worker.write_text("import{createInterface}from'node:readline';const r=createInterface({input:process.stdin});r.once('line',l=>{const j=JSON.parse(l);console.log(JSON.stringify({type:'game',game:{id:j.id}}));r.close();process.stdin.destroy();});")
             runner = Runner.__new__(Runner)
+            runner.device = torch.device("cpu")
             runner.directory = Path(directory); runner.state = default_state()
             runner.last_checkpoint = time.monotonic(); runner.deadline = time.monotonic()+60
             runner.checkpoint_requested = False; runner.stage = 'initial'; runner.model_version = 'test'

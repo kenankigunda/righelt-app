@@ -17,6 +17,7 @@ class Sample:
     available_bytes: int
     disk_free_bytes: int
     artifact_bytes: int
+    device_memory_known: bool = True
 
 @dataclass(frozen=True)
 class Allocation:
@@ -44,6 +45,9 @@ class AdaptivePolicy:
             return Allocation(0, LIMITS['minMemoryGiB'], True, True, 'artifact-cap')
         if sample.disk_free_bytes < LIMITS['freeDiskFloorGiB'] * GIB:
             return Allocation(0, LIMITS['minMemoryGiB'], True, True, 'disk-reserve')
+        if not sample.device_memory_known:
+            self.workers=LIMITS['minWorkers'];self.quiet_since=None
+            return Allocation(0,LIMITS['minMemoryGiB'],True,False,'device-memory-unknown')
         fresh = (sample.activity_observed_at is not None
                  and math.isfinite(sample.activity_observed_at)
                  and 0 <= sample.now - sample.activity_observed_at <= LIMITS['activityFreshSeconds'])

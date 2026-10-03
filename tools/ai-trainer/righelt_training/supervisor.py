@@ -67,7 +67,8 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
                         paused_since=now
                         # The runner checkpoints between bounded operations. A blocked runner
                         # cannot defeat this external watchdog or extend the run budget.
-                        try:os.kill(process.pid,signal.SIGUSR1)
+                        try:
+                            if (Path(run_dir)/'device-memory.json').exists():os.kill(process.pid,signal.SIGUSR1)
                         except ProcessLookupError:pass
                     elif now-paused_since>=sample_seconds:
                         stop_group(process)
@@ -146,7 +147,7 @@ def main():
     env={**os.environ,'PYTHONPATH':str(ROOT/'tools/ai-trainer')}
     with (args.run_dir/'runner.log').open('w') as log:
         process=start_group(['/usr/bin/nice','-n','10',*argv],cwd=ROOT,env=env,stdout=log,stderr=log)
-        reason=supervise(process,budget,AdaptivePolicy(),Telemetry(artifact_root,args.activity_file),args.run_dir)
+        reason=supervise(process,budget,AdaptivePolicy(),Telemetry(artifact_root,args.activity_file,args.run_dir/'device-memory.json',process.pid),args.run_dir)
     atomic_json(args.run_dir/'supervisor-result.json',{'reason':reason,'runnerReturncode':process.returncode,
                 'elapsedSeconds':time.monotonic()-started,'budgetSeconds':budget.seconds,'productionPromotion':False})
     print(json.dumps({'reason':reason,'runDir':str(args.run_dir)}))
