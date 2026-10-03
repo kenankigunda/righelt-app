@@ -64,10 +64,14 @@ test("cancelling account gate keeps choice, and unavailable computer never creat
   await page.locator('[data-opponent="babs"]').click();
   await finishRegistration(page);
   await acknowledge(page);
-  await expect(page.locator(".home-start-status")).toContainText("Computer play is being prepared");
-  await page.locator('[data-opponent="babs"]').focus();
+  const story = page.getByRole("dialog", { name: "Babs · Easy" });
+  await expect(story).toContainText("Computer play is being prepared");
+  await page.keyboard.press("Escape");
+  await page.locator('button[data-opponent="babs"]').focus();
   await page.keyboard.press("Space");
-  await expect(page.locator('[data-opponent="babs"]')).toBeFocused();
+  await expect(story).toBeVisible();
+  await expect(story.getByRole("button", { name: "Play Babs", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
   expect(creates).toBe(0);
   await expect(page.getByTestId("home-create-game")).toBeVisible();
 });

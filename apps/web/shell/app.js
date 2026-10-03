@@ -1,3 +1,5 @@
+import { createModal } from "./modal.js";
+import { createOpponentStoryDialog, shouldShowOpponentIntroduction, cancelAbandonedOpponentTutorial, createOpponentStartCoordinator } from "./opponent-stories.js";
 import { PERSONAL_OPPONENTS, isPersonalSide, isComputerOpponent, getComputerReadiness, selectResumeGames, isAwaitingPlayer, captureHomeFocus, restoreHomeFocus } from "./personal-home.js";
 import { createContextualHelp, gamePlayRevision, canRestoreGameView } from "./play-view.js";
 import { captureHeaderFocus, restoreHeaderFocus } from "./header-focus.js";
@@ -9,7 +11,8 @@ import { createAccountDialog } from './account-dialog.js';
 import { recoveryMessage, sharedMutationActions } from "./recovery-view.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter } from "../board-adapters/engine-board-adapter.js";
-import { syncMiniBoardPreviews } from "../board/mini-board-preview.js";
+import { createInitialState } from "../generated/packages/game-engine/src/index.js";
+import { createMiniBoardPreview, syncMiniBoardPreviews } from "../board/mini-board-preview.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
@@ -4137,6 +4140,9 @@ const subscribeToTransport = () => transport.subscribe((change) => {
 subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
+  storyStart.cancel();
+  if (pendingOpponentTutorial) { pendingOpponentTutorial.reject(new Error("Account changed. Choose your opponent again.")); pendingOpponentTutorial = null; }
+  storyDialog.refresh();
   const gameId = getCurrentViewedGameId();
   const visible = gameId ? transport.getAuthoritativeGame?.(gameId) : null;
   routeSyncRequestId++;
@@ -4231,6 +4237,7 @@ window.addEventListener("hashchange", () => {
   closeHeaderMenu();
   const parsedRoute = parseRouteFromHash(window.location.hash);
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
+  if (cancelAbandonedOpponentTutorial(previousRoute, currentRoute, pendingOpponentTutorial, () => storyStart.cancel())) pendingOpponentTutorial = null;
   if (previousRoute.name !== currentRoute.name || previousRoute.gameId !== currentRoute.gameId || previousRoute.inviteToken !== currentRoute.inviteToken) {
     navigationGeneration += 1;
     routeSyncRequestId += 1;
@@ -4305,9 +4312,45 @@ const openBoardAccountGate = async source => {
   accountDialog.open(state.session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, source);
 };
 
+let pendingOpponentTutorial = null;
+const storyStart = createOpponentStartCoordinator({
+  getAccount: () => ({ canPlay: account.canPlay(), generation: account.snapshot().generation, tutorial: account.snapshot().session.account?.preferences?.tutorial || "new" }),
+  getReadiness: getComputerReadiness,
+  markIntroduced: bit => account.updateAccount({ preferences: { introducedOpponents: bit } }),
+  runTutorial: intent => new Promise((resolve, reject) => {
+    pendingOpponentTutorial = { intent, resolve, reject, generation: account.snapshot().generation };
+    storyDialog.close("handoff");
+    tutorial.reset(); navigateTo(buildTutorialHash());
+  }),
+  createGame: async () => { throw new Error("The trained opponent is not available yet."); },
+});
+const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: getComputerReadiness,
+  onPresentation: () => {
+    const root = document.createElement("div"); root.className = "story-presentation-board";
+    root.inert = true; root.setAttribute("aria-hidden", "true"); document.body.append(root);
+    const preview = createMiniBoardPreview({ rootEl: root, preview: { snapshot: createInitialState(), previewKey: "initial-story-board" }, createAdapter: createEngineBoardAdapter });
+    return () => { preview.destroy(); root.remove(); };
+  },
+  onPlay: intent => {
+    if (!account.canPlay()) {
+      storyDialog.close();
+      accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", safeAccountIntent({ hash: window.location.hash, action: "start-opponent", ...intent }));
+      return { state: "account-required" };
+    }
+    return storyStart.accept(intent);
+  }, onClose: reason => { if (reason !== "handoff") storyStart.cancel(); },
+});
 const startPersonalGame = ({ opponent, side }) => {
   if (!account.canPlay() || !isPersonalSide(side)) return;
-  if (isComputerOpponent(opponent)) { homeStartStatus = getComputerReadiness(opponent).message; render(); return; }
+  if (isComputerOpponent(opponent)) {
+    const readiness = getComputerReadiness(opponent);
+    homeStartStatus = readiness.message;
+    if (shouldShowOpponentIntroduction(opponent, account.snapshot().session.account?.preferences?.introducedOpponents || 0, readiness)) storyDialog.open(opponent, { side });
+    else void storyStart.accept({ opponent, side }).then(result => {
+      if (result.state !== "started" && result.state !== "cancelled") { homeStartStatus = result.message || readiness.message; render(); }
+    });
+    return;
+  }
   if (opponent !== "friend" && opponent !== "self") return;
   const handle = transport.createGame({ selfPlayMode: opponent === "self", creatorSide: side });
   selfPlayStartSides.set(`${transport.getIdentityId()}:${handle.result.id}`, side);
@@ -4825,6 +4868,13 @@ appEl.addEventListener("click", async (event) => {
       catch { window.__righeltLastError = "Could not save tutorial progress. Try again."; return; }
     } else if (!account.snapshot().enabled) saveTutorialCompleted(storage, true);
     tutorial.reset();
+    if (pendingOpponentTutorial) {
+      const pending = pendingOpponentTutorial; pendingOpponentTutorial = null;
+      if (pending.generation === account.snapshot().generation && account.canPlay()) pending.resolve();
+      else pending.reject(new Error("Sign in again before playing."));
+      navigateTo(buildHomeHash(getCurrentFlyoutState()));
+      return;
+    }
     const gameId = actionEl.getAttribute("data-game-id");
     navigateTo(gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : buildHomeHash(getCurrentFlyoutState()));
     return;

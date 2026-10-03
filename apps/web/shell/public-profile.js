@@ -1,3 +1,4 @@
+import { createModal } from "./modal.js";
 const escape = (value) =>
   String(value ?? "").replace(
     /[&<>"']/g,
@@ -18,23 +19,18 @@ export const createPublicProfileDialog = ({
   document = globalThis.document,
   fetcher = fetch,
 } = {}) => {
-  const dialog = document.createElement("dialog");
-  dialog.className = "account-dialog";
+  const modal = createModal({ document, labelId: "public-profile-title", onClose: () => { generation++; } });
+  const dialog = modal.element;
   dialog.dataset.testid = "public-profile";
   dialog.setAttribute("aria-labelledby", "public-profile-title");
-  document.body.append(dialog);
-  let generation = 0,
-    trigger;
+
+  let generation = 0;
   const close = () => {
     generation++;
-    dialog.close();
+    modal.close();
     dialog.replaceChildren();
-    if (trigger?.isConnected) trigger.focus();
+
   };
-  dialog.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    close();
-  });
   dialog.addEventListener("click", (event) => {
     if (event.target.closest("[data-profile-close]")) close();
   });
@@ -42,10 +38,9 @@ export const createPublicProfileDialog = ({
     close,
     async open(username, source) {
       const marker = ++generation;
-      trigger = source;
       dialog.innerHTML =
         '<h2 id="public-profile-title">Player profile</h2><p role="status">Loading…</p><button data-profile-close>Close</button>';
-      if (!dialog.open) dialog.showModal();
+      modal.open(dialog.innerHTML, source);
       try {
         const response = await fetcher(
           `/api/profiles/${encodeURIComponent(username)}`,
