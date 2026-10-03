@@ -1,9 +1,10 @@
 // JSON-lines protocol. Parent owns inference, resource allocation and hard process termination.
 import { createInterface } from 'node:readline';
 import { writeFileSync, renameSync } from 'node:fs';
+import { createEngineOperationBudget, EngineExpansionLimit } from './engine-operation-budget.mjs';
 import { searchRecovery } from './search-recovery.mjs';
 import { createHash } from 'node:crypto';
-import { createInitialState, deterministicStateHash, normalizeState, resolveToStability, withEngineComputationGuard } from '../../packages/game-engine/src/index.ts';
+import { createInitialState, deterministicStateHash, normalizeState, resolveToStability } from '../../packages/game-engine/src/index.ts';
 import { encodeState, selectMove, seededRandom, experimentConfig, legalActionMap as engineLegalActionMap, transition as engineTransition } from '../../packages/computer-player/src/index.ts';
 
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity })[Symbol.asyncIterator]();
@@ -57,12 +58,10 @@ async function main() {
   if (!Number.isFinite(budgetMs) || budgetMs <= 0 || budgetMs > 600_000) throw new Error('Invalid job bound');
   const deadline = performance.now() + budgetMs;
   const check = () => { if (performance.now() >= deadline) throw new BudgetExpired(); };
+  const engineBudget=createEngineOperationBudget(job.command,experimentConfig.search.maxNodes,check);
   const bounded = operation => {
-    let expansions=0;
-    return withEngineComputationGuard(expansion=>{
-      check();
-      if(expansion && ++expansions>experimentConfig.search.maxNodes) throw new BudgetExpired('node-limit');
-    },operation);
+    try{return engineBudget.bounded(operation);}
+    catch(error){if(error instanceof EngineExpansionLimit)throw new BudgetExpired('node-limit');throw error;}
   };
   const legalActionMap = state => bounded(()=>engineLegalActionMap(state));
   const transition = (state,action) => bounded(()=>engineTransition(state,action));
@@ -103,7 +102,7 @@ async function main() {
         : repetitions.get(ruleFingerprint(state)) >= experimentConfig.training.repetitionLimit ? 'repetition' : null;
       if (job.game.termination !== 'truncated' || !reason || job.game.truncationReason !== reason) throw new Error('Unjustified truncation');
     } else if (job.game.termination !== 'terminal') throw new Error('Terminal game mislabeled');
-    send({ type: 'replayed', hash: deterministicStateHash(state), outcome: state.outcome }); return;
+    send({ type: 'replayed', hash: deterministicStateHash(state), outcome: state.outcome, engineBudget:engineBudget.stats }); return;
   }
   if (job.command === 'validate-opening') {
     let current=createInitialState();

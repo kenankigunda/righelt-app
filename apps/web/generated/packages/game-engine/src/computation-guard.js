@@ -1,3 +1,7 @@
+// Per synchronous operation, separate from model-guided search tree nodes.
+// Retained replay evidence peaks at 9,879 expansions; 16,384 bounds allocation
+// with headroom while the caller's deadline remains independently enforced.
+export const MAX_ENGINE_OPERATION_EXPANSIONS = 16_384;
 let current;
 export function checkEngineComputation(expansion = false) {
     for (let frame = current; frame; frame = frame.parent)
