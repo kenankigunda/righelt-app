@@ -58,6 +58,12 @@ export async function proveResultsRematch({ page, info, root }) {
   const rematch = page.getByRole('dialog', { name: 'Play again', exact: true });
   await expect(rematch.getByRole('combobox', { name: 'Opponent', exact: true })).toHaveValue('friend');
   await expect(rematch.getByRole('radio', { name: 'Player 1 · Red', exact: true })).toBeChecked();
+  await expect(rematch.getByRole('radio')).toHaveCount(2);
+  for(const side of await rematch.getByRole('radio').all()){
+    const box=await side.boundingBox();
+    expect(box.width).toBeGreaterThanOrEqual(16);expect(box.width).toBeLessThanOrEqual(24);
+    expect(box.height).toBeGreaterThanOrEqual(16);expect(box.height).toBeLessThanOrEqual(24);
+  }
   await proof(page, info, 'friend-rematch-choice', rematch);
   let requests = 0;
   const observesCreate = event => { if (event.method() === 'POST' && new URL(event.url()).pathname === '/api/shell/games') requests++; };

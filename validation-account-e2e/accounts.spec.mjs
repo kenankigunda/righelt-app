@@ -194,7 +194,22 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
     expect(denied.status).toBeGreaterThanOrEqual(400);expect(denied.body.error).toBe('legacy_read_only');
     await proveLegacyMutationDenied({browser,legacy,oldGame});
     expect(await count(page)).toBe(legacy.count);
-    await page.getByTestId('game-board').scrollIntoViewIfNeeded();
+    if(capabilities.movePreview){
+      const help=page.locator('[data-zone="game-help"]');
+      if(await help.getAttribute('data-expanded')==='true')await help.getByRole('button',{name:'Collapse',exact:true}).click();
+      await expect(help).toHaveAttribute('data-expanded','false');
+      // Collapsing the overlay reveals the board without changing the saved
+      // explanatory preference whose continuity this journey must preserve.
+      expect((await session(page)).account.preferences.view).toBe('explanatory');
+    }
+    const legacyBoard=page.getByTestId('game-board');
+    await legacyBoard.evaluate(element=>element.scrollIntoView({block:'start',behavior:'instant'}));
+    for(const cell of [legacyBoard.locator('.cell').first(),legacyBoard.locator('.cell').last()]){
+      await expect.poll(()=>cell.evaluate(element=>{
+        const rect=element.getBoundingClientRect();
+        return element.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2));
+      })).toBe(true);
+    }
     await proof(page,info,'legacy-history-preserved-no-account-takeover',page.getByTestId('game-board'));
   }
   if(process.env.RIGHELT_CONTINUITY_FILE){
