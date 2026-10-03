@@ -54,3 +54,9 @@ Thumbs.db
 # Backlog and ticket docs live in the sibling righelt-backlog repo
 backlog/
 docs/tickets/
+
+# Local trained-play experiments
+.venv/
+__pycache__/
+*.pyc
+.ai-runs/
