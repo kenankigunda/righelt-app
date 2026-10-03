@@ -866,59 +866,6 @@ const buildCommittedEndTurnResult = ({ transport, gameId, fallback }) => {
   };
 };
 
-const buildHistoryViewProjection = (game, moveIndex) => {
-  const authoritativeMoves = Array.isArray(game?.moves) ? game.moves : [];
-  const pendingMoves = Array.isArray(game?.pendingMoves) ? game.pendingMoves : [];
-  const selectedMove =
-    authoritativeMoves.find((move) => move?.index === moveIndex) ?? pendingMoves.find((move) => move?.index === moveIndex) ?? null;
-  const selectedSnapshotSource = selectedMove?.snapshot ?? selectedMove?.selectionSnapshot ?? null;
-  if (!selectedSnapshotSource) {
-    return null;
-  }
-  const selectedSnapshot = clone(selectedSnapshotSource);
-  const selectedTurn =
-    (Array.isArray(game.turns) ? game.turns.find((turn) => turn?.index === selectedSnapshot.turnIndex) : null) ??
-    game.currentTurn ??
-    null;
-  const turnOwnerSeat = selectedTurn?.playerSeat ?? game.turnOwnerSeat ?? null;
-  const controlSeat = turnOwnerSeat ? getControlSeatForTurn(selectedSnapshot, turnOwnerSeat) : game.controlSeat ?? null;
-  return {
-    ...clone(game),
-    inHistoryMode: true,
-    historyIndex: moveIndex,
-    historySelectionAction: selectedMove.action ? clone(selectedMove.action) : null,
-    currentSnapshot: selectedSnapshot,
-    currentTurn: selectedTurn ? clone(selectedTurn) : game.currentTurn ? clone(game.currentTurn) : null,
-    turnOwnerSeat,
-    controlSeat,
-    control: controlSeat === turnOwnerSeat ? "turn-owner" : controlSeat ? "opponent" : game.control ?? "turn-owner",
-    canRecordMove: false,
-    canEndTurn: false,
-  };
-};
-
-const buildLiveViewProjection = (game) => {
-  const liveSnapshot = game?.board?.state ? clone(game.board.state) : game?.currentSnapshot ? clone(game.currentSnapshot) : null;
-  if (!liveSnapshot) {
-    return null;
-  }
-  const currentTurn =
-    (Array.isArray(game.turns) ? [...game.turns].reverse().find((turn) => turn?.status === "active") : null) ?? game.currentTurn ?? null;
-  return {
-    ...clone(game),
-    inHistoryMode: false,
-    historyIndex: null,
-    historySelectionAction: null,
-    currentSnapshot: liveSnapshot,
-    currentTurn: currentTurn ? clone(currentTurn) : game.currentTurn ? clone(game.currentTurn) : null,
-  };
-};
-
-const sameHistoryProjection = (currentGame, projectedGame) =>
-  currentGame?.inHistoryMode === true &&
-  currentGame?.historyIndex === projectedGame?.historyIndex &&
-  JSON.stringify(currentGame?.currentSnapshot ?? null) === JSON.stringify(projectedGame?.currentSnapshot ?? null);
-
 export const createSyncStore = ({
   storage,
   fetcher = fetch,
@@ -935,7 +882,6 @@ export const createSyncStore = ({
   const operationManager = createOperationManager();
   let pendingLocalGames = readPendingLocalGames(storage);
   let activeGameId = null;
-  const localHistorySelectionByGameId = new Map();
   const getRollbackFailureHandle = (gameId) => {
     if (!gameId) {
       return null;
@@ -1090,12 +1036,16 @@ export const createSyncStore = ({
     }
   };
 
+  const optimisticOperationOwner = new Map();
   const runOptimisticGameOperation = ({ id, gameId, buildOptimisticGame, commit }) => {
     const currentGame = transport.getGameViewModel(gameId);
     if (!currentGame) {
       throw createOperationError(`Game ${gameId} is not loaded.`, "game_not_loaded");
     }
+    if (currentGame.sharedMutationsBlocked) throw createOperationError("Recovery is in progress.", "sync_recovering");
     const previousGame = clone(currentGame);
+    const operationSequence = transport.getLastEventSeq(gameId);
+    optimisticOperationOwner.set(gameId, id);
     const optimisticGame = buildOptimisticGame(previousGame);
     transport.applyLiveGameUpdate({ game: optimisticGame });
 
@@ -1108,13 +1058,11 @@ export const createSyncStore = ({
     void Promise.resolve()
       .then(() => commit())
       .then((game) => {
-        if (game) {
-          transport.applyLiveGameUpdate({ game });
-        }
+        // The transport already applied the response with its authoritative sequence.
         operationManager.confirm(id, transport.getGameViewModel(gameId) ?? game ?? optimisticGame);
       })
       .catch((error) => {
-        transport.applyLiveGameUpdate({ game: previousGame });
+        if (error.code !== "delivery_unknown" && optimisticOperationOwner.get(gameId) === id && transport.getLastEventSeq(gameId) === operationSequence) transport.applyLiveGameUpdate({ game: previousGame });
         operationManager.fail(id, error);
       });
 
@@ -1135,9 +1083,11 @@ export const createSyncStore = ({
     if (change?.type === "optimistic_rollback" && clientCommandId) {
       failOperation(
         clientCommandId,
-        createOperationError("Predicted move was rejected by the authoritative game state.", "optimistic_rollback"),
+        createOperationError(failureNotice || "The game changed before your move could be completed. Check the board and try again.", "optimistic_rollback"),
       );
-      upsertRollbackFailure(gameId, failureNotice || "Predicted move was rejected by the authoritative game state.");
+      const rejectedMoves = operationManager.getFailedOperations(gameId).filter((handle) => handle.error?.code === "optimistic_rollback").length;
+      const notice = failureNotice || "The game changed before your move could be completed. Check the board and try again.";
+      upsertRollbackFailure(gameId, rejectedMoves > 1 ? notice.replace("your move could", "your moves could") : notice);
     }
     if (change?.type === "optimistic_desynced" && clientCommandId) {
       failOperation(
@@ -1146,17 +1096,7 @@ export const createSyncStore = ({
       );
       upsertRollbackFailure(gameId, failureNotice || "Sync failed before the optimistic command could be confirmed.");
     }
-    if (gameId && localHistorySelectionByGameId.has(gameId)) {
-      const currentGame = transport.getGameViewModel(gameId);
-      if (currentGame?.inHistoryMode !== true || typeof currentGame?.historyIndex !== "number") {
-        localHistorySelectionByGameId.delete(gameId);
-        return;
-      }
-      const projectedGame = buildHistoryViewProjection(currentGame, localHistorySelectionByGameId.get(gameId));
-      if (projectedGame && !sameHistoryProjection(transport.getGameViewModel(gameId), projectedGame)) {
-        transport.applyLiveGameUpdate({ game: projectedGame });
-      }
-    }
+
   });
 
   const liveSync = createSyncClient({
@@ -1327,36 +1267,14 @@ export const createSyncStore = ({
       if (outcome?.outcome === "rejected") operationManager.fail(handle.id, createOperationError(outcome.reason));
       return handle;
     },
-    selectHistoryMove: ({ gameId, moveIndex }) => {
-      const currentGame = transport.getGameViewModel(gameId);
-      const projectedGame = buildHistoryViewProjection(currentGame, moveIndex);
-      if (!projectedGame) {
-        throw createOperationError(`History move ${moveIndex} is not available for game ${gameId}.`, "move_not_found");
-      }
-      localHistorySelectionByGameId.set(gameId, moveIndex);
-      transport.applyLiveGameUpdate({ game: projectedGame });
-      void transport.selectHistoryMove({ gameId, moveIndex }).catch(onError);
-      return operationManager.createCommitted({
-        id: `history:${gameId}:${moveIndex}:${Date.now().toString(16)}`,
-        gameId,
-        result: projectedGame,
-      });
-    },
-    returnToLive: ({ gameId }) => {
-      const currentGame = transport.getGameViewModel(gameId);
-      const projectedGame = buildLiveViewProjection(currentGame);
-      if (!projectedGame) {
-        throw createOperationError(`Game ${gameId} is not loaded.`, "game_not_loaded");
-      }
-      localHistorySelectionByGameId.delete(gameId);
-      transport.applyLiveGameUpdate({ game: projectedGame });
-      void transport.returnToLive({ gameId }).catch(onError);
-      return operationManager.createCommitted({
-        id: `live:${gameId}:${Date.now().toString(16)}`,
-        gameId,
-        result: projectedGame,
-      });
-    },
+    selectHistoryMove: ({ gameId, moveIndex }) => operationManager.createCommitted({
+      id: `history:${gameId}:${moveIndex}:${Date.now()}`, gameId,
+      result: transport.selectHistoryMove({ gameId, moveIndex }),
+    }),
+    returnToLive: ({ gameId }) => operationManager.createCommitted({
+      id: `live:${gameId}:${Date.now()}`, gameId,
+      result: transport.returnToLive({ gameId }),
+    }),
     launchHistoryBranch: ({
       sourceGameId,
       sourceMoveIndex,
@@ -1369,6 +1287,7 @@ export const createSyncStore = ({
       const createdAt = new Date().toISOString();
       const identityId = transport.getIdentityId();
       const sourceGame = transport.getGameViewModel(sourceGameId);
+      if (sourceGame?.sharedMutationsBlocked) throw createOperationError("Recovery is in progress.", "sync_recovering");
       const sideToMoveSeat = getSeatForSide(scenario?.resultingState?.sideToMove ?? "P1");
       let player1 = null;
       let player2 = null;

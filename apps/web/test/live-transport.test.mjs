@@ -76,6 +76,7 @@ const buildLiveGame = () => {
     moves: [
       {
         index: 0,
+        moveId: "move-1",
         turnIndex: 0,
         turnMoveIndex: 0,
         actorSide: "P1",
@@ -581,6 +582,7 @@ test("live transport store can promote player 1 to both seats when player 2 is o
     if (String(url).startsWith("/api/shell/games/game-000001/play-as-both") && init.method === "POST") {
       return Response.json({
         ok: true,
+        eventSeq: 1,
         game: {
           id: "game-000001",
     gameplayRevision: 0,
@@ -592,6 +594,8 @@ test("live transport store can promote player 1 to both seats when player 2 is o
           player2: { identityId: "id-a", connected: true },
           viewers: [],
           pendingJoinRequests: [],
+          turns: [],
+          board: { state: { sideToMove: "P1", turnIndex: 0, pieces: [] } },
           moves: [],
           notifications: ["Play as both players enabled"],
           myRole: "Player 1",
@@ -623,6 +627,7 @@ test("live transport store can promote player 2 to both seats when player 1 is o
     if (String(url).startsWith("/api/shell/games/game-000001/play-as-both") && init.method === "POST") {
       return Response.json({
         ok: true,
+        eventSeq: 1,
         game: {
           id: "game-000001",
     gameplayRevision: 0,
@@ -634,6 +639,8 @@ test("live transport store can promote player 2 to both seats when player 1 is o
           player2: { identityId: "id-a", connected: true },
           viewers: [],
           pendingJoinRequests: [],
+          turns: [],
+          board: { state: { sideToMove: "P1", turnIndex: 0, pieces: [] } },
           moves: [],
           notifications: ["Play as both players enabled"],
           myRole: "Player 2",
@@ -1373,6 +1380,8 @@ test("live transport store posts revert lifecycle endpoints", async () => {
         eventSeq: 8,
         game: {
           id: "game-revert",
+          gameplayRevision: 0,
+          turns: [],
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: "2026-02-26T00:00:01.000Z",
           updatedAt: "2026-02-26T00:00:01.000Z",
@@ -1398,6 +1407,8 @@ test("live transport store posts revert lifecycle endpoints", async () => {
         eventSeq: 9,
         game: {
           id: "game-revert",
+          gameplayRevision: 0,
+          turns: [],
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: null,
           updatedAt: "2026-02-26T00:00:02.000Z",
@@ -1423,6 +1434,8 @@ test("live transport store posts revert lifecycle endpoints", async () => {
         eventSeq: 10,
         game: {
           id: "game-revert",
+          gameplayRevision: 0,
+          turns: [],
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: "2026-02-26T00:00:02.000Z",
           updatedAt: "2026-02-26T00:00:02.000Z",
@@ -1448,6 +1461,8 @@ test("live transport store posts revert lifecycle endpoints", async () => {
         eventSeq: 11,
         game: {
           id: "game-revert",
+          gameplayRevision: 0,
+          turns: [],
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: "2026-02-26T00:00:02.000Z",
           updatedAt: "2026-02-26T00:00:02.000Z",
@@ -1607,4 +1622,24 @@ test("I-12: two client stores receive identical destroyedPieces on the same move
     moveB.destroyedPieces,
     "I-12: both stores must have identical destroyedPieces on the same move",
   );
+});
+
+test("discard preserves unknown submitted commands, their retry ownership, journal and eventual outcome", async () => {
+ const game=buildLiveGame();let removed=0;let reconciles=0;
+ const journal={admit:async()=>{},list:async()=>[],remove:async()=>{removed++;}};
+ const store=createLiveTransportStore({storage:createMemoryStorage(),commandJournal:journal,
+  timing:{requestTimeoutMs:100,confirmationBudgetMs:500,retryDelaysMs:[30],retryJitter:0},
+  fetcher:async(url,init)=>{
+   if(String(url).includes("?"))return Response.json({protocolVersion:2,ok:true,game,eventSeq:1});
+   if(String(url).endsWith("apply"))throw Error("unknown delivery");
+   if(String(url).endsWith("reconcile")){reconciles++;const command=JSON.parse(init.body).commands[0];return Response.json({protocolVersion:2,ok:true,gameId:game.id,gameplayRevision:0,eventSeq:1,
+    commandOutcomes:[{gameId:game.id,identityId:command.identityId,clientCommandId:command.clientCommandId,fingerprint:command.fingerprint,outcome:"rejected",reason:"stale_state",gameplayRevision:0,eventSeq:1}]});}
+  }});
+ await store.loadGame(game.id);
+ const action=listLegalActions(game.board.state).find(a=>a.type==="move");
+ const response=await store.applyGameAction({gameId:game.id,state:game.board.state,action});
+ await tick();store.discardPendingCommands(game.id);
+ assert.equal(store.getGameViewModel(game.id).pendingCommandCount,1);assert.equal(removed,0);
+ await new Promise(resolve=>setTimeout(resolve,70));
+ assert.ok(reconciles>0);assert.equal(removed,1);assert.equal(store.getCommandOutcome(game.id,response.clientCommandId).outcome,"rejected");
 });

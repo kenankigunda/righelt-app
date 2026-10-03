@@ -706,7 +706,7 @@ test("integration sync store keeps optimistic revert request ids aligned when ap
   assert.equal(committedGame.moves.at(-1)?.undone, undefined);
 });
 
-test("integration sync store exits history mode when the approver accepts an undo request", async () => {
+test("integration sync store preserves intentional history when the approver accepts an undo request", async () => {
   const env = createApiEnv();
   const ownerStorage = createMemoryStorage();
   const guestStorage = createMemoryStorage();
@@ -768,10 +768,10 @@ test("integration sync store exits history mode when the approver accepts an und
   assert.equal(guestStore.getGameViewModel(createdGame.id)?.inHistoryMode, true);
 
   const approved = await guestStore.approveRevertRequest({ gameId: createdGame.id, requestId }).committed;
-  assert.equal(approved.inHistoryMode, false);
-  assert.equal(approved.historyIndex, null);
-  assert.equal(guestStore.getGameViewModel(createdGame.id)?.inHistoryMode, false);
-  assert.equal(guestStore.getGameViewModel(createdGame.id)?.historyIndex, null);
+  assert.equal(approved.inHistoryMode, true);
+  assert.equal(approved.historyIndex, 0);
+  assert.equal(guestStore.getGameViewModel(createdGame.id)?.inHistoryMode, true);
+  assert.equal(guestStore.getGameViewModel(createdGame.id)?.historyIndex, 0);
 });
 
 test("integration sync store keeps the approver in history mode when an undo request is rejected", async () => {

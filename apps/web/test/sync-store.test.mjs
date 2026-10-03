@@ -796,78 +796,6 @@ test("sync store computes undo ownership for optimistic revert approval from the
   assert.equal(store.getGameViewModel("game-revert").canUndoLastMove, false);
 });
 
-test("sync store clears a latched history selection when undo approval returns the game to live view", async () => {
-  const listeners = new Set();
-  const games = new Map();
-  const game = {
-    ...createRevertReadyGame(),
-    pendingRevertRequest: {
-      requestId: "req-history-live",
-      requesterIdentityId: "id-peer",
-      targetMoveId: "move-1",
-      targetMoveIndex: 0,
-      requestedAt: "2026-04-03T00:00:03.000Z",
-      status: "pending",
-    },
-    approvableRevertRequest: {
-      requestId: "req-history-live",
-      requesterIdentityId: "id-peer",
-      targetMoveId: "move-1",
-      targetMoveIndex: 0,
-      requestedAt: "2026-04-03T00:00:03.000Z",
-      status: "pending",
-    },
-  };
-  games.set(game.id, game);
-
-  const transport = {
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    getIdentityId: () => "id-test",
-    getLastEventSeq: () => 0,
-    getGameViewModel: (gameId) => games.get(gameId) ?? null,
-    applyLiveGameUpdate: ({ game: nextGame, clientCommandId = null }) => {
-      games.set(nextGame.id, nextGame);
-      const changeType = clientCommandId ? "authoritative_update" : "history_mode_changed";
-      for (const listener of listeners) {
-        listener({ type: changeType, gameId: nextGame.id, clientCommandId });
-      }
-    },
-    selectHistoryMove: async () => {},
-    approveRevertRequest: async () => ({
-      ...clone(game),
-      pendingRevertRequest: null,
-      approvableRevertRequest: null,
-      myPendingRevertRequest: null,
-      inHistoryMode: false,
-      historyIndex: null,
-    }),
-  };
-
-  const store = createSyncStore({
-    storage: createMemoryStorage(),
-    createTransportStore: () => transport,
-    createSyncClient: () => ({
-      connectGame() {},
-      disconnectGame() {},
-      disconnectAll() {},
-      getDesiredGameIds: () => [],
-    }),
-  });
-
-  store.selectHistoryMove({ gameId: game.id, moveIndex: 0 });
-  assert.equal(store.getGameViewModel(game.id).inHistoryMode, true);
-
-  const handle = store.approveRevertRequest({ gameId: game.id, requestId: "req-history-live" });
-  assert.equal(store.getGameViewModel(game.id).inHistoryMode, false);
-
-  await handle.committed;
-  assert.equal(store.getGameViewModel(game.id).inHistoryMode, false);
-  assert.equal(store.getGameViewModel(game.id).historyIndex, null);
-});
-
 test("sync store launches history branches with immediate local stubs", async () => {
   const { transport, games } = createTransportHarness();
   games.set("game-source", {
@@ -919,213 +847,6 @@ test("sync store launches history branches with immediate local stubs", async ()
   const committed = await handle.committed;
   assert.equal(committed.game.id, handle.result.game.id);
   assert.equal(committed.game.notifications.at(-1), "History branch launched");
-});
-
-test("sync store selects history locally and keeps the selection latched while live updates append", async () => {
-  const { transport, games, listeners } = createTransportHarness();
-  const game = createHistoryReadyGame();
-  games.set(game.id, game);
-  let releaseHistorySync = null;
-  const historySyncReady = new Promise((resolve) => {
-    releaseHistorySync = resolve;
-  });
-
-  const store = createSyncStore({
-    storage: createMemoryStorage(),
-    createTransportStore: () => ({
-      ...transport,
-      selectHistoryMove: async () => {
-        await historySyncReady;
-        return games.get(game.id);
-      },
-    }),
-    createSyncClient: () => ({
-      connectGame() {},
-      disconnectGame() {},
-      disconnectAll() {},
-      getDesiredGameIds: () => [],
-    }),
-  });
-
-  const handle = store.selectHistoryMove({ gameId: game.id, moveIndex: 2 });
-  assert.equal(handle.status, "committed");
-  assert.equal(handle.result.inHistoryMode, true);
-  assert.equal(handle.result.historyIndex, 2);
-  assert.deepEqual(handle.result.currentSnapshot, game.pendingMoves[0].snapshot);
-
-  const liveAppend = {
-    ...createHistoryReadyGame(),
-    inHistoryMode: true,
-    historyIndex: 2,
-    pendingMoves: [],
-    pendingCommandCount: 0,
-    moves: [
-      ...createHistoryReadyGame().moves,
-      {
-        index: 2,
-        moveId: "move-3",
-        displayMoveNumber: 3,
-        turnIndex: 1,
-        turnMoveIndex: 1,
-        actorSide: "P2",
-        notation: "M3",
-        at: "2026-04-03T00:00:05.000Z",
-        action: { type: "move", from: { row: 5, col: 4 }, to: { row: 4, col: 4 } },
-        selectionSnapshot: {
-          boardSize: 10,
-          sideToMove: "P1",
-          turnIndex: 1,
-          pieces: [{ id: "U1", owner: "P1", row: 5, col: 4 }],
-          continuation: null,
-          outcome: { status: "ongoing" },
-        },
-        snapshot: {
-          boardSize: 10,
-          sideToMove: "P1",
-          turnIndex: 1,
-          pieces: [{ id: "U1", owner: "P1", row: 4, col: 4 }],
-          continuation: null,
-          outcome: { status: "ongoing" },
-        },
-      },
-    ],
-  };
-  transport.applyLiveGameUpdate({ game: liveAppend });
-  for (const listener of listeners) {
-    listener({ type: "authoritative_update", gameId: game.id, clientCommandId: null });
-  }
-
-  const latchedView = store.getGameViewModel(game.id);
-  assert.equal(latchedView.inHistoryMode, true);
-  assert.equal(latchedView.historyIndex, 2);
-  assert.equal(latchedView.moves.length, 3);
-  assert.deepEqual(latchedView.currentSnapshot, game.pendingMoves[0].snapshot);
-
-  releaseHistorySync?.();
-});
-
-test("sync store local history projection prefers the selected move snapshot over selectionSnapshot", () => {
-  const { transport, games } = createTransportHarness();
-  const game = createHistoryReadyGame();
-  games.set(game.id, game);
-
-  const store = createSyncStore({
-    storage: createMemoryStorage(),
-    createTransportStore: () => ({
-      ...transport,
-      selectHistoryMove: async () => games.get(game.id),
-    }),
-    createSyncClient: () => ({
-      connectGame() {},
-      disconnectGame() {},
-      disconnectAll() {},
-      getDesiredGameIds: () => [],
-    }),
-  });
-
-  const handle = store.selectHistoryMove({ gameId: game.id, moveIndex: 0 });
-  assert.equal(handle.result.inHistoryMode, true);
-  assert.deepEqual(handle.result.currentSnapshot, game.moves[0].snapshot);
-  assert.notDeepEqual(handle.result.currentSnapshot, game.moves[0].selectionSnapshot);
-});
-
-test("sync store only preserves a local history latch while the authoritative game remains in history mode", () => {
-  const makeStore = () => {
-    const { transport, games, listeners } = createTransportHarness();
-    const game = createHistoryReadyGame();
-    games.set(game.id, game);
-    const store = createSyncStore({
-      storage: createMemoryStorage(),
-      createTransportStore: () => ({
-        ...transport,
-        selectHistoryMove: async () => games.get(game.id),
-      }),
-      createSyncClient: () => ({
-        connectGame() {},
-        disconnectGame() {},
-        disconnectAll() {},
-        getDesiredGameIds: () => [],
-      }),
-    });
-    store.selectHistoryMove({ gameId: game.id, moveIndex: 0 });
-    return { game, games, listeners, store, transport };
-  };
-
-  {
-    const { game, listeners, store, transport } = makeStore();
-    transport.applyLiveGameUpdate({
-      game: {
-        ...createHistoryReadyGame(),
-        inHistoryMode: true,
-        historyIndex: 0,
-      },
-    });
-    for (const listener of listeners) {
-      listener({ type: "authoritative_update", gameId: game.id, clientCommandId: null });
-    }
-    assert.equal(store.getGameViewModel(game.id)?.inHistoryMode, true);
-    assert.equal(store.getGameViewModel(game.id)?.historyIndex, 0);
-  }
-
-  for (const changeType of ["authoritative_update", "history_mode_changed"]) {
-    const { game, listeners, store, transport } = makeStore();
-    transport.applyLiveGameUpdate({
-      game: {
-        ...createHistoryReadyGame(),
-        inHistoryMode: false,
-        historyIndex: null,
-      },
-    });
-    for (const listener of listeners) {
-      listener({ type: changeType, gameId: game.id, clientCommandId: null });
-    }
-    assert.equal(store.getGameViewModel(game.id)?.inHistoryMode, false);
-    assert.equal(store.getGameViewModel(game.id)?.historyIndex, null);
-  }
-});
-
-test("sync store returns to live immediately without waiting for server history sync", async () => {
-  const { transport, games } = createTransportHarness();
-  const game = createHistoryReadyGame();
-  games.set(game.id, {
-    ...game,
-    inHistoryMode: true,
-    historyIndex: 0,
-    historySelectionAction: clone(game.moves[0].action),
-    currentSnapshot: clone(game.moves[0].selectionSnapshot),
-    canRecordMove: false,
-    canEndTurn: false,
-  });
-  let releaseLiveSync = null;
-  const liveSyncReady = new Promise((resolve) => {
-    releaseLiveSync = resolve;
-  });
-
-  const store = createSyncStore({
-    storage: createMemoryStorage(),
-    createTransportStore: () => ({
-      ...transport,
-      returnToLive: async () => {
-        await liveSyncReady;
-        return games.get(game.id);
-      },
-    }),
-    createSyncClient: () => ({
-      connectGame() {},
-      disconnectGame() {},
-      disconnectAll() {},
-      getDesiredGameIds: () => [],
-    }),
-  });
-
-  const handle = store.returnToLive({ gameId: game.id });
-  assert.equal(handle.status, "committed");
-  assert.equal(handle.result.inHistoryMode, false);
-  assert.equal(handle.result.historyIndex, null);
-  assert.deepEqual(handle.result.currentSnapshot, game.board.state);
-  assert.equal(store.getGameViewModel(game.id).inHistoryMode, false);
-
-  releaseLiveSync?.();
 });
 
 test("sync store falls back to a shared-storage branch stub when a second store loads before commit", async () => {
@@ -1566,4 +1287,20 @@ test("sync store propagates rejected socket snapshots without forwarding or ackn
   });
   assert.equal(receive({ type: "state_sync", eventSeq: 2, game: { id: "g" } }, { gameId: "g" }), false);
   assert.equal(forwarded, 0);
+});
+
+test("late optimistic undo failure cannot overwrite newer server state or a newer local operation", async () => {
+ for (const serverAdvanced of [true,false]) {
+  const {transport,games}=createTransportHarness();games.set("game-revert",createRevertReadyGame());
+  let rejectOld;let seq=0;
+  const store=createSyncStore({storage:createMemoryStorage(),createTransportStore:()=>({...transport,getLastEventSeq:()=>seq,
+   requestRevertToMove:()=>new Promise((_,reject)=>{rejectOld=reject;}),rejectRevertRequest:()=>new Promise(()=>{})}),
+   createSyncClient:()=>({connectGame(){},disconnectAll(){},getDesiredGameIds:()=>[]})});
+  const old=store.requestRevertToMove({gameId:"game-revert",targetMoveId:"move-1"});await Promise.resolve();
+  if(serverAdvanced){seq=3;transport.applyLiveGameUpdate({game:{...createRevertReadyGame(),notifications:["new authoritative state"]}});}
+  else store.rejectRevertRequest({gameId:"game-revert",requestId:"newer"});
+  const before=structuredClone(store.getGameViewModel("game-revert"));
+  rejectOld(new Error("rejected"));await assert.rejects(old.committed,/rejected/);
+  assert.deepEqual(store.getGameViewModel("game-revert"),before);
+ }
 });

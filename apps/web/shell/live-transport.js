@@ -5,6 +5,8 @@ import { buildStaticGameCardFromGame, normalizeStaticGameCard } from "./static-g
 import { createCommandJournal } from "./command-journal.js";
 import { SYNC_PROTOCOL_VERSION, SYNC_TIMING, commandFingerprint, isReconcileResponse, isCommandOutcome, isSyncRevision, isSyncCommand, canonicalCommandJson } from "../generated/packages/shared-types/src/sync-protocol.js";
 
+import { applyHistoryIntent, historyMoveKey } from "./recovery-view.js";
+
 const clone = (value) => structuredClone(value);
 export const validSyncSnapshot = (game, gameId) => {
   const state = game?.board?.state;
@@ -97,6 +99,7 @@ export const createLiveTransportStore = ({
   let homeGameCardById = new Map();
   const lastEventSeqByGameId = new Map();
   const optimisticStateByGameId = new Map();
+  const historyIntentByGameId = new Map();
   const listeners = new Set();
   const syncMetrics = {
     httpConfirmFailed: 0,
@@ -192,9 +195,17 @@ export const createLiveTransportStore = ({
     next.liveCurrentSnapshot = clone(next.liveCurrentSnapshot ?? next.board?.state ?? next.currentSnapshot ?? null);
     next.syncStatus = optimistic.storageBlocked ? "storage-blocked" : optimistic.syncStatus;
     next.storageBlocked = optimistic.storageBlocked;
+    next.unsavedCommand = Boolean(optimistic.unsavedCommand);
     next.confirmationOverdue = optimistic.confirmationOverdue;
     next.recovering = optimistic.connectionRecovering === true || optimistic.syncStatus === "confirming";
-    next.sharedMutationsBlocked = optimistic.storageBlocked || next.recovering;
+    next.upgradeRequired = optimistic.upgradeRequired === true;
+    next.storageLimitReached = optimistic.storageError?.code === "command_limit_reached" || /limit/.test(optimistic.storageError?.message ?? "");
+    next.sharedMutationsBlocked = optimistic.storageBlocked || next.recovering || next.upgradeRequired;
+    applyHistoryIntent(next, historyIntentByGameId.get(gameId), identityId);
+    if (next.sharedMutationsBlocked) {
+      next.canRecordMove = false;
+      next.canEndTurn = false;
+    }
     return next;
   };
 
@@ -237,18 +248,17 @@ export const createLiveTransportStore = ({
     { notice = "", syncStatus = "ready", changeType = "optimistic_queue_cleared", clientCommandId = null } = {},
   ) => {
     const optimistic = getOptimisticState(gameId);
-    clearRetryState(optimistic);
-    const removed = optimistic.pendingCommands;
-    optimistic.pendingCommands = [];
-    optimistic.attempt?.controller.abort();
-    optimistic.attempt = null;
+    // Only commands still deferred behind a failed local creation are safe to cancel.
+    // Submitted/unknown commands retain their journal and handles until receipts resolve them.
+    const removed = optimistic.pendingCommands.filter((command) => shouldDeferCommandSend(gameId, command));
+    optimistic.pendingCommands = optimistic.pendingCommands.filter((command) => !removed.includes(command));
     for (const command of removed) {
       void commandJournal.remove(command.envelope).catch((error) => blockStorage(gameId, error));
       emitChange({ type: "optimistic_rollback", gameId, clientCommandId: command.clientCommandId, failureNotice: notice });
     }
-    optimistic.inflightCommandId = null;
+    if (!optimistic.pendingCommands.length) { clearRetryState(optimistic); optimistic.inflightCommandId = null; }
     optimistic.commandResults = new Map();
-    optimistic.syncStatus = syncStatus;
+    optimistic.syncStatus = optimistic.pendingCommands.length ? "confirming" : syncStatus;
     recalculateOptimisticGame(gameId);
     emitChange({ type: changeType, gameId, clientCommandId, failureNotice: notice });
   };
@@ -377,19 +387,22 @@ export const createLiveTransportStore = ({
   const processResponse = (gameId, body, envelopes) => {
     if (!isReconcileResponse(body, gameId, envelopes) || (body.game !== undefined && (!validSyncSnapshot(body.game, gameId) || body.game.gameplayRevision !== body.gameplayRevision))) throw new Error("invalid_confirmation");
     for (const outcome of body.commandOutcomes) settleOutcome(gameId, outcome);
-    if (body.game) upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    if (body.game) { upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }); }
     return body;
   };
   const reconcileRequest = async (gameId, controller, isCurrent = () => true) => {
     await beforeReconcile(gameId);
     if (!isCurrent()) return null;
+    const recoveryEpoch = getOptimisticState(gameId).mutationRecoveryEpoch;
     const envelopes = getOptimisticState(gameId).pendingCommands.map((entry) => entry.envelope);
     const body = await boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}/reconcile`, {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ protocolVersion: 2, identityId, knownSnapshotEventSeq: lastEventSeqByGameId.get(gameId) ?? 0, commands: envelopes }),
+      body: JSON.stringify({ protocolVersion: 2, identityId, knownSnapshotEventSeq: getOptimisticState(gameId).forceSnapshot ? 0 : lastEventSeqByGameId.get(gameId) ?? 0, commands: envelopes }),
     }, controller);
     if (!isCurrent()) return null;
-    return processResponse(gameId, body, envelopes);
+    const result = processResponse(gameId, body, envelopes);
+    if (body.game && recoveryEpoch === getOptimisticState(gameId).mutationRecoveryEpoch) getOptimisticState(gameId).forceSnapshot = false;
+    return result;
   };
 
   const sendNextPendingCommand = async (gameId, { retryAttempt = 0, reconcileFirst = false } = {}) => {
@@ -435,6 +448,7 @@ export const createLiveTransportStore = ({
       if (optimistic.pendingCommands.includes(command)) throw new Error("outcome_unknown");
     } catch (error) {
       if (optimistic.attempt !== attempt) return;
+      if (error.code === "upgrade_required") markUpgradeRequired(gameId);
       optimistic.syncStatus = "confirming";
       incrementSyncMetric("httpConfirmFailed", gameId);
       recalculateOptimisticGame(gameId);
@@ -503,7 +517,7 @@ export const createLiveTransportStore = ({
 
   const setConnectionRecovering = (gameId, recovering) => {
     const optimistic = getOptimisticState(gameId);
-    optimistic.connectionRecovering = recovering;
+    optimistic.connectionRecovering = recovering || optimistic.forceSnapshot === true;
     recalculateOptimisticGame(gameId);
     emitChange({ type: "connection_recovery_changed", gameId, recovering });
   };
@@ -568,6 +582,11 @@ export const createLiveTransportStore = ({
     };
   };
 
+  const markUpgradeRequired = (gameId) => {
+    getOptimisticState(gameId).upgradeRequired = true;
+    recalculateOptimisticGame(gameId);
+    emitChange({ type: "upgrade_required", gameId });
+  };
   const loadGame = async (gameId, { openAsViewer = false } = {}) => {
     const body = await boundedRequest(
       `/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}${
@@ -578,7 +597,7 @@ export const createLiveTransportStore = ({
         cache: "no-store",
       },
     );
-    if (body.protocolVersion !== 2) throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
+    if (body.protocolVersion !== 2) { markUpgradeRequired(gameId); throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" }); }
     if (!validSyncSnapshot(body.game, gameId) || !isSyncRevision(body.eventSeq)) throw new Error("invalid_snapshot");
     upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
     // Storage failure blocks shared changes, not access to the authoritative board/history.
@@ -648,6 +667,7 @@ export const createLiveTransportStore = ({
   };
 
   const joinGame = async ({ gameId, mode, inviteFromRole = null, inviteToken = null }) => {
+    if (mode !== "viewer") assertSharedMutationAllowed(gameId);
     const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/join`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -658,22 +678,22 @@ export const createLiveTransportStore = ({
   };
 
   const playAsBothPlayers = async ({ gameId }) => {
-    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/play-as-both`, {
+    assertSharedMutationAllowed(gameId);
+    const body = await boundedSharedRequest(gameId, `/api/shell/games/${encodeURIComponent(gameId)}/play-as-both`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId }),
     });
-    const body = await mustOk(response);
     return { ...body, game: upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }) };
   };
 
   const approvePendingRequest = async ({ gameId, requesterIdentityId }) => {
-    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/approve`, {
+    assertSharedMutationAllowed(gameId);
+    const body = await boundedSharedRequest(gameId, `/api/shell/games/${encodeURIComponent(gameId)}/approve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, requesterIdentityId }),
     });
-    const body = await mustOk(response);
     return { ...body, game: upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }) };
   };
 
@@ -778,71 +798,102 @@ export const createLiveTransportStore = ({
     };
   };
 
-  const selectHistoryMove = async ({ gameId, moveIndex }) => {
-    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/history`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, moveIndex }),
-    });
-    const body = await mustOk(response);
-    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+  const selectHistoryMove = ({ gameId, moveIndex }) => {
+    const game = getGameViewModel(gameId);
+    const moves = [...(game?.moves ?? []), ...(game?.pendingMoves ?? [])];
+    const selected = moves.find((move) => move.index === moveIndex);
+    if (!selected) throw new Error("move_not_found");
+    historyIntentByGameId.set(gameId, { moveId: historyMoveKey(selected), clientCommandId: selected.clientCommandId, order: moves.map(historyMoveKey), position: moves.indexOf(selected) });
+    recalculateOptimisticGame(gameId);
+    emitChange({ type: "history_mode_changed", gameId });
     return getGameViewModel(gameId);
   };
 
-  const returnToLive = async ({ gameId }) => {
-    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/live`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId }),
-    });
-    const body = await mustOk(response);
-    upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
+  const returnToLive = ({ gameId }) => {
+    historyIntentByGameId.set(gameId, { moveId: null });
+    recalculateOptimisticGame(gameId);
+    emitChange({ type: "history_mode_changed", gameId });
     return getGameViewModel(gameId);
+  };
+  const assertSharedMutationAllowed = (gameId) => {
+    if (getGameViewModel(gameId)?.sharedMutationsBlocked) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
+  };
+
+  const recoverUncertainMutation = async (gameId) => {
+    const optimistic = getOptimisticState(gameId);
+    if (optimistic.mutationRecovery) return;
+    optimistic.mutationRecovery = true;
+    try {
+      await reconcileGame(gameId);
+      if (optimistic.forceSnapshot) throw new Error("snapshot_required");
+      setConnectionRecovering(gameId, false);
+    } catch {
+      optimistic.mutationRecoveryTimer = setTimeout(() => { optimistic.mutationRecoveryTimer = null; void recoverUncertainMutation(gameId); }, timing.retryDelaysMs.at(-1));
+      optimistic.mutationRecoveryTimer.unref?.();
+    } finally { optimistic.mutationRecovery = false; }
+  };
+
+  const boundedSharedRequest = async (gameId, url, init) => {
+    try {
+      const body = await boundedRequest(url, init);
+      if (!validSyncSnapshot(body.game, gameId) || !isSyncRevision(body.eventSeq)) throw new Error("invalid_confirmation");
+      return body;
+    }
+    catch (error) {
+      if (!error.body) {
+        getOptimisticState(gameId).mutationRecoveryEpoch = (getOptimisticState(gameId).mutationRecoveryEpoch ?? 0) + 1;
+        getOptimisticState(gameId).forceSnapshot = true;
+        setConnectionRecovering(gameId, true);
+        void recoverUncertainMutation(gameId);
+        throw Object.assign(new Error("The response was lost. Checking the current game before you continue."), { code: "delivery_unknown", cause: error });
+      }
+      throw error;
+    }
   };
 
   const requestRevertToMove = async ({ gameId, targetMoveId, requestId = null }) => {
-    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/revert-request`, {
+    assertSharedMutationAllowed(gameId);
+    const body = await boundedSharedRequest(gameId, `/api/shell/games/${encodeURIComponent(gameId)}/revert-request`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, targetMoveId, requestId }),
     });
-    const body = await mustOk(response);
     logDiagnostic("info", "live_transport_revert_requested", { gameId, targetMoveId }, { verboseOnly: true });
     upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
     return getGameViewModel(gameId);
   };
 
   const approveRevertRequest = async ({ gameId, requestId }) => {
-    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/revert-approve`, {
+    assertSharedMutationAllowed(gameId);
+    const body = await boundedSharedRequest(gameId, `/api/shell/games/${encodeURIComponent(gameId)}/revert-approve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, requestId }),
     });
-    const body = await mustOk(response);
     logDiagnostic("info", "live_transport_revert_approved", { gameId, requestId }, { verboseOnly: true });
     upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
     return getGameViewModel(gameId);
   };
 
   const rejectRevertRequest = async ({ gameId, requestId }) => {
-    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/revert-reject`, {
+    assertSharedMutationAllowed(gameId);
+    const body = await boundedSharedRequest(gameId, `/api/shell/games/${encodeURIComponent(gameId)}/revert-reject`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, requestId }),
     });
-    const body = await mustOk(response);
     logDiagnostic("info", "live_transport_revert_rejected", { gameId, requestId }, { verboseOnly: true });
     upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
     return getGameViewModel(gameId);
   };
 
   const rescindRevertRequest = async ({ gameId, requestId }) => {
-    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/revert-rescind`, {
+    assertSharedMutationAllowed(gameId);
+    const body = await boundedSharedRequest(gameId, `/api/shell/games/${encodeURIComponent(gameId)}/revert-rescind`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ identityId, requestId }),
     });
-    const body = await mustOk(response);
     logDiagnostic("info", "live_transport_revert_rescinded", { gameId, requestId }, { verboseOnly: true });
     upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, changeType: "history_mode_changed" });
     return getGameViewModel(gameId);

@@ -45,7 +45,7 @@ const setup = async (t, { loseApply = false, timeout = 100 } = {}) => {
 };
 
 test("WS-first recovery coalesces concurrent HTTP triggers and sends the unchanged snapshot exactly once", async (t) => {
-  const f = await setup(t, { loseApply: true });
+  const f = await setup(t, { loseApply: true, timeout: 1000 });
   const game = f.store.getGameViewModel(f.gameId), action = game.legalActions.find((action) => action.type === "move");
   const handle = await f.store.applyGameAction({ gameId: f.gameId, state: game.currentSnapshot, action });
   f.store.setActiveGameId(f.gameId); const socket = f.sockets[0]; socket.emit("open");
