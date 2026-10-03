@@ -1,0 +1,302 @@
+{
+  "run": "pnpm test, 2026-10-03, ccf1d9e",
+  "units": "elapsed milliseconds and uncompressed application payload bytes",
+  "measurements": [
+    {
+      "engine": "chromium",
+      "fault": "history-reconnect",
+      "restoredAt": "2026-10-03T11:50:23.722Z",
+      "convergenceMs": 5049,
+      "requests": 5,
+      "snapshots": 17,
+      "applicationPayloadBytes": 152305
+    },
+    {
+      "engine": "chromium",
+      "fault": "home-journal-reload",
+      "restoredAt": "2026-10-03T11:50:51.621Z",
+      "convergenceMs": 1051,
+      "requests": 5,
+      "snapshots": 11,
+      "applicationPayloadBytes": 98979
+    },
+    {
+      "engine": "chromium",
+      "fault": "long-history",
+      "restoredAt": "2026-10-03T11:50:43.821Z",
+      "convergenceMs": 5550,
+      "requests": 2,
+      "snapshots": 1,
+      "applicationPayloadBytes": 621020,
+      "moves": 205,
+      "duplicateSubmissions": 30
+    },
+    {
+      "engine": "chromium",
+      "fault": "lost-response",
+      "restoredAt": "2026-10-03T11:49:18.695Z",
+      "convergenceMs": 948,
+      "requests": 3,
+      "snapshots": 6,
+      "applicationPayloadBytes": 55082
+    },
+    {
+      "engine": "chromium",
+      "fault": "reload-resume",
+      "restoredAt": "2026-10-03T11:49:51.824Z",
+      "convergenceMs": 409,
+      "requests": 6,
+      "snapshots": 10,
+      "applicationPayloadBytes": 90438
+    },
+    {
+      "engine": "chromium",
+      "fault": "same-identity-tabs",
+      "restoredAt": "2026-10-03T11:49:54.858Z",
+      "convergenceMs": 958,
+      "requests": 6,
+      "snapshots": 16,
+      "applicationPayloadBytes": 130407
+    },
+    {
+      "engine": "chromium",
+      "fault": "silent-online",
+      "restoredAt": "2026-10-03T11:49:43.514Z",
+      "convergenceMs": 5015,
+      "requests": 5,
+      "snapshots": 22,
+      "applicationPayloadBytes": 196502,
+      "detectionMs": 15244
+    },
+    {
+      "engine": "chromium",
+      "fault": "storage-390px",
+      "restoredAt": "2026-10-03T11:51:19.765Z",
+      "convergenceMs": 321,
+      "requests": 6,
+      "snapshots": 4,
+      "applicationPayloadBytes": 48244
+    },
+    {
+      "engine": "chromium",
+      "fault": "storage-899px",
+      "restoredAt": "2026-10-03T11:51:12.940Z",
+      "convergenceMs": 341,
+      "requests": 6,
+      "snapshots": 4,
+      "applicationPayloadBytes": 48244
+    },
+    {
+      "engine": "chromium",
+      "fault": "storage-900px",
+      "restoredAt": "2026-10-03T11:51:06.125Z",
+      "convergenceMs": 346,
+      "requests": 6,
+      "snapshots": 4,
+      "applicationPayloadBytes": 48244
+    },
+    {
+      "engine": "chromium",
+      "fault": "storage-901px",
+      "restoredAt": "2026-10-03T11:50:59.304Z",
+      "convergenceMs": 334,
+      "requests": 6,
+      "snapshots": 4,
+      "applicationPayloadBytes": 48244
+    },
+    {
+      "engine": "chromium",
+      "fault": "upgrade-refresh",
+      "restoredAt": "2026-10-03T11:50:30.679Z",
+      "convergenceMs": 399,
+      "requests": 6,
+      "snapshots": 4,
+      "applicationPayloadBytes": 33616,
+      "automaticReloads": 1
+    },
+    {
+      "engine": "chromium",
+      "fault": "worker-restart-after-commit",
+      "restoredAt": "2026-10-03T11:50:03.772Z",
+      "convergenceMs": 944,
+      "requests": 19,
+      "snapshots": 7,
+      "applicationPayloadBytes": 64444
+    },
+    {
+      "engine": "chromium",
+      "fault": "worker-restart-before-commit",
+      "restoredAt": "2026-10-03T11:49:58.732Z",
+      "convergenceMs": 1952,
+      "requests": 16,
+      "snapshots": 5,
+      "applicationPayloadBytes": 46149
+    },
+    {
+      "engine": "firefox",
+      "fault": "lost-response",
+      "restoredAt": "2026-10-03T11:51:46.873Z",
+      "convergenceMs": 973,
+      "requests": 3,
+      "snapshots": 6,
+      "applicationPayloadBytes": 55082
+    },
+    {
+      "engine": "firefox",
+      "fault": "reload-resume",
+      "restoredAt": "2026-10-03T11:52:20.660Z",
+      "convergenceMs": 331,
+      "requests": 3,
+      "snapshots": 10,
+      "applicationPayloadBytes": 90390
+    },
+    {
+      "engine": "firefox",
+      "fault": "same-identity-tabs",
+      "restoredAt": "2026-10-03T11:52:24.177Z",
+      "convergenceMs": 1000,
+      "requests": 4,
+      "snapshots": 17,
+      "applicationPayloadBytes": 138922
+    },
+    {
+      "engine": "firefox",
+      "fault": "silent-online",
+      "restoredAt": "2026-10-03T11:52:12.461Z",
+      "convergenceMs": 5032,
+      "requests": 5,
+      "snapshots": 22,
+      "applicationPayloadBytes": 196502,
+      "detectionMs": 15612
+    },
+    {
+      "engine": "firefox",
+      "fault": "storage-390px",
+      "restoredAt": "2026-10-03T11:52:56.612Z",
+      "convergenceMs": 437,
+      "requests": 6,
+      "snapshots": 4,
+      "applicationPayloadBytes": 48244
+    },
+    {
+      "engine": "firefox",
+      "fault": "storage-899px",
+      "restoredAt": "2026-10-03T11:52:49.400Z",
+      "convergenceMs": 440,
+      "requests": 6,
+      "snapshots": 4,
+      "applicationPayloadBytes": 48244
+    },
+    {
+      "engine": "firefox",
+      "fault": "storage-900px",
+      "restoredAt": "2026-10-03T11:52:42.209Z",
+      "convergenceMs": 443,
+      "requests": 6,
+      "snapshots": 4,
+      "applicationPayloadBytes": 48244
+    },
+    {
+      "engine": "firefox",
+      "fault": "storage-901px",
+      "restoredAt": "2026-10-03T11:52:35.001Z",
+      "convergenceMs": 451,
+      "requests": 6,
+      "snapshots": 4,
+      "applicationPayloadBytes": 48244
+    },
+    {
+      "engine": "firefox",
+      "fault": "upgrade-refresh",
+      "restoredAt": "2026-10-03T11:52:27.712Z",
+      "convergenceMs": 403,
+      "requests": 2,
+      "snapshots": 4,
+      "applicationPayloadBytes": 33520,
+      "automaticReloads": 1
+    },
+    {
+      "engine": "webkit",
+      "fault": "lost-response",
+      "restoredAt": "2026-10-03T11:53:20.888Z",
+      "convergenceMs": 1012,
+      "requests": 3,
+      "snapshots": 6,
+      "applicationPayloadBytes": 55082
+    },
+    {
+      "engine": "webkit",
+      "fault": "reload-resume",
+      "restoredAt": "2026-10-03T11:53:54.516Z",
+      "convergenceMs": 459,
+      "requests": 5,
+      "snapshots": 11,
+      "applicationPayloadBytes": 99230
+    },
+    {
+      "engine": "webkit",
+      "fault": "same-identity-tabs",
+      "restoredAt": "2026-10-03T11:53:58.838Z",
+      "convergenceMs": 1153,
+      "requests": 6,
+      "snapshots": 18,
+      "applicationPayloadBytes": 148315
+    },
+    {
+      "engine": "webkit",
+      "fault": "silent-online",
+      "restoredAt": "2026-10-03T11:53:47.001Z",
+      "convergenceMs": 4062,
+      "requests": 5,
+      "snapshots": 22,
+      "applicationPayloadBytes": 196502,
+      "detectionMs": 15737
+    },
+    {
+      "engine": "webkit",
+      "fault": "storage-390px",
+      "restoredAt": "2026-10-03T11:54:33.221Z",
+      "convergenceMs": 515,
+      "requests": 6,
+      "snapshots": 4,
+      "applicationPayloadBytes": 48244
+    },
+    {
+      "engine": "webkit",
+      "fault": "storage-899px",
+      "restoredAt": "2026-10-03T11:54:25.596Z",
+      "convergenceMs": 532,
+      "requests": 6,
+      "snapshots": 4,
+      "applicationPayloadBytes": 48244
+    },
+    {
+      "engine": "webkit",
+      "fault": "storage-900px",
+      "restoredAt": "2026-10-03T11:54:17.872Z",
+      "convergenceMs": 514,
+      "requests": 6,
+      "snapshots": 4,
+      "applicationPayloadBytes": 48244
+    },
+    {
+      "engine": "webkit",
+      "fault": "storage-901px",
+      "restoredAt": "2026-10-03T11:54:10.241Z",
+      "convergenceMs": 523,
+      "requests": 6,
+      "snapshots": 4,
+      "applicationPayloadBytes": 48244
+    },
+    {
+      "engine": "webkit",
+      "fault": "upgrade-refresh",
+      "restoredAt": "2026-10-03T11:54:02.385Z",
+      "convergenceMs": 436,
+      "requests": 6,
+      "snapshots": 5,
+      "applicationPayloadBytes": 42070,
+      "automaticReloads": 1
+    }
+  ]
+}

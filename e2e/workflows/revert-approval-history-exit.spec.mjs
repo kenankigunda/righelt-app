@@ -39,7 +39,7 @@ const requestUndoForFirstMoveViaApi = async (page) =>
     return revertBody;
   });
 
-test("accepting an undo request returns history viewers on both clients to the live view", async ({ browser, baseURL }) => {
+test("accepting undo preserves each selected retained entry until explicit return to live", async ({ browser, baseURL }) => {
   const owner = await createIsolatedPage(browser);
   const guest = await createIsolatedPage(browser);
 
@@ -56,15 +56,27 @@ test("accepting an undo request returns history viewers on both clients to the l
     await openHistoryMode(owner.page, 0);
     await openHistoryMode(guest.page, 0);
 
+    const selectedId = await owner.page.locator('[data-testid="history-move-item"].is-selected').getAttribute("data-move-id");
     await requestUndoForFirstMoveViaApi(owner.page);
     await expect(guest.page.locator('[data-action="accept-revert-request"]')).toBeVisible();
 
     await guest.page.locator('[data-action="accept-revert-request"]').click();
 
+    for (const page of [owner.page, guest.page]) {
+      await expect(page.getByTestId("history-return-live")).toBeVisible();
+      await page.locator('[data-action="toggle-undone-group"]').first().click();
+      const selected = page.locator(`[data-testid="history-move-item"][data-move-id="${selectedId}"]`);
+      await expect(selected).toHaveClass(/is-selected/);
+      await expect(selected).toHaveClass(/is-undone/);
+      await page.getByTestId("history-return-live").click();
+    }
     await expect(owner.page.getByTestId("history-return-live")).toHaveCount(0);
     await expect(guest.page.getByTestId("history-return-live")).toHaveCount(0);
     await expect(owner.page.getByText("You are on the live view.")).toBeVisible();
     await expect(guest.page.getByText("You are on the live view.")).toBeVisible();
+    const board = page => page.locator('[data-testid="game-board"] .cell').evaluateAll(cells => cells.map(cell => ({ row: cell.dataset.row, col: cell.dataset.col, pieces: [...cell.querySelectorAll('.piece-token')].map(piece => piece.textContent) })));
+    for (const page of [owner.page, guest.page]) { const cells = await board(page); expect(cells).toHaveLength(100); expect(cells.some(cell => cell.pieces.length)).toBe(true); }
+    await expect.poll(async () => JSON.stringify(await board(owner.page))).toBe(JSON.stringify(await board(guest.page)));
   } finally {
     await closeContextQuietly(owner.context);
     await closeContextQuietly(guest.context);
