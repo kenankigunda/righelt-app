@@ -50,6 +50,18 @@ class SupervisorTest(unittest.TestCase):
             self.assertEqual(result,'telemetry-failed')
             self.assertIsNotNone(process.returncode)
 
+    def test_resume_with_old_device_file_does_not_signal_unready_process(self):
+        import json
+        from dataclasses import replace
+        class Starting(QuietTelemetry):
+            def sample(self):return replace(super().sample(),device_memory_known=False)
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d)/'device-memory.json').write_text(json.dumps({'schema':1,'pid':999999,'observedAt':time.time(),'driverBytes':1024}))
+            process=start_group([sys.executable,'-c','import time; time.sleep(5)'])
+            result=supervise(process,Budget(time.monotonic(),.15),AdaptivePolicy(),Starting(),Path(d))
+            self.assertEqual(result,'budget-expired')
+            self.assertEqual(process.returncode,-9)
+
     def test_stale_or_smoke_only_gate_report_rejected(self):
         report={'sourceRevision':'rev','configSha256':CONFIG_SHA256,'checks':{k:{'passed':True,'evidence':'test'} for k in ('coreTests','trainerTests','exactReplay','exportParity')}}
         with self.assertRaises(ValueError):validate_gate_report(report,'rev','initial')

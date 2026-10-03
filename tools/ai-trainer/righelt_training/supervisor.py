@@ -16,7 +16,7 @@ from .config import CONFIG,CONFIG_SHA256,ROOT
 from .manifest import build_manifest,write_manifest
 from .processes import start_group,stop_group
 from .resources import AdaptivePolicy
-from .telemetry import Telemetry
+from .telemetry import Telemetry,read_device_memory
 
 
 def validate_gate_report(report, source_revision, stage):
@@ -68,7 +68,8 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
                         # The runner checkpoints between bounded operations. A blocked runner
                         # cannot defeat this external watchdog or extend the run budget.
                         try:
-                            if (Path(run_dir)/'device-memory.json').exists():os.kill(process.pid,signal.SIGUSR1)
+                            if read_device_memory(Path(run_dir)/'device-memory.json',process.pid,time.time())[1]:
+                                os.kill(process.pid,signal.SIGUSR1)
                         except ProcessLookupError:pass
                     elif now-paused_since>=sample_seconds:
                         stop_group(process)
