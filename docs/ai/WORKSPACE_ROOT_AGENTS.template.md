@@ -59,3 +59,7 @@ The tracked sources of truth for the parent workspace bootstrap files live in `d
 Refresh all parent files with `pnpm setup:workspace`.
 
 Whenever you change parent-workspace guidance, permissions, or settings, update the relevant tracked template(s) in the repo and regenerate the parent files in the same change so the live workspace files stay aligned with the tracked templates.
+
+## Validation and shepherding
+
+For end-to-end evidence, integrated PR validation, and autonomous repairs, read `__APP_REPO__/skills/validate-and-shepherd/SKILL.md`. The skill includes recipient preflight, hosted review reports, and explicit email merge authorization.

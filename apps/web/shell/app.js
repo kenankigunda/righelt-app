@@ -3709,12 +3709,29 @@ for (const type of ["pointerup", "pointercancel", "touchcancel", "lostpointercap
 window.addEventListener("blur", event => { if (event.target === window) renderGesture.end(); });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") renderGesture.end(); });
 
+// Background shell updates must not interrupt an in-progress scenario draft.
+const captureScenarioDraftFocus = (baseRouteKey) => {
+  const active = document.activeElement;
+  if (baseRouteKey !== lastRenderedBaseRouteKey ||
+      !(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)) return null;
+  const field = active.getAttribute("data-scenario-save-field");
+  if (field !== "title" && field !== "description") return null;
+  const { selectionStart, selectionEnd, selectionDirection } = active;
+  return () => {
+    const replacement = appEl.querySelector(`[data-scenario-save-field="${field}"]`);
+    if (!(replacement instanceof HTMLInputElement || replacement instanceof HTMLTextAreaElement)) return;
+    replacement.focus({ preventScroll: true });
+    replacement.setSelectionRange(selectionStart, selectionEnd, selectionDirection);
+  };
+};
+
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (renderGesture.defer({ animatePanels, includeBoard })) return;
   document.title = getDocumentTitle();
   syncRouteTransitionForCurrentRoute();
   const routeKey = getRouteRenderKey();
   const baseRouteKey = getBaseRouteRenderKey();
+  const restoreScenarioDraftFocus = captureScenarioDraftFocus(baseRouteKey);
   const shouldPatchFlyoutsOnly = shouldPatchMountedFlyouts(routeKey, baseRouteKey);
   const previousPanelHeights = animatePanels && !shouldPatchFlyoutsOnly ? capturePanelHeights() : [];
   const previousFlyoutRects = animatePanels ? captureFlyoutRects() : new Map();
@@ -3722,6 +3739,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (shouldPatchFlyoutsOnly) {
     updateMountedHeader();
     updateMountedFlyouts();
+    restoreScenarioDraftFocus?.();
     syncFlyoutAwareLinks();
     syncCopyInviteLinks();
     updateHeaderFields();
@@ -3757,6 +3775,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
       inviteFromRole: currentRoute.inviteFromRole,
       includeBoard,
     });
+    restoreScenarioDraftFocus?.();
     return;
   }
 
@@ -3786,6 +3805,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderFlyouts()}</div>`;
   if (nextMarkup !== lastRenderedMarkup) {
     if (currentRoute.name !== "home" || !patchHomeAroundCreateControl(nextMarkup)) appEl.innerHTML = nextMarkup;
+    restoreScenarioDraftFocus?.();
     lastRenderedMarkup = nextMarkup;
     lastRenderedMainMarkup = `<div class="shell-main-content">${renderHeader()}${body}</div>`;
     lastRenderedFlyoutMarkup = renderFlyouts();
