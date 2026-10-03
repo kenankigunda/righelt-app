@@ -84,3 +84,15 @@ The complete machine-readable evidence is [t114-browser-measurements.json](t114-
 | webkit | storage-900px | 514 | — | 6 | 4 | 48,244 |
 | webkit | storage-901px | 523 | — | 6 | 4 | 48,244 |
 | webkit | upgrade-refresh | 436 | — | 6 | 5 | 42,070 |
+
+## T-114.09: Firefox CI input and timing repair
+
+The original full local run above remains the recorded T-114.08 snapshot. PR #92's first CI run (`37121388232`, `eb55ef7`) passed Chromium, WebKit and every non-browser gate, but failed 11 Firefox cases. Trace snapshots consistently recorded `data-hover-capability="none"`; the helper assumed hover selection, so click-only Firefox selected a destination without confirming a move. Screenshots showed a selected source and no selected destination. This was a browser harness input assumption, not evidence that a submitted command was lost.
+
+Shared helpers now select destinations using the browser's supported hover or click path, assert the destination's target state, then confirm with a real click. Pressure, overdue, and storage-geometry cases use the same path. A new regression forces each capability, observes an actual version-2 `/apply` request, and requires one history move. It is included in Chromium, Firefox and WebKit. The non-hover case fails against the original helper at `331a311` with the same hover assertion as CI; both paths pass after the correction.
+
+The silent-failure measurement now timestamps actual socket delivery and the DOM transition to the recovery notice using a MutationObserver. Previously it included the 100ms delivery delay and locator polling lag; CI reported 16,076ms. The unchanged 16,000ms limit now measures the transition itself, with finite, positive timestamp and nonnegative elapsed assertions. No recovery budget or behavioral assertion was relaxed.
+
+The complete representative Firefox lane passed with cached Firefox 150.0.2 configured to reproduce CI's non-hover media capability: 14 passed, five intentional Chromium-only skips. This includes both new input regressions. The pinned Firefox 1511 archive (Firefox 148.0.2) was also recovered after Playwright's extraction stalled; matching-version validation is recorded below. Linux CI remains the final platform proof. Independent review found no remaining static issues in the repair. No application code changed, and the original measurement JSON was preserved.
+
+Pinned Firefox 148.0.2 with the same non-hover preferences passed all 14 representative tests (five intentional skips), exit 0. Silent-failure detection measured 15,007ms and post-restoration convergence 3,990ms. The two Chromium capability regressions also passed. The repair adds six browser cases across the existing three-engine matrix; final Linux CI results will supplement, rather than replace, the original full-run evidence.
