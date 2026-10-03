@@ -66,8 +66,8 @@ test("history live-return control stays mounted without blocking through the glo
   assert.doesNotMatch(source, /data-action="return-live"[^`]*\$\{busy \? "disabled" : ""\}/);
   assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*transport\.selectHistoryMove\(\{ gameId, moveIndex \}\);[\s\S]*return;/s);
   assert.match(source, /if \(action === "return-live"\) \{[\s\S]*transport\.returnToLive\(\{ gameId \}\);[\s\S]*return;/s);
-  assert.match(syncStoreSource, /selectHistoryMove: \(\{ gameId, moveIndex \}\) => \{/);
-  assert.match(syncStoreSource, /returnToLive: \(\{ gameId \}\) => \{/);
+  assert.match(syncStoreSource, /selectHistoryMove: \(\{ gameId, moveIndex \}\) => operationManager.createCommitted/);
+  assert.match(syncStoreSource, /returnToLive: \(\{ gameId \}\) => operationManager.createCommitted/);
   assert.doesNotMatch(source, /if \(game\.inHistoryMode && activeTurn\.moveIndexes\.length > 0\) \{/);
 });
 
@@ -85,7 +85,7 @@ test("invite choice commit suppresses repeat game-route invite gate and join act
   assert.match(source, /if \(requestRoute\.name === "game"\) \{\s*resolvedInvite = null;\s*await transport\.loadGame\(requestRoute\.gameId, \{ openAsViewer: false \}\);\s*return;\s*\}/s);
   assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
   assert.match(source, /routeHydrated = false;\s*syncLiveChannels\(\);/s);
-  assert.match(source, /const initialRender = async \(\) => \{\s*routeHydrated = false;\s*syncLiveChannels\(\);\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
+  assert.match(source, /const initialRender = async \(\) => \{[\s\S]*?routeHydrated = false;\s*render\(\{ animatePanels: false, includeBoard: false \}\);[\s\S]*?await account\.start\(\);/s);
   assert.match(source, /startRouteSync\(\{ renderStart: false \}\);/);
   assert.match(source, /routeHydrated = true;\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
 });

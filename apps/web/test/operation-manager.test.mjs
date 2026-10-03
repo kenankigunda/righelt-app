@@ -50,3 +50,13 @@ test("operation manager can create already committed local handles", async () =>
   manager.dismiss("local-1");
   assert.equal(manager.getHandle("local-1"), null);
 });
+
+test("a late failure cannot change a committed operation", async () => {
+  const manager = createOperationManager();
+  const handle = manager.enqueue({ id: "final", gameId: "g", result: 1 });
+  manager.confirm(handle.id, 2);
+  manager.fail(handle.id, new Error("obsolete response"));
+  assert.equal(handle.status, "committed");
+  assert.equal(handle.error, null);
+  assert.equal(await handle.committed, 2);
+});

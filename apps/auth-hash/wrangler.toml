@@ -1,0 +1,14 @@
+name = "righelt-auth-hash"
+main = "index.mjs"
+compatibility_date = "2026-03-12"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+
+[[durable_objects.bindings]]
+name = "PASSWORD_HASH"
+class_name = "PasswordHashDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PasswordHashDO"]

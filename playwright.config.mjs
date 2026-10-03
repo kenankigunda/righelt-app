@@ -10,6 +10,7 @@ const reporter = process.env.CI
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: "**/auth/**",
   fullyParallel: false,
   workers: 1,
   outputDir,
@@ -29,13 +30,20 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: devices["Desktop Chrome"],
+      use: { ...devices["Desktop Chrome"], launchOptions: { executablePath: process.env.RIGHELT_CHROMIUM_EXECUTABLE } },
     },
+    ...["firefox", "webkit"].map(name => ({
+      name,
+      testMatch: /(sync-recovery-(pressure|ux)|browser-move-input)\.spec\.mjs/,
+      use: { ...devices[name === "firefox" ? "Desktop Firefox" : "Desktop Safari"],
+        launchOptions: { executablePath: process.env[`RIGHELT_${name.toUpperCase()}_EXECUTABLE`] } },
+    })),
   ],
   webServer: {
     command: "node scripts/e2e-stack.mjs",
+    gracefulShutdown: { signal: "SIGTERM", timeout: 15000 },
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     stdout: "pipe",
     stderr: "pipe",
     timeout: 180_000,

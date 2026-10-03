@@ -141,7 +141,7 @@ const createSelfPlayGameViaApi = async (page) =>
     const response = await fetch("/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, selfPlayMode: true }),
+      body: JSON.stringify({ protocolVersion: 2, identityId, selfPlayMode: true }),
     });
     const body = await response.json();
     if (!response.ok || !body?.game?.id) {
@@ -160,7 +160,7 @@ const importScenarioIntoExistingGame = async (page, scenario, targetGameId) =>
     const response = await fetch("/api/shell/scenarios/import", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, targetGameId: gameId, scenario: payload }),
+      body: JSON.stringify({ protocolVersion: 2, identityId, targetGameId: gameId, scenario: payload }),
     });
     const body = await response.json();
     if (!response.ok || !body?.game?.id) {

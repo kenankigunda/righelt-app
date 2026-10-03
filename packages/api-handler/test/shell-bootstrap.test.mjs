@@ -35,3 +35,14 @@ test("/api/shell/bootstrap is deterministic and uses bootstrap cache policy", as
   assert.equal(bodyA.app, "righelt-web-shell");
   assert.ok(Array.isArray(bodyA.tutorialSteps));
 });
+
+test("bootstrap exposes only the public Turnstile key when accounts are enabled", async () => {
+  const authEnv = { ...env, AUTH_ENABLED: "true", AUTH_TURNSTILE_SITE_KEY: "public-test-key", TURNSTILE_SECRET: "private-test-secret" };
+  const response = await handleApiRequest(new Request("https://example.test/api/shell/bootstrap"), authEnv);
+  const body = await response.json();
+  assert.equal(body.accountsRequired, true);
+  assert.equal(body.turnstileSiteKey, "public-test-key");
+  assert.equal(JSON.stringify(body).includes("private-test-secret"), false);
+  const disabled = await handleApiRequest(new Request("https://example.test/api/shell/bootstrap"), { ...authEnv, AUTH_ENABLED: "false" });
+  assert.equal(Object.hasOwn(await disabled.json(), "turnstileSiteKey"), false);
+});

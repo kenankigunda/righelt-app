@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "apps/api/**"
+      - "apps/auth/**"
+      - "apps/auth-hash/**"
       - "apps/web/**"
       - "packages/api-handler/**"
       - "packages/game-engine/**"
@@ -13,6 +15,7 @@ on:
       - "e2e/**"
       - "package.json"
       - "playwright.config.mjs"
+      - "playwright.auth.config.mjs"
       - "pnpm-workspace.yaml"
       - "pnpm-lock.yaml"
       - "scripts/**"
@@ -25,6 +28,8 @@ on:
     branches: [main]
     paths:
       - "apps/api/**"
+      - "apps/auth/**"
+      - "apps/auth-hash/**"
       - "apps/web/**"
       - "packages/api-handler/**"
       - "packages/game-engine/**"
@@ -34,6 +39,7 @@ on:
       - "e2e/**"
       - "package.json"
       - "playwright.config.mjs"
+      - "playwright.auth.config.mjs"
       - "pnpm-workspace.yaml"
       - "pnpm-lock.yaml"
       - "scripts/**"
@@ -267,6 +273,63 @@ jobs:
           path: test-results/web-integration/results.xml
           if-no-files-found: ignore
 
+  sync-stress:
+    name: Sync seeded fault stress
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+      - name: Sync seeded fault stress
+        run: pnpm test:sync-stress -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/sync-stress/results.xml
+      - name: Upload sync-stress JUnit
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: junit-sync-stress
+          path: test-results/sync-stress/results.xml
+          if-no-files-found: ignore
+      - name: Upload deterministic failure schedules
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sync-failure-schedules
+          path: test-results/sync-stress/traces
+          if-no-files-found: ignore
+
+  sync-runtime:
+    name: Sync Workers and D1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+      - name: Sync Workers and D1
+        run: pnpm test:sync-runtime -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/sync-runtime/results.xml
+      - name: Upload sync-runtime JUnit
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: junit-sync-runtime
+          path: test-results/sync-runtime/results.xml
+          if-no-files-found: ignore
+
   e2e:
     name: E2E
     runs-on: ubuntu-latest
@@ -286,7 +349,7 @@ jobs:
         run: pnpm install --frozen-lockfile=false
 
       - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
 
       - name: E2E tests
         env:
@@ -310,6 +373,57 @@ jobs:
           path: test-results/e2e/artifacts
           if-no-files-found: ignore
 
+      - name: Upload sync recovery measurements
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sync-recovery-measurements
+          path: test-results/sync-recovery
+          if-no-files-found: ignore
+
+  auth-e2e:
+    name: Account E2E
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+
+      - name: E2E tests
+        env:
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/auth-e2e/results.xml
+          PLAYWRIGHT_OUTPUT_DIR: test-results/auth-e2e/artifacts
+        run: pnpm test:e2e:auth
+
+      - name: Upload E2E JUnit
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: junit-auth-e2e
+          path: test-results/auth-e2e/results.xml
+          if-no-files-found: ignore
+
+      - name: Upload E2E Playwright debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-auth-e2e-debug
+          path: test-results/auth-e2e/artifacts
+          if-no-files-found: ignore
+
   test-results:
     name: Test results
     if: ${{ always() }}
@@ -323,7 +437,10 @@ jobs:
       - api-handler-integration
       - api-worker-integration
       - web-integration
+      - sync-stress
+      - sync-runtime
       - e2e
+      - auth-e2e
     steps:
       - name: Checkout
         uses: actions/checkout@v5

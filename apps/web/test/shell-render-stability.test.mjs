@@ -239,7 +239,7 @@ test("shell render patches same-route game updates without replacing the board p
 test("live sync applies authoritative pushed game payloads before render", () => {
   assert.match(syncStoreSource, /payload\?\.type === "state_sync"/);
   assert.match(syncStoreSource, /payload\?\.type === "event_appended"/);
-  assert.match(syncStoreSource, /transport\.applyLiveGameUpdate\(\{\s*game: payload\.game,\s*eventSeq: payload\.eventSeq,\s*clientCommandId: payload\.clientCommandId \?\? null,\s*\}\);/s);
+  assert.match(syncStoreSource, /transport\.applyLiveGameUpdate\(\{\s*game: payload\.game,\s*eventSeq: payload\.eventSeq,\s*clientCommandId: payload\.clientCommandId \?\? null,\s*commandOutcome: payload\.commandOutcome \?\? null,\s*\}\);/s);
   assert.match(source, /if \(document\.getElementById\("shell-debug-last-event"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
@@ -301,7 +301,7 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
 });
 
 test("transport subscriptions drive immediate game-shell updates", () => {
-  assert.match(source, /transport\.subscribe\(\(change\) => \{\s*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);\s*\}\);/s);
+  assert.match(source, /transport\.subscribe\(\(change\) => \{[\s\S]*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);\s*\}\);/s);
   assert.match(source, /const canHydrateRouteFromLocalState = \(route = currentRoute\) => \{/);
   assert.match(source, /return Boolean\(transport\.getGameViewModel\(route\.gameId\)\);/);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
@@ -440,7 +440,7 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   assert.match(source, /const SCENARIO_LOAD_PENDING_KEY = "scenario:load";/);
   assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
   assert.match(source, /routeHydrated = false;\s*syncLiveChannels\(\);/s);
-  assert.match(source, /const initialRender = async \(\) => \{\s*routeHydrated = false;\s*syncLiveChannels\(\);\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
+  assert.match(source, /const initialRender = async \(\) => \{[\s\S]*?routeHydrated = false;\s*render\(\{ animatePanels: false, includeBoard: false \}\);[\s\S]*?await account\.start\(\);/s);
   assert.match(source, /startRouteSync\(\{ renderStart: false \}\);/);
   assert.match(source, /renderGameViewSkeleton\(\)/);
   assert.match(source, /renderInvitePageSkeleton\(\)/);
