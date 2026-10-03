@@ -38,7 +38,37 @@ def validate_gate_report(report, source_revision, stage):
             raise ValueError('overnight health or progress-report gate missing')
 
 
-def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sleep=time.sleep,sample_seconds=None):
+def validation_boundary(runtime):
+    return runtime['startedMonotonic']+(runtime['deadlineMonotonic']-runtime['startedMonotonic'])*5/6
+
+
+def validate_training_window(runtime,now):
+    if runtime['command']=='training' and now>=validation_boundary(runtime):
+        raise ValueError('training window ended; resume health, preparation or arena within the original validation reserve')
+
+
+def request_validation_handoff(run_dir,runtime,now):
+    if runtime.get('command')!='training' or now<validation_boundary(runtime):return False
+    directory=Path(run_dir);path=directory/'handoff-request.json'
+    request_id=f"automatic-validation:{runtime['manifestSha256']}:{runtime['deadlineMonotonic']}"
+    if path.exists():
+        pending=json.loads(path.read_text())
+        if pending.get('id')==request_id:return False
+        # Preserve an outstanding manual request. A consumed manual request may
+        # remain on disk after an earlier checkpoint/resume; it cannot disable
+        # the later automatic validation boundary.
+        latest=directory/'latest.json'
+        consumed=None
+        if latest.exists():
+            checkpoint=Path(json.loads(latest.read_text())['checkpoint'])
+            consumed=json.loads(checkpoint.with_suffix('.runner.json').read_text())['state'].get('lastHandoffId')
+        if pending.get('id')!=consumed:return False
+    atomic_json(path,{'schema':1,'id':request_id,'reason':'validation',
+                     'manifestSha256':runtime['manifestSha256']})
+    return True
+
+
+def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sleep=time.sleep,sample_seconds=None,runtime=None):
     sample_seconds=sample_seconds or CONFIG['resources']['sampleSeconds']
     next_sample=clock();paused_since=None
     events=Path(run_dir)/'resource-events.jsonl'
@@ -48,6 +78,10 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
             if budget.remaining(now)<=0:
                 stop_group(process)
                 return 'budget-expired'
+            if runtime is not None:request_validation_handoff(run_dir,runtime,now)
+            if runtime is not None and runtime.get('command')=='training' and now>=validation_boundary(runtime)+60:
+                stop_group(process)
+                return 'validation-handoff-timeout'
             if now>=next_sample:
                 try:
                     sample=telemetry.sample()
@@ -172,6 +206,7 @@ def main():
         runtime['parentCheckpoint']=str(args.resume.resolve())
     runtime['supervisorPid']=os.getpid()
     runtime['command']='prepare-arena' if args.prepare_arena else 'health' if args.health else 'arena' if arena_digest else 'training'
+    validate_training_window(runtime,time.monotonic())
     runtime['supervisorAttempt']=uuid.uuid4().hex
     if arena_digest:runtime['arenaPlanSha256']=arena_digest
     else:runtime.pop('arenaPlanSha256',None)
@@ -196,7 +231,7 @@ def main():
     record_attempt(args.run_dir,{'event':'started','id':runtime['supervisorAttempt'],'phase':runtime['command'],'pid':os.getpid()})
     with (args.run_dir/'runner.log').open('a') as log:
         process=start_group(['/usr/bin/nice','-n','10',*argv],cwd=ROOT,env=env,stdout=log,stderr=log)
-        reason=supervise(process,budget,AdaptivePolicy(),Telemetry(artifact_root,args.activity_file,args.run_dir/'device-memory.json',process.pid),args.run_dir)
+        reason=supervise(process,budget,AdaptivePolicy(),Telemetry(artifact_root,args.activity_file,args.run_dir/'device-memory.json',process.pid),args.run_dir,runtime=runtime)
     record_attempt(args.run_dir,{'event':'finished','id':runtime['supervisorAttempt'],'phase':runtime['command'],'reason':reason})
     atomic_json(args.run_dir/'supervisor-result.json',{'reason':reason,'runnerReturncode':process.returncode,
                 'elapsedSeconds':time.monotonic()-started,'budgetSeconds':budget.seconds,'productionPromotion':False})
