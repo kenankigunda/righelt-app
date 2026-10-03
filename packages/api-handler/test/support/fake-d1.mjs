@@ -4,6 +4,11 @@ export const createFakeD1 = () => {
   const shellGames = new Map();
   const shellInvites = new Map();
   const shellEvents = new Map();
+  const receipts = new Map();
+  const tombstones = new Map();
+  const executors = new WeakMap();
+  let batchFailureIndex = null;
+  let loseBatchResponse = false;
   const nextGameReadOverrideById = new Map();
   let selectGameByIdCount = 0;
   const writes = [];
@@ -73,12 +78,14 @@ export const createFakeD1 = () => {
         params = values;
         return statement;
       },
-      async run() {
+      executeRun() {
         writes.push({ query: normalized, params: [...params] });
 
         if (normalized.includes("INSERT INTO live_games")) {
-          const [gameId, createdAt, updatedAt, latestActivityAt, player1IdentityId, player2IdentityId, hasSmoke, stateJson, eventSeq = 0] =
+          const [gameId, createdAt, updatedAt, latestActivityAt, player1IdentityId, player2IdentityId, hasSmoke, stateJson, eventSeq = 0, gameplayRevision = 0, commitBaseEventSeq = null] =
             params;
+          const old = shellGames.get(gameId);
+          if (old && commitBaseEventSeq !== null && (commitBaseEventSeq !== old.event_seq || eventSeq <= old.event_seq || gameplayRevision < (old.gameplay_revision ?? 0))) throw new Error("stale_game_revision");
           shellGames.set(
             gameId,
             toStoredRow({
@@ -93,6 +100,23 @@ export const createFakeD1 = () => {
               eventSeq,
             }),
           );
+          Object.assign(shellGames.get(gameId), { gameplay_revision: gameplayRevision, commit_base_event_seq: commitBaseEventSeq });
+          return { success: true };
+        }
+
+        if (normalized.includes("INSERT INTO live_command_receipts")) {
+          const [gameId, commandId, actor, fingerprint, outcome, reason, eventSeq, gameplayRevision, resultJson = null] = params;
+          const key = JSON.stringify([gameId, commandId]);
+          if (receipts.has(key)) throw new Error("UNIQUE constraint failed: live_command_receipts");
+          if (!["accepted", "rejected"].includes(outcome)) throw new Error("CHECK constraint failed: outcome");
+          receipts.set(key, { game_id: gameId, client_command_id: commandId, actor_identity_id: actor, fingerprint, outcome, reason, event_seq: eventSeq, gameplay_revision: gameplayRevision, result_json: resultJson });
+          return { success: true };
+        }
+        if (normalized.includes("INSERT INTO live_legacy_command_tombstones")) {
+          const [gameId, commandId, evidenceJson] = params;
+          const key = JSON.stringify([gameId, commandId]);
+          if (tombstones.has(key)) throw new Error("UNIQUE constraint failed: live_legacy_command_tombstones");
+          tombstones.set(key, { game_id: gameId, client_command_id: commandId, evidence_json: evidenceJson });
           return { success: true };
         }
 
@@ -109,6 +133,7 @@ export const createFakeD1 = () => {
         if (normalized.includes("INSERT INTO live_events")) {
           const [gameId, eventSeq, payloadJson] = params;
           const current = shellEvents.get(gameId) ?? [];
+          if (current.some((row) => row.event_seq === eventSeq)) throw new Error("UNIQUE constraint failed: live_events");
           current.push({
             game_id: gameId,
             event_seq: eventSeq,
@@ -121,8 +146,11 @@ export const createFakeD1 = () => {
 
         throw new Error(`Unsupported run query: ${normalized}`);
       },
+      async run() { return statement.executeRun(); },
       async first() {
         reads.push({ query: normalized, params: [...params] });
+        if (normalized.includes("FROM live_command_receipts")) return structuredClone(receipts.get(JSON.stringify(params.slice(0, 2))) ?? null);
+        if (normalized.includes("FROM live_legacy_command_tombstones")) return structuredClone(tombstones.get(JSON.stringify(params.slice(0, 2))) ?? null);
 
         if (
           normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq FROM live_games WHERE game_id = ?1") ||
@@ -201,15 +229,46 @@ export const createFakeD1 = () => {
       },
     };
 
+    executors.set(statement, () => statement.executeRun());
     return statement;
   };
 
   return {
     prepare,
+    async batch(statements) {
+      // Execute synchronously so reads cannot observe intermediate statements.
+      const tables = [shellGames, shellInvites, shellEvents, receipts, tombstones];
+      const snapshots = tables.map((table) => structuredClone(table));
+      const failAt = batchFailureIndex;
+      batchFailureIndex = null;
+      let results;
+      try {
+        results = statements.map((statement, index) => {
+          if (index === failAt) throw new Error(`Injected batch failure at statement ${index}`);
+          const execute = executors.get(statement);
+          if (!execute) throw new Error("Statement belongs to another database");
+          return execute();
+        });
+      } catch (error) {
+        tables.forEach((table, index) => { table.clear(); for (const [key, value] of snapshots[index]) table.set(key, value); });
+        throw error;
+      }
+      if (loseBatchResponse) { loseBatchResponse = false; throw new Error("Lost batch response after commit"); }
+      return results;
+    },
+    failNextBatchAt(index) { batchFailureIndex = index; },
+    loseNextBatchResponse() { loseBatchResponse = true; },
+    getReceipt(gameId, commandId) { return structuredClone(receipts.get(JSON.stringify([gameId, commandId])) ?? null); },
+    getTombstone(gameId, commandId) { return structuredClone(tombstones.get(JSON.stringify([gameId, commandId])) ?? null); },
+    getInvite(token) { return structuredClone(shellInvites.get(token) ?? null); },
     reset() {
       shellGames.clear();
       shellInvites.clear();
       shellEvents.clear();
+      receipts.clear();
+      tombstones.clear();
+      batchFailureIndex = null;
+      loseBatchResponse = false;
       nextGameReadOverrideById.clear();
       selectGameByIdCount = 0;
       writes.length = 0;

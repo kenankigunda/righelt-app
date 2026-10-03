@@ -19,7 +19,7 @@ const LIVE_GAMES_TABLE = "live_games";
 const LIVE_INVITES_TABLE = "live_invites";
 const LIVE_EVENTS_TABLE = "live_events";
 
-type D1RunResult = {
+export type D1RunResult = {
   success: boolean;
   meta?: {
     last_row_id?: number;
@@ -39,6 +39,7 @@ export type D1Statement = {
 
 export type D1DatabaseLike = {
   prepare: (query: string) => D1Statement;
+  batch: (statements: D1Statement[]) => Promise<D1RunResult[]>;
 };
 
 export type LiveGameEnv = {
