@@ -46,7 +46,7 @@ test("an old guest invite stays view-only and offers a fresh account game", asyn
   await expect(page.getByTestId("game-board")).toBeVisible();
   await expect(page.getByText("This older guest game is view-only.", { exact: false })).toBeVisible();
   const url = page.url();
-  await page.getByTestId("home-create-game").click();
+  await page.getByRole("button", { name: "Start new game", exact: true }).click();
   await expect(dialog(page)).toBeVisible();
   await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
   expect(page.url()).toBe(url);
@@ -60,7 +60,7 @@ test("an old guest invite stays view-only and offers a fresh account game", asyn
   expect(legacy.body.game.myRoles).toEqual([]);
   const denied = await request(page, "/api/shell/games/cutover-legacy-fixture/join", { mode: "player" });
   expect(denied.body.error).toBe("legacy_read_only");
-  await page.getByTestId("home-create-game").click();
+  await page.getByRole("button", { name: "Start new game", exact: true }).click();
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
   expect(page.url()).not.toBe(url);
 });
