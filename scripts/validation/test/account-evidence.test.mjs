@@ -18,3 +18,10 @@ test('results capability requires result, chosen rematch, and confirmed new game
  verifyAccountEvidence(rows,{capabilities:{results:true}});
  for(const label of resultLabels){const missing=structuredClone(rows);missing[1].images=missing[1].images.filter(image=>!image.caption.startsWith(label+' ·'));assert.throws(()=>verifyAccountEvidence(missing,{capabilities:{results:true}}),/Missing account checkpoint/);}
 });
+
+test('personal home evidence requires deliberate lower scroll positions at every viewport',()=>{
+ const homeLabels=['personal-home-start-lower','returning-personal-home','returning-personal-home-lower'];
+ const rows=['mobile','mid-wide','full-wide'].map(viewport=>item(viewport,FRESH_ACCOUNT_WORKFLOW,[...labels,...homeLabels]));
+ verifyAccountEvidence(rows,{capabilities:{personalHome:true}});
+ for(const label of homeLabels){const missing=structuredClone(rows);missing[0].images=missing[0].images.filter(image=>!image.caption.startsWith(label+' ·'));assert.throws(()=>verifyAccountEvidence(missing,{capabilities:{personalHome:true}}),/Missing account checkpoint/);}
+});

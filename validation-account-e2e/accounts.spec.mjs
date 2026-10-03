@@ -45,6 +45,20 @@ async function fits(page,locator){
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2)).toBe(true);
   const box=await locator.boundingBox();expect(box.x).toBeGreaterThanOrEqual(-1);expect(box.x+box.width).toBeLessThanOrEqual(page.viewportSize().width+1);
 }
+async function settledHome(page){
+  await expect(page.getByTestId('home-create-game')).toBeVisible();
+  // The early account UI renders its start button inside the loading skeleton.
+  // Wait for actual home content, not merely the actionable button.
+  await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+  await expect(page.getByTestId('home-card-skeleton')).toHaveCount(0);
+  if(capabilities.personalHome){
+    await expect(page.getByTestId('resume-slot')).toBeVisible();
+    await expect(page.getByTestId('resume-slot').locator('[aria-busy="true"]')).toHaveCount(0);
+    await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
+  }else{
+    await expect(page.locator('[data-home-section-root="my"]')).toBeVisible();
+  }
+}
 async function accountOpen(page){await page.getByRole('button',{name:'Account',exact:true}).click();await expect(dialog(page)).toBeVisible();}
 async function login(page,name,secret=password){
   await page.getByRole('button',{name:'Sign in',exact:true}).click();
@@ -83,16 +97,22 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   const username=`Proof_${Date.now().toString(36)}_${info.project.name.replaceAll('-','').slice(0,4)}`;
   let creates=0;page.on('request',r=>{if(r.method()==='POST'&&new URL(r.url()).pathname==='/api/shell/games')creates++;});
   await page.goto('/');
+  await settledHome(page);
   await fits(page,page.getByTestId('home-create-game'));
   await proof(page,info,'account-home',page.locator(capabilities.personalHome?'[data-zone="home-start"]':'#app'));
+  if(capabilities.personalHome){
+    const start=page.locator('[data-zone="home-start"]');
+    await start.getByRole('button',{name:'Self-play',exact:true}).scrollIntoViewIfNeeded();
+    await proof(page,info,'personal-home-start-lower',start);
+  }
   await page.getByTestId('home-create-game').click();
   await fits(page,dialog(page));
   const trigger=dialog(page).getByLabel('Username',{exact:true});
   await expect(trigger).toHaveAttribute('autocomplete','username');
+  await proof(page,info,'sign-in',dialog(page));
   await dialog(page).getByLabel('Password',{exact:true}).fill('');
   await dialog(page).getByRole('button',{name:'Sign in',exact:true}).click();
   await expect(dialog(page)).toBeVisible();expect(creates).toBe(0);
-  await proof(page,info,'sign-in',dialog(page));
   expect((await new AxeBuilder({page}).include('[data-testid="account-dialog"]').analyze()).violations).toEqual([]);
   await dialog(page).getByRole('button',{name:'Create account',exact:true}).click();
   await dialog(page).getByLabel('Username',{exact:true}).fill(username);
@@ -135,9 +155,17 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   if(capabilities.profiles){expect(savedSession.account.displayName).toBe('Validation Player');expect(savedSession.account.preferences.view).toBe('explanatory');}
   if(capabilities.personalHome){
     await page.getByRole('link',{name:'Righelt',exact:true}).click();
+    await settledHome(page);
     await expect(page.locator('[data-zone="home-resume"]')).toContainText('Continue playing');
     await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
     await fits(page,page.locator('[data-zone="home-start"]'));await proof(page,info,'returning-personal-home',page.locator('[data-zone="home-resume"]'));
+    const resume=page.locator('[data-zone="home-resume"]');
+    const firstBoard=resume.locator('[data-mini-board-preview]').first();
+    await expect(firstBoard.locator('.cell').last()).toBeAttached();
+    await firstBoard.locator('.cell').last().scrollIntoViewIfNeeded();
+    await proof(page,info,'returning-personal-home-lower',resume);
+    // Restore the intentional top-of-panel view before opening a story.
+    await page.getByTestId('resume-slot').evaluate(element=>{element.scrollTop=0;});
     if(capabilities.stories){
       const priorCreates=creates;const babs=page.locator('button[data-opponent="babs"]');await babs.click();
       const story=page.getByRole('dialog',{name:'Babs · Easy'});
