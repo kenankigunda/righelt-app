@@ -53,3 +53,7 @@ Do not escalate to the human. Surface findings and remaining risks to the caller
 - [docs/ai/TICKET_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/TICKET_WORKFLOW.md)
 - [docs/ai/UX_VALIDATION_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/UX_VALIDATION_WORKFLOW.md)
 - [docs/ai/FRAGILITY_HARDENING_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/FRAGILITY_HARDENING_WORKFLOW.md)
+
+## Validation evidence and PR shepherding
+
+Use the repo skill `skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. Run `pnpm validate:local` before completion; use `pnpm validate:integrated --manifest FILE` for ordered PR sets. Inspect actual screenshots, repair source PRs, publish the evidence report, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.
