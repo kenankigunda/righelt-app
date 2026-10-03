@@ -1,8 +1,13 @@
+import {mkdir,writeFile} from "node:fs/promises";
 import { test, expect } from "@playwright/test";
 import { runScopedAxeScan } from "../support/ux.mjs";
 import { createGameFromHome, makeAnyLegalMove } from "../support/app.mjs";
 
-for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gate at ${width}px`, async ({page}) => {
+for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gate at ${width}px`, async ({page},info) => {
+ const metrics={requests:0,snapshots:0,applicationPayloadBytes:0};
+ page.on('request',request=>{if(request.url().includes('/api/shell/'))metrics.requests++;});
+ page.on('response',async response=>{if(!response.url().includes('/api/shell/'))return;try{const body=await response.body();metrics.applicationPayloadBytes+=body.length;if(JSON.parse(body)?.game)metrics.snapshots++;}catch{}});
+ page.on('websocket',socket=>socket.on('framereceived',({payload})=>{metrics.applicationPayloadBytes+=Buffer.byteLength(payload);try{if(JSON.parse(payload)?.game)metrics.snapshots++;}catch{}}));
  await page.setViewportSize({width,height:1000});
  await page.emulateMedia({reducedMotion:"reduce"});
  const {gameId}=await createGameFromHome(page);
@@ -13,6 +18,7 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  const geometry=()=>page.locator('[data-testid="game-board"]').evaluate(el=>{const b=el.getBoundingClientRect();return {x:b.x+scrollX,y:b.y+scrollY,width:b.width,height:b.height};});
  let before;
+ metrics.requests=0;metrics.snapshots=0;metrics.applicationPayloadBytes=0;
  await page.evaluate(()=>{
    window.savedIDBAdd=IDBObjectStore.prototype.add;
    IDBObjectStore.prototype.add=function(){throw new DOMException("Test quota", "QuotaExceededError");};
@@ -48,6 +54,7 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
  // Dismissal leaves the shared controls gated, including synthetic keyboard/click paths.
  const gated=page.locator('[data-action="undo-last-move"]');
  if(await gated.count()) await expect(gated).toBeDisabled();
+ const restoredAt=Date.now();
  await page.evaluate(()=>{IDBObjectStore.prototype.add=window.savedIDBAdd;});
  await page.getByRole("button",{name:"Retry saving"}).click();
  await expect(banner).toHaveCount(0);
@@ -56,6 +63,11 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
  expect(announcements.filter(x=>x.includes("couldn't save this move")).length).toBe(1);
  if(await gated.count()) await expect(gated).toBeEnabled();
  await makeAnyLegalMove(page);
+ const result={fault:`storage-${width}px`,restoredAt:new Date(restoredAt).toISOString(),convergenceMs:Date.now()-restoredAt,...metrics};
+ expect(result.convergenceMs).toBeLessThanOrEqual(25000);
+ await mkdir('test-results/sync-recovery',{recursive:true});
+ await writeFile(`test-results/sync-recovery/${info.project.name}-storage-${width}.json`,JSON.stringify(result,null,2));
+ await info.attach('storage-recovery',{body:JSON.stringify(result),contentType:'application/json'});
 });
 
 test("pending feedback reaches overdue once, then clears or explains definitive conflict", async ({page}) => {
