@@ -61,20 +61,28 @@ test('actual D1 schema: uniqueness, immutable usernames, conditional guard rollb
 test('actual workerd private admission/hash services: random salts, verification, strict inputs and burst',async()=>{
  const common={modules:true,modulesRules:[{type:'ESModule',include:['**/*.mjs','**/*.js'],fallthrough:true}],compatibilityDate:'2026-03-12',compatibilityFlags:['nodejs_compat']};
  const mf=new Miniflare({workers:[
+  {...common,name:'driver',serviceBindings:{AUTH:'auth'},script:`export default {async fetch(request,env) {
+   const body=await request.text();
+   return env.AUTH.fetch('https://auth.internal/hash',{method:'POST',headers:{'Content-Type':'application/json'},body});
+  }}`},
   {...common,name:'auth',scriptPath:`${root}apps/auth/index.mjs`,durableObjects:{PASSWORD_ADMISSION:{className:'PasswordAdmissionDO',useSQLite:true}},serviceBindings:{HASH_ENGINE:'hash'}},
   {...common,name:'hash',scriptPath:`${root}apps/auth-hash/index.mjs`,durableObjects:{PASSWORD_HASH:{className:'PasswordHashDO',useSQLite:true}}},
  ]});
  const password='synthetic-password-123';
- // Production callers use a private service binding, never the development
- // HTTP listener. Cancelling an oversized HTTP upload can reset that socket
- // before a response is delivered; exercise the actual binding contract.
- const service=await mf.getWorker('auth');
- const send=body=>service.fetch('https://auth.internal/hash',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ // Miniflare's host proxy also crosses HTTP. Read the upload in a driver
+ // worker first, then construct the private service request inside workerd,
+ // so rejecting an oversized body cannot cancel the host proxy's upload.
+ const service=await mf.getWorker('driver');
+ const sendJson=body=>service.fetch('https://auth.internal/hash',{method:'POST',headers:{'Content-Type':'application/json'},body});
+ const send=body=>sendJson(JSON.stringify(body));
  try {
   const first=await send({operation:'hash',password});assert.equal(first.status,200);assert.equal(first.headers.get('Cache-Control'),'no-store');const {encoded}=await first.json();
   assert.notEqual((await (await send({operation:'hash',password})).json()).encoded,encoded);
   assert.equal((await (await send({operation:'verify',password,encoded})).json()).verified,true);
   assert.equal((await (await send({operation:'verify',password:'incorrect-password-123',encoded})).json()).verified,false);
+  const validBody=JSON.stringify({operation:'hash',password});
+  assert.equal((await sendJson(validBody.padEnd(2048,' '))).status,200);
+  assert.equal((await sendJson(validBody.padEnd(2049,' '))).status,400);
   for(const input of [{operation:'hash',password,N:1},{operation:'hash',password:'short'},{operation:'verify',password,encoded:'invalid'},{operation:'hash',password:'x'.repeat(5000)},null]) assert.equal((await send(input)).status,400);
   const burst=await Promise.all(Array.from({length:20},()=>send({operation:'hash',password})));
   assert.ok(burst.some(r=>r.status===429));assert.ok(burst.some(r=>r.status===200));assert.ok(burst.every(r=>r.status===200||r.status===429));
