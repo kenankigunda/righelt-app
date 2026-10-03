@@ -233,10 +233,22 @@ export const selectPlayableAction = async (page, action) => {
 };
 
 export const submitPlayableAction = async (page, action) => {
-  const target = await selectPlayableAction(page, action);
-  await target.click();
-  await expect(page.locator("#shell-board-preview-label")).toContainText("Activate this destination again to play.");
-  await target.click();
+  let writes = 0;
+  const observe = request => {
+    if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/apply")) writes++;
+  };
+  page.on("request", observe);
+  try {
+    const target = await selectPlayableAction(page, action);
+    // Touch selection already activates the destination and arms its preview.
+    if (await page.locator("html").getAttribute("data-hover-capability") === "hover") await target.click();
+    await expect(page.locator("#shell-board-preview-label")).toContainText("Activate this destination again to play.");
+    expect(writes, "Preview must not submit an action").toBe(0);
+    await target.click();
+    await expect.poll(() => writes, { message: "Confirmation submits exactly one action" }).toBe(1);
+  } finally {
+    page.off("request", observe);
+  }
 };
 
 export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
