@@ -52,7 +52,7 @@ def register_partition(plan,digest,*,consume=False,experiment_root=None):
         atomic_json(path,ledger)
 
 
-def freeze_plan(path,plan,*,experiment_root=None):
+def freeze_plan(path,plan,*,experiment_root=None,deadline=None,heartbeat=lambda:None):
     if plan.get('partition') not in ('validation','final') or plan.get('configSha256')!=CONFIG_SHA256:
         raise ValueError('invalid evaluation partition/configuration')
     if plan.get('purpose') not in ('difficulty','incumbent'):raise ValueError('invalid comparison purpose')
@@ -71,7 +71,12 @@ def freeze_plan(path,plan,*,experiment_root=None):
         kinds[pair['kind']]+=1
         if pair['kind']=='heldout':
             if not pair.get('initialState') or not pair.get('openingActions'):raise ValueError('held-out opening trajectory missing')
-            proof=engine_command({'command':'validate-opening','state':pair['initialState'],'actions':pair['openingActions']},timeout=10)
+            heartbeat()
+            remaining=10 if deadline is None else min(10,deadline-time.monotonic()-5)
+            if remaining<=0:raise TimeoutError('opening verification budget expired')
+            proof=engine_command({'command':'validate-opening','state':pair['initialState'],'actions':pair['openingActions'],'budgetMs':remaining*1000},timeout=remaining)
+            if pair.get('openingFingerprint',proof['fingerprint'])!=proof['fingerprint']:
+                raise ValueError('opening fingerprint changed during preparation')
             if proof['initial'] or proof['fingerprint'] in openings:raise ValueError('opening is initial or duplicated')
             openings.add(proof['fingerprint'])
             pair['openingFingerprint']=proof['fingerprint']

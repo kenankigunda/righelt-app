@@ -95,6 +95,19 @@ async function main() {
     if(current.outcome.status!=='ongoing')throw new Error('Opening is terminal');
     send({type:'opening-verified',fingerprint:ruleFingerprint(current),initial:ruleFingerprint(current)===ruleFingerprint(createInitialState())});return;
   }
+  if (job.command === 'generate-opening') {
+    const random=seededRandom(job.seed),actions=[];
+    let current=createInitialState();
+    const steps=12+Math.floor(random()*29);
+    for(let i=0;i<steps && current.outcome.status==='ongoing';i++) {
+      check();const legal=[...legalActionMap(current).values()];check();
+      if(!legal.length)break;
+      const action=legal[Math.floor(random()*legal.length)];
+      current=transition(current,action);actions.push(action);
+    }
+    check();send({type:'opening-generated',state:current,actions,fingerprint:ruleFingerprint(current),
+      initial:ruleFingerprint(current)===ruleFingerprint(createInitialState())});return;
+  }
   if (job.command === 'fingerprint') { send({ type: 'fingerprint', fingerprint: ruleFingerprint(job.state) }); return; }
   const arena=job.command==='arena';
   if (arena && ['P1', 'P2'].some(seat => !job.profiles?.[seat] || !job.modelVersions?.[seat] || !job.profileVersions?.[seat])) {
