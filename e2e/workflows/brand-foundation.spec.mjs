@@ -2,6 +2,26 @@ import { test, expect } from "@playwright/test";
 import { createGameFromHome, makeAnyLegalMove } from "../support/app.mjs";
 import { runScopedAxeScan } from "../support/ux.mjs";
 
+test("home hydration retains keyboard focus on the brand link", async ({ page }) => {
+  let release;
+  const hydrationGate = new Promise((resolve) => { release = resolve; });
+  await page.route(/\/api\/shell\/games(?:\?|$)/, async (route) => {
+    const response = await route.fetch();
+    await hydrationGate;
+    await route.fulfill({ response });
+  });
+  await page.goto("/");
+  const link = page.getByRole("link", { name: "Righelt", exact: true });
+  await link.focus();
+  const original = await link.elementHandle();
+  await expect(link).toBeFocused();
+  release();
+  // Prove the refresh actually replaced the node before checking its successor.
+  await expect.poll(() => original.evaluate((element) => element.isConnected)).toBe(false);
+  await expect(link).toBeFocused();
+  await expect(link).toHaveCSS("outline-style", "solid");
+});
+
 test("home logo changes together while primary actions stay affiliated; game supply stays owned", async ({ page }, testInfo) => {
   await page.goto("/");
   const logo = page.getByRole("img", { name: "Righelt", exact: true });
@@ -61,7 +81,8 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 1100, height: 800 
     const logo = page.getByRole("img", { name: "Righelt", exact: true });
     await expect(logo).toBeVisible();
     await page.getByRole("link", { name: "Righelt", exact: true }).focus();
-    expect(await page.getByRole("link", { name: "Righelt", exact: true }).evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("solid");
+    await expect(page.getByRole("link", { name: "Righelt", exact: true })).toBeFocused();
+    await expect(page.getByRole("link", { name: "Righelt", exact: true })).toHaveCSS("outline-style", "solid");
     await page.clock.install();
     await page.clock.fastForward(20000);
     await expect(logo).toHaveAttribute("data-player", "red");
