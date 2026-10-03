@@ -2159,3 +2159,9 @@ button:not(.secondary):not(.warn):not(.danger):not(:disabled):active,
 .story-presentation-board { position: fixed; inset: 7rem max(16px, calc((100vw - 680px)/2)) 16px; z-index: 30; pointer-events: none; background: var(--paper); }
 .story-presentation-board .mini-board-preview-wrap { width: 100%; max-height: 100%; }
 .story-modal [hidden] { display: none !important; }
+
+.game-result { max-width: 640px; margin: clamp(24px, 8vh, 80px) auto; padding: clamp(24px, 5vw, 48px); }
+.game-result h1 { font-size: clamp(36px, 8vw, 64px); }
+.story-modal select { display: block; width: 100%; min-height: 44px; margin: 8px 0 20px; }
+.story-modal fieldset { border: 1px solid var(--line); margin: 16px 0; }
+.story-modal fieldset label { display: flex; align-items: center; gap: 12px; min-height: 44px; }

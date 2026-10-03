@@ -1,3 +1,4 @@
+import { getGameResult, createResultTransitions, createRematchDialog } from "./game-result.js";
 import { createModal } from "./modal.js";
 import { createOpponentStoryDialog, shouldShowOpponentIntroduction, cancelAbandonedOpponentTutorial, createOpponentStartCoordinator } from "./opponent-stories.js";
 import { PERSONAL_OPPONENTS, isPersonalSide, isComputerOpponent, getComputerReadiness, selectResumeGames, isAwaitingPlayer, captureHomeFocus, restoreHomeFocus } from "./personal-home.js";
@@ -170,6 +171,8 @@ const toStableKey = (value) => {
 };
 
 let currentRoute = parseRouteFromHash(window.location.hash);
+const resultTransitions = createResultTransitions();
+let activeResultGameId = null;
 let homeSide = "p1";
 let homeStartStatus = "";
 let resumeRequestId = 0;
@@ -2734,7 +2737,9 @@ const updateGameHelp = (gameId, event = null) => {
   }
 };
 
+const renderResultLink = game => getGameResult(game, transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button>` : "";
 const renderBoardPanel = (game) => `
+  <div data-result-link>${renderResultLink(game)}</div>
   ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p class="alert" role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
   ${game.ownershipMode === "legacy_guest" && account.snapshot().enabled ? '<p class="alert" role="status">This older guest game is view-only. <button data-action="create-game">Start new game</button></p>' : ''}
   ${account.snapshot().enabled && account.snapshot().available && !account.snapshot().maintenance && !account.canPlay() ? '<p class="alert" role="status">Sign in to play or analyze. The board remains available to view.</p>' : ''}
@@ -3045,6 +3050,8 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
     return false;
   }
 
+  const resultLink = shellRoot.querySelector("[data-result-link]");
+  if (resultLink && resultLink.innerHTML !== renderResultLink(game)) resultLink.innerHTML = renderResultLink(game);
   const alertsEl = document.getElementById("shell-game-alerts");
   const summaryEl = shellRoot.querySelector('[data-game-panel="summary"]');
   const joinEl = shellRoot.querySelector('[data-game-panel="join"]');
@@ -3114,7 +3121,7 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
   if (!game) {
     return false;
   }
-  return !getActiveApprovalRequest(game) && !getActiveRevertRequest(game) && !getActivePendingRevertRequest(game) && doesMountedFlyoutStateMatchRoute();
+  return activeResultGameId !== gameId && !getActiveApprovalRequest(game) && !getActiveRevertRequest(game) && !getActivePendingRevertRequest(game) && doesMountedFlyoutStateMatchRoute();
 };
 
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
@@ -3255,6 +3262,13 @@ const renderRevertWaitingGate = (game, request) => {
   `;
 };
 
+const renderResult = game => {
+  const result = getGameResult(game, transport.getIdentityId());
+  if (!result) return "";
+  const names = game.selfPlayMode ? "Self-play" : [game.player1, game.player2].map((person, i) => person?.profile?.displayName || `Player ${i + 1}`).join(" vs ");
+  return `<section class="panel game-result" data-testid="game-result"><p class="small">Game finished</p><h1 tabindex="-1">${escapeHtml(result.title)}</h1><p>${escapeHtml(result.reason)}</p><p>${escapeHtml(names)}</p><p class="small">Game ${escapeHtml(formatDisplayGameId(game.id))}</p><div class="story-modal-actions"><button data-action="analysis" data-game-id="${escapeHtml(game.id)}">Review game</button><button class="secondary" data-action="rematch" data-game-id="${escapeHtml(game.id)}">Play again</button><a class="button-link secondary" href="#/">Home</a></div></section>`;
+};
+
 const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   if (!routeHydrated) {
     return renderGameContent(gameId, inviteFromRole, inviteToken);
@@ -3263,6 +3277,7 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   if (!game) {
     return renderGameContent(gameId, inviteFromRole, inviteToken);
   }
+  if (activeResultGameId === gameId && getGameResult(game, transport.getIdentityId())) return renderResult(game);
   const approvalRequest = getActiveApprovalRequest(game);
   if (approvalRequest) {
     return renderApprovalGate(game, approvalRequest);
@@ -3840,10 +3855,16 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     pendingSide: currentRoute.name === "home" ? homeSide : null,
     selfPlaySide: transport.getGameViewModel(affiliationGameId)?.selfPlayStartSide ?? selfPlayStartSides.get(`${transport.getIdentityId()}:${affiliationGameId}`) ?? "p1",
   }));
+  if (currentRoute.name === "game" && routeHydrated) {
+    const game = transport.getGameViewModel(currentRoute.gameId);
+    const confirmed = transport.getAuthoritativeGame(currentRoute.gameId);
+    if (resultTransitions.observe(confirmed, { inHistory: game?.inHistoryMode, hidden: document.hidden, storyOpen: storyDialog.isOpen() })) activeResultGameId = currentRoute.gameId;
+    if (storyDialog.gameId() === currentRoute.gameId && getGameResult(confirmed, transport.getIdentityId())) storyDialog.setMatchStatus("Game finished", true);
+  }
   syncRouteTransitionForCurrentRoute();
   const routeKey = getRouteRenderKey();
   const baseRouteKey = getBaseRouteRenderKey();
-  const shouldPatchFlyoutsOnly = shouldPatchMountedFlyouts(routeKey, baseRouteKey);
+  const shouldPatchFlyoutsOnly = activeResultGameId !== currentRoute.gameId && shouldPatchMountedFlyouts(routeKey, baseRouteKey);
   const previousPanelHeights = animatePanels && !shouldPatchFlyoutsOnly ? capturePanelHeights() : [];
   const previousFlyoutRects = animatePanels ? captureFlyoutRects() : new Map();
   syncShellLayoutMode();
@@ -3947,6 +3968,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     return;
   }
   if (currentRoute.name === "game") {
+    if (activeResultGameId === currentRoute.gameId) { destroyMountedBoardRuntime(); appEl.querySelector(".game-result h1")?.focus({ preventScroll: true }); return; }
     if (shouldUseIncrementalGameShell()) {
       updateMountedGameShell({
         game: transport.getGameViewModel(currentRoute.gameId),
@@ -4140,6 +4162,7 @@ const subscribeToTransport = () => transport.subscribe((change) => {
 subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
+  resultTransitions.clear(); activeResultGameId = null; rematchDialog.close();
   storyStart.cancel();
   if (pendingOpponentTutorial) { pendingOpponentTutorial.reject(new Error("Account changed. Choose your opponent again.")); pendingOpponentTutorial = null; }
   storyDialog.refresh();
@@ -4210,6 +4233,7 @@ const navigateTo = (hash) => {
   const nextRoute = normalizeRouteFlyoutState(parsedRoute, { preferredFlyoutKey });
   const nextHash = buildHashForRoute(nextRoute);
   const previousRoute = currentRoute;
+  activeResultGameId = null;
   closeHeaderMenu();
   if (window.location.hash === nextHash) {
     currentRoute = nextRoute;
@@ -4239,6 +4263,7 @@ window.addEventListener("hashchange", () => {
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
   if (cancelAbandonedOpponentTutorial(previousRoute, currentRoute, pendingOpponentTutorial, () => storyStart.cancel())) pendingOpponentTutorial = null;
   if (previousRoute.name !== currentRoute.name || previousRoute.gameId !== currentRoute.gameId || previousRoute.inviteToken !== currentRoute.inviteToken) {
+    activeResultGameId = null;
     navigationGeneration += 1;
     routeSyncRequestId += 1;
   }
@@ -4340,6 +4365,15 @@ const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: getCo
     return storyStart.accept(intent);
   }, onClose: reason => { if (reason !== "handoff") storyStart.cancel(); },
 });
+const rematchDialog = createRematchDialog({ createModal, onStart: async intent => {
+  if (!await waitForAccountGate()) return;
+  rematchDialog.close();
+  if (!account.canPlay()) {
+    accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", safeAccountIntent({ hash: window.location.hash, action: "start-opponent", ...intent }));
+    return;
+  }
+  startPersonalGame(intent);
+} });
 const startPersonalGame = ({ opponent, side }) => {
   if (!account.canPlay() || !isPersonalSide(side)) return;
   if (isComputerOpponent(opponent)) {
@@ -4448,7 +4482,7 @@ appEl.addEventListener("click", async (event) => {
   if (action === "public-profile") { void publicProfileDialog.open(actionEl.getAttribute("data-username"), actionEl); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") { accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
-  const accountGatedActions = new Set(["start-opponent","create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
+  const accountGatedActions = new Set(["start-opponent","create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch","analysis"]);
   if (accountGatedActions.has(action) && (!account.snapshot().ready || account.snapshot().pendingLogout)) {
     event.preventDefault();
     if (!await waitForAccountGate()) return;
@@ -4458,6 +4492,13 @@ appEl.addEventListener("click", async (event) => {
     if (!account.snapshot().available || account.snapshot().maintenance) return;
     const intent = safeAccountIntent({ ...startIntent, action, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });
     accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", intent, actionEl);
+    return;
+  }
+  if (action === "view-result") { activeResultGameId = actionGameId; render({ animatePanels: false }); return; }
+  if (action === "analysis") { activeResultGameId = null; render({ animatePanels: false }); navigateTo(buildGameHash(actionGameId, null, getCurrentGameHashState("history"))); return; }
+  if (action === "rematch") {
+    const result = getGameResult(transport.getGameViewModel(actionGameId), transport.getIdentityId());
+    if (result) rematchDialog.open(result, actionEl);
     return;
   }
   if (sharedMutationActions.has(action) && transport.getGameViewModel(actionGameId)?.sharedMutationsBlocked) return;
