@@ -4,6 +4,12 @@ for (const input of ['pointer', 'keyboard']) test(`home refresh preserves ${inpu
   await page.setViewportSize({ width: 390, height: 1000 });
   let release;
   const gate = new Promise(resolve => { release = resolve; });
+  const completedSections = new Set();
+  page.on('response', async response => {
+    const url = new URL(response.url());
+    if (url.pathname !== '/api/shell/games' || !url.searchParams.has('section')) return;
+    if (await response.finished() === null) completedSections.add(url.searchParams.get('section'));
+  });
   await page.route('**/api/shell/games?**', async route => {
     const response = await route.fetch();
     await gate;
@@ -22,12 +28,16 @@ for (const input of ['pointer', 'keyboard']) test(`home refresh preserves ${inpu
   else { await button.focus(); await page.keyboard.down("Space"); }
   try {
     release();
-    await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+    await expect.poll(() => completedSections.size).toBe(2);
+    // Account UI defers rendering during a held activation. Let response
+    // microtasks and the next paint finish without requiring that deferred UI.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const connected = await page.evaluate(() => window.originalCreateButton.isConnected);
     await info.attach('create-node-after-refresh', { body: JSON.stringify({ connected }), contentType: 'application/json' });
     if (input === "keyboard") expect(await page.evaluate(() => document.activeElement === window.originalCreateButton)).toBe(true);
-    if (input === "pointer") await page.mouse.up(); else await page.keyboard.up("Space");
     expect(connected, 'A response must not detach the pressed create control').toBe(true);
+    expect(creates).toHaveLength(0);
+    if (input === "pointer") await page.mouse.up(); else await page.keyboard.up("Space");
     await expect.poll(() => creates.length).toBe(1);
     await expect(page.getByTestId('game-shell')).toBeVisible();
     await expect(page.getByTestId('game-role')).toContainText('Player 1');
