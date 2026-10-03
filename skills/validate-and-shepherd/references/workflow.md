@@ -2,7 +2,7 @@
 
 ## Commands and artifacts
 
-The repository must contain the validation tooling on the selected base before an integrated run can execute. Land the tooling first or explicitly validate a tooling-inclusive base; do not silently copy uncommitted harness code into candidate branches and call them reproducible.
+The runner uses its own pinned harness checkout for responsive proof and report tests, while executing the candidate checkout's own full test commands and local stack. This allows validating a base that predates the tooling without copying code into it. Record harnessRevision and harnessFingerprint separately from candidate revisions; changes to either invalidate evidence. Keep the harness checkout unchanged during a run. If a stream changes user-facing contracts, extend the harness coverage and rerun affected stages; do not hide incompatibility.
 
 ```
 pnpm validate:local --base origin/main

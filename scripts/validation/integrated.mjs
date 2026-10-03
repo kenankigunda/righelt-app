@@ -23,7 +23,6 @@ export async function integratedRun({manifest,cwd=process.cwd(),dir,resume=false
  run.complete=false;run.base=base;run.prs=prs;run.signature=signature;run.stages=[];await saveJSON(file,run);
  const attempt=Date.now();const root=path.join(path.dirname(cwd),`righelt-validation-${attempt}`);await command(['git','worktree','add','--detach',root,base],{cwd});run.worktree=root;await saveJSON(file,run);
  try{
-  await access(path.join(root,'playwright.validation.config.mjs'));
   await command(['pnpm','install','--frozen-lockfile'],{cwd:root,log:path.join(dir,'install.log')});
   const upgrade=path.join(dir,`upgrade-state-${attempt}`);await mkdir(upgrade,{recursive:true});let continuity;
   for(let i=0;i<=prs.length;i++){
