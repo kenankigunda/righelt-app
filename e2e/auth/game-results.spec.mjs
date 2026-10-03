@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { expectRematchRadioGeometry } from "../support/rematch-layout.mjs";
 const scenario = JSON.parse(readFileSync(new URL("../../apps/web/scenarios/catalog.json", import.meta.url))).scenarios.find(s => s.title === "Capture supply point to win by unsupplying the commander");
 test.beforeEach(async () => { expect((await fetch(`http://127.0.0.1:${Number(process.env.RIGHELT_AUTH_E2E_WEB_PORT || 9988)+100}/reset-limits`, { method: "POST" })).ok).toBe(true); });
 for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game has persistent result, review and swapped rematch`, async ({ page }, testInfo) => {
@@ -45,6 +46,11 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   const rematch = page.getByRole("dialog", { name: "Play again" });
   await expect(rematch.getByLabel("Opponent")).toHaveValue(opponent);
   await expect(rematch.getByRole("radio", { name: "Player 1 · Red" })).toBeChecked();
+  for (const width of [375, 1100, 1600]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expectRematchRadioGeometry(rematch);
+  }
+  await page.setViewportSize({ width: 375, height: 812 });
   const created = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/shell/games");
   await rematch.getByRole("button", { name: "Start game" }).click();
   const fresh = (await (await created).json()).game;
