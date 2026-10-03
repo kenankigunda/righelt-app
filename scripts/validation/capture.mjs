@@ -25,7 +25,7 @@ export async function capture(page,target=page,options={}) {
      const view=await page.evaluate(()=>({x:scrollX,y:scrollY,width:innerWidth,height:innerHeight}));
      const sx=x-view.x,sy=y-view.y,width=Math.min(view.width-sx,region.x+region.width-x),height=Math.min(view.height-sy,region.y+region.height-y);
      if(width<=0||height<=0)throw Error('Evidence region is outside the scrollable viewport');
-     const image=await page.screenshot({fullPage:false,scale:'css',animations:'disabled'});
+     const image=await page.screenshot({...options,path:undefined,fullPage:false,scale:'css',animations:'disabled'});
      tiles.push({image:image.toString('base64'),sx,sy,width,height,dx:x-region.x,dy:y-region.y});
      rowHeight=Math.min(rowHeight,height);x+=width;
     }
