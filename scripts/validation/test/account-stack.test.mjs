@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, stat, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, stat, rm, mkdir, symlink } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import path from 'node:path';
@@ -13,7 +13,7 @@ test('candidate config retains bindings and resolves paths without touching cand
   assert.match(result, /main = "\/candidate with spaces\/apps\/api\/index.js"/);
   assert.match(result, /migrations_dir = "\/candidate with spaces\/db\/migrations"/);
   assert.match(result, /service = "righelt-validation-account-admission"/);
-  assert.match(result, /database_id = "local-validation-account-v1"/);
+  assert.match(result, /database_id = "production"/);
   assert.match(result, /AUTH_ENABLED = "true"/);
   assert.match(result, /AUTH_ALLOWED_ORIGINS = "https:\/\/127.0.0.1:9988"/);
   assert.match(source, /AUTH_ENABLED = "false"/);
@@ -92,4 +92,32 @@ test('cleanup escalates surviving group even when its leader has already exited'
   assert.equal(signals[0], 'SIGTERM');
   assert.ok(signals.includes('SIGKILL'));
   assert.equal(signals.at(-1), 0);
+});
+
+
+test('upgrade clones only local D1 once, retains WAL, and privately records source fingerprints', async () => {
+  const { initializeAccountUpgrade } = await import('../account-stack.mjs');
+  const root = await mkdtemp(path.join(os.tmpdir(), 'account-clone-test-'));
+  const sourcePersistRoot = path.join(root, 'guest/api-state'), accountPersistRoot = path.join(root, 'account');
+  const d1 = path.join(sourcePersistRoot, 'v3/d1/miniflare-D1DatabaseObject');
+  try {
+    await mkdir(d1, { recursive: true });
+    await writeFile(path.join(d1, 'abc123.sqlite'), 'retained game and history');
+    await writeFile(path.join(d1, 'abc123.sqlite-wal'), 'wal');
+    await mkdir(path.join(sourcePersistRoot, 'v3/do'), { recursive: true });
+    await writeFile(path.join(sourcePersistRoot, 'v3/do/remote-secret'), 'excluded');
+    const result = await initializeAccountUpgrade({ sourcePersistRoot, accountPersistRoot });
+    assert.equal(result.initialized, true);
+    assert.equal(result.provenance.files.length, 2);
+    assert.equal(await readFile(path.join(accountPersistRoot, 'state/v3/d1/miniflare-D1DatabaseObject/abc123.sqlite'), 'utf8'), 'retained game and history');
+    await assert.rejects(stat(path.join(accountPersistRoot, 'state/v3/do')), { code: 'ENOENT' });
+    assert.equal((await stat(path.join(accountPersistRoot, 'state/upgrade-provenance.json'))).mode & 0o777, 0o600);
+    await writeFile(path.join(d1, 'abc123.sqlite'), 'later guest state');
+    assert.equal((await initializeAccountUpgrade({ sourcePersistRoot, accountPersistRoot })).initialized, false);
+    assert.equal(await readFile(path.join(accountPersistRoot, 'state/v3/d1/miniflare-D1DatabaseObject/abc123.sqlite'), 'utf8'), 'retained game and history');
+    const badRoot = path.join(root, 'bad'); await mkdir(path.join(badRoot, 'state'), { recursive: true });
+    await assert.rejects(initializeAccountUpgrade({ sourcePersistRoot, accountPersistRoot: badRoot }), /Refusing to overwrite/);
+    await symlink(path.join(d1, 'abc123.sqlite'), path.join(d1, 'bad.sqlite'));
+    await assert.rejects(initializeAccountUpgrade({ sourcePersistRoot, accountPersistRoot: path.join(root, 'symlink-target') }), /Unexpected/);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

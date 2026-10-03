@@ -3,8 +3,8 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createServer as createSocketServer } from 'node:net';
 import { get } from 'node:https';
-import { mkdir, mkdtemp, readFile, writeFile, rm, chmod } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, writeFile, rm, chmod, lstat, readdir, rename } from 'node:fs/promises';
+import { randomBytes, createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -21,13 +21,67 @@ export function candidateConfig(source, { root, folder, role, secret }) {
   result = replaceOne(result, /^main\s*=\s*"([^"\n]+)"/m, (_, entry) => `main = ${JSON.stringify(path.resolve(root, 'apps', folder, entry))}`, 'entrypoint');
   result = result.replace(/^service\s*=\s*"righelt-auth-hash"/gm, `service = "${names['auth-hash']}"`).replace(/^service\s*=\s*"righelt-auth"/gm, `service = "${names.auth}"`);
   if (role === 'api') {
-    result = replaceOne(result, /^database_id\s*=\s*"[^"]+"/m, 'database_id = "local-validation-account-v1"', 'D1 database');
+    // Preserve the binding's local namespace across the guest -> account upgrade.
+    // Every D1 invocation below is explicitly --local.
+    result = replaceOne(result, /^database_id\s*=\s*"[^"]+"/m, match => match, 'D1 database');
     result = replaceOne(result, /^migrations_dir\s*=\s*"[^"]+"/m, `migrations_dir = ${JSON.stringify(path.join(root, 'db/migrations'))}`, 'migration path');
     result = replaceOne(result, /^AUTH_ENABLED\s*=\s*"false"/m, 'AUTH_ENABLED = "true"', 'auth flag');
     if (/^AUTH_(HMAC_SECRET|ALLOWED_ORIGINS)\s*=/m.test(result)) throw new Error('Candidate embeds auth fixture credentials');
     result = replaceOne(result, /^\[vars\]/m, `[vars]\nAUTH_ALLOWED_ORIGINS = "https://127.0.0.1:${PORTS.web}"\nAUTH_HMAC_SECRET = ${JSON.stringify(secret)}`, 'vars table');
   }
   return result;
+}
+// Caller must fully stop the guest stack before invoking this helper.
+export async function initializeAccountUpgrade({ sourcePersistRoot, accountPersistRoot }) {
+  if (![sourcePersistRoot, accountPersistRoot].every(value => value && path.isAbsolute(value))) throw new Error('Upgrade persistence paths must be absolute');
+  const source = path.join(sourcePersistRoot, 'v3', 'd1');
+  await mkdir(accountPersistRoot, { recursive: true, mode: 0o700 });
+  await chmod(accountPersistRoot, 0o700);
+  const lock = path.join(accountPersistRoot, '.clone-lock');
+  await mkdir(lock);
+  let staging;
+  try {
+    const target = path.join(accountPersistRoot, 'state');
+    try {
+      const prior = JSON.parse(await readFile(path.join(target, 'upgrade-provenance.json'), 'utf8'));
+      if (prior.version !== 1 || prior.source !== source) throw new Error('Account upgrade provenance does not match source');
+      return { initialized: false, provenance: prior };
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    try { await lstat(target); throw new Error('Refusing to overwrite existing account state without upgrade provenance'); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const files = [];
+    const walk = async (directory, relative = '') => {
+      if (!(await lstat(directory)).isDirectory()) throw new Error('Local D1 source must be a real directory');
+      for (const item of await readdir(directory, { withFileTypes: true })) {
+        const next = path.join(relative, item.name), absolute = path.join(directory, item.name);
+        if (item.isDirectory()) await walk(absolute, next);
+        else if (item.isFile() && /^[a-f0-9]+\.sqlite(?:-wal|-shm)?$/.test(item.name)) files.push(next);
+        else throw new Error(`Unexpected local D1 entry: ${next}`);
+      }
+    };
+    await walk(source);
+    if (!files.some(file => file.endsWith('.sqlite'))) throw new Error('No retained local D1 database found');
+    staging = await mkdtemp(path.join(accountPersistRoot, '.upgrade-'));
+    const entries = [];
+    for (const file of files.sort()) {
+      const bytes = await readFile(path.join(source, file));
+      const dest = path.join(staging, 'v3', 'd1', file);
+      await mkdir(path.dirname(dest), { recursive: true, mode: 0o700 });
+      await writeFile(dest, bytes, { mode: 0o600 });
+      entries.push({ file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
+    }
+    for (const entry of entries) {
+      const digest = createHash('sha256').update(await readFile(path.join(source, entry.file))).digest('hex');
+      if (digest !== entry.sha256) throw new Error('Guest database changed during account upgrade copy; stop its stack first');
+    }
+    const provenance = { version: 1, source, copiedAt: new Date().toISOString(), files: entries };
+    await writeFile(path.join(staging, 'upgrade-provenance.json'), JSON.stringify(provenance, null, 2), { mode: 0o600 });
+    await rename(staging, target); staging = null;
+    return { initialized: true, provenance };
+  } finally {
+    if (staging) await rm(staging, { recursive: true, force: true });
+    await rm(lock, { recursive: true, force: true });
+  }
 }
 export async function prepareAccountState(persistRoot) {
   if (!persistRoot || !path.isAbsolute(persistRoot)) throw new Error('RIGHELT_ACCOUNT_PERSIST_ROOT must be an absolute private path');
