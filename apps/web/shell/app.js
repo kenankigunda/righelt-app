@@ -1,3 +1,5 @@
+import { createAccountController, safeAccountIntent } from './account-controller.js';
+import { createAccountDialog } from './account-dialog.js';
 import { recoveryMessage, sharedMutationActions } from "./recovery-view.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter } from "../board-adapters/engine-board-adapter.js";
@@ -120,7 +122,22 @@ const createMemoryStorageFallback = () => {
   };
 };
 
-const storage = typeof window.localStorage !== "undefined" ? window.localStorage : createMemoryStorageFallback();
+const storage = (() => { try { return window.localStorage || createMemoryStorageFallback(); } catch { return createMemoryStorageFallback(); } })();
+let accountInitialized = false;
+let accountStartupError = "";
+const account = createAccountController({ storage,
+  onTransition: next => { if (accountInitialized) resetAccountTransport(next); },
+  onChange: () => { if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) render({ animatePanels: false, includeBoard: false }); },
+});
+const accountDialog = createAccountDialog({ controller: account, getSiteKey: () => account.snapshot().siteKey,
+  onComplete: async intent => {
+    await syncRouteDataAndLiveChannels().catch(() => {});
+    render({ animatePanels: false });
+    if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
+    const selector = `[data-action="${CSS.escape(intent.action)}"]${intent.gameId ? `[data-game-id="${CSS.escape(intent.gameId)}"]` : ""}${intent.moveIndex ? `[data-move-index="${CSS.escape(intent.moveIndex)}"]` : ""}`;
+    appEl.querySelector(selector)?.click();
+  },
+});
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 const boardAdapter = createEngineBoardAdapter();
 const hoverCapability = ensureHoverCapabilityController();
@@ -1786,6 +1803,9 @@ const renderHeader = () => `
       <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Righelt</a></h1>
     </div>
     ${renderHeaderAlertZone()}
+    ${account.snapshot().ready && account.snapshot().enabled ? `<button class="secondary" data-action="account-open" data-testid="account-open">${account.snapshot().session.authenticated ? "Account" : "Sign in"}</button>` : ""}
+    ${account.snapshot().pendingLogout ? '<span role="status">Sign-out pending</span>' : ''}
+    ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p>` : ""}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
         ${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
@@ -2148,6 +2168,7 @@ const markInviteChoiceCommitted = (gameId) => {
 };
 
 const getInviteContextForGame = (game, routeName = currentRoute.name) => {
+  if (account.snapshot().enabled && (routeName === "game" || game?.ownershipMode === "legacy_guest")) return null;
   if (!game || game.myRole !== "Guest") {
     return null;
   }
@@ -2583,6 +2604,8 @@ const renderHistoryPanel = (game) => {
 };
 
 const renderBoardPanel = (game) => `
+  ${game.ownershipMode === "legacy_guest" && account.snapshot().enabled ? '<p class="alert" role="status">This older guest game is view-only. <button data-action="create-game">Start new game</button></p>' : ''}
+  ${account.snapshot().enabled && !account.canPlay() ? '<p class="alert" role="status">Sign in to play or analyze. The board remains available to view.</p>' : ''}
   <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span></h2>
   <p class="board-preview-label" id="shell-board-preview-label">Select a piece to preview moves; click it again for supply and command lines only:</p>
   <div class="board-wrap" data-testid="game-board-wrap">
@@ -3135,7 +3158,7 @@ const renderInviteLanding = (inviteContext) => {
   }
 
   const canJoinPlayer = game.canJoinAsPlayer && game.showJoinActions;
-  const canJoinViewer = game.canJoinAsViewer;
+  const canJoinViewer = account.snapshot().enabled || game.canJoinAsViewer;
   const playerActionLabel = inviteContext.inviteType === "player" ? "Join as player" : "Request to join as player";
   const inviteMessage =
     inviteContext.inviteType === "player"
@@ -3463,12 +3486,14 @@ const loadHomeSectionServerPage = async (
   } = {},
 ) => {
   const previous = getHomeSection(sectionKey);
+  const accountGeneration = account.snapshot().generation;
   const response = await transport.loadGamesPage({
     section: sectionKey,
     page: serverPage,
     pageSize: HOME_SECTION_SERVER_PAGE_SIZE,
     debug: currentRoute.debug === true,
   });
+  if (accountGeneration !== account.snapshot().generation) throw Object.assign(new Error("session_changed"), {code:"session_changed"});
   const normalizedServerPage = typeof response.page === "number" ? response.page : 0;
   const serverPageGameIds = Array.isArray(response.games) ? response.games.map((game) => game.id) : [];
   const nextSection = {
@@ -3758,6 +3783,7 @@ const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd
   if (!pendingKey || pendingButtonKeys.has(pendingKey)) {
     return;
   }
+  const pendingGeneration=account.snapshot().generation;
   pendingButtonKeys.add(pendingKey);
   if (renderStart) {
     render({ animatePanels: false, includeBoard: false });
@@ -3768,6 +3794,7 @@ const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
     return undefined;
   } finally {
+    if(pendingGeneration!==account.snapshot().generation)return;
     pendingButtonKeys.delete(pendingKey);
     if (renderEnd) {
       render({ animatePanels: false, includeBoard: false });
@@ -3851,8 +3878,11 @@ const syncScenarioCatalog = async () => {
   }
 };
 
-const syncStore = createSyncStore({
+const makeAccountSyncStore = auth => createSyncStore({
   storage,
+  auth,
+  fetcher: account.fetch,
+  onAuthLost: () => account.authorityLost(),
   onEvent: (payload) => {
     wsLastEvent = payload?.type
       ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
@@ -3894,9 +3924,9 @@ const syncStore = createSyncStore({
     }
   },
 });
-const transport = syncStore;
-
-transport.subscribe((change) => {
+let syncStore = makeAccountSyncStore(account.snapshot());
+let transport = syncStore;
+const subscribeToTransport = () => transport.subscribe((change) => {
   if (change?.type === "upgrade_required") {
     try {
       const key = "righelt.sync-v2-refresh";
@@ -3913,6 +3943,28 @@ transport.subscribe((change) => {
   });
 });
 
+subscribeToTransport();
+accountInitialized = true;
+function resetAccountTransport(next) {
+  const gameId = getCurrentViewedGameId();
+  const visible = gameId ? transport.getAuthoritativeGame?.(gameId) : null;
+  routeSyncRequestId++;
+  pendingButtonKeys.clear();pendingHomeSectionKeys.clear();inviteChoiceCommittedByGameId.clear();ignoredApprovalRequests.clear();ignoredRevertRequests.clear();
+  consumedInitialSelectionActionKeyByGameId.clear();
+  transport.retire?.();
+  destroyMountedBoardRuntime();
+  clearRouteTransition({ renderNow: false });
+
+  homeSections = { my: createHomeSectionState("My games"), other: createHomeSectionState("Other games"), smoke: createHomeSectionState("Deploy smoke player") };
+  syncStore = makeAccountSyncStore(next);transport = syncStore;subscribeToTransport();
+  if (visible) {
+    for (const key of ['canRecordMove','canEndTurn','canInvite','canPlayAsBothPlayers','canUndoLastMove']) visible[key] = false;
+    visible.legalActions=[];visible.myRoles=[];visible.myRole=null;visible.inviteToken=null;delete visible.inviteTokens;
+    visible.pendingJoinRequests=[];visible.pendingRevertRequest=null;visible.myPendingRevertRequest=null;visible.approvableRevertRequest=null;visible.approvableRequesterIds=[];visible.pendingPlayerRequestSeat=null;
+    transport.applyLiveGameUpdate({ game: visible });
+  }
+  queueMicrotask(() => { if (account.snapshot().ready) startRouteSync(); });
+}
 const syncLiveChannels = () => {
   const routeGameId =
     shouldLiveSyncRoute(currentRoute) &&
@@ -3991,6 +4043,15 @@ window.addEventListener("load", () => {
   scheduleResponsiveHomeSectionPageSizes();
 });
 
+appEl.addEventListener("pointerdown", event => {
+  if (event.target.closest?.("#shell-board") && !account.canPlay()) {
+    event.preventDefault();event.stopImmediatePropagation();
+    accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login");
+  }
+}, true);
+appEl.addEventListener("click", event => {
+  if (event.target.closest?.("#shell-board") && !account.canPlay()) { event.preventDefault();event.stopImmediatePropagation(); }
+}, true);
 appEl.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
@@ -4028,6 +4089,14 @@ appEl.addEventListener("click", async (event) => {
 
   const action = actionEl.getAttribute("data-action");
   const actionGameId = actionEl.getAttribute("data-game-id") || currentRoute.gameId;
+  if (action === "account-open") { accountDialog.open(account.snapshot().session.authenticated ? "account" : "login"); return; }
+  const accountGatedActions = new Set(["create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
+  if (accountGatedActions.has(action) && !account.canPlay()) {
+    event.preventDefault();
+    const intent = safeAccountIntent({ hash: window.location.hash, action, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });
+    accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", intent);
+    return;
+  }
   if (sharedMutationActions.has(action) && transport.getGameViewModel(actionGameId)?.sharedMutationsBlocked) return;
   const animateFlyoutClose = async (flyoutKey, closeFlyout) => {
     const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
@@ -4153,6 +4222,9 @@ appEl.addEventListener("click", async (event) => {
   }
 
   if (action === "join-viewer" || action === "accept-invite-viewer") {
+    if (account.snapshot().enabled && (!account.snapshot().session.authenticated || transport.getGameViewModel(actionGameId)?.ownershipMode === "legacy_guest")) {
+      markInviteChoiceCommitted(actionGameId);navigateTo(buildGameHash(actionGameId, null, getCurrentFlyoutState()));return;
+    }
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) return;
     void withPendingButton(getJoinButtonKey("viewer", gameId), async () => {
@@ -4374,6 +4446,7 @@ appEl.addEventListener("click", async (event) => {
     }
     const delta = action === "home-page-prev" ? -1 : 1;
     const nextPage = (section.page + delta + section.totalPages) % section.totalPages;
+    const pageGeneration=account.snapshot().generation;
     pendingHomeSectionKeys.add(sectionKey);
     render({ animatePanels: false, includeBoard: false });
     try {
@@ -4385,6 +4458,7 @@ appEl.addEventListener("click", async (event) => {
     } catch (error) {
       window.__righeltLastError = error instanceof Error ? error.message : String(error);
     } finally {
+      if(pageGeneration!==account.snapshot().generation)return;
       pendingHomeSectionKeys.delete(sectionKey);
       render({ animatePanels: false, includeBoard: false });
       window.requestAnimationFrame(() => {
@@ -4763,6 +4837,18 @@ window.addEventListener("touchcancel", () => {
 
 const initialRender = async () => {
   routeHydrated = false;
+  render({ animatePanels: false, includeBoard: false });
+  try {
+    await account.start();
+    await account.activity(true);
+  } catch (error) {
+    window.__righeltLastError = error.code || error.message;
+    if (error.code === "upgrade_required") {
+      try { const key="righelt.auth-refresh"; if(!window.sessionStorage.getItem(key)){window.sessionStorage.setItem(key,"1");window.location.reload();return;} } catch {}
+      accountStartupError="Please refresh to update Righelt. Play is unavailable until the update completes.";render({animatePanels:false,includeBoard:false});
+    }
+    return;
+  }
   syncLiveChannels();
   render({ animatePanels: false, includeBoard: false });
   const scenarioCatalogPromise = (async () => {

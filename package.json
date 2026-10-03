@@ -33,7 +33,7 @@
     "check:web-engine-generated": "node scripts/check-web-engine-generated.mjs",
     "check:ticket-workflow": "node scripts/check-ticket-workflow-setup.mjs",
     "setup:workspace": "bash scripts/setup-workspace.sh",
-    "test": "pnpm typecheck && pnpm check:web-engine-generated && pnpm test:unit && pnpm test:integration && pnpm test:e2e",
+    "test": "pnpm typecheck && pnpm check:web-engine-generated && pnpm test:unit && pnpm test:integration && pnpm test:e2e && pnpm test:e2e:auth",
     "test:unit": "pnpm test:engine:unit && pnpm test:web:unit",
     "test:integration": "pnpm test:engine:integration && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web:integration && pnpm test:sync-stress && pnpm test:sync-runtime",
     "test:engine": "node scripts/run-node-tests.mjs packages/game-engine/test",
@@ -57,7 +57,8 @@
     "deploy:api": "pnpm --dir apps/api exec wrangler deploy --config wrangler.toml",
     "deploy:web": "pnpm --dir apps/web exec wrangler pages deploy . --project-name ${CLOUDFLARE_PAGES_PROJECT:-righelt}",
     "deploy:prod": "pnpm deploy:api && pnpm deploy:web",
-    "test:sync-stress": "node scripts/run-node-tests.mjs packages/api-handler/test-stress"
+    "test:sync-stress": "node scripts/run-node-tests.mjs packages/api-handler/test-stress",
+    "test:e2e:auth": "playwright test --config playwright.auth.config.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.1",

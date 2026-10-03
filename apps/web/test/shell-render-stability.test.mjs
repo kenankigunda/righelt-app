@@ -440,7 +440,7 @@ test("app uses route skeleton sync and localized loading instead of a global bus
   assert.match(source, /const SCENARIO_LOAD_PENDING_KEY = "scenario:load";/);
   assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
   assert.match(source, /routeHydrated = false;\s*syncLiveChannels\(\);/s);
-  assert.match(source, /const initialRender = async \(\) => \{\s*routeHydrated = false;\s*syncLiveChannels\(\);\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
+  assert.match(source, /const initialRender = async \(\) => \{\s*routeHydrated = false;\s*render\(\{ animatePanels: false, includeBoard: false \}\);[\s\S]*?await account\.start\(\);/s);
   assert.match(source, /startRouteSync\(\{ renderStart: false \}\);/);
   assert.match(source, /renderGameViewSkeleton\(\)/);
   assert.match(source, /renderInvitePageSkeleton\(\)/);

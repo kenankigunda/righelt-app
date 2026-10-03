@@ -50,3 +50,13 @@ Run `pnpm typecheck` and `pnpm test:api-handler` for credential changes. The sui
 Persistent abuse counters are checked before hashing. Expired counter rows are removed in bounded batches during admission. Challenges never bypass hard limits. Unavailable hashing or challenge services return a temporary failure without weakening verification.
 
 The pinned local runtime delays some HTTP-triggered socket close handshakes by approximately ten seconds, including over native TCP. Tests separately assert immediate server retirement/no protected output and eventual client closure. Explicit close-handshake echoing did not remove the measured delay; no production timeout was increased. Attachment reconstruction is tested locally, while actual deployed isolate hibernation and closure timing remain distinct acceptance checks.
+
+## Local account browser tests
+
+`pnpm test:e2e:auth` starts a separate HTTPS Pages server on port 9988, the local API on 9987, and the real private admission/hash Workers. It applies migrations to a fresh temporary D1 database and uses synthetic credentials. No production configuration or remote database is changed. Playwright accepts the local self-signed certificate and runs the account workflows in Chromium, Firefox, and WebKit.
+
+The runner has a separate loopback-only fixture endpoint on port 10088. It accepts only two fixed operations: clear rate-limit counters between cases and expire test sessions. Browser-origin requests are rejected. These operations are absent from the application Worker and Pages routes. Hard limits remain enabled during each case.
+
+The account suite runs separately from the existing guest-mode regression suite, and both are included in `pnpm test` and CI. Local runtime results do not establish deployed hashing resource use, actual Durable Object hibernation, or physical iPhone/in-app-browser acceptance.
+
+The public `AUTH_TURNSTILE_SITE_KEY` value is included in account-enabled bootstrap responses. Keep `TURNSTILE_SECRET` server-side. Without a configured public key, a required challenge stops the form with a temporary-unavailable message; it never bypasses rate limits.

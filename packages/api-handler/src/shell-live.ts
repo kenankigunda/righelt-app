@@ -36,6 +36,7 @@ type DurableObjectNamespaceLike = {
 
 export type LiveGameRequestEnv = {
   AUTH_ENABLED?: string;
+  AUTH_TURNSTILE_SITE_KEY?: string;
   AUTH_ALLOWED_ORIGINS?: string;
   DB: D1DatabaseLike;
   GAME_ROOMS: DurableObjectNamespaceLike;
@@ -170,6 +171,8 @@ export const handleLiveGameRequest = async (
         app: "righelt-web-shell",
         specVersion: 1,
         authProtocolVersion: AUTH_PROTOCOL_VERSION, accountsRequired: authActive(env),
+        ...(authActive(env) && env.AUTH_TURNSTILE_SITE_KEY
+          ? { turnstileSiteKey: env.AUTH_TURNSTILE_SITE_KEY } : {}),
         tutorialSteps: [
           "Select your role",
           "Review board state",

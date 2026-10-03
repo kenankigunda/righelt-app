@@ -85,7 +85,7 @@ test("invite choice commit suppresses repeat game-route invite gate and join act
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*resolvedInvite = null;\s*await transport\.loadGame\(currentRoute\.gameId, \{ openAsViewer: false \}\);\s*return;\s*\}/s);
   assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
   assert.match(source, /routeHydrated = false;\s*syncLiveChannels\(\);/s);
-  assert.match(source, /const initialRender = async \(\) => \{\s*routeHydrated = false;\s*syncLiveChannels\(\);\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
+  assert.match(source, /const initialRender = async \(\) => \{\s*routeHydrated = false;\s*render\(\{ animatePanels: false, includeBoard: false \}\);[\s\S]*?await account\.start\(\);/s);
   assert.match(source, /startRouteSync\(\{ renderStart: false \}\);/);
   assert.match(source, /routeHydrated = true;\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
 });

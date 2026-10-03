@@ -4,7 +4,7 @@ const journalError = (code, cause) => Object.assign(new Error(code, { cause }), 
 const keyOf = (command) => [command.identityId, command.gameId, command.clientCommandId];
 
 /** All admission and cleanup operations serialize through one IndexedDB store across tabs. */
-export const createCommandJournal = ({ indexedDB = globalThis.indexedDB, databaseName = "righelt.online-commands.v2" } = {}) => {
+export const createCommandJournal = ({ indexedDB = globalThis.indexedDB, databaseName = "righelt.online-commands.v2", isCurrent = () => true } = {}) => {
   let connection;
   const open = () => {
     if (connection) return connection;
@@ -28,6 +28,7 @@ export const createCommandJournal = ({ indexedDB = globalThis.indexedDB, databas
   };
   const transaction = async (mode, work) => {
     const db = await open();
+    if (!isCurrent()) throw journalError("session_changed");
     return new Promise((resolve, reject) => {
       const tx = db.transaction("commands", mode);
       let value, failure;
@@ -45,6 +46,7 @@ export const createCommandJournal = ({ indexedDB = globalThis.indexedDB, databas
       return transaction("readwrite", (store, done, abort) => {
         const read = store.getAll();
         read.onsuccess = () => {
+          if (!isCurrent()) { abort(journalError("session_changed")); return; }
           const records = read.result.filter((entry) => entry.identityId === command.identityId);
           const existing = records.find((entry) => entry.gameId === command.gameId && entry.clientCommandId === command.clientCommandId);
           if (existing) {
@@ -60,12 +62,13 @@ export const createCommandJournal = ({ indexedDB = globalThis.indexedDB, databas
     },
     list: (identityId, gameId) => transaction("readonly", (store, done) => {
       const read = store.getAll();
-      read.onsuccess = () => done(read.result.filter((entry) => entry.identityId === identityId && (gameId == null || entry.gameId === gameId)));
+      read.onsuccess = () => done(isCurrent() ? read.result.filter((entry) => entry.identityId === identityId && (gameId == null || entry.gameId === gameId)) : []);
     }),
     remove: (command) => transaction("readwrite", (store, done, abort) => {
       const key = keyOf(command);
       const read = store.get(key);
       read.onsuccess = () => {
+        if (!isCurrent()) { abort(journalError("session_changed")); return; }
         // A stale tab cannot remove another identity's record or a conflicting replacement.
         if (read.result && read.result.fingerprint !== command.fingerprint) { abort(journalError("command_id_conflict")); return; }
         store.delete(key);
