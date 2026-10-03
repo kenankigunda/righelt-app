@@ -2,6 +2,8 @@
 
 This probe cannot enable accounts. It exercises synthetic credentials and writes evidence for the T-108 prerequisite. Local results never pass the deployed gate.
 
+CI runs the harness and fail-closed evaluator tests on relevant branch changes. The external Cloudflare access check is separate: manually dispatch `T-108 hashing feasibility` with `verify_cloudflare_access=true` when its CI credential has the required read access. That check still fails on missing access; a skipped check is not feasibility evidence. The user approved reviewing/releasing this harness independently of metric collection. No account-implementation gate is waived by green harness CI.
+
 The admission Worker forwards work to a separate hash Worker. Each has one SQLite-backed Durable Object. Admission permits one active request and four waiting requests. Excess requests return `429` with `Retry-After: 1`. Keeping hashing in a separate Worker lets admission process requests while synchronous hashing runs.
 
 Both Workers disable public routes and preview URLs. The only allowed request is `POST /probe` with `{ "fixture": "ascii" }`, `unicode`, or `long`. A separately managed authenticated gateway can expose this private service for a bounded test. No input accepts real credentials, resource names, hashing parameters or salts. Do not bind this probe to production services or databases.

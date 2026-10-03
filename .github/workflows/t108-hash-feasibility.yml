@@ -1,6 +1,11 @@
 name: T-108 hashing feasibility
 on:
   workflow_dispatch:
+    inputs:
+      verify_cloudflare_access:
+        description: Run the separate read-only Free-plan and analytics access prerequisite
+        type: boolean
+        default: false
   push:
     branches: [codex/t-108-accounts]
     paths:
@@ -26,6 +31,7 @@ jobs:
       - name: Validate synthetic harness and evidence gate
         run: node --test tools/t108-feasibility/core.test.mjs tools/t108-feasibility/runner.test.mjs scripts/t108-cloudflare-preflight.test.mjs
   cloudflare-preflight:
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_cloudflare_access
     runs-on: ubuntu-latest
     environment: Dev
     timeout-minutes: 5
