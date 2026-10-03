@@ -367,6 +367,14 @@ jobs:
           path: test-results/e2e/artifacts
           if-no-files-found: ignore
 
+      - name: Upload sync recovery measurements
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sync-recovery-measurements
+          path: test-results/sync-recovery
+          if-no-files-found: ignore
+
   test-results:
     name: Test results
     if: ${{ always() }}
