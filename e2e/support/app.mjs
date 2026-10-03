@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 const historyMoveItems = (page) => page.locator('[data-testid="history-move-item"]');
 
@@ -32,7 +32,8 @@ const getVisibleJoinSurface = async (page) => {
 export const buildAppUrl = (baseURL, hash = "#/") => `${baseURL}${hash}`;
 
 export const createIsolatedPage = async (browser) => {
-  const context = await browser.newContext();
+  const use = test.info().project.use;
+  const context = await browser.newContext({ baseURL: use.baseURL, viewport: use.viewport, isMobile: use.isMobile, hasTouch: use.hasTouch, deviceScaleFactor: use.deviceScaleFactor });
   const page = await context.newPage();
   return { context, page };
 };

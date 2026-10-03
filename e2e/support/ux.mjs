@@ -92,7 +92,8 @@ const loadAxeBuilder = async () => {
 };
 
 export const installUxMetricsCollector = async (page, storageKey = "__righeltUxMetrics") => {
-  await page.addInitScript((key) => {
+  const install = (key) => {
+    if (window[key]) return;
     const metrics = {
       layoutShiftEntries: [],
       measures: [],
@@ -137,7 +138,9 @@ export const installUxMetricsCollector = async (page, storageKey = "__righeltUxM
       });
       measureObserver.observe({ type: "measure", buffered: true });
     } catch {}
-  }, storageKey);
+  };
+  await page.addInitScript(install, storageKey);
+  await page.evaluate(install, storageKey);
 };
 
 export const readUxMetrics = async (page, storageKey = "__righeltUxMetrics") =>

@@ -215,3 +215,7 @@ Clear (or leave as audit trail) when the ticket moves to Ready for acceptance.
 - These rules are repo defaults.
 - Direct user instructions take precedence.
 - System/developer constraints still apply above this file.
+
+## Validation evidence and PR shepherding
+
+Use the repo skill `skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. Run `pnpm validate:local` before completion; use `pnpm validate:integrated --manifest FILE` for ordered PR sets. Inspect actual screenshots, repair source PRs, publish the evidence report, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.
