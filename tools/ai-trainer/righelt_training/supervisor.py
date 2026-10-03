@@ -1,6 +1,7 @@
 """External watchdog: resource policy and hard process-group deadline enforcement."""
 import argparse
 import fcntl
+import hashlib
 from dataclasses import asdict
 import json
 import os
@@ -34,6 +35,7 @@ def validate_gate_report(report, source_revision, stage):
         health=report.get('health',{})
         if (health.get('terminalGames',0)<100 or health.get('distinctRecoverableTrainedCheckpoints',0)<2
             or health.get('finiteNonzeroUpdates') is not True or health.get('unresolvedCorrectnessFailures',1)!=0
+            or health.get('trainedExportParityPassed') is not True or health.get('unfinishedAttempts',[])
             or health.get('progressReportPublished') is not True):
             raise ValueError('overnight health or progress-report gate missing')
 
@@ -145,6 +147,16 @@ def arena_arguments(args,artifact_root):
     return digest
 
 
+def parity_arguments(args,artifact_root):
+    if not args.export_parity:
+        if args.parity_corpus:raise ValueError('parity corpus requires export-parity phase')
+        return None
+    if args.arena_plan or args.prepare_arena or args.health:raise ValueError('export parity is an exclusive phase')
+    if not args.resume or not args.run_dir.exists():raise ValueError('export parity requires original run and trained checkpoint resume')
+    if not args.parity_corpus or not args.parity_corpus.resolve().is_relative_to(artifact_root.resolve()):raise ValueError('parity corpus must be under experiment archive')
+    return hashlib.sha256(args.parity_corpus.read_bytes()).hexdigest()
+
+
 def record_attempt(directory,event):
     with (Path(directory)/'supervisor-attempts.jsonl').open('a') as stream:
         stream.write(json.dumps({**event,'observedAt':time.time()},allow_nan=False)+'\n')
@@ -162,10 +174,13 @@ def main():
     parser.add_argument('--arena-plan',type=Path)
     parser.add_argument('--health',action='store_true')
     parser.add_argument('--prepare-arena',action='store_true')
+    parser.add_argument('--export-parity',action='store_true')
+    parser.add_argument('--parity-corpus',type=Path)
     parser.add_argument('--candidate-checkpoint',type=Path)
     parser.add_argument('--opponent-checkpoint',type=Path)
     args=parser.parse_args()
     artifact_root=ROOT/'.ai-runs'
+    parity_digest=parity_arguments(args,artifact_root)
     arena_digest=arena_arguments(args,artifact_root)
     if args.health and (arena_digest or not args.run_dir.exists() or not args.resume):
         raise ValueError('health requires an existing supervised allocation and cannot run alongside arena')
@@ -205,8 +220,11 @@ def main():
         runtime['parentCheckpointManifestSha256']=metadata['manifestSha256']
         runtime['parentCheckpoint']=str(args.resume.resolve())
     runtime['supervisorPid']=os.getpid()
-    runtime['command']='prepare-arena' if args.prepare_arena else 'health' if args.health else 'arena' if arena_digest else 'training'
+    runtime['command']='export-parity' if args.export_parity else 'prepare-arena' if args.prepare_arena else 'health' if args.health else 'arena' if arena_digest else 'training'
     validate_training_window(runtime,time.monotonic())
+    if parity_digest:
+        runtime['parityCorpusSha256']=parity_digest
+        runtime['parityCorpusPath']=str(args.parity_corpus.resolve())
     runtime['supervisorAttempt']=uuid.uuid4().hex
     if arena_digest:runtime['arenaPlanSha256']=arena_digest
     else:runtime.pop('arenaPlanSha256',None)
@@ -215,7 +233,10 @@ def main():
                 'memory_gib':CONFIG['resources']['minMemoryGiB'],'paused':False,'stop':False,
                 'reason':'initial-conservative','observedAt':time.time()})
     claim_stage(artifact_root,args.stage,args.run_dir)
-    if args.prepare_arena:
+    if args.export_parity:
+        argv=[sys.executable,'-m','righelt_training.export_parity','--run-dir',str(args.run_dir.resolve()),
+              '--checkpoint',str(args.resume.resolve()),'--corpus',str(args.parity_corpus.resolve())]
+    elif args.prepare_arena:
         argv=[sys.executable,'-m','righelt_training.prepare_arena','--run-dir',str(args.run_dir.resolve()),
               '--candidate-checkpoint',str(args.candidate_checkpoint.resolve()),'--opponent-checkpoint',str(args.opponent_checkpoint.resolve())]
     elif args.health:

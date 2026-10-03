@@ -65,4 +65,15 @@ class HealthTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'external supervisor'):health.main()
                 audit_mock.assert_not_called()
 
+    def test_handoff_timeout_stays_visible_while_checkpoint_recovery_is_audited(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory=Path(temporary);self.fixture(directory,True)
+            path=directory/'supervisor-attempts.jsonl'
+            path.write_text(path.read_text().replace('"reason": "completed"','"reason": "validation-handoff-timeout"'))
+            result=audit(directory,time.monotonic()+30)
+            self.assertTrue(result['complete']);self.assertFalse(result['healthy'])
+            self.assertEqual(result['distinctRecoverableTrainedCheckpoints'],2)
+            self.assertEqual(result['unfinishedAttempts'][0]['reason'],'validation-handoff-timeout')
+            self.assertFalse(result['trainedExportParityPassed'])
+
 if __name__=='__main__':unittest.main()

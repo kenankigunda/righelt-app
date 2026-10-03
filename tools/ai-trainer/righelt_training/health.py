@@ -12,7 +12,7 @@ import subprocess
 import threading
 import torch
 from .checkpoint import atomic_json, load_checkpoint
-from .config import ROOT
+from .config import ROOT,CONFIG_SHA256
 from .model import PolicyValueNet
 from .replay import partition_for_family
 from .runner import verify_game
@@ -38,12 +38,34 @@ def check_attempt_history(directory):
         if target is None or row['id'] in target:raise ValueError('invalid supervisor attempt journal')
         target[row['id']]=row
     if not starts or not set(ends)<=set(starts):raise ValueError('incomplete supervisor attempt journal')
+    unfinished=[]
     for identity,start in starts.items():
         end=ends.get(identity)
         if end is None:
             if start['phase']=='health' and start['pid']==os.getppid():continue
             raise ValueError('unresolved interrupted supervisor attempt')
         if end['reason'] in ('runner-failed','telemetry-failed'):raise ValueError('unresolved prior supervisor failure')
+        if end['reason']=='validation-handoff-timeout':unfinished.append({'id':identity,'phase':start['phase'],'reason':end['reason']})
+    return unfinished
+
+
+def trained_export_proof(directory,latest,manifest):
+    path=directory/'trained-export-parity.json'
+    if not path.exists():return False
+    proof=json.loads(path.read_text());runtime=json.loads((directory/'runtime.json').read_text())
+    corpus=Path(runtime.get('parityCorpusPath',''))
+    if not corpus.is_file():return False
+    digest=hashlib.sha256(corpus.read_bytes()).hexdigest()
+    errors=proof.get('maxAbsoluteError',[])
+    return (proof.get('complete') is True and proof.get('numericPassed') is True
+        and proof.get('trainedCheckpoint') is True and proof.get('referenceDevice')=='mps'
+        and proof.get('heldoutStates',0)>=1000 and len(errors)==2 and finite_tree(errors)
+        and all(type(value) in (float,int) and value>=0 for value in errors)
+        and proof.get('atol')==1e-5 and proof.get('rtol')==1e-4
+        and proof.get('checkpointSha256')==latest['sha256'] and proof.get('configSha256')==CONFIG_SHA256
+        and proof.get('manifestSha256')==manifest['sha256']
+        and proof.get('sourceRevision')==manifest['manifest']['sourceRevision']
+        and proof.get('corpusSha256')==runtime.get('parityCorpusSha256')==digest)
 
 
 def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
@@ -51,9 +73,10 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
     result={'schema':1,'terminalGames':0,'truncatedGames':0,'replayChecks':0,
             'distinctRecoverableTrainedCheckpoints':0,'finiteNonzeroUpdates':False,
             'unresolvedCorrectnessFailures':0,'complete':False,'progressReportPublished':False,
-            'healthy':False,'productionPromotion':False,'failures':[],'checkpoints':[]}
+            'healthy':False,'productionPromotion':False,'failures':[],'checkpoints':[],
+            'trainedExportParityPassed':False,'unfinishedAttempts':[]}
     try:
-        check_attempt_history(directory)
+        result['unfinishedAttempts']=check_attempt_history(directory)
         latest=json.loads((directory/'latest.json').read_text())
         path=Path(latest['checkpoint']).resolve()
         if not path.is_relative_to(directory):raise ValueError('checkpoint outside run')
@@ -62,7 +85,9 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
             raise ValueError('latest checkpoint identity mismatch')
         state=companion['state'];seen=set()
         if state['updates']!=latest['updates']:raise ValueError('latest update count mismatch')
-        manifest=json.loads((directory/'manifest.json').read_text())['sha256']
+        manifest_record=json.loads((directory/'manifest.json').read_text())
+        manifest=manifest_record['sha256']
+        result['trainedExportParityPassed']=trained_export_proof(directory,latest,manifest_record)
         for name in state['archives']:
             if clock()>=deadline-5:raise TimeoutError('health replay audit unfinished within stage budget')
             archive=(directory/name).resolve()
@@ -101,7 +126,8 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
         if supervisor.exists() and json.loads(supervisor.read_text())['reason'] in ('runner-failed','telemetry-failed'):
             raise ValueError('unresolved supervisor failure')
         result['complete']=True
-        result['healthy']=result['terminalGames']>=100 and len(weights)>=2 and result['finiteNonzeroUpdates']
+        result['healthy']=(result['terminalGames']>=100 and len(weights)>=2 and result['finiteNonzeroUpdates']
+                           and result['trainedExportParityPassed'] and not result['unfinishedAttempts'])
     except (TimeoutError,subprocess.TimeoutExpired) as error:
         result['failures'].append(str(error))
     except (ValueError,KeyError,OSError,RuntimeError) as error:
