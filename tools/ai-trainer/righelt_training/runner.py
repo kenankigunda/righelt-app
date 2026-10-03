@@ -371,7 +371,7 @@ class Runner:
                 result = train_round(self.model, self.optimizer, list(self.buffer.positions), device=self.device,
                                      seed=self.seed + self.state['round'], deadline=self.deadline,
                                      should_pause=lambda: self.allocation()['paused'] or bool(self.handoff_requested()), on_batch=after_batch,
-                                     start_batch=self.state['trainingBatch'])
+                                     start_batch=self.state['trainingBatch'],operation=self.operation)
                 self.event('training-round', result=result)
                 if result['stopped'] != 'complete':
                     self.checkpoint()

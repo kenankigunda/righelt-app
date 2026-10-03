@@ -1,5 +1,6 @@
 import time
 import unittest
+from contextlib import contextmanager
 import torch
 from array import array
 from righelt_training.model import PolicyValueNet
@@ -39,9 +40,32 @@ class TrainerTest(unittest.TestCase):
     def test_invalid_targets_and_inputs_rejected(self):
         bad = position(); bad['legal'] = [0, 0]
         with self.assertRaises(ValueError): tensor_batch([bad], 'cpu')
+
         bad = position(); bad['encoded'][0] = float('nan')
         with self.assertRaises(ValueError): tensor_batch([bad], 'cpu')
         bad = position(); bad['policy'][0]['probability'] = float('inf')
         with self.assertRaises(ValueError): tensor_batch([bad], 'cpu')
+
+    def test_batch_watchdog_excludes_checkpoint_callback_and_propagates_timeout(self):
+        active=[];bounds=[];callbacks=[]
+        @contextmanager
+        def operation(name,seconds):
+            active.append(name);bounds.append(seconds)
+            try:yield
+            finally:active.pop()
+        def checkpoint(metrics):
+            self.assertEqual(active,[]);callbacks.append(metrics)
+        model=PolicyValueNet()
+        result=train_round(model,make_optimizer(model),[position()],device='cpu',seed=3,
+            deadline=time.monotonic()+60,operation=operation,on_batch=checkpoint)
+        self.assertEqual(bounds,[30.]);self.assertEqual(len(callbacks),1);self.assertEqual(result['updates'],1)
+        @contextmanager
+        def expired(name,seconds):
+            raise TimeoutError('operation watchdog');yield
+        before=model.stem.weight.detach().clone()
+        with self.assertRaises(TimeoutError):
+            train_round(model,make_optimizer(model),[position()],device='cpu',seed=3,
+                deadline=time.monotonic()+60,operation=expired,on_batch=checkpoint)
+        self.assertTrue(torch.equal(before,model.stem.weight));self.assertEqual(len(callbacks),1)
 
 if __name__ == '__main__': unittest.main()
