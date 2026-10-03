@@ -48,8 +48,16 @@ async function sharedInvite(host) {
   if (await players.isVisible()) await players.click();
   const invite = host.getByTestId("copy-invite");
   await expect(invite).toBeEnabled();
-  // Read the actual share control's server-issued invite URL, not a game URL.
-  const url = await invite.getAttribute("data-link");
+  // Exercise the share action: it waits for an optimistic game's real invite
+  // token before copying. Its provisional data-link can still contain a game ID.
+  await host.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      writeText: async () => {},
+    } });
+  });
+  await invite.click();
+  await expect.poll(() => host.evaluate(() => window.__righeltLastInvite)).toBeTruthy();
+  const url = await host.evaluate(() => window.__righeltLastInvite);
   expect(new URL(url).hash).toMatch(/^#\/invite\//);
   expect(url).not.toBe(gameUrl);
   return { url, gameUrl };
@@ -128,7 +136,7 @@ for (const method of ["login", "recovery"]) {
       await expect(dialog(visitor)).not.toBeVisible();
       await expect(visitor.getByTestId("game-role")).toContainText("Player 2");
       const expectedGame = new URL(invite.gameUrl).hash.match(/^#\/game\/([^?]+)/)[1];
-      expect(new URL(visitor.url()).hash.match(/^#\/game\/([^?]+)/)?.[1]).toBe(expectedGame);
+      await expect(visitor).toHaveURL(url => url.hash.match(/^#\/game\/([^?]+)/)?.[1] === expectedGame);
       expect(joins).toHaveLength(1);
       expect(joins[0].mode).toBe("player");
       expect(joins[0].inviteToken).toBe(decodeURIComponent(new URL(invite.url).hash.match(/^#\/invite\/([^?]+)/)[1]));

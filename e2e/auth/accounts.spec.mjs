@@ -448,19 +448,36 @@ test("switching accounts in another tab retires the old settings form", async ({
   } finally { await sibling.close(); }
 });
 
-test("keyboard board activation opens sign in without losing the board", async ({ page }) => {
-  await register(page, uniqueName(), { gate: true });
+test("keyboard board activation opens sign in without losing the board", async ({ page, browser }) => {
+  const username = uniqueName();
+  await register(page, username, { gate: true });
   const gameUrl = page.url();
-  await account(page);
-  await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-  const cell = page.locator("#shell-board button").first();
-  await expect(cell).toBeVisible();
-  await cell.press("Enter");
-  await expect(dialog(page).getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
-  await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
-  expect(page.url()).toBe(gameUrl);
-  await expect(page.getByTestId("game-board")).toBeVisible();
+  const otherContext = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const owner = await otherContext.newPage();
+    await owner.goto(gameUrl);
+    await signIn(owner, username);
+    await expect(owner.getByTestId("game-role")).toContainText("Player 1");
+    await account(page);
+    await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect(dialog(page)).not.toBeVisible();
+    await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+    const before = await getHistoryMoveCount(page);
+    const cell = page.locator("#shell-board button").first();
+    await expect(cell).toBeVisible();
+    await cell.focus();
+    // A real remote move replaces the board while the spectator is using its
+    // keyboard. Keep focus on the same coordinate before physical Enter.
+    await makeAccountMove(owner);
+    await expect.poll(() => getHistoryMoveCount(page)).toBeGreaterThan(before);
+    await expect(cell).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(dialog(page).getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
+    await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(page.url()).toBe(gameUrl);
+    await expect(page.getByTestId("game-board")).toBeVisible();
+  } finally { await otherContext.close(); }
 });
 
 test("a delayed play continuation is discarded after a cross-tab account switch", async ({ page }) => {
