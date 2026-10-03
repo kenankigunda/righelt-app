@@ -23,6 +23,7 @@ async function submitPlayableAction(page,action,info){
     // both pointer types; a touch click is not a separate selection step.
     await target.click();
     await expect(page.locator('#shell-board-preview-label')).toBeVisible();
+    await expect(page.locator('#shell-board-preview-label')).toContainText('Preview. Activate this destination again to play.');
     expect(writes).toBe(0);expect(await count(page)).toBe(before);
     await proof(page,info,'move-preview-before-confirm',page.getByTestId('game-board'));
   }else{
