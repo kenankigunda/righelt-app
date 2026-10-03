@@ -70,7 +70,10 @@ try {
     .replace('main = "index.js"', `main = ${JSON.stringify(path.join(root, "apps/api/index.js"))}`)
     .replace('migrations_dir = "../../db/migrations"', `migrations_dir = ${JSON.stringify(path.join(root, "db/migrations"))}`)
     .replace('database_id = "22435cc4-6655-4bdf-a05d-d100cd8e6cc9"', 'database_id = "local-auth-e2e"');
-  api += `\n[vars]\nAUTH_ENABLED = "true"\nAUTH_ALLOWED_ORIGINS = ${JSON.stringify(origin)}\nAUTH_HMAC_SECRET = ${JSON.stringify(randomBytes(32).toString("hex"))}\n\n[[services]]\nbinding = "HASH_SERVICE"\nservice = "righelt-auth-e2e-admission"\n`;
+  api = api.replace('AUTH_ENABLED = "false"', 'AUTH_ENABLED = "true"')
+    .replace('service = "righelt-auth"', 'service = "righelt-auth-e2e-admission"');
+  // Append vars to the existing table, rather than introducing duplicate bindings.
+  api = api.replace('[vars]', `[vars]\nAUTH_ALLOWED_ORIGINS = ${JSON.stringify(origin)}\nAUTH_HMAC_SECRET = ${JSON.stringify(randomBytes(32).toString("hex"))}`);
   await writeFile(apiConfig, api);
   const configs = [apiConfig];
   for (const [folder, name] of [["auth", "admission"], ["auth-hash", "hash"]]) {
@@ -84,6 +87,15 @@ try {
   }
   const d1 = ["exec", "wrangler", "d1"];
   await run([...d1, "migrations", "apply", "DB", "--config", apiConfig, "--local", "--persist-to", persist]);
+  const { tsImport } = await import("tsx/esm/api");
+  const { createInitialGame } = await tsImport(path.join(root, "packages/api-handler/src/shell-live-core.ts"), import.meta.url);
+  const fixture = createInitialGame({gameId:"cutover-legacy-fixture",identityId:"cutover-legacy-owner",selfPlayMode:true});
+  fixture.inviteTokens.player1 = "cutover-legacy-invite";
+  const quote = value => "'" + String(value).replaceAll("'", "''") + "'";
+  const seedSql = `INSERT INTO live_games(game_id,created_at,updated_at,latest_activity_at,state_json,event_seq) VALUES(${quote(fixture.id)},${quote(fixture.createdAt)},${quote(fixture.updatedAt)},${quote(fixture.updatedAt)},${quote(JSON.stringify(fixture))},0); INSERT INTO live_invites(token,game_id,shared_by_role) VALUES('cutover-legacy-invite','cutover-legacy-fixture','Player 1');`;
+  const fixtureFile=path.join(temporary,"legacy.sql");
+  await writeFile(fixtureFile,seedSql);
+  await run([...d1,"execute","DB","--config",apiConfig,"--local","--persist-to",persist,"--file",fixtureFile]);
   run(["exec", "wrangler", "dev", ...configs.flatMap(file => ["--config", file]), "--local", "--port", apiPort,
     "--inspector-port", "9997", "--persist-to", persist], { service: true });
   await ready(`http://127.0.0.1:${apiPort}/api/health`);
@@ -92,6 +104,9 @@ try {
   let busy = false;
   control = createServer(async (request, response) => {
     const sql = request.url === "/reset-limits" ? "DELETE FROM account_rate_limits"
+      : request.url === "/activate-cutover" ? "UPDATE account_cutover SET activated_at=COALESCE(activated_at,CAST(unixepoch('subsec')*1000 AS INTEGER)),maintenance=1,canary_account_id=(SELECT account_id FROM accounts WHERE username_canonical='cutover_canary' AND recovery_acknowledged=1) WHERE singleton=1"
+      : request.url === "/maintenance-on" ? "UPDATE account_cutover SET maintenance=1 WHERE singleton=1 AND activated_at IS NOT NULL"
+      : request.url === "/maintenance-off" ? "UPDATE account_cutover SET maintenance=0 WHERE singleton=1 AND activated_at IS NOT NULL"
       : request.url === "/expire-sessions" ? "UPDATE account_sessions SET expires_at = created_at + 1, last_activity_at = created_at" : null;
     if (request.method !== "POST" || request.headers.origin || !sql) { response.writeHead(404).end(); return; }
     if (busy) { response.writeHead(409).end(); return; }

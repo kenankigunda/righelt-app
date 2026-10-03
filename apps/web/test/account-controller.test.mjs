@@ -875,3 +875,15 @@ test("only the initiating local credential operation owns its session transition
     assert.equal(fixture.transitionSources.at(-1).owner, null);
   } finally { fixture.client.destroy(); }
 });
+
+test('required but unavailable accounts hydrate public browsing without restoring guest play',async()=>{
+ const calls=[];
+ const controller=createAccountController({storage:storage(),eventTarget:new EventTarget(),fetcher:async route=>{
+  calls.push(route);assert.equal(route,'/api/shell/bootstrap');return Response.json({authProtocolVersion:1,accountsRequired:true,accountsAvailable:false,maintenance:true});
+ }});
+ try{await controller.start();assert.equal(controller.snapshot().ready,true);assert.equal(controller.snapshot().enabled,true);assert.equal(controller.snapshot().available,false);assert.equal(controller.canPlay(),false);await controller.hydrate();assert.equal(calls.length,1);}finally{controller.destroy();}
+});
+test('maintenance keeps an authenticated session but denies play',async()=>{
+ const controller=createAccountController({storage:storage(),eventTarget:new EventTarget(),fetcher:async route=>Response.json(route==='/api/shell/bootstrap'?{authProtocolVersion:1,accountsRequired:true,accountsAvailable:true,maintenance:true}:state())});
+ try{await controller.start();assert.equal(controller.snapshot().session.authenticated,true);assert.equal(controller.canPlay(),false);}finally{controller.destroy();}
+});

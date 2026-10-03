@@ -1,3 +1,4 @@
+import { maintenanceAllowed, type CutoverPolicy } from './account-cutover';
 import {
   AUTH_PROTOCOL_VERSION,
   AUTH_PROTOCOL_HEADER,
@@ -26,10 +27,12 @@ export type GameAuthority = {
 };
 export type GameAuthEnv = {
   AUTH_ENABLED?: string;
+  AUTH_REQUIRED?: string;
+  ACCOUNT_POLICY?: CutoverPolicy;
   AUTH_ALLOWED_ORIGINS?: string;
   DB: unknown;
 };
-export const authActive = (env: GameAuthEnv) => env.AUTH_ENABLED === "true";
+export const authActive = (env: GameAuthEnv) => env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true";
 export const authDatabase = (env: GameAuthEnv) =>
   primaryAuthDatabase(env.DB as AuthDatabase);
 export async function readGameAuthority(
@@ -51,6 +54,7 @@ export async function currentGameAuthority(
   env: GameAuthEnv,
   authority: GameAuthority,
 ): Promise<boolean> {
+  if (env.AUTH_ENABLED !== "true") return false;
   const found = await authDatabase(env)
     .prepare(
       `SELECT a.recovery_acknowledged FROM account_sessions s JOIN accounts a ON a.account_id=s.account_id WHERE s.token_hash=? AND s.context_id=? AND s.account_id=? AND s.revoked_at IS NULL AND s.expires_at>${DB_NOW} AND s.session_epoch=a.session_epoch`,
@@ -66,6 +70,7 @@ export async function authorizeGameRequest(
   websocket = false,
 ): Promise<{ request: Request; authority: GameAuthority | null }> {
   if (!authActive(env)) return { request, authority: null };
+  if (request.method !== "GET" && env.AUTH_ENABLED !== "true") throw new AuthProblem("temporarily_unavailable",503);
   const cleanHeaders = new Headers(request.headers);
   for (const name of [...cleanHeaders.keys()])
     if (name.toLowerCase().startsWith("x-righelt-internal-"))
@@ -100,6 +105,7 @@ export async function authorizeGameRequest(
     )
       throw new AuthProblem("invalid_input", 403);
     if (!authority) throw new AuthProblem("invalid_credentials", 401);
+    if (!maintenanceAllowed(env,authority.accountId)) throw new AuthProblem("temporarily_unavailable",503);
     if (request.headers.get(SESSION_CONTEXT_HEADER) !== authority.contextId)
       throw new AuthProblem("session_changed", 409);
     // Same bounded reader as T-114, before dispatch; never trust an identity field.

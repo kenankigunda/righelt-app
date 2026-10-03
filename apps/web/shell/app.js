@@ -703,7 +703,7 @@ const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
   return { selectionAction: matchingAction, selectionState: null };
 };
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
-const canControlLiveBoard = (game) => !game?.sharedMutationsBlocked && Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
+const canControlLiveBoard = (game) => account.canPlay() && !game?.sharedMutationsBlocked && Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
 const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "other", "smoke"] : ["my", "other"]);
 const getHomeSection = (sectionKey) => homeSections[sectionKey] ?? createHomeSectionState(sectionKey);
 const setHomeSection = (sectionKey, nextState) => {
@@ -1807,7 +1807,8 @@ const renderHeader = () => `
       <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Righelt</a></h1>
     </div>
     ${renderHeaderAlertZone()}
-    ${account.snapshot().ready && account.snapshot().enabled ? `<button class="secondary" data-action="account-open" data-testid="account-open">${account.snapshot().session.authenticated ? "Account" : "Sign in"}</button>` : ""}
+    ${account.snapshot().ready && account.snapshot().enabled && account.snapshot().available ? `<button class="secondary" data-action="account-open" data-testid="account-open">${account.snapshot().session.authenticated ? "Account" : "Sign in"}</button>` : ""}
+    ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
     ${account.snapshot().pendingLogout ? '<span role="status">Sign-out pending</span>' : ''}
     ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p role="status">Connecting…</p>` : ""}
     <div class="shell-header-actions">
@@ -2610,8 +2611,9 @@ const renderHistoryPanel = (game) => {
 };
 
 const renderBoardPanel = (game) => `
+  ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p class="alert" role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
   ${game.ownershipMode === "legacy_guest" && account.snapshot().enabled ? '<p class="alert" role="status">This older guest game is view-only. <button data-action="create-game">Start new game</button></p>' : ''}
-  ${account.snapshot().enabled && !account.canPlay() ? '<p class="alert" role="status">Sign in to play or analyze. The board remains available to view.</p>' : ''}
+  ${account.snapshot().enabled && account.snapshot().available && !account.snapshot().maintenance && !account.canPlay() ? '<p class="alert" role="status">Sign in to play or analyze. The board remains available to view.</p>' : ''}
   <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span></h2>
   <p class="board-preview-label" id="shell-board-preview-label">Select a piece to preview moves; click it again for supply and command lines only:</p>
   <div class="board-wrap" data-testid="game-board-wrap">
@@ -4067,12 +4069,14 @@ window.addEventListener("load", () => {
 appEl.addEventListener("pointerdown", event => {
   if (event.target.closest?.("#shell-board") && !account.canPlay()) {
     event.preventDefault();event.stopImmediatePropagation();
+    if (!account.snapshot().available || account.snapshot().maintenance) return;
     accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, event.target.closest?.("button, [tabindex]"));
   }
 }, true);
 appEl.addEventListener("click", event => {
   if (event.target.closest?.("#shell-board") && !account.canPlay()) {
     event.preventDefault();event.stopImmediatePropagation();
+    if (!account.snapshot().available || account.snapshot().maintenance) return;
     if (!accountDialog.isOpen()) accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, event.target.closest?.("button, [tabindex]"));
   }
 }, true);
@@ -4119,6 +4123,7 @@ appEl.addEventListener("click", async (event) => {
   const accountGatedActions = new Set(["create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
   if (accountGatedActions.has(action) && !account.canPlay()) {
     event.preventDefault();
+    if (!account.snapshot().available || account.snapshot().maintenance) return;
     const intent = safeAccountIntent({ hash: window.location.hash, action, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });
     accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", intent, actionEl);
     return;

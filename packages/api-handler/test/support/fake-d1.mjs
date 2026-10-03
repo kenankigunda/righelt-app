@@ -149,6 +149,7 @@ export const createFakeD1 = () => {
       },
       async run() { return statement.executeRun(); },
       async first() {
+        if (normalized.startsWith("SELECT activated_at,maintenance,canary_account_id FROM account_cutover")) return {activated_at:null,maintenance:0,canary_account_id:null};
         reads.push({ query: normalized, params: [...params] });
         if (normalized.includes("FROM live_command_receipts")) return structuredClone(receipts.get(JSON.stringify(params.slice(0, 2))) ?? null);
         if (normalized.includes("FROM live_legacy_command_tombstones")) return structuredClone(tombstones.get(JSON.stringify(params.slice(0, 2))) ?? null);

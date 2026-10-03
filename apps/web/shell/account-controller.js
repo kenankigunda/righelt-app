@@ -60,6 +60,8 @@ export const createAccountController = ({
 } = {}) => {
   let siteKey = null,
     enabled = true,
+    available = true,
+    maintenance = false,
     ready = false,
     session = { authenticated: false },
     generation = 0,
@@ -120,6 +122,8 @@ export const createAccountController = ({
   };
   const snapshot = () => ({
     enabled,
+    available,
+    maintenance,
     ready,
     siteKey,
     session: structuredClone(session),
@@ -286,7 +290,7 @@ export const createAccountController = ({
     return logoutFlight;
   };
   const hydrate = async (signal) => {
-    if (!enabled || destroyed || busy) return snapshot();
+    if (!enabled || !available || destroyed || busy) return snapshot();
     if (readPending()) {
       await finishLogout();
       return snapshot();
@@ -319,9 +323,11 @@ export const createAccountController = ({
       )
         throw failure("upgrade_required");
       enabled = result.accountsRequired;
+      available = result.accountsAvailable !== false;
+      maintenance = result.maintenance === true;
       siteKey = result.turnstileSiteKey || null;
       ready = true;
-      if (enabled) await hydrate(controller.signal);
+      if (enabled && available) await hydrate(controller.signal);
       else retire({ authenticated: false });
       if (controller.signal.aborted || destroyed)
         throw failure("session_changed");
@@ -577,7 +583,7 @@ export const createAccountController = ({
     updateAccount,
     canPlay: () =>
       !enabled ||
-      (session.authenticated &&
+      (available && !maintenance && session.authenticated &&
         !session.recoveryAcknowledgmentRequired &&
         !readPending()),
     destroy() {

@@ -511,7 +511,7 @@ test("configured origins, request protections, expiry and session-context mismat
           { env: { ...f.env, AUTH_ENABLED: undefined } },
         )
       ).status,
-      404,
+      503,
     );
     for (const headers of [
       { Origin: "https://evil.test" },
