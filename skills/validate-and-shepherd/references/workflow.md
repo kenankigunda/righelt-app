@@ -2,7 +2,7 @@
 
 ## Commands and artifacts
 
-The runner uses its own pinned harness checkout for responsive proof and report tests, while executing the candidate checkout's own full test commands and local stack. This allows validating a base that predates the tooling without copying code into it. Publishing uses Wrangler from the pinned harness, so the invoking checkout does not need publishing dependencies. Record harnessRevision and harnessFingerprint separately from candidate revisions; changes to either invalidate evidence. Keep the harness checkout unchanged during a run. If a stream changes user-facing contracts, extend the harness coverage and rerun affected stages; do not hide incompatibility.
+The runner uses its own pinned harness checkout for responsive proof and report tests, while executing the candidate checkout's own full test commands and local stack. This allows validating a base that predates the tooling without copying code into it. Publishing uses the separate keychain-compatible `scripts/validation/publisher` workspace dependency from the pinned harness (the app dev runtime remains unchanged), so the invoking checkout does not need publishing dependencies. Record harnessRevision and harnessFingerprint separately from candidate revisions; changes to either invalidate evidence. Keep the harness checkout unchanged during a run. If a stream changes user-facing contracts, extend the harness coverage and rerun affected stages; do not hide incompatibility.
 
 ```
 pnpm validate:local --base origin/main
