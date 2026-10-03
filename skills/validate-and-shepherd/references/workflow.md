@@ -22,6 +22,10 @@ A shared exclusive lock prevents two validation stacks from occupying port pair 
 
 At each baseline/merge point, run the full checks, fresh database lane, and retained-state upgrade lane. Verify previous-stage synthetic identity, game, role and history. Add account or schema-specific continuity assertions whenever a stream introduces those capabilities. Login is not proven by a legacy anonymous identity check.
 
+When the candidate defines `test:e2e:auth`, the runner also executes that candidate-owned suite in a separate Auth E2E lane and preserves its failures and artifacts. This supplements guest journeys; it does not establish retained-account migration proof. Add contract-aware account continuity and responsive login assertions when those features change.
+
+`tools/t108-feasibility/` is known private probe tooling. Run its dedicated harness/runtime/preflight checks and assess its documented deployed-evidence gate separately; mapping it as tooling does not waive that gate or prove account behavior. Unknown `tools/` paths remain coverage gaps.
+
 The default proof journey covers creation, moves, viewer sync, reload and reconnection. The full E2E suite covers history and adjacent flows. For each touched surface add meaningful capture checkpoints to the responsive proof suite, including a component close-up and viewport context at all three sizes. Add missing accessibility, focus, geometry, loading/error and interaction assertions; never mistake images for assertion coverage. Target stable snapshots only when visual appearance itself is a requirement.
 
 Classify failures from primary logs: product regression, invalid/racy assertion, environment mismatch, infrastructure/deployment. Reproduce the smallest case against the matching build; add failing-first coverage for real bugs. Fix synchronization instead of masking races with sleeps or broad retries. Validate the failing case, affected subsystem and required full pass.

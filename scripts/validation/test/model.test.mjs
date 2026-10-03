@@ -25,3 +25,14 @@ test('published readiness cannot retain a cached ready verdict after invalidatio
 test('review actions preserve history and notes, revisions do not clear deferral',()=>{let r={status:'Not started',notes:'note',history:[],revision:'a'};let t=transition(r,'Complete','a');assert.equal(t.expanded,false);r=t.record;r=transition(r,'Reopen','a').record;assert.equal(statusOf(r,'b'),'Needs revisit');r=transition(r,'Skip','b').record;assert.equal(statusOf(r,'c'),'Skipped');r=transition(r,'Cancel','c').record;assert.equal(r.notes,'note');assert.equal(r.history.length,1);assert.equal(r.status,'Not started');});
 test('backup rejects invalid data atomically and retains conflicting notes',()=>{const r={status:'Complete',notes:'local',revision:'a',updatedAt:'2026-01-01',history:[]};const local={version:1,namespace:'n',records:{x:r},expanded:{x:true}};assert.throws(()=>mergeBackup(local,{...local,records:{x:{...r,status:'bogus'}}}));const result=mergeBackup(local,{...local,records:{x:{...r,notes:'incoming',updatedAt:'2026-02-01'}}});assert.equal(result.conflicts[0].local,'local');assert.equal(local.records.x.notes,'local');assert.equal(result.next.records.x.notes,'incoming');});
 test('manifest enforces ordered prerequisites and mapped coverage is explicit',()=>{assert.throws(()=>validateManifest({version:1,repository:'o/r',base:'main',prs:[{number:2,dependsOn:[1]}]}));assert.deepEqual(coverage(['unknown.xyz']).unmapped,['unknown.xyz']);assert.equal(coverage(['apps/web/app.js']).files.length,0);});
+
+test('known T108 feasibility tooling is mapped without accepting unrelated tools',()=>{
+ const known=['tools/t108-feasibility/core.mjs','tools/t108-feasibility/runtime.test.mjs','tools/t108-feasibility/evidence/RESULTS.md'];
+ const selected=coverage(known);
+ assert.deepEqual(selected.areas,['core','tooling']);
+ assert.deepEqual(selected.unmapped,[]);
+ assert.ok(selected.files.includes('e2e/workflows/reconnect-recovery.spec.mjs'));
+ const unknown=['tools/unknown/core.mjs','tools/t108-feasibility-other/core.mjs','tools/t108-feasibility.mjs'];
+ assert.deepEqual(coverage([...known,...unknown]).unmapped,unknown);
+ assert.equal(coverage([...known,'apps/web/shell/app.js']).files.length,0);
+});
