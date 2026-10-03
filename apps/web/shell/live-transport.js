@@ -55,6 +55,7 @@ const mustOk = async (response) => {
     const error = new Error(body.error || `HTTP_${response.status}`);
     error.code = body.error || `HTTP_${response.status}`;
     error.body = body;
+    error.status = response.status;
     throw error;
   }
   return body;
@@ -385,6 +386,7 @@ export const createLiveTransportStore = ({
     optimistic.retryTimer.unref?.();
   };
   const processResponse = (gameId, body, envelopes) => {
+    if (body?.protocolVersion === 1) { markUpgradeRequired(gameId); throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" }); }
     if (!isReconcileResponse(body, gameId, envelopes) || (body.game !== undefined && (!validSyncSnapshot(body.game, gameId) || body.game.gameplayRevision !== body.gameplayRevision))) throw new Error("invalid_confirmation");
     for (const outcome of body.commandOutcomes) settleOutcome(gameId, outcome);
     if (body.game) { upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }); }
@@ -596,6 +598,27 @@ export const createLiveTransportStore = ({
     emitChange({ type: "upgrade_required", gameId });
   };
   const loadGame = async (gameId, { openAsViewer = false } = {}) => {
+    // A fresh route already opened its socket. Its bounded initial snapshot owns recovery;
+    // only fall back to HTTP after that generation has been retired by the connection owner.
+    if (!openAsViewer && !lastEventSeqByGameId.get(gameId)) {
+      const socketOwned = await Promise.resolve(beforeReconcile(gameId, { initialLoad: true })).catch(() => false);
+      if (lastEventSeqByGameId.get(gameId) && gameById.has(gameId)) {
+        await hydrateJournal(gameId).catch(() => {});
+        return getGameViewModel(gameId);
+      }
+      if (socketOwned) {
+        try {
+          await reconcileGame(gameId);
+          const recovered = getGameViewModel(gameId);
+          if (!recovered) throw new Error("invalid_snapshot");
+          return recovered;
+        } catch (error) {
+          // The legacy server has no reconciliation route. A bounded read can establish
+          // its protocol version without submitting or inventing any command outcome.
+          if (error.status !== 404 && error.status !== 405) throw error;
+        }
+      }
+    }
     const body = await boundedRequest(
       `/api/shell/games/${encodeURIComponent(gameId)}?identityId=${encodeURIComponent(identityId)}${
         openAsViewer ? "&openAsViewer=1" : ""

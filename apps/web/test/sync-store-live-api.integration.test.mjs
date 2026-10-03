@@ -544,10 +544,7 @@ test("integration sync store keeps a failed create-game stub locally hydratable 
     "Game creation failed. The server could not create this game. Return home and try again.",
   );
   assert.equal(failedGame.notifications[0], "Game creation failed");
-  assert.deepEqual(syncClientCalls, [
-    ["connect", createHandle.result.id],
-    ["disconnect", createHandle.result.id],
-  ]);
+  assert.deepEqual(syncClientCalls, [], "a game that never persisted must never open a recovery socket");
 });
 
 test("integration sync store keeps optimistic revert request ids aligned through auto-approved server commits", async () => {
@@ -907,4 +904,30 @@ test("integration sync store keeps the requester in history mode when an undo re
   assert.equal(rescinded.pendingRevertRequest, null);
   assert.equal(ownerStore.getGameViewModel(createdGame.id)?.inHistoryMode, true);
   assert.equal(ownerStore.getGameViewModel(createdGame.id)?.historyIndex, 0);
+});
+
+test("pending creation admits a queued command without opening a recovery socket",async()=>{
+ const env=createApiEnv();let release;const creation=new Promise(resolve=>{release=resolve;});const connected=[];let submissions=0;
+ const store=createSyncStore({storage:createMemoryStorage(),fetcher:async(url,init={})=>{
+  if(String(url)==='/api/shell/games'&&init.method==='POST')await creation;
+  if(String(url).endsWith('/apply'))submissions++;
+  return apiWorker.fetch(new Request(toAbsoluteUrl(url),{method:init.method||'GET',headers:init.headers,body:init.body}),env);
+ },createSyncClient:()=>({connectGame:id=>connected.push(id),disconnectGame(){},disconnectAll(){},getDesiredGameIds:()=>connected})});
+ const create=store.createGame();const id=create.result.id;store.setActiveGameId(id);
+ assert.deepEqual(connected,[]);assert.equal(store.getGameViewModel(id).sharedMutationsBlocked,false);
+ const stub=store.getGameViewModel(id);const action=stub.legalActions.find(a=>a.from&&a.to);
+ const move=await store.applyGameAction({gameId:id,state:stub.currentSnapshot,action});
+ assert.equal(move.status,'pending');assert.equal(submissions,0);
+ release();await create.committed;await move.committed;
+ assert.deepEqual(connected,[id]);assert.equal(submissions,1);assert.equal(store.getGameViewModel(id).moves.length,1);
+});
+
+test("reload of a durable game clears stale local creation data before connecting",async()=>{
+ const {store,storage}=createTrackedSyncStore();const game=await store.createGame().committed;
+ storage.setItem('righelt.pendingLocalGames',JSON.stringify({[game.id]:{...game,notifications:['Game creation pending sync']}}));
+ // The fetcher supplies the already durable game's authoritative projection.
+ const connected=[];const reloaded=createSyncStore({storage,fetcher:async()=>Response.json({protocolVersion:2,eventSeq:1,game}),createSyncClient:()=>({connectGame:id=>connected.push(id),disconnectGame(){},disconnectAll(){},getDesiredGameIds:()=>connected})});
+ reloaded.setActiveGameId(game.id);assert.deepEqual(connected,[]);
+ await reloaded.loadGame(game.id);reloaded.setActiveGameId(game.id);
+ assert.deepEqual(connected,[game.id]);assert.equal(JSON.parse(storage.getItem('righelt.pendingLocalGames')||'{}')[game.id],undefined);
 });

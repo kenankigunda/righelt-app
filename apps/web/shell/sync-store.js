@@ -547,15 +547,22 @@ export const createLiveSyncClient = ({
     });
   }
 
+  const waitForInitialSnapshot = (gameId) => {
+    const pending = connectionState.get(gameId)?.initial ?? reconnectGates.get(gameId)?.promise;
+    if (!pending) return Promise.resolve();
+    let timer;
+    return Promise.race([pending, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("initial_snapshot_wait_timeout")), initialSnapshotTimeoutMs);
+    })]).finally(() => clearTimeout(timer));
+  };
   return {
     connectGame: (gameId) => connect(gameId),
-    waitForInitialSnapshot: (gameId) => {
-      const pending = connectionState.get(gameId)?.initial ?? reconnectGates.get(gameId)?.promise;
-      if (!pending) return Promise.resolve();
-      let timer;
-      return Promise.race([pending, new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("initial_snapshot_wait_timeout")), initialSnapshotTimeoutMs);
-      })]).finally(() => clearTimeout(timer));
+    waitForInitialSnapshot,
+    prepareInitialLoad: async (gameId) => {
+      if (!desiredGameIds.has(gameId)) return false;
+      try { await waitForInitialSnapshot(gameId); }
+      catch { await repair(gameId, "initial_load_fallback"); }
+      return true;
     },
     getAdvertisedEventSeq: (gameId) => advertisedEventSeqByGameId.get(gameId) ?? 0,
     disconnectGame,
@@ -917,7 +924,8 @@ export const createSyncStore = ({
       return true;
     }
     const branchHandle = operationManager.getHandle(`branch:${gameId}`);
-    return branchHandle?.status === "pending";
+    const stored = readPendingLocalGames(storage)[gameId];
+    return branchHandle?.status === "pending" || Boolean(stored && !isFailedLocalStub(stored));
   };
   const transport = createTransportStore({
     storage,
@@ -925,7 +933,8 @@ export const createSyncStore = ({
     random,
     commandJournal,
     timing,
-    beforeReconcile: (gameId) => liveSync.waitForInitialSnapshot?.(gameId),
+    beforeReconcile: (gameId, options) => options?.initialLoad && liveSync.prepareInitialLoad
+      ? liveSync.prepareInitialLoad(gameId) : liveSync.waitForInitialSnapshot?.(gameId),
     shouldDeferCommandSend: (gameId, command) => {
       void command;
       return isPendingOptimisticGameCreation(gameId);
@@ -1140,7 +1149,7 @@ export const createSyncStore = ({
     }
     const activeGame =
       activeGameId && typeof transport.getGameViewModel === "function" ? transport.getGameViewModel(activeGameId) : null;
-    const desiredGameIds = isFailedLocalStub(activeGame) ? new Set() : new Set([activeGameId]);
+    const desiredGameIds = isFailedLocalStub(activeGame) || isPendingOptimisticGameCreation(activeGameId) ? new Set() : new Set([activeGameId]);
     for (const gameId of liveSync.getDesiredGameIds()) {
       if (!desiredGameIds.has(gameId)) {
         liveSync.disconnectGame(gameId);
@@ -1154,6 +1163,30 @@ export const createSyncStore = ({
   };
 
   if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+    window.addEventListener("storage", (event) => {
+      if (event.key !== PENDING_LOCAL_GAMES_KEY || !activeGameId) return;
+      const gameId = activeGameId;
+      try {
+        const before = JSON.parse(event.oldValue || "{}")[gameId];
+        const after = JSON.parse(event.newValue || "{}")[gameId];
+        if (JSON.stringify(before) === JSON.stringify(after)) return;
+      } catch { return; }
+      const stored = getStoredPendingLocalGame(gameId);
+      if (stored) {
+        transport.applyLiveGameUpdate({ game: stored });
+        if (isFailedLocalStub(stored)) {
+          transport.discardPendingCommands?.(gameId, { notice: stored.localFailureMessage });
+          failDependentOperationsForGame(gameId, createOperationError(stored.localFailureMessage), [], { preserveLocalGame: true });
+        }
+        syncActiveGame();
+      } else {
+        void transport.loadGame(gameId).then(() => {
+          if (activeGameId !== gameId) return;
+          syncActiveGame();
+          transport.flushPendingCommands?.(gameId);
+        }).catch(onError);
+      }
+    });
     window.addEventListener("online", () => {
       syncActiveGame();
     });
@@ -1232,6 +1265,7 @@ export const createSyncStore = ({
           transport.applyLiveGameUpdate({ game });
           operationManager.confirm(`create:${gameId}`, transport.getGameViewModel(gameId) ?? game);
           clearPendingLocalGame(gameId);
+          syncActiveGame();
           transport.flushPendingCommands?.(gameId);
         })
         .catch((error) => {
@@ -1359,6 +1393,7 @@ export const createSyncStore = ({
             game: transport.getGameViewModel(gameId) ?? result?.game ?? stubGame,
           });
           clearPendingLocalGame(gameId);
+          syncActiveGame();
           transport.flushPendingCommands?.(gameId);
         })
         .catch((error) => {

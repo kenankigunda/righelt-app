@@ -137,3 +137,18 @@ test("home listing restores and reconciles a journal game outside the visible pa
  assert.equal(reconciled,true);assert.equal(saved.length,0);
  assert.equal(t.getGameViewModel('history').pendingCommandCount,0);
 });
+
+test("initial socket snapshot satisfies page load without a second HTTP snapshot",async()=>{
+ let t;let reads=0;
+ t=createLiveTransportStore({storage:{getItem:()=>"actor",setItem(){}},commandJournal:{list:async()=>[]},beforeReconcile:async()=>{t.applyLiveGameUpdate({game:fixture(),eventSeq:7});return true;},fetcher:async()=>{reads++;throw Error('duplicate HTTP snapshot');}});
+ assert.equal((await t.loadGame('history')).id,'history');assert.equal(reads,0);
+});
+
+test("initial socket fallback shares reconciliation and does not start a competing GET",async()=>{
+ let reads=0;const t=createLiveTransportStore({storage:{getItem:()=>"actor",setItem(){}},commandJournal:{list:async()=>[]},beforeReconcile:async()=>true,fetcher:async(url)=>{
+  assert.ok(url.endsWith('/reconcile'));reads++;
+  return Response.json({protocolVersion:2,gameId:'history',eventSeq:7,gameplayRevision:0,commandOutcomes:[],game:fixture()});
+ }});
+ const loaded=await Promise.all([t.loadGame('history'),t.reconcileGame('history')]);
+ assert.equal(loaded[0].id,'history');assert.equal(reads,1);
+});

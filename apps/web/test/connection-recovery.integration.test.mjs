@@ -41,7 +41,7 @@ const setup = async (t, { loseApply = false, timeout = 100 } = {}) => {
   wire.length = 0;
   t.after(() => { store.setActiveGameId(null); for (const key of Object.keys(originals)) globalThis[key] = originals[key]; });
   const current = async () => (await actual(`/api/shell/games/${gameId}?identityId=${store.getIdentityId()}`)).json();
-  return { store, gameId, sockets, wire, reconciles, current, release: () => releaseApply?.() };
+  return { store, gameId, sockets, wire, reconciles, current, applyCommitted: () => Boolean(releaseApply), release: () => releaseApply?.() };
 };
 
 test("WS-first recovery coalesces concurrent HTTP triggers and sends the unchanged snapshot exactly once", async (t) => {
@@ -50,7 +50,7 @@ test("WS-first recovery coalesces concurrent HTTP triggers and sends the unchang
   const handle = await f.store.applyGameAction({ gameId: f.gameId, state: game.currentSnapshot, action });
   f.store.setActiveGameId(f.gameId); const socket = f.sockets[0]; socket.emit("open");
   const recoveries = [f.store.reconcileGame(f.gameId), f.store.reconcileGame(f.gameId), f.store.reconcileGame(f.gameId)];
-  await sleep(8); assert.equal(f.reconciles.length, 0);
+  await until(f.applyCommitted); assert.equal(f.reconciles.length, 0);
   const snapshot = await f.current();
   socket.receive({ ...snapshot, protocolVersion: 2, gameId: f.gameId, type: "state_sync" });
   f.release(); await Promise.all(recoveries); await until(() => handle.status === "committed");
