@@ -112,10 +112,22 @@ test('healthy optimistic confirmation adds no recovery announcement',async({page
   const node=document.getElementById('shell-sync-announcement');
   new MutationObserver(()=>window.healthyAnnouncements.push(node.textContent)).observe(node,{subtree:true,childList:true,characterData:true});
  });
+ let completed,failed;
+ const applied=new Promise((resolve,reject)=>{completed=resolve;failed=reject;});
+ void applied.catch(()=>{});
  await page.route(`**/api/shell/games/${gameId}/apply`,async route=>{
-  const response=await route.fetch();await new Promise(resolve=>setTimeout(resolve,500));await route.fulfill({response});
+  try {
+   const response=await route.fetch();await new Promise(resolve=>setTimeout(resolve,500));await route.fulfill({response});
+   completed();
+  } catch(error) {failed(error);}
  });
- await makeAnyLegalMove(page);
- await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
- expect(await page.evaluate(()=>window.healthyAnnouncements.filter(Boolean))).toEqual([]);
+ try {
+  await makeAnyLegalMove(page);
+  // A socket receipt may confirm first. Keep the fixture alive until the
+  // delayed HTTP reply also completes, then inspect the entire observation.
+  await applied;
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
+  expect(await page.evaluate(()=>window.healthyAnnouncements.filter(Boolean))).toEqual([]);
+ } finally {await page.unrouteAll({behavior:'wait'});}
 });
