@@ -156,6 +156,26 @@ console.log(JSON.stringify({initialState,decisions,finalHash:deterministicStateH
             self.assertEqual(runner.buffer.game_ids,[game['id']])
             self.assertTrue((runner.directory/runner.state['archives'][0]).exists())
 
+    def test_worker_persists_exact_state_before_inference(self):
+        import selectors
+        from righelt_training.runner import ENGINE,stop_worker
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'decision.json'
+            job={'command':'generate','id':'diagnostic-test','seed':107,'kind':'normal',
+                 'familyId':'test','partition':'train','modelVersion':'weights','budgetMs':5000,'diagnosticPath':str(path)}
+            process=subprocess.Popen(['node','--import','tsx',str(ENGINE)],cwd=ROOT,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+            selector=selectors.DefaultSelector();selector.register(process.stdout,selectors.EVENT_READ)
+            try:
+                process.stdin.write((json.dumps(job)+'\n').encode());process.stdin.flush()
+                self.assertTrue(selector.select(timeout=6),'worker did not request inference')
+                message=json.loads(process.stdout.readline())
+                self.assertEqual(message['type'],'evaluate')
+                diagnostic=json.loads(path.read_text())
+                self.assertEqual(diagnostic['jobId'],job['id']);self.assertEqual(diagnostic['decision'],0)
+                self.assertEqual(diagnostic['seed'],107);self.assertEqual(diagnostic['modelVersion'],'weights')
+                self.assertGreater(len(diagnostic['state']['pieces']),0)
+            finally:selector.close();stop_worker(process)
+
     def test_generation_protocol_respects_persisted_round_count(self):
         with tempfile.TemporaryDirectory() as directory:
             worker = Path(directory)/'mock-engine.mjs'
