@@ -20,9 +20,9 @@ export async function integratedRun({manifest,cwd=process.cwd(),dir,resume=false
  const harnessRevision=await git(['rev-parse','HEAD'],harnessRoot),harnessFingerprint=await fingerprint(harnessRoot);
  const signature=inputSignature(spec.repository,base,prs,harnessRevision,harnessFingerprint);const previous=run.signature;
  if(resume&&previous===signature&&run.stages.length===prs.length+1&&run.stages.every(s=>s.status==='passed')){console.log('Matching stages already passed. Refresh PR gates and agent review before merging.');return {run,dir};}
- if(run.stages.length)(run.attempts??=[]).push({signature:previous,stages:run.stages});
+ if(run.stages.length)(run.attempts??=[]).push({signature:previous,stages:run.stages,risks:run.risks,publication:run.publication});
  for(const p of prs){const old=run.prs.find(x=>x.number===p.number);if(old?.authorization)p.authorization={...old.authorization,state:old.base===p.base?old.authorization.state:'suspended'};}
- run.complete=false;run.base=base;run.prs=prs;run.signature=signature;run.harnessRevision=harnessRevision;run.harnessFingerprint=harnessFingerprint;run.stages=[];await saveJSON(file,run);
+ run.complete=false;run.base=base;run.prs=prs;run.signature=signature;run.harnessRevision=harnessRevision;run.harnessFingerprint=harnessFingerprint;run.stages=[];run.risks=[];run.publication={status:'pending'};await saveJSON(file,run);
  const attempt=Date.now();const root=path.join(path.dirname(cwd),`righelt-validation-${attempt}`);await command(['git','worktree','add','--detach',root,base],{cwd});run.worktree=root;await saveJSON(file,run);
  try{
   await command(['pnpm','install','--frozen-lockfile','--ignore-scripts'],{cwd:root,log:path.join(dir,'install.log')});

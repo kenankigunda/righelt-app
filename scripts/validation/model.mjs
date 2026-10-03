@@ -53,7 +53,8 @@ export function readiness(pr, stage, currentBase) {
   if (pr.scopeDecision) waiting.push('Product or structural decision');
   const deps=pr.waitingFor ?? [];
   if (deps.length) waiting.push(`Prerequisites: ${deps.join(', ')}`);
-  return {status:waiting.length?(waiting.length===1&&deps.length?'validated, waiting on prerequisites':'not merge-ready'):'merge-ready', waiting};
+  const unverified=!stage||stage.head!==pr.head||stage.base!==currentBase||['stale','running','unverified'].includes(stage.status);
+  return {status:unverified?'unverified/stale':waiting.length?(waiting.length===1&&deps.length?'validated but waiting on prerequisites':'not merge-ready'):'merge-ready', waiting};
 }
 export function canMerge(pr, stage, base) {
   return pr.authorization?.state==='authorized' && pr.authorization.target===pr.base && readiness(pr,stage,base).status==='merge-ready';
