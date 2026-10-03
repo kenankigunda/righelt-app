@@ -4,12 +4,20 @@ on:
     paths:
       - 'packages/computer-player/**'
       - 'tools/ai-trainer/**'
+      - 'tools/ai-benchmark/**'
+      - 'scripts/build-ai-benchmark.mjs'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/trained-play.yml'
   push:
     branches: [main]
     paths:
       - 'packages/computer-player/**'
       - 'tools/ai-trainer/**'
+      - 'tools/ai-benchmark/**'
+      - 'scripts/build-ai-benchmark.mjs'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/trained-play.yml'
 permissions:
   contents: read
@@ -41,3 +49,24 @@ jobs:
         env:
           PYTHONPATH: tools/ai-trainer
         run: tools/ai-trainer/.venv/bin/python -m righelt_training.preflight
+      - name: Generate held-out browser proof assets
+        env:
+          PYTHONPATH: tools/ai-trainer
+        run: |
+          node --import tsx tools/ai-trainer/parity-corpus.mjs 1000 /tmp/ai-corpus.json
+          tools/ai-trainer/.venv/bin/python -m righelt_training.parity --corpus /tmp/ai-corpus.json --output /tmp/ai-export --reference-output /tmp/ai-reference.json
+          node scripts/build-ai-benchmark.mjs --out /tmp/ai-browser --model /tmp/ai-export/model.onnx --corpus /tmp/ai-corpus.json
+      - name: Install proof browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Browser worker and full WASM parity
+        env:
+          AI_BENCHMARK_DIR: /tmp/ai-browser
+          AI_BENCHMARK_REFERENCE: /tmp/ai-reference.json
+          AI_BENCHMARK_REPORT: /tmp/ai-wasm-report.json
+        run: node --test tools/ai-benchmark/tests/*.test.mjs
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: trained-play-browser-proof
+          path: /tmp/ai-wasm-report.json
+          if-no-files-found: ignore
