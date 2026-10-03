@@ -283,14 +283,17 @@ class Runner:
                     self.checkpoint()
                     job['modelVersion'] = self.model_version
                     job['budgetMs'] = max(1, (round_deadline - time.monotonic()) * 1000)
-                    error_path = self.directory / 'worker-errors.log'
+                    diagnostics=self.directory/'worker-diagnostics';diagnostics.mkdir(exist_ok=True)
+                    identity=hashlib.sha256(job['id'].encode()).hexdigest()
+                    job['diagnosticPath']=str((diagnostics/f'{identity}.state.json').resolve())
+                    error_path=diagnostics/f'{identity}.stderr.log'
                     error_stream = error_path.open('ab')
                     process = subprocess.Popen(['node', '--import', 'tsx', str(ENGINE)], cwd=ROOT,
                                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=error_stream)
                     error_stream.close()
                     process.stdin.write((json.dumps(job) + '\n').encode()); process.stdin.flush()
                     fd = process.stdout.fileno()
-                    workers[fd] = {'process': process, 'job': job, 'buffer': b''}
+                    workers[fd] = {'process': process, 'job': job, 'buffer': b'', 'errorPath':str(error_path)}
                     selector.register(fd, selectors.EVENT_READ)
                     launched += 1
                 if not workers:
@@ -301,7 +304,9 @@ class Runner:
                     worker = workers[fd]
                     chunk = os.read(fd, 65536)
                     if not chunk:
-                        raise RuntimeError(f"engine exited without complete result: {worker['job']['id']}")
+                        code=worker['process'].poll()
+                        self.event('worker-exit',job=worker['job'],returncode=code,stderr=worker.get('errorPath'),partialBytes=len(worker['buffer']))
+                        raise RuntimeError(f"engine exited without complete result: {worker['job']['id']} (code={code}, stderr={worker.get('errorPath')})")
                     worker['buffer'] += chunk
                     while b'\n' in worker['buffer']:
                         raw, worker['buffer'] = worker['buffer'].split(b'\n', 1)

@@ -1,5 +1,6 @@
 // JSON-lines protocol. Parent owns inference, resource allocation and hard process termination.
 import { createInterface } from 'node:readline';
+import { writeFileSync, renameSync } from 'node:fs';
 import { searchRecovery } from './search-recovery.mjs';
 import { createHash } from 'node:crypto';
 import { createInitialState, deterministicStateHash, normalizeState, resolveToStability } from '../../packages/game-engine/src/index.ts';
@@ -153,6 +154,11 @@ async function main() {
       const seed = (job.seed + n) >>> 0;
       const decisionController=state.sideToMove;
       const profile=arena ? job.profiles[decisionController] : {simulations:experimentConfig.search.selfPlaySimulations,temperature:1,maxValueGap:.1};
+      if (job.diagnosticPath) {
+        const temporary = `${job.diagnosticPath}.tmp`;
+        writeFileSync(temporary, JSON.stringify({schema:1, jobId:job.id, modelVersion:job.modelVersion, decision:n, seed, profile, state}));
+        renameSync(temporary, job.diagnosticPath);
+      }
       const result = await selectMove({ state, seed, ...searchOptions(profile), deadlineMs: deadline }, async encoded => {
         const id = ++requestId;
         send({ type: 'evaluate', id, modelSeat:decisionController, input: Array.from(encoded) });

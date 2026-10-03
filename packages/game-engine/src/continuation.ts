@@ -1,3 +1,4 @@
+import { checkEngineComputation } from "./computation-guard";
 import type { Action, ContinuationContext, GameState, Piece } from "./types";
 import { BOARD_SIZE, SUPPLY_POINTS, normalizeState } from "./deterministic";
 
@@ -581,6 +582,7 @@ function closePushContinuation(state: GameState, attackerOwner: "P1" | "P2") {
 }
 
 export function buildContinuationSuccessorState(state: GameState, action: Action): GameState {
+  checkEngineComputation(true);
   const next = cloneState(state);
   const actor = action.actorId ? next.pieces.find((piece) => piece.id === action.actorId) : undefined;
 
@@ -754,6 +756,7 @@ function continuationSearchKey(state: GameState): string {
 }
 
 export function isContinuationCompletable(state: GameState, memo = new Map<string, SearchMemoState>()): boolean {
+  checkEngineComputation(Boolean(state.continuation));
   if (!state.continuation) {
     return true;
   }
@@ -768,25 +771,31 @@ export function isContinuationCompletable(state: GameState, memo = new Map<strin
     return false;
   }
 
-  memo.set(key, "visiting");
-  if (canCloseContinuationNow(normalized)) {
-    memo.set(key, "success");
-    return true;
-  }
-
-  const successors = buildSuccessorStates(normalized);
-  if (successors.length === 0) {
-    memo.set(key, "failure");
-    return false;
-  }
-
-  for (const successor of successors) {
-    if (isContinuationCompletable(successor, memo)) {
+  try {
+    memo.set(key, "visiting");
+    if (canCloseContinuationNow(normalized)) {
       memo.set(key, "success");
       return true;
     }
-  }
 
-  memo.set(key, "failure");
-  return false;
+    const successors = buildSuccessorStates(normalized);
+    if (successors.length === 0) {
+      memo.set(key, "failure");
+      return false;
+    }
+
+    for (const successor of successors) {
+      if (isContinuationCompletable(successor, memo)) {
+        memo.set(key, "success");
+        return true;
+      }
+    }
+
+    memo.set(key, "failure");
+    return false;
+  } catch (error) {
+    // Resource interruption proves nothing; never retain a visiting marker.
+    memo.delete(key);
+    throw error;
+  }
 }

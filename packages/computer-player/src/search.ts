@@ -1,3 +1,4 @@
+import { withEngineComputationGuard } from "../../game-engine/src/index";
 import type { Action, GameState } from "../../shared-types/src/engine";
 import { encodeState, experimentConfig as config, legalActionMap } from "./representation";
 import { terminalValue, transition } from "./transition";
@@ -59,6 +60,8 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
       !Number.isSafeInteger(maxNodes) || maxNodes < 1 || maxNodes > config.search.maxNodes ||
       !Number.isFinite(temperature) || temperature < 0 || !Number.isFinite(valueGap) || valueGap < 0 ||
       (request.deadlineMs !== undefined && !Number.isFinite(request.deadlineMs))) throw new Error("Invalid search limits");
+  // One shared ceiling covers search nodes and synchronous continuation work;
+  // recursive legality cannot allocate an unbounded graph inside a single node.
   let nodes = 1;
   let completed = 0;
   let stopped: "complete" | "deadline" | "node-limit" = "complete";
@@ -71,9 +74,16 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
       stopped = "deadline"; throw new SoftStop();
     }
   };
+  const engine = <T>(operation: () => T): T => withEngineComputationGuard(expansion => {
+    check();
+    if (expansion) {
+      if (nodes >= maxNodes) { stopped = "node-limit"; throw new SoftStop(); }
+      nodes++;
+    }
+  }, operation);
   const edges = (node: Node) => {
     check();
-    if (!node.edges) node.edges = [...legalActionMap(node.state)].map(([index, action]) => ({ index, action, prior: 0, visits: 0, sum: 0 }));
+    if (!node.edges) node.edges = [...engine(() => legalActionMap(node.state))].map(([index, action]) => ({ index, action, prior: 0, visits: 0, sum: 0 }));
     check();
     return node.edges;
   };
@@ -81,8 +91,8 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     check();
     if (!edge.child) {
       if (nodes >= maxNodes) { stopped = "node-limit"; throw new SoftStop(); }
-      edge.child = { state: transition(node.state, edge.action), visits: 0, sum: 0 };
       nodes += 1;
+      edge.child = { state: engine(() => transition(node.state, edge.action)), visits: 0, sum: 0 };
     }
     check();
     return edge.child;

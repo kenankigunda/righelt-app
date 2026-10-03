@@ -1,3 +1,4 @@
+import { checkEngineComputation } from "./computation-guard.js";
 import { buildContinuationSuccessorState, canCloseContinuationNow, isContinuationCompletable, } from "./continuation.js";
 import { BOARD_SIZE, SUPPLY_POINTS } from "./deterministic.js";
 function outOfBounds(value) {
@@ -379,6 +380,7 @@ export function listLegalActions(state) {
     return actions;
 }
 export function validateAction(state, action) {
+    checkEngineComputation();
     if (state.outcome.status !== "ongoing") {
         return {
             ok: false,
