@@ -94,7 +94,7 @@ test("resume puts your older turn before a newer waiting game and retries a fail
   await testInfo.attach("personal-home", { body: await page.screenshot({ path: testInfo.outputPath("personal-home.png"), fullPage: true }), contentType: "image/png" });
 });
 
-for (const width of [375, 1100, 1600]) test(`personal home fits ${width}px and keeps keyboard side choice visible`, async ({ page }, testInfo) => {
+for (const width of [320, 375, 1100, 1600]) test(`personal home fits ${width}px and keeps keyboard side choice visible`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 });
   await page.goto("/");
   const red = page.getByRole("radio", { name: "Player 1 · Red" });
@@ -104,10 +104,12 @@ for (const width of [375, 1100, 1600]) test(`personal home fits ${width}px and k
   await expect(blue).toBeChecked();
   await expect(blue).toBeFocused();
   expect(await blue.evaluate(element => getComputedStyle(element).appearance)).not.toBe("none");
-  const babs = await page.locator('[data-opponent="babs"]').boundingBox();
-  const horus = await page.locator('[data-opponent="horus"]').boundingBox();
-  if (width >= 1200) expect(horus.y).toBe(babs.y);
-  else expect(horus.y).toBeGreaterThan(babs.y);
+  await expect.poll(() => page.evaluate((wide) => {
+    const babs = document.querySelector('[data-opponent="babs"]')?.getBoundingClientRect();
+    const horus = document.querySelector('[data-opponent="horus"]')?.getBoundingClientRect();
+    return Boolean(babs && horus && (wide ? horus.y === babs.y : horus.y > babs.y));
+  }, width >= 1200)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  await expect(page.locator('[data-opponent="babs"]')).toHaveCSS("background-color", "rgb(36, 94, 155)");
   await testInfo.attach(`personal-home-${width}`, { body: await page.screenshot({ path: testInfo.outputPath(`home-${width}.png`), fullPage: true }), contentType: "image/png" });
 });
