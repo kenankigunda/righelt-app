@@ -19,7 +19,7 @@ test('retained-state validation rejects candidate edits and a changed sequence h
  for(const kind of ['candidate','harness']){
   await writeFile(path.join(cwd,'file'),'original');let n=0;
   const run={version:1,id:kind,mode:'integrated',base,stages:[],prs:[],risks:[],...(kind==='harness'?{harnessRevision:'old',harnessFingerprint:'old'}:{})};
-  const result=await localRun({cwd,base,dir:path.join(root,kind),run,publishReport:false,lockPath:path.join(root,'lock'),execute:async(argv,{env})=>{await saveJSON(env.RIGHELT_EVIDENCE_JSON,[{id:'proof',status:'passed',images:[]}]);if(kind==='candidate'&&n++===0)await writeFile(path.join(cwd,'file'),'unported change');return {code:0,duration:1};}});
+  const result=await localRun({cwd,base,dir:path.join(root,kind),run,publishReport:false,lockPath:path.join(root,'lock'),execute:async(argv,{env})=>{if(argv[1]==='test:e2e')assert.equal(env.CI,'1','candidate E2E must disable legacy server reuse');await saveJSON(env.RIGHELT_EVIDENCE_JSON,[{id:'proof',status:'passed',images:[]}]);if(kind==='candidate'&&n++===0)await writeFile(path.join(cwd,'file'),'unported change');return {code:0,duration:1};}});
   assert.equal(result.stage.status,'stale');if(kind==='candidate')assert.equal(result.stage.sourceClean,false);else assert.equal(run.harnessFingerprint,'old');
  }
 });
