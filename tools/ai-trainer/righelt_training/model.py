@@ -17,7 +17,7 @@ class PolicyValueNet(nn.Module):
         c = CONFIG['model']; n = c['channels']
         self.stem = nn.Conv2d(CONFIG['inputPlanes'], n, 3, padding=1)
         self.blocks = nn.Sequential(*(ResidualBlock(n) for _ in range(c['residualBlocks'])))
-        self.policy = nn.Conv2d(n, 28, 1)
+        self.policy = nn.Conv2d(n, (CONFIG['actionCount'] - 1) // CONFIG['boardSize'] ** 2, 1)
         self.pass_head = nn.Linear(n, 1)
         self.value_spatial = nn.Conv2d(n, c['valueChannels'], 1)
         self.value_hidden = nn.Linear(c['valueChannels'] * CONFIG['boardSize'] ** 2, c['valueHidden'])

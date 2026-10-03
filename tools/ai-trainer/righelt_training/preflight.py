@@ -5,13 +5,14 @@ import tempfile
 from pathlib import Path
 import torch
 from .model import PolicyValueNet
+from .config import CONFIG
 from .export import export_onnx,numeric_parity
 
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--require-mps',action='store_true');args=parser.parse_args()
     torch.manual_seed(107);torch.set_num_threads(1)
-    model=PolicyValueNet();x=torch.randn(2,46,10,10)
+    model=PolicyValueNet();x=torch.randn(2,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
     mps=torch.backends.mps.is_available()
     if args.require_mps and not mps:raise RuntimeError('Apple MPS is unavailable')
     report={'python':platform.python_version(),'torch':torch.__version__,'mpsAvailable':mps,

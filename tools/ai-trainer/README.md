@@ -26,3 +26,15 @@ Both approved stages begin at two self-play workers and a 16 GiB experiment ceil
 The activity bridge is a local JSON file with `schema: 1`, `observedAt` (Unix seconds), and `developmentActive` (boolean). A coordinator must refresh this from actual task status; a stale `false` never authorizes more resources. System CPU and memory telemetry must independently permit escalation. Every observation and allocation is appended to the experiment record.
 
 Throttling and paused time count against the six-hour or twelve-hour deadline. Resuming the same run cannot reset that deadline. Setup/unit tests do not consume the experiment budget. The launch supervisor rejects missing/stale correctness or full export-parity proof. Synthetic preflight output cannot authorize a run.
+
+## Held-out export proof and timing reports
+
+```sh
+pnpm ai:parity-corpus 1000 /tmp/t107-parity-corpus.json
+pnpm ai:export-parity --corpus /tmp/t107-parity-corpus.json --output /tmp/t107-parity --require-mps
+pnpm ai:benchmark-report phone-measurements.json timing-report.json
+```
+
+The parity corpus uses separate validation trajectory families. It never opens the final test partition. Numeric reports identify the reference device and preserve unmet legal-mask, tactical and browser gates. Add `--reference-output FILE` to emit corresponding policy/value references for browser comparison. A checkpoint counts as trained only when its saved update count is positive.
+
+Timing reports count failures and unfinished computations as unknown successful completion times, not fast successes. Interruptions are reported separately. Reports keep all outliers and refuse to declare release acceptance from desktop data or provisional profiles.

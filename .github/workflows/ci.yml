@@ -117,7 +117,7 @@ jobs:
         run: pnpm test:engine:unit -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/engine-unit/results.xml
 
       - name: Trained search tests
-        run: pnpm test:computer-player
+        run: pnpm test:computer-player:unit
 
       - name: Upload engine unit JUnit
         if: always()
@@ -176,6 +176,9 @@ jobs:
 
       - name: Engine integration tests
         run: pnpm test:engine:integration -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/engine-integration/results.xml
+
+      - name: Trained transition integration tests
+        run: pnpm test:computer-player:integration
 
       - name: Upload engine integration JUnit
         if: always()
