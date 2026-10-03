@@ -17,7 +17,7 @@ class ExportParityTest(unittest.TestCase):
     def fixture(self,d):
         root=Path(d);checkpoint=root/'checkpoint.pt';checkpoint.write_bytes(b'trained')
         digest=hashlib.sha256(checkpoint.read_bytes()).hexdigest()
-        atomic_json(checkpoint.with_suffix('.json'),{'updates':1})
+        atomic_json(checkpoint.with_suffix('.json'),{'updates':1,'manifestSha256':'manifest'})
         atomic_json(root/'latest.json',{'sha256':digest})
         corpus=root/'corpus.json';corpus.write_text('{}')
         corpus_hash=hashlib.sha256(corpus.read_bytes()).hexdigest()

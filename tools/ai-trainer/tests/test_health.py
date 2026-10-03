@@ -21,8 +21,7 @@ class HealthTest(unittest.TestCase):
             if index==1 or change:
                 optimizer.zero_grad();model(torch.ones(1,46,10,10))[0].sum().backward();optimizer.step();updates+=1
             path=directory/'checkpoints'/f'checkpoint-{index:06d}.pt'
-            digest=save_checkpoint(path,model,optimizer,round_index=index,updates=updates,replay_ids=[],manifest_sha256='test')
-            atomic_json(path.with_suffix('.runner.json'),{'checkpointSha256':digest,'state':{'archives':[],'updates':updates,'nonzeroUpdates':updates}})
+            digest=save_checkpoint(path,model,optimizer,round_index=index,updates=updates,replay_ids=[],manifest_sha256='test',recovery_state={'round':index,'archives':[],'updates':updates,'nonzeroUpdates':updates})
         atomic_json(directory/'latest.json',{'checkpoint':str(path),'sha256':digest,'updates':updates})
         return path
     def test_repeated_checkpoint_bytes_do_not_count_as_distinct_trained_models(self):

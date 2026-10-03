@@ -14,6 +14,7 @@ from .checkpoint import atomic_json,load_checkpoint
 from .config import CONFIG,CONFIG_SHA256
 from .export import export_onnx,numeric_parity
 from .model import PolicyValueNet
+from .manifest import active_manifest,manifest_hashes
 from .parity import verify_corpus
 
 
@@ -26,7 +27,7 @@ def evaluate(directory,checkpoint,corpus,deadline,*,clock=time.monotonic,checker
     try:
         if deadline-clock()<30:raise TimeoutError('export parity budget insufficient')
         runtime=json.loads((directory/'runtime.json').read_text())
-        manifest=json.loads((directory/'manifest.json').read_text())
+        manifest=active_manifest(directory)
         corpus_hash=hashlib.sha256(corpus.read_bytes()).hexdigest()
         if corpus_hash!=runtime['parityCorpusSha256']:raise ValueError('supervised parity corpus changed')
         meta=json.loads(checkpoint.with_suffix('.json').read_text())
@@ -35,7 +36,8 @@ def evaluate(directory,checkpoint,corpus,deadline,*,clock=time.monotonic,checker
         if checkpoint_hash!=latest['sha256'] or meta['updates']<=0:raise ValueError('parity requires latest trained checkpoint')
         rows=verify_corpus(json.loads(corpus.read_text()))
         if not torch.backends.mps.is_available():raise RuntimeError('MPS unavailable for trained parity')
-        model=PolicyValueNet();load_checkpoint(checkpoint,model,manifest_sha256=manifest['sha256'])
+        if meta['manifestSha256'] not in manifest_hashes(directory):raise ValueError('checkpoint lineage not authorized')
+        model=PolicyValueNet();load_checkpoint(checkpoint,model,manifest_sha256=meta['manifestSha256'],require_recovery=True)
         asset=directory/'trained-export'/f'{checkpoint_hash}.onnx'
         metadata=export_onnx(model,asset)
         errors=[0.,0.]
