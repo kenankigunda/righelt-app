@@ -1,4 +1,4 @@
-import { createRenderGestureGate } from './render-gesture.js';
+import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js';
 import { participantButton, participantName, createPublicProfileDialog } from './public-profile.js';
 import { createAccountController, safeAccountIntent } from './account-controller.js';
 import { createAccountDialog } from './account-dialog.js';
@@ -3681,6 +3681,9 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (renderGesture.defer({ animatePanels, includeBoard })) return;
+  return preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
+};
+const renderContent = ({ animatePanels, includeBoard }) => {
   document.title = getDocumentTitle();
   syncRouteTransitionForCurrentRoute();
   const routeKey = getRouteRenderKey();
