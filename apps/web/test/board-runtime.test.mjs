@@ -3371,6 +3371,7 @@ test("board runtime refreshes a preserved branch selection from the new legal ac
   let releaseOldMoves;
   let holdPieceMoves = false;
   const runtime = createBoardRuntime({
+    previewAction: state => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick }) => { click = onCellClick; },
       render: noop,
@@ -3395,6 +3396,8 @@ test("board runtime refreshes a preserved branch selection from the new legal ac
   runtime.bindElements({ boardEl: {}, overlayLinesEl: {}, boardPreviewLabelEl: null, boardTurnIndicatorEl: null });
   await runtime.loadSnapshot(snapshot, { legalActions: [action], selectionAction: action });
   await runtime.loadSnapshot(snapshot, { legalActions: [action], resetSelection: false });
+  click(action.to);
+  assert.deepEqual(submitted, [], "first activation previews the refreshed action");
   click(action.to);
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.deepEqual(submitted, [action], "the hydrated target remains actionable after the authoritative snapshot replaces the branch stub");

@@ -7,7 +7,7 @@ const dialog = page => page.getByTestId("account-dialog");
 const uniqueName = () => `Invite_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
 test.beforeEach(async () => {
-  const response = await fetch("http://127.0.0.1:10088/reset-limits", { method: "POST" });
+  const response = await fetch(`http://127.0.0.1:${Number(process.env.RIGHELT_AUTH_E2E_WEB_PORT || 9988) + 100}/reset-limits`, { method: "POST" });
   expect(response.status).toBe(200);
 });
 
@@ -16,7 +16,7 @@ async function register(page, username, play = false) {
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
   // Landing is public; an account overlay appears only after an explicit attempt.
   await expect(dialog(page)).not.toBeVisible();
-  await page.getByRole("button", { name: play ? "Start new game" : "Sign in", exact: true }).click();
+  await (play ? page.getByTestId("home-create-game") : page.getByRole("button", { name: "Sign in", exact: true })).click();
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
   await dialog(page).getByLabel("Username", { exact: true }).fill(username);
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);

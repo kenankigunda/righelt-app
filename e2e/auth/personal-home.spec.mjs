@@ -152,3 +152,23 @@ test("Explain activation survives an account response arriving during its press"
   await expect(explain).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => page.evaluate(async () => (await (await fetch("/api/auth/session")).json()).account.preferences.view)).toBe("explanatory");
 });
+
+test("an initial session wait preserves the side chosen when play was requested", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("account-open")).toBeVisible();
+  let release, arrived;
+  const held = new Promise(resolve => { arrived = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route("**/api/auth/session", async route => {
+    const response = await route.fetch(); arrived(); await gate; await route.fulfill({ response });
+  }, { times: 1 });
+  try {
+    await page.reload(); await held;
+    await page.getByRole("radio", { name: "Player 2 · Blue" }).check();
+    await page.getByTestId("home-create-game").click();
+    await page.getByRole("radio", { name: "Player 1 · Red" }).check();
+    release();
+    await finishRegistration(page); await acknowledge(page);
+    await expect(page.getByTestId("game-role")).toContainText("Player 2");
+  } finally { release(); await page.unrouteAll({ behavior: "wait" }); }
+});

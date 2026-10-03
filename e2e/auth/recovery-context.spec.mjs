@@ -17,7 +17,7 @@ async function prepare(page) {
   return page.getByTestId("recovery-code").textContent();
 }
 test("two tabs can acknowledge only the recovery code prepared by that exact form", async ({ page }) => {
-  expect((await fetch("http://127.0.0.1:10088/reset-limits", { method: "POST" })).status).toBe(200);
+  expect((await fetch(`http://127.0.0.1:${Number(process.env.RIGHELT_AUTH_E2E_WEB_PORT || 9988) + 100}/reset-limits`, { method: "POST" })).status).toBe(200);
   await page.goto("/");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();

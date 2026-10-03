@@ -4375,6 +4375,7 @@ appEl.addEventListener("click", async (event) => {
   }
 
   const action = actionEl.getAttribute("data-action");
+  const startIntent = { hash: window.location.hash, opponent: actionEl.getAttribute("data-opponent"), side: homeSide };
   if (action === "retry-game-route") { startRouteSync(); return; }
   if (["toggle-explain", "collapse-help", "expand-help"].includes(action)) {
     const gameId = getCurrentViewedGameId();
@@ -4412,7 +4413,7 @@ appEl.addEventListener("click", async (event) => {
   if (accountGatedActions.has(action) && !account.canPlay()) {
     event.preventDefault();
     if (!account.snapshot().available || account.snapshot().maintenance) return;
-    const intent = safeAccountIntent({ hash: window.location.hash, action, opponent: actionEl.getAttribute("data-opponent"), side: homeSide, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });
+    const intent = safeAccountIntent({ ...startIntent, action, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });
     accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", intent, actionEl);
     return;
   }
@@ -4473,7 +4474,7 @@ appEl.addEventListener("click", async (event) => {
     }, 0);
   };
 
-  if (action === "start-opponent") { startPersonalGame({ opponent: actionEl.getAttribute("data-opponent"), side: homeSide }); return; }
+  if (action === "start-opponent") { startPersonalGame(startIntent); return; }
   if (action === "resume-page" || action === "retry-resume") { await loadResumePage(action === "resume-page" ? Number(actionEl.dataset.page) : resumeSection.page, { renderPending: true }); if (currentRoute.name === "home") render(); return; }
 
   if (action === "create-game") {

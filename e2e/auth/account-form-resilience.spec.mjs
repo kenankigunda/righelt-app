@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 const dialog = page => page.getByTestId("account-dialog");
 test.beforeEach(async () => {
-  expect((await fetch("http://127.0.0.1:10088/reset-limits", { method: "POST" })).status).toBe(200);
+  expect((await fetch(`http://127.0.0.1:${Number(process.env.RIGHELT_AUTH_E2E_WEB_PORT || 9988) + 100}/reset-limits`, { method: "POST" })).status).toBe(200);
 });
 
 test("correctable errors preserve inputs and failed recovery-code exports keep a manual fallback", async ({ page }) => {
@@ -13,7 +13,7 @@ test("correctable errors preserve inputs and failed recovery-code exports keep a
   });
   await page.setViewportSize({ width: 390, height: 700 });
   await page.goto("/");
-  await page.getByRole("button", { name: "Start new game", exact: true }).click();
+  await page.getByTestId("home-create-game").click();
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
   await dialog(page).getByLabel("Username", { exact: true }).fill("Invalid name");
   await dialog(page).getByLabel("Display name (optional)", { exact: true }).fill("Preserved name");
