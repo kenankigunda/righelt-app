@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "apps/api/**"
+      - "apps/auth/**"
+      - "apps/auth-hash/**"
       - "apps/web/**"
       - "packages/api-handler/**"
       - "packages/game-engine/**"
@@ -25,6 +27,8 @@ on:
     branches: [main]
     paths:
       - "apps/api/**"
+      - "apps/auth/**"
+      - "apps/auth-hash/**"
       - "apps/web/**"
       - "packages/api-handler/**"
       - "packages/game-engine/**"
