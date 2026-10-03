@@ -63,7 +63,7 @@ test("device sound is muted initially, confirms once, and reload stays silent", 
   await page.getByRole("button", { name: "Sound on this device: On", exact: true }).click();
   await expect(page.getByRole("button", { name: "Sound on this device: Off", exact: true })).toHaveAttribute("aria-pressed", "false");
 });
-test("resume loading reserves Start position without blocking it", async ({ page }) => {
+test("resume loading reserves Start position without blocking it", async ({ page }, testInfo) => {
   await register(page); await page.getByRole("button", { name: "Self-play", exact: true }).click(); await expect(page.getByTestId("game-shell")).toBeVisible();
   let release, arrived; const held = new Promise(resolve => { release = resolve; }); const requested = new Promise(resolve => { arrived = resolve; });
   await page.route("**/api/shell/games?**unfinished=1*", async route => { const response = await route.fetch(); arrived(); await held; await route.fulfill({ response }); });
@@ -72,6 +72,10 @@ test("resume loading reserves Start position without blocking it", async ({ page
   const before = await start.boundingBox(); release();
   await expect(page.locator('[data-zone="home-resume"]')).toHaveAttribute("aria-busy", "false");
   const after = await start.boundingBox(); expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+  for (const viewport of [{ width: 375, height: 812 }, { width: 1100, height: 800 }, { width: 1600, height: 1000 }]) {
+    await page.setViewportSize(viewport);
+    await page.screenshot({ path: testInfo.outputPath(`personal-home-${viewport.width}.png`), fullPage: true });
+  }
 });
 
 test("dismissed rule help survives reload and respects the hydrated manual preference", async ({ page }) => {
