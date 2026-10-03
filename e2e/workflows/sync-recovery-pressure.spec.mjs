@@ -21,7 +21,9 @@ async function wire(page) {
   if(mutation)fault.commands.push(route.request().postDataJSON());
   if(mutation&&fault.holdApply){await route.abort();return;}
   const response=await route.fetch({timeout:5000});
-  const body=await response.body();fault.bytes+=body.length;
+  let body=await response.body();
+  if(fault.legacy&&route.request().method()==='GET'){try{const parsed=JSON.parse(body);if(parsed.game){delete parsed.protocolVersion;body=Buffer.from(JSON.stringify(parsed));}}catch{}}
+  fault.bytes+=body.length;
   try{if(JSON.parse(body)?.game)fault.snapshots++;}catch{}
   if(mutation&&fault.loseReply){await route.abort();return;}
   await new Promise(resolve=>setTimeout(resolve,fault.latency));
@@ -203,18 +205,13 @@ test('E05 intentional history survives disconnection and home navigation',async(
 
 test('E07 new client rejects old protocol and one refresh preserves saved game',async({page},info)=>{
  const {gameId}=await createGameFromHome(page);await makeAnyLegalMove(page);const before=await digest(page);
- let legacy=true;let navigation=0;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigation++;});
- await page.route(`**/api/shell/games/${gameId}?**`,async route=>{
-  const response=await route.fetch();const body=await response.json();
-  if(legacy)delete body.protocolVersion;
-  await route.fulfill({response,json:body});
- });
+ const fault=await wire(page);fault.legacy=true;let navigation=0;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigation++;});
  await page.reload();await page.waitForTimeout(3000);
  expect(navigation).toBeLessThanOrEqual(2);
- const start=Date.now();legacy=false;await page.reload();
+ const start=Date.now();fault.legacy=false;await page.reload();
  await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
  await expect.poll(async()=>JSON.stringify(await digest(page))).toBe(JSON.stringify(before));
- await info.attach('upgrade-refresh',{body:JSON.stringify({convergenceMs:Date.now()-start,automaticReloads:navigation-2}),contentType:'application/json'});
+ await evidence(info,'upgrade-refresh',start,[fault],{automaticReloads:navigation-2});
 });
 
 test('I10 browser reconnect transfers one current snapshot after205 moves and30 duplicate submissions',async({page},info)=>{

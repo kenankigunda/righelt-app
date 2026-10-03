@@ -920,7 +920,8 @@ export const createLiveTransportStore = ({
     if (!card) return null;
     const optimistic = getOptimisticState(gameId);
     const next = clone(card);
-    if (optimistic.pendingCommands.length || optimistic.storageBlocked || optimistic.connectionRecovering) next.syncStatus = "confirming";
+    if (optimistic.pendingCommands.length) next.syncStatus = optimistic.syncStatus;
+    if (optimistic.storageBlocked || optimistic.connectionRecovering) next.syncStatus = "confirming";
     return next;
   };
 
