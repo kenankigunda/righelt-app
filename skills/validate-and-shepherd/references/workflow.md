@@ -41,3 +41,7 @@ Refresh each PR record with checks/review (`passed`, `pending`, `failed`), previ
 Use four statuses: merge-ready; validated but waiting on prerequisites; not merge-ready; unverified/stale. Include next action and owner. Local tests alone never establish PR readiness. Recheck remote base and PR heads at handoff and before merging.
 
 After a real merge, rebuild the next stage against actual remote base (including squash/rebase effects). Preserve the completed run and its notification/authorization history. Create the next manifest/run for the remaining open PRs, removing already merged prerequisites from the ordered list only after verifying their actual merge commits; record those settled prerequisites and the prior run path in the new run's coordination metadata. Transfer still-active authorization and tracked report conversations under the run lock; never transfer consumed authorizations. If no open PRs remain, stop monitoring. Do not reuse a simulated tree solely because it looked similar.
+
+### Capture boundaries
+
+Component evidence shows only pixels visible within the viewport and clipping ancestors; reveal or scroll a component deliberately before capturing another view. Labels identify visible-area crops. Do not stitch fixed, sticky or modal surfaces into full-page images: repeated controls misrepresent the app. Keep whole-viewport context for those surfaces and capture additional named scroll positions when necessary. Ordinary scrolling documents can retain full-page evidence.
