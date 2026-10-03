@@ -25,6 +25,9 @@ async function wire(page) {
   if(fault.legacy&&route.request().method()==='GET'){try{const parsed=JSON.parse(body);if(parsed.game){delete parsed.protocolVersion;body=Buffer.from(JSON.stringify(parsed));}}catch{}}
   fault.bytes+=body.length;
   try{if(JSON.parse(body)?.game)fault.snapshots++;}catch{}
+  if(fault.interruptNextRecovery && /\/reconcile$/.test(new URL(route.request().url()).pathname)){
+   fault.interruptNextRecovery=false;fault.interruptedRecoveries=(fault.interruptedRecoveries||0)+1;fault.http=true;await route.abort();return;
+  }
   if(mutation&&fault.loseReply){await route.abort();return;}
   await new Promise(resolve=>setTimeout(resolve,fault.latency));
   await route.fulfill({response,body});
@@ -99,8 +102,9 @@ test('E02 silent online receive loss triggers watchdog and survives interrupted 
   const loss=p.faults[1].lastInbound;await move(p.pages[0],p.gameId);
   await expect(p.pages[1].getByTestId('sync-recovery-banner')).toContainText('Reconnecting',{timeout:17000});
   const detectionMs=Date.now()-loss;expect(detectionMs).toBeLessThanOrEqual(16000);
-  p.faults[1].http=false;await p.pages[1].waitForTimeout(300);p.faults[1].http=true;
-  await p.pages[1].waitForTimeout(5500);
+  p.faults[1].interruptNextRecovery=true;p.faults[1].http=false;
+  await expect.poll(()=>p.faults[1].interruptedRecoveries||0,{timeout:10000}).toBe(1);
+  await p.pages[1].waitForTimeout(1000);
   p.faults[1].receive=false;p.faults[1].http=false;const start=Date.now();
   await converged(p.pages);await evidence(info,'silent-online',start,p.faults,{detectionMs});
  }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
