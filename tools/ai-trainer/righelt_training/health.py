@@ -5,6 +5,10 @@ import hashlib
 import json
 from pathlib import Path
 import time
+import os
+import signal
+import subprocess
+import threading
 import torch
 from .checkpoint import atomic_json, load_checkpoint
 from .config import ROOT
@@ -25,6 +29,22 @@ def finite_tree(value):
     return True
 
 
+def check_attempt_history(directory):
+    starts={};ends={}
+    for line in (Path(directory)/'supervisor-attempts.jsonl').read_text().splitlines():
+        row=json.loads(line)
+        target=starts if row['event']=='started' else ends if row['event']=='finished' else None
+        if target is None or row['id'] in target:raise ValueError('invalid supervisor attempt journal')
+        target[row['id']]=row
+    if not starts or not set(ends)<=set(starts):raise ValueError('incomplete supervisor attempt journal')
+    for identity,start in starts.items():
+        end=ends.get(identity)
+        if end is None:
+            if start['phase']=='health' and start['pid']==os.getppid():continue
+            raise ValueError('unresolved interrupted supervisor attempt')
+        if end['reason'] in ('runner-failed','telemetry-failed'):raise ValueError('unresolved prior supervisor failure')
+
+
 def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
     directory=Path(directory).resolve()
     result={'schema':1,'terminalGames':0,'truncatedGames':0,'replayChecks':0,
@@ -32,6 +52,7 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
             'unresolvedCorrectnessFailures':0,'complete':False,'progressReportPublished':False,
             'healthy':False,'productionPromotion':False,'failures':[],'checkpoints':[]}
     try:
+        check_attempt_history(directory)
         latest=json.loads((directory/'latest.json').read_text())
         path=Path(latest['checkpoint']).resolve()
         if not path.is_relative_to(directory):raise ValueError('checkpoint outside run')
@@ -80,7 +101,7 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
             raise ValueError('unresolved supervisor failure')
         result['complete']=True
         result['healthy']=result['terminalGames']>=100 and len(weights)>=2 and result['finiteNonzeroUpdates']
-    except TimeoutError as error:
+    except (TimeoutError,subprocess.TimeoutExpired) as error:
         result['failures'].append(str(error))
     except (ValueError,KeyError,OSError,RuntimeError) as error:
         result['unresolvedCorrectnessFailures']+=1
@@ -95,8 +116,20 @@ def main():
     runtime=json.loads((directory/'runtime.json').read_text())
     import psutil
     if runtime['bootTime']!=psutil.boot_time():raise ValueError('cannot reuse deadline after reboot')
+    if runtime.get('supervisorPid')!=os.getppid() or runtime.get('command')!='health' or os.getpgrp()!=os.getpid():
+        raise ValueError('health must run inside the original external supervisor')
+    signal.signal(signal.SIGUSR1,lambda *_:None)
+    stopped=threading.Event()
+    def heartbeat():
+        while not stopped.is_set():
+            amount=torch.mps.driver_allocated_memory() if torch.backends.mps.is_available() else 0
+            atomic_json(directory/'device-memory.json',{'schema':1,'pid':os.getpid(),'observedAt':time.time(),'driverBytes':amount})
+            stopped.wait(3)
+    thread=threading.Thread(target=heartbeat,daemon=True);thread.start()
+    atomic_json(directory/'health-report.json',{'schema':1,'healthy':False,'complete':False,'reason':'audit-running'})
     torch.set_num_threads(1)
-    result=audit(directory,runtime['deadlineMonotonic'])
+    try:result=audit(directory,runtime['deadlineMonotonic'])
+    finally:stopped.set();thread.join(timeout=1)
     atomic_json(directory/'health-report.json',result);print(json.dumps(result,indent=2))
 
 if __name__=='__main__':main()
