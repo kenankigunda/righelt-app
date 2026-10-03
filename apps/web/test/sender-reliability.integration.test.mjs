@@ -255,7 +255,7 @@ test("admission quota failure cannot block durable command recovery", async () =
   await until(() => f.env.DB.getGameState(f.gameId).moves.length === 2);
 });
 
-test("full game and identity journal caps drain durable receipts before retrying admission", async () => {
+test("full game and identity journal caps drain durable receipts before retrying admission", async (t) => {
   const { commandFingerprint } = await import("../generated/packages/shared-types/src/sync-protocol.js");
   for (const cap of [16, 128]) {
     let lost = true, unavailableGame;
@@ -265,6 +265,9 @@ test("full game and identity journal caps drain durable receipts before retrying
       if (lost && url.endsWith("/reconcile")) return new Promise(() => {});
       return call();
     } });
+    // Fixture seeding must not spend the sender confirmation budget: this case
+    // tests journal capacity, while the budget has its own test above.
+    t.mock.timers.enable({ apis: ["setTimeout"] });
     const first = await f.move(); const [original] = await f.journal.list(f.store.getIdentityId());
     const gameIds = [f.gameId];
     for (let i = 1; i < cap / 16; i++) { const created = f.store.createGame({ selfPlayMode: true }); await created.committed; gameIds.push(created.gameId); }
@@ -275,7 +278,12 @@ test("full game and identity journal caps drain durable receipts before retrying
     assert.equal((await f.journal.list(f.store.getIdentityId())).length, cap);
     await assert.rejects(f.move(), /journal_limit/);
     unavailableGame = cap === 128 ? gameIds[1] : null;
-    lost = false; await f.store.retrySaving(f.gameId);
+    lost = false;
+    // Release the deliberately hung send through its real timeout path only
+    // after the cap assertion, then let receipt recovery use normal timers.
+    t.mock.timers.tick(1000);
+    t.mock.timers.reset();
+    await f.store.retrySaving(f.gameId);
     await until(() => first.status === "committed");
     await until(() => f.store.getGameViewModel(f.gameId).pendingCommandCount === 0);
     assert.equal(f.store.getGameViewModel(f.gameId).storageBlocked, false);
