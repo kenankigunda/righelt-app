@@ -417,22 +417,9 @@ export async function handleAuthRequest(
     !path.startsWith("/api/profiles/")
   )
     return null;
-  if (rawEnv.AUTH_ENABLED !== "true")
-    return json({ ok: false, error: "not_found" }, 404);
   try {
-    if (
-      !rawEnv.HASH_SERVICE ||
-      !/^[a-f0-9]{64}$/.test(rawEnv.AUTH_HMAC_SECRET ?? "") ||
-      !rawEnv.AUTH_ALLOWED_ORIGINS
-    )
-      throw new AuthProblem("temporarily_unavailable", 503);
     const env = rawEnv,
       db = primaryAuthDatabase(env.DB);
-    if (request.method === "GET" && path === "/api/auth/session")
-      return json({
-        ok: true,
-        ...sessionState(await authenticatedActor(request, env)),
-      });
     if (request.method === "GET" && path.startsWith("/api/profiles/")) {
       const name = normalizeUsername(
         decodeURIComponent(path.slice("/api/profiles/".length)),
@@ -456,6 +443,15 @@ export async function handleAuthRequest(
           })
         : json({ ok: false, error: "not_found" }, 404);
     }
+    if (rawEnv.AUTH_ENABLED !== "true")
+      throw new AuthProblem("temporarily_unavailable", 503);
+    if (
+      !rawEnv.HASH_SERVICE ||
+      !/^[a-f0-9]{64}$/.test(rawEnv.AUTH_HMAC_SECRET ?? "") ||
+      !rawEnv.AUTH_ALLOWED_ORIGINS
+    ) throw new AuthProblem("temporarily_unavailable", 503);
+    if (request.method === "GET" && path === "/api/auth/session")
+      return json({ ok: true, ...sessionState(await authenticatedActor(request, env)) });
     if (request.method !== (path === "/api/account" ? "PATCH" : "POST"))
       throw new AuthProblem("invalid_input", 405);
     const body = await authBody(request, env);

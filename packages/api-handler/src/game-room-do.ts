@@ -1,3 +1,4 @@
+import { withCutoverPolicy, maintenanceAllowed, cutoverWritePermit } from './account-cutover';
 import { enrichAccountNames } from './account-profiles';
 import type { AuthDatabase } from './auth-db';
 import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
@@ -175,7 +176,7 @@ const eventForSession = (event: ServerEvent, identityId: string) => {
 
 export class GameRoomDO {
   private readonly state: DurableObjectStateLike;
-  private readonly env: LiveGameEnv;
+  private env: LiveGameEnv;
   private game: LiveGame | null = null;
   private requestAuthority: GameAuthority | null = null;
   private requestedGameId: string | null = null;
@@ -206,6 +207,7 @@ export class GameRoomDO {
     this.restoreSessionsFromState();
     this.configureWebSocketAutoResponse();
     const initialize = () => this.enqueue(async () => {
+      this.env = await withCutoverPolicy(this.env);
       await this.reconcileAllPresenceFromSessions();
       await this.syncSessionAlarm();
     });
@@ -230,6 +232,7 @@ export class GameRoomDO {
   async fetch(request: Request): Promise<Response> {
     try {
       return await this.enqueue(async () => {
+        this.env = await withCutoverPolicy(this.env);
         this.requestAuthority = null;
         try {
           if (authActive(this.env) && new URL(request.url).pathname === "/auth-recheck") {
@@ -251,7 +254,8 @@ export class GameRoomDO {
           if (this.requestAuthority && !await currentGameAuthority(this.env, this.requestAuthority)) {
             throw new AuthProblem("session_changed", 409);
           }
-          return json(sanitizeGameResponse(body, this.requestAuthority), response.status);
+          this.env = await withCutoverPolicy(this.env);
+          return json(sanitizeGameResponse(body, maintenanceAllowed(this.env,this.requestAuthority?.accountId) ? this.requestAuthority : this.requestAuthority ? {...this.requestAuthority,acknowledged:false} : null), response.status);
         } finally {
           this.requestAuthority = null;
         }
@@ -811,6 +815,7 @@ export class GameRoomDO {
 
   async webSocketMessage(socket: WebSocket, message: ArrayBuffer | string) {
     return this.enqueue(async () => {
+      this.env = await withCutoverPolicy(this.env);
       this.requestAuthority = null;
       try {
         const session = this.sessions.get(socket);
@@ -893,6 +898,7 @@ export class GameRoomDO {
   }
 
   private async alarmQueued() {
+    this.env = await withCutoverPolicy(this.env);
     if (authActive(this.env)) await this.recheckSockets();
     const cutoff = Date.now() - HEARTBEAT_TIMEOUT_MS;
     const expiredIdentityIds = new Set<string>();
@@ -961,7 +967,10 @@ export class GameRoomDO {
   }
 
   private async setPresenceFromSessions(identityId: string, excludedSocket?: WebSocket) {
-    const game = await this.ensureLoaded();
+    this.env = await withCutoverPolicy(this.env);
+    if (authActive(this.env) && (this.env.AUTH_ENABLED !== "true" || this.env.ACCOUNT_POLICY?.maintenance)) return;
+    const loaded = await this.ensureLoaded();
+    const game = loaded ? clone(loaded) : null;
     if (!game) {
       return;
     }
@@ -1120,6 +1129,9 @@ export class GameRoomDO {
   }
 
   private async persistCandidate(game: LiveGame, event: (ServerEvent & { eventSeq: number }) | null, receipt?: CommandReceipt, systemPresence = false) {
+    this.env = await withCutoverPolicy(this.env);
+    if (authActive(this.env) && (this.env.AUTH_ENABLED !== "true" || !maintenanceAllowed(this.env,this.requestAuthority?.accountId))) throw new AuthProblem("temporarily_unavailable",503);
+    const permit = cutoverWritePermit(this.env,game.id,this.requestAuthority,systemPresence);
     if (!authActive(this.env) && game.ownershipMode === "account_v1") throw new AuthProblem("temporarily_unavailable", 503);
     if (authActive(this.env) && !this.requestAuthority && !systemPresence) throw new AuthProblem("invalid_credentials", 401);
     const base = this.eventSeq;
@@ -1132,7 +1144,7 @@ export class GameRoomDO {
       Object.assign(event, { commandOutcome: receipt });
     }
     try {
-      await persistGameState(this.env, game, base + 1, event, { baseEventSeq: base, statements: [...(this.requestAuthority && authActive(this.env) ? gameGuardStatements(this.env, this.requestAuthority) as D1Statement[] : []), ...(receipt ? [commandReceiptStatement(this.env, receipt)] : [])] });
+      await persistGameState(this.env, game, base + 1, event, { baseEventSeq: base, before: permit.before as D1Statement[], after: permit.after as D1Statement[], statements: [...(this.requestAuthority && authActive(this.env) ? gameGuardStatements(this.env, this.requestAuthority) as D1Statement[] : []), ...(receipt ? [commandReceiptStatement(this.env, receipt)] : [])] });
     } catch (error) {
       // A rejected batch response may follow a durable commit. Force a durable read
       // before any next mutation; never retain or acknowledge the speculative candidate.
@@ -1140,6 +1152,8 @@ export class GameRoomDO {
       this.game = null;
       this.eventSeq = 0;
       try { await this.ensureLoaded(); this.needsDurableReload = false; } catch { /* Retry durable read before the next mutation. */ }
+      this.env = await withCutoverPolicy(this.env);
+      if (authActive(this.env) && !this.requestAuthority && !systemPresence) throw new AuthProblem("upgrade_required", 426);
       if (authActive(this.env) && this.requestAuthority && !await currentGameAuthority(this.env, this.requestAuthority)) throw new AuthProblem("session_changed", 409);
       throw error;
     }
@@ -1155,11 +1169,13 @@ export class GameRoomDO {
   }
 
   private async send(socket: WebSocket, payload: ServerEvent) {
+    this.env = await withCutoverPolicy(this.env);
     const session = this.sessions.get(socket);
     if (authActive(this.env)) {
       payload = await enrichAccountNames(payload as unknown as Record<string, unknown>, this.env.DB as unknown as AuthDatabase) as unknown as ServerEvent;
+      this.env = await withCutoverPolicy(this.env);
       if (!session || !await this.authorizeSocket(session)) return;
-      payload = sanitizeGameResponse(payload as unknown as Record<string, unknown>, session.authority ?? null) as unknown as ServerEvent;
+      payload = sanitizeGameResponse(payload as unknown as Record<string, unknown>, maintenanceAllowed(this.env,session.authority?.accountId) ? session.authority ?? null : session.authority ? {...session.authority,acknowledged:false} : null) as unknown as ServerEvent;
     }
     try {
       socket.send(JSON.stringify({ ...payload, ...(authActive(this.env) ? { authProtocolVersion: AUTH_PROTOCOL_VERSION } : {}), protocolVersion: 2, gameId: this.getLoadedGameId() }));

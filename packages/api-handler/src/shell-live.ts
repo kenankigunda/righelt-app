@@ -36,6 +36,8 @@ type DurableObjectNamespaceLike = {
 
 export type LiveGameRequestEnv = {
   AUTH_ENABLED?: string;
+  AUTH_REQUIRED?: string;
+  ACCOUNT_POLICY?: import("./account-cutover").CutoverPolicy;
   AUTH_TURNSTILE_SITE_KEY?: string;
   AUTH_ALLOWED_ORIGINS?: string;
   DB: D1DatabaseLike;
@@ -170,7 +172,7 @@ export const handleLiveGameRequest = async (
         ok: true,
         app: "righelt-web-shell",
         specVersion: 1,
-        authProtocolVersion: AUTH_PROTOCOL_VERSION, accountsRequired: authActive(env),
+        authProtocolVersion: AUTH_PROTOCOL_VERSION, accountsRequired: authActive(env), accountsAvailable: env.AUTH_ENABLED === "true", maintenance: Boolean(env.ACCOUNT_POLICY?.maintenance),
         ...(authActive(env) && env.AUTH_TURNSTILE_SITE_KEY
           ? { turnstileSiteKey: env.AUTH_TURNSTILE_SITE_KEY } : {}),
         tutorialSteps: [
@@ -181,7 +183,7 @@ export const handleLiveGameRequest = async (
           "Invite participants",
         ],
       },
-      cacheControl: CACHE_BOOTSTRAP_SHORT,
+      cacheControl: CACHE_NO_STORE,
     };
   }
 
