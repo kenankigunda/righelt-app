@@ -155,6 +155,7 @@ export const createFakeD1 = () => {
 
         if (
           normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq FROM live_games WHERE game_id = ?1") ||
+          normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision FROM live_games WHERE game_id = ?1") ||
           normalized.includes("SELECT state_json, event_seq FROM live_games WHERE game_id = ?1")
         ) {
           selectGameByIdCount += 1;
@@ -170,6 +171,7 @@ export const createFakeD1 = () => {
                   updated_at: row.updated_at,
                   state_json: JSON.stringify(override),
                   event_seq: row.event_seq ?? 0,
+                  gameplay_revision: row.gameplay_revision ?? 0,
                 }
               : null;
           }
@@ -181,6 +183,7 @@ export const createFakeD1 = () => {
                 updated_at: row.updated_at,
                 state_json: row.state_json,
                 event_seq: row.event_seq ?? 0,
+                gameplay_revision: row.gameplay_revision ?? 0,
               }
             : null;
         }
@@ -199,7 +202,7 @@ export const createFakeD1 = () => {
       async all() {
         reads.push({ query: normalized, params: [...params] });
 
-        if (normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq FROM live_games")) {
+        if (normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq FROM live_games") || normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision FROM live_games")) {
           const rows = sortRows(filterRowsForHomeQuery(normalized, params));
           const limitIndex = normalized.includes("LIMIT ?") ? params.length - 2 : null;
           const offsetIndex = normalized.includes("OFFSET ?") ? params.length - 1 : null;
@@ -213,6 +216,7 @@ export const createFakeD1 = () => {
               updated_at: row.updated_at,
               state_json: row.state_json,
               event_seq: row.event_seq ?? 0,
+              gameplay_revision: row.gameplay_revision ?? 0,
             }));
           return { results };
         }

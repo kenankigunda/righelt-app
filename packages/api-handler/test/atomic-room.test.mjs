@@ -1,3 +1,4 @@
+import { upgradeTestRequest } from "./support/v2-test-adapter.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { persistGameState } from "../src/shell-live-db.ts";
@@ -8,7 +9,7 @@ const harness = async () => {
   const DB = createFakeD1();
   const state = { id: { name: "g" }, storage: { setAlarm() {}, deleteAlarm() {} } };
   const room = new GameRoomDO(state, { DB });
-  const call = (route, body = {}) => room.fetch(new Request(`https://test/${route}`, { method: "POST", headers: { "x-game-id": "g" }, body: JSON.stringify({ identityId: "actor", ...body }) }));
+  const call = async (route, body = {}) => room.fetch(await upgradeTestRequest(new Request(`https://test/${route}`, { method: "POST", headers: { "x-game-id": "g" }, body: JSON.stringify({ identityId: "actor", ...body }) }), { DB }));
   await call("create", { gameId: "g", selfPlayMode: true });
   const move = () => {
     const game = DB.getGameState("g");
@@ -43,7 +44,7 @@ test("I-02 lost commit response reloads durable state before retry and restart",
   assert.equal(retried.duplicate, true);
   assert.equal(retried.game.moves.length, 1);
   const restarted = new GameRoomDO(state, { DB });
-  const response = await restarted.fetch(new Request("https://test/apply", { method: "POST", headers: { "x-game-id": "g" }, body: JSON.stringify({ identityId: "actor", ...command }) }));
+  const response = await restarted.fetch(await upgradeTestRequest(new Request("https://test/apply", { method: "POST", headers: { "x-game-id": "g" }, body: JSON.stringify({ identityId: "actor", ...command }) }), { DB }));
   assert.equal((await response.json()).duplicate, true);
   assert.equal(DB.getEvents("g").length, 2);
 });

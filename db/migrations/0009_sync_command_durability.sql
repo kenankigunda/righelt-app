@@ -25,11 +25,13 @@ CREATE TABLE live_command_receipts (
   event_seq INTEGER NOT NULL CHECK (event_seq >= 0),
   gameplay_revision INTEGER NOT NULL CHECK (gameplay_revision >= 0),
   result_json TEXT,
-  PRIMARY KEY (game_id, client_command_id)
+  PRIMARY KEY (game_id, client_command_id),
+  FOREIGN KEY (game_id) REFERENCES live_games(game_id) ON DELETE CASCADE
 );
 CREATE TABLE live_legacy_command_tombstones (
   game_id TEXT NOT NULL,
   client_command_id TEXT NOT NULL,
   evidence_json TEXT NOT NULL,
-  PRIMARY KEY (game_id, client_command_id)
+  PRIMARY KEY (game_id, client_command_id),
+  FOREIGN KEY (game_id) REFERENCES live_games(game_id) ON DELETE CASCADE
 );

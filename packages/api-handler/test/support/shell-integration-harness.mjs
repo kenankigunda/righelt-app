@@ -1,7 +1,7 @@
 import { createLiveTransportStore } from "../../../../apps/web/shell/live-transport.js";
 import { IDENTITY_KEY } from "../../../../apps/web/shell/persistence.js";
 import { buildGameHash, buildInviteHash, parseRouteFromHash } from "../../../../apps/web/shell/routes.js";
-import { handleApiRequest } from "../../src/index.ts";
+import { handleApiRequest } from "./v2-test-adapter.mjs";
 import { __resetLiveGameStateForTests } from "../../src/shell-live.ts";
 import { createFakeD1 } from "./fake-d1.mjs";
 import { createFakeGameRooms } from "./fake-game-rooms.mjs";

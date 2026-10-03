@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleApiRequest } from "../src/index.ts";
+import { handleApiRequest } from "./support/v2-test-adapter.mjs";
 import { createFakeD1 } from "./support/fake-d1.mjs";
 import { createFakeGameRooms } from "./support/fake-game-rooms.mjs";
 

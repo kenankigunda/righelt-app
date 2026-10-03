@@ -26,10 +26,10 @@ const createIdentity = (random = Math.random) => `id-${random().toString(36).sli
 const createClientCommandId = ({ gameId, identityId, random = Math.random }) => {
   const now = Date.now().toString(36);
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return `${gameId}:${identityId}:${now}:${crypto.randomUUID()}`;
+    return `v2:${crypto.randomUUID()}`;
   }
   const rand = Math.floor(random() * Number.MAX_SAFE_INTEGER).toString(36);
-  return `${gameId}:${identityId}:${now}:${rand}`;
+  return `v2:${now}:${rand}`;
 };
 
 const readJson = async (response) => {

@@ -87,6 +87,7 @@ type PersistedGameRow = {
   updated_at: string;
   state_json: string;
   event_seq: number;
+  gameplay_revision?: number;
 };
 
 export type HomeSectionKey = "my" | "other" | "smoke";
@@ -580,7 +581,7 @@ const normalizePersistedGame = (
     createdAt: typeof parsed.createdAt === "string" && parsed.createdAt ? parsed.createdAt : row.created_at || row.updated_at || now(),
     lastMoveAt: typeof parsed.lastMoveAt === "string" ? parsed.lastMoveAt : null,
     updatedAt: typeof parsed.updatedAt === "string" && parsed.updatedAt ? parsed.updatedAt : row.updated_at || row.created_at || now(),
-    gameplayRevision: Number.isSafeInteger(parsed.gameplayRevision) && Number(parsed.gameplayRevision) >= 0 ? Number(parsed.gameplayRevision) : 0,
+    gameplayRevision: Number.isSafeInteger(row.gameplay_revision) && Number(row.gameplay_revision) >= 0 ? Number(row.gameplay_revision) : 0,
     selfPlayMode: parsed.selfPlayMode === true || parsed.playgroundMode === true,
     board: { state: boardState },
     player1: normalizeParticipant(parsed.player1, "player1", mismatches),
@@ -712,7 +713,7 @@ const normalizePersistedStaticGameCard = (
 
 export const loadGameProjection = async (env: LiveGameEnv, gameId: string): Promise<PersistedGameProjection | null> => {
   const row = await env.DB.prepare(
-    `SELECT game_id, created_at, updated_at, state_json, event_seq FROM ${LIVE_GAMES_TABLE} WHERE game_id = ?1`,
+    `SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision FROM ${LIVE_GAMES_TABLE} WHERE game_id = ?1`,
   )
     .bind(gameId)
     .first<PersistedGameRow>();
@@ -763,7 +764,7 @@ export const listHomeSectionGameProjectionPage = async (
   const where = getHomeSectionWhereClause({ identityId, section, debug });
   const offset = page * pageSize;
   const result = await env.DB.prepare(
-    `SELECT game_id, created_at, updated_at, state_json, event_seq FROM ${LIVE_GAMES_TABLE}
+    `SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision FROM ${LIVE_GAMES_TABLE}
      ${where.sql}
      ORDER BY latest_activity_at DESC, created_at DESC
      LIMIT ?${where.params.length + 1}
@@ -787,7 +788,7 @@ export const listHomeSectionStaticGameCardPage = async (
   const where = getHomeSectionWhereClause({ identityId, section, debug });
   const offset = page * pageSize;
   const result = await env.DB.prepare(
-    `SELECT game_id, created_at, updated_at, state_json, event_seq FROM ${LIVE_GAMES_TABLE}
+    `SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision FROM ${LIVE_GAMES_TABLE}
      ${where.sql}
      ORDER BY latest_activity_at DESC, created_at DESC
      LIMIT ?${where.params.length + 1}

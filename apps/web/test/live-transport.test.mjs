@@ -735,6 +735,8 @@ test("live transport store applies optimistic moves immediately and clears pendi
   const pending = await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
   assert.equal(pending.accepted, true);
   assert.equal(typeof pending.clientCommandId, "string");
+  assert.match(pending.clientCommandId, /^v2:/);
+  assert.ok(pending.clientCommandId.length <= 128);
 
   const optimisticView = store.getGameViewModel(baseGame.id);
   assert.equal(optimisticView.pendingMoves.length, 1);
