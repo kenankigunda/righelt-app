@@ -84,8 +84,26 @@ for (const method of ["login", "recovery"]) {
   test(`a shared player invite survives ${method} and preserves its destination`, async ({ page, browser }) => {
     const invite = await sharedInvite(page);
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    let visitor;
     try {
-      const visitor = await context.newPage();
+      visitor = await context.newPage();
+      await visitor.addInitScript(() => {
+        const fetch = window.fetch.bind(window);
+        window.fetch = async (...args) => {
+          const hold = window.__holdNextInviteRead && new URL(args[0], location.href).pathname.startsWith("/api/shell/invites/");
+          if (hold) window.__holdNextInviteRead = false;
+          const response = await fetch(...args);
+          if (hold) {
+            const json = response.json.bind(response);
+            response.json = async () => {
+              const body = await json();
+              await new Promise(resolve => { window.__releaseInviteRead = resolve; });
+              return body;
+            };
+          }
+          return response;
+        };
+      });
       const username = uniqueName();
       const code = await register(visitor, username);
       await signOut(visitor);
@@ -119,7 +137,11 @@ for (const method of ["login", "recovery"]) {
         await visitor.getByTestId("invite-join-player").click();
         await dialog(visitor).getByLabel("Username", { exact: true }).fill(username);
         await dialog(visitor).getByLabel("Password", { exact: true }).fill(password);
+        // Hold the reset transport's first invite read while the independent
+        // continuation read completes. Neither may silently consume the intent.
+        await visitor.evaluate(() => { window.__holdNextInviteRead = true; });
         await dialog(visitor).getByRole("button", { name: "Sign in", exact: true }).click();
+        await expect.poll(() => visitor.evaluate(() => Boolean(window.__releaseInviteRead))).toBe(true);
       } else {
         await dialog(visitor).getByRole("button", { name: "Recover account", exact: true }).click();
         await dialog(visitor).getByLabel("Username", { exact: true }).fill(username);
@@ -141,6 +163,9 @@ for (const method of ["login", "recovery"]) {
       expect(joins[0].mode).toBe("player");
       expect(joins[0].inviteToken).toBe(decodeURIComponent(new URL(invite.url).hash.match(/^#\/invite\/([^?]+)/)[1]));
       await expect(page.getByTestId("game-role")).toContainText("Player 1");
-    } finally { await context.close(); }
+    } finally {
+      if (visitor && !visitor.isClosed()) await visitor.evaluate(() => window.__releaseInviteRead?.());
+      await context.close();
+    }
   });
 }
