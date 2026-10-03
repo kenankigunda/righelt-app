@@ -36,3 +36,11 @@ test('known T108 feasibility tooling is mapped without accepting unrelated tools
  assert.deepEqual(coverage([...known,...unknown]).unmapped,unknown);
  assert.equal(coverage([...known,'apps/web/shell/app.js']).files.length,0);
 });
+
+test('account proof directory is mapped without accepting unrelated validation folders',()=>{
+ const known=['validation-account-e2e/accounts.spec.mjs','playwright.validation-account.config.mjs'];
+ assert.deepEqual(coverage(known).unmapped,[]);
+ assert.ok(coverage(known).areas.includes('tooling'));
+ const unknown=['validation-account-other/example.mjs','validation-other-e2e/example.mjs'];
+ assert.deepEqual(coverage([...known,...unknown]).unmapped,unknown);
+});
