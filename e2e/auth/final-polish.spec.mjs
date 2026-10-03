@@ -74,6 +74,7 @@ test("resume loading reserves Start position without blocking it", async ({ page
   const after = await start.boundingBox(); expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
   for (const viewport of [{ width: 375, height: 812 }, { width: 1100, height: 800 }, { width: 1600, height: 1000 }]) {
     await page.setViewportSize(viewport);
+    await expect(page.locator(".shell-route-transition-layer")).toHaveAttribute("data-active", "false");
     await page.screenshot({ path: testInfo.outputPath(`personal-home-${viewport.width}.png`), fullPage: true });
   }
 });
