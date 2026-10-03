@@ -1,0 +1,4 @@
+interface:
+  display_name: "Validate and shepherd"
+  short_description: "Validate changes with evidence and shepherd PRs to readiness"
+  default_prompt: "Use $validate-and-shepherd to validate these changes, repair issues, and report PR readiness with hosted evidence."

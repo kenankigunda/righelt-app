@@ -40,7 +40,7 @@ export const buildStaticGameCardFromGame = (game) =>
     canJoinAsPlayer: game?.canJoinAsPlayer === true,
     player1: game?.player1 ?? null,
     player2: game?.player2 ?? null,
-    syncStatus: game?.syncStatus,
+    syncStatus: game?.sharedMutationsBlocked ? "confirming" : game?.syncStatus,
   });
 
 export const buildStaticGameCardFromScenario = (scenario) =>

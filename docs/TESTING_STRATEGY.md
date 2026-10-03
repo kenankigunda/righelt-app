@@ -79,6 +79,14 @@ CI runs in lane order:
 4. `integration`
 5. `E2E`
 
+The integration gate includes `test:sync-stress` (100 fixed multiplayer fault schedules with saved failure traces) and `test:sync-runtime` (actual local Workers/D1 transactions, sockets and restart durability). CI runs these as explicit jobs as well as the existing engine/API/web integration jobs. See [sync fault harness details](../packages/api-handler/test-stress/README.md) for replay commands, assertions and browser-proof boundaries.
+
+## Browser setup and recovery evidence
+
+`pnpm e2e:install` installs Chromium, Firefox, and WebKit. The E2E gate runs the full workflow suite in Chromium and representative multiplayer recovery and UX cases in Firefox and WebKit. CI uses Playwright-managed browser versions. Optional `RIGHELT_CHROMIUM_EXECUTABLE`, `RIGHELT_FIREFOX_EXECUTABLE`, and `RIGHELT_WEBKIT_EXECUTABLE` overrides are for local environments only.
+
+Recovery measurements are written to `test-results/sync-recovery` and uploaded by CI even after successful runs. They count application payload bytes, not compressed wire traffic. See [T-114 browser validation](validation/t114-browser-validation.md) for fault coverage and measurement limits.
+
 ## Change Review Expectations
 
 Implementation plans and PR summaries should identify:
@@ -88,3 +96,7 @@ Implementation plans and PR summaries should identify:
 - the user workflow touched
 - whether `E2E` coverage was added, expanded, or intentionally left unchanged
 - which UX proof lanes were used when the change touches the user experience
+
+## Validation evidence and PR shepherding
+
+Use the repo skill `skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. Run `pnpm validate:local` before completion; use `pnpm validate:integrated --manifest FILE` for ordered PR sets. Inspect actual screenshots, repair source PRs, publish the evidence report, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.

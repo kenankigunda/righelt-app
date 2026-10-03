@@ -5,3 +5,4 @@ export * from "./history";
 export * from "./http";
 export * from "./shell-live-turn.js";
 export * from "./validation";
+export * from "./sync-protocol";

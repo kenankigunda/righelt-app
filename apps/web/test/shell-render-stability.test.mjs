@@ -225,9 +225,9 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /clearCoordinatedFlyoutMotionStyles\(\);/);
   assert.match(source, /const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">\$\{renderHeader\(\)\}\$\{body\}<\/div>\$\{renderFlyouts\(\)\}<\/div>`;/);
   assert.match(source, /document\.title = getDocumentTitle\(\);/);
-  assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*syncMountedGameShellPanelUi\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
+  assert.match(source, /if \(shouldPatchFlyoutsOnly\) \{\s*updateMountedHeader\(\);\s*updateMountedFlyouts\(\);\s*restoreScenarioDraftFocus\?\.\(\);\s*syncFlyoutAwareLinks\(\);\s*syncCopyInviteLinks\(\);\s*updateHeaderFields\(\);\s*syncMountedGameShellPanelUi\(\);\s*reconcileMiniBoardPreviews\(\);[\s\S]*syncRenderedMarkupSnapshot\(\);\s*return;\s*\}/s);
   assert.match(source, /shouldUseIncrementalGameShell\(\) &&[\s\S]*getRouteTransitionPhaseKey\(\) === lastRenderedTransitionPhaseKey[\s\S]*updateMountedHeader\(\);\s*updateHeaderFields\(\);\s*syncScenarioAuthoringControls\(\);\s*updateMountedGameShell\(/s);
-  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*appEl\.innerHTML = nextMarkup;\s*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
+  assert.match(source, /if \(nextMarkup !== lastRenderedMarkup\) \{\s*if \(currentRoute\.name !== "home" \|\| !patchHomeAroundCreateControl\(nextMarkup\)\) appEl\.innerHTML = nextMarkup;\s*restoreScenarioDraftFocus\?\.\(\);\s*lastRenderedMarkup = nextMarkup;[\s\S]*lastRenderedRouteKey = routeKey;[\s\S]*if \(animatePanels\) \{\s*animatePanelHeightChanges\(previousPanelHeights\);\s*animateFlyoutPositionChanges\(previousFlyoutRects\);\s*\}\s*\}/s);
   assert.equal((source.match(/appEl\.innerHTML\s*=/g) || []).length, 1);
   assert.match(source, /data-flyout-link="home"/);
   assert.match(source, /flyoutLink \? `data-flyout-link="\$\{escapeHtml\(flyoutLink\)\}"` : ""/);
@@ -239,7 +239,7 @@ test("shell render patches same-route game updates without replacing the board p
 test("live sync applies authoritative pushed game payloads before render", () => {
   assert.match(syncStoreSource, /payload\?\.type === "state_sync"/);
   assert.match(syncStoreSource, /payload\?\.type === "event_appended"/);
-  assert.match(syncStoreSource, /transport\.applyLiveGameUpdate\(\{\s*game: payload\.game,\s*eventSeq: payload\.eventSeq,\s*clientCommandId: payload\.clientCommandId \?\? null,\s*\}\);/s);
+  assert.match(syncStoreSource, /transport\.applyLiveGameUpdate\(\{\s*game: payload\.game,\s*eventSeq: payload\.eventSeq,\s*clientCommandId: payload\.clientCommandId \?\? null,\s*commandOutcome: payload\.commandOutcome \?\? null,\s*\}\);/s);
   assert.match(source, /if \(document\.getElementById\("shell-debug-last-event"\)\) \{\s*updateHeaderFields\(\);\s*\} else \{\s*render\(\{ animatePanels: false, includeBoard: false \}\);\s*\}/s);
 });
 
@@ -301,7 +301,7 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
 });
 
 test("transport subscriptions drive immediate game-shell updates", () => {
-  assert.match(source, /transport\.subscribe\(\(change\) => \{\s*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);\s*\}\);/s);
+  assert.match(source, /transport\.subscribe\(\(change\) => \{[\s\S]*render\(\{\s*animatePanels: false,\s*includeBoard: change\?\.type !== "optimistic_enqueue",\s*\}\);\s*\}\);/s);
   assert.match(source, /const canHydrateRouteFromLocalState = \(route = currentRoute\) => \{/);
   assert.match(source, /return Boolean\(transport\.getGameViewModel\(route\.gameId\)\);/);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);

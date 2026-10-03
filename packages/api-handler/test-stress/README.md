@@ -1,0 +1,17 @@
+# T-114 sync fault gates
+
+`pnpm test:sync-stress` runs 100 fixed seeds, each with 300 recorded scheduling events:
+
+- 200 server commands/delivery events: delay/drop, duplicate, rollback at receipt persistence, lost commit response, durable reload, stale prerequisites, predecessor dependencies, undo, conflicting IDs, presence/history overlap and bounded reconciliation.
+- 50 browser-store events: actual sync store, operation manager and IndexedDB journal; two same-identity tabs submit concurrently with held HTTP responses. A third tab reloads and the room restarts while the original handles remain pending. Responses are released in seeded order, including malformed success, write failure and lost-response faults; all resolvable handles and journal records must settle.
+- 50 socket callback events: actual live sync client with controlled sockets, game changes and superseded open/message/error/close callbacks. Replacement heartbeat must remain active.
+
+The authoritative receipt/revision ledger decides acceptance independently from actual responses. A separate fault-free room executes only the ledger's accepted intents as a board-rule oracle; it does not establish receipt or revision expectations. Every server step compares the actual board, durable receipts, event sequence and duplicate effects. The client lane cross-checks each terminal handle against durable receipts and asserts that submissions were journaled first, pending entries survive held replies, and healthy draining leaves no orphaned handles.
+
+Every seed also races two IndexedDB connections at either the 16/game or 128/identity cap, checks exact admission counts and preservation of unresolved records, and attempts stale cleanup.
+
+A failure writes the seed, ordered schedule and error to `test-results/sync-stress/traces/seed-N.json`; CI uploads that directory. Replay one schedule with `T114_SEED=N pnpm test:sync-stress`. Command/game UUIDs are opaque freshly generated identifiers; the seeded choices and response-release order are reproducible. The accelerated client retry timing is a scheduling harness, not wall-clock acceptance proof; timing boundary tests and browser recovery targets run in their separate lanes.
+
+`pnpm test:sync-runtime` uses actual local workerd/Miniflare Durable Objects and D1, isolated persisted directories, and the production room implementation. The bundled test-only wrapper injects transaction errors and lost commit replies; production exposes no fault endpoints. It covers all six production move transaction statements, SQL stale/missing revision guards, overlapping writes, restart before/after commit, accepted/rejected receipt durability, repeatable backfill, real socket heartbeat and snapshot recovery after inbound loss. The runtime socket harness explicitly invokes reconciliation after dropping inbound delivery; automatic browser watchdog and restored-connectivity timing are separate browser gates. Runtime socket tests measure response bytes; the >=205 move /30 duplicate long-history proof is I-10 in `test/live-websocket.test.mjs`.
+
+Both commands are part of `pnpm test:integration` and explicit CI jobs (including the results aggregator). Their focused coverage adds S-01/R-01–03 to the permanent I-01–10, journal, sender and recovery regressions in the normal API and web integration suites. Real-browser IndexedDB policy, browser suspension and the 25-second restored-connectivity target remain the browser proof lane; physical devices remain separate.
