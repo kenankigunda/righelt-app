@@ -37,7 +37,15 @@ The full `pnpm test` run passed on 2026-10-03 using Node 22 and pnpm 9:
 - 98 general browser cases and 69 account browser cases across Chromium, Firefox and WebKit. Ten general cases are intentional representative skips.
 - Typecheck and generated-runtime consistency passed.
 
-Independent combined review cleared the reviewed implementation and separately ran four operation-context regressions. Local browser binaries were installed macOS builds (Chromium 1223, Firefox 1522, WebKit 2287), while CI uses its pinned Linux installation. Local success does not supersede CI evidence: subsequent PR99/100 browser jobs reported timing/startup failures now under investigation. Current-head CI remains an acceptance gate.
+Independent combined review cleared the reviewed implementation and separately ran four operation-context regressions. Local browser binaries were installed macOS builds (Chromium 1223, Firefox 1522, WebKit 2287), while CI uses its pinned Linux installation. Local success does not supersede CI evidence: subsequent PR99/100 browser jobs reported timing/startup failures. The repairs below passed their focused checks; current-head CI remains an acceptance gate.
+
+## CI repair proof
+
+- Initial play gates now await complete session hydration. A held-session regression failed before the fix and passed in all three engines afterward.
+- Post-login continuation marks its successfully loaded route ready before locating the preserved action. A held background invite read reproduced the missing join before the fix.
+- Snapshot refresh now rebuilds a preserved branch selection from current legal actions and invalidates delayed results from the prior snapshot. Tests reject removed actions and stale responses. Branch browser fixtures confirm the existing selected target after pending synchronization finishes.
+- Thirty affected account browser cases and nine repeated Chromium branch cases passed. The pre-cutover PR99 transplant separately passed 12 browser cases and its 23 controller tests. Combined repair web suites passed 310 unit and 224 integration tests; independent source and fixture reviews cleared.
+- One registration failure returned Wrangler's plain-text worker-restart response. No reload cause was recorded. It did not come from credential verification; no mutation retry, weaker hash or speculative infrastructure change was added.
 
 ## Remaining external proof
 
