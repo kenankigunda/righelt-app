@@ -4347,12 +4347,12 @@ const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: getCo
     return storyStart.accept(intent);
   }, onClose: reason => { if (reason !== "handoff") storyStart.cancel(); },
 });
-const startPersonalGame = ({ opponent, side }) => {
+const startPersonalGame = ({ opponent, side }, trigger = null) => {
   if (!account.canPlay() || !isPersonalSide(side)) return;
   if (isComputerOpponent(opponent)) {
     const readiness = getComputerReadiness(opponent);
     homeStartStatus = readiness.message;
-    if (shouldShowOpponentIntroduction(opponent, account.snapshot().session.account?.preferences?.introducedOpponents || 0, readiness)) storyDialog.open(opponent, { side });
+    if (shouldShowOpponentIntroduction(opponent, account.snapshot().session.account?.preferences?.introducedOpponents || 0, readiness)) storyDialog.open(opponent, { side, trigger: trigger?.isConnected ? trigger : appEl.querySelector(`button[data-opponent="${opponent}"]`) || document.activeElement });
     else void storyStart.accept({ opponent, side }).then(result => {
       if (result.state !== "started" && result.state !== "cancelled") { homeStartStatus = result.message || readiness.message; render(); }
     });
@@ -4524,7 +4524,7 @@ appEl.addEventListener("click", async (event) => {
     }, 0);
   };
 
-  if (action === "start-opponent") { startPersonalGame(startIntent); return; }
+  if (action === "start-opponent") { startPersonalGame(startIntent, actionEl); return; }
   if (action === "resume-page" || action === "retry-resume") { await loadResumePage(action === "resume-page" ? Number(actionEl.dataset.page) : resumeSection.page, { renderPending: true }); if (currentRoute.name === "home") render(); return; }
 
   if (action === "create-game") {
