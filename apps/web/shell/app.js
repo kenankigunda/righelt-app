@@ -3660,6 +3660,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
       inviteFromRole: currentRoute.inviteFromRole,
       includeBoard,
     });
+    restoreScenarioDraftFocus?.();
     return;
   }
 
