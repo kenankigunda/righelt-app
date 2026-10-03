@@ -8,7 +8,7 @@ import { chromium } from '@playwright/test';
 // Build with scripts/build-ai-benchmark.mjs before this integration suite.
 const directory = process.env.AI_BENCHMARK_DIR;
 const enabled = !!directory;
-test('real browser WASM, cache, computation, parity and corrupt assets', { skip: !enabled, timeout: 120_000 }, async () => {
+test('real browser WASM, cache, computation, parity and corrupt assets', { skip: !enabled, timeout: process.env.AI_BENCHMARK_SEARCH_REFERENCE ? 1_800_000 : 120_000 }, async () => {
   let corrupt = false;
   const server = createServer(async (request, response) => {
     try {
@@ -56,6 +56,32 @@ test('real browser WASM, cache, computation, parity and corrupt assets', { skip:
         backend: 'wasm', threads: 1, states: parityCount, policyMaxAbs, valueMaxAbs,
         numericParityPassed: true, legalMasksIdentical: true, actualPhone: false, tacticalOutcomesVerified: false };
       if (process.env.AI_BENCHMARK_REPORT) await writeFile(process.env.AI_BENCHMARK_REPORT, JSON.stringify(proof, null, 2));
+    }
+    if (process.env.AI_BENCHMARK_SEARCH_REFERENCE) {
+      const reference = JSON.parse(await readFile(process.env.AI_BENCHMARK_SEARCH_REFERENCE, 'utf8'));
+      assert.equal(reference.complete, true);
+      const actual = await page.evaluate(({ states, profile }) => window.benchmark.searchParity({ rows: states, profile }), reference);
+      assert.equal(actual.modelVersion, reference.modelSha256);
+      let nearTies = 0;
+      for (let i = 0; i < actual.results.length; i++) {
+        const expected = reference.states[i], observed = actual.results[i];
+        assert.equal(observed.id, expected.id);
+        assert.equal(expected.result.status, 'ready', `${expected.id}: unfinished reference`);
+        assert.equal(observed.result.status, 'ready', `${expected.id}: unfinished browser`);
+        const guard = result => result.actions.map(({ index, immediate, tactical }) => ({ index, immediate, tactical }));
+        assert.deepEqual(guard(observed.result), guard(expected.result), `${expected.id}: tactical outcomes differ`);
+        if (observed.result.actionIndex !== expected.result.actionIndex) {
+          const a = expected.result.actions.find(row => row.index === observed.result.actionIndex);
+          const b = expected.result.actions.find(row => row.index === expected.result.actionIndex);
+          assert.ok(a?.visits > 0 && b?.visits > 0 && Number.isFinite(a.value) && Number.isFinite(b.value));
+          assert.ok(Math.abs(a.value - b.value) <= 2 * (1e-5 + 1e-4 * Math.max(Math.abs(a.value), Math.abs(b.value))), `${expected.id}: selection differs beyond numerical bound`);
+          nearTies++;
+        }
+      }
+      if (process.env.AI_BENCHMARK_SEARCH_REPORT) await writeFile(process.env.AI_BENCHMARK_SEARCH_REPORT, JSON.stringify({
+        states: actual.results.length, referenceDevice: reference.referenceDevice, browserVersion: browser.version(),
+        modelSha256: actual.modelVersion, tacticalOutcomesVerified: true, nearTies, actualPhone: false, acceptancePassed: false,
+      }, null, 2));
     }
     const report = await page.evaluate(() => window.benchmark.measure({ profile: 'Babs', steps: 2, sequences: 1 }));
     assert.equal(report.measurements.filter(row => row.kind === 'step').length >= 3, true);

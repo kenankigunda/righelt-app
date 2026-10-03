@@ -163,6 +163,20 @@ async function rawParity({ count = 1000 } = {}) {
     window.benchmark.parityResult = result; return result;
   } finally { document.querySelector('#run').disabled = !ready; document.querySelector('#parity').disabled = !ready; show(); }
 }
+async function searchParity({ rows, profile }) {
+  if (!ready || !Array.isArray(rows) || !rows.length || rows.length > 1000) throw new Error('Invalid search parity request');
+  const token = operation, results = [], byId = new Map(corpus.states.map(row => [row.id, row]));
+  for (const row of rows) {
+    if (token !== operation) throw new Error('Search parity interrupted');
+    const item = byId.get(row.id);
+    if (!item || !Number.isSafeInteger(row.seed)) throw new Error('Unknown search parity state');
+    const metadata = { ...identity(item.state, results.length, 'search-parity-v1'), seed: row.seed };
+    const response = await client.request({ type: 'compute', state: item.state, metadata, profile, softMs: 9000 }, 10000);
+    results.push({ id: row.id, seed: row.seed, result: response.result });
+    status.textContent = `${results.length}/${rows.length} search parity states evaluated.`;
+  }
+  return { modelVersion: manifest.modelVersion, results };
+}
 function download(value, prefix) {
   const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([JSON.stringify(value)], { type: 'application/json' }));
   link.download = `${prefix}-${Date.now()}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
@@ -173,4 +187,4 @@ document.querySelector('#run').onclick = () => measure().catch(displayError);
 document.querySelector('#parity').onclick = () => rawParity().then(value => download(value, 'righelt-wasm-parity')).catch(displayError);
 document.querySelector('#stop').onclick = () => cancel();
 document.querySelector('#save').onclick = () => download(report, 'righelt-benchmark');
-window.benchmark = { prepare, measure, rawParity, cancel, report, client, settings };
+window.benchmark = { prepare, measure, rawParity, searchParity, cancel, report, client, settings };
