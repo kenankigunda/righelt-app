@@ -8,6 +8,11 @@ run-name: >-
 
 on:
   workflow_dispatch:
+    inputs:
+      prepare_accounts:
+        description: "Deploy during closed maintenance for first canary registration; do not reopen play"
+        type: boolean
+        default: false
   workflow_run:
     workflows: ["CI"]
     types:
@@ -42,10 +47,10 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
 
       - name: Preflight configuration check
         env:
@@ -54,6 +59,14 @@ jobs:
           CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
           CLOUDFLARE_D1_DB_NAME: ${{ vars.CLOUDFLARE_D1_DB_NAME }}
           CLOUDFLARE_API_BASE_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
+          RIGHELT_AUTH_ENABLED: ${{ vars.RIGHELT_AUTH_ENABLED || 'false' }}
+          RIGHELT_SITE_ORIGIN: ${{ vars.RIGHELT_SITE_ORIGIN }}
+          AUTH_TURNSTILE_SITE_KEY: ${{ vars.AUTH_TURNSTILE_SITE_KEY }}
+          AUTH_HMAC_SECRET: ${{ secrets.AUTH_HMAC_SECRET }}
+          TURNSTILE_SECRET: ${{ secrets.TURNSTILE_SECRET }}
+          ACCOUNT_SMOKE_USERNAME: ${{ secrets.ACCOUNT_SMOKE_USERNAME }}
+          ACCOUNT_SMOKE_PASSWORD: ${{ secrets.ACCOUNT_SMOKE_PASSWORD }}
+          PREPARE_ACCOUNTS: ${{ inputs.prepare_accounts || 'false' }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "Missing required secret: CLOUDFLARE_API_TOKEN"
@@ -71,6 +84,7 @@ jobs:
             echo "Missing required variable: CLOUDFLARE_API_BASE_URL"
             exit 1
           fi
+          node scripts/deploy-account-services.mjs --check-only
           echo "Using D1 DB name: ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev}"
 
       - name: Wrangler version
@@ -84,12 +98,20 @@ jobs:
         run: |
           pnpm --dir apps/api exec wrangler d1 migrations apply "${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev}" --config wrangler.toml --remote
 
-      - name: Deploy API worker
+      - name: Deploy private authentication services and API
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          RIGHELT_AUTH_ENABLED: ${{ vars.RIGHELT_AUTH_ENABLED || 'false' }}
+          RIGHELT_SITE_ORIGIN: ${{ vars.RIGHELT_SITE_ORIGIN }}
+          AUTH_TURNSTILE_SITE_KEY: ${{ vars.AUTH_TURNSTILE_SITE_KEY }}
+          AUTH_HMAC_SECRET: ${{ secrets.AUTH_HMAC_SECRET }}
+          TURNSTILE_SECRET: ${{ secrets.TURNSTILE_SECRET }}
+          ACCOUNT_SMOKE_USERNAME: ${{ secrets.ACCOUNT_SMOKE_USERNAME }}
+          ACCOUNT_SMOKE_PASSWORD: ${{ secrets.ACCOUNT_SMOKE_PASSWORD }}
+          PREPARE_ACCOUNTS: ${{ inputs.prepare_accounts || 'false' }}
         run: |
-          pnpm --dir apps/api exec wrangler deploy --config wrangler.toml
+          node scripts/deploy-account-services.mjs
 
       - name: Deploy Pages
         env:
@@ -111,58 +133,24 @@ jobs:
           EOF
           pnpm --dir apps/web exec wrangler pages deploy . --project-name "$CLOUDFLARE_PAGES_PROJECT" --branch main
 
-      - name: Smoke test deployed API bindings
+      - name: Verify public Pages and private API boundaries
         env:
+          RIGHELT_SITE_ORIGIN: ${{ vars.RIGHELT_SITE_ORIGIN }}
           CLOUDFLARE_API_BASE_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
-          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
-        run: |
-          API_HEALTH_URL="${CLOUDFLARE_API_BASE_URL%/}/api/health"
-          PAGES_BASE_URL="https://${CLOUDFLARE_PAGES_PROJECT}.pages.dev"
-          HEALTH_URL="${PAGES_BASE_URL}/api/health"
-          API_HEALTH_JSON="$(curl -fsS "$API_HEALTH_URL")"
-          HEALTH_JSON="$(curl -fsS "$HEALTH_URL")"
-          echo "$API_HEALTH_JSON"
-          echo "$HEALTH_JSON"
-          printf '%s' "$API_HEALTH_JSON" | node -e '
-            let payload = "";
-            process.stdin.on("data", (chunk) => {
-              payload += chunk;
-            });
-            process.stdin.on("end", () => {
-              const body = JSON.parse(payload);
-              if (body?.ok !== true || body?.bindings?.db !== true || body?.bindings?.gameRooms !== true) {
-                console.error("Deploy smoke test failed: API worker bindings are not active.");
-                process.exit(1);
-              }
-            });
-          '
-          printf '%s' "$HEALTH_JSON" | node -e '
-            let payload = "";
-            process.stdin.on("data", (chunk) => {
-              payload += chunk;
-            });
-            process.stdin.on("end", () => {
-              const body = JSON.parse(payload);
-              if (body?.ok !== true || body?.bindings?.db !== true || body?.bindings?.gameRooms !== true) {
-                console.error("Deploy smoke test failed: Pages proxy is not returning the expected API health payload.");
-                process.exit(1);
-              }
-            });
-          '
-          CREATE_JSON="$(curl -fsS -X POST "${PAGES_BASE_URL}/api/shell/games?offline=1" \
-            -H "content-type: application/json" \
-            --data '{"identityId":"deploy-smoke-player","playgroundMode":false,"offlineLocal":false}')"
-          echo "$CREATE_JSON"
-          printf '%s' "$CREATE_JSON" | node -e '
-            let payload = "";
-            process.stdin.on("data", (chunk) => {
-              payload += chunk;
-            });
-            process.stdin.on("end", () => {
-              const body = JSON.parse(payload);
-              if (body?.ok !== true || typeof body?.game?.id !== "string") {
-                console.error("Deploy smoke test failed: Pages proxy create-game flow is not healthy.");
-                process.exit(1);
-              }
-            });
-          '
+        run: node scripts/deploy-boundary-smoke.mjs
+
+      - name: Verify acknowledged canary account
+        if: vars.RIGHELT_AUTH_ENABLED == 'true' && !inputs.prepare_accounts
+        env:
+          RIGHELT_SITE_ORIGIN: ${{ vars.RIGHELT_SITE_ORIGIN }}
+          ACCOUNT_SMOKE_USERNAME: ${{ secrets.ACCOUNT_SMOKE_USERNAME }}
+          ACCOUNT_SMOKE_PASSWORD: ${{ secrets.ACCOUNT_SMOKE_PASSWORD }}
+          ACCOUNT_SMOKE_LEGACY_GAME_ID: ${{ vars.ACCOUNT_SMOKE_LEGACY_GAME_ID }}
+        run: node scripts/account-smoke.mjs
+
+      - name: Verify account preparation remains closed
+        if: inputs.prepare_accounts
+        env:
+          RIGHELT_SITE_ORIGIN: ${{ vars.RIGHELT_SITE_ORIGIN }}
+          CLOUDFLARE_API_BASE_URL: ${{ vars.CLOUDFLARE_API_BASE_URL }}
+        run: node scripts/deploy-boundary-smoke.mjs --preparation

@@ -1,5 +1,11 @@
 import { captureHeaderFocus, restoreHeaderFocus } from "./header-focus.js";
 import { createBrandController, renderWordmark, resolveActionAffiliation } from "./brand.js";
+import { createRouteHydration } from './route-hydration.js';
+import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js';
+import { participantButton, participantName, createPublicProfileDialog } from './public-profile.js';
+import { createAccountController, safeAccountIntent } from './account-controller.js';
+import { createAccountDialog } from './account-dialog.js';
+import { recoveryMessage, sharedMutationActions } from "./recovery-view.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter } from "../board-adapters/engine-board-adapter.js";
 import { syncMiniBoardPreviews } from "../board/mini-board-preview.js";
@@ -41,6 +47,36 @@ import {
 import { createTutorialController } from "./tutorial.js";
 
 const appEl = document.getElementById("app");
+const dismissedRecoveryNotices = new Map();
+// This node survives header/panel rendering, including repeated heartbeat snapshots.
+const syncAnnouncement = document.createElement("div");
+syncAnnouncement.id = "shell-sync-announcement";
+syncAnnouncement.className = "sr-only";
+syncAnnouncement.setAttribute("role", "status");
+syncAnnouncement.setAttribute("aria-live", "polite");
+syncAnnouncement.setAttribute("aria-atomic", "true");
+document.body.appendChild(syncAnnouncement);
+const updateRecoveryAnnouncement = (game) => {
+  const failures = game ? [...new Set((transport.getFailedOperations?.(game.id) ?? []).map((operation) => operation.error?.message).filter(Boolean))] : [];
+  const text = game ? [recoveryMessage(game), game.historyNotice, ...failures].filter(Boolean).join(" ") : "";
+  if (syncAnnouncement.textContent !== text) syncAnnouncement.textContent = text;
+};
+const applySharedMutationGates = (game) => {
+  if (!game) return;
+  document.querySelectorAll("[data-action]").forEach((element) => {
+    if (!sharedMutationActions.has(element.getAttribute("data-action"))) return;
+    if (element.getAttribute("data-game-id") && element.getAttribute("data-game-id") !== game.id) return;
+    if (game.sharedMutationsBlocked) {
+      if (!element.hasAttribute("data-sync-disabled")) element.setAttribute("data-sync-disabled", String(element.hasAttribute("disabled")));
+      element.setAttribute("aria-disabled", "true");
+      if (element instanceof HTMLButtonElement) element.disabled = true;
+    } else if (element.hasAttribute("data-sync-disabled")) {
+      if (element instanceof HTMLButtonElement && element.getAttribute("data-sync-disabled") === "false") element.disabled = false;
+      element.removeAttribute("data-sync-disabled");
+      element.removeAttribute("aria-disabled");
+    }
+  });
+};
 const bootstrap = getBootstrapPayload();
 
 if (isShellRootHash(window.location.hash)) {
@@ -91,7 +127,20 @@ const createMemoryStorageFallback = () => {
   };
 };
 
-const storage = typeof window.localStorage !== "undefined" ? window.localStorage : createMemoryStorageFallback();
+const storage = (() => { try { return window.localStorage || createMemoryStorageFallback(); } catch { return createMemoryStorageFallback(); } })();
+const publicProfileDialog = createPublicProfileDialog();
+let accountInitialized = false;
+let accountStartupError = "";
+let accountContinuation = null;
+let accountContinuationError = false;
+const hydrateRoute = createRouteHydration();
+const account = createAccountController({ storage,
+  onTransition: (next, source) => { if (accountInitialized) { accountDialog.onTransition(source); resetAccountTransport(next); } },
+  onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); } },
+});
+const accountDialog = createAccountDialog({ controller: account, onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
+  onComplete: intent => { void completeAccountContinuation(intent); },
+});
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 const boardAdapter = createEngineBoardAdapter();
 const hoverCapability = ensureHoverCapabilityController();
@@ -654,7 +703,7 @@ const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
   return { selectionAction: matchingAction, selectionState: null };
 };
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
-const canControlLiveBoard = (game) => Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
+const canControlLiveBoard = (game) => account.canPlay() && !game?.sharedMutationsBlocked && Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
 const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "other", "smoke"] : ["my", "other"]);
 const getHomeSection = (sectionKey) => homeSections[sectionKey] ?? createHomeSectionState(sectionKey);
 const setHomeSection = (sectionKey, nextState) => {
@@ -1496,29 +1545,26 @@ const getGameAlertItems = (game) => {
     key: `failed:${operation.id}`,
     html: renderGameAlertCard({
       tone: "danger",
-      body: `<strong>Sync failed.</strong> ${escapeHtml(operation.error?.message || "The operation could not be completed.")}`,
+      body: escapeHtml(operation.error?.message || "The operation could not be completed."),
       action: `<button class="secondary mini-button" data-action="dismiss-failed-operation" data-operation-id="${escapeHtml(operation.id)}">Dismiss</button>`,
       testId: "sync-failure-banner",
     }),
   }));
 
-  if (failedOperations.length === 0 && game.syncStatus === "confirming") {
-    items.push({
-      key: "live-sync:confirming",
-      html: renderGameAlertCard({
-        tone: "warn",
-        body: "Move confirmation is retrying. The board stays optimistic until the server confirms.",
-      }),
-    });
-  } else if (game.syncStatus === "desynced") {
-    items.push({
-      key: "live-sync:desynced",
-      html: renderGameAlertCard({
-        tone: "warn",
-        body: "Live sync is recovering. The board is showing the last authoritative state.",
+  const message = recoveryMessage(game);
+  if (!message) dismissedRecoveryNotices.delete(game.id);
+  const dismissed = dismissedRecoveryNotices.get(game.id) === message;
+  if (message && (!dismissed || game.storageBlocked)) {
+    items.unshift({
+      key: `live-sync:${message}`,
+      html: renderGameAlertCard({ tone: "warn", body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner",
+        action: game.storageBlocked
+          ? `<button class="secondary mini-button" data-action="retry-saving" data-game-id="${escapeHtml(game.id)}">Retry saving</button>${dismissed ? "" : `<button class="secondary mini-button" data-action="dismiss-recovery-notice" data-game-id="${escapeHtml(game.id)}">Dismiss</button>`}`
+          : "",
       }),
     });
   }
+  if (game.historyNotice) items.push({ key: "history-change", html: renderGameAlertCard({ body: escapeHtml(game.historyNotice) }) });
 
   if (undoRequestFeedback && undoRequestFeedbackGameId === game.id) {
     items.push({
@@ -1663,7 +1709,7 @@ const renderTurnHistory = (game) => {
       actorSide: move.actorSide || null,
       html: `<li class="history-item${sectionClass} ${playerToneClassForSide(move.actorSide || "P1")}${selectedClass}${undoneClass}" data-action="jump-history" data-game-id="${escapeHtml(
         game.id,
-      )}" data-move-index="${move.index}" data-testid="history-move-item">
+      )}" data-move-index="${move.index}" data-move-id="${escapeHtml(move.moveId || "")}" data-testid="history-move-item">
           <div class="history-item-info">
             <span class="history-move-line">Move ${escapeHtml(
               String(move.displayMoveNumber ?? move.index + 1),
@@ -1761,6 +1807,11 @@ const renderHeader = () => `
       <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">${renderWordmark(brandController.getState())}</a></h1>
     </div>
     ${renderHeaderAlertZone()}
+    ${account.snapshot().ready && account.snapshot().enabled && account.snapshot().available ? `<button class="secondary" data-action="account-open" data-testid="account-open">${account.snapshot().session.authenticated ? "Account" : "Sign in"}</button>` : ""}
+    ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
+    ${account.snapshot().pendingLogout ? '<span role="status">Sign-out pending</span>' : ''}
+    ${accountContinuationError ? `<p role="alert">The page could not finish loading. Try again.</p><button class="secondary" data-action="retry-account-continuation">Try again</button>` : ""}
+    ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p role="status">Connecting…</p>` : ""}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
         ${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
@@ -1931,7 +1982,7 @@ const renderDebugContent = () => {
       : route.name === "tutorial"
         ? {
             tutorial: tutorial.current(),
-            completed: bootstrap.tutorialCompleted ?? false,
+            completed: account.snapshot().session.account?.preferences?.tutorial === "completed",
           }
         : {
             route: route.name,
@@ -2123,6 +2174,7 @@ const markInviteChoiceCommitted = (gameId) => {
 };
 
 const getInviteContextForGame = (game, routeName = currentRoute.name) => {
+  if (account.snapshot().enabled && (routeName === "game" || game?.ownershipMode === "legacy_guest")) return null;
   if (!game || game.myRole !== "Guest") {
     return null;
   }
@@ -2459,7 +2511,7 @@ const renderJoinInvitePanel = (game, inviteLink) => {
             (request) => {
               const approveRequestButtonKey = getApproveRequestButtonKey(game.id, request.identityId);
               return `<li data-testid="pending-join-request" data-requester-id="${escapeHtml(request.identityId)}">
-              <span class="mono">${escapeHtml(request.identityId)}</span> requests ${renderSeatLabel(request.requestedSeat)}
+              ${participantButton(request)} requests ${renderSeatLabel(request.requestedSeat)}
               <button data-action="approve-request" data-game-id="${escapeHtml(game.id)}" data-requester-id="${escapeHtml(
                 request.identityId,
               )}" data-testid="approve-request-inline"${renderButtonStateAttributes({
@@ -2517,7 +2569,7 @@ const renderParticipantsPanel = (game) => {
       if (!entry.value) {
         return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: <span class="small">Open seat</span></li>`;
       }
-      return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: <span class="mono">${escapeHtml(entry.value.identityId)}</span> ${formatStatus(entry.value.connected)}</li>`;
+      return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: ${participantButton(entry.value)} ${formatStatus(entry.value.connected)}</li>`;
     })
     .join("");
 
@@ -2527,7 +2579,7 @@ const renderParticipantsPanel = (game) => {
       : game.viewers
           .map(
             (viewer) =>
-              `<li data-testid="participant-viewer">Viewer: <span class="mono">${escapeHtml(viewer.identityId)}</span> ${formatStatus(viewer.connected)}</li>`,
+              `<li data-testid="participant-viewer">Viewer: ${participantButton(viewer)} ${formatStatus(viewer.connected)}</li>`,
           )
           .join("");
   return `
@@ -2538,6 +2590,7 @@ const renderParticipantsPanel = (game) => {
 
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
+  const currentNames = [game.player1,game.player2].filter(person => person?.profile).map(participantName).join(" · ");
   const selectedMove = typeof game.historyIndex === "number" && Array.isArray(game.moves) ? game.moves[game.historyIndex] ?? null : null;
   const historyMoveNumber = typeof selectedMove?.displayMoveNumber === "number" ? String(selectedMove.displayMoveNumber) : "?";
   const hasHistoryMoves = Array.isArray(game.moves) && game.moves.length > 0;
@@ -2550,6 +2603,7 @@ const renderHistoryPanel = (game) => {
 
   return `
     <h2>History</h2>
+    ${currentNames ? `<p class="small" data-testid="history-player-names">${currentNames}</p>` : ""}
     <div class="section-followup">
       ${historyBanner}
       <ol class="history-list" data-testid="history-list">${historyRows}</ol>
@@ -2558,6 +2612,9 @@ const renderHistoryPanel = (game) => {
 };
 
 const renderBoardPanel = (game) => `
+  ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p class="alert" role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
+  ${game.ownershipMode === "legacy_guest" && account.snapshot().enabled ? '<p class="alert" role="status">This older guest game is view-only. <button data-action="create-game">Start new game</button></p>' : ''}
+  ${account.snapshot().enabled && account.snapshot().available && !account.snapshot().maintenance && !account.canPlay() ? '<p class="alert" role="status">Sign in to play or analyze. The board remains available to view.</p>' : ''}
   <h2 class="board-heading">Board <span class="board-heading-separator">-</span> <span id="shell-board-turn-indicator">-</span></h2>
   <p class="board-preview-label" id="shell-board-preview-label">Select a piece to preview moves; click it again for supply and command lines only:</p>
   <div class="board-wrap" data-testid="game-board-wrap">
@@ -2683,6 +2740,7 @@ const updateMountedHeader = () => {
   if (!(nextHeaderEl instanceof HTMLElement)) {
     return false;
   }
+  if (currentHeaderEl.isEqualNode(nextHeaderEl)) return true;
   const savedFocus = captureHeaderFocus(currentHeaderEl, document.activeElement);
   currentHeaderEl.replaceWith(nextHeaderEl);
   restoreHeaderFocus(nextHeaderEl, savedFocus, document);
@@ -2871,7 +2929,9 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   )}`;
 
   if (alertsEl instanceof HTMLElement) {
-    alertsEl.innerHTML = renderGameAlertsHtml(game, inviteFromRole);
+    const html = renderGameAlertsHtml(game, inviteFromRole);
+    if (alertsEl.innerHTML !== html) alertsEl.innerHTML = html;
+    updateRecoveryAnnouncement(game);
   }
   if (summaryEl instanceof HTMLElement) {
     summaryEl.innerHTML = renderGameSummaryPanel(game);
@@ -2888,6 +2948,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   if (includeBoard || mountedBoardGameId === game.id) {
     mountBoardForGame(game);
   }
+  applySharedMutationGates(game);
   FLYOUT_KEYS.forEach((flyoutKey) => {
     const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
     if (!(flyoutEl instanceof HTMLElement)) {
@@ -2969,7 +3030,7 @@ const renderApprovalGate = (game, request) => {
       <section class="panel invite-gate-modal">
         <p class="small invite-gate-kicker">Approval required</p>
         <h2>Respond to this player request</h2>
-        <p><span class="mono">${escapeHtml(request.identityId)}</span> wants to join as ${renderSeatLabel(request.requestedSeat)}.</p>
+        <p>${participantButton(request)} wants to join as ${renderSeatLabel(request.requestedSeat)}.</p>
         <div class="invite-choice-list">
           <div class="invite-choice-row">
             <button
@@ -3105,7 +3166,7 @@ const renderInviteLanding = (inviteContext) => {
   }
 
   const canJoinPlayer = game.canJoinAsPlayer && game.showJoinActions;
-  const canJoinViewer = game.canJoinAsViewer;
+  const canJoinViewer = account.snapshot().enabled || game.canJoinAsViewer;
   const playerActionLabel = inviteContext.inviteType === "player" ? "Join as player" : "Request to join as player";
   const inviteMessage =
     inviteContext.inviteType === "player"
@@ -3179,6 +3240,7 @@ const renderTutorial = (gameId) => {
       <div class="row">
         <button data-action="tutorial-next">Next</button>
         <button class="secondary" data-action="tutorial-skip">Skip Step</button>
+        <button class="secondary" data-action="tutorial-skip-all" data-game-id="${escapeHtml(gameId || "")}">Skip tutorial</button>
         <button class="secondary" data-action="tutorial-complete" data-game-id="${escapeHtml(gameId || "")}">Finish Tutorial</button>
       </div>
     </section>
@@ -3233,6 +3295,8 @@ const mountBoardForGame = (game) => {
     return;
   }
 
+  applySharedMutationGates(game);
+  updateRecoveryAnnouncement(game);
   const snapshot = game.currentSnapshot ?? null;
   const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
   const historySelectionAction = game.inHistoryMode ? game.historySelectionAction ?? null : null;
@@ -3431,12 +3495,14 @@ const loadHomeSectionServerPage = async (
   } = {},
 ) => {
   const previous = getHomeSection(sectionKey);
-  const response = await transport.loadGamesPage({
+  const read = captureRouteRead();
+  const response = await read.owner.loadGamesPage({
     section: sectionKey,
     page: serverPage,
     pageSize: HOME_SECTION_SERVER_PAGE_SIZE,
     debug: currentRoute.debug === true,
   });
+  assertCurrentRouteRead(read);
   const normalizedServerPage = typeof response.page === "number" ? response.page : 0;
   const serverPageGameIds = Array.isArray(response.games) ? response.games.map((game) => game.id) : [];
   const nextSection = {
@@ -3465,6 +3531,7 @@ const loadHomeSectionPage = async (
     visibleColumnCount = getHomeSectionColumnCount(sectionKey),
   } = {},
 ) => {
+  const read = captureRouteRead();
   const previous = getHomeSection(sectionKey);
   let nextSection = {
     ...previous,
@@ -3493,6 +3560,7 @@ const loadHomeSectionPage = async (
     visiblePageSize,
   }) ?? [];
   const nextDirection = normalizedTotalPages > 1 && normalizedPage !== previous.page ? direction : "none";
+  assertCurrentRouteRead(read);
   setHomeSection(sectionKey, {
     ...nextSection,
     page: normalizedPage,
@@ -3542,6 +3610,7 @@ const syncResponsiveHomeSectionPageSizes = async () => {
 };
 
 const syncHomeSections = async () => {
+  const read = captureRouteRead();
   const visibleSectionKeys = getVisibleHomeSectionKeys();
   await Promise.all(
     visibleSectionKeys.map(async (sectionKey) => {
@@ -3562,6 +3631,7 @@ const syncHomeSections = async () => {
       await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
     }),
   );
+  assertCurrentRouteRead(read);
   const hiddenSectionKeys = ["my", "other", "smoke"].filter((sectionKey) => !visibleSectionKeys.includes(sectionKey));
   hiddenSectionKeys.forEach((sectionKey) => {
     const section = getHomeSection(sectionKey);
@@ -3600,7 +3670,24 @@ const scheduleResponsiveHomeSectionPageSizes = () => {
   });
 };
 
+const renderGesture = createRenderGestureGate({ render: options => render(options) });
+window.addEventListener("pointerdown", event => {
+  if (appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
+}, true);
+window.addEventListener("keydown", event => {
+  if (!event.repeat && (event.key === " " || event.key === "Enter") && appEl.contains(event.target) && event.target.closest?.("button, a, [data-action]")) renderGesture.begin();
+}, true);
+window.addEventListener("keyup", event => { if (event.key === " " || event.key === "Enter") renderGesture.end(); }, true);
+for (const type of ["pointerup", "pointercancel", "touchcancel", "lostpointercapture", "click"])
+  window.addEventListener(type, () => renderGesture.end(), true);
+window.addEventListener("blur", event => { if (event.target === window) renderGesture.end(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") renderGesture.end(); });
+
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
+  if (renderGesture.defer({ animatePanels, includeBoard })) return;
+  return preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
+};
+const renderContent = ({ animatePanels, includeBoard }) => {
   document.title = getDocumentTitle();
   brandController.setHome(currentRoute.name === "home");
   const affiliationGameId = getCurrentViewedGameId();
@@ -3734,6 +3821,7 @@ const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd
   if (!pendingKey || pendingButtonKeys.has(pendingKey)) {
     return;
   }
+  const pendingGeneration=account.snapshot().generation;
   pendingButtonKeys.add(pendingKey);
   if (renderStart) {
     render({ animatePanels: false, includeBoard: false });
@@ -3744,6 +3832,7 @@ const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
     return undefined;
   } finally {
+    if(pendingGeneration!==account.snapshot().generation)return;
     pendingButtonKeys.delete(pendingKey);
     if (renderEnd) {
       render({ animatePanels: false, includeBoard: false });
@@ -3751,26 +3840,72 @@ const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd
   }
 };
 
-const syncRouteData = async () => {
-  if (currentRoute.name === "home") {
-    await syncHomeSections();
-    return;
-  }
-  if (currentRoute.name === "game") {
-    resolvedInvite = null;
-    await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
-    return;
-  }
-  if (currentRoute.name === "invite") {
-    resolvedInvite = await transport.resolveInvite(currentRoute.inviteToken);
-    await transport.loadGame(resolvedInvite.gameId, { openAsViewer: false });
-    return;
-  }
+const captureRouteRead = () => ({
+  generation: account.snapshot().generation,
+  hash: window.location.hash,
+  owner: transport,
+  route: { ...currentRoute },
+  inputs: JSON.stringify(getVisibleHomeSectionKeys().map(key => [key, getHomeSection(key).page, getHomeSectionVisiblePageSize(key), getHomeSectionColumnCount(key)])),
+});
+const routeReadIsCurrent = read => read.generation === account.snapshot().generation && read.hash === window.location.hash && read.owner === transport;
+const assertCurrentRouteRead = read => {
+  if (!routeReadIsCurrent(read)) throw Object.assign(new Error("session_changed"), { code: "session_changed" });
+};
+const syncRouteDataAndLiveChannels = () => {
+  const read = captureRouteRead();
+  return hydrateRoute(read, async () => {
+    assertCurrentRouteRead(read);
+    if (read.route.name === "home") await syncHomeSections();
+    if (read.route.name === "game") {
+      resolvedInvite = null;
+      await read.owner.loadGame(read.route.gameId, { openAsViewer: false });
+    }
+    if (read.route.name === "invite") {
+      const invite = await read.owner.resolveInvite(read.route.inviteToken);
+      assertCurrentRouteRead(read);
+      await read.owner.loadGame(invite.gameId, { openAsViewer: false });
+      assertCurrentRouteRead(read);
+      resolvedInvite = invite;
+    }
+    assertCurrentRouteRead(read);
+    syncLiveChannels();
+  });
 };
 
-const syncRouteDataAndLiveChannels = async () => {
-  await syncRouteData();
-  syncLiveChannels();
+const retryAccountContinuation = async () => {
+  const pending = accountContinuation;
+  if (!pending || pending.running || !routeReadIsCurrent(pending)) return;
+  pending.running = true;
+  accountContinuationError = false;
+  render({ animatePanels: false, includeBoard: false });
+  try {
+    await syncRouteDataAndLiveChannels();
+  } catch {
+    if (accountContinuation === pending && routeReadIsCurrent(pending)) {
+      pending.running = false;
+      accountContinuationError = true;
+      render({ animatePanels: false, includeBoard: false });
+    }
+    return;
+  }
+  if (accountContinuation !== pending || !routeReadIsCurrent(pending)) return;
+  // Claim before invoking the original action. A failed write is never replayed.
+  accountContinuation = null;
+  accountContinuationError = false;
+  routeHydrated = true;
+  render({ animatePanels: false });
+  const intent = pending.intent;
+  if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
+  const selector = `[data-action="${CSS.escape(intent.action)}"]${intent.gameId ? `[data-game-id="${CSS.escape(intent.gameId)}"]` : ""}${intent.moveIndex ? `[data-move-index="${CSS.escape(intent.moveIndex)}"]` : ""}`;
+  appEl.querySelector(selector)?.click();
+};
+const completeAccountContinuation = async intent => {
+  accountContinuation = { ...captureRouteRead(), intent, running: false };
+  await retryAccountContinuation();
+};
+const clearAccountContinuation = () => {
+  accountContinuation = null;
+  accountContinuationError = false;
 };
 
 const canHydrateRouteFromLocalState = (route = currentRoute) => {
@@ -3827,8 +3962,11 @@ const syncScenarioCatalog = async () => {
   }
 };
 
-const syncStore = createSyncStore({
+const makeAccountSyncStore = auth => createSyncStore({
   storage,
+  auth,
+  fetcher: account.fetch,
+  onAuthLost: () => account.authorityLost(),
   onEvent: (payload) => {
     wsLastEvent = payload?.type
       ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
@@ -3870,15 +4008,48 @@ const syncStore = createSyncStore({
     }
   },
 });
-const transport = syncStore;
-
-transport.subscribe((change) => {
+let syncStore = makeAccountSyncStore(account.snapshot());
+let transport = syncStore;
+const subscribeToTransport = () => transport.subscribe((change) => {
+  if (change?.type === "upgrade_required") {
+    try {
+      const key = "righelt.sync-v2-refresh";
+      if (!window.sessionStorage.getItem(key)) {
+        window.sessionStorage.setItem(key, "1");
+        window.location.reload();
+        return;
+      }
+    } catch { /* Keep the visible update notice if session storage cannot guard a reload. */ }
+  }
   render({
     animatePanels: false,
     includeBoard: change?.type !== "optimistic_enqueue",
   });
 });
 
+subscribeToTransport();
+accountInitialized = true;
+function resetAccountTransport(next) {
+  clearAccountContinuation();
+  const gameId = getCurrentViewedGameId();
+  const visible = gameId ? transport.getAuthoritativeGame?.(gameId) : null;
+  routeSyncRequestId++;
+  pendingButtonKeys.clear();pendingHomeSectionKeys.clear();inviteChoiceCommittedByGameId.clear();ignoredApprovalRequests.clear();ignoredRevertRequests.clear();
+  consumedInitialSelectionActionKeyByGameId.clear();
+  transport.retire?.();
+  destroyMountedBoardRuntime();
+  clearRouteTransition({ renderNow: false });
+
+  homeSections = { my: createHomeSectionState("My games"), other: createHomeSectionState("Other games"), smoke: createHomeSectionState("Deploy smoke player") };
+  syncStore = makeAccountSyncStore(next);transport = syncStore;subscribeToTransport();
+  if (visible) {
+    for (const key of ['canRecordMove','canEndTurn','canInvite','canPlayAsBothPlayers','canUndoLastMove']) visible[key] = false;
+    visible.legalActions=[];visible.myRoles=[];visible.myRole=null;visible.inviteToken=null;delete visible.inviteTokens;
+    visible.pendingJoinRequests=[];visible.pendingRevertRequest=null;visible.myPendingRevertRequest=null;visible.approvableRevertRequest=null;visible.approvableRequesterIds=[];visible.pendingPlayerRequestSeat=null;
+    transport.applyLiveGameUpdate({ game: visible });
+  }
+  queueMicrotask(() => { if (account.snapshot().ready) startRouteSync(); });
+}
 const syncLiveChannels = () => {
   const routeGameId =
     shouldLiveSyncRoute(currentRoute) &&
@@ -3894,6 +4065,7 @@ const syncLiveChannels = () => {
 };
 
 const navigateTo = (hash) => {
+  clearAccountContinuation();
   const parsedRoute = parseRouteFromHash(hash);
   const preferredFlyoutKey = FLYOUT_KEYS.find((key) => parsedRoute[key] && !currentRoute[key]) ?? null;
   const nextRoute = normalizeRouteFlyoutState(parsedRoute, { preferredFlyoutKey });
@@ -3918,6 +4090,7 @@ const navigateTo = (hash) => {
 };
 
 window.addEventListener("hashchange", () => {
+  clearAccountContinuation();
   const previousRoute = currentRoute;
   closeHeaderMenu();
   const parsedRoute = parseRouteFromHash(window.location.hash);
@@ -3957,6 +4130,41 @@ window.addEventListener("load", () => {
   scheduleResponsiveHomeSectionPageSizes();
 });
 
+// The first click may arrive while the initial cookie is still being read.
+// Resolve that session before choosing login versus recovery acknowledgment.
+const waitForAccountGate = async () => {
+  const hash = window.location.hash;
+  let awaitedLogout = false;
+  try {
+    if (!account.snapshot().ready) await account.start();
+    if (account.snapshot().pendingLogout) {
+      awaitedLogout = true;
+      await account.hydrate();
+    }
+  } catch { return false; }
+  const state = account.snapshot();
+  return hash === window.location.hash && state.ready && !state.pendingLogout
+    && (!awaitedLogout || !state.session.authenticated);
+};
+const openBoardAccountGate = async source => {
+  if (!await waitForAccountGate()) return;
+  const state = account.snapshot();
+  if (state.available === false || state.maintenance || account.canPlay() || accountDialog.isOpen()) return;
+  accountDialog.open(state.session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, source);
+};
+
+appEl.addEventListener("pointerdown", event => {
+  if (event.target.closest?.("#shell-board") && !account.canPlay()) {
+    event.preventDefault();event.stopImmediatePropagation();
+    void openBoardAccountGate(event.target.closest?.("button, [tabindex]"));
+  }
+}, true);
+appEl.addEventListener("click", event => {
+  if (event.target.closest?.("#shell-board") && !account.canPlay()) {
+    event.preventDefault();event.stopImmediatePropagation();
+    void openBoardAccountGate(event.target.closest?.("button, [tabindex]"));
+  }
+}, true);
 appEl.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
@@ -3993,6 +4201,24 @@ appEl.addEventListener("click", async (event) => {
   }
 
   const action = actionEl.getAttribute("data-action");
+  const actionGameId = actionEl.getAttribute("data-game-id") || currentRoute.gameId;
+  if (action === "public-profile") { void publicProfileDialog.open(actionEl.getAttribute("data-username"), actionEl); return; }
+  if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
+  if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
+  if (action === "account-open") { accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
+  const accountGatedActions = new Set(["create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
+  if (accountGatedActions.has(action) && (!account.snapshot().ready || account.snapshot().pendingLogout)) {
+    event.preventDefault();
+    if (!await waitForAccountGate()) return;
+  }
+  if (accountGatedActions.has(action) && !account.canPlay()) {
+    event.preventDefault();
+    if (!account.snapshot().available || account.snapshot().maintenance) return;
+    const intent = safeAccountIntent({ hash: window.location.hash, action, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });
+    accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", intent, actionEl);
+    return;
+  }
+  if (sharedMutationActions.has(action) && transport.getGameViewModel(actionGameId)?.sharedMutationsBlocked) return;
   const animateFlyoutClose = async (flyoutKey, closeFlyout) => {
     const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
     const mainContentEl = appEl?.querySelector?.(".shell-main-content");
@@ -4117,6 +4343,9 @@ appEl.addEventListener("click", async (event) => {
   }
 
   if (action === "join-viewer" || action === "accept-invite-viewer") {
+    if (account.snapshot().enabled && (!account.snapshot().session.authenticated || transport.getGameViewModel(actionGameId)?.ownershipMode === "legacy_guest")) {
+      markInviteChoiceCommitted(actionGameId);navigateTo(buildGameHash(actionGameId, null, getCurrentFlyoutState()));return;
+    }
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) return;
     void withPendingButton(getJoinButtonKey("viewer", gameId), async () => {
@@ -4210,6 +4439,20 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "retry-saving") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    dismissedRecoveryNotices.delete(gameId);
+    await transport.retrySaving(gameId).catch(() => {});
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
+  if (action === "dismiss-recovery-notice") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    dismissedRecoveryNotices.set(gameId, recoveryMessage(transport.getGameViewModel(gameId)));
+    render({ animatePanels: false, includeBoard: false });
+    document.querySelector('[data-action="return-live"], [data-action="open-history"], .shell-logo, a[href="#/"]')?.focus({ preventScroll: true });
+    return;
+  }
   if (action === "dismiss-failed-operation") {
     const operationId = actionEl.getAttribute("data-operation-id");
     if (!operationId) {
@@ -4217,6 +4460,7 @@ appEl.addEventListener("click", async (event) => {
     }
     transport.dismissFailedOperation?.(operationId);
     render({ animatePanels: false, includeBoard: false });
+    document.querySelector('[data-action="return-live"], .shell-header-title-link')?.focus({ preventScroll: true });
     return;
   }
 
@@ -4323,6 +4567,7 @@ appEl.addEventListener("click", async (event) => {
     }
     const delta = action === "home-page-prev" ? -1 : 1;
     const nextPage = (section.page + delta + section.totalPages) % section.totalPages;
+    const pageGeneration=account.snapshot().generation;
     pendingHomeSectionKeys.add(sectionKey);
     render({ animatePanels: false, includeBoard: false });
     try {
@@ -4334,6 +4579,7 @@ appEl.addEventListener("click", async (event) => {
     } catch (error) {
       window.__righeltLastError = error instanceof Error ? error.message : String(error);
     } finally {
+      if(pageGeneration!==account.snapshot().generation)return;
       pendingHomeSectionKeys.delete(sectionKey);
       render({ animatePanels: false, includeBoard: false });
       window.requestAnimationFrame(() => {
@@ -4370,8 +4616,12 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
-  if (action === "tutorial-complete") {
-    saveTutorialCompleted(storage, true);
+  if (action === "tutorial-complete" || action === "tutorial-skip-all") {
+    if (account.snapshot().enabled && account.snapshot().session.authenticated) {
+      const epoch = account.snapshot().generation;
+      try { await account.updateAccount({ preferences: { tutorial: action === "tutorial-complete" ? "completed" : "skipped" } }); if (account.snapshot().generation !== epoch) return; }
+      catch { window.__righeltLastError = "Could not save tutorial progress. Try again."; return; }
+    } else if (!account.snapshot().enabled) saveTutorialCompleted(storage, true);
     tutorial.reset();
     const gameId = actionEl.getAttribute("data-game-id");
     navigateTo(gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : buildHomeHash(getCurrentFlyoutState()));
@@ -4710,8 +4960,35 @@ window.addEventListener("touchcancel", () => {
   clearActivePanelSwipe();
 });
 
+let startupFlight = false, startupComplete = false, startupRetryTimer = null, startupRetryDelay = 1000;
 const initialRender = async () => {
+  if (startupFlight || startupComplete) return;
+  clearTimeout(startupRetryTimer);
+  startupFlight = true;
+  try {
   routeHydrated = false;
+  render({ animatePanels: false, includeBoard: false });
+  try {
+    await account.start();
+    void account.activity(true);
+  } catch (error) {
+    window.__righeltLastError = error.code || error.message;
+    if (error.code === "upgrade_required") {
+      try { const key="righelt.auth-refresh"; if(!window.sessionStorage.getItem(key)){window.sessionStorage.setItem(key,"1");window.location.reload();return;} } catch {}
+      accountStartupError="Please refresh to update Righelt. Play is unavailable until the update completes.";render({animatePanels:false,includeBoard:false});
+    }
+    if (error.code !== "upgrade_required") {
+      accountStartupError = "Could not connect. Retrying when the connection is available.";
+      render({animatePanels:false,includeBoard:false});
+      if (navigator.onLine !== false) {
+        startupRetryTimer = setTimeout(() => void initialRender(), startupRetryDelay);
+        startupRetryDelay = Math.min(startupRetryDelay * 2, 30000);
+      }
+    }
+    return;
+  }
+  startupComplete = true;
+  accountStartupError = "";
   syncLiveChannels();
   render({ animatePanels: false, includeBoard: false });
   const scenarioCatalogPromise = (async () => {
@@ -4729,6 +5006,9 @@ const initialRender = async () => {
   } catch (error) {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
   }
+  } finally { startupFlight = false; }
 };
+window.addEventListener("offline", () => clearTimeout(startupRetryTimer));
+window.addEventListener("online", () => { startupRetryDelay = 1000; if (!startupComplete) void initialRender(); });
 
 void initialRender();

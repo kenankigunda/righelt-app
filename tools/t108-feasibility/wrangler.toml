@@ -1,0 +1,22 @@
+name = "righelt-t108-hash-feasibility"
+main = "worker.mjs"
+compatibility_date = "2026-03-12"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+
+[[durable_objects.bindings]]
+name = "ADMISSION"
+class_name = "AdmissionProbe"
+
+[[services]]
+binding = "HASH_WORKER"
+service = "righelt-t108-hash-engine"
+
+[[migrations]]
+tag = "t108-probe-v1"
+new_sqlite_classes = ["AdmissionProbe"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1

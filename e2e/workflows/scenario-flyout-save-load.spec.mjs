@@ -7,6 +7,7 @@ import {
   getHistoryMoveCount,
   importScenarioGame,
   makeAnyLegalMove,
+  waitForLegacyIdentity,
 } from "../support/app.mjs";
 
 const buildPiece = (id, owner, kind, row, col) => ({
@@ -131,8 +132,9 @@ const getLegalActions = async (page) =>
     return Array.isArray(body?.game?.legalActions) ? body.game.legalActions : [];
   });
 
-const createSelfPlayGameViaApi = async (page) =>
-  page.evaluate(async () => {
+const createSelfPlayGameViaApi = async (page) => {
+  await waitForLegacyIdentity(page);
+  return page.evaluate(async () => {
     const identityId = window.localStorage.getItem("righelt.identity.id.v1");
     if (!identityId) {
       throw new Error("Expected identity id in local storage before creating a self-play game");
@@ -141,7 +143,7 @@ const createSelfPlayGameViaApi = async (page) =>
     const response = await fetch("/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, selfPlayMode: true }),
+      body: JSON.stringify({ protocolVersion: 2, identityId, selfPlayMode: true }),
     });
     const body = await response.json();
     if (!response.ok || !body?.game?.id) {
@@ -149,6 +151,7 @@ const createSelfPlayGameViaApi = async (page) =>
     }
     return body.game.id;
   });
+};
 
 const importScenarioIntoExistingGame = async (page, scenario, targetGameId) =>
   page.evaluate(async ({ scenario: payload, targetGameId: gameId }) => {
@@ -160,7 +163,7 @@ const importScenarioIntoExistingGame = async (page, scenario, targetGameId) =>
     const response = await fetch("/api/shell/scenarios/import", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, targetGameId: gameId, scenario: payload }),
+      body: JSON.stringify({ protocolVersion: 2, identityId, targetGameId: gameId, scenario: payload }),
     });
     const body = await response.json();
     if (!response.ok || !body?.game?.id) {

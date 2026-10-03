@@ -13,6 +13,7 @@ function buildEnv() {
           bind() {
             return this;
           },
+          async first() {return {activated_at:null,maintenance:0,canary_account_id:null};},
           async run() {
             return { success: true, meta: { last_row_id: 1 } };
           },

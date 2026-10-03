@@ -32,6 +32,7 @@ const buildAcknowledgedGame = (baseGame, action, clientCommandId) => {
 
   return {
     ...baseGame,
+    gameplayRevision: (baseGame.gameplayRevision ?? 0) + 1,
     updatedAt: baseGame.createdAt,
     lastMoveAt: baseGame.createdAt,
     currentSnapshot: nextState,
@@ -76,7 +77,7 @@ test("integration sync store defers live move requests until optimistic game cre
         return new Promise((resolve) => {
           resolveCreate = () => {
             createdAuthoritativeGame = structuredClone(initialCreatedGame);
-            resolve(Response.json({ ok: true, game: initialCreatedGame }));
+            resolve(Response.json({ protocolVersion: 2, ok: true, game: initialCreatedGame }));
           };
         });
       }
@@ -91,7 +92,9 @@ test("integration sync store defers live move requests until optimistic game cre
           accepted: true,
           clientCommandId: body.clientCommandId,
           eventSeq: 1,
-          game: buildAcknowledgedGame(baseGame, body.action, body.clientCommandId),
+          protocolVersion: 2, gameId: body.gameId, gameplayRevision: body.expectedGameplayRevision + 1,
+          commandOutcomes: [{ gameId: body.gameId, identityId: body.identityId, clientCommandId: body.clientCommandId, fingerprint: body.fingerprint, outcome: "accepted", reason: null, eventSeq: 1, gameplayRevision: body.expectedGameplayRevision + 1 }],
+          game: buildAcknowledgedGame(baseGame, body.payload.action, body.clientCommandId),
         });
       }
       if (String(url).includes("/api/shell/games/") && (!init.method || init.method === "GET")) {
@@ -136,7 +139,7 @@ test("integration sync store defers live move requests until optimistic game cre
 
   assert.equal(calls.some((entry) => entry.url.endsWith("/apply")), true);
   assert.equal(applyBodies.length, 1);
-  assert.equal(applyBodies[0].action.type, action.type);
+  assert.equal(applyBodies[0].payload.action.type, action.type);
   assert.equal(committedMove.accepted, true);
   assert.equal(store.getGameViewModel(createHandle.result.id)?.moves.length, 1);
 });
