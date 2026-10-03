@@ -22,6 +22,42 @@ test.beforeEach(async () => {
   expect(response.ok).toBe(true);
 });
 
+test("a pending home list cannot delay or replace the chosen game after account acknowledgment", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("radio", { name: "Player 2 · Blue" }).check();
+  await page.getByTestId("home-create-game").click();
+  await finishRegistration(page);
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let held = 0;
+  const creates = [];
+  page.on("request", request => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates.push(request.postDataJSON());
+  });
+  await page.route(/\/api\/shell\/games\?.*section=other/, async route => {
+    const response = await route.fetch();
+    held++;
+    await gate;
+    await route.fulfill({ response });
+  });
+  try {
+    await acknowledge(page);
+    await expect.poll(() => held).toBeGreaterThan(0);
+    await expect(page.getByTestId("game-role")).toContainText("Player 2");
+    const gameUrl = page.url();
+    expect(creates).toHaveLength(1);
+    expect(creates[0].creatorSide).toBe("p2");
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+    await expect(page).toHaveURL(gameUrl);
+    await expect(page.getByTestId("game-role")).toContainText("Player 2");
+    expect(creates).toHaveLength(1);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
+
 test("blue Friend intent survives registration and no game starts before recovery acknowledgment", async ({ page, browser }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   let creates = 0;

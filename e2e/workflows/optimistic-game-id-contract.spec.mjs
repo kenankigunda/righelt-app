@@ -73,6 +73,9 @@ test("optimistic history branch keeps popup route id, server id, and first apply
     const branchTarget = popup.locator("#shell-board .cell.target");
     await expect(branchTarget).toHaveCount(1);
     await branchTarget.click();
+    await expect(popup.locator("#shell-board-preview-label")).toContainText("Preview.");
+    expect(await getHistoryMoveCount(popup)).toBe(branchHistoryCount);
+    await branchTarget.click();
 
     const applyRequest = await applyRequestPromise;
     expect(new URL(applyRequest.url()).pathname).toBe(`/api/shell/games/${gameId}/apply`);
@@ -129,6 +132,9 @@ test("optimistic history branch renders the popup shell before the branch respon
     await expect(popup.locator("#shell-board .selected-piece")).toHaveCount(1);
     const branchTarget = popup.locator("#shell-board .cell.target");
     await expect(branchTarget).toHaveCount(1);
+    await branchTarget.click();
+    await expect(popup.locator("#shell-board-preview-label")).toContainText("Preview.");
+    expect(await getHistoryMoveCount(popup)).toBe(pendingHistoryCount);
     await branchTarget.click();
 
     const applyRequest = await applyRequestPromise;
