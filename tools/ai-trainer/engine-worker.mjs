@@ -14,6 +14,8 @@ const send = message => process.stdout.write(`${JSON.stringify(message)}\n`);
 const canonical = value => Array.isArray(value) ? value.map(canonical)
   : value && typeof value === 'object'
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
+const searchOptions = profile => ({ simulations: profile?.simulations, temperature: profile?.temperature,
+  maxValueGap: profile?.maxValueGap, maxNodes: experimentConfig.search.maxNodes });
 
 // IDs are canonicalized by owner/location for repetition detection only. Original
 // states and IDs are preserved for exact replay. Administrative counters and UI
@@ -53,6 +55,14 @@ async function main() {
   if (!Number.isFinite(budgetMs) || budgetMs <= 0 || budgetMs > 600_000) throw new Error('Invalid job bound');
   const deadline = performance.now() + budgetMs;
   const check = () => { if (performance.now() >= deadline) throw new BudgetExpired(); };
+  if (job.command === 'search') {
+    let requestId=0;
+    const result=await selectMove({state:job.state,seed:job.seed,...searchOptions(job.profile),deadlineMs:deadline},async encoded=>{
+      const id=++requestId;send({type:'evaluate',id,input:Array.from(encoded)});
+      const reply=await read();if(reply.type!=='evaluation'||reply.id!==id)throw new Error('Inference response mismatch');return reply;
+    });
+    send({type:'searched',result});return;
+  }
   if (job.command === 'replay') {
     let state = job.game.rootState ?? job.game.initialState;
     for (const action of job.game.warmupActions ?? []) { check(); state = transition(state, action); }
@@ -78,8 +88,20 @@ async function main() {
     } else if (job.game.termination !== 'terminal') throw new Error('Terminal game mislabeled');
     send({ type: 'replayed', hash: deterministicStateHash(state), outcome: state.outcome }); return;
   }
+  if (job.command === 'validate-opening') {
+    let current=createInitialState();
+    for (const action of job.actions??[]) {check();current=transition(current,action);}
+    if(deterministicStateHash(current)!==deterministicStateHash(job.state))throw new Error('Opening trajectory mismatch');
+    if(current.outcome.status!=='ongoing')throw new Error('Opening is terminal');
+    send({type:'opening-verified',fingerprint:ruleFingerprint(current),initial:ruleFingerprint(current)===ruleFingerprint(createInitialState())});return;
+  }
   if (job.command === 'fingerprint') { send({ type: 'fingerprint', fingerprint: ruleFingerprint(job.state) }); return; }
-  if (!['generate', 'prepare'].includes(job.command) || !Number.isSafeInteger(job.seed) || job.partition !== 'train' ||
+  const arena=job.command==='arena';
+  if (arena && ['P1', 'P2'].some(seat => !job.profiles?.[seat] || !job.modelVersions?.[seat] || !job.profileVersions?.[seat])) {
+    throw new Error('Arena model and profile identities are required for both seats');
+  }
+  if (!['generate', 'prepare', 'arena'].includes(job.command) || !Number.isSafeInteger(job.seed) ||
+      (arena ? !['validation','final'].includes(job.partition) : job.partition !== 'train') ||
       !['normal', 'simple', 'continuation'].includes(job.kind)) throw new Error('Invalid training job');
   let state = resolveToStability(normalizeState(job.initialState ?? createInitialState()));
   encodeState(state);
@@ -115,10 +137,11 @@ async function main() {
         termination = 'truncated'; truncationReason = n >= experimentConfig.training.maxDecisions ? 'decision-cap' : 'repetition'; break;
       }
       const seed = (job.seed + n) >>> 0;
-      const result = await selectMove({ state, seed, deadlineMs: deadline,
-        simulations: experimentConfig.search.selfPlaySimulations, temperature: 1, maxValueGap: .1 }, async encoded => {
+      const decisionController=state.sideToMove;
+      const profile=arena ? job.profiles[decisionController] : {simulations:experimentConfig.search.selfPlaySimulations,temperature:1,maxValueGap:.1};
+      const result = await selectMove({ state, seed, ...searchOptions(profile), deadlineMs: deadline }, async encoded => {
         const id = ++requestId;
-        send({ type: 'evaluate', id, input: Array.from(encoded) });
+        send({ type: 'evaluate', id, modelSeat:decisionController, input: Array.from(encoded) });
         const reply = await read();
         if (reply.type !== 'evaluation' || reply.id !== id) throw new Error('Inference response mismatch');
         return reply;
@@ -132,14 +155,16 @@ async function main() {
       state = transition(state, result.action);
       decisions.push({ id: `${job.id}:${n}`, controller, action: result.action, beforeHash,
         afterHash: deterministicStateHash(state), seed, policy: result.policy, legal, encoded,
+        ...(arena ? { modelVersion: job.modelVersions[controller], profileVersion: job.profileVersions[controller] } : {}),
         search: { nodes: result.nodes, simulations: result.simulations, stopped: result.stopped, reason: result.reason } });
     }
   } catch (error) {
     if (!(error instanceof BudgetExpired)) throw error;
     send({ type: 'unfinished', id: job.id, reason: 'budget', decisions: decisions.length }); return;
   }
-  send({ type: 'game', game: { schema: 1, id: job.id, familyId: job.familyId, partition: 'train', kind: job.kind,
+  send({ type: 'game', game: { schema: 1, id: job.id, familyId: job.familyId, partition: job.partition, kind: job.kind,
     seed: job.seed, modelVersion: job.modelVersion, rootState, warmupActions, initialState, decisions,
+    ...(arena ? { modelVersions: job.modelVersions, profileVersions: job.profileVersions } : {}),
     termination, truncationReason, outcome: state.outcome, finalHash: deterministicStateHash(state) } });
 }
 main().catch(error => {
