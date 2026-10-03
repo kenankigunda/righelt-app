@@ -143,6 +143,15 @@ const accountDialog = createAccountDialog({ controller: account, onTutorial: () 
   onComplete: async intent => {
     const generation = account.snapshot().generation;
     const hash = window.location.hash;
+    // A typed start needs account authority, not unrelated home-list data.
+    // Admit it synchronously through the current account's transport.
+    if (intent?.action === "start-opponent") {
+      const start = safeAccountIntent(intent);
+      if (!start || !account.snapshot().ready || !account.canPlay() || start.hash !== hash) return;
+      homeSide = start.side;
+      startPersonalGame(start);
+      return;
+    }
     try { await syncRouteDataAndLiveChannels(); } catch { return; }
     if (generation !== account.snapshot().generation || hash !== window.location.hash) return;
     // This read has hydrated the current route even if the transport reset's
@@ -150,7 +159,6 @@ const accountDialog = createAccountDialog({ controller: account, onTutorial: () 
     routeHydrated = true;
     render({ animatePanels: false });
     if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
-    if (intent.action === "start-opponent") { homeSide = intent.side; startPersonalGame(intent); return; }
     const selector = `[data-action="${CSS.escape(intent.action)}"]${intent.gameId ? `[data-game-id="${CSS.escape(intent.gameId)}"]` : ""}${intent.moveIndex ? `[data-move-index="${CSS.escape(intent.moveIndex)}"]` : ""}`;
     appEl.querySelector(selector)?.click();
   },
