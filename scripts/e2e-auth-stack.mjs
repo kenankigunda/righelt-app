@@ -7,6 +7,8 @@ import { randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { LOCAL_DEV_PORT_VARIANTS, resolveLocalApiPort } from "../apps/web/local-dev-ports.js";
+import { installProxyDiagnostics } from "./auth-proxy-diagnostics.mjs";
+import { createFixtureControlHandler, runFixtureCommand } from "./auth-fixture-control.mjs";
 
 const root = process.cwd();
 const webPort = String(process.env.RIGHELT_AUTH_E2E_WEB_PORT || LOCAL_DEV_PORT_VARIANTS.find(variant => variant.suffix === "auth-e2e").webPort);
@@ -17,6 +19,7 @@ const persist = path.join(temporary, "state");
 const children = new Set();
 let stopping = false;
 let control;
+let proxyDiagnosticsInstallation;
 
 function run(args, { cwd = root, service = false } = {}) {
   const child = spawn("pnpm", args, { cwd, stdio: "inherit", detached: service });
@@ -40,6 +43,8 @@ async function shutdown(code = 0) {
     kill("SIGTERM");
     setTimeout(() => { kill("SIGKILL"); resolve(); }, 5000).unref();
   })));
+  try { const restore = await proxyDiagnosticsInstallation; await restore?.(); }
+  catch (error) { console.error(error); code = 1; }
   await rm(temporary, { recursive: true, force: true });
   process.exit(code);
 }
@@ -63,6 +68,10 @@ async function ready(url) {
   throw new Error(`Local account stack not ready: ${url}`);
 }
 try {
+  if (process.env.RIGHELT_AUTH_PROXY_DIAGNOSTICS === "1") {
+    proxyDiagnosticsInstallation = installProxyDiagnostics();
+    await proxyDiagnosticsInstallation;
+  }
   await mkdir(persist, { recursive: true });
   const apiConfig = path.join(temporary, "api.toml");
   let api = await readFile(path.join(root, "apps/api/wrangler.toml"), "utf8");
@@ -101,22 +110,9 @@ try {
   await ready(`http://127.0.0.1:${apiPort}/api/health`);
   // Test-runner-only loopback control; never exposed through Pages or application routes.
   // Fixed SQL operations only, rejecting browser-origin requests. This is not an auth bypass.
-  let busy = false;
-  control = createServer(async (request, response) => {
-    const sql = request.url === "/reset-limits" ? "DELETE FROM account_rate_limits"
-      : request.url === "/activate-cutover" ? "UPDATE account_cutover SET activated_at=COALESCE(activated_at,CAST(unixepoch('subsec')*1000 AS INTEGER)),maintenance=1,canary_account_id=(SELECT account_id FROM accounts WHERE username_canonical='cutover_canary' AND recovery_acknowledged=1) WHERE singleton=1"
-      : request.url === "/maintenance-on" ? "UPDATE account_cutover SET maintenance=1 WHERE singleton=1 AND activated_at IS NOT NULL"
-      : request.url === "/maintenance-off" ? "UPDATE account_cutover SET maintenance=0 WHERE singleton=1 AND activated_at IS NOT NULL"
-      : request.url === "/expire-sessions" ? "UPDATE account_sessions SET expires_at = created_at + 1, last_activity_at = created_at" : null;
-    if (request.method !== "POST" || request.headers.origin || !sql) { response.writeHead(404).end(); return; }
-    if (busy) { response.writeHead(409).end(); return; }
-    busy = true;
-    try {
-      await run([...d1, "execute", "DB", "--config", apiConfig, "--local", "--persist-to", persist, "--command", sql]);
-      response.writeHead(200).end("done");
-    } catch { response.writeHead(500).end("Local fixture operation failed"); }
-    finally { busy = false; }
-  }).listen(Number(webPort) + 100, "127.0.0.1");
+  control = createServer(createFixtureControlHandler({
+    execute: sql => runFixtureCommand([...d1, "execute", "DB", "--config", apiConfig, "--local", "--persist-to", persist, "--command", sql], { cwd: root }),
+  })).listen(Number(webPort) + 100, "127.0.0.1");
   run(["exec", "wrangler", "pages", "dev", ".", "--port", webPort, "--local-protocol", "https", "--inspector-port", String(Number(webPort) + 10)],
     { cwd: path.join(root, "apps/web"), service: true });
   await ready(origin);

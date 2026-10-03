@@ -406,7 +406,10 @@ jobs:
         env:
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/auth-e2e/results.xml
           PLAYWRIGHT_OUTPUT_DIR: test-results/auth-e2e/artifacts
-        run: pnpm test:e2e:auth
+          RIGHELT_AUTH_PROXY_DIAGNOSTICS: "1"
+        run: |
+          node --test scripts/auth-proxy-diagnostics.test.mjs
+          pnpm test:e2e:auth
 
       - name: Upload E2E JUnit
         if: always()

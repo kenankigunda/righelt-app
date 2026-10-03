@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { AUTH_REQUEST_HEADER, AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION, SESSION_CONTEXT_HEADER } from "../../packages/shared-types/src/auth-policy.js";
 import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
 
 const password = "A long browser test password 482";
@@ -499,7 +500,7 @@ test("keyboard board activation opens sign in without losing the board", async (
   } finally { await otherContext.close(); }
 });
 
-test("a delayed legacy play continuation is discarded after a cross-tab account switch", async ({ page }) => {
+test("a delayed legacy play continuation is discarded after a cross-tab account switch", async ({ page, request, baseURL }) => {
   await page.addInitScript(() => {
     const original = window.fetch.bind(window);
     window.__heldAccountGame = [];
@@ -517,16 +518,31 @@ test("a delayed legacy play continuation is discarded after a cross-tab account 
     };
   });
   const first = uniqueName(), second = uniqueName();
-  await register(page, second);
-  await account(page);
-  await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
-  await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
-  await expect(dialog(page)).not.toBeVisible();
-  await register(page, first);
-  await account(page);
-  await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
-  await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
-  await expect(dialog(page)).not.toBeVisible();
+  // This case covers continuation retirement, not registration form mechanics.
+  // Create real acknowledged accounts in the isolated API fixture cookie jar;
+  // the browser remains anonymous and still performs both actual UI logins.
+  for (const username of [second, first]) {
+    const headers = {
+      Origin: new URL(baseURL).origin,
+      [AUTH_REQUEST_HEADER]: "1",
+      [AUTH_PROTOCOL_HEADER]: String(AUTH_PROTOCOL_VERSION),
+    };
+    const registered = await request.post("/api/auth/register", {
+      headers, data: { username, password },
+    });
+    expect(registered.status()).toBe(200);
+    const session = await registered.json();
+    expect(session.account.username).toBe(username);
+    const sessionHeaders = { ...headers, [SESSION_CONTEXT_HEADER]: session.contextId };
+    const acknowledged = await request.post("/api/auth/recovery-code/acknowledge", {
+      headers: sessionHeaders, data: { saved: true, recoveryVersion: session.recoveryVersion },
+    });
+    expect(acknowledged.status()).toBe(200);
+    expect((await acknowledged.json()).recoveryAcknowledgmentRequired).toBe(false);
+    const loggedOut = await request.post("/api/auth/logout", { headers: sessionHeaders, data: {} });
+    expect(loggedOut.status()).toBe(200);
+  }
+  await page.goto("/");
   const sibling = await page.context().newPage();
   let creates = 0;
   page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates++; });
@@ -563,4 +579,31 @@ test("a delayed legacy play continuation is discarded after a cross-tab account 
     if (!page.isClosed()) await page.evaluate(() => window.__heldAccountGame.splice(0).forEach(resolve => resolve()));
     await sibling.close();
   }
+});
+
+test('a failed continuation read preserves the play choice for explicit retry', async ({ page }) => {
+  await page.goto('/#/invite/cutover-legacy-invite');
+  await page.getByRole('button', { name: 'Start new game', exact: true }).click();
+  await dialog(page).getByRole('button', { name: 'Create account', exact: true }).click();
+  await dialog(page).getByLabel('Username', { exact: true }).fill(uniqueName());
+  await dialog(page).getByLabel('Password', { exact: true }).fill(password);
+  await dialog(page).getByRole('button', { name: 'Create account', exact: true }).click();
+  await expect(dialog(page).getByRole('heading', { name: 'Save your recovery code' })).toBeVisible();
+  let denyReads = true;
+  let creates = 0;
+  page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/shell/games') creates++; });
+  await page.route('**/api/shell/invites/cutover-legacy-invite', async route => {
+    if (denyReads) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'temporarily_unavailable' }) });
+    else await route.continue();
+  });
+  await dialog(page).getByLabel('I saved my recovery code').check();
+  await dialog(page).getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(dialog(page)).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
+  expect(creates).toBe(0);
+  denyReads = false;
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page).toHaveURL(/#\/game\//);
+  await expect(page.getByTestId('game-role')).toContainText('Player 1');
+  expect(creates).toBe(1);
 });
