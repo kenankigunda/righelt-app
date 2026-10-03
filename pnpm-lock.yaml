@@ -17,6 +17,9 @@ importers:
       '@playwright/test':
         specifier: ^1.54.2
         version: 1.59.1
+      fake-indexeddb:
+        specifier: ^6.2.5
+        version: 6.2.5
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -444,6 +447,10 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  fake-indexeddb@6.2.5:
+    resolution: {integrity: sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w==}
+    engines: {node: '>=18'}
+
   fsevents@2.3.2:
     resolution: {integrity: sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
@@ -833,6 +840,8 @@ snapshots:
       '@esbuild/win32-arm64': 0.27.3
       '@esbuild/win32-ia32': 0.27.3
       '@esbuild/win32-x64': 0.27.3
+
+  fake-indexeddb@6.2.5: {}
 
   fsevents@2.3.2:
     optional: true

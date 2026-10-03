@@ -79,6 +79,8 @@ CI runs in lane order:
 4. `integration`
 5. `E2E`
 
+The integration gate includes `test:sync-stress` (100 fixed multiplayer fault schedules with saved failure traces) and `test:sync-runtime` (actual local Workers/D1 transactions, sockets and restart durability). CI runs these as explicit jobs as well as the existing engine/API/web integration jobs. See [sync fault harness details](../packages/api-handler/test-stress/README.md) for replay commands, assertions and browser-proof boundaries.
+
 ## Change Review Expectations
 
 Implementation plans and PR summaries should identify:

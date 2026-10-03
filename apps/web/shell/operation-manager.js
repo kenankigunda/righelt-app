@@ -85,7 +85,7 @@ export const createOperationManager = () => {
 
   const fail = (id, error) => {
     const record = recordsById.get(id);
-    if (!record || record.handle.status === "failed") {
+    if (!record || record.handle.status === "failed" || record.handle.status === "committed") {
       return record?.handle ?? null;
     }
     const nextError = cloneError(error);

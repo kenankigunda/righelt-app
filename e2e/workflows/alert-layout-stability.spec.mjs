@@ -44,6 +44,8 @@ const getShellAnchors = async (page) =>
     const historyRect = history.getBoundingClientRect();
     return {
       layoutMode: "wide",
+      scrollY:window.scrollY,
+      headerHeight:document.querySelector(".shell-header")?.getBoundingClientRect().height,
       boardTop: Math.round(boardRect.top),
       historyTop: Math.round(historyRect.top),
     };
@@ -57,7 +59,7 @@ const expectStableShellAnchors = (before, after, label) => {
     expect(Math.abs(after.activePanelTop - before.activePanelTop), `${label}: active panel top should stay stable`).toBeLessThanOrEqual(2);
     return;
   }
-  expect(Math.abs(after.boardTop - before.boardTop), `${label}: board top should stay stable`).toBeLessThanOrEqual(2);
+  expect(Math.abs(after.boardTop - before.boardTop), `${label}: board top should stay stable ${JSON.stringify({before,after})}`).toBeLessThanOrEqual(2);
   expect(Math.abs(after.historyTop - before.historyTop), `${label}: history top should stay stable`).toBeLessThanOrEqual(2);
 };
 
@@ -85,8 +87,7 @@ const cycleAlertStack = async (page) => {
 
 const bringFailureBannerToFront = async (page) => {
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const activeText = (await readAlertStackState(page)).activeText;
-    if (activeText.includes("Sync failed")) {
+    if (await page.locator('.shell-game-alert-stack-card.is-active [data-testid="sync-failure-banner"]').count()) {
       return;
     }
     await cycleAlertStack(page);
@@ -164,7 +165,17 @@ const runAlertLayoutCase = async ({ context, page, zone }) => {
 
   await bringFailureBannerToFront(popup);
 
-  await popup.locator('.shell-game-alert-stack-card.is-active [data-action="dismiss-failed-operation"]').click();
+  const dismissButton = popup.locator('.shell-game-alert-stack-card.is-active [data-action="dismiss-failed-operation"]');
+  await expect(dismissButton).toBeVisible();
+  const dismissRect = await dismissButton.boundingBox();
+  expect(dismissRect).not.toBeNull();
+  expect(dismissRect.y).toBeGreaterThanOrEqual(0);
+  expect(dismissRect.y + dismissRect.height).toBeLessThanOrEqual(popup.viewportSize().height);
+  expect(dismissRect.x).toBeGreaterThanOrEqual(0);
+  expect(dismissRect.x + dismissRect.width).toBeLessThanOrEqual(popup.viewportSize().width);
+  // locator.click scrolls the document 16px before pointerdown despite this visible
+  // overlay button. A real pointer click isolates the product's layout/focus behavior.
+  await popup.mouse.click(dismissRect.x + dismissRect.width / 2, dismissRect.y + dismissRect.height / 2);
   await expect(failureBanner).toHaveCount(0);
   const afterDismiss = await getShellAnchors(popup);
   expectStableShellAnchors(before, afterDismiss, "after alert dismissal");

@@ -4,23 +4,8 @@ import { CACHE_NO_STORE } from "../../shared-types/src/http";
 import { GameRoomDO } from "./game-room-do";
 import { handleLiveGameRequest, handleLiveGameWebSocketUpgrade } from "./shell-live";
 
-type D1RunResult = {
-  success: boolean;
-  meta?: {
-    last_row_id?: number;
-  };
-};
-
-type D1Statement = {
-  bind: (...args: unknown[]) => D1Statement;
-  first: <T = Record<string, unknown>>() => Promise<T | null>;
-  all: <T = Record<string, unknown>>() => Promise<{ results?: T[] }>;
-  run: () => Promise<D1RunResult>;
-};
-
-export type D1DatabaseLike = {
-  prepare: (query: string) => D1Statement;
-};
+import type { D1DatabaseLike } from "./shell-live-db";
+export type { D1DatabaseLike } from "./shell-live-db";
 
 export type ApiEnv = {
   DB: D1DatabaseLike;

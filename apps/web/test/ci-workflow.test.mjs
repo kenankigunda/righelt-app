@@ -51,7 +51,7 @@ test("CI allows non-E2E checks to run in parallel and keeps E2E as a single inde
   const apiWorkerIntegration = jobBlock("api-worker-integration", "web-integration");
   assert.doesNotMatch(apiWorkerIntegration, /\n\s+needs:\n/);
 
-  const webIntegration = jobBlock("web-integration", "e2e");
+  const webIntegration = jobBlock("web-integration", "sync-stress");
   assert.doesNotMatch(webIntegration, /\n\s+needs:\n/);
 
   const e2e = jobBlock("e2e", "test-results");
@@ -61,7 +61,7 @@ test("CI allows non-E2E checks to run in parallel and keeps E2E as a single inde
   assert.match(results, /if: \$\{\{ always\(\) \}\}/);
   assert.match(
     results,
-    /needs:\n\s+- typecheck\n\s+- generated-web-runtime\n\s+- engine-unit\n\s+- web-unit\n\s+- engine-integration\n\s+- api-handler-integration\n\s+- api-worker-integration\n\s+- web-integration\n\s+- e2e/s,
+    /needs:\n\s+- typecheck\n\s+- generated-web-runtime\n\s+- engine-unit\n\s+- web-unit\n\s+- engine-integration\n\s+- api-handler-integration\n\s+- api-worker-integration\n\s+- web-integration\n\s+- sync-stress\n\s+- sync-runtime\n\s+- e2e/s,
   );
 });
 
@@ -108,4 +108,18 @@ test("CI keeps JUnit and Playwright debug artifacts available after lane executi
   assert.match(workflow, /name: junit-web-integration/);
   assert.match(workflow, /name: junit-e2e/);
   assert.match(workflow, /name: playwright-e2e-debug/);
+});
+
+
+test("CI and local integration both run seeded and actual Workers/D1 fault gates", () => {
+  const manifest = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+  for (const [lane, next] of [["sync-stress", "sync-runtime"], ["sync-runtime", "e2e"]]) {
+    const block = jobBlock(lane, next);
+    assert.ok(block.includes(`pnpm test:${lane} -- --reporter spec --reporter junit`));
+    assert.ok(block.includes(`test-results/${lane}/results.xml`));
+    assert.ok(block.includes(`name: junit-${lane}`));
+    assert.ok(manifest.scripts["test:integration"].includes(`pnpm test:${lane}`));
+    assert.doesNotMatch(block, /continue-on-error/);
+  }
+  assert.match(jobBlock("sync-stress", "sync-runtime"), /path: test-results\/sync-stress\/traces/);
 });
