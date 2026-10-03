@@ -1,3 +1,4 @@
+import { profileLayoutDisplayName } from "../support/profile-layout.mjs";
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
@@ -427,7 +428,7 @@ test("long profile names wrap inside participants without covering the board", a
   await page.setViewportSize({ width: 1366, height: 900 });
   await register(page, uniqueName(), { gate: true });
   await account(page);
-  const displayName = "VeryLongUnbrokenDisplayName123456";
+  const displayName = profileLayoutDisplayName;
   await dialog(page).getByLabel("Display name", { exact: true }).fill(displayName);
   await dialog(page).getByRole("button", { name: "Save account settings" }).click();
   await expect(dialog(page).locator("[data-account-status]")).toHaveText("Account settings saved.");
