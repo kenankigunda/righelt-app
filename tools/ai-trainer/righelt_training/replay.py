@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 from collections import deque
+from array import array
 from .config import CONFIG
 
 
@@ -30,6 +31,7 @@ class ReplayBuffer:
     def __init__(self,capacity=None):
         self.positions=deque(maxlen=capacity or CONFIG['training']['replayCapacity'])
         self.ids=set()
+        self.game_ids=[]
 
     def append(self,game):
         if game['id'] in self.ids:raise ValueError('duplicate replay game')
@@ -38,5 +40,8 @@ class ReplayBuffer:
         if terminal==(outcome=='ongoing'):raise ValueError('inconsistent value target')
         value={'p1_win':1.,'p2_win':-1.,'draw':0.,'ongoing':0.}[outcome]
         for decision in game['decisions']:
-            self.positions.append({**decision,'terminalMask':terminal,'terminalValue':value,'gameId':game['id']})
+            position={k:decision[k] for k in ('id','legal','policy') if k in decision}
+            if 'encoded' in decision:position['encoded']=array('f',decision['encoded'])
+            self.positions.append({**position,'terminalMask':terminal,'terminalValue':value,'gameId':game['id']})
         self.ids.add(game['id'])
+        self.game_ids.append(game['id'])

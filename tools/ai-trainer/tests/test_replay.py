@@ -15,6 +15,12 @@ class ReplayTest(unittest.TestCase):
             p=save_game(d,g)
             with gzip.open(p,'rt') as f:self.assertEqual(json.load(f),g)
             with self.assertRaises(ValueError):save_game(d,g)
+    def test_dense_inputs_use_four_bytes_per_plane_value(self):
+        g=self.game();g['decisions'][0]['encoded']=[0.0]*4600
+        b=ReplayBuffer();b.append(g)
+        self.assertEqual(b.positions[0]['encoded'].itemsize,4)
+        self.assertEqual(b.game_ids,['game-1'])
+
     def test_sealed_families_and_duplicate_games_rejected(self):
         b=ReplayBuffer()
         for partition in ['validation','final']:

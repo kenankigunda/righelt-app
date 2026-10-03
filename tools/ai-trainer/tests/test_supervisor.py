@@ -3,7 +3,7 @@ import sys
 import time
 from pathlib import Path
 import unittest
-from righelt_training.supervisor import supervise,validate_gate_report
+from righelt_training.supervisor import supervise,validate_gate_report,claim_stage
 from righelt_training.processes import start_group
 from righelt_training.budget import Budget
 from righelt_training.resources import AdaptivePolicy,Sample,GIB
@@ -15,6 +15,13 @@ class QuietTelemetry:
         return Sample(now,None,None,0,'normal',GIB,40*GIB,500*GIB,0)
 
 class SupervisorTest(unittest.TestCase):
+    def test_fresh_directory_cannot_reset_approved_stage(self):
+        with tempfile.TemporaryDirectory() as d:
+            claim_stage(d,'initial',Path(d)/'first')
+            claim_stage(d,'initial',Path(d)/'first')
+            with self.assertRaises(ValueError):claim_stage(d,'initial',Path(d)/'second')
+            claim_stage(d,'overnight',Path(d)/'overnight')
+
     def test_deadline_kills_noncooperative_child(self):
         with tempfile.TemporaryDirectory() as d:
             process=start_group([sys.executable,'-c','while True: pass'])
@@ -33,6 +40,15 @@ class SupervisorTest(unittest.TestCase):
             allocation=json.loads((Path(d)/'allocation.json').read_text())
             self.assertEqual(allocation['workers'],2)
             self.assertEqual(allocation['memory_gib'],16)
+
+    def test_missing_machine_telemetry_stops_instead_of_guessing(self):
+        class Missing:
+            def sample(self): raise RuntimeError('unavailable')
+        with tempfile.TemporaryDirectory() as d:
+            process=start_group([sys.executable,'-c','while True: pass'])
+            result=supervise(process,Budget(time.monotonic(),2),AdaptivePolicy(),Missing(),Path(d))
+            self.assertEqual(result,'telemetry-failed')
+            self.assertIsNotNone(process.returncode)
 
     def test_stale_or_smoke_only_gate_report_rejected(self):
         report={'sourceRevision':'rev','configSha256':CONFIG_SHA256,'checks':{k:{'passed':True,'evidence':'test'} for k in ('coreTests','trainerTests','exactReplay','exportParity')}}

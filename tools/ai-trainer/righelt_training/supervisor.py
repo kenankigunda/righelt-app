@@ -1,5 +1,6 @@
 """External watchdog: resource policy and hard process-group deadline enforcement."""
 import argparse
+import fcntl
 from dataclasses import asdict
 import json
 import os
@@ -47,7 +48,14 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
                 stop_group(process)
                 return 'budget-expired'
             if now>=next_sample:
-                sample=telemetry.sample();allocation=policy.decide(sample)
+                try:
+                    sample=telemetry.sample()
+                except (RuntimeError, OSError) as error:
+                    with events.open('a') as f:
+                        f.write(json.dumps({'event':'telemetry-failed','error':str(error)})+'\n')
+                    stop_group(process)
+                    return 'telemetry-failed'
+                allocation=policy.decide(sample)
                 atomic_json(Path(run_dir)/'allocation.json',{**allocation.record(),'observedAt':sample.now})
                 with events.open('a') as f:
                     f.write(json.dumps({'sample':asdict(sample),'allocation':allocation.record()},allow_nan=False)+'\n');f.flush()
@@ -69,7 +77,18 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
             sleep(min(.25,budget.remaining(clock())))
         return 'completed' if process.returncode==0 else 'runner-failed'
     finally:
-        if process.poll() is None:stop_group(process)
+        stop_group(process)
+
+
+def claim_stage(artifact_root, stage, run_directory):
+    path=Path(artifact_root)/'budget-ledger.json'
+    ledger=json.loads(path.read_text()) if path.exists() else {'schema':1,'stages':{}}
+    location=str(Path(run_directory).resolve())
+    prior=ledger['stages'].get(stage)
+    if prior is not None and prior!=location:
+        raise ValueError(f'{stage} stage already claimed; resume its original run instead of resetting budget')
+    ledger['stages'][stage]=location
+    atomic_json(path,ledger)
 
 
 def main():
@@ -81,8 +100,19 @@ def main():
     parser.add_argument('--seed',type=int,required=True)
     parser.add_argument('--resume',type=Path)
     args=parser.parse_args()
+    artifact_root=ROOT/'.ai-runs'
+    if not args.run_dir.resolve().is_relative_to(artifact_root.resolve()):
+        raise ValueError('run directories must be under .ai-runs for aggregate artifact accounting')
+    if args.resume and not args.resume.resolve().is_relative_to(artifact_root.resolve()):
+        raise ValueError('resume checkpoints must remain in the aggregate experiment archive')
+    artifact_root.mkdir(parents=True,exist_ok=True)
+    # Kernel lock survives no crashed process, prevents competing supervisors.
+    lock=(artifact_root/'supervisor.lock').open('a+')
+    fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     manifest=build_manifest(args.seed,args.stage)
     validate_gate_report(json.loads(args.gate_report.read_text()),manifest['sourceRevision'],args.stage)
+    if args.resume and not args.run_dir.exists() and args.stage!='overnight':
+        raise ValueError('initial-stage resume must retain its original directory and budget')
     runtime_path=args.run_dir/'runtime.json'
     if args.run_dir.exists():
         if not args.resume:raise ValueError('existing run requires an explicit checkpoint resume')
@@ -110,12 +140,13 @@ def main():
     atomic_json(args.run_dir/'allocation.json',{'workers':CONFIG['resources']['minWorkers'],
                 'memory_gib':CONFIG['resources']['minMemoryGiB'],'paused':False,'stop':False,
                 'reason':'initial-conservative','observedAt':time.time()})
+    claim_stage(artifact_root,args.stage,args.run_dir)
     argv=[sys.executable,'-m','righelt_training.runner','--run-dir',str(args.run_dir.resolve()),'--seed',str(args.seed),'--stage',args.stage]
     if args.resume:argv+=['--resume',str(args.resume.resolve())]
     env={**os.environ,'PYTHONPATH':str(ROOT/'tools/ai-trainer')}
     with (args.run_dir/'runner.log').open('w') as log:
         process=start_group(['/usr/bin/nice','-n','10',*argv],cwd=ROOT,env=env,stdout=log,stderr=log)
-        reason=supervise(process,budget,AdaptivePolicy(),Telemetry(args.run_dir,args.activity_file),args.run_dir)
+        reason=supervise(process,budget,AdaptivePolicy(),Telemetry(artifact_root,args.activity_file),args.run_dir)
     atomic_json(args.run_dir/'supervisor-result.json',{'reason':reason,'runnerReturncode':process.returncode,
                 'elapsedSeconds':time.monotonic()-started,'budgetSeconds':budget.seconds,'productionPromotion':False})
     print(json.dumps({'reason':reason,'runDir':str(args.run_dir)}))

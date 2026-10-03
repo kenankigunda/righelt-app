@@ -14,6 +14,12 @@ class Telemetry:
         psutil.cpu_percent()
 
     def sample(self):
+        try:
+            return self._sample()
+        except (OSError, psutil.Error, subprocess.SubprocessError) as error:
+            raise RuntimeError(f'Resource telemetry unavailable: {type(error).__name__}') from error
+
+    def _sample(self):
         now=time.time();observed=None;active=None
         try:
             data=json.loads(self.activity_file.read_text())

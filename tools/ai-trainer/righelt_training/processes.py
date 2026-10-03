@@ -10,7 +10,6 @@ def start_group(argv, **kwargs):
 
 
 def stop_group(process, grace_seconds=0):
-    if process.poll() is not None:return
     try:os.killpg(process.pid,signal.SIGTERM if grace_seconds else signal.SIGKILL)
     except ProcessLookupError:return
     try:process.wait(timeout=grace_seconds or 2)
