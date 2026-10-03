@@ -7,7 +7,7 @@
   --history-entry-section-gap: 0.42rem;
   --history-marker-slot-width: 0.56rem;
   --history-marker-gap: 0.24rem;
-  --shell-main-max-width: 1200px;
+  --shell-main-max-width: 1440px;
   --shell-flyout-wide-width: min(34rem, 36vw);
   --shell-flyout-content-gap: 1rem;
   --connection-status-connected-bg: #3ea76a;
@@ -595,7 +595,7 @@ button.button-pending,
 .layout-grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: 1.05fr 1.9fr 1.05fr;
+  grid-template-columns: minmax(180px, 1fr) minmax(360px, 680px) minmax(180px, 1fr);
   align-items: start;
 }
 
@@ -2060,4 +2060,27 @@ button:not(.secondary):not(.warn):not(.danger):not(:disabled):active,
   pointer-events: none;
   background: var(--surface-raised);
   clip-path: polygon(var(--corner-cut) 0, 100% 0, 100% calc(100% - var(--corner-cut)), calc(100% - var(--corner-cut)) 100%, 0 100%, 0 var(--corner-cut));
+}
+
+/* Reverse the same causal sweep on every game-to-home path, including browser back. */
+.shell-route-transition-layer[data-direction="back"] { transform: scaleX(-1); }
+.game-help { min-height: 160px; max-height: 240px; overflow: auto; padding: var(--space-3); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; }
+.game-help-controls { display: flex; gap: var(--space-2); }
+.game-help-copy { margin: var(--space-2) 0 0; }
+.game-help[data-expanded="false"] .game-help-copy { max-height: 3em; overflow: auto; }
+#shell-board-preview-label { height: 4.35em; min-height: 4.35em; overflow: auto; font-size: var(--type-body); }
+.preview-change { outline: 2px dashed var(--ink); outline-offset: -3px; }
+.preview-removal::after { content: "×"; color: var(--danger); position: absolute; inset: 0; display: grid; place-items: center; font-size: 1.5rem; }
+@media (max-width: 900px) {
+  .game-help { position: fixed; z-index: 6; left: 8px; right: 8px; bottom: var(--shell-mobile-tabbar-height); min-height: 56px; max-height: min(320px, 40dvh); box-shadow: var(--shadow-raised); }
+  .game-help[data-expanded="false"] { height: 56px; display: flex; align-items: center; gap: 8px; padding: 4px 8px; }
+  .game-help-controls { flex-shrink: 0; }
+  .game-help[data-expanded="false"] .game-help-copy { font-size: var(--type-secondary); margin: 0; }
+  #app:not([data-shell-game-panel="board"]) .game-help { display: none; }
+  [data-mobile-panel="board"] { padding-bottom: 64px !important; }
+}
+@media (max-width: 400px) {
+  .app-root { width: calc(100vw - 16px); }
+  [data-shell-panel="board"] { padding: 8px; }
+  #shell-board { gap: 3px; }
 }

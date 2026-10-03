@@ -101,7 +101,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const getRouteTransitionPhaseKey = \(\) => routeTransition\?\.phase \|\| "idle";/);
   assert.match(source, /const getRouteTransitionRenderKey = \(\) =>/);
   assert.match(source, /const isGameEntryRouteTransitionActive = \(route = currentRoute\) =>/);
-  assert.match(source, /const startGameEntryRouteTransition = \(gameId, fromRoute = currentRoute\?\.name \|\| "unknown"\) => \{/);
+  assert.match(source, /const startGameEntryRouteTransition = \(gameId, fromRoute = currentRoute\?\.name \|\| "unknown", toRoute = "game"\) => \{/);
   assert.match(source, /const maybeRevealRouteTransition = \(\) => \{/);
   assert.match(source, /const syncRouteTransitionForCurrentRoute = \(\) => \{/);
   assert.match(source, /const isFlyoutOnlyRouteChange = \(previousRoute, nextRoute\) =>/);
@@ -203,7 +203,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /homeSectionResizeFrame = window\.requestAnimationFrame\(\(\) => \{/);
   assert.match(source, /const didUpdate = await syncResponsiveHomeSectionPageSizes\(\);/);
   assert.match(source, /render\(\{ animatePanels: false, includeBoard: false \}\);/);
-  assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
+  assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*syncMountedGameShellPanelUi\(\);\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
   assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
   assert.match(source, /syncFlyoutRenderOrder\(currentRoute\);/);
   assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, nextRoute\)\) \{[\s\S]*render\(\);\s*return;\s*\}/s);
@@ -309,7 +309,7 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*\}\);/s);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
   assert.match(source, /const game = transport\.getGameViewModel\(gameId\);\s*if \(!routeHydrated && !game\) \{/s);
-  assert.match(source, /if \(canHydrateRouteFromLocalState\(currentRoute\)\) \{\s*routeHydrated = true;\s*syncLiveChannels\(\);\s*render\(\);\s*maybeRevealRouteTransition\(\);\s*return;\s*\}/s);
+  assert.match(source, /if \(canHydrateRouteFromLocalState\(currentRoute\) && !pendingViewRestore\) \{\s*routeHydrated = true;\s*syncLiveChannels\(\);\s*render\(\);\s*maybeRevealRouteTransition\(\);\s*return;\s*\}/s);
 });
 
 test("scenario selector labels use titles without visible ids", () => {

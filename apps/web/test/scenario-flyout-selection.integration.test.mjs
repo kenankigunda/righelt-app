@@ -60,6 +60,7 @@ const createMountHarness = async () => {
   const boardPreviewLabelEl = createBoardPreviewLabelEl();
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick: nextOnCellClick, onCellHoverStart: nextOnCellHoverStart }) => {
         onCellClick = nextOnCellClick;
@@ -245,10 +246,10 @@ test("integration shell rerender switches a mounted board into click target sele
     source: SOURCE,
     target: TARGET_A,
   });
-  assert.equal(String(harness.boardPreviewLabelEl.innerHTML).includes("Click again to"), true);
+  assert.equal(String(harness.boardPreviewLabelEl.textContent).includes("Activate this destination again"), true);
 });
 
-test("integration shell rerender restores hover target selection when scenarios close on a mounted board", async () => {
+test("integration shell rerender invalidates an old preview when scenarios close on a mounted board", async () => {
   const harness = await createMountHarness();
 
   harness.clickCell(SOURCE);
@@ -269,7 +270,7 @@ test("integration shell rerender restores hover target selection when scenarios 
   assert.deepEqual(harness.runtime.getSelection(), {
     selectedPieceId: "A1",
     source: SOURCE,
-    target: TARGET_B,
+    target: TARGET_A,
   });
-  assert.equal(String(harness.boardPreviewLabelEl.innerHTML).includes("Click to"), true);
+  assert.equal(String(harness.boardPreviewLabelEl.textContent).includes("Activate this destination again"), false);
 });

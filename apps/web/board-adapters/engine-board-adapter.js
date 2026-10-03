@@ -1223,6 +1223,7 @@ export function createEngineBoardAdapter() {
 
           cell.dataset.row = String(row);
           cell.dataset.col = String(col);
+          if (isLiveInteractiveBoard) cell.setAttribute("aria-label", `Row ${row}, column ${col}${cellPiece ? `, ${cellPiece.owner === "P1" ? "Player 1" : "Player 2"} ${cellPiece.kind}` : ", empty"}`);
 
           const cellPieces = findPiecesAt(snapshot, row, col);
           const selectedActorForPushPreview =

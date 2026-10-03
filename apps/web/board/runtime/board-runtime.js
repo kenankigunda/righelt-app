@@ -1,3 +1,5 @@
+import { BOARD_SIZE } from "../../generated/packages/game-engine/src/deterministic.js";
+import { buildImmediateActionPreview, actionPreviewKey, describeImmediatePreview } from "../action-preview.js";
 import {
   getBlockedPreviewLabel,
   buildActionPayload,
@@ -47,7 +49,7 @@ const REMOVAL_EFFECT_DURATION_MS = 2400;
 const shouldUseCompactBoardPreviewCta = () =>
   globalThis.window?.matchMedia?.(MOBILE_BOARD_PREVIEW_BREAKPOINT_QUERY)?.matches === true;
 
-export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
+export function createBoardRuntime({ boardAdapter, host, controls = {}, previewAction = buildImmediateActionPreview }) {
   let elements = {
     boardEl: null,
     overlayLinesEl: null,
@@ -56,6 +58,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   let state = null;
+  let armedPreview = null;
+  let submitting = false;
   let legalActions = [];
   let selectedPieceMoves = [];
   let selectedPieceMovePreviews = [];
@@ -430,9 +434,12 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!state || !mounted) {
       return;
     }
+    if (armedPreview && (host.canInteract?.(state) === false || armedPreview.key !== actionPreviewKey(state, armedPreview.action, host.getInteractionKey?.() ?? ""))) armedPreview = null;
+    const focused = elements.boardEl?.contains?.(document.activeElement) ? document.activeElement : null;
+    const focusCoord = focused?.dataset?.row != null ? { row: focused.dataset.row, col: focused.dataset.col } : null;
     const effectiveMoves = getEffectiveSelectedPieceMovesForBoard();
     boardAdapter.render({
-      snapshot: state,
+      snapshot: armedPreview?.effects.state ?? state,
       selection: getCurrentSelection(),
       overlay: getOverlay(),
       legalActions,
@@ -441,11 +448,31 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       removalEffects,
       allowFreeSelection: getAllowFreeSelection(),
       currentActionType: getActionType(),
-      selectedPieceOverlayPhase,
+      selectedPieceOverlayPhase: controls.getExplanatoryMode?.() ? "explanatory" : selectedPieceOverlayPhase,
     });
+    const cells = elements.boardEl?.querySelectorAll?.(".cell[data-row][data-col]") ?? [];
+    for (const cell of cells) cell.tabIndex = -1;
+    const selectedCell = focusCoord ? elements.boardEl.querySelector(`[data-row="${focusCoord.row}"][data-col="${focusCoord.col}"]`) : cells[0];
+    if (selectedCell) { selectedCell.tabIndex = 0; if (focusCoord) selectedCell.focus(); }
+    if (armedPreview) {
+      for (const piece of armedPreview.effects.removed) {
+        const cell = elements.boardEl.querySelector(`[data-row="${piece.position.row}"][data-col="${piece.position.col}"]`);
+        cell?.classList.add("preview-removal");
+        cell?.setAttribute("data-preview-effect", "Removed in preview");
+      }
+      for (const piece of armedPreview.effects.changed) {
+        const cell = elements.boardEl.querySelector(`[data-row="${piece.position.row}"][data-col="${piece.position.col}"]`);
+        cell?.classList.add("preview-change");
+      }
+    }
   };
 
   const renderStatus = () => {
+    if (armedPreview) {
+      setBoardPreviewPrompt(`Preview. Activate this destination again to play.${armedPreview.effects.continuation ? " Another decision follows." : ""}`);
+      controls.onContextHelp?.({ kind: "preview", text: describeImmediatePreview(armedPreview.effects) });
+      return;
+    }
     if (!state) {
       return;
     }
@@ -617,6 +644,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const clearSelection = () => {
+    armedPreview = null;
     selectedPieceId = null;
     selectedPieceMoves = [];
     selectedPieceMovePreviews = [];
@@ -793,12 +821,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const submitCurrentAction = async (actionOverride = null) => {
-    if (!state || host.canInteract?.(state) === false) {
+    if (submitting || !state || host.canInteract?.(state) === false) {
       return;
     }
 
     const action = actionOverride ?? buildActionPayload(getActionType(), selectedSource, selectedTarget, selectedPieceId);
     const previousState = state;
+    submitting = true;
+    armedPreview = null;
 
     controls.onSubmitting?.(true);
     setResult("Applying action...");
@@ -834,6 +864,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         if (selectedPieceId) {
           await reloadSelectedPieceMoves();
         }
+        controls.onContextHelp?.({ kind: "commit" });
         setResult({ accepted: true, outcome: body.outcome ?? state.outcome });
 
         return;
@@ -848,6 +879,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     } catch (error) {
       setResult({ ok: false, error: "request_failed", message: error instanceof Error ? error.message : "Unknown error" });
     } finally {
+      submitting = false;
       controls.onSubmitting?.(false);
     }
   };
@@ -907,7 +939,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const handleBoardCellClick = (clickedCoord) => {
-    if (!state || host.canInteract?.(state) === false) {
+    if (submitting || !state || host.canInteract?.(state) === false) {
       return;
     }
 
@@ -924,6 +956,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       if (selectedPieceId && selectedPieceMovesLoading) {
         return;
       }
+      if (selectedPieceId) {
+        controls.onContextHelp?.({ kind: "blocked", reason: "unavailable-destination", text: "That destination is not available for this piece. Choose a highlighted destination." });
+        renderBoard();
+        return;
+      }
       setActionType("pass");
       clearSelection();
       refreshSelectionLabels();
@@ -932,21 +969,26 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return;
     }
 
-    if (sameCoordinate(selectedTarget, clickedCoord)) {
-      const candidates = actionsAtTarget(clickedCoord);
-      if (candidates.length > 0) {
-        const nextType = pickBestActionTypeForTarget(candidates, getActionType());
-        if (nextType && getActionType() !== nextType) {
-          setActionType(nextType);
-        }
-        void submitCurrentAction();
+    const candidates = effectiveMoves.filter((action) => sameCoordinate(action.to, clickedCoord));
+    if (selectedSource && candidates.length > 0) {
+      const nextType = pickBestActionTypeForTarget(candidates, getActionType());
+      const action = candidates.find((candidate) => candidate.type === nextType) ?? candidates[0];
+      const key = actionPreviewKey(state, action, host.getInteractionKey?.() ?? "");
+      if (armedPreview?.key === key) {
+        void submitCurrentAction(action);
         return;
       }
-    }
-
-    if (usesHoverTargetSelection && selectedSource && hasPreviewAtClicked) {
+      setActionType(action.type);
+      setSelectedTarget(clickedCoord, TARGET_ORIGIN.MANUAL);
+      armedPreview = { key, action, effects: previewAction(state, action) };
+      refreshSelectionLabels();
+      renderBoard();
+      renderStatus();
       return;
     }
+    armedPreview = null;
+    const blocked = effectivePreviews.find((action) => sameCoordinate(action.to, clickedCoord) && action.legal === false);
+    if (blocked) controls.onContextHelp?.({ kind: "blocked", reason: blocked.blockedReason, text: getBlockedPreviewLabel(blocked.blockedReason) });
 
     if (clickedPiece?.id === selectedPieceId && canToggleSelectedPieceOverlay()) {
       selectedPieceOverlayPhase = selectedPieceOverlayPhase === "actionPreviews" ? "supplyCommand" : "actionPreviews";
@@ -981,6 +1023,12 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     }
 
     refreshSelectionLabels();
+    const selected = getBoardPieceById(selectedPieceId);
+    if (selected && !blocked) {
+      const reason = !selected.supplied ? "piece-unsupplied" : !selected.commanded ? "piece-uncommanded" : null;
+      const text = reason === "piece-unsupplied" ? "This piece needs an unbroken supply line to its own supply point before it can act." : reason === "piece-uncommanded" ? "This piece needs a command connection to its commander before it can act." : `${selected.owner === "P1" ? "Player 1" : "Player 2"} ${selected.kind}: supplied and commanded. Highlighted destinations show its available actions.`;
+      controls.onContextHelp?.({ kind: reason ? "blocked" : "selection", reason, text });
+    }
     renderBoard();
     renderStatus();
     void reloadSelectedPieceMoves().catch((error) => {
@@ -989,20 +1037,21 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const handleBoardCellHoverStart = (hoveredCoord) => {
-    if (!state || !getUsesHoverTargetSelection() || host.canInteract?.(state) === false) {
+    if (armedPreview || !state || !getUsesHoverTargetSelection() || host.canInteract?.(state) === false) {
       return;
     }
     applyHoveredTarget(hoveredCoord);
   };
 
   const handleBoardCellHoverEnd = (hoveredCoord) => {
-    if (!state || !getUsesHoverTargetSelection() || host.canInteract?.(state) === false) {
+    if (armedPreview || !state || !getUsesHoverTargetSelection() || host.canInteract?.(state) === false) {
       return;
     }
     clearHoveredTarget(hoveredCoord);
   };
 
   const handleDocumentClick = (event) => {
+    if (event.target.closest?.('[data-zone="game-help"]')) return;
     if (!shouldResetSelectionOnDocumentClick(event.target)) {
       return;
     }
@@ -1014,6 +1063,25 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const handleDocumentKeydown = (event) => {
+    const cell = event.target.closest?.(".cell[data-row][data-col]");
+    if (cell && elements.boardEl?.contains(cell)) {
+      const row = Number(cell.dataset.row), col = Number(cell.dataset.col);
+      const delta = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[event.key];
+      if (delta) {
+        event.preventDefault();
+        const next = elements.boardEl.querySelector(`[data-row="${Math.max(0, Math.min(BOARD_SIZE - 1, row + delta[0]))}"][data-col="${Math.max(0, Math.min(BOARD_SIZE - 1, col + delta[1]))}"]`);
+        if (next) { cell.tabIndex = -1; next.tabIndex = 0; next.focus(); }
+        return;
+      }
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        handleBoardCellClick({ row, col });
+        elements.boardEl.querySelector(`[data-row="${row}"][data-col="${col}"]`)?.focus();
+        return;
+      }
+    }
+
+    if (!armedPreview) return;
     if (
       !shouldSubmitOnEnter({
         key: event.key,
@@ -1152,6 +1220,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       destroyedPieces: nextDestroyedPieces = [],
     } = {},
   ) => {
+    armedPreview = null;
     state = structuredClone(snapshot);
     legalActions = Array.isArray(incomingLegalActions) ? incomingLegalActions : [];
     overlayMode = nextOverlayMode;
@@ -1267,6 +1336,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   return {
     initialize,
     destroy,
+    refreshPresentation: () => { renderBoard(); renderStatus(); },
     bindElements,
     submitCurrentAction,
     reloadLegalActions,

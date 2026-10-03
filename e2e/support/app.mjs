@@ -236,6 +236,7 @@ export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
     })
     .toBe(true);
   await targetCell.click();
+  await targetCell.click();
   await expectHistoryMoveCountToIncrease(page, startingHistoryCount);
 };
 

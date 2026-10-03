@@ -6,6 +6,7 @@ const noop = () => {};
 
 test("board runtime keeps internal action type when external controls are absent", () => {
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: noop,
       render: noop,
@@ -55,6 +56,7 @@ test("board runtime uses recorded-action overlay mode without selected piece sum
   };
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: noop,
       render: (payload) => renderCalls.push(payload),
@@ -139,6 +141,7 @@ test("board runtime starts history destruction in the removal-effects layer befo
 
   try {
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: noop,
       render: (payload) => renderCalls.push(payload),
@@ -227,6 +230,7 @@ test("board runtime renders removal effects returned from shell apply actions", 
 
   try {
     const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
       boardAdapter: {
         mount: noop,
         render: (payload) => renderCalls.push(payload),
@@ -321,6 +325,7 @@ test("board runtime shortens rush continuation CTA on narrow mobile viewports on
 
   try {
     const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
       boardAdapter: {
         mount: noop,
         render: noop,
@@ -403,6 +408,7 @@ test("board runtime omits end-turn CTA when the rush chain is not yet closable",
   let previewHtml = "";
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: noop,
       render: noop,
@@ -533,6 +539,7 @@ test("board runtime rush blocker prompt prefers the most recently rushed unsuppl
   let previewHtml = "";
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: noop,
       render: noop,
@@ -610,6 +617,7 @@ test("board runtime falls back to generic rush prompt when blocker lookup yields
   let previewHtml = "";
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: noop,
       render: noop,
@@ -699,6 +707,7 @@ test("board runtime preserves in-progress removal effects across snapshot reload
 
   try {
     const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
       boardAdapter: {
         mount: noop,
         render: (payload) => renderCalls.push(payload),
@@ -818,6 +827,7 @@ test("board runtime preserves in-progress removal effects across interactive tur
 
   try {
     const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
       boardAdapter: {
         mount: noop,
         render: (payload) => renderCalls.push(payload),
@@ -935,6 +945,7 @@ test("board runtime preserves in-progress removal effects across interactive tur
 test("board runtime does not submit retreat continuation while interaction is locked to the other player", async () => {
   let applyCount = 0;
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: noop,
       render: noop,
@@ -1007,6 +1018,7 @@ test("board runtime does not submit retreat continuation while interaction is lo
 test("board runtime uses retreat chip styling for push retreat actor coordinate in preview label", async () => {
   let previewHtml = "";
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: noop,
       render: noop,
@@ -1078,6 +1090,7 @@ test("board preview source coordinate chip uses selected-piece styling", async (
   let onCellClick = null;
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick: nextOnCellClick }) => {
         onCellClick = nextOnCellClick;
@@ -1220,6 +1233,7 @@ test("board runtime does not flash no-moves preview text while selected piece mo
   };
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick: nextOnCellClick }) => {
         onCellClick = nextOnCellClick;
@@ -1343,6 +1357,7 @@ test("board runtime uses hover-aware action prompt copy", async () => {
     let onCellHoverStart = null;
     const boardPreviewLabelEl = createBoardPreviewLabel();
     const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
       boardAdapter: {
         mount: ({ onCellClick: nextOnCellClick, onCellHoverStart: nextOnCellHoverStart }) => {
           onCellClick = nextOnCellClick;
@@ -1431,7 +1446,7 @@ test("board runtime uses hover-aware action prompt copy", async () => {
   );
   nonHover.getOnCellClick()?.({ row: 4, col: 2 });
   nonHover.getOnCellClick()?.({ row: 4, col: 3 });
-  assert.equal(nonHover.boardPreviewLabelEl.textContent.includes("Click again to"), true);
+  assert.equal(nonHover.boardPreviewLabelEl.textContent.includes("Activate this destination again"), true);
 
   const hover = createRuntime({ supportsHover: true });
   hover.runtime.bindElements({
@@ -1470,6 +1485,7 @@ test("board runtime can force click target selection even on hover-capable devic
   const appliedActions = [];
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick: nextOnCellClick, onCellHoverStart: nextOnCellHoverStart }) => {
         onCellClick = nextOnCellClick;
@@ -1567,8 +1583,9 @@ test("board runtime can force click target selection even on hover-capable devic
     source: { row: 4, col: 2 },
     target: { row: 4, col: 3 },
   });
-  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Click again to"), true);
+  assert.equal(String(boardPreviewLabelEl.textContent).includes("Activate this destination again"), true);
 
+  onCellClick({ row: 4, col: 3 });
   onCellClick({ row: 4, col: 3 });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(appliedActions.length, 1);
@@ -1578,6 +1595,7 @@ test("board runtime keeps lone-target auto-selection while forced click target s
   let onCellClick = null;
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick: nextOnCellClick }) => {
         onCellClick = nextOnCellClick;
@@ -1686,6 +1704,7 @@ test("board runtime toggles overlay phase when the selected piece is clicked aga
   ];
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick: nextOnCellClick }) => {
         onCellClick = nextOnCellClick;
@@ -1774,6 +1793,7 @@ test("board runtime can submit a legal target immediately after piece selection"
   let releasePieceMoves = null;
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick: nextOnCellClick }) => {
         onCellClick = nextOnCellClick;
@@ -1890,6 +1910,8 @@ test("board runtime can submit a legal target immediately after piece selection"
 
   onCellClick({ row: 4, col: 2 });
   onCellClick({ row: 4, col: 3 });
+  assert.equal(appliedActions.length, 0);
+  onCellClick({ row: 4, col: 3 });
 
   await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -1912,6 +1934,7 @@ test("board runtime uses hover selection before click submission on hover-capabl
   const appliedActions = [];
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick: nextOnCellClick, onCellHoverStart: nextOnCellHoverStart, onCellHoverEnd: nextOnCellHoverEnd }) => {
         onCellClick = nextOnCellClick;
@@ -2067,6 +2090,7 @@ test("board runtime uses hover selection before click submission on hover-capabl
 
   onCellHoverStart({ row: 4, col: 3 });
   onCellClick({ row: 4, col: 3 });
+  onCellClick({ row: 4, col: 3 });
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.deepEqual(appliedActions, [
@@ -2085,6 +2109,7 @@ test("board runtime keeps auto-selected lone targets on hover-capable devices un
   const appliedActions = [];
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick: nextOnCellClick, onCellHoverEnd: nextOnCellHoverEnd }) => {
         onCellClick = nextOnCellClick;
@@ -2212,6 +2237,7 @@ test("board runtime keeps auto-selected lone targets on hover-capable devices un
   });
 
   onCellClick({ row: 4, col: 3 });
+  onCellClick({ row: 4, col: 3 });
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.deepEqual(appliedActions, [
@@ -2309,6 +2335,7 @@ test("board runtime promotes lone auto-selected targets to the correct action ty
     const appliedActions = [];
 
     const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
       boardAdapter: {
         mount: ({ onCellClick: nextOnCellClick }) => {
           onCellClick = nextOnCellClick;
@@ -2401,6 +2428,8 @@ test("board runtime promotes lone auto-selected targets to the correct action ty
     assert.equal(runtime.getActionType(), testCase.type, `expected ${testCase.type} action type to sync from the lone target`);
 
     onCellClick(testCase.action.to);
+    assert.equal(appliedActions.length, 0);
+    onCellClick(testCase.action.to);
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.deepEqual(appliedActions, [testCase.action], `expected ${testCase.type} confirmation to submit the synced action`);
   }
@@ -2412,6 +2441,7 @@ test("board runtime clears transient hover targets when hover support turns off"
   let supportsHover = true;
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick: nextOnCellClick, onCellHoverStart: nextOnCellHoverStart }) => {
         onCellClick = nextOnCellClick;
@@ -2536,6 +2566,7 @@ test("board runtime clears transient hover targets when click target selection b
   const appliedActions = [];
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick: nextOnCellClick, onCellHoverStart: nextOnCellHoverStart }) => {
         onCellClick = nextOnCellClick;
@@ -2670,6 +2701,7 @@ test("board runtime clears transient hover targets when click target selection b
   });
 
   onCellClick({ row: 4, col: 3 });
+  onCellClick({ row: 4, col: 3 });
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.deepEqual(appliedActions, [
@@ -2682,7 +2714,7 @@ test("board runtime clears transient hover targets when click target selection b
   ]);
 });
 
-test("board runtime restores hover target selection when click target selection stops being forced", async () => {
+test("board runtime keeps an explicit preview stable when hover becomes available", async () => {
   let onCellClick = null;
   let onCellHoverStart = null;
   let forceClickTargetSelection = true;
@@ -2706,6 +2738,7 @@ test("board runtime restores hover target selection when click target selection 
   };
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick: nextOnCellClick, onCellHoverStart: nextOnCellHoverStart }) => {
         onCellClick = nextOnCellClick;
@@ -2814,17 +2847,17 @@ test("board runtime restores hover target selection when click target selection 
     source: { row: 4, col: 2 },
     target: { row: 4, col: 3 },
   });
-  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Click again to"), true);
+  assert.equal(String(boardPreviewLabelEl.textContent).includes("Activate this destination again"), true);
 
   forceClickTargetSelection = false;
   assert.equal(runtime.syncInteractionCapabilities(), true);
-  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Click to"), true);
+  assert.equal(String(boardPreviewLabelEl.textContent).includes("Activate this destination again"), true);
 
   onCellHoverStart({ row: 5, col: 2 });
   assert.deepEqual(runtime.getSelection(), {
     selectedPieceId: "A1",
     source: { row: 4, col: 2 },
-    target: { row: 5, col: 2 },
+    target: { row: 4, col: 3 },
   });
 });
 
@@ -2833,6 +2866,7 @@ test("board runtime hydrates a source-only selection state and loads piece moves
   let pieceMoveLoads = 0;
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: noop,
       render: (payload) => renderCalls.push(payload),
@@ -2902,6 +2936,7 @@ test("board runtime hydrates a source-only selection state and loads piece moves
 
 test("board runtime hydrates a source and target from a selection action", async () => {
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: noop,
       render: noop,
@@ -2955,6 +2990,7 @@ test("board runtime keeps selection while piece moves are still loading", async 
   let releasePieceMoves = null;
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: ({ onCellClick: nextOnCellClick }) => {
         onCellClick = nextOnCellClick;
@@ -3052,6 +3088,7 @@ test("board runtime emits turn-ended when applyAction returns a settled next-tur
   const boardMessages = [];
 
   const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
     boardAdapter: {
       mount: noop,
       render: noop,
@@ -3152,6 +3189,7 @@ test("U-10: loadSnapshot starts a history destruction transition before exposing
 
   try {
     const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
       boardAdapter: {
         mount: noop,
         render: (payload) => renderCalls.push(payload),
@@ -3254,6 +3292,7 @@ test("U-11: history destruction transition settles into overlay state and clears
 
   try {
     const runtime = createBoardRuntime({
+    previewAction: (state) => ({ state, removed: [], changed: [], supplyChanges: [], commandChanges: [], continuation: null }),
       boardAdapter: {
         mount: noop,
         render: (payload) => renderCalls.push(payload),

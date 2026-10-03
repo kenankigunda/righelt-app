@@ -20,6 +20,10 @@ const unwrapOperationResult = async (value) => {
 };
 
 export const createShellBoardHost = ({ transport, gameId, canInteract }) => ({
+  getInteractionKey() {
+    const game = transport.getGameViewModel(gameId);
+    return JSON.stringify([transport.getIdentityId?.(), gameId, game?.syncStatus]);
+  },
   async loadInitialState() {
     const game = transport.getGameViewModel(gameId);
     const legalActions = Array.isArray(game?.legalActions) ? game.legalActions : [];
