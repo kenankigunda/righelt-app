@@ -80,6 +80,17 @@ test("lone auto-selected push targets render the nudge preview and submit the pu
     await expect(previewLabel).toContainText("push piece onto");
     await expect(targetCell.locator('[data-push-preview-stack="1"] .stacked-underlay.stacked-pushed')).toHaveCount(1);
 
+    const applyRequests = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST" && /\/api\/shell\/games\/[^/]+\/apply$/.test(new URL(request.url()).pathname)) {
+        applyRequests.push(request);
+      }
+    });
+    await targetCell.click();
+    await expect(previewLabel).toContainText("Activate this destination again to play");
+    expect(await getHistoryMoveCount(page)).toBe(startingHistoryCount);
+    expect(applyRequests).toHaveLength(0);
+
     const applyRequestPromise = page.waitForRequest((request) => {
       const url = new URL(request.url());
       return request.method() === "POST" && /\/api\/shell\/games\/[^/]+\/apply$/.test(url.pathname);

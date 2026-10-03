@@ -116,7 +116,7 @@ test("scenario flyout saves a selected source and destination after switching an
         message: "Expected clicking the destination while the flyout is open to select it for scenario authoring",
       })
       .toBe(true);
-    await expect(page.locator("#shell-board-preview-label")).toContainText("Click again to");
+    await expect(page.locator("#shell-board-preview-label")).toContainText("Activate this destination again to play");
 
     await page.locator('[data-scenario-save-field="title"]').fill(`Selection mode scenario ${Date.now()}`);
     await page.locator('[data-scenario-save-field="description"]').fill("Verifies flyout authoring captures a clicked source/destination.");
@@ -176,7 +176,7 @@ test("closing the scenarios flyout restores hover target selection on an already
 
     await sourceCell.click();
     await firstTargetCell.click();
-    await expect(page.locator("#shell-board-preview-label")).toContainText("Click again to");
+    await expect(page.locator("#shell-board-preview-label")).toContainText("Activate this destination again to play");
 
     await page.getByRole("button", { name: "Scenarios" }).click();
     await expect(page.locator('[data-scenario-save-field="title"]')).toHaveCount(0);
