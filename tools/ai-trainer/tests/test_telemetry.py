@@ -15,4 +15,19 @@ class TelemetryTest(unittest.TestCase):
             self.assertEqual(read_device_memory(p,42,131),(0,False))
             self.assertEqual(read_device_memory(p,42,99),(0,False))
 
+    def test_heartbeat_written_during_telemetry_collection_is_fresh(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'device.json'
+            sample_started=100
+            # CPU and sysctl sampling runs before the GPU file is read.
+            path.write_text(json.dumps({'schema':1,'pid':42,'observedAt':100.003,'driverBytes':9125888}))
+            self.assertEqual(read_device_memory(path,42,sample_started),(0,False))
+            with patch('righelt_training.telemetry.time.time',return_value=100.004):
+                self.assertEqual(read_device_memory(path,42),(9125888,True))
+            with patch('righelt_training.telemetry.time.time',return_value=99):
+                self.assertEqual(read_device_memory(path,42),(0,False))
+            with patch('righelt_training.telemetry.time.time',return_value=131):
+                self.assertEqual(read_device_memory(path,42),(0,False))
+
 if __name__=='__main__':unittest.main()
