@@ -13,6 +13,7 @@ export const createContextualHelp = () => {
     getState: () => ({ manual, expanded, reason, text }),
     explain(nextReason, nextText) { reason = nextReason; text = nextText; expanded = manual || !dismissed.has(reason); },
     select(nextText) { text = nextText; },
+    setManual(value) { manual = Boolean(value); expanded = manual; },
     toggleManual() { manual = !manual; expanded = manual; },
     expand() { expanded = true; },
     dismiss() { if (reason) dismissed.add(reason); expanded = false; },

@@ -25,3 +25,19 @@ export const selectResumeGames = (games, identityId) => games.filter(isUnfinishe
 // Until T-107 supplies a production adapter, the UI must report unavailable.
 // This seam cannot fall back to the old search-only computer player.
 export const getComputerReadiness = () => ({ state: "unavailable", message: "Computer play is being prepared. Choose Friend or self-play for now." });
+
+export const captureHomeFocus = (root, active) => {
+  if (!root?.contains(active)) return null;
+  if (active?.name === "home-side") return { kind: "side", value: active.value };
+  if (active?.dataset?.opponent) return { kind: "opponent", value: active.dataset.opponent };
+  if (active?.matches?.('.mini-board-card-link-surface')) return { kind: "game", value: active.dataset.gameId };
+  if (active?.dataset?.action === "resume-page") return { kind: "page", value: active.dataset.page };
+  return null;
+};
+export const restoreHomeFocus = (root, key) => {
+  if (!key) return;
+  const selector = key.kind === "side" ? '[name="home-side"]' : key.kind === "opponent" ? '[data-opponent]' : key.kind === "game" ? '.mini-board-card-link-surface' : '[data-action="resume-page"]';
+  const target = [...root.querySelectorAll(selector)].find(element =>
+    (key.kind === "side" ? element.value : key.kind === "opponent" ? element.dataset.opponent : key.kind === "game" ? element.dataset.gameId : element.dataset.page) === key.value);
+  target?.focus({ preventScroll: true });
+};

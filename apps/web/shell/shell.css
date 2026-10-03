@@ -2120,7 +2120,7 @@ button:not(.secondary):not(.warn):not(.danger):not(:disabled):active,
 .home-side { border: 0; padding: 0; margin: var(--space-4) 0; display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .home-side legend { font-weight: 700; margin-bottom: var(--space-2); }
 .home-side label { min-height: 44px; display: flex; align-items: center; gap: var(--space-2); }
-.home-side input { width: 20px; height: 20px; accent-color: var(--action-color); }
+.home-side input { appearance: auto; -webkit-appearance: radio; width: 20px; height: 20px; padding: 0; flex: none; accent-color: var(--action-color); }
 .home-start-status { min-height: 1.5em; margin-bottom: 0; }
 .resume-turn { font-weight: 700; margin: 0 0 var(--space-2); }
 .resume-game { min-width: 0; }

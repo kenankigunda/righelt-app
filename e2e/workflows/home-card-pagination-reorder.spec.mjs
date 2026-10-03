@@ -8,7 +8,7 @@ import {
   makeAnyLegalMove,
 } from "../support/app.mjs";
 
-test("home pagination refreshes correctly when a moved game reorders onto an earlier page", async ({ browser }) => {
+test("resume pagination keeps waiting games after games awaiting your turn", async ({ browser }) => {
   const { context, page } = await createIsolatedPage(browser);
 
   try {
@@ -16,11 +16,11 @@ test("home pagination refreshes correctly when a moved game reorders onto an ear
     const oldestGameId = createdGameIds[0];
     await page.goto("/");
 
-    const mySection = page.locator('[data-home-section-root="my"]');
+    const mySection = page.locator('[data-zone="home-resume"]');
     await expect(mySection).toBeVisible();
     await expect(mySection).toContainText("Page 1 of 2");
 
-    await mySection.locator('[data-action="home-page-next"]').click();
+    await mySection.locator('[data-action="resume-page"][data-page="1"]').click();
     await expect(mySection).toContainText("Page 2 of 2");
     const pageTwoCard = page.locator(`[data-game-id="${oldestGameId}"]`).first();
     await expect(pageTwoCard).toBeVisible();
@@ -37,20 +37,17 @@ test("home pagination refreshes correctly when a moved game reorders onto an ear
 
     await page.getByRole("link", { name: "Righelt" }).click();
     await expect(mySection).toContainText("Page 2 of 2");
-    await expect(page.locator(`[data-game-id="${oldestGameId}"]`)).toHaveCount(0);
+    await expect(page.locator(`[data-game-id="${oldestGameId}"]`).first()).toContainText("Move 2");
 
-    await mySection.locator('[data-action="home-page-prev"]').click();
+    await mySection.locator('[data-action="resume-page"][data-page="0"]').click();
     await expect(mySection).toContainText("Page 1 of 2");
-    const reorderedCard = page.locator(`[data-game-id="${oldestGameId}"]`).first();
-    await expect(reorderedCard).toBeVisible();
-    await expect(reorderedCard).toContainText("Move 2");
-    await expect(reorderedCard.locator(".mini-board-preview-status")).toContainText("Player 2 to play");
+    await expect(page.locator(`[data-game-id="${oldestGameId}"]`)).toHaveCount(0);
   } finally {
     await closeContextQuietly(context);
   }
 });
 
-test("home header pagination is visible at narrow viewport with a multi-column grid", async ({ browser }) => {
+test("resume pagination remains visible at a narrow multi-column viewport", async ({ browser }) => {
   const { context, page } = await createIsolatedPage(browser);
 
   try {
@@ -58,10 +55,10 @@ test("home header pagination is visible at narrow viewport with a multi-column g
     await createGamesViaApi(page, 5);
     await page.goto("/");
 
-    const mySection = page.locator('[data-home-section-root="my"]');
+    const mySection = page.locator('[data-zone="home-resume"]');
     await expect(mySection).toBeVisible();
 
-    const headerPaging = mySection.locator(".home-games-section-controls-header");
+    const headerPaging = mySection.locator(".resume-pagination");
     await expect(headerPaging).toBeVisible();
     await expect(headerPaging).toContainText("Page 1 of 2");
     await expect(mySection.locator(".home-games-section-controls-footer")).toHaveCount(0);

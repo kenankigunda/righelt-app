@@ -754,6 +754,8 @@ const getHomeSectionWhereClause = ({ identityId, section, debug, unfinished = fa
 
 // Resume priority is applied before pagination. A retreat is controlled by the
 // opposing seat; all other decisions stay with the current turn owner.
+// This is the query projection of getControlSeatForTurn. Keep it in parity with
+// that shared helper; personal-home.test exercises both sides and every phase.
 const homeOrderSql = (unfinished: boolean) => unfinished ? `
   CASE WHEN (
     CASE WHEN (

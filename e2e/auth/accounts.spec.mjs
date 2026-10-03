@@ -13,7 +13,7 @@ const control = async action => {
 test.beforeEach(async () => control("reset-limits"));
 async function register(page, username, { gate = false } = {}) {
   await page.goto("/");
-  await page.getByRole("button", { name: gate ? "Start new game" : "Sign in", exact: true }).click();
+  await (gate ? page.getByTestId("home-create-game") : page.getByRole("button", { name: "Sign in", exact: true })).click();
   await expect(dialog(page)).toBeVisible();
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
   await dialog(page).getByLabel("Username", { exact: true }).fill(username);
@@ -266,7 +266,7 @@ test("a delayed renewal cookie cannot overwrite an account switch", async ({ pag
 test("interrupted registration resumes with a replacement recovery code and an explicit save", async ({ page }) => {
   const username = uniqueName();
   await page.goto("/");
-  await page.getByRole("button", { name: "Start new game", exact: true }).click();
+  await page.getByTestId("home-create-game").click();
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
   await dialog(page).getByLabel("Username", { exact: true }).fill(username);
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
@@ -278,7 +278,7 @@ test("interrupted registration resumes with a replacement recovery code and an e
   expect(new URL(page.url()).hash).not.toContain("game/");
   await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
   await page.reload();
-  await page.getByRole("button", { name: "Start new game", exact: true }).click();
+  await page.getByTestId("home-create-game").click();
   await expect(dialog(page).getByRole("heading", { name: "Replace recovery code" })).toBeVisible();
   await dialog(page).getByLabel("Current password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Prepare replacement code", exact: true }).click();
@@ -417,7 +417,7 @@ test("a stalled startup read recovers without granting guest play", async ({ pag
     await page.goto("/");
     await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
     expect(requests).toBeGreaterThanOrEqual(2);
-    await page.getByRole("button", { name: "Start new game", exact: true }).click();
+    await page.getByTestId("home-create-game").click();
     await expect(dialog(page)).toBeVisible();
     await expect(page).not.toHaveURL(/#\/game\//);
   } finally { release(); }

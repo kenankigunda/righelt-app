@@ -22,7 +22,7 @@ test.beforeEach(async () => {
   expect(response.ok).toBe(true);
 });
 
-test("blue Friend intent survives registration and no game starts before recovery acknowledgment", async ({ page }) => {
+test("blue Friend intent survives registration and no game starts before recovery acknowledgment", async ({ page, browser }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   let creates = 0;
   page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates++; });
@@ -37,6 +37,18 @@ test("blue Friend intent survives registration and no game starts before recover
   await expect(page.getByTestId("game-role")).toContainText("Player 2");
   expect(creates).toBe(1);
   await expect(page.locator("#app")).toHaveAttribute("data-action-affiliation", "blue");
+  await page.getByRole("button", { name: "Explain", exact: true }).click();
+  await expect.poll(async () => page.evaluate(async () => (await (await fetch("/api/auth/session")).json()).account.preferences.view)).toBe("explanatory");
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Explain", exact: true })).toHaveAttribute("aria-pressed", "true");
+  const guest = await browser.newPage({ ignoreHTTPSErrors: true });
+  try {
+    await guest.goto(page.url());
+    await guest.locator("#shell-board .cell").first().focus();
+    await guest.keyboard.press("Enter");
+    await expect(dialog(guest)).toBeVisible();
+  } finally { await guest.close(); }
+
 });
 
 test("cancelling account gate keeps choice, and unavailable computer never creates a substitute match", async ({ page }) => {
@@ -53,6 +65,9 @@ test("cancelling account gate keeps choice, and unavailable computer never creat
   await finishRegistration(page);
   await acknowledge(page);
   await expect(page.locator(".home-start-status")).toContainText("Computer play is being prepared");
+  await page.locator('[data-opponent="babs"]').focus();
+  await page.keyboard.press("Space");
+  await expect(page.locator('[data-opponent="babs"]')).toBeFocused();
   expect(creates).toBe(0);
   await expect(page.getByTestId("home-create-game")).toBeVisible();
 });

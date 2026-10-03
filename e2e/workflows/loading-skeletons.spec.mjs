@@ -145,14 +145,14 @@ test("home pagination swaps only the active section into a skeleton while the ne
       });
     });
 
-    await page.locator('[data-action="home-page-next"][data-home-section="my"]').click();
+    await page.locator('[data-action="resume-page"][data-page="1"]').click();
     await pageLoadSeen;
-    await expect(page.getByTestId("home-section-skeleton").first()).toBeVisible();
+    await expect(page.locator('[data-zone="home-resume"]')).toHaveAttribute("aria-busy", "true");
     await expect(page.getByTestId("home-create-game")).toBeVisible();
 
     releasePageLoad?.();
 
-    await expect(page.locator('[data-action="home-page-next"][data-home-section="my"]')).toBeVisible();
+    await expect(page.locator('[data-zone="home-resume"]')).toContainText("Page 2 of 2");
   } finally {
     await closeContextQuietly(context);
   }

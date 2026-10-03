@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { getControlSeatForTurn } from "../../shared-types/src/shell-live-turn.js";
 import { createInitialGame, withViewModel } from "../src/shell-live-core.ts";
 import { countHomeSectionGames, listHomeSectionGameProjectionPage } from "../src/shell-live-db.ts";
 
@@ -41,5 +42,23 @@ test("real SQLite resume query filters finished games and orders before paginati
     for (let page = 0; page < 4; page++) ordered.push((await listHomeSectionGameProjectionPage(env, { ...params, page }))[0].id);
     assert.deepEqual(ordered, ["retreat", "a", "b", "opponent"]);
     assert.equal(await countHomeSectionGames(env, { ...params, unfinished: false, finished: true }), 1);
+    sql.exec("DELETE FROM live_games");
+    const expected = [];
+    for (const side of ["P1", "P2"]) for (const creatorSide of ["p1", "p2"]) for (const continuation of [null, { type: "push", phase: "retreat" }, { type: "push", phase: "follow" }, { type: "rush" }]) {
+      const id = `${side}-${creatorSide}-${continuation?.type || "none"}-${continuation?.phase || "none"}`;
+      const game = createInitialGame({ gameId: id, identityId: "me", selfPlayMode: false, creatorSide });
+      game.board.state.sideToMove = side;
+      game.board.state.continuation = continuation;
+      game.turns[0].playerSeat = side === "P1" ? "Player 1" : "Player 2";
+      const controller = getControlSeatForTurn(game.board.state, game.turns[0].playerSeat);
+      expected.push({ id, waiting: controller === (creatorSide === "p1" ? "Player 1" : "Player 2") });
+      sql.prepare("INSERT INTO live_games VALUES (?, 'same', 'same', 'same', ?, ?, 0, ?, 0, 0, 'legacy_guest')").run(id, creatorSide === "p1" ? "me" : "them", creatorSide === "p2" ? "me" : "them", JSON.stringify(game));
+    }
+    sql.prepare("INSERT INTO live_games VALUES ('malformed', 'same', 'same', 'same', 'me', 'them', 0, 'not-json', 0, 0, 'legacy_guest')").run();
+    assert.equal(await countHomeSectionGames(env, params), expected.length);
+    const actual = (await listHomeSectionGameProjectionPage(env, { ...params, pageSize: 100 })).map(game => game.id);
+    expected.sort((a, b) => Number(b.waiting) - Number(a.waiting) || a.id.localeCompare(b.id));
+    assert.deepEqual(actual, expected.map(item => item.id));
+
   } finally { sql.close(); }
 });

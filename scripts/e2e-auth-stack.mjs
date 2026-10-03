@@ -85,7 +85,7 @@ try {
   const d1 = ["exec", "wrangler", "d1"];
   await run([...d1, "migrations", "apply", "DB", "--config", apiConfig, "--local", "--persist-to", persist]);
   run(["exec", "wrangler", "dev", ...configs.flatMap(file => ["--config", file]), "--local", "--port", apiPort,
-    "--inspector-port", "9997", "--persist-to", persist], { service: true });
+    "--inspector-port", String(Number(webPort) + 9), "--persist-to", persist], { service: true });
   await ready(`http://127.0.0.1:${apiPort}/api/health`);
   // Test-runner-only loopback control; never exposed through Pages or application routes.
   // Fixed SQL operations only, rejecting browser-origin requests. This is not an auth bypass.
@@ -102,7 +102,7 @@ try {
     } catch { response.writeHead(500).end("Local fixture operation failed"); }
     finally { busy = false; }
   }).listen(Number(webPort) + 100, "127.0.0.1");
-  run(["exec", "wrangler", "pages", "dev", ".", "--port", webPort, "--local-protocol", "https", "--inspector-port", "9998"],
+  run(["exec", "wrangler", "pages", "dev", ".", "--port", webPort, "--local-protocol", "https", "--inspector-port", String(Number(webPort) + 10)],
     { cwd: path.join(root, "apps/web"), service: true });
   await ready(origin);
   console.log(`[auth-e2e] Ready at ${origin}`);

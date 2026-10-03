@@ -1,4 +1,4 @@
-import { PERSONAL_OPPONENTS, isPersonalSide, isComputerOpponent, getComputerReadiness, selectResumeGames, isAwaitingPlayer } from "./personal-home.js";
+import { PERSONAL_OPPONENTS, isPersonalSide, isComputerOpponent, getComputerReadiness, selectResumeGames, isAwaitingPlayer, captureHomeFocus, restoreHomeFocus } from "./personal-home.js";
 import { createContextualHelp, gamePlayRevision, canRestoreGameView } from "./play-view.js";
 import { captureHeaderFocus, restoreHeaderFocus } from "./header-focus.js";
 import { createBrandController, renderWordmark, resolveActionAffiliation } from "./brand.js";
@@ -134,7 +134,7 @@ let accountInitialized = false;
 let accountStartupError = "";
 const account = createAccountController({ storage,
   onTransition: next => { if (accountInitialized) resetAccountTransport(next); },
-  onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); } },
+  onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { syncAccountViewPreference(); accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); } },
 });
 const accountDialog = createAccountDialog({ controller: account, onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
   onComplete: async intent => {
@@ -163,6 +163,7 @@ const toStableKey = (value) => {
 let currentRoute = parseRouteFromHash(window.location.hash);
 let homeSide = "p1";
 let homeStartStatus = "";
+let resumeRequestId = 0;
 let resumeSection = { gameIds: [], page: 0, totalPages: 0, totalGames: 0, error: false };
 const selfPlayStartSides = new Map();
 const brandController = createBrandController();
@@ -2334,9 +2335,10 @@ const renderResumeSection = () => {
   if (resumeSection.error) return '<section class="panel" data-zone="home-resume"><p role="status">Your games could not be loaded.</p><button class="secondary" data-action="retry-resume">Try again</button></section>';
   const games = selectResumeGames(resumeSection.gameIds.map((id) => transport.getHomeGameCard(id)).filter(Boolean), transport.getIdentityId());
   if (!games.length) return "";
-  return `<section class="panel home-games-section" data-zone="home-resume"><h2>Continue playing</h2>
+  return `<section class="panel home-games-section" data-zone="home-resume" aria-busy="${resumeSection.pending ? "true" : "false"}"><h2>Continue playing</h2>
+    ${resumeSection.pending ? '<p role="status">Loading your games…</p>' : ""}
     <div class="mini-board-card-list">${games.map((game) => `<div class="resume-game"><p class="resume-turn">${isAwaitingPlayer(game, transport.getIdentityId()) ? "Your turn" : "Waiting for the other player"}</p>${renderHomeGameCard(game)}</div>`).join("")}</div>
-    ${resumeSection.totalPages > 1 ? `<div class="resume-pagination"><button class="secondary" data-action="resume-page" data-page="${resumeSection.page - 1}" ${resumeSection.page === 0 ? "disabled" : ""}>Previous games</button><span>Page ${resumeSection.page + 1} of ${resumeSection.totalPages}</span><button class="secondary" data-action="resume-page" data-page="${resumeSection.page + 1}" ${resumeSection.page + 1 >= resumeSection.totalPages ? "disabled" : ""}>More games</button></div>` : ""}
+    ${resumeSection.totalPages > 1 ? `<div class="resume-pagination"><button class="secondary" data-action="resume-page" data-page="${resumeSection.page - 1}" ${resumeSection.pending || resumeSection.page === 0 ? "disabled" : ""}>Previous games</button><span>Page ${resumeSection.page + 1} of ${resumeSection.totalPages}</span><button class="secondary" data-action="resume-page" data-page="${resumeSection.page + 1}" ${resumeSection.pending || resumeSection.page + 1 >= resumeSection.totalPages ? "disabled" : ""}>More games</button></div>` : ""}
   </section>`;
 };
 
@@ -2659,9 +2661,23 @@ const renderHistoryPanel = (game) => {
   `;
 };
 
+const viewPreferenceByIdentity = new Map();
+function syncAccountViewPreference() {
+  const identity = transport.getIdentityId();
+  const preference = account.snapshot().session.account?.preferences?.view || "focused";
+  if (viewPreferenceByIdentity.get(identity) === preference) return;
+  viewPreferenceByIdentity.set(identity, preference);
+  for (const [key, help] of helpByGame) if (key.startsWith(`${identity}:`)) help.setManual(preference === "explanatory");
+  boardRuntime?.refreshPresentation?.();
+}
+
 const getGameHelp = (gameId) => {
   const key = `${transport.getIdentityId()}:${gameId}`;
-  if (!helpByGame.has(key)) helpByGame.set(key, createContextualHelp());
+  if (!helpByGame.has(key)) {
+    const help = createContextualHelp();
+    help.setManual(account.snapshot().session.account?.preferences?.view === "explanatory");
+    helpByGame.set(key, help);
+  }
   return helpByGame.get(key);
 };
 const renderGameHelp = (gameId) => {
@@ -3715,13 +3731,16 @@ const syncResponsiveHomeSectionPageSizes = async () => {
   return updated;
 };
 
-const loadResumePage = async (page = 0) => {
+const loadResumePage = async (page = 0, { renderPending = false } = {}) => {
+  const requestId = ++resumeRequestId;
+  resumeSection = { ...resumeSection, pending: true };
+  if (renderPending) render({ animatePanels: false });
   const generation = account.snapshot().generation;
   try {
     const response = await transport.loadGamesPage({ section: "my", page, pageSize: 4, unfinished: true });
-    if (generation !== account.snapshot().generation) return;
-    resumeSection = { gameIds: response.games.map((game) => game.id), page: response.page, totalPages: response.totalPages, totalGames: response.totalGames, error: false };
-  } catch { if (generation === account.snapshot().generation) resumeSection = { ...resumeSection, error: true }; }
+    if (generation !== account.snapshot().generation || requestId !== resumeRequestId) return;
+    resumeSection = { gameIds: response.games.map((game) => game.id), page: response.page, totalPages: response.totalPages, totalGames: response.totalGames, error: false, pending: false };
+  } catch { if (generation === account.snapshot().generation && requestId === resumeRequestId) resumeSection = { ...resumeSection, error: true, pending: false }; }
 };
 
 const syncHomeSections = async () => {
@@ -3880,9 +3899,11 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
 
   const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderFlyouts()}</div>`;
   if (nextMarkup !== lastRenderedMarkup) {
+    const savedHomeFocus = currentRoute.name === "home" ? captureHomeFocus(appEl, document.activeElement) : null;
     const savedHeaderFocus = captureHeaderFocus(getMountedHeaderEl(), document.activeElement);
     appEl.innerHTML = nextMarkup;
     restoreHeaderFocus(getMountedHeaderEl(), savedHeaderFocus, document);
+    restoreHomeFocus(appEl, savedHomeFocus);
     lastRenderedMarkup = nextMarkup;
     lastRenderedMainMarkup = `<div class="shell-main-content">${renderHeader()}${body}</div>`;
     lastRenderedFlyoutMarkup = renderFlyouts();
@@ -3890,7 +3911,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     lastRenderedBaseRouteKey = baseRouteKey;
     lastRenderedTransitionPhaseKey = getRouteTransitionPhaseKey();
     if (animatePanels) {
-      animatePanelHeightChanges(previousPanelHeights);
+      if (currentRoute.name !== "home") animatePanelHeightChanges(previousPanelHeights);
       animateFlyoutPositionChanges(previousFlyoutRects);
     }
   }
@@ -4265,6 +4286,12 @@ appEl.addEventListener("change", (event) => {
   appEl.setAttribute("data-action-affiliation", homeSide === "p2" ? "blue" : "red");
 });
 
+appEl.addEventListener("keydown", event => {
+  if (event.target.closest?.("#shell-board") && (event.key === "Enter" || event.key === " ") && !account.canPlay()) {
+    event.preventDefault(); event.stopImmediatePropagation();
+    accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, event.target);
+  }
+}, true);
 appEl.addEventListener("pointerdown", event => {
   if (event.target.closest?.("#shell-board") && !account.canPlay()) {
     event.preventDefault();event.stopImmediatePropagation();
@@ -4316,7 +4343,20 @@ appEl.addEventListener("click", async (event) => {
     const gameId = getCurrentViewedGameId();
     if (!gameId) return;
     const help = getGameHelp(gameId);
-    if (action === "toggle-explain") help.toggleManual();
+    if (action === "toggle-explain") {
+      const previous = help.getState().manual;
+      help.toggleManual();
+      if (account.canPlay() && account.snapshot().session.authenticated) {
+        const generation = account.snapshot().generation;
+        void account.updateAccount({ preferences: { view: help.getState().manual ? "explanatory" : "focused" } }).catch(() => {
+          if (generation !== account.snapshot().generation) return;
+          help.setManual(previous);
+          help.select("Your view preference could not be saved. Try Explain again.");
+          updateGameHelp(gameId);
+          boardRuntime?.refreshPresentation?.();
+        });
+      }
+    }
     else if (action === "collapse-help") help.dismiss();
     else help.expand();
     updateGameHelp(gameId);
@@ -4392,7 +4432,7 @@ appEl.addEventListener("click", async (event) => {
   };
 
   if (action === "start-opponent") { startPersonalGame({ opponent: actionEl.getAttribute("data-opponent"), side: homeSide }); return; }
-  if (action === "resume-page" || action === "retry-resume") { await loadResumePage(action === "resume-page" ? Number(actionEl.dataset.page) : resumeSection.page); if (currentRoute.name === "home") render(); return; }
+  if (action === "resume-page" || action === "retry-resume") { await loadResumePage(action === "resume-page" ? Number(actionEl.dataset.page) : resumeSection.page, { renderPending: true }); if (currentRoute.name === "home") render(); return; }
 
   if (action === "create-game") {
     const handle = transport.createGame({ selfPlayMode: false });
