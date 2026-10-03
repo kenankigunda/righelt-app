@@ -28,6 +28,12 @@ export function candidateConfig(source, { root, folder, role, secret }) {
     // Every D1 invocation below is explicitly --local.
     result = replaceOne(result, /^database_id\s*=\s*"[^"]+"/m, match => match, 'D1 database');
     result = replaceOne(result, /^migrations_dir\s*=\s*"[^"]+"/m, `migrations_dir = ${JSON.stringify(path.join(root, 'db/migrations'))}`, 'migration path');
+    // Early account UI stages predate deployment wiring. Match their checked-in
+    // e2e-auth-stack overlay, while preserving the retained local D1 namespace.
+    if (!/^AUTH_ENABLED\s*=/m.test(result)) {
+      if (/^\[vars\]|HASH_SERVICE|AUTH_HMAC_SECRET|AUTH_ALLOWED_ORIGINS/m.test(result)) throw new Error('Unsupported partial account config');
+      result += `\n[vars]\nAUTH_ENABLED = "false"\n\n[[services]]\nbinding = "HASH_SERVICE"\nservice = "${names.auth}"\n`;
+    }
     result = replaceOne(result, /^AUTH_ENABLED\s*=\s*"false"/m, 'AUTH_ENABLED = "true"', 'auth flag');
     if (/^AUTH_(HMAC_SECRET|ALLOWED_ORIGINS)\s*=/m.test(result)) throw new Error('Candidate embeds auth fixture credentials');
     result = replaceOne(result, /^\[vars\]/m, `[vars]\nAUTH_ALLOWED_ORIGINS = "https://127.0.0.1:${PORTS.web}"\nAUTH_HMAC_SECRET = ${JSON.stringify(secret)}`, 'vars table');

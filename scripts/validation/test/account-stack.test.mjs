@@ -145,3 +145,14 @@ test('cutover controls accept only fixed local POST operations with available sc
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), 'canary');
 });
+
+test('early account UI gets its explicit local auth overlay without changing retained D1 identity',()=>{
+ const source='name = "righelt-api"\nmain = "index.js"\n[[d1_databases]]\nbinding = "DB"\ndatabase_id = "retained"\nmigrations_dir = "../../db/migrations"\n';
+ const options={root:'/candidate',folder:'api',role:'api',secret:'synthetic'};
+ const configured=candidateConfig(source,options);
+ assert.match(configured,/AUTH_ENABLED = "true"/);
+ assert.match(configured,/binding = "HASH_SERVICE"\nservice = "righelt-validation-account-admission"/);
+ assert.match(configured,/database_id = "retained"/);
+ assert.match(configured,/AUTH_HMAC_SECRET = "synthetic"/);
+ assert.throws(()=>candidateConfig(source+'[vars]\nPARTIAL = "yes"\n',options),/Unsupported partial/);
+});
