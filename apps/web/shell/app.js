@@ -10,8 +10,7 @@ import { createAccountController, safeAccountIntent } from './account-controller
 import { createAccountDialog } from './account-dialog.js';
 import { recoveryMessage, sharedMutationActions } from "./recovery-view.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
-import { createEngineBoardAdapter } from "../board-adapters/engine-board-adapter.js";
-import { createInitialState } from "../generated/packages/game-engine/src/index.js";
+import { createEngineBoardAdapter, createInitialBoardSnapshot } from "../board-adapters/engine-board-adapter.js";
 import { createMiniBoardPreview, syncMiniBoardPreviews } from "../board/mini-board-preview.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
@@ -4328,7 +4327,7 @@ const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: getCo
   onPresentation: () => {
     const root = document.createElement("div"); root.className = "story-presentation-board";
     root.inert = true; root.setAttribute("aria-hidden", "true"); document.body.append(root);
-    const preview = createMiniBoardPreview({ rootEl: root, preview: { snapshot: createInitialState(), previewKey: "initial-story-board" }, createAdapter: createEngineBoardAdapter });
+    const preview = createMiniBoardPreview({ rootEl: root, preview: { snapshot: createInitialBoardSnapshot(), previewKey: "initial-story-board" }, createAdapter: createEngineBoardAdapter });
     return () => { preview.destroy(); root.remove(); };
   },
   onPlay: intent => {
