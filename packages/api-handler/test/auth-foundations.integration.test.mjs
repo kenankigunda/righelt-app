@@ -65,7 +65,11 @@ test('actual workerd private admission/hash services: random salts, verification
   {...common,name:'hash',scriptPath:`${root}apps/auth-hash/index.mjs`,durableObjects:{PASSWORD_HASH:{className:'PasswordHashDO',useSQLite:true}}},
  ]});
  const password='synthetic-password-123';
- const send=body=>mf.dispatchFetch('https://auth.internal/hash',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ // Production callers use a private service binding, never the development
+ // HTTP listener. Cancelling an oversized HTTP upload can reset that socket
+ // before a response is delivered; exercise the actual binding contract.
+ const service=await mf.getWorker('auth');
+ const send=body=>service.fetch('https://auth.internal/hash',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  try {
   const first=await send({operation:'hash',password});assert.equal(first.status,200);assert.equal(first.headers.get('Cache-Control'),'no-store');const {encoded}=await first.json();
   assert.notEqual((await (await send({operation:'hash',password})).json()).encoded,encoded);
