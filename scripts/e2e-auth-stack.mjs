@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { LOCAL_DEV_PORT_VARIANTS, resolveLocalApiPort } from "../apps/web/local-dev-ports.js";
+import { installProxyDiagnostics } from "./auth-proxy-diagnostics.mjs";
 
 const root = process.cwd();
 const webPort = String(process.env.RIGHELT_AUTH_E2E_WEB_PORT || LOCAL_DEV_PORT_VARIANTS.find(variant => variant.suffix === "auth-e2e").webPort);
@@ -17,6 +18,7 @@ const persist = path.join(temporary, "state");
 const children = new Set();
 let stopping = false;
 let control;
+let proxyDiagnosticsInstallation;
 
 function run(args, { cwd = root, service = false } = {}) {
   const child = spawn("pnpm", args, { cwd, stdio: "inherit", detached: service });
@@ -40,6 +42,8 @@ async function shutdown(code = 0) {
     kill("SIGTERM");
     setTimeout(() => { kill("SIGKILL"); resolve(); }, 5000).unref();
   })));
+  try { const restore = await proxyDiagnosticsInstallation; await restore?.(); }
+  catch (error) { console.error(error); code = 1; }
   await rm(temporary, { recursive: true, force: true });
   process.exit(code);
 }
@@ -63,6 +67,10 @@ async function ready(url) {
   throw new Error(`Local account stack not ready: ${url}`);
 }
 try {
+  if (process.env.RIGHELT_AUTH_PROXY_DIAGNOSTICS === "1") {
+    proxyDiagnosticsInstallation = installProxyDiagnostics();
+    await proxyDiagnosticsInstallation;
+  }
   await mkdir(persist, { recursive: true });
   const apiConfig = path.join(temporary, "api.toml");
   let api = await readFile(path.join(root, "apps/api/wrangler.toml"), "utf8");

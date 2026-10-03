@@ -137,11 +137,13 @@ for (const method of ["login", "recovery"]) {
         await visitor.getByTestId("invite-join-player").click();
         await dialog(visitor).getByLabel("Username", { exact: true }).fill(username);
         await dialog(visitor).getByLabel("Password", { exact: true }).fill(password);
-        // Hold the reset transport's first invite read while the independent
-        // continuation read completes. Neither may silently consume the intent.
+        // The reset and continuation share this read. Neither may act before
+        // it finishes, or duplicate the preserved join after release.
         await visitor.evaluate(() => { window.__holdNextInviteRead = true; });
         await dialog(visitor).getByRole("button", { name: "Sign in", exact: true }).click();
         await expect.poll(() => visitor.evaluate(() => Boolean(window.__releaseInviteRead))).toBe(true);
+        expect(joins).toEqual([]);
+        await visitor.evaluate(() => window.__releaseInviteRead());
       } else {
         await dialog(visitor).getByRole("button", { name: "Recover account", exact: true }).click();
         await dialog(visitor).getByLabel("Username", { exact: true }).fill(username);
