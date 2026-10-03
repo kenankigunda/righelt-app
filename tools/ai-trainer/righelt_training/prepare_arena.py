@@ -1,4 +1,5 @@
 """Supervised, resumable validation workload preparation; never opens final tests."""
+from .budget import effective_deadline
 import argparse
 import hashlib
 import json
@@ -28,10 +29,10 @@ def checkpoint_identity(path):
 
 def prepare(directory,candidate,opponent,*,clock=time.monotonic,command=engine_command,experiment_root=None):
     directory=Path(directory);runtime=json.loads((directory/'runtime.json').read_text())
-    deadline=runtime['deadlineMonotonic']
+    deadline=effective_deadline(runtime)
     result_path=directory/'prepare-arena-result.json'
     result={'schema':1,'status':'inconclusive','reason':'preparation-unfinished','partition':'validation',
-            'deadlineMonotonic':deadline,'productionPromotion':False}
+            'deadlineMonotonic':runtime['deadlineMonotonic'],'productionPromotion':False}
     atomic_json(result_path,result)
     def heartbeat():
         atomic_json(directory/'device-memory.json',{'schema':1,'pid':os.getpid(),'observedAt':time.time(),'driverBytes':0})
@@ -51,7 +52,7 @@ def prepare(directory,candidate,opponent,*,clock=time.monotonic,command=engine_c
     if not ready():return result
     identity={'candidate':checkpoint_identity(candidate),'opponent':checkpoint_identity(opponent),
               'seed':runtime['seed'],'manifestSha256':runtime['manifestSha256'],'configSha256':CONFIG_SHA256,
-              'deadlineMonotonic':deadline}
+              'deadlineMonotonic':runtime['deadlineMonotonic']}
     key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
     output=directory/'validation-plans'/key;output.mkdir(parents=True,exist_ok=True)
     state_path=output/'preparation.json';plan_path=output/'plan.json'

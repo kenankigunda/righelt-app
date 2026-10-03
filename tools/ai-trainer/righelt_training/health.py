@@ -1,4 +1,5 @@
 """Audit experiment health from replay archives and recoverable model weights."""
+from .budget import effective_deadline
 import argparse
 import gzip
 import hashlib
@@ -128,7 +129,7 @@ def main():
     thread=threading.Thread(target=heartbeat,daemon=True);thread.start()
     atomic_json(directory/'health-report.json',{'schema':1,'healthy':False,'complete':False,'reason':'audit-running'})
     torch.set_num_threads(1)
-    try:result=audit(directory,runtime['deadlineMonotonic'])
+    try:result=audit(directory,effective_deadline(runtime))
     finally:stopped.set();thread.join(timeout=1)
     atomic_json(directory/'health-report.json',result);print(json.dumps(result,indent=2))
 

@@ -1,4 +1,5 @@
 """Budgeted local experiment child. Supervisor owns permission and hard limits."""
+from .budget import effective_deadline
 import argparse
 import gzip
 import hashlib
@@ -82,7 +83,7 @@ class Runner:
         digest = hashlib.sha256(json.dumps(self.manifest['manifest'], sort_keys=True, allow_nan=False).encode()).hexdigest()
         if digest != self.manifest_hash:
             raise ValueError('manifest content mismatch')
-        self.deadline = self.runtime['deadlineMonotonic']
+        self.deadline = effective_deadline(self.runtime)
         self.started = self.runtime['startedMonotonic']
         if self.deadline <= self.started or self.deadline <= time.monotonic():
             raise ValueError('expired experiment')
