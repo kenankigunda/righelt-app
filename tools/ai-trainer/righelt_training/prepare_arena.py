@@ -51,8 +51,7 @@ def prepare(directory,candidate,opponent,*,clock=time.monotonic,command=engine_c
     heartbeat()
     if not ready():return result
     identity={'candidate':checkpoint_identity(candidate),'opponent':checkpoint_identity(opponent),
-              'seed':runtime['seed'],'manifestSha256':runtime['manifestSha256'],'configSha256':CONFIG_SHA256,
-              'deadlineMonotonic':runtime['deadlineMonotonic']}
+              'seed':runtime['seed'],'allocationId':runtime.get('allocationId',runtime['manifestSha256']),'configSha256':CONFIG_SHA256}
     key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
     output=directory/'validation-plans'/key;output.mkdir(parents=True,exist_ok=True)
     state_path=output/'preparation.json';plan_path=output/'plan.json'

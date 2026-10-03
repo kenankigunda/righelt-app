@@ -78,7 +78,7 @@ def execute(args, invoke=None):
         phase('prepare-validation',['--resume',str(latest),'--prepare-arena',*pair],'prepare-arena-result.json',lambda p:p.get('status')=='completed')
         plan=read(directory/'prepare-arena-result.json')
         if plan.get('status')!='completed':raise ValueError('validation workload preparation incomplete')
-        phase('validation',['--resume',str(latest),'--arena-plan',plan['plan'],*pair],'supervisor-result.json',lambda p:p.get('reason')=='completed')
+        phase('validation',['--resume',str(latest),'--arena-plan',plan['plan'],*pair],f"evaluations/{plan['planSha256']}/report.json",lambda p:p.get('status')=='completed' and p.get('completePairs')==100 and p.get('completedGames')==200 and p.get('identity',{}).get('planSha256')==plan['planSha256'])
         result.update(status='phases-finished',reason='Inspect arena evidence and publish progress before considering the conditional overnight stage.')
     except (ValueError,OSError,KeyError,subprocess.SubprocessError) as error:
         result['reason']=str(error)

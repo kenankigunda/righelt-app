@@ -17,7 +17,7 @@ from argparse import Namespace
 class PrepareArenaTest(unittest.TestCase):
     def setup_run(self,d):
         root=Path(d);now=time.monotonic()
-        runtime={'seed':107,'manifestSha256':'test','deadlineMonotonic':now+600}
+        runtime={'allocationId':'allocation','seed':107,'manifestSha256':'test','deadlineMonotonic':now+600}
         (root/'runtime.json').write_text(json.dumps(runtime))
         (root/'allocation.json').write_text(json.dumps({'paused':False,'workers':2,'observedAt':time.time(),'reason':'usable'}))
         paths=[]
@@ -44,6 +44,8 @@ class PrepareArenaTest(unittest.TestCase):
             self.assertTrue(all(partition_for_family(p['familyId'])=='validation' for p in plan['pairs']))
             self.assertEqual(len({p['openingFingerprint'] for p in plan['pairs'][50:]}),50)
             self.assertEqual(json.loads((root/'runtime.json').read_text()),runtime)
+            runtime['deadlineMonotonic']+=10;runtime['manifestSha256']='repaired-source'
+            (root/'runtime.json').write_text(json.dumps(runtime))
             with patch('righelt_training.prepare_arena.engine_command',side_effect=AssertionError('must reuse plan')):
                 resumed=prepare(root,*paths,command=lambda *a,**k:self.fail('must not regenerate'),experiment_root=root/'registry')
             self.assertEqual(resumed['planSha256'],result['planSha256'])
