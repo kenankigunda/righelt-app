@@ -38,6 +38,7 @@ export function applyReply(run, message, recipient, mailbox) {
 }
 export function readiness(pr, stage, currentBase) {
   const waiting=[];
+  if(pr.nativeStack)waiting.push('Native GitHub stacks are unsupported; individual authorization cannot include predecessors');
   if (!stage || stage.head !== pr.head || stage.base !== currentBase || stage.status !== 'passed') waiting.push('Current integrated validation');
   if (stage?.unmapped?.length) waiting.push('Coverage gaps');
   if (stage?.sourceClean !== true) waiting.push('Clean reproducible source tree');
