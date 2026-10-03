@@ -1,3 +1,4 @@
+import { profileLayoutDisplayName, profileLayoutUsername } from "../support/profile-layout.mjs";
 import { test } from "@playwright/test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -7,7 +8,7 @@ const css = (await Promise.all(["../../apps/web/styles.css", "../../apps/web/she
 for (const width of [220, 270, 320]) {
   test(`long public names fit ${width}px participant panels and remain readable`, async ({ page }) => {
     await page.setViewportSize({ width: 1366, height: 900 });
-    const person = { profile: { displayName: "VeryLongUnbrokenDisplayName123456", username: "LongUnbrokenUsername123456" } };
+    const person = { profile: { displayName: profileLayoutDisplayName, username: profileLayoutUsername } };
     await page.setContent(`<style>${css}</style><section class="panel" style="width:${width}px"><h2>Participants</h2><ul class="participant-list"><li>Player 1: ${participantButton(person)} <span>Connected</span></li></ul></section>`);
     const bounds = await page.locator(".participant-profile").evaluate(button => {
       const panel = button.closest(".panel").getBoundingClientRect();
