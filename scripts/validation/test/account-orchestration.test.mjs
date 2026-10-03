@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,rm,access} from 'node:fs/promises';
 import path from 'node:path';import os from 'node:os';
 import {git,saveJSON} from '../io.mjs';
 import {localRun} from '../local.mjs';
@@ -35,4 +35,27 @@ test('missing retained sidecars fails before any account commands can silently c
  const {dir,cwd,base}=await candidate();let calls=0;
  const result=await localRun({cwd,base,dir:path.join(dir,'run'),publishReport:false,lockPath:path.join(dir,'lock'),accountContinuityInput:path.join(dir,'missing'),execute:async()=>{calls++;return {code:0,duration:1};}});
  assert.equal(calls,0);assert.equal(result.stage.status,'failed');
+});
+
+test('reusing an account output for a non-account revision cannot publish old account proof',async()=>{
+ const {dir,cwd,base}=await candidate(),out=path.join(dir,'reuse');
+ const stale={id:'stale-account',title:'old passed account proof',status:'passed',images:[]};
+ const execute=async(argv,{env})=>{
+  await saveJSON(env.RIGHELT_EVIDENCE_JSON,argv.some(x=>x.endsWith('playwright.validation-account.config.mjs'))?[stale]:[{id:'guest',status:'passed',images:[]}]);
+  return {code:0,duration:1};
+ };
+ const prior=await localRun({cwd,base,dir:out,publishReport:false,lockPath:path.join(dir,'lock'),execute});
+ assert.ok(prior.stage.items.some(x=>x.id===stale.id));
+ await rm(path.join(cwd,'apps/web/shell/account-controller.js'));
+ await git(['add','.'],cwd);await git(['commit','-m','non-account revision'],cwd);
+ let calls=0;
+ const next=await localRun({cwd,base,dir:out,publishReport:false,lockPath:path.join(dir,'lock'),execute:async(argv,{env})=>{
+  if(!calls++)await assert.rejects(access(env.RIGHELT_EVIDENCE_JSON+'.account'),{code:'ENOENT'});
+  assert.ok(!argv.some(x=>x.endsWith('playwright.validation-account.config.mjs')));
+  await saveJSON(env.RIGHELT_EVIDENCE_JSON,[{id:'current-guest',status:'passed',images:[]}]);
+  // Even an unrelated late artifact is not evidence for this capability set.
+  await saveJSON(env.RIGHELT_EVIDENCE_JSON+'.account',[stale]);
+  return {code:0,duration:1};
+ }});
+ assert.ok(calls>0);assert.ok(next.stage.items.every(x=>x.id!==stale.id));
 });

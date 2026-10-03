@@ -34,13 +34,13 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
  try{await mkdir(lock);locked=true;await saveJSON(path.join(lock,'owner.json'),{pid:process.pid,run:run.id,cwd});
   const env={RIGHELT_VALIDATION_TARGET_ROOT:cwd,RIGHELT_VALIDATION:'1',RIGHELT_E2E_WEB_PORT:'9888',RIGHELT_EVIDENCE_DIR:site,RIGHELT_EVIDENCE_JSON:path.join(dir,`evidence-${stageIndex}.json`),PLAYWRIGHT_OUTPUT_DIR:path.join(dir,`debug-${stageIndex}`),...(persistRoot?{RIGHELT_E2E_PERSIST_ROOT:persistRoot}:{}),...(continuityInput?{RIGHELT_CONTINUITY_INPUT:continuityInput}:{}),...(continuityOutput?{RIGHELT_CONTINUITY_FILE:continuityOutput}:{})};
   await rm(env.RIGHELT_EVIDENCE_JSON+'.adjacent',{force:true});
+  await rm(env.RIGHELT_EVIDENCE_JSON+'.account',{force:true});
   const capabilities=await candidateCapabilities(cwd);
   if(accountContinuityInput&&!capabilities.accounts)throw Error('Account capability disappeared after retained account proof');
   if(capabilities.accounts){
    if(accountContinuityInput)for(const name of ['mobile','mid-wide','full-wide'])await readFile(`${accountContinuityInput}.account-${name}`);
    Object.assign(env,{RIGHELT_ACCOUNT_CANDIDATE_ROOT:cwd,RIGHELT_ACCOUNT_PERSIST_ROOT:accountPersistRoot||await mkdtemp(path.join(dir,'fresh-account-')),...(accountContinuityInput?{RIGHELT_ACCOUNT_CONTINUITY_INPUT:accountContinuityInput}:{}),...((accountLegacyContinuityInput||(!accountContinuityInput&&continuityInput))?{RIGHELT_LEGACY_CONTINUITY_INPUT:accountLegacyContinuityInput||continuityInput}:{})});
    stage.accountContract={phase:accountContinuityInput?'retained':'introduced',legacy:env.RIGHELT_LEGACY_CONTINUITY_INPUT?'Prior guest history remains public; authenticated account cannot claim guest seats':'Fresh local legacy fixture',cutover:capabilities.cutover?'Permanent local activation with acknowledged synthetic canary':'Pre-activation account protocol'};
-   await rm(env.RIGHELT_EVIDENCE_JSON+'.account',{force:true});
   }
   const candidateScripts=(await readJSON(path.join(cwd,'package.json'),{})).scripts??{};
   const authChecks=typeof candidateScripts['test:e2e:auth']==='string'&&candidateScripts['test:e2e:auth'].trim()?[['Auth E2E',['pnpm','test:e2e:auth']]]:[];
@@ -50,7 +50,7 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
   for(const [name,argv]of checks){
    if(name==='Account responsive proof'&&accountPersistRoot&&persistRoot&&!accountContinuityInput)await initializeAccountUpgrade({sourcePersistRoot:path.join(persistRoot,'api-state'),accountPersistRoot});
    console.log(`[validation] ${stage.title}: ${name}`);const r=await execute(argv,{cwd,env:{...env,...(name==='Account responsive proof'?{RIGHELT_EVIDENCE_JSON:env.RIGHELT_EVIDENCE_JSON+'.account'}:{}),PLAYWRIGHT_OUTPUT_DIR:path.join(dir,`debug-${stageIndex}`,name.replaceAll(' ','-')),...(['E2E','Auth E2E'].includes(name)?{CI:'1'}:{})},log:path.join(dir,`stage-${stageIndex}-${name.replaceAll(' ','-')}.log`),allowFailure:true});stage.checks.push({name,status:r.code?'failed':'passed',duration:r.duration});await save();}
-  stage.items=[...await readJSON(env.RIGHELT_EVIDENCE_JSON,[]),...await readJSON(env.RIGHELT_EVIDENCE_JSON+'.ui',[]),...await readJSON(env.RIGHELT_EVIDENCE_JSON+'.adjacent',[]),...await readJSON(env.RIGHELT_EVIDENCE_JSON+'.account',[])];
+  stage.items=[...await readJSON(env.RIGHELT_EVIDENCE_JSON,[]),...await readJSON(env.RIGHELT_EVIDENCE_JSON+'.ui',[]),...await readJSON(env.RIGHELT_EVIDENCE_JSON+'.adjacent',[]),...(capabilities.accounts?await readJSON(env.RIGHELT_EVIDENCE_JSON+'.account',[]):[])];
   if(capabilities.accounts){
    try{
     const accountItems=await readJSON(env.RIGHELT_EVIDENCE_JSON+'.account',[]);
