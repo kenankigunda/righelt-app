@@ -226,7 +226,8 @@ export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
     `[data-testid="game-board"] .cell[data-row="${action.to.row}"][data-col="${action.to.col}"]`,
   );
 
-  if (test.info().project.use.hasTouch) {
+  // Read the actual client: describe-level and popup settings can differ from the project defaults.
+  if (await page.evaluate(() => navigator.maxTouchPoints > 0)) {
     const boardTab = page.locator('[data-action="switch-game-panel"][data-panel="board"]');
     if (await boardTab.isVisible()) await boardTab.tap();
     await sourceCell.tap();
