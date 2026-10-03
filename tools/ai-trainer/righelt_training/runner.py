@@ -172,9 +172,9 @@ class Runner:
             or not request['id']):raise ValueError('invalid checkpoint handoff request')
         return request if request['id']!=self.state.get('lastHandoffId') else None
 
-    def event(self, kind, **fields):
+    def event(self, event_type, **fields):
         with (self.directory / 'runner-events.jsonl').open('a') as stream:
-            stream.write(json.dumps({'type': kind, 'monotonic': time.monotonic(), **fields}, allow_nan=False) + '\n')
+            stream.write(json.dumps({'type': event_type, 'monotonic': time.monotonic(), **fields}, allow_nan=False) + '\n')
 
     def checkpoint(self):
         with self.operation("checkpoint",120):return self._checkpoint()
