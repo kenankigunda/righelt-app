@@ -343,7 +343,7 @@ jobs:
         run: pnpm install --frozen-lockfile=false
 
       - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
 
       - name: E2E tests
         env:

@@ -1,8 +1,10 @@
 import { test, expect } from "@playwright/test";
+import { runScopedAxeScan } from "../support/ux.mjs";
 import { createGameFromHome, makeAnyLegalMove } from "../support/app.mjs";
 
 for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gate at ${width}px`, async ({page}) => {
  await page.setViewportSize({width,height:1000});
+ await page.emulateMedia({reducedMotion:"reduce"});
  const {gameId}=await createGameFromHome(page);
  await page.getByRole("button",{name:"Play as both players",exact:true}).dispatchEvent("click");
  await expect(page.getByRole("button",{name:"Play as both players",exact:true})).toHaveCount(0);
@@ -30,6 +32,8 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
  await from.click();await to.hover();before=await geometry();await to.click();
  const banner=page.getByTestId("sync-recovery-banner");
  await expect(banner).toContainText("Your browser couldn't save this move. It wasn't sent.");
+ expect((await runScopedAxeScan({page,include:'[data-testid="sync-recovery-banner"]'})).violations).toEqual([]);
+ expect(await banner.evaluate(el=>getComputedStyle(el).animationName)).toBe("none");
  await page.getByRole("button",{name:"Retry saving"}).evaluate(el=>el.focus({preventScroll:true}));
  const focusBefore=await page.evaluate(()=>({active:document.activeElement.textContent,scroll:window.scrollY}));
  await page.waitForTimeout(5500); // A real acknowledged heartbeat must not rebuild or reannounce this notice.
@@ -89,4 +93,20 @@ test("pending feedback reaches overdue once, then clears or explains definitive 
  mode="accept";
  await makeAnyLegalMove(page);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
+});
+
+test('healthy optimistic confirmation adds no recovery announcement',async({page})=>{
+ const {gameId}=await createGameFromHome(page);
+ await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
+ await page.evaluate(()=>{
+  window.healthyAnnouncements=[];
+  const node=document.getElementById('shell-sync-announcement');
+  new MutationObserver(()=>window.healthyAnnouncements.push(node.textContent)).observe(node,{subtree:true,childList:true,characterData:true});
+ });
+ await page.route(`**/api/shell/games/${gameId}/apply`,async route=>{
+  const response=await route.fetch();await new Promise(resolve=>setTimeout(resolve,500));await route.fulfill({response});
+ });
+ await makeAnyLegalMove(page);
+ await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
+ expect(await page.evaluate(()=>window.healthyAnnouncements.filter(Boolean))).toEqual([]);
 });

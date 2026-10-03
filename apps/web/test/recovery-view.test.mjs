@@ -41,7 +41,7 @@ test("recovery copy distinguishes pending, overdue, storage admission, cleanup a
  assert.equal(recoveryMessage({storageBlocked:true,unsavedCommand:true}),"Your browser couldn't save this move. It wasn't sent.");
  assert.doesNotMatch(recoveryMessage({storageBlocked:true}),/wasn't sent/);
  assert.match(recoveryMessage({storageBlocked:true,storageLimitReached:true}),/Earlier moves/);
- assert.equal(recoveryMessage({pendingCommandCount:1}),"Checking your move…");
+ assert.equal(recoveryMessage({pendingCommandCount:1,syncStatus:"applying-update"}),"");
 });
 test("recovery gates every shared transport entrypoint and preserves home-card state", async () => {
  const t=store();t.applyLiveGameUpdate({game:fixture()});t.setConnectionRecovering("history",true);
@@ -114,4 +114,26 @@ test("history and live-return project forced-response ownership without enabling
  t.applyLiveGameUpdate({game});t.selectHistoryMove({gameId:"history",moveIndex:0});
  assert.equal(t.getGameViewModel("history").control,"opponent");assert.equal(t.getGameViewModel("history").canRecordMove,false);
  t.returnToLive({gameId:"history"});assert.equal(t.getGameViewModel("history").canRecordMove,true);assert.equal(t.getGameViewModel("history").canEndTurn,false);
+});
+
+test("refreshing static home cards cannot erase local recovery state",async()=>{
+ const t=createLiveTransportStore({storage:{getItem:()=>"actor",setItem(){}},commandJournal:{list:async()=>[]},fetcher:async()=>Response.json({games:[{id:"history",syncStatus:"ready"}]})});
+ t.applyLiveGameUpdate({game:fixture()});t.setConnectionRecovering('history',true);
+ await t.loadGamesPage({section:'my'});
+ assert.equal(t.getHomeGameCard('history').syncStatus,'confirming');
+ assert.equal(t.getGameViewModel('history').recovering,true);
+});
+
+test("home listing restores and reconciles a journal game outside the visible page",async()=>{
+ const {commandFingerprint}=await import('../generated/packages/shared-types/src/sync-protocol.js');
+ const envelope={protocolVersion:2,gameId:'history',identityId:'actor',clientCommandId:'v2:home-reload',kind:'end_turn',payload:{},expectedState:snapshot(9),expectedGameplayRevision:0,expectedTurnIndex:9};
+ envelope.fingerprint=await commandFingerprint(envelope);let saved=[envelope];let reconciled=false;
+ const t=createLiveTransportStore({storage:{getItem:()=>"actor",setItem(){}},commandJournal:{list:async()=>saved,remove:async()=>{saved=[];}},fetcher:async(url)=>{
+  if(url.includes('/reconcile')){reconciled=true;return Response.json({protocolVersion:2,gameId:'history',eventSeq:1,gameplayRevision:0,game:fixture(),commandOutcomes:[{...envelope,outcome:'rejected',reason:'stale_state',eventSeq:1,gameplayRevision:0}]});}
+  return Response.json({games:[]});
+ }});
+ await t.loadGamesPage({section:'my'});
+ for(let i=0;i<20&&saved.length;i++)await new Promise(resolve=>setTimeout(resolve,5));
+ assert.equal(reconciled,true);assert.equal(saved.length,0);
+ assert.equal(t.getGameViewModel('history').pendingCommandCount,0);
 });

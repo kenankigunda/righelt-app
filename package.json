@@ -45,7 +45,7 @@
     "test:web": "node apps/web/test/run-web-tests.mjs",
     "test:web:unit": "node apps/web/test/run-web-tests.mjs --layer unit",
     "test:web:integration": "node apps/web/test/run-web-tests.mjs --layer integration",
-    "e2e:install": "playwright install chromium",
+    "e2e:install": "playwright install chromium firefox webkit",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "cf:set-db": "node scripts/set-d1-binding.mjs",

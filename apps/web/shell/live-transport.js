@@ -576,9 +576,17 @@ export const createLiveTransportStore = ({
     for (const game of gamesPage) {
       homeGameCardById.set(game.id, game);
     }
+    // Home reloads must resume durable commands even when their game is not opened.
+    // Hydration starts bounded reconciliation; listing a page never waits on the network recovery.
+    try {
+      const saved = await commandJournal.list(identityId);
+      await Promise.all([...new Set(saved.map(command => command.gameId))].map(gameId => hydrateJournal(gameId).catch(() => {})));
+    } catch (error) {
+      for (const game of gamesPage) blockStorage(game.id, error);
+    }
     return {
       ...body,
-      games: gamesPage,
+      games: gamesPage.map(game => getHomeGameCard(game.id)),
     };
   };
 
@@ -909,7 +917,11 @@ export const createLiveTransportStore = ({
   const listGames = () => games.map((game) => getGameViewModel(game.id)).filter(Boolean);
   const getHomeGameCard = (gameId) => {
     const card = homeGameCardById.get(gameId);
-    return card ? clone(card) : null;
+    if (!card) return null;
+    const optimistic = getOptimisticState(gameId);
+    const next = clone(card);
+    if (optimistic.pendingCommands.length || optimistic.storageBlocked || optimistic.connectionRecovering) next.syncStatus = "confirming";
+    return next;
   };
 
   const getGameViewModel = (gameId) => {

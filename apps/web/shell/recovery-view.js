@@ -50,7 +50,7 @@ export const recoveryMessage = (game) => {
     ? "Earlier moves are still being checked. Wait for them to finish before making another move."
     : game.unsavedCommand ? "Your browser couldn't save this move. It wasn't sent."
       : "Your browser couldn't save recovery information. Retry saving to continue.";
-  if (!game.pendingCommandCount && !game.recovering && game.syncStatus !== "confirming" && !game.confirmationOverdue) return "";
+  if (!game.recovering && game.syncStatus !== "confirming" && !game.confirmationOverdue) return "";
   const plural = game.pendingCommandCount > 1;
   if (game.pendingCommandCount > 0) return game.confirmationOverdue
     ? `Your ${plural ? "moves are" : "move is"} still being checked.`
