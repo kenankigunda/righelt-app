@@ -176,10 +176,12 @@ test("Explain activation survives an account response arriving during its press"
   expect((await created).ok()).toBe(true);
   // Start the deliberate press race only after authoritative game hydration,
   // rather than while the optimistic creation view is still being replaced.
+  const gameUrl = page.url();
+  await page.goto("about:blank");
   const hydrated = page.waitForEvent("websocket").then(socket => socket.waitForEvent("framereceived", {
     predicate: event => JSON.parse(String(event.payload)).type === "state_sync",
   }));
-  await page.reload();
+  await page.goto(gameUrl);
   await hydrated;
   await expect(page.locator('.shell-route-transition-layer')).toHaveAttribute("data-active", "false");
   const explain = page.getByRole("button", { name: "Explain", exact: true });
@@ -196,16 +198,19 @@ test("Explain activation survives an account response arriving during its press"
   await held;
   const box = await explain.boundingBox();
   const heldExplain = await explain.elementHandle();
-  await explain.focus();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
-  const resumed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/auth/session");
-  release();
-  await (await resumed).finished();
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  expect(await heldExplain.evaluate(element => element.isConnected && element === document.activeElement)).toBe(true);
-  expect(await explain.evaluate((element, held) => element === held, heldExplain)).toBe(true);
-  await page.mouse.up();
+  try {
+    // WebKit natively blurs buttons on mouse-down. Establish the focus being
+    // preserved after that native event, while the account response is held.
+    await explain.focus();
+    const resumed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/auth/session");
+    release();
+    await (await resumed).finished();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(await heldExplain.evaluate(element => element.isConnected && element === document.activeElement)).toBe(true);
+    expect(await explain.evaluate((element, held) => element === held, heldExplain)).toBe(true);
+  } finally { release(); await page.mouse.up(); }
   await expect(explain).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => page.evaluate(async () => (await (await fetch("/api/auth/session")).json()).account.preferences.view)).toBe("explanatory");
 });
