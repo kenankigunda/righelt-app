@@ -55,8 +55,19 @@ async function fixture() {
   class Browser {
     cookies = new Map();
     context = null;
+    operationContext = null;
     ip = `192.0.2.${nextIp++}`;
     async call(path, body = {}, options = {}) {
+      // Each tab keeps the preparation context in its own form state. Cookies
+      // may be shared; never derive this confirmation value from the cookie.
+      if (
+        [
+          "/api/auth/recovery/finish",
+          "/api/auth/recovery-code/finish",
+        ].includes(path) &&
+        !Object.hasOwn(body, "operationContext")
+      )
+        body = { ...body, operationContext: this.operationContext };
       const headers = {
         "Content-Type": "application/json",
         Origin: origin,
@@ -77,6 +88,8 @@ async function fixture() {
       );
       const data = await response.json();
       if (!options.discardResponse) {
+        if (typeof data.operationContext === "string")
+          this.operationContext = data.operationContext;
         for (const cookie of response.headers.getSetCookie()) {
           const [kv] = cookie.split(";"),
             [name, value] = kv.split("=");
@@ -865,6 +878,7 @@ test("logout racing a pending finish revokes its issued session even when logout
       newPassword,
     });
     finisher.cookies = new Map(logout.cookies);
+    finisher.operationContext = logout.operationContext;
     let release, entered;
     const barrier = new Promise((resolve) => (release = resolve)),
       started = new Promise((resolve) => (entered = resolve));
@@ -1448,6 +1462,127 @@ for (const operation of [
           "completed receipt retries safely",
         );
       }
+    } finally {
+      await f.close();
+    }
+  });
+}
+
+for (const kind of ["replacement", "recovery", "cross-account recovery"]) {
+  test(`shared browser flow cookie cannot acknowledge another tab's ${kind} code`, async () => {
+    const f = await fixture();
+    try {
+      const firstOwner = new f.Browser(),
+        secondOwner = new f.Browser();
+      const firstAccount = await firstOwner.register("FirstOwner");
+      await firstOwner.call("/api/auth/recovery-code/acknowledge", {
+        saved: true,
+        recoveryVersion: 1,
+      });
+      const secondAccount = await secondOwner.register("SecondOwner");
+      await secondOwner.call("/api/auth/recovery-code/acknowledge", {
+        saved: true,
+        recoveryVersion: 1,
+      });
+      const shared = kind === "replacement" ? firstOwner : new f.Browser();
+      const prepare =
+        kind === "replacement"
+          ? "/api/auth/recovery-code/prepare"
+          : "/api/auth/recovery/prepare";
+      const finish =
+        kind === "replacement"
+          ? "/api/auth/recovery-code/finish"
+          : "/api/auth/recovery/finish";
+      const first = await shared.call(
+        prepare,
+        kind === "replacement"
+          ? { currentPassword: password }
+          : {
+              username: "FirstOwner",
+              recoveryCode: firstAccount.data.recoveryCode,
+              newPassword,
+            },
+      );
+      const firstFlowCookie = shared.cookies.get("__Host-righelt_recovery");
+      const second = await shared.call(
+        prepare,
+        kind === "replacement"
+          ? { currentPassword: password }
+          : {
+              username:
+                kind === "cross-account recovery"
+                  ? "SecondOwner"
+                  : "FirstOwner",
+              recoveryCode:
+                kind === "cross-account recovery"
+                  ? secondAccount.data.recoveryCode
+                  : firstAccount.data.recoveryCode,
+              newPassword: "another-synthetic-password-789",
+            },
+      );
+      assert.equal(first.status, 200);
+      assert.equal(second.status, 200);
+      assert.equal(first.data.recoveryVersion, second.data.recoveryVersion);
+      const before = await credentialSnapshot(f.db);
+      const missing = await shared.call(finish, {
+        saved: true,
+        recoveryVersion: first.data.recoveryVersion,
+        operationContext: undefined,
+      });
+      assert.equal(missing.status, 400);
+      const wrong = await shared.call(finish, {
+        saved: true,
+        recoveryVersion: first.data.recoveryVersion,
+        operationContext: first.data.operationContext,
+      });
+      assert.equal(wrong.status, 409);
+      assert.equal((await shared.call(finish,{saved:true,recoveryVersion:first.data.recoveryVersion,operationContext:null})).status,409);
+      assert.deepEqual(await credentialSnapshot(f.db), before);
+      assert.match(first.data.operationContext, /^[a-f0-9]{64}$/);
+      assert.notEqual(first.data.operationContext, firstFlowCookie);
+      assert.notEqual(
+        first.data.operationContext,
+        await tokenHash(firstFlowCookie),
+      );
+      assert.notEqual(
+        first.data.operationContext,
+        second.data.operationContext,
+      );
+      const right = {
+        saved: true,
+        recoveryVersion: second.data.recoveryVersion,
+        operationContext: second.data.operationContext,
+      };
+      const completed = await shared.call(finish, right);
+      assert.equal(completed.status, 200);
+      assert.equal(
+        completed.data.account.username,
+        kind === "cross-account recovery" ? "SecondOwner" : "FirstOwner",
+      );
+      const stored = await f.db
+        .prepare("SELECT recovery_hash FROM accounts WHERE username=?")
+        .bind(completed.data.account.username)
+        .first();
+      assert.equal(
+        stored.recovery_hash,
+        await tokenHash(second.data.recoveryCode.replaceAll("-", "")),
+      );
+      assert.notEqual(
+        stored.recovery_hash,
+        await tokenHash(first.data.recoveryCode.replaceAll("-", "")),
+      );
+      const completedSnapshot = await credentialSnapshot(f.db);
+      assert.equal(
+        (
+          await shared.call(finish, {
+            ...right,
+            operationContext: first.data.operationContext,
+          })
+        ).status,
+        409,
+      );
+      assert.deepEqual(await credentialSnapshot(f.db), completedSnapshot);
+      assert.equal((await shared.call(finish, right)).status, 200);
     } finally {
       await f.close();
     }

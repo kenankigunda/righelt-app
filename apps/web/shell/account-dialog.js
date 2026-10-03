@@ -41,6 +41,7 @@ export const createAccountDialog = ({
     values = {},
     code = null,
     version = null,
+    operationContext = null,
     finish = null,
     username = "",
     challengeToken = "",
@@ -124,6 +125,7 @@ export const createAccountDialog = ({
     values = {};
     code = null;
     version = null;
+    operationContext = null;
     finish = null;
     challengeToken = "";
     if (widget !== null) globalThis.turnstile?.remove(widget);
@@ -257,6 +259,7 @@ export const createAccountDialog = ({
       owner = {};
       code = null;
       version = null;
+      operationContext = null;
       finish = null;
       values = {
         username:
@@ -351,6 +354,7 @@ export const createAccountDialog = ({
         result = await controller.act(finish, {
           saved: true,
           recoveryVersion: version,
+          ...(finish !== "recovery-code/acknowledge" ? { operationContext } : {}),
         }, operationOwner);
       else if (mode === "login")
         result = await controller.act("login", {
@@ -397,6 +401,7 @@ export const createAccountDialog = ({
               : "recovery-code/finish";
         code = result.recoveryCode;
         version = result.recoveryVersion;
+        operationContext = result.operationContext ?? null;
         mode = "code";
         render();
         return;

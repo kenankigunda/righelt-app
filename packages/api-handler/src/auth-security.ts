@@ -78,6 +78,15 @@ export function readAuthCookie(
   const token = values[0].slice(name.length + 1);
   return /^[a-f0-9]{64}$/.test(token) ? token : null;
 }
+// Public confirmation context. Domain separation avoids exposing either the flow
+// cookie or its stored credential digest; this value never authenticates a flow.
+export async function recoveryOperationContext(
+  flowToken: string,
+): Promise<string> {
+  if (!/^[a-f0-9]{64}$/.test(flowToken))
+    throw new Error("Invalid recovery flow");
+  return tokenHash(`righelt/recovery-confirmation/v1\0${flowToken}`);
+}
 export async function recoverySessionToken(
   secret: string,
   flowToken: string,

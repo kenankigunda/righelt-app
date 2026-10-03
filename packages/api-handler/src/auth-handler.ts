@@ -31,6 +31,7 @@ import {
   clearAuthCookie,
   readAuthCookie,
   recoverySessionToken,
+  recoveryOperationContext,
   equalTokenDigests,
 } from "./auth-security";
 import {
@@ -862,6 +863,7 @@ export async function handleAuthRequest(
           ok: true,
           recoveryCode: code,
           recoveryVersion: account.recovery_version + 1,
+          operationContext: await recoveryOperationContext(flowToken),
         },
         200,
         [
@@ -874,10 +876,12 @@ export async function handleAuthRequest(
       path === "/api/auth/recovery/finish" ||
       path === "/api/auth/recovery-code/finish"
     ) {
-      exactKeys(body, ["saved", "recoveryVersion"]);
+      exactKeys(body, ["saved", "recoveryVersion", "operationContext"]);
       if (body.saved !== true) throw new AuthProblem("invalid_input");
       const flowToken = readAuthCookie(request, "flow");
-      if (!flowToken) throw new AuthProblem("stale_operation", 409);
+      if (!flowToken || typeof body.operationContext !== "string" ||
+          !equalTokenDigests(body.operationContext, await recoveryOperationContext(flowToken)))
+        throw new AuthProblem("stale_operation", 409);
       const operation = await flowOperation(db, await tokenHash(flowToken));
       const recovery = path === "/api/auth/recovery/finish";
       if (
