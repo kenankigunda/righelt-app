@@ -23,11 +23,11 @@ export async function integratedRun({manifest,cwd=process.cwd(),dir,resume=false
  run.complete=false;run.base=base;run.prs=prs;run.signature=signature;run.stages=[];await saveJSON(file,run);
  const attempt=Date.now();const root=path.join(path.dirname(cwd),`righelt-validation-${attempt}`);await command(['git','worktree','add','--detach',root,base],{cwd});run.worktree=root;await saveJSON(file,run);
  try{
-  await command(['pnpm','install','--frozen-lockfile'],{cwd:root,log:path.join(dir,'install.log')});
+  await command(['pnpm','install','--frozen-lockfile','--ignore-scripts'],{cwd:root,log:path.join(dir,'install.log')});
   const upgrade=path.join(dir,`upgrade-state-${attempt}`);await mkdir(upgrade,{recursive:true});let continuity;
   for(let i=0;i<=prs.length;i++){
    if(i){const r=await command(['git','merge','--no-edit','--no-ff',prs[i-1].head],{cwd:root,allowFailure:true});if(r.code){run.risks.push(`Merge conflict at PR #${prs[i-1].number}. Resolve in source PR; retained worktree: ${root}`);run.stages.push({id:`stage-${i}`,index:i,title:`PR #${prs[i-1].number}`,status:'failed',checks:[{name:'Aggregate source PR',status:'failed'}],items:[]});break;}}
-   if(i) await command(['pnpm','install','--frozen-lockfile'],{cwd:root,log:path.join(dir,`install-${i}.log`)});
+   if(i) await command(['pnpm','install','--frozen-lockfile','--ignore-scripts'],{cwd:root,log:path.join(dir,`install-${i}.log`)});
    const next=path.join(dir,`continuity-${i}.json`);
    const fresh=await localRun({cwd:root,dir:path.join(dir,`fresh-${i}`),base,full:true,config,publishReport:false});
    if(fresh.stage.status!=='passed'){await cp(path.join(dir,`fresh-${i}`,'site'),path.join(dir,'site'),{recursive:true});fresh.stage.id=`stage-${i}`;fresh.stage.index=i;run.stages.push(fresh.stage);run.risks.push(`Fresh-install validation failed at stage ${i}; inspect private fresh-${i} logs.`);break;}

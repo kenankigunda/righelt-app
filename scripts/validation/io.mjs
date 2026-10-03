@@ -7,7 +7,7 @@ export async function readJSON(file,fallback) {try{return JSON.parse(await readF
 export async function saveJSON(file,value) {await mkdir(path.dirname(file),{recursive:true});const tmp=`${file}.${process.pid}.tmp`;await writeFile(tmp,JSON.stringify(value,null,2)+'\n',{mode:0o600});await rename(tmp,file);}
 export async function command(argv,{cwd=process.cwd(),env={},log,allowFailure=false}={}) {
   const start=Date.now();let output='';
-  const result=await new Promise((resolve,reject)=>{const child=spawn(argv[0],argv.slice(1),{cwd,env:{...process.env,...env},stdio:['ignore','pipe','pipe']});
+  const result=await new Promise((resolve,reject)=>{const child=spawn(argv[0],argv.slice(1),{cwd,env:{...process.env,pnpm_config_verify_deps_before_run:'false',...env},stdio:['ignore','pipe','pipe']});
     child.on('error',reject);for(const stream of [child.stdout,child.stderr])stream.on('data',chunk=>{output+=chunk;});child.on('exit',(code,signal)=>resolve({code:code??1,signal}));});
   if(log){await mkdir(path.dirname(log),{recursive:true});await writeFile(log,output);}
   if(result.code && !allowFailure)throw new Error(`${argv[0]} ${argv.slice(1,3).join(' ')} failed (${result.code}): ${output.slice(-2500)}`);
