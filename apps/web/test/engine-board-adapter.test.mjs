@@ -1163,3 +1163,24 @@ test("group strength badge sits inset from the square's upper-left corner", () =
 test("group strength badge only renders for strengths above one", () => {
   assert.match(adapterSource, /if \(anchorCell && typeof groupInfo\.strength === "number" && groupInfo\.strength > 1\) \{/);
 });
+
+
+test("interactive supply cells announce fixed ownership independently of turn and occupant", async () => {
+  await withFakeDocument(async () => {
+    const { adapter, boardEl } = createMountedAdapter();
+    for (const sideToMove of ["P1", "P2"]) {
+      adapter.render({
+        snapshot: { sideToMove, continuation: null, pieces: [
+          { id: "A1", owner: "P2", kind: "unit", position: { row: 0, col: 9 }, supplied: true, commanded: true },
+        ] },
+        selection: { selectedPieceId: null, source: null, target: null },
+        overlay: { mode: "none" }, legalActions: [], selectedPieceMoves: [],
+        selectedPieceMovePreviews: [], removalEffects: [], allowFreeSelection: false,
+        currentActionType: "pass", interactionMode: "interactive",
+      });
+      assert.equal(getCell(boardEl, 0, 9).getAttribute("aria-label"), "Row 0, column 9, Player 1 supply point, Player 2 unit");
+      assert.equal(getCell(boardEl, 9, 0).getAttribute("aria-label"), "Row 9, column 0, Player 2 supply point, empty");
+      assert.equal(getCell(boardEl, 0, 0).getAttribute("aria-label"), "Row 0, column 0, empty");
+    }
+  });
+});

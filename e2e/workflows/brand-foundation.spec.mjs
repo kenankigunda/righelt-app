@@ -41,6 +41,8 @@ test("home logo changes together while primary actions stay affiliated; game sup
   const blueSupply = page.locator('[data-testid="game-shell"] .supply-point-p2');
   await expect(redSupply).toHaveAttribute("aria-label", "Player 1 supply point");
   await expect(blueSupply).toHaveAttribute("aria-label", "Player 2 supply point");
+  await expect(page.getByRole("button", { name: "Row 0, column 9, Player 1 supply point, empty", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Row 9, column 0, Player 2 supply point, empty", exact: true })).toBeVisible();
   const fill = (locator) => locator.evaluate((el) => getComputedStyle(el, "::before").backgroundColor);
   const before = [await fill(redSupply), await fill(blueSupply)];
   expect(before[0]).not.toBe(before[1]);
