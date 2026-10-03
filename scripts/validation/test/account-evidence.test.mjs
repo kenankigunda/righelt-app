@@ -8,6 +8,7 @@ test('account acceptance requires each exact workflow and viewport with both ima
  assert.throws(()=>verifyAccountEvidence([...rows.slice(0,5),rows[0]],{retained:true}),/Missing or duplicate/);
  const missing=structuredClone(rows);missing[0].images.pop();assert.throws(()=>verifyAccountEvidence(missing,{retained:true}),/checkpoint/);
  assert.throws(()=>verifyAccountEvidence(rows,{retained:true,capabilities:{stories:true}}),/unavailable-trained-story/);
+ assert.throws(()=>verifyAccountEvidence(rows,{retained:true,capabilities:{movePreview:true}}),/move-preview-before-confirm/);
  assert.throws(()=>verifyAccountEvidence(rows,{retained:true,legacy:true}),/legacy-history/);
 });
 
