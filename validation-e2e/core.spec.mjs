@@ -1,8 +1,17 @@
 import {test,expect} from '@playwright/test';
 import {readFile,writeFile} from 'node:fs/promises';
 import {proof} from '../scripts/validation/proof.mjs';
+import {historySnapshot,assertHistoryPreserved} from '../scripts/validation/history-continuity.mjs';
 import {createGameFromHome,openDirectGameLink,joinAsViewer,makeAnyLegalMove,getHistoryMoveCount,setOfflineState} from '../e2e/support/app.mjs';
 async function geometry(page){await expect(page.getByTestId('game-board')).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2)).toBe(true);}
+async function authoritativeGame(page){return page.evaluate(async()=>{
+ const id=decodeURIComponent(location.hash.match(/^#\/game\/([^?]+)/)[1]);
+ const identity=localStorage.getItem('righelt.identity.id.v1');
+ if(!identity)throw Error('Retained guest identity is missing');
+ const response=await fetch(`/api/shell/games/${encodeURIComponent(id)}?identityId=${encodeURIComponent(identity)}`,{cache:'no-store'});
+ if(!response.ok)throw Error(`Authoritative guest history: ${response.status}`);
+ return (await response.json()).game;
+});}
 
 test('create, move, viewer live update, reload and reconnect',async({page,context,browser,baseURL},info)=>{
  if(info.project.use.hasTouch)expect(await page.evaluate(()=>navigator.maxTouchPoints>0&&!matchMedia('(any-hover: hover)').matches)).toBe(true);
@@ -24,13 +33,13 @@ test('create, move, viewer live update, reload and reconnect',async({page,contex
   await proof(viewer,info,'reconnected',viewer.getByTestId('game-board'));
   // Persistent synthetic fixture: the next merge stage must still hydrate this identity/game.
   if(process.env.RIGHELT_CONTINUITY_FILE&&info.project.name==='mid-wide'){
-   await writeFile(process.env.RIGHELT_CONTINUITY_FILE,JSON.stringify({hash:gameHash,count:await getHistoryMoveCount(page),role:await page.getByTestId('game-role').textContent(),storage:await context.storageState()}));
+   await writeFile(process.env.RIGHELT_CONTINUITY_FILE,JSON.stringify({version:2,hash:gameHash,count:await getHistoryMoveCount(page),history:historySnapshot(await authoritativeGame(page)),role:await page.getByTestId('game-role').textContent(),storage:await context.storageState()}),{mode:0o600});
   }
  }finally{await viewerContext.close();}
 });
 
 test('previous-stage identity and game survive migrations',async({browser,baseURL},info)=>{
  const file=process.env.RIGHELT_CONTINUITY_INPUT;test.skip(!file,'Baseline has no preceding stage');
- const prior=JSON.parse(await readFile(file,'utf8'));const opts=info.project.use;const context=await browser.newContext({baseURL,storageState:prior.storage,viewport:opts.viewport,isMobile:opts.isMobile,hasTouch:opts.hasTouch});
- try{const page=await context.newPage();await page.goto(`/${prior.hash}`);await expect(page.getByTestId('game-role')).toHaveText(prior.role);await expect.poll(()=>getHistoryMoveCount(page)).toBeGreaterThanOrEqual(prior.count);await proof(page,info,'upgrade-retained',page.getByTestId('game-board'));}finally{await context.close();}
+ const prior=JSON.parse(await readFile(file,'utf8'));expect(prior.version).toBe(2);const opts=info.project.use;const context=await browser.newContext({baseURL,storageState:prior.storage,viewport:opts.viewport,isMobile:opts.isMobile,hasTouch:opts.hasTouch});
+ try{const page=await context.newPage();await page.goto(`/${prior.hash}`);await expect(page.getByTestId('game-role')).toHaveText(prior.role);await expect.poll(()=>getHistoryMoveCount(page)).toBe(prior.count);assertHistoryPreserved(await authoritativeGame(page),prior.history);await proof(page,info,'upgrade-retained',page.getByTestId('game-board'));}finally{await context.close();}
 });
