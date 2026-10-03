@@ -20,7 +20,7 @@ test('retained-state validation rejects candidate edits and a changed sequence h
   await writeFile(path.join(cwd,'file'),'original');let n=0;let e2eArtifact;
   const run={version:1,id:kind,mode:'integrated',base,stages:[],prs:[],risks:[],...(kind==='harness'?{harnessRevision:'old',harnessFingerprint:'old'}:{})};
   const result=await localRun({cwd,base,dir:path.join(root,kind),run,publishReport:false,lockPath:path.join(root,'lock'),execute:async(argv,{env})=>{if(argv[1]==='test:e2e')assert.equal(env.CI,'1','candidate E2E must disable legacy server reuse');if(argv[1]==='test:e2e'||argv[2]==='test'){await rm(env.PLAYWRIGHT_OUTPUT_DIR,{recursive:true,force:true});await mkdir(env.PLAYWRIGHT_OUTPUT_DIR,{recursive:true});if(argv[1]==='test:e2e'){e2eArtifact=path.join(env.PLAYWRIGHT_OUTPUT_DIR,'failure-trace.zip');await writeFile(e2eArtifact,'retained E2E failure');}}await saveJSON(env.RIGHELT_EVIDENCE_JSON,[{id:'proof',status:'passed',images:[]}]);if(kind==='candidate'&&n++===0)await writeFile(path.join(cwd,'file'),'unported change');return {code:0,duration:1};}});
-  assert.equal(await readFile(e2eArtifact,'utf8'),'retained E2E failure','responsive checks must not erase earlier failure artifacts');assert.equal(result.stage.status,'stale');if(kind==='candidate')assert.equal(result.stage.sourceClean,false);else assert.equal(run.harnessFingerprint,'old');
+  assert.equal(result.stage.checks.some(c=>c.name==='Auth E2E'),false,'legacy candidates have no auth lane');assert.equal(await readFile(e2eArtifact,'utf8'),'retained E2E failure','responsive checks must not erase earlier failure artifacts');assert.equal(result.stage.status,'stale');if(kind==='candidate')assert.equal(result.stage.sourceClean,false);else assert.equal(run.harnessFingerprint,'old');
  }
 });
 
@@ -32,4 +32,20 @@ test('evidence integrity rejects replaced earlier-stage images and missing thumb
  await writeFile(path.join(root,image.src),'later screenshot');await assert.rejects(verifyEvidenceImages(stages,root),/changed after capture/);
  await writeFile(path.join(root,image.src),'earlier screenshot');await rm(path.join(root,image.thumbnail));await assert.rejects(verifyEvidenceImages(stages,root),/ENOENT/);
  await assert.rejects(verifyEvidenceImages([{items:[{images:[{...image,src:'../private.log'}]}]}],root),/path is invalid/);
+});
+
+test('candidate auth capability runs its own E2E lane and preserves failures and artifacts',async()=>{
+ const {localRun}=await import('../local.mjs');const {saveJSON}=await import('../io.mjs');
+ const root=await mkdtemp(path.join(os.tmpdir(),'validation-auth-capability-'));const cwd=path.join(root,'repo');await mkdir(cwd);
+ await git(['init','-b','main'],cwd);await git(['config','user.email','test@example.invalid'],cwd);await git(['config','user.name','Validation test'],cwd);
+ await saveJSON(path.join(cwd,'package.json'),{scripts:{'test:e2e:auth':'playwright test --config playwright.auth.config.mjs'}});await git(['add','.'],cwd);await git(['commit','-m','auth-capable candidate'],cwd);const base=await git(['rev-parse','HEAD'],cwd);
+ const seen=[];let authArtifact;
+ const result=await localRun({cwd,base,full:true,dir:path.join(root,'run'),publishReport:false,lockPath:path.join(root,'lock'),execute:async(argv,{env})=>{
+  seen.push(argv);await saveJSON(env.RIGHELT_EVIDENCE_JSON,[{id:'proof',status:'passed',images:[]}]);
+  if(argv[1]==='test:e2e:auth'){assert.equal(env.CI,'1');assert.ok(env.PLAYWRIGHT_OUTPUT_DIR.endsWith('Auth-E2E'));await mkdir(env.PLAYWRIGHT_OUTPUT_DIR,{recursive:true});authArtifact=path.join(env.PLAYWRIGHT_OUTPUT_DIR,'failure.txt');await writeFile(authArtifact,'auth failure');return {code:1,duration:1};}
+  return {code:0,duration:1};
+ }});
+ assert.equal(seen.filter(argv=>argv[1]==='test:e2e:auth').length,1);
+ assert.equal(result.stage.checks.find(c=>c.name==='Auth E2E').status,'failed');assert.equal(result.stage.status,'failed');
+ assert.equal(await readFile(authArtifact,'utf8'),'auth failure');assert.ok(result.stage.checks.some(c=>c.name==='Report viewer'&&c.status==='passed'),'independent evidence still runs after auth failure');
 });
