@@ -172,10 +172,12 @@ test("Explain activation survives an account response arriving during its press"
   expect((await created).ok()).toBe(true);
   // Start the deliberate press race only after authoritative game hydration,
   // rather than while the optimistic creation view is still being replaced.
+  const gameUrl = page.url();
+  await page.goto("about:blank");
   const hydrated = page.waitForEvent("websocket").then(socket => socket.waitForEvent("framereceived", {
     predicate: event => JSON.parse(String(event.payload)).type === "state_sync",
   }));
-  await page.reload();
+  await page.goto(gameUrl);
   await hydrated;
   await expect(page.locator('.shell-route-transition-layer')).toHaveAttribute("data-active", "false");
   const explain = page.getByRole("button", { name: "Explain", exact: true });
