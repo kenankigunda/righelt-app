@@ -29,11 +29,10 @@ test("home logo changes together while primary actions stay affiliated; game sup
   await expect(page.getByRole("link", { name: "Righelt", exact: true })).toBeVisible();
   const play = page.getByTestId("home-create-game");
   await expect(play).toHaveCSS("background-color", "rgb(180, 47, 54)");
-  const redButton = await play.evaluate((el) => getComputedStyle(el).backgroundColor);
   await page.clock.install();
   await page.clock.fastForward(9500);
   await expect(logo).toHaveAttribute("data-player", "blue");
-  expect(await play.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(redButton);
+  await expect(play).toHaveCSS("background-color", "rgb(180, 47, 54)");
   await testInfo.attach("blue-wordmark", { body: await logo.screenshot({ path: testInfo.outputPath("wordmark.png") }), contentType: "image/png" });
   await page.clock.resume();
   await createGameFromHome(page);
@@ -41,11 +40,14 @@ test("home logo changes together while primary actions stay affiliated; game sup
   const blueSupply = page.locator('[data-testid="game-shell"] .supply-point-p2');
   await expect(redSupply).toHaveAttribute("aria-label", "Player 1 supply point");
   await expect(blueSupply).toHaveAttribute("aria-label", "Player 2 supply point");
-  const fill = (locator) => locator.evaluate((el) => getComputedStyle(el, "::before").backgroundColor);
-  const before = [await fill(redSupply), await fill(blueSupply)];
-  expect(before[0]).not.toBe(before[1]);
+  const supplyColors = () => page.evaluate(() => [".supply-point-p1", ".supply-point-p2"].map((selector) => {
+    const marker = document.querySelector(`[data-testid="game-shell"] ${selector}`);
+    return marker ? getComputedStyle(marker, "::before").backgroundColor : null;
+  }));
+  const expectedSupplyColors = ["rgb(180, 47, 54)", "rgb(36, 94, 155)"];
+  await expect.poll(supplyColors).toEqual(expectedSupplyColors);
   await makeAnyLegalMove(page, "p1");
-  expect([await fill(redSupply), await fill(blueSupply)]).toEqual(before);
+  await expect.poll(supplyColors).toEqual(expectedSupplyColors);
   await expect(logo).toHaveAttribute("data-player", "red");
   await expect(page.locator("#app")).toHaveAttribute("data-action-affiliation", "red");
 });
