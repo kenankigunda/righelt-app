@@ -47,12 +47,14 @@ async function party(browser,baseURL) {
  return {...game,pages,faults,contexts};
 }
 async function move(page,gameId) {
- const action=await page.evaluate(async gameId=>{
+ const current=await page.evaluate(async gameId=>{
   const identityId=localStorage.getItem("righelt.identity.id.v1");
   const body=await (await fetch(`/api/shell/games/${gameId}?identityId=${identityId}`)).json();
-  return body.game.legalActions.find(a=>a.from&&a.to);
+  return {action:body.game.legalActions.find(a=>a.from&&a.to),canRecordMove:body.game.canRecordMove,myRole:body.game.myRole,turn:body.game.currentTurn?.playerSeat};
  },gameId);
- await submitPlayableAction(page,action);
+ expect(current.canRecordMove, `Move fixture requires authority: role=${current.myRole}, turn=${current.turn}`).toBe(true);
+ expect(current.action, 'Move fixture requires a legal board action').toBeTruthy();
+ await submitPlayableAction(page,current.action);
 }
 async function digest(page) {
  return page.evaluate(()=>({
@@ -199,10 +201,19 @@ test('E06 real IndexedDB commits admission atomically across tabs and aborts suc
 test('E05 intentional history survives disconnection and home navigation',async({browser,baseURL},info)=>{
  test.skip(info.project.name!=='chromium');const p=await party(browser,baseURL);try{
   await move(p.pages[0],p.gameId);await converged(p.pages);
+  // Give Player 2 a real turn before taking that browser offline; the next
+  // live update must come from a player who is actually authorized to move.
+  await move(p.pages[1],p.gameId);await converged(p.pages);
+  const endTurn=p.pages[1].locator('[data-board-preview-action="end-turn"]');
+  if(await endTurn.isVisible()){await endTurn.click();await converged(p.pages);}
+  await expect(p.pages[0].getByTestId('active-turn-label')).toContainText('Player 1');
   const history=p.pages[1].getByTestId('history-move-item').first();const selected=await history.getAttribute('data-move-id');
   await history.click();await expect(p.pages[1].getByTestId('history-return-live')).toBeVisible();
   p.faults[1].receive=true;p.faults[1].http=true;
-  await move(p.pages[0],p.gameId);await p.pages[1].waitForTimeout(16000);
+  const beforeLiveMove=await p.pages[0].getByTestId('history-move-item').count();
+  await move(p.pages[0],p.gameId);
+  await expect(p.pages[0].getByTestId('history-move-item')).toHaveCount(beforeLiveMove+1);
+  await p.pages[1].waitForTimeout(16000);
   expect(await p.pages[1].getByTestId('history-move-item').first().getAttribute('data-move-id')).toBe(selected);
   p.faults[1].receive=false;p.faults[1].http=false;const start=Date.now();
   await expect(p.pages[1].getByTestId('sync-recovery-banner')).toHaveCount(0,{timeout:25000});
@@ -218,9 +229,11 @@ test('E07 new client rejects old protocol and one refresh preserves saved game',
  const {gameId}=await createGameFromHome(page);await makeAnyLegalMove(page);const before=await digest(page);
  const fault=await wire(page);fault.legacy=true;let navigation=0;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigation++;});
  await page.reload();
- await expect.poll(()=>page.evaluate(()=>sessionStorage.getItem('righelt.sync-v2-refresh')),{timeout:15000}).toBe('1');
+ // The expected automatic reload destroys the first document's context.
+ // Observe its navigation before evaluating storage in the settled document.
+ await expect.poll(()=>navigation,{timeout:15000}).toBe(2);
  await page.waitForLoadState('domcontentloaded');
- await expect.poll(()=>navigation).toBe(2);
+ expect(await page.evaluate(()=>sessionStorage.getItem('righelt.sync-v2-refresh'))).toBe('1');
  expect(fault.commands).toHaveLength(0);
  expect(navigation).toBeLessThanOrEqual(2);
  const start=Date.now();fault.legacy=false;await page.reload();
