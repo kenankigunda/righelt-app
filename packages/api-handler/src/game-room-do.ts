@@ -1,3 +1,8 @@
+import { deterministicStateHash } from "../../game-engine/src/hash";
+import { resolveToStability } from "../../game-engine/src/resolve";
+import { readSyncBody, SyncBodyError } from "./sync-body";
+import { commandFingerprint, isReconcileRequest, isSyncCommand, type SyncCommand, type CommandOutcome, type CommandReceipt } from "../../shared-types/src/sync-protocol";
+import { commandReceiptStatement, loadCommandReceipt, hasLegacyCommandEvidence } from "./sync-receipts";
 import type {
   ClientSocketMessage,
   EventAppendedEvent,
@@ -47,8 +52,7 @@ import {
   type LiveGame,
   withViewModel,
 } from "./shell-live-core";
-import { loadEventsAfter, loadGameProjection, persistGameState, type LiveGameEnv } from "./shell-live-db";
-import type { CommandMetadata } from "./shell-command-metadata";
+import { loadGameProjection, persistGameState, type LiveGameEnv } from "./shell-live-db";
 
 const HEARTBEAT_TIMEOUT_MS = 95_000;
 
@@ -111,9 +115,6 @@ const parseBody = async (request: Request): Promise<Record<string, unknown>> => 
   }
 };
 
-const parseCommandMetadata = (body: Record<string, unknown>): CommandMetadata => ({
-  clientCommandId: typeof body.clientCommandId === "string" && body.clientCommandId ? body.clientCommandId : null,
-});
 
 const parseLaunchParticipantCopyMode = (value: unknown): LaunchParticipantCopyMode | null =>
   value === "copy_source_participants" || value === "viewer_as_side_to_move" ? value : null;
@@ -169,6 +170,8 @@ export class GameRoomDO {
   private game: LiveGame | null = null;
   private requestedGameId: string | null = null;
   private eventSeq = 0;
+  private mutationTail: Promise<unknown> = Promise.resolve();
+  private needsDurableReload = false;
   private readonly sessions = new Map<WebSocket, SessionRecord>();
 
   private logDiagnostic(level: "info" | "warn" | "error", event: string, payload: Record<string, unknown>, verboseOnly = false) {
@@ -192,13 +195,34 @@ export class GameRoomDO {
     this.env = env;
     this.restoreSessionsFromState();
     this.configureWebSocketAutoResponse();
-    void this.state.blockConcurrencyWhile?.(async () => {
+    const initialize = () => this.enqueue(async () => {
       await this.reconcileAllPresenceFromSessions();
       await this.syncSessionAlarm();
     });
+    if (this.state.blockConcurrencyWhile) void this.state.blockConcurrencyWhile(initialize);
+    else void initialize();
+  }
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationTail.then(async () => {
+      if (this.needsDurableReload) {
+        this.game = null;
+        this.eventSeq = 0;
+        await this.ensureLoaded();
+        this.needsDurableReload = false;
+      }
+      return operation();
+    });
+    this.mutationTail = result.catch(() => undefined);
+    return result;
   }
 
   async fetch(request: Request): Promise<Response> {
+    try { return await this.enqueue(() => this.fetchQueued(request)); }
+    catch (error) { if (error instanceof SyncBodyError) return json({ ok: false, error: error.message }, error.status); throw error; }
+  }
+
+  private async fetchQueued(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
     const headerGameId = asIdentity(request.headers.get("x-game-id"));
@@ -210,6 +234,10 @@ export class GameRoomDO {
       return this.handleWebSocket(url);
     }
 
+    if (request.method === "POST" && (path === "/create" || path === "/create-from-scenario")) {
+      if (await this.ensureLoaded()) return json({ ok: false, error: "game_already_exists" }, 409);
+    }
+
     if (request.method === "POST" && path === "/create") {
       const body = await parseBody(request);
       const identityId = asIdentity(body.identityId);
@@ -217,14 +245,13 @@ export class GameRoomDO {
       if (!identityId || !gameId) {
         return json({ ok: false, error: "invalid_identity" }, 400);
       }
-      this.game = createInitialGame({
+      const candidate = createInitialGame({
         gameId,
         identityId,
         selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
       });
-      this.eventSeq = 1;
-      await persistGameState(this.env, this.game, this.eventSeq, null);
-      return json({ ok: true, game: withViewModel(this.game, identityId), eventSeq: this.eventSeq });
+      await this.persistCandidate(candidate, null);
+      return json({ ok: true, game: withViewModel(candidate, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/create-from-scenario") {
@@ -237,7 +264,7 @@ export class GameRoomDO {
       if (!identityId || !gameId || !scenario || (hasInitialSelectionAction && !initialSelectionAction)) {
         return json({ ok: false, error: "invalid_scenario_payload" }, 400);
       }
-      this.game = createInitialGame({
+      const candidate = createInitialGame({
         gameId,
         identityId,
         selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
@@ -248,38 +275,36 @@ export class GameRoomDO {
         : null;
       if (sourceGame) {
         if (participantCopyMode === "copy_source_participants") {
-          applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
+          applyLaunchParticipantCopyMode(sourceGame, candidate, identityId, participantCopyMode);
         } else {
-          this.game.player1 = null;
-          this.game.player2 = null;
-          this.game.viewers = [];
-          this.game.pendingJoinRequests = [];
+          candidate.player1 = null;
+          candidate.player2 = null;
+          candidate.viewers = [];
+          candidate.pendingJoinRequests = [];
         }
-        this.game.selfPlayMode = body.selfPlayMode === true || body.playgroundMode === true;
+        candidate.selfPlayMode = body.selfPlayMode === true || body.playgroundMode === true;
       }
-      applyScenarioToGame(this.game, scenario);
+      applyScenarioToGame(candidate, scenario);
       if (
         shouldReconcileImportedScenarioResultingState(
           body.preserveResultingState,
-          Number(this.game.board.state?.turnIndex ?? 0),
+          Number(candidate.board.state?.turnIndex ?? 0),
           Number(scenario.resultingState?.turnIndex ?? 0),
         )
       ) {
-        reconcileGameToScenarioResultingState(this.game, scenario);
+        reconcileGameToScenarioResultingState(candidate, scenario);
       }
       if (sourceGame && participantCopyMode && participantCopyMode !== "copy_source_participants") {
-        applyLaunchParticipantCopyMode(sourceGame, this.game, identityId, participantCopyMode);
+        applyLaunchParticipantCopyMode(sourceGame, candidate, identityId, participantCopyMode);
       } else if (participantCopyMode !== "copy_source_participants") {
-        assignIdentityToScenarioSeat(this.game, identityId, getSeatForSide(this.game.board.state.sideToMove));
+        assignIdentityToScenarioSeat(candidate, identityId, getSeatForSide(candidate.board.state.sideToMove));
       }
-      this.game.initialSelectionAction = initialSelectionAction ? clone(initialSelectionAction) : null;
-      this.eventSeq = 1;
-      await persistGameState(this.env, this.game, this.eventSeq, null);
-      return json({ ok: true, game: withViewModel(this.game, identityId), eventSeq: this.eventSeq });
+      candidate.initialSelectionAction = initialSelectionAction ? clone(initialSelectionAction) : null;
+      await this.persistCandidate(candidate, null);
+      return json({ ok: true, game: withViewModel(candidate, identityId), eventSeq: this.eventSeq });
     }
 
-    const body = await parseBody(request);
-    const commandMetadata = parseCommandMetadata(body);
+    const body = ["/moves", "/apply", "/end-turn", "/reconcile"].includes(path) ? await readSyncBody(request) : await parseBody(request);
     const identityId = asIdentity(body.identityId);
     if (!identityId) {
       return json({ ok: false, error: "invalid_identity" }, 400);
@@ -290,6 +315,12 @@ export class GameRoomDO {
       return json({ ok: false, error: "game_not_found" }, 404);
     }
     const game = loaded;
+    if (["/moves", "/apply", "/end-turn", "/reconcile"].includes(path)) {
+      return this.handleSyncCommand(path, body, game);
+    }
+    if (!["/history", "/live", "/presence", "/legal", "/piece-actions", "/piece-moves"].includes(path) && body.protocolVersion !== 2) {
+      return json({ ok: false, error: "upgrade_required", protocolVersion: 2 }, 426);
+    }
 
     if (request.method === "POST" && path === "/presence") {
       const sessionId = asIdentity(body.sessionId);
@@ -575,213 +606,19 @@ export class GameRoomDO {
       return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
-    if (request.method === "POST" && path === "/moves") {
-      const role = findRoleForIdentity(game, identityId);
-      if (role !== "Player 1" && role !== "Player 2") {
-        return json({ ok: false, error: "role_not_allowed" }, 403);
-      }
-      if (commandMetadata.clientCommandId) {
-        const existingMove = game.moves.find(
-          (entry) => entry.undone !== true && entry.clientCommandId === commandMetadata.clientCommandId,
-        );
-        if (existingMove) {
-          return json({
-            ok: true,
-            move: existingMove,
-            clientCommandId: commandMetadata.clientCommandId,
-            game: withViewModel(game, identityId),
-            eventSeq: this.eventSeq,
-            duplicate: true,
-          });
-        }
-      }
-      const sideToMoveSeat = getSideToMoveSeat(game);
-      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
-      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
-        return json({ ok: false, error: "not_your_turn" }, 409);
-      }
-      const notation = typeof body.notation === "string" ? body.notation : undefined;
-      const moved = applyServerMove(game, notation, commandMetadata.clientCommandId);
-      if (!moved.ok) {
-        return json({ ok: false, error: moved.error }, 409);
-      }
-      if (moved.duplicate) {
-        return json({
-          ok: true,
-          move: moved.move,
-          clientCommandId: commandMetadata.clientCommandId,
-          game: withViewModel(game, identityId),
-          eventSeq: this.eventSeq,
-          duplicate: true,
-        });
-      }
-      await this.commit({
-        type: "event_appended",
-        reason: "move_recorded",
-        clientCommandId: commandMetadata.clientCommandId,
-        game,
-      });
-      return json({
-        ok: true,
-        move: moved.move,
-        clientCommandId: commandMetadata.clientCommandId,
-        game: withViewModel(game, identityId),
-        eventSeq: this.eventSeq,
-      });
-    }
-
-    if (request.method === "POST" && path === "/apply") {
-      const role = findRoleForIdentity(game, identityId);
-      if (role !== "Player 1" && role !== "Player 2") {
-        return json({ ok: false, error: "role_not_allowed" }, 403);
-      }
-      if (commandMetadata.clientCommandId) {
-        const existingMove = game.moves.find(
-          (entry) => entry.undone !== true && entry.clientCommandId === commandMetadata.clientCommandId,
-        );
-        if (existingMove) {
-          return json({
-            ok: true,
-            accepted: true,
-            move: existingMove,
-            clientCommandId: commandMetadata.clientCommandId,
-            state: existingMove.snapshot,
-            removedPieces: [],
-            destroyedPieces: existingMove.destroyedPieces ?? [],
-            game: withViewModel(game, identityId),
-            eventSeq: this.eventSeq,
-            duplicate: true,
-          });
-        }
-      }
-      const sideToMoveSeat = getSideToMoveSeat(game);
-      const sideToMoveIdentity = getSeatIdentity(game, sideToMoveSeat);
-      if (!sideToMoveIdentity || sideToMoveIdentity !== identityId) {
-        return json({ ok: false, error: "not_your_turn" }, 409);
-      }
-      const bodyState = asGameState(body.state);
-      const action = asAction(body.action);
-      if (!bodyState) {
-        return json({ ok: false, error: "invalid_state" }, 400);
-      }
-      if (!action) {
-        return json({ ok: false, error: "invalid_action" }, 400);
-      }
-      const notation = typeof body.notation === "string" ? body.notation : undefined;
-      const moved = applyServerActionWithExpectedState(game, action, bodyState, notation, commandMetadata.clientCommandId);
-      if (!moved.ok) {
-        if (moved.validation && moved.state) {
-          return json({
-            ok: true,
-            accepted: false,
-            clientCommandId: commandMetadata.clientCommandId,
-            validation: moved.validation,
-            state: moved.state,
-            legalActions: listLegalActions(moved.state),
-            game: withViewModel(game, identityId),
-            eventSeq: this.eventSeq,
-          });
-        }
-        return json({ ok: false, error: moved.error }, 409);
-      }
-      if (moved.duplicate) {
-        return json({
-          ok: true,
-          accepted: true,
-          move: moved.move,
-          clientCommandId: commandMetadata.clientCommandId,
-          state: moved.state,
-          removedPieces: moved.removedPieces,
-          destroyedPieces: moved.destroyedPieces ?? [],
-          game: withViewModel(game, identityId),
-          eventSeq: this.eventSeq,
-          duplicate: true,
-        });
-      }
-      await this.commit({
-        type: "event_appended",
-        reason: "move_recorded",
-        clientCommandId: commandMetadata.clientCommandId,
-        game,
-      });
-      return json({
-        ok: true,
-        accepted: true,
-        move: moved.move,
-        clientCommandId: commandMetadata.clientCommandId,
-        state: moved.state,
-        removedPieces: moved.removedPieces,
-        destroyedPieces: moved.destroyedPieces ?? [],
-        game: withViewModel(game, identityId),
-        eventSeq: this.eventSeq,
-      });
-    }
-
-    if (request.method === "POST" && path === "/end-turn") {
-      const role = findRoleForIdentity(game, identityId);
-      if (role !== "Player 1" && role !== "Player 2") {
-        return json({ ok: false, error: "role_not_allowed" }, 403);
-      }
-      const activeTurn = getActiveTurn(game);
-      if (!activeTurn) {
-        return json({ ok: false, error: "turn_not_initialized" }, 409);
-      }
-      if (commandMetadata.clientCommandId) {
-        const duplicateEvents = await loadEventsAfter(this.env, game.id, 0);
-        const duplicateTurnEnd = duplicateEvents.find(
-          (event) =>
-            event.type === "event_appended" &&
-            event.reason === "turn_ended" &&
-            event.clientCommandId === commandMetadata.clientCommandId,
-        );
-        if (duplicateTurnEnd) {
-          const completedTurn = game.turns.length > 1 ? clone(game.turns[game.turns.length - 2]) : null;
-          return json({
-            ok: true,
-            turn: completedTurn,
-            clientCommandId: commandMetadata.clientCommandId,
-            game: withViewModel(game, identityId),
-            eventSeq: this.eventSeq,
-            duplicate: true,
-          });
-        }
-      }
-      const turnOwnerIdentity = getSeatIdentity(game, activeTurn.playerSeat);
-      if (!turnOwnerIdentity || turnOwnerIdentity !== identityId) {
-        return json({ ok: false, error: "not_your_turn" }, 409);
-      }
-      const ended = endServerTurn(game);
-      if (!ended.ok) {
-        return json({ ok: false, error: ended.error }, 409);
-      }
-      await this.commit({
-        type: "event_appended",
-        reason: "turn_ended",
-        clientCommandId: commandMetadata.clientCommandId,
-        game,
-      });
-      return json({
-        ok: true,
-        turn: ended.turn,
-        clientCommandId: commandMetadata.clientCommandId,
-        game: withViewModel(game, identityId),
-        eventSeq: this.eventSeq,
-      });
-    }
-
     if (request.method === "POST" && path === "/history") {
       const moveIndex = typeof body.moveIndex === "number" ? body.moveIndex : -1;
       if (moveIndex < 0 || moveIndex >= game.moves.length) {
         return json({ ok: false, error: "invalid_move_index" }, 400);
       }
       game.historyIndexByIdentity[identityId] = moveIndex;
-      await persistGameState(this.env, game, this.eventSeq, null);
+      await this.persistCandidate(game, null);
       return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/live") {
       delete game.historyIndexByIdentity[identityId];
-      await persistGameState(this.env, game, this.eventSeq, null);
+      await this.persistCandidate(game, null);
       return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
@@ -902,45 +739,25 @@ export class GameRoomDO {
     };
     this.sessions.set(server, session);
     this.persistSessionAttachment(server, session);
-    await this.setPresenceFromSessions(identityId);
+    await this.setPresenceFromSessions(identityId, server);
     await this.syncSessionAlarm();
 
-    const replayEvents = lastEventSeq > 0 ? await loadEventsAfter(this.env, game.id, lastEventSeq) : [];
-    if (
-      replayEvents.length > 0 &&
-      "eventSeq" in replayEvents[0] &&
-      (replayEvents[0] as { eventSeq: number }).eventSeq === lastEventSeq + 1 &&
-      (replayEvents[replayEvents.length - 1] as { eventSeq: number }).eventSeq === this.eventSeq
-    ) {
-      this.logDiagnostic(
-        "info",
-        "live_server_ws_replay_sent",
-        { identityId, lastEventSeq, replayCount: replayEvents.length },
-        true,
-      );
-      for (const event of replayEvents) {
-        this.send(server, eventForSession(event, identityId));
-      }
-    } else {
-      const syncEvent: StateSyncEvent = {
-        type: "state_sync",
-        eventSeq: this.eventSeq,
-        reason: replayEvents.length > 0 ? "replay_unavailable" : "connected",
-        game: clone(game),
-      };
+    // Recover from one current projection, never accumulated full-state events.
+    if (lastEventSeq !== this.eventSeq) {
+      const syncEvent: StateSyncEvent = { type: "state_sync", eventSeq: this.eventSeq, reason: "connected", game: clone(this.game ?? game) };
       this.send(server, eventForSession(syncEvent, identityId));
-      this.logDiagnostic(
-        "info",
-        "live_server_ws_state_sync_sent",
-        { identityId, lastEventSeq, reason: syncEvent.reason, replayCount: replayEvents.length },
-        true,
-      );
+    } else {
+      this.send(server, { type: "heartbeat_ack", protocolVersion: 2, gameId: game.id, eventSeq: this.eventSeq });
     }
 
     return new Response(null, { status: 101, webSocket: client } as any);
   }
 
   async webSocketMessage(socket: WebSocket, message: ArrayBuffer | string) {
+    return this.enqueue(() => this.webSocketMessageQueued(socket, message));
+  }
+
+  private async webSocketMessageQueued(socket: WebSocket, message: ArrayBuffer | string) {
     const text = typeof message === "string" ? message : "";
     let payload: ClientSocketMessage | null = null;
     try {
@@ -948,7 +765,7 @@ export class GameRoomDO {
     } catch {
       payload = null;
     }
-    if (!payload) {
+    if (!payload || !["heartbeat", "inactive", "disconnecting"].includes(payload.type) || !Number.isSafeInteger(payload.lastEventSeq) || payload.lastEventSeq < 0) {
       return;
     }
     const current = this.sessions.get(socket);
@@ -965,9 +782,14 @@ export class GameRoomDO {
     this.persistSessionAttachment(socket as HibernationWebSocket, current);
     await this.setPresenceFromSessions(payload.identityId);
     await this.syncSessionAlarm();
+    if (payload.type === "heartbeat") this.send(socket, { type: "heartbeat_ack", protocolVersion: 2, gameId: current.gameId, eventSeq: this.eventSeq });
   }
 
   async webSocketClose(socket: WebSocket) {
+    return this.enqueue(() => this.webSocketCloseQueued(socket));
+  }
+
+  private async webSocketCloseQueued(socket: WebSocket) {
     const current = this.sessions.get(socket);
     if (!current) {
       return;
@@ -1002,6 +824,10 @@ export class GameRoomDO {
   }
 
   async alarm() {
+    return this.enqueue(() => this.alarmQueued());
+  }
+
+  private async alarmQueued() {
     const cutoff = Date.now() - HEARTBEAT_TIMEOUT_MS;
     const expiredIdentityIds = new Set<string>();
     for (const [socket, session] of [...this.sessions.entries()]) {
@@ -1024,7 +850,7 @@ export class GameRoomDO {
 
   private async ensureLoaded() {
     if (this.game) {
-      return this.game;
+      return clone(this.game);
     }
     const gameId = this.getLoadedGameId();
     if (!gameId) {
@@ -1036,7 +862,7 @@ export class GameRoomDO {
     }
     this.game = projection.game;
     this.eventSeq = projection.eventSeq;
-    return this.game;
+    return clone(this.game);
   }
 
   private getLoadedGameId() {
@@ -1044,6 +870,10 @@ export class GameRoomDO {
   }
 
   async setGameId(gameId: string) {
+    return this.enqueue(() => this.setGameIdQueued(gameId));
+  }
+
+  private async setGameIdQueued(gameId: string) {
     this.requestedGameId = gameId;
     if (!this.game) {
       const projection = await loadGameProjection(this.env, gameId);
@@ -1064,7 +894,7 @@ export class GameRoomDO {
     return count;
   }
 
-  private async setPresenceFromSessions(identityId: string) {
+  private async setPresenceFromSessions(identityId: string, excludedSocket?: WebSocket) {
     const game = await this.ensureLoaded();
     if (!game) {
       return;
@@ -1098,9 +928,8 @@ export class GameRoomDO {
       connected,
       game: clone(game),
     };
-    this.eventSeq += 1;
-    await persistGameState(this.env, game, this.eventSeq, presenceEvent);
-    this.broadcast(presenceEvent);
+    await this.persistCandidate(game, presenceEvent);
+    this.broadcast(presenceEvent, excludedSocket);
   }
 
   private async commit(
@@ -1135,27 +964,135 @@ export class GameRoomDO {
               game: clone(input.game),
             } satisfies JoinRequestResolvedEvent);
 
-    this.eventSeq += 1;
-    await persistGameState(this.env, input.game, this.eventSeq, event);
+    await this.persistCandidate(input.game, event);
     this.logDiagnostic("info", "live_server_commit_event", { type: event.type }, true);
     this.broadcast(event);
   }
 
-  private broadcast(event: ServerEvent) {
+  private async handleSyncCommand(path: string, body: Record<string, unknown>, game: LiveGame) {
+    if (body.protocolVersion !== 2) return json({ ok: false, error: "upgrade_required", protocolVersion: 2 }, 426);
+    const reconcile = path === "/reconcile";
+    if (reconcile ? !isReconcileRequest(body, game.id) : !isSyncCommand(body)) return json({ ok: false, error: "invalid_sync_request" }, 400);
+    const commands = (reconcile ? body.commands : [body]) as SyncCommand[];
+    for (const command of commands) {
+      if (command.gameId !== game.id || command.identityId !== body.identityId || await commandFingerprint(command) !== command.fingerprint) return json({ ok: false, error: "invalid_command_fingerprint" }, 400);
+      const routeKind = path === "/moves" ? "move" : path === "/apply" ? "action" : "end_turn";
+      if (!reconcile && command.kind !== routeKind) return json({ ok: false, error: "invalid_command_kind" }, 400);
+    }
+    const existing = !reconcile ? await loadCommandReceipt(this.env, game.id, commands[0].clientCommandId) : null;
+    const outcomes = new Map<string, CommandOutcome>();
+    const batch = new Map(commands.map((command) => [command.clientCommandId, command]));
+    const resolve = async (command: SyncCommand): Promise<CommandOutcome> => {
+      const resolved = outcomes.get(command.clientCommandId);
+      if (resolved) return resolved;
+      if (command.predecessor && batch.has(command.predecessor.clientCommandId)) await resolve(batch.get(command.predecessor.clientCommandId)!);
+      const outcome = await this.resolveCommand(command, !reconcile);
+      outcomes.set(command.clientCommandId, outcome);
+      return outcome;
+    };
+    for (const command of commands) await resolve(command);
+    const current = this.game!;
+    const commandOutcomes = commands.map((command) => outcomes.get(command.clientCommandId)!);
+    const result = commandOutcomes[0];
+    const stored = !reconcile ? await loadCommandReceipt(this.env, game.id, commands[0].clientCommandId) : null;
+    const move = !reconcile ? current.moves.find((move) => move.clientCommandId === commands[0].clientCommandId) : undefined;
+    return json({ ok: true, protocolVersion: 2, gameId: game.id, eventSeq: this.eventSeq, gameplayRevision: current.gameplayRevision, commandOutcomes,
+      ...(!reconcile || body.knownSnapshotEventSeq !== this.eventSeq ? { game: withViewModel(current, String(body.identityId)) } : {}),
+      ...(!reconcile ? { accepted: result.outcome === "accepted", clientCommandId: commands[0].clientCommandId, move, state: current.board.state, destroyedPieces: move?.destroyedPieces ?? [], removedPieces: [], ...(stored?.result ?? {}), duplicate: Boolean(existing && result.outcome === "accepted"), ...(result.outcome === "rejected" ? { validation: { ok: false, code: result.reason } } : {}) } : {}),
+    });
+  }
+
+  private async resolveCommand(command: SyncCommand, execute: boolean): Promise<CommandOutcome> {
+    const game = clone(this.game!);
+    const outcome = (status: CommandOutcome["outcome"], reason: string | null, eventSeq = this.eventSeq, gameplayRevision = game.gameplayRevision): CommandOutcome => ({
+      gameId: game.id, identityId: command.identityId, clientCommandId: command.clientCommandId, fingerprint: command.fingerprint, outcome: status, reason, eventSeq, gameplayRevision,
+    });
+    const receipt = await loadCommandReceipt(this.env, game.id, command.clientCommandId);
+    if (receipt) return receipt.identityId === command.identityId && receipt.fingerprint === command.fingerprint ? receipt : outcome("rejected", "command_id_conflict");
+    if (await hasLegacyCommandEvidence(this.env, game.id, command.clientCommandId)) return outcome("unknown", "legacy_evidence");
+    const reject = async (reason: string) => {
+      const rejected = outcome("rejected", reason, this.eventSeq + 1) as CommandReceipt;
+      await this.persistCandidate(clone(this.game!), null, rejected);
+      return rejected;
+    };
+    if (command.predecessor) {
+      const parent = await loadCommandReceipt(this.env, game.id, command.predecessor.clientCommandId);
+      if (!parent) return outcome("unknown", "dependency_pending");
+      if (parent.identityId !== command.identityId || parent.fingerprint !== command.predecessor.fingerprint) return reject("invalid_dependency");
+      if (parent.outcome === "rejected") return reject("predecessor_rejected");
+    } else if (command.expectedGameplayRevision > game.gameplayRevision) return reject("invalid_dependency");
+    const expectedState = asGameState(command.expectedState);
+    const sameBoard = expectedState && deterministicStateHash(resolveToStability(expectedState, { artifactMode: "full" })) === deterministicStateHash(resolveToStability(game.board.state, { artifactMode: "full" }));
+    if (command.expectedGameplayRevision !== game.gameplayRevision || !sameBoard || (command.kind === "end_turn" && command.expectedTurnIndex !== game.board.state.turnIndex)) return reject("stale_state");
+    if (!execute) return outcome("unknown", "not_recorded");
+    const role = findRoleForIdentity(game, command.identityId);
+    if (role !== "Player 1" && role !== "Player 2") return reject("role_not_allowed");
+    const ownerSeat = command.kind === "end_turn" ? getActiveTurn(game)?.playerSeat : getSideToMoveSeat(game);
+    if (!ownerSeat || getSeatIdentity(game, ownerSeat) !== command.identityId) return reject("not_your_turn");
+    const payload = command.payload;
+    let result;
+    if (command.kind === "end_turn") result = endServerTurn(game);
+    else if (command.kind === "move") result = applyServerMove(game, typeof payload.notation === "string" ? payload.notation : undefined, command.clientCommandId);
+    else {
+      const action = asAction(payload.action);
+      if (!action) return reject("invalid_action");
+      result = applyServerActionWithExpectedState(game, action, asGameState(command.expectedState), typeof payload.notation === "string" ? payload.notation : undefined, command.clientCommandId);
+    }
+    if (!result.ok) return reject(result.error);
+    const accepted = { ...outcome("accepted", null, this.eventSeq + 1, game.gameplayRevision + 1), result: {
+      ...("turn" in result ? { turn: result.turn } : {}),
+      ...("removedPieces" in result ? { removedPieces: result.removedPieces } : {}),
+      ...("destroyedPieces" in result ? { destroyedPieces: result.destroyedPieces } : {}),
+    } } as CommandReceipt;
+    const event: EventAppendedEvent = { type: "event_appended", reason: command.kind === "end_turn" ? "turn_ended" : "move_recorded", eventSeq: this.eventSeq + 1, clientCommandId: command.clientCommandId, game: clone(game) };
+    await this.persistCandidate(game, event, accepted);
+    this.broadcast(event);
+    return accepted;
+  }
+
+  private async persistCandidate(game: LiveGame, event: (ServerEvent & { eventSeq: number }) | null, receipt?: CommandReceipt) {
+    const base = this.eventSeq;
+    const gameplay = (value: LiveGame | null) => value ? JSON.stringify([value.board, value.moves, value.turns]) : null;
+    game.gameplayRevision = (this.game?.gameplayRevision ?? 0) + (this.game && gameplay(this.game) !== gameplay(game) ? 1 : 0);
+    event ??= { type: "state_sync", eventSeq: base + 1, reason: "projection_updated", game: clone(game) };
+    if ("game" in event) event.game = clone(game);
+    if (receipt) {
+      if (receipt.eventSeq !== base + 1 || receipt.gameplayRevision !== game.gameplayRevision) throw new Error("receipt_revision_mismatch");
+      Object.assign(event, { commandOutcome: receipt });
+    }
+    try {
+      await persistGameState(this.env, game, base + 1, event, { baseEventSeq: base, statements: receipt ? [commandReceiptStatement(this.env, receipt)] : [] });
+    } catch (error) {
+      // A rejected batch response may follow a durable commit. Force a durable read
+      // before any next mutation; never retain or acknowledge the speculative candidate.
+      this.needsDurableReload = true;
+      this.game = null;
+      this.eventSeq = 0;
+      try { await this.ensureLoaded(); this.needsDurableReload = false; } catch { /* Retry durable read before the next mutation. */ }
+      throw error;
+    }
+    this.game = clone(game);
+    this.eventSeq = base + 1;
+  }
+
+  private broadcast(event: ServerEvent, excludedSocket?: WebSocket) {
     for (const session of this.sessions.values()) {
+      if (session.socket === excludedSocket) continue;
       this.send(session.socket, eventForSession(event, session.identityId));
     }
   }
 
   private send(socket: WebSocket, payload: ServerEvent) {
     try {
-      socket.send(JSON.stringify(payload));
+      socket.send(JSON.stringify({ ...payload, protocolVersion: 2, gameId: this.getLoadedGameId() }));
     } catch {
       const session = this.sessions.get(socket);
       this.sessions.delete(socket);
       if (session) {
-        void this.setPresenceFromSessions(session.identityId);
-        void this.syncSessionAlarm();
+        void this.enqueue(async () => {
+          await this.setPresenceFromSessions(session.identityId);
+          await this.syncSessionAlarm();
+        }).catch((error) => this.logDiagnostic("error", "live_server_presence_cleanup_failed", { error: String(error) }));
       }
       this.logDiagnostic("warn", "live_server_socket_send_failed", { payloadType: payload.type });
     }

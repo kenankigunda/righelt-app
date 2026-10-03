@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { commandFingerprint } from "../../../packages/shared-types/src/sync-protocol.ts";
 
 import apiWorker, { GameRoomDO } from "../index.js";
 import { onRequest as proxyRequest } from "../../web/functions/api/[[path]].js";
@@ -169,11 +170,20 @@ test("split-stack integration forwards history and return-to-live shell routes t
   });
   const createBody = await create.json();
 
+  const legacy = await proxyRequest({
+    request: new Request(`https://righelt.pages.dev/api/shell/games/${createBody.game.id}/moves`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ identityId: "id-history", notation: "M1" }),
+    }), env: apiServiceEnv,
+  });
+  assert.equal(legacy.status, 426, "unsafe legacy writes require the approved client refresh");
+  const command = { protocolVersion: 2, gameId: createBody.game.id, identityId: "id-history", clientCommandId: "v2:proxy-history", kind: "move", payload: { notation: "M1" }, expectedState: createBody.game.board.state, expectedGameplayRevision: createBody.game.gameplayRevision };
+  command.fingerprint = await commandFingerprint(command);
+
   const move = await proxyRequest({
     request: new Request(`https://righelt.pages.dev/api/shell/games/${createBody.game.id}/moves`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId: "id-history", notation: "M1" }),
+      body: JSON.stringify(command),
     }),
     env: apiServiceEnv,
   });

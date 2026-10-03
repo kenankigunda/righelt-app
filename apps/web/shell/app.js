@@ -1,3 +1,4 @@
+import { recoveryMessage, sharedMutationActions } from "./recovery-view.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter } from "../board-adapters/engine-board-adapter.js";
 import { syncMiniBoardPreviews } from "../board/mini-board-preview.js";
@@ -39,6 +40,36 @@ import {
 import { createTutorialController } from "./tutorial.js";
 
 const appEl = document.getElementById("app");
+const dismissedRecoveryNotices = new Map();
+// This node survives header/panel rendering, including repeated heartbeat snapshots.
+const syncAnnouncement = document.createElement("div");
+syncAnnouncement.id = "shell-sync-announcement";
+syncAnnouncement.className = "sr-only";
+syncAnnouncement.setAttribute("role", "status");
+syncAnnouncement.setAttribute("aria-live", "polite");
+syncAnnouncement.setAttribute("aria-atomic", "true");
+document.body.appendChild(syncAnnouncement);
+const updateRecoveryAnnouncement = (game) => {
+  const failures = game ? [...new Set((transport.getFailedOperations?.(game.id) ?? []).map((operation) => operation.error?.message).filter(Boolean))] : [];
+  const text = game ? [recoveryMessage(game), game.historyNotice, ...failures].filter(Boolean).join(" ") : "";
+  if (syncAnnouncement.textContent !== text) syncAnnouncement.textContent = text;
+};
+const applySharedMutationGates = (game) => {
+  if (!game) return;
+  document.querySelectorAll("[data-action]").forEach((element) => {
+    if (!sharedMutationActions.has(element.getAttribute("data-action"))) return;
+    if (element.getAttribute("data-game-id") && element.getAttribute("data-game-id") !== game.id) return;
+    if (game.sharedMutationsBlocked) {
+      if (!element.hasAttribute("data-sync-disabled")) element.setAttribute("data-sync-disabled", String(element.hasAttribute("disabled")));
+      element.setAttribute("aria-disabled", "true");
+      if (element instanceof HTMLButtonElement) element.disabled = true;
+    } else if (element.hasAttribute("data-sync-disabled")) {
+      if (element instanceof HTMLButtonElement && element.getAttribute("data-sync-disabled") === "false") element.disabled = false;
+      element.removeAttribute("data-sync-disabled");
+      element.removeAttribute("aria-disabled");
+    }
+  });
+};
 const bootstrap = getBootstrapPayload();
 
 if (isShellRootHash(window.location.hash)) {
@@ -651,7 +682,7 @@ const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
   return { selectionAction: matchingAction, selectionState: null };
 };
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
-const canControlLiveBoard = (game) => Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
+const canControlLiveBoard = (game) => !game?.sharedMutationsBlocked && Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
 const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "other", "smoke"] : ["my", "other"]);
 const getHomeSection = (sectionKey) => homeSections[sectionKey] ?? createHomeSectionState(sectionKey);
 const setHomeSection = (sectionKey, nextState) => {
@@ -1493,29 +1524,26 @@ const getGameAlertItems = (game) => {
     key: `failed:${operation.id}`,
     html: renderGameAlertCard({
       tone: "danger",
-      body: `<strong>Sync failed.</strong> ${escapeHtml(operation.error?.message || "The operation could not be completed.")}`,
+      body: escapeHtml(operation.error?.message || "The operation could not be completed."),
       action: `<button class="secondary mini-button" data-action="dismiss-failed-operation" data-operation-id="${escapeHtml(operation.id)}">Dismiss</button>`,
       testId: "sync-failure-banner",
     }),
   }));
 
-  if (failedOperations.length === 0 && game.syncStatus === "confirming") {
-    items.push({
-      key: "live-sync:confirming",
-      html: renderGameAlertCard({
-        tone: "warn",
-        body: "Move confirmation is retrying. The board stays optimistic until the server confirms.",
-      }),
-    });
-  } else if (game.syncStatus === "desynced") {
-    items.push({
-      key: "live-sync:desynced",
-      html: renderGameAlertCard({
-        tone: "warn",
-        body: "Live sync is recovering. The board is showing the last authoritative state.",
+  const message = recoveryMessage(game);
+  if (!message) dismissedRecoveryNotices.delete(game.id);
+  const dismissed = dismissedRecoveryNotices.get(game.id) === message;
+  if (message && (!dismissed || game.storageBlocked)) {
+    items.unshift({
+      key: `live-sync:${message}`,
+      html: renderGameAlertCard({ tone: "warn", body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner",
+        action: game.storageBlocked
+          ? `<button class="secondary mini-button" data-action="retry-saving" data-game-id="${escapeHtml(game.id)}">Retry saving</button>${dismissed ? "" : `<button class="secondary mini-button" data-action="dismiss-recovery-notice" data-game-id="${escapeHtml(game.id)}">Dismiss</button>`}`
+          : "",
       }),
     });
   }
+  if (game.historyNotice) items.push({ key: "history-change", html: renderGameAlertCard({ body: escapeHtml(game.historyNotice) }) });
 
   if (undoRequestFeedback && undoRequestFeedbackGameId === game.id) {
     items.push({
@@ -1660,7 +1688,7 @@ const renderTurnHistory = (game) => {
       actorSide: move.actorSide || null,
       html: `<li class="history-item${sectionClass} ${playerToneClassForSide(move.actorSide || "P1")}${selectedClass}${undoneClass}" data-action="jump-history" data-game-id="${escapeHtml(
         game.id,
-      )}" data-move-index="${move.index}" data-testid="history-move-item">
+      )}" data-move-index="${move.index}" data-move-id="${escapeHtml(move.moveId || "")}" data-testid="history-move-item">
           <div class="history-item-info">
             <span class="history-move-line">Move ${escapeHtml(
               String(move.displayMoveNumber ?? move.index + 1),
@@ -2671,6 +2699,39 @@ const createMarkupRoot = (markup) => {
   template.innerHTML = markup.trim();
   return template.content.firstElementChild instanceof HTMLElement ? template.content.firstElementChild : null;
 };
+// Keep the enabled home control and its ancestor chain mounted while asynchronous
+// home sections update. Detaching a pressed/focused button loses native activation.
+const patchHomeAroundCreateControl = (markup) => {
+  const currentControl = appEl.querySelector('[data-testid="home-create-game"]');
+  const nextRoot = document.createElement("div");
+  nextRoot.innerHTML = markup;
+  const nextControl = nextRoot.querySelector('[data-testid="home-create-game"]');
+  if (!currentControl || !nextControl) return false;
+  const comparableControl = currentControl.cloneNode(true);
+  comparableControl.classList.remove("is-pressing");
+  if (!comparableControl.isEqualNode(nextControl)) return false;
+  const pathTo = (control, root) => {
+    const path = [];
+    for (let node = control; node && node !== root; node = node.parentElement) path.unshift(node);
+    return [root, ...path];
+  };
+  const currentPath = pathTo(currentControl, appEl), nextPath = pathTo(nextControl, nextRoot);
+  if (currentPath.length !== nextPath.length || currentPath.some((node, index) => index > 0 && node.tagName !== nextPath[index].tagName)) return false;
+  for (let index = 0; index < currentPath.length - 1; index++) {
+    const current = currentPath[index], next = nextPath[index], retained = currentPath[index + 1], replacement = nextPath[index + 1];
+    if (index > 0) {
+      for (const attribute of [...current.attributes]) if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+      for (const attribute of next.attributes) current.setAttribute(attribute.name, attribute.value);
+    }
+    for (const child of [...current.childNodes]) if (child !== retained) child.remove();
+    let after = false;
+    for (const child of next.childNodes) {
+      if (child === replacement) { after = true; continue; }
+      if (after) current.append(child.cloneNode(true)); else current.insertBefore(child.cloneNode(true), retained);
+    }
+  }
+  return true;
+};
 const updateMountedHeader = () => {
   const currentHeaderEl = getMountedHeaderEl();
   if (!(currentHeaderEl instanceof HTMLElement)) {
@@ -2680,7 +2741,11 @@ const updateMountedHeader = () => {
   if (!(nextHeaderEl instanceof HTMLElement)) {
     return false;
   }
+  if (currentHeaderEl.isEqualNode(nextHeaderEl)) return true;
+  const focused = currentHeaderEl.contains(document.activeElement) ? document.activeElement : null;
+  const focusAction = focused?.getAttribute("data-action");
   currentHeaderEl.replaceWith(nextHeaderEl);
+  if (focusAction) nextHeaderEl.querySelector(`[data-action="${CSS.escape(focusAction)}"]`)?.focus({ preventScroll: true });
   return true;
 };
 const getFlyoutAwareHref = (element) => {
@@ -2866,7 +2931,9 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   )}`;
 
   if (alertsEl instanceof HTMLElement) {
-    alertsEl.innerHTML = renderGameAlertsHtml(game, inviteFromRole);
+    const html = renderGameAlertsHtml(game, inviteFromRole);
+    if (alertsEl.innerHTML !== html) alertsEl.innerHTML = html;
+    updateRecoveryAnnouncement(game);
   }
   if (summaryEl instanceof HTMLElement) {
     summaryEl.innerHTML = renderGameSummaryPanel(game);
@@ -2883,6 +2950,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   if (includeBoard || mountedBoardGameId === game.id) {
     mountBoardForGame(game);
   }
+  applySharedMutationGates(game);
   FLYOUT_KEYS.forEach((flyoutKey) => {
     const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
     if (!(flyoutEl instanceof HTMLElement)) {
@@ -3228,6 +3296,8 @@ const mountBoardForGame = (game) => {
     return;
   }
 
+  applySharedMutationGates(game);
+  updateRecoveryAnnouncement(game);
   const snapshot = game.currentSnapshot ?? null;
   const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
   const historySelectionAction = game.inHistoryMode ? game.historySelectionAction ?? null : null;
@@ -3670,7 +3740,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
 
   const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderFlyouts()}</div>`;
   if (nextMarkup !== lastRenderedMarkup) {
-    appEl.innerHTML = nextMarkup;
+    if (currentRoute.name !== "home" || !patchHomeAroundCreateControl(nextMarkup)) appEl.innerHTML = nextMarkup;
     lastRenderedMarkup = nextMarkup;
     lastRenderedMainMarkup = `<div class="shell-main-content">${renderHeader()}${body}</div>`;
     lastRenderedFlyoutMarkup = renderFlyouts();
@@ -3860,6 +3930,16 @@ const syncStore = createSyncStore({
 const transport = syncStore;
 
 transport.subscribe((change) => {
+  if (change?.type === "upgrade_required") {
+    try {
+      const key = "righelt.sync-v2-refresh";
+      if (!window.sessionStorage.getItem(key)) {
+        window.sessionStorage.setItem(key, "1");
+        window.location.reload();
+        return;
+      }
+    } catch { /* Keep the visible update notice if session storage cannot guard a reload. */ }
+  }
   render({
     animatePanels: false,
     includeBoard: change?.type !== "optimistic_enqueue",
@@ -3980,6 +4060,8 @@ appEl.addEventListener("click", async (event) => {
   }
 
   const action = actionEl.getAttribute("data-action");
+  const actionGameId = actionEl.getAttribute("data-game-id") || currentRoute.gameId;
+  if (sharedMutationActions.has(action) && transport.getGameViewModel(actionGameId)?.sharedMutationsBlocked) return;
   const animateFlyoutClose = async (flyoutKey, closeFlyout) => {
     const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
     const mainContentEl = appEl?.querySelector?.(".shell-main-content");
@@ -4197,6 +4279,20 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "retry-saving") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    dismissedRecoveryNotices.delete(gameId);
+    await transport.retrySaving(gameId).catch(() => {});
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
+  if (action === "dismiss-recovery-notice") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    dismissedRecoveryNotices.set(gameId, recoveryMessage(transport.getGameViewModel(gameId)));
+    render({ animatePanels: false, includeBoard: false });
+    document.querySelector('[data-action="return-live"], [data-action="open-history"], .shell-logo, a[href="#/"]')?.focus({ preventScroll: true });
+    return;
+  }
   if (action === "dismiss-failed-operation") {
     const operationId = actionEl.getAttribute("data-operation-id");
     if (!operationId) {
@@ -4204,6 +4300,7 @@ appEl.addEventListener("click", async (event) => {
     }
     transport.dismissFailedOperation?.(operationId);
     render({ animatePanels: false, includeBoard: false });
+    document.querySelector('[data-action="return-live"], .shell-header-title-link')?.focus({ preventScroll: true });
     return;
   }
 

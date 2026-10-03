@@ -6,3 +6,4 @@ export * from "./http.js";
 export * from "./shell-live-turn.js";
 export * from "./validation.js";
 export * from "./auth.js";
+export * from "./sync-protocol.js";

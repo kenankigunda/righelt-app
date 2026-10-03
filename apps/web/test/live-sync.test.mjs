@@ -83,6 +83,8 @@ const createMockWindow = ({ protocol = "https:", hostname = "righelt.pages.dev",
   };
 };
 
+const snapshot = (gameId, eventSeq = 8) => ({ protocolVersion: 2, gameId, type: "state_sync", eventSeq,
+  game: { id: gameId, createdAt: "2026-10-03T00:00:00Z", updatedAt: "2026-10-03T00:00:00Z", gameplayRevision: 0, board: { state: { sideToMove: "P1", turnIndex: 0, pieces: [] } }, moves: [], turns: [] } });
 const flushAsync = async (delay = 0) => {
   await new Promise((resolve) => setTimeout(resolve, delay));
 };
@@ -223,7 +225,7 @@ test("live sync can maintain separate sockets per game and disconnect only one s
     MockSocket.instances[0].emit("open");
     MockSocket.instances[1].emit("open");
 
-    MockSocket.instances[1].emit("message", { data: JSON.stringify({ type: "state_sync", eventSeq: 8 }) });
+    MockSocket.instances[1].emit("message", { data: JSON.stringify(snapshot("g-2")) });
     assert.deepEqual(events, ["g-2"]);
 
     client.disconnectGame("g-1");
@@ -417,7 +419,7 @@ test("live sync does not send websocket ack frames after receiving events", asyn
     client.connectGame("g-no-ack");
     MockSocket.instances[0].emit("open");
     MockSocket.instances[0].sent.length = 0;
-    MockSocket.instances[0].emit("message", { data: JSON.stringify({ type: "state_sync", eventSeq: 8 }) });
+    MockSocket.instances[0].emit("message", { data: JSON.stringify(snapshot("g-no-ack")) });
 
     assert.equal(MockSocket.instances[0].sent.length, 0);
     client.disconnectAll();
@@ -596,4 +598,84 @@ test("live sync keeps fetch keepalive presence fallback same-origin in local dev
     globalThis.fetch = originalFetch;
     MockSocket.instances.length = 0;
   }
+});
+
+const controlledClient = (t, options = {}) => {
+  const previous = { WebSocket: globalThis.WebSocket, window: globalThis.window, document: globalThis.document, navigator: globalThis.navigator };
+  globalThis.WebSocket = MockSocket;
+  globalThis.window = createMockWindow(); globalThis.document = createMockDocument(); setGlobalNavigator({ onLine: true });
+  MockSocket.instances.length = 0;
+  const client = createLiveSyncClient({ identityId: "actor", onEvent: () => {}, heartbeatMs: 10, inboundTimeoutMs: 100, initialSnapshotTimeoutMs: 50, reconnectBaseMs: 2, reconnectMaxMs: 3, ...options });
+  t.after(() => { client.disconnectAll(); globalThis.WebSocket = previous.WebSocket; globalThis.window = previous.window; globalThis.document = previous.document; setGlobalNavigator(previous.navigator); MockSocket.instances.length = 0; });
+  return client;
+};
+const until = async (predicate) => { for (let i = 0; i < 100; i++) { if (predicate()) return; await flushAsync(2); } assert.fail("condition did not converge"); };
+
+test("late callbacks from a superseded socket cannot affect the new generation's heartbeat or board", async (t) => {
+  const applied = [], statuses = [];
+  const client = controlledClient(t, { onEvent: (payload) => applied.push(payload.eventSeq), onStatus: (status) => statuses.push(status.state) });
+  client.connectGame("g"); const old = MockSocket.instances[0]; old.emit("open"); old.emit("message", { data: JSON.stringify(snapshot("g", 1)) });
+  old.close = () => { old.readyState = 3; };
+  client.disconnectGame("g"); client.connectGame("g"); const current = MockSocket.instances[1]; current.emit("open"); current.emit("message", { data: JSON.stringify(snapshot("g", 2)) });
+  const before = current.sent.length, statusCount = statuses.length;
+  old.emit("close"); old.emit("error"); old.emit("open"); old.emit("message", { data: JSON.stringify(snapshot("g", 99)) });
+  await flushAsync(25);
+  assert.ok(current.sent.length > before); assert.deepEqual(applied, [1, 2]); assert.equal(statuses.length, statusCount);
+  assert.equal(MockSocket.instances.length, 2);
+});
+
+test("silent foreground sockets recover without an offline event and coalesce repeated faults", async (t) => {
+  let repairs = 0, release;
+  const client = controlledClient(t, { inboundTimeoutMs: 30, initialSnapshotTimeoutMs: 20, onReconcile: () => { repairs++; return new Promise((resolve) => { release = resolve; }); } });
+  client.connectGame("g"); const old = MockSocket.instances[0]; old.emit("open"); old.emit("message", { data: JSON.stringify(snapshot("g", 1)) });
+  await until(() => repairs === 1);
+  assert.equal(old.readyState, 3); assert.equal(globalThis.navigator.onLine, true);
+  old.emit("error"); old.emit("close"); old.emit("message", { data: JSON.stringify(snapshot("g", 2)) });
+  await flushAsync(10); assert.equal(repairs, 1); assert.equal(MockSocket.instances.length, 1);
+  release(); await until(() => MockSocket.instances.length === 2);
+  const next = MockSocket.instances[1]; assert.match(next.url, /lastEventSeq=1/);
+  next.emit("open"); next.emit("message", { data: JSON.stringify({ type: "heartbeat_ack", protocolVersion: 2, gameId: "g", eventSeq: 1 }) });
+});
+
+test("initial socket timeout retires its generation before HTTP and reopen uses the applied HTTP cursor", async (t) => {
+  let cursor = 3, repairs = 0, release;
+  const client = controlledClient(t, { getLastEventSeq: () => cursor, initialSnapshotTimeoutMs: 15, onReconcile: () => {
+    repairs++; assert.equal(MockSocket.instances[0].readyState, 3);
+    return new Promise((resolve) => { release = () => { cursor = 8; resolve(); }; });
+  } });
+  client.connectGame("g"); const old = MockSocket.instances[0]; old.emit("open");
+  await until(() => repairs === 1); await client.waitForInitialSnapshot("g");
+  old.emit("message", { data: JSON.stringify(snapshot("g", 999)) });
+  release(); await until(() => MockSocket.instances.length === 2);
+  assert.match(MockSocket.instances[1].url, /lastEventSeq=8/);
+  assert.equal(client.getAdvertisedEventSeq("g"), 0);
+});
+
+test("heartbeat advertisements never advance the applied snapshot cursor", async (t) => {
+  let repairs = 0;
+  const client = controlledClient(t, { getLastEventSeq: () => 4, onReconcile: async () => { repairs++; } });
+  client.connectGame("g"); const old = MockSocket.instances[0]; old.emit("open"); old.emit("message", { data: JSON.stringify(snapshot("g", 4)) });
+  old.emit("message", { data: JSON.stringify({ type: "heartbeat_ack", protocolVersion: 2, gameId: "g", eventSeq: 9 }) });
+  await until(() => MockSocket.instances.length === 2);
+  assert.equal(repairs, 1); assert.equal(client.getAdvertisedEventSeq("g"), 9);
+  assert.match(MockSocket.instances[1].url, /lastEventSeq=4/);
+});
+
+test("visibility resume reconciles immediately after a healthy initial snapshot", async (t) => {
+  let repairs = 0;
+  const client = controlledClient(t, { onReconcile: async () => { repairs++; } });
+  client.connectGame("g"); const socket = MockSocket.instances[0]; socket.emit("open"); socket.emit("message", { data: JSON.stringify(snapshot("g", 1)) });
+  globalThis.document.hidden = true; globalThis.document.visibilityState = "hidden"; globalThis.document.dispatchEvent("visibilitychange");
+  globalThis.document.hidden = false; globalThis.document.visibilityState = "visible"; globalThis.document.dispatchEvent("visibilitychange");
+  await until(() => repairs === 1); assert.equal(socket.readyState, 3);
+});
+
+test("initial waits are bounded while reconnect is suspended and disconnect releases outstanding waits", async (t) => {
+  const client = controlledClient(t, { initialSnapshotTimeoutMs: 15 });
+  client.connectGame("g"); const socket = MockSocket.instances[0]; socket.emit("open"); socket.emit("message", { data: JSON.stringify(snapshot("g", 1)) });
+  globalThis.document.hidden = true; globalThis.document.visibilityState = "hidden";
+  socket.emit("close");
+  await assert.rejects(client.waitForInitialSnapshot("g"), /initial_snapshot_wait_timeout/);
+  const waiting = client.waitForInitialSnapshot("g"); client.disconnectGame("g"); await waiting;
+  assert.deepEqual(client.getDesiredGameIds(), []);
 });
