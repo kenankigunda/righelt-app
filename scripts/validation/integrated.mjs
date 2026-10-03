@@ -4,6 +4,7 @@ import {git,command,readJSON,saveJSON} from './io.mjs';
 import {localRun,harnessRoot,fingerprint} from './local.mjs';
 import {renderReport} from './report.mjs';
 import {publish} from './publish.mjs';
+import {candidateCapabilities} from './capabilities.mjs';
 import {VERSION,hash} from './model.mjs';
 export function validateManifest(m){
  if(m?.version!==VERSION||typeof m.repository!=='string'||! /^[\w.-]+\/[\w.-]+$/.test(m.repository)||typeof m.base!=='string'||!Array.isArray(m.prs)||!m.prs.length)throw Error('Expected version, owner/repo, base and ordered prs');
@@ -26,18 +27,19 @@ export async function integratedRun({manifest,cwd=process.cwd(),dir,resume=false
  const attempt=Date.now();const root=path.join(path.dirname(cwd),`righelt-validation-${attempt}`);await command(['git','worktree','add','--detach',root,base],{cwd});run.worktree=root;await saveJSON(file,run);
  try{
   await command(['pnpm','install','--frozen-lockfile','--ignore-scripts'],{cwd:root,log:path.join(dir,'install.log')});
-  const upgrade=path.join(dir,`upgrade-state-${attempt}`);await mkdir(upgrade,{recursive:true});let continuity;
+  const upgrade=path.join(dir,`upgrade-state-${attempt}`);await mkdir(upgrade,{recursive:true});let continuity,accountContinuity,accountLegacyContinuity;const accountUpgrade=path.join(dir,`account-upgrade-state-${attempt}`);
   for(let i=0;i<=prs.length;i++){
    if(i){const r=await command(['git','merge','--no-edit','--no-ff',prs[i-1].head],{cwd:root,allowFailure:true});if(r.code){run.risks.push(`Merge conflict at PR #${prs[i-1].number}. Resolve in source PR; retained worktree: ${root}`);run.stages.push({id:`stage-${i}`,index:i,title:`PR #${prs[i-1].number}`,status:'failed',checks:[{name:'Aggregate source PR',status:'failed'}],items:[]});break;}}
    if(i) await command(['pnpm','install','--frozen-lockfile','--ignore-scripts'],{cwd:root,log:path.join(dir,`install-${i}.log`)});
    const next=path.join(dir,`continuity-${i}.json`);
    const fresh=await localRun({cwd:root,dir:path.join(dir,`fresh-${i}`),base,full:true,config,publishReport:false});
    if(fresh.stage.status!=='passed'){await cp(path.join(dir,`fresh-${i}`,'site'),path.join(dir,'site'),{recursive:true});fresh.stage.id=`stage-${i}`;fresh.stage.index=i;run.stages.push(fresh.stage);run.risks.push(`Fresh-install validation failed at stage ${i}; inspect private fresh-${i} logs.`);break;}
-   const result=await localRun({cwd:root,dir,base,full:true,config,publishReport:false,run,stageIndex:i,persistRoot:upgrade,continuityInput:continuity,continuityOutput:next});
+   if((await candidateCapabilities(root)).accounts&&!accountContinuity)accountLegacyContinuity=continuity;
+   const result=await localRun({cwd:root,dir,base,full:true,config,publishReport:false,run,stageIndex:i,persistRoot:upgrade,continuityInput:continuity,continuityOutput:next,accountPersistRoot:accountUpgrade,accountContinuityInput:accountContinuity,accountLegacyContinuityInput:accountLegacyContinuity});
    run=result.run;result.stage.aggregateHead=result.stage.head;result.stage.head=i?prs[i-1].head:base;result.stage.title=i?`After #${prs[i-1].number}: ${prs[i-1].title}`:'Unchanged base';result.stage.checks.unshift({name:'Fresh-install full verification',status:'passed'});
    await saveJSON(file,run);await renderReport(run,path.join(dir,'site'));
    if(publishReport){try{await publish(run,path.join(dir,'site'),config,{cwd});}catch(e){run.publication={status:'failed',error:e.message};}await saveJSON(file,run);}
-   if(result.stage.status!=='passed')break;continuity=next;
+   if(result.stage.status!=='passed')break;continuity=next;if((await candidateCapabilities(root)).accounts)accountContinuity=next;
   }
  }catch(e){run.risks.push('Integrated validation interrupted; inspect private startup-error.json.');await saveJSON(path.join(dir,'startup-error.json'),{error:e.message});}
  // Read heads again; a moving input invalidates evidence even if all checks passed.

@@ -3,6 +3,7 @@ import AxeBuilder from '@axe-core/playwright';
 import {readFile,writeFile} from 'node:fs/promises';
 import {candidateCapabilities} from '../scripts/validation/capabilities.mjs';
 import {proof} from '../scripts/validation/proof.mjs';
+import {FRESH_ACCOUNT_WORKFLOW,RETAINED_ACCOUNT_WORKFLOW} from '../scripts/validation/account-evidence.mjs';
 
 const root=process.env.RIGHELT_VALIDATION_TARGET_ROOT||process.cwd();
 const capabilities=await candidateCapabilities(root);
@@ -52,9 +53,27 @@ async function gamePayload(page){return page.evaluate(async()=>{
   const r=await fetch(`/api/shell/games/${encodeURIComponent(id)}`,{headers:{'X-Righelt-Auth-Version':'1','X-Righelt-Session':s.contextId}});
   if(!r.ok)throw Error(`Game: ${r.status}`);return (await r.json()).game;
 });}
+async function registerStandalone(page,username){
+  await page.goto('/');await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await dialog(page).getByRole('button',{name:'Create account',exact:true}).click();
+  await dialog(page).getByLabel('Username',{exact:true}).fill(username);await dialog(page).getByLabel('Password',{exact:true}).fill(password);
+  await dialog(page).getByRole('button',{name:'Create account',exact:true}).click();
+  await dialog(page).getByLabel('I saved my recovery code').check();await dialog(page).getByRole('button',{name:'Continue',exact:true}).click();
+  await expect(dialog(page)).not.toBeVisible();
+}
+test.beforeAll(async({browser},info)=>{
+  if(!capabilities.cutover)return;
+  const context=await browser.newContext(options(info));
+  try{
+    const page=await context.newPage();await page.goto('/');
+    if(!(await context.request.get('https://127.0.0.1:9988/api/profiles/validation_canary')).ok())await registerStandalone(page,'validation_canary');
+    expect((await fetch('http://127.0.0.1:10088/activate-cutover',{method:'POST'})).status).toBe(200);
+    expect((await fetch('http://127.0.0.1:10088/maintenance-off',{method:'POST'})).status).toBe(200);
+  }finally{await context.close();}
+});
 test.beforeEach(async()=>{expect((await fetch('http://127.0.0.1:10088/reset-limits',{method:'POST'})).ok).toBe(true);});
 
-test('fresh account acknowledgment, owned move, returning login and independent UX',async({page,browser},info)=>{
+test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   const username=`Proof_${Date.now().toString(36)}_${info.project.name.replaceAll('-','').slice(0,4)}`;
   let creates=0;page.on('request',r=>{if(r.method()==='POST'&&new URL(r.url()).pathname==='/api/shell/games')creates++;});
   await page.goto('/');
@@ -123,13 +142,38 @@ test('fresh account acknowledgment, owned move, returning login and independent 
       expect(creates).toBe(priorCreates);expect((await session(page)).account.preferences.introducedOpponents).toBe(0);
     }
   }
+  if(process.env.RIGHELT_LEGACY_CONTINUITY_INPUT){
+    const legacy=JSON.parse(await readFile(process.env.RIGHELT_LEGACY_CONTINUITY_INPUT,'utf8'));
+    await page.goto(`/${legacy.hash}`);
+    await expect(page.getByTestId('game-board')).toBeVisible();
+    await expect.poll(()=>count(page)).toBe(legacy.count);
+    const oldGame=await gamePayload(page);
+    expect(oldGame.ownershipMode).toBe('legacy_guest');expect(oldGame.myRoles).toEqual([]);expect(oldGame.canRecordMove).toBe(false);
+    const denied=await page.evaluate(async()=>{
+      const s=await(await fetch('/api/auth/session')).json();
+      const id=decodeURIComponent(location.hash.match(/^#\/game\/([^?]+)/)[1]);
+      const r=await fetch(`/api/shell/games/${encodeURIComponent(id)}/join`,{method:'POST',headers:{'Content-Type':'application/json','X-Righelt-Auth':'1','X-Righelt-Auth-Version':'1','X-Righelt-Session':s.contextId},body:JSON.stringify({mode:'player'})});
+      return {status:r.status,body:await r.json()};
+    });
+    expect(denied.status).toBeGreaterThanOrEqual(400);expect(denied.body.error).toBe('legacy_read_only');
+    expect(await count(page)).toBe(legacy.count);
+    await proof(page,info,'legacy-history-preserved-no-account-takeover',page.getByTestId('game-board'));
+  }
   if(process.env.RIGHELT_CONTINUITY_FILE){
-    await page.goto(gameURL);await expect(page.getByTestId('game-role')).toContainText('Player 1');
-    await writeFile(`${process.env.RIGHELT_CONTINUITY_FILE}.account-${info.project.name}`,JSON.stringify({version:1,username,password,gameURL,historyCount:await count(page),account:savedSession.account,storage:await page.context().storageState()}),{mode:0o600});
+    // A real self-play game keeps the retained account authorized on either turn.
+    const retainedGame=await page.evaluate(async()=>{
+      const s=await(await fetch('/api/auth/session')).json();
+      const r=await fetch('/api/shell/games',{method:'POST',headers:{'Content-Type':'application/json','X-Righelt-Auth':'1','X-Righelt-Auth-Version':'1','X-Righelt-Session':s.contextId},body:JSON.stringify({selfPlayMode:true})});
+      if(!r.ok)throw Error(`Retained fixture creation: ${r.status}`);return (await r.json()).game;
+    });
+    expect(retainedGame.myRoles.slice().sort()).toEqual(['Player 1','Player 2']);
+    await page.goto(`/#/game/${encodeURIComponent(retainedGame.id)}`);await expect(page.getByTestId('game-board')).toBeVisible();
+    const action=(await gamePayload(page)).legalActions.find(x=>x.from&&x.to);expect(action).toBeTruthy();await submitPlayableAction(page,action,info);
+    await writeFile(`${process.env.RIGHELT_CONTINUITY_FILE}.account-${info.project.name}`,JSON.stringify({version:1,username,password,gameURL:page.url(),historyCount:await count(page),account:savedSession.account,storage:await page.context().storageState()}),{mode:0o600});
   }
 });
 
-test('retained account session, ownership, history and preferences survive the next schema',async({browser},info)=>{
+test(RETAINED_ACCOUNT_WORKFLOW,async({browser},info)=>{
   const input=process.env.RIGHELT_ACCOUNT_CONTINUITY_INPUT;
   test.skip(!input,'First account-capable stage establishes retained account fixtures');
   const prior=JSON.parse(await readFile(`${input}.account-${info.project.name}`,'utf8'));
@@ -141,11 +185,13 @@ test('retained account session, ownership, history and preferences survive the n
     expect(current.account.displayName).toBe(prior.account.displayName);
     for(const [key,value]of Object.entries(prior.account.preferences))expect(current.account.preferences[key],`Retained preference ${key}`).toEqual(value);
     if(capabilities.introductions&&!Object.hasOwn(prior.account.preferences,'introducedOpponents'))expect(current.account.preferences.introducedOpponents).toBe(0);
-    await expect(page.getByTestId('game-role')).toContainText('Player 1');await expect.poll(()=>count(page)).toBe(prior.historyCount);
-    expect((await gamePayload(page)).ownershipMode).toBe('account_v1');
+    await expect.poll(()=>count(page)).toBe(prior.historyCount);
+    const retained=await gamePayload(page);expect(retained.ownershipMode).toBe('account_v1');expect(retained.myRoles.slice().sort()).toEqual(['Player 1','Player 2']);
+    const action=retained.legalActions.find(x=>x.from&&x.to);expect(action).toBeTruthy();await submitPlayableAction(page,action,info);
+    await page.reload();await expect.poll(()=>count(page)).toBe(prior.historyCount+1);
     await fits(page,page.getByTestId('game-board'));await proof(page,info,'retained-account-upgrade',page.getByTestId('game-board'));
     await accountOpen(page);await dialog(page).getByRole('button',{name:'Sign out',exact:true}).click();
     await login(page,prior.username,prior.password);expect((await session(page)).account.id).toBe(prior.account.id);
-    await expect(page.getByTestId('game-role')).toContainText('Player 1');
+    expect((await gamePayload(page)).myRoles.slice().sort()).toEqual(['Player 1','Player 2']);
   }finally{await context.close();}
 });
