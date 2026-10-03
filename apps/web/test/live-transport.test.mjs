@@ -1,6 +1,7 @@
-import test from "node:test";
+import test, { beforeEach } from "node:test";
+import { IDBFactory } from "fake-indexeddb";
 import assert from "node:assert/strict";
-import { createLiveTransportStore } from "../shell/live-transport.js";
+import { createLiveTransportStore as createActualTransportStore } from "../shell/live-transport.js";
 import { IDENTITY_KEY } from "../shell/persistence.js";
 import {
   applyAction,
@@ -12,6 +13,22 @@ import {
   finalizeResolvedTurn,
   getControlSeatForTurn,
 } from "../generated/packages/shared-types/src/shell-live-turn.js";
+
+let sentCommands = new Map();
+beforeEach(() => { globalThis.indexedDB = new IDBFactory(); sentCommands = new Map(); });
+const createLiveTransportStore = (options) => createActualTransportStore({ ...options, fetcher: (url, init) => {
+  if (init?.body) { const body = JSON.parse(init.body); if (body.fingerprint) sentCommands.set(body.clientCommandId, body); }
+  return options.fetcher(url, init);
+} });
+const receipt = (id, accepted = true, eventSeq = 2) => {
+  const command = sentCommands.get(id) ?? [...sentCommands.values()].at(-1);
+  assert.ok(command, "fixture must receive the real command before acknowledging it");
+  return { gameId: command.gameId, identityId: command.identityId, clientCommandId: command.clientCommandId, fingerprint: command.fingerprint,
+    outcome: accepted ? "accepted" : "rejected", reason: accepted ? null : "stale_state", eventSeq,
+    gameplayRevision: command.expectedGameplayRevision + (accepted ? 1 : 0) };
+};
+const commandResponse = (body) => { const outcome = receipt(body.clientCommandId, body.accepted !== false, body.eventSeq);
+  return Response.json({ ...body, game: { ...body.game, gameplayRevision: outcome.gameplayRevision }, protocolVersion: 2, gameId: outcome.gameId, gameplayRevision: outcome.gameplayRevision, commandOutcomes: [outcome] }); };
 
 const IMPORT_SCENARIO_UUID = "e5e48740-f8e2-4b32-bfbf-c46ec98b5962";
 const HISTORY_BRANCH_UUID = "32bfe814-d353-4492-af25-4cb9f9a9dd75";
@@ -46,6 +63,7 @@ const buildLiveGame = () => {
   };
   return {
     id: "game-live-1",
+    gameplayRevision: 0,
     createdAt: "2026-02-26T00:00:00.000Z",
     lastMoveAt: "2026-02-26T00:00:01.000Z",
     updatedAt: "2026-02-26T00:00:01.000Z",
@@ -113,6 +131,7 @@ const buildAcknowledgedGame = (baseGame, action) => {
 
   return {
     ...clone(baseGame),
+    gameplayRevision: (baseGame.gameplayRevision ?? 0) + 1,
     lastMoveAt: "2026-02-26T00:00:02.000Z",
     updatedAt: "2026-02-26T00:00:02.000Z",
     moves: [
@@ -193,7 +212,7 @@ const buildOptimisticParityFetcher = ({ baseGame, acknowledgedGame }) => {
   return {
     fetcher: async (url, init = {}) => {
       if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-        return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+        return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
       }
       if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
         return new Promise((resolve) => {
@@ -204,7 +223,7 @@ const buildOptimisticParityFetcher = ({ baseGame, acknowledgedGame }) => {
     },
     acknowledge: (clientCommandId) =>
       resolveApply?.(
-        Response.json({
+        commandResponse({
           ok: true,
           accepted: true,
           clientCommandId,
@@ -286,6 +305,7 @@ const buildGameForIdentity = ({ gameId, identityId, myRole, state, currentTurn, 
 
   return {
     id: gameId,
+    gameplayRevision: 0,
     createdAt: "2026-02-26T00:00:00.000Z",
     lastMoveAt: moves.at(-1)?.at ?? "2026-02-26T00:00:01.000Z",
     updatedAt: moves.at(-1)?.at ?? "2026-02-26T00:00:01.000Z",
@@ -335,6 +355,7 @@ test("live transport store uses backend responses for create/load/join flows", a
         pendingApproval: true,
         game: {
           id: "game-000001",
+    gameplayRevision: 0,
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: null,
           updatedAt: "2026-02-26T00:00:00.000Z",
@@ -358,6 +379,7 @@ test("live transport store uses backend responses for create/load/join flows", a
         ok: true,
         game: {
           id: "game-000001",
+    gameplayRevision: 0,
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: null,
           updatedAt: "2026-02-26T00:00:00.000Z",
@@ -376,7 +398,7 @@ test("live transport store uses backend responses for create/load/join flows", a
       });
     }
 
-    return Response.json({ ok: true, game: null });
+    return Response.json({ protocolVersion: 2, ok: true, game: null });
   };
 
   const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.12345 });
@@ -561,6 +583,7 @@ test("live transport store can promote player 1 to both seats when player 2 is o
         ok: true,
         game: {
           id: "game-000001",
+    gameplayRevision: 0,
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: null,
           updatedAt: "2026-02-26T00:00:00.000Z",
@@ -602,6 +625,7 @@ test("live transport store can promote player 2 to both seats when player 1 is o
         ok: true,
         game: {
           id: "game-000001",
+    gameplayRevision: 0,
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: null,
           updatedAt: "2026-02-26T00:00:00.000Z",
@@ -651,6 +675,7 @@ test("live transport store ignores stale game snapshots once a newer eventSeq is
         previewActions: [],
         game: {
           id: gameId,
+    gameplayRevision: 0,
           createdAt: "2026-02-26T00:00:00.000Z",
           lastMoveAt: "2026-02-26T00:00:10.000Z",
           updatedAt: "2026-02-26T00:00:10.000Z",
@@ -680,6 +705,7 @@ test("live transport store ignores stale game snapshots once a newer eventSeq is
     eventSeq: 5,
     game: {
       id: gameId,
+    gameplayRevision: 0,
       createdAt: "2026-02-26T00:00:00.000Z",
       lastMoveAt: "2026-02-26T00:00:11.000Z",
       updatedAt: "2026-02-26T00:00:11.000Z",
@@ -696,6 +722,7 @@ test("live transport store ignores stale game snapshots once a newer eventSeq is
       myRole: "Player 1",
       inHistoryMode: false,
       currentSnapshot: { sideToMove: "P2", turnIndex: 1, pieces: [] },
+      board: { state: { sideToMove: "P2", turnIndex: 1, pieces: [] } },
       currentTurn: { index: 1, playerSeat: "Player 2", status: "active", moveIndexes: [], lastMoveAt: null },
       canRecordMove: false,
       canEndTurn: false,
@@ -719,7 +746,7 @@ test("live transport store applies optimistic moves immediately and clears pendi
 
   const fetcher = async (url, init = {}) => {
     if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+      return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
     }
     if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
       return new Promise((resolve) => {
@@ -749,7 +776,7 @@ test("live transport store applies optimistic moves immediately and clears pendi
   assert.notDeepEqual(optimisticHomeCard.previewSnapshot, baseGame.currentSnapshot);
 
   resolveApply?.(
-    Response.json({
+    commandResponse({
       ok: true,
       accepted: true,
       clientCommandId: pending.clientCommandId,
@@ -833,7 +860,7 @@ test("live transport store can defer command sends until a caller flushes them",
   const fetcher = async (url, init = {}) => {
     calls.push({ url: String(url), method: init.method || "GET" });
     if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+      return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
     }
     if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
       return new Promise((resolve) => {
@@ -863,7 +890,7 @@ test("live transport store can defer command sends until a caller flushes them",
   assert.equal(calls.some((entry) => entry.url.endsWith("/apply")), true);
 
   resolveApply?.(
-    Response.json({
+    commandResponse({
       ok: true,
       accepted: true,
       clientCommandId: pending.clientCommandId,
@@ -989,7 +1016,7 @@ test("live transport store hands retreat control to the defending player", async
     })(),
     fetcher: async (url, init = {}) => {
       if (String(url).startsWith(`/api/shell/games/${gameId}?`) && (!init.method || init.method === "GET")) {
-        return Response.json({ ok: true, game: ownerGame, eventSeq: 1 });
+        return Response.json({ protocolVersion: 2, ok: true, game: ownerGame, eventSeq: 1 });
       }
       if (String(url) === `/api/shell/games/${gameId}/apply` && init.method === "POST") {
         return new Promise((resolve) => {
@@ -1015,7 +1042,7 @@ test("live transport store hands retreat control to the defending player", async
   assert.equal(optimisticOwner.canEndTurn, false);
 
   resolveApply?.(
-    Response.json({
+    commandResponse({
       ok: true,
       accepted: true,
       clientCommandId: pending.clientCommandId,
@@ -1033,7 +1060,7 @@ test("live transport store hands retreat control to the defending player", async
     })(),
     fetcher: async (url, init = {}) => {
       if (String(url).startsWith(`/api/shell/games/${gameId}?`) && (!init.method || init.method === "GET")) {
-        return Response.json({ ok: true, game: defenderGame, eventSeq: 2 });
+        return Response.json({ protocolVersion: 2, ok: true, game: defenderGame, eventSeq: 2 });
       }
       return Response.json({ ok: true, games: [] });
     },
@@ -1055,7 +1082,7 @@ test("live transport store notifies subscribers for optimistic enqueue and autho
 
   const fetcher = async (url, init = {}) => {
     if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+      return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
     }
     if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
       return new Promise((resolve) => {
@@ -1077,7 +1104,7 @@ test("live transport store notifies subscribers for optimistic enqueue and autho
   assert.equal(changes.some((change) => change.type === "optimistic_enqueue" && change.gameId === baseGame.id), true);
 
   resolveApply?.(
-    Response.json({
+    commandResponse({
       ok: true,
       accepted: true,
       clientCommandId: pending.clientCommandId,
@@ -1099,7 +1126,7 @@ test("live transport store notifies subscribers when optimistic sync rolls back 
     let resolveApply = null;
     const fetcher = async (url, init = {}) => {
       if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-        return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+        return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
       }
       if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
         return new Promise((resolve) => {
@@ -1118,7 +1145,7 @@ test("live transport store notifies subscribers when optimistic sync rolls back 
 
     await rollbackStore.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
     resolveApply?.(
-      Response.json({
+      commandResponse({
         ok: true,
         accepted: false,
         eventSeq: 2,
@@ -1136,7 +1163,7 @@ test("live transport store notifies subscribers when optimistic sync rolls back 
       storage: createMemoryStorage(),
       fetcher: async (url, init = {}) => {
         if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-          return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+          return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
         }
         if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
           throw new Error("network_failed");
@@ -1161,6 +1188,7 @@ test("live transport store notifies subscribers when optimistic sync rolls back 
       game: buildAcknowledgedGame(baseGame, nextAction),
       eventSeq: 2,
       clientCommandId: pending.clientCommandId,
+      commandOutcome: receipt(pending.clientCommandId),
     });
   }
 });
@@ -1174,7 +1202,7 @@ test("live transport store clears pending command when ws confirms after transpo
     storage: createMemoryStorage(),
     fetcher: async (url, init = {}) => {
       if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-        return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+        return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
       }
       if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
         applyAttempts += 1;
@@ -1194,6 +1222,7 @@ test("live transport store clears pending command when ws confirms after transpo
     game: buildAcknowledgedGame(baseGame, nextAction),
     eventSeq: 2,
     clientCommandId: pending.clientCommandId,
+    commandOutcome: receipt(pending.clientCommandId),
   });
   await tick();
 
@@ -1210,7 +1239,7 @@ test("live transport store does not infer end-turn confirmation from move histor
     storage: createMemoryStorage(),
     fetcher: async (url, init = {}) => {
       if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-        return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+        return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
       }
       if (String(url) === `/api/shell/games/${baseGame.id}/end-turn` && init.method === "POST") {
         return new Promise(() => {});
@@ -1251,7 +1280,7 @@ test("live transport store keeps authoritative history selectable while pending 
 
   const fetcher = async (url, init = {}) => {
     if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+      return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
     }
     if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
       return new Promise(() => {});
@@ -1311,7 +1340,7 @@ test("live transport store generates unique command ids across store instances",
   const nextAction = baseGame.legalActions.find((action) => action.type !== "pass") ?? baseGame.legalActions[0];
   const fetcher = async (url, init = {}) => {
     if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+      return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
     }
     if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
       return new Promise(() => {});
@@ -1485,7 +1514,7 @@ test("I-11: applyGameAction optimistic result carries destroyedPieces array", as
     storage: createMemoryStorage(),
     fetcher: async (url, init = {}) => {
       if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && (!init.method || init.method === "GET")) {
-        return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+        return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
       }
       if (String(url) === `/api/shell/games/${baseGame.id}/apply` && init.method === "POST") {
         // Never resolves — keeps command pending so we observe the optimistic state
@@ -1535,7 +1564,7 @@ test("I-12: two client stores receive identical destroyedPieces on the same move
     storage: createMemoryStorage(),
     fetcher: async (url) => {
       if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`)) {
-        return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+        return Response.json({ protocolVersion: 2, ok: true, game: baseGame, eventSeq: 1 });
       }
       return Response.json({ ok: true, games: [] });
     },
@@ -1549,7 +1578,7 @@ test("I-12: two client stores receive identical destroyedPieces on the same move
     fetcher: async (url) => {
       if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`)) {
         // P2's initial load returns the base game
-        return Response.json({ ok: true, game: { ...clone(baseGame), myRole: "Player 2" }, eventSeq: 1 });
+        return Response.json({ protocolVersion: 2, ok: true, game: { ...clone(baseGame), myRole: "Player 2" }, eventSeq: 1 });
       }
       return Response.json({ ok: true, games: [] });
     },

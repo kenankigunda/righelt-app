@@ -437,7 +437,7 @@ export const handleLiveGameRequest = async (
       return {
         handled: true,
         status: 200,
-        body: { ok: true, game: withFullViewModel(game, identityId), eventSeq: projection.eventSeq },
+        body: { ok: true, protocolVersion: 2, game: withFullViewModel(game, identityId), eventSeq: projection.eventSeq },
         cacheControl: CACHE_NO_STORE,
       };
     }

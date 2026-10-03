@@ -823,6 +823,8 @@ export const createSyncStore = ({
   onError = () => {},
   onStatus = () => {},
   onMetric = () => {},
+  commandJournal,
+  timing,
   createTransportStore = createLiveTransportStore,
   createSyncClient = createLiveSyncClient,
 } = {}) => {
@@ -871,6 +873,8 @@ export const createSyncStore = ({
     storage,
     fetcher,
     random,
+    commandJournal,
+    timing,
     shouldDeferCommandSend: (gameId, command) => {
       void command;
       return isPendingOptimisticGameCreation(gameId);
@@ -1016,6 +1020,7 @@ export const createSyncStore = ({
     const clientCommandId = typeof change?.clientCommandId === "string" ? change.clientCommandId : null;
     const gameId = typeof change?.gameId === "string" ? change.gameId : null;
     const failureNotice = typeof change?.failureNotice === "string" ? change.failureNotice.trim() : "";
+    if (change?.type === "journal_restored") for (const id of change.clientCommandIds) operationManager.enqueue({ id, gameId, result: transport.getGameViewModel(gameId) });
     if (change?.type === "authoritative_update" && clientCommandId) {
       confirmOperation(clientCommandId);
     }
@@ -1058,6 +1063,7 @@ export const createSyncStore = ({
           game: payload.game,
           eventSeq: payload.eventSeq,
           clientCommandId: payload.clientCommandId ?? null,
+          commandOutcome: payload.commandOutcome ?? null,
         });
       }
       onEvent(payload, context);
@@ -1188,22 +1194,22 @@ export const createSyncStore = ({
       if (!response?.accepted || typeof response?.clientCommandId !== "string") {
         return response;
       }
-      return operationManager.enqueue({
-        id: response.clientCommandId,
-        gameId,
-        result: response,
-      });
+      const handle = operationManager.enqueue({ id: response.clientCommandId, gameId, result: response });
+      const outcome = transport.getCommandOutcome?.(gameId, response.clientCommandId);
+      if (outcome?.outcome === "accepted") operationManager.confirm(handle.id);
+      if (outcome?.outcome === "rejected") operationManager.fail(handle.id, createOperationError(outcome.reason));
+      return handle;
     },
     endTurn: async ({ gameId }) => {
       const response = await transport.endTurn({ gameId });
       if (typeof response?.clientCommandId !== "string") {
         return response;
       }
-      return operationManager.enqueue({
-        id: response.clientCommandId,
-        gameId,
-        result: response,
-      });
+      const handle = operationManager.enqueue({ id: response.clientCommandId, gameId, result: response });
+      const outcome = transport.getCommandOutcome?.(gameId, response.clientCommandId);
+      if (outcome?.outcome === "accepted") operationManager.confirm(handle.id);
+      if (outcome?.outcome === "rejected") operationManager.fail(handle.id, createOperationError(outcome.reason));
+      return handle;
     },
     selectHistoryMove: ({ gameId, moveIndex }) => {
       const currentGame = transport.getGameViewModel(gameId);

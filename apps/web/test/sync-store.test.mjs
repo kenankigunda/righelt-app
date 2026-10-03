@@ -328,7 +328,7 @@ test("sync store applies authoritative live payloads before forwarding events", 
   );
 
   assert.deepEqual(appliedPayloads, [
-    { game: { id: "game-1" }, eventSeq: 8, clientCommandId: "cmd-1" },
+    { game: { id: "game-1" }, eventSeq: 8, clientCommandId: "cmd-1", commandOutcome: null },
   ]);
   assert.deepEqual(forwardedPayload, {
     type: "event_appended",
