@@ -4,6 +4,7 @@ import { classifyWorkersPlan, preflight } from './t108-cloudflare-preflight.mjs'
 
 test('free classification requires a readable complete subscription list', () => {
   assert.equal(classifyWorkersPlan(undefined), 'unknown');
+  assert.equal(classifyWorkersPlan([{}]), 'unknown');
   assert.equal(classifyWorkersPlan([]), 'free');
   assert.equal(classifyWorkersPlan([{ rate_plan: { id: 'WORKERS_FREE' } }]), 'free');
   assert.equal(classifyWorkersPlan([{ rate_plan: { id: 'WORKERS_BASIC' } }]), 'not_verified_free');

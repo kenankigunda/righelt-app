@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 // Read-only: never changes a subscription or prints credential values.
 export function classifyWorkersPlan(subscriptions) {
   if (!Array.isArray(subscriptions)) return 'unknown';
+  if (subscriptions.some(s => typeof s?.rate_plan?.id !== 'string' || !s.rate_plan.id)) return 'unknown';
   const workers = subscriptions.filter((s) => /workers/i.test(`${s?.rate_plan?.id ?? ''} ${s?.rate_plan?.public_name ?? ''}`));
   if (workers.length === 0) return 'free'; // Workers Free is the default without a Workers subscription.
   return workers.every((s) => /^workers[_ -]free$/i.test(s.rate_plan.id)) ? 'free' : 'not_verified_free';

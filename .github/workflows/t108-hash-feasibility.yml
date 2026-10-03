@@ -15,6 +15,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  harness-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Validate synthetic harness and evidence gate
+        run: node --test tools/t108-feasibility/core.test.mjs tools/t108-feasibility/runner.test.mjs scripts/t108-cloudflare-preflight.test.mjs
   cloudflare-preflight:
     runs-on: ubuntu-latest
     environment: Dev
