@@ -1,7 +1,7 @@
 import {mkdir,writeFile} from "node:fs/promises";
 import { test, expect } from "@playwright/test";
 import { runScopedAxeScan } from "../support/ux.mjs";
-import { createGameFromHome, makeAnyLegalMove, submitPlayableAction, selectPlayableAction } from "../support/app.mjs";
+import { createGameFromHome, makeAnyLegalMove, submitPlayableAction } from "../support/app.mjs";
 
 for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gate at ${width}px`, async ({page},info) => {
  const metrics={requests:0,snapshots:0,applicationPayloadBytes:0};
@@ -36,8 +36,14 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
    return body.game.legalActions.find(a=>a.from&&a.to);
  },gameId);
  expect(action).toBeTruthy();
- const to=await selectPlayableAction(page,action);
+ const cell=position=>page.locator(`[data-testid="game-board"] .cell[data-row="${position.row}"][data-col="${position.col}"]`);
+ await cell(action.from).click();
+ const to=cell(action.to);
  before=await geometry();await to.click();
+ // A destination first previews; only confirmation attempts durable storage.
+ await expect(page.locator("#shell-board-preview-label")).toContainText("Preview.");
+ await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
+ await to.click();
  const banner=page.getByTestId("sync-recovery-banner");
  await expect(banner).toContainText("Your browser couldn't save this move. It wasn't sent.");
  expect((await runScopedAxeScan({page,include:'[data-testid="sync-recovery-banner"]'})).violations).toEqual([]);

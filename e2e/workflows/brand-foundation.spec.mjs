@@ -65,7 +65,7 @@ test("Player 2 actions remain blue during Player 1's turn and home returns to re
     };
     const created = await post("/api/shell/games", { identityId: `foundation-${crypto.randomUUID()}` });
     await post(`/api/shell/games/${created.game.id}/join`, {
-      identityId: localStorage.getItem("righelt.identity.id.v1"), mode: "player", inviteFromRole: "Player 1",
+      protocolVersion: 2, identityId: localStorage.getItem("righelt.identity.id.v1"), mode: "player", inviteFromRole: "Player 1",
     });
     return created.game.id;
   });
