@@ -1,0 +1,8 @@
+{
+  "name": "@righelt/validation-publisher",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "wrangler": "4.147.0"
+  }
+}
