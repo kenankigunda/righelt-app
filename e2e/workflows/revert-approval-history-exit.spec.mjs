@@ -60,7 +60,16 @@ test("accepting undo preserves each selected retained entry until explicit retur
     await requestUndoForFirstMoveViaApi(owner.page);
     await expect(guest.page.locator('[data-action="accept-revert-request"]')).toBeVisible();
 
+    const approvalResponse = guest.page.waitForResponse(response => response.url().endsWith("/revert-approve") && response.request().method() === "POST");
     await guest.page.locator('[data-action="accept-revert-request"]').click();
+    const response = await approvalResponse;
+    expect(response.ok()).toBe(true);
+    const approved = await response.json();
+    const liveState = approved.game.board.state;
+    const expectedBoard = Array.from({ length: liveState.boardSize ** 2 }, (_, index) => {
+      const row = Math.floor(index / liveState.boardSize), col = index % liveState.boardSize;
+      return { row, col, pieces: liveState.pieces.filter(piece => piece.position?.row === row && piece.position?.col === col).map(piece => `${piece.owner}:${piece.kind}`).sort() };
+    });
 
     for (const page of [owner.page, guest.page]) {
       await expect(page.getByTestId("history-return-live")).toBeVisible();
@@ -74,9 +83,16 @@ test("accepting undo preserves each selected retained entry until explicit retur
     await expect(guest.page.getByTestId("history-return-live")).toHaveCount(0);
     await expect(owner.page.getByText("You are on the live view.")).toBeVisible();
     await expect(guest.page.getByText("You are on the live view.")).toBeVisible();
-    const board = page => page.locator('[data-testid="game-board"] .cell').evaluateAll(cells => cells.map(cell => ({ row: cell.dataset.row, col: cell.dataset.col, pieces: [...cell.querySelectorAll('.piece-token')].map(piece => piece.textContent) })));
-    for (const page of [owner.page, guest.page]) { const cells = await board(page); expect(cells).toHaveLength(100); expect(cells.some(cell => cell.pieces.length)).toBe(true); }
-    await expect.poll(async () => JSON.stringify(await board(owner.page))).toBe(JSON.stringify(await board(guest.page)));
+    // Action previews and recorded-action ghosts vary with pointer/selection.
+    // Compare actual rendered pieces to the confirmed server state on each page.
+    const board = page => page.locator('[data-testid="game-board"] .cell').evaluateAll(cells => cells.map(cell => ({
+      row: Number(cell.dataset.row), col: Number(cell.dataset.col),
+      pieces: [...cell.querySelectorAll('.piece-token:not(.move-ghost):not(.history-destruction-piece):not(.removal-piece)')]
+        .map(piece => `${piece.classList.contains("p1") ? "P1" : piece.classList.contains("p2") ? "P2" : "unknown"}:${piece.classList.contains("commander") ? "commander" : piece.classList.contains("unit") ? "unit" : "unknown"}`).sort(),
+    })));
+    expect(expectedBoard).toHaveLength(100);
+    expect(expectedBoard.some(cell => cell.pieces.length)).toBe(true);
+    for (const page of [owner.page, guest.page]) await expect.poll(() => board(page)).toEqual(expectedBoard);
   } finally {
     await closeContextQuietly(owner.context);
     await closeContextQuietly(guest.context);
