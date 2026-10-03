@@ -166,9 +166,21 @@ test("Explain activation survives an account response arriving during its press"
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/");
   await page.getByTestId("home-create-game").click();
-  await finishRegistration(page); await acknowledge(page);
+  await finishRegistration(page);
+  const created = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/shell/games");
+  await acknowledge(page);
+  expect((await created).ok()).toBe(true);
+  // Start the deliberate press race only after authoritative game hydration,
+  // rather than while the optimistic creation view is still being replaced.
+  const hydrated = page.waitForEvent("websocket").then(socket => socket.waitForEvent("framereceived", {
+    predicate: event => JSON.parse(String(event.payload)).type === "state_sync",
+  }));
+  await page.reload();
+  await hydrated;
+  await expect(page.locator('.shell-route-transition-layer')).toHaveAttribute("data-active", "false");
   const explain = page.getByRole("button", { name: "Explain", exact: true });
   await expect(explain).toBeVisible();
+  await explain.scrollIntoViewIfNeeded();
   let release, intercepted;
   const held = new Promise(resolve => { intercepted = resolve; });
   await page.route("**/api/auth/session", async route => {
@@ -178,12 +190,12 @@ test("Explain activation survives an account response arriving during its press"
   }, { times: 1 });
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await held;
-  await explain.scrollIntoViewIfNeeded();
   const box = await explain.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
+  const resumed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/auth/session");
   release();
-  await page.waitForResponse(response => new URL(response.url()).pathname === "/api/auth/session");
+  await resumed;
   await page.mouse.up();
   await expect(explain).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => page.evaluate(async () => (await (await fetch("/api/auth/session")).json()).account.preferences.view)).toBe("explanatory");
