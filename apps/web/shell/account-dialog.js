@@ -136,10 +136,13 @@ export const createAccountDialog = ({
         : document.querySelector('[data-action="account-open"]');
     restored?.focus?.();
   };
-  const open = (next = "login", intent = null) => {
+  const open = (next = "login", intent = null, source = null) => {
     flow++;
     pending = intent;
-    trigger = document.activeElement;
+    // Safari does not focus pointer-clicked buttons before opening a dialog.
+    trigger =
+      source ||
+      (document.activeElement !== document.body ? document.activeElement : null);
     values = {};
     mode = next;
     const session = controller.snapshot().session;
