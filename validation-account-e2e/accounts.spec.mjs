@@ -27,6 +27,7 @@ async function submitPlayableAction(page,action,info){
     await expect(page.locator('#shell-board-preview-label')).toBeVisible();
     await expect(page.locator('#shell-board-preview-label')).toContainText('Preview. Activate this destination again to play.');
     expect(writes).toBe(0);expect(await count(page)).toBe(before);
+    await mobileNavigationClear(page);
     await proof(page,info,'move-preview-before-confirm',page.getByTestId('game-board'));
   }else{
     if(await page.locator('html').getAttribute('data-hover-capability')==='hover')await target.hover();
@@ -45,6 +46,24 @@ async function fits(page,locator){
   await expect(locator).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2)).toBe(true);
   const box=await locator.boundingBox();expect(box.x).toBeGreaterThanOrEqual(-1);expect(box.x+box.width).toBeLessThanOrEqual(page.viewportSize().width+1);
+}
+async function mobileNavigationClear(page){
+  if(await page.locator('#app').getAttribute('data-shell-layout-mode')!=='narrow')return;
+  await page.getByTestId('game-board').evaluate(element=>element.scrollIntoView({block:'start',behavior:'instant'}));
+  // Both the expanded preview and the collapsed legacy help must leave the
+  // navigation usable after the journey has scrolled the real document.
+  await expect.poll(()=>page.evaluate(()=>{
+    const help=document.querySelector('[data-zone="game-help"]');
+    const navigation=document.querySelector('.shell-mobile-tabbar');
+    const tabs=[...document.querySelectorAll('.shell-mobile-tabbar .shell-mobile-tab')];
+    if(!help||!navigation)return false;
+    const helpRect=help.getBoundingClientRect(),navRect=navigation.getBoundingClientRect();
+    return tabs.length===3&&helpRect.bottom<=navRect.top+1&&tabs.every(tab=>{
+      const rect=tab.getBoundingClientRect();
+      return rect.top>=0&&rect.bottom<=innerHeight+1&&rect.left>=0&&rect.right<=innerWidth+1
+        &&tab.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2));
+    });
+  }),{message:'Mobile help must leave all three navigation tabs visible and reachable'}).toBe(true);
 }
 async function settledHome(page){
   await expect(page.getByTestId('home-create-game')).toBeVisible();
@@ -213,6 +232,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
         return element.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2));
       })).toBe(true);
     }
+    if(capabilities.movePreview)await mobileNavigationClear(page);
     await proof(page,info,'legacy-history-preserved-no-account-takeover',page.getByTestId('game-board'));
   }
   if(process.env.RIGHELT_CONTINUITY_FILE){
