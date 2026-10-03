@@ -66,3 +66,36 @@ test("reduced-motion stories stay manual and art failure preserves the full stor
   await page.locator('button[data-opponent="babs"]').click();
   await expect(dialog.getByRole("button", { name: "Show image 1 of 3" })).toHaveAttribute("aria-pressed", "true");
 });
+
+test("closing a story restores its opponent after delayed home hydration replaces the trigger", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await register(page);
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  let pending = 0;
+  await page.route("**/api/shell/games?**", async route => {
+    pending++;
+    const response = await route.fetch();
+    await held;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.reload();
+    await expect.poll(() => pending).toBeGreaterThan(0);
+    const trigger = page.locator('button[data-opponent="babs"]');
+    await expect(trigger).toBeVisible();
+    await trigger.evaluate(element => { window.storyOpeningTrigger = element; });
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "Babs · Easy" });
+    await expect(dialog).toBeVisible();
+    release();
+    await expect.poll(() => page.evaluate(() => window.storyOpeningTrigger.isConnected)).toBe(false);
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).not.toBeVisible();
+    await expect(trigger).toBeFocused();
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
