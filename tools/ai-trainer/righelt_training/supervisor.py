@@ -16,7 +16,7 @@ from .budget import Budget
 from .checkpoint import atomic_json
 from .config import CONFIG,CONFIG_SHA256,ROOT
 from .manifest import build_manifest,write_manifest
-from .processes import start_group,stop_group
+from .processes import start_group,stop_group,install_stop_handlers
 from .resources import AdaptivePolicy
 from .telemetry import Telemetry,read_device_memory
 
@@ -40,17 +40,22 @@ def validate_gate_report(report, source_revision, stage):
             raise ValueError('overnight health or progress-report gate missing')
 
 
-def validation_boundary(runtime):
-    return runtime['startedMonotonic']+(runtime['deadlineMonotonic']-runtime['startedMonotonic'])*5/6
+def validation_boundary(runtime,now=None):
+    duration=runtime['deadlineMonotonic']-runtime['startedMonotonic']
+    boundary=runtime['startedMonotonic']+duration*5/6
+    if 'deadlineWall' in runtime:
+        now=time.monotonic() if now is None else now
+        boundary=min(boundary,now+(runtime['deadlineWall']-duration/6-time.time()))
+    return boundary
 
 
 def validate_training_window(runtime,now):
-    if runtime['command']=='training' and now>=validation_boundary(runtime):
+    if runtime['command']=='training' and now>=validation_boundary(runtime,now):
         raise ValueError('training window ended; resume health, preparation or arena within the original validation reserve')
 
 
 def request_validation_handoff(run_dir,runtime,now):
-    if runtime.get('command')!='training' or now<validation_boundary(runtime):return False
+    if runtime.get('command')!='training' or now<validation_boundary(runtime,now):return False
     directory=Path(run_dir);path=directory/'handoff-request.json'
     request_id=f"automatic-validation:{runtime['manifestSha256']}:{runtime['deadlineMonotonic']}"
     if path.exists():
@@ -81,7 +86,7 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
                 stop_group(process)
                 return 'budget-expired'
             if runtime is not None:request_validation_handoff(run_dir,runtime,now)
-            if runtime is not None and runtime.get('command')=='training' and now>=validation_boundary(runtime)+60:
+            if runtime is not None and runtime.get('command')=='training' and now>=validation_boundary(runtime,now)+60:
                 stop_group(process)
                 return 'validation-handoff-timeout'
             if now>=next_sample:
@@ -164,6 +169,7 @@ def record_attempt(directory,event):
 
 
 def main():
+    install_stop_handlers()
     parser=argparse.ArgumentParser()
     parser.add_argument('--run-dir',type=Path,required=True)
     parser.add_argument('--activity-file',type=Path,required=True)

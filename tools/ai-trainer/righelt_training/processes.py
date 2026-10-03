@@ -17,3 +17,9 @@ def stop_group(process, grace_seconds=0):
         try:os.killpg(process.pid,signal.SIGKILL)
         except ProcessLookupError:pass
         process.wait(timeout=2)
+
+
+def install_stop_handlers():
+    def stop(signum,frame):
+        raise SystemExit(128+signum)
+    signal.signal(signal.SIGTERM,stop)
