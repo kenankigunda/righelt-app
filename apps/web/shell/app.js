@@ -2591,7 +2591,7 @@ const renderGameHelp = (gameId) => {
 const updateGameHelp = (gameId, event = null) => {
   const help = getGameHelp(gameId);
   if (event?.kind === "blocked") help.explain(event.reason, event.text);
-  else if (event?.kind === "commit") help.commit();
+  else if (event?.kind === "commit") help.commit(event.text);
   else if (event?.text) help.select(event.text);
   const existing = appEl.querySelector('[data-zone="game-help"]');
   if (!existing) return;
@@ -2603,15 +2603,23 @@ const updateGameHelp = (gameId, event = null) => {
   const disclosure = existing.querySelector('[data-action="collapse-help"], [data-action="expand-help"]');
   disclosure.dataset.action = state.expanded ? "collapse-help" : "expand-help";
   disclosure.textContent = state.expanded ? "Collapse" : "Expand";
-  // Expanded help may never cover a board destination. Collapse before the next
-  // pointer action when its overlay intersects the board; the summary remains.
-  if (event && state.expanded && getShellLayoutMode() === "narrow") {
-    const board = document.getElementById('shell-board');
-    if (board && existing.getBoundingClientRect().top < board.getBoundingClientRect().bottom) {
-      help.collapseForBoard();
-      existing.dataset.expanded = "false";
-      disclosure.dataset.action = "expand-help";
-      disclosure.textContent = "Expand";
+  // Keep required destinations visible without changing the board's dimensions.
+  // Shrink the sheet to the free space first; retain its disclosure when the
+  // viewport has too little room for an expanded explanation.
+  existing.style.maxHeight = "";
+  if (state.expanded && getShellLayoutMode() === "narrow") {
+    const targets = [...appEl.querySelectorAll('#shell-board [data-legal-target="true"], #shell-board .target')];
+    const sheet = existing.getBoundingClientRect();
+    const requiredBottom = Math.max(0, ...targets.map((target) => target.getBoundingClientRect().bottom));
+    if (requiredBottom > sheet.top - 8) {
+      const available = sheet.bottom - requiredBottom - 8;
+      if (available >= 112) existing.style.maxHeight = `${available}px`;
+      else {
+        help.collapseForBoard();
+        existing.dataset.expanded = "false";
+        disclosure.dataset.action = "expand-help";
+        disclosure.textContent = "Expand";
+      }
     }
   }
 };
@@ -2996,7 +3004,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
     return renderGameViewSkeleton();
   }
   if (!game) {
-    return `<section class="panel" role="status"><h2>Game unavailable</h2><p>We could not open this game. Try again or return home.</p><button data-action="retry-game-route">Try again</button> <a class="button-link secondary" href="#/">Home</a></section>`;
+    return `<section class="panel" role="status"><h2>Game unavailable</h2><p>We could not open this game. Try again or return home.</p><button data-action="retry-game-route">Try again</button> <a class="button-link secondary" href="#/">Back to home</a></section>`;
   }
   const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(
     game.inviteToken || inviteToken || game.id,
@@ -3348,7 +3356,12 @@ const mountBoardForGame = (game) => {
       controls: {
         getAllowFreeSelection: () => false,
         getExplanatoryMode: () => { const help = getGameHelp(game.id).getState(); return help.manual || help.expanded; },
-        onContextHelp: (event) => updateGameHelp(game.id, event),
+        onContextHelp: (event) => {
+          updateGameHelp(game.id, event);
+          window.requestAnimationFrame(() => {
+            if (currentRoute.name === "game" && currentRoute.gameId === game.id) updateGameHelp(game.id);
+          });
+        },
         getSupportsHover: () => hoverCapability.getSupportsHover(),
         getForceClickTargetSelection: () => Boolean(currentRoute.scenarios),
         onStateUpdated: ({ state, selectedPieceId }) => {
@@ -3834,8 +3847,9 @@ const syncRouteData = async () => {
 };
 
 const syncRouteDataAndLiveChannels = async () => {
+  const generation = navigationGeneration;
   await syncRouteData();
-  syncLiveChannels();
+  if (generation === navigationGeneration) syncLiveChannels();
 };
 
 const canHydrateRouteFromLocalState = (route = currentRoute) => {
@@ -3870,8 +3884,11 @@ const startRouteSync = ({ renderStart = true } = {}) => {
 };
 
 const syncRouteDataPassive = async () => {
+  const generation = navigationGeneration;
+  const requestId = routeSyncRequestId;
   try {
     await syncRouteDataAndLiveChannels();
+    if (generation !== navigationGeneration || requestId !== routeSyncRequestId) return;
     routeHydrated = true;
     render({ animatePanels: false, includeBoard: false });
     maybeRevealRouteTransition();
@@ -4010,8 +4027,6 @@ const navigateTo = (hash) => {
 };
 
 window.addEventListener("hashchange", () => {
-  navigationGeneration += 1;
-  routeSyncRequestId += 1;
   const previousRoute = currentRoute;
   if (previousRoute.name === "game") {
     const game = transport.getGameViewModel(previousRoute.gameId);
@@ -4020,6 +4035,10 @@ window.addEventListener("hashchange", () => {
   closeHeaderMenu();
   const parsedRoute = parseRouteFromHash(window.location.hash);
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
+  if (previousRoute.name !== currentRoute.name || previousRoute.gameId !== currentRoute.gameId || previousRoute.inviteToken !== currentRoute.inviteToken) {
+    navigationGeneration += 1;
+    routeSyncRequestId += 1;
+  }
   if (previousRoute.name === "home" && currentRoute.name === "game") {
     homeReturn = { scrollY: homeReturn?.gameId === currentRoute.gameId ? homeReturn.scrollY : window.scrollY, gameId: currentRoute.gameId, pending: false };
     if (!routeTransition) startGameEntryRouteTransition(currentRoute.gameId, "home");
@@ -4057,6 +4076,7 @@ window.addEventListener("hashchange", () => {
 
 window.addEventListener("resize", () => {
   syncMountedGameShellPanelUi();
+  if (currentRoute.name === "game") updateGameHelp(currentRoute.gameId);
   scheduleGameShellStickyLayout();
   scheduleResponsiveHomeSectionPageSizes();
 });

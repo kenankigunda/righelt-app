@@ -203,7 +203,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /homeSectionResizeFrame = window\.requestAnimationFrame\(\(\) => \{/);
   assert.match(source, /const didUpdate = await syncResponsiveHomeSectionPageSizes\(\);/);
   assert.match(source, /render\(\{ animatePanels: false, includeBoard: false \}\);/);
-  assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*syncMountedGameShellPanelUi\(\);\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
+  assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*syncMountedGameShellPanelUi\(\);\s*if \(currentRoute.name === "game"\) updateGameHelp\(currentRoute.gameId\);\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
   assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
   assert.match(source, /syncFlyoutRenderOrder\(currentRoute\);/);
   assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, nextRoute\)\) \{[\s\S]*render\(\);\s*return;\s*\}/s);

@@ -216,3 +216,14 @@ Examples illustrating the spirit:
 - If the referenced UI surface is ambiguous, ask for a screenshot of the current product as a fallback so the exact existing surface can be identified.
 - When screenshots or other reference artifacts are needed, attach them to the backlog repo.
 - If the intended experience depends on viewport-specific placement, animation feel, branding treatment, or sound, those details belong in the ticket spec and eng plan, not only in chat.
+
+## Personal play shell
+
+- Keep the wide board centered, with support columns and a reserved explanation region below it. Narrow screens retain Players, Board and History swipe panels.
+- First activation previews the engine's immediate result. A second activation of the same destination confirms once. Changing the destination replaces the preview; a changed game snapshot or account invalidates it.
+- Show immediate removals, supply and command changes. Stop previews at a decision that requires another action.
+- Explain is separate from game analysis. Automatic help can be dismissed per reason for the current game; manual Explain stays enabled after a move. Clear obsolete preview instructions after confirmation.
+- Help does not resize the board or trap focus. On narrow screens, shrink or collapse it when it would cover a required destination, including after resizing or selecting another piece.
+- Arrow keys move board focus. Enter and Space use the same preview and confirmation sequence as a pointer.
+- Back navigation reverses the entry sweep and restores the originating card and scroll position. Restore game panel/history position only when the account and actual game revision still match; otherwise show live play.
+- Older asynchronous requests cannot reveal a newer destination. Flyout changes retain hydration of the underlying route. Reduced motion skips the sweep.

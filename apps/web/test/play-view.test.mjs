@@ -21,10 +21,15 @@ test("automatic help suppresses a dismissed reason per game, while manual help s
   assert.equal(help.getState().expanded, false);
   help.explain("strength", "Needs strength");
   assert.equal(help.getState().expanded, true);
+  help.select("Preview. Activate this destination again to play.");
   help.commit();
+  assert.doesNotMatch(help.getState().text, /Activate/);
+  assert.equal(help.getState().reason, "");
   assert.equal(help.getState().expanded, false);
   help.toggleManual();
-  help.commit();
+  help.select("Preview. Activate this destination again to play.");
+  help.commit("Choose the next retreat decision.");
+  assert.equal(help.getState().text, "Choose the next retreat decision.");
   assert.equal(help.getState().manual, true);
   assert.equal(help.getState().expanded, true);
   const anotherGame = createContextualHelp();

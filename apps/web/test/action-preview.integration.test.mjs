@@ -1,4 +1,5 @@
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { createInitialState } from "../generated/packages/game-engine/src/state.js";
 import { resolveToStability } from "../generated/packages/game-engine/src/resolve.js";
@@ -59,4 +60,38 @@ test("runtime previews real effects, re-arms after authority change and sends on
     resolveApply({ accepted: false, state, legalActions: legal });
     await new Promise((resolve) => setTimeout(resolve, 0));
   } finally { globalThis.document = originalDocument; }
+});
+
+const catalog = JSON.parse(readFileSync(new URL("../scenarios/catalog.json", import.meta.url))).scenarios;
+const savedPreview = (title, action) => {
+  const state = resolveToStability(catalog.find((scenario) => scenario.title === title).resultingState, { artifactMode: "full" });
+  return buildImmediateActionPreview(state, action);
+};
+
+test("preview resolves immediate supply removals and command gains from a saved real position", () => {
+  const result = savedPreview("Imminent loss of supply due to long horizontal line", {
+    type: "move", actorId: "C2", from: { row: 5, col: 3 }, to: { row: 6, col: 3 },
+  });
+  assert.deepEqual(result.removed.map((piece) => piece.id), ["U2-1"]);
+  assert.deepEqual(result.commandChanges.map((piece) => piece.id), ["U2-2", "U2-3", "U2-4", "U2-5"]);
+  assert.ok(result.commandChanges.every((piece) => piece.commanded));
+});
+
+for (const [title, action] of [
+  ["Push vs. project strategy endgame", { type: "push", actorId: "U1-11", from: { row: 5, col: 0 }, to: { row: 5, col: 1 } }],
+  ["Retreat after push", { type: "retreat", actorId: "U1-2", from: { row: 5, col: 4 }, to: { row: 4, col: 4 } }],
+  ["Push with multiple follow paths", { type: "follow", actorId: "U1-2", from: { row: 4, col: 4 }, to: { row: 5, col: 4 } }],
+]) test(`${action.type} preview stops at the next unresolved continuation`, () => {
+  const result = savedPreview(title, action);
+  assert.equal(result.continuation.type, "push");
+  assert.deepEqual(result.state.pieces.find((piece) => piece.id === action.actorId).position, action.to);
+  assert.ok(result.changed.some((piece) => piece.id === action.actorId));
+});
+
+test("rush preview shows immediate supply loss without inventing a removal", () => {
+  const result = savedPreview("Push vs. project strategy endgame", {
+    type: "rush", actorId: "U1-11", from: { row: 5, col: 0 }, to: { row: 4, col: 1 },
+  });
+  assert.deepEqual(result.supplyChanges.map((piece) => [piece.id, piece.supplied]), [["U2-14", false]]);
+  assert.deepEqual(result.removed, []);
 });

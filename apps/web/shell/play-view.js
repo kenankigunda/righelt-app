@@ -16,7 +16,7 @@ export const createContextualHelp = () => {
     toggleManual() { manual = !manual; expanded = manual; },
     expand() { expanded = true; },
     dismiss() { if (reason) dismissed.add(reason); expanded = false; },
-    commit() { if (!manual) expanded = false; },
+    commit(nextText = "Select a piece to inspect its supply, command and available actions.") { reason = ""; text = nextText; if (!manual) expanded = false; },
     collapseForBoard() { expanded = false; },
   };
 };

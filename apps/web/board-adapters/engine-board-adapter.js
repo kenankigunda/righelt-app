@@ -1169,6 +1169,7 @@ export function createEngineBoardAdapter() {
             (action) => action.to && action.to.row === row && action.to.col === col,
           );
           const hasActionToCell = previewsAtCell.length > 0;
+          if (legalAtCell.length) cell.dataset.legalTarget = "true";
           const blockedPreview = previewsAtCell.find((action) => action.legal === false) ?? null;
           const hasBlockedPreview = Boolean(blockedPreview) && legalAtCell.length === 0;
 

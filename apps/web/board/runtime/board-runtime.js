@@ -864,7 +864,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, previewA
         if (selectedPieceId) {
           await reloadSelectedPieceMoves();
         }
-        controls.onContextHelp?.({ kind: "commit" });
+        controls.onContextHelp?.({ kind: "commit", text: state.continuation ? `Choose the next ${state.continuation.phase ?? state.continuation.type} decision.` : "Select a piece to inspect its supply, command and available actions." });
         setResult({ accepted: true, outcome: body.outcome ?? state.outcome });
 
         return;

@@ -2082,5 +2082,5 @@ button:not(.secondary):not(.warn):not(.danger):not(:disabled):active,
 @media (max-width: 400px) {
   .app-root { width: calc(100vw - 16px); }
   [data-shell-panel="board"] { padding: 8px; }
-  #shell-board { gap: 3px; }
+  #shell-board { grid-template-columns: repeat(10, minmax(24px, 1fr)); gap: 3px; }
 }
