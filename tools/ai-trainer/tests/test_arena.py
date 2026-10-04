@@ -168,6 +168,93 @@ class ArenaTest(unittest.TestCase):
             with patch('righelt_training.arena.engine_command',side_effect=[{'type':'opening-verified','initial':False,'fingerprint':str(i)} for i in range(50)]):
                 with self.assertRaises(ValueError):freeze_plan(Path(d)/'plan.json',plan)
 
+    def test_engine_unfinished_protocol_is_preserved(self):
+        import subprocess,sys
+        protocol={'type':'unfinished','id':'job','reason':'search-recovery',
+                  'search':{'stopped':'node-limit','nodes':2048,'rootActions':[7]},
+                  'game':{'id':'job','termination':'unfinished','decisions':[{'controller':'P2'}]}}
+        real_popen=subprocess.Popen
+        def spawn(*args,**kwargs):
+            return real_popen([sys.executable,'-c',
+                'import sys,json;json.loads(sys.stdin.readline());print('+repr(json.dumps(protocol))+',flush=True)'],
+                stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        for reason in ('search-recovery','budget','node-limit','deadline'):
+            with self.subTest(reason=reason):
+                protocol['reason']=reason
+                with patch('righelt_training.arena.subprocess.Popen',side_effect=spawn):
+                    result=play_game({'id':'job'}, {},time.monotonic()+60,'cpu')
+                self.assertEqual(result['reason'],reason)
+                self.assertEqual(result['retryClass'],'engine');self.assertEqual(result['protocol'],protocol)
+                self.assertEqual(result['job']['command'],'arena')
+
+    def test_diagnostics_are_immutable_and_engine_failure_requires_reviewed_repair(self):
+        import hashlib
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as d:
+            path,runtime=self.frozen(d)
+            failure={'status':'unfinished','reason':'search-recovery','retryClass':'engine',
+                     'protocol':{'type':'unfinished','search':{'stopped':'deadline'},'game':{'decisions':[1,2]}}}
+            player=Mock(return_value=failure);models={'candidate':None,'opponent':None}
+            report=run_arena(path,d,models,'cpu',player=player)
+            output=Path(d)/'evaluations'/report['identity']['planSha256']
+            state=json.loads((output/'state.json').read_text());attempt=state['attempts'][0]
+            artifact=output/attempt['diagnostic']['path'];raw=artifact.read_bytes()
+            self.assertEqual(hashlib.sha256(raw).hexdigest(),attempt['diagnostic']['sha256'])
+            self.assertEqual(json.loads(raw)['result'],failure)
+            self.assertEqual(run_arena(path,d,models,'cpu',player=player)['reason'],'engine-recovery-review-required')
+            self.assertEqual(player.call_count,1)
+            runtime['manifestSha256']='repair';(Path(d)/'runtime.json').write_text(json.dumps(runtime))
+            self.assertEqual(run_arena(path,d,models,'cpu',player=player)['reason'],'engine-recovery-review-required')
+            evidence=Path(d)/'review.txt';evidence.write_text('reviewed narrow repair and regression')
+            proof={'path':str(evidence),'sha256':hashlib.sha256(evidence.read_bytes()).hexdigest()}
+            amendment={'oldManifest':'manifest','newManifest':'repair','cause':'arena diagnostics discarded',
+                       'artifactDisposition':'preserve originals','reviewEvidence':[proof],'regressionEvidence':[proof],
+                       'arenaRecovery':{'planSha256':report['identity']['planSha256'],
+                         'jobId':json.loads(raw)['job']['id'],'priorSourceManifest':'manifest',
+                         'diagnosticSha256':attempt['diagnostic']['sha256'],'reason':'search-recovery'}}
+            (Path(d)/'source-amendments.jsonl').write_text(json.dumps(amendment)+'\n')
+            evidence.write_text('tampered')
+            with self.assertRaisesRegex(ValueError,'evidence changed'):run_arena(path,d,models,'cpu',player=player)
+            evidence.write_text('reviewed narrow repair and regression')
+            run_arena(path,d,models,'cpu',player=player)
+            self.assertEqual(player.call_count,2);self.assertEqual(artifact.read_bytes(),raw)
+            self.assertEqual(run_arena(path,d,models,'cpu',player=player)['reason'],'engine-recovery-review-required')
+            self.assertEqual(player.call_count,2)
+            artifact.write_bytes(raw+b' ')
+            with self.assertRaisesRegex(ValueError,'diagnostic changed'):run_arena(path,d,models,'cpu',player=player)
+
+    def test_resource_pause_resumes_without_source_repair(self):
+        with tempfile.TemporaryDirectory() as d:
+            path,_=self.frozen(d);models={'candidate':'candidate-model','opponent':'opponent-model'}
+            first=run_arena(path,d,models,'cpu',player=lambda *a,**k:{'status':'unfinished','reason':'resource-pause'})
+            self.assertEqual(first['reason'],'resource-pause')
+            result=run_arena(path,d,models,'cpu',player=self.player)
+            self.assertEqual(result['completedGames'],200)
+
+    def test_legacy_generic_budget_requires_explicit_diagnostic_repair(self):
+        from unittest.mock import Mock
+        import hashlib
+        with tempfile.TemporaryDirectory() as d:
+            path,runtime=self.frozen(d);models={'candidate':None,'opponent':None}
+            player=Mock(return_value={'status':'unfinished','reason':'budget'})
+            report=run_arena(path,d,models,'cpu',player=player)
+            output=Path(d)/'evaluations'/report['identity']['planSha256'];state_path=output/'state.json'
+            state=json.loads(state_path.read_text());attempt=state['attempts'][0]
+            diagnostic=json.loads((output/attempt.pop('diagnostic')['path']).read_text());attempt.pop('retryClass')
+            state_path.write_text(json.dumps(state))
+            self.assertEqual(run_arena(path,d,models,'cpu',player=player)['reason'],'engine-recovery-review-required')
+            self.assertEqual(player.call_count,1)
+            runtime['manifestSha256']='repair';(Path(d)/'runtime.json').write_text(json.dumps(runtime))
+            proof_path=Path(d)/'proof';proof_path.write_text('legacy diagnostic repair reviewed')
+            proof={'path':str(proof_path),'sha256':hashlib.sha256(proof_path.read_bytes()).hexdigest()}
+            amendment={'oldManifest':'manifest','newManifest':'repair','cause':'legacy diagnostics absent',
+                'artifactDisposition':'retain historical attempt','reviewEvidence':[proof],'regressionEvidence':[proof],
+                'arenaRecovery':{'planSha256':report['identity']['planSha256'],'jobId':diagnostic['job']['id'],
+                    'priorSourceManifest':'manifest','diagnosticSha256':None,'reason':'legacy-missing-diagnostics'}}
+            (Path(d)/'source-amendments.jsonl').write_text(json.dumps(amendment)+'\n')
+            run_arena(path,d,models,'cpu',player=player)
+            self.assertEqual(player.call_count,2)
+
     def test_inference_operation_deadline_is_independent_of_heartbeat(self):
         import torch
         from righelt_training.arena import infer

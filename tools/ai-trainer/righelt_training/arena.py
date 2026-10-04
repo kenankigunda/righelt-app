@@ -151,7 +151,9 @@ def play_game(job,models,deadline,device,*,allocation=lambda:{'paused':False,'wo
                         try:verify_game(message['game'],min(game_deadline,time.monotonic()+20))
                         except (TimeoutError,subprocess.TimeoutExpired):return {'status':'unfinished','reason':'verification-budget'}
                         return {'status':'completed','game':message['game']}
-                    elif message['type']=='unfinished':return {'status':'unfinished','reason':'budget'}
+                    elif message['type']=='unfinished':
+                        return {'status':'unfinished','reason':message.get('reason','engine-unfinished'),
+                                'retryClass':'engine','protocol':message,'job':job}
                     else:raise RuntimeError(f'arena protocol error: {message}')
         return {'status':'unfinished','reason':'budget'}
     finally:selector.close();stop_worker(process)
@@ -200,6 +202,40 @@ def archive_game(directory,game):
     return path,hashlib.sha256(raw).hexdigest()
 
 
+def preserve_diagnostic(output,job,result,attempt_number):
+    payload={'schema':1,'job':job,'result':result}
+    raw=json.dumps(payload,sort_keys=True,allow_nan=False).encode()
+    digest=hashlib.sha256(raw).hexdigest()
+    path=output/'diagnostics'/f'{attempt_number:06d}-{digest}.json'
+    path.parent.mkdir(parents=True,exist_ok=True)
+    with path.open('xb') as stream:stream.write(raw);stream.flush();os.fsync(stream.fileno())
+    return {'path':str(path.relative_to(output)),'sha256':digest}
+
+
+def retry_qualification(directory,runtime,digest,job,prior):
+    """Only an explicitly reviewed repair for this failed job permits a rerun."""
+    if prior.get('retryClass')=='transient':return True
+    if not prior.get('retryClass') and prior.get('reason') in ('resource-pause','inference-budget','verification-budget'):return True
+    if prior.get('status')!='unfinished':return True
+    from .allocation import rows
+    reason=prior.get('reason') if prior.get('diagnostic') else 'legacy-missing-diagnostics'
+    required={'planSha256':digest,'jobId':job['id'],'priorSourceManifest':prior.get('sourceManifest'),
+              'diagnosticSha256':prior.get('diagnostic',{}).get('sha256'),'reason':reason}
+    for amendment in rows(Path(directory)/'source-amendments.jsonl'):
+        if (amendment.get('newManifest')==runtime['manifestSha256']
+            and amendment.get('newManifest')!=prior.get('sourceManifest')
+            and all(amendment.get(key) for key in ('cause','regressionEvidence','artifactDisposition','reviewEvidence'))
+            and amendment.get('arenaRecovery')==required):
+            for field in ('reviewEvidence','regressionEvidence'):
+                evidence=amendment[field]
+                if not isinstance(evidence,list) or not evidence:raise ValueError('repair evidence must contain hashed artifacts')
+                for item in evidence:
+                    if hashlib.sha256(Path(item['path']).read_bytes()).hexdigest()!=item['sha256']:
+                        raise ValueError('repair evidence changed')
+            return True
+    return False
+
+
 def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,player=play_game,experiment_root=None,monitor=None):
     directory=Path(run_directory)
     runtime=json.loads((directory/'runtime.json').read_text())
@@ -224,6 +260,12 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
         job=expected[(pair_id,seat)]
         outcome='truncated' if game['termination']=='truncated' else game['outcome']['status']
         if game['id']!=job['id'] or outcome!=record['outcome'] or key!=job['id']:raise ValueError('evaluation record mismatch')
+    for attempt in state['attempts']:
+        if attempt.get('diagnostic'):
+            artifact=attempt['diagnostic'];path=output/artifact['path']
+            if not path.resolve().is_relative_to(output.resolve()):raise ValueError('invalid diagnostic path')
+            if hashlib.sha256(path.read_bytes()).hexdigest()!=artifact['sha256']:
+                raise ValueError('evaluation diagnostic changed')
     def persist():atomic_json(state_path,state)
     def allocation():return json.loads((directory/'allocation.json').read_text())
     def heartbeat():
@@ -248,6 +290,9 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
         for seat in ('P1','P2'):
             job=expected[(pair['id'],seat)]
             if job['id'] in state['records']:continue
+            prior=next((a for a in reversed(state['attempts']) if a['pairId']==pair['id'] and a['candidateSeat']==seat and a['status']=='unfinished'),None)
+            if prior and not retry_qualification(directory,runtime,digest,job,prior):
+                reason='engine-recovery-review-required';break
             assigned=allocation()
             if deadline-clock()<40:reason='budget';break
             if assigned.get('stop') or assigned['paused']:reason='resource-pause';break
@@ -265,7 +310,13 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
                 with monitor.operation('arena-game',min(610,deadline-clock())) if monitor else nullcontext():
                     result=player(job,by_seat,deadline,device,allocation=allocation,checkpoint=heartbeat,monitor=monitor)
             attempt.update(status=result['status'],finishedMonotonic=clock(),reason=result.get('reason'))
-            if result['status']!='completed':reason=result.get('reason','unfinished');persist();break
+            if result['status']!='completed':
+                reason=result.get('reason','unfinished')
+                # Only host-controlled budget/resource pauses are resumable unchanged.
+                attempt['retryClass']=result.get('retryClass','transient' if reason in
+                    ('budget','resource-pause','inference-budget','verification-budget') else 'engine')
+                attempt['diagnostic']=preserve_diagnostic(output,job,result,len(state['attempts']))
+                persist();break
             game=result['game']
             if (game['id']!=job['id'] or game['seed']!=job['seed'] or game['partition']!=plan['partition']
                 or game.get('modelVersions')!=job['modelVersions'] or game.get('profileVersions')!=job['profileVersions']):
