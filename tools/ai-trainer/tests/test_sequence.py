@@ -55,6 +55,12 @@ class SequenceTest(unittest.TestCase):
             with self.assertRaises(ValueError):s.complete('six-hour',evidence)
             self.assertFalse(Allocation(Path(d),Path(d)/'six').events())
 
+    def test_explicit_new_prerequisite_hold_prevents_any_stage_claim(self):
+        with tempfile.TemporaryDirectory() as d:
+            s,r,e=self.setup_sequence(Path(d));s.config['launchHold']='Waiting for the additional task identity'
+            with self.assertRaisesRegex(ValueError,'launch held'):s.claim(r,e)
+            self.assertFalse((s.directory/'claims'/'diagnostic.json').exists())
+
     def test_crash_after_report_reconciles_outbox_before_progression(self):
         with tempfile.TemporaryDirectory() as d:
             s,r,e=self.setup_sequence(Path(d));s.claim(r,e)

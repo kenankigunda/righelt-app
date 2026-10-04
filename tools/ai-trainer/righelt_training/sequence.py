@@ -74,6 +74,7 @@ class Sequence:
         return None
 
     def claim(self,receipt,envelope):
+        if self.config.get('launchHold'):raise ValueError(f"sequence launch held: {self.config['launchHold']}")
         phase=self.next_phase()
         if phase is None:return {'action':'finished-or-gate-unmet'}
         completion=self.directory/'completion-receipt.json'
@@ -188,7 +189,7 @@ def main():
         if args.command=='claim':result=sequence.claim(read(args.completion),read(args.snapshot))
         elif args.command=='complete':result=sequence.complete(args.phase,args.evidence)
         elif args.command=='mail':result=sequence.mail(args.phase,args.action,read(args.receipt) if args.receipt else None)
-        else:result={'nextPhase':sequence.next_phase()}
+        else:result={'nextPhase':sequence.next_phase(),'launchHold':sequence.config.get('launchHold')}
         print(json.dumps(result,indent=2))
 
 if __name__=='__main__':main()
