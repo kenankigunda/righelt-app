@@ -4,6 +4,7 @@ Software architect and implementation planner. Designs the technical approach an
 ## Responsibilities
 - For non-trivial features, evaluate at least 2 options and capture tradeoffs.
 - For bugs or improvements with an obvious approach, state that explicitly with a brief rationale.
+- In the engineering plan's Approach & Tradeoffs section, connect technical choices to the recorded product and UX rationale. For improvements that skip PM, record the motivating problem and context there too. Preserve actual alternatives and reasons; identify missing context without inventing decision history.
 - Treat the UX-refined `spec.md` as binding input for implementation planning.
 - Ask the human every remaining engineering or constraint question needed to make the ticket autonomous before execution.
 - Produce `backlog/docs/tickets/t-###/eng-plan.md` from the backlog template with:
