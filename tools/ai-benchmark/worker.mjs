@@ -9,7 +9,7 @@ async function evaluate(encoded) {
     [1, experimentConfig.inputPlanes, experimentConfig.boardSize, experimentConfig.boardSize]) });
   const policyLogits = outputs.policy.data, value = outputs.value.data[0];
   if (policyLogits.length !== experimentConfig.actionCount || !Number.isFinite(value) || Math.abs(value) > 1 ||
-      !Array.from(policyLogits).every(Number.isFinite)) throw new Error('Invalid model output');
+      !Array.from(policyLogits).every(Number.isFinite)) throw new Error(`Invalid model output: ${JSON.stringify({ value: String(value), policyLength: policyLogits.length, policyShape: outputs.policy.dims, valueShape: outputs.value.dims, policyType: outputs.policy.type, valueType: outputs.value.type, firstNonFiniteLogit: Array.from(policyLogits).findIndex(value => !Number.isFinite(value)), encoded: Array.from(encoded) })}`);
   return { policyLogits, value };
 }
 self.onmessage = async ({ data }) => {
