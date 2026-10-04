@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withEngineComputationGuard, checkEngineComputation, buildContinuationSuccessorState,
-  isContinuationCompletable, listLegalActions } from '../../src/index.ts';
+  isContinuationCompletable, listLegalActions, withEngineComputationObserver,
+  isEngineComputationObserved, observeEngineComputation } from '../../src/index.ts';
 import { commander, makeState, unit } from '../helpers/state-builders.mjs';
 
 function recursiveRush(b = { row: 5, col: 5 }) {
@@ -53,4 +54,41 @@ test('completion stops constructing siblings once the first successful branch is
     if(expansion && ++expansions>5)throw new Error('constructed unused sibling');
   },()=>isContinuationCompletable(state));
   assert.equal(result,true);assert.equal(expansions,5);assert.deepEqual(state,original);
+});
+
+test('optional diagnostics distinguish expansions, unique keys, memo reuse and candidate outcomes without changing answers',()=>{
+  const state=recursiveRush(),memo=new Map(),events=[];
+  const observed=withEngineComputationObserver(event=>events.push(event),()=>{
+    assert.equal(isContinuationCompletable(state,memo),true);
+    assert.equal(isContinuationCompletable(state,memo),true);
+    return listLegalActions(state);
+  });
+  assert.deepEqual(observed,listLegalActions(state));
+  assert.ok(events.some(event=>event.type==='expansion'));
+  assert.ok(events.some(event=>event.type==='successor'));
+  assert.ok(events.some(event=>event.type==='continuation-key'));
+  assert.ok(events.some(event=>event.type==='memo-hit'));
+  assert.ok(events.some(event=>event.type==='candidate-result'&&event.status==='legal'));
+  assert.ok(events.some(event=>event.type==='candidate-result'&&event.status==='illegal'));
+  assert.equal(events.filter(event=>event.type==='supply-start').length,events.filter(event=>event.type==='supply-end').length);
+  assert.equal(isEngineComputationObserved(),false);
+});
+
+test('diagnostic observer scopes restore nesting and reject asynchronous contexts',async()=>{
+  const calls=[];
+  withEngineComputationObserver(()=>calls.push('outer'),()=>{
+    assert.equal(isEngineComputationObserved(),true);
+    assert.throws(()=>withEngineComputationObserver(()=>calls.push('inner'),()=>{
+      observeEngineComputation({type:'successor'});throw new Error('nested');
+    }),/nested/);
+    assert.deepEqual(calls,['inner','outer']);
+    observeEngineComputation({type:'successor'});
+    assert.deepEqual(calls,['inner','outer','outer']);
+  });
+  assert.equal(isEngineComputationObserved(),false);
+  assert.throws(()=>withEngineComputationObserver(()=>{},()=>Promise.resolve()),/synchronous/);
+  await Promise.resolve();
+  assert.equal(isEngineComputationObserved(),false);
+  observeEngineComputation({type:'successor'});
+  assert.equal(calls.length,3);
 });

@@ -1,4 +1,4 @@
-import { checkEngineComputation } from "./computation-guard.js";
+import { checkEngineComputation, isEngineComputationObserved, observeEngineComputation } from "./computation-guard.js";
 import { BOARD_SIZE, SUPPLY_POINTS, normalizeState } from "./deterministic.js";
 function cloneState(state) {
     return {
@@ -117,69 +117,78 @@ function buildSupplyCheckPieces(state) {
     }));
 }
 function computeLiveSuppliedPieceIds(state, owner) {
-    const pieces = buildSupplyCheckPieces(state);
-    const enemyBlockedByEdge = new Set();
-    for (const edge of buildCommandEdgesForPieces(pieces)) {
-        if (edge.owner === owner) {
-            continue;
-        }
-        if (edge.from.row === edge.to.row) {
-            const row = edge.from.row;
-            const startCol = Math.min(edge.from.col, edge.to.col) + 1;
-            const endCol = Math.max(edge.from.col, edge.to.col);
-            for (let col = startCol; col < endCol; col += 1) {
-                enemyBlockedByEdge.add(coordinateKey(row, col));
-            }
-            continue;
-        }
-        if (edge.from.col === edge.to.col) {
-            const col = edge.from.col;
-            const startRow = Math.min(edge.from.row, edge.to.row) + 1;
-            const endRow = Math.max(edge.from.row, edge.to.row);
-            for (let row = startRow; row < endRow; row += 1) {
-                enemyBlockedByEdge.add(coordinateKey(row, col));
-            }
-        }
-    }
-    const occupiedByCoordinate = new Map(pieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece]));
-    const supplyPoint = SUPPLY_POINTS[owner];
-    const supplyKey = coordinateKey(supplyPoint.row, supplyPoint.col);
-    const isTraversable = (row, col) => {
-        if (enemyBlockedByEdge.has(coordinateKey(row, col))) {
-            return false;
-        }
-        const occupant = occupiedByCoordinate.get(coordinateKey(row, col));
-        return !occupant || occupant.owner === owner;
-    };
-    if (!isTraversable(supplyPoint.row, supplyPoint.col)) {
-        return new Set();
-    }
-    const reachableCoordinates = new Set([supplyKey]);
-    const queue = [{ ...supplyPoint }];
-    while (queue.length > 0) {
-        const current = queue.shift();
-        if (!current) {
-            break;
-        }
-        for (const next of sortedOrthogonalNeighbors(current.row, current.col)) {
-            const nextKey = coordinateKey(next.row, next.col);
-            if (reachableCoordinates.has(nextKey) || !isTraversable(next.row, next.col)) {
+    const observed = isEngineComputationObserved();
+    if (observed)
+        observeEngineComputation({ type: "supply-start" });
+    try {
+        const pieces = buildSupplyCheckPieces(state);
+        const enemyBlockedByEdge = new Set();
+        for (const edge of buildCommandEdgesForPieces(pieces)) {
+            if (edge.owner === owner) {
                 continue;
             }
-            reachableCoordinates.add(nextKey);
-            queue.push(next);
+            if (edge.from.row === edge.to.row) {
+                const row = edge.from.row;
+                const startCol = Math.min(edge.from.col, edge.to.col) + 1;
+                const endCol = Math.max(edge.from.col, edge.to.col);
+                for (let col = startCol; col < endCol; col += 1) {
+                    enemyBlockedByEdge.add(coordinateKey(row, col));
+                }
+                continue;
+            }
+            if (edge.from.col === edge.to.col) {
+                const col = edge.from.col;
+                const startRow = Math.min(edge.from.row, edge.to.row) + 1;
+                const endRow = Math.max(edge.from.row, edge.to.row);
+                for (let row = startRow; row < endRow; row += 1) {
+                    enemyBlockedByEdge.add(coordinateKey(row, col));
+                }
+            }
         }
+        const occupiedByCoordinate = new Map(pieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece]));
+        const supplyPoint = SUPPLY_POINTS[owner];
+        const supplyKey = coordinateKey(supplyPoint.row, supplyPoint.col);
+        const isTraversable = (row, col) => {
+            if (enemyBlockedByEdge.has(coordinateKey(row, col))) {
+                return false;
+            }
+            const occupant = occupiedByCoordinate.get(coordinateKey(row, col));
+            return !occupant || occupant.owner === owner;
+        };
+        if (!isTraversable(supplyPoint.row, supplyPoint.col)) {
+            return new Set();
+        }
+        const reachableCoordinates = new Set([supplyKey]);
+        const queue = [{ ...supplyPoint }];
+        while (queue.length > 0) {
+            const current = queue.shift();
+            if (!current) {
+                break;
+            }
+            for (const next of sortedOrthogonalNeighbors(current.row, current.col)) {
+                const nextKey = coordinateKey(next.row, next.col);
+                if (reachableCoordinates.has(nextKey) || !isTraversable(next.row, next.col)) {
+                    continue;
+                }
+                reachableCoordinates.add(nextKey);
+                queue.push(next);
+            }
+        }
+        const supplied = new Set();
+        for (const piece of pieces) {
+            if (piece.owner !== owner) {
+                continue;
+            }
+            if (reachableCoordinates.has(coordinateKey(piece.position.row, piece.position.col))) {
+                supplied.add(piece.id);
+            }
+        }
+        return supplied;
     }
-    const supplied = new Set();
-    for (const piece of pieces) {
-        if (piece.owner !== owner) {
-            continue;
-        }
-        if (reachableCoordinates.has(coordinateKey(piece.position.row, piece.position.col))) {
-            supplied.add(piece.id);
-        }
+    finally {
+        if (observed)
+            observeEngineComputation({ type: "supply-end" });
     }
-    return supplied;
 }
 function getPieceAt(state, value) {
     return state.pieces.find((piece) => piece.position.row === value.row && piece.position.col === value.col);
@@ -484,6 +493,8 @@ function closePushContinuation(state, attackerOwner) {
 }
 export function buildContinuationSuccessorState(state, action) {
     checkEngineComputation(true);
+    if (isEngineComputationObserved())
+        observeEngineComputation({ type: "successor" });
     const next = cloneState(state);
     const actor = action.actorId ? next.pieces.find((piece) => piece.id === action.actorId) : undefined;
     if (action.type === "push" && actor && action.to) {
@@ -651,7 +662,11 @@ export function isContinuationCompletable(state, memo = new Map()) {
     }
     const normalized = normalizeState(state);
     const key = continuationSearchKey(normalized);
+    if (isEngineComputationObserved())
+        observeEngineComputation({ type: "continuation-key", key });
     const existing = memo.get(key);
+    if (existing !== undefined && isEngineComputationObserved())
+        observeEngineComputation({ type: "memo-hit", key });
     if (existing === "success") {
         return true;
     }

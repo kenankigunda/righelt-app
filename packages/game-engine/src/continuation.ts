@@ -1,4 +1,4 @@
-import { checkEngineComputation } from "./computation-guard";
+import { checkEngineComputation, isEngineComputationObserved, observeEngineComputation } from "./computation-guard";
 import type { Action, ContinuationContext, GameState, Piece } from "./types";
 import { BOARD_SIZE, SUPPLY_POINTS, normalizeState } from "./deterministic";
 
@@ -154,77 +154,83 @@ function buildSupplyCheckPieces(state: GameState): PieceForSupplyCheck[] {
 }
 
 function computeLiveSuppliedPieceIds(state: GameState, owner: "P1" | "P2"): Set<string> {
-  const pieces = buildSupplyCheckPieces(state);
-  const enemyBlockedByEdge = new Set<string>();
-  for (const edge of buildCommandEdgesForPieces(pieces)) {
-    if (edge.owner === owner) {
-      continue;
-    }
-
-    if (edge.from.row === edge.to.row) {
-      const row = edge.from.row;
-      const startCol = Math.min(edge.from.col, edge.to.col) + 1;
-      const endCol = Math.max(edge.from.col, edge.to.col);
-      for (let col = startCol; col < endCol; col += 1) {
-        enemyBlockedByEdge.add(coordinateKey(row, col));
-      }
-      continue;
-    }
-
-    if (edge.from.col === edge.to.col) {
-      const col = edge.from.col;
-      const startRow = Math.min(edge.from.row, edge.to.row) + 1;
-      const endRow = Math.max(edge.from.row, edge.to.row);
-      for (let row = startRow; row < endRow; row += 1) {
-        enemyBlockedByEdge.add(coordinateKey(row, col));
-      }
-    }
-  }
-
-  const occupiedByCoordinate = new Map(pieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece]));
-  const supplyPoint = SUPPLY_POINTS[owner];
-  const supplyKey = coordinateKey(supplyPoint.row, supplyPoint.col);
-
-  const isTraversable = (row: number, col: number): boolean => {
-    if (enemyBlockedByEdge.has(coordinateKey(row, col))) {
-      return false;
-    }
-    const occupant = occupiedByCoordinate.get(coordinateKey(row, col));
-    return !occupant || occupant.owner === owner;
-  };
-
-  if (!isTraversable(supplyPoint.row, supplyPoint.col)) {
-    return new Set<string>();
-  }
-
-  const reachableCoordinates = new Set<string>([supplyKey]);
-  const queue: { row: number; col: number }[] = [{ ...supplyPoint }];
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) {
-      break;
-    }
-    for (const next of sortedOrthogonalNeighbors(current.row, current.col)) {
-      const nextKey = coordinateKey(next.row, next.col);
-      if (reachableCoordinates.has(nextKey) || !isTraversable(next.row, next.col)) {
+  const observed = isEngineComputationObserved();
+  if (observed) observeEngineComputation({ type: "supply-start" });
+  try {
+    const pieces = buildSupplyCheckPieces(state);
+    const enemyBlockedByEdge = new Set<string>();
+    for (const edge of buildCommandEdgesForPieces(pieces)) {
+      if (edge.owner === owner) {
         continue;
       }
-      reachableCoordinates.add(nextKey);
-      queue.push(next);
-    }
-  }
 
-  const supplied = new Set<string>();
-  for (const piece of pieces) {
-    if (piece.owner !== owner) {
-      continue;
-    }
-    if (reachableCoordinates.has(coordinateKey(piece.position.row, piece.position.col))) {
-      supplied.add(piece.id);
-    }
-  }
+      if (edge.from.row === edge.to.row) {
+        const row = edge.from.row;
+        const startCol = Math.min(edge.from.col, edge.to.col) + 1;
+        const endCol = Math.max(edge.from.col, edge.to.col);
+        for (let col = startCol; col < endCol; col += 1) {
+          enemyBlockedByEdge.add(coordinateKey(row, col));
+        }
+        continue;
+      }
 
-  return supplied;
+      if (edge.from.col === edge.to.col) {
+        const col = edge.from.col;
+        const startRow = Math.min(edge.from.row, edge.to.row) + 1;
+        const endRow = Math.max(edge.from.row, edge.to.row);
+        for (let row = startRow; row < endRow; row += 1) {
+          enemyBlockedByEdge.add(coordinateKey(row, col));
+        }
+      }
+    }
+
+    const occupiedByCoordinate = new Map(pieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece]));
+    const supplyPoint = SUPPLY_POINTS[owner];
+    const supplyKey = coordinateKey(supplyPoint.row, supplyPoint.col);
+
+    const isTraversable = (row: number, col: number): boolean => {
+      if (enemyBlockedByEdge.has(coordinateKey(row, col))) {
+        return false;
+      }
+      const occupant = occupiedByCoordinate.get(coordinateKey(row, col));
+      return !occupant || occupant.owner === owner;
+    };
+
+    if (!isTraversable(supplyPoint.row, supplyPoint.col)) {
+      return new Set<string>();
+    }
+
+    const reachableCoordinates = new Set<string>([supplyKey]);
+    const queue: { row: number; col: number }[] = [{ ...supplyPoint }];
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) {
+        break;
+      }
+      for (const next of sortedOrthogonalNeighbors(current.row, current.col)) {
+        const nextKey = coordinateKey(next.row, next.col);
+        if (reachableCoordinates.has(nextKey) || !isTraversable(next.row, next.col)) {
+          continue;
+        }
+        reachableCoordinates.add(nextKey);
+        queue.push(next);
+      }
+    }
+
+    const supplied = new Set<string>();
+    for (const piece of pieces) {
+      if (piece.owner !== owner) {
+        continue;
+      }
+      if (reachableCoordinates.has(coordinateKey(piece.position.row, piece.position.col))) {
+        supplied.add(piece.id);
+      }
+    }
+
+    return supplied;
+  } finally {
+    if (observed) observeEngineComputation({ type: "supply-end" });
+  }
 }
 
 function getPieceAt(state: GameState, value: { row: number; col: number }) {
@@ -583,6 +589,7 @@ function closePushContinuation(state: GameState, attackerOwner: "P1" | "P2") {
 
 export function buildContinuationSuccessorState(state: GameState, action: Action): GameState {
   checkEngineComputation(true);
+  if (isEngineComputationObserved()) observeEngineComputation({ type: "successor" });
   const next = cloneState(state);
   const actor = action.actorId ? next.pieces.find((piece) => piece.id === action.actorId) : undefined;
 
@@ -762,7 +769,9 @@ export function isContinuationCompletable(state: GameState, memo = new Map<strin
 
   const normalized = normalizeState(state);
   const key = continuationSearchKey(normalized);
+  if (isEngineComputationObserved()) observeEngineComputation({ type: "continuation-key", key });
   const existing = memo.get(key);
+  if (existing !== undefined && isEngineComputationObserved()) observeEngineComputation({ type: "memo-hit", key });
   if (existing === "success") {
     return true;
   }
