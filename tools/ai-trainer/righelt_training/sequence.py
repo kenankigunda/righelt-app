@@ -41,10 +41,12 @@ def immutable(path,data):
     finally:Path(temp).unlink()
 
 
-def launch_ready(receipt,envelope,*,now=None):
+def launch_ready(receipt,envelope,*,now=None,required=(PREREQUISITE,)):
     now=time.time() if now is None else now
-    if (receipt.get('threadId')!=PREREQUISITE or receipt.get('completed') is not True
-        or not receipt.get('evidence') or not receipt.get('alertId')):
+    receipts=receipt.get('receipts',[receipt])
+    if (not isinstance(receipts,list) or len(receipts)!=len(required)
+        or {r.get('threadId') for r in receipts}!=set(required)
+        or any(r.get('completed') is not True or not r.get('evidence') or not r.get('alertId') for r in receipts)):
         raise ValueError('required task completion receipt missing')
     live=observation(envelope,now)
     if live['developmentActive']:raise ValueError('project work active or observations unavailable')
@@ -57,6 +59,10 @@ class Sequence:
         self.config=read(self.path)
         self.root=self.directory.parent
         if not self.config.get('sequenceId'):raise ValueError('sequence identity required')
+        self.prerequisites=self.config.get('prerequisiteThreadIds',[PREREQUISITE])
+        if (not isinstance(self.prerequisites,list) or PREREQUISITE not in self.prerequisites
+            or len(set(self.prerequisites))!=len(self.prerequisites) or any(not isinstance(t,str) or not t for t in self.prerequisites)):
+            raise ValueError('explicit unique task prerequisites required')
         for name in ('diagnosticDirectory','sixHourDirectory','twelveHourDirectory','recoveryCheckpoint','opponentCheckpoint'):
             if not Path(self.config[name]).resolve().is_relative_to(self.root):raise ValueError('sequence path outside archive')
         if digest(self.config['recoveryCheckpoint'])!=self.config['recoverySha256']:raise ValueError('starting checkpoint changed')
@@ -78,7 +84,7 @@ class Sequence:
         phase=self.next_phase()
         if phase is None:return {'action':'finished-or-gate-unmet'}
         completion=self.directory/'completion-receipt.json'
-        if not (self.directory/'claims'/'diagnostic.json').exists():launch_ready(receipt,envelope)
+        if not (self.directory/'claims'/'diagnostic.json').exists():launch_ready(receipt,envelope,required=self.prerequisites)
         else:
             # Newly active work is protected by the live adaptive resource policy;
             # it does not revoke an already-started conditional sequence.

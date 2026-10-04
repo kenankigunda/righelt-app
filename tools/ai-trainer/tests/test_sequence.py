@@ -61,6 +61,14 @@ class SequenceTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'launch held'):s.claim(r,e)
             self.assertFalse((s.directory/'claims'/'diagnostic.json').exists())
 
+    def test_every_added_task_requires_its_own_completion_receipt(self):
+        with tempfile.TemporaryDirectory() as d:
+            s,r,e=self.setup_sequence(Path(d));s.prerequisites=[PREREQUISITE,'additional-task']
+            with self.assertRaisesRegex(ValueError,'completion receipt'):s.claim(r,e)
+            second={**r,'threadId':'additional-task','alertId':'second-alert'}
+            with self.assertRaises(ValueError):s.claim({'receipts':[r,r]},e)
+            self.assertEqual(s.claim({'receipts':[r,second]},e)['phase'],'diagnostic')
+
     def test_crash_after_report_reconciles_outbox_before_progression(self):
         with tempfile.TemporaryDirectory() as d:
             s,r,e=self.setup_sequence(Path(d));s.claim(r,e)
