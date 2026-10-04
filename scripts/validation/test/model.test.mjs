@@ -46,7 +46,7 @@ test('account proof directory is mapped without accepting unrelated validation f
 });
 
 test('public items allowlist text/client provenance and exclude nested private fields',()=>{
- const p=publicRun({stages:[{items:[{id:'i',title:'journey',status:'failed',privateLog:'SECRET',client:{browser:'webkit',width:390,baseURL:'SECRET'},behaviors:[{label:'owned move',checkpoint:'owned-move',raw:'SECRET'}],images:[{src:'images/a.png',caption:'board',privatePath:'SECRET'}]}]}]});assert(!JSON.stringify(p).includes('SECRET'));assert.equal(p.stages[0].items[0].client.browser,'webkit');assert.equal(p.stages[0].items[0].behaviors[0].label,'owned move');
+ const p=publicRun({stages:[{items:[{id:'i',title:'journey',status:'failed',privateLog:'SECRET',client:{browser:'webkit',width:390,baseURL:'SECRET'},behaviors:[{label:'owned move',checkpoint:'owned-move',raw:'SECRET'}],images:[{src:'images/a.png',caption:'board',checkpoint:'created',kind:'context',viewport:'mobile',privatePath:'SECRET'}]}]}]});assert(!JSON.stringify(p).includes('SECRET'));assert.equal(p.stages[0].items[0].client.browser,'webkit');assert.equal(p.stages[0].items[0].behaviors[0].label,'owned move');assert.deepEqual(p.stages[0].items[0].images[0],{src:'images/a.png',thumbnail:undefined,caption:'board',digest:undefined,checkpoint:'created',kind:'context',viewport:'mobile'});
 });
 
 test('historical attempts retain failures without private paths, payloads or images',()=>{
