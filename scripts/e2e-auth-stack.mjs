@@ -1,5 +1,6 @@
 // Isolated local account stack. No remote resources or production auth flags are changed.
 import { spawn } from "node:child_process";
+import { createAuthFixtureControl } from "./auth-fixture-control.mjs";
 import { createServer } from "node:http";
 import { get } from "node:https";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
@@ -20,16 +21,23 @@ let stopping = false;
 let control;
 let proxyDiagnosticsInstallation;
 
-function run(args, { cwd = root, service = false } = {}) {
-  const child = spawn("pnpm", args, { cwd, stdio: "inherit", detached: service });
+function run(args, { cwd = root, service = false, captureStderr = false } = {}) {
+  const child = spawn("pnpm", args, { cwd, stdio: captureStderr ? ["inherit", "inherit", "pipe"] : "inherit", detached: service });
   if (service) {
     children.add(child);
     child.on("exit", code => { children.delete(child); if (!stopping) void shutdown(code || 1); });
     return child;
   }
   return new Promise((resolve, reject) => {
+    let stderr = "";
+    child.stderr?.on("data", chunk => {
+      process.stderr.write(chunk);
+      stderr = (stderr + chunk.toString()).slice(-65536);
+    });
     child.once("error", reject);
-    child.once("exit", code => code === 0 ? resolve() : reject(new Error(`Local command exited ${code}`)));
+    // close waits for the complete diagnostic stream before classifying a failure.
+    child.once("close", code => code === 0 ? resolve() :
+      reject(Object.assign(new Error(`Local command exited ${code}`), { stderr })));
   });
 }
 async function shutdown(code = 0) {
@@ -109,22 +117,10 @@ try {
   await ready(`http://127.0.0.1:${apiPort}/api/health`);
   // Test-runner-only loopback control; never exposed through Pages or application routes.
   // Fixed SQL operations only, rejecting browser-origin requests. This is not an auth bypass.
-  let busy = false;
-  control = createServer(async (request, response) => {
-    const sql = request.url === "/reset-limits" ? "DELETE FROM account_rate_limits"
-      : request.url === "/activate-cutover" ? "UPDATE account_cutover SET activated_at=COALESCE(activated_at,CAST(unixepoch('subsec')*1000 AS INTEGER)),maintenance=1,canary_account_id=(SELECT account_id FROM accounts WHERE username_canonical='cutover_canary' AND recovery_acknowledged=1) WHERE singleton=1"
-      : request.url === "/maintenance-on" ? "UPDATE account_cutover SET maintenance=1 WHERE singleton=1 AND activated_at IS NOT NULL"
-      : request.url === "/maintenance-off" ? "UPDATE account_cutover SET maintenance=0 WHERE singleton=1 AND activated_at IS NOT NULL"
-      : request.url === "/expire-sessions" ? "UPDATE account_sessions SET expires_at = created_at + 1, last_activity_at = created_at" : null;
-    if (request.method !== "POST" || request.headers.origin || !sql) { response.writeHead(404).end(); return; }
-    if (busy) { response.writeHead(409).end(); return; }
-    busy = true;
-    try {
-      await run([...d1, "execute", "DB", "--config", apiConfig, "--local", "--persist-to", persist, "--command", sql]);
-      response.writeHead(200).end("done");
-    } catch { response.writeHead(500).end("Local fixture operation failed"); }
-    finally { busy = false; }
-  }).listen(Number(webPort) + 100, "127.0.0.1");
+  control = createServer(createAuthFixtureControl(sql =>
+    run([...d1, "execute", "DB", "--config", apiConfig, "--local", "--persist-to", persist, "--command", sql],
+      { captureStderr: true })
+  )).listen(Number(webPort) + 100, "127.0.0.1");
   run(["exec", "wrangler", "pages", "dev", ".", "--port", webPort, "--local-protocol", "https", "--inspector-port", "9998"],
     { cwd: path.join(root, "apps/web"), service: true });
   await ready(origin);
