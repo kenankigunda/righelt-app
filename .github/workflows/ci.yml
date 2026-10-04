@@ -367,6 +367,85 @@ jobs:
           path: test-results/ci-provenance/web-integration.json
           if-no-files-found: error
 
+  sync-stress:
+    name: Sync seeded fault stress
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+      - name: Sync seeded fault stress
+        run: pnpm test:sync-stress -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/sync-stress/results.xml
+      - name: Upload sync-stress JUnit
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: junit-sync-stress
+          path: test-results/sync-stress/results.xml
+          if-no-files-found: ignore
+      - name: Upload deterministic failure schedules
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sync-failure-schedules
+          path: test-results/sync-stress/traces
+          if-no-files-found: ignore
+
+      - name: Record exact CI environment
+        if: always()
+        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/sync-stress.json
+      - name: Upload exact CI environment
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-provenance-sync-stress-${{ github.run_attempt }}
+          path: test-results/ci-provenance/sync-stress.json
+          if-no-files-found: error
+
+  sync-runtime:
+    name: Sync Workers and D1
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+      - name: Sync Workers and D1
+        run: pnpm test:sync-runtime -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/sync-runtime/results.xml
+      - name: Upload sync-runtime JUnit
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: junit-sync-runtime
+          path: test-results/sync-runtime/results.xml
+          if-no-files-found: ignore
+
+      - name: Record exact CI environment
+        if: always()
+        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/sync-runtime.json
+      - name: Upload exact CI environment
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-provenance-sync-runtime-${{ github.run_attempt }}
+          path: test-results/ci-provenance/sync-runtime.json
+          if-no-files-found: error
+
   e2e:
     name: E2E
     runs-on: ubuntu-latest
@@ -386,7 +465,7 @@ jobs:
         run: pnpm install --frozen-lockfile=false
 
       - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
 
       - name: E2E tests
         env:
@@ -424,6 +503,14 @@ jobs:
             test-results/e2e-responsive/artifacts
           if-no-files-found: ignore
 
+      - name: Upload sync recovery measurements
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: sync-recovery-measurements
+          path: test-results/sync-recovery
+          if-no-files-found: ignore
+
       - name: Record exact CI environment
         if: always()
         run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/e2e.json
@@ -449,6 +536,8 @@ jobs:
       - api-handler-integration
       - api-worker-integration
       - web-integration
+      - sync-stress
+      - sync-runtime
       - e2e
     steps:
       - name: Checkout

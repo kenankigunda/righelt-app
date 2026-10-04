@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import os from "node:os";
@@ -19,6 +20,19 @@ const autoPersistRoot = process.env.RIGHELT_E2E_PERSIST_ROOT || "";
 const managedChildren = new Set();
 let tempRoot = "";
 let shuttingDown = false;
+const intentionalStops = new Set();
+let controlServer;
+let restartActive = false;
+const stopChild = async child => {
+ intentionalStops.add(child);
+ const signal = value => { try { if (child.spawnargs.includes("--persist-to") && child.spawnargs.includes("dev")) process.kill(-child.pid,value); else child.kill(value); } catch {} };
+ const stopped = new Promise(resolve=>child.once("exit",resolve));
+ signal("SIGTERM");
+ const timer=setTimeout(()=>signal("SIGKILL"),5000);
+ await Promise.race([stopped,new Promise(resolve=>setTimeout(resolve,6000))]);
+ clearTimeout(timer);
+ signal("SIGKILL");
+};
 
 export const createE2ePersistRoot = async () => {
   if (autoPersistRoot) {
@@ -59,7 +73,7 @@ const spawnLogged = (label, command, args, options) => {
   });
   child.on("exit", (code, signal) => {
     managedChildren.delete(child);
-    if (shuttingDown) {
+    if (shuttingDown || intentionalStops.has(child)) {
       return;
     }
     if (code !== 0) {
@@ -91,20 +105,8 @@ const shutdown = async (exitCode = 0) => {
     return;
   }
   shuttingDown = true;
-  await Promise.allSettled(
-    [...managedChildren].map(
-      (child) =>
-        new Promise((resolve) => {
-          child.once("exit", () => resolve());
-          child.kill("SIGTERM");
-          setTimeout(() => {
-            if (child.exitCode === null) {
-              child.kill("SIGKILL");
-            }
-          }, 5_000);
-        }),
-    ),
-  );
+  controlServer?.close();
+  await Promise.allSettled([...managedChildren].map(stopChild));
 
   if (tempRoot) {
     await rm(tempRoot, { recursive: true, force: true });
@@ -145,7 +147,7 @@ const run = async () => {
     { cwd: repoRoot },
   );
 
-  spawnLogged(
+  const startApi = () => spawnLogged(
     "api",
     "pnpm",
     [
@@ -161,8 +163,28 @@ const run = async () => {
       "--persist-to",
       apiPersistPath,
     ],
-    { cwd: repoRoot },
+    { cwd: repoRoot, detached: true },
   );
+  let apiChild = startApi();
+  // Test-runner-only loopback control: not served by Pages or the application Worker.
+  controlServer = createServer(async (request, response) => {
+    if (request.method !== "POST" || request.url !== "/restart") { response.writeHead(404).end(); return; }
+    if (restartActive) { response.writeHead(409).end(); return; }
+    restartActive=true;
+    try {
+      await stopChild(apiChild);
+      const deadline=Date.now()+5000;
+      let down=false;
+      while(Date.now()<deadline) {
+        try { await fetch(apiHealthUrl,{signal:AbortSignal.timeout(500)}); } catch { down=true; break; }
+        await new Promise(resolve=>setTimeout(resolve,100));
+      }
+      if (!down || shuttingDown) throw new Error("API did not stop or stack is shutting down");
+      apiChild = startApi();
+      await waitForHttp(apiHealthUrl, "restarted local API");
+      response.writeHead(200).end("restarted");
+    } catch (error) { response.writeHead(500).end(String(error)); } finally { restartActive=false; }
+  }).listen(Number(webPort) + 100, "127.0.0.1");
   await waitForHttp(apiHealthUrl, "local API");
 
   spawnLogged("pages", "pnpm", ["exec", "wrangler", "pages", "dev", ".", "--port", webPort], {
