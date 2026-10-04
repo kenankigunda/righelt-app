@@ -48,6 +48,7 @@ export const createAccountDialog = ({
     challengeToken = "",
     widget = null,
     flow = 0,
+    pendingLogoutGeneration = null,
     owner = {};
   const status = (text) => {
     const target = dialog.querySelector("[data-account-status]");
@@ -121,6 +122,7 @@ export const createAccountDialog = ({
     );
   };
   const close = () => {
+    pendingLogoutGeneration = null;
     flow++;
     owner = {};
     pending = null;
@@ -155,7 +157,9 @@ export const createAccountDialog = ({
         : null);
     values = {};
     mode = next;
-    const session = controller.snapshot().session;
+    const snapshot = controller.snapshot();
+    const session = snapshot.session;
+    pendingLogoutGeneration = snapshot.pendingLogout && !session.authenticated ? snapshot.generation : null;
     if (next === "account" && !session.authenticated) mode = "login";
     dialog.dataset.actionAffiliation = document.querySelector("#app")?.dataset.actionAffiliation || "red";
     render();
@@ -319,7 +323,9 @@ export const createAccountDialog = ({
       return;
     }
     if (button.hasAttribute("data-logout")) {
+      const marker = flow;
       await controller.logout();
+      if (marker !== flow) return;
       close();
       onComplete(null);
     }
@@ -441,7 +447,13 @@ export const createAccountDialog = ({
     open,
     close,
     refreshSession,
-    onTransition: ({ owner: transitionOwner } = {}) => {
+    onTransition: ({ owner: transitionOwner, completedLogoutGeneration } = {}) => {
+      // The prior session was already retired before this anonymous form opened.
+      // Only completion of that exact local logout may preserve it.
+      if (dialog.open && pendingLogoutGeneration !== null && completedLogoutGeneration === pendingLogoutGeneration) {
+        pendingLogoutGeneration = null;
+        return;
+      }
       // Only the operation submitted by this exact dialog flow may carry it
       // across a session replacement. Other tabs and revocation retire secrets.
       if (dialog.open && transitionOwner !== owner) close();
