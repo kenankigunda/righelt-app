@@ -15,7 +15,7 @@ export type SearchRequest = {
   maxValueGap?: number; maxNodes?: number; deadlineMs?: number; signal?: AbortSignal;
 };
 export type ActionReport = {
-  index: number; visits: number; prior: number; value: number | null;
+  index: number; visits: number; prior: number; policyLogit: number; value: number | null;
   immediate: "win" | "eligible" | "losing" | "incomplete";
   tactical: TacticalStatus;
 };
@@ -145,7 +145,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
   };
   function reports(): ActionReport[] {
     return (root.edges ?? []).map(edge => ({
-      index: edge.index, visits: edge.visits, prior: edge.prior,
+      index: edge.index, visits: edge.visits, prior: edge.prior, policyLogit: edge.policyLogit,
       value: edge.visits ? edge.sum / edge.visits : null,
       immediate: safety.get(edge.index) ?? "incomplete", tactical: proofs.get(edge.index) ?? "incomplete",
     }));

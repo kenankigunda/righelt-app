@@ -106,6 +106,8 @@ test('fallback ranking preserves model order when excluded dominant logits under
   const result=await run({root:{actions:[{index:1,to:'lost'},{index:2,to:'a',limit:true},{index:3,to:'b',limit:true}]},lost:{terminal:-1}},{1:1000,2:-1001,3:-1000});
   masked(result,'safety-incomplete');assert.equal(result.actionIndex,3);
   assert.equal(result.actions.find(a=>a.index===2).prior,0);assert.equal(result.actions.find(a=>a.index===3).prior,0);
+  assert.equal(result.actions.find(a=>a.index===2).policyLogit,-1001);
+  assert.equal(result.actions.find(a=>a.index===3).policyLogit,-1000);
 });
 
 test('post-root deadline returns a masked root estimate, but post-root cancellation still rejects',async()=>{
