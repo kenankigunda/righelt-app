@@ -58,6 +58,25 @@ Failure resolutions retain the original attempt and link a tested fix, independe
 
 ### Synchronous engine verification allowance
 
-The search tree remains capped at 2,048 nodes. Recursive continuation enumeration uses a separate per-operation ceiling of 16,384 expansions (`MAX_ENGINE_OPERATION_EXPANSIONS`); each expansion also checks the existing deadline. Exact replay uses this same finite engine allowance when reconstructing complete legal masks and transitions. Interrupted work remains unfinished and never supplies a partial legal list or a training value target.
+The search tree remains capped at 2,048 nodes. Recursive continuation enumeration uses a separate per-operation ceiling of 16,384 expansions (`MAX_ENGINE_OPERATION_EXPANSIONS`); each expansion also checks the existing deadline. Exact replay uses this same finite engine allowance when reconstructing complete legal masks and transitions. Interrupted operations never publish partial legal lists or claim completed checking. A verified legal root action may still be selected by the explicit fallback contract below; unfinished games never receive terminal-value targets.
 
 The retained 14 archives referenced by initial-r2 checkpoint 63 required at most 9,879 expansions in one authoritative operation; the previous 2,048-operation allowance censored three valid archives. The 16,384 ceiling provides bounded headroom for that measured workload without increasing search tree nodes. Replay reports include the operation ceiling, measured expansion peak and sampled heap usage; search reports distinguish internal engine work from tree nodes.
+
+
+### Legal model fallbacks and reporting
+
+Search continues past a candidate-local engine limit without repeating that failed operation. Global deadlines, cancellation and tree-node limits remain bounded. If checked alternatives exist but no eligible search visit finishes, `search-incomplete` selects their highest raw model-policy logit. If none is fully checked, `safety-incomplete` selects the highest-ranked verified legal action whose immediate loss is not proven. Exact ties use the recorded seed. Immediate wins and existing all-proven-losing behavior remain intact. Invalid model outputs and unknown legality still stop the decision.
+
+Fallback records contain `policyMask: false`, an empty policy target, versioned reason, selected-action safety, root-value provenance and search diagnostics. They retain genuine terminal-value supervision; truncated games remain value-masked. Losses normalize over supervised examples, and batches with no supervised targets do not update the optimizer. Older replay records keep their original semantics.
+
+Decision progress is saved before the game completes, so unfinished games remain visible in completion reports. Inspect observed rates by start kind and profile with:
+
+```sh
+PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.fallback_report .ai-runs/overnight-r2
+```
+
+The report identifies coverage gaps rather than inferring unrecorded decisions. T-115 owns the eventual lightweight and debug analysis presentation; a fallback is not automatically a poor decision grade.
+
+An authorized reset from a prior overnight allocation requires a gate report binding the exact predecessor checkpoint checksum and recovery audit. The supervisor validates model, optimizer, random state, cursor and archive hashes; a disposable canary never supplies the inherited training checkpoint. Run the canary explicitly before an overnight stage, then pass the verified predecessor with `--resume`. All preflight, canary and experiment computation consumes the same approved allocation.
+
+The value head explicitly clamps its tanh output to its mathematical range before export. This corrects observed FP32 WASM endpoint overshoot without changing trained parameter shapes. Runtime/search validators remain strict; a changed export checksum requires new compatibility proof.
