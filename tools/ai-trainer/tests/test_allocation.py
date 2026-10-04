@@ -31,3 +31,21 @@ class AllocationTests(unittest.TestCase):
             with patch('righelt_training.allocation.alive',return_value=False):a.recover_abandoned(lambda _:None)
             self.assertFalse(a.accounting()[2]);self.assertGreater(a.accounting()[1],0)
             self.assertEqual(a.events()[0]['resetFrom'],str(old.resolve()))
+
+    def test_short_evaluation_allocation_cannot_expand_to_overnight_default(self):
+        from righelt_training.allocation import append
+        from righelt_training.budget import Budget
+        with tempfile.TemporaryDirectory() as d:
+            a=Allocation(d,Path(d)/'evaluation')
+            append(a.path,{'event':'created','allocation':a.key,'stage':'overnight','seconds':7200,'id':'evaluation','authorization':'User approved two hours evaluation only'})
+            self.assertEqual(a.create('overnight')['seconds'],7200)
+            with patch('righelt_training.allocation.time.time',return_value=100),patch('righelt_training.allocation.time.monotonic',return_value=20):
+                first,_,_=a.begin('export-parity')
+            with patch('righelt_training.allocation.time.time',return_value=200),patch('righelt_training.allocation.time.monotonic',return_value=120):
+                a.finish(first['id'],reason='completed')
+                _,remaining,charged=a.begin('arena')
+            self.assertEqual((remaining,charged),(7100,100))
+            budget=Budget(120-charged,a.accounting()[0]['seconds'],200+remaining)
+            self.assertEqual(budget.seconds,7200)
+            with patch('righelt_training.budget.time.time',return_value=7300):
+                self.assertEqual(budget.remaining(200),0)

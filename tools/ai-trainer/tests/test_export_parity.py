@@ -6,7 +6,7 @@ import time
 from argparse import Namespace
 import unittest
 from unittest.mock import patch
-from righelt_training.export_parity import evaluate
+from righelt_training.export_parity import evaluate,validate_parity_checkpoint
 from righelt_training.health import trained_export_proof
 from righelt_training.supervisor import parity_arguments
 from righelt_training.config import CONFIG_SHA256
@@ -51,6 +51,45 @@ class ExportParityTest(unittest.TestCase):
             with patch('righelt_training.export_parity.verify_corpus',return_value=[{'encoded':[0.0]*4600}]*1000),patch('torch.backends.mps.is_available',return_value=True),patch('righelt_training.export_parity.load_checkpoint'),patch('righelt_training.export_parity.export_onnx',return_value={}):
                 report=evaluate(root,checkpoint,corpus,time.monotonic()+60,checker=lambda *a,**k:{'numericPassed':True,'maxAbsoluteError':[float('nan'),0]})
             self.assertFalse(report['complete']);self.assertTrue(report['failed'])
+
+    def test_audited_parent_without_local_latest_or_copied_manifest(self):
+        import torch
+        from righelt_training.model import PolicyValueNet
+        from righelt_training.checkpoint import save_checkpoint
+        from righelt_training.allocation import append
+        with tempfile.TemporaryDirectory() as d:
+            archive=Path(d).resolve();prior=archive/'prior';target=archive/'evaluation';target.mkdir()
+            model=PolicyValueNet();optimizer=torch.optim.AdamW(model.parameters())
+            checkpoint=prior/'checkpoints'/'trained.pt'
+            digest=save_checkpoint(checkpoint,model,optimizer,round_index=1,updates=1,replay_ids=[],
+                manifest_sha256='original',recovery_state={'archives':[],'updates':1,'round':1})
+            atomic_json(prior/'manifest.json',{'sha256':'original','manifest':{}})
+            audit=target/'audit.json';atomic_json(audit,{'passed':True,'sha256':digest,'updates':1})
+            gate=target/'gate.json';atomic_json(gate,{'resumeCheckpoint':{'checkpoint':str(checkpoint),
+                'sha256':digest,'auditPath':str(audit),'auditSha256':hashlib.sha256(audit.read_bytes()).hexdigest()}})
+            creation={'event':'created','allocation':str(target),'seconds':7200,'authorization':'evaluation approved',
+                'resetFrom':str(prior)}
+            append(archive/'allocation-events.jsonl',creation)
+            runtime={'parentCheckpoint':str(checkpoint),'parentCheckpointManifestSha256':'original'}
+            meta=json.loads(checkpoint.with_suffix('.json').read_text())
+            validate_parity_checkpoint(target,checkpoint,runtime,meta,digest,gate)
+            self.assertFalse((target/'latest.json').exists())
+            self.assertFalse((target/'manifest.json').exists())
+            for field,value in [('parentCheckpoint',str(prior/'other.pt')),('parentCheckpointManifestSha256','wrong')]:
+                with self.assertRaises(ValueError):
+                    validate_parity_checkpoint(target,checkpoint,{**runtime,field:value},meta,digest,gate)
+            with self.assertRaises(ValueError):validate_parity_checkpoint(target,checkpoint,runtime,meta,digest,None)
+            audit.write_text('{}')
+            with self.assertRaisesRegex(ValueError,'audit missing or changed'):
+                validate_parity_checkpoint(target,checkpoint,runtime,meta,digest,gate)
+
+    def test_existing_latest_cannot_be_bypassed_by_parent_binding(self):
+        with tempfile.TemporaryDirectory() as d:
+            root,checkpoint,_,_=self.fixture(d)
+            meta=json.loads(checkpoint.with_suffix('.json').read_text())
+            runtime={'parentCheckpoint':str(checkpoint),'parentCheckpointManifestSha256':meta['manifestSha256']}
+            with self.assertRaisesRegex(ValueError,'latest trained'):
+                validate_parity_checkpoint(root,checkpoint,runtime,meta,'wrong',root/'gate.json')
 
     def test_supervisor_phase_requires_existing_run_corpus_and_is_exclusive(self):
         with tempfile.TemporaryDirectory() as d:

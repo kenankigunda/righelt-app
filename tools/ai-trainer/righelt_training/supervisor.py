@@ -331,7 +331,7 @@ def main():
     reason='setup-failed'
     try:
         now=time.monotonic();wall=time.time()
-        total=manifest['seconds']
+        total=allocation.accounting()[0]['seconds']
         budget=Budget(now-charged,total,wall+remaining)
         if phase=='canary':budget=Budget(now,min(600,remaining),wall+min(600,remaining))
         started=now-charged
@@ -363,7 +363,8 @@ def main():
             argv=[sys.executable,'-m','righelt_training.canary','--run-dir',str(args.run_dir.resolve()),'--corpus',str(args.parity_corpus.resolve())]
         elif args.export_parity:
             argv=[sys.executable,'-m','righelt_training.export_parity','--run-dir',str(args.run_dir.resolve()),
-                  '--checkpoint',str(args.resume.resolve()),'--corpus',str(args.parity_corpus.resolve())]
+                  '--checkpoint',str(args.resume.resolve()),'--corpus',str(args.parity_corpus.resolve()),
+                  '--gate-report',str(args.gate_report.resolve())]
         elif args.prepare_arena:
             argv=[sys.executable,'-m','righelt_training.prepare_arena','--run-dir',str(args.run_dir.resolve()),
                   '--candidate-checkpoint',str(args.candidate_checkpoint.resolve()),'--opponent-checkpoint',str(args.opponent_checkpoint.resolve())]
