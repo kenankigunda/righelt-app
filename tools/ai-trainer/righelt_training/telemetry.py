@@ -1,11 +1,38 @@
 """Read-only telemetry. Missing activity observations never imply idle threads."""
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import time
 import psutil
 from .resources import Sample
+
+def artifact_bytes(root):
+    """Measure live artifacts without treating atomic publication as failure.
+
+    A scan is a point-in-time estimate, not an archive integrity check. Only
+    vanished descendants are harmless; inaccessible storage must fail closed.
+    scandir propagates traversal errors which Path.rglob may suppress.
+    """
+    root=Path(root)
+    if not stat.S_ISDIR(root.stat().st_mode):raise NotADirectoryError(str(root))
+    pending=[root];total=0
+    while pending:
+        directory=pending.pop()
+        try:
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    try:info=entry.stat(follow_symlinks=False)
+                    except FileNotFoundError:continue
+                    if stat.S_ISDIR(info.st_mode):pending.append(Path(entry.path))
+                    elif stat.S_ISREG(info.st_mode):total+=info.st_size
+                    # Do not traverse symlinks outside the artifact tree.
+        except FileNotFoundError:
+            if directory==root:raise
+    # Losing the root during traversal is not an empty archive.
+    if not stat.S_ISDIR(root.stat().st_mode):raise NotADirectoryError(str(root))
+    return total
 
 def read_device_memory(path, runner_pid, now=None):
     try:
@@ -31,7 +58,7 @@ class Telemetry:
         try:
             return self._sample()
         except (OSError, psutil.Error, subprocess.SubprocessError) as error:
-            raise RuntimeError(f'Resource telemetry unavailable: {type(error).__name__}') from error
+            raise RuntimeError(f'Resource telemetry unavailable: {type(error).__name__}: {error}') from error
 
     def _sample(self):
         now=time.time();observed=None;active=None
@@ -59,6 +86,6 @@ class Telemetry:
         if self.device_memory_file:
             amount,device_known=read_device_memory(self.device_memory_file,self.runner_pid)
             rss+=amount
-        size=sum(p.stat().st_size for p in self.artifacts.rglob('*') if p.is_file())
+        size=artifact_bytes(self.artifacts)
         return Sample(now,observed,active,max(0,psutil.cpu_percent()*psutil.cpu_count()-owned_cpu),pressure,rss,
                       psutil.virtual_memory().available,psutil.disk_usage(self.artifacts).free,size,device_known)
