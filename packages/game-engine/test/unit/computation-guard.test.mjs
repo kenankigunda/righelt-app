@@ -4,9 +4,9 @@ import { withEngineComputationGuard, checkEngineComputation, buildContinuationSu
   isContinuationCompletable, listLegalActions } from '../../src/index.ts';
 import { commander, makeState, unit } from '../helpers/state-builders.mjs';
 
-function recursiveRush() {
+function recursiveRush(b = { row: 5, col: 5 }) {
   const state=makeState({pieces:[commander('C1','P1',3,6),commander('C2','P2',6,3),
-    unit('A','P1',4,4),unit('B','P1',5,5),unit('E0','P2',0,4),unit('E1','P2',9,4),unit('E2','P2',4,2)]});
+    unit('A','P1',4,4),unit('B','P1',b.row,b.col),unit('E0','P2',0,4),unit('E1','P2',9,4),unit('E2','P2',4,2)]});
   return buildContinuationSuccessorState(state,{type:'rush',actorId:'A',from:{row:4,col:4},to:{row:4,col:3}});
 }
 
@@ -41,4 +41,16 @@ test('nested guards restore outer scope and neither thrown nor Promise-returning
   const count=calls.length;checkEngineComputation(true);assert.equal(calls.length,count);
   assert.throws(()=>withEngineComputationGuard(()=>calls.push('async'),()=>Promise.resolve()),/synchronous/);
   const after=calls.length;await Promise.resolve();checkEngineComputation(true);assert.equal(calls.length,after);
+});
+
+
+test('completion stops constructing siblings once the first successful branch is found',()=>{
+  // Eager sibling materialization previously consumed seven expansions here.
+  // Authoritative depth-first order reaches the same true answer within five.
+  const state=recursiveRush({row:5,col:3}), original=structuredClone(state);
+  let expansions=0;
+  const result=withEngineComputationGuard(expansion=>{
+    if(expansion && ++expansions>5)throw new Error('constructed unused sibling');
+  },()=>isContinuationCompletable(state));
+  assert.equal(result,true);assert.equal(expansions,5);assert.deepEqual(state,original);
 });

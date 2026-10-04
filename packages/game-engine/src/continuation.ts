@@ -663,20 +663,21 @@ export function buildContinuationSuccessorState(state: GameState, action: Action
   return normalizeState(next);
 }
 
-function advanceForcedRetreatIfNeeded(state: GameState): GameState[] {
+function* advanceForcedRetreatIfNeeded(state: GameState): Generator<GameState> {
   if (!state.continuation || state.continuation.type !== "push" || state.continuation.phase !== "retreat") {
-    return [state];
+    yield state; return;
   }
 
   const retreatActions = buildPushRetreatSuccessorActions(state);
   if (retreatActions.length > 0) {
-    return retreatActions.map((action) => buildContinuationSuccessorState(state, action));
+    for (const action of retreatActions) yield buildContinuationSuccessorState(state, action);
+    return;
   }
 
   const next = cloneState(state);
   const continuation = next.continuation;
   if (!continuation || continuation.type !== "push") {
-    return [normalizeState(next)];
+    yield normalizeState(next); return;
   }
   const attackerOwner = continuation.attackerOwner ?? next.sideToMove;
   if (continuation.pushedPieceId) {
@@ -686,22 +687,20 @@ function advanceForcedRetreatIfNeeded(state: GameState): GameState[] {
   continuation.owner = attackerOwner;
   continuation.pushedPieceId = undefined;
   next.sideToMove = attackerOwner;
-  return [normalizeState(next)];
+  yield normalizeState(next);
 }
 
-function buildSuccessorStates(state: GameState): GameState[] {
-  if (!state.continuation) {
-    return [];
+function* buildSuccessorStates(state: GameState): Generator<GameState> {
+  if (!state.continuation) return;
+  if (state.continuation.type === "push" && state.continuation.phase === "retreat") {
+    yield* advanceForcedRetreatIfNeeded(state);
+    return;
   }
-
-  if (state.continuation.type === "push") {
-    if (state.continuation.phase === "retreat") {
-      return advanceForcedRetreatIfNeeded(state);
-    }
-    return buildPushFollowSuccessorActions(state).map((action) => buildContinuationSuccessorState(state, action));
-  }
-
-  return buildRushSuccessorActions(state).map((action) => buildContinuationSuccessorState(state, action));
+  const actions = state.continuation.type === "push"
+    ? buildPushFollowSuccessorActions(state) : buildRushSuccessorActions(state);
+  // Preserve authoritative action order while materializing only successors
+  // actually visited by the existential completion check.
+  for (const action of actions) yield buildContinuationSuccessorState(state, action);
 }
 
 export function canCloseContinuationNow(state: GameState): boolean {
@@ -778,13 +777,7 @@ export function isContinuationCompletable(state: GameState, memo = new Map<strin
       return true;
     }
 
-    const successors = buildSuccessorStates(normalized);
-    if (successors.length === 0) {
-      memo.set(key, "failure");
-      return false;
-    }
-
-    for (const successor of successors) {
+    for (const successor of buildSuccessorStates(normalized)) {
       if (isContinuationCompletable(successor, memo)) {
         memo.set(key, "success");
         return true;
