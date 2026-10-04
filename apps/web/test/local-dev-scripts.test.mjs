@@ -42,7 +42,7 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.equal(scripts["check:web-engine-generated"], "node scripts/check-web-engine-generated.mjs");
   assert.equal(scripts["check:ticket-workflow"], "node scripts/check-ticket-workflow-setup.mjs");
   assert.match(scripts.test, /^pnpm typecheck && pnpm check:web-engine-generated && /);
-  assert.equal(scripts["test:unit"], "pnpm test:engine:unit && pnpm test:web:unit && pnpm test:computer-player:unit");
+  assert.equal(scripts["test:unit"], "pnpm test:engine:unit && pnpm test:web:unit && pnpm test:computer-player:unit && pnpm test:validation");
   assert.equal(scripts["test:integration"], "pnpm test:engine:integration && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web:integration && pnpm test:computer-player:integration");
   assert.equal(scripts["test:engine"], "node scripts/run-node-tests.mjs packages/game-engine/test");
   assert.equal(scripts["test:engine:unit"], "node scripts/run-node-tests.mjs packages/game-engine/test/unit");

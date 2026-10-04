@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "scripts/validation/publisher"
 allowBuilds:
   esbuild: true
   protobufjs: false
