@@ -4,6 +4,8 @@ import json
 import re
 from pathlib import Path
 from .checkpoint import atomic_json
+from .allocation import append,rows
+import time
 
 class RecoveryLedger:
     def __init__(self,root):self.root=Path(root);self.root.mkdir(parents=True,exist_ok=True)
@@ -34,3 +36,16 @@ class RecoveryLedger:
             return value
     def checkpoint(self,minimum=0):return self.claim('checkpoint','',minimum)
     def job(self,stage,seed,minimum=0):return self.claim('job',f'{stage}:{seed}',minimum)
+
+    def launches(self):return rows(self.root/'generation-launches.jsonl')
+
+    def launched(self,job_id):return any(row['jobId']==job_id for row in self.launches())
+
+    def launch(self,job_id,directory):
+        """Consume a pending ID durably before spawn, independently of rollback."""
+        with (self.root/'recovery-ledger.lock').open('a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            if self.launched(job_id):return False
+            append(self.root/'generation-launches.jsonl',{'jobId':job_id,
+                   'directory':str(Path(directory).resolve()),'claimedAt':time.time()})
+            return True

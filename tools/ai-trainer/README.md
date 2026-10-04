@@ -51,6 +51,8 @@ Resume the same supervisor arguments with `--resume /path/checkpoint.pt --health
 
 `pnpm ai:arena freeze input-plan.json frozen-plan.json` verifies and freezes the 100 seat-swapped pairs, split identities, checkpoint checksums and profiles. Run them by adding `--arena-plan frozen-plan.json --candidate-checkpoint /path/candidate.pt --opponent-checkpoint /path/opponent.pt` to a same-allocation supervisor resume. Missing time, resource interruption or incomplete pairs remain inconclusive. Validation can resume completed immutable games; final families are claimed once across the experiment archive, independent of filename or model/profile changes. Separate final comparisons need distinct unopened families.
 
+For a completion diagnostic, set `mode: "diagnostic"` in the validation plan before freezing it. This mode continues the fixed schedule after expected search/legality limits, preserving the original pair, seat, seed and failure artifact. It never replaces or silently retries an attempted match, including after resume. Correctness failures stop and remain blocking on resume. Resource and overall allocation stops still apply. Diagnostic reports include attempted/completed counts and unfinished reasons, omit strength statistics and cannot satisfy the stage's learning-evaluation proof. Final plans reject diagnostic mode; omitted mode preserves the existing strict behavior.
+
 `pnpm ai:replay archive.json.gz` independently checks a complete game with a bounded authoritative-engine child. `pnpm ai:arena report pairs.json report.json --seed 107 --purpose incumbent` produces deterministic whole-pair bootstrap statistics. These diagnostic commands do not start training, reserve extra compute, open final data or promote models. Run experiment evaluation/reporting within the remaining approved allocation.
 
 ## Autonomous recovery and supervised time
@@ -88,6 +90,20 @@ PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_trainin
 ```
 
 The report identifies coverage gaps rather than inferring unrecorded decisions. T-115 owns the eventual lightweight and debug analysis presentation; a fallback is not automatically a poor decision grade.
+
+### Generation admission and useful data yield
+
+Admission reserves generation, replay and checkpoint time inside the existing ten-minute round and allocation deadlines. Starting engineering defaults are 60 seconds for generation, 20 seconds for replay and 10 seconds for checkpoint allowance. Per curriculum kind and operation, generation/replay estimates use the larger of that floor and 1.25 times the larger of completed-duration p90 and the greatest unfinished-duration lower bound. The completed window holds 128 observations; censored lower bounds are retained. These are conservative scheduling defaults, not measured completion guarantees.
+
+A deferred start keeps its exact job identity, seed and curriculum kind for the next round; it cannot be replaced with an easier start. Reports count deferrals by kind. If the observed requirement cannot fit a fresh ten-minute round, the runner checkpoints and stops with `observed-game-bound-exceeds-round` for engineering review. One long outlier can trigger this conservative gate; it does not prove every game of that kind is infeasible. It never clips the estimate, extends the round or retrains the old buffer indefinitely. The append-only duration journal and checkpoint-bound cursor preserve observations across recovery and rollback. Allocation-wide launch claims prevent a restored pending job from reusing an already launched ID. Interrupted launch claims with no trustworthy duration are explicitly reported as unobserved, never as completed. Games that fail replay remain excluded from training.
+
+Inspect observed attempts, accepted policy/value positions and genuine terminal games per charged allocation hour with:
+
+```sh
+PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.throughput .ai-runs/overnight-r2
+```
+
+The report includes generation, replay, inference and gradient-update wall times plus the first worker-message delay. These timings can overlap across workers; first-message delay includes startup and initial engine work. It uses the durable allocation ledger, including conservative open-interval accounting and supervised resource pauses. It keeps observed decisions from unfinished games separate from accepted replay positions, preserves terminal-value supervision for policy-masked fallbacks, and reports missing historical counts explicitly.
 
 An authorized reset from a prior overnight allocation requires a gate report binding the exact predecessor checkpoint checksum and recovery audit. The supervisor validates model, optimizer, random state, cursor and archive hashes; a disposable canary never supplies the inherited training checkpoint. Same-stage relocation preserves the curriculum and round/phase/batch cursor, rebases saved generation elapsed time, and clears the old run's handoff receipt. It requires matching seeds in checksum-validated manifests. Initial-to-overnight transitions intentionally start new stage counters. Run the canary explicitly before an overnight stage, then pass the verified predecessor with `--resume`. All preflight, canary and experiment computation consumes the same approved allocation.
 

@@ -87,6 +87,8 @@ class RecoveryTest(unittest.TestCase):
             destination.restore(checkpoint)
             expected=default_state()
             expected.update(updates=2770,nonzeroUpdates=2770,archives=[str((source.directory/'game.gz').resolve())])
+            expected.update(admissionDurations={},admissionJournalPath=str((destination.directory/'admission-durations.jsonl').resolve()),
+                            admissionJournalCursor=0,admissionUnobservedClaims=[])
             self.assertEqual(destination.state,expected)
             self.assertEqual(destination.buffer.game_ids,['retained'])
 

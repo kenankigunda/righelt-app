@@ -43,8 +43,9 @@ class ArenaTest(unittest.TestCase):
             p=Path(d)/'plan.json';plan=self.plan();plan['pairs'][1]['seed']=plan['pairs'][0]['seed']
             with self.assertRaises(ValueError):freeze_plan(p,plan)
 
-    def frozen(self,directory,partition='validation'):
+    def frozen(self,directory,partition='validation',mode=None):
         path=Path(directory)/'plan.json';plan=self.plan(partition)
+        if mode:plan['mode']=mode
         plan['opponent']={**plan['opponent'],'checkpointSha256':'b'*64,'profileVersion':'opponent'}
         with patch('righelt_training.arena.engine_command',side_effect=[{'type':'opening-verified','initial':False,'fingerprint':str(i)} for i in range(50)]):freeze_plan(path,plan)
         runtime={'allocationId':'allocation','manifestSha256':'manifest','startedMonotonic':time.monotonic(),'deadlineMonotonic':time.monotonic()+600}
@@ -59,6 +60,71 @@ class ArenaTest(unittest.TestCase):
         self.assertLessEqual(deadline,time.monotonic()+601)
         return {'status':'completed','game':{**job,'decisions':[],'termination':'terminal',
             'outcome':{'status':'p1_win' if candidate_seat=='P1' else 'p2_win'}}}
+
+    def test_diagnostic_continues_fixed_schedule_but_cannot_claim_strength(self):
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as d:
+            path,_=self.frozen(d,mode='diagnostic');calls=[]
+            def player(*args,**kwargs):
+                calls.append((args[0]['id'],args[0]['seed']))
+                if len(calls)==1:return {'status':'unfinished','reason':'search-recovery',
+                    'protocol':{'search':{'stopped':'node-limit'}}}
+                return self.player(*args,**kwargs)
+            models={'candidate':'candidate-model','opponent':'opponent-model'}
+            result=run_arena(path,d,models,'cpu',player=player)
+            self.assertEqual((len(calls),len(set(calls))),(200,200))
+            self.assertEqual(calls[0][1],calls[1][1])  # Same frozen pair, opposite seat.
+            self.assertTrue(calls[0][0].endswith(':0:P1'));self.assertTrue(calls[1][0].endswith(':0:P2'))
+            self.assertEqual(result['scheduledGames'],200);self.assertEqual(result['attemptedGames'],200)
+            self.assertEqual(result['completedGames'],199);self.assertEqual(result['completePairs'],99)
+            self.assertEqual(result['status'],'inconclusive');self.assertIsNone(result['statistics'])
+            self.assertFalse(result['strengthAcceptanceEligible'])
+            self.assertEqual(result['unfinishedByReason'],{'search-recovery':1})
+            never=Mock(side_effect=AssertionError('diagnostics must not retry a frozen identity'))
+            resumed=run_arena(path,d,models,'cpu',player=never);never.assert_not_called()
+            self.assertEqual(resumed['completedGames'],199)
+
+    def test_diagnostic_mode_is_frozen_and_final_rejects_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            plan=self.plan('final');plan['mode']='diagnostic'
+            with self.assertRaisesRegex(ValueError,'validation-only'):
+                freeze_plan(Path(d)/'plan.json',plan)
+            self.assertFalse((Path(d)/'plan.json').exists())
+
+    def test_diagnostic_interruption_becomes_unfinished_evidence_without_retry(self):
+        with tempfile.TemporaryDirectory() as d:
+            path,_=self.frozen(d,mode='diagnostic');models={'candidate':'candidate-model','opponent':'opponent-model'}
+            def crash(*args,**kwargs):raise KeyboardInterrupt('simulated abrupt process loss')
+            with self.assertRaises(KeyboardInterrupt):run_arena(path,d,models,'cpu',player=crash)
+            calls=[]
+            def resume(*args,**kwargs):calls.append(args[0]['id']);return self.player(*args,**kwargs)
+            result=run_arena(path,d,models,'cpu',player=resume)
+            self.assertEqual(len(calls),199);self.assertTrue(calls[0].endswith(':0:P2'))
+            self.assertEqual(result['unfinishedByReason'],{'interrupted':1})
+            output=Path(d)/'evaluations'/result['identity']['planSha256']
+            state=json.loads((output/'state.json').read_text());attempt=state['attempts'][0]
+            self.assertEqual(attempt['status'],'unfinished')
+            evidence=json.loads((output/attempt['diagnostic']['path']).read_text())
+            self.assertEqual(evidence['result']['reason'],'interrupted')
+
+    def test_diagnostic_correctness_errors_stop_and_cannot_resume_past_failure(self):
+        for variant in ('raise','wrong-identity','unknown-status'):
+            with self.subTest(variant=variant),tempfile.TemporaryDirectory() as d:
+                path,_=self.frozen(d,mode='diagnostic');calls=[]
+                def player(*args,**kwargs):
+                    calls.append(True)
+                    if variant=='raise':raise RuntimeError('illegal transition')
+                    if variant=='unknown-status':return {'status':'invalid'}
+                    result=self.player(*args,**kwargs);result['game']['seed']+=1;return result
+                models={'candidate':'candidate-model','opponent':'opponent-model'}
+                with self.assertRaises((ValueError,RuntimeError)):run_arena(path,d,models,'cpu',player=player)
+                self.assertEqual(len(calls),1)
+                state=json.loads(next((Path(d)/'evaluations').glob('*/state.json')).read_text())
+                self.assertEqual(state['attempts'][0]['status'],'failed')
+                self.assertFalse(state['records'])
+                with self.assertRaisesRegex(ValueError,'correctness failure'):
+                    run_arena(path,d,models,'cpu',player=player)
+                self.assertEqual(len(calls),1)
 
     def test_validation_resumes_partial_pair_without_replaying_completed_side(self):
         with tempfile.TemporaryDirectory() as d:

@@ -59,6 +59,7 @@ def freeze_plan(path,plan,*,experiment_root=None,deadline=None,heartbeat=lambda:
     if plan.get('partition') not in ('validation','final') or plan.get('configSha256')!=CONFIG_SHA256:
         raise ValueError('invalid evaluation partition/configuration')
     if plan.get('purpose') not in ('difficulty','incumbent'):raise ValueError('invalid comparison purpose')
+    validate_mode(plan)
     if len(plan.get('pairs',[]))!=100:raise ValueError('requires 100 seat-swapped pairs')
     ids=set();seeds=set();openings=set();kinds={'normal':0,'heldout':0}
     for pair in plan['pairs']:
@@ -172,8 +173,25 @@ def read_frozen_plan(path):
     if digest!=data['sha256'] or data['plan']['configSha256']!=CONFIG_SHA256:raise ValueError('frozen plan mismatch')
     if len(data['plan']['pairs'])!=100 or data['plan']['partition'] not in ('validation','final'):
         raise ValueError('invalid frozen workload')
+    validate_mode(data['plan'])
     partition_identities(data['plan'])
     return data['plan'],digest
+
+
+def validate_mode(plan):
+    mode=plan.get('mode','strict')
+    if mode not in ('strict','diagnostic') or (mode=='diagnostic' and plan.get('partition')!='validation'):
+        raise ValueError('diagnostic evaluation is validation-only')
+    return mode
+
+
+def expected_diagnostic_limit(result):
+    """Only explicitly recognized unfinished computations can be skipped."""
+    if result.get('status')!='unfinished':return False
+    reason=result.get('reason')
+    if reason in ('node-limit','deadline','budget','inference-budget','verification-budget'):return True
+    search=result.get('protocol',{}).get('search',{})
+    return reason=='search-recovery' and search.get('stopped') in ('node-limit','deadline')
 
 
 def load_frozen_models(plan,paths,device):
@@ -215,6 +233,9 @@ def preserve_diagnostic(output,job,result,attempt_number):
     digest=hashlib.sha256(raw).hexdigest()
     path=output/'diagnostics'/f'{attempt_number:06d}-{digest}.json'
     path.parent.mkdir(parents=True,exist_ok=True)
+    if path.exists():
+        if path.read_bytes()!=raw:raise ValueError('conflicting immutable diagnostic')
+        return {'path':str(path.relative_to(output)),'sha256':digest}
     with path.open('xb') as stream:stream.write(raw);stream.flush();os.fsync(stream.fileno())
     return {'path':str(path.relative_to(output)),'sha256':digest}
 
@@ -248,6 +269,7 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
     runtime=json.loads((directory/'runtime.json').read_text())
     deadline=effective_deadline(runtime)
     plan,digest=read_frozen_plan(plan_path)
+    diagnostic=validate_mode(plan)=='diagnostic'
     identity={'planSha256':digest,'allocationId':runtime.get('allocationId',runtime['manifestSha256']),'configSha256':CONFIG_SHA256}
     output=directory/'evaluations'/digest;output.mkdir(parents=True,exist_ok=True)
     state_path=output/'state.json'
@@ -267,12 +289,23 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
         job=expected[(pair_id,seat)]
         outcome='truncated' if game['termination']=='truncated' else game['outcome']['status']
         if game['id']!=job['id'] or outcome!=record['outcome'] or key!=job['id']:raise ValueError('evaluation record mismatch')
-    for attempt in state['attempts']:
+    for attempt_number,attempt in enumerate(state['attempts'],1):
+        if diagnostic and attempt.get('status')=='running':
+            job=expected[(attempt['pairId'],attempt['candidateSeat'])]
+            attempt.update(status='unfinished',reason='interrupted',recoveredAt=time.time())
+            attempt['diagnostic']=preserve_diagnostic(output,job,
+                {'status':'unfinished','reason':'interrupted','completion':'unknown after process interruption'},attempt_number)
+            atomic_json(state_path,state)
         if attempt.get('diagnostic'):
             artifact=attempt['diagnostic'];path=output/artifact['path']
             if not path.resolve().is_relative_to(output.resolve()):raise ValueError('invalid diagnostic path')
             if hashlib.sha256(path.read_bytes()).hexdigest()!=artifact['sha256']:
                 raise ValueError('evaluation diagnostic changed')
+        if diagnostic and attempt.get('status')=='failed':
+            raise ValueError('diagnostic correctness failure requires a reviewed new evaluation plan')
+        if (diagnostic and attempt.get('status')=='unfinished' and attempt.get('reason') not in ('resource-pause','resource-stop','interrupted')
+            and not expected_diagnostic_limit(json.loads((output/attempt['diagnostic']['path']).read_text())['result'])):
+            raise ValueError('unresolved diagnostic result requires review')
     def persist():atomic_json(state_path,state)
     def allocation():return json.loads((directory/'allocation.json').read_text())
     def heartbeat():
@@ -297,6 +330,10 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
         for seat in ('P1','P2'):
             job=expected[(pair['id'],seat)]
             if job['id'] in state['records']:continue
+            if diagnostic and any(a['pairId']==pair['id'] and a['candidateSeat']==seat for a in state['attempts']):
+                # An interrupted/unfinished seat is evidence, not a request for
+                # another attempt. Resume proceeds to the next frozen identity.
+                continue
             prior=next((a for a in reversed(state['attempts']) if a['pairId']==pair['id'] and a['candidateSeat']==seat and a['status']=='unfinished'),None)
             if prior and not retry_qualification(directory,runtime,digest,job,prior):
                 reason='engine-recovery-review-required';break
@@ -306,47 +343,67 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
             by_seat={seat:models['candidate'],('P2' if seat=='P1' else 'P1'):models['opponent']}
             attempt={'pairId':pair['id'],'candidateSeat':seat,'startedMonotonic':clock(),'status':'running','sourceManifest':runtime['manifestSha256'],'interval':runtime.get('allocationInterval')}
             state['attempts'].append(attempt);persist()
-            orphan=output/'games'/(hashlib.sha256(job['id'].encode()).hexdigest()+'.json.gz')
-            if orphan.exists():
-                game=json.loads(gzip.decompress(orphan.read_bytes()))
-                heartbeat()
-                try:verify_game(game,min(deadline-10,clock()+20))
-                except (TimeoutError,subprocess.TimeoutExpired):result={'status':'unfinished','reason':'verification-budget'}
-                else:result={'status':'completed','game':game}
-            else:
-                with monitor.operation('arena-game',min(610,deadline-clock())) if monitor else nullcontext():
-                    result=player({**job,'decisionLogPath':str(output/'decision-events.jsonl')},by_seat,deadline,device,allocation=allocation,checkpoint=heartbeat,monitor=monitor)
-            attempt.update(status=result['status'],finishedMonotonic=clock(),reason=result.get('reason'))
-            if result['status']!='completed':
-                reason=result.get('reason','unfinished')
-                # Only host-controlled budget/resource pauses are resumable unchanged.
-                attempt['retryClass']=result.get('retryClass','transient' if reason in
-                    ('budget','resource-pause','inference-budget','verification-budget') else 'engine')
-                attempt['diagnostic']=preserve_diagnostic(output,job,result,len(state['attempts']))
-                persist();break
-            game=result['game']
-            if (game['id']!=job['id'] or game['seed']!=job['seed'] or game['partition']!=plan['partition']
-                or game.get('modelVersions')!=job['modelVersions'] or game.get('profileVersions')!=job['profileVersions']):
-                raise ValueError('arena game identity mismatch')
-            for decision in game['decisions']:
-                controller=decision['controller']
-                if (decision.get('modelVersion')!=job['modelVersions'][controller]
-                    or decision.get('profileVersion')!=job['profileVersions'][controller]):raise ValueError('decision model identity mismatch')
-            path,sha=archive_game(output/'games',game)
-            state['records'][job['id']]={'pairId':pair['id'],'candidateSeat':seat,
-                'outcome':'truncated' if game['termination']=='truncated' else game['outcome']['status'],
-                'archive':str(path.relative_to(output)),'sha256':sha}
-            persist();heartbeat()
+            try:
+                orphan=output/'games'/(hashlib.sha256(job['id'].encode()).hexdigest()+'.json.gz')
+                if orphan.exists():
+                    game=json.loads(gzip.decompress(orphan.read_bytes()))
+                    heartbeat()
+                    try:verify_game(game,min(deadline-10,clock()+20))
+                    except (TimeoutError,subprocess.TimeoutExpired):result={'status':'unfinished','reason':'verification-budget'}
+                    else:result={'status':'completed','game':game}
+                else:
+                    with monitor.operation('arena-game',min(610,deadline-clock())) if monitor else nullcontext():
+                        result=player({**job,'decisionLogPath':str(output/'decision-events.jsonl')},by_seat,deadline,device,allocation=allocation,checkpoint=heartbeat,monitor=monitor)
+                if result.get('status') not in ('completed','unfinished'):
+                    raise ValueError('invalid arena result status')
+                attempt.update(status=result['status'],finishedMonotonic=clock(),reason=result.get('reason'))
+                if result['status']!='completed':
+                    reason=result.get('reason','unfinished')
+                    # Only host-controlled budget/resource pauses are resumable unchanged.
+                    attempt['retryClass']=result.get('retryClass','transient' if reason in
+                        ('budget','resource-pause','inference-budget','verification-budget') else 'engine')
+                    attempt['diagnostic']=preserve_diagnostic(output,job,result,len(state['attempts']))
+                    persist()
+                    if diagnostic and expected_diagnostic_limit(result):
+                        reason='complete';heartbeat();continue
+                    break
+                game=result['game']
+                if (game['id']!=job['id'] or game['seed']!=job['seed'] or game['partition']!=plan['partition']
+                    or game.get('modelVersions')!=job['modelVersions'] or game.get('profileVersions')!=job['profileVersions']):
+                    raise ValueError('arena game identity mismatch')
+                for decision in game['decisions']:
+                    controller=decision['controller']
+                    if (decision.get('modelVersion')!=job['modelVersions'][controller]
+                        or decision.get('profileVersion')!=job['profileVersions'][controller]):raise ValueError('decision model identity mismatch')
+                path,sha=archive_game(output/'games',game)
+                state['records'][job['id']]={'pairId':pair['id'],'candidateSeat':seat,
+                    'outcome':'truncated' if game['termination']=='truncated' else game['outcome']['status'],
+                    'archive':str(path.relative_to(output)),'sha256':sha}
+                persist();heartbeat()
+            except (ValueError,RuntimeError,KeyError,TypeError) as error:
+                if diagnostic:
+                    attempt.update(status='failed',finishedMonotonic=clock(),reason='correctness-failure')
+                    attempt['diagnostic']=preserve_diagnostic(output,job,{'status':'failed','error':str(error)},len(state['attempts']))
+                    persist()
+                raise
         if reason!='complete':break
     pairs=[]
     for pair in plan['pairs']:
         games=[state['records'][expected[(pair['id'],seat)]['id']] for seat in ('P1','P2') if expected[(pair['id'],seat)]['id'] in state['records']]
         if len(games)==2:pairs.append({'id':pair['id'],'kind':pair['kind'],'games':games})
     complete=len(pairs)==len(plan['pairs'])
-    statistics=paired_report(pairs,plan.get('bootstrapSeed',107),threshold=.6 if plan['purpose']=='difficulty' else .55) if pairs and deadline-clock()>2 else None
+    # Diagnostic completion sweeps do not make strength claims from the surviving
+    # pairs, whose inclusion may depend on which model reaches hard positions.
+    statistics=paired_report(pairs,plan.get('bootstrapSeed',107),threshold=.6 if plan['purpose']=='difficulty' else .55) if not diagnostic and pairs and deadline-clock()>2 else None
+    unfinished=[a for a in state['attempts'] if a['status']!='completed']
+    if diagnostic and reason=='complete' and unfinished:reason='diagnostic-incomplete-matches'
     report={'schema':1,'identity':identity,'partition':plan['partition'],'purpose':plan['purpose'],
             'status':'completed' if complete else 'inconclusive','reason':reason,'completePairs':len(pairs),
-            'completedGames':len(state['records']),'statistics':statistics,'pairs':pairs,'productionPromotion':False}
+            'completedGames':len(state['records']),'statistics':statistics,'pairs':pairs,'productionPromotion':False,
+            'mode':plan.get('mode','strict'),'strengthAcceptanceEligible':complete and not diagnostic,
+            'scheduledGames':len(expected),'attemptedGames':len(state['attempts']),
+            'unfinishedGames':len(unfinished),'unfinishedByReason':{reason:sum((a.get('reason') or 'interrupted')==reason for a in unfinished)
+                for reason in sorted({(a.get('reason') or 'interrupted') for a in unfinished})}}
     atomic_json(output/'report.json',report);return report
 
 

@@ -197,7 +197,7 @@ console.log(JSON.stringify({initialState,decisions,finalHash:deterministicStateH
             runner = Runner.__new__(Runner)
             runner.device = torch.device("cpu")
             runner.directory = Path(directory); runner.state = default_state()
-            runner.last_checkpoint = time.monotonic(); runner.deadline = time.monotonic()+60
+            runner.last_checkpoint = time.monotonic(); runner.deadline = time.monotonic()+180
             runner.checkpoint_requested = False; runner.stage = 'initial'; runner.model_version = 'test'
             runner.curriculum = Curriculum(2); runner.checkpoint = Mock()
             runner.allocation = Mock(return_value={'workers': 2, 'paused': False, 'stop': False})

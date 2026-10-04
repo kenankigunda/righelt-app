@@ -1,5 +1,7 @@
 """Budgeted local experiment child. Supervisor owns permission and hard limits."""
 from .budget import effective_deadline
+from .admission import estimate as admission_estimate, observe as observe_duration, restore_observations
+from .allocation import rows
 from .fallback_report import add_game as add_fallback_game
 import argparse
 from contextlib import nullcontext
@@ -72,7 +74,8 @@ def default_state():
             'generationLaunched': 0, 'generationStartedMonotonic': None,'generationElapsedSeconds':0.,
             'archives': [], 'completedGames': 0, 'terminalGames': 0, 'truncatedGames': 0,
             'unfinishedGames': 0, 'unavailableStarts': 0, 'curriculumSwitched': False,
-            'replayChecks': 0, 'generationKinds': {'normal': 0, 'simple': 0, 'continuation': 0}}
+            'replayChecks': 0, 'pendingGenerationJob': None,
+            'generationKinds': {'normal': 0, 'simple': 0, 'continuation': 0}}
 
 
 class Runner:
@@ -112,6 +115,8 @@ class Runner:
         self.inference_bound = 30.
         if resume:
             self.restore(Path(resume))
+        restore_observations(self.state,self.directory)
+        self.restore_admission_claims()
         self.curriculum = Curriculum(seed, switched=self.state['curriculumSwitched'])
         self.model.eval()
         self.report_device_memory()
@@ -157,6 +162,7 @@ class Runner:
         if companion['checkpointSha256'] != hashlib.sha256(checkpoint.read_bytes()).hexdigest():
             raise ValueError('runner checkpoint mismatch')
         self.state = data['recovery']['state']
+        restore_observations(self.state,source_directory)
         if self.state['generationStartedMonotonic'] is not None:
             elapsed=self.state['generationElapsedSeconds']
             if not __import__('math').isfinite(elapsed) or elapsed<0:raise ValueError('invalid generation elapsed time')
@@ -169,12 +175,26 @@ class Runner:
                 self.state = default_state()
                 self.state['updates'] = data['updates']
                 self.state['nonzeroUpdates'] = previous['nonzeroUpdates']
+                self.state['admissionDurations'] = previous.get('admissionDurations',{})
             self.state.pop('lastHandoffId', None)
             self.state['archives'] = [str((source_directory / p).resolve()) for p in previous['archives']]
         for path in self.state['archives']:
             with gzip.open(self.directory / path, 'rt') as stream:
                 self.buffer.append(json.load(stream))
         self.model_version = companion['checkpointSha256']
+        restore_observations(self.state,self.directory)
+        self.restore_admission_claims()
+
+    def restore_admission_claims(self):
+        ledger=getattr(self,'ledger',None) or RecoveryLedger(self.directory)
+        observed={row['jobId'] for row in rows(self.directory/'admission-durations.jsonl') if row['phase']=='generation'}
+        reported=self.state.setdefault('admissionUnobservedClaims',[])
+        for record in ledger.launches():
+            if record['directory']!=str(self.directory.resolve()) or record['jobId'] in observed or record['jobId'] in reported:continue
+            # A claim precedes spawn. A crash can leave no trustworthy duration;
+            # report that gap rather than inventing a completed or elapsed game.
+            self.event('admission-unobserved',id=record['jobId'],reason='interrupted-launch-without-duration')
+            reported.append(record['jobId'])
 
     def allocation(self):
         allocation = read_json(self.directory / 'allocation.json')
@@ -240,7 +260,9 @@ class Runner:
         for (worker, message), logits, scalar in zip(requests, policies, values):
             worker['process'].stdin.write((json.dumps({'type': 'evaluation', 'id': message['id'], 'policyLogits': logits, 'value': scalar}) + '\n').encode())
             worker['process'].stdin.flush()
-        self.inference_bound = max(self.inference_bound, (time.monotonic() - started) * 2)
+        seconds=time.monotonic()-started
+        self.inference_bound = max(self.inference_bound, seconds * 2)
+        self.event('inference-batch',seconds=seconds,positions=len(requests))
         return True
 
     def accept_game(self, game, round_deadline):
@@ -248,6 +270,7 @@ class Runner:
         path = save_game(self.directory / 'games', game)
         verification_deadline = min(round_deadline, self.deadline - 10,
                                     self.last_checkpoint + CHECKPOINT_INTERVAL - 10)
+        started=time.monotonic()
         try:
             with self.operation("exact-replay",max(.1,verification_deadline-time.monotonic())):
                 verify_game(game, verification_deadline)
@@ -256,7 +279,11 @@ class Runner:
             # count a game whose exact replay could not finish within its bound.
             self.state['unfinishedGames'] += 1
             self.event('unfinished-verification', id=game['id'], archive=str(path))
+            observe_duration(self.state,self.directory,job_id=game['id'],kind=game['kind'],
+                             phase='replay',seconds=time.monotonic()-started,censored=True)
             return False
+        observe_duration(self.state,self.directory,job_id=game['id'],kind=game['kind'],
+                         phase='replay',seconds=time.monotonic()-started,censored=False)
         self.buffer.append(game)
         self.state['archives'].append(str(path.relative_to(self.directory)))
         self.state['completedGames'] += 1
@@ -265,10 +292,64 @@ class Runner:
         self.state['replayChecks'] += 1
         add_fallback_game(self.state.setdefault('fallbackReport',{}),game)
         self.event('game', id=game['id'], termination=game['termination'], decisions=len(game['decisions']), kind=game['kind'],
+                   policyPositions=sum(d.get('policyMask',True) for d in game['decisions']),
+                   valuePositions=len(game['decisions']) if game['termination']=='terminal' else 0,
                    fallbackDecisions=sum(bool(d.get('fallback')) for d in game['decisions']))
         return True
 
+    def next_generation_job(self,round_deadline):
+        """Reserve identity once; a deferred kind cannot be replaced by an easier start."""
+        ledger=getattr(self,'ledger',None) or RecoveryLedger(self.directory)
+        job=self.state.get('pendingGenerationJob')
+        if job is not None and ledger.launched(job['id']):
+            self.event('admission-pending-consumed',id=job['id'],kind=job['kind'])
+            self.state['pendingGenerationJob']=None;job=None
+        if job is None:
+            index=ledger.job(self.stage,getattr(self,'seed',self.curriculum.seed),self.state['nextJob'])
+            job=self.curriculum.job(index,self.model_version)
+            job['id']=f"{self.stage}-{job['id']}"
+            self.state['nextJob']=index+1
+            self.state['pendingGenerationJob']=job
+        bound=admission_estimate(self.state,job['kind'])
+        if round_deadline-time.monotonic()<bound['requiredSeconds']:
+            key=f"{self.state['round']}:{job['id']}"
+            if self.state.get('admissionLastDeferral')!=key:
+                self.state['admissionLastDeferral']=key
+                counts=self.state.setdefault('admissionDeferrals',{})
+                counts[job['kind']]=counts.get(job['kind'],0)+1
+                self.event('admission-deferred',id=job['id'],kind=job['kind'],bound=bound,
+                           remainingSeconds=max(0,round_deadline-time.monotonic()))
+                self.checkpoint()
+            if bound['requiredSeconds']>CONFIG['training']['generationSeconds']:
+                self.state['admissionStop']='observed-game-bound-exceeds-round'
+            elif self.deadline-time.monotonic()-10<bound['requiredSeconds']:
+                self.state['admissionStop']='insufficient-generation-runway'
+            return None
+        # Persist consumption before spawning. Recovery never reuses a live or
+        # interrupted game's ID. A merely deferred job remains bound to its seed.
+        self.state['pendingGenerationJob']=None
+        self.state['generationLaunched']+=1
+        self.checkpoint()
+        remaining=round_deadline-time.monotonic()
+        if remaining<bound['requiredSeconds']:
+            # Checkpointing consumed the admission allowance; no process started.
+            self.state['pendingGenerationJob']=job
+            self.state['generationLaunched']-=1
+            self.checkpoint()
+            return None
+        if not ledger.launch(job['id'],self.directory):
+            raise ValueError('generation identity already launched')
+        return {**job,'modelVersion':self.model_version,
+                'budgetMs':max(1,(remaining-bound['replay']-bound['checkpoint'])*1000)}
+
+    def record_generation_duration(self,worker,*,censored):
+        if worker.get('durationRecorded'):return
+        observe_duration(self.state,self.directory,job_id=worker['job']['id'],kind=worker['job']['kind'],
+                         phase='generation',seconds=time.monotonic()-worker['startedMonotonic'],censored=censored)
+        worker['durationRecorded']=True
+
     def generate_round(self):
+        self.state.pop('admissionStop',None)
         if self.state['generationStartedMonotonic'] is None:
             self.state['generationStartedMonotonic'] = time.monotonic()
         round_deadline = min(self.deadline - 10, self.state['generationStartedMonotonic'] + CONFIG['training']['generationSeconds'])
@@ -294,30 +375,21 @@ class Runner:
                 while len(workers) > allowed:
                     self.finish_worker(selector, workers, next(reversed(workers)), 'resource-downscale')
                 while len(workers) < allowed and launched < CONFIG['training']['roundGames']:
-                    remaining = round_deadline - time.monotonic()
-                    if remaining < 10:
-                        break
-                    ledger=getattr(self,'ledger',None) or RecoveryLedger(self.directory)
-                    index=ledger.job(self.stage,getattr(self,'seed',self.curriculum.seed),self.state['nextJob'])
-                    job = self.curriculum.job(index, self.model_version)
-                    job['id'] = f"{self.stage}-{job['id']}"
-                    self.state['nextJob'] = index+1
-                    self.state['generationLaunched'] += 1
-                    # Persist consumed seeds before spawning so restart never reuses IDs.
-                    self.checkpoint()
-                    job['modelVersion'] = self.model_version
-                    job['budgetMs'] = max(1, (round_deadline - time.monotonic()) * 1000)
+                    job=self.next_generation_job(round_deadline)
+                    if job is None:break
                     diagnostics=self.directory/'worker-diagnostics';diagnostics.mkdir(exist_ok=True)
                     identity=hashlib.sha256(job['id'].encode()).hexdigest()
                     job['diagnosticPath']=str((diagnostics/f'{identity}.state.json').resolve())
                     error_path=diagnostics/f'{identity}.stderr.log'
                     error_stream = error_path.open('ab')
+                    started=time.monotonic()
                     process = subprocess.Popen(['node', '--import', 'tsx', str(ENGINE)], cwd=ROOT,
                                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=error_stream)
                     error_stream.close()
                     process.stdin.write((json.dumps(job) + '\n').encode()); process.stdin.flush()
                     fd = process.stdout.fileno()
-                    workers[fd] = {'process': process, 'job': job, 'buffer': b'', 'errorPath':str(error_path)}
+                    workers[fd] = {'process': process, 'job': job, 'buffer': b'', 'errorPath':str(error_path),
+                                   'startedMonotonic':started}
                     selector.register(fd, selectors.EVENT_READ)
                     launched += 1
                 if not workers:
@@ -335,17 +407,27 @@ class Runner:
                     while b'\n' in worker['buffer']:
                         raw, worker['buffer'] = worker['buffer'].split(b'\n', 1)
                         message = json.loads(raw)
+                        if not worker.get('firstMessage'):
+                            worker['firstMessage']=True
+                            self.event('worker-first-message',id=worker['job']['id'],
+                                       seconds=time.monotonic()-worker['startedMonotonic'])
                         kind = message['type']
                         if kind == 'evaluate':
                             requests.append((worker, message))
                         elif kind == 'decision-progress':
                             self.event(kind,gameId=message['gameId'],kind=message['kind'],decision=message['decision'])
                         elif kind == 'game':
+                            self.record_generation_duration(worker,censored=False)
+                            game=message['game']
+                            self.event('generated-game',id=game['id'],kind=worker['job']['kind'],
+                                       decisions=len(game.get('decisions',[])),termination=game.get('termination'),
+                                       valuePositions=len(game.get('decisions',[])) if game.get('termination')=='terminal' else 0)
                             self.accept_game(message['game'], round_deadline)
                             self.finish_worker(selector, workers, fd)
                             self.checkpoint()
                             break
                         elif kind in ('unfinished', 'unavailable-start'):
+                            if kind=='unfinished':self.record_generation_duration(worker,censored=True)
                             self.state['unavailableStarts' if kind == 'unavailable-start' else 'unfinishedGames'] += 1
                             self.event(kind, job=worker['job'], result=message)
                             self.finish_worker(selector, workers, fd)
@@ -367,6 +449,7 @@ class Runner:
         selector.unregister(fd)
         stop_worker(worker['process'])
         if unfinished:
+            self.record_generation_duration(worker,censored=True)
             self.state['unfinishedGames'] += 1
             self.event('unfinished', job=worker['job'], reason=unfinished)
 
@@ -387,6 +470,7 @@ class Runner:
                 self.event('curriculum-change', weights=CONFIG['training']['fallbackCurriculum'])
             if self.state['phase'] == 'generation':
                 self.generate_round()
+                if self.state.get('admissionStop'):break
                 handoff=self.handoff_requested()
                 if handoff:break
                 self.state['phase'] = 'training'
@@ -421,7 +505,7 @@ class Runner:
         self.checkpoint()
         atomic_json(self.directory / 'runner-result.json', {'schema': 1, 'state': self.state,
                     'status': 'stopped', 'elapsedSeconds': time.monotonic() - self.started,
-                    'reason':f"{handoff['reason']}-handoff" if handoff else 'budget-or-resource-stop',
+                    'reason':f"{handoff['reason']}-handoff" if handoff else self.state.get('admissionStop','budget-or-resource-stop'),
                     'trainingHealthOnly': True, 'productionGatesPassed': False})
 
 
