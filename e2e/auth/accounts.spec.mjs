@@ -1,4 +1,4 @@
-import { profileLayoutDisplayName } from "../support/profile-layout.mjs";
+import { profileLayoutDisplayName, sampleParticipantGeometry } from "../support/profile-layout.mjs";
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { AUTH_REQUEST_HEADER, AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION, SESSION_CONTEXT_HEADER } from "../../packages/shared-types/src/auth-policy.js";
@@ -656,11 +656,14 @@ test("long profile names wrap inside participants without covering the board", a
   await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
   const profile = page.getByTestId("participant-player-1").getByRole("button");
   await expect(profile).toContainText(displayName);
-  const box = await profile.boundingBox();
-  const panel = await page.locator('[data-game-panel="participants"]').boundingBox();
-  expect(box.x).toBeGreaterThanOrEqual(panel.x);
-  expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width);
-  expect(await profile.evaluate(button => button.scrollWidth <= button.clientWidth + 1)).toBe(true);
+  let geometry;
+  await expect.poll(async () => {
+    geometry = await page.evaluate(sampleParticipantGeometry);
+    return geometry !== null;
+  }).toBe(true);
+  expect(geometry.x).toBeGreaterThanOrEqual(geometry.panelX);
+  expect(geometry.x + geometry.width).toBeLessThanOrEqual(geometry.panelX + geometry.panelWidth);
+  expect(geometry.scrollWidth <= geometry.clientWidth + 1).toBe(true);
   await profile.click();
   await expect(page.getByTestId("public-profile")).toContainText(displayName);
 });
