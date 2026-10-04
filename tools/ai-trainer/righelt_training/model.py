@@ -32,19 +32,21 @@ class PolicyValueNet(nn.Module):
         return policy, torch.tanh(value).squeeze(-1)
 
 
-def training_loss(logits, values, legal, targets, terminal_values, terminal_mask):
+def training_loss(logits, values, legal, targets, terminal_values, terminal_mask, policy_mask=None):
+    if policy_mask is None:
+        policy_mask = torch.ones_like(terminal_mask, dtype=torch.bool)
     if not torch.isfinite(logits).all() or not torch.isfinite(values).all():
         raise ValueError('nonfinite model output')
     if not legal.any(dim=1).all():
         raise ValueError('empty legal mask')
     if not torch.isfinite(targets).all() or (targets < 0).any() or (targets[~legal] != 0).any():
         raise ValueError('invalid policy target')
-    if not torch.allclose(targets.sum(dim=1), torch.ones_like(values), atol=1e-5):
-        raise ValueError('policy target must sum to one')
+    if not torch.allclose(targets.sum(dim=1), policy_mask.to(values.dtype), atol=1e-5):
+        raise ValueError('supervised policy must sum to one; masked policy must be empty')
     if not torch.isfinite(terminal_values[terminal_mask]).all() or (terminal_values[terminal_mask].abs() > 1).any():
         raise ValueError('invalid terminal value')
     log_prob = torch.log_softmax(logits.masked_fill(~legal, torch.finfo(logits.dtype).min), dim=1)
-    policy = -(targets * log_prob).sum(dim=1).mean()
+    policy = -(targets[policy_mask] * log_prob[policy_mask]).sum(dim=1).mean() if policy_mask.any() else logits.sum() * 0
     # An all-truncated batch has zero value loss, not a draw target.
     value = ((values[terminal_mask] - terminal_values[terminal_mask]) ** 2).mean() if terminal_mask.any() else values.sum() * 0
     return policy + value, policy.detach(), value.detach()

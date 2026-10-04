@@ -4,6 +4,7 @@ import { encodeState, experimentConfig as config, legalActionMap } from "./repre
 import { terminalValue, transition } from "./transition";
 import { proveTactical, TacticalInterrupted, type TacticalStatus } from "./tactics";
 export type { TacticalStatus } from "./tactics";
+export const SEARCH_POLICY_VERSION = "model-fallback-v1";
 
 export type Evaluation = { policyLogits: ArrayLike<number>; value: number };
 export type Evaluator = (input: Float32Array, context: {
@@ -14,26 +15,34 @@ export type SearchRequest = {
   maxValueGap?: number; maxNodes?: number; deadlineMs?: number; signal?: AbortSignal;
 };
 export type ActionReport = {
-  index: number; visits: number; prior: number; value: number | null;
+  index: number; visits: number; prior: number; policyLogit: number; value: number | null;
   immediate: "win" | "eligible" | "losing" | "incomplete";
   tactical: TacticalStatus;
 };
 type EngineBudget = { perOperationLimit: number; peakExpansions: number; totalExpansions: number; limitReached: boolean };
+export type ModelFallback = {
+  schemaVersion: 1; reason: "search-incomplete" | "safety-incomplete";
+  selectionBasis: "model-policy"; selectedActionSafety: "eligible" | "incomplete";
+  valueSource: "root-model"; checkedEligibleCount: number; uncheckedCount: number; provenLosingCount: number;
+};
 export type SearchResult = {
   status: "ready"; action: Action; actionIndex: number; value: number;
-  policy: { index: number; probability: number }[];
+  policy: { index: number; probability: number }[]; policyMask: boolean; fallback: ModelFallback | null;
   actions: ActionReport[]; seed: number; nodes: number; simulations: number;
   elapsedMs: number; engineBudget: EngineBudget; stopped: "complete" | "deadline" | "node-limit";
-  reason: "immediate-win" | "forced-win" | "search" | "unavoidable-loss";
+  reason: "immediate-win" | "forced-win" | "search" | "unavoidable-loss" | "model-fallback";
 } | {
   status: "recovery"; reason: "terminal" | "no-legal-actions" | "incomplete-safety" | "no-completed-search";
   actions: ActionReport[]; nodes: number; simulations: number; elapsedMs: number; engineBudget: EngineBudget;
   stopped: "complete" | "deadline" | "node-limit";
 };
 
-type Edge = { index: number; action: Action; prior: number; visits: number; sum: number; child?: Node };
-type Node = { state: GameState; edges?: Edge[]; value?: number; visits: number; sum: number };
+type Edge = { index: number; action: Action; prior: number; policyLogit: number; visits: number; sum: number; child?: Node; transitionLimited?: boolean };
+type Node = { state: GameState; edges?: Edge[]; enumerationLimited?: boolean; value?: number; visits: number; sum: number };
 class SoftStop extends Error {}
+// Exhausting one authoritative operation does not spend another candidate's
+// allowance. Memoize interruption, never a legal/safety answer.
+class EngineLimit extends Error {}
 function abort() { const error = new Error("Search cancelled"); error.name = "AbortError"; return error; }
 function mover(state: GameState) { return state.sideToMove === "P1" ? 1 : -1; }
 
@@ -83,7 +92,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
       check();
       if (expansion) {
         if (expansions >= engineBudget.perOperationLimit) {
-          engineBudget.limitReached = true; stopped = "node-limit"; throw new SoftStop();
+          engineBudget.limitReached = true; stopped = "node-limit"; throw new EngineLimit();
         }
         expansions++; engineBudget.totalExpansions++;
         engineBudget.peakExpansions = Math.max(engineBudget.peakExpansions, expansions);
@@ -92,16 +101,22 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
   };
   const edges = (node: Node) => {
     check();
-    if (!node.edges) node.edges = [...engine(() => legalActionMap(node.state))].map(([index, action]) => ({ index, action, prior: 0, visits: 0, sum: 0 }));
+    if (node.enumerationLimited) throw new EngineLimit();
+    if (!node.edges) {
+      try { node.edges = [...engine(() => legalActionMap(node.state))].map(([index, action]) => ({ index, action, prior: 0, policyLogit: 0, visits: 0, sum: 0 })); }
+      catch (error) { if (error instanceof EngineLimit) node.enumerationLimited = true; throw error; }
+    }
     check();
     return node.edges;
   };
   const child = (node: Node, edge: Edge) => {
     check();
+    if (edge.transitionLimited) throw new EngineLimit();
     if (!edge.child) {
       if (nodes >= maxNodes) { stopped = "node-limit"; throw new SoftStop(); }
       nodes += 1;
-      edge.child = { state: engine(() => transition(node.state, edge.action)), visits: 0, sum: 0 };
+      try { edge.child = { state: engine(() => transition(node.state, edge.action)), visits: 0, sum: 0 }; }
+      catch (error) { if (error instanceof EngineLimit) edge.transitionLimited = true; throw error; }
     }
     check();
     return edge.child;
@@ -123,14 +138,14 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     for (let i = 0; i < config.actionCount; i++) if (!Number.isFinite(evaluation.policyLogits[i])) throw new Error("Non-finite policy logit");
     const max = Math.max(...available.map(edge => evaluation.policyLogits[edge.index]));
     let total = 0;
-    for (const edge of available) { edge.prior = Math.exp(evaluation.policyLogits[edge.index] - max); total += edge.prior; }
+    for (const edge of available) { edge.policyLogit = evaluation.policyLogits[edge.index]; edge.prior = Math.exp(edge.policyLogit - max); total += edge.prior; }
     for (const edge of available) edge.prior /= total;
     node.value = evaluation.value;
     return evaluation.value;
   };
   function reports(): ActionReport[] {
     return (root.edges ?? []).map(edge => ({
-      index: edge.index, visits: edge.visits, prior: edge.prior,
+      index: edge.index, visits: edge.visits, prior: edge.prior, policyLogit: edge.policyLogit,
       value: edge.visits ? edge.sum / edge.visits : null,
       immediate: safety.get(edge.index) ?? "incomplete", tactical: proofs.get(edge.index) ?? "incomplete",
     }));
@@ -156,8 +171,28 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
       status: "ready", action: chosen.action, actionIndex: chosen.index,
       value: chosen.visits ? chosen.sum / chosen.visits : root.value!,
       policy: candidates.map(edge => ({ index: edge.index, probability: total ? edge.visits / total : Number(edge === chosen) })),
+      policyMask: true, fallback: null,
       actions: reports(), seed: request.seed, nodes, simulations: completed,
       elapsedMs: performance.now() - started, engineBudget, stopped, reason,
+    };
+  };
+  const modelFallback = (choices: Edge[], reason: ModelFallback["reason"]): SearchResult => {
+    // Every choice came from the complete authoritative root legal list; the
+    // root evaluation was validated before any fallback became available.
+    const highest = Math.max(...choices.map(edge => edge.policyLogit));
+    const tied = choices.filter(edge => edge.policyLogit === highest);
+    const chosen = tied[Math.floor(random() * tied.length)];
+    return {
+      status: "ready", reason: "model-fallback", action: chosen.action, actionIndex: chosen.index,
+      value: root.value!, policy: [], policyMask: false,
+      fallback: { schemaVersion: 1, reason, selectionBasis: "model-policy",
+        selectedActionSafety: safety.get(chosen.index) === "eligible" ? "eligible" : "incomplete",
+        valueSource: "root-model",
+        checkedEligibleCount: root.edges!.filter(edge => safety.get(edge.index) === "eligible").length,
+        uncheckedCount: root.edges!.filter(edge => !safety.has(edge.index)).length,
+        provenLosingCount: root.edges!.filter(edge => safety.get(edge.index) === "losing").length },
+      actions: reports(), seed: request.seed, nodes, simulations: completed,
+      elapsedMs: performance.now() - started, engineBudget, stopped,
     };
   };
   const rootSign = mover(root.state);
@@ -168,11 +203,13 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     await evaluate(root);
     // Scan all immediate outcomes first; an early safety expansion must not hide a win.
     for (const edge of root.edges!) {
-      const next = child(root, edge);
-      const value = terminalValue(next.state);
-      if (value === rootSign) safety.set(edge.index, "win");
-      else if (value === -rootSign) safety.set(edge.index, "losing");
-      else if (value !== undefined || next.state.sideToMove === root.state.sideToMove) safety.set(edge.index, "eligible");
+      try {
+        const next = child(root, edge);
+        const value = terminalValue(next.state);
+        if (value === rootSign) safety.set(edge.index, "win");
+        else if (value === -rootSign) safety.set(edge.index, "losing");
+        else if (value !== undefined || next.state.sideToMove === root.state.sideToMove) safety.set(edge.index, "eligible");
+      } catch (error) { if (!(error instanceof EngineLimit)) throw error; }
     }
     const wins = root.edges!.filter(edge => safety.get(edge.index) === "win");
     if (wins.length) {
@@ -182,14 +219,16 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     // Incomplete reply enumeration never grants eligibility.
     for (const edge of [...root.edges!].sort((a, b) => b.prior - a.prior || a.index - b.index)) {
       if (safety.has(edge.index)) continue;
-      const next = child(root, edge);
-      let losing = false;
-      for (const reply of edges(next)) {
-        if (terminalValue(child(next, reply).state) === -rootSign) { losing = true; break; }
-      }
-      safety.set(edge.index, losing ? "losing" : "eligible");
+      try {
+        const next = child(root, edge);
+        let losing = false;
+        for (const reply of edges(next)) {
+          if (terminalValue(child(next, reply).state) === -rootSign) { losing = true; break; }
+        }
+        safety.set(edge.index, losing ? "losing" : "eligible");
+      } catch (error) { if (!(error instanceof EngineLimit)) throw error; }
     }
-  } catch (error) { if (!(error instanceof SoftStop)) throw error; }
+  } catch (error) { if (!(error instanceof SoftStop) && !(error instanceof EngineLimit)) throw error; }
   if (request.signal?.aborted) throw abort();
   if (root.value === undefined) return recovery("no-completed-search");
   const rootEdges = root.edges!;
@@ -208,7 +247,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
       chosen.visits = 1; chosen.sum = -rootSign;
       return ready(chosen, [chosen], "unavoidable-loss");
     }
-    return recovery("incomplete-safety");
+    return modelFallback(rootEdges.filter(edge => safety.get(edge.index) !== "losing"), "safety-incomplete");
   }
 
   // Complete one model evaluation before optional tactical work. A deadline never
@@ -236,10 +275,15 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     for (const item of path) { item.node.visits++; item.node.sum += value; item.edge.visits++; item.edge.sum += value; }
     completed++;
   }
-  try {
-    const preferred = [...eligible].sort((a, b) => b.prior - a.prior || a.index - b.index)[0];
-    await visit(preferred);
-  } catch (error) { if (!(error instanceof SoftStop)) throw error; }
+  const limitedVisits = new Set<number>();
+  for (const preferred of [...eligible].sort((a, b) => b.prior - a.prior || a.index - b.index)) {
+    try { await visit(preferred); break; }
+    catch (error) {
+      if (error instanceof EngineLimit) { limitedVisits.add(preferred.index); continue; }
+      if (error instanceof SoftStop) break;
+      throw error;
+    }
+  }
 
   // Interval minimax proves only terminal-forced outcomes. Horizon and unfinished
   // work remain distinct. Reserve at least half the remaining nodes for PUCT.
@@ -256,7 +300,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
           yield child(node, edge);
         }
       } catch (error) {
-        if (error instanceof SoftStop) throw new TacticalInterrupted();
+        if (error instanceof SoftStop || error instanceof EngineLimit) throw new TacticalInterrupted();
         throw error;
       }
     },
@@ -276,19 +320,22 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
   try {
     while (completed < simulations) {
       check();
+      const available = eligible.filter(edge => !limitedVisits.has(edge.index));
+      if (!available.length) break;
       let best = -Infinity;
-      let selected = eligible[0];
-      for (const edge of eligible) {
+      let selected = available[0];
+      for (const edge of available) {
         const q = edge.visits ? edge.sum / edge.visits : root.value;
         const score = rootSign * q + config.search.cPuct * edge.prior * Math.sqrt(Math.max(1, root.visits)) / (1 + edge.visits);
         if (score > best || (score === best && edge.index < selected.index)) { best = score; selected = edge; }
       }
-      await visit(selected);
+      try { await visit(selected); }
+      catch (error) { if (error instanceof EngineLimit) limitedVisits.add(selected.index); else throw error; }
     }
   } catch (error) { if (!(error instanceof SoftStop)) throw error; }
   if (request.signal?.aborted) throw abort();
   const visited = eligible.filter(edge => edge.visits > 0);
-  if (!visited.length) return recovery("no-completed-search");
+  if (!visited.length) return modelFallback(eligible, "search-incomplete");
   const bestValue = Math.max(...visited.map(edge => rootSign * edge.sum / edge.visits));
   const choices = visited.filter(edge => bestValue - rootSign * edge.sum / edge.visits <= valueGap);
   const chosen = sample(choices, edge => Math.log(edge.visits));

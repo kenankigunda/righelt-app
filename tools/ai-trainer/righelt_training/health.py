@@ -1,5 +1,6 @@
 """Audit experiment health from replay archives and recoverable model weights."""
 from .budget import effective_deadline
+from .fallback_report import add_game as add_fallback_game
 import argparse
 import gzip
 import hashlib
@@ -110,6 +111,7 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
             elif game['termination']=='truncated' and game['outcome']['status']=='ongoing':result['truncatedGames']+=1
             else:raise ValueError('invalid terminal/truncation record')
             result['replayChecks']+=1
+            add_fallback_game(result.setdefault('fallbackReport',{}),game)
         weights=set()
         for checkpoint in [path]+[p for p in sorted((directory/'checkpoints').glob('*.pt'),reverse=True) if p!=path]:
             if clock()>=deadline-2:raise TimeoutError('checkpoint recovery audit unfinished within stage budget')

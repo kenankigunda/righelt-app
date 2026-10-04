@@ -20,6 +20,7 @@ from .allocation import Allocation
 from .processes import start_group,stop_group,install_stop_handlers,register_owned,cleanup_owned
 from .resources import AdaptivePolicy
 from .telemetry import Telemetry,read_device_memory
+from .resume import validate_reset_checkpoint
 
 
 def validate_gate_report(report, source_revision, stage):
@@ -303,10 +304,17 @@ def main():
     phase='canary' if args.canary else 'export-parity' if args.export_parity else 'prepare-arena' if args.prepare_arena else 'health' if args.health else 'arena' if arena_digest else 'training'
     if args.canary and (args.resume or args.export_parity or args.prepare_arena or args.health or args.arena_plan):raise ValueError('canary is exclusive')
     allocation=Allocation(artifact_root,args.run_dir)
-    if args.stage=='overnight' and not args.run_dir.exists():
-        validate_overnight_checkpoint(args.resume,json.loads(args.gate_report.read_text()))
     allocation.create(args.stage)
     allocation.recover_abandoned(cleanup_owned)
+    if args.stage=='overnight' and not (args.run_dir/'latest.json').exists():
+        gate=json.loads(args.gate_report.read_text())
+        creation=allocation.accounting()[0]
+        if creation.get('resetFrom'):
+            # Canary creates the manifest but never supplies trained state.
+            checkpoint=args.resume or (gate.get('resumeCheckpoint',{}).get('checkpoint') if phase=='canary' else None)
+            validate_reset_checkpoint(checkpoint,gate,creation)
+        elif phase!='canary':
+            validate_overnight_checkpoint(args.resume,gate)
     runtime_path=args.run_dir/'runtime.json'
     manifest_path=args.run_dir/'manifest.json'
     if manifest_path.exists():

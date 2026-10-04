@@ -3,9 +3,10 @@ import { createInterface } from 'node:readline';
 import { writeFileSync, renameSync } from 'node:fs';
 import { createEngineOperationBudget, EngineExpansionLimit } from './engine-operation-budget.mjs';
 import { searchRecovery } from './search-recovery.mjs';
+import { decisionProvenance, validateDecisionProvenance } from './decision-provenance.mjs';
 import { createHash } from 'node:crypto';
 import { createInitialState, deterministicStateHash, normalizeState, resolveToStability } from '../../packages/game-engine/src/index.ts';
-import { encodeState, selectMove, seededRandom, experimentConfig, legalActionMap as engineLegalActionMap, transition as engineTransition } from '../../packages/computer-player/src/index.ts';
+import { encodeState, selectMove, seededRandom, experimentConfig, SEARCH_POLICY_VERSION, legalActionMap as engineLegalActionMap, transition as engineTransition } from '../../packages/computer-player/src/index.ts';
 
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity })[Symbol.asyncIterator]();
 const read = async () => {
@@ -73,11 +74,23 @@ async function main() {
   };
   if (job.command === 'search') {
     let requestId=0;
-    const result=await selectMove({state:job.state,seed:job.seed,...searchOptions(job.profile),deadlineMs:deadline},async encoded=>{
+    const result=await selectMove({state:job.state,seed:job.seed,...searchOptions(job.profile),
+      ...(job.verifyFallback ? {maxNodes:1} : {}),deadlineMs:deadline},async encoded=>{
       const id=++requestId;send({type:'evaluate',id,input:Array.from(encoded)});
       const reply=await read();if(reply.type!=='evaluation'||reply.id!==id)throw new Error('Inference response mismatch');return reply;
     });
-    send({type:'searched',result});return;
+    let fallbackProof;
+    if(job.verifyFallback){
+      if(result.status!=='ready'||!result.fallback)throw new Error('Canary fallback missing');
+      const legal=legalActionMap(job.state);
+      if(JSON.stringify(legal.get(result.actionIndex))!==JSON.stringify(result.action))throw new Error('Canary fallback illegal');
+      const next=transition(job.state,result.action),again=transition(job.state,result.action);
+      if(deterministicStateHash(next)!==deterministicStateHash(again))throw new Error('Canary fallback replay mismatch');
+      const record=decisionProvenance(result,SEARCH_POLICY_VERSION);
+      fallbackProof={passed:true,beforeHash:deterministicStateHash(job.state),afterHash:deterministicStateHash(next),
+        action:result.action,actionIndex:result.actionIndex,...record};
+    }
+    send({type:'searched',result,...(fallbackProof?{fallbackProof}:{})});return;
   }
   if (job.command === 'replay') {
     let state = job.game.rootState ?? job.game.initialState;
@@ -86,6 +99,7 @@ async function main() {
     const repetitions = new Map([[ruleFingerprint(state), 1]]);
     for (const record of job.game.decisions) {
       check();
+      validateDecisionProvenance(record);
       if (deterministicStateHash(state) !== record.beforeHash) throw new Error('Replay before-state mismatch');
       if (state.sideToMove !== record.controller) throw new Error('Replay controller mismatch');
       if (record.encoded && JSON.stringify(Array.from(encodeState(state))) !== JSON.stringify(record.encoded)) throw new Error('Replay encoding mismatch');
@@ -183,9 +197,16 @@ async function main() {
       const encoded = Array.from(encodeState(state)), legal = [...legalActionMap(state).keys()];
       state = transition(state, result.action);
       decisions.push({ id: `${job.id}:${n}`, controller, action: result.action, beforeHash,
-        afterHash: deterministicStateHash(state), seed, policy: result.policy, legal, encoded,
-        ...(arena ? { modelVersion: job.modelVersions[controller], profileVersion: job.profileVersions[controller] } : {}),
-        search: { nodes: result.nodes, simulations: result.simulations, stopped: result.stopped, reason: result.reason } });
+        afterHash: deterministicStateHash(state), seed, legal, encoded,
+        modelVersion: arena ? job.modelVersions[controller] : job.modelVersion,
+        profileVersion: arena ? job.profileVersions[controller] : `selfplay-${SEARCH_POLICY_VERSION}`,
+        ...decisionProvenance(result,SEARCH_POLICY_VERSION) });
+      const committed=decisions[decisions.length-1];
+      send({type:'decision-progress',gameId:job.id,kind:job.kind,decision:{
+        id:committed.id,controller,action:committed.action,beforeHash,afterHash:committed.afterHash,
+        seed,modelVersion:committed.modelVersion,profileVersion:committed.profileVersion,
+        searchPolicyVersion:SEARCH_POLICY_VERSION,policyMask:committed.policyMask,fallback:committed.fallback,
+        search:{...committed.search,actions:committed.fallback?committed.search.actions:undefined}}});
     }
   } catch (error) {
     if (!(error instanceof BudgetExpired)) throw error;

@@ -69,12 +69,14 @@ console.log(JSON.stringify(JSON.parse(input).map(raw=>{
             atomic_json(root/'manifest.json',{'sha256':'toy','manifest':{}})
             atomic_json(root/'allocation.json',{'paused':False,'workers':2,'reason':'usable'})
             def generator(job,*args):
+                if job.get('verifyFallback'):return {'passed':True,'policyMask':False,'policy':[]}
                 return {**job,'termination':'terminal','outcome':{'status':'p1_win'},'decisions':[
                     {'encoded':[0.0]*4600,'legal':[0,2800],'policy':[{'index':0,'probability':1.0}]}]}
             with patch('righelt_training.canary.verify_game'),patch('righelt_training.canary.verify_corpus',return_value=[{'encoded':[0.0]*4600}]*1000),patch('righelt_training.canary.export_onnx'),patch('righelt_training.canary.RunnerMonitor',side_effect=lambda directory:RunnerMonitor(directory,query=lambda:0)):
                 report=run(root,corpus,device='cpu',generator=generator,checker=lambda *a,**k:{'numericPassed':True,'maxAbsoluteError':[0.,0.]})
             self.assertTrue(report['complete'],report);self.assertFalse(report['passed'])
             self.assertEqual(report['terminalGames'],2);self.assertEqual(report['updates'],2);self.assertEqual(report['parityStates'],1000)
+            self.assertTrue(report['fallbackReplayPassed']);self.assertTrue(report['maskedValueUpdatePassed'])
             self.assertFalse((root/'latest.json').exists());self.assertFalse((root/'checkpoints').exists());self.assertFalse((root/'games').exists())
 
 if __name__=='__main__':unittest.main()
