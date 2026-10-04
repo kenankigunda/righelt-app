@@ -14,3 +14,8 @@ test('reporter distinguishes skipped workflows from failed and passed workflows'
   'All assertions in this workflow passed.'
  ]);
 });
+
+test('reporter records client and checkpoints without leaking failure data',()=>{
+ const reporter=new EvidenceReporter(),workflow={titlePath:()=>['suite','workflow'],parent:{project:()=>({name:'mobile',use:{browserName:'webkit',viewport:{width:390,height:844},hasTouch:true,baseURL:'secret'}})}};
+ reporter.onTestEnd(workflow,{status:'failed',error:{message:'private recovery secret'},attachments:[{name:'behavior',contentType:'application/json',body:Buffer.from(JSON.stringify({label:'owned move',checkpoint:'owned-move',private:'secret'}))}]});const row=reporter.items[0];assert.deepEqual(row.client,{browser:'webkit',viewport:'mobile',width:390,height:844,hasTouch:true});assert.deepEqual(row.behaviors,[{label:'owned move',checkpoint:'owned-move'}]);assert(!JSON.stringify(row).includes('secret'));
+});

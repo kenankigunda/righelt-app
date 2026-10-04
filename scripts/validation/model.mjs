@@ -36,16 +36,30 @@ export function applyReply(run, message, recipient, mailbox) {
   (run.processedMessages ??= []).push(message.id);
   return commands.length > 0;
 }
-export function readiness(pr, stage, currentBase) {
+export function finalProofReady(run, currentBase) {
+  if (!run || run.base !== currentBase) return false;
+  const integrated=run.mode==='integrated';
+  const final=run.stages?.find(s=>s.phase==='final'&&s.index===(integrated?run.prs.length:0));
+  if (!final || final.base!==currentBase || final.status!=='passed' || final.sourceClean!==true || final.visualReviewed!==true || final.unmapped?.length || !final.checks?.length || final.checks.some(c=>c.status!=='passed')) return false;
+  if (!integrated) return final.head===run.revision;
+  if (run.complete!==true || run.stages.length!==run.prs.length+1 || run.stages.some(s=>s.status!=='passed')) return false;
+  const proof=final.checkpointProvenance;
+  if (proof?.base!==currentBase || proof.prefix?.length!==run.prs.length) return false;
+  return run.prs.every((pr,i)=>proof.prefix[i]?.number===pr.number&&proof.prefix[i]?.head===pr.head&&run.stages.find(s=>s.index===i+1)?.head===pr.head);
+}
+export function readiness(pr, stage, currentBase, run) {
   const waiting=[];
+  if ((run?.version===2||stage?.policyVersion===2)&&!finalProofReady(run,currentBase)) waiting.push('Final broad validation and screenshot review of current inputs');
   if(pr.nativeStack)waiting.push('Native GitHub stacks are unsupported; individual authorization cannot include predecessors');
   if (!stage || stage.head !== pr.head || stage.base !== currentBase || stage.status !== 'passed') waiting.push('Current integrated validation');
   if (stage?.unmapped?.length) waiting.push('Coverage gaps');
   if (stage?.sourceClean !== true) waiting.push('Clean reproducible source tree');
-  if (!stage?.visualReviewed) waiting.push('Agent screenshot inspection');
+  if (stage?.visualRequired !== false && !stage?.visualReviewed) waiting.push('Agent screenshot inspection');
   if (pr.independentReview?.status !== 'passed' || pr.independentReview?.head !== pr.head) waiting.push('Independent review of current head');
   if (pr.gatesHead !== pr.head || pr.gatesBase !== currentBase) waiting.push('Fresh PR gate provenance');
-  if (pr.checks !== 'passed') waiting.push('Required CI checks');
+  const a=pr.checkApplicability;
+  const notApplicable=pr.checks==='not-applicable'&&a?.verified===true&&a.head===pr.head&&a.base===currentBase&&a.workflowFiltersVerified===true&&a.requiredChecksVerified===true&&Array.isArray(a.requiredChecks)&&a.requiredChecks.length===0&&Array.isArray(a.sources)&&a.sources.length>0;
+  if (pr.checks !== 'passed'&&!notApplicable) waiting.push('Required CI checks');
   if (pr.review !== 'passed') waiting.push('Required reviews');
   if ((pr.preview === 'passed' && (pr.previewHead !== pr.head || !pr.previewUrl)) || (pr.preview === 'not-configured' && pr.previewCheckedHead !== pr.head)) waiting.push('Current preview provenance');
   if (pr.preview !== 'passed' && pr.preview !== 'not-configured') waiting.push('Current preview verification');
@@ -57,8 +71,8 @@ export function readiness(pr, stage, currentBase) {
   const unverified=!stage||stage.head!==pr.head||stage.base!==currentBase||['stale','running','unverified'].includes(stage.status);
   return {status:unverified?'unverified/stale':waiting.length?(waiting.length===1&&deps.length?'validated but waiting on prerequisites':'not merge-ready'):'merge-ready', waiting};
 }
-export function canMerge(pr, stage, base) {
-  return pr.authorization?.state==='authorized' && pr.authorization.target===pr.base && readiness(pr,stage,base).status==='merge-ready';
+export function canMerge(pr, stage, base, run) {
+  return pr.authorization?.state==='authorized' && pr.authorization.target===pr.base && readiness(pr,stage,base,run).status==='merge-ready';
 }
 export function invalidate(run, base, heads) {
   const changed = run.base !== base ? 0 : run.prs.findIndex((p,i)=>p.head !== heads[i])+1;
@@ -75,14 +89,19 @@ export function coverage(files) {
     else if (/^tools\/ai-trainer\//.test(file)) { areas.add('tooling'); areas.add('ai-trainer'); }
     else if (/^tools\/ai-benchmark\//.test(file)) { areas.add('tooling'); areas.add('ai-benchmark'); }
     else if (/^tools\/t108-feasibility\//.test(file)) areas.add('tooling');
-    else if (/^(\.npmrc|validation-e2e\/|scripts\/|skills\/|\.agents\/|docs\/|\.github\/|AGENTS\.md|README\.md|package\.json|pnpm-|playwright|tsconfig|\.gitignore)/.test(file)) areas.add('tooling');
+    else if (/^(\.npmrc|validation-(?:account-)?e2e\/|scripts\/|skills\/|\.agents\/|docs\/|\.github\/|AGENTS\.md|README\.md|package\.json|pnpm-|playwright|tsconfig|\.gitignore)/.test(file)) areas.add('tooling');
     else unmapped.push(file);
   }
   return {areas:[...areas],unmapped,files:areas.has('app')?[]:coreFiles};
 }
+function publicAttempt(attempt){
+ const stages=Array.isArray(attempt)?attempt:attempt.stages??[attempt];
+ const links=Object.entries(attempt.publication??{}).filter(([key,value])=>['url','immutableUrl','stableUrl'].includes(key)&&typeof value==='string'&&/^https?:\/\//.test(value)).map(([key,value])=>({kind:key,url:value}));
+ return {stages:stages.map(s=>({id:s.id,title:s.title,status:s.status,checks:(s.checks??[]).map(c=>({name:c.name,status:c.status})),reusedChecks:(s.checks??[]).filter(c=>c.reused).length})),links};
+}
 export function publicRun(run) {
   // Explicit allowlist: logs, connector envelopes, notes and recipient are never published.
-  return {version:VERSION,id:run.id,startedAt:run.startedAt,base:run.base,revision:run.revision,fingerprint:run.fingerprint,harnessRevision:run.harnessRevision,harnessFingerprint:run.harnessFingerprint,
-    risks:run.risks??[], findings:run.findings??[], prs:(run.prs??[]).map((p,index)=>{const stage=run.mode==='local'?run.stages?.[0]:run.stages?.find(s=>s.index===index+1);const current=readiness(p,stage,run.base);return {number:p.number,title:p.title,url:p.url,head:p.head,readiness:p.merged?'merged':current.status,waiting:p.merged?[]:current.waiting,authorization:p.authorization?.state};}),
-    stages:(run.stages??[]).map(s=>({id:s.id,index:s.index,title:s.title,status:s.status,head:s.head,base:s.base,fingerprint:s.fingerprint,harnessRevision:s.harnessRevision,harnessFingerprint:s.harnessFingerprint,visualReviewed:s.visualReviewed,unmapped:s.unmapped??[],checks:(s.checks??[]).map(c=>({name:c.name,status:c.status,duration:c.duration})),items:s.items??[]}))};
+  return {history:[...(run.history??[]),...(run.attempts??[])].map(publicAttempt),version:VERSION,id:run.id,startedAt:run.startedAt,base:run.base,revision:run.revision,fingerprint:run.fingerprint,harnessRevision:run.harnessRevision,harnessFingerprint:run.harnessFingerprint,
+    risks:run.risks??[], findings:run.findings??[], prs:(run.prs??[]).map((p,index)=>{const stage=run.mode==='local'?run.stages?.[0]:run.stages?.find(s=>s.index===index+1);const current=readiness(p,stage,run.base,run);return {number:p.number,title:p.title,url:p.url,head:p.head,readiness:p.merged?'merged':current.status,waiting:p.merged?[]:current.waiting,authorization:p.authorization?.state};}),
+    stages:(run.stages??[]).map(s=>({id:s.id,index:s.index,title:s.title,status:s.status,head:s.head,base:s.base,fingerprint:s.fingerprint,harnessRevision:s.harnessRevision,harnessFingerprint:s.harnessFingerprint,visualReviewed:s.visualReviewed,visualRequired:s.visualRequired,phase:s.phase,questions:s.questions,unmapped:s.unmapped??[],checks:(s.checks??[]).map(c=>({name:c.name,status:c.status,duration:c.duration,reused:c.reused,reason:c.reason,source:c.source})),items:(s.items??[]).map(i=>({id:i.id,title:i.title,viewport:i.viewport,status:i.status,revision:i.revision,assertions:i.assertions??[],findings:i.findings??[],behaviors:(i.behaviors??[]).map(b=>({label:b.label,checkpoint:b.checkpoint})),client:i.client?{browser:i.client.browser,viewport:i.client.viewport,width:i.client.width,height:i.client.height,hasTouch:i.client.hasTouch}:undefined,images:(i.images??[]).map(p=>({src:p.src,thumbnail:p.thumbnail,caption:p.caption,digest:p.digest,checkpoint:p.checkpoint,kind:p.kind,viewport:p.viewport}))}))}))};
 }
