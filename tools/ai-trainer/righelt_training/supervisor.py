@@ -131,6 +131,81 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
         stop_group(process)
 
 
+def latest_recovery(run_dir,runtime):
+    from .checkpoint import inspect_checkpoint
+    directory=Path(run_dir);latest=json.loads((directory/'latest.json').read_text())
+    path=Path(latest['checkpoint']).resolve()
+    if not path.is_relative_to((directory/'checkpoints').resolve()):raise ValueError('recovery checkpoint outside run')
+    if hashlib.sha256(path.read_bytes()).hexdigest()!=latest['sha256']:raise ValueError('latest recovery checkpoint changed')
+    metadata=json.loads(path.with_suffix('.json').read_text())
+    if metadata['manifestSha256'] not in manifest_hashes(directory):raise ValueError('recovery checkpoint lineage unauthorized')
+    data=inspect_checkpoint(path,manifest_sha256=metadata['manifestSha256'],require_recovery=True)
+    if latest.get('updates')!=data['updates']:raise ValueError('latest recovery update count changed')
+    runtime.update(parentCheckpoint=str(path),parentCheckpointManifestSha256=metadata['manifestSha256'])
+    atomic_json(directory/'runtime.json',runtime)
+    return path,data['recovery']['state']
+
+
+def wait_for_resources(budget,policy,telemetry,run_dir,runtime,*,clock=time.monotonic,sleep=time.sleep):
+    """The caller has verified cleanup; the original allocation remains open."""
+    while budget.remaining(clock())>0:
+        now=clock()
+        if runtime['command']=='training' and now>=validation_boundary(runtime,now):return 'validation-boundary'
+        try:sample=telemetry.sample()
+        except (RuntimeError,OSError):return 'telemetry-failed'
+        assigned=policy.decide(sample)
+        atomic_json(Path(run_dir)/'allocation.json',{**assigned.record(),'observedAt':sample.now})
+        with (Path(run_dir)/'resource-events.jsonl').open('a') as stream:
+            stream.write(json.dumps({'event':'charged-resource-wait','sample':asdict(sample),'allocation':assigned.record()})+'\n')
+        if assigned.stop:return assigned.reason
+        if not assigned.paused:return 'resources-ready'
+        delay=min(CONFIG['resources']['sampleSeconds'],budget.remaining(clock()))
+        if runtime['command']=='training':delay=min(delay,max(0,validation_boundary(runtime,clock())-clock()))
+        sleep(delay)
+    return 'budget-expired'
+
+
+def run_phase(argv,env,log,budget,runtime,run_dir,artifact_root,activity_file,*,clock=time.monotonic,sleep=time.sleep):
+    """Retry only resource stops, never repair/correctness failures or new budgets."""
+    directory=Path(run_dir);policy=AdaptivePolicy();process=None;recovering=False
+    while True:
+        # Initial launch and every restart wait on host resources before loading
+        # MPS. No GPU heartbeat is required while no owned compute exists.
+        reason=wait_for_resources(budget,policy,Telemetry(artifact_root,activity_file),directory,runtime,clock=clock,sleep=sleep)
+        if reason not in ('resources-ready','validation-boundary'):return reason,process
+        if runtime['command']=='training' and (recovering or reason=='validation-boundary'):
+            path,state=latest_recovery(directory,runtime)
+            if budget.remaining(clock())<=0:return 'budget-expired',process
+            if clock()>=validation_boundary(runtime,clock()):
+                atomic_json(directory/'runner-result.json',{'schema':1,'status':'stopped','reason':'validation-handoff',
+                    'origin':'supervisor-resource-wait','checkpoint':str(path),'state':state,'unfinishedWork':recovering,
+                    'trainingHealthOnly':True,'productionGatesPassed':False})
+                return 'completed',process
+            argv=list(argv)
+            if '--resume' in argv:argv[argv.index('--resume')+1]=str(path)
+            else:argv+=['--resume',str(path)]
+        validate_training_window(runtime,clock())
+        atomic_json(directory/'allocation.json',{'workers':0,'memory_gib':CONFIG['resources']['minMemoryGiB'],
+                    'paused':True,'stop':False,'reason':'device-memory-unknown','observedAt':time.time()})
+        process=start_group(['/usr/bin/nice','-n','10',*argv],cwd=ROOT,env=env,stdout=log,stderr=log)
+        try:
+            register_owned(directory,process)
+            reason=supervise(process,budget,policy,Telemetry(artifact_root,activity_file,directory/'device-memory.json',process.pid),directory,
+                             runtime=runtime,clock=clock,sleep=sleep)
+        finally:
+            stop_group(process)
+            cleanup_owned(directory)
+        if reason!='resource-pressure-stop':return reason,process
+        with (directory/'resource-events.jsonl').open('a') as stream:
+            stream.write(json.dumps({'event':'resource-compute-stopped','pid':process.pid,'reason':reason,'cleanupVerified':True})+'\n')
+        if runtime['command']!='training':
+            with (directory/'resource-events.jsonl').open('a') as stream:
+                stream.write(json.dumps({'event':'engineering-review-stop','phase':runtime['command'],
+                    'reason':'phase-resource-restart-not-supported','cleanupVerified':True})+'\n')
+            return 'resource-restart-review-required',process
+        recovering=True
+
+
 def claim_stage(artifact_root, stage, run_directory):
     path=Path(artifact_root)/'budget-ledger.json'
     ledger=json.loads(path.read_text()) if path.exists() else {'schema':1,'stages':{}}
@@ -296,17 +371,10 @@ def main():
         env={**os.environ,'PYTHONPATH':str(ROOT/'tools/ai-trainer')}
         record_attempt(args.run_dir,{'event':'started','id':runtime['supervisorAttempt'],'phase':runtime['command'],'pid':os.getpid()})
         with (args.run_dir/'runner.log').open('a') as log:
-            process=start_group(['/usr/bin/nice','-n','10',*argv],cwd=ROOT,env=env,stdout=log,stderr=log)
             reason='interrupted'
-            try:
-                register_owned(args.run_dir,process)
-                reason=supervise(process,budget,AdaptivePolicy(),Telemetry(artifact_root,args.activity_file,args.run_dir/'device-memory.json',process.pid),args.run_dir,runtime=runtime)
-            finally:
-                stop_group(process)
-                cleanup_owned(args.run_dir)
-                allocation.finish(interval['id'],reason=reason)
+            reason,process=run_phase(argv,env,log,budget,runtime,args.run_dir,artifact_root,args.activity_file)
         record_attempt(args.run_dir,{'event':'finished','id':runtime['supervisorAttempt'],'phase':runtime['command'],'reason':reason})
-        atomic_json(args.run_dir/'supervisor-result.json',{'reason':reason,'runnerReturncode':process.returncode,
+        atomic_json(args.run_dir/'supervisor-result.json',{'reason':reason,'runnerReturncode':process.returncode if process is not None else None,
                     'elapsedSeconds':time.monotonic()-started,'budgetSeconds':budget.seconds,'productionPromotion':False})
         print(json.dumps({'reason':reason,'runDir':str(args.run_dir)}))
     finally:
