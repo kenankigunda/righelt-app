@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { browserLaunchOptions } from "./scripts/playwright-launch-options.mjs";
 
 const webPort = process.env.RIGHELT_E2E_WEB_PORT || "9888";
 const baseURL = `http://127.0.0.1:${webPort}`;
@@ -30,13 +31,13 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"], launchOptions: { executablePath: process.env.RIGHELT_CHROMIUM_EXECUTABLE } },
+      use: { ...devices["Desktop Chrome"], launchOptions: browserLaunchOptions("chromium") },
     },
     ...["firefox", "webkit"].map(name => ({
       name,
       testMatch: /(sync-recovery-(pressure|ux)|browser-move-input|home-create-refresh)\.spec\.mjs/,
       use: { ...devices[name === "firefox" ? "Desktop Firefox" : "Desktop Safari"],
-        launchOptions: { executablePath: process.env[`RIGHELT_${name.toUpperCase()}_EXECUTABLE`] } },
+        launchOptions: browserLaunchOptions(name) },
     })),
   ],
   webServer: {
