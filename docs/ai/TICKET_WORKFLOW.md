@@ -151,10 +151,12 @@ Lead monitors progress, integrates worker commits into the canonical feature bra
 Once all subtasks are done, Lead sets status → `Review` and writes Implementation Notes.
 
 Lead then does two things concurrently:
-- refreshes the existing draft feature PR with the combined implementation and validation scope
+- refreshes the existing draft feature PR using [AGENTS.md §6.2](../../AGENTS.md#62-pr-writing), carrying forward recorded product, UX, and engineering rationale alongside the combined implementation and validation scope
 - spawns Tester in `final-validation` mode
 
 Tester treats `test-plan.md` as the floor, then hunts for seam failures, UX regressions, branding drift, accessibility misses, sound misuse, state drift, multi-client edge cases, and subtle merge issues.
+
+Lead keeps the PR description current as implementation and validation progress: preserve changed decisions and reasons in the planning documents and coordination log, refresh verified diff links, and distinguish current validation from older evidence. Include both immutable evidence and stable review links when available, or an honest missing-evidence status. Missing evidence alone does not prevent review; existing acceptance and merge gates still apply.
 
 If material issues are found, Lead creates follow-up subtasks, keeps their fixes in the same PR and loops back to Step 5. Otherwise, Lead waits for green CI and required validation before marking the PR ready for review, then advances the ticket to `Ready for acceptance`, writes Final Summary, and clears or intentionally retains the parent `branch` and `worktree` fields. Outstanding product gates remain explicit.
 

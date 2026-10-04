@@ -4,7 +4,7 @@
 
 Use one canonical branch and PR per feature, normally corresponding to its parent ticket. Reuse the matching PR and record its branch, worktree and URL in the ticket. Subtasks, implementation layers, tests and repairs belong in that feature PR; file count alone is not a reason to split it.
 
-Commit and push early in semantically coherent units. Open a draft PR after the first reviewable push. Keep its title and description about the complete feature outcome, using Sentence case bullets and current validation evidence. Mark it ready for review only after the required checks pass. Draft status and passing CI never replace outstanding product acceptance gates.
+Commit and push early in semantically coherent units. Open a draft PR after the first reviewable push. Keep its title and description about the complete feature outcome, following [AGENTS.md §6.2](../../AGENTS.md#62-pr-writing) for the title, four-section description, prose or sentence-case bullets, verified diff links and current validation evidence. Mark it ready for review only after the required checks pass. Draft status and passing CI never replace outstanding product acceptance gates.
 
 Parallel workers may use isolated branches and worktrees. The Lead integrates their commits into the canonical feature branch in dependency order and validates the combined result. Workers do not open additional PRs for those implementation steps. Subsequent fixes go to the same feature PR while it remains open; after it merges, use a new focused PR.
 
