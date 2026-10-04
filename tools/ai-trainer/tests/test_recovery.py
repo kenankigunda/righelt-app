@@ -1,4 +1,5 @@
 import json
+import gzip
 from pathlib import Path
 import tempfile
 import time
@@ -14,6 +15,8 @@ from righelt_training.model import PolicyValueNet
 from righelt_training.trainer import make_optimizer
 from righelt_training.replay import ReplayBuffer
 from righelt_training.config import ROOT
+from righelt_training.manifest import write_manifest
+from righelt_training.replay import partition_for_family
 
 class RecoveryTest(unittest.TestCase):
     def setUp(self):torch.set_num_threads(1)
@@ -46,6 +49,62 @@ class RecoveryTest(unittest.TestCase):
             self.assertEqual(len({first,second,third}),3);self.assertEqual(Path(first).read_bytes(),original)
             self.assertLess(abs(time.monotonic()-runner.state['generationStartedMonotonic']-12),2)
             with self.assertRaises(FileExistsError):save_checkpoint(Path(first),runner.model,runner.optimizer,round_index=0,updates=0,replay_ids=[],manifest_sha256='test')
+
+    def relocation(self, root, *, source_stage='overnight', destination_seed=107, phase='generation'):
+        source=self.runner(root/'source');source.directory.mkdir()
+        source.manifest_hash=write_manifest(source.directory/'manifest.json',{'stage':source_stage,'seed':107})
+        source.state.update(round=10,phase=phase,trainingBatch=127,curriculumSwitched=True,
+                            nextJob=98,updates=2770,nonzeroUpdates=2770,generationLaunched=7,
+                            generationStartedMonotonic=time.monotonic()-280.6,lastHandoffId='old-request')
+        family=next(str(i) for i in range(100) if partition_for_family(str(i))=='train')
+        with gzip.open(source.directory/'game.gz','wt') as stream:
+            json.dump({'id':'retained','familyId':family,'partition':'train','termination':'terminal',
+                       'outcome':{'status':'p1_win'},'decisions':[]},stream)
+        source.state['archives']=['game.gz'];source.checkpoint()
+        checkpoint=Path(json.loads((source.directory/'latest.json').read_text())['checkpoint'])
+        destination=self.runner(root/'destination');destination.directory.mkdir()
+        destination.manifest_hash=write_manifest(destination.directory/'manifest.json',{'stage':'overnight','seed':destination_seed})
+        destination.manifest=json.loads((destination.directory/'manifest.json').read_text())
+        destination.runtime={'parentCheckpointManifestSha256':source.manifest_hash}
+        return source,destination,checkpoint
+
+    def test_same_stage_relocation_preserves_cursor_curriculum_and_rebases_elapsed(self):
+        for phase in ('generation','training'):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as d:
+                source,destination,checkpoint=self.relocation(Path(d),phase=phase)
+                destination.restore(checkpoint)
+                for key in ('round','phase','trainingBatch','curriculumSwitched','nextJob','updates',
+                            'nonzeroUpdates','generationLaunched','checkpointSequence','generationElapsedSeconds'):
+                    self.assertEqual(destination.state[key],source.state[key],key)
+                self.assertLess(abs(time.monotonic()-destination.state['generationStartedMonotonic']-280.6),2)
+                self.assertNotIn('lastHandoffId',destination.state)
+                self.assertEqual(destination.state['archives'],[str((source.directory/'game.gz').resolve())])
+                self.assertEqual(destination.buffer.game_ids,['retained'])
+
+    def test_initial_to_overnight_relocation_starts_new_stage_cursor(self):
+        with tempfile.TemporaryDirectory() as d:
+            source,destination,checkpoint=self.relocation(Path(d),source_stage='initial',phase='training')
+            destination.restore(checkpoint)
+            expected=default_state()
+            expected.update(updates=2770,nonzeroUpdates=2770,archives=[str((source.directory/'game.gz').resolve())])
+            self.assertEqual(destination.state,expected)
+            self.assertEqual(destination.buffer.game_ids,['retained'])
+
+    def test_same_stage_seed_mismatch_rejected_before_weights_restore(self):
+        with tempfile.TemporaryDirectory() as d:
+            _,destination,checkpoint=self.relocation(Path(d),destination_seed=108)
+            before=destination.model.stem.weight.detach().clone()
+            with self.assertRaisesRegex(ValueError,'same-stage restore seed mismatch'):
+                destination.restore(checkpoint)
+            self.assertTrue(torch.equal(before,destination.model.stem.weight))
+
+    def test_relocation_does_not_trust_tampered_manifest_stage(self):
+        with tempfile.TemporaryDirectory() as d:
+            source,destination,checkpoint=self.relocation(Path(d))
+            path=source.directory/'manifest.json';record=json.loads(path.read_text())
+            record['manifest']['stage']='initial';atomic_json(path,record)
+            with self.assertRaisesRegex(ValueError,'restore manifest checksum mismatch'):
+                destination.restore(checkpoint)
 
     def test_cursor_and_archive_tamper_rejected_before_weights_or_rng_restore(self):
         with tempfile.TemporaryDirectory() as d:

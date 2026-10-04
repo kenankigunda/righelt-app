@@ -5,7 +5,7 @@ import argparse
 from contextlib import nullcontext
 from .recovery import RecoveryLedger
 from .runner_monitor import RunnerMonitor
-from .manifest import active_manifest
+from .manifest import active_manifest, manifest_hashes
 import gzip
 import hashlib
 import json
@@ -132,23 +132,44 @@ class Runner:
 
     def _restore(self, checkpoint):
         parent_manifest = self.runtime.get('parentCheckpointManifestSha256', self.manifest_hash)
+        source_directory = checkpoint.parent.parent
+        relocated = source_directory.resolve() != self.directory.resolve()
+        same_stage = False
+        if relocated:
+            if parent_manifest not in manifest_hashes(source_directory):
+                raise ValueError('checkpoint manifest outside source lineage')
+            source = read_json(source_directory / 'manifest.json')
+            if source['sha256'] != parent_manifest:
+                source = read_json(source_directory / 'manifests' / f'{parent_manifest}.json')
+            destination = self.manifest
+            for record, expected in ((source, parent_manifest), (destination, self.manifest_hash)):
+                digest = hashlib.sha256(json.dumps(record['manifest'], sort_keys=True, allow_nan=False).encode()).hexdigest()
+                if record['sha256'] != expected or digest != expected:
+                    raise ValueError('restore manifest checksum mismatch')
+            origin, target = source['manifest'], destination['manifest']
+            same_stage = origin['stage'] == target['stage']
+            if same_stage and origin['seed'] != target['seed']:
+                raise ValueError('same-stage restore seed mismatch')
+            if not same_stage and (origin['stage'], target['stage']) != ('initial', 'overnight'):
+                raise ValueError('unsupported restore stage transition')
         data = load_checkpoint(checkpoint, self.model, self.optimizer, manifest_sha256=parent_manifest, require_recovery=True)
         companion = read_json(checkpoint.with_suffix('.runner.json'))
         if companion['checkpointSha256'] != hashlib.sha256(checkpoint.read_bytes()).hexdigest():
             raise ValueError('runner checkpoint mismatch')
-        source_directory = checkpoint.parent.parent
         self.state = data['recovery']['state']
         if self.state['generationStartedMonotonic'] is not None:
             elapsed=self.state['generationElapsedSeconds']
             if not __import__('math').isfinite(elapsed) or elapsed<0:raise ValueError('invalid generation elapsed time')
             self.state['generationStartedMonotonic']=time.monotonic()-elapsed
-        if source_directory.resolve() != self.directory.resolve():
-            # Overnight inherits optimizer, replay and random states, but gets a new
-            # stage budget/counters and game IDs; elapsed time is never inherited.
+        if relocated:
             previous = self.state
-            self.state = default_state()
-            self.state['updates'] = data['updates']
-            self.state['nonzeroUpdates'] = previous['nonzeroUpdates']
+            if not same_stage:
+                # Initial-to-overnight starts new stage counters. A same-stage
+                # allocation reset instead continues the exact training cursor.
+                self.state = default_state()
+                self.state['updates'] = data['updates']
+                self.state['nonzeroUpdates'] = previous['nonzeroUpdates']
+            self.state.pop('lastHandoffId', None)
             self.state['archives'] = [str((source_directory / p).resolve()) for p in previous['archives']]
         for path in self.state['archives']:
             with gzip.open(self.directory / path, 'rt') as stream:
