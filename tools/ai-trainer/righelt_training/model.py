@@ -29,7 +29,10 @@ class PolicyValueNet(nn.Module):
         spatial = self.policy(x).permute(0, 2, 3, 1).flatten(1)
         policy = torch.cat((spatial, self.pass_head(x.mean(dim=(2, 3)))), dim=1)
         value = self.value_out(torch.relu(self.value_hidden(torch.relu(self.value_spatial(x)).flatten(1))))
-        return policy, torch.tanh(value).squeeze(-1)
+        # Some FP32 WASM tanh kernels overshoot an endpoint by one ULP.
+        # Preserve the mathematical range in the exported graph; consumers
+        # still reject invalid outputs rather than relaxing their checks.
+        return policy, torch.tanh(value).clamp(-1., 1.).squeeze(-1)
 
 
 def training_loss(logits, values, legal, targets, terminal_values, terminal_mask, policy_mask=None):
