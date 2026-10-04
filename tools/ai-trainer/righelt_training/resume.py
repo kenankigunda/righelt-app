@@ -6,6 +6,21 @@ from .checkpoint import inspect_checkpoint
 from .manifest import manifest_hashes
 
 
+def validate_continuation_checkpoint(checkpoint,gate,contract,directory):
+    checkpoint=Path(checkpoint).resolve()
+    # Later phases resume the new allocation's retained checkpoint. The initial
+    # handoff alone must equal the separately authorized recovery source.
+    if checkpoint.parent.parent==Path(directory).resolve():
+        latest=json.loads((Path(directory)/'latest.json').read_text())
+        if str(checkpoint)!=latest['checkpoint'] or hashlib.sha256(checkpoint.read_bytes()).hexdigest()!=latest['sha256']:
+            raise ValueError('continuation must resume retained latest checkpoint')
+        return
+    if str(checkpoint)!=contract['recoveryCheckpoint']:
+        raise ValueError('continuation recovery source changed')
+    return validate_reset_checkpoint(checkpoint,gate,{
+        'authorization':'approved conditional continuation','resetFrom':str(checkpoint.parent.parent)})
+
+
 def validate_reset_checkpoint(checkpoint, gate, creation):
     proof=gate.get('resumeCheckpoint',{})
     if not checkpoint or not creation.get('authorization') or not creation.get('resetFrom'):

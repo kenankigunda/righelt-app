@@ -8,7 +8,7 @@ from pathlib import Path
 import signal
 import subprocess
 import time
-from .arena import freeze_plan, read_frozen_plan
+from .arena import freeze_plan, read_frozen_plan, RESTART_WORKLOAD
 from .checkpoint import atomic_json
 from .config import CONFIG_SHA256
 from .curriculum import family_for_root
@@ -27,7 +27,7 @@ def checkpoint_identity(path):
     return {'checkpointSha256':digest,'profileVersion':PROFILE_VERSION,'profile':dict(PROFILE)}
 
 
-def prepare(directory,candidate,opponent,*,clock=time.monotonic,command=engine_command,experiment_root=None):
+def prepare(directory,candidate,opponent,*,clock=time.monotonic,command=engine_command,experiment_root=None,diagnostic=False):
     directory=Path(directory);runtime=json.loads((directory/'runtime.json').read_text())
     deadline=effective_deadline(runtime)
     result_path=directory/'prepare-arena-result.json'
@@ -50,7 +50,9 @@ def prepare(directory,candidate,opponent,*,clock=time.monotonic,command=engine_c
         return True
     heartbeat()
     if not ready():return result
-    identity={'candidate':checkpoint_identity(candidate),'opponent':checkpoint_identity(opponent),
+    count=10 if diagnostic else 100
+    identity={'mode':'diagnostic' if diagnostic else 'strict','workload':RESTART_WORKLOAD if diagnostic else None,
+              'candidate':checkpoint_identity(candidate),'opponent':checkpoint_identity(opponent),
               'seed':runtime['seed'],'allocationId':runtime.get('allocationId',runtime['manifestSha256']),'configSha256':CONFIG_SHA256}
     key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
     output=directory/'validation-plans'/key;output.mkdir(parents=True,exist_ok=True)
@@ -63,10 +65,10 @@ def prepare(directory,candidate,opponent,*,clock=time.monotonic,command=engine_c
     else:
         fingerprints={p['openingFingerprint'] for p in state['pairs'] if p['kind']=='heldout'}
         attempts=0
-        while len(state['pairs'])<100 and attempts<10000:
+        while len(state['pairs'])<count and attempts<10000:
             if not ready():break
             seed=state['nextSeed']%(2**32);state['nextSeed']+=1;attempts+=1
-            if len(state['pairs'])<50:
+            if len(state['pairs'])<count//2:
                 if partition_for_family(f'normal:{seed}')=='validation':
                     state['pairs'].append({'id':str(len(state['pairs'])),'seed':seed,'kind':'normal'})
             else:
@@ -82,11 +84,12 @@ def prepare(directory,candidate,opponent,*,clock=time.monotonic,command=engine_c
                         fingerprints.add(fingerprint)
             atomic_json(state_path,state)
         result.update(preparedPairs=len(state['pairs']),progress=str(state_path))
-        if len(state['pairs'])<100:
+        if len(state['pairs'])<count:
             result['reason']='budget-or-resource-stop' if attempts<10000 else 'opening-attempt-limit'
             atomic_json(result_path,result);return result
         plan={'configSha256':CONFIG_SHA256,'partition':'validation','purpose':'incumbent',
               'candidate':identity['candidate'],'opponent':identity['opponent'],'pairs':state['pairs'],'bootstrapSeed':runtime['seed']}
+        if diagnostic:plan.update(mode='diagnostic',workload=RESTART_WORKLOAD,decisionCache=False)
         def verification_ready():
             if not ready():raise TimeoutError('preparation resource/budget stop')
         try:
@@ -94,17 +97,18 @@ def prepare(directory,candidate,opponent,*,clock=time.monotonic,command=engine_c
             digest=freeze_plan(plan_path,plan,deadline=deadline,heartbeat=verification_ready,experiment_root=experiment_root)
         except (TimeoutError,subprocess.TimeoutExpired):
             result['reason']='verification-unfinished';atomic_json(result_path,result);return result
-    result.update(status='completed',reason='complete',plan=str(plan_path),planSha256=digest,preparedPairs=100)
+    result.update(status='completed',reason='complete',plan=str(plan_path),planSha256=digest,preparedPairs=count)
     atomic_json(result_path,result);return result
 
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--run-dir',type=Path,required=True)
     parser.add_argument('--candidate-checkpoint',type=Path,required=True);parser.add_argument('--opponent-checkpoint',type=Path,required=True)
+    parser.add_argument('--diagnostic',action='store_true')
     args=parser.parse_args();runtime=json.loads((args.run_dir/'runtime.json').read_text())
     if runtime.get('command')!='prepare-arena' or runtime.get('supervisorPid')!=os.getppid() or os.getpgrp()!=os.getpid():
         raise ValueError('preparation requires the original external supervisor')
     signal.signal(signal.SIGUSR1,lambda *_:None)
-    print(json.dumps(prepare(args.run_dir,args.candidate_checkpoint,args.opponent_checkpoint),indent=2))
+    print(json.dumps(prepare(args.run_dir,args.candidate_checkpoint,args.opponent_checkpoint,diagnostic=args.diagnostic),indent=2))
 
 if __name__=='__main__':main()

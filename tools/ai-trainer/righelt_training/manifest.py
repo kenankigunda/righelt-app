@@ -56,6 +56,8 @@ def amend_manifest(directory,manifest,repair):
     from .allocation import append
     directory=Path(directory);prior=active_manifest(directory)
     if prior['manifest']==manifest:return prior
+    if prior['manifest'].get('continuation')!=manifest.get('continuation'):
+        raise ValueError('repair changes continuation authorization')
     for key in ('configSha256','seed','stage','seconds'):
         if prior['manifest'][key]!=manifest[key]:raise ValueError('repair changes approved experiment contract')
     for key in ('cause','regressionEvidence','artifactDisposition','reviewEvidence'):

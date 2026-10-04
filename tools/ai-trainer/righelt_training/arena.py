@@ -60,7 +60,7 @@ def freeze_plan(path,plan,*,experiment_root=None,deadline=None,heartbeat=lambda:
         raise ValueError('invalid evaluation partition/configuration')
     if plan.get('purpose') not in ('difficulty','incumbent'):raise ValueError('invalid comparison purpose')
     validate_mode(plan)
-    if len(plan.get('pairs',[]))!=100:raise ValueError('requires 100 seat-swapped pairs')
+    count=workload_pairs(plan)
     ids=set();seeds=set();openings=set();kinds={'normal':0,'heldout':0}
     for pair in plan['pairs']:
         if not isinstance(pair.get('id'),str) or type(pair.get('seed')) is not int or not 0<=pair['seed']<2**32:
@@ -84,7 +84,7 @@ def freeze_plan(path,plan,*,experiment_root=None,deadline=None,heartbeat=lambda:
             if proof['initial'] or proof['fingerprint'] in openings:raise ValueError('opening is initial or duplicated')
             openings.add(proof['fingerprint'])
             pair['openingFingerprint']=proof['fingerprint']
-    if kinds!={'normal':50,'heldout':50}:raise ValueError('incorrect opening mix')
+    if kinds!={'normal':count//2,'heldout':count//2}:raise ValueError('incorrect opening mix')
     for who in ('candidate','opponent'):
         entry=plan[who]
         digest=entry.get('checkpointSha256','')
@@ -171,9 +171,9 @@ def read_frozen_plan(path):
     data=json.loads(Path(path).read_text())
     digest=hashlib.sha256(json.dumps(data['plan'],sort_keys=True,allow_nan=False).encode()).hexdigest()
     if digest!=data['sha256'] or data['plan']['configSha256']!=CONFIG_SHA256:raise ValueError('frozen plan mismatch')
-    if len(data['plan']['pairs'])!=100 or data['plan']['partition'] not in ('validation','final'):
+    if data['plan']['partition'] not in ('validation','final'):
         raise ValueError('invalid frozen workload')
-    validate_mode(data['plan'])
+    workload_pairs(data['plan'])
     partition_identities(data['plan'])
     return data['plan'],digest
 
@@ -183,6 +183,33 @@ def validate_mode(plan):
     if mode not in ('strict','diagnostic') or (mode=='diagnostic' and plan.get('partition')!='validation'):
         raise ValueError('diagnostic evaluation is validation-only')
     return mode
+
+
+RESTART_WORKLOAD='restart-diagnostic-20-v1'
+
+
+def workload_pairs(plan):
+    mode=validate_mode(plan)
+    workload=plan.get('workload')
+    if workload is not None and workload!=RESTART_WORKLOAD:raise ValueError('unknown evaluation workload')
+    count=10 if workload==RESTART_WORKLOAD else 100
+    if workload and (mode!='diagnostic' or plan.get('purpose')!='incumbent' or plan.get('decisionCache') is not False):
+        raise ValueError('restart workload requires validation diagnostic with caching off')
+    pairs=plan.get('pairs',[])
+    if (len(pairs)!=count or len({p['id'] for p in pairs})!=count or len({p['seed'] for p in pairs})!=count
+        or sum(p['kind']=='normal' for p in pairs)!=count//2 or sum(p['kind']=='heldout' for p in pairs)!=count//2):
+        raise ValueError('invalid frozen workload: requires unique seat-swapped pairs and equal opening mix')
+    return count
+
+
+def diagnostic_gate(plan,records,attempts):
+    expected={(p['id'],seat) for p in plan['pairs'] for seat in ('P1','P2')}
+    identities=[(a['pairId'],a['candidateSeat']) for a in attempts]
+    accounted=(len(identities)==len(expected) and set(identities)==expected
+               and all(a['status'] in ('completed','unfinished') for a in attempts))
+    terminal=sum(r['outcome'] in ('p1_win','p2_win','draw') for r in records.values())
+    return {'terminalGames':terminal,'allAttemptsAccounted':accounted,
+            'diagnosticGatePassed':plan.get('workload')==RESTART_WORKLOAD and accounted and terminal>=16}
 
 
 def expected_diagnostic_limit(result):
@@ -209,6 +236,7 @@ def load_frozen_models(plan,paths,device):
 def make_job(plan,pair,candidate_seat,digest):
     seats={candidate_seat:'candidate',('P2' if candidate_seat=='P1' else 'P1'):'opponent'}
     return {'id':f"{digest}:{pair['id']}:{candidate_seat}",'familyId':pair['familyId'],
+            'decisionCache':False,
             'seed':pair['seed'],'partition':plan['partition'],'kind':'normal' if pair['kind']=='normal' else 'simple',
             'initialState':None if pair['kind']=='normal' else pair['initialState'],
             'modelVersion':digest,'profiles':{seat:plan[who]['profile'] for seat,who in seats.items()},
@@ -404,6 +432,8 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
             'scheduledGames':len(expected),'attemptedGames':len(state['attempts']),
             'unfinishedGames':len(unfinished),'unfinishedByReason':{reason:sum((a.get('reason') or 'interrupted')==reason for a in unfinished)
                 for reason in sorted({(a.get('reason') or 'interrupted') for a in unfinished})}}
+    if diagnostic:report.update(diagnostic_gate(plan,state['records'],state['attempts']))
+    report['workload']=plan.get('workload')
     atomic_json(output/'report.json',report);return report
 
 

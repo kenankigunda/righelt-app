@@ -15,6 +15,22 @@ from argparse import Namespace
 
 
 class PrepareArenaTest(unittest.TestCase):
+    def test_restart_preparation_cannot_reuse_strict_workload(self):
+        with tempfile.TemporaryDirectory() as d:
+            root,_,paths=self.setup_run(d)
+            state=next(simple_root(s) for s in range(1000) if partition_for_family(family_for_root(simple_root(s)))=='validation')
+            def generate(job,timeout):
+                return {'type':'opening-generated','state':{**state,'turnIndex':job['seed']},'actions':[{'type':'pass'}],
+                        'initial':False,'fingerprint':str(job['seed'])}
+            with patch('righelt_training.arena.engine_command',side_effect=lambda job,timeout:{'initial':False,'fingerprint':str(job['state']['turnIndex'])}):
+                strict=prepare(root,*paths,command=generate,experiment_root=root/'registry')
+                diagnostic=prepare(root,*paths,command=generate,experiment_root=root/'registry',diagnostic=True)
+            self.assertNotEqual(strict['planSha256'],diagnostic['planSha256'])
+            plan=json.loads(Path(diagnostic['plan']).read_text())['plan']
+            self.assertEqual(diagnostic['preparedPairs'],10)
+            self.assertEqual(plan['mode'],'diagnostic');self.assertFalse(plan['decisionCache'])
+            self.assertEqual(sum(p['kind']=='heldout' for p in plan['pairs']),5)
+
     def setup_run(self,d):
         root=Path(d);now=time.monotonic()
         runtime={'allocationId':'allocation','seed':107,'manifestSha256':'test','deadlineMonotonic':now+600}

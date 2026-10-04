@@ -20,7 +20,7 @@ const canonical = value => Array.isArray(value) ? value.map(canonical)
   : value && typeof value === 'object'
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 const searchOptions = profile => ({ simulations: profile?.simulations, temperature: profile?.temperature,
-  maxValueGap: profile?.maxValueGap, maxNodes: experimentConfig.search.maxNodes });
+  maxValueGap: profile?.maxValueGap, maxNodes: experimentConfig.search.maxNodes, decisionCache: false });
 
 // IDs are canonicalized by owner/location for repetition detection only. Original
 // states and IDs are preserved for exact replay. Administrative counters and UI

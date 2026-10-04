@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import time
 import uuid
+import hashlib
 import psutil
 from .config import CONFIG
 
@@ -28,6 +29,55 @@ def alive(record):
     except psutil.NoSuchProcess:return False
 
 
+CONTINUATION_LIMITS={'six-hour':(21600,3600),'twelve-hour':(43200,7200)}
+
+
+def contract_hash(contract):
+    return hashlib.sha256(json.dumps(contract,sort_keys=True,allow_nan=False).encode()).hexdigest()
+
+
+def validate_contract(contract,root):
+    """Fixed conditional authorization, distinct from the recovery lineage."""
+    if (not isinstance(contract,dict) or contract.get('phase') not in CONTINUATION_LIMITS
+        or not isinstance(contract.get('sequenceId'),str) or not contract['sequenceId']
+        or contract.get('preserveState') is not True or contract.get('freshHealth') is not True):
+        raise ValueError('invalid continuation contract')
+    if (contract.get('budgetSeconds'),contract.get('reserveSeconds'))!=CONTINUATION_LIMITS[contract['phase']]:
+        raise ValueError('continuation exceeds approved budget or changes reserve')
+    for name in ('recoveryCheckpoint','predecessorEvidence'):
+        path=Path(contract[name]).resolve()
+        if not path.is_relative_to(Path(root).resolve()):raise ValueError('continuation evidence outside archive')
+        digest=hashlib.sha256(path.read_bytes()).hexdigest()
+        key='recoverySha256' if name=='recoveryCheckpoint' else 'predecessorEvidenceSha256'
+        if digest!=contract.get(key):raise ValueError('continuation evidence changed')
+    evidence=json.loads(Path(contract['predecessorEvidence']).read_text())
+    if contract['phase']=='six-hour':
+        if (evidence.get('diagnosticGatePassed') is not True or evidence.get('allAttemptsAccounted') is not True
+            or evidence.get('terminalGames',0)<16 or evidence.get('scheduledGames')!=20
+            or evidence.get('workload')!='restart-diagnostic-20-v1'):
+            raise ValueError('diagnostic predecessor gate unmet')
+    elif (evidence.get('advancementEligible') is not True or evidence.get('phase')!='six-hour'
+          or evidence.get('sequenceId')!=contract['sequenceId'] or evidence.get('health',{}).get('healthy') is not True
+          or evidence.get('recoveryCheckpoint')!=contract['recoveryCheckpoint']
+          or evidence.get('recoverySha256')!=contract['recoverySha256']):
+        raise ValueError('fresh six-hour health predecessor gate unmet')
+    return contract
+
+
+def validate_continuation(directory,manifest):
+    directory=Path(directory).resolve()
+    creation=Allocation(directory.parent,directory).accounting()[0]
+    contract=manifest.get('continuation')
+    if contract is None:
+        if creation.get('continuation'):raise ValueError('continuation manifest missing')
+        return None
+    validate_contract(contract,directory.parent)
+    if (creation.get('continuation')!=contract or creation.get('contractSha256')!=contract_hash(contract)
+        or creation['seconds']!=contract['budgetSeconds'] or manifest.get('seconds')!=contract['budgetSeconds']):
+        raise ValueError('manifest continuation differs from authorized allocation')
+    return contract
+
+
 class Allocation:
     # Caller holds the archive's supervisor.lock throughout mutations and compute.
     def __init__(self,root,directory):
@@ -37,6 +87,24 @@ class Allocation:
         self.key=str(self.directory)
 
     def events(self):return [r for r in rows(self.path) if r['allocation']==self.key]
+
+    def create_continuation(self,contract):
+        validate_contract(contract,self.root)
+        existing=self.events()
+        if existing:
+            if existing[0].get('continuation')!=contract:raise ValueError('allocation contract already frozen')
+            return existing[0]
+        for row in rows(self.path):
+            prior=row.get('continuation',{})
+            if (row['event']=='created' and prior.get('sequenceId')==contract['sequenceId']
+                and prior.get('phase')==contract['phase']):
+                raise ValueError('sequence phase allocation already claimed')
+        record={'event':'created','allocation':self.key,'stage':'initial' if contract['phase']=='six-hour' else 'overnight',
+                'seconds':contract['budgetSeconds'],'id':uuid.uuid4().hex,'observedAt':time.time(),
+                'continuation':contract,'contractSha256':contract_hash(contract),
+                'authorization':'T-107 approved conditional sequence 2026-10-04'}
+        append(self.path,record)
+        return record
 
     def create(self,stage,*,reset_from=None,reason=None):
         existing=self.events()

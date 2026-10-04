@@ -16,11 +16,11 @@ from .budget import Budget
 from .checkpoint import atomic_json
 from .config import CONFIG,CONFIG_SHA256,ROOT
 from .manifest import build_manifest,write_manifest,active_manifest,amend_manifest,manifest_hashes,dependency_inventory
-from .allocation import Allocation
+from .allocation import Allocation,validate_continuation
 from .processes import start_group,stop_group,install_stop_handlers,register_owned,cleanup_owned
 from .resources import AdaptivePolicy
 from .telemetry import Telemetry,read_device_memory
-from .resume import validate_reset_checkpoint
+from .resume import validate_reset_checkpoint,validate_continuation_checkpoint
 
 
 def validate_gate_report(report, source_revision, stage):
@@ -277,6 +277,8 @@ def main():
     parser.add_argument('--stage',choices=('initial','overnight'),required=True)
     parser.add_argument('--seed',type=int,required=True)
     parser.add_argument('--resume',type=Path)
+    parser.add_argument('--continuation',type=Path)
+    parser.add_argument('--diagnostic',action='store_true')
     parser.add_argument('--arena-plan',type=Path)
     parser.add_argument('--health',action='store_true')
     parser.add_argument('--canary',action='store_true')
@@ -286,6 +288,7 @@ def main():
     parser.add_argument('--candidate-checkpoint',type=Path)
     parser.add_argument('--opponent-checkpoint',type=Path)
     args=parser.parse_args()
+    if args.diagnostic and not args.prepare_arena:parser.error('diagnostic flag requires preparation')
     artifact_root=ROOT/'.ai-runs'
     parity_digest=parity_arguments(args,artifact_root)
     arena_digest=arena_arguments(args,artifact_root)
@@ -300,13 +303,25 @@ def main():
     lock=(artifact_root/'supervisor.lock').open('a+')
     fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     manifest=build_manifest(args.seed,args.stage)
-    validate_gate_report(json.loads(args.gate_report.read_text()),manifest['sourceRevision'],args.stage)
+    continuation=json.loads(args.continuation.read_text()) if args.continuation else None
+    if continuation:
+        if args.stage!=('initial' if continuation['phase']=='six-hour' else 'overnight'):
+            raise ValueError('continuation stage mismatch')
+        manifest.update(continuation=continuation,seconds=continuation['budgetSeconds'])
+    # Continuations prove fresh predecessor health through their bound contract;
+    # legacy stage launches keep their original health requirements.
+    validate_gate_report(json.loads(args.gate_report.read_text()),manifest['sourceRevision'],'initial' if continuation else args.stage)
     phase='canary' if args.canary else 'export-parity' if args.export_parity else 'prepare-arena' if args.prepare_arena else 'health' if args.health else 'arena' if arena_digest else 'training'
     if args.canary and (args.resume or args.export_parity or args.prepare_arena or args.health or args.arena_plan):raise ValueError('canary is exclusive')
     allocation=Allocation(artifact_root,args.run_dir)
-    allocation.create(args.stage)
+    if continuation:allocation.create_continuation(continuation)
+    else:allocation.create(args.stage)
+    validate_continuation(args.run_dir,manifest)
     allocation.recover_abandoned(cleanup_owned)
-    if args.stage=='overnight' and not (args.run_dir/'latest.json').exists():
+    if continuation:
+        if not args.resume:raise ValueError('continuation requires trained recovery checkpoint')
+        validate_continuation_checkpoint(args.resume,json.loads(args.gate_report.read_text()),continuation,args.run_dir)
+    elif args.stage=='overnight' and not (args.run_dir/'latest.json').exists():
         gate=json.loads(args.gate_report.read_text())
         creation=allocation.accounting()[0]
         if creation.get('resetFrom'):
@@ -368,6 +383,7 @@ def main():
         elif args.prepare_arena:
             argv=[sys.executable,'-m','righelt_training.prepare_arena','--run-dir',str(args.run_dir.resolve()),
                   '--candidate-checkpoint',str(args.candidate_checkpoint.resolve()),'--opponent-checkpoint',str(args.opponent_checkpoint.resolve())]
+            if args.diagnostic:argv+=['--diagnostic']
         elif args.health:
             argv=[sys.executable,'-m','righelt_training.health','--run-dir',str(args.run_dir.resolve())]
         elif arena_digest:
