@@ -13,6 +13,7 @@ Resolve the repository from the current task. All paths below are relative to th
 2. Read the user-local `~/.config/righelt/validation.json` (or RIGHELT_VALIDATION_CONFIG). If recipient is missing, ask **upfront**, then persist it with `node scripts/validation/cli.mjs configure --recipient EMAIL`. An explicit no-email choice permits `--no-email` for that run.
 3. Check available email connector and signed-in profile. Report unavailable email upfront; continue with task notices. Never guess a recipient. Do not place recipient settings in Git or public artifacts.
 4. Resolve requested PRs, product goals, dependency order and exact heads. Ask only when material ambiguity cannot be resolved from repository evidence.
+5. Follow `docs/ai/PR_WORKFLOW.md`: one canonical feature PR receives implementation and repair commits. Use squash by default; rebase only when explicitly chosen. GitHub merge-commit merging is disabled. Preserve all existing merge authorization gates.
 
 ## Authority and autonomy
 
