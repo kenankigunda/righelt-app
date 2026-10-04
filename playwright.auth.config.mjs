@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { browserLaunchOptions } from "./scripts/playwright-launch-options.mjs";
 import { LOCAL_DEV_PORT_VARIANTS } from "./apps/web/local-dev-ports.js";
 const variant = LOCAL_DEV_PORT_VARIANTS.find(item => item.suffix === "auth-e2e");
 const baseURL = `https://127.0.0.1:${variant.webPort}`;
@@ -14,7 +15,7 @@ export default defineConfig({
     trace: "retain-on-failure", screenshot: "only-on-failure" },
   projects: ["chromium", "firefox", "webkit"].map(name => ({ name,
     use: { ...devices[name === "chromium" ? "Desktop Chrome" : name === "firefox" ? "Desktop Firefox" : "Desktop Safari"],
-      launchOptions: { executablePath: process.env[`RIGHELT_${name.toUpperCase()}_EXECUTABLE`] } } })),
+      launchOptions: browserLaunchOptions(name) } })),
   webServer: { command: "node scripts/e2e-auth-stack.mjs", url: baseURL, ignoreHTTPSErrors: true,
     reuseExistingServer: false, timeout: 180000, gracefulShutdown: { signal: "SIGTERM", timeout: 15000 }, stdout: "pipe", stderr: "pipe" },
 });
