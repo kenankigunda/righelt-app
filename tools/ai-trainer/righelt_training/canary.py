@@ -65,7 +65,13 @@ def selfplay(job,model,device,deadline,monitor):
                                 if not torch.isfinite(policy).all() or not torch.isfinite(value).all():raise ValueError('nonfinite canary inference')
                                 reply={'type':'evaluation','id':message['id'],'policyLogits':policy[0].cpu().tolist(),'value':value[0].item()}
                                 process.stdin.write((json.dumps(reply,allow_nan=False)+'\n').encode());process.stdin.flush()
+                        elif message['type']=='decision-progress':continue
                         elif message['type']=='game':return message['game']
+                        elif message['type']=='searched' and job.get('verifyFallback'):
+                            proof=message.get('fallbackProof',{})
+                            if not proof.get('passed') or proof.get('policyMask') is not False or proof.get('policy')!=[]:
+                                raise ValueError('canary fallback evidence invalid')
+                            return proof
                         elif message['type'] in ('unfinished','unavailable-start'):raise TimeoutError('canary self-play unfinished')
                         else:raise RuntimeError(f'canary engine error: {message}')
             raise TimeoutError('canary self-play deadline')
@@ -75,8 +81,13 @@ def selfplay(job,model,device,deadline,monitor):
 def train_and_recover(directory,model,positions,archives,manifest_hash,device,deadline,monitor):
     optimizer=make_optimizer(model);updates=0;metrics=[]
     for step in range(2):
-        result=train_round(model,optimizer,positions,device=device,seed=107+step,deadline=deadline,operation=monitor.operation)
+        # Exercise value-only learning using genuine terminal canary outcomes.
+        # These disposable masked examples never enter sustained replay.
+        batch=[{**p,'policy':[],'policyMask':False} for p in positions] if step==0 else positions
+        result=train_round(model,optimizer,batch,device=device,seed=107+step,deadline=deadline,operation=monitor.operation)
         if result['updates']<1 or result['nonzeroUpdates']!=result['updates']:raise TimeoutError('canary minibatch incomplete')
+        if step==0 and any(b['policyLoss']!=0 or b['policyPositions']!=0 or b['valuePositions']<=0 for b in result['batches']):
+            raise ValueError('canary value-only masking failed')
         updates+=result['updates'];metrics.extend(result['batches'])
     state=default_state();state.update(updates=updates,nonzeroUpdates=updates,archives=archives)
     checkpoint=Path(directory)/'checkpoints'/'canary.pt'
@@ -99,7 +110,8 @@ def train_and_recover(directory,model,positions,archives,manifest_hash,device,de
                 recovered=after['state'][key][name]
                 equal=torch.equal(value.cpu(),recovered.cpu()) if isinstance(value,torch.Tensor) else value==recovered
                 if not equal:raise ValueError('canary optimizer tensor mismatch')
-    return restored.eval(),{'updates':updates,'nonzeroUpdates':updates,'batches':metrics,'checkpointSha256':digest,'recoveryPassed':True}
+    return restored.eval(),{'updates':updates,'nonzeroUpdates':updates,'batches':metrics,'checkpointSha256':digest,
+                           'recoveryPassed':True,'maskedValueUpdatePassed':True}
 
 
 def run(directory,corpus,*,device='mps',generator=selfplay,checker=numeric_parity):
@@ -137,6 +149,13 @@ def run(directory,corpus,*,device='mps',generator=selfplay,checker=numeric_parit
                 if game['termination']!='terminal' or not game['decisions']:raise ValueError('canary needs genuine terminal self-play')
                 path=save_game(attempt/'games',game);archives.append(str(path.relative_to(attempt)));buffer.append(game)
                 report['terminalGames']+=1;report['replayChecks']+=1;atomic_json(output,report)
+            ready()
+            root,_=next(canary_roots())
+            proof=generator({'command':'search','id':f'canary-{attempt.name}-fallback','state':root,
+                             'seed':107,'verifyFallback':True},model,device,deadline,monitor)
+            if proof.get('passed') is not True or proof.get('policyMask') is not False or proof.get('policy')!=[]:
+                raise ValueError('canary fallback probe did not pass')
+            atomic_json(attempt/'fallback-proof.json',proof);report['fallbackReplayPassed']=True
             ready();model,training=train_and_recover(attempt,model,list(buffer.positions),archives,manifest['sha256'],device,deadline,monitor)
             report.update(training);atomic_json(output,report)
             with monitor.operation('canary-export',60):
