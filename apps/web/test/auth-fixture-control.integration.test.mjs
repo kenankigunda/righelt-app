@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { createFixtureControlHandler, runFixtureCommand } from "../../../scripts/auth-fixture-control.mjs";
 
-const request = (overrides = {}) => ({ method: "POST", url: "/expire-sessions", headers: {}, ...overrides });
+const request = (overrides = {}) => ({ method: "POST", url: "/reset-limits", headers: {}, ...overrides });
 const response = () => ({ status: null, body: null, writeHead(status) { this.status = status; return this; }, end(body) { this.body = body; } });
 const busyError = () => Object.assign(new Error("Local fixture command exited 1"), { diagnostics: "NOSENTRY database is locked: SQLITE_BUSY" });
 
@@ -12,7 +12,7 @@ test("busy fixture retries only twice with bounded delays and preserves identica
   const handler = createFixtureControlHandler({ execute: async sql => { calls.push(sql); if (calls.length < 3) throw busyError(); }, wait: async ms => delays.push(ms), report: error => reports.push(error) });
   const res = response(); await handler(request(), res);
   assert.equal(res.status, 200); assert.equal(calls.length, 3);
-  assert.equal(new Set(calls).size, 1); assert.match(calls[0], /^UPDATE account_sessions SET expires_at/);
+  assert.equal(new Set(calls).size, 1); assert.equal(calls[0], "DELETE FROM account_rate_limits");
   assert.deepEqual(delays, [100, 250]); assert.deepEqual(reports, []);
 });
 
@@ -61,4 +61,33 @@ test("command captures late stderr through close and preserves streamed diagnost
   await assert.rejects(result, error => /SQLITE_BUSY/.test(error.diagnostics));
   assert.equal(invocation[0], "pnpm"); assert.equal(invocation[2].cwd, "/tmp");
   assert.deepEqual(output, ["database is locked: SQLITE_BUSY"]);
+});
+
+test("stdout-only busy diagnostics trigger bounded reset retry and keep their original error", async () => {
+  let attempts = 0;
+  const streamed = [], reports = [];
+  const handler = createFixtureControlHandler({
+    execute: () => {
+      const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+      const result = runFixtureCommand([], { spawnCommand: () => child, stdout: { write: chunk => streamed.push(String(chunk)) }, stderr: { write: chunk => streamed.push(String(chunk)) } });
+      queueMicrotask(() => {
+        attempts++;
+        child.stdout.emit("data", "SQLITE_BUSY on stdout");
+        child.emit("close", 1);
+      });
+      return result;
+    },
+    wait: async () => {}, report: error => reports.push(error),
+  });
+  const res = response(); await handler(request(), res);
+  assert.equal(attempts, 3); assert.equal(res.status, 500);
+  assert.deepEqual(streamed, Array(3).fill("SQLITE_BUSY on stdout"));
+  assert.equal(reports.length, 1); assert.equal(reports[0].diagnostics, "SQLITE_BUSY on stdout");
+});
+
+test("command capture retains a bounded combined stdout and stderr tail", async () => {
+  const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+  const result = runFixtureCommand([], { spawnCommand: () => child, stdout: { write() {} }, stderr: { write() {} } });
+  child.stdout.emit("data", "x".repeat(70000)); child.stderr.emit("data", "SQLITE_BUSY"); child.emit("close", 1);
+  await assert.rejects(result, error => error.diagnostics.length === 65536 && error.diagnostics.endsWith("SQLITE_BUSY"));
 });

@@ -37,12 +37,12 @@ export function createFixtureControlHandler({ execute, wait = ms => new Promise(
     if (busy) { response.writeHead(409).end(); return; }
     busy = true;
     try {
-      // These fixed fixture operations are idempotent. Only actual SQLite busy
-      // diagnostics permit a retry, never generic failures or browser tests.
+      // Only the idempotent rate-limit reset retries explicit SQLite busy
+      // diagnostics. Cutover and session controls retain one execution.
       for (let attempt = 0; ; attempt++) {
         try { await execute(sql); break; }
         catch (error) {
-          if (attempt >= 2 || !/\bSQLITE_BUSY\b/.test(error?.diagnostics ?? "")) throw error;
+          if (request.url !== "/reset-limits" || attempt >= 2 || !/\bSQLITE_BUSY\b/.test(error?.diagnostics ?? "")) throw error;
           await wait(attempt === 0 ? 100 : 250);
         }
       }

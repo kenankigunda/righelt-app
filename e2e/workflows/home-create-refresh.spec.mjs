@@ -1,5 +1,41 @@
 import { test, expect } from '@playwright/test';
 
+test('early create waits for guest bootstrap without opening account sign-in', async ({ page }) => {
+  let release, entered;
+  const held = new Promise(resolve => { release = resolve; });
+  const intercepted = new Promise(resolve => { entered = resolve; });
+  const creates = [];
+  page.on('request', request => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/shell/games') creates.push(request);
+  });
+  await page.route('**/api/shell/bootstrap', async route => {
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    expect((await response.json()).accountsRequired).toBe(false);
+    entered();
+    await held;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.goto('/');
+    await intercepted;
+    await page.getByTestId('home-create-game').click();
+    await expect(page.getByTestId('account-dialog')).not.toBeVisible();
+    expect(creates).toHaveLength(0);
+    const created = page.waitForResponse(response => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/shell/games');
+    release();
+    expect((await created).ok()).toBe(true);
+    await expect(page).toHaveURL(/#\/game\//);
+    await expect(page.getByTestId('game-role')).toContainText('Player 1');
+    await expect(page.getByTestId('account-dialog')).not.toBeVisible();
+    expect(creates).toHaveLength(1);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
 for (const input of ['pointer', 'keyboard']) test(`home refresh preserves ${input} activation already in progress`, async ({ page }, info) => {
   await page.setViewportSize({ width: 390, height: 1000 });
   let release;
