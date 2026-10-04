@@ -30,7 +30,7 @@ The default proof journey covers creation, moves, viewer sync, reload and reconn
 
 Classify failures from primary logs: product regression, invalid/racy assertion, environment mismatch, infrastructure/deployment. Reproduce the smallest case against the matching build; add failing-first coverage for real bugs. Fix synchronization instead of masking races with sleeps or broad retries. Validate the failing case, affected subsystem and required full pass.
 
-Use separate source repair worktrees. Fetch before pushing; preserve concurrent commits without force-pushing. Fix ownership follows the earliest source PR requiring the change. Rebuild from current source heads after repair. Record conflict decisions, tests and scope in the manifest findings. If material decisions are needed, ask with a recommendation and continue unaffected work.
+Use separate source repair worktrees when useful, but deliver their coherent commits to the canonical feature PR rather than opening repair PRs. Follow `docs/ai/PR_WORKFLOW.md`. Fetch before pushing; preserve concurrent commits without force-pushing. Across distinct features, fix ownership follows the earliest source PR requiring the change. Rebuild from current source heads after repair. Record conflict decisions, tests and scope in the manifest findings. If material decisions are needed, ask with a recommendation and continue unaffected work.
 
 Inspect PR required checks and review rules using GitHub metadata. A missing check result is unknown, not passed. Verify configured preview jobs, URLs and actual current artifact; distinguish deployment success from inspection. Require independent review for timing, accessibility, responsive UI, deployment, authorization or test-validity changes.
 

@@ -9,6 +9,7 @@ Ticket lifecycle coordinator. Owns routing, backlog state transitions, teammate 
 - Re-run acceptance checks after merges, resolve conflicts, and record decisions in the coordination log.
 - Set parent task `branch` and `worktree` fields when the ticket moves to `In Progress`, then clear or intentionally retain them when moving to `Ready for acceptance`.
 - Track any additional parallel Eng worktrees in the coordination log when they are needed, and keep them scoped to the same ticket.
+- Own one canonical feature PR, opened as a draft after the first reviewable push. Integrate worker commits and ongoing fixes there; follow `docs/ai/PR_WORKFLOW.md` for readiness, shared prerequisites, squash-by-default merging and consolidation without lost evidence.
 - Report setup blockers instead of silently falling back to ad hoc edits if backlog CLI, sibling repo, or wrapper resolution is unavailable.
 
 ## Context To Read
