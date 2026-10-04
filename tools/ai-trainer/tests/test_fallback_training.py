@@ -63,4 +63,18 @@ class FallbackTrainingTest(unittest.TestCase):
         invalid=copy.deepcopy(game);invalid['id']='bad';invalid['decisions'][0]['policyMask']=True
         with self.assertRaises(ValueError):buffer.append(invalid)
 
+    def test_partial_legality_remains_value_only_and_cannot_masquerade_as_complete_policy(self):
+        family=next(f'family:{n}' for n in range(100) if partition_for_family(f'family:{n}')=='train')
+        decision={**self.position(), 'fallback':{'schemaVersion':2,'reason':'legality-incomplete'},
+                  'legality':{'complete':False,'checked':3,'unknown':1,'indices':[0,2800]}}
+        game={'id':'partial','partition':'train','familyId':family,'termination':'terminal',
+              'outcome':{'status':'p1_win'},'decisions':[decision]}
+        buffer=ReplayBuffer();buffer.append(game)
+        row=buffer.positions[0]
+        self.assertFalse(row['policyMask']);self.assertTrue(row['terminalMask'])
+        self.assertEqual(row['legality']['complete'],False)
+        for mutation in ({'policyMask':True},{'legality':None}):
+            changed=copy.deepcopy(game);changed['decisions'][0].update(mutation)
+            with self.assertRaises(ValueError):ReplayBuffer().append(changed)
+
 if __name__=='__main__':unittest.main()

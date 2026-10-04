@@ -109,3 +109,26 @@ test('fallback cannot select a proven immediate loss or a tactically excluded ch
   }
   assert.throws(()=>compareSearchParity(...pair),/selection evidence/);
 });
+
+
+test('partial-root parity preserves completeness and executable-tier evidence',()=>{
+  const [reference,actual]=fallbackFixture();
+  const result=reference.states[0].result;
+  result.legality={complete:false,checked:2,unknown:1,indices:[1,2]};
+  result.fallback.schemaVersion=2;result.fallback.reason='legality-incomplete';
+  result.actions[0].executable=true;result.actions[1].executable=false;
+  actual.results[0]=structuredClone(reference.states[0]);
+  assert.equal(compareSearchParity(reference,actual).fallbackStates,1);
+  actual.results[0].result.legality.complete=true;
+  assert.throws(()=>compareSearchParity(reference,actual),/legality/);
+});
+
+test('completed losing fallback cannot claim all alternatives were proven losing',()=>{
+  const [reference,actual]=fallbackFixture();const result=reference.states[0].result;
+  Object.assign(result.fallback,{schemaVersion:2,selectedActionSafety:'losing',uncheckedCount:1,provenLosingCount:1});
+  Object.assign(result.actions[0],{immediate:'losing',executable:true});result.actions[1].executable=false;
+  actual.results[0]=structuredClone(reference.states[0]);
+  assert.equal(compareSearchParity(reference,actual).fallbackStates,1);
+  for(const row of [reference.states[0],actual.results[0]])row.result.actions[1].executable=true;
+  assert.throws(()=>compareSearchParity(reference,actual),/tier|selection/);
+});

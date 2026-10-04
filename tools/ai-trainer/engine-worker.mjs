@@ -3,10 +3,11 @@ import { createInterface } from 'node:readline';
 import { writeFileSync, renameSync } from 'node:fs';
 import { createEngineOperationBudget, EngineExpansionLimit } from './engine-operation-budget.mjs';
 import { searchRecovery } from './search-recovery.mjs';
-import { decisionProvenance, validateDecisionProvenance } from './decision-provenance.mjs';
+import { decisionProvenance } from './decision-provenance.mjs';
+import { replayDecision } from './decision-replay.mjs';
 import { createHash } from 'node:crypto';
 import { createInitialState, deterministicStateHash, normalizeState, resolveToStability } from '../../packages/game-engine/src/index.ts';
-import { encodeState, selectMove, seededRandom, experimentConfig, SEARCH_POLICY_VERSION, legalActionMap as engineLegalActionMap, transition as engineTransition } from '../../packages/computer-player/src/index.ts';
+import { encodeState, selectMove, seededRandom, experimentConfig, SEARCH_POLICY_VERSION, encodeAction, verifyLegalSubset, legalActionMap as engineLegalActionMap, transition as engineTransition } from '../../packages/computer-player/src/index.ts';
 
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity })[Symbol.asyncIterator]();
 const read = async () => {
@@ -82,8 +83,8 @@ async function main() {
     let fallbackProof;
     if(job.verifyFallback){
       if(result.status!=='ready'||!result.fallback)throw new Error('Canary fallback missing');
-      const legal=legalActionMap(job.state);
-      if(JSON.stringify(legal.get(result.actionIndex))!==JSON.stringify(result.action))throw new Error('Canary fallback illegal');
+      bounded(()=>verifyLegalSubset(job.state,result.legality.indices));
+      if(!result.legality.indices.includes(result.actionIndex)||encodeAction(result.action)!==result.actionIndex)throw new Error('Canary fallback illegal');
       const next=transition(job.state,result.action),again=transition(job.state,result.action);
       if(deterministicStateHash(next)!==deterministicStateHash(again))throw new Error('Canary fallback replay mismatch');
       const record=decisionProvenance(result,SEARCH_POLICY_VERSION);
@@ -99,13 +100,7 @@ async function main() {
     const repetitions = new Map([[ruleFingerprint(state), 1]]);
     for (const record of job.game.decisions) {
       check();
-      validateDecisionProvenance(record);
-      if (deterministicStateHash(state) !== record.beforeHash) throw new Error('Replay before-state mismatch');
-      if (state.sideToMove !== record.controller) throw new Error('Replay controller mismatch');
-      if (record.encoded && JSON.stringify(Array.from(encodeState(state))) !== JSON.stringify(record.encoded)) throw new Error('Replay encoding mismatch');
-      if (record.legal && JSON.stringify([...legalActionMap(state).keys()]) !== JSON.stringify(record.legal)) throw new Error('Replay legal mask mismatch');
-      state = transition(state, record.action);
-      if (deterministicStateHash(state) !== record.afterHash) throw new Error('Replay after-state mismatch');
+      state = replayDecision(state, record, bounded);
       const key = ruleFingerprint(state);
       repetitions.set(key, (repetitions.get(key) ?? 0) + 1);
     }
@@ -194,8 +189,8 @@ async function main() {
         initialState,decisions,finalHash:deterministicStateHash(state),outcome:state.outcome});
       if(unfinished){send(unfinished);return;}
       const beforeHash = deterministicStateHash(state), controller = state.sideToMove;
-      const encoded = Array.from(encodeState(state)), legal = [...legalActionMap(state).keys()];
-      state = transition(state, result.action);
+      const encoded = Array.from(encodeState(state)), legal = result.legality.indices;
+      state = result.nextState;
       decisions.push({ id: `${job.id}:${n}`, controller, action: result.action, beforeHash,
         afterHash: deterministicStateHash(state), seed, legal, encoded,
         modelVersion: arena ? job.modelVersions[controller] : job.modelVersion,
@@ -205,7 +200,7 @@ async function main() {
       send({type:'decision-progress',gameId:job.id,kind:job.kind,decision:{
         id:committed.id,controller,action:committed.action,beforeHash,afterHash:committed.afterHash,
         seed,modelVersion:committed.modelVersion,profileVersion:committed.profileVersion,
-        searchPolicyVersion:SEARCH_POLICY_VERSION,policyMask:committed.policyMask,fallback:committed.fallback,
+        searchPolicyVersion:SEARCH_POLICY_VERSION,policyMask:committed.policyMask,fallback:committed.fallback,legality:committed.legality,
         search:{...committed.search,actions:committed.fallback?committed.search.actions:undefined}}});
     }
   } catch (error) {

@@ -1,10 +1,10 @@
 import { withEngineComputationGuard, MAX_ENGINE_OPERATION_EXPANSIONS } from "../../game-engine/src/index";
 import type { Action, GameState } from "../../shared-types/src/engine";
-import { encodeState, experimentConfig as config, legalActionMap } from "./representation";
+import { encodeState, experimentConfig as config, legalActionMap, scanLegalActions } from "./representation";
 import { terminalValue, transition } from "./transition";
 import { proveTactical, TacticalInterrupted, type TacticalStatus } from "./tactics";
 export type { TacticalStatus } from "./tactics";
-export const SEARCH_POLICY_VERSION = "model-fallback-v1";
+export const SEARCH_POLICY_VERSION = "model-fallback-v2";
 
 export type Evaluation = { policyLogits: ArrayLike<number>; value: number };
 export type Evaluator = (input: Float32Array, context: {
@@ -15,18 +15,19 @@ export type SearchRequest = {
   maxValueGap?: number; maxNodes?: number; deadlineMs?: number; signal?: AbortSignal;
 };
 export type ActionReport = {
-  index: number; visits: number; prior: number; policyLogit: number; value: number | null;
+  executable: boolean | null; index: number; visits: number; prior: number; policyLogit: number; value: number | null;
   immediate: "win" | "eligible" | "losing" | "incomplete";
   tactical: TacticalStatus;
 };
 type EngineBudget = { perOperationLimit: number; peakExpansions: number; totalExpansions: number; limitReached: boolean };
 export type ModelFallback = {
-  schemaVersion: 1; reason: "search-incomplete" | "safety-incomplete";
-  selectionBasis: "model-policy"; selectedActionSafety: "eligible" | "incomplete";
+  schemaVersion: 1 | 2; reason: "search-incomplete" | "safety-incomplete" | "legality-incomplete";
+  selectionBasis: "model-policy"; selectedActionSafety: "win" | "eligible" | "losing" | "incomplete";
   valueSource: "root-model"; checkedEligibleCount: number; uncheckedCount: number; provenLosingCount: number;
 };
+export type LegalityEvidence = { complete: boolean; checked: number; unknown: number; indices: number[] };
 export type SearchResult = {
-  status: "ready"; action: Action; actionIndex: number; value: number;
+  status: "ready"; nextState: GameState; legality: LegalityEvidence; action: Action; actionIndex: number; value: number;
   policy: { index: number; probability: number }[]; policyMask: boolean; fallback: ModelFallback | null;
   actions: ActionReport[]; seed: number; nodes: number; simulations: number;
   elapsedMs: number; engineBudget: EngineBudget; stopped: "complete" | "deadline" | "node-limit";
@@ -37,7 +38,7 @@ export type SearchResult = {
   stopped: "complete" | "deadline" | "node-limit";
 };
 
-type Edge = { index: number; action: Action; prior: number; policyLogit: number; visits: number; sum: number; child?: Node; transitionLimited?: boolean };
+type Edge = { index: number; action: Action; prior: number; policyLogit: number; visits: number; sum: number; child?: Node; resolved?: GameState; transitionLimited?: boolean };
 type Node = { state: GameState; edges?: Edge[]; enumerationLimited?: boolean; value?: number; visits: number; sum: number };
 class SoftStop extends Error {}
 // Exhausting one authoritative operation does not spend another candidate's
@@ -80,16 +81,18 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
   const root: Node = { state: request.state, visits: 0, sum: 0 };
   const safety = new Map<number, ActionReport["immediate"]>();
   const proofs = new Map<number, TacticalStatus>();
-  const check = () => {
+  const reserveMs = request.deadlineMs === undefined ? 0 : Math.min(500, Math.max(0, (request.deadlineMs - started) / 5));
+  const legality: LegalityEvidence = { complete: true, checked: 0, unknown: 0, indices: [] };
+  const check = (final = false) => {
     if (request.signal?.aborted) throw abort();
-    if (request.deadlineMs !== undefined && performance.now() >= request.deadlineMs) {
+    if (request.deadlineMs !== undefined && performance.now() >= request.deadlineMs - (final ? 0 : reserveMs)) {
       stopped = "deadline"; throw new SoftStop();
     }
   };
-  const engine = <T>(operation: () => T): T => {
+  const engine = <T>(operation: () => T, final = false): T => {
     let expansions = 0;
     return withEngineComputationGuard(expansion => {
-      check();
+      check(final);
       if (expansion) {
         if (expansions >= engineBudget.perOperationLimit) {
           engineBudget.limitReached = true; stopped = "node-limit"; throw new EngineLimit();
@@ -121,16 +124,16 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     check();
     return edge.child;
   };
-  const evaluate = async (node: Node): Promise<number> => {
-    check();
+  const evaluate = async (node: Node, final = false): Promise<number> => {
+    check(final);
     const terminal = terminalValue(node.state);
     if (terminal !== undefined) { node.value = terminal; return terminal; }
     if (node.value !== undefined) return node.value;
-    const available = edges(node);
+    const available = node === root && root.edges ? root.edges : edges(node);
     const evaluation = await evaluator(encodeState(node.state), {
       state: node.state, legalActions: new Map(available.map(edge => [edge.index, edge.action])), signal: request.signal,
     });
-    check();
+    check(final);
     if (!Number.isFinite(evaluation.value) || Math.abs(evaluation.value) > 1 || evaluation.policyLogits.length !== config.actionCount) {
       throw new Error("Invalid model output");
     }
@@ -145,6 +148,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
   };
   function reports(): ActionReport[] {
     return (root.edges ?? []).map(edge => ({
+      executable: edge.child || edge.resolved ? true : edge.transitionLimited ? false : null,
       index: edge.index, visits: edge.visits, prior: edge.prior, policyLogit: edge.policyLogit,
       value: edge.visits ? edge.sum / edge.visits : null,
       immediate: safety.get(edge.index) ?? "incomplete", tactical: proofs.get(edge.index) ?? "incomplete",
@@ -165,10 +169,24 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     for (let i = 0; i < choices.length; i++) { draw -= weights[i]; if (draw < 0) return choices[i]; }
     return choices[choices.length - 1];
   };
+  const finish = (edge: Edge): GameState => {
+    // The deadline stops additional work. Already completed transitions remain
+    // usable; cancellation (including the host watchdog) still rejects them.
+    if (request.signal?.aborted) throw abort();
+    if (edge.child) return edge.child.state;
+    if (edge.resolved) return edge.resolved;
+    check(true);
+    if (edge.transitionLimited) throw new EngineLimit();
+    try { edge.resolved = engine(() => transition(root.state, edge.action), true); return edge.resolved; }
+    catch (error) { if (error instanceof EngineLimit) edge.transitionLimited = true; throw error; }
+  };
   const ready = (chosen: Edge, candidates: Edge[], reason: Extract<SearchResult, { status: "ready" }>["reason"]): SearchResult => {
+    let nextState: GameState;
+    try { nextState = finish(chosen); }
+    catch (error) { if (error instanceof SoftStop || error instanceof EngineLimit) return recovery("no-completed-search"); throw error; }
     const total = candidates.reduce((sum, edge) => sum + edge.visits, 0);
     return {
-      status: "ready", action: chosen.action, actionIndex: chosen.index,
+      status: "ready", nextState, legality, action: chosen.action, actionIndex: chosen.index,
       value: chosen.visits ? chosen.sum / chosen.visits : root.value!,
       policy: candidates.map(edge => ({ index: edge.index, probability: total ? edge.visits / total : Number(edge === chosen) })),
       policyMask: true, fallback: null,
@@ -177,30 +195,81 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     };
   };
   const modelFallback = (choices: Edge[], reason: ModelFallback["reason"]): SearchResult => {
-    // Every choice came from the complete authoritative root legal list; the
-    // root evaluation was validated before any fallback became available.
-    const highest = Math.max(...choices.map(edge => edge.policyLogit));
-    const tied = choices.filter(edge => edge.policyLogit === highest);
-    const chosen = tied[Math.floor(random() * tied.length)];
-    return {
-      status: "ready", reason: "model-fallback", action: chosen.action, actionIndex: chosen.index,
-      value: root.value!, policy: [], policyMask: false,
-      fallback: { schemaVersion: 1, reason, selectionBasis: "model-policy",
-        selectedActionSafety: safety.get(chosen.index) === "eligible" ? "eligible" : "incomplete",
-        valueSource: "root-model",
-        checkedEligibleCount: root.edges!.filter(edge => safety.get(edge.index) === "eligible").length,
-        uncheckedCount: root.edges!.filter(edge => !safety.has(edge.index)).length,
-        provenLosingCount: root.edges!.filter(edge => safety.get(edge.index) === "losing").length },
-      actions: reports(), seed: request.seed, nodes, simulations: completed,
-      elapsedMs: performance.now() - started, engineBudget, stopped,
-    };
+    // A chosen action needs a completed transition as well as known legality.
+    const remaining = root.edges!.filter(edge => !choices.includes(edge));
+    const tiers = [choices, ...(["win", "eligible", "incomplete", "losing"] as const).map(status =>
+      remaining.filter(edge => (safety.get(edge.index) ?? "incomplete") === status))];
+    for (const tier of tiers) {
+      const pending = [...tier];
+      while (pending.length) {
+        const highest = Math.max(...pending.map(edge => edge.policyLogit));
+        const tied = pending.filter(edge => edge.policyLogit === highest);
+        const chosen = tied[Math.floor(random() * tied.length)];
+        pending.splice(pending.indexOf(chosen), 1);
+        let nextState: GameState;
+        try { nextState = finish(chosen); }
+        catch (error) {
+          if (error instanceof EngineLimit) continue;
+          if (error instanceof SoftStop) { chosen.transitionLimited = true; continue; }
+          throw error;
+        }
+        const selectedSafety = safety.get(chosen.index) ?? "incomplete";
+        const selectedReason = reason === "legality-incomplete" ? reason : selectedSafety === "eligible" ? "search-incomplete" : "safety-incomplete";
+        return {
+          status: "ready", nextState, legality, reason: "model-fallback", action: chosen.action, actionIndex: chosen.index,
+          value: root.value!, policy: [], policyMask: false,
+          fallback: { schemaVersion: selectedReason === "legality-incomplete" || selectedSafety === "losing" || selectedReason !== reason ? 2 : 1,
+            reason: selectedReason, selectionBasis: "model-policy", selectedActionSafety: selectedSafety,
+            valueSource: "root-model",
+            checkedEligibleCount: root.edges!.filter(edge => safety.get(edge.index) === "eligible").length,
+            uncheckedCount: root.edges!.filter(edge => !safety.has(edge.index)).length,
+            provenLosingCount: root.edges!.filter(edge => safety.get(edge.index) === "losing").length },
+          actions: reports(), seed: request.seed, nodes, simulations: completed,
+          elapsedMs: performance.now() - started, engineBudget, stopped,
+        };
+      }
+    }
+    return recovery("no-completed-search");
   };
+  // One aggregate root allowance: expensive candidates cannot reset it. Cheap
+  // zero-expansion validation may still establish alternatives after exhaustion.
+  let rootExpansions = 0;
+  let enumerationStopped = false;
+  root.edges = [];
+  try {
+    scanLegalActions(root.state, operation => {
+      if (request.signal?.aborted) throw abort();
+      if (enumerationStopped) return undefined;
+      try { check(); return withEngineComputationGuard(expansion => {
+        check();
+        if (expansion) {
+          if (rootExpansions >= engineBudget.perOperationLimit) {
+            engineBudget.limitReached = true; stopped = "node-limit"; throw new EngineLimit();
+          }
+          rootExpansions++; engineBudget.totalExpansions++;
+          engineBudget.peakExpansions = Math.max(engineBudget.peakExpansions, rootExpansions);
+        }
+      }, operation); }
+      catch (error) {
+        if (error instanceof SoftStop) { enumerationStopped = true; return undefined; }
+        if (error instanceof EngineLimit) return undefined;
+        throw error;
+      }
+    }, (index, action, legal) => {
+      if (legal === undefined) { legality.unknown++; legality.complete = false; }
+      else legality.checked++;
+      if (legal) { legality.indices.push(index); root.edges!.push({ index, action, prior: 0, policyLogit: 0, visits: 0, sum: 0 }); }
+    });
+  } catch (error) {
+    if (!(error instanceof SoftStop)) throw error;
+    legality.complete = false;
+  }
   const rootSign = mover(root.state);
   try {
-    check();
+    check(true);
     if (terminalValue(root.state) !== undefined) return recovery("terminal");
-    if (!edges(root).length) return recovery("no-legal-actions");
-    await evaluate(root);
+    if (!root.edges!.length) return recovery(legality.complete ? "no-legal-actions" : "no-completed-search");
+    await evaluate(root, true);
     // Scan all immediate outcomes first; an early safety expansion must not hide a win.
     for (const edge of root.edges!) {
       try {
@@ -212,6 +281,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
       } catch (error) { if (!(error instanceof EngineLimit)) throw error; }
     }
     const wins = root.edges!.filter(edge => safety.get(edge.index) === "win");
+    if (wins.length && !legality.complete) return modelFallback(wins, "legality-incomplete");
     if (wins.length) {
       for (const edge of wins) { edge.visits = 1; edge.sum = rootSign; proofs.set(edge.index, "proven-win"); }
       return ready(sample(wins, edge => Math.log(Math.max(edge.prior, Number.MIN_VALUE))), wins, "immediate-win");
@@ -226,6 +296,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
           if (terminalValue(child(next, reply).state) === -rootSign) { losing = true; break; }
         }
         safety.set(edge.index, losing ? "losing" : "eligible");
+        if (!legality.complete && !losing) break;
       } catch (error) { if (!(error instanceof EngineLimit)) throw error; }
     }
   } catch (error) { if (!(error instanceof SoftStop) && !(error instanceof EngineLimit)) throw error; }
@@ -234,11 +305,16 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
   const rootEdges = root.edges!;
   // A completed immediate win remains usable even if scanning other actions hit the budget.
   const knownWins = rootEdges.filter(edge => safety.get(edge.index) === "win");
+  if (knownWins.length && !legality.complete) return modelFallback(knownWins, "legality-incomplete");
   if (knownWins.length) {
     for (const edge of knownWins) { edge.visits = 1; edge.sum = rootSign; proofs.set(edge.index, "proven-win"); }
     return ready(sample(knownWins, edge => Math.log(Math.max(edge.prior, Number.MIN_VALUE))), knownWins, "immediate-win");
   }
   let eligible = rootEdges.filter(edge => safety.get(edge.index) === "eligible");
+  if (!legality.complete) {
+    const notLosing = rootEdges.filter(edge => safety.get(edge.index) !== "losing");
+    return modelFallback(eligible.length ? eligible : notLosing.length ? notLosing : rootEdges, "legality-incomplete");
+  }
   if (!eligible.length) {
     if (rootEdges.every(edge => safety.get(edge.index) === "losing")) {
       const highest = Math.max(...rootEdges.map(edge => edge.prior));

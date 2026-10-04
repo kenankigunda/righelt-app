@@ -40,14 +40,27 @@ class ReplayBuffer:
         if terminal==(outcome=='ongoing'):raise ValueError('inconsistent value target')
         value={'p1_win':1.,'p2_win':-1.,'draw':0.,'ongoing':0.}[outcome]
         for decision in game['decisions']:
-            position={k:decision[k] for k in ('id','legal','policy','policyMask','fallback') if k in decision}
+            position={k:decision[k] for k in ('id','legal','policy','policyMask','fallback','legality') if k in decision}
             mask=decision.get('policyMask',True)
             fallback=decision.get('fallback')
             if type(mask) is not bool or (fallback is not None) != (not mask):
                 raise ValueError('fallback policy mask mismatch')
-            if not mask and (decision.get('policy') or fallback.get('schemaVersion')!=1
-                or fallback.get('reason') not in ('search-incomplete','safety-incomplete')):
+            if not mask and (decision.get('policy') or fallback.get('schemaVersion') not in (1,2)
+                or fallback.get('reason') not in ('search-incomplete','safety-incomplete','legality-incomplete')):
                 raise ValueError('invalid fallback training target')
+            legality=decision.get('legality')
+            if fallback and fallback.get('reason')=='legality-incomplete':
+                if fallback.get('schemaVersion')!=2 or not legality or legality.get('complete') is not False:
+                    raise ValueError('missing partial legality evidence')
+            if legality is not None:
+                indices=legality.get('indices')
+                if (type(legality.get('complete')) is not bool or not isinstance(indices,list) or
+                    any(type(i) is not int or i<0 or i>=CONFIG['actionCount'] for i in indices) or
+                    len(set(indices))!=len(indices) or indices!=decision.get('legal') or
+                    any(type(legality.get(k)) is not int or legality[k]<0 for k in ('checked','unknown')) or
+                    legality['checked']<len(indices) or (legality['complete'] and legality['unknown']!=0) or
+                    (not legality['complete'] and (mask or not fallback or fallback.get('reason')!='legality-incomplete'))):
+                    raise ValueError('invalid legality evidence')
             if 'encoded' in decision:position['encoded']=array('f',decision['encoded'])
             self.positions.append({**position,'terminalMask':terminal,'terminalValue':value,'gameId':game['id']})
         self.ids.add(game['id'])

@@ -1,0 +1,604 @@
+{
+  "boardSize": 10,
+  "sideToMove": "P2",
+  "turnIndex": 45,
+  "pieces": [
+    {
+      "commanded": true,
+      "displayCommanded": true,
+      "displaySupplied": true,
+      "id": "C1",
+      "kind": "commander",
+      "owner": "P1",
+      "position": {
+        "row": 4,
+        "col": 8
+      },
+      "supplied": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U1-1",
+      "owner": "P1",
+      "kind": "unit",
+      "position": {
+        "row": 2,
+        "col": 5
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U1-10",
+      "owner": "P1",
+      "kind": "unit",
+      "position": {
+        "row": 6,
+        "col": 5
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U1-11",
+      "owner": "P1",
+      "kind": "unit",
+      "position": {
+        "row": 1,
+        "col": 5
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U1-12",
+      "owner": "P1",
+      "kind": "unit",
+      "position": {
+        "row": 2,
+        "col": 2
+      },
+      "supplied": true,
+      "commanded": false,
+      "displaySupplied": true,
+      "displayCommanded": false,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U1-13",
+      "owner": "P1",
+      "kind": "unit",
+      "position": {
+        "row": 4,
+        "col": 5
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U1-2",
+      "owner": "P1",
+      "kind": "unit",
+      "position": {
+        "row": 0,
+        "col": 8
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U1-3",
+      "owner": "P1",
+      "kind": "unit",
+      "position": {
+        "row": 3,
+        "col": 4
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U1-4",
+      "owner": "P1",
+      "kind": "unit",
+      "position": {
+        "row": 2,
+        "col": 8
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U1-5",
+      "owner": "P1",
+      "kind": "unit",
+      "position": {
+        "row": 2,
+        "col": 7
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U1-6",
+      "owner": "P1",
+      "kind": "unit",
+      "position": {
+        "row": 4,
+        "col": 6
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U1-7",
+      "owner": "P1",
+      "kind": "unit",
+      "position": {
+        "row": 2,
+        "col": 9
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U1-8",
+      "owner": "P1",
+      "kind": "unit",
+      "position": {
+        "row": 3,
+        "col": 9
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U1-9",
+      "owner": "P1",
+      "kind": "unit",
+      "position": {
+        "row": 5,
+        "col": 4
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "commanded": true,
+      "displayCommanded": true,
+      "displaySupplied": true,
+      "id": "C2",
+      "kind": "commander",
+      "owner": "P2",
+      "position": {
+        "row": 6,
+        "col": 3
+      },
+      "supplied": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U2-1",
+      "owner": "P2",
+      "kind": "unit",
+      "position": {
+        "row": 6,
+        "col": 1
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U2-10",
+      "owner": "P2",
+      "kind": "unit",
+      "position": {
+        "row": 3,
+        "col": 3
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U2-11",
+      "owner": "P2",
+      "kind": "unit",
+      "position": {
+        "row": 4,
+        "col": 1
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U2-12",
+      "owner": "P2",
+      "kind": "unit",
+      "position": {
+        "row": 6,
+        "col": 4
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U2-13",
+      "owner": "P2",
+      "kind": "unit",
+      "position": {
+        "row": 8,
+        "col": 5
+      },
+      "supplied": true,
+      "commanded": false,
+      "displaySupplied": true,
+      "displayCommanded": false,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U2-14",
+      "owner": "P2",
+      "kind": "unit",
+      "position": {
+        "row": 1,
+        "col": 2
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U2-15",
+      "owner": "P2",
+      "kind": "unit",
+      "position": {
+        "row": 1,
+        "col": 4
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U2-2",
+      "owner": "P2",
+      "kind": "unit",
+      "position": {
+        "row": 4,
+        "col": 3
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U2-4",
+      "owner": "P2",
+      "kind": "unit",
+      "position": {
+        "row": 2,
+        "col": 3
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    },
+    {
+      "id": "U2-8",
+      "owner": "P2",
+      "kind": "unit",
+      "position": {
+        "row": 4,
+        "col": 4
+      },
+      "supplied": true,
+      "commanded": true,
+      "displaySupplied": true,
+      "displayCommanded": true,
+      "shifted": false,
+      "pushed": false
+    }
+  ],
+  "continuation": null,
+  "outcome": {
+    "status": "ongoing"
+  },
+  "artifacts": {
+    "mode": "minimal",
+    "supply": [
+      {
+        "player": "P1",
+        "reachability": [
+          "C1",
+          "U1-1",
+          "U1-10",
+          "U1-11",
+          "U1-12",
+          "U1-13",
+          "U1-2",
+          "U1-3",
+          "U1-4",
+          "U1-5",
+          "U1-6",
+          "U1-7",
+          "U1-8",
+          "U1-9"
+        ],
+        "shortestPathByPieceId": {},
+        "distanceByPieceId": {}
+      },
+      {
+        "player": "P2",
+        "reachability": [
+          "C2",
+          "U2-1",
+          "U2-10",
+          "U2-11",
+          "U2-12",
+          "U2-13",
+          "U2-14",
+          "U2-15",
+          "U2-2",
+          "U2-4",
+          "U2-8"
+        ],
+        "shortestPathByPieceId": {},
+        "distanceByPieceId": {}
+      }
+    ],
+    "command": {
+      "candidateEdges": [
+        "C1|U1-4",
+        "C1|U1-6",
+        "C1|U1-8",
+        "C2|U2-1",
+        "C2|U2-12",
+        "C2|U2-2",
+        "U1-1|U1-11",
+        "U1-1|U1-13",
+        "U1-1|U1-3",
+        "U1-1|U1-5",
+        "U1-10|U1-13",
+        "U1-10|U1-9",
+        "U1-13|U1-3",
+        "U1-13|U1-6",
+        "U1-13|U1-9",
+        "U1-2|U1-4",
+        "U1-3|U1-8",
+        "U1-4|U1-5",
+        "U1-4|U1-7",
+        "U1-4|U1-8",
+        "U1-7|U1-8",
+        "U2-1|U2-11",
+        "U2-10|U2-2",
+        "U2-10|U2-4",
+        "U2-10|U2-8",
+        "U2-11|U2-2",
+        "U2-14|U2-15",
+        "U2-14|U2-4",
+        "U2-15|U2-4",
+        "U2-2|U2-8"
+      ],
+      "cutEdges": [],
+      "activeEdges": [
+        "C1|U1-4",
+        "C1|U1-6",
+        "C1|U1-8",
+        "C2|U2-1",
+        "C2|U2-12",
+        "C2|U2-2",
+        "U1-1|U1-11",
+        "U1-1|U1-13",
+        "U1-1|U1-3",
+        "U1-1|U1-5",
+        "U1-10|U1-13",
+        "U1-10|U1-9",
+        "U1-13|U1-3",
+        "U1-13|U1-6",
+        "U1-13|U1-9",
+        "U1-2|U1-4",
+        "U1-3|U1-8",
+        "U1-4|U1-5",
+        "U1-4|U1-7",
+        "U1-4|U1-8",
+        "U1-7|U1-8",
+        "U2-1|U2-11",
+        "U2-10|U2-2",
+        "U2-10|U2-4",
+        "U2-10|U2-8",
+        "U2-11|U2-2",
+        "U2-14|U2-15",
+        "U2-14|U2-4",
+        "U2-15|U2-4",
+        "U2-2|U2-8"
+      ],
+      "shortestPathToCommanderByPieceId": {}
+    },
+    "groups": {
+      "componentByPieceId": {
+        "C1": "P1:C1",
+        "C2": "P2:C2",
+        "U2-12": "P2:C2",
+        "U1-1": "P1:U1-1",
+        "U1-11": "P1:U1-1",
+        "U1-10": "P1:U1-10",
+        "U1-12": "P1:U1-12",
+        "U1-13": "P1:U1-13",
+        "U1-6": "P1:U1-13",
+        "U1-2": "P1:U1-2",
+        "U1-3": "P1:U1-3",
+        "U1-4": "P1:U1-4",
+        "U1-5": "P1:U1-4",
+        "U1-7": "P1:U1-4",
+        "U1-8": "P1:U1-4",
+        "U1-9": "P1:U1-9",
+        "U2-1": "P2:U2-1",
+        "U2-10": "P2:U2-10",
+        "U2-2": "P2:U2-10",
+        "U2-4": "P2:U2-10",
+        "U2-8": "P2:U2-10",
+        "U2-11": "P2:U2-11",
+        "U2-13": "P2:U2-13",
+        "U2-14": "P2:U2-14",
+        "U2-15": "P2:U2-15"
+      },
+      "membersByComponentId": {
+        "P1:C1": [
+          "C1"
+        ],
+        "P2:C2": [
+          "C2",
+          "U2-12"
+        ],
+        "P1:U1-1": [
+          "U1-1",
+          "U1-11"
+        ],
+        "P1:U1-10": [
+          "U1-10"
+        ],
+        "P1:U1-12": [
+          "U1-12"
+        ],
+        "P1:U1-13": [
+          "U1-13",
+          "U1-6"
+        ],
+        "P1:U1-2": [
+          "U1-2"
+        ],
+        "P1:U1-3": [
+          "U1-3"
+        ],
+        "P1:U1-4": [
+          "U1-4",
+          "U1-5",
+          "U1-7",
+          "U1-8"
+        ],
+        "P1:U1-9": [
+          "U1-9"
+        ],
+        "P2:U2-1": [
+          "U2-1"
+        ],
+        "P2:U2-10": [
+          "U2-10",
+          "U2-2",
+          "U2-4",
+          "U2-8"
+        ],
+        "P2:U2-11": [
+          "U2-11"
+        ],
+        "P2:U2-13": [
+          "U2-13"
+        ],
+        "P2:U2-14": [
+          "U2-14"
+        ],
+        "P2:U2-15": [
+          "U2-15"
+        ]
+      },
+      "strengthByComponentId": {
+        "P1:C1": 1,
+        "P2:C2": 2,
+        "P1:U1-1": 2,
+        "P1:U1-10": 1,
+        "P1:U1-12": 1,
+        "P1:U1-13": 2,
+        "P1:U1-2": 1,
+        "P1:U1-3": 1,
+        "P1:U1-4": 4,
+        "P1:U1-9": 1,
+        "P2:U2-1": 1,
+        "P2:U2-10": 4,
+        "P2:U2-11": 1,
+        "P2:U2-13": 1,
+        "P2:U2-14": 1,
+        "P2:U2-15": 1
+      }
+    }
+  }
+}

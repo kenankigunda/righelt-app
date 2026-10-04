@@ -10,16 +10,23 @@ function fallbackChoices(result, require, id) {
   require(result.policyMask === false && result.reason === 'model-fallback' &&
     Array.isArray(result.policy) && result.policy.length === 0, `${id}: fallback policy contract differs`);
   require(fallback && Object.keys(fallback).sort().join() === [...FALLBACK_FIELDS].sort().join() &&
-    fallback.schemaVersion === 1 && fallback.selectionBasis === 'model-policy' && fallback.valueSource === 'root-model' &&
-    ['search-incomplete', 'safety-incomplete'].includes(fallback.reason), `${id}: invalid fallback metadata`);
+    [1,2].includes(fallback.schemaVersion) && fallback.selectionBasis === 'model-policy' && fallback.valueSource === 'root-model' &&
+    ['search-incomplete', 'safety-incomplete', 'legality-incomplete'].includes(fallback.reason), `${id}: invalid fallback metadata`);
   const checked = result.actions.filter(action => action.immediate === 'eligible');
   const unknown = result.actions.filter(action => action.immediate === 'incomplete');
   const losing = result.actions.filter(action => action.immediate === 'losing');
-  require(checked.length + unknown.length + losing.length === result.actions.length &&
+  const wins = result.actions.filter(action => action.immediate === 'win');
+  require(wins.length + checked.length + unknown.length + losing.length === result.actions.length &&
     fallback.checkedEligibleCount === checked.length && fallback.uncheckedCount === unknown.length &&
     fallback.provenLosingCount === losing.length, `${id}: fallback safety counts differ`);
   let choices;
-  if (fallback.reason === 'search-incomplete') {
+  if (fallback.reason === 'legality-incomplete') {
+    require(fallback.schemaVersion === 2 && result.legality?.complete === false, `${id}: missing partial legality`);
+    choices = [wins, checked, unknown, losing].map(rows => rows.filter(action => action.executable !== false)).find(rows => rows.length) ?? [];
+  } else if (fallback.schemaVersion === 2) {
+    choices = [wins, checked, unknown, losing].map(rows => rows.filter(action => action.executable !== false)).find(rows => rows.length) ?? [];
+    require(choices.some(action => action.immediate === fallback.selectedActionSafety), `${id}: unavailable fallback tier`);
+  } else if (fallback.reason === 'search-incomplete') {
     require(checked.length > 0 && fallback.selectedActionSafety === 'eligible', `${id}: fallback safety reason differs`);
     const notProvenLost = checked.filter(action => action.tactical !== 'proven-loss');
     choices = notProvenLost.length ? notProvenLost : checked;
@@ -28,6 +35,7 @@ function fallbackChoices(result, require, id) {
     choices = unknown;
   }
   require(result.actions.every(action => Number.isFinite(action.policyLogit)), `${id}: missing raw policy logits`);
+  choices = choices.filter(action => action.executable !== false);
   const selected = choices.find(action => action.index === result.actionIndex);
   require(selected && selected.visits === 0 && selected.value === null, `${id}: invalid fallback selection evidence`);
   const maximum = Math.max(...choices.map(action => action.policyLogit));
@@ -49,7 +57,8 @@ export function compareSearchParity(reference, actual) {
     require(a.stopped !== 'deadline' && b.stopped !== 'deadline', `${id}: deadline-censored search`);
     require(a.simulations === b.simulations && a.stopped === b.stopped, `${id}: completed work differs`);
     require(a.reason === b.reason && a.policyMask === b.policyMask, `${id}: result provenance differs`);
-    const guards = result => result.actions.map(({ index, immediate, tactical }) => ({ index, immediate, tactical }));
+    require(JSON.stringify(a.legality) === JSON.stringify(b.legality), `${id}: legality evidence differs`);
+    const guards = result => result.actions.map(({ index, immediate, tactical, executable }) => ({ index, immediate, tactical, executable }));
     require(JSON.stringify(guards(a)) === JSON.stringify(guards(b)), `${id}: tactical outcomes differ`);
     if (a.fallback !== null || b.fallback !== null) {
       const aTies = fallbackChoices(a, require, id), bTies = fallbackChoices(b, require, id);

@@ -1,5 +1,5 @@
 import config from "../config/experiment-v1.json";
-import { SUPPLY_POINTS, listLegalActions } from "../../game-engine/src/index";
+import { SUPPLY_POINTS, listLegalActions, legalActionCandidates, validateAction } from "../../game-engine/src/index";
 import type { Action, Coordinate, GameState } from "../../shared-types/src/engine";
 
 export { config as experimentConfig };
@@ -101,4 +101,32 @@ export function legalActionMap(state: GameState): Map<number, Action> {
     result.set(key, action);
   }
   return result;
+}
+
+/** Classification is caller-bounded; a missing result is unknown, never illegal. */
+export function scanLegalActions(state: GameState, classify: (operation: () => boolean) => boolean | undefined,
+  accept: (index: number, action: Action, legal: boolean | undefined) => void): void {
+  const seen = new Set<number>();
+  for (const action of legalActionCandidates(state)) {
+    const legal = classify(() => validateAction(state, action).ok);
+    if (legal !== false) {
+      const index = encodeAction(action);
+      if (seen.has(index)) throw new Error(`Legal action encoding collision: ${index}`);
+      seen.add(index);
+      accept(index, action, legal);
+    } else accept(-1, action, false);
+  }
+}
+
+/** Verify a recorded subset without asking unrelated candidates to finish. */
+export function verifyLegalSubset(state: GameState, indices: number[]): void {
+  const pending = new Set(indices);
+  if (!indices.length || pending.size !== indices.length) throw new Error("Invalid legal subset");
+  for (const action of legalActionCandidates(state)) {
+    const index = encodeAction(action);
+    if (!pending.has(index)) continue;
+    if (!validateAction(state, action).ok) throw new Error("Illegal action in recorded subset");
+    pending.delete(index);
+  }
+  if (pending.size) throw new Error("Unknown action in recorded subset");
 }
