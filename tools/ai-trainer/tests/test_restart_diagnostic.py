@@ -23,11 +23,17 @@ class RestartDiagnosticTest(unittest.TestCase):
             def player(*args,**kwargs):
                 calls.append(args[0]['id'])
                 if len(calls)<=4:return {'status':'unfinished','reason':'node-limit'}
-                return self.player(*args,**kwargs)
+                played=self.player(*args,**kwargs);job=args[0]
+                played['game']['decisions']=[{'id':job['id']+':0','controller':'P1','modelVersion':job['modelVersions']['P1'],
+                    'profileVersion':job['profileVersions']['P1'],'policyMask':False,'fallback':{'reason':'legality-incomplete'}}]
+                return played
             models={'candidate':'candidate-model','opponent':'opponent-model'}
             report=run_arena(path,d,models,'cpu',player=player)
             self.assertEqual(len(calls),20);self.assertEqual(report['terminalGames'],16)
             self.assertTrue(report['diagnosticGatePassed']);self.assertFalse(report['strengthAcceptanceEligible'])
+            self.assertEqual(report['acceptedReplayGames'],16)
+            self.assertEqual(report['supervisionAvailability'],{'policyEligiblePositions':0,'valueEligiblePositions':16,'evaluationUsedForTraining':False})
+            self.assertEqual(sum(g['fallbackDecisions'] for g in report['acceptedFallback']['groups'].values()),16)
             report=run_arena(path,d,models,'cpu',player=lambda *a,**k:self.fail('retry'))
             self.assertTrue(report['diagnosticGatePassed'])
 

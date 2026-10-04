@@ -1,4 +1,5 @@
-import json,tempfile,time,unittest
+import json,tempfile,time,unittest,fcntl,subprocess,sys
+from unittest.mock import patch
 from pathlib import Path
 from righelt_training.sequence import Sequence,PREREQUISITE,digest,immutable,launch_ready
 from righelt_training.allocation import Allocation,append
@@ -54,6 +55,17 @@ class SequenceTest(unittest.TestCase):
             with self.assertRaises(ValueError):s.complete('six-hour',evidence)
             self.assertFalse(Allocation(Path(d),Path(d)/'six').events())
 
+    def test_crash_after_report_reconciles_outbox_before_progression(self):
+        with tempfile.TemporaryDirectory() as d:
+            s,r,e=self.setup_sequence(Path(d));s.claim(r,e)
+            with patch.object(s,'ensure_mail_intent',side_effect=RuntimeError('power loss')):
+                with self.assertRaises(RuntimeError):s.complete('diagnostic',self.diagnostic(Path(d)))
+            self.assertTrue(s.report_path('diagnostic').exists())
+            self.assertFalse((s.directory/'mail'/'diagnostic.json').exists())
+            restored=Sequence(s.directory)
+            self.assertEqual(restored.next_phase(),'six-hour')
+            self.assertEqual(restored.mail('diagnostic','status')['status'],'pending')
+
     def test_historical_scope_does_not_hide_resumed_or_new_work(self):
         with tempfile.TemporaryDirectory() as d:
             s,r,e=self.setup_sequence(Path(d));self.assertFalse(launch_ready(r,e)['developmentActive'])
@@ -65,6 +77,23 @@ class SequenceTest(unittest.TestCase):
             with self.assertRaises(ValueError):s.claim(r,e)
             e['observedAt']=0
             with self.assertRaises(ValueError):s.claim(r,e)
+
+    def test_new_development_between_stages_uses_adaptive_policy(self):
+        with tempfile.TemporaryDirectory() as d:
+            s,r,e=self.setup_sequence(Path(d));s.claim(r,e);s.complete('diagnostic',self.diagnostic(Path(d)))
+            e['snapshot']['threads'][0]['status']='active'
+            self.assertTrue(observation(e)['developmentActive'])
+            self.assertEqual(s.claim(r,e)['phase'],'six-hour')
+
+    def test_mail_cli_remains_usable_while_training_coordinator_is_locked(self):
+        with tempfile.TemporaryDirectory() as d:
+            s,r,e=self.setup_sequence(Path(d));s.claim(r,e);s.complete('diagnostic',self.diagnostic(Path(d)))
+            with (s.root/'coordinator.lock').open('a+') as lock:
+                fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                for action in ('status','claim','uncertain'):
+                    result=subprocess.run([sys.executable,'-m','righelt_training.sequence','--directory',str(s.directory),
+                        'mail','--phase','diagnostic','--action',action],capture_output=True,text=True,timeout=10,check=True)
+                    self.assertEqual(json.loads(result.stdout)['status'],{'claim':'sending'}.get(action,action if action!='status' else 'pending'))
 
     def test_email_uncertainty_requires_matching_reconciliation_and_no_changed_report(self):
         with tempfile.TemporaryDirectory() as d:

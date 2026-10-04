@@ -1,13 +1,16 @@
-import json
+import json,hashlib,subprocess,sys
+from contextlib import nullcontext
+from righelt_training.allocation import Allocation,append
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 from righelt_training.stage import execute
 
 
 class StageTests(unittest.TestCase):
-    def run_case(self,fail=None,healthy=True,resume=False,repeat=False,incomplete_arena=False,diagnostic=False,continuation=False,arena_reason='budget'):
+    def run_case(self,fail=None,healthy=True,resume=False,repeat=False,incomplete_arena=False,diagnostic=False,continuation=False,arena_reason='budget',exhausted_process=False):
         with TemporaryDirectory() as tmp:
             root=Path(tmp);run=root/'run';calls=[]
             args=SimpleNamespace(run_dir=run,activity_file=root/'activity',gate_report=root/'gates',parity_corpus=root/'corpus',stage='initial',seed=107,resume=root/'old.pt' if resume else None)
@@ -15,21 +18,38 @@ class StageTests(unittest.TestCase):
             if continuation:
                 args.continuation=root/'contract.json'
                 args.continuation.write_text(json.dumps({'sequenceId':'approved','phase':'six-hour','recoveryCheckpoint':str(root/'old.pt')}))
+            if exhausted_process:
+                run.mkdir();allocation=Allocation(root,run);allocation.create('initial')
             def invoke(argv):
+                if exhausted_process and '--prepare-arena' in argv:
+                    interval,_,_=allocation.begin('simulated-last-computation')
+                    append(allocation.path,{'event':'finished','allocation':allocation.key,'id':interval['id'],'chargedSeconds':21600,'reason':'completed'})
+                    code="from pathlib import Path; import sys; from righelt_training.allocation import Allocation; from righelt_training.supervisor import begin_phase; p=Path(sys.argv[1]); assert begin_phase(Allocation(p.parent,p),'prepare-arena',p,'test') is None"
+                    subprocess.run([sys.executable,'-c',code,str(run)],check=True,timeout=10)
+                    calls.append(argv);return
                 calls.append(argv);run.mkdir(exist_ok=True)
                 (run/'supervisor-result.json').write_text(json.dumps({'reason':'runner-failed' if len(calls)==fail else 'completed'}))
                 (run/'canary-report.json').write_text(json.dumps({'passed':True}))
                 (run/'runner-result.json').write_text(json.dumps({'reason':'validation-handoff'}))
-                (run/'latest.json').write_text(json.dumps({'checkpoint':str(run/'latest.pt'),'sha256':'latest'}))
+                (run/'latest.pt').write_bytes(b'trained')
+                (run/'latest.json').write_text(json.dumps({'checkpoint':str(run/'latest.pt'),'sha256':hashlib.sha256(b'trained').hexdigest()}))
                 (run/'trained-export-parity.json').write_text(json.dumps({'complete':True,'numericPassed':True}))
                 (run/'health-report.json').write_text(json.dumps({'complete':True,'healthy':healthy,'checkpoints':[{'path':str(run/'latest.pt'),'weightsSha256':'new'},{'path':str(run/'first.pt'),'weightsSha256':'old'}]}))
                 (run/'prepare-arena-result.json').write_text(json.dumps({'status':'completed','plan':str(run/'plan.json'),'planSha256':'frozen'}))
                 proof=run/'evaluations'/'frozen';proof.mkdir(parents=True,exist_ok=True)
                 (proof/'report.json').write_text(json.dumps({'mode':'diagnostic' if diagnostic else 'strict','reason':arena_reason if incomplete_arena else 'completion evidence incomplete','status':'inconclusive' if incomplete_arena else 'completed','completePairs':99 if incomplete_arena else 100,'completedGames':198 if incomplete_arena else 200,'identity':{'planSha256':'frozen'}}))
-            result=execute(args,invoke)
+            with (nullcontext() if exhausted_process else patch('righelt_training.stage.remaining_budget',return_value=500)):result=execute(args,invoke)
             if repeat:
-                calls.clear();result=execute(args,invoke)
+                calls.clear()
+                with (nullcontext() if exhausted_process else patch('righelt_training.stage.remaining_budget',return_value=500)):result=execute(args,invoke)
             return result,calls
+
+    def test_exhausted_supervisor_result_and_crash_resume_preserve_health(self):
+        result,calls=self.run_case(continuation=True,exhausted_process=True)
+        self.assertTrue(result['advancementEligible'])
+        self.assertIn('budget-exhausted-before-phase',result['reason'])
+        result,calls=self.run_case(continuation=True,exhausted_process=True,repeat=True)
+        self.assertTrue(result['advancementEligible']);self.assertEqual(calls,[])
 
     def test_one_allocation_all_phases(self):
         result,calls=self.run_case()

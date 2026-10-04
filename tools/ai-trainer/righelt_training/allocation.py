@@ -32,6 +32,9 @@ def alive(record):
 CONTINUATION_LIMITS={'six-hour':(21600,3600),'twelve-hour':(43200,7200)}
 
 
+class BudgetExhausted(ValueError):pass
+
+
 def contract_hash(contract):
     return hashlib.sha256(json.dumps(contract,sort_keys=True,allow_nan=False).encode()).hexdigest()
 
@@ -152,7 +155,7 @@ class Allocation:
         creation,charged,pending=self.accounting()
         if pending:raise ValueError('unsettled accounting interval')
         remaining=max(0,creation['seconds']-charged)
-        if remaining<=0:raise ValueError('approved supervised budget exhausted')
+        if remaining<=0:raise BudgetExhausted('approved supervised budget exhausted')
         row={'event':'started','allocation':self.key,'id':uuid.uuid4().hex,'phase':phase,
              'wall':time.time(),'monotonic':time.monotonic(),'boot':psutil.boot_time(),'owner':identity(os.getpid())}
         append(self.path,row)

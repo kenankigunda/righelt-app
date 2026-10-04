@@ -9,12 +9,24 @@ import sys
 from .checkpoint import atomic_json
 from .config import ROOT
 from .processes import install_stop_handlers,cleanup_owned
+from .allocation import Allocation,contract_hash
 
 
 class PhaseIncomplete(ValueError):
     def __init__(self,phase,reason):
         super().__init__(f'{phase}: {reason}')
         self.phase=phase;self.reason=reason
+
+
+def remaining_budget(directory):
+    creation,charged,pending=Allocation(Path(directory).parent,directory).accounting()
+    if pending:raise ValueError('stage has unsettled supervised computation')
+    return max(0,creation['seconds']-charged)
+
+
+def health_bindings(directory):
+    return {name:hashlib.sha256((Path(directory)/name).read_bytes()).hexdigest()
+            for name in ('health-report.json','trained-export-parity.json','latest.json')}
 
 
 def read(path):
@@ -70,7 +82,13 @@ def execute_diagnostic(args,invoke=None):
         report=directory/'evaluations'/digest/'report.json'
         phase('arena',['--arena-plan',preparation['plan'],*pair],report,lambda p:p.get('allAttemptsAccounted') is True and p.get('identity',{}).get('planSha256')==digest)
         result.update(read(report),phase='diagnostic',report=str(report),plan=preparation['plan'])
-    except (ValueError,OSError,KeyError,subprocess.SubprocessError) as error:result['reason']=str(error)
+    except (ValueError,OSError,KeyError,subprocess.SubprocessError) as error:
+        result['reason']=str(error)
+        if 'report' in locals() and report.exists():
+            partial=read(report)
+            if partial.get('identity',{}).get('planSha256')==digest:
+                result.update(partial,phase='diagnostic',report=str(report),plan=preparation['plan'],
+                              diagnosticGatePassed=False,status='inconclusive',reason=str(error))
     atomic_json(directory/'diagnostic-result.json',result)
     return result
 
@@ -87,6 +105,19 @@ def execute(args, invoke=None):
         invoke=invoke_supervisor
     revision=read(args.gate_report)['sourceRevision']
     result['sourceRevision']=revision
+    completed=directory/'stage-result.json'
+    if continuation and completed.exists():
+        prior=read(completed)
+        if (prior.get('advancementEligible') is True and prior.get('sourceRevision')==revision
+            and prior.get('sequenceId')==continuation['sequenceId'] and prior.get('phase')==continuation['phase']
+            and prior.get('continuationSha256')==contract_hash(continuation)
+            and prior.get('healthBindings')==health_bindings(directory)):
+            # An ended stage is not another request to run its unfinished strength
+            # matches. Recovery reuses the proven outcome without spending again.
+            remaining_budget(directory)
+            if hashlib.sha256(Path(prior['recoveryCheckpoint']).read_bytes()).hexdigest()!=prior['recoverySha256']:
+                raise ValueError('completed stage recovery checkpoint changed')
+            return prior
     def phase(name,flags,proof_name=None,valid=lambda data:True):
         receipt_path=directory/'phase-receipts'/f'{name}.json'
         proof=directory/proof_name if proof_name else None
@@ -98,6 +129,8 @@ def execute(args, invoke=None):
 
         result['phase']=name
         if directory.exists():atomic_json(directory/'stage-result.json',result)
+        optional_strength=bool(continuation and result.get('healthPassed') and name in ('prepare-validation','validation'))
+        if optional_strength and remaining_budget(directory)<=0:raise PhaseIncomplete(name,'budget-expired')
         invoke(common+flags)
         report=read(directory/'supervisor-result.json')
         if report['reason']!='completed':raise PhaseIncomplete(name,report['reason'])
@@ -120,6 +153,7 @@ def execute(args, invoke=None):
         result['health']=health
         if not health.get('healthy'):raise ValueError('pipeline health gate unmet')
         result['healthPassed']=True
+        if continuation:result['healthBindings']=health_bindings(directory)
         checkpoints=health['checkpoints'];candidate=checkpoints[0]
         opponent={'path':continuation['recoveryCheckpoint']} if continuation else next((p for p in checkpoints[1:] if p['weightsSha256']!=candidate['weightsSha256']),None)
         if opponent is None:raise ValueError('distinct evaluation checkpoints unavailable')
@@ -134,15 +168,18 @@ def execute(args, invoke=None):
         result['reason']=str(error)
         # Expected unfinished strength work does not invalidate proven health.
         # Process failures and unclassified engine/correctness errors still stop.
-        allowed={'budget','budget-expired','resource-stop','resource-pause','node-limit','deadline',
+        allowed={'budget','budget-expired','budget-exhausted-before-phase','resource-stop','resource-pause','node-limit','deadline',
                  'inference-budget','verification-budget','budget-or-resource-stop','opening-attempt-limit',
                  'verification-unfinished','search-recovery'}
         result['advancementEligible']=bool(continuation and result.get('healthPassed') and
             error.phase in ('prepare-validation','validation') and error.reason in allowed)
     except (ValueError,OSError,KeyError,subprocess.SubprocessError) as error:
         result['reason']=str(error)
+    if 'plan' in locals():
+        arena_report=directory/'evaluations'/plan['planSha256']/'report.json'
+        if arena_report.exists():result['strengthEvaluation']=read(arena_report)
     if continuation:
-        result.update(sequenceId=continuation['sequenceId'],phase=continuation['phase'])
+        result.update(sequenceId=continuation['sequenceId'],phase=continuation['phase'],continuationSha256=contract_hash(continuation))
         if (directory/'latest.json').exists():
             latest=read(directory/'latest.json')
             result.update(recoveryCheckpoint=latest['checkpoint'],recoverySha256=latest['sha256'])

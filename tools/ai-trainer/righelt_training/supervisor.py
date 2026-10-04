@@ -16,11 +16,20 @@ from .budget import Budget
 from .checkpoint import atomic_json
 from .config import CONFIG,CONFIG_SHA256,ROOT
 from .manifest import build_manifest,write_manifest,active_manifest,amend_manifest,manifest_hashes,dependency_inventory
-from .allocation import Allocation,validate_continuation
+from .allocation import Allocation,validate_continuation,BudgetExhausted
 from .processes import start_group,stop_group,install_stop_handlers,register_owned,cleanup_owned
 from .resources import AdaptivePolicy
 from .telemetry import Telemetry,read_device_memory
 from .resume import validate_reset_checkpoint,validate_continuation_checkpoint
+
+
+def begin_phase(allocation,phase,directory,manifest_digest):
+    try:return allocation.begin(phase)
+    except BudgetExhausted:
+        atomic_json(Path(directory)/'supervisor-result.json',{'reason':'budget-exhausted-before-phase',
+            'command':phase,'manifestSha256':manifest_digest,'allocationId':allocation.accounting()[0]['id'],
+            'observedAt':time.time(),'productionPromotion':False})
+        return None
 
 
 def validate_gate_report(report, source_revision, stage):
@@ -342,7 +351,9 @@ def main():
     else:
         args.run_dir.mkdir(parents=True,exist_ok=True)
         digest=write_manifest(manifest_path,manifest);runtime={}
-    interval,remaining,charged=allocation.begin(phase)
+    started_interval=begin_phase(allocation,phase,args.run_dir,digest)
+    if started_interval is None:return
+    interval,remaining,charged=started_interval
     reason='setup-failed'
     try:
         now=time.monotonic();wall=time.time()

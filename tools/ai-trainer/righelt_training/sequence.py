@@ -68,6 +68,7 @@ class Sequence:
         for phase in PHASES:
             path=self.report_path(phase)
             if not path.exists():return phase
+            self.ensure_mail_intent(phase)
             report=read(path)
             if not report.get('advancementEligible'):return None
         return None
@@ -75,8 +76,14 @@ class Sequence:
     def claim(self,receipt,envelope):
         phase=self.next_phase()
         if phase is None:return {'action':'finished-or-gate-unmet'}
-        launch_ready(receipt,envelope)
-        immutable(self.directory/'completion-receipt.json',receipt)
+        completion=self.directory/'completion-receipt.json'
+        if not (self.directory/'claims'/'diagnostic.json').exists():launch_ready(receipt,envelope)
+        else:
+            # Newly active work is protected by the live adaptive resource policy;
+            # it does not revoke an already-started conditional sequence.
+            observation(envelope)
+            if not completion.exists():raise ValueError('sequence launch receipt missing')
+        if not completion.exists():immutable(completion,receipt)
         directory=Path(self.config[{'diagnostic':'diagnosticDirectory','six-hour':'sixHourDirectory','twelve-hour':'twelveHourDirectory'}[phase]])
         allocation=Allocation(self.root,directory)
         if phase=='diagnostic':
@@ -129,12 +136,17 @@ class Sequence:
                 'evidence':str(Path(evidence).resolve()),'evidenceSha256':digest(evidence),'advancementEligible':passed,
                 'allocationId':creation['id'],'budgetSeconds':creation['seconds'],'chargedSeconds':charged}
         immutable(self.report_path(phase),report)
+        self.ensure_mail_intent(phase)
+        return report
+
+    def ensure_mail_intent(self,phase):
+        # Recovery closes the crash window between immutable report publication
+        # and outbox publication before progression exposes the next stage.
         notification_id=hashlib.sha256(f"{self.config['sequenceId']}:{phase}".encode()).hexdigest()
         intent={'id':notification_id,'phase':phase,'report':str(self.report_path(phase)),
                 'reportSha256':digest(self.report_path(phase)),
                 'subject':f'Righelt T-107: {phase} results [{notification_id[:16]}]'}
         immutable(self.directory/'mail'/f'{phase}.json',intent)
-        return report
 
     def mail(self,phase,action,receipt=None):
         intent=read(self.directory/'mail'/f'{phase}.json')
@@ -169,7 +181,8 @@ def main():
     done=sub.add_parser('complete');done.add_argument('--phase',choices=PHASES,required=True);done.add_argument('--evidence',type=Path,required=True)
     mail=sub.add_parser('mail');mail.add_argument('--phase',choices=PHASES,required=True);mail.add_argument('--action',choices=('status','claim','sent','uncertain','confirmed-not-sent'),default='status');mail.add_argument('--receipt',type=Path)
     sub.add_parser('status');args=parser.parse_args()
-    with (args.directory.parent/'coordinator.lock').open('a+') as lock:
+    lock_path=args.directory/'mail.lock' if args.command=='mail' else args.directory.parent/'coordinator.lock'
+    with lock_path.open('a+') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         sequence=Sequence(args.directory)
         if args.command=='claim':result=sequence.claim(read(args.completion),read(args.snapshot))

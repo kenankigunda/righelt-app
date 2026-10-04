@@ -21,6 +21,7 @@ from .model import PolicyValueNet
 from .runner import stop_worker,verify_game,engine_command
 from .replay import partition_for_family
 from .curriculum import family_for_root
+from .fallback_report import add_game as add_fallback_game,observed_report
 
 
 def partition_identities(plan):
@@ -306,6 +307,12 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
         if state['identity']!=identity:raise ValueError('evaluation allocation or frozen plan changed')
     else:state={'schema':1,'identity':identity,'records':{},'attempts':[]}
     expected={(pair['id'],seat):make_job(plan,pair,seat,digest) for pair in plan['pairs'] for seat in ('P1','P2')}
+    accepted_fallback={}
+    supervision={'policyEligiblePositions':0,'valueEligiblePositions':0,'evaluationUsedForTraining':False}
+    def count_accepted(game):
+        add_fallback_game(accepted_fallback,game)
+        supervision['policyEligiblePositions']+=sum(d.get('policyMask',True) for d in game['decisions'])
+        if game['termination']=='terminal':supervision['valueEligiblePositions']+=len(game['decisions'])
     for key,record in state['records'].items():
         pair_id,seat=record['pairId'],record['candidateSeat']
         if (pair_id,seat) not in expected:raise ValueError('unknown resumed pair')
@@ -317,6 +324,7 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
         job=expected[(pair_id,seat)]
         outcome='truncated' if game['termination']=='truncated' else game['outcome']['status']
         if game['id']!=job['id'] or outcome!=record['outcome'] or key!=job['id']:raise ValueError('evaluation record mismatch')
+        count_accepted(game)
     for attempt_number,attempt in enumerate(state['attempts'],1):
         if diagnostic and attempt.get('status')=='running':
             job=expected[(attempt['pairId'],attempt['candidateSeat'])]
@@ -404,6 +412,7 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
                     if (decision.get('modelVersion')!=job['modelVersions'][controller]
                         or decision.get('profileVersion')!=job['profileVersions'][controller]):raise ValueError('decision model identity mismatch')
                 path,sha=archive_game(output/'games',game)
+                count_accepted(game)
                 state['records'][job['id']]={'pairId':pair['id'],'candidateSeat':seat,
                     'outcome':'truncated' if game['termination']=='truncated' else game['outcome']['status'],
                     'archive':str(path.relative_to(output)),'sha256':sha}
@@ -434,6 +443,11 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
                 for reason in sorted({(a.get('reason') or 'interrupted') for a in unfinished})}}
     if diagnostic:report.update(diagnostic_gate(plan,state['records'],state['attempts']))
     report['workload']=plan.get('workload')
+    report.update(acceptedReplayGames=len(state['records']),acceptedFallback=accepted_fallback,supervisionAvailability=supervision)
+    events=output/'decision-events.jsonl'
+    if events.exists():
+        observed=observed_report(json.loads(line) for line in events.read_text().splitlines())
+        report['observedFallback']={'coverage':observed['coverage'],'groups':observed.get('groups',{})}
     atomic_json(output/'report.json',report);return report
 
 
