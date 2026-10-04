@@ -220,4 +220,6 @@ Clear (or leave as audit trail) when the ticket moves to Ready for acceptance.
 
 ## Validation evidence and PR shepherding
 
-Use the repo skill `skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. Run `pnpm validate:local` before completion; use `pnpm validate:integrated --manifest FILE` for ordered PR sets. Inspect actual screenshots, repair source PRs, publish the evidence report, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.
+Use the dedicated sibling `righelt-validation-tools/skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. It is pinned to a merged release; invoke its CLI with an explicit `--candidate /absolute/path`. Do not implicitly execute candidate-local tooling. When developing validation tooling itself, review and test the candidate changes in isolation, then release/install separately. See `skills/validate-and-shepherd/references/distribution.md`.
+
+Validate introduced behavior and affected contracts, reuse compatible exact-revision evidence, and finish with required combined proof. Curate screenshots while preserving raw artifacts. Independent review is bounded to the coherent diff and changed findings. Separate ready-for-review, merge-ready/authorized, and activation-ready/authorized states. Scheduling is opt-in; a paused automation stays paused. Parent workspace templates are applied only during the explicit released installation, not while this tooling branch is under review.

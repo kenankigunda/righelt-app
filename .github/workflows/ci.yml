@@ -55,6 +55,18 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+      - name: Record exact CI environment
+        if: always()
+        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/push.json
+
+      - name: Upload exact CI environment
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-provenance-push-${{ github.run_attempt }}
+          path: test-results/ci-provenance/push.json
+          if-no-files-found: error
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -76,6 +88,18 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Record exact CI environment
+        if: always()
+        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/typecheck.json
+
+      - name: Upload exact CI environment
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-provenance-typecheck-${{ github.run_attempt }}
+          path: test-results/ci-provenance/typecheck.json
+          if-no-files-found: error
+
   generated-web-runtime:
     name: Generated web runtime
     runs-on: ubuntu-latest
@@ -96,6 +120,18 @@ jobs:
 
       - name: Generated web runtime is up to date
         run: pnpm check:web-engine-generated
+
+      - name: Record exact CI environment
+        if: always()
+        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/generated-web-runtime.json
+
+      - name: Upload exact CI environment
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-provenance-generated-web-runtime-${{ github.run_attempt }}
+          path: test-results/ci-provenance/generated-web-runtime.json
+          if-no-files-found: error
 
   engine-unit:
     name: Engine unit
@@ -126,6 +162,18 @@ jobs:
           path: test-results/engine-unit/results.xml
           if-no-files-found: ignore
 
+      - name: Record exact CI environment
+        if: always()
+        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/engine-unit.json
+
+      - name: Upload exact CI environment
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-provenance-engine-unit-${{ github.run_attempt }}
+          path: test-results/ci-provenance/engine-unit.json
+          if-no-files-found: error
+
   web-unit:
     name: Web unit
     runs-on: ubuntu-latest
@@ -154,6 +202,18 @@ jobs:
           name: junit-web-unit
           path: test-results/web-unit/results.xml
           if-no-files-found: ignore
+
+      - name: Record exact CI environment
+        if: always()
+        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/web-unit.json
+
+      - name: Upload exact CI environment
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-provenance-web-unit-${{ github.run_attempt }}
+          path: test-results/ci-provenance/web-unit.json
+          if-no-files-found: error
 
   engine-integration:
     name: Engine integration
@@ -184,6 +244,18 @@ jobs:
           path: test-results/engine-integration/results.xml
           if-no-files-found: ignore
 
+      - name: Record exact CI environment
+        if: always()
+        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/engine-integration.json
+
+      - name: Upload exact CI environment
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-provenance-engine-integration-${{ github.run_attempt }}
+          path: test-results/ci-provenance/engine-integration.json
+          if-no-files-found: error
+
   api-handler-integration:
     name: API handler integration
     runs-on: ubuntu-latest
@@ -212,6 +284,18 @@ jobs:
           name: junit-api-handler-integration
           path: test-results/api-handler-integration/results.xml
           if-no-files-found: ignore
+
+      - name: Record exact CI environment
+        if: always()
+        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/api-handler-integration.json
+
+      - name: Upload exact CI environment
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-provenance-api-handler-integration-${{ github.run_attempt }}
+          path: test-results/ci-provenance/api-handler-integration.json
+          if-no-files-found: error
 
   api-worker-integration:
     name: API worker integration
@@ -242,6 +326,18 @@ jobs:
           path: test-results/api-worker-integration/results.xml
           if-no-files-found: ignore
 
+      - name: Record exact CI environment
+        if: always()
+        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/api-worker-integration.json
+
+      - name: Upload exact CI environment
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-provenance-api-worker-integration-${{ github.run_attempt }}
+          path: test-results/ci-provenance/api-worker-integration.json
+          if-no-files-found: error
+
   web-integration:
     name: Web integration
     runs-on: ubuntu-latest
@@ -270,6 +366,18 @@ jobs:
           name: junit-web-integration
           path: test-results/web-integration/results.xml
           if-no-files-found: ignore
+
+      - name: Record exact CI environment
+        if: always()
+        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/web-integration.json
+
+      - name: Upload exact CI environment
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-provenance-web-integration-${{ github.run_attempt }}
+          path: test-results/ci-provenance/web-integration.json
+          if-no-files-found: error
 
   e2e:
     name: E2E
@@ -327,6 +435,18 @@ jobs:
             test-results/e2e/artifacts
             test-results/e2e-responsive/artifacts
           if-no-files-found: ignore
+
+      - name: Record exact CI environment
+        if: always()
+        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/e2e.json
+
+      - name: Upload exact CI environment
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-provenance-e2e-${{ github.run_attempt }}
+          path: test-results/ci-provenance/e2e.json
+          if-no-files-found: error
 
   test-results:
     name: Test results

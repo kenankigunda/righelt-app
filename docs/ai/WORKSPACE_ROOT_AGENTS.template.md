@@ -62,4 +62,4 @@ Whenever you change parent-workspace guidance, permissions, or settings, update 
 
 ## Validation and shepherding
 
-For end-to-end evidence, integrated PR validation, and autonomous repairs, read `__APP_REPO__/skills/validate-and-shepherd/SKILL.md`. The skill includes recipient preflight, hosted review reports, and explicit email merge authorization.
+For end-to-end evidence, integrated PR validation, and autonomous repairs, read the released `__VALIDATION_TOOLS__/skills/validate-and-shepherd/SKILL.md`. Use its CLI with `--candidate /absolute/path` for the intended app checkout. The installed tools stay pinned to a merged revision; a candidate branch is not the tooling source. If the released checkout is missing, report the missing installation and prepare the explicit installer command; do not silently use an unmerged candidate skill. Review readiness, merge authorization, and deployment activation are separate. A paused schedule stays paused until explicitly resumed.

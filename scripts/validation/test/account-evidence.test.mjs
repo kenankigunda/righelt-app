@@ -25,3 +25,14 @@ test('personal home evidence requires deliberate lower scroll positions at every
  verifyAccountEvidence(rows,{capabilities:{personalHome:true}});
  for(const label of homeLabels){const missing=structuredClone(rows);missing[0].images=missing[0].images.filter(image=>!image.caption.startsWith(label+' ·'));assert.throws(()=>verifyAccountEvidence(missing,{capabilities:{personalHome:true}}),/Missing account checkpoint/);}
 });
+
+test('text-only proof requires passed workflows for declared clients without images',()=>{
+ const rows=['mobile','mid-wide'].map(v=>item(v,FRESH_ACCOUNT_WORKFLOW,[]));verifyAccountEvidence(rows,{visualMode:'none',viewports:['mobile','mid-wide']});assert.throws(()=>verifyAccountEvidence(rows,{visualMode:'none'}),/full-wide/);rows[1].status='failed';assert.throws(()=>verifyAccountEvidence(rows,{visualMode:'none',viewports:['mobile','mid-wide']}),/Missing or duplicate/);
+});
+test('walkthrough requires selected context checkpoints and exact workflows',()=>{
+ const rows=['mobile','mid-wide'].map(v=>item(v,FRESH_ACCOUNT_WORKFLOW,['account-home']));for(const row of rows)row.images=row.images.filter(i=>i.caption.endsWith('context'));const options={visualMode:'walkthrough',viewports:['mobile','mid-wide'],checkpoints:['account-home']};verifyAccountEvidence(rows,options);assert.throws(()=>verifyAccountEvidence(rows.slice(1),options),/Missing or duplicate/);rows[0].images=[];assert.throws(()=>verifyAccountEvidence(rows,options),/account-home/);
+});
+
+test('walkthrough still requires full-wide behavioral pass without full-wide images',()=>{
+ const rows=['mobile','mid-wide','full-wide'].map(v=>item(v,FRESH_ACCOUNT_WORKFLOW,v==='full-wide'?[]:['account-home']));verifyAccountEvidence(rows,{visualMode:'walkthrough',checkpoints:['account-home']});rows[2].status='failed';assert.throws(()=>verifyAccountEvidence(rows,{visualMode:'walkthrough',checkpoints:['account-home']}),/full-wide/);
+});

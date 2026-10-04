@@ -211,9 +211,12 @@ export async function startAccountStack({ root = resolveCandidateRoot(), persist
     state = await prepareAccountState(persistRoot);
     if (stopping) { await state.cleanup(); throw new Error('Account fixture shutdown requested'); }
     const configs = [];
+    const snapshot = path.join(persistRoot, 'private-config');
+    await mkdir(snapshot, { recursive: true, mode: 0o700 });
     for (const [index, folder] of ['api', 'auth', 'auth-hash'].entries()) {
       const file = path.join(state.temporary, `${folder}.toml`);
       await writeFile(file, candidateConfig(sources[index], { root, folder, role: index === 0 ? 'api' : 'service', secret: state.secret }), { mode: 0o600 }); configs.push(file);
+      await writeFile(path.join(snapshot, `${folder}.toml`), await readFile(file), { mode: 0o600 });
     }
     const d1 = ['exec', 'wrangler', 'd1'];
     const dbArgs = ['DB', '--config', configs[0], '--local', '--persist-to', state.persist];

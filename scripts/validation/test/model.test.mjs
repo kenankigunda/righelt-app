@@ -44,3 +44,12 @@ test('account proof directory is mapped without accepting unrelated validation f
  const unknown=['validation-account-other/example.mjs','validation-other-e2e/example.mjs'];
  assert.deepEqual(coverage([...known,...unknown]).unmapped,unknown);
 });
+
+test('public items allowlist text/client provenance and exclude nested private fields',()=>{
+ const p=publicRun({stages:[{items:[{id:'i',title:'journey',status:'failed',privateLog:'SECRET',client:{browser:'webkit',width:390,baseURL:'SECRET'},behaviors:[{label:'owned move',checkpoint:'owned-move',raw:'SECRET'}],images:[{src:'images/a.png',caption:'board',privatePath:'SECRET'}]}]}]});assert(!JSON.stringify(p).includes('SECRET'));assert.equal(p.stages[0].items[0].client.browser,'webkit');assert.equal(p.stages[0].items[0].behaviors[0].label,'owned move');
+});
+
+test('historical attempts retain failures without private paths, payloads or images',()=>{
+ const attempt={stages:[{id:'old',title:'Earlier',status:'failed',checks:[{name:'E2E',status:'failed',log:'SECRET'}],items:[{images:[{src:'SECRET'}]}]}],risks:['SECRET'],publication:{url:'https://example.test/report',directory:'SECRET',stableUrl:'file:///SECRET'}};
+ const p=publicRun({attempts:[attempt],history:[{status:'failed',logs:'SECRET'}],stages:[]});assert(!JSON.stringify(p).includes('SECRET'));assert.equal(p.history[0].stages[0].status,'failed');assert.equal(p.history[1].links[0].url,'https://example.test/report');
+});
