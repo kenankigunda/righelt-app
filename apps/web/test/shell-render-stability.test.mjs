@@ -163,7 +163,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /element\.style\.width = `\$\{toWidth\}px`;/);
   assert.match(source, /element\.style\.maxWidth = `\$\{toWidth\}px`;/);
   assert.match(source, /const capturePanelHeights = \(\) =>/);
-  assert.match(source, /const shouldPatchFlyoutsOnly = activeResultGameId !== currentRoute\.gameId && shouldPatchMountedFlyouts\(routeKey, baseRouteKey\);/);
+  assert.match(source, /const shouldPatchFlyoutsOnly = !hadResultView && activeResultGameId !== currentRoute\.gameId && shouldPatchMountedFlyouts\(routeKey, baseRouteKey\);/);
   assert.match(source, /const previousPanelHeights = animatePanels && !shouldPatchFlyoutsOnly \? capturePanelHeights\(\) : \[\];/);
   assert.match(source, /const previousFlyoutRects = animatePanels \? captureFlyoutRects\(\) : new Map\(\);/);
   assert.match(source, /const animatePanelHeightChange = \(panelEl, fromHeight\) => \{/);

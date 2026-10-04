@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { expectRematchRadioGeometry } from "../support/rematch-layout.mjs";
 const scenario = JSON.parse(readFileSync(new URL("../../apps/web/scenarios/catalog.json", import.meta.url))).scenarios.find(s => s.title === "Capture supply point to win by unsupplying the commander");
 test.beforeEach(async () => { expect((await fetch(`http://127.0.0.1:${Number(process.env.RIGHELT_AUTH_E2E_WEB_PORT || 9988)+100}/reset-limits`, { method: "POST" })).ok).toBe(true); });
-for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game has persistent result, review and swapped rematch`, async ({ page }, testInfo) => {
+for (const controlledOrder of [false, true]) for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game has persistent result, review and swapped rematch${controlledOrder ? " with controlled review ordering" : ""}`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 375, height: 812 });
   let creationHeaders;
   page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creationHeaders = request.headers(); });
@@ -62,9 +62,52 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await expect(page.getByTestId("game-result")).toHaveCount(0);
   await page.getByRole("button", { name: "View result" }).click();
-  await page.getByRole("button", { name: "Review game" }).click();
-  await expect(page.getByTestId("game-shell")).toBeVisible();
-  await page.getByRole("button", { name: "View result" }).click();
+  for (let cycle = 0; cycle < 2; cycle++) {
+    if (controlledOrder && cycle === 0) {
+      expect(new URL(page.url()).hash).not.toContain("panel=history");
+      // Explicit event-order control: keep the existing gesture gate held through
+      // the trusted click, then deliver the changed hash before its render flush.
+      await page.evaluate(() => {
+        window.__reviewHashchangeOrder = null;
+        window.addEventListener("click", event => {
+          const control = event.target.closest?.('[data-action="analysis"]');
+          if (control) control.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        }, { capture: true, once: true });
+        window.addEventListener("click", event => {
+          if (!event.target.closest?.('[data-action="analysis"]')) return;
+          window.__reviewHashchangeOrder = { trusted: event.isTrusted, hash: location.hash };
+          window.dispatchEvent(new HashChangeEvent("hashchange"));
+          // Release through the same public event path, without altering timers.
+          window.dispatchEvent(new PointerEvent("pointerup"));
+        }, { once: true });
+      });
+    }
+    await page.getByRole("button", { name: "Review game" }).click();
+    if (controlledOrder && cycle === 0) {
+      const ordering = await page.evaluate(() => window.__reviewHashchangeOrder);
+      expect(ordering.trusted).toBe(true);
+      expect(ordering.hash).toContain("panel=history");
+    }
+    await expect(page.getByTestId("game-shell")).toBeVisible();
+    await expect(page.getByTestId("game-result")).toHaveCount(0);
+    // Read the real authenticated HTTP projection, not the optimistic creation
+    // object or a warm socket snapshot. Repeating catches persistence regressions.
+    const projected = await page.evaluate(async gameId => {
+      const session = await (await fetch("/api/auth/session")).json();
+      const response = await fetch(`/api/shell/games/${encodeURIComponent(gameId)}`, {
+        headers: { "X-Righelt-Auth-Version": "1", "X-Righelt-Session": session.contextId },
+      });
+      return { status: response.status, body: await response.json() };
+    }, gameId);
+    expect(projected.status).toBe(200);
+    if (opponent === "self") expect(projected.body.game.selfPlayStartSide).toBe("p2");
+    if (cycle === 0) {
+      await page.getByRole("button", { name: "Board", exact: true }).click();
+      await expect(page).not.toHaveURL(/panel=history/);
+    }
+    await page.getByRole("button", { name: "View result" }).click();
+    await expect(page.getByTestId("game-result").getByRole("heading", { name: "Loss" })).toBeVisible();
+  }
   await page.getByRole("button", { name: "Play again" }).click();
   const rematch = page.getByRole("dialog", { name: "Play again" });
   await expect(rematch.getByLabel("Opponent")).toHaveValue(opponent);

@@ -3923,7 +3923,8 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   const routeKey = getRouteRenderKey();
   const baseRouteKey = getBaseRouteRenderKey();
   const restoreScenarioDraftFocus = captureScenarioDraftFocus(baseRouteKey);
-  const shouldPatchFlyoutsOnly = activeResultGameId !== currentRoute.gameId && shouldPatchMountedFlyouts(routeKey, baseRouteKey);
+  // Leaving a result changes the main view even when only the panel hash changed.
+  const shouldPatchFlyoutsOnly = !hadResultView && activeResultGameId !== currentRoute.gameId && shouldPatchMountedFlyouts(routeKey, baseRouteKey);
   const previousPanelHeights = animatePanels && !shouldPatchFlyoutsOnly ? capturePanelHeights() : [];
   const previousFlyoutRects = animatePanels ? captureFlyoutRects() : new Map();
   syncShellLayoutMode();

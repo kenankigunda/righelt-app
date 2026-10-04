@@ -592,6 +592,7 @@ const normalizePersistedGame = (
     updatedAt: typeof parsed.updatedAt === "string" && parsed.updatedAt ? parsed.updatedAt : row.updated_at || row.created_at || now(),
     gameplayRevision: Number.isSafeInteger(row.gameplay_revision) && Number(row.gameplay_revision) >= 0 ? Number(row.gameplay_revision) : 0,
     selfPlayMode: parsed.selfPlayMode === true || parsed.playgroundMode === true,
+    ...(parsed.selfPlayStartSide === "p1" || parsed.selfPlayStartSide === "p2" ? { selfPlayStartSide: parsed.selfPlayStartSide } : {}),
     board: { state: boardState },
     player1: normalizeParticipant(parsed.player1, "player1", mismatches),
     player2: normalizeParticipant(parsed.player2, "player2", mismatches),
