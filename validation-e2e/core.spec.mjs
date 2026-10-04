@@ -1,8 +1,11 @@
 import {test,expect} from '@playwright/test';
 import {readFile,writeFile} from 'node:fs/promises';
+import {candidateCapabilities} from '../scripts/validation/capabilities.mjs';
+import {makeValidationMove} from '../scripts/validation/browser-move.mjs';
 import {proof} from '../scripts/validation/proof.mjs';
 import {historySnapshot,assertHistoryPreserved} from '../scripts/validation/history-continuity.mjs';
-import {createGameFromHome,openDirectGameLink,joinAsViewer,makeAnyLegalMove,getHistoryMoveCount,setOfflineState} from '../e2e/support/app.mjs';
+import {createGameFromHome,openDirectGameLink,joinAsViewer,getHistoryMoveCount,setOfflineState} from '../e2e/support/app.mjs';
+const capabilities=await candidateCapabilities(process.env.RIGHELT_VALIDATION_TARGET_ROOT||process.cwd());
 async function geometry(page){await expect(page.getByTestId('game-board')).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2)).toBe(true);}
 async function authoritativeGame(page){return page.evaluate(async()=>{
  const id=decodeURIComponent(location.hash.match(/^#\/game\/([^?]+)/)[1]);
@@ -26,9 +29,9 @@ test('create, move, viewer live update, reload and reconnect',async({page,contex
   await geometry(page);await proof(page,info,'created',page.getByTestId('game-board'));
   if(info.project.use.hasTouch)expect(await page.evaluate(()=>navigator.maxTouchPoints>0&&!matchMedia('(any-hover: hover)').matches)).toBe(true);
   await openDirectGameLink(viewer,baseURL,gameHash);await joinAsViewer(viewer);const before=await getHistoryMoveCount(viewer);
-  await makeAnyLegalMove(page);await expect.poll(()=>getHistoryMoveCount(viewer)).toBeGreaterThan(before);
+  await makeValidationMove(page,capabilities);await expect.poll(()=>getHistoryMoveCount(viewer)).toBeGreaterThan(before);
   await viewer.reload();await expect.poll(()=>getHistoryMoveCount(viewer)).toBeGreaterThan(before);await geometry(viewer);await proof(viewer,info,'viewer-reloaded',viewer.getByTestId('game-board'));
-  await setOfflineState(viewer,true);const offlineCount=await getHistoryMoveCount(viewer);await makeAnyLegalMove(page,'p2');await setOfflineState(viewer,false);await expect(viewer.getByTestId('game-shell')).toBeVisible();await expect.poll(()=>getHistoryMoveCount(viewer)).toBeGreaterThan(before);
+  await setOfflineState(viewer,true);const offlineCount=await getHistoryMoveCount(viewer);await makeValidationMove(page,capabilities,'p2');await setOfflineState(viewer,false);await expect(viewer.getByTestId('game-shell')).toBeVisible();await expect.poll(()=>getHistoryMoveCount(viewer)).toBeGreaterThan(before);
   await expect.poll(()=>getHistoryMoveCount(viewer)).toBeGreaterThan(offlineCount);
   await proof(viewer,info,'reconnected',viewer.getByTestId('game-board'));
   // Persistent synthetic fixture: the next merge stage must still hydrate this identity/game.

@@ -1,0 +1,48 @@
+{
+  "version": 2,
+  "repository": "owner/repo",
+  "base": "main",
+  "lanes": 2,
+  "mergeMethod": "squash",
+  "questions": [
+    {
+      "id": "multiplayer-continuity",
+      "description": "Do moves, history and reconnect remain consistent across clients and upgrades?",
+      "paths": [
+        "apps/",
+        "packages/",
+        "db/",
+        "e2e/"
+      ],
+      "checks": [
+        "Typecheck",
+        "Generated runtime",
+        "Unit",
+        "Integration",
+        "E2E",
+        "Responsive proof"
+      ]
+    }
+  ],
+  "prs": [
+    {
+      "number": 123,
+      "dependsOn": [],
+      "tests": [
+        "e2e/workflows/reconnect-recovery.spec.mjs"
+      ],
+      "rationale": "Transport boundary: reconnect and retained history; remaining browser matrix at final candidate."
+    }
+  ],
+  "visual": {
+    "viewports": [
+      "mobile",
+      "mid-wide"
+    ],
+    "checkpoints": [
+      "created",
+      "reconnected",
+      "upgrade-retained"
+    ]
+  }
+}
