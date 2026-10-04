@@ -47,7 +47,12 @@ test("cancellation before and after evaluator await rejects stale work", async (
 });
 
 test("invalid model values and masked logits are rejected", async () => {
-  await assert.rejects(selectMove({ state: initial(), seed: 1 }, async () => ({ policyLogits: new Float32Array(2801), value: NaN })), /model output/);
+  for (const value of [NaN, Infinity, -Infinity, 1.0000001192092896, -1.0000001192092896, 1.01, -1.01]) {
+    await assert.rejects(selectMove({ state: initial(), seed: 1 }, async () => ({ policyLogits: new Float32Array(2801), value })), /model output/);
+  }
+  for (const length of [0, 2800, 2802]) {
+    await assert.rejects(selectMove({ state: initial(), seed: 1 }, async () => ({ policyLogits: new Float32Array(length), value: 0 })), /model output/);
+  }
   const logits = new Float32Array(2801); logits[0] = Infinity;
   await assert.rejects(selectMove({ state: initial(), seed: 1 }, async () => ({ policyLogits: logits, value: 0 })), /Non-finite/);
 });
