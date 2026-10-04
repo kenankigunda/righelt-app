@@ -13,7 +13,8 @@ export function checkoutCommit(log){
 }
 // Deliberately supports this repository's indented workflow, not arbitrary YAML or shell programs.
 export function workflowJobs(text){
- const jobs=[];const blocks=text.matchAll(/^  ([a-z][a-z0-9-]*):\n([\s\S]*?)(?=^  [a-z][a-z0-9-]*:\n|$(?![\s\S]))/gm);
+ const section=text.split(/^jobs:\s*$/m)[1];if(!section||!/^\s*\n  [a-z][a-z0-9-]*:\n/.test(section))throw Error('Workflow jobs must begin with a job mapping');
+ const jobs=[];const blocks=section.matchAll(/^  ([a-z][a-z0-9-]*):\n([\s\S]*?)(?=^  [a-z][a-z0-9-]*:\n|$(?![\s\S]))/gm);
  for(const [,id,body] of blocks){
   const name=/^    name: (.+)$/m.exec(body)?.[1],runner=/^    runs-on: (.+)$/m.exec(body)?.[1];if(!name||!runner)continue;
   const steps=[];

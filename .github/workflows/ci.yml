@@ -55,18 +55,6 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-      - name: Record exact CI environment
-        if: always()
-        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/push.json
-
-      - name: Upload exact CI environment
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-provenance-push-${{ github.run_attempt }}
-          path: test-results/ci-provenance/push.json
-          if-no-files-found: error
-
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest

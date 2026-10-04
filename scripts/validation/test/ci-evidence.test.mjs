@@ -84,3 +84,10 @@ test('persisted CI evidence requires exact name/tree/command, expiry and survivi
  assert.equal(await loadCIReceipt(file,{...options,tree:head}),null);assert.equal(await loadCIReceipt(file,{...options,argv:['pnpm','test:unit']}),null);assert.equal(await loadCIReceipt(file,{...options,name:'Unit'}),null);assert.equal(await loadCIReceipt(file,{...options,now:Date.now()+86400001}),null);
  await writeFile(imported.receipts.Typecheck.evidence[0].archive,'corrupt');assert.equal(await loadCIReceipt(file,options),null);
 });
+
+test('tracked workflow has job mappings and provenance steps only inside real jobs',async()=>{
+ const source=await readFile(new URL('../../../.github/workflows/ci.yml',import.meta.url),'utf8');
+ const {workflowJobs}=await import('../ci-evidence.mjs');const jobs=workflowJobs(source);assert.equal(jobs.length,10);assert.ok(!jobs.some(j=>j.id==='push'));
+ for(const job of jobs.filter(j=>j.id!=='test-results'))assert.equal(job.steps.filter(s=>s.name==='Record exact CI environment').length,1);
+ assert.throws(()=>workflowJobs(source.replace('jobs:\n','jobs:\n      - name: invalid\n')),/job mapping/);
+});
