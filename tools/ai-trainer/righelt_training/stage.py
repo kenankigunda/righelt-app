@@ -11,6 +11,12 @@ from .config import ROOT
 from .processes import install_stop_handlers,cleanup_owned
 
 
+class PhaseIncomplete(ValueError):
+    def __init__(self,phase,reason):
+        super().__init__(f'{phase}: {reason}')
+        self.phase=phase;self.reason=reason
+
+
 def read(path):
     return json.loads(Path(path).read_text())
 
@@ -31,15 +37,56 @@ def invoke_supervisor(argv):
         raise
 
 
+def execute_diagnostic(args,invoke=None):
+    """Use the existing evaluation allocation; never create a training budget."""
+    from .arena import RESTART_WORKLOAD
+    directory=args.run_dir.resolve();invoke=invoke or invoke_supervisor
+    common=[sys.executable,'-m','righelt_training.supervisor','--run-dir',str(directory),
+            '--activity-file',str(args.activity_file.resolve()),'--gate-report',str(args.gate_report.resolve()),
+            '--stage','overnight','--seed',str(args.seed),'--resume',str(args.resume.resolve())]
+    pair=['--candidate-checkpoint',str(args.resume.resolve()),'--opponent-checkpoint',str(args.opponent_checkpoint.resolve())]
+    result={'schema':1,'phase':'diagnostic','status':'inconclusive','diagnosticGatePassed':False,
+            'sourceRevision':read(args.gate_report)['sourceRevision'],'productionPromotion':False}
+    def phase(name,flags,proof,valid):
+        receipt=directory/'phase-receipts'/f'diagnostic-{name}.json'
+        if receipt.exists() and proof.exists():
+            prior=read(receipt)
+            if (prior['sourceRevision']==result['sourceRevision'] and
+                prior['proofSha256']==hashlib.sha256(proof.read_bytes()).hexdigest() and valid(read(proof))):return
+        invoke(common+flags)
+        if read(directory/'supervisor-result.json')['reason']!='completed':raise ValueError(f'diagnostic {name} unfinished')
+        if not proof.exists() or not valid(read(proof)):raise ValueError(f'diagnostic {name} incomplete')
+        atomic_json(receipt,{'sourceRevision':result['sourceRevision'],'proofSha256':hashlib.sha256(proof.read_bytes()).hexdigest()})
+    try:
+        phase('export',['--export-parity','--parity-corpus',str(args.parity_corpus.resolve())],directory/'trained-export-parity.json',lambda p:p.get('complete') is True and p.get('numericPassed') is True)
+        parity=read(directory/'trained-export-parity.json')
+        if not parity.get('complete') or not parity.get('numericPassed'):raise ValueError('diagnostic export failed')
+        phase('prepare',['--prepare-arena','--diagnostic',*pair],directory/'prepare-arena-result.json',lambda p:p.get('status')=='completed' and p.get('preparedPairs')==10)
+        preparation=read(directory/'prepare-arena-result.json')
+        if preparation.get('status')!='completed' or preparation.get('preparedPairs')!=10:raise ValueError('diagnostic preparation incomplete')
+        from .arena import read_frozen_plan
+        plan,digest=read_frozen_plan(preparation['plan'])
+        if plan.get('workload')!=RESTART_WORKLOAD:raise ValueError('diagnostic workload mismatch')
+        report=directory/'evaluations'/digest/'report.json'
+        phase('arena',['--arena-plan',preparation['plan'],*pair],report,lambda p:p.get('allAttemptsAccounted') is True and p.get('identity',{}).get('planSha256')==digest)
+        result.update(read(report),phase='diagnostic',report=str(report),plan=preparation['plan'])
+    except (ValueError,OSError,KeyError,subprocess.SubprocessError) as error:result['reason']=str(error)
+    atomic_json(directory/'diagnostic-result.json',result)
+    return result
+
+
 def execute(args, invoke=None):
     directory=args.run_dir.resolve()
     result={'schema':1,'stage':args.stage,'status':'inconclusive','phase':'training','productionPromotion':False}
     common=[sys.executable,'-m','righelt_training.supervisor','--run-dir',str(directory),
             '--activity-file',str(args.activity_file.resolve()),'--gate-report',str(args.gate_report.resolve()),
             '--stage',args.stage,'--seed',str(args.seed)]
+    continuation=read(args.continuation) if getattr(args,'continuation',None) else None
+    if continuation:common+=['--continuation',str(args.continuation.resolve())]
     if invoke is None:
         invoke=invoke_supervisor
     revision=read(args.gate_report)['sourceRevision']
+    result['sourceRevision']=revision
     def phase(name,flags,proof_name=None,valid=lambda data:True):
         receipt_path=directory/'phase-receipts'/f'{name}.json'
         proof=directory/proof_name if proof_name else None
@@ -53,15 +100,16 @@ def execute(args, invoke=None):
         if directory.exists():atomic_json(directory/'stage-result.json',result)
         invoke(common+flags)
         report=read(directory/'supervisor-result.json')
-        if report['reason']!='completed':raise ValueError(f"{name}: {report['reason']}")
-        if proof is None or not proof.exists() or not valid(read(proof)):raise ValueError(f'{name}: completion evidence incomplete')
+        if report['reason']!='completed':raise PhaseIncomplete(name,report['reason'])
+        if proof is None or not proof.exists() or not valid(read(proof)):
+            raise PhaseIncomplete(name,read(proof).get('reason','completion evidence incomplete') if proof and proof.exists() else 'completion evidence incomplete')
         atomic_json(receipt_path,{'schema':1,'sourceRevision':revision,'proofSha256':hashlib.sha256(proof.read_bytes()).hexdigest()})
     try:
         # Existing allocation requires an explicit checkpoint; supervisor preserves
         # source, stage claim and original deadline, including all stopped time.
-        if args.stage=='initial':phase('canary',['--canary','--parity-corpus',str(args.parity_corpus.resolve())],'canary-report.json',lambda p:p.get('passed') is True)
+        if args.stage=='initial' and not continuation:phase('canary',['--canary','--parity-corpus',str(args.parity_corpus.resolve())],'canary-report.json',lambda p:p.get('passed') is True)
         checkpoint=args.resume
-        if checkpoint is None and (directory/'latest.json').exists():checkpoint=Path(read(directory/'latest.json')['checkpoint'])
+        if (directory/'latest.json').exists():checkpoint=Path(read(directory/'latest.json')['checkpoint'])
         phase('training',['--resume',str(checkpoint.resolve())] if checkpoint else [],'runner-result.json',lambda p:p.get('reason')=='validation-handoff')
         latest=Path(read(directory/'latest.json')['checkpoint']).resolve()
         phase('export-parity',['--resume',str(latest),'--export-parity','--parity-corpus',str(args.parity_corpus.resolve())],'trained-export-parity.json',lambda p:p.get('complete') is True and p.get('numericPassed') is True)
@@ -71,8 +119,9 @@ def execute(args, invoke=None):
         health=read(directory/'health-report.json')
         result['health']=health
         if not health.get('healthy'):raise ValueError('pipeline health gate unmet')
+        result['healthPassed']=True
         checkpoints=health['checkpoints'];candidate=checkpoints[0]
-        opponent=next((p for p in checkpoints[1:] if p['weightsSha256']!=candidate['weightsSha256']),None)
+        opponent={'path':continuation['recoveryCheckpoint']} if continuation else next((p for p in checkpoints[1:] if p['weightsSha256']!=candidate['weightsSha256']),None)
         if opponent is None:raise ValueError('distinct evaluation checkpoints unavailable')
         pair=['--candidate-checkpoint',candidate['path'],'--opponent-checkpoint',opponent['path']]
         phase('prepare-validation',['--resume',str(latest),'--prepare-arena',*pair],'prepare-arena-result.json',lambda p:p.get('status')=='completed')
@@ -80,8 +129,23 @@ def execute(args, invoke=None):
         if plan.get('status')!='completed':raise ValueError('validation workload preparation incomplete')
         phase('validation',['--resume',str(latest),'--arena-plan',plan['plan'],*pair],f"evaluations/{plan['planSha256']}/report.json",lambda p:p.get('mode','strict')=='strict' and p.get('status')=='completed' and p.get('completePairs')==100 and p.get('completedGames')==200 and p.get('identity',{}).get('planSha256')==plan['planSha256'])
         result.update(status='phases-finished',reason='Inspect arena evidence and publish progress before considering the conditional overnight stage.')
+        result['advancementEligible']=bool(continuation and result.get('healthPassed'))
+    except PhaseIncomplete as error:
+        result['reason']=str(error)
+        # Expected unfinished strength work does not invalidate proven health.
+        # Process failures and unclassified engine/correctness errors still stop.
+        allowed={'budget','budget-expired','resource-stop','resource-pause','node-limit','deadline',
+                 'inference-budget','verification-budget','budget-or-resource-stop','opening-attempt-limit',
+                 'verification-unfinished','search-recovery'}
+        result['advancementEligible']=bool(continuation and result.get('healthPassed') and
+            error.phase in ('prepare-validation','validation') and error.reason in allowed)
     except (ValueError,OSError,KeyError,subprocess.SubprocessError) as error:
         result['reason']=str(error)
+    if continuation:
+        result.update(sequenceId=continuation['sequenceId'],phase=continuation['phase'])
+        if (directory/'latest.json').exists():
+            latest=read(directory/'latest.json')
+            result.update(recoveryCheckpoint=latest['checkpoint'],recoverySha256=latest['sha256'])
     if directory.exists():atomic_json(directory/'stage-result.json',result)
     return result
 
@@ -93,11 +157,15 @@ def main():
         parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--stage',choices=('initial','overnight'),required=True)
     parser.add_argument('--seed',type=int,required=True);parser.add_argument('--resume',type=Path)
+    parser.add_argument('--continuation',type=Path)
+    parser.add_argument('--diagnostic',action='store_true');parser.add_argument('--opponent-checkpoint',type=Path)
     args=parser.parse_args()
     args.run_dir.parent.mkdir(parents=True,exist_ok=True)
     lock=(args.run_dir.parent/'coordinator.lock').open('a+')
     fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-    result=execute(args);print(json.dumps(result,indent=2))
+    if args.diagnostic and (not args.resume or not args.opponent_checkpoint or args.continuation):parser.error('diagnostic requires both historical checkpoints, without continuation')
+    result=execute_diagnostic(args) if args.diagnostic else execute(args)
+    print(json.dumps(result,indent=2))
     if result['status']=='inconclusive':raise SystemExit(1)
 
 if __name__=='__main__':main()

@@ -27,14 +27,24 @@ def observation(envelope, now=None):
             if row['id'] in relevant and relevant[row['id']]!=row['status']:
                 raise ValueError('conflicting task status')
             relevant[row['id']]=row['status']
-    missing=sorted(expected-set(relevant))
+    retired=envelope.get('retiredTasks',{})
+    for task,receipt in retired.items():
+        if (receipt.get('threadId')!=task or receipt.get('completed') is not True
+            or not receipt.get('evidence') or not receipt.get('authorization')):
+            raise ValueError('retired task requires completion evidence and scope authorization')
+    # Keep the raw observation intact. Verified historical tasks are outside the
+    # current work set only while unloaded/absent/idle; resumed work re-enters.
+    protected={task:status for task,status in relevant.items()
+               if task not in retired or status not in ('notLoaded','idle')}
+    missing=sorted(expected-set(relevant)-set(retired))
     unavailable=bool(snapshot.get('unavailableHosts') or snapshot.get('unavailableSources'))
     # Only explicit idle observations can authorize ramp-up. Missing, unloaded,
     # unknown or blocked tasks remain conservative until independently resolved.
-    active=bool(missing or unavailable or not relevant or any(s!='idle' for s in relevant.values()))
+    active=bool(missing or unavailable or (not relevant and not retired) or any(s!='idle' for s in protected.values()))
     return {'schema':1,'observedAt':observed,'developmentActive':active,
             'source':'codex-task-snapshot','projectId':project,'excludedThreadId':excluded,
-            'tasks':relevant,'missingExpectedTasks':missing,'sourcesUnavailable':unavailable}
+            'tasks':relevant,'protectedTasks':protected,'retiredTasks':retired,
+            'missingExpectedTasks':missing,'sourcesUnavailable':unavailable}
 
 
 def main():
