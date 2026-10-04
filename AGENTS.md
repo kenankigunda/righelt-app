@@ -29,6 +29,8 @@ The parent workspace files must make it obvious that `/Users/kenankigunda/Docume
 - Branch convention: `codex/<short-topic-slug>`
 - Reuse existing matching worktrees/branches when possible.
 - Never delete worktrees or branches unless the user explicitly asks.
+- Use one canonical branch and PR per feature, normally its parent ticket. Keep coherent commits and ongoing fixes in that PR; open it as a draft after the first reviewable push.
+- Squash is the default merge method; rebase is available when explicitly chosen, and GitHub merge-commit merging is disabled. Follow `docs/ai/PR_WORKFLOW.md` for parallel work, shared prerequisites and consolidation. Existing merge authorization requirements still apply.
 
 ## 4) Testing Policy
 
@@ -118,7 +120,7 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
 - `Cp` = commit + push + wait before continuing
 - `Cpn` = commit + push + take the next action
 - `Opr` = open a PR and give me the link
-  - PR descriptions should always use bullet points written in Sentence case.
+  - Follow the PR writing guidance in §6.2 for titles and descriptions.
 - `Dd` = do a deep investigation to understand holistically, give your diagnosis, and propose a change; wait before implementing
 - `Dfix` = diagnose and fix
 - `Ddfix` = do a deep investigation to diagnose and fix holistically
@@ -153,6 +155,21 @@ Shorthands are case-insensitive (for example: `cp = CP = Cp`).
   - `Es [type]` = execution sprint filtered to a ticket type such as `feature`, `bug`, or `improvement`
   - `Es [milestone]` = execution sprint filtered to a backlog milestone such as `Friend play alpha`
   - `Es [type] in [milestone]` = execution sprint filtered to both ticket type and backlog milestone
+
+## 6.2) PR Writing
+
+These rules apply whenever a PR is created or substantively updated, including outside `Opr`. Use `.github/pull_request_template.md` as the starting structure.
+
+**Title:** Write a short, imperative description followed by applicable uppercase ticket IDs: `Improve reconnect recovery (T-114)` or `Improve account and invite recovery (T-108, T-114)`. Verify ticket mappings; omit the suffix for unticketed work. Do not use prefixes such as `[codex]` or `T-114:`.
+
+**Description:** Use exactly these four second-level headings, in this order. Use prose or sentence-case bullets, whichever reads best. Scale detail to the change and write for a reviewer unfamiliar with the codebase.
+
+- **Why:** Explain the underlying problem and product context, alternatives actually considered, and why the chosen approach fits. Draw from the ticket, spec, engineering plan, and recorded decisions; for unticketed work, use the request and documented investigation. Distinguish missing rationale from a documented choice not to evaluate alternatives. Never invent decision history.
+- **What changed:** Explain the relevant code changes, their context, and their effect in plain language. Include descriptive, clickable links to the most useful changed lines in the GitHub PR diff. Verify the file, side, and line against the current diff; refresh links after substantive updates. When creating a PR, add verified links as soon as its number is available. Preserve dependencies, scope limits, and rollout constraints where relevant.
+- **What was validated:** Describe behaviors checked, how they were checked, results, and meaningful gaps. Commands and counts are optional when useful. Distinguish local results, CI results, and evidence from older revisions; do not imply that earlier results validate the current head.
+- **Additional evidence:** Include clearly labeled immutable evidence and stable review links from the validation flow when available. Identify the validated revision and label partial or stale evidence. If unavailable, state pending, blocked, or not applicable with a reason; never invent a URL.
+
+Missing evidence alone does not prevent review. Existing testing, acceptance, and merge gates remain authoritative. Before handoff, check the title, all four headings, rationale sources, diff links, validation claims, and evidence status. Refresh the description as implementation decisions and validation results change.
 
 ## 7) Backlog
 
@@ -218,4 +235,6 @@ Clear (or leave as audit trail) when the ticket moves to Ready for acceptance.
 
 ## Validation evidence and PR shepherding
 
-Use the repo skill `skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. Run `pnpm validate:local` before completion; use `pnpm validate:integrated --manifest FILE` for ordered PR sets. Inspect actual screenshots, repair source PRs, publish the evidence report, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.
+Use the dedicated sibling `righelt-validation-tools/skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. It is pinned to a merged release; invoke its CLI with an explicit `--candidate /absolute/path`. Do not implicitly execute candidate-local tooling. When developing validation tooling itself, review and test the candidate changes in isolation, then release/install separately. See `skills/validate-and-shepherd/references/distribution.md`.
+
+Validate introduced behavior and affected contracts, reuse compatible exact-revision evidence, and finish with required combined proof. Curate screenshots while preserving raw artifacts. Independent review is bounded to the coherent diff and changed findings. Separate ready-for-review, merge-ready/authorized, and activation-ready/authorized states. Scheduling is opt-in; a paused automation stays paused. Parent workspace templates are applied only during the explicit released installation, not while this tooling branch is under review.
