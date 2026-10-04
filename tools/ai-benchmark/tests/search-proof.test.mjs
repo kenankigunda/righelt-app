@@ -132,3 +132,13 @@ test('completed losing fallback cannot claim all alternatives were proven losing
   for(const row of [reference.states[0],actual.results[0]])row.result.actions[1].executable=true;
   assert.throws(()=>compareSearchParity(reference,actual),/tier|selection/);
 });
+
+
+test('Python sorted-key serialization preserves identical legality evidence',()=>{
+  const [reference,actual]=fixture();
+  reference.states[0].result.legality={checked:5,complete:true,indices:[1,2],unknown:0};
+  actual.results[0].result.legality={complete:true,checked:5,unknown:0,indices:[1,2]};
+  assert.equal(compareSearchParity(reference,actual).states,1);
+  actual.results[0].result.legality.indices=[2,1];
+  assert.throws(()=>compareSearchParity(reference,actual),/legality/);
+});

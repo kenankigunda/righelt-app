@@ -57,7 +57,10 @@ export function compareSearchParity(reference, actual) {
     require(a.stopped !== 'deadline' && b.stopped !== 'deadline', `${id}: deadline-censored search`);
     require(a.simulations === b.simulations && a.stopped === b.stopped, `${id}: completed work differs`);
     require(a.reason === b.reason && a.policyMask === b.policyMask, `${id}: result provenance differs`);
-    require(JSON.stringify(a.legality) === JSON.stringify(b.legality), `${id}: legality evidence differs`);
+    const legality = result => result.legality === undefined ? undefined : {
+      complete:result.legality.complete,checked:result.legality.checked,unknown:result.legality.unknown,indices:result.legality.indices,
+    };
+    require(JSON.stringify(legality(a)) === JSON.stringify(legality(b)), `${id}: legality evidence differs`);
     const guards = result => result.actions.map(({ index, immediate, tactical, executable }) => ({ index, immediate, tactical, executable }));
     require(JSON.stringify(guards(a)) === JSON.stringify(guards(b)), `${id}: tactical outcomes differ`);
     if (a.fallback !== null || b.fallback !== null) {
