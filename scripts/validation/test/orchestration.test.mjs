@@ -49,3 +49,20 @@ test('candidate auth capability runs its own E2E lane and preserves failures and
  assert.equal(result.stage.checks.find(c=>c.name==='Auth E2E').status,'failed');assert.equal(result.stage.status,'failed');
  assert.equal(await readFile(authArtifact,'utf8'),'auth failure');assert.ok(result.stage.checks.some(c=>c.name==='Report viewer'&&c.status==='passed'),'independent evidence still runs after auth failure');
 });
+
+test('changed AI tools require dedicated checks and preserve a failed or missing candidate lane',async()=>{
+ const {localRun}=await import('../local.mjs');const {saveJSON}=await import('../io.mjs');
+ const root=await mkdtemp(path.join(os.tmpdir(),'validation-ai-'));const cwd=path.join(root,'repo');await mkdir(cwd);
+ await git(['init','-b','main'],cwd);await git(['config','user.email','test@example.invalid'],cwd);await git(['config','user.name','Validation test'],cwd);
+ await saveJSON(path.join(cwd,'package.json'),{scripts:{}});await git(['add','.'],cwd);await git(['commit','-m','base'],cwd);const base=await git(['rev-parse','HEAD'],cwd);
+ for(const area of ['ai-trainer','ai-benchmark']){await mkdir(path.join(cwd,'tools',area),{recursive:true});await writeFile(path.join(cwd,'tools',area,'example.txt'),'tool');}
+ await git(['add','.'],cwd);await git(['commit','-m','AI tools'],cwd);
+ const seen=[];
+ const result=await localRun({cwd,base,dir:path.join(root,'run'),publishReport:false,lockPath:path.join(root,'lock'),execute:async(argv,{env})=>{
+  seen.push(argv);await saveJSON(env.RIGHELT_EVIDENCE_JSON,[{id:'proof',status:'passed',images:[]}]);return {code:argv[1]==='test:trainer'?1:0,duration:1};
+ }});
+ for(const script of ['test:trainer','test:ai-benchmark'])assert.equal(seen.filter(argv=>argv[1]===script).length,1);
+ assert.deepEqual(result.stage.unmapped,[]);assert.equal(result.stage.checks.find(c=>c.name==='Trainer checks').status,'failed');
+ assert.equal(result.stage.checks.find(c=>c.name==='AI benchmark checks').status,'passed');assert.equal(result.stage.status,'failed');
+ assert.ok(!seen.some(argv=>['ai:run','ai:arena'].includes(argv[1])),'validation must not start budgeted experiments');
+});
