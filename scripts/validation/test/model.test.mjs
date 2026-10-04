@@ -36,3 +36,20 @@ test('known T108 feasibility tooling is mapped without accepting unrelated tools
  assert.deepEqual(coverage([...known,...unknown]).unmapped,unknown);
  assert.equal(coverage([...known,'apps/web/shell/app.js']).files.length,0);
 });
+
+test('account proof directory is mapped without accepting unrelated validation folders',()=>{
+ const known=['validation-account-e2e/accounts.spec.mjs','playwright.validation-account.config.mjs'];
+ assert.deepEqual(coverage(known).unmapped,[]);
+ assert.ok(coverage(known).areas.includes('tooling'));
+ const unknown=['validation-account-other/example.mjs','validation-other-e2e/example.mjs'];
+ assert.deepEqual(coverage([...known,...unknown]).unmapped,unknown);
+});
+
+test('public items allowlist text/client provenance and exclude nested private fields',()=>{
+ const p=publicRun({stages:[{items:[{id:'i',title:'journey',status:'failed',privateLog:'SECRET',client:{browser:'webkit',width:390,baseURL:'SECRET'},behaviors:[{label:'owned move',checkpoint:'owned-move',raw:'SECRET'}],images:[{src:'images/a.png',caption:'board',checkpoint:'created',kind:'context',viewport:'mobile',privatePath:'SECRET'}]}]}]});assert(!JSON.stringify(p).includes('SECRET'));assert.equal(p.stages[0].items[0].client.browser,'webkit');assert.equal(p.stages[0].items[0].behaviors[0].label,'owned move');assert.deepEqual(p.stages[0].items[0].images[0],{src:'images/a.png',thumbnail:undefined,caption:'board',digest:undefined,checkpoint:'created',kind:'context',viewport:'mobile'});
+});
+
+test('historical attempts retain failures without private paths, payloads or images',()=>{
+ const attempt={stages:[{id:'old',title:'Earlier',status:'failed',checks:[{name:'E2E',status:'failed',log:'SECRET'}],items:[{images:[{src:'SECRET'}]}]}],risks:['SECRET'],publication:{url:'https://example.test/report',directory:'SECRET',stableUrl:'file:///SECRET'}};
+ const p=publicRun({attempts:[attempt],history:[{status:'failed',logs:'SECRET'}],stages:[]});assert(!JSON.stringify(p).includes('SECRET'));assert.equal(p.history[0].stages[0].status,'failed');assert.equal(p.history[1].links[0].url,'https://example.test/report');
+});

@@ -1,7 +1,7 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {mergeAuthorized} from '../merge.mjs';
+import test from 'node:test';import assert from 'node:assert/strict';import {mergeAuthorized,refreshPR,verifyCheckApplicability} from '../merge.mjs';
 function fixture(){return {repository:'o/r',mergeMethod:'squash',mode:'local',replyCheckedAt:new Date().toISOString(),prs:[{number:1,head:'h',base:'main',noReviewRequired:true,preview:'passed',previewHead:'h',previewUrl:'https://example.invalid/preview',independentReview:{status:'passed',head:'h'},authorization:{state:'authorized',target:'main'}}],stages:[{index:0,head:'h',base:'b',status:'passed',visualReviewed:true,sourceClean:true}]};}
 const state={number:1,headRefOid:'h',baseRefOid:'b',baseRefName:'main',state:'OPEN',isDraft:false,mergeable:'MERGEABLE',reviewDecision:'APPROVED',statusCheckRollup:[{conclusion:'SUCCESS'}]};
-function response(argv,data=state){return JSON.stringify(argv[1]==='api'?{number:1,head:{sha:data.headRefOid},base:{sha:data.baseRefOid,ref:data.baseRefName},stack:null}:data);}
+function response(argv,data=state){if(argv[1]==='api'&&argv[2]==='repos/o/r')return JSON.stringify({allow_merge_commit:false,allow_squash_merge:true,allow_rebase_merge:true});return JSON.stringify(argv[1]==='api'?{number:1,head:{sha:data.headRefOid},base:{sha:data.baseRefOid,ref:data.baseRefName},stack:null}:data);}
 test('merge checks current head, uses expected-head and consumes only confirmed merge',async()=>{const run=fixture();const calls=[];let merged=false;const execute=async argv=>{calls.push(argv);if(argv[2]==='merge'){merged=true;return {output:''};}return {output:response(argv,{...state,state:merged?'MERGED':'OPEN',mergeCommit:merged?{oid:'merged'}:null})};};assert.equal(await mergeAuthorized(run,1,{execute}),true);const merge=calls.find(a=>a[2]==='merge');assert(merge.includes('--match-head-commit'));assert.equal(merge.at(-1),'h');assert(!merge.includes('--admin'));assert(!merge.includes('--auto'));assert.equal(run.prs[0].authorization.state,'consumed');});
 test('head race, pending CI, dirty proof and stale reply check prevent a merge',async()=>{for(const variant of ['head','pending','dirty','stale','preview']){const run=fixture();if(variant==='preview')run.prs[0].previewHead='old';if(variant==='dirty')run.stages[0].sourceClean=false;if(variant==='stale')run.replyCheckedAt='not-a-date';let writes=0;const execute=async a=>{if(a[2]==='merge')writes++;return {output:response(a,{...state,headRefOid:variant==='head'?'new':'h',statusCheckRollup:[{conclusion:variant==='pending'?null:'SUCCESS'}]})};};await assert.rejects(mergeAuthorized(run,1,{execute}));assert.equal(writes,0);}});
 test('queued merge retains authorization until actual merge',async()=>{const run=fixture();const execute=async a=>({output:a[2]==='merge'?'':response(a)});assert.equal(await mergeAuthorized(run,1,{execute}),false);assert.equal(run.prs[0].authorization.state,'authorized');assert.equal(run.prs[0].readiness,'queued or pending merge');});
@@ -31,4 +31,32 @@ test('ordinary PR resources may omit stack membership under the GitHub REST cont
   return {output:JSON.stringify(data)};
  };
  assert.equal(await mergeAuthorized(run,1,{execute}),true);assert.equal(run.prs[0].nativeStack,null);
+});
+
+
+test('merge method is checked against fresh repository settings, with no fallback',async()=>{
+ for(const allowed of [false,undefined,null]){
+  const run=fixture();let writes=0;
+  const execute=async a=>{if(a[2]==='merge'){writes++;return {output:''};}if(a[1]==='api'&&a[2]==='repos/o/r')return {output:JSON.stringify({allow_squash_merge:allowed})};return {output:response(a)};};
+  await assert.rejects(mergeAuthorized(run,1,{execute}),/Repository does not allow squash/);assert.equal(writes,0);
+ }
+ for(const method of ['merge','rebase']){
+  const run=fixture();run.mergeMethod=method;let writes=0;
+  const execute=async a=>{if(a[2]==='merge'){writes++;assert(a.includes('--rebase'));return {output:''};}return {output:response(a)};};
+  if(method==='merge')await assert.rejects(mergeAuthorized(run,1,{execute}),/Repository does not allow merge/);
+  else assert.equal(await mergeAuthorized(run,1,{execute}),false);
+  assert.equal(writes,method==='rebase'?1:0);
+ }
+});
+
+test('absent CI is not applicable only with exact workflow-filter and required-check evidence',async()=>{
+ const proof={head:'h',base:'b',verified:true,workflowFiltersVerified:true,requiredChecksVerified:true,requiredChecks:[],sources:['retained/workflow-and-protection-inspection.json']};
+ assert.equal(verifyCheckApplicability(proof,'h','b'),true);
+ for(const changes of [{head:'old'},{base:'old'},{verified:false},{workflowFiltersVerified:false},{requiredChecksVerified:false},{requiredChecks:['CI']},{requiredChecks:null},{sources:[]},{sources:[' ']}]){
+  const run=fixture();run.prs[0].checkApplicability={...proof,...changes};const execute=async a=>({output:response(a,{...state,statusCheckRollup:[]})});
+  await refreshPR(run,1,{execute});assert.equal(run.prs[0].checks,'unknown');
+ }
+ const run=fixture();run.prs[0].checkApplicability=proof;
+ await refreshPR(run,1,{execute:async a=>({output:response(a,{...state,statusCheckRollup:[]})})});assert.equal(run.prs[0].checks,'not-applicable');
+ await refreshPR(run,1,{execute:async a=>({output:response(a,{...state,statusCheckRollup:[{conclusion:'FAILURE'}]})})});assert.equal(run.prs[0].checks,'failed','applicability evidence never overrides an actual failed check');
 });
