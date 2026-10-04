@@ -1,5 +1,6 @@
 """Budgeted local experiment child. Supervisor owns permission and hard limits."""
 from .budget import effective_deadline
+from .fallback_report import add_game as add_fallback_game
 import argparse
 from contextlib import nullcontext
 from .recovery import RecoveryLedger
@@ -241,7 +242,9 @@ class Runner:
         self.state['terminalGames' if game['termination'] == 'terminal' else 'truncatedGames'] += 1
         self.state['generationKinds'][game['kind']] += 1
         self.state['replayChecks'] += 1
-        self.event('game', id=game['id'], termination=game['termination'], decisions=len(game['decisions']), kind=game['kind'])
+        add_fallback_game(self.state.setdefault('fallbackReport',{}),game)
+        self.event('game', id=game['id'], termination=game['termination'], decisions=len(game['decisions']), kind=game['kind'],
+                   fallbackDecisions=sum(bool(d.get('fallback')) for d in game['decisions']))
         return True
 
     def generate_round(self):
@@ -314,6 +317,8 @@ class Runner:
                         kind = message['type']
                         if kind == 'evaluate':
                             requests.append((worker, message))
+                        elif kind == 'decision-progress':
+                            self.event(kind,gameId=message['gameId'],kind=message['kind'],decision=message['decision'])
                         elif kind == 'game':
                             self.accept_game(message['game'], round_deadline)
                             self.finish_worker(selector, workers, fd)

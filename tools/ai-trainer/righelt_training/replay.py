@@ -40,7 +40,14 @@ class ReplayBuffer:
         if terminal==(outcome=='ongoing'):raise ValueError('inconsistent value target')
         value={'p1_win':1.,'p2_win':-1.,'draw':0.,'ongoing':0.}[outcome]
         for decision in game['decisions']:
-            position={k:decision[k] for k in ('id','legal','policy') if k in decision}
+            position={k:decision[k] for k in ('id','legal','policy','policyMask','fallback') if k in decision}
+            mask=decision.get('policyMask',True)
+            fallback=decision.get('fallback')
+            if type(mask) is not bool or (fallback is not None) != (not mask):
+                raise ValueError('fallback policy mask mismatch')
+            if not mask and (decision.get('policy') or fallback.get('schemaVersion')!=1
+                or fallback.get('reason') not in ('search-incomplete','safety-incomplete')):
+                raise ValueError('invalid fallback training target')
             if 'encoded' in decision:position['encoded']=array('f',decision['encoded'])
             self.positions.append({**position,'terminalMask':terminal,'terminalValue':value,'gameId':game['id']})
         self.ids.add(game['id'])

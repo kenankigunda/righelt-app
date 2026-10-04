@@ -87,7 +87,7 @@ class RecoveryTest(unittest.TestCase):
             expire.assert_called_once()
             self.assertEqual(json.loads((Path(d)/'operation-status.json').read_text())['status'],'monitor-failed')
 
-    def test_real_search_budget_recovery_becomes_unfinished_diagnostic(self):
+    def test_root_model_allows_node_fallback_but_expired_request_stays_unfinished(self):
         script="""
 import {createInitialState} from './packages/game-engine/src/index.ts';
 import {selectMove} from './packages/computer-player/src/index.ts';
@@ -95,14 +95,17 @@ import {searchRecovery} from './tools/ai-trainer/search-recovery.mjs';
 const state=createInitialState(),rows=[];
 for(const limits of [{maxNodes:1},{deadlineMs:performance.now()-1}]){
  const result=await selectMove({state,seed:107,simulations:64,...limits},async()=>({policyLogits:new Float32Array(2801),value:0}));
- rows.push(searchRecovery(result,{id:'diagnostic',initialState:state,decisions:[],outcome:state.outcome}));
+ rows.push({result,recovery:searchRecovery(result,{id:'diagnostic',initialState:state,decisions:[],outcome:state.outcome})});
 }
 console.log(JSON.stringify(rows));
 """
         rows=json.loads(subprocess.check_output(['node','--import','tsx','--input-type=module','-e',script],cwd=ROOT,text=True,timeout=10))
-        self.assertEqual([row['search']['stopped'] for row in rows],['node-limit','deadline'])
-        for row in rows:
-            self.assertEqual(row['type'],'unfinished');self.assertEqual(row['game']['termination'],'unfinished')
-            self.assertEqual(row['game']['decisions'],[])
+        self.assertIsNone(rows[0]['recovery'])
+        self.assertEqual(rows[0]['result']['fallback']['reason'],'safety-incomplete')
+        self.assertFalse(rows[0]['result']['policyMask']);self.assertEqual(rows[0]['result']['policy'],[])
+        row=rows[1]['recovery']
+        self.assertEqual(row['search']['stopped'],'deadline')
+        self.assertEqual(row['type'],'unfinished');self.assertEqual(row['game']['termination'],'unfinished')
+        self.assertEqual(row['game']['decisions'],[])
 
 if __name__=='__main__':unittest.main()

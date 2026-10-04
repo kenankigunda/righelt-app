@@ -145,6 +145,13 @@ def play_game(job,models,deadline,device,*,allocation=lambda:{'paused':False,'wo
                         policy,value=infer(model,message['input'],device,monitor)
                         response={'type':'evaluation','id':message['id'],'policyLogits':policy,'value':value}
                         process.stdin.write((json.dumps(response,allow_nan=False)+'\n').encode());process.stdin.flush()
+                    elif message['type']=='decision-progress':
+                        # Retain observations even when this attempt is later
+                        # stopped before a complete game archive is returned.
+                        if job.get('decisionLogPath'):
+                            from .allocation import append
+                            append(job['decisionLogPath'],{'jobId':job['id'],'observedAt':time.time(),**message})
+                        continue
                     elif message['type']=='game':
                         checkpoint()
                         # Keep blocking replay below the supervisor's telemetry age bound.
@@ -308,7 +315,7 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
                 else:result={'status':'completed','game':game}
             else:
                 with monitor.operation('arena-game',min(610,deadline-clock())) if monitor else nullcontext():
-                    result=player(job,by_seat,deadline,device,allocation=allocation,checkpoint=heartbeat,monitor=monitor)
+                    result=player({**job,'decisionLogPath':str(output/'decision-events.jsonl')},by_seat,deadline,device,allocation=allocation,checkpoint=heartbeat,monitor=monitor)
             attempt.update(status=result['status'],finishedMonotonic=clock(),reason=result.get('reason'))
             if result['status']!='completed':
                 reason=result.get('reason','unfinished')

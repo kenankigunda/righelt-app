@@ -25,7 +25,7 @@ def tensor_batch(positions, device):
     targets = torch.zeros((n, CONFIG['actionCount']), dtype=torch.float32, device=device)
     for row, position in enumerate(positions):
         indices = position['legal']
-        if len(indices) != len(set(indices)) or any(not isinstance(i, int) or not 0 <= i < CONFIG['actionCount'] for i in indices):
+        if not indices or len(indices) != len(set(indices)) or any(type(i) is not int or not 0 <= i < CONFIG['actionCount'] for i in indices):
             raise ValueError('invalid legal mask')
         legal[row, indices] = True
         seen = set()
@@ -37,7 +37,12 @@ def tensor_batch(positions, device):
             targets[row, i] = probability
     values = torch.tensor([p['terminalValue'] for p in positions], dtype=torch.float32, device=device)
     mask = torch.tensor([p['terminalMask'] for p in positions], dtype=torch.bool, device=device)
-    return inputs, legal, targets, values, mask
+    if any(type(p.get('policyMask', True)) is not bool or type(p['terminalMask']) is not bool for p in positions):
+        raise ValueError('invalid policy mask')
+    policy_mask = torch.tensor([p.get('policyMask', True) for p in positions], dtype=torch.bool, device=device)
+    if any(not p.get('policyMask', True) and p['policy'] for p in positions):
+        raise ValueError('masked policy must be empty')
+    return inputs, legal, targets, values, mask, policy_mask
 
 
 def train_round(model, optimizer, positions, *, device, seed, deadline, should_pause=lambda: False,
@@ -45,7 +50,7 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
     order = list(range(len(positions)))
     random.Random(seed).shuffle(order)
     batch_size = CONFIG['training']['batchSize']
-    result = {'updates': 0, 'positions': 0, 'nonzeroUpdates': 0, 'batches': [], 'stopped': 'complete'}
+    result = {'updates': 0, 'positions': 0, 'nonzeroUpdates': 0, 'skippedUnsupervisedBatches': 0, 'batches': [], 'stopped': 'complete'}
     batch_bound = 30.0
     model.train()
     for start in range(0, min(len(order), batch_size * CONFIG['training']['maxMinibatches']), batch_size):
@@ -59,10 +64,13 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
         with operation('training-minibatch',batch_bound):
             before = clock()
             batch = [positions[i] for i in order[start:start + batch_size]]
-            inputs, legal, target, value, mask = tensor_batch(batch, device)
+            inputs, legal, target, value, mask, policy_mask = tensor_batch(batch, device)
+            if not (mask.any() or policy_mask.any()):
+                result['skippedUnsupervisedBatches'] += 1
+                continue
             optimizer.zero_grad(set_to_none=True)
             logits, values = model(inputs)
-            loss, policy_loss, value_loss = training_loss(logits, values, legal, target, value, mask)
+            loss, policy_loss, value_loss = training_loss(logits, values, legal, target, value, mask, policy_mask)
             if not torch.isfinite(loss):
                 raise ValueError('nonfinite loss')
             loss.backward()
@@ -74,7 +82,8 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
                 raise ValueError('training update was nonfinite or zero')
             metrics = {'loss': loss.item(), 'policyLoss': policy_loss.item(), 'valueLoss': value_loss.item(),
                        'gradientNorm': norm.item(), 'parameterDelta': delta, 'positions': len(batch),
-                       'seconds': clock() - before, 'batchIndex': start // batch_size}
+                       'seconds': clock() - before, 'batchIndex': start // batch_size,
+                       'policyPositions': int(policy_mask.sum()), 'valuePositions': int(mask.sum())}
             batch_bound = max(batch_bound, metrics['seconds'] * 2)
         result['updates'] += 1
         result['nonzeroUpdates'] += 1
