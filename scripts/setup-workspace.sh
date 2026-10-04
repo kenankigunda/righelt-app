@@ -23,6 +23,7 @@ APP_NAME="$(basename "$APP_REPO")"
 WORKSPACE_ROOT="$(dirname "$APP_REPO")"
 WORKSPACE_NAME="$(basename "$WORKSPACE_ROOT")"
 BACKLOG_REPO="$WORKSPACE_ROOT/righelt-backlog"
+VALIDATION_TOOLS="$WORKSPACE_ROOT/righelt-validation-tools"
 ROOT_AGENTS_PATH="$WORKSPACE_ROOT/AGENTS.md"
 ROOT_CLAUDE_PATH="$WORKSPACE_ROOT/CLAUDE.md"
 AGENTS_TEMPLATE_PATH="$APP_REPO/docs/ai/WORKSPACE_ROOT_AGENTS.template.md"
@@ -90,6 +91,7 @@ APP_REPO_ESCAPED=${APP_REPO//\//\\/}
 BACKLOG_REPO_ESCAPED=${BACKLOG_REPO//\//\\/}
 
 sed \
+  -e "s|__VALIDATION_TOOLS__|$VALIDATION_TOOLS|g" \
   -e "s/__APP_REPO__/$APP_REPO_ESCAPED/g" \
   -e "s/__BACKLOG_REPO__/$BACKLOG_REPO_ESCAPED/g" \
   "$AGENTS_TEMPLATE_PATH" > "$ROOT_AGENTS_PATH"
@@ -97,6 +99,7 @@ sed \
 echo "Wrote parent AGENTS.md: $ROOT_AGENTS_PATH"
 
 sed \
+  -e "s|__VALIDATION_TOOLS__|$VALIDATION_TOOLS|g" \
   -e "s/__APP_REPO__/$APP_REPO_ESCAPED/g" \
   -e "s/__BACKLOG_REPO__/$BACKLOG_REPO_ESCAPED/g" \
   "$CLAUDE_TEMPLATE_PATH" > "$ROOT_CLAUDE_PATH"
@@ -136,3 +139,5 @@ fi
 echo "Workspace root: $WORKSPACE_ROOT"
 echo "App repo: $APP_REPO"
 echo "Backlog repo: $BACKLOG_REPO"
+
+echo "Released validation tools: $VALIDATION_TOOLS (install/update separately after merge)"

@@ -6,11 +6,13 @@ Software engineer. Implements one assigned subtask, validates it against the eng
 - Mark the subtask `In Progress` before starting.
 - Work in an isolated worktree and branch dedicated to this ticket, never shared with another ticket.
 - Commit early and often, scoped to acceptance criteria.
+- Keep commits semantically coherent and deliver them to the canonical feature branch. Do not open subtask or repair PRs while the feature PR remains open; follow `docs/ai/PR_WORKFLOW.md` for shared-prerequisite exceptions.
 - Run the subtask acceptance checks from the eng plan.
 - Complete the subtask only after acceptance checks pass.
 - Consult Tester only for novel gaps not already covered in `test-plan.md`.
 - Escalate back to Lead if the assigned worktree is already being used for a different ticket.
 - Escalate scope-expanding issues back to Lead instead of silently creating new tasks or broadening the work.
+- Include material departures from the planned approach, alternatives considered, and their reasons in the Progress report. Give Lead enough context to update the planning documents and PR; keep unresolved rationale explicit.
 
 ## Context To Read
 1. `task view t-###.NN`

@@ -47,6 +47,8 @@ For non-trivial features split into multiple streams, use this structure:
 
 ## Worktree And Branch Conventions
 
+Follow `docs/ai/PR_WORKFLOW.md`: one canonical branch and PR per feature. Stream branches feed that feature branch without separate PRs. A separate prerequisite PR requires an independently useful, testable dependency needed by another feature. Stream merges below mean internal feature integration, not authorization to merge to main.
+
 - Worktree path convention: `../righelt-<feature-id>-<stream-id>`
 - Branch convention: `codex/<feature-id>-<stream-id>`
 - Reuse existing matching worktrees or branches when possible.

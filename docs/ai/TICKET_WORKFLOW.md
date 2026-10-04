@@ -135,26 +135,30 @@ Lead appends to the coordination log and advances status → `Ready for executio
 ### Step 5 — Eng Implementation
 Lead picks up a `Ready for execution` ticket, establishes the ticket's dedicated execution worktree, and sets status → `In Progress`, along with the parent task `branch` and `worktree` fields. The parent `worktree` field is the canonical execution worktree for the ticket, not just a convenience note.
 
+Follow `docs/ai/PR_WORKFLOW.md`: use one canonical feature branch and PR, open a draft after the first reviewable push, and record its URL in the parent ticket. Keep semantically coherent commits and subsequent fixes in that PR. A separate shared prerequisite requires the independently useful, testable, cross-feature justification defined there.
+
 Lead fans out unblocked subtasks to Eng teammates. Each Eng:
 1. Reads the subtask plus relevant eng-plan and test-plan context.
 2. Sets subtask status → `In Progress`.
-3. Implements only the assigned scope in an isolated worktree and branch dedicated to this ticket.
+3. Implements only the assigned scope in an isolated worktree and branch dedicated to this ticket; reports commits to Lead without opening a subtask PR.
 4. Runs the subtask acceptance checks.
 5. Consults Tester only for novel gaps not already covered in `test-plan.md`.
 6. Reports completion in the shared report shape and marks the subtask complete only after acceptance checks pass.
 
-Lead monitors progress, merges in dependency order, reruns required checks after merges, and records decisions in the coordination log.
+Lead monitors progress, integrates worker commits into the canonical feature branch in dependency order, reruns required checks after integration, and records decisions in the coordination log. These internal integrations do not merge the feature to main.
 
 ### Step 6 — Review
 Once all subtasks are done, Lead sets status → `Review` and writes Implementation Notes.
 
 Lead then does two things concurrently:
-- opens the PR
+- refreshes the existing draft feature PR using [AGENTS.md §6.2](../../AGENTS.md#62-pr-writing), carrying forward recorded product, UX, and engineering rationale alongside the combined implementation and validation scope
 - spawns Tester in `final-validation` mode
 
 Tester treats `test-plan.md` as the floor, then hunts for seam failures, UX regressions, branding drift, accessibility misses, sound misuse, state drift, multi-client edge cases, and subtle merge issues.
 
-If material issues are found, Lead creates follow-up subtasks and loops back to Step 5. Otherwise, Lead waits for green CI and then advances the ticket to `Ready for acceptance`, writes Final Summary, and clears or intentionally retains the parent `branch` and `worktree` fields.
+Lead keeps the PR description current as implementation and validation progress: preserve changed decisions and reasons in the planning documents and coordination log, refresh verified diff links, and distinguish current validation from older evidence. Include both immutable evidence and stable review links when available, or an honest missing-evidence status. Missing evidence alone does not prevent review; existing acceptance and merge gates still apply.
+
+If material issues are found, Lead creates follow-up subtasks, keeps their fixes in the same PR and loops back to Step 5. Otherwise, Lead waits for green CI and required validation before marking the PR ready for review, then advances the ticket to `Ready for acceptance`, writes Final Summary, and clears or intentionally retains the parent `branch` and `worktree` fields. Outstanding product gates remain explicit.
 
 ## Merge Gates and Coordination
 
@@ -163,6 +167,7 @@ Follow the same merge-gate rules as `ORCHESTRATION_WORKFLOW.md`:
 - Dependencies merge in topological order.
 - Lead owns cross-worktree conflict resolution.
 - Merge decisions and conflict resolutions are recorded in `coordination-log.md`.
+- Squash feature PRs by default; rebase only when explicitly chosen. Revalidate dependent features against the actual merged prerequisite, including squash/rebase effects. All existing merge authorization requirements remain in force.
 
 ## Testing Policy
 
@@ -235,7 +240,7 @@ Where:
 4. For each ticket that starts, Lead confirms that a dedicated execution worktree exists for that ticket, then runs Steps 5 and 6 of the ticket workflow.
 5. Before starting each ticket, output:
    `Sprint progress: [N/Total] — starting <ticket title> (t-###)`
-6. Within each active ticket, Lead fans out Eng subtasks, monitors progress, resolves conflicts, opens the PR, runs final validation, and waits for green CI.
+6. Within each active ticket, Lead fans out Eng subtasks, monitors progress, resolves conflicts, maintains the canonical feature PR, runs final validation, and waits for green CI.
 7. After the last ticket completes, output:
    `Sprint complete: N tickets advanced to Ready for acceptance`
 

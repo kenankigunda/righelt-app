@@ -252,3 +252,39 @@ test("deployment workflow supplies legacy proof to preflight, deploy and smoke",
     assert.match(step, /ACCOUNT_SMOKE_LEGACY_GAME_ID: \$\{\{ vars\.ACCOUNT_SMOKE_LEGACY_GAME_ID \}\}/);
   }
 });
+
+
+test("deployment shares the explicit origin or canonical Pages fallback across preflight and all smoke gates", async () => {
+  const workflow = readFileSync(new URL("../../../.github/workflows/deploy.yml", import.meta.url), "utf8");
+  const expression = /^    env:\n      RIGHELT_SITE_ORIGIN: \$\{\{ (.+) \}\}$/m.exec(workflow)?.[1];
+  assert.equal(expression, "vars.RIGHELT_SITE_ORIGIN || format('https://{0}.pages.dev', vars.CLOUDFLARE_PAGES_PROJECT)");
+  assert.equal((workflow.match(/RIGHELT_SITE_ORIGIN:/g) || []).length, 1, "steps inherit the single job-level origin");
+  assert.match(workflow, /if \[ -z "\$CLOUDFLARE_PAGES_PROJECT" \]; then/);
+  for (const name of ["Preflight configuration check", "Deploy private authentication services and API", "Verify public Pages and private API boundaries", "Verify acknowledged canary account", "Verify account preparation remains closed"])
+    assert.ok(workflow.includes(`- name: ${name}\n`), name);
+  assert.match(workflow, /if: vars\.RIGHELT_AUTH_ENABLED == 'true' && !inputs\.prepare_accounts/);
+  assert.match(workflow, /if: inputs\.prepare_accounts/);
+
+  // The exact expression above locks GitHub's short-circuit selection. Exercise its
+  // two resulting origins against real preflight and public/private smoke logic.
+  for (const selectedOrigin of ["https://righelt-dev.pages.dev", "https://play.custom.test"]) {
+    assert.deepEqual(validateDeployment({ RIGHELT_SITE_ORIGIN: selectedOrigin }), { enabled: "false", origin: selectedOrigin });
+    const cli = spawnSync(process.execPath, [fileURLToPath(new URL("../../../scripts/deploy-account-services.mjs", import.meta.url)), "--check-only"], { env: { PATH: "", RIGHELT_SITE_ORIGIN: selectedOrigin }, encoding: "utf8" });
+    assert.equal(cli.status, 0, cli.stderr);
+    const calls = [];
+    assert.deepEqual(await boundarySmoke({ origin: selectedOrigin, privateOrigin, fetcher: async url => {
+      calls.push(url.href);
+      return url.origin === selectedOrigin
+        ? Response.json({ ok: true, bindings: { db: true, gameRooms: true } })
+        : new Response("", { status: 404, headers: { server: "cloudflare" } });
+    } }), { ok: true });
+    assert.deepEqual(calls, [`${selectedOrigin}/api/health`, `${privateOrigin}/api/health`]);
+    assert.throws(() => validateDeployment({ RIGHELT_SITE_ORIGIN: selectedOrigin, RIGHELT_AUTH_ENABLED: "true" }), /secret/);
+  }
+  for (const invalidOrigin of ["http://custom.test", "https://custom.test/path", "https://custom.test/", "https://a.test,https://b.test"]) {
+    assert.throws(() => validateDeployment({ RIGHELT_SITE_ORIGIN: invalidOrigin }));
+    let calls = 0;
+    await assert.rejects(boundarySmoke({ origin: invalidOrigin, privateOrigin, fetcher: async () => { calls++; } }));
+    assert.equal(calls, 0, "invalid explicit origin cannot proceed to a smoke request");
+  }
+});

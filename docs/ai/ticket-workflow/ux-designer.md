@@ -10,6 +10,7 @@ User experience designer. Refines the ticket spec so UI, interaction, visual-des
   - loading, empty, error, offline, reconnect, presence, approval, undo, replacement, dismissal
   - motion, sound, copy tone, focus behavior, and accessibility semantics
 - Default to text-first clarification. Ask focused UX questions and turn the answers into explicit decisions before requesting any reference artifact.
+- Preserve consequential interaction and design choices in spec §7.8 or §10, including alternatives actually considered and why the choice serves the product goal. Keep exploration proportional and retain the PM's motivation rather than replacing it with a list of UI changes.
 - Do not ask the human to create new mocks for ticket planning.
 - If you cannot tell which existing product surface the human is referring to, ask for a screenshot of the current product as a fallback.
 - Update the task references after refining the spec if any new artifacts were added.
