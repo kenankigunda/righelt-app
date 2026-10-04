@@ -11,7 +11,7 @@ export function verifyAccountEvidence(items,{retained=false,capabilities={},lega
   if(visualMode==='none'||visualMode==='walkthrough'&&!policy.visualViewports.includes(name))continue;
   const labels=visualMode==='walkthrough'?row.labels.filter(label=>policy.checkpoints.includes(label)):row.labels;
   for(const label of labels)for(const kind of visualMode==='walkthrough'?['context']:['context','component']){
-   if(!matches[0].images?.some(image=>image.caption===`${label} · ${name} · ${kind}${kind==='component'?' (visible area)':''}`&&image.src&&image.thumbnail&&image.digest))throw Error(`Missing account checkpoint: ${name} / ${label} / ${kind}`);
+   if(!matches[0].images?.some(image=>((image.checkpoint===label&&image.kind===kind&&image.viewport===name)||image.caption===`${label} · ${name} · ${kind}${kind==='component'?' (visible area)':''}`)&&image.src&&image.thumbnail&&image.digest))throw Error(`Missing account checkpoint: ${name} / ${label} / ${kind}`);
   }
  }
 }

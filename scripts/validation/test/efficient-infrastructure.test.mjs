@@ -80,7 +80,7 @@ test('restore fails closed on provenance, expiry, and corrupted checkpoint conte
 });
 test('compact status suppresses unchanged state but observes gate and authorization changes',()=>{
  const run={id:'run',complete:false,stages:[{id:'stage-1',status:'passed',checks:[{name:'E2E',status:'passed'}],items:[{huge:'image data'}]}],prs:[{number:92,head:'abc',checks:'pending'}]};const first=compactStatus(run);assert.equal(first.changed,true);assert.equal(JSON.stringify(first).includes('image data'),false);
- assert.deepEqual(compactStatus(run,{afterCursor:first.cursor}),{cursor:first.cursor,changed:false});run.prs[0].checks='passed';assert.equal(compactStatus(run,{afterCursor:first.cursor}).changed,true);const second=compactStatus(run);run.prs[0].authorization={state:'authorized'};assert.notEqual(compactStatus(run).cursor,second.cursor);
+ assert.deepEqual(compactStatus(run,{afterCursor:first.cursor}),{cursor:first.cursor,changed:false});run.prs[0].checks='passed';assert.deepEqual(compactStatus(run,{afterCursor:first.cursor}).changes,[{key:'pr:92:checks',status:'passed'}]);const second=compactStatus(run);run.prs[0].authorization={state:'authorized'};assert.notEqual(compactStatus(run).cursor,second.cursor);
  run.complete=true;run.stages[0].status='failed';assert.equal(compactStatus(run).status,'failed');
 });
 test('binary stdout-only logs exclude stderr without changing default command output',async t=>{

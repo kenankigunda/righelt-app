@@ -15,6 +15,10 @@ const stopped=async()=>{
  const result=await command(['lsof','-nP',...['9888','9887','10888','9988','9987','10088'].map(p=>'-iTCP:'+p),'-sTCP:LISTEN'],{allowFailure:true});
  return result.code===1&&!result.output;
 };
+export function markInterrupted(run){
+ run.complete=false;run.orchestration='failed';
+ const stage=run.stages.at(-1);if(stage){stage.status='failed';stage.checks.push({name:'Validation orchestration',status:'failed',reason:'Checkpoint or execution did not complete; inspect private diagnostics'});}
+}
 export async function boundedIntegratedRun({spec,cwd=process.cwd(),dir,resume=false,config,publishReport=true,ciEvidence}){
  validatePlan(spec);dir=path.resolve(dir??path.join(cwd,'test-results','validation',`integrated-${Date.now()}`));await mkdir(dir,{recursive:true});
  const file=path.join(dir,'run.json'),previous=resume?await readJSON(file,null):null;
@@ -77,12 +81,12 @@ export async function boundedIntegratedRun({spec,cwd=process.cwd(),dir,resume=fa
    await saveJSON(file,run);await renderReport(run,path.join(dir,'site'));
    if(stage.status!=='passed')break;
   }
- }catch(error){run.risks.push('Validation interrupted; inspect private startup-error.json');await saveJSON(path.join(attemptDir,'startup-error.json'),{error:error.message});}
+ }catch(error){markInterrupted(run);run.risks.push('Validation interrupted; inspect private startup-error.json');await saveJSON(path.join(attemptDir,'startup-error.json'),{error:error.message});}
  const remoteBase=(await git(['ls-remote','origin',`refs/heads/${spec.base}`],cwd)).split(/\s/)[0];
  if(remoteBase!==base)for(const s of run.stages)s.status='stale';
  for(let i=0;i<prs.length;i++){const current=JSON.parse((await command(['gh','pr','view',String(prs[i].number),'--repo',spec.repository,'--json','headRefOid'],{cwd})).output);if(current.headRefOid!==prs[i].head)for(const s of run.stages)if(s.index>=i+1)s.status='stale';}
  if(harnessFingerprint!==await fingerprint(harnessRoot))for(const s of run.stages)s.status='stale';
- run.complete=run.stages.length===prs.length+1&&run.stages.every(s=>s.status==='passed');
+ run.complete=run.orchestration!=='failed'&&run.stages.length===prs.length+1&&run.stages.every(s=>s.status==='passed');
  await saveJSON(file,run);await renderReport(run,path.join(dir,'site'));
  if(publishReport){try{await publish(run,path.join(dir,'site'),config);}catch(error){run.publication={status:'failed',error:error.message};}await saveJSON(file,run);}
  return {run,dir};

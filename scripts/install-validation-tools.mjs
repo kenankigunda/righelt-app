@@ -28,14 +28,15 @@ function installFile(file,contents){
  }
  writeFileSync(file,contents,{mode:0o600});
 }
-export function installValidationTools({source=repository,destination=path.join(path.dirname(source),'righelt-validation-tools'),skillRoot=path.join(os.homedir(),'.codex/skills'),revision='origin/main',install=false,update=false,updateGhWatch=false}={}){
+export function installValidationTools({source=repository,destination=path.join(path.dirname(source),'righelt-validation-tools'),skillRoot=path.join(os.homedir(),'.codex/skills'),revision='origin/main',install=false,update=false,updateGhWatch=false,updateShippingSkills=false}={}){
  source=path.resolve(source);destination=path.resolve(destination);skillRoot=path.resolve(skillRoot);
  if(source===destination)throw Error('Released tools must have a dedicated checkout');
  if(install)git(source,'fetch','origin','main');
  const release=resolveRelease(source,revision);
  const adapter=path.join(skillRoot,'righelt-validation/SKILL.md');
  const watcher=path.join(skillRoot,'gh-watch-and-repair-pr/SKILL.md');
- const plan={source,destination,revision:release.head,mergedMain:release.main,adapter,...(updateGhWatch?{watcher}:{}),install};
+ const shipping=path.join(skillRoot,'ship-worktree/SKILL.md');
+ const plan={source,destination,...(updateShippingSkills?{shipping}:{}),revision:release.head,mergedMain:release.main,adapter,...(updateGhWatch?{watcher}:{}),install};
  if(!install)return plan;
  if(existsSync(destination)){
   if(lstatSync(destination).isSymbolicLink())throw Error('Refusing a symlink tools checkout');
@@ -52,6 +53,10 @@ export function installValidationTools({source=repository,destination=path.join(
   const template=git(source,'show',`${release.head}:docs/ai/GH_WATCH_AND_REPAIR_PR_SKILL.template.md`);
   installFile(watcher,template.replaceAll('__VALIDATION_TOOLS__',destination)+'\n');
  }
+ if(updateShippingSkills&&existsSync(shipping)){
+  const original=readFileSync(shipping,'utf8');
+  installFile(shipping,original.replace('rerun the full visual suite, and amend the feature commit.', 'rerun affected visual checks and the repository-required final pass, crediting compatible existing evidence, and amend the feature commit.'));
+ }
  return plan;
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
@@ -62,6 +67,7 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
    if(arg==='--install')options.install=true;
    else if(arg==='--update')options.update=true;
    else if(arg==='--update-gh-watch')options.updateGhWatch=true;
+   else if(arg==='--update-shipping-skills')options.updateShippingSkills=true;
    else if(keys[arg]){if(!process.argv[i+1]||process.argv[i+1].startsWith('--'))throw Error(`Missing value for ${arg}`);options[keys[arg]]=process.argv[++i];}
    else throw Error(`Unknown option ${arg}; default is a read-only plan. Use --install only after release and explicit authorization.`);
   }

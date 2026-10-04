@@ -31,6 +31,7 @@ test('declared input fingerprints survive documentation-only changes but invalid
  const root=await mkdtemp(path.join(os.tmpdir(),'bounded-input-'));await command(['git','init'],{cwd:root});await mkdir(path.join(root,'apps'));await mkdir(path.join(root,'docs'));
  await writeFile(path.join(root,'apps/a.js'),'a');await writeFile(path.join(root,'docs/a.md'),'a');await command(['git','add','.'],{cwd:root});
  const before=await checkInputFingerprint(root,'E2E');await writeFile(path.join(root,'docs/a.md'),'b');assert.equal(await checkInputFingerprint(root,'E2E'),before);
+ await writeFile(path.join(root,'apps/untracked.js'),'new behavior');assert.notEqual(await checkInputFingerprint(root,'E2E'),before);
  await writeFile(path.join(root,'apps/a.js'),'b');assert.notEqual(await checkInputFingerprint(root,'E2E'),before);
 });
 test('text-only behavioral evidence requires every existing client and retained flow',()=>{
@@ -52,4 +53,9 @@ test('report-only regeneration does not execute product checks or change raw evi
  await writeFile(evidence,'preserve failed attempt');await writeFile(run,JSON.stringify({id:'report-only',version:2,mode:'local',stages:[],prs:[],risks:['Disclosed intermittent failure']}));
  await command(['node',path.join(harnessRoot,'scripts/validation/cli.mjs'),'report','--run',run],{cwd:root});
  assert.equal(await readFile(evidence,'utf8'),'preserve failed attempt');assert.match(await readFile(path.join(root,'site/index.html'),'utf8'),/Disclosed intermittent failure/);
+});
+
+test('checkpoint or receipt interruption cannot leave a passed final candidate',async()=>{
+ const {markInterrupted}=await import('../integrated-bounded.mjs');const run={complete:true,stages:[{status:'passed',checks:[{name:'E2E',status:'passed'}]}]};
+ markInterrupted(run);assert.equal(run.complete,false);assert.equal(run.orchestration,'failed');assert.equal(run.stages[0].status,'failed');assert.equal(run.stages[0].checks.at(-1).name,'Validation orchestration');
 });

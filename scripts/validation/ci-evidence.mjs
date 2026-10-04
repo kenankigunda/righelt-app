@@ -81,7 +81,7 @@ export async function importCI({repository,runId,cwd,outDir,expected,execute=com
   if(artifacts.length!==1)throw Error('Exact dependency/runtime provenance artifact unavailable');
   const artifact=artifacts[0];if(artifact.workflow_run?.id!==run.id||artifact.workflow_run?.head_sha!==run.head_sha)throw Error('Artifact run/head provenance mismatch');
   const archive=path.join(outDir,`provenance-${artifact.id}.zip`);
-  await execute(['gh','api',`repos/${repository}/actions/artifacts/${artifact.id}/zip`],{cwd,log:archive,maxOutputBytes:1024,logStdoutOnly:true});
+  await execute(['gh','api',`repos/${repository}/actions/artifacts/${artifact.id}/zip`,'--allow-escape-sequences'],{cwd,log:archive,maxOutputBytes:1024,logStdoutOnly:true});
   const members=(await call(['unzip','-Z1',archive])).trim().split('\n');
   if(members.length!==1||members[0]!==`${def.id}.json`)throw Error('Unexpected provenance archive entries');
   const provenance=JSON.parse(await call(['unzip','-p',archive,members[0]]));

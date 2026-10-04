@@ -94,13 +94,13 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
    if(name==='Account responsive proof'&&accountPersistRoot&&persistRoot&&!accountContinuityInput)await initializeAccountUpgrade({sourcePersistRoot:path.join(persistRoot,'api-state'),accountPersistRoot});
    if(policy?.lanes===2&&name==='E2E'&&checks[position+1]?.[0]==='Auth E2E'&&stage.sourceClean&&execute===command){
     const lane=await createAuthLane(cwd,path.join(dir,`lanes-${stageIndex}`));
-    const before=await fingerprint(lane);
+    const before=await fingerprint(lane);stage.activeChecks=[name,checks[position+1][0]];await save();
     const results=await Promise.allSettled([runCheck(name,argv),runCheck(...checks[position+1],lane)]);
     for(let i=0;i<results.length;i++){const r=results[i];stage.checks.push(r.status==='fulfilled'?r.value:{name:checks[position+i][0],status:'failed',reason:'Execution failed; inspect private logs'});}
     if(before!==await fingerprint(lane))stage.checks.push({name:'Account lane source integrity',status:'failed'});
-    position++;await save();continue;
+    position++;stage.activeChecks=[];await save();continue;
    }
-   const record=await runCheck(name,argv);stage.checks.push(record);
+   stage.activeChecks=[name];await save();const record=await runCheck(name,argv);stage.activeChecks=[];stage.checks.push(record);
    if(record.status==='failed'&&prerequisites.has(name))prerequisiteFailure=name;
    await save();
   }
@@ -122,7 +122,7 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
   if(policy)for(const q of policy.questions??[]){const required=policy.phase==='final'?q.checks:(q.boundaryChecks??[]);if(required.length)stage.checks.push({name:`Release question: ${q.id}`,status:required.every(name=>stage.checks.some(c=>c.name===name&&c.status==='passed'))?'passed':'failed',coverage:required});}
   stage.status=stage.checks.every(c=>c.status==='passed')&&stage.items.length>0&&!selection.unmapped.length?'passed':'failed';
  }catch(error){stage.status='failed';stage.checks.push({name:'Validation startup',status:'failed'});run.risks.push('Validation could not finish. Inspect the private startup log.');await saveJSON(path.join(dir,'startup-error.json'),{error:error.message});}
- finally{if(locked)await rm(lock,{recursive:true});}
+ finally{stage.activeChecks=[];if(locked)await rm(lock,{recursive:true});}
  if(stage.fingerprint!==await fingerprint(cwd)||revision!==await git(['rev-parse','HEAD'],cwd)){stage.status='stale';stage.sourceClean=false;run.risks.push('Source files changed during validation. Rerun before relying on this evidence.');}
  if(run.harnessRevision!==await git(['rev-parse','HEAD'],harnessRoot)||run.harnessFingerprint!==await fingerprint(harnessRoot)){stage.status='stale';run.risks.push('Validation harness changed during this run.');}
  await save();

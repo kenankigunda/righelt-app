@@ -28,7 +28,7 @@ const checkPaths={
 };
 export async function checkInputFingerprint(cwd,name){
  const prefixes=checkPaths[name];if(!prefixes)return null;
- const files=(await git(['ls-files','-z'],cwd)).split('\0').filter(Boolean).filter(f=>prefixes.some(p=>f.startsWith(p))||/(^|\/)(package.json|pnpm-lock.yaml|pnpm-workspace.yaml|\.npmrc|\.pnpmfile.cjs)$/.test(f));
+ const files=[...new Set((await git(['ls-files','-z'],cwd)+'\0'+await git(['ls-files','--others','--exclude-standard','-z'],cwd)).split('\0').filter(Boolean))].filter(f=>prefixes.some(p=>f.startsWith(p))||/(^|\/)(package.json|pnpm-lock.yaml|pnpm-workspace.yaml|\.npmrc|\.pnpmfile.cjs)$/.test(f));
  const inputs=[];for(const f of files.sort()){try{const p=path.join(cwd,f);inputs.push([f,hash((await lstat(p)).isSymbolicLink()?await readlink(p):await readFile(p))]);}catch(e){if(e.code!=='ENOENT')throw e;inputs.push([f,'deleted']);}}return hash(inputs);
 }
 export async function checkProvenance(cwd,argv,env,{fingerprint,phase,name}) {
