@@ -134,12 +134,12 @@ export const createAccountController = ({
   const publish = () => {
     if (!destroyed) onChange(snapshot());
   };
-  const retire = (next = { authenticated: false }, broadcast = false, owner = null) => {
+  const retire = (next = { authenticated: false }, broadcast = false, owner = null, completedLogoutGeneration = null) => {
     generation++;
     clearTimeout(expiryTimer);
     for (const controller of controllers) controller.abort();
     controllers.clear();
-    onTransition({ ...snapshot(), session: structuredClone(next), generation }, { owner });
+    onTransition({ ...snapshot(), session: structuredClone(next), generation }, { owner, ...(completedLogoutGeneration === null ? {} : { completedLogoutGeneration }) });
     session = next;
     if (broadcast) {
       write(AUTH_CHANGE_KEY, `${now()}:${Math.random()}`);
@@ -277,8 +277,9 @@ export const createAccountController = ({
       logoutRetryDelay = 1000;
       write(LOGOUT_PENDING_KEY, null);
       announce({ type: "logout-complete" });
-      // Rebuild the anonymous transport with pendingLogout cleared.
-      retire({ authenticated: false }, true);
+      // Rebuild the anonymous transport without retiring a newer anonymous form
+      // opened in this exact pending-logout generation.
+      retire({ authenticated: false }, true, null, generation);
     })()
       .catch((error) => {
         scheduleLogoutRetry();
