@@ -1,5 +1,5 @@
 // Engineering workload only: synthetic fixed logits, no training or strength claims.
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, readdir } from 'node:fs/promises';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -41,9 +41,11 @@ if(options.child){
     for(let i=0;i<policyLogits.length;i++)policyLogits[i]=Math.sin(i*1.7)*.25;
     inferences++;inferenceMs+=performance.now()-tick;return{policyLogits,value:.125};
   });
-  const searchMs=performance.now()-began;let recording,replay,nextHash;
+  const searchMs=performance.now()-began;let recording,replay,nextHash,transitionProof;
   if(result.status==='ready'){
-    const next=result.nextState??bound(()=>player.transition(state,result.action));nextHash=engine.deterministicStateHash(next);
+    transitionProof=timed(()=>result.nextState??bound(()=>player.transition(state,result.action)));
+    if(transitionProof.status!=='completed')throw new Error('Selected transition did not finish');
+    const next=transitionProof.value;nextHash=engine.deterministicStateHash(next);delete transitionProof.value;
     let record;
     recording=timed(()=>{
       record={controller:state.sideToMove,action:result.action,beforeHash:engine.deterministicStateHash(state),afterHash:nextHash,
@@ -55,17 +57,23 @@ if(options.child){
       const {replayDecision}=await import('./../ai-trainer/decision-replay.mjs');
       const {createEngineOperationBudget}=await import('./../ai-trainer/engine-operation-budget.mjs');
       const budget=createEngineOperationBudget('replay',2048,()=>{});
-      replay=timed(()=>engine.deterministicStateHash(replayDecision(state,record,budget.bounded)));
+      replay=timed(()=>{
+        if(job.mode==='baseline'){
+          if(JSON.stringify([...bound(()=>player.legalActionMap(state)).keys()])!==JSON.stringify(record.legal))throw new Error('Baseline replay legal mask mismatch');
+          return engine.deterministicStateHash(bound(()=>player.transition(state,record.action)));
+        }
+        return engine.deterministicStateHash(replayDecision(state,record,budget.bounded));
+      });
       if(replay.status==='completed'&&replay.value!==nextHash)throw new Error('Replay parity mismatch');
     }
   }
   const {nextState,...compact}=result;
   process.stdout.write(JSON.stringify({id:job.row.id,mode:job.mode,iteration:job.iteration,initializationMs,legal,
-    result:compact,nextHash,searchMs,recording,replay,inferences,inferenceMs,
+    result:compact,nextHash,searchMs,transitionProof,recording,replay,inferences,inferenceMs,
     ...(job.instrument?{instrumentation:{counters,uniqueContinuationStates:unique.size,supplyMs}}:{}),
     peakRssKiB:process.resourceUsage().maxRSS,heapUsedBytes:process.memoryUsage().heapUsed}));
 }else{
-  if(!options.corpus||!options.output||!options['baseline-root'])throw new Error('Required: --corpus FILE --output FILE --baseline-root DIR [--repetitions 3]');
+  if(!options.corpus||!options.output||!options['baseline-root']||!/^[a-f0-9]{40}$/.test(options['baseline-revision']??''))throw new Error('Required: --corpus FILE --output FILE --baseline-root DIR --baseline-revision SHA [--repetitions 3]');
   const bytes=await readFile(options.corpus),corpus=JSON.parse(bytes),repetitions=Number(options.repetitions??3);
   if(!Number.isSafeInteger(repetitions)||repetitions<1||repetitions>10||corpus.states.some(row=>row.partition==='final'))throw new Error('Invalid diagnostic workload');
   const rows=[],script=fileURLToPath(import.meta.url);
@@ -94,10 +102,24 @@ if(options.child){
   }
   const profiles=[];
   for(const row of corpus.states)profiles.push(await run({row,mode:'instrumented-cache-off',iteration:0,root,cache:false,instrument:true}));
+  async function sourceDigest(directory){
+    const digest=createHash('sha256');
+    async function visit(relative){
+      for(const entry of (await readdir(path.join(directory,relative),{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))){
+        const name=path.join(relative,entry.name);
+        if(entry.isDirectory())await visit(name);
+        else if(entry.isFile()){digest.update(name);digest.update(await readFile(path.join(directory,name)));}
+      }
+    }
+    for(const name of ['packages/game-engine/src','packages/computer-player/src','packages/computer-player/config','packages/shared-types/src'])await visit(name);
+    return digest.digest('hex');
+  }
   const report={schema:1,kind:'engineering-selection-diagnostic',createdAt:new Date().toISOString(),
     sourceRevision:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),
     sourceDirty:!!execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim(),
-    baselineRoot:path.resolve(options['baseline-root']),corpusSha256:createHash('sha256').update(bytes).digest('hex'),
+    baselineRoot:path.resolve(options['baseline-root']),baselineRevision:options['baseline-revision'],
+    baselineSourceSha256:await sourceDigest(path.resolve(options['baseline-root'])),currentSourceSha256:await sourceDigest(root),
+    replayRuntime:'Each mode uses its own engine; baseline reconstructs the full mask and current modes use the partial-aware verifier',corpusSha256:createHash('sha256').update(bytes).digest('hex'),
     evaluator:'Fixed synthetic policy logits and value; no trained model or strength measurement',
     cacheEnabledByDefault:false,actualPhone:false,trainingRestarted:false,repetitions,rows,profiles};
   await writeFile(options.output,JSON.stringify(report,null,2),{flag:'wx'});

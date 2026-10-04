@@ -33,12 +33,12 @@ A ready move returned at a soft deadline is valid runtime recovery, but is censo
 
 ### Decision-local cache pilot and selection diagnostics
 
-`pnpm ai:selection-diagnostic --corpus FILE --baseline-root DIR --output FILE --repetitions 3`
+`pnpm ai:selection-diagnostic --corpus FILE --baseline-root DIR --baseline-revision SHA --output FILE --repetitions 3`
 compares the archived earlier engine/search source, current default behavior and the
 opt-in cache on the same development workload. Archive the chosen source revision
 with its `packages/game-engine`, `packages/computer-player` and `packages/shared-types`
 paths. The corpus must not contain final partitions. The command refuses to overwrite
-its output and uses isolated, time-bounded child processes. Fixed synthetic logits
+its output, records revision and source digests, and uses isolated, time-bounded child processes. Fixed synthetic logits
 isolate engine/search costs; these results say nothing about playing strength.
 
 The report separates exact enumeration, selection, recording, independent replay,
