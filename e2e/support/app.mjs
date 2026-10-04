@@ -66,6 +66,10 @@ export const createGameFromHome = async (page) => {
   }
 
   const createBody = await createResponse.json();
+  // A successful create response can precede local WebSocket reconciliation.
+  // This shared action is gated by the same local recovery state as board input.
+  await expect(page.locator('[data-action="play-as-both-players"]')).toBeEnabled();
+  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
 
   return {
     gameHash: url.hash,
