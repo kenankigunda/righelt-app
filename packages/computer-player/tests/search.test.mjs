@@ -19,14 +19,21 @@ test("seeded PUCT returns completed legal model-informed visits", async () => {
   assert.equal(first.actions.find(item => item.index === first.actionIndex).immediate, "eligible");
   assert.ok(Math.abs(first.policy.reduce((sum, item) => sum + item.probability, 0) - 1) < 1e-10);
   assert.ok(first.nodes <= 2048);
+  assert.equal(first.policyMask, true);
+  assert.equal(first.fallback, null);
 });
 
-test("expired and tiny budgets recover rather than silently emitting a policy-only action", async () => {
+test("expired pre-model work recovers; tiny post-model budgets emit explicit masked fallback", async () => {
   const deadline = await selectMove({ state: initial(), seed: 1, deadlineMs: 0 }, uniform);
   assert.equal(deadline.status, "recovery");
   assert.equal(deadline.stopped, "deadline");
   const tiny = await selectMove({ state: initial(), seed: 1, maxNodes: 1 }, uniform);
-  assert.equal(tiny.status, "recovery");
+  assert.equal(tiny.status, "ready");
+  assert.equal(tiny.reason, "model-fallback");
+  assert.equal(tiny.fallback.reason, "safety-incomplete");
+  assert.equal(tiny.policyMask, false);
+  assert.deepEqual(tiny.policy, []);
+  assert.ok(tiny.actions.every(action => action.visits === 0));
   assert.equal(tiny.stopped, "node-limit");
 });
 
@@ -160,7 +167,8 @@ test("internal legal enumeration has its own allowance without raising the searc
     unit('A','P1',4,4),unit('B','P1',5,5),unit('E0','P2',0,4),unit('E1','P2',9,4),unit('E2','P2',4,2)]});
   const state=buildContinuationSuccessorState(raw,{type:'rush',actorId:'A',from:{row:4,col:4},to:{row:4,col:3}});
   const result=await selectMove({state,seed:107,maxNodes:2},uniform);
-  assert.equal(result.status,'recovery');assert.equal(result.stopped,'node-limit');assert.equal(result.nodes,2);
+  assert.equal(result.status,'ready');assert.equal(result.reason,'model-fallback');
+  assert.equal(result.policyMask,false);assert.equal(result.stopped,'node-limit');assert.equal(result.nodes,2);
   assert.ok(result.actions.length>0);
   assert.ok(result.engineBudget.peakExpansions>result.nodes);
   assert.equal(result.engineBudget.perOperationLimit,16384);
