@@ -13,6 +13,9 @@ const control = async action => {
 test.beforeEach(async () => control("reset-limits"));
 async function register(page, username, { gate = false } = {}) {
   await page.goto("/");
+  // The play button also exists while startup retries. The account trigger
+  // appears only after startup is ready, which this happy-path helper needs.
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
   await page.getByRole("button", { name: gate ? "Start new game" : "Sign in", exact: true }).click();
   await expect(dialog(page)).toBeVisible();
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
@@ -38,6 +41,43 @@ async function signIn(page, username, secret = password) {
   await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
 }
+
+test("registration helper waits for a failed bootstrap retry before submitting", async ({ page }) => {
+  let bootstrapRequests = 0, registerRequests = 0, release, retryStarted;
+  const held = new Promise(resolve => { release = resolve; });
+  const retry = new Promise(resolve => { retryStarted = resolve; });
+  await page.route("**/api/shell/bootstrap", async route => {
+    if (++bootstrapRequests === 1) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ ok: false, error: "local_api_unavailable" }) });
+      return;
+    }
+    retryStarted();
+    await held;
+    await route.continue();
+  });
+  await page.route("**/api/auth/register", async route => {
+    registerRequests++;
+    await route.continue();
+  });
+  // Capture rejection immediately, including when demonstrating the old race.
+  const registration = register(page, uniqueName(), { gate: true }).then(value => ({ value }), error => ({ error }));
+  try {
+    await retry;
+    await expect(page.getByRole("button", { name: "Start new game", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in", exact: true })).not.toBeVisible();
+    await expect(dialog(page)).not.toBeVisible();
+    expect(registerRequests).toBe(0);
+    release();
+    const outcome = await registration;
+    if (outcome.error) throw outcome.error;
+    expect(registerRequests).toBe(1);
+    await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  } finally {
+    release();
+    await registration;
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
 async function makeAccountMove(page) {
   const action = await page.evaluate(async () => {
     const session = await (await fetch("/api/auth/session")).json();
