@@ -58,21 +58,33 @@ def cleanup_owned(directory,owner=None):
             for process in leader.children(recursive=True)+[leader]:
                 witnessed[(process.pid,process.create_time())]=process
         except (ProcessLookupError,psutil.NoSuchProcess):pass
+    tokens={}
+    for record in records:
+        token=record.get('groupToken')
+        if isinstance(token,str) and token:
+            tokens[token]=min(tokens.get(token,record['created']),record['created'])
+    earliest=min(tokens.values(),default=float('inf'))
     deadline=time.monotonic()+3
     while True:
         targets=dict(witnessed)
         for process in psutil.process_iter():
             try:
-                group=os.getpgid(process.pid)
-                relevant=[record for record in records if record['group']==group]
-                if not relevant:continue
                 birth=process.create_time()
                 if (process.pid,birth) in targets:continue
-                # Group/session numbers alone are insufficient after leader
-                # death: an unrelated later session can reuse the same PID.
-                if os.getsid(process.pid)!=group:continue
-                token=process.environ().get('RIGHELT_COMPUTE_GROUP_TOKEN')
-                if any(record.get('groupToken') and record['groupToken']==token for record in relevant):
+                if birth<earliest:continue
+                # Detached descendants (including Chromium) inherit the unique
+                # allocation token but intentionally create another group/session.
+                # The token, creation time and same user establish ownership;
+                # group numbers alone never do. Process.kill checks PID reuse.
+                if process.uids().real!=os.getuid():continue
+                group=os.getpgid(process.pid)
+                try:token=process.environ().get('RIGHELT_COMPUTE_GROUP_TOKEN')
+                except psutil.AccessDenied:
+                    # A known group must be inspectable to verify cleanup. An
+                    # unrelated protected process grants no authority to kill it.
+                    if any(record['group']==group for record in records):raise
+                    continue
+                if token in tokens and birth>=tokens[token]:
                     targets[(process.pid,birth)]=process
             except (ProcessLookupError,psutil.NoSuchProcess):continue
         live=[]
