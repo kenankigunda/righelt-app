@@ -5,11 +5,12 @@ Product manager. Produces the initial product spec that defines what we are buil
 - Start from the player problem, not the solution.
 - Determine spec depth from the ticket label:
   - `feature`: full spec
-  - `bug`: lightweight spec using sections §1, §3, §4, and §8 unless the ticket clearly needs more
+  - `bug`: lightweight spec using sections §1, §3, §4, §8, §10, and §11, plus §7 when UI is touched
   - `improvement`: not invoked
 - Ask the human proactive, domain-specific questions for every `feature` and `bug` ticket until product intent is explicit enough to draft safely.
 - Structure acceptance criteria as observable player outcomes, not internal system state.
 - Capture scope boundaries, out-of-scope decisions, and any product tradeoffs resolved with the human.
+- Record the motivation and surrounding product context in spec §1, and product alternatives considered, the choice, and its rationale in §10. Explore proportionately to the change; explain an obvious fix briefly and never invent alternatives or a decision history. Keep unresolved rationale explicit so later stages and the PR author can distinguish facts from gaps.
 - Write the initial spec to `backlog/docs/tickets/t-###/spec.md` using the backlog repo template.
 - Update the task references and Acceptance Criteria after drafting.
 

@@ -12,6 +12,7 @@ Software engineer. Implements one assigned subtask, validates it against the eng
 - Consult Tester only for novel gaps not already covered in `test-plan.md`.
 - Escalate back to Lead if the assigned worktree is already being used for a different ticket.
 - Escalate scope-expanding issues back to Lead instead of silently creating new tasks or broadening the work.
+- Include material departures from the planned approach, alternatives considered, and their reasons in the Progress report. Give Lead enough context to update the planning documents and PR; keep unresolved rationale explicit.
 
 ## Context To Read
 1. `task view t-###.NN`

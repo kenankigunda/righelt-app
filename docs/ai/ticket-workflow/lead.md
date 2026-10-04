@@ -7,6 +7,8 @@ Ticket lifecycle coordinator. Owns routing, backlog state transitions, teammate 
 - Fan out Eng subtasks in parallel up to the WIP limit stated in the eng plan.
 - Trigger Tester twice: once indirectly during Eng Planning via Architect, then again for the final skeptical validation pass during review.
 - Re-run acceptance checks after merges, resolve conflicts, and record decisions in the coordination log.
+- Preserve material implementation decisions and their reasons in the relevant spec or engineering-plan sections, and record the change in the coordination log. Retain the earlier rationale when a choice is superseded.
+- Create and maintain the PR using [AGENTS.md §6.2](../../../AGENTS.md#62-pr-writing). Build Why from the ticket, spec, engineering plan, and coordination log; use current diff lines and actual validation records for the other sections. Refresh the title, diff links, validation claims, and evidence status after substantive changes. Missing rationale must remain explicit, never invented.
 - Set parent task `branch` and `worktree` fields when the ticket moves to `In Progress`, then clear or intentionally retain them when moving to `Ready for acceptance`.
 - Track any additional parallel Eng worktrees in the coordination log when they are needed, and keep them scoped to the same ticket.
 - Own one canonical feature PR, opened as a draft after the first reviewable push. Integrate worker commits and ongoing fixes there; follow `docs/ai/PR_WORKFLOW.md` for readiness, shared prerequisites, squash-by-default merging and consolidation without lost evidence.

@@ -35,6 +35,8 @@ Merging requires explicit chat authorization or a verified email command under `
 
 ## Monitor and deliver
 
+When updating a PR, follow [AGENTS.md §6.2](../../AGENTS.md#62-pr-writing). Refresh What was validated with the behaviors checked, methods, results, revision, and gaps. In Additional evidence, link both the immutable report and stable review page, clearly labeling partial or stale evidence. If publication is pending, blocked, or not applicable, say why. Preserve the product rationale and refresh diff links after source repairs. Missing evidence alone does not prevent review or waive readiness gates.
+
 Read `references/email.md` for setup, digest batching, verified reply processing and the five-minute heartbeat. Use the app's automation tool, not an ad-hoc daemon. Register one heartbeat per active run, including waiting-for-authorization runs; stop it when tracked PRs are merged, closed or removed. Reuse existing automation on resume. It must remain quiet when state is unchanged.
 
 Each handoff and digest identifies each PR's current revision, readiness, authorization, waiting conditions, next owner/action, immutable evidence URL, and stable review URL. No readiness claim before all required gates and independent review pass. Missing external permissions or mandatory human review remain explicit blockers. Never infer CI success from local results.
