@@ -23,6 +23,7 @@ const getControlSeatForTurn = (state, turnOwnerSeat) => {
 };
 
 const createIdentity = (random = Math.random) => `id-${random().toString(36).slice(2, 10)}`;
+const isOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
 const createClientCommandId = ({ gameId, identityId, random = Math.random }) => {
   const now = Date.now().toString(36);
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -63,6 +64,25 @@ const isVerboseClientLoggingEnabled = (storage) => {
   const storageFlag = storage?.getItem?.("righelt.verboseClientLogs");
   const value = processEnvFlag || globalFlag || (typeof storageFlag === "string" ? storageFlag.toLowerCase() : "");
   return value === "1" || value === "true" || value === "yes" || value === "on" || value === "verbose";
+};
+
+export const computeLeaveDeleteLabel = (game, identityId) => {
+  if (!game || typeof identityId !== "string" || identityId.length === 0) {
+    return "Leave";
+  }
+  if (game.selfPlayMode === true) {
+    return "Delete";
+  }
+  const isPlayer1 = game.player1?.identityId === identityId;
+  const isPlayer2 = game.player2?.identityId === identityId;
+  const isViewer = Array.isArray(game.viewers) && game.viewers.some((viewer) => viewer?.identityId === identityId);
+  if (isViewer) {
+    return "Leave";
+  }
+  if ((isPlayer1 && !game.player2) || (isPlayer2 && !game.player1)) {
+    return "Delete";
+  }
+  return "Leave";
 };
 
 export const createLiveTransportStore = ({
@@ -629,6 +649,49 @@ export const createLiveTransportStore = ({
     return { ...body, game: upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }) };
   };
 
+  const leaveGame = async ({ gameId }) => {
+    if (!isOnline()) {
+      const error = new Error("offline");
+      error.code = "offline";
+      throw error;
+    }
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/leave`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId }),
+    });
+    const body = await mustOk(response);
+    return { ...body, game: upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }) };
+  };
+
+  const restoreGame = async ({ gameId }) => {
+    if (!isOnline()) {
+      const error = new Error("offline");
+      error.code = "offline";
+      throw error;
+    }
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/restore`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId }),
+    });
+    const body = await mustOk(response);
+    return { ...body, game: upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq }) };
+  };
+
+  const leaveAsViewer = async ({ gameId }) => {
+    const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/leave-viewer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identityId }),
+    });
+    const body = await mustOk(response);
+    if (body.game) {
+      upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq });
+    }
+    return { ...body, game: getGameViewModel(gameId) };
+  };
+
   const approvePendingRequest = async ({ gameId, requesterIdentityId }) => {
     const response = await fetcher(`/api/shell/games/${encodeURIComponent(gameId)}/approve`, {
       method: "POST",
@@ -845,6 +908,9 @@ export const createLiveTransportStore = ({
     launchHistoryBranch,
     joinGame,
     playAsBothPlayers,
+    leaveGame,
+    restoreGame,
+    leaveAsViewer,
     approvePendingRequest,
     addMove,
     loadGameLegalActions,

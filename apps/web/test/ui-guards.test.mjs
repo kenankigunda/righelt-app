@@ -61,6 +61,17 @@ test("game, join/invite, and history use shared section spacing structure", () =
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
 });
 
+test("game-page delete, restore, and viewer-leave controls stay on the game-shell path", () => {
+  assert.match(source, /const renderGameDeletedGate = \(game\) =>/);
+  assert.match(source, /data-testid="game-deleted-gate"/);
+  assert.match(source, /data-testid="restore-game"/);
+  assert.match(source, /const renderGameNotFound = \(\) =>/);
+  assert.match(source, /data-testid="game-not-found"/);
+  assert.match(source, /if \(action === "leave-viewer"\) \{[\s\S]*leaveGamePageViewer\(gameId\);[\s\S]*return;/s);
+  assert.match(source, /if \(action === "restore-game"\) \{[\s\S]*transport\.restoreGame\(\{ gameId \}\);/s);
+  assert.match(source, /if \(currentRoute\.name === "game" && isDeletedGameRoute\) \{[\s\S]*destroyMountedBoardRuntime\(\);[\s\S]*return;/s);
+});
+
 test("history live-return control stays mounted without blocking through the global busy gate", () => {
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
   assert.doesNotMatch(source, /data-action="return-live"[^`]*\$\{busy \? "disabled" : ""\}/);
@@ -82,7 +93,10 @@ test("invite choice commit suppresses repeat game-route invite gate and join act
   assert.match(source, /if \(routeName === "game" && inviteChoiceCommittedByGameId\.has\(game\.id\)\) \{\s*return null;\s*\}/s);
   assert.match(source, /if \(action === "join-viewer" \|\| action === "accept-invite-viewer"\)[\s\S]*?markInviteChoiceCommitted\(gameId\);/s);
   assert.match(source, /if \(action === "join-player" \|\| action === "accept-invite-player"\)[\s\S]*?markInviteChoiceCommitted\(gameId\);/s);
-  assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*resolvedInvite = null;\s*await transport\.loadGame\(currentRoute\.gameId, \{ openAsViewer: false \}\);\s*return;\s*\}/s);
+  assert.match(
+    source,
+    /if \(currentRoute\.name === "game"\) \{\s*resolvedInvite = null;\s*try \{\s*await transport\.loadGame\(currentRoute\.gameId, \{ openAsViewer: false \}\);\s*\} catch \(error\) \{\s*if \(\(error\?\.(?:code|body\?\.error) === "game_not_found" \|\| error\?\.body\?\.error === "game_not_found"\) && currentRoute\.gameId\) \{\s*currentRoute = normalizeRouteFlyoutState\(\{\s*name: "game-not-found",\s*gameId: currentRoute\.gameId,\s*debug: currentRoute\.debug,\s*scenarios: currentRoute\.scenarios,\s*\}\);\s*syncFlyoutRenderOrder\(currentRoute\);\s*syncLiveChannels\(\);\s*return;\s*\}\s*throw error;\s*\}\s*return;\s*\}/s,
+  );
   assert.match(source, /const startRouteSync = \(\{ renderStart = true \} = \{\}\) => \{/);
   assert.match(source, /routeHydrated = false;\s*syncLiveChannels\(\);/s);
   assert.match(source, /const initialRender = async \(\) => \{\s*routeHydrated = false;\s*syncLiveChannels\(\);\s*render\(\{ animatePanels: false, includeBoard: false \}\);/s);
@@ -176,13 +190,18 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /my: createHomeSectionState\("My games"\),/);
   assert.match(source, /other: createHomeSectionState\("Other games"\),/);
   assert.match(source, /smoke: createHomeSectionState\("Deploy smoke player"\),/);
+  assert.match(source, /"trash-my": createHomeSectionState\("My deleted games"\),/);
+  assert.match(source, /"trash-other": createHomeSectionState\("Other games"\),/);
   assert.match(source, /serverPage:\s*0,/);
   assert.match(source, /serverTotalPages:\s*0,/);
   assert.match(source, /serverPageGameIds:\s*\[\],/);
   assert.match(source, /serverPageGameIdsByPage:\s*\{\},/);
   assert.match(source, /visiblePageSize:\s*HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,/);
   assert.match(source, /visibleColumnCount:\s*1,/);
-  assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \(route\?\.debug \? \["my", "other", "smoke"\] : \["my", "other"\]\);/);
+  assert.match(source, /const getVisibleHomeSectionKeys = \(route = currentRoute\) => \{/);
+  assert.match(source, /if \(route\?\.name === "trash"\) \{\s*return \["trash-my"\];\s*\}/s);
+  assert.match(source, /if \(route\?\.name !== "home"\) \{\s*return \[\];\s*\}/s);
+  assert.match(source, /return route\?\.debug \? \["my", "other", "smoke"\] : \["my", "other"\];/);
   assert.match(source, /const getHomeSectionCardMinWidthPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_MIN_WIDTH_REM;/);
   assert.match(source, /const getHomeSectionCardGapPx = \(\) => getRootFontSizePx\(\) \* HOME_SECTION_CARD_GAP_REM;/);
   assert.match(source, /const carouselEl = appEl\?\.querySelector\?\.\(`\[data-home-carousel="\$\{sectionKey\}"\]`\);/);
@@ -209,7 +228,9 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /const renderHomeStartButton = \(\) =>/);
   assert.match(source, /data-action="create-game"/);
   assert.match(source, /home-games-section-controls home-games-section-controls-\$\{escapeHtml\(placement\)\}/);
-  assert.match(source, /const shouldAlwaysRender = sectionKey === "my";/);
+  assert.match(source, /const renderHomeGameSection = \(sectionKey, \{ alwaysRender = sectionKey === "my", menuMode = currentRoute\.name === "trash" \? "trash" : "home" \} = \{\}\) =>/);
+  assert.match(source, /const renderTrashBanner = \(trashSection = getHomeSection\("trash-my"\)\) =>/);
+  assert.match(source, /data-testid="trash-bin-banner"/);
   assert.match(source, /const showEmptyState = section\.totalGames === 0;/);
   assert.match(source, /const showHeaderPaging = showPaging && section\.visibleColumnCount > 1;/);
   assert.match(source, /const showFooterPaging = showPaging && section\.visibleColumnCount === 1;/);
@@ -232,7 +253,8 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\)/);
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "footer" \}\)/);
   assert.match(source, /hasHeaderAction \? renderHomeStartButton\(\) : ""/);
-  assert.match(source, /<p class="small home-games-empty">No games yet\.<\/p>/);
+  assert.match(source, /const emptyStateText = sectionKey\.startsWith\("trash-"\) \? "No deleted games yet\." : "No games yet\.";?/);
+  assert.match(source, /<p class="small home-games-empty">\$\{escapeHtml\(emptyStateText\)\}<\/p>/);
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
   assert.match(source, /if \(getShellLayoutMode\(\) !== "narrow" \|\| !\(appEl instanceof HTMLElement\)\) \{\s*return;\s*\}/s);
   assert.match(source, /sectionEl\.scrollIntoView\(\{\s*behavior: "smooth",\s*block: "start",\s*\}\);/s);

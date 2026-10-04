@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createLiveTransportStore } from "../shell/live-transport.js";
+import { computeLeaveDeleteLabel, createLiveTransportStore } from "../shell/live-transport.js";
 import { IDENTITY_KEY } from "../shell/persistence.js";
 import {
   applyAction,
@@ -1576,4 +1576,104 @@ test("I-12: two client stores receive identical destroyedPieces on the same move
     moveB.destroyedPieces,
     "I-12: both stores must have identical destroyedPieces on the same move",
   );
+});
+
+test("leave/delete label logic distinguishes delete, leave, and viewer states", () => {
+  const game = buildLiveGame();
+  assert.equal(computeLeaveDeleteLabel(game, "id-a"), "Leave");
+  assert.equal(computeLeaveDeleteLabel({ ...game, selfPlayMode: true }, "id-a"), "Delete");
+  assert.equal(computeLeaveDeleteLabel({ ...game, player2: null }, "id-a"), "Delete");
+  assert.equal(
+    computeLeaveDeleteLabel({ ...game, viewers: [{ identityId: "id-viewer", connected: true }] }, "id-viewer"),
+    "Leave",
+  );
+});
+
+test("leave/restore/leave-viewer transport methods call the matching endpoints and update local cache", async () => {
+  const baseGame = buildLiveGame();
+  baseGame.deletedAt = null;
+  const calls = [];
+  const fetcher = async (url, init = {}) => {
+    const method = init.method || "GET";
+    const body = init.body ? JSON.parse(init.body) : null;
+    calls.push({ url: String(url), method, body });
+    if (String(url).startsWith(`/api/shell/games/${baseGame.id}?`) && method === "GET") {
+      return Response.json({ ok: true, game: baseGame, eventSeq: 1 });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/leave`) {
+      return Response.json({
+        ok: true,
+        deleted: false,
+        game: { ...clone(baseGame), player1: null, notifications: [...baseGame.notifications, "Player left"] },
+        eventSeq: 2,
+      });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/restore`) {
+      return Response.json({
+        ok: true,
+        game: { ...clone(baseGame), deletedAt: null, notifications: [...baseGame.notifications, "Game restored"] },
+        eventSeq: 3,
+      });
+    }
+    if (String(url) === `/api/shell/games/${baseGame.id}/leave-viewer`) {
+      return Response.json({
+        ok: true,
+        redirectTarget: "join",
+        game: { ...clone(baseGame), viewers: [], myRole: "Guest" },
+        eventSeq: 4,
+      });
+    }
+    return Response.json({ ok: true, games: [] });
+  };
+
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), fetcher, random: () => 0.42 });
+  await store.loadGame(baseGame.id);
+
+  const left = await store.leaveGame({ gameId: baseGame.id });
+  assert.equal(left.deleted, false);
+  assert.equal(store.getGameViewModel(baseGame.id).player1, null);
+
+  const restored = await store.restoreGame({ gameId: baseGame.id });
+  assert.equal(restored.game.deletedAt, null);
+
+  const viewerLeft = await store.leaveAsViewer({ gameId: baseGame.id });
+  assert.equal(viewerLeft.redirectTarget, "join");
+  assert.equal(store.getGameViewModel(baseGame.id).myRole, "Guest");
+
+  assert.deepEqual(
+    calls
+      .filter((entry) => entry.method === "POST")
+      .map((entry) => entry.url),
+    [
+      `/api/shell/games/${baseGame.id}/leave`,
+      `/api/shell/games/${baseGame.id}/restore`,
+      `/api/shell/games/${baseGame.id}/leave-viewer`,
+    ],
+  );
+});
+
+test("leave and restore reject immediately while offline", async () => {
+  const originalNavigator = globalThis.navigator;
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: { onLine: false },
+  });
+
+  try {
+    const store = createLiveTransportStore({
+      storage: createMemoryStorage(),
+      fetcher: async () => {
+        assert.fail("fetcher should not be called while offline");
+      },
+      random: () => 0.9,
+    });
+
+    await assert.rejects(() => store.leaveGame({ gameId: "g-offline" }), (error) => error.code === "offline");
+    await assert.rejects(() => store.restoreGame({ gameId: "g-offline" }), (error) => error.code === "offline");
+  } finally {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: originalNavigator,
+    });
+  }
 });

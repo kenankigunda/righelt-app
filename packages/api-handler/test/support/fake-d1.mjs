@@ -16,12 +16,24 @@ export const createFakeD1 = () => {
     (Array.isArray(game?.pendingJoinRequests) &&
       game.pendingJoinRequests.some((request) => request?.identityId === "smoke-player"));
 
-  const toStoredRow = ({ gameId, createdAt, updatedAt, latestActivityAt, player1IdentityId, player2IdentityId, hasSmoke, stateJson, eventSeq }) => {
+  const toStoredRow = ({
+    gameId,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    latestActivityAt,
+    player1IdentityId,
+    player2IdentityId,
+    hasSmoke,
+    stateJson,
+    eventSeq,
+  }) => {
     const parsed = typeof stateJson === "string" ? JSON.parse(stateJson) : null;
     return {
       game_id: gameId,
       created_at: createdAt,
       updated_at: updatedAt,
+      deleted_at: deletedAt ?? parsed?.deletedAt ?? null,
       latest_activity_at: latestActivityAt,
       player1_identity_id: player1IdentityId ?? parsed?.player1?.identityId ?? null,
       player2_identity_id: player2IdentityId ?? parsed?.player2?.identityId ?? null,
@@ -41,22 +53,44 @@ export const createFakeD1 = () => {
 
   const filterRowsForHomeQuery = (normalized, params) => {
     const rows = [...shellGames.values()];
-    if (normalized.includes("WHERE has_smoke_identity = 1")) {
-      return rows.filter((row) => row.has_smoke_identity === 1);
+    const playerMatchSql = "(COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)";
+    if (normalized.includes("has_smoke_identity = 1")) {
+      return rows.filter(
+        (row) => row.has_smoke_identity === 1 && (!normalized.includes("deleted_at IS NULL") || row.deleted_at == null),
+      );
     }
-    if (normalized.includes("WHERE (COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)")) {
+    if (normalized.includes(`deleted_at IS NOT NULL AND ${playerMatchSql}`)) {
       const identityId = params[0];
       return rows.filter(
         (row) =>
-          row.has_smoke_identity === 0 &&
+          row.deleted_at != null &&
           (row.player1_identity_id === identityId || row.player2_identity_id === identityId),
       );
     }
-    if (normalized.includes("WHERE NOT (COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)")) {
+    if (normalized.includes(`deleted_at IS NOT NULL AND NOT ${playerMatchSql}`)) {
+      const identityId = params[0];
+      return rows.filter(
+        (row) =>
+          row.deleted_at != null &&
+          row.player1_identity_id !== identityId &&
+          row.player2_identity_id !== identityId,
+      );
+    }
+    if (normalized.includes(playerMatchSql) && !normalized.includes(`NOT ${playerMatchSql}`)) {
       const identityId = params[0];
       return rows.filter(
         (row) =>
           row.has_smoke_identity === 0 &&
+          row.deleted_at == null &&
+          (row.player1_identity_id === identityId || row.player2_identity_id === identityId),
+      );
+    }
+    if (normalized.includes(`NOT ${playerMatchSql}`)) {
+      const identityId = params[0];
+      return rows.filter(
+        (row) =>
+          row.has_smoke_identity === 0 &&
+          row.deleted_at == null &&
           row.player1_identity_id !== identityId &&
           row.player2_identity_id !== identityId,
       );
@@ -77,7 +111,7 @@ export const createFakeD1 = () => {
         writes.push({ query: normalized, params: [...params] });
 
         if (normalized.includes("INSERT INTO live_games")) {
-          const [gameId, createdAt, updatedAt, latestActivityAt, player1IdentityId, player2IdentityId, hasSmoke, stateJson, eventSeq = 0] =
+          const [gameId, createdAt, updatedAt, deletedAt, latestActivityAt, player1IdentityId, player2IdentityId, hasSmoke, stateJson, eventSeq = 0] =
             params;
           shellGames.set(
             gameId,
@@ -85,6 +119,7 @@ export const createFakeD1 = () => {
               gameId,
               createdAt,
               updatedAt,
+              deletedAt,
               latestActivityAt,
               player1IdentityId,
               player2IdentityId,
@@ -224,6 +259,7 @@ export const createFakeD1 = () => {
       const next = update(parsed);
       row.state_json = JSON.stringify(next);
       row.updated_at = next.updatedAt || row.updated_at;
+      row.deleted_at = next.deletedAt ?? null;
       row.latest_activity_at = next.lastMoveAt || next.updatedAt || next.createdAt || row.latest_activity_at;
       row.player1_identity_id = next.player1?.identityId ?? null;
       row.player2_identity_id = next.player2?.identityId ?? null;

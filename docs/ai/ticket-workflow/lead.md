@@ -42,6 +42,12 @@ Phases: `SPEC`, `VISUAL DESIGN`, `ENG PLANNING`, `IMPLEMENTATION`, `REVIEW`, `VA
 - When `coordination-log.md` exceeds roughly 200 lines, collapse completed work into a `## Summary (archived)` block of at most 10 lines and retain only the latest 3 to 5 detailed entries.
 - When transitioning to `Review`, include **Implementation Notes** in the same task update.
 - When transitioning to `Ready for acceptance`, include **Final Summary** in both the task and the final coordination-log entry.
+- Start the task's **Final Summary** with the canonical execution location so it is visible immediately in backlog browser views:
+
+```md
+Branch: `codex/t-###-execution`
+Worktree: `/absolute/path/to/worktree`
+```
 
 ## References
 - [docs/ai/TICKET_WORKFLOW.md](/Users/kenankigunda/.codex/worktrees/5b34/righelt/docs/ai/TICKET_WORKFLOW.md)

@@ -13,6 +13,7 @@ export const normalizeStaticGameCard = (card) => ({
   createdAt: typeof card?.createdAt === "string" ? card.createdAt : "",
   lastMoveAt: typeof card?.lastMoveAt === "string" ? card.lastMoveAt : null,
   updatedAt: typeof card?.updatedAt === "string" ? card.updatedAt : "",
+  deletedAt: typeof card?.deletedAt === "string" ? card.deletedAt : null,
   moveCount:
     typeof card?.moveCount === "number" && Number.isFinite(card.moveCount)
       ? card.moveCount
@@ -34,6 +35,7 @@ export const buildStaticGameCardFromGame = (game) =>
     createdAt: game?.createdAt,
     lastMoveAt: game?.lastMoveAt ?? null,
     updatedAt: game?.updatedAt,
+    deletedAt: game?.deletedAt ?? null,
     moveCount: Array.isArray(game?.moves) ? game.moves.length : 0,
     previewSnapshot: game?.liveCurrentSnapshot ?? game?.board?.state ?? game?.currentSnapshot ?? null,
     myRole: game?.myRole,

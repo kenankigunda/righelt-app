@@ -41,6 +41,18 @@ test("shell header stacks cleanly on narrow screens", () => {
     shellStylesSource,
     /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-menu-root\s*\{[\s\S]*display:\s*block;/s,
   );
+  assert.match(
+    shellStylesSource,
+    /\.shell-route-message\s*\{[\s\S]*width:\s*min\(100%, 32rem\);[\s\S]*justify-items:\s*center;[\s\S]*text-align:\s*center;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-route-message-copy\s*\{[\s\S]*display:\s*grid;[\s\S]*justify-items:\s*center;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.trash-bin-banner\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);[\s\S]*gap:\s*0\.75rem;[\s\S]*align-items:\s*start;[\s\S]*border:\s*1px solid color-mix\(in srgb, var\(--danger\) 18%, var\(--line\)\);[\s\S]*box-shadow:\s*0 10px 24px rgba\(29, 45, 53, 0\.08\);/s,
+  );
 });
 
 test("shell header separates layout spacing from panel chrome", () => {
@@ -70,6 +82,15 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
+    /\.shell-header-main\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-wrap:\s*wrap;[\s\S]*justify-content:\s*space-between;[\s\S]*gap:\s*0\.75rem 1rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-page-footer-actions\s*\{[\s\S]*display:\s*flex;[\s\S]*justify-content:\s*flex-start;[\s\S]*width:\s*100%;[\s\S]*margin-top:\s*0\.75rem;/s,
+  );
+  assert.doesNotMatch(shellStylesSource, /\.shell-header-trash-link\s*\{/);
+  assert.match(
+    shellStylesSource,
     /\.shell-header h1\s*\{[\s\S]*font-size:\s*2rem;/s,
   );
   assert.match(
@@ -78,15 +99,15 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*calc\(100%\s*\+\s*0\.45rem\);[\s\S]*right:\s*0;[\s\S]*width:\s*min\(17rem,\s*calc\(100vw\s*-\s*3\.5rem\)\);/s,
+    /\.shell-header-menu-button,\s*\.mini-board-card-menu-button\s*\{[\s\S]*border-radius:\s*10px;[\s\S]*background:\s*#fffefa;[\s\S]*box-shadow:\s*inset 0 1px 0 rgba\(255, 255, 255, 0\.92\);/s,
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel\s*\{[\s\S]*gap:\s*0;[\s\S]*padding:\s*0;[\s\S]*overflow:\s*hidden;/s,
+    /\.shell-header-menu-panel\s*\{[\s\S]*gap:\s*0;[\s\S]*padding:\s*0;[\s\S]*overflow:\s*hidden;[\s\S]*border:\s*1px solid color-mix\(in srgb, var\(--shell-elevated-border\) 82%, var\(--line\)\);/s,
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel\s*\{[\s\S]*transform-origin:\s*top right;[\s\S]*transform:\s*translateY\(-0\.35rem\) scale\(0\.78\);[\s\S]*opacity:\s*0;[\s\S]*pointer-events:\s*none;[\s\S]*transition:\s*[\s\S]*transform 180ms ease,[\s\S]*opacity 180ms ease;/s,
+    /\.shell-header-menu-panel\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*100%;[\s\S]*right:\s*0;[\s\S]*width:\s*min\(17rem,\s*calc\(100vw\s*-\s*3\.5rem\)\);[\s\S]*transform-origin:\s*top right;[\s\S]*transform:\s*translateY\(-0\.2rem\) scale\(0\.98\);[\s\S]*opacity:\s*0;[\s\S]*pointer-events:\s*none;[\s\S]*transition:\s*[\s\S]*transform 180ms ease,[\s\S]*opacity 180ms ease;/s,
   );
   assert.match(
     shellStylesSource,
@@ -94,11 +115,122 @@ test("shell header separates layout spacing from panel chrome", () => {
   );
   assert.match(
     shellStylesSource,
-    /\.shell-header-menu-panel button\.secondary\.shell-header-menu-item\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*3\.75rem;[\s\S]*border-radius:\s*0;[\s\S]*padding:\s*1rem 1\.1rem;/s,
+    /\.shell-header-menu-panel button\.secondary\.shell-header-menu-item\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*3rem;[\s\S]*justify-content:\s*flex-start;[\s\S]*padding:\s*0\.85rem 1rem;[\s\S]*border:\s*none;[\s\S]*border-radius:\s*0;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-header-menu-panel > \* \+ \*\s*\{[\s\S]*border-top:\s*1px solid color-mix\(in srgb, var\(--shell-elevated-border\) 76%, var\(--line\)\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-deleted-games-tile\s*\{[\s\S]*width:\s*min\(13\.5rem,\s*100%\);[\s\S]*min-height:\s*6\.75rem;[\s\S]*display:\s*block;[\s\S]*padding:\s*0;[\s\S]*border-radius:\s*18px;[\s\S]*box-shadow:\s*var\(--shell-elevated-shadow\);[\s\S]*text-align:\s*left;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-deleted-games-tile-content\s*\{[\s\S]*display:\s*grid;[\s\S]*justify-items:\s*start;[\s\S]*align-content:\s*start;[\s\S]*gap:\s*0\.3rem;[\s\S]*min-height:\s*6\.75rem;[\s\S]*padding:\s*1\.2rem 1\.1rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.home-deleted-games-tile-kicker\s*\{[\s\S]*letter-spacing:\s*0\.08em;[\s\S]*text-transform:\s*uppercase;[\s\S]*color:\s*var\(--muted\);/s,
+  );
+  assert.doesNotMatch(shellStylesSource, /\.home-page-footer-actions-inner\s*\{/);
+  assert.doesNotMatch(shellStylesSource, /\.home-page-footer-actions\s*\{[^}]*position:\s*fixed;/s);
+  assert.match(
+    shellStylesSource,
+    /\[data-hover-capability="hover"\] \.home-deleted-games-tile:not\(:disabled\):hover\s*\{[\s\S]*background:\s*linear-gradient\(180deg,\s*#fffefc 0%,\s*#f5efe2 100%\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card\s*\{[\s\S]*position:\s*relative;[\s\S]*overflow:\s*clip;/s,
+  );
+  assert.doesNotMatch(shellStylesSource, /\.mini-board-card\[data-home-game-card\] \.mini-board-card-link-surface\s*\{[\s\S]*padding-top:\s*3rem;/s);
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card\[data-home-game-card\] \.mini-board-card-header\s*\{[\s\S]*padding-right:\s*2\.9rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu\s*\{[\s\S]*display:\s*grid;[\s\S]*gap:\s*0;[\s\S]*justify-items:\s*end;[\s\S]*align-content:\s*start;[\s\S]*width:\s*max-content;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-overlay\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*0\.45rem;[\s\S]*right:\s*0\.45rem;[\s\S]*z-index:\s*3;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-button\s*\{[\s\S]*min-width:\s*2\.2rem;[\s\S]*min-height:\s*2\.2rem;[\s\S]*padding:\s*0\.36rem;[\s\S]*position:\s*relative;[\s\S]*z-index:\s*2;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.shell-header-menu-icon,\s*\.mini-board-card-menu-icon\s*\{[\s\S]*width:\s*1\.05rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-icon\s*\{[\s\S]*width:\s*0\.9rem;[\s\S]*gap:\s*0\.22rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-icon span\s*\{[\s\S]*width:\s*100%;[\s\S]*height:\s*0\.12rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-game\s*\{[\s\S]*position:\s*relative;[\s\S]*justify-items:\s*end;[\s\S]*align-content:\s*start;[\s\S]*width:\s*max-content;[\s\S]*z-index:\s*1;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-action-body\s*\{[\s\S]*display:\s*grid;[\s\S]*justify-items:\s*end;[\s\S]*gap:\s*0\.25rem;[\s\S]*width:\s*max-content;[\s\S]*margin-top:\s*-1px;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-action-capsule\s*\{[\s\S]*display:\s*grid;[\s\S]*width:\s*max-content;[\s\S]*max-width:\s*calc\(100vw\s*-\s*3rem\);[\s\S]*overflow:\s*hidden;[\s\S]*border:\s*1px solid color-mix\(in srgb, var\(--shell-elevated-border\) 82%, var\(--line\)\);[\s\S]*border-top-color:\s*color-mix\(in srgb, var\(--shell-elevated-border\) 92%, var\(--line\)\);[\s\S]*border-radius:\s*0 0 14px 14px;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-item\s*\{[\s\S]*width:\s*auto;[\s\S]*min-width:\s*max-content;[\s\S]*min-height:\s*2\.85rem;[\s\S]*justify-content:\s*flex-end;[\s\S]*padding:\s*0\.8rem 1\.15rem 0\.8rem 1\.55rem;[\s\S]*border:\s*none;[\s\S]*border-radius:\s*0;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;[\s\S]*font-weight:\s*600;[\s\S]*text-align:\s*right;[\s\S]*white-space:\s*nowrap;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-menu-item\.destructive\s*\{[\s\S]*color:\s*var\(--danger\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\[data-hover-capability="hover"\] \.mini-board-card-menu-item\.destructive:not\(:disabled\):hover\s*\{[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.86\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card\.is-trash-card\s*\{[\s\S]*border-color:\s*color-mix\(in srgb, var\(--danger\) 18%, var\(--line\)\);[\s\S]*opacity:\s*0\.88;[\s\S]*filter:\s*saturate\(0\.88\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.mini-board-card-action-note\s*\{[\s\S]*padding:\s*0 0\.15rem 0;[\s\S]*color:\s*var\(--muted\);[\s\S]*text-align:\s*right;[\s\S]*justify-self:\s*end;[\s\S]*max-width:\s*12rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.game-shell-summary-shell\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;[\s\S]*align-items:\s*start;[\s\S]*gap:\s*0\.85rem 1rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.game-shell-summary-actions\s*\{[\s\S]*justify-self:\s*end;[\s\S]*align-self:\s*start;[\s\S]*width:\s*max-content;[\s\S]*margin-top:\s*0\.1rem;[\s\S]*position:\s*relative;[\s\S]*z-index:\s*1;/s,
   );
   assert.match(
     shellStylesSource,
     /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-header-menu-panel\s*\{[\s\S]*width:\s*calc\(100vw\s*-\s*3\.5rem\);[\s\S]*max-width:\s*calc\(100vw\s*-\s*3\.5rem\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="narrow"\]\s+\.game-shell-summary-shell\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /#app\[data-shell-layout-mode="narrow"\]\s+\.game-shell-summary-actions\s*\{[\s\S]*justify-self:\s*stretch;[\s\S]*margin-top:\s*0;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.mini-board-card-menu-button\s*\{[\s\S]*min-width:\s*3\.2rem;[\s\S]*min-height:\s*3\.2rem;[\s\S]*padding:\s*0\.62rem;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.mini-board-card-action-capsule\s*\{[\s\S]*max-width:\s*calc\(100vw\s*-\s*3rem\);/s,
   );
 });
 
@@ -134,6 +266,10 @@ test("shell main layout transitions width when docked flyouts open or close", ()
   assert.match(
     shellStylesSource,
     /\.shell-game-alert-copy\s*\{[\s\S]*-webkit-line-clamp:\s*2;[\s\S]*overflow:\s*hidden;/s,
+  );
+  assert.match(
+    shellStylesSource,
+    /\.left-game-banner\s*\{[\s\S]*box-shadow:\s*0 18px 40px rgba\(29, 45, 53, 0\.12\);/s,
   );
   assert.match(
     shellStylesSource,

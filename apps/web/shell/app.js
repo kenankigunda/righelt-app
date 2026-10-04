@@ -29,6 +29,7 @@ import {
   buildGameHash,
   buildHomeHash,
   buildInviteHash,
+  buildTrashHash,
   buildTutorialHash,
   isShellRootHash,
   parseRouteFromHash,
@@ -36,6 +37,7 @@ import {
   shouldLiveSyncRoute,
   toggleScenariosHash,
 } from "./routes.js";
+import { computeLeaveDeleteLabel } from "./live-transport.js";
 import { createTutorialController } from "./tutorial.js";
 
 const appEl = document.getElementById("app");
@@ -96,6 +98,7 @@ const hoverCapability = ensureHoverCapabilityController();
 assertGameBoardAdapter(boardAdapter);
 const liveSyncMetricCounts = Object.create(null);
 window.__righeltLiveSyncMetrics = liveSyncMetricCounts;
+const HOME_CARD_LEAVE_COLLAPSE_MS = 180;
 
 const toStableKey = (value) => {
   if (value === null || typeof value === "undefined") {
@@ -137,6 +140,9 @@ const ignoredRevertRequests = new Set();
 const expandedUndoneGroups = new Set();
 const pendingButtonKeys = new Set();
 const pendingHomeSectionKeys = new Set();
+const pendingHomeCardLeaveIds = new Set();
+const leftGameBannerByGameId = new Map();
+const leftGameInviteFromRoleByGameId = new Map();
 let lastRenderedMarkup = "";
 let lastRenderedMainMarkup = "";
 let lastRenderedFlyoutMarkup = "";
@@ -191,10 +197,13 @@ const createHomeSectionState = (title) => ({
   slideDirection: "none",
   animationToken: 0,
 });
+const HOME_SECTION_KEYS = ["my", "other", "smoke", "trash-my", "trash-other"];
 let homeSections = {
   my: createHomeSectionState("My games"),
   other: createHomeSectionState("Other games"),
   smoke: createHomeSectionState("Deploy smoke player"),
+  "trash-my": createHomeSectionState("My deleted games"),
+  "trash-other": createHomeSectionState("Other games"),
 };
 const getPersistedDebugFlyoutOpen = () => loadDebugFlyoutOpen(storage);
 
@@ -359,6 +368,12 @@ const formatDisplayGameId = (gameId) => {
 };
 
 const getDocumentTitle = () => {
+  if (currentRoute.name === "game-not-found") {
+    return "Game not found | Righelt";
+  }
+  if (currentRoute?.name === "trash") {
+    return "Trash bin | Righelt";
+  }
   const gameId = getCurrentViewedGameId();
   if (gameId) {
     return `${formatDisplayGameId(gameId)} | Righelt`;
@@ -652,7 +667,15 @@ const resolvePendingScenarioHydration = ({ game, snapshot, legalActions }) => {
 };
 const isPlayerRole = (role) => role === "Player 1" || role === "Player 2";
 const canControlLiveBoard = (game) => Boolean(game?.canRecordMove || (game?.canEndTurn && game?.control === "turn-owner"));
-const getVisibleHomeSectionKeys = (route = currentRoute) => (route?.debug ? ["my", "other", "smoke"] : ["my", "other"]);
+const getVisibleHomeSectionKeys = (route = currentRoute) => {
+  if (route?.name === "trash") {
+    return ["trash-my"];
+  }
+  if (route?.name !== "home") {
+    return [];
+  }
+  return route?.debug ? ["my", "other", "smoke"] : ["my", "other"];
+};
 const getHomeSection = (sectionKey) => homeSections[sectionKey] ?? createHomeSectionState(sectionKey);
 const setHomeSection = (sectionKey, nextState) => {
   homeSections = {
@@ -1054,8 +1077,36 @@ const getBaseRouteRenderKey = (route = currentRoute) => {
   }
   return String(route.name || "unknown");
 };
+const getGameRoutePresentationKey = (route = currentRoute) => {
+  if (route?.name !== "game") {
+    return "";
+  }
+  if (!routeHydrated) {
+    return "loading";
+  }
+  const game = transport.getGameViewModel(route.gameId);
+  if (!game) {
+    return "loading";
+  }
+  if (game.deletedAt) {
+    return "deleted";
+  }
+  if (getActiveApprovalRequest(game)) {
+    return "approval";
+  }
+  if (getActiveRevertRequest(game)) {
+    return "revert-approval";
+  }
+  if (getActivePendingRevertRequest(game)) {
+    return "revert-waiting";
+  }
+  if (leftGameBannerByGameId.get(game.id) === true) {
+    return "left";
+  }
+  return "live";
+};
 const getRouteRenderKey = (route = currentRoute) =>
-  `${getBaseRouteRenderKey(route)}|panel:${route?.name === "game" ? getGamePanel(route) : ""}|${FLYOUT_KEYS.map((key) => `${key}:${route?.[key] === true}`).join("|")}|transition:${getRouteTransitionRenderKey()}`;
+  `${getBaseRouteRenderKey(route)}|panel:${route?.name === "game" ? getGamePanel(route) : ""}|presentation:${getGameRoutePresentationKey(route)}|${FLYOUT_KEYS.map((key) => `${key}:${route?.[key] === true}`).join("|")}|transition:${getRouteTransitionRenderKey()}`;
 const isFlyoutOnlyRouteChange = (previousRoute, nextRoute) =>
   getBaseRouteRenderKey(previousRoute) === getBaseRouteRenderKey(nextRoute) &&
   getRouteRenderKey(previousRoute) !== getRouteRenderKey(nextRoute);
@@ -1152,6 +1203,17 @@ const isNarrowHeaderMode = () => getShellLayoutMode() === "narrow";
 const closeHeaderMenu = () => {
   headerMenuOpen = false;
 };
+const closeCardMenus = (exceptMenu = null) => {
+  if (!(appEl instanceof HTMLElement)) {
+    return;
+  }
+  appEl.querySelectorAll("details[data-card-menu][open]").forEach((menuEl) => {
+    if (!(menuEl instanceof HTMLElement) || menuEl === exceptMenu) {
+      return;
+    }
+    menuEl.removeAttribute("open");
+  });
+};
 const syncNarrowHeaderMenuDom = () => {
   if (!isNarrowHeaderMode() || !(appEl instanceof HTMLElement)) {
     return;
@@ -1212,6 +1274,12 @@ const syncNarrowHeaderMenuDom = () => {
 };
 const renderHeaderWideActions = () => `
   <button
+    class="secondary${currentRoute.name === "home" ? " is-active" : ""}"
+    type="button"
+    data-action="open-home"
+    aria-pressed="${currentRoute.name === "home" ? "true" : "false"}"
+  >Home</button>
+  <button
     class="secondary${currentRoute.scenarios ? " is-active" : ""}"
     type="button"
     data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
@@ -1248,6 +1316,14 @@ const renderHeaderNarrowMenu = () => {
         data-header-menu-panel
         aria-hidden="${headerMenuOpen ? "false" : "true"}"
       >
+        <button
+          class="secondary shell-header-menu-item${currentRoute.name === "home" ? " is-active" : ""}"
+          type="button"
+          data-action="open-home"
+          data-header-menu-close="true"
+          aria-pressed="${currentRoute.name === "home" ? "true" : "false"}"
+          tabindex="${headerMenuOpen ? "0" : "-1"}"
+        >Home</button>
         <button
           class="secondary shell-header-menu-item${currentRoute.scenarios ? " is-active" : ""}"
           type="button"
@@ -1425,7 +1501,8 @@ const shouldHandleGamePanelSwipe = (target) =>
   getShellLayoutMode() === "narrow" &&
   target instanceof HTMLElement &&
   target.closest("[data-game-shell-root]") instanceof HTMLElement &&
-  !target.closest(".shell-mobile-tabbar");
+  !target.closest(".shell-mobile-tabbar") &&
+  !(transport.getGameViewModel(currentRoute.gameId)?.deletedAt);
 
 const getCurrentViewedGameId = () => {
   if (currentRoute.name === "game") {
@@ -2123,6 +2200,9 @@ const getInviteContextForGame = (game, routeName = currentRoute.name) => {
   if (!game || game.myRole !== "Guest") {
     return null;
   }
+  if (routeName === "game" && leftGameBannerByGameId.get(game.id) === true) {
+    return null;
+  }
   if (routeName === "game" && inviteChoiceCommittedByGameId.has(game.id)) {
     return null;
   }
@@ -2181,7 +2261,7 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
   if (!href) {
     return `<div class="mini-board-card mini-board-card-${escapeHtml(variant)}">${body}</div>`;
   }
-  return `<article class="mini-board-card">
+  return `<article class="mini-board-card" data-game-id="${escapeHtml(gameId || card.id || "")}">
     <a
       class="mini-board-card-link-surface"
       href="${href}"
@@ -2193,30 +2273,286 @@ const renderStaticMiniBoardCard = ({ card, variant = "home", href = null, flyout
   </article>`;
 };
 
-const renderHomeGameCard = (game) => {
+const renderCardMenu = (game, { isOffline, myIdentityId, mode = "home", variant = mode } = {}) => {
+  const menuId = `mini-board-card-menu-${escapeHtml(game.id)}`;
+  const offlineNote = isOffline ? '<p class="small mini-board-card-action-note">Not available offline.</p>' : "";
+  const menuClassName =
+    variant === "game"
+      ? "mini-board-card-menu mini-board-card-menu-game"
+      : "mini-board-card-menu mini-board-card-menu-overlay";
+  if (mode === "trash") {
+    if (!isPlayerRole(game?.myRole)) {
+      return "";
+    }
+    return `
+      <details class="${menuClassName}" data-card-menu data-game-id="${escapeHtml(game.id)}">
+        <summary
+          class="secondary mini-board-card-menu-button"
+          aria-label="Restore game actions"
+          aria-controls="${menuId}"
+        >
+          <span class="mini-board-card-menu-icon" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+        </summary>
+        <div class="mini-board-card-action-body" id="${menuId}">
+          <div class="mini-board-card-action-capsule">
+            <button
+              class="secondary mini-board-card-menu-item"
+              data-action="restore-game"
+              data-game-id="${escapeHtml(game.id)}"
+              data-testid="restore-game"
+              ${isOffline ? "disabled" : ""}
+              aria-disabled="${isOffline ? "true" : "false"}"
+            >Restore</button>
+          </div>
+          ${offlineNote}
+        </div>
+      </details>
+    `;
+  }
+  const isSameIdentitySelfPlay = game?.player1?.identityId === myIdentityId && game?.player2?.identityId === myIdentityId;
+  const leaveDeleteLabel = computeLeaveDeleteLabel(game, myIdentityId) === "Leave" && isSameIdentitySelfPlay ? "Delete" : computeLeaveDeleteLabel(game, myIdentityId);
+  const action =
+    variant === "game" && game?.myRole === "Viewer"
+      ? "leave-viewer"
+      : leaveDeleteLabel === "Delete"
+        ? "delete-game"
+        : "leave-game";
+  const actionButtonClassName = action === "delete-game" ? "secondary destructive mini-board-card-menu-item" : "secondary mini-board-card-menu-item";
+  return `
+    <details class="${menuClassName}" data-card-menu data-game-id="${escapeHtml(game.id)}">
+      <summary
+        class="secondary mini-board-card-menu-button"
+        aria-label="${escapeHtml(`${leaveDeleteLabel} game actions`)}"
+        aria-controls="${menuId}"
+      >
+        <span class="mini-board-card-menu-icon" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </span>
+      </summary>
+      <div class="mini-board-card-action-body" id="${menuId}">
+        <div class="mini-board-card-action-capsule">
+          <button
+            class="${actionButtonClassName}"
+            data-action="${escapeHtml(action)}"
+            data-game-id="${escapeHtml(game.id)}"
+            data-testid="${escapeHtml(action)}"
+            ${isOffline ? "disabled" : ""}
+            aria-disabled="${isOffline ? "true" : "false"}"
+          >${escapeHtml(leaveDeleteLabel)}</button>
+        </div>
+        ${offlineNote}
+      </div>
+    </details>
+  `;
+};
+
+const renderHomeGameCard = (game, { menuMode = "home" } = {}) => {
   const snapshot = getStaticCardPreviewSnapshot(game);
   const statusText = snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable";
-  const moveLabel = `Move ${game.moveCount + 1}`;
+  const isTrashCard = menuMode === "trash";
+  const moveLabel = isTrashCard ? `Deleted on ${formatClientDateTime(game.deletedAt || game.lastMoveAt || game.createdAt)}` : `Move ${game.moveCount + 1}`;
   const recoveryChip =
     game.syncStatus === "desynced" || game.syncStatus === "confirming" ? '<span class="status-chip">Recovering</span>' : "";
+  const deletedChip = isTrashCard ? '<span class="status-chip trash-card-badge">Deleted</span>' : "";
   const seatConnectionLine = renderHomeSeatConnectionLine(game);
-  return renderStaticMiniBoardCard({
-    card: game,
-    href: buildGameHash(game.id, null, getCurrentFlyoutState()),
-    flyoutLink: "game",
-    gameId: game.id,
-    header: `<div>
-        <span class="mini-board-card-link">${escapeHtml(formatDisplayGameId(game.id))}</span>
-        <p class="small mini-board-card-subtitle">Last move on ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
-      </div>
-      ${recoveryChip}`,
-    meta: `<div class="mini-board-card-meta mini-board-card-meta-primary">
-        <span>${renderHomeRoleLine(game)}</span>
-        <span class="small">${escapeHtml(moveLabel)}</span>
-      </div>
-      ${seatConnectionLine}`,
-    statusText,
+  const homeCardMenu = renderCardMenu(game, {
+    isOffline: navigator.onLine === false,
+    myIdentityId: transport.getIdentityId(),
+    mode: menuMode,
   });
+  const leaving = pendingHomeCardLeaveIds.has(game.id);
+  const cardClassName = `mini-board-card${leaving ? " is-leaving" : ""}${isTrashCard ? " is-trash-card" : ""}`;
+  return `<article class="${cardClassName}" data-home-game-card="${escapeHtml(game.id)}" data-game-id="${escapeHtml(game.id)}">
+    ${homeCardMenu}
+    <a
+      class="mini-board-card-link-surface"
+      href="${buildGameHash(game.id, null, getCurrentFlyoutState())}"
+      data-flyout-link="game"
+      data-game-id="${escapeHtml(game.id)}"
+    >
+      <div class="mini-board-card-header">
+        <div>
+          <span class="mini-board-card-link">${escapeHtml(formatDisplayGameId(game.id))}</span>
+          <p class="small mini-board-card-subtitle">${escapeHtml(moveLabel)}</p>
+        </div>
+        <div class="mini-board-card-header-badges">
+          ${deletedChip}
+          ${recoveryChip}
+        </div>
+      </div>
+      <div class="mini-board-card-copy">
+        <div class="mini-board-card-meta mini-board-card-meta-primary">
+          <span>${renderHomeRoleLine(game)}</span>
+          <span class="small">${escapeHtml(moveLabel)}</span>
+        </div>
+        ${seatConnectionLine}
+      </div>
+      ${renderMiniBoardPreviewRoot({
+        previewId: `home:${game.id}`,
+        snapshot,
+        selection: null,
+        overlay: null,
+        legalActions: [],
+        selectedPieceId: null,
+        selectedPieceMoves: [],
+        selectedPieceMovePreviews: [],
+        currentActionType: null,
+        selectedPieceOverlayPhase: null,
+        previewKey: toStableKey({ snapshot, selection: null, overlay: null, legalActions: [], selectedPieceId: null, selectedPieceMoves: [], selectedPieceMovePreviews: [], currentActionType: null, selectedPieceOverlayPhase: null }),
+        sizeVariant: "compact",
+      })}
+      <p class="small mini-board-preview-status">${escapeHtml(statusText)}</p>
+    </a>
+  </article>`;
+};
+
+const getLeftGameBannerRole = (game) =>
+  leftGameInviteFromRoleByGameId.get(game.id) ||
+  (game?.myRole === "Player 1" || game?.myRole === "Player 2" ? game.myRole : null);
+
+const renderLeftGameBanner = (game) => {
+  const inviteFromRole = getLeftGameBannerRole(game);
+  const inviteRoleText = inviteFromRole ? ` Your previous seat was ${renderRoleLabel(inviteFromRole, game)}.` : "";
+  return `
+    <section class="invite-gate" data-testid="left-game-gate">
+      <section class="panel invite-gate-modal left-game-banner">
+        <p class="small invite-gate-kicker">You have left the game</p>
+        <h2>You have left the game</h2>
+        <p>You are no longer seated in this game.${inviteRoleText}</p>
+        <div class="invite-choice-list">
+          <div class="invite-choice-row">
+            <button
+              data-action="rejoin-left-game"
+              data-game-id="${escapeHtml(game.id)}"
+              data-testid="rejoin-left-game"
+            >Rejoin as player</button>
+            <span class="small invite-choice-note">You will rejoin immediately without an approval prompt.</span>
+          </div>
+        </div>
+      </section>
+      <div class="invite-gate-content" aria-hidden="true">
+        ${renderGameContent(game.id)}
+      </div>
+    </section>
+  `;
+};
+
+const markLeftGameBanner = (gameId, inviteFromRole = null) => {
+  leftGameBannerByGameId.set(gameId, true);
+  if (inviteFromRole) {
+    leftGameInviteFromRoleByGameId.set(gameId, inviteFromRole);
+  }
+};
+
+const clearLeftGameBanner = (gameId) => {
+  leftGameBannerByGameId.delete(gameId);
+  leftGameInviteFromRoleByGameId.delete(gameId);
+};
+
+const animateHomeGameCardLeave = async (gameId) => {
+  const cardEl = appEl?.querySelector?.(`[data-home-game-card="${gameId}"]`);
+  if (!(cardEl instanceof HTMLElement) || prefersReducedMotion()) {
+    return;
+  }
+
+  const currentHeight = cardEl.getBoundingClientRect().height;
+  if (!Number.isFinite(currentHeight) || currentHeight <= 0) {
+    return;
+  }
+
+  cardEl.style.overflow = "hidden";
+  cardEl.style.height = `${currentHeight}px`;
+  cardEl.style.opacity = "1";
+  cardEl.style.transform = "translateY(0)";
+  cardEl.style.transition = "height 180ms ease, opacity 180ms ease, transform 180ms ease, margin 180ms ease";
+  void cardEl.offsetHeight;
+  cardEl.style.height = "0px";
+  cardEl.style.opacity = "0";
+  cardEl.style.transform = "translateY(-0.35rem)";
+  cardEl.style.marginBlockEnd = "0";
+  await delay(HOME_CARD_LEAVE_COLLAPSE_MS);
+};
+
+const clearHomeGameCardLeaveAnimation = (gameId) => {
+  const cardEl = appEl?.querySelector?.(`[data-home-game-card="${gameId}"]`);
+  if (!(cardEl instanceof HTMLElement)) {
+    return;
+  }
+  cardEl.style.transition = "";
+  cardEl.style.height = "";
+  cardEl.style.opacity = "";
+  cardEl.style.transform = "";
+  cardEl.style.overflow = "";
+  cardEl.style.marginBlockEnd = "";
+};
+
+const leaveHomeGame = async (gameId) => {
+  const game = transport.getGameViewModel(gameId) ?? transport.getHomeGameCard(gameId);
+  const inviteFromRole = game?.myRole === "Player 1" || game?.myRole === "Player 2" ? game.myRole : null;
+  const shouldAnimate = !prefersReducedMotion();
+
+  if (shouldAnimate) {
+    pendingHomeCardLeaveIds.add(gameId);
+    render({ animatePanels: false, includeBoard: false });
+    await animateHomeGameCardLeave(gameId);
+  }
+
+  try {
+    const result = await transport.leaveGame({ gameId });
+    if (result?.deleted) {
+      clearLeftGameBanner(gameId);
+    } else {
+      markLeftGameBanner(gameId, inviteFromRole);
+    }
+    await syncHomeSections();
+    return result;
+  } catch (error) {
+    window.__righeltLastError = error instanceof Error ? error.message : String(error);
+    return null;
+  } finally {
+    pendingHomeCardLeaveIds.delete(gameId);
+    clearHomeGameCardLeaveAnimation(gameId);
+    render({ animatePanels: false, includeBoard: false });
+  }
+};
+
+const leaveGamePagePlayer = async (gameId) => {
+  const game = transport.getGameViewModel(gameId) ?? transport.getHomeGameCard(gameId);
+  const inviteFromRole = game?.myRole === "Player 1" || game?.myRole === "Player 2" ? game.myRole : null;
+  try {
+    const result = await transport.leaveGame({ gameId });
+    if (result.deleted) {
+      clearLeftGameBanner(gameId);
+      render({ animatePanels: false, includeBoard: false });
+      return result;
+    }
+    markLeftGameBanner(gameId, inviteFromRole);
+    render({ animatePanels: false, includeBoard: false });
+    return result;
+  } catch (error) {
+    window.__righeltLastError = error instanceof Error ? error.message : String(error);
+    return null;
+  }
+};
+
+const leaveGamePageViewer = async (gameId) => {
+  const game = transport.getGameViewModel(gameId) ?? transport.getHomeGameCard(gameId);
+  try {
+    const result = await transport.leaveAsViewer({ gameId });
+    clearLeftGameBanner(gameId);
+    const inviteToken = result.game?.inviteToken || game?.inviteToken || gameId;
+    navigateTo(buildInviteHash(inviteToken, getCurrentFlyoutState()));
+    return result;
+  } catch (error) {
+    window.__righeltLastError = error instanceof Error ? error.message : String(error);
+    return null;
+  }
 };
 
 const renderHomeSectionControls = (sectionKey, section, { placement } = { placement: "header" }) => `<div
@@ -2240,17 +2576,17 @@ const renderHomeSectionControls = (sectionKey, section, { placement } = { placem
 const renderHomeStartButton = () =>
   `<button class="home-start-button" data-action="create-game" data-testid="home-create-game">Start new game</button>`;
 
-const renderHomeGameSection = (sectionKey) => {
+const renderHomeGameSection = (sectionKey, { alwaysRender = sectionKey === "my", menuMode = currentRoute.name === "trash" ? "trash" : "home" } = {}) => {
   const section = getHomeSection(sectionKey);
   if (isHomeSectionPending(sectionKey)) {
     return renderHomeSectionSkeleton(section.title, { showStartButton: sectionKey === "my" });
   }
   const games = section.gameIds.map((gameId) => transport.getHomeGameCard(gameId)).filter(Boolean);
-  const shouldAlwaysRender = sectionKey === "my";
-  if (!Array.isArray(games) || (!shouldAlwaysRender && (games.length === 0 || section.totalGames === 0))) {
+  if (!Array.isArray(games) || (!alwaysRender && (games.length === 0 || section.totalGames === 0))) {
     return "";
   }
   const showEmptyState = section.totalGames === 0;
+  const emptyStateText = sectionKey.startsWith("trash-") ? "No deleted games yet." : "No games yet.";
   const showPaging = section.totalPages > 1;
   const showHeaderPaging = showPaging && section.visibleColumnCount > 1;
   const showFooterPaging = showPaging && section.visibleColumnCount === 1;
@@ -2269,14 +2605,46 @@ const renderHomeGameSection = (sectionKey) => {
       </div>
     </div>
     ${showEmptyState
-      ? `<p class="small home-games-empty">No games yet.</p>`
+      ? `<p class="small home-games-empty">${escapeHtml(emptyStateText)}</p>`
       : `<div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
       <div class="home-games-carousel-track" data-home-carousel-track="${escapeHtml(sectionKey)}">
-        <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
+        <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game, { menuMode })).join("")}</div>
       </div>
     </div>`}
     ${showFooterPaging ? renderHomeSectionControls(sectionKey, section, { placement: "footer" }) : ""}
   </section>`;
+};
+
+const renderHomeDeletedGamesButton = () => `
+  <footer class="home-page-footer-actions">
+    <button
+      class="secondary home-deleted-games-tile"
+      type="button"
+      data-action="open-trash"
+      data-testid="home-deleted-games"
+    >
+      <span class="home-deleted-games-tile-content">
+        <span class="home-deleted-games-tile-kicker small">Trash bin</span>
+        <strong>Deleted games</strong>
+      </span>
+    </button>
+  </footer>
+`;
+
+const renderTrashBanner = (trashSection = getHomeSection("trash-my")) => {
+  const loadingCopy = "Loading deleted games...";
+  const helperCopy = routeHydrated
+    ? "Deleted games live in the trash bin for some period of time and can be restored if they are not yet permanently deleted."
+    : loadingCopy;
+  return `
+    <section class="panel trash-bin-banner" data-testid="trash-bin-banner">
+      <div class="trash-bin-banner-copy">
+        <p class="small shell-route-kicker">Trash bin</p>
+        <h2>Deleted games</h2>
+        <p class="small">${escapeHtml(helperCopy)}</p>
+      </div>
+    </section>
+  `;
 };
 
 const scrollHomeSectionToTop = (sectionKey) => {
@@ -2298,6 +2666,7 @@ const renderHome = () => {
     return `
       <section class="stack">
         ${getVisibleHomeSectionKeys().map((sectionKey) => renderHomeSectionSkeleton(getHomeSection(sectionKey).title, { showStartButton: sectionKey === "my" })).join("")}
+        ${renderHomeDeletedGamesButton()}
       </section>
     `;
   }
@@ -2307,6 +2676,25 @@ const renderHome = () => {
   return `
     <section class="stack">
       ${listHtml}
+      ${renderHomeDeletedGamesButton()}
+    </section>
+  `;
+};
+
+const renderTrash = () => {
+  const trashSection = getHomeSection("trash-my");
+  if (!routeHydrated) {
+    return `
+      <section class="stack">
+        ${renderTrashBanner(trashSection)}
+        ${renderHomeSectionSkeleton(trashSection.title)}
+      </section>
+    `;
+  }
+  return `
+    <section class="stack">
+      ${renderTrashBanner(trashSection)}
+      ${renderHomeGameSection("trash-my", { alwaysRender: true, menuMode: "trash" })}
     </section>
   `;
 };
@@ -2421,21 +2809,31 @@ const renderInvitePageSkeleton = () => `
 
 const renderGameSummaryPanel = (game) => {
   const latestNote = game.notifications[0] || "Ready";
+  const gamePageMenu = renderCardMenu(game, {
+    isOffline: navigator.onLine === false,
+    myIdentityId: transport.getIdentityId(),
+    variant: "game",
+  });
   return `
-    <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
-    <div class="section-stack">
-      <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
-      <p class="small" data-testid="game-role">Role: ${renderRoleLabel(game.myRole, game)}</p>
-      <div class="section-followup">
-        <p class="small" data-testid="active-turn-label">Active turn: ${
-          game.currentTurn
-            ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderSeatLabel(game.currentTurn.playerSeat)} · ${escapeHtml(
-                String(game.currentTurn.moveIndexes.length),
-              )} move(s)`
-            : "n/a"
-        }</p>
-        <p class="small">Latest: ${colorizePlayerReferences(latestNote)}</p>
+    <div class="game-shell-summary-shell">
+      <div class="game-shell-summary-copy">
+        <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
+        <div class="section-stack">
+          <p class="small">Started ${escapeHtml(formatClientDateTime(game.createdAt))}</p>
+          <p class="small" data-testid="game-role">Role: ${renderRoleLabel(game.myRole, game)}</p>
+          <div class="section-followup">
+            <p class="small" data-testid="active-turn-label">Active turn: ${
+              game.currentTurn
+                ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderSeatLabel(game.currentTurn.playerSeat)} · ${escapeHtml(
+                    String(game.currentTurn.moveIndexes.length),
+                  )} move(s)`
+                : "n/a"
+            }</p>
+            <p class="small">Latest: ${colorizePlayerReferences(latestNote)}</p>
+          </div>
+        </div>
       </div>
+      <div class="game-shell-summary-actions">${gamePageMenu}</div>
     </div>
   `;
 };
@@ -2617,6 +3015,48 @@ const renderGameShellFrame = (game) => `
   </section>
 `;
 
+const renderGameDeletedGate = (game) => {
+  const canRestore = isPlayerRole(game?.myRole);
+  const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(
+    game.inviteToken || game.id,
+    getCurrentFlyoutState(),
+  )}`;
+  const restoreButton = canRestore
+    ? `<div class="invite-choice-row">
+        <button data-action="restore-game" data-game-id="${escapeHtml(game.id)}" data-testid="restore-game">Restore</button>
+        <span class="small invite-choice-note">Restore the deleted game and return to the live board without a full reload.</span>
+      </div>`
+    : "";
+  return `
+    <section class="invite-gate game-deleted-gate" data-testid="game-deleted-gate">
+      <section class="panel invite-gate-modal game-deleted-modal">
+        <p class="small invite-gate-kicker">Game deleted</p>
+        <h2>Game deleted</h2>
+        <p>${canRestore ? "Restore the game to return to the live view." : "This game was deleted and can no longer be restored from this session."}</p>
+        <div class="invite-choice-list">
+          ${restoreButton}
+          <div class="invite-choice-row">
+            <a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Back home</a>
+            <span class="small invite-choice-note">Open the home page or copy the invite link below to re-enter if the game is restored.</span>
+          </div>
+        </div>
+        <p class="small">Invite link: <span class="mono">${escapeHtml(inviteLink)}</span></p>
+      </section>
+      <div class="invite-gate-content" aria-hidden="true">
+        ${renderGameContent(game.id)}
+      </div>
+    </section>
+  `;
+};
+
+const renderGameNotFound = () => `
+  <section class="panel game-not-found-state" data-testid="game-not-found">
+    <h2>Game not found</h2>
+    <p class="small">The game you opened no longer exists.</p>
+    <a class="button-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Return home</a>
+  </section>
+`;
+
 const getMountedGameShellRoot = () =>
   appEl?.querySelector?.("[data-game-shell-root]") instanceof HTMLElement ? appEl.querySelector("[data-game-shell-root]") : null;
 const syncMountedGameShellPanelUi = (shellRoot = getMountedGameShellRoot()) => {
@@ -2698,6 +3138,9 @@ const getFlyoutAwareHref = (element) => {
     const gameId = element.getAttribute("data-game-id");
     return gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : "";
   }
+  if (target === "trash") {
+    return buildTrashHash(getCurrentFlyoutState());
+  }
   return "";
 };
 const syncFlyoutAwareLinks = () => {
@@ -2758,6 +3201,7 @@ const shouldPatchMountedFlyouts = (routeKey = getRouteRenderKey(), baseRouteKey 
   routeKey !== lastRenderedRouteKey &&
   getRouteTransitionPhaseKey() === lastRenderedTransitionPhaseKey &&
   baseRouteKey === lastRenderedBaseRouteKey &&
+  (currentRoute.name !== "game" || getGameRoutePresentationKey() === "live") &&
   appEl instanceof HTMLElement &&
   appEl.querySelector(".shell-main-content") instanceof HTMLElement &&
   getMountedShellPageEl() instanceof HTMLElement;
@@ -2921,6 +3365,9 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
   if (!game) {
     return false;
   }
+  if (game.deletedAt || leftGameBannerByGameId.get(game.id) === true) {
+    return false;
+  }
   return !getActiveApprovalRequest(game) && !getActiveRevertRequest(game) && !getActivePendingRevertRequest(game) && doesMountedFlyoutStateMatchRoute();
 };
 
@@ -3070,6 +3517,10 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   if (!game) {
     return renderGameContent(gameId, inviteFromRole, inviteToken);
   }
+  if (game.deletedAt) {
+    clearLeftGameBanner(game.id);
+    return renderGameDeletedGate(game);
+  }
   const approvalRequest = getActiveApprovalRequest(game);
   if (approvalRequest) {
     return renderApprovalGate(game, approvalRequest);
@@ -3081,6 +3532,9 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   const pendingRevertRequest = getActivePendingRevertRequest(game);
   if (pendingRevertRequest) {
     return renderRevertWaitingGate(game, pendingRevertRequest);
+  }
+  if (currentRoute.name === "game" && leftGameBannerByGameId.get(game.id) === true) {
+    return renderLeftGameBanner(game);
   }
   if (currentRoute.name === "game") {
     return renderGameShellFrame(game);
@@ -3123,7 +3577,7 @@ const renderInviteLanding = (inviteContext) => {
   const joinViewerButtonKey = getJoinButtonKey("viewer", game.id);
 
   return `
-    <section class="invite-gate">
+    <section class="invite-gate" data-testid="invite-gate">
       <section class="panel invite-gate-modal">
         <p class="small invite-gate-kicker">Invite received</p>
         <h2>Choose how to enter this game</h2>
@@ -3557,7 +4011,7 @@ const syncHomeSections = async () => {
       await loadHomeSectionPage(sectionKey, { page: section.page, direction: "none" });
     }),
   );
-  const hiddenSectionKeys = ["my", "other", "smoke"].filter((sectionKey) => !visibleSectionKeys.includes(sectionKey));
+  const hiddenSectionKeys = HOME_SECTION_KEYS.filter((sectionKey) => !visibleSectionKeys.includes(sectionKey));
   hiddenSectionKeys.forEach((sectionKey) => {
     const section = getHomeSection(sectionKey);
     setHomeSection(sectionKey, {
@@ -3621,6 +4075,8 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   const previousPanelHeights = animatePanels && !shouldPatchFlyoutsOnly ? capturePanelHeights() : [];
   const previousFlyoutRects = animatePanels ? captureFlyoutRects() : new Map();
   syncShellLayoutMode();
+  const currentGame = currentRoute.name === "game" ? transport.getGameViewModel(currentRoute.gameId) : null;
+  const isDeletedGameRoute = currentRoute.name === "game" && currentGame?.deletedAt != null;
   if (shouldPatchFlyoutsOnly) {
     updateMountedHeader();
     updateMountedFlyouts();
@@ -3631,14 +4087,20 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     syncMountedGameShellPanelUi();
     reconcileMiniBoardPreviews();
     if (includeBoard) {
-      if (currentRoute.name === "game") {
-        mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
+      if (currentRoute.name === "game" && !isDeletedGameRoute) {
+        mountBoardForGame(currentGame);
       } else if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
         mountBoardForGame(transport.getGameViewModel(resolvedInvite.gameId));
       }
     }
     animateHomeSectionTransitions();
     syncScenarioAuthoringControls();
+    if (currentRoute.name === "game" && isDeletedGameRoute) {
+      scheduleGameShellStickyLayout();
+      destroyMountedBoardRuntime();
+      syncRenderedMarkupSnapshot();
+      return;
+    }
     if (animatePanels) {
       animateFlyoutPositionChanges(previousFlyoutRects);
     }
@@ -3656,7 +4118,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     updateHeaderFields();
     syncScenarioAuthoringControls();
     updateMountedGameShell({
-      game: transport.getGameViewModel(currentRoute.gameId),
+      game: currentGame,
       inviteFromRole: currentRoute.inviteFromRole,
       includeBoard,
     });
@@ -3667,9 +4129,10 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   let body = "";
   if (currentRoute.name === "home") {
     body = renderHome();
+  } else if (currentRoute.name === "trash") {
+    body = renderTrash();
   } else if (currentRoute.name === "game") {
-    const game = transport.getGameViewModel(currentRoute.gameId);
-    const inviteContext = getInviteContextForGame(game, "game");
+    const inviteContext = getInviteContextForGame(currentGame, "game");
     body = inviteContext ? renderInviteLanding(inviteContext) : renderGame(currentRoute.gameId, currentRoute.inviteFromRole);
   } else if (currentRoute.name === "invite") {
     if (!routeHydrated) {
@@ -3681,6 +4144,8 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
         ? renderInviteLanding(inviteContext)
         : renderGame(resolvedInvite?.gameId || null, resolvedInvite?.inviteFromRole || null, resolvedInvite?.inviteToken || null);
     }
+  } else if (currentRoute.name === "game-not-found") {
+    body = renderGameNotFound();
   } else if (currentRoute.name === "tutorial") {
     body = renderTutorial(currentRoute.gameId);
   } else {
@@ -3714,6 +4179,11 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   reconcileMiniBoardPreviews();
   animateHomeSectionTransitions();
   syncScenarioAuthoringControls();
+  if (currentRoute.name === "game" && isDeletedGameRoute) {
+    scheduleGameShellStickyLayout();
+    destroyMountedBoardRuntime();
+    return;
+  }
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
@@ -3722,13 +4192,13 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (currentRoute.name === "game") {
     if (shouldUseIncrementalGameShell()) {
       updateMountedGameShell({
-        game: transport.getGameViewModel(currentRoute.gameId),
+        game: currentGame,
         inviteFromRole: currentRoute.inviteFromRole,
         includeBoard,
       });
       return;
     }
-    mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
+    mountBoardForGame(currentGame);
     scheduleGameShellStickyLayout();
   }
   if (currentRoute.name === "invite" && resolvedInvite?.gameId) {
@@ -3763,9 +4233,28 @@ const syncRouteData = async () => {
     await syncHomeSections();
     return;
   }
+  if (currentRoute.name === "trash") {
+    await syncHomeSections();
+    return;
+  }
   if (currentRoute.name === "game") {
     resolvedInvite = null;
-    await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
+    try {
+      await transport.loadGame(currentRoute.gameId, { openAsViewer: false });
+    } catch (error) {
+      if ((error?.code === "game_not_found" || error?.body?.error === "game_not_found") && currentRoute.gameId) {
+        currentRoute = normalizeRouteFlyoutState({
+          name: "game-not-found",
+          gameId: currentRoute.gameId,
+          debug: currentRoute.debug,
+          scenarios: currentRoute.scenarios,
+        });
+        syncFlyoutRenderOrder(currentRoute);
+        syncLiveChannels();
+        return;
+      }
+      throw error;
+    }
     return;
   }
   if (currentRoute.name === "invite") {
@@ -3959,6 +4448,14 @@ window.addEventListener("resize", () => {
   scheduleResponsiveHomeSectionPageSizes();
 });
 
+const handleConnectivityChange = () => {
+  syncLiveChannels();
+  render({ animatePanels: false });
+};
+
+window.addEventListener("online", handleConnectivityChange);
+window.addEventListener("offline", handleConnectivityChange);
+
 window.addEventListener("load", () => {
   scheduleGameShellStickyLayout();
   scheduleResponsiveHomeSectionPageSizes();
@@ -4123,6 +4620,20 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "restore-game") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) {
+      return;
+    }
+    void withPendingButton(`restore-game:${gameId}`, async () => {
+      await transport.restoreGame({ gameId });
+      clearLeftGameBanner(gameId);
+      await syncHomeSections();
+      render({ animatePanels: false, includeBoard: false });
+    });
+    return;
+  }
+
   if (action === "join-viewer" || action === "accept-invite-viewer") {
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) return;
@@ -4140,6 +4651,15 @@ appEl.addEventListener("click", async (event) => {
       }
       await syncRouteDataAndLiveChannels();
     });
+    return;
+  }
+
+  if (action === "leave-viewer") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) {
+      return;
+    }
+    void leaveGamePageViewer(gameId);
     return;
   }
 
@@ -4162,6 +4682,43 @@ appEl.addEventListener("click", async (event) => {
         return;
       }
       await syncRouteDataAndLiveChannels();
+    });
+    return;
+  }
+
+  if (action === "leave-game" || action === "delete-game") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) {
+      return;
+    }
+    const game = transport.getGameViewModel(gameId) ?? transport.getHomeGameCard(gameId);
+    if (currentRoute.name === "game" && game?.myRole === "Viewer") {
+      void leaveGamePageViewer(gameId);
+      return;
+    }
+    if (currentRoute.name === "game") {
+      void leaveGamePagePlayer(gameId);
+      return;
+    }
+    void leaveHomeGame(gameId);
+    return;
+  }
+
+  if (action === "rejoin-left-game") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) {
+      return;
+    }
+    const inviteFromRole = leftGameInviteFromRoleByGameId.get(gameId) || null;
+    void withPendingButton(getJoinButtonKey("player", gameId), async () => {
+      await transport.joinGame({
+        gameId,
+        mode: "player",
+        inviteFromRole,
+        inviteToken: null,
+      });
+      clearLeftGameBanner(gameId);
+      render({ animatePanels: false, includeBoard: false });
     });
     return;
   }
@@ -4267,6 +4824,16 @@ appEl.addEventListener("click", async (event) => {
     }
     return;
   }
+  if (action === "open-home") {
+    if (currentRoute.name !== "home") {
+      navigateTo(buildHomeHash(getCurrentFlyoutState()));
+      return;
+    }
+    if (headerMenuOpen) {
+      closeHeaderMenu();
+    }
+    return;
+  }
   if (action === "open-debug") {
     if (!currentRoute.debug) {
       saveDebugFlyoutOpen(storage, true);
@@ -4277,6 +4844,12 @@ appEl.addEventListener("click", async (event) => {
         return;
       }
       render({ animatePanels: false, includeBoard: false });
+    }
+    return;
+  }
+  if (action === "open-trash") {
+    if (currentRoute.name !== "trash") {
+      navigateTo(buildTrashHash(getCurrentFlyoutState()));
     }
     return;
   }
@@ -4624,6 +5197,14 @@ window.addEventListener("pointercancel", () => {
 
 window.addEventListener("click", (event) => {
   const target = event.target;
+  if (target instanceof HTMLElement) {
+    const cardMenuRoot = target.closest("details[data-card-menu]");
+    if (cardMenuRoot instanceof HTMLElement) {
+      closeCardMenus(cardMenuRoot);
+    } else {
+      closeCardMenus();
+    }
+  }
   if (!headerMenuOpen || !(target instanceof HTMLElement)) {
     return;
   }
@@ -4648,11 +5229,26 @@ window.addEventListener("keydown", (event) => {
     }
     return;
   }
-  if (event.key !== "Escape" || !headerMenuOpen) {
+  if (event.key !== "Escape") {
+    return;
+  }
+  closeCardMenus();
+  if (!headerMenuOpen) {
     return;
   }
   closeHeaderMenu();
   syncNarrowHeaderMenuDom();
+});
+
+appEl.addEventListener("toggle", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLDetailsElement) || !target.matches("[data-card-menu]")) {
+    return;
+  }
+  if (!target.open) {
+    return;
+  }
+  closeCardMenus(target);
 });
 
 appEl.addEventListener("touchstart", (event) => {

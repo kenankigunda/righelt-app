@@ -4,12 +4,20 @@
  * Covers test plan rows:
  *   U-08 — normalization: missing destroyedPieces defaults to []
  *   U-09 — normalization: existing destroyedPieces is preserved
+ *   U-24 — normalizePersistedGame round-trips deletedAt
+ *   U-25 — StaticGameCard projection includes deletedAt
  *   I-08 — destroyedPieces survives a full persist → normalize → serve round-trip
  *   I-19 — schema normalization mismatch logging: absence is logged but not fatal
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadGameProjection, persistGameState } from "../src/shell-live-db.ts";
+import {
+  getHomeSectionWhereClause,
+  getTrashSectionWhereClause,
+  listHomeSectionStaticGameCardPage,
+  loadGameProjection,
+  persistGameState,
+} from "../src/shell-live-db.ts";
 import { createInitialGame } from "../src/shell-live-core.ts";
 import { createFakeD1 } from "./support/fake-d1.mjs";
 
@@ -275,6 +283,57 @@ test("I-19d: normalization condenses repeated destroyedPieces repairs into a sum
   });
 });
 
+test("U-21: home section WHERE clause excludes soft-deleted games", () => {
+  const clause = getHomeSectionWhereClause({ identityId: "id-u21", section: "my", debug: false });
+  assert.match(clause.sql, /deleted_at IS NULL/);
+});
+
+test("U-22: trash-my WHERE clause filters deleted rows for player identities", () => {
+  const clause = getTrashSectionWhereClause({ identityId: "id-u22" }).my;
+  assert.match(clause.sql, /deleted_at IS NOT NULL/);
+  assert.match(clause.sql, /player1_identity_id/);
+  assert.deepEqual(clause.params, ["id-u22"]);
+});
+
+test("U-23: trash-other list returns viewer-only deleted games", async () => {
+  const env = makeEnv();
+
+  const playerOwned = createInitialGame({ gameId: "g-trash-my", identityId: "id-viewer", selfPlayMode: false });
+  playerOwned.deletedAt = "2026-04-09T12:00:00.000Z";
+
+  const viewerOwned = createInitialGame({ gameId: "g-trash-other", identityId: "id-owner", selfPlayMode: false });
+  viewerOwned.viewers.push({
+    identityId: "id-viewer",
+    connected: true,
+    joinedAt: "2026-04-09T12:00:00.000Z",
+    lastHeartbeatAt: "2026-04-09T12:00:00.000Z",
+    sessionCount: 1,
+  });
+  viewerOwned.deletedAt = "2026-04-09T12:01:00.000Z";
+
+  await persistGameState(env, playerOwned, 1);
+  await persistGameState(env, viewerOwned, 1);
+
+  const trashMy = await listHomeSectionStaticGameCardPage(env, {
+    identityId: "id-viewer",
+    section: "trash-my",
+    page: 0,
+    pageSize: 10,
+    debug: false,
+  });
+  const trashOther = await listHomeSectionStaticGameCardPage(env, {
+    identityId: "id-viewer",
+    section: "trash-other",
+    page: 0,
+    pageSize: 10,
+    debug: false,
+  });
+
+  assert.deepEqual(trashMy.games.map((game) => game.id), ["g-trash-my"]);
+  assert.deepEqual(trashOther.games.map((game) => game.id), ["g-trash-other"]);
+  assert.equal(trashOther.games[0].myRole, "Viewer");
+});
+
 test("I-19c: mixed legacy and modern moves — both handled correctly in same game", async () => {
   const destroyedPieces = [{ position: { row: 4, col: 2 }, ownerSeat: "p2", reason: "no_retreat" }];
   const env = makeEnv();
@@ -291,4 +350,42 @@ test("I-19c: mixed legacy and modern moves — both handled correctly in same ga
   assert.equal(projection.game.moves.length, 2);
   assert.deepEqual(projection.game.moves[0].destroyedPieces, [], "legacy move defaults to []");
   assert.deepEqual(projection.game.moves[1].destroyedPieces, destroyedPieces, "modern move is preserved");
+});
+
+test("U-24: normalizePersistedGame round-trips deletedAt when present and when absent", async () => {
+  const env = makeEnv();
+  const deletedGame = createInitialGame({ gameId: "g-u24-deleted", identityId: "id-u24", selfPlayMode: false });
+  deletedGame.deletedAt = "2026-04-09T12:00:00.000Z";
+  await persistGameState(env, deletedGame, 1);
+
+  const deletedProjection = await loadGameProjection(env, deletedGame.id);
+  assert.ok(deletedProjection);
+  assert.equal(deletedProjection.kind, "ok");
+  assert.equal(deletedProjection.game.deletedAt, "2026-04-09T12:00:00.000Z");
+
+  const activeGame = createInitialGame({ gameId: "g-u24-active", identityId: "id-u24", selfPlayMode: false });
+  await persistGameState(env, activeGame, 2);
+
+  const activeProjection = await loadGameProjection(env, activeGame.id);
+  assert.ok(activeProjection);
+  assert.equal(activeProjection.kind, "ok");
+  assert.equal(activeProjection.game.deletedAt, null);
+});
+
+test("U-25: static game card projections include deletedAt", async () => {
+  const env = makeEnv();
+  const game = createInitialGame({ gameId: "g-u25", identityId: "id-u25", selfPlayMode: false });
+  game.deletedAt = "2026-04-09T12:00:00.000Z";
+  await persistGameState(env, game, 1);
+
+  const page = await listHomeSectionStaticGameCardPage(env, {
+    identityId: "id-u25",
+    section: "trash-my",
+    page: 0,
+    pageSize: 10,
+    debug: false,
+  });
+
+  assert.equal(page.games.length, 1);
+  assert.equal(page.games[0].deletedAt, "2026-04-09T12:00:00.000Z");
 });

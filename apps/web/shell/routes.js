@@ -60,6 +60,10 @@ export const parseRouteFromHash = (hash) => {
     }, query);
   }
 
+  if (parts[0] === "trash" && parts.length === 1) {
+    return withFlyoutState({ name: "trash" }, query);
+  }
+
   return withFlyoutState({ name: "not-found" }, query);
 };
 
@@ -131,9 +135,11 @@ export const buildTutorialHash = (gameId = null, flyouts = {}) => {
   return appendFlyoutQuery(`#/tutorial/${encodeURIComponent(gameId)}`, flyouts);
 };
 
+export const buildTrashHash = (flyouts = {}) => appendFlyoutQuery("#/trash", flyouts);
+
 export const shouldLiveSyncRoute = (route) => route?.name === "game" || route?.name === "invite";
 
-export const shouldPassiveRefreshRoute = (route) => route?.name === "home";
+export const shouldPassiveRefreshRoute = (route) => route?.name === "home" || route?.name === "trash";
 
 export const isShellRootHash = (hash) => {
   return !hash || hash === "#" || hash === "#/" || hash === "";
@@ -151,7 +157,8 @@ export const isShellRouteHash = (hash) => {
     pathOnly === "/invite" ||
     pathOnly.startsWith("/invite/") ||
     pathOnly === "/tutorial" ||
-    pathOnly.startsWith("/tutorial/")
+    pathOnly.startsWith("/tutorial/") ||
+    pathOnly === "/trash"
   );
 };
 
@@ -163,6 +170,10 @@ const buildHashForParsedRoute = (parsed, flyouts) => {
       return buildInviteHash(parsed.inviteToken, flyouts);
     case "tutorial":
       return buildTutorialHash(parsed.gameId, flyouts);
+    case "trash":
+      return buildTrashHash(flyouts);
+    case "game-not-found":
+      return buildGameHash(parsed.gameId, null, flyouts);
     case "home":
     default:
       return buildHomeHash(flyouts);

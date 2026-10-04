@@ -158,6 +158,15 @@ Tester treats `test-plan.md` as the floor, then hunts for seam failures, UX regr
 
 If material issues are found, Lead creates follow-up subtasks, keeps their fixes in the same PR and loops back to Step 5. Otherwise, Lead waits for green CI and required validation before marking the PR ready for review, then advances the ticket to `Ready for acceptance`, writes Final Summary, and clears or intentionally retains the parent `branch` and `worktree` fields. Outstanding product gates remain explicit.
 
+When writing **Final Summary** for a ticket that is moving to `Ready for acceptance`, the first two lines must make the manual-test location easy to find in backlog views:
+
+```md
+Branch: `codex/t-###-execution`
+Worktree: `/absolute/path/to/worktree`
+```
+
+Put these lines at the very top of the task's **Final Summary** before the narrative summary and validation bullets. If the ticket used additional temporary subtask worktrees, only the canonical execution branch/worktree go at the top; secondary worktrees belong in the coordination log or later summary detail.
+
 ## Merge Gates and Coordination
 
 Follow the same merge-gate rules as `ORCHESTRATION_WORKFLOW.md`:
