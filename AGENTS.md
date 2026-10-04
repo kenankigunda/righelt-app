@@ -29,6 +29,8 @@ The parent workspace files must make it obvious that `/Users/kenankigunda/Docume
 - Branch convention: `codex/<short-topic-slug>`
 - Reuse existing matching worktrees/branches when possible.
 - Never delete worktrees or branches unless the user explicitly asks.
+- Use one canonical branch and PR per feature, normally its parent ticket. Keep coherent commits and ongoing fixes in that PR; open it as a draft after the first reviewable push.
+- Squash is the default merge method; rebase is available when explicitly chosen, and GitHub merge-commit merging is disabled. Follow `docs/ai/PR_WORKFLOW.md` for parallel work, shared prerequisites and consolidation. Existing merge authorization requirements still apply.
 
 ## 4) Testing Policy
 
