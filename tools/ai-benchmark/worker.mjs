@@ -1,5 +1,5 @@
 import * as ort from 'onnxruntime-web/wasm';
-import { encodeState, legalActionMap, selectMove, transition, experimentConfig } from '../../packages/computer-player/src/index.ts';
+import { encodeState, legalActionMap, selectMove, experimentConfig } from '../../packages/computer-player/src/index.ts';
 import { deterministicStateHash } from '../../packages/game-engine/src/index.ts';
 let session, modelVersion, busy = false;
 const identityNames = ['gameId', 'gameplayRevision', 'fingerprint', 'generation', 'modelVersion', 'profileVersion', 'seed'];
@@ -54,7 +54,7 @@ self.onmessage = async ({ data }) => {
     const result = await selectMove({ state: data.state, seed: metadata.seed, simulations: data.profile?.simulations,
       temperature: data.profile?.temperature, maxValueGap: data.profile?.maxValueGap,
       maxNodes: experimentConfig.search.maxNodes, deadlineMs: performance.now() + data.softMs }, evaluate);
-    const nextState = result.status === 'ready' ? transition(data.state, result.action) : null;
+    const nextState = result.status === 'ready' ? result.nextState : null;
     send({ type: 'computed', result, nextState });
   } catch (error) { send({ type: 'error', message: error.message }); }
   finally { busy = false; }

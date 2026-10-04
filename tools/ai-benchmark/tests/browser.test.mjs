@@ -68,6 +68,17 @@ test('real browser WASM, cache, computation, parity and corrupt assets', { skip:
         ...searchProof, browserVersion: browser.version(),
       }, null, 2));
     }
+    if (process.env.AI_BENCHMARK_DIFFICULT_ID) {
+      const difficult = await page.evaluate(id => window.benchmark.searchParity({
+        rows: [{id, seed:107}], profile:{simulations:8,temperature:0,maxValueGap:0}
+      }), process.env.AI_BENCHMARK_DIFFICULT_ID);
+      const result=difficult.results[0].result;
+      assert.equal(result.status,'ready');assert.equal(result.legality.complete,false);
+      assert.equal(result.policyMask,false);assert.equal(result.fallback.reason,'legality-incomplete');
+      assert.ok(result.nextState);assert.ok(result.legality.indices.includes(result.actionIndex));
+      if (process.env.AI_BENCHMARK_DIFFICULT_REPORT) await writeFile(process.env.AI_BENCHMARK_DIFFICULT_REPORT,
+        JSON.stringify({browserVersion:browser.version(),actualPhone:false,...difficult},null,2));
+    }
     const report = await page.evaluate(() => window.benchmark.measure({ profile: 'Babs', steps: 2, sequences: 1 }));
     assert.equal(report.measurements.filter(row => row.kind === 'step').length >= 3, true);
     assert.equal(report.measurements.filter(row => row.kind === 'sequence').length, 1);
