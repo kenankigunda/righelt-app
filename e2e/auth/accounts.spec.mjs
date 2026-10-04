@@ -509,7 +509,7 @@ test("switching accounts in another tab retires the old settings form", async ({
   } finally { await sibling.close(); }
 });
 
-test("keyboard board activation opens sign in without losing the board", async ({ page, browser }) => {
+for (const activationKey of ["Enter", "Space"]) test(`keyboard board ${activationKey} activation opens sign in without losing the board`, async ({ page, browser }) => {
   const username = uniqueName();
   await register(page, username, { gate: true });
   const gameUrl = page.url();
@@ -533,8 +533,10 @@ test("keyboard board activation opens sign in without losing the board", async (
     await makeAccountMove(owner);
     await expect.poll(() => getHistoryMoveCount(page)).toBeGreaterThan(before);
     await expect(cell).toBeFocused();
-    await page.keyboard.press("Enter");
+    const historyBeforeActivation = await getHistoryMoveCount(page);
+    await page.keyboard.press(activationKey);
     await expect(dialog(page).getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
+    expect(await getHistoryMoveCount(page)).toBe(historyBeforeActivation);
     await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
     expect(page.url()).toBe(gameUrl);
     await expect(page.getByTestId("game-board")).toBeVisible();
