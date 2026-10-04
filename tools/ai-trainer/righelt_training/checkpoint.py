@@ -8,6 +8,14 @@ import torch
 from .config import CONFIG_SHA256
 
 
+def weights_sha256(state):
+    digest=hashlib.sha256()
+    for name,tensor in sorted(state.items()):
+        digest.update(name.encode())
+        digest.update(tensor.detach().cpu().contiguous().numpy().tobytes())
+    return digest.hexdigest()
+
+
 def atomic_json(path, data):
     path=Path(path); path.parent.mkdir(parents=True,exist_ok=True)
     tmp=path.with_suffix(path.suffix+'.tmp')

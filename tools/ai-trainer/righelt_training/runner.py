@@ -24,6 +24,7 @@ from .curriculum import Curriculum
 from .model import PolicyValueNet
 from .replay import ReplayBuffer, save_game
 from .trainer import make_optimizer, train_round
+from . import fresh_health
 
 ENGINE = ROOT / 'tools/ai-trainer/engine-worker.mjs'
 CHECKPOINT_INTERVAL = 590
@@ -93,6 +94,9 @@ class Runner:
         digest = hashlib.sha256(json.dumps(self.manifest['manifest'], sort_keys=True, allow_nan=False).encode()).hexdigest()
         if digest != self.manifest_hash:
             raise ValueError('manifest content mismatch')
+        self.continuation = fresh_health.continuation_for(self.directory, self.manifest['manifest'])
+        if self.continuation and not resume:
+            raise ValueError('continuation requires checkpoint restoration')
         self.deadline = effective_deadline(self.runtime)
         self.started = self.runtime['startedMonotonic']
         if self.deadline <= self.started or self.deadline <= time.monotonic():
@@ -136,6 +140,11 @@ class Runner:
         with self.operation("restore-and-replay",300):return self._restore(checkpoint)
 
     def _restore(self, checkpoint):
+        continuation = getattr(self, 'continuation', None)
+        if continuation is None:
+            continuation = fresh_health.continuation_for(self.directory, getattr(self, 'manifest', {}).get('manifest', {}))
+            self.continuation = continuation
+        preserve_state = continuation is not None and continuation['preserveState'] is True
         parent_manifest = self.runtime.get('parentCheckpointManifestSha256', self.manifest_hash)
         source_directory = checkpoint.parent.parent
         relocated = source_directory.resolve() != self.directory.resolve()
@@ -153,10 +162,12 @@ class Runner:
                     raise ValueError('restore manifest checksum mismatch')
             origin, target = source['manifest'], destination['manifest']
             same_stage = origin['stage'] == target['stage']
-            if same_stage and origin['seed'] != target['seed']:
+            if (same_stage or preserve_state) and origin['seed'] != target['seed']:
                 raise ValueError('same-stage restore seed mismatch')
-            if not same_stage and (origin['stage'], target['stage']) != ('initial', 'overnight'):
+            if not preserve_state and not same_stage and (origin['stage'], target['stage']) != ('initial', 'overnight'):
                 raise ValueError('unsupported restore stage transition')
+            if preserve_state and checkpoint.resolve() != Path(continuation['recoveryCheckpoint']).resolve():
+                raise ValueError('continuation checkpoint differs from authorized recovery source')
         data = load_checkpoint(checkpoint, self.model, self.optimizer, manifest_sha256=parent_manifest, require_recovery=True)
         companion = read_json(checkpoint.with_suffix('.runner.json'))
         if companion['checkpointSha256'] != hashlib.sha256(checkpoint.read_bytes()).hexdigest():
@@ -169,7 +180,7 @@ class Runner:
             self.state['generationStartedMonotonic']=time.monotonic()-elapsed
         if relocated:
             previous = self.state
-            if not same_stage:
+            if not same_stage and not preserve_state:
                 # Initial-to-overnight starts new stage counters. A same-stage
                 # allocation reset instead continues the exact training cursor.
                 self.state = default_state()
@@ -178,12 +189,19 @@ class Runner:
                 self.state['admissionDurations'] = previous.get('admissionDurations',{})
             self.state.pop('lastHandoffId', None)
             self.state['archives'] = [str((source_directory / p).resolve()) for p in previous['archives']]
+        self.buffer.positions.clear(); self.buffer.ids.clear(); self.buffer.game_ids.clear()
         for path in self.state['archives']:
             with gzip.open(self.directory / path, 'rt') as stream:
                 self.buffer.append(json.load(stream))
         self.model_version = companion['checkpointSha256']
         restore_observations(self.state,self.directory)
         self.restore_admission_claims()
+        if continuation and continuation['freshHealth'] is True:
+            self.fresh_baseline = fresh_health.initialize(self.directory, continuation, self.state, checkpoint)
+            if self.runtime.get('allocationId') != self.fresh_baseline['baseline']['allocationId']:
+                raise ValueError('fresh baseline differs from runtime allocation')
+            self.fresh_previous_checkpoint = (fresh_health.checkpoint_reference(
+                checkpoint, companion['checkpointSha256'], self.state, data['model']) if not relocated else None)
 
     def restore_admission_claims(self):
         ledger=getattr(self,'ledger',None) or RecoveryLedger(self.directory)
@@ -227,10 +245,17 @@ class Runner:
         ledger=getattr(self,'ledger',None) or RecoveryLedger(self.directory)
         self.state['checkpointSequence'] = ledger.checkpoint(self.state['checkpointSequence'])+1
         path = self.directory / 'checkpoints' / f"checkpoint-{self.state['checkpointSequence']:06d}.pt"
+        if getattr(self, 'fresh_baseline', None) is not None:
+            fresh = self.state[fresh_health.STATE_KEY]
+            previous = getattr(self, 'fresh_previous_checkpoint', None)
+            if previous and (not fresh['checkpoints'] or fresh['checkpoints'][-1] != previous):
+                fresh['checkpoints'].append(previous)
         digest = save_checkpoint(path, self.model, self.optimizer, round_index=self.state['round'],
                                  updates=self.state['updates'], replay_ids=self.state['archives'], manifest_sha256=self.manifest_hash,recovery_state=self.state)
         atomic_json(self.directory / 'latest.json', {'checkpoint': str(path), 'sha256': digest, 'updates': self.state['updates']})
         self.model_version = digest
+        if getattr(self, 'fresh_baseline', None) is not None:
+            self.fresh_previous_checkpoint = fresh_health.checkpoint_reference(path, digest, self.state, self.model.state_dict())
         self.last_checkpoint = time.monotonic()
         self.checkpoint_requested = False
         self.event('checkpoint', path=str(path), sha256=digest, updates=self.state['updates'])
@@ -265,7 +290,7 @@ class Runner:
         self.event('inference-batch',seconds=seconds,positions=len(requests))
         return True
 
-    def accept_game(self, game, round_deadline):
+    def accept_game(self, game, round_deadline, *, job=None):
         self.maybe_checkpoint()
         path = save_game(self.directory / 'games', game)
         verification_deadline = min(round_deadline, self.deadline - 10,
@@ -284,6 +309,8 @@ class Runner:
             return False
         observe_duration(self.state,self.directory,job_id=game['id'],kind=game['kind'],
                          phase='replay',seconds=time.monotonic()-started,censored=False)
+        if getattr(self, 'fresh_baseline', None) is not None:
+            fresh_health.accept_game(self.directory, self.state, self.fresh_baseline, game, path, job)
         self.buffer.append(game)
         self.state['archives'].append(str(path.relative_to(self.directory)))
         self.state['completedGames'] += 1
@@ -422,7 +449,7 @@ class Runner:
                             self.event('generated-game',id=game['id'],kind=worker['job']['kind'],
                                        decisions=len(game.get('decisions',[])),termination=game.get('termination'),
                                        valuePositions=len(game.get('decisions',[])) if game.get('termination')=='terminal' else 0)
-                            self.accept_game(message['game'], round_deadline)
+                            self.accept_game(message['game'], round_deadline, job=worker['job'])
                             self.finish_worker(selector, workers, fd)
                             self.checkpoint()
                             break
@@ -453,6 +480,15 @@ class Runner:
             self.state['unfinishedGames'] += 1
             self.event('unfinished', job=worker['job'], reason=unfinished)
 
+    def record_training_batch(self, metrics):
+        self.state['updates'] += 1
+        self.state['nonzeroUpdates'] += 1
+        self.state['trainingBatch'] = metrics['batchIndex'] + 1
+        if getattr(self, 'fresh_baseline', None) is not None:
+            fresh_health.record_batch(self.state, metrics)
+        self.event('training-batch', **metrics)
+        self.maybe_checkpoint()
+
     def run(self):
         self.checkpoint()
         handoff=None
@@ -477,16 +513,12 @@ class Runner:
                 self.state['trainingBatch'] = 0
                 self.checkpoint()
             if self.buffer.positions:
-                def after_batch(metrics):
-                    self.state['updates'] += 1
-                    self.state['nonzeroUpdates'] += 1
-                    self.state['trainingBatch'] = metrics['batchIndex'] + 1
-                    self.event('training-batch', **metrics)
-                    self.maybe_checkpoint()
                 result = train_round(self.model, self.optimizer, list(self.buffer.positions), device=self.device,
                                      seed=self.seed + self.state['round'], deadline=self.deadline,
-                                     should_pause=lambda: self.allocation()['paused'] or bool(self.handoff_requested()), on_batch=after_batch,
-                                     start_batch=self.state['trainingBatch'],operation=self.operation)
+                                     should_pause=lambda: self.allocation()['paused'] or bool(self.handoff_requested()), on_batch=self.record_training_batch,
+                                     start_batch=self.state['trainingBatch'],operation=self.operation,
+                                     evidence_game_ids=(fresh_health.eligible_game_ids(self.state)
+                                                        if getattr(self, 'fresh_baseline', None) is not None else None))
                 self.event('training-round', result=result)
                 if result['stopped'] != 'complete':
                     self.checkpoint()

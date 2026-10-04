@@ -46,7 +46,8 @@ def tensor_batch(positions, device):
 
 
 def train_round(model, optimizer, positions, *, device, seed, deadline, should_pause=lambda: False,
-                on_batch=lambda metrics: None, clock=time.monotonic, start_batch=0, operation=lambda name,seconds:nullcontext()):
+                on_batch=lambda metrics: None, clock=time.monotonic, start_batch=0, operation=lambda name,seconds:nullcontext(),
+                evidence_game_ids=None):
     order = list(range(len(positions)))
     random.Random(seed).shuffle(order)
     batch_size = CONFIG['training']['batchSize']
@@ -84,6 +85,15 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
                        'gradientNorm': norm.item(), 'parameterDelta': delta, 'positions': len(batch),
                        'seconds': clock() - before, 'batchIndex': start // batch_size,
                        'policyPositions': int(policy_mask.sum()), 'valuePositions': int(mask.sum())}
+            if evidence_game_ids is not None:
+                # These are the actual shuffled batch members and masks used by
+                # training_loss, not counts inferred from the replay buffer.
+                metrics['policyExamples'] = [
+                    {'gameId': p['gameId'], 'positionId': p['id']} for p in batch
+                    if p.get('gameId') in evidence_game_ids and p.get('policyMask', True)]
+                metrics['valueExamples'] = [
+                    {'gameId': p['gameId'], 'positionId': p['id']} for p in batch
+                    if p.get('gameId') in evidence_game_ids and p['terminalMask']]
             batch_bound = max(batch_bound, metrics['seconds'] * 2)
         result['updates'] += 1
         result['nonzeroUpdates'] += 1

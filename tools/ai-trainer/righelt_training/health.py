@@ -12,7 +12,8 @@ import signal
 import subprocess
 import threading
 import torch
-from .checkpoint import atomic_json, load_checkpoint,inspect_checkpoint
+from .checkpoint import atomic_json, load_checkpoint,inspect_checkpoint,weights_sha256
+from . import fresh_health
 from .manifest import active_manifest,manifest_hashes
 from .repair import resolved_failures
 from .config import ROOT,CONFIG_SHA256
@@ -96,7 +97,17 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
         if state['updates']!=latest['updates']:raise ValueError('latest update count mismatch')
         manifest_record=active_manifest(directory)
         manifest=manifest_record['sha256']
+        continuation = fresh_health.continuation_for(directory, manifest_record.get('manifest', {}))
+        baseline = None
+        if continuation and continuation['freshHealth'] is True:
+            baseline = fresh_health.load_baseline(directory, continuation,
+                        expected_sha256=state[fresh_health.STATE_KEY]['baselineSha256'])
+            result['freshHealthRequired'] = True
+            result['freshBaselineSha256'] = baseline['sha256']
+            result['freshAllocationId'] = baseline['baseline']['allocationId']
+            result['startingCheckpoint'] = baseline['baseline']['checkpoint']
         result['trainedExportParityPassed']=trained_export_proof(directory,latest,manifest_record)
+        games = {}
         for name in state['archives']:
             if clock()>=deadline-5:raise TimeoutError('health replay audit unfinished within stage budget')
             archive=(directory/name).resolve()
@@ -111,30 +122,51 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
             elif game['termination']=='truncated' and game['outcome']['status']=='ongoing':result['truncatedGames']+=1
             else:raise ValueError('invalid terminal/truncation record')
             result['replayChecks']+=1
+            if baseline is not None: games[name] = game
             add_fallback_game(result.setdefault('fallbackReport',{}),game)
-        weights=set()
-        for checkpoint in [path]+[p for p in sorted((directory/'checkpoints').glob('*.pt'),reverse=True) if p!=path]:
+        if baseline is not None:
+            result.update(fresh_health.audit_evidence(directory, state, baseline, games))
+            references = state[fresh_health.STATE_KEY]['checkpoints']
+            retained = {Path(record['path']).resolve(): record for record in references}
+            if len(retained) != len(references) or path in retained:
+                raise ValueError('duplicate retained checkpoint reference')
+            candidates = [path] + list(reversed(retained))
+        else:
+            candidates = [path]+[p for p in sorted((directory/'checkpoints').glob('*.pt'),reverse=True) if p!=path]
+        weights=set(); trained_updates=set()
+        for checkpoint in candidates:
             if clock()>=deadline-2:raise TimeoutError('checkpoint recovery audit unfinished within stage budget')
+            if not checkpoint.resolve().is_relative_to(directory):raise ValueError('retained checkpoint outside allocation')
             meta=json.loads(checkpoint.with_suffix('.json').read_text())
             model=PolicyValueNet();optimizer=torch.optim.AdamW(model.parameters())
             if meta['manifestSha256'] not in allowed:raise ValueError('checkpoint source lineage not authorized')
             data=load_checkpoint(checkpoint,model,optimizer,manifest_sha256=meta['manifestSha256'],require_recovery=True)
             if data['updates']!=meta['updates'] or not finite_tree(data['model']) or not finite_tree(data['optimizer']):
                 raise ValueError('invalid checkpoint parameters or optimizer state')
+            weight_digest = weights_sha256(data['model'])
+            if baseline is not None:
+                fresh_health.retained_checkpoint(data, state, baseline)
+                if checkpoint != path:
+                    expected = retained[checkpoint]
+                    if (expected['sha256'] != meta['sha256'] or expected['weightsSha256'] != weight_digest
+                            or expected['updates'] != data['updates']):
+                        raise ValueError('retained checkpoint reference mismatch')
+                if (data['updates'] <= baseline['baseline']['checkpoint']['updates']
+                        or weight_digest == baseline['baseline']['checkpoint']['weightsSha256']
+                        or data['updates'] in trained_updates):continue
             if data['updates']<=0:continue
             optimizer_steps=[float(entry.get('step',0)) for entry in data['optimizer']['state'].values()]
             if not optimizer_steps or max(optimizer_steps)!=data['updates']:raise ValueError('optimizer update count mismatch')
-            digest=hashlib.sha256()
-            for name,tensor in sorted(model.state_dict().items()):
-                digest.update(name.encode());digest.update(tensor.detach().cpu().contiguous().numpy().tobytes())
-            weights.add(digest.hexdigest())
+            if weight_digest in weights:continue
+            weights.add(weight_digest);trained_updates.add(data['updates'])
             result['checkpoints'].append({'path':str(checkpoint),'sha256':meta['sha256'],
-                'weightsSha256':digest.hexdigest(),'updates':data['updates']})
+                'weightsSha256':weight_digest,'updates':data['updates']})
             if len(weights)>=2:break
         result['distinctRecoverableTrainedCheckpoints']=len(weights)
         result['finiteNonzeroUpdates']=bool(weights) and state['updates']>0 and state['nonzeroUpdates']==state['updates']
         result['complete']=True
-        result['healthy']=(result['terminalGames']>=100 and len(weights)>=2 and result['finiteNonzeroUpdates']
+        result['healthy']=(result.get('freshTerminalGames',result['terminalGames'])>=100 and len(weights)>=2 and result['finiteNonzeroUpdates']
+                           and (baseline is None or result['freshExamplesUsed'])
                            and result['trainedExportParityPassed'] and not result['unfinishedAttempts'])
     except (TimeoutError,subprocess.TimeoutExpired) as error:
         result['failures'].append(str(error))
