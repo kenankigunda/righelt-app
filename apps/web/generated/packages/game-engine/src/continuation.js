@@ -1,3 +1,4 @@
+import { completedDecisionRule } from "./decision-cache.js";
 import { checkEngineComputation, isEngineComputationObserved, observeEngineComputation } from "./computation-guard.js";
 import { BOARD_SIZE, SUPPLY_POINTS, normalizeState } from "./deterministic.js";
 function cloneState(state) {
@@ -655,7 +656,14 @@ function continuationSearchKey(state) {
             .sort((a, b) => a.id.localeCompare(b.id)),
     });
 }
-export function isContinuationCompletable(state, memo = new Map()) {
+export function isContinuationCompletable(state, memo) {
+    // Keep recursive path-local memoization unchanged. The pilot only shares
+    // completed outer calls, so path-dependent visiting markers cannot escape.
+    if (memo)
+        return solveContinuation(state, memo);
+    return completedDecisionRule("continuation-v1", state, () => solveContinuation(state, new Map()));
+}
+function solveContinuation(state, memo) {
     checkEngineComputation(Boolean(state.continuation));
     if (!state.continuation) {
         return true;
@@ -663,7 +671,7 @@ export function isContinuationCompletable(state, memo = new Map()) {
     const normalized = normalizeState(state);
     const key = continuationSearchKey(normalized);
     if (isEngineComputationObserved())
-        observeEngineComputation({ type: "continuation-key", key });
+        observeEngineComputation({ type: "continuation-key", key: JSON.stringify({ ...normalized, artifacts: undefined }) });
     const existing = memo.get(key);
     if (existing !== undefined && isEngineComputationObserved())
         observeEngineComputation({ type: "memo-hit", key });
@@ -680,7 +688,7 @@ export function isContinuationCompletable(state, memo = new Map()) {
             return true;
         }
         for (const successor of buildSuccessorStates(normalized)) {
-            if (isContinuationCompletable(successor, memo)) {
+            if (solveContinuation(successor, memo)) {
                 memo.set(key, "success");
                 return true;
             }

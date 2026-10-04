@@ -1,3 +1,4 @@
+import { completedDecisionRule } from "./decision-cache";
 import { checkEngineComputation, isEngineComputationObserved, observeEngineComputation } from "./computation-guard";
 import type { Action, ContinuationContext, GameState, Piece } from "./types";
 import { BOARD_SIZE, SUPPLY_POINTS, normalizeState } from "./deterministic";
@@ -761,7 +762,14 @@ function continuationSearchKey(state: GameState): string {
   });
 }
 
-export function isContinuationCompletable(state: GameState, memo = new Map<string, SearchMemoState>()): boolean {
+export function isContinuationCompletable(state: GameState, memo?: Map<string, SearchMemoState>): boolean {
+  // Keep recursive path-local memoization unchanged. The pilot only shares
+  // completed outer calls, so path-dependent visiting markers cannot escape.
+  if (memo) return solveContinuation(state, memo);
+  return completedDecisionRule("continuation-v1", state, () => solveContinuation(state, new Map()));
+}
+
+function solveContinuation(state: GameState, memo: Map<string, SearchMemoState>): boolean {
   checkEngineComputation(Boolean(state.continuation));
   if (!state.continuation) {
     return true;
@@ -769,7 +777,7 @@ export function isContinuationCompletable(state: GameState, memo = new Map<strin
 
   const normalized = normalizeState(state);
   const key = continuationSearchKey(normalized);
-  if (isEngineComputationObserved()) observeEngineComputation({ type: "continuation-key", key });
+  if (isEngineComputationObserved()) observeEngineComputation({ type: "continuation-key", key: JSON.stringify({ ...normalized, artifacts: undefined }) });
   const existing = memo.get(key);
   if (existing !== undefined && isEngineComputationObserved()) observeEngineComputation({ type: "memo-hit", key });
   if (existing === "success") {
@@ -787,7 +795,7 @@ export function isContinuationCompletable(state: GameState, memo = new Map<strin
     }
 
     for (const successor of buildSuccessorStates(normalized)) {
-      if (isContinuationCompletable(successor, memo)) {
+      if (solveContinuation(successor, memo)) {
         memo.set(key, "success");
         return true;
       }

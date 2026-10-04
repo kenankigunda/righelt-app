@@ -1,4 +1,4 @@
-import { withEngineComputationGuard, MAX_ENGINE_OPERATION_EXPANSIONS } from "../../game-engine/src/index";
+import { withEngineComputationGuard, MAX_ENGINE_OPERATION_EXPANSIONS, DecisionRuleCache, withDecisionRuleCache, type DecisionCacheStats, withEngineComputationObserver, type EngineComputationObserver } from "../../game-engine/src/index";
 import type { Action, GameState } from "../../shared-types/src/engine";
 import { encodeState, experimentConfig as config, legalActionMap, scanLegalActions } from "./representation";
 import { terminalValue, transition } from "./transition";
@@ -12,7 +12,7 @@ export type Evaluator = (input: Float32Array, context: {
 }) => Promise<Evaluation>;
 export type SearchRequest = {
   state: GameState; seed: number; simulations?: number; temperature?: number;
-  maxValueGap?: number; maxNodes?: number; deadlineMs?: number; signal?: AbortSignal;
+  maxValueGap?: number; maxNodes?: number; deadlineMs?: number; signal?: AbortSignal; decisionCache?: boolean; observeEngine?: EngineComputationObserver;
 };
 export type ActionReport = {
   executable: boolean | null; index: number; visits: number; prior: number; policyLogit: number; value: number | null;
@@ -26,7 +26,7 @@ export type ModelFallback = {
   valueSource: "root-model"; checkedEligibleCount: number; uncheckedCount: number; provenLosingCount: number;
 };
 export type LegalityEvidence = { complete: boolean; checked: number; unknown: number; indices: number[] };
-export type SearchResult = {
+export type SearchResult = ({
   status: "ready"; nextState: GameState; legality: LegalityEvidence; action: Action; actionIndex: number; value: number;
   policy: { index: number; probability: number }[]; policyMask: boolean; fallback: ModelFallback | null;
   actions: ActionReport[]; seed: number; nodes: number; simulations: number;
@@ -36,7 +36,7 @@ export type SearchResult = {
   status: "recovery"; reason: "terminal" | "no-legal-actions" | "incomplete-safety" | "no-completed-search";
   actions: ActionReport[]; nodes: number; simulations: number; elapsedMs: number; engineBudget: EngineBudget;
   stopped: "complete" | "deadline" | "node-limit";
-};
+}) & { decisionCache?: DecisionCacheStats };
 
 type Edge = { index: number; action: Action; prior: number; policyLogit: number; visits: number; sum: number; child?: Node; resolved?: GameState; transitionLimited?: boolean };
 type Node = { state: GameState; edges?: Edge[]; enumerationLimited?: boolean; value?: number; visits: number; sum: number };
@@ -62,12 +62,18 @@ export function seededRandom(seed: number): () => number {
  * This core checks cooperative cancellation between bounded operations, not during them. */
 export async function selectMove(request: SearchRequest, evaluator: Evaluator): Promise<SearchResult> {
   const started = performance.now();
+  const ruleCache = request.decisionCache ? new DecisionRuleCache() : undefined;
+  const rules = <T>(operation: () => T): T => {
+    const cached = () => withDecisionRuleCache(ruleCache, operation);
+    return request.observeEngine ? withEngineComputationObserver(request.observeEngine, cached) : cached();
+  };
+  const cacheEvidence = () => ruleCache ? { decisionCache: { ...ruleCache.stats } } : {};
   const random = seededRandom(request.seed);
   const simulations = request.simulations ?? config.search.selfPlaySimulations;
   const maxNodes = request.maxNodes ?? config.search.maxNodes;
   const temperature = request.temperature ?? 0;
   const valueGap = request.maxValueGap ?? 0;
-  if (!Number.isSafeInteger(request.seed) || !Number.isSafeInteger(simulations) || simulations < 1 ||
+  if ((request.decisionCache !== undefined && typeof request.decisionCache !== "boolean") || !Number.isSafeInteger(request.seed) || !Number.isSafeInteger(simulations) || simulations < 1 ||
       !Number.isSafeInteger(maxNodes) || maxNodes < 1 || maxNodes > config.search.maxNodes ||
       !Number.isFinite(temperature) || temperature < 0 || !Number.isFinite(valueGap) || valueGap < 0 ||
       (request.deadlineMs !== undefined && !Number.isFinite(request.deadlineMs))) throw new Error("Invalid search limits");
@@ -91,7 +97,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
   };
   const engine = <T>(operation: () => T, final = false): T => {
     let expansions = 0;
-    return withEngineComputationGuard(expansion => {
+    return rules(() => withEngineComputationGuard(expansion => {
       check(final);
       if (expansion) {
         if (expansions >= engineBudget.perOperationLimit) {
@@ -100,7 +106,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
         expansions++; engineBudget.totalExpansions++;
         engineBudget.peakExpansions = Math.max(engineBudget.peakExpansions, expansions);
       }
-    }, operation);
+    }, operation));
   };
   const edges = (node: Node) => {
     check();
@@ -155,7 +161,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     }));
   }
   const recovery = (reason: Extract<SearchResult, { status: "recovery" }>["reason"]): SearchResult => ({
-    status: "recovery", reason, actions: reports(), nodes, simulations: completed, elapsedMs: performance.now() - started, engineBudget, stopped,
+    status: "recovery", ...cacheEvidence(), reason, actions: reports(), nodes, simulations: completed, elapsedMs: performance.now() - started, engineBudget, stopped,
   });
   const sample = (choices: Edge[], score: (edge: Edge) => number): Edge => {
     const scores = choices.map(score);
@@ -186,7 +192,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     catch (error) { if (error instanceof SoftStop || error instanceof EngineLimit) return recovery("no-completed-search"); throw error; }
     const total = candidates.reduce((sum, edge) => sum + edge.visits, 0);
     return {
-      status: "ready", nextState, legality, action: chosen.action, actionIndex: chosen.index,
+      status: "ready", ...cacheEvidence(), nextState, legality, action: chosen.action, actionIndex: chosen.index,
       value: chosen.visits ? chosen.sum / chosen.visits : root.value!,
       policy: candidates.map(edge => ({ index: edge.index, probability: total ? edge.visits / total : Number(edge === chosen) })),
       policyMask: true, fallback: null,
@@ -216,7 +222,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
         const selectedSafety = safety.get(chosen.index) ?? "incomplete";
         const selectedReason = reason === "legality-incomplete" ? reason : selectedSafety === "eligible" ? "search-incomplete" : "safety-incomplete";
         return {
-          status: "ready", nextState, legality, reason: "model-fallback", action: chosen.action, actionIndex: chosen.index,
+          status: "ready", ...cacheEvidence(), nextState, legality, reason: "model-fallback", action: chosen.action, actionIndex: chosen.index,
           value: root.value!, policy: [], policyMask: false,
           fallback: { schemaVersion: selectedReason === "legality-incomplete" || selectedSafety === "losing" || selectedReason !== reason ? 2 : 1,
             reason: selectedReason, selectionBasis: "model-policy", selectedActionSafety: selectedSafety,
@@ -240,7 +246,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     scanLegalActions(root.state, operation => {
       if (request.signal?.aborted) throw abort();
       if (enumerationStopped) return undefined;
-      try { check(); return withEngineComputationGuard(expansion => {
+      try { check(); return rules(() => withEngineComputationGuard(expansion => {
         check();
         if (expansion) {
           if (rootExpansions >= engineBudget.perOperationLimit) {
@@ -249,7 +255,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
           rootExpansions++; engineBudget.totalExpansions++;
           engineBudget.peakExpansions = Math.max(engineBudget.peakExpansions, rootExpansions);
         }
-      }, operation); }
+      }, operation)); }
       catch (error) {
         if (error instanceof SoftStop) { enumerationStopped = true; return undefined; }
         if (error instanceof EngineLimit) return undefined;

@@ -62,14 +62,15 @@
     "ai:parity-corpus": "node --import tsx tools/ai-trainer/parity-corpus.mjs",
     "ai:export-parity": "PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.parity",
     "ai:benchmark-report": "PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.benchmark_report",
-    "test:computer-player:unit": "node scripts/run-node-tests.mjs packages/computer-player/tests/representation.test.mjs packages/computer-player/tests/search.test.mjs packages/computer-player/tests/search-fallback.test.mjs packages/computer-player/tests/partial-legality.test.mjs packages/computer-player/tests/tactics.test.mjs",
-    "test:computer-player:integration": "node scripts/run-node-tests.mjs packages/computer-player/tests/transition.test.mjs",
+    "test:computer-player:unit": "node scripts/run-node-tests.mjs packages/computer-player/tests/representation.test.mjs packages/computer-player/tests/search.test.mjs packages/computer-player/tests/search-fallback.test.mjs packages/computer-player/tests/tactics.test.mjs",
+    "test:computer-player:integration": "node scripts/run-node-tests.mjs packages/computer-player/tests/transition.test.mjs packages/computer-player/tests/partial-legality.test.mjs packages/computer-player/tests/cache-pilot.test.mjs",
     "ai:benchmark-build": "node scripts/build-ai-benchmark.mjs",
     "test:ai-benchmark": "node --test tools/ai-benchmark/tests/*.test.mjs",
     "ai:search-parity": "PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.search_parity",
     "ai:run": "PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.supervisor",
     "ai:arena": "PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.arena",
-    "ai:replay": "PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.replay_check"
+    "ai:replay": "PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.replay_check",
+    "ai:selection-diagnostic": "node --import tsx tools/ai-benchmark/selection-diagnostic.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.1",

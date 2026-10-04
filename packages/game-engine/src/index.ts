@@ -11,3 +11,5 @@ export * from "./resolve";
 export * from "./continuation";
 
 export * from "./computation-guard";
+
+export * from "./decision-cache";

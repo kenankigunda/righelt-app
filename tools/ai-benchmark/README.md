@@ -30,3 +30,27 @@ Runtime files are copied from the pinned `onnxruntime-web` dependency, not fetch
 Search parity uses the same held-out states with real model calls at every visited node. Generate a reference with `pnpm ai:search-parity --corpus /path/corpus.json --output /path/search-reference.json` (MPS by default). The command exports the exact reference model beside the report; build the browser harness with that export. Set `AI_BENCHMARK_SEARCH_REFERENCE` and `AI_BENCHMARK_SEARCH_REPORT` when running the browser suite. It requires matching model checksums, completed results, identical immediate/tactical classifications, and matching selections except value ties within the FP32 numerical bound. CI runs a 20-state regression subset; the training launch requires the separate complete 1,000-state proof. Neither establishes the sealed tactical quality suite or target-phone acceptance.
 
 A ready move returned at a soft deadline is valid runtime recovery, but is censored evidence for cross-runtime search parity. The comparator rejects it and requires equal completed simulation counts. The reference driver uses a separate 30-second diagnostic bound. `--repair-reference OLD --reference-revision COMMIT` can remeasure only incomplete reference rows after checking identical model, corpus, configuration, profile and unchanged search/engine source. It preserves the original report by writing a new artifact with the prior checksum and recomputed IDs. Observed browser results are retained beside the proof even if comparison fails; `node scripts/compare-ai-search-parity.mjs reference.json observed.json report.json` applies the same comparison to those saved artifacts. These are validation diagnostics, not sealed final quality tests or phone timing measurements.
+
+### Decision-local cache pilot and selection diagnostics
+
+`pnpm ai:selection-diagnostic --corpus FILE --baseline-root DIR --output FILE --repetitions 3`
+compares the archived earlier engine/search source, current default behavior and the
+opt-in cache on the same development workload. Archive the chosen source revision
+with its `packages/game-engine`, `packages/computer-player` and `packages/shared-types`
+paths. The corpus must not contain final partitions. The command refuses to overwrite
+its output and uses isolated, time-bounded child processes. Fixed synthetic logits
+isolate engine/search costs; these results say nothing about playing strength.
+
+The report separates exact enumeration, selection, recording, independent replay,
+process startup, synthetic inference, peak resident memory and an additional
+instrumented pass. Instrumented timings are separate from the timing comparison.
+Continuation-state counts use full rule-state keys; local memo-hit counts retain
+the existing narrower, call-local keys and are not a second unique-state count.
+
+`SearchRequest.decisionCache` defaults to false. The pilot caches only completed
+outer continuation-completion checks, keyed by the entire state except derived UI
+artifacts. It retains at most 512 entries and 4 MiB of estimated key/entry storage;
+that estimate is not a VM heap measurement. It expires with the decision. Recursive
+visiting markers and interrupted results never enter it, and no cache context stays
+installed across an inference await. Adoption requires repeatable end-to-end benefit
+without correctness or memory regressions; a faster microbenchmark is insufficient.
