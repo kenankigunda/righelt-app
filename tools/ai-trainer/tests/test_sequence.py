@@ -73,6 +73,24 @@ class SequenceTest(unittest.TestCase):
             with self.assertRaises(ValueError):s.complete('six-hour',evidence)
             self.assertFalse(Allocation(Path(d),Path(d)/'six').events())
 
+    def test_failed_unselected_stage_reports_without_adopting_or_advancing(self):
+        with tempfile.TemporaryDirectory() as d:
+            s,r,e=self.setup_sequence(Path(d));s.claim(r,e);s.complete('diagnostic',self.diagnostic(Path(d)))
+            claim=s.claim(r,e);path=Path(claim['runDirectory'])/'failed.json'
+            immutable(path,{'phase':'six-hour','status':'inconclusive','reason':'screen gate unmet'})
+            result=s.complete('six-hour',path)
+            self.assertFalse(result['advancementEligible']);self.assertNotIn(adoption.FIELD,result)
+            self.assertIsNone(s.next_phase());self.assertEqual(s.mail('six-hour','status')['status'],'pending')
+            self.assertFalse((s.directory/'claims'/'twelve-hour.json').exists())
+
+    def test_health_cannot_drop_the_selected_recipe(self):
+        with tempfile.TemporaryDirectory() as d:
+            s,r,e=self.setup_sequence(Path(d));s.claim(r,e);s.complete('diagnostic',self.diagnostic(Path(d)));s.claim(r,e)
+            path=self.health(s,'six-hour');report=json.loads(path.read_text());report['health'].pop(adoption.FIELD)
+            wrong=path.parent/'wrong.json';immutable(wrong,report)
+            with self.assertRaisesRegex(ValueError,'health report'):s.complete('six-hour',wrong)
+            self.assertFalse(s.report_path('six-hour').exists())
+
     def test_explicit_new_prerequisite_hold_prevents_any_stage_claim(self):
         with tempfile.TemporaryDirectory() as d:
             s,r,e=self.setup_sequence(Path(d));s.config['launchHold']='Waiting for the additional task identity'

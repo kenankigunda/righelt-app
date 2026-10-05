@@ -355,7 +355,10 @@ class FreshHealthTest(unittest.TestCase):
         bad = game(101)
         with self.assertRaisesRegex(ValueError, 'authorized recipe'): self.accept(runner, bad)
         self.assertEqual(len(runner.buffer.positions), before)
-        self.assertTrue(list((runner.directory/'games').glob('*101*')))
+        import hashlib
+        archive=runner.directory/'games'/f"{hashlib.sha256(bad['id'].encode()).hexdigest()}.json.gz"
+        self.assertTrue(archive.exists())
+        self.assertEqual(fresh_health.read_game(archive)['id'],bad['id'])
         self.assertNotIn(bad['id'], runner.state[fresh_health.STATE_KEY]['games'])
 
     def test_inconclusive_screen_baseline_is_still_bound_for_new_games(self):
