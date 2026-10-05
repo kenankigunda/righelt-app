@@ -1,0 +1,16 @@
+export const AUTH_PROTOCOL_VERSION: 2;
+export const AUTH_BOOTSTRAP_TIMEOUT_MS: number;
+export const SESSION_COOKIE: '__Host-righelt_session';
+export const SESSION_IDLE_MS: number;
+export const ACTIVITY_THROTTLE_MS: number;
+export const PASSWORD_MIN_CODE_POINTS: number;
+export const PASSWORD_MAX_CODE_POINTS: number;
+export const SCRYPT_PARAMETERS: Readonly<{ N: number; r: number; p: number; maxmem: number }>;
+export const SCRYPT_KEY_BYTES: number;
+export const SCRYPT_SALT_BYTES: number;
+export const HASH_MAX_WAITING: number;
+export const AUTH_REQUEST_HEADER: 'X-Righelt-Auth';
+export const SESSION_CONTEXT_HEADER: 'X-Righelt-Session';
+export const AUTH_PROTOCOL_HEADER: 'X-Righelt-Auth-Version';
+export const USERNAME_LOOKUP_DEBOUNCE_MS: 500;
+export const USERNAME_LOOKUP_TIMEOUT_MS: 5000;

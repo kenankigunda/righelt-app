@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { listLegalActions } from "../../game-engine/src/legal";
 import { MAX_HISTORY } from "../../shared-types/src/history";
-import { handleApiRequest } from "../src/index.ts";
+import { handleApiRequest } from "./support/v2-test-adapter.mjs";
 import { __resetLiveGameStateForTests } from "../src/shell-live.ts";
 import { applyServerAction, createInitialGame } from "../src/shell-live-core.ts";
 import { createFakeD1 } from "./support/fake-d1.mjs";
@@ -1209,13 +1209,13 @@ test("live transport: join approval flow and presence/history/move transitions",
     req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
     env,
   );
-  assert.equal((await secondMove.json()).error, "not_your_turn");
+  assert.equal((await secondMove.json()).commandOutcomes[0].reason, "not_your_turn");
 
   const endTurn = await handleApiRequest(
     req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: "id-owner" }),
     env,
   );
-  assert.equal((await endTurn.json()).error, "not_your_turn");
+  assert.equal((await endTurn.json()).commandOutcomes[0].reason, "not_your_turn");
 
   const history = await handleApiRequest(
     req(`/api/shell/games/${gameId}/history`, "POST", { identityId: "id-owner", moveIndex: 0 }),
@@ -1279,7 +1279,7 @@ test("live transport: apply echoes clientCommandId and auto-settles ordinary tur
   const apply = await handleApiRequest(
     req(`/api/shell/games/${gameId}/apply`, "POST", {
       identityId: "id-owner",
-      clientCommandId: "cmd-apply-1",
+      clientCommandId: "v2:cmd-apply-1",
       state: createdBody.game.currentSnapshot,
       action: { type: "pass" },
     }),
@@ -1287,12 +1287,12 @@ test("live transport: apply echoes clientCommandId and auto-settles ordinary tur
   );
   const applyBody = await apply.json();
   assert.equal(applyBody.accepted, true);
-  assert.equal(applyBody.clientCommandId, "cmd-apply-1");
+  assert.equal(applyBody.clientCommandId, "v2:cmd-apply-1");
   assert.equal(applyBody.game.currentTurn.playerSeat, "Player 2");
   assert.equal(applyBody.game.currentSnapshot.sideToMove, "P2");
 
   const events = env.DB.getEvents(gameId).map((row) => JSON.parse(row.payload_json));
-  assert.equal(events.some((event) => event.type === "event_appended" && event.clientCommandId === "cmd-apply-1"), true);
+  assert.equal(events.some((event) => event.type === "event_appended" && event.clientCommandId === "v2:cmd-apply-1"), true);
 });
 
 test("live transport: duplicate clientCommandId retries are idempotent for apply after auto-settlement", async () => {
@@ -1306,7 +1306,7 @@ test("live transport: duplicate clientCommandId retries are idempotent for apply
   const applyOne = await handleApiRequest(
     req(`/api/shell/games/${gameId}/apply`, "POST", {
       identityId: "id-owner",
-      clientCommandId: "cmd-apply-dup",
+      clientCommandId: "v2:cmd-apply-dup",
       state: createdBody.game.currentSnapshot,
       action: { type: "pass" },
     }),
@@ -1317,7 +1317,7 @@ test("live transport: duplicate clientCommandId retries are idempotent for apply
   const applyRetry = await handleApiRequest(
     req(`/api/shell/games/${gameId}/apply`, "POST", {
       identityId: "id-owner",
-      clientCommandId: "cmd-apply-dup",
+      clientCommandId: "v2:cmd-apply-dup",
       state: createdBody.game.currentSnapshot,
       action: { type: "pass" },
     }),
@@ -1331,7 +1331,7 @@ test("live transport: duplicate clientCommandId retries are idempotent for apply
     .getEvents(gameId)
     .map((row) => JSON.parse(row.payload_json))
     .filter((event) => event.type === "event_appended");
-  assert.equal(events.filter((event) => event.clientCommandId === "cmd-apply-dup").length, 1);
+  assert.equal(events.filter((event) => event.clientCommandId === "v2:cmd-apply-dup").length, 1);
 });
 
 test("live transport: stale apply state is rejected with authoritative recovery payload", async () => {
@@ -1347,7 +1347,7 @@ test("live transport: stale apply state is rejected with authoritative recovery 
   const firstApply = await handleApiRequest(
     req(`/api/shell/games/${gameId}/apply`, "POST", {
       identityId: "id-owner",
-      clientCommandId: "cmd-fresh",
+      clientCommandId: "v2:cmd-fresh",
       state: createdBody.game.currentSnapshot,
       action: { type: "pass" },
     }),
@@ -1358,7 +1358,7 @@ test("live transport: stale apply state is rejected with authoritative recovery 
   const staleApply = await handleApiRequest(
     req(`/api/shell/games/${gameId}/apply`, "POST", {
       identityId: "id-owner",
-      clientCommandId: "cmd-stale",
+      clientCommandId: "v2:cmd-stale",
       state: createdBody.game.currentSnapshot,
       action: { type: "pass" },
     }),
@@ -1811,8 +1811,8 @@ test("live transport: move endpoint rejects non-player and wrong-turn players", 
     req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-viewer" }),
     env,
   );
-  assert.equal(nonPlayerMove.status, 403);
-  assert.equal((await nonPlayerMove.json()).error, "role_not_allowed");
+  assert.equal(nonPlayerMove.status, 200);
+  assert.equal((await nonPlayerMove.json()).commandOutcomes[0].reason, "role_not_allowed");
 
   await handleApiRequest(
     req(`/api/shell/games/${gameId}/join`, "POST", {
@@ -1827,8 +1827,8 @@ test("live transport: move endpoint rejects non-player and wrong-turn players", 
     req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-player2" }),
     env,
   );
-  assert.equal(wrongTurnMove.status, 409);
-  assert.equal((await wrongTurnMove.json()).error, "not_your_turn");
+  assert.equal(wrongTurnMove.status, 200);
+  assert.equal((await wrongTurnMove.json()).commandOutcomes[0].reason, "not_your_turn");
 
   const endTurn = await handleApiRequest(
     req(`/api/shell/games/${gameId}/moves`, "POST", { identityId: "id-owner" }),
@@ -1856,8 +1856,8 @@ test("live transport: end-turn rejects empty turns", async () => {
     req(`/api/shell/games/${gameId}/end-turn`, "POST", { identityId: "id-owner" }),
     env,
   );
-  assert.equal(endTurn.status, 409);
-  assert.equal((await endTurn.json()).error, "turn_has_no_moves");
+  assert.equal(endTurn.status, 200);
+  assert.equal((await endTurn.json()).commandOutcomes[0].reason, "turn_has_no_moves");
 });
 
 test("live transport: approve rejects unauthorized approver", async () => {

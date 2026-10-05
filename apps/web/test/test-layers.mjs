@@ -1,9 +1,13 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
+  "account-controller.test.mjs",
+  "render-gesture.test.mjs",
+  "public-profile.test.mjs",
   "adapter-render-status.test.mjs",
   "api-proxy.test.mjs",
   "board-adapter-contract.test.mjs",
   "bootstrap.test.mjs",
   "client-move-generation.test.mjs",
+  "command-journal.test.mjs",
   "deploy-config.test.mjs",
   "engine-board-adapter.test.mjs",
   "e2e-stack.test.mjs",

@@ -1,0 +1,56 @@
+name: T-108 hashing feasibility
+on:
+  workflow_dispatch:
+    inputs:
+      verify_cloudflare_access:
+        description: Run the separate read-only Free-plan and analytics access prerequisite
+        type: boolean
+        default: false
+  push:
+    branches: [codex/t-108-accounts]
+    paths:
+      - .github/workflows/t108-hash-feasibility.yml
+      - scripts/t108-cloudflare-preflight*
+      - tools/t108-feasibility/**
+
+permissions:
+  contents: read
+concurrency:
+  group: t108-isolated-hashing-feasibility
+  cancel-in-progress: false
+
+jobs:
+  harness-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Validate synthetic harness and evidence gate
+        run: node --test tools/t108-feasibility/core.test.mjs tools/t108-feasibility/runner.test.mjs scripts/t108-cloudflare-preflight.test.mjs
+  cloudflare-preflight:
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_cloudflare_access
+    runs-on: ubuntu-latest
+    environment: Dev
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Test fail-closed access checks
+        run: node --test scripts/t108-cloudflare-preflight.test.mjs
+      - name: Verify Free plan and analytics access (read only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/t108-cloudflare-preflight.mjs
+      - name: Retain non-secret access evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t108-preflight
+          path: artifacts/t108-feasibility/preflight.json
+          if-no-files-found: error

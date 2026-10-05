@@ -2,9 +2,9 @@ import test from 'node:test';import assert from 'node:assert/strict';import {mkd
 test('external harness publishes without candidate dependencies and preserves upload failures',async()=>{
  const caller=await mkdtemp(path.join(os.tmpdir(),'validation-publish-caller-'));const site=path.join(caller,'site');await mkdir(site);await writeFile(path.join(site,'index.html'),'<script id="report-data" type="application/json">{"id":"portable-run"}</script>');
  const run={id:'portable-run'};const requests=[];
- const result=await publish(run,site,{pagesProject:'proof'},{cwd:caller,execute:async(argv,options)=>{assert.equal(options.cwd,publisherRoot);assert.equal(argv[0],process.execPath);assert.equal(argv[1],path.join(publisherRoot,'scripts/validation/publisher/node_modules/wrangler/bin/wrangler.js'));assert.equal(argv[4],site);return {output:'Deployment complete! Take a peek over at https://abc123.proof.pages.dev\nDeployment alias URL: https://run-portable-run.proof.pages.dev',code:0};},fetchImpl:async url=>{requests.push(url);return new Response(await readFile(path.join(site,'index.html')));}});
+ const result=await publish(run,site,{pagesProject:'proof',publicationEnabled:true},{cwd:caller,execute:async(argv,options)=>{assert.equal(options.cwd,publisherRoot);assert.equal(argv[0],process.execPath);assert.equal(argv[1],path.join(publisherRoot,'scripts/validation/publisher/node_modules/wrangler/bin/wrangler.js'));assert.equal(argv[4],site);return {output:'Deployment complete! Take a peek over at https://abc123.proof.pages.dev\nDeployment alias URL: https://run-portable-run.proof.pages.dev',code:0};},fetchImpl:async url=>{requests.push(url);return new Response(await readFile(path.join(site,'index.html')));}});
  assert.equal(result.status,'published');assert.deepEqual(requests,['https://abc123.proof.pages.dev','https://run-portable-run.proof.pages.dev']);
- await assert.rejects(publish({id:'portable-run'},site,{pagesProject:'proof'},{cwd:caller,execute:async()=>{throw Error('upload unavailable');}}),/Report upload failed/);
+ await assert.rejects(publish({id:'portable-run'},site,{pagesProject:'proof',publicationEnabled:true},{cwd:caller,execute:async()=>{throw Error('upload unavailable');}}),/Report upload failed/);
  assert.equal(await readFile(path.join(site,'index.html'),'utf8'),'<script id="report-data" type="application/json">{"id":"portable-run"}</script>');
 });
 
@@ -27,7 +27,7 @@ test('publisher follows the returned normalized alias instead of guessing the re
  const html=`<script id="report-data" type="application/json">${JSON.stringify(run)}</script>`;
  await writeFile(path.join(site,'index.html'),html);
  const requests=[];
- const result=await publish(run,site,{pagesProject:'proof'},{
+ const result=await publish(run,site,{pagesProject:'proof',publicationEnabled:true},{
   execute:async()=>({code:0,output:'✨ Deployment complete! Take a peek over at https://a1b2c3d4.proof.pages.dev\n✨ Deployment alias URL: https://run-focused-account-upgrade.proof.pages.dev'}),
   fetchImpl:async url=>{requests.push(url);return new Response(html);},
  });
@@ -42,7 +42,7 @@ test('publisher accepts immutable-only output but rejects wrong hosts, redirects
  await writeFile(path.join(site,'index.html'),html);
  const output='Deployment complete! Take a peek over at https://abcdef12.proof.pages.dev';
  const requests=[];
- const result=await publish({id:'verified'},site,{pagesProject:'proof'},{execute:async()=>({code:0,output}),fetchImpl:async(url,options)=>{requests.push(url);assert.equal(options.redirect,'error');return new Response(html);}});
+ const result=await publish({id:'verified'},site,{pagesProject:'proof',publicationEnabled:true},{execute:async()=>({code:0,output}),fetchImpl:async(url,options)=>{requests.push(url);assert.equal(options.redirect,'error');return new Response(html);}});
  assert.equal(result.url,result.reviewUrl);assert.equal(requests.length,1);
  for(const bad of [
   'Uploaded https://abcdef12.proof.pages.dev',
@@ -53,15 +53,23 @@ test('publisher accepts immutable-only output but rejects wrong hosts, redirects
   output+'\nDeployment alias URL: https://run-verified.proof.pages.dev/?secret=not-logged',
  ]){
   const run={id:'verified'};
-  await assert.rejects(publish(run,site,{pagesProject:'proof'},{execute:async()=>({code:0,output:bad}),fetchImpl:async()=>{assert.fail('untrusted output must not be fetched');}}),/trusted project deployment URL/);
+  await assert.rejects(publish(run,site,{pagesProject:'proof',publicationEnabled:true},{execute:async()=>({code:0,output:bad}),fetchImpl:async()=>{assert.fail('untrusted output must not be fetched');}}),/trusted project deployment URL/);
   assert.equal(run.publication,undefined);
  }
  for(const fetchImpl of [async()=>new Response(html+'stale'),async()=>{throw Error('redirect refused');},async()=>new Response(html,{status:503})]){
   const run={id:'verified'};
-  await assert.rejects(publish(run,site,{pagesProject:'proof'},{execute:async()=>({code:0,output}),fetchImpl,wait:async()=>{}}),/Published report verification failed/);
+  await assert.rejects(publish(run,site,{pagesProject:'proof',publicationEnabled:true},{execute:async()=>({code:0,output}),fetchImpl,wait:async()=>{}}),/Published report verification failed/);
   assert.equal(run.publication,undefined);
  }
- await assert.rejects(publish({id:'verified'},site,{pagesProject:'proof'},{execute:async()=>({code:1,output}),fetchImpl:async()=>{assert.fail('failed upload must not verify');}}),/Report upload failed/);
- await assert.rejects(publish({id:'verified'},site,{pagesProject:'proof'},{execute:async()=>{throw Error('private credential payload');}}),error=>{assert.equal(error.message,'Report upload failed');assert.equal(error.cause.message,'private credential payload');return true;});
- await assert.rejects(publish({id:'different'},site,{pagesProject:'proof'},{execute:async()=>{assert.fail('wrong local identity must not upload');}}),/Local report identity/);
+ await assert.rejects(publish({id:'verified'},site,{pagesProject:'proof',publicationEnabled:true},{execute:async()=>({code:1,output}),fetchImpl:async()=>{assert.fail('failed upload must not verify');}}),/Report upload failed/);
+ await assert.rejects(publish({id:'verified'},site,{pagesProject:'proof',publicationEnabled:true},{execute:async()=>{throw Error('private credential payload');}}),error=>{assert.equal(error.message,'Report upload failed');assert.equal(error.cause.message,'private credential payload');return true;});
+ await assert.rejects(publish({id:'different'},site,{pagesProject:'proof',publicationEnabled:true},{execute:async()=>{assert.fail('wrong local identity must not upload');}}),/Local report identity/);
+});
+
+test('publication defaults off and a configured project cannot bypass the pause',async()=>{
+ for(const config of [{},{pagesProject:'proof'},{pagesProject:'proof',publicationEnabled:false}]){
+  const run={id:'paused',publication:{status:'published',url:'https://old.example'}};
+  const result=await publish(run,'/does-not-exist',config,{execute:async()=>assert.fail('must not upload'),fetchImpl:async()=>assert.fail('must not fetch')});
+  assert.equal(result.status,'disabled');assert.equal(run.publication.url,undefined);
+ }
 });

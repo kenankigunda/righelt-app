@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleApiRequest } from "../src/index.ts";
+import { handleApiRequest } from "./support/v2-test-adapter.mjs";
 import { createFakeD1 } from "./support/fake-d1.mjs";
 import { createFakeGameRooms } from "./support/fake-game-rooms.mjs";
 
@@ -223,6 +223,12 @@ test("/api/shell/games/:id/ws heartbeat does not persist or append events when p
     const persistedAfterHeartbeat = env.DB.getGameState(gameId);
     const eventCountAfterHeartbeat = env.DB.getEvents(gameId).length;
 
+    const heartbeatAck = client.peer.sent.map((entry) => JSON.parse(entry)).at(-1);
+    assert.equal(heartbeatAck.type, "heartbeat_ack");
+    assert.equal(heartbeatAck.protocolVersion, 2);
+    assert.equal(heartbeatAck.gameId, gameId);
+    assert.ok(Number.isSafeInteger(heartbeatAck.eventSeq));
+    assert.equal(heartbeatAck.game, undefined);
     assert.equal(eventCountAfterHeartbeat, eventCountBeforeHeartbeat);
     assert.equal(persistedAfterHeartbeat.player1.lastHeartbeatAt, persistedBeforeHeartbeat.player1.lastHeartbeatAt);
 
@@ -234,7 +240,7 @@ test("/api/shell/games/:id/ws heartbeat does not persist or append events when p
   }
 });
 
-test("/api/shell/games/:id/ws replays contiguous events on reconnect when lastEventSeq is current-1", async () => {
+test("/api/shell/games/:id/ws sends one current snapshot instead of replaying events on reconnect", async () => {
   const realWebSocketPair = globalThis.WebSocketPair;
   const RealResponse = globalThis.Response;
   globalThis.WebSocketPair = FakeWebSocketPair;
@@ -279,8 +285,10 @@ test("/api/shell/games/:id/ws replays contiguous events on reconnect when lastEv
     assert.equal(replay.status, 101);
 
     const sent = replay.webSocket.peer.sent.map((payload) => JSON.parse(payload));
-    const replayEvent = sent.find((payload) => payload.type === "event_appended" && payload.eventSeq === moveBody.eventSeq);
-    assert.ok(replayEvent);
+    assert.equal(sent.filter((payload) => payload.game).length, 1);
+    assert.equal(sent[0].type, "state_sync");
+    assert.ok(sent[0].eventSeq >= moveBody.eventSeq);
+    assert.equal(sent.some((payload) => payload.type === "event_appended"), false);
   } finally {
     globalThis.WebSocketPair = realWebSocketPair;
     globalThis.Response = RealResponse;
@@ -460,4 +468,48 @@ test("GameRoomDO restores session attachments after a restart", async () => {
     globalThis.WebSocketPair = realWebSocketPair;
     globalThis.Response = RealResponse;
   }
+});
+
+test("I-10: 205 moves and 30 duplicate submissions recover with one current snapshot and bounded receipts", { timeout: 60000 }, async () => {
+  const { handleApiRequest: actualHandler } = await import("../src/index.ts");
+  const { commandFingerprint } = await import("../../shared-types/src/sync-protocol.ts");
+  const local = { DB: createFakeD1() }; local.GAME_ROOMS = createFakeGameRooms(() => local);
+  const originalPair = globalThis.WebSocketPair, OriginalResponse = globalThis.Response;
+  globalThis.WebSocketPair = FakeWebSocketPair;
+  globalThis.Response = function (body, init = {}) { return init.status === 101 ? { status: 101, webSocket: init.webSocket } : new OriginalResponse(body, init); };
+  const post = async (path, body) => (await actualHandler(new Request(`https://example.test/api/shell/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), local)).json();
+  try {
+    const created = await post("games", { identityId: "long-actor", selfPlayMode: true });
+    const gameId = created.game.id, duplicates = [];
+    for (let index = 0; index < 205; index++) {
+      const game = local.DB.getGameState(gameId);
+      const command = { protocolVersion: 2, gameId, identityId: "long-actor", clientCommandId: `v2:long-${index}`, kind: "move", payload: {}, expectedState: game.board.state, expectedGameplayRevision: game.gameplayRevision };
+      command.fingerprint = await commandFingerprint(command);
+      const outcome = await post(`games/${gameId}/moves`, command);
+      assert.equal(outcome.commandOutcomes[0].outcome, "accepted");
+      if (duplicates.length < 30) duplicates.push(command);
+    }
+    const before = local.DB.getGameState(gameId);
+    for (const command of duplicates) assert.equal((await post(`games/${gameId}/moves`, command)).duplicate, true);
+    assert.deepEqual(local.DB.getGameState(gameId), before);
+    const connected = await actualHandler(new Request(wsUrl(gameId, "long-observer", "long-first", 1)), local);
+    const frames = connected.webSocket.peer.sent.map((value) => JSON.parse(value));
+    assert.equal(frames.length, 1); assert.equal(frames[0].type, "state_sync");
+    assert.equal(frames.filter((event) => event.game).length, 1);
+    const knownSnapshotEventSeq = frames[0].eventSeq;
+    let metadataBytes = 0;
+    for (const commands of [duplicates.slice(0, 16), duplicates.slice(16)]) {
+      const reconciled = await post(`games/${gameId}/reconcile`, { protocolVersion: 2, identityId: "long-actor", knownSnapshotEventSeq, commands });
+      assert.equal(reconciled.game, undefined); assert.equal(reconciled.commandOutcomes.length, commands.length);
+      metadataBytes += Buffer.byteLength(JSON.stringify(reconciled));
+    }
+    assert.ok(metadataBytes < 16000);
+    const reopened = await actualHandler(new Request(wsUrl(gameId, "long-observer", "long-second", knownSnapshotEventSeq)), local);
+    const followup = reopened.webSocket.peer.sent.map((value) => JSON.parse(value));
+    assert.equal(followup.length, 1); assert.equal(followup[0].type, "heartbeat_ack"); assert.equal(followup[0].game, undefined);
+    const snapshotBytes = Buffer.byteLength(JSON.stringify(frames[0]));
+    const oldReplayBytes = Buffer.byteLength(JSON.stringify(local.DB.getEvents(gameId)));
+    assert.ok(oldReplayBytes > snapshotBytes * 20);
+    console.info(JSON.stringify({ test: "I-10", moves: 205, duplicateSubmissions: 30, snapshots: 1, snapshotBytes, metadataBytes, unchangedReopenBytes: Buffer.byteLength(JSON.stringify(followup[0])), historicalReplayBytesAvoided: oldReplayBytes }));
+  } finally { globalThis.WebSocketPair = originalPair; globalThis.Response = OriginalResponse; }
 });

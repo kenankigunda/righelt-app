@@ -1,3 +1,4 @@
+import {candidateCapabilities} from './capabilities.mjs';
 // Versioned validation fixture. Runs candidate code; never rewrites candidate scripts.
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -114,13 +115,14 @@ export function legacySeedSql({ fixture, columns, cutover = null }) {
   for (const key of ['game_id', 'created_at', 'updated_at', 'state_json']) if (!keys.includes(key)) throw new Error(`Unsupported legacy schema: ${key}`);
   return `INSERT INTO live_games(${keys.join(',')}) SELECT ${keys.map(key => quote(values[key])).join(',')} WHERE NOT EXISTS(SELECT 1 FROM live_games WHERE game_id=${quote(fixture.id)});\nINSERT INTO live_invites(token,game_id,shared_by_role) SELECT 'cutover-legacy-invite',${quote(fixture.id)},'Player 1' WHERE NOT EXISTS(SELECT 1 FROM live_invites WHERE token='cutover-legacy-invite');`;
 }
-export function selectAccountControl({ method, url, origin, hasCutover }) {
+export function selectAccountControl({ method, url, origin, hasCutover, simplifiedAccounts = false }) {
   if (method !== 'POST' || origin !== undefined) return { status: 404 };
   if (url === '/reset-limits') return { status: 200, sql: 'DELETE FROM account_rate_limits' };
   if (!['/activate-cutover', '/maintenance-off'].includes(url)) return { status: 404 };
   if (!hasCutover) return { status: 409, message: 'Cutover schema unavailable' };
-  if (url === '/activate-cutover') return { status: 200, sql: "UPDATE account_cutover SET activated_at=COALESCE(activated_at,CAST(unixepoch('subsec')*1000 AS INTEGER)),maintenance=1,canary_account_id=COALESCE(canary_account_id,(SELECT account_id FROM accounts WHERE username_canonical='validation_canary' AND recovery_acknowledged=1)) WHERE singleton=1 AND EXISTS(SELECT 1 FROM accounts WHERE username_canonical='validation_canary' AND recovery_acknowledged=1 AND (account_cutover.canary_account_id IS NULL OR account_cutover.canary_account_id=accounts.account_id))" };
-  return { status: 200, sql: "UPDATE account_cutover SET maintenance=0 WHERE singleton=1 AND activated_at IS NOT NULL AND canary_account_id=(SELECT account_id FROM accounts WHERE username_canonical='validation_canary' AND recovery_acknowledged=1)" };
+  const acknowledgment = simplifiedAccounts ? '' : ' AND recovery_acknowledged=1';
+  if (url === '/activate-cutover') return { status: 200, sql: `UPDATE account_cutover SET activated_at=COALESCE(activated_at,CAST(unixepoch('subsec')*1000 AS INTEGER)),maintenance=1,canary_account_id=COALESCE(canary_account_id,(SELECT account_id FROM accounts WHERE username_canonical='validation_canary'${acknowledgment})) WHERE singleton=1 AND EXISTS(SELECT 1 FROM accounts WHERE username_canonical='validation_canary'${acknowledgment} AND (account_cutover.canary_account_id IS NULL OR account_cutover.canary_account_id=accounts.account_id))` };
+  return { status: 200, sql: `UPDATE account_cutover SET maintenance=0 WHERE singleton=1 AND activated_at IS NOT NULL AND canary_account_id=(SELECT account_id FROM accounts WHERE username_canonical='validation_canary'${acknowledgment})` };
 }
 export async function assertPortsFree(ports = Object.values(PORTS)) {
   const held = [];
@@ -159,6 +161,7 @@ export async function terminateProcessGroup(pid, { kill = process.kill, pause = 
 }
 export async function startAccountStack({ root = resolveCandidateRoot(), persistRoot = process.env.RIGHELT_ACCOUNT_PERSIST_ROOT, onStopReady = () => {} } = {}) {
   root = path.resolve(root);
+  const {simplifiedAccounts} = await candidateCapabilities(root);
   // Read capabilities from the candidate, rather than assuming the harness has account code.
   const sources = await Promise.all(['api', 'auth', 'auth-hash'].map(folder => readFile(path.join(root, 'apps', folder, 'wrangler.toml'), 'utf8')));
   await readFile(path.join(root, 'apps/web/shell/account-controller.js'));
@@ -239,7 +242,7 @@ export async function startAccountStack({ root = resolveCandidateRoot(), persist
     assertRunning(stopping);
     let busy = false;
     control = createServer(async (request, response) => {
-      const operation = selectAccountControl({ method: request.method, url: request.url, origin: request.headers.origin, hasCutover });
+      const operation = selectAccountControl({ method: request.method, url: request.url, origin: request.headers.origin, hasCutover, simplifiedAccounts });
       if (!operation.sql) { response.writeHead(operation.status).end(operation.message); return; }
       if (busy) { response.writeHead(409).end(); return; }
       busy = true;

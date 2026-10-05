@@ -76,3 +76,11 @@ for (const source of sources) {
     await transpileFile(file, outputFile);
   }
 }
+
+// The server and browser consume this single pinned, versioned source list.
+const passwordData = path.join(outputRoot, "packages", "shared-types", "data");
+await ensureDir(passwordData);
+await writeFile(
+  path.join(passwordData, "common-passwords.json"),
+  await readFile(path.join(repoRoot, "packages", "shared-types", "data", "common-passwords.json")),
+);

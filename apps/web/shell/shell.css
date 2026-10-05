@@ -2047,3 +2047,71 @@ textarea:focus-visible {
     max-width: calc(100vw - 3.5rem);
   }
 }
+
+/* Persistent, non-layout announcement surface for sync transitions. */
+#shell-sync-announcement { position: fixed; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* Account forms share the shell's existing controls and breakpoint. */
+.account-dialog { box-sizing: border-box; width: min(30rem, calc(100vw - 2rem)); max-height: calc(100% - 2rem); overflow: auto; border: 1px solid var(--border, #bbb); border-radius: 12px; padding: 1.5rem; color: var(--text, #222); background: var(--panel-bg, #fff); }
+.account-dialog::backdrop { background: rgb(0 0 0 / 48%); }
+.account-form { display: grid; gap: .75rem; min-width: 0; }
+.account-dialog-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.account-form h2 { margin: 0; align-self: center; }
+.account-form .account-close { flex: 0 0 2.75rem; width: 2.75rem; padding: 0; border: 0; font-size: 1.5rem; line-height: 1; }
+.account-form input:not([type=checkbox]) { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; font-size: max(1rem, 16px); padding: .65rem; }
+.account-input-row { display: flex; position: relative; min-width: 0; }
+.account-input-row input { flex: 1; }
+/* Reusable input action: a shared field boundary with an intrinsic-width text
+   button. Flex layout reserves space without overlaying the entered text. */
+.input-with-action { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: #fffefa; }
+.input-with-action > input, .input-with-action > input:focus-visible { flex: 1 1 0%; min-width: 0; border: 0; background: transparent; box-shadow: none; outline: none; }
+.input-with-action:has(> input:focus-visible) { border-color: var(--accent); background: #fff; box-shadow: 0 0 0 3px rgb(13 122 90 / 14%); }
+.input-with-action > button.input-action { flex: 0 0 auto; min-width: 3.5rem; min-height: 2.75rem; align-self: stretch; margin: 0; padding: 0 .75rem; border: 0; border-radius: 8px; background: transparent; box-shadow: none; color: var(--muted); font-size: .875rem; font-weight: 500; line-height: 1; }
+.input-with-action > button.input-action:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+[data-hover-capability="hover"] .input-with-action > button.input-action:not(:disabled):hover { color: var(--ink); text-decoration: underline; background: transparent; box-shadow: none; }
+.account-form [hidden] { display: none !important; }
+.account-password-requirements { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+.account-password-requirements [data-state="met"], .account-username-status[data-state="available"], .account-status[data-state="success"] { color: #176b36; }
+.account-password-requirements [data-state="unmet"], .account-username-status[data-state="taken"] { font-weight: 600; }
+.account-password-requirements [data-state="unmet"], .account-username-status[data-state="taken"], .account-status[data-state="error"] { color: #b42318; }
+.account-username-status[data-state="pending"] { border-radius: .25rem; background-image: linear-gradient(100deg, transparent 35%, rgb(23 107 54 / 12%) 50%, transparent 65%); background-size: 200% 100%; animation: account-loading-swipe 1.4s ease-in-out infinite; }
+@keyframes account-loading-swipe { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+.account-help { display: grid; gap: .25rem; }
+.account-help > p { margin: 0; }
+.account-help:not(:has(> :not([hidden]))) { display: none; }
+.account-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.account-status { margin: 0; overflow-wrap: anywhere; }
+.account-status[data-state="pending"], .account-status[data-state="info"] { color: var(--muted, #52646c); }
+.account-status:empty, .account-form [data-challenge]:empty { display: none; }
+.account-username-status[data-revealed="true"] { display: block; min-height: 1lh; }
+.account-form button { min-height: 2.75rem; }
+@media (max-width: 480px) {
+  .account-dialog { box-sizing: border-box; width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-dialog, .account-dialog * { scroll-behavior: auto; transition: none; animation: none; }
+  .account-dialog .account-username-status[data-state="pending"] { animation: none; background-image: none; }
+}
+
+
+/* Public names must wrap within their panel, including unbroken usernames. */
+.participant-list > li { min-width: 0; }
+.participant-profile {
+  display: inline-block;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.account-dialog select { width: 100%; min-height: 44px; font: inherit; }
+
+/* Autosave feedback occupies the same inline slot as shared input actions. */
+.account-autosave { display: flex; align-items: center; gap: .25rem; padding: 0 .75rem; font-size: .875rem; white-space: nowrap; color: var(--muted); }
+.account-autosave > button { display: none; }
+.account-autosave[data-state="error"] > button { display: inline-block; min-width: auto; padding: 0 .25rem; border: 0; background: transparent; color: inherit; font: inherit; }
+.account-autosave[data-state="saved"] { color: #176b36; }
+.account-autosave:is([data-state="error"], [data-state="invalid"]) { color: #b42318; }
+.account-autosave[data-state="saving"] { background-image: linear-gradient(100deg, transparent 35%, rgb(23 107 54 / 12%) 50%, transparent 65%); background-size: 200% 100%; animation: account-loading-swipe 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .account-autosave[data-state="saving"] { animation: none; background-image: none; } }

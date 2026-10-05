@@ -33,7 +33,7 @@ test("CI uses split job-level checks and Node 22", () => {
   assert.match(workflow, /uses: actions\/checkout@v5/);
   assert.match(workflow, /uses: actions\/setup-node@v5/);
   assert.match(workflow, /uses: actions\/upload-artifact@v6/);
-  assert.match(workflow, /uses: actions\/download-artifact@v6/);
+  assert.match(workflow, /uses: actions\/github-script@v8/);
   assert.match(workflow, /name: Setup pnpm via Corepack/);
   assert.match(workflow, /corepack enable && corepack prepare pnpm@9 --activate/);
   assert.doesNotMatch(workflow, /pnpm\/action-setup@/);
@@ -51,7 +51,7 @@ test("CI allows non-E2E checks to run in parallel and keeps E2E as a single inde
   const apiWorkerIntegration = jobBlock("api-worker-integration", "web-integration");
   assert.doesNotMatch(apiWorkerIntegration, /\n\s+needs:\n/);
 
-  const webIntegration = jobBlock("web-integration", "e2e");
+  const webIntegration = jobBlock("web-integration", "sync-stress");
   assert.doesNotMatch(webIntegration, /\n\s+needs:\n/);
 
   const e2e = jobBlock("e2e", "test-results");
@@ -61,7 +61,7 @@ test("CI allows non-E2E checks to run in parallel and keeps E2E as a single inde
   assert.match(results, /if: \$\{\{ always\(\) \}\}/);
   assert.match(
     results,
-    /needs:\n\s+- typecheck\n\s+- generated-web-runtime\n\s+- engine-unit\n\s+- web-unit\n\s+- engine-integration\n\s+- api-handler-integration\n\s+- api-worker-integration\n\s+- web-integration\n\s+- e2e/s,
+    /needs:\n\s+- typecheck\n\s+- generated-web-runtime\n\s+- engine-unit\n\s+- web-unit\n\s+- engine-integration\n\s+- api-handler-integration\n\s+- api-worker-integration\n\s+- web-integration\n\s+- sync-stress\n\s+- sync-runtime\n\s+- e2e/s,
   );
 });
 
@@ -91,8 +91,15 @@ test("CI emits JUnit from each lane and publishes a consolidated test-results ch
     /pnpm test:web:integration -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results\/web-integration\/results\.xml/,
   );
   assert.match(workflow, /PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results\/e2e\/results\.xml/);
-  assert.match(workflow, /uses: actions\/download-artifact@v6/);
-  assert.match(workflow, /pattern: junit-\*/);
+  assert.match(workflow, /uses: actions\/github-script@v8/);
+  const results = jobBlock("test-results");
+  assert.match(results, /run: node --test scripts\/select-junit-artifacts\.test\.mjs/);
+  assert.match(results, /selectJUnitArtifacts\(artifacts, \{ runId, headSha \}\)/);
+  assert.match(results, /downloadArtifact\(\{ \.\.\.context\.repo, artifact_id: artifact\.id, archive_format: 'zip' \}\)/);
+  assert.match(results, /scripts\/extract-junit-artifact\.py/);
+  assert.match(results, /test-selection-provenance-\$\{\{ github\.run_attempt \}\}/);
+  assert.match(results, /require_tests: false/);
+  assert.doesNotMatch(results, /uses: actions\/download-artifact/);
   assert.doesNotMatch(workflow, /merge-multiple: true/);
   assert.match(workflow, /uses: mikepenz\/action-junit-report@v6/);
   assert.match(workflow, /check_name: Test results/);
@@ -108,4 +115,18 @@ test("CI keeps JUnit and Playwright debug artifacts available after lane executi
   assert.match(workflow, /name: junit-web-integration/);
   assert.match(workflow, /name: junit-e2e/);
   assert.match(workflow, /name: playwright-e2e-debug/);
+});
+
+
+test("CI and local integration both run seeded and actual Workers/D1 fault gates", () => {
+  const manifest = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+  for (const [lane, next] of [["sync-stress", "sync-runtime"], ["sync-runtime", "e2e"]]) {
+    const block = jobBlock(lane, next);
+    assert.ok(block.includes(`pnpm test:${lane} -- --reporter spec --reporter junit`));
+    assert.ok(block.includes(`test-results/${lane}/results.xml`));
+    assert.ok(block.includes(`name: junit-${lane}`));
+    assert.ok(manifest.scripts["test:integration"].includes(`pnpm test:${lane}`));
+    assert.doesNotMatch(block, /continue-on-error/);
+  }
+  assert.match(jobBlock("sync-stress", "sync-runtime"), /path: test-results\/sync-stress\/traces/);
 });

@@ -11,7 +11,7 @@ export function validateManifest(m){
  const seen=new Set();for(const p of m.prs){if(!Number.isSafeInteger(p.number)||p.number<1||seen.has(p.number))throw Error('PR numbers must be positive and unique');for(const dep of p.dependsOn??[])if(!seen.has(dep))throw Error('Dependencies must occur earlier in merge order');seen.add(p.number);}return m;
 }
 export function inputSignature(repository,base,prs,harnessRevision,harnessFingerprint){return hash({repository,base,prs:prs.map(p=>({number:p.number,head:p.head,base:p.base,dependsOn:p.dependsOn??[]})),harnessRevision,harnessFingerprint});}
-export async function integratedRun({manifest,cwd=process.cwd(),dir,resume=false,config,publishReport=true,ciEvidence}){
+export async function integratedRun({manifest,cwd=process.cwd(),dir,resume=false,config,publishReport=config?.publicationEnabled===true,ciEvidence}){
  const spec=validateManifest(await readJSON(manifest));
  if(spec.version===2){const {boundedIntegratedRun}=await import('./integrated-bounded.mjs');return boundedIntegratedRun({spec,cwd,dir,resume,config,publishReport,ciEvidence});}
  await command(['git','fetch','origin',spec.base],{cwd});const base=await git(['rev-parse','FETCH_HEAD'],cwd);

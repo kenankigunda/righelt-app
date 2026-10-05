@@ -1,6 +1,15 @@
 name = "righelt-api"
 main = "index.js"
 compatibility_date = "2026-03-12"
+workers_dev = false
+preview_urls = false
+
+[vars]
+AUTH_ENABLED = "false"
+
+[[services]]
+binding = "HASH_SERVICE"
+service = "righelt-auth"
 
 [observability]
 [observability.logs]
