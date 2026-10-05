@@ -65,6 +65,18 @@ def validate_contract(contract,root):
           or evidence.get('recoveryCheckpoint')!=contract['recoveryCheckpoint']
           or evidence.get('recoverySha256')!=contract['recoverySha256']):
         raise ValueError('fresh six-hour health predecessor gate unmet')
+    from . import exploration_adoption
+    if exploration_adoption.required(contract):
+        if contract['phase']=='six-hour':
+            if exploration_adoption.FIELD in contract:raise ValueError('six-hour selection cannot precede its screen')
+        else:
+            binding=contract.get(exploration_adoption.FIELD)
+            selected=exploration_adoption.validate(binding)
+            if (evidence.get(exploration_adoption.FIELD)!=binding or evidence.get('trainingRecipe')!=selected['trainingRecipe']
+                    or evidence.get('health',{}).get(exploration_adoption.FIELD)!=binding
+                    or evidence.get('health',{}).get('trainingRecipe')!=selected['trainingRecipe']
+                    or selected['sequenceId']!=contract['sequenceId']):
+                raise ValueError('overnight predecessor changed selected recipe')
     return contract
 
 

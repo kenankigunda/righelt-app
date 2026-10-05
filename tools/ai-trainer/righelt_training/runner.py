@@ -26,6 +26,8 @@ from .model import PolicyValueNet
 from .replay import ReplayBuffer, save_game
 from .trainer import make_optimizer, train_round
 from . import fresh_health
+from . import exploration_adoption
+from .training_recipe import record_recipe, recipe_binding
 
 ENGINE = ROOT / 'tools/ai-trainer/engine-worker.mjs'
 CHECKPOINT_INTERVAL = 590
@@ -96,6 +98,11 @@ class Runner:
         if digest != self.manifest_hash:
             raise ValueError('manifest content mismatch')
         self.continuation = fresh_health.continuation_for(self.directory, self.manifest['manifest'])
+        self.training_recipe = record_recipe(self.manifest['manifest'])
+        self.exploration_adoption = exploration_adoption.manifest_binding(self.directory, self.manifest['manifest'], mode='provenance')
+        if self.exploration_adoption and (self.runtime.get('explorationAdoption') != self.exploration_adoption
+                or self.runtime.get('trainingRecipe') != self.training_recipe):
+            raise ValueError('runner adoption differs from supervised manifest')
         if self.continuation and not resume:
             raise ValueError('continuation requires checkpoint restoration')
         self.deadline = effective_deadline(self.runtime)
@@ -169,7 +176,12 @@ class Runner:
                 raise ValueError('unsupported restore stage transition')
             if preserve_state and checkpoint.resolve() != Path(continuation['recoveryCheckpoint']).resolve():
                 raise ValueError('continuation checkpoint differs from authorized recovery source')
-        data = load_checkpoint(checkpoint, self.model, self.optimizer, manifest_sha256=parent_manifest, require_recovery=True)
+        manifest = getattr(self, 'manifest', {}).get('manifest', {})
+        self.training_recipe = record_recipe(manifest)
+        self.exploration_adoption = exploration_adoption.manifest_binding(self.directory, manifest, mode='provenance')
+        data = load_checkpoint(checkpoint, self.model, self.optimizer, manifest_sha256=parent_manifest, require_recovery=True,
+            validate_state=lambda data: exploration_adoption.checkpoint_recipe(checkpoint, data, recipe=self.training_recipe,
+                binding=self.exploration_adoption, continuation=continuation))
         companion = read_json(checkpoint.with_suffix('.runner.json'))
         if companion['checkpointSha256'] != hashlib.sha256(checkpoint.read_bytes()).hexdigest():
             raise ValueError('runner checkpoint mismatch')
@@ -252,7 +264,9 @@ class Runner:
             if previous and (not fresh['checkpoints'] or fresh['checkpoints'][-1] != previous):
                 fresh['checkpoints'].append(previous)
         digest = save_checkpoint(path, self.model, self.optimizer, round_index=self.state['round'],
-                                 updates=self.state['updates'], replay_ids=self.state['archives'], manifest_sha256=self.manifest_hash,recovery_state=self.state)
+                                 updates=self.state['updates'], replay_ids=self.state['archives'], manifest_sha256=self.manifest_hash,recovery_state=self.state,
+                                 training_recipe=getattr(self,'training_recipe',recipe_binding()),
+                                 exploration_adoption=getattr(self,'exploration_adoption',None))
         atomic_json(self.directory / 'latest.json', {'checkpoint': str(path), 'sha256': digest, 'updates': self.state['updates']})
         self.model_version = digest
         if getattr(self, 'fresh_baseline', None) is not None:
@@ -294,6 +308,7 @@ class Runner:
     def accept_game(self, game, round_deadline, *, job=None):
         self.maybe_checkpoint()
         path = save_game(self.directory / 'games', game)
+        exploration_adoption.validate_game(game, getattr(self,'training_recipe',recipe_binding()), getattr(self,'exploration_adoption',None))
         verification_deadline = min(round_deadline, self.deadline - 10,
                                     self.last_checkpoint + CHECKPOINT_INTERVAL - 10)
         started=time.monotonic()
@@ -338,6 +353,8 @@ class Runner:
             job['id']=f"{self.stage}-{job['id']}"
             self.state['nextJob']=index+1
             self.state['pendingGenerationJob']=job
+        job=exploration_adoption.authorize_job(job,getattr(self,'training_recipe',recipe_binding()),getattr(self,'exploration_adoption',None))
+        self.state['pendingGenerationJob']=job
         bound=admission_estimate(self.state,job['kind'])
         if round_deadline-time.monotonic()<bound['requiredSeconds']:
             key=f"{self.state['round']}:{job['id']}"

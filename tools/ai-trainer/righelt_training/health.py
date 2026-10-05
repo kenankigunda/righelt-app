@@ -18,6 +18,8 @@ from .manifest import active_manifest,manifest_hashes
 from .repair import resolved_failures
 from .config import ROOT,CONFIG_SHA256
 from .model import PolicyValueNet
+from . import exploration_adoption
+from .training_recipe import record_recipe
 from .replay import partition_for_family
 from .runner import verify_game
 
@@ -98,6 +100,9 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
         manifest_record=active_manifest(directory)
         manifest=manifest_record['sha256']
         continuation = fresh_health.continuation_for(directory, manifest_record.get('manifest', {}))
+        recipe=record_recipe(manifest_record['manifest'])
+        binding=exploration_adoption.manifest_binding(directory,manifest_record['manifest'],mode='provenance')
+        if binding:result.update(explorationAdoption=binding,trainingRecipe=recipe)
         baseline = None
         if continuation and continuation['freshHealth'] is True:
             baseline = fresh_health.load_baseline(directory, continuation,
@@ -141,6 +146,7 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
             model=PolicyValueNet();optimizer=torch.optim.AdamW(model.parameters())
             if meta['manifestSha256'] not in allowed:raise ValueError('checkpoint source lineage not authorized')
             data=load_checkpoint(checkpoint,model,optimizer,manifest_sha256=meta['manifestSha256'],require_recovery=True)
+            exploration_adoption.checkpoint_recipe(checkpoint,data,recipe=recipe,binding=binding,continuation=continuation)
             if data['updates']!=meta['updates'] or not finite_tree(data['model']) or not finite_tree(data['optimizer']):
                 raise ValueError('invalid checkpoint parameters or optimizer state')
             weight_digest = weights_sha256(data['model'])

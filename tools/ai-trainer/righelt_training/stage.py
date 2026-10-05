@@ -66,7 +66,8 @@ def export_complete(data,directory,args):
 
 
 def invoke_supervisor(argv):
-    directory=Path(argv[argv.index("--run-dir")+1]) if "--run-dir" in argv else None
+    key='--run-dir' if '--run-dir' in argv else '--allocation' if '--allocation' in argv else None
+    directory=Path(argv[argv.index(key)+1]) if key else None
     process=subprocess.Popen(argv,cwd=ROOT)
     try:
         code=process.wait()
@@ -79,6 +80,36 @@ def invoke_supervisor(argv):
             except subprocess.TimeoutExpired:process.kill();process.wait(timeout=2)
         if directory is not None:cleanup_owned(directory,owner=process.pid)
         raise
+
+
+def prepare_exploration(args, continuation, invoke):
+    from . import exploration_adoption as adoption
+    if not adoption.required(continuation):return None
+    directory=args.run_dir.resolve()
+    if continuation['phase']=='twelve-hour':
+        return adoption.for_allocation(directory,continuation,mode='provenance')
+    if (directory/'recipe-adoption.json').exists():
+        # Read-only recovery may encounter an abandoned training interval. The
+        # supervisor owns cleanup and settled admission under its exclusive lock.
+        return adoption.for_allocation(directory,continuation,mode='provenance')
+    allocation=Allocation(directory.parent,directory)
+    if allocation.accounting()[0].get('continuation')!=continuation:
+        raise ValueError('screen continuation differs from claimed allocation')
+    from .bootstrap import source_identity
+    from .supervisor import validate_gate_report
+    validate_gate_report(read(args.gate_report),source_identity()['sourceRevision'],'initial')
+    plan=directory/'exploration-screen'/'plan.json'
+    if not plan.exists():
+        cases=getattr(args,'development_cases',None)
+        if not cases:raise ValueError('exploration screen requires frozen development cases')
+        from .exploration_plan import prepare
+        prepare(cases,Path(continuation['recoveryCheckpoint']),allocation.accounting()[0]['id'],plan)
+    command=[sys.executable,'-m','righelt_training.exploration_screen','--allocation',str(directory),
+             '--plan',str(plan),'--gate',str(args.gate_report.resolve()),'--activity',str(args.activity_file.resolve())]
+    amendment=getattr(args,'exploration_repair_amendment',None)
+    if amendment:command+=['--repair-amendment',str(amendment.resolve())]
+    invoke(command)
+    return adoption.publish(directory,adoption.locate_receipt(directory))
 
 
 def execute_diagnostic(args,invoke=None):
@@ -138,12 +169,19 @@ def execute(args, invoke=None):
         invoke=invoke_supervisor
     revision=read(args.gate_report)['sourceRevision']
     result['sourceRevision']=revision
+    from . import exploration_adoption as adoption
+    binding=prepare_exploration(args,continuation,invoke)
+    if binding:
+        result.update(explorationAdoption=binding,trainingRecipe=adoption.read_binding(binding)['trainingRecipe'],
+                      exploration=adoption.report(directory,binding))
     completed=directory/'stage-result.json'
     if continuation and completed.exists():
         prior=read(completed)
         if (prior.get('advancementEligible') is True and prior.get('sourceRevision')==revision
             and prior.get('sequenceId')==continuation['sequenceId'] and prior.get('phase')==continuation['phase']
             and prior.get('continuationSha256')==contract_hash(continuation)
+            and prior.get('explorationAdoption')==binding
+            and (binding is None or prior.get('trainingRecipe')==result['trainingRecipe'])
             and prior.get('healthBindings')==health_bindings(directory)):
             # An ended stage is not another request to run its unfinished strength
             # matches. Recovery reuses the proven outcome without spending again.
@@ -184,6 +222,8 @@ def execute(args, invoke=None):
         if not parity.get('complete') or not parity.get('numericPassed'):raise ValueError('trained export parity incomplete or failed')
         phase('health',['--resume',str(latest),'--health'],'health-report.json',lambda p:p.get('complete') is True)
         health=read(directory/'health-report.json')
+        if binding and (health.get('explorationAdoption')!=binding or health.get('trainingRecipe')!=result['trainingRecipe']):
+            raise ValueError('health differs from selected recipe')
         result['health']=health
         if not health.get('healthy'):raise ValueError('pipeline health gate unmet')
         result['healthPassed']=True
@@ -230,6 +270,7 @@ def main():
     parser.add_argument('--seed',type=int,required=True);parser.add_argument('--resume',type=Path)
     parser.add_argument('--continuation',type=Path)
     parser.add_argument('--development-cases',type=Path)
+    parser.add_argument('--exploration-repair-amendment',type=Path)
     parser.add_argument('--diagnostic',action='store_true');parser.add_argument('--opponent-checkpoint',type=Path)
     args=parser.parse_args()
     args.run_dir.parent.mkdir(parents=True,exist_ok=True)

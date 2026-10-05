@@ -28,13 +28,20 @@ def atomic_json(path, data):
     finally:os.close(fd)
 
 
-def save_checkpoint(path, model, optimizer, *, round_index, updates, replay_ids, manifest_sha256, recovery_state=None, training_recipe=None):
+def save_checkpoint(path, model, optimizer, *, round_index, updates, replay_ids, manifest_sha256, recovery_state=None, training_recipe=None, exploration_adoption=None):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
     recipe = recipe_binding() if training_recipe is None else validate_recipe(training_recipe)
     data={'schema':1,'configSha256':CONFIG_SHA256,'manifestSha256':manifest_sha256,'trainingRecipe':recipe,
           'model':{k:v.detach().cpu() for k,v in model.state_dict().items()},
           'optimizer':optimizer.state_dict(),'round':round_index,'updates':updates,
           'replayIds':replay_ids,'pythonRng':random.getstate(),'torchRng':torch.get_rng_state()}
+    binding = {}
+    if exploration_adoption is not None:
+        from .exploration_adoption import read_binding
+        if read_binding(exploration_adoption)['trainingRecipe'] != recipe:
+            raise ValueError('checkpoint differs from selected recipe')
+        binding = {'explorationAdoption': exploration_adoption}
+        data.update(binding)
     if recovery_state is not None:
         state=json.loads(json.dumps(recovery_state,sort_keys=True,allow_nan=False))
         archives={name:hashlib.sha256((path.parent.parent/name).read_bytes()).hexdigest() for name in state['archives']}
@@ -51,7 +58,7 @@ def save_checkpoint(path, model, optimizer, *, round_index, updates, replay_ids,
     finally:os.close(fd)
     digest=hashlib.sha256(path.read_bytes()).hexdigest()
     atomic_json(path.with_suffix('.json'),{'sha256':digest,'configSha256':CONFIG_SHA256,
-                                         'manifestSha256':manifest_sha256,'round':round_index,'updates':updates,'trainingRecipe':recipe})
+                                         'manifestSha256':manifest_sha256,'round':round_index,'updates':updates,'trainingRecipe':recipe,**binding})
     if recovery_state is not None:
         atomic_json(path.with_suffix('.runner.json'),{'schema':2,'checkpointSha256':digest,
                     'recoverySha256':data['recoverySha256'],'state':data['recovery']['state']})
@@ -69,6 +76,12 @@ def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False, trainin
         raise ValueError('checkpoint recipe metadata mismatch')
     if training_recipe is not None and validate_recipe(training_recipe) != recipe:
         raise ValueError('checkpoint training recipe mismatch')
+    if ('explorationAdoption' in data) != ('explorationAdoption' in meta) or data.get('explorationAdoption') != meta.get('explorationAdoption'):
+        raise ValueError('checkpoint adoption metadata mismatch')
+    if 'explorationAdoption' in data:
+        from .exploration_adoption import read_binding
+        if read_binding(data['explorationAdoption'])['trainingRecipe'] != recipe:
+            raise ValueError('checkpoint selected recipe mismatch')
     if any(meta.get(key)!=data[key] for key in ('configSha256','manifestSha256','round','updates')):
         raise ValueError('checkpoint metadata mismatch')
     recovery=data.get('recovery')
@@ -87,8 +100,9 @@ def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False, trainin
     return data
 
 
-def load_checkpoint(path, model, optimizer=None, *, manifest_sha256, require_recovery=False, training_recipe=None):
+def load_checkpoint(path, model, optimizer=None, *, manifest_sha256, require_recovery=False, training_recipe=None, validate_state=None):
     data=inspect_checkpoint(path,manifest_sha256=manifest_sha256,require_recovery=require_recovery,training_recipe=training_recipe)
+    if validate_state is not None: validate_state(data)
     model.load_state_dict(data['model'])
     if optimizer is not None: optimizer.load_state_dict(data['optimizer'])
     random.setstate(data['pythonRng']);torch.set_rng_state(data['torchRng'])

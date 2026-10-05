@@ -4,9 +4,15 @@ from pathlib import Path
 from righelt_training.sequence import Sequence,PREREQUISITE,digest,immutable,launch_ready
 from righelt_training.allocation import Allocation,append
 from righelt_training.activity import observation
+from righelt_training import exploration_adoption as adoption
+from exploration_fixture import publish_selection, receipt_fixture_validation
 
 class SequenceTest(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(receipt_fixture_validation())
+
     def setup_sequence(self,root):
+        root=root.resolve()
         control=root/'sequence';control.mkdir();a=root/'old.pt';a.write_bytes(b'942');b=root/'other.pt';b.write_bytes(b'842')
         diagnostic=root/'diagnostic';diagnostic.mkdir()
         allocation=Allocation(root,diagnostic)
@@ -23,13 +29,16 @@ class SequenceTest(unittest.TestCase):
         path=root/'diagnostic'/'result.json';immutable(path,{'diagnosticGatePassed':passed,'allAttemptsAccounted':True,'terminalGames':16 if passed else 15,'scheduledGames':20,'workload':'restart-diagnostic-20-v1'})
         return path
 
-    def health(self,sequence,phase):
+    def health(self,sequence,phase,enabled=False):
         checkpoint=sequence.root/('six' if phase=='six-hour' else 'twelve')/'latest.pt';checkpoint.parent.mkdir(exist_ok=True);checkpoint.write_bytes(phase.encode())
-        path=checkpoint.parent/'stage-result.json';immutable(path,{'advancementEligible':True,'sequenceId':'approved','phase':phase,
-            'health':{'healthy':True,'freshHealthRequired':True},'recoveryCheckpoint':str(checkpoint),'recoverySha256':digest(checkpoint)})
+        contract=json.loads((sequence.directory/'contracts'/f'{phase}.json').read_text())
+        binding=publish_selection(Allocation(sequence.root,checkpoint.parent),enabled=enabled) if phase=='six-hour' else contract[adoption.FIELD]
+        metadata={adoption.FIELD:binding,'trainingRecipe':adoption.read_binding(binding)['trainingRecipe']}
+        path=checkpoint.parent/'stage-result.json';immutable(path,{**metadata,'advancementEligible':True,'sequenceId':'approved','phase':phase,
+            'health':{'healthy':True,'freshHealthRequired':True,**metadata},'recoveryCheckpoint':str(checkpoint),'recoverySha256':digest(checkpoint)})
         return path
 
-    def test_full_progression_exact_caps_and_mail_failure_nonblocking(self):
+    def full_progression(self,enabled=False):
         with tempfile.TemporaryDirectory() as d:
             sequence,receipt,snapshot=self.setup_sequence(Path(d))
             self.assertEqual(sequence.claim(receipt,snapshot)['phase'],'diagnostic')
@@ -38,14 +47,23 @@ class SequenceTest(unittest.TestCase):
             with self.assertRaises(ValueError):sequence.mail('diagnostic','claim')
             six=sequence.claim(receipt,snapshot);self.assertEqual(six,sequence.claim(receipt,snapshot))
             self.assertEqual(Allocation(Path(d),six['runDirectory']).accounting()[0]['seconds'],21600)
-            sequence.complete('six-hour',self.health(sequence,'six-hour'))
+            sequence.complete('six-hour',self.health(sequence,'six-hour',enabled))
+            selected=json.loads(sequence.report_path('six-hour').read_text())
+            self.assertEqual(selected['trainingRecipe']['id'],'root-dirichlet-v1' if enabled else 'baseline-v1')
             twelve=sequence.claim(receipt,snapshot)
+            self.assertEqual(json.loads(Path(twelve['contract']).read_text())[adoption.FIELD],selected[adoption.FIELD])
             self.assertEqual(Allocation(Path(d),twelve['runDirectory']).accounting()[0]['seconds'],43200)
             sequence.complete('twelve-hour',self.health(sequence,'twelve-hour'))
             self.assertIsNone(sequence.next_phase());self.assertEqual(sequence.claim(receipt,snapshot)['action'],'finished-or-gate-unmet')
             sequence.mail('diagnostic','sent',{'notificationId':intent['id'],'messageId':'verified-connector-id'})
             self.assertEqual(sequence.mail('diagnostic','status')['status'],'sent')
             with self.assertRaises(ValueError):sequence.mail('diagnostic','claim')
+
+    def test_full_progression_exact_caps_and_mail_failure_nonblocking(self):
+        self.full_progression()
+
+    def test_selected_exploration_continues_to_twelve_without_retuning(self):
+        self.full_progression(enabled=True)
 
     def test_gate_failure_no_allocation_and_unrun_report_rejected(self):
         with tempfile.TemporaryDirectory() as d:

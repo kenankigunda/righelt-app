@@ -91,6 +91,10 @@ def load_baseline(directory, continuation, *, expected_sha256=None):
     directory = Path(directory).resolve()
     baseline = json.loads((directory / BASELINE_NAME).read_text())
     value = baseline['baseline']
+    from . import exploration_adoption as adoption
+    binding=adoption.for_allocation(directory,continuation,mode='provenance')
+    if binding and (value.get(adoption.FIELD)!=binding or value.get('trainingRecipe')!=adoption.read_binding(binding)['trainingRecipe']):
+        raise ValueError('fresh baseline changed selected recipe')
     if digest(value) != baseline['sha256'] or (expected_sha256 is not None and expected_sha256 != baseline['sha256']):
         raise ValueError('fresh baseline checksum mismatch')
     creation = allocation_record(directory)
@@ -140,6 +144,9 @@ def initialize(directory, continuation, state, checkpoint):
                  'allocationSha256': digest(creation), 'continuation': continuation,
                  'checkpoint': source, 'archives': inventory, 'launchCount': len(launches),
                  'launchesSha256': digest(launches)}
+        from . import exploration_adoption as adoption
+        binding=adoption.for_allocation(directory,continuation,mode='provenance')
+        if binding:value.update(explorationAdoption=binding,trainingRecipe=adoption.read_binding(binding)['trainingRecipe'])
         immutable_json(path, {'baseline': value, 'sha256': digest(value)})
     baseline = load_baseline(directory, continuation,
                              expected_sha256=retained['baselineSha256'] if same_allocation else None)
@@ -154,6 +161,12 @@ def initialize(directory, continuation, state, checkpoint):
 def accept_game(directory, state, baseline, game, archive, job):
     """Receipt publication follows exact replay and a real training launch."""
     value = baseline['baseline']
+    from . import exploration_adoption as adoption
+    binding=value.get(adoption.FIELD)
+    if binding:
+        adoption.validate_game(game,value['trainingRecipe'],binding)
+        if not job or job.get(adoption.FIELD)!=binding or job.get('trainingRecipe')!=value['trainingRecipe']:
+            raise ValueError('fresh generation job changed selected recipe')
     if (not job or job.get('command') != 'generate' or job.get('partition') != 'train'
             or any(game.get(key) != job.get(key) for key in
                    ('id', 'seed', 'familyId', 'partition', 'kind', 'modelVersion'))
@@ -182,6 +195,7 @@ def accept_game(directory, state, baseline, game, archive, job):
         'trajectorySha256': trajectory, 'launchIndex': index, 'launchSha256': digest(launch),
         'job': {key: job[key] for key in ('command', 'id', 'seed', 'familyId', 'partition', 'kind', 'modelVersion')},
     }
+    if binding:fresh['games'][game['id']]['job'].update(explorationAdoption=binding,trainingRecipe=value['trainingRecipe'])
 
 
 def eligible_game_ids(state):
@@ -229,6 +243,11 @@ def audit_evidence(directory, state, baseline, games):
                 or launches[index]['directory'] != str(Path(directory).resolve())):
             raise ValueError('fresh launch binding mismatch')
         job = receipt['job']
+        if value.get('explorationAdoption'):
+            from . import exploration_adoption as adoption
+            adoption.validate_game(game,value['trainingRecipe'],value[adoption.FIELD])
+            if job.get(adoption.FIELD)!=value[adoption.FIELD] or job.get('trainingRecipe')!=value['trainingRecipe']:
+                raise ValueError('fresh receipt changed selected recipe')
         if (job.get('command') != 'generate' or job.get('partition') != 'train'
                 or any(game.get(key) != job.get(key) for key in
                        ('id', 'seed', 'familyId', 'partition', 'kind', 'modelVersion'))

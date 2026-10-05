@@ -59,6 +59,16 @@ class BudgetExpired extends Error { constructor(reason='deadline') { super(reaso
 async function main() {
   const job = await read();
   const explorationOptions = trainingExplorationOptions(job);
+  const adoption = job.explorationAdoption;
+  if (adoption !== undefined && (job.command !== 'generate' || job.partition !== 'train' ||
+      !adoption || Object.keys(adoption).sort().join(',') !== 'path,sha256' ||
+      typeof adoption.path !== 'string' || !adoption.path.startsWith('/') ||
+      !/^[a-f0-9]{64}$/.test(adoption.sha256) ||
+      job.trainingRecipe?.id !== job.rootExploration?.recipe?.id ||
+      job.trainingRecipe?.sha256 !== job.rootExploration?.recipe?.sha256)) {
+    throw new Error('Invalid training adoption binding');
+  }
+  const adoptionFields = adoption === undefined ? {} : { trainingRecipe: job.trainingRecipe, explorationAdoption: adoption };
   const budgetMs = job.budgetMs ?? 600_000;
   if (!Number.isFinite(budgetMs) || budgetMs <= 0 || budgetMs > 600_000) throw new Error('Invalid job bound');
   const deadline = performance.now() + budgetMs;
@@ -214,13 +224,13 @@ async function main() {
         afterHash: deterministicStateHash(state), seed, legal, encoded,
         modelVersion: arena ? job.modelVersions[controller] : job.modelVersion,
         profileVersion: arena ? job.profileVersions[controller] : `selfplay-${SEARCH_POLICY_VERSION}`,
-        ...decisionProvenance(result,SEARCH_POLICY_VERSION) });
+        ...decisionProvenance(result,SEARCH_POLICY_VERSION), ...adoptionFields });
       const committed=decisions[decisions.length-1];
       send({type:'decision-progress',gameId:job.id,kind:job.kind,decision:{
         id:committed.id,controller,action:committed.action,beforeHash,afterHash:committed.afterHash,
         seed,modelVersion:committed.modelVersion,profileVersion:committed.profileVersion,
         searchPolicyVersion:SEARCH_POLICY_VERSION,policyMask:committed.policyMask,fallback:committed.fallback,legality:committed.legality,
-        trainingRecipe:committed.trainingRecipe,rootExploration:committed.rootExploration,
+        trainingRecipe:committed.trainingRecipe,rootExploration:committed.rootExploration,explorationAdoption:committed.explorationAdoption,
         search:{...committed.search,actions:committed.fallback?committed.search.actions:undefined}}});
     }
   } catch (error) {
@@ -228,7 +238,7 @@ async function main() {
     send({ type: 'unfinished', id: job.id, reason: error.reason, decisions: decisions.length }); return;
   }
   send({ type: 'game', game: { schema: 1, id: job.id, familyId: job.familyId, partition: job.partition, kind: job.kind,
-    seed: job.seed, modelVersion: job.modelVersion, rootState, warmupActions, initialState, decisions,
+    seed: job.seed, modelVersion: job.modelVersion, rootState, warmupActions, initialState, decisions, ...adoptionFields,
     ...(arena ? { modelVersions: job.modelVersions, profileVersions: job.profileVersions } : {}),
     termination, truncationReason, outcome: state.outcome, finalHash: deterministicStateHash(state) } });
 }

@@ -111,6 +111,18 @@ class Sequence:
             contract={'sequenceId':self.config['sequenceId'],'phase':phase,'budgetSeconds':seconds,'reserveSeconds':reserve,
                 'preserveState':True,'freshHealth':True,'recoveryCheckpoint':checkpoint,'recoverySha256':sha,
                 'predecessorEvidence':str(evidence),'predecessorEvidenceSha256':digest(evidence)}
+            from . import exploration_adoption
+            existing=self.directory/'contracts'/f'{phase}.json'
+            if existing.exists():
+                saved=read(existing)
+                if any(saved.get(key)!=value for key,value in contract.items()):
+                    raise ValueError('existing continuation contract changed')
+                contract=saved
+            else:
+                contract['explorationProtocol']=exploration_adoption.PROTOCOL
+                if phase=='twelve-hour':
+                    contract[exploration_adoption.FIELD]=report.get(exploration_adoption.FIELD)
+                    exploration_adoption.validate(contract[exploration_adoption.FIELD])
             # Coordinator serializes progression; acquire the same allocation lock
             # used by supervisors to prevent claims racing live compute.
             import fcntl
@@ -139,6 +151,20 @@ class Sequence:
             passed=(proof.get('advancementEligible') is True and proof.get('health',{}).get('healthy') is True
                 and proof.get('health',{}).get('freshHealthRequired') is True
                 and proof.get('sequenceId')==self.config['sequenceId'] and proof.get('phase')==phase)
+            from . import exploration_adoption
+            contract=read(claim['contract'])
+            selected=(Path(claim['runDirectory'])/'recipe-adoption.json').exists() or phase=='twelve-hour'
+            if exploration_adoption.required(contract) and (passed or selected):
+                binding=exploration_adoption.for_allocation(claim['runDirectory'],contract)
+                choice=exploration_adoption.read_binding(binding)
+                if proof.get(exploration_adoption.FIELD)!=binding or proof.get('trainingRecipe')!=choice['trainingRecipe']:
+                    raise ValueError('stage report changed selected recipe')
+                if passed and (proof.get('health',{}).get(exploration_adoption.FIELD)!=binding
+                        or proof.get('health',{}).get('trainingRecipe')!=choice['trainingRecipe']):
+                    raise ValueError('health report changed selected recipe')
+            elif exploration_adoption.required(contract) and (
+                    proof.get(exploration_adoption.FIELD) is not None or proof.get('trainingRecipe') is not None):
+                raise ValueError('unselected failed stage cannot claim a recipe')
         report={**proof,'sequenceId':self.config['sequenceId'],'phase':phase,
                 'evidence':str(Path(evidence).resolve()),'evidenceSha256':digest(evidence),'advancementEligible':passed,
                 'allocationId':creation['id'],'budgetSeconds':creation['seconds'],'chargedSeconds':charged}

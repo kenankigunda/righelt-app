@@ -73,7 +73,7 @@ class FreshHealthTest(unittest.TestCase):
         self.assertEqual(result['updates'], 1)
         return self.publish(runner) if publish else None
 
-    def fixture(self):
+    def fixture(self, exploration=None):
         source = self.runner('source')
         source.stage = 'overnight'
         source.manifest_hash = write_manifest(source.directory / 'manifest.json', {'stage': 'overnight', 'seed': 107})
@@ -94,9 +94,18 @@ class FreshHealthTest(unittest.TestCase):
                     'reserveSeconds': 3600, 'preserveState': True, 'freshHealth': True,
                     'recoveryCheckpoint': str(checkpoint), 'recoverySha256': fresh_health.file_digest(checkpoint),
                     'predecessorEvidence': str(evidence), 'predecessorEvidenceSha256': fresh_health.file_digest(evidence)}
+        if exploration is not None:
+            from righelt_training import exploration_adoption as adoption
+            from exploration_fixture import receipt_fixture_validation
+            self.enterContext(receipt_fixture_validation())
+            contract['explorationProtocol'] = adoption.PROTOCOL
         runner = self.runner('six-hour')
         creation = Allocation(self.root, runner.directory).create_continuation(contract)
         manifest = {'stage': 'initial', 'seed': 107, 'seconds': 21600, 'continuation': contract}
+        if exploration is not None:
+            from exploration_fixture import publish_selection
+            binding = publish_selection(Allocation(self.root, runner.directory), enabled=exploration)
+            manifest.update(explorationAdoption=binding,trainingRecipe=adoption.read_binding(binding)['trainingRecipe'])
         runner.manifest_hash = write_manifest(runner.directory / 'manifest.json', manifest)
         runner.manifest = json.loads((runner.directory / 'manifest.json').read_text())
         runner.runtime = {'parentCheckpointManifestSha256': source.manifest_hash, 'allocationId': creation['id']}
@@ -111,6 +120,8 @@ class FreshHealthTest(unittest.TestCase):
     def accept(self, runner, record):
         job = {'command': 'generate', **{key: record[key] for key in
                 ('id', 'seed', 'familyId', 'partition', 'kind', 'modelVersion')}}
+        for key in ('trainingRecipe','explorationAdoption'):
+            if key in record: job[key]=record[key]
         self.assertTrue(runner.ledger.launch(record['id'], runner.directory))
         with patch('righelt_training.runner.verify_game') as verify:
             self.assertTrue(runner.accept_game(record, time.monotonic()+60, job=job))
@@ -316,6 +327,49 @@ class FreshHealthTest(unittest.TestCase):
         self.assertFalse(result['healthy'])
         self.assertEqual(result['unresolvedCorrectnessFailures'], 1)
         self.assertIn('continuation manifest missing', result['failures'][0])
+
+    def test_selected_recipe_survives_restore_and_only_new_bound_games_count(self):
+        _, runner, original = self.fixture(exploration=True)
+        recipe, binding = runner.training_recipe, runner.exploration_adoption
+        self.assertEqual(recipe['id'], 'root-dirichlet-v1')
+        original_bytes = original.read_bytes()
+        baseline = copy.deepcopy(runner.fresh_baseline)
+        for index in range(1, 101):
+            record = game(index)
+            record.update(trainingRecipe=recipe, explorationAdoption=binding)
+            record['decisions'][0].update(trainingRecipe=recipe, explorationAdoption=binding,
+                                         rootExploration={'recipe': recipe, 'applied': True})
+            self.accept(runner, record)
+        first = self.train(runner, [runner.buffer.positions[-1]])
+        last = self.train(runner, [runner.buffer.positions[-1]])
+        runner.restore(last)
+        self.assertEqual(runner.training_recipe, recipe); self.assertEqual(runner.exploration_adoption, binding)
+        self.assertEqual(runner.fresh_baseline, baseline); self.assertEqual(original.read_bytes(), original_bytes)
+        result = self.audit(runner)
+        self.assertTrue(result['healthy'], result)
+        self.assertEqual(result['freshTerminalGames'], 100); self.assertEqual(result['inheritedTerminalGames'], 1)
+        self.assertEqual(result['explorationAdoption'], binding); self.assertEqual(result['trainingRecipe'], recipe)
+        self.assertEqual(result['distinctRecoverableTrainedCheckpoints'], 2)
+        self.assertTrue(first.exists())
+        before = len(runner.buffer.positions)
+        bad = game(101)
+        with self.assertRaisesRegex(ValueError, 'authorized recipe'): self.accept(runner, bad)
+        self.assertEqual(len(runner.buffer.positions), before)
+        self.assertTrue(list((runner.directory/'games').glob('*101*')))
+        self.assertNotIn(bad['id'], runner.state[fresh_health.STATE_KEY]['games'])
+
+    def test_inconclusive_screen_baseline_is_still_bound_for_new_games(self):
+        _, runner, _ = self.fixture(exploration=False)
+        self.assertEqual(runner.training_recipe['id'], 'baseline-v1')
+        record = game(1)
+        with self.assertRaisesRegex(ValueError, 'authorized recipe'): self.accept(runner, record)
+        # The rejected launch ID remains consumed. Use a distinct next game.
+        record = game(2)
+        record.update(trainingRecipe=runner.training_recipe, explorationAdoption=runner.exploration_adoption)
+        record['decisions'][0].update(trainingRecipe=runner.training_recipe, explorationAdoption=runner.exploration_adoption)
+        self.accept(runner, record); self.train(runner, [runner.buffer.positions[-1]])
+        result = self.audit(runner)
+        self.assertEqual(result['freshTerminalGames'], 1); self.assertFalse(result['healthy'])
 
 
 if __name__ == '__main__': unittest.main()

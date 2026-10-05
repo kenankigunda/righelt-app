@@ -12,6 +12,12 @@ from .sequence import immutable, read
 from .training_recipe import recipe_binding
 
 PHASE = 'exploration-screen'
+PROVENANCE_PHASES = frozenset(('training', 'health', 'export-parity', 'prepare-arena', 'arena'))
+
+
+def unsettled(state, mode):
+    if mode not in ('admission', 'provenance'): raise ValueError('unknown receipt validation mode')
+    return any(mode == 'admission' or row['phase'] not in PROVENANCE_PHASES for row in state['pending'])
 
 
 def elapsed(row):
@@ -141,15 +147,15 @@ def recover_publication(directory, allocation):
     return intent
 
 
-def validate_receipt(path, allocation, *, verify_plan=True):
+def validate_receipt(path, allocation, *, verify_plan=True, mode='admission'):
     path = Path(path); receipt = read(path)
     validate_identity(allocation, read(checked_ref(receipt['plan'])), path.parent)
     if receipt.get('kind') == KIND + '-resolution':
-        return validate_resolution(path, allocation, verify_plan=verify_plan)
+        return validate_resolution(path, allocation, verify_plan=verify_plan, mode=mode)
     if receipt.get('kind') == KIND + '-terminal':
-        return validate_terminal(path, allocation, verify_plan=verify_plan)
+        return validate_terminal(path, allocation, verify_plan=verify_plan, mode=mode)
     if receipt.get('kind') == KIND + '-repair':
-        return validate_repair(path, allocation, verify_plan=verify_plan)
+        return validate_repair(path, allocation, verify_plan=verify_plan, mode=mode)
     intent = read(checked_ref(receipt['intent']))
     if receipt != {**intent, 'kind': KIND + '-receipt', 'intent': receipt['intent'],
                    'chargeFloor': allocation.charge_floor(intent['interval']),
@@ -158,7 +164,7 @@ def validate_receipt(path, allocation, *, verify_plan=True):
     plan = read(checked_ref(receipt['plan'])); checked_ref(receipt['launch'])
     if verify_plan: validate(plan)
     journal = Journal(path.parent, plan); state = accounting(allocation)
-    if state['pending']: raise ValueError('screen receipt is not settled')
+    if unsettled(state, mode): raise ValueError('screen receipt is not settled')
     last = [row for row in state['finished'] if row['id'] == receipt['interval']]
     if len(last) != 1 or state['finished'] != [*receipt['accountingBefore'], last[0]]:
         raise ValueError('screen accounting changed after publication')
@@ -210,11 +216,11 @@ def resolve_publication(directory, allocation, *, verify_plan=True):
     return validate_resolution(target, allocation, verify_plan=verify_plan)
 
 
-def validate_resolution(path, allocation, *, verify_plan=True):
+def validate_resolution(path, allocation, *, verify_plan=True, mode='admission'):
     value = read(path); intent = read(checked_ref(value['intent']))
     state = validate_identity(allocation, read(checked_ref(value['plan'])), Path(path).parent)
     if value.get('originalReceipt'): checked_ref(value['originalReceipt'])
-    if (state['pending'] or state['finished'] != value['accounting']
+    if (unsettled(state, mode) or state['finished'] != value['accounting']
             or state['screen'] == intent['report']['chargedSeconds']
             or value['plan'] != intent['plan'] or value['launch'] != intent['launch']
             or value['selectedRecipe'] != recipe_binding()):
@@ -250,11 +256,11 @@ def terminal_baseline(directory, plan_path, allocation, *, verify_plan=True):
     return validate_terminal(path, allocation, verify_plan=verify_plan)
 
 
-def validate_terminal(path, allocation, *, verify_plan=True):
+def validate_terminal(path, allocation, *, verify_plan=True, mode='admission'):
     value = read(path); plan = read(checked_ref(value['plan']))
     state = validate_identity(allocation, plan, Path(path).parent)
     if verify_plan: validate(plan)
-    if (state['pending'] or state['finished'] != value['accounting'] or value['selectedRecipe'] != recipe_binding()
+    if (unsettled(state, mode) or state['finished'] != value['accounting'] or value['selectedRecipe'] != recipe_binding()
             or min(LIMITS['screenSeconds'] - state['screen'], state['creation']['seconds'] -
                    value['allocationChargedSeconds'] - LIMITS['validationReserveSeconds']) >= LIMITS['publicationSeconds']):
         raise ValueError('invalid terminal baseline accounting')
@@ -307,12 +313,12 @@ def repair_baseline(directory, plan_path, allocation, amendment_ref, current_sou
     return validate_repair(path, allocation)
 
 
-def validate_repair(path, allocation, *, verify_plan=True):
+def validate_repair(path, allocation, *, verify_plan=True, mode='admission'):
     value = read(path); plan = read(checked_ref(value['plan']))
     state = validate_identity(allocation, plan, Path(path).parent)
     if verify_plan: validate(plan)
     checked_amendment(value['amendment'], plan, value['sourceAfterRepair'])
-    if state['pending'] or state['finished'] != value['accounting'] or value['selectedRecipe'] != recipe_binding():
+    if unsettled(state, mode) or state['finished'] != value['accounting'] or value['selectedRecipe'] != recipe_binding():
         raise ValueError('invalid settled source-repair screen receipt')
     report, refs = report_from_journal(plan, Journal(Path(path).parent, plan), state['screen'])
     reason = 'reviewed source repair made the frozen screen incompatible; baseline retained without repeated attempts'

@@ -65,6 +65,8 @@ def amend_manifest(directory,manifest,repair):
     directory=Path(directory);prior=active_manifest(directory)
     if record_recipe(prior['manifest']) != record_recipe(manifest):
         raise ValueError('repair changes training recipe')
+    if prior['manifest'].get('explorationAdoption') != manifest.get('explorationAdoption'):
+        raise ValueError('repair changes recipe adoption')
     if prior['manifest']==manifest:return prior
     if prior['manifest'].get('continuation')!=manifest.get('continuation'):
         raise ValueError('repair changes continuation authorization')
@@ -90,10 +92,15 @@ SCREEN_PROOF_PATHS=('tools/ai-trainer/exploration-record.mjs','tools/ai-trainer/
     'tools/ai-trainer/tests/test_exploration_journal_receipt.py','tools/ai-trainer/tests/test_exploration_screen.py',
     'tools/ai-trainer/tests/test_exploration_process.py')
 
+ADOPTION_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for name in (
+    'exploration_adoption','sequence','stage','supervisor','runner','checkpoint','fresh_health','health','manifest')) + (
+    'tools/ai-trainer/tests/exploration_fixture.py','tools/ai-trainer/tests/test_exploration_adoption.py',
+    'tools/ai-trainer/tests/test_sequence.py','tools/ai-trainer/tests/test_fresh_health.py','tools/ai-trainer/tests/test_stage.py')
+
 PROOF_PATHS=('packages/game-engine/src','packages/computer-player/src','packages/shared-types/src',
     'packages/computer-player/config/training-recipes-v1.json',
     'tools/ai-trainer/righelt_training/model.py','tools/ai-trainer/righelt_training/export.py',
-    'tools/ai-trainer/righelt_training/parity.py','tools/ai-trainer/requirements.lock','pnpm-lock.yaml',*SCREEN_PROOF_PATHS)
+    'tools/ai-trainer/righelt_training/parity.py','tools/ai-trainer/requirements.lock','pnpm-lock.yaml',*SCREEN_PROOF_PATHS,*ADOPTION_PROOF_PATHS)
 
 def dependency_inventory(revision=None):
     """Exact tracked source inventory; missing paths can never imply no changes."""

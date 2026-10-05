@@ -296,6 +296,7 @@ def record_attempt(directory,event):
 
 
 def main():
+    from . import exploration_adoption
     install_stop_handlers()
     parser=argparse.ArgumentParser()
     parser.add_argument('--run-dir',type=Path,required=True)
@@ -346,6 +347,10 @@ def main():
     else:allocation.create(args.stage)
     validate_continuation(args.run_dir,manifest)
     allocation.recover_abandoned(cleanup_owned)
+    adoption=exploration_adoption.admission(args.run_dir,continuation)
+    if adoption:
+        manifest.update(trainingRecipe=adoption['trainingRecipe'],explorationAdoption=adoption['explorationAdoption'])
+    exploration_adoption.manifest_binding(args.run_dir,manifest)
     if continuation:
         if not args.resume:raise ValueError('continuation requires trained recovery checkpoint')
         validate_continuation_checkpoint(args.resume,json.loads(args.gate_report.read_text()),continuation,args.run_dir)
@@ -362,14 +367,16 @@ def main():
     manifest_path=args.run_dir/'manifest.json'
     if manifest_path.exists():
         original=active_manifest(args.run_dir)
-        if any(original['manifest'].get(key)!=manifest[key] for key in (
-                'sourceRevision','configSha256','seed','stage','dependencies','lockHashes',*manifest_fields())):
+        if any(original['manifest'].get(key)!=manifest.get(key) for key in (
+                'sourceRevision','configSha256','seed','stage','dependencies','lockHashes','explorationAdoption',*manifest_fields())):
             original=amend_manifest(args.run_dir,manifest,json.loads(args.gate_report.read_text()).get('repair',{}))
+        exploration_adoption.manifest_binding(args.run_dir,original['manifest'])
         digest=original['sha256']
         runtime=json.loads(runtime_path.read_text()) if runtime_path.exists() else {}
         if phase=='training' and (args.run_dir/'latest.json').exists() and not args.resume:raise ValueError('trained state requires explicit verified checkpoint resume')
     else:
         args.run_dir.mkdir(parents=True,exist_ok=True)
+        exploration_adoption.first_manifest_source(manifest,json.loads(args.gate_report.read_text()).get('repair',{}))
         digest=write_manifest(manifest_path,manifest);runtime={}
     started_interval=begin_phase(allocation,phase,args.run_dir,digest)
     if started_interval is None:return
@@ -384,6 +391,7 @@ def main():
         runtime.update(schema=2,startedMonotonic=started,deadlineMonotonic=now+remaining,startedWall=wall-charged,
                        deadlineWall=wall+remaining,manifestSha256=digest,stage=args.stage,seed=args.seed,
                        bootTime=psutil.boot_time(),elapsedBefore=charged,allocationInterval=interval['id'],allocationId=allocation.accounting()[0]['id'])
+        if adoption:runtime.update(trainingRecipe=adoption['trainingRecipe'],explorationAdoption=adoption['explorationAdoption'])
         if phase=='canary':runtime.update(deadlineMonotonic=now+min(600,remaining),deadlineWall=wall+min(600,remaining))
         if args.resume:
             metadata=json.loads(args.resume.with_suffix('.json').read_text())

@@ -84,3 +84,37 @@ test('E-I02 screen records an independently replayed development decision withou
     assert.equal(rejected.messages[0].type, 'error');
   }
 });
+
+test('E-I03 training worker binds selected recipe to a terminal game and each decision', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { catalogActions } = await import('../../../packages/computer-player/tests/catalog-helper.mjs');
+  const { transition, terminalValue } = await import('../../../packages/computer-player/src/index.ts');
+  const catalog = JSON.parse(readFileSync(new URL('../../../apps/web/scenarios/catalog.json', import.meta.url)));
+  const scenario = catalog.scenarios.find(item => item.title === 'Commander surrounded loss of supply');
+  let state = resolveToStability(structuredClone(scenario.initialState)), winning;
+  for (const action of catalogActions(scenario)) {
+    const next = transition(state, action);
+    if (terminalValue(next) === (state.sideToMove === 'P1' ? 1 : -1)) { winning = state; break; }
+    state = next;
+  }
+  assert.ok(winning);
+  const binding = { path: '/fixture/six/recipe-adoption.json', sha256: 'a'.repeat(64) };
+  for (const name of ['baseline-v1', 'root-dirichlet-v1']) {
+    const recipe = trainingRecipe(name);
+    const job = { command: 'generate', partition: 'train', kind: 'normal', id: 'new-game', familyId: 'fixture',
+      seed: 107, modelVersion: 'fixture-model', initialState: winning, budgetMs: 5000,
+      trainingRecipe: recipe, explorationAdoption: binding, rootExploration: { purpose: 'self-play', recipe } };
+    const generated = await run(job);
+    assert.equal(generated.code, 0, generated.stderr);
+    const game = generated.messages.find(message => message.type === 'game')?.game;
+    assert.ok(game, JSON.stringify(generated.messages));
+    assert.equal(game.termination, 'terminal'); assert.equal(game.decisions.length, 1);
+    assert.deepEqual(game.trainingRecipe, recipe); assert.deepEqual(game.explorationAdoption, binding);
+    assert.deepEqual(game.decisions[0].trainingRecipe, recipe);
+    assert.deepEqual(game.decisions[0].explorationAdoption, binding);
+    const replayed = await run({ command: 'replay', game, budgetMs: 5000 });
+    assert.equal(replayed.code, 0, replayed.stderr); assert.equal(replayed.messages[0].type, 'replayed');
+    const rejected = await run({ ...job, command: 'arena' });
+    assert.equal(rejected.code, 1); assert.equal(rejected.evaluations, 0);
+  }
+});
