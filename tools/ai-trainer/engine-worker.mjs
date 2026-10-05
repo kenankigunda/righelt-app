@@ -93,14 +93,25 @@ async function main() {
     }
     send({type:'searched',result,...(fallbackProof?{fallbackProof}:{})});return;
   }
-  if (job.command === 'replay') {
+  if (job.command === 'replay' || job.command === 'inventory') {
+    const inventory = job.command === 'inventory';
+    const indices = inventory ? job.indices : [];
+    if (inventory && (job.game.partition !== 'train' || !Array.isArray(indices) ||
+        !indices.length || indices.length > 32 || new Set(indices).size !== indices.length ||
+        indices.some(i => !Number.isSafeInteger(i) || i < 0 || i >= job.game.decisions.length))) {
+      throw new Error('Invalid training inventory selection');
+    }
+    const snapshots = [];
     let state = job.game.rootState ?? job.game.initialState;
     for (const action of job.game.warmupActions ?? []) { check(); state = transition(state, action); }
     if (deterministicStateHash(state) !== deterministicStateHash(job.game.initialState)) throw new Error('Replay warmup mismatch');
     const repetitions = new Map([[ruleFingerprint(state), 1]]);
-    for (const record of job.game.decisions) {
+    for (const [index, record] of job.game.decisions.entries()) {
       check();
+      const before = state;
       state = replayDecision(state, record, bounded);
+      if (inventory && indices.includes(index)) snapshots.push({ index, state: before,
+        hash: record.beforeHash, decisionId: record.id, controller: record.controller });
       const key = ruleFingerprint(state);
       repetitions.set(key, (repetitions.get(key) ?? 0) + 1);
     }
@@ -111,7 +122,8 @@ async function main() {
         : repetitions.get(ruleFingerprint(state)) >= experimentConfig.training.repetitionLimit ? 'repetition' : null;
       if (job.game.termination !== 'truncated' || !reason || job.game.truncationReason !== reason) throw new Error('Unjustified truncation');
     } else if (job.game.termination !== 'terminal') throw new Error('Terminal game mislabeled');
-    send({ type: 'replayed', hash: deterministicStateHash(state), outcome: state.outcome, engineBudget:engineBudget.stats }); return;
+    send({ type: inventory ? 'inventoried' : 'replayed', hash: deterministicStateHash(state), outcome: state.outcome,
+      ...(inventory ? {states: snapshots} : {}), engineBudget:engineBudget.stats }); return;
   }
   if (job.command === 'validate-opening') {
     let current=createInitialState();

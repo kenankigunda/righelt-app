@@ -85,6 +85,17 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
                        'gradientNorm': norm.item(), 'parameterDelta': delta, 'positions': len(batch),
                        'seconds': clock() - before, 'batchIndex': start // batch_size,
                        'policyPositions': int(policy_mask.sum()), 'valuePositions': int(mask.sum())}
+            # Aggregate the actual sampled rows, without changing order, masks,
+            # loss or RNG. Legacy fixtures without game identities stay unknown.
+            if all(p.get('gameId') for p in batch):
+                sampled = {}
+                for p in batch:
+                    row = sampled.setdefault(p['gameId'], {'gameId': p['gameId'], 'positions': 0,
+                                                          'policyPositions': 0, 'valuePositions': 0})
+                    row['positions'] += 1
+                    row['policyPositions'] += int(p.get('policyMask', True))
+                    row['valuePositions'] += int(p['terminalMask'])
+                metrics['sampledGames'] = [sampled[k] for k in sorted(sampled)]
             if evidence_game_ids is not None:
                 # These are the actual shuffled batch members and masks used by
                 # training_loss, not counts inferred from the replay buffer.

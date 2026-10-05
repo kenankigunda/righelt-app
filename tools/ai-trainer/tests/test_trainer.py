@@ -40,11 +40,23 @@ class TrainerTest(unittest.TestCase):
     def test_invalid_targets_and_inputs_rejected(self):
         bad = position(); bad['legal'] = [0, 0]
         with self.assertRaises(ValueError): tensor_batch([bad], 'cpu')
-
         bad = position(); bad['encoded'][0] = float('nan')
         with self.assertRaises(ValueError): tensor_batch([bad], 'cpu')
         bad = position(); bad['policy'][0]['probability'] = float('inf')
         with self.assertRaises(ValueError): tensor_batch([bad], 'cpu')
+
+    def test_actual_sampled_game_counts_preserve_loss_masks(self):
+        first = position(); first.update(gameId='old', terminalMask=True, terminalValue=1.)
+        second = position(1); second.update(gameId='new', policyMask=False, policy=[])
+        third = position(2); third.update(gameId='new', terminalMask=True, terminalValue=-1.)
+        model = PolicyValueNet(); metrics = []
+        train_round(model, make_optimizer(model), [first, second, third], device='cpu', seed=3,
+                    deadline=time.monotonic()+60, on_batch=metrics.append)
+        self.assertEqual(metrics[0]['sampledGames'], [
+            {'gameId': 'new', 'positions': 2, 'policyPositions': 1, 'valuePositions': 1},
+            {'gameId': 'old', 'positions': 1, 'policyPositions': 1, 'valuePositions': 1}])
+        self.assertEqual(metrics[0]['policyPositions'], 2)
+        self.assertEqual(metrics[0]['valuePositions'], 2)
 
     def test_batch_watchdog_excludes_checkpoint_callback_and_propagates_timeout(self):
         active=[];bounds=[];callbacks=[]

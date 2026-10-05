@@ -141,3 +141,16 @@ The report includes generation, replay, inference and gradient-update wall times
 An authorized reset from a prior overnight allocation requires a gate report binding the exact predecessor checkpoint checksum and recovery audit. The supervisor validates model, optimizer, random state, cursor and archive hashes; a disposable canary never supplies the inherited training checkpoint. Same-stage relocation preserves the curriculum and round/phase/batch cursor, rebases saved generation elapsed time, and clears the old run's handoff receipt. It requires matching seeds in checksum-validated manifests. Initial-to-overnight transitions intentionally start new stage counters. Run the canary explicitly before an overnight stage, then pass the verified predecessor with `--resume`. All preflight, canary and experiment computation consumes the same approved allocation.
 
 The value head explicitly clamps its tanh output to its mathematical range before export. This corrects observed FP32 WASM endpoint overshoot without changing trained parameter shapes. Runtime/search validators remain strict; a changed export checksum requires new compatibility proof.
+
+### Learning-data observations and start inventory
+
+These prep commands inspect existing training archives. They do not start an experiment, change the curriculum or supply strength evidence. Outputs are immutable: use a new filename for each snapshot.
+
+```sh
+PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.learning_data --checkpoint .ai-runs/overnight-r2/checkpoints/checkpoint-000942.pt --run-directory .ai-runs/overnight-r2 --output .ai-runs/control/learning-data-v1.json
+PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.start_inventory --checkpoint .ai-runs/overnight-r2/checkpoints/checkpoint-000942.pt --limit 16 --verify-seconds 60 --output .ai-runs/control/start-inventory-v1.json
+```
+
+The data report separates retained historical archives, observed attempts, retained data from the selected allocation and actual batch exposure. It reports controller/continuation coverage, families, exact states, policy entropy, visit coverage, unvisited prior mass and policy-target divergence. Missing legacy measurements remain unknown. Sampled positions from later-rolled-back updates remain observations, not fresh-health proof. The checkpoint recovery bundle, baseline and exact journal snapshots bind the report to its evidence.
+
+Start inventory selects training-family states deterministically across controllers and continuation phases, retaining family, source archive and ancestry. The optional replay allowance is at most 60 seconds total and ten seconds per source game. Only a complete independent authoritative replay can publish exact states. Unfinished sources remain visible and are not replaced. The command uses no model, records its source dependencies, and terminates its engine child on interruption. Omit `--verify-seconds` for an index without replay. Nothing consumes this inventory as a new self-play distribution; adopting archived starts is a separate experiment tracked by T-122.
