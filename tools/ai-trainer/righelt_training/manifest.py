@@ -81,10 +81,19 @@ def amend_manifest(directory,manifest,repair):
     return active_manifest(directory)
 
 
+SCREEN_PROOF_PATHS=('tools/ai-trainer/exploration-record.mjs','tools/ai-trainer/engine-worker.mjs',
+    'tools/ai-trainer/righelt_training/exploration_plan.py','tools/ai-trainer/righelt_training/exploration_metrics.py',
+    'tools/ai-trainer/righelt_training/exploration_journal.py','tools/ai-trainer/righelt_training/exploration_receipt.py',
+    'tools/ai-trainer/righelt_training/exploration_screen.py','tools/ai-trainer/righelt_training/exploration_worker.py',
+    'tools/ai-trainer/righelt_training/allocation.py','tools/ai-trainer/righelt_training/processes.py',
+    'tools/ai-trainer/tests/exploration-worker.test.mjs','tools/ai-trainer/tests/test_exploration_plan_metrics.py',
+    'tools/ai-trainer/tests/test_exploration_journal_receipt.py','tools/ai-trainer/tests/test_exploration_screen.py',
+    'tools/ai-trainer/tests/test_exploration_process.py')
+
 PROOF_PATHS=('packages/game-engine/src','packages/computer-player/src','packages/shared-types/src',
     'packages/computer-player/config/training-recipes-v1.json',
     'tools/ai-trainer/righelt_training/model.py','tools/ai-trainer/righelt_training/export.py',
-    'tools/ai-trainer/righelt_training/parity.py','tools/ai-trainer/requirements.lock','pnpm-lock.yaml')
+    'tools/ai-trainer/righelt_training/parity.py','tools/ai-trainer/requirements.lock','pnpm-lock.yaml',*SCREEN_PROOF_PATHS)
 
 def dependency_inventory(revision=None):
     """Exact tracked source inventory; missing paths can never imply no changes."""

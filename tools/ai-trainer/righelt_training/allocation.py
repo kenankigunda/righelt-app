@@ -5,6 +5,7 @@ from pathlib import Path
 import time
 import uuid
 import hashlib
+import math
 import psutil
 from .config import CONFIG
 
@@ -161,13 +162,41 @@ class Allocation:
         append(self.path,row)
         return row,remaining,charged
 
-    def finish(self,attempt,*,reason):
+    def charge_floor(self, attempt):
+        records=[row for row in self.events() if row['event']=='charge-floor' and row['id']==attempt]
+        if len(records)>1:raise ValueError('duplicate accounting charge floor')
+        if not records:return None
+        value=records[0]['minimumSeconds']
+        if type(value) not in (int,float) or not math.isfinite(value) or value<0:
+            raise ValueError('invalid accounting charge floor')
+        return records[0]
+
+    def set_charge_floor(self, attempt, minimum_seconds, *, reason):
+        """Conservative publication allowance, durable before publishing its receipt."""
+        creation,charged,pending=self.accounting()
+        if (type(minimum_seconds) not in (int,float) or not math.isfinite(minimum_seconds)
+            or minimum_seconds<0 or minimum_seconds>creation['seconds']-charged or not reason):
+            raise ValueError('invalid or excessive accounting charge floor')
+        if not any(row['id']==attempt for row in pending):raise ValueError('charge floor requires open interval')
+        prior=self.charge_floor(attempt)
+        if prior:
+            if prior['minimumSeconds']!=minimum_seconds or prior['reason']!=reason:raise ValueError('charge floor already frozen')
+            return prior
+        row={'event':'charge-floor','allocation':self.key,'id':attempt,'minimumSeconds':minimum_seconds,'reason':reason}
+        append(self.path,row)
+        return row
+
+    def finish(self,attempt,*,reason,minimum_seconds=None):
         _,_,pending=self.accounting()
         row=next((r for r in pending if r['id']==attempt),None)
         if row is None:return
+        if minimum_seconds is not None:self.set_charge_floor(attempt,minimum_seconds,reason=reason)
         elapsed=max(0,time.time()-row['wall'])
         if row['boot']==psutil.boot_time():elapsed=max(elapsed,time.monotonic()-row['monotonic'])
-        append(self.path,{'event':'finished','allocation':self.key,'id':attempt,'chargedSeconds':elapsed,'reason':reason,'observedAt':time.time()})
+        floor=self.charge_floor(attempt)
+        append(self.path,{'event':'finished','allocation':self.key,'id':attempt,
+            'chargedSeconds':max(elapsed,floor['minimumSeconds'] if floor else 0),
+            'elapsedSeconds':elapsed,'chargeFloor':floor,'reason':reason,'observedAt':time.time()})
 
 
 def main():

@@ -8,7 +8,7 @@ from righelt_training.exploration_plan import freeze, derived_seed, PROFILE
 from righelt_training.exploration_metrics import summarize, diversity
 
 
-def fixture_plan():
+def fixture_plan(checkpoint=None):
     rows = []; cases = []
     for index in range(20):
         # Same 12/2/2/2/2 family imbalance as the actual development workload.
@@ -21,7 +21,7 @@ def fixture_plan():
     cases = {'cases': cases, 'configSha256': CONFIG_SHA256, 'missingCoverage': [],
              'corpus': {'path': '/fixture/corpus.json', 'sha256': 'c' * 64}}
     plan = freeze(cases, rows, cases_ref={'path': '/fixture/cases.json', 'sha256': 'd' * 64},
-                  checkpoint={'path': '/fixture/checkpoint.pt', 'sha256': 'e' * 64}, allocation_id='fixture-allocation',
+                  checkpoint=checkpoint or {'path': '/fixture/checkpoint.pt', 'sha256': 'e' * 64}, allocation_id='fixture-allocation',
                   source={'sourceRevision': 'a' * 40, 'configSha256': CONFIG_SHA256,
                           'proofDependencies': {'fixture': 'b' * 64}, 'bootstrapDependencies': {'fixture': 'f' * 64}},
                   runtime={'python': 'fixture', 'node': 'fixture'})
