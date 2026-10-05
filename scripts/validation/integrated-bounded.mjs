@@ -19,7 +19,7 @@ export function markInterrupted(run){
  run.complete=false;run.orchestration='failed';
  const stage=run.stages.at(-1);if(stage){stage.status='failed';stage.checks.push({name:'Validation orchestration',status:'failed',reason:'Checkpoint or execution did not complete; inspect private diagnostics'});}
 }
-export async function boundedIntegratedRun({spec,cwd=process.cwd(),dir,resume=false,config,publishReport=true,ciEvidence}){
+export async function boundedIntegratedRun({spec,cwd=process.cwd(),dir,resume=false,config,publishReport=config?.publicationEnabled===true,ciEvidence}){
  validatePlan(spec);dir=path.resolve(dir??path.join(cwd,'test-results','validation',`integrated-${Date.now()}`));await mkdir(dir,{recursive:true});
  const file=path.join(dir,'run.json'),previous=resume?await readJSON(file,null):null;
  await git(['fetch','origin',spec.base],cwd);const base=await git(['rev-parse','FETCH_HEAD'],cwd);

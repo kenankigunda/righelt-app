@@ -23,7 +23,7 @@ try{
   console.log('Email is connector-managed: the invoking skill must check availability and send the consolidated digest.');
   if(mode==='integrated'&&!flags.manifest)throw Error('Provide --manifest FILE');
   const candidate=path.resolve(flags.candidate??process.cwd());
-  const options={cwd:candidate,base:flags.base??'origin/main',dir:flags.out??path.join(process.cwd(),'test-results','validation',`${mode}-${Date.now()}-${process.pid}`),full:Boolean(flags.full),ciEvidence:flags['ci-evidence']?path.resolve(flags['ci-evidence']):undefined,config,publishReport:!flags['no-publish'],manifest:flags.manifest,resume:Boolean(flags.resume)};
+  const options={cwd:candidate,base:flags.base??'origin/main',dir:flags.out??path.join(process.cwd(),'test-results','validation',`${mode}-${Date.now()}-${process.pid}`),full:Boolean(flags.full),ciEvidence:flags['ci-evidence']?path.resolve(flags['ci-evidence']):undefined,config,publishReport:config.publicationEnabled===true&&!flags['no-publish'],manifest:flags.manifest,resume:Boolean(flags.resume)};
   if(mode==='integrated'&&!flags.legacy&&(await readJSON(flags.manifest)).version!==2)throw Error('Use a version 2 release-question manifest; --legacy is only for historical reproduction');
   if(mode==='local'&&!flags.legacy){const spec=flags.plan?await readJSON(flags.plan):await defaultLocalPlan(candidate);const changed=(await git(['diff','--name-only',options.base],candidate)).split('\n').filter(Boolean);options.policy=stagePolicy(spec,0,{accounts:(await candidateCapabilities(candidate)).accounts,changed});options.cacheDir=path.join(path.resolve(options.dir),'check-cache');}
   if(mode==='local'&&flags.resume){options.dir=path.dirname(path.resolve(flags.resume));options.cacheDir=path.join(options.dir,'check-cache');}
@@ -32,6 +32,7 @@ try{
    return mode==='local'?localRun(options):integratedRun(options);
   };
   const result=await withRunLock(path.join(path.resolve(options.dir),'run.json'),execute);
+  console.log(path.join(path.resolve(options.dir),'evidence.md'));
   process.exitCode=(mode!=='integrated'||result.run.complete===true)&&result.run.stages.length&&result.run.stages.every(s=>s.status==='passed')&&(!options.publishReport||result.run.publication?.status==='published')?0:1;
  }
  else if(['publish','report','review','reply','sync-replies','refresh','merge'].includes(mode)){
@@ -51,6 +52,6 @@ try{
   if(mode==='reply'){if(!flags.message||!flags.mailbox)throw Error('Provide connector-verified --message FILE --mailbox EMAIL');applyReply(run,await readJSON(flags.message),config.recipient,flags.mailbox);}
   await renderReport(run,path.join(dir,'site'));
   if(mode==='publish')await publish(run,path.join(dir,'site'),config);
-  await saveJSON(file,run);console.log(path.join(dir,'site','index.html'));});
+  await saveJSON(file,run);console.log(path.join(dir,'evidence.md'));});
  }else console.log('Modes: status, import-ci, configure, local, integrated, report, review, publish, reply, refresh, merge. See skill references for invocation.');
 }catch(error){console.error(error.message);process.exitCode=1;}

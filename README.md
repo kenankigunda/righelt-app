@@ -29,6 +29,7 @@ Useful variants:
 - `pnpm dev:api` starts only the API worker.
 - `pnpm test:unit`, `pnpm test:integration`, and `pnpm test:e2e` run individual test lanes.
 - `pnpm setup:workspace -- --clone-backlog` also clones the sibling `righelt-backlog` repo when it is missing.
+- For local HTTPS without browser warnings, follow [Trusted local HTTPS](docs/LOCAL_HTTPS.md). `pnpm setup:https --all-worktrees` shares one development certificate across local checkouts and ports.
 
 ## Read This First
 

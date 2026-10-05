@@ -27,7 +27,7 @@ export function verifyGeneralEvidence(items,{retained=false,viewports=['mobile',
   if(matches.length!==1||matches[0].status!=='passed')throw Error(`Missing current behavioral proof: ${viewport} / ${flow}`);
  }
 }
-export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=false,config={},publishReport=true,run,stageIndex=0,persistRoot,continuityInput,continuityOutput,accountPersistRoot,accountContinuityInput,accountLegacyContinuityInput,execute=command,policy,cacheDir,ciEvidence,lockPath=path.join(os.tmpdir(),'righelt-validation-9888.lock')}={}){
+export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=false,config={},publishReport=config?.publicationEnabled===true,run,stageIndex=0,persistRoot,continuityInput,continuityOutput,accountPersistRoot,accountContinuityInput,accountLegacyContinuityInput,execute=command,policy,cacheDir,ciEvidence,lockPath=path.join(os.tmpdir(),'righelt-validation-9888.lock')}={}){
  cwd=path.resolve(cwd);
  const revision=await git(['rev-parse','HEAD'],cwd);const baseSha=await git(['rev-parse',base],cwd);
  const changed=(await git(['diff','--name-only',baseSha],cwd)+'\n'+await git(['ls-files','--others','--exclude-standard'],cwd)).split('\n').filter(Boolean);const selection=coverage(changed);if(policy)selection.unmapped=[...new Set([...selection.unmapped,...(policy.unmapped??[])])];
