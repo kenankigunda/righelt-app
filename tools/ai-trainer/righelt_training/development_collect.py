@@ -109,10 +109,14 @@ class GuardedModel:
 
     def __call__(self, inputs):
         self.check()
-        if not torch.isfinite(inputs).all(): raise ValueError('nonfinite development input')
+        shape = (1, CONFIG['inputPlanes'], CONFIG['boardSize'], CONFIG['boardSize'])
+        if tuple(inputs.shape) != shape or inputs.dtype != torch.float32 or not torch.isfinite(inputs).all():
+            raise ValueError('invalid development input shape, dtype or values')
         root = self.raw is None
-        if root and inputs.detach().cpu().flatten().tolist() != self.frozen['encoded']:
-            raise ValueError('current engine root encoding differs from frozen case')
+        if root:
+            expected = torch.tensor(self.frozen['encoded'], dtype=torch.float32).reshape(shape)
+            if not torch.equal(inputs.detach().cpu(), expected):
+                raise ValueError('current engine root encoding differs from frozen case')
         with torch.inference_mode(): policy, value = self.model(inputs)
         self.check()
         if (tuple(policy.shape) != (1, CONFIG['actionCount']) or tuple(value.shape) != (1,)

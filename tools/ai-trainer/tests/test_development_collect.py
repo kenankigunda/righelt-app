@@ -133,6 +133,16 @@ class DevelopmentCollectTest(unittest.TestCase):
             guarded = collect.GuardedModel(lambda _: (torch.zeros((1, 2801)), torch.tensor([value])), frozen, lambda: None)
             with self.assertRaisesRegex(ValueError, 'output'): guarded(inputs)
 
+    def test_root_encoding_uses_exact_fp32_conversion_including_fractional_counters(self):
+        frozen = {**self.rows[0], 'encoded': [.1] + self.rows[0]['encoded'][1:]}
+        inputs = torch.tensor(frozen['encoded'], dtype=torch.float32).reshape(1, 46, 10, 10)
+        guarded = collect.GuardedModel(self.model, frozen, lambda: None)
+        guarded(inputs)
+        self.assertIsNotNone(guarded.raw)
+        for invalid in (inputs.double(), inputs.flatten()):
+            with self.assertRaisesRegex(ValueError, 'shape, dtype'):
+                collect.GuardedModel(self.model, frozen, lambda: None)(invalid)
+
     def test_checkpoint_model_mismatch_and_source_change_fail_without_success(self):
         self.model.weight += 1
         with self.assertRaisesRegex(ValueError, 'loaded development model'): self.run_collect()
