@@ -797,6 +797,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return;
     }
 
+    controls.onInteractionSound?.({kind:'preview-leave'});
     const action = actionOverride ?? buildActionPayload(getActionType(), selectedSource, selectedTarget, selectedPieceId);
     const previousState = state;
 
@@ -911,6 +912,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       return;
     }
 
+    controls.onInteractionSound?.({kind:'preview-leave'});
     const allowFreeSelection = getAllowFreeSelection();
     const usesHoverTargetSelection = getUsesHoverTargetSelection();
     const clickedPiece = boardAdapter.getPieceAt(state, clickedCoord);
@@ -924,6 +926,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       if (selectedPieceId && selectedPieceMovesLoading) {
         return;
       }
+      if(selectedPieceId) controls.onInteractionSound?.({kind:'cancel'});
       setActionType("pass");
       clearSelection();
       refreshSelectionLabels();
@@ -975,6 +978,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     setActionType(result.nextActionType);
 
     const pieceChanged = previousSelection.selectedPieceId !== result.selection.selectedPieceId;
+    if(pieceChanged && selectedPieceId) controls.onInteractionSound?.({kind:'select'});
+    else if(!sameCoordinate(previousSelection.target,selectedTarget) && selectedTarget) controls.onInteractionSound?.({kind:'preview'});
     if (pieceChanged) {
       invalidateSelectedPieceMovesRequests();
       primeSelectedPieceMovesFromLegalActions();
@@ -992,13 +997,14 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!state || !getUsesHoverTargetSelection() || host.canInteract?.(state) === false) {
       return;
     }
-    applyHoveredTarget(hoveredCoord);
+    if(applyHoveredTarget(hoveredCoord)) controls.onInteractionSound?.({kind:'preview-hover',key:`${hoveredCoord.row}:${hoveredCoord.col}`});
   };
 
   const handleBoardCellHoverEnd = (hoveredCoord) => {
     if (!state || !getUsesHoverTargetSelection() || host.canInteract?.(state) === false) {
       return;
     }
+    controls.onInteractionSound?.({kind:'preview-leave'});
     clearHoveredTarget(hoveredCoord);
   };
 
@@ -1006,6 +1012,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!shouldResetSelectionOnDocumentClick(event.target)) {
       return;
     }
+    if(selectedPieceId) controls.onInteractionSound?.({kind:'cancel'});
     setActionType("pass");
     clearSelection();
     refreshSelectionLabels();
@@ -1247,6 +1254,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const destroy = () => {
+    controls.onInteractionSound?.({kind:'preview-leave'});
     document.removeEventListener("click", handleDocumentClick);
     document.removeEventListener("keydown", handleDocumentKeydown);
     if (elements.boardPreviewLabelEl) {

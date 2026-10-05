@@ -105,7 +105,7 @@ test("game route live sync connection is not gated by participant role", () => {
 });
 
 test("optimistic game creation and history branch actions bypass the blocking busy wrapper", () => {
-  assert.match(source, /if \(action === "create-game"\) \{\s*const handle = transport\.createGame\(\{ selfPlayMode: false \}\);/s);
+  assert.match(source, /if \(action === "create-game" \|\| action === 'create-self-play'\) \{\s*gameSound\.play\('enter'\);\s*const handle = transport\.createGame\(\{ selfPlayMode: action === 'create-self-play' \}\);/s);
   assert.match(source, /startGameEntryRouteTransition\(handle\.result\.id, "home"\);/);
   assert.match(source, /navigateTo\(buildGameHash\(handle\.result\.id, null, getCurrentFlyoutState\(\)\)\);/);
   assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*const handle = transport\.launchHistoryBranch\(/s);
@@ -213,7 +213,7 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /const showEmptyState = section\.totalGames === 0;/);
   assert.match(source, /const showHeaderPaging = showPaging && section\.visibleColumnCount > 1;/);
   assert.match(source, /const showFooterPaging = showPaging && section\.visibleColumnCount === 1;/);
-  assert.match(source, /const hasHeaderAction = sectionKey === "my";/);
+  assert.match(source, /const hasHeaderAction = false;/);
   assert.match(
     source,
     /<div class="home-games-section-header" data-home-header-has-action="\$\{hasHeaderAction \? "true" : "false"\}" data-home-header-paging="\$\{showHeaderPaging \? "true" : "false"\}">/,
@@ -232,7 +232,7 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\)/);
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "footer" \}\)/);
   assert.match(source, /hasHeaderAction \? renderHomeStartButton\(\) : ""/);
-  assert.match(source, /<p class="small home-games-empty">No games yet\.<\/p>/);
+  assert.match(source, /<p class="small home-games-empty">Your next good game starts here\.<\/p>/);
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
   assert.match(source, /if \(getShellLayoutMode\(\) !== "narrow" \|\| !\(appEl instanceof HTMLElement\)\) \{\s*return;\s*\}/s);
   assert.match(source, /sectionEl\.scrollIntoView\(\{\s*behavior: "smooth",\s*block: "start",\s*\}\);/s);
@@ -252,7 +252,7 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /visiblePageSize:\s*getHomeSectionVisiblePageSize\(sectionKey\),/);
   assert.match(source, /visibleColumnCount:\s*getHomeSectionColumnCount\(sectionKey\),/);
   assert.match(source, /<div class="home-games-carousel" data-home-carousel="\$\{escapeHtml\(sectionKey\)\}">/);
-  assert.match(source, /getVisibleHomeSectionKeys\(\)\.map\(\(sectionKey\) => renderHomeGameSection\(sectionKey\)\)\.join\(""\)/);
+  assert.match(source, /getVisibleHomeSectionKeys\(\)\.filter\(key=>key!=='my'\)\.map\(renderHomeGameSection\)\.join\(''\)/);
   assert.match(source, /<section class="panel home-games-section" data-home-section-root="\$\{escapeHtml\(sectionKey\)\}">/);
   assert.match(source, /<h2>\$\{escapeHtml\(section\.title\)\}<\/h2>/);
   assert.match(source, /<div class="mini-board-card-list" data-game-count="\$\{games\.length\}">/);

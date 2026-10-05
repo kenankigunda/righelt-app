@@ -3,6 +3,12 @@ import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js
 import { participantButton, participantName, createPublicProfileDialog } from './public-profile.js';
 import { createAccountController, safeAccountIntent } from './account-controller.js';
 import { createAccountDialog } from './account-dialog.js';
+import { createIntroductionPreferences, createOpponentSession } from './opponent-session.js';
+import { renderWordmark, createBrandController, createBrandGrid, resolveActionAffiliation } from './brand.js';
+import { icon, soundToggle } from './ui.js';
+import { createGameSound } from './sound.js';
+import { createModal } from './modal.js';
+import { createOpponentStoryDialog, OPPONENT_STORIES } from './opponent-stories.js';
 import { recoveryMessage, sharedMutationActions } from "./recovery-view.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter } from "../board-adapters/engine-board-adapter.js";
@@ -90,6 +96,7 @@ const ensureShellStylesheet = () => {
   link.rel = "stylesheet";
   link.href = "./shell/shell.css";
   document.head.appendChild(link);
+
 };
 
 const ensureRouteTransitionLayer = () => {
@@ -110,6 +117,7 @@ const ensureRouteTransitionLayer = () => {
 };
 
 ensureShellStylesheet();
+const refreshStylesheet = document.createElement('link'); refreshStylesheet.rel='stylesheet'; refreshStylesheet.href='./shell/refresh.css'; document.head.appendChild(refreshStylesheet);
 const routeTransitionLayerEl = ensureRouteTransitionLayer();
 if (appEl) {
   appEl.hidden = false;
@@ -139,6 +147,12 @@ const account = createAccountController({ storage,
 const accountDialog = createAccountDialog({ controller: account, onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
   onComplete: intent => { void completeAccountContinuation(intent); },
 });
+const gameSound = createGameSound({ storage });
+const brand = createBrandController();
+createBrandGrid();
+document.addEventListener('pointerdown',()=>gameSound.gesture(),{passive:true});
+document.addEventListener('keydown',()=>gameSound.gesture());
+document.addEventListener('visibilitychange',()=>{if(document.hidden)gameSound.hide();});
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 const boardAdapter = createEngineBoardAdapter();
 const hoverCapability = ensureHoverCapabilityController();
@@ -1801,7 +1815,7 @@ const renderTurnHistory = (game) => {
 const renderHeader = () => `
   <header class="shell-header">
     <div class="shell-header-main">
-      <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Righelt</a></h1>
+      <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">${renderWordmark(brand.getState())}</a></h1>
     </div>
     ${renderHeaderAlertZone()}
     ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
@@ -1811,7 +1825,7 @@ const renderHeader = () => `
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
         ${account.snapshot().ready && account.snapshot().enabled && account.snapshot().available && account.snapshot().session.authenticated ? '<button class="secondary" type="button" data-action="account-open" data-testid="account-open">Account</button>' : ""}
-        ${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
+        ${soundToggle(gameSound.enabled())}${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
       </div>
     </div>
   </header>
@@ -2306,11 +2320,11 @@ const renderHomeGameSection = (sectionKey) => {
   const showPaging = section.totalPages > 1;
   const showHeaderPaging = showPaging && section.visibleColumnCount > 1;
   const showFooterPaging = showPaging && section.visibleColumnCount === 1;
-  const hasHeaderAction = sectionKey === "my";
+  const hasHeaderAction = false;
   return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}">
       <div class="home-games-section-header" data-home-header-has-action="${hasHeaderAction ? "true" : "false"}" data-home-header-paging="${showHeaderPaging ? "true" : "false"}">
       <div class="home-games-section-heading">
-        <h2>${escapeHtml(section.title)}</h2>
+        <h2>${sectionKey === "my" ? "Continue playing" : escapeHtml(section.title)}</h2>
         <p class="small">${section.totalGames === 1 ? "1 game" : `${section.totalGames} games`}</p>
       </div>
       <div class="home-games-section-header-center">
@@ -2321,7 +2335,7 @@ const renderHomeGameSection = (sectionKey) => {
       </div>
     </div>
     ${showEmptyState
-      ? `<p class="small home-games-empty">No games yet.</p>`
+      ? `<p class="small home-games-empty">Your next good game starts here.</p>`
       : `<div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
       <div class="home-games-carousel-track" data-home-carousel-track="${escapeHtml(sectionKey)}">
         <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
@@ -2345,23 +2359,8 @@ const scrollHomeSectionToTop = (sectionKey) => {
   });
 };
 
-const renderHome = () => {
-  if (!routeHydrated) {
-    return `
-      <section class="stack">
-        ${getVisibleHomeSectionKeys().map((sectionKey) => renderHomeSectionSkeleton(getHomeSection(sectionKey).title, { showStartButton: sectionKey === "my" })).join("")}
-      </section>
-    `;
-  }
-  const sectionHtml = getVisibleHomeSectionKeys().map((sectionKey) => renderHomeGameSection(sectionKey)).join("");
-  const listHtml = sectionHtml || `<section class="panel"><p class="small">No games yet.</p></section>`;
-
-  return `
-    <section class="stack">
-      ${listHtml}
-    </section>
-  `;
-};
+const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something good.</h2><p class="home-start-description">A familiar rival. A new challenge. One more game.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${story.scenes[0][0]}.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><span class="opponent-friend">${icon('friend')}</span><strong>Friend</strong><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer opponents are being prepared.</span><button class="secondary" data-action="create-self-play">Play both sides</button></div></section>`;
+const renderHome = () => `<section class="stack home-refresh">${routeHydrated ? renderHomeGameSection('my') : renderHomeSectionSkeleton('Continue playing')}${renderStartChoices()}${routeHydrated ? getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('') : ''}</section>`;
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
   isBuildingGameAlerts = true;
@@ -2502,7 +2501,7 @@ const renderJoinInvitePanel = (game, inviteLink) => {
     : "";
   const pendingRows =
     game.pendingJoinRequests.length === 0
-      ? "<li class=\"small\">No pending join requests</li>"
+      ? ""
       : game.pendingJoinRequests
           .map(
             (request) => {
@@ -2619,7 +2618,7 @@ const renderBoardPanel = (game) => `
     <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
   </div>
   <div class="overlay-key" aria-label="Overlay color key">
-    <span><i class="swatch supply-point"></i>Supply point</span>
+    <span><i class="swatch supply-point" style="--supply-owner:var(--player-${game.currentSnapshot?.sideToMove === 'P2' ? 'p2' : 'p1'})"></i>Supply point</span>
     <span><i class="swatch supply"></i>Supply line</span>
     <span><i id="shell-command-legend-swatch" class="swatch command" style="${escapeHtml(
       getCommandLegendSwatchStyle(game.currentSnapshot ?? null),
@@ -3380,11 +3379,13 @@ const mountBoardForGame = (game) => {
         },
       }),
       controls: {
+        onInteractionSound: event => gameSound.interaction(event),
         getAllowFreeSelection: () => false,
         getSupportsHover: () => hoverCapability.getSupportsHover(),
         getForceClickTargetSelection: () => Boolean(currentRoute.scenarios),
         onStateUpdated: ({ state, selectedPieceId }) => {
           applyCommandLegendSwatch(document.getElementById("shell-command-legend-swatch"), state, selectedPieceId);
+          document.querySelector('.swatch.supply-point')?.style.setProperty('--supply-owner',`var(--player-${state?.sideToMove==='P2'?'p2':'p1'})`);
         },
       },
     });
@@ -3810,6 +3811,8 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     body = renderNotFound();
   }
 
+  brand.setHome(currentRoute.name === 'home');
+  appEl.dataset.actionAffiliation = resolveActionAffiliation({game:transport.getGameViewModel(currentRoute.gameId),identityId:transport.getIdentityId()});
   const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderFlyouts()}</div>`;
   if (nextMarkup !== lastRenderedMarkup) {
     if (currentRoute.name !== "home" || !patchHomeAroundCreateControl(nextMarkup)) appEl.innerHTML = nextMarkup;
@@ -4011,6 +4014,7 @@ const makeAccountSyncStore = auth => createSyncStore({
   fetcher: account.fetch,
   onAuthLost: () => account.authorityLost(),
   onEvent: (payload) => {
+    gameSound.observe(payload,{silent:currentRoute.name!=='game' || payload?.game?.id!==currentRoute.gameId || Boolean(transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode)});
     wsLastEvent = payload?.type
       ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
       : "unknown";
@@ -4053,6 +4057,12 @@ const makeAccountSyncStore = auth => createSyncStore({
 });
 let syncStore = makeAccountSyncStore(account.snapshot());
 let transport = syncStore;
+const getComputerReadiness = () => ({ state:'unavailable', message:'This opponent is still in training. Friend games are ready to play.' });
+const opponentSession = createOpponentSession({ preferences:createIntroductionPreferences(storage), getReadiness:getComputerReadiness, createGame:async()=>{throw new Error('Trained computer play is not available yet.');} });
+const storyDialog = createOpponentStoryDialog({ createModal, getReadiness:getComputerReadiness,
+  onPlay: intent => opponentSession.play(intent), onClose:()=>opponentSession.cancel(),
+});
+
 const subscribeToTransport = () => transport.subscribe((change) => {
   if (change?.type === "upgrade_required") {
     try {
@@ -4318,8 +4328,11 @@ appEl.addEventListener("click", async (event) => {
     }, 0);
   };
 
-  if (action === "create-game") {
-    const handle = transport.createGame({ selfPlayMode: false });
+  if (action === 'toggle-sound') { gameSound.toggle(); render({animatePanels:false,includeBoard:false}); return; }
+  if (action === 'opponent-story') { gameSound.play('intro'); storyDialog.open(actionEl.dataset.opponent,{trigger:actionEl}); return; }
+  if (action === "create-game" || action === 'create-self-play') {
+    gameSound.play('enter');
+    const handle = transport.createGame({ selfPlayMode: action === 'create-self-play' });
     startGameEntryRouteTransition(handle.result.id, "home");
     navigateTo(buildGameHash(handle.result.id, null, getCurrentFlyoutState()));
     return;

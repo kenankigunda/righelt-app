@@ -231,3 +231,26 @@ Save lightweight account fields automatically after a short typing pause or on b
 ### Make new passwords easy to verify
 
 Show newly chosen passwords by default during account creation and password changes, with an accessible Hide control. Help people catch typing mistakes before they commit a password and risk losing access. Sign-in passwords remain hidden initially, with Show available.
+
+## Playful, physical, coherent game experience
+
+Righelt should feel playful, thoughtfully designed, and unmistakably like a game. Visuals, motion, sound, language, and interactions work together to make play tangible and enjoyable while preserving clarity and ease of use. Preserve the rationale behind preexisting interaction, layout, spacing, alignment, and responsive decisions.
+
+## Boundaries
+Ship independently of T-108 login; preserve guest play. Keep account gates, migrations, and account policy in T-108. Keep original board geometry, controls, and mouse/touch input rules. Exceptions: supply markers use their owner's piece color, the legend uses the active player color, and action-specific sounds. Defer refresh-added Explain/expanded help and changed confirmation behavior to T-118. Keep results/rematch flows. Bypass the placeholder tutorial; T-009 owns the real interactive lesson, T-117 character-hosted instruction. Do not describe the placeholder as implemented interactive teaching.
+
+## Visual system
+Keep the selected vector logo unchanged as a quality benchmark, not a shape template for every component. Faithfully translate approved intro references: warm ivory, generous spacing, rounded primary actions, restrained shadows and small red/blue corner accents. Use reusable buttons, icon controls, alerts, headings, metadata/participant rows, cards and modals. Avoid boxes inside boxes; use spacing before borders. Self-host Google Fonts OFL Manrope. Primary actions follow the user's affiliation, red when unknown, never the logo's animated turn. Strengthen the background grid and derive its cell scale and origin from the rendered logo motif, recalculating on resize.
+
+Keep Continue playing / Start / Other games. Restore established card placement, alignment, reserved optional row heights, pagination and natural document scrolling. Remove fixed-height nested scrolling. Use small integrated illustrated opponent choices and an intentional Friend icon. Restyle game surroundings while keeping swipe panels and Board / Players / History tabs. Replace Join/Invite and Participants bullets with structured lightweight rows. Keep forward transitions and reverse Back/browser Back transitions with focus and scroll restoration.
+
+## Opponent stories
+Keep exact approved story copy and three scenes per opponent. Plain artwork areas and substantial outer negative space must match the card color exactly; crisp selective edges and continuous wall/tablecloth space, not generic feathered fades. Intro is a modal over an obscured inert board. Full story stays fixed. Six-second cycling; hover/focus pauses; manual left/right carets stop automatic cycling for the visit; reduced motion is manual. No numeric or pause/resume controls. Carets have accessible names and touch targets.
+
+Show each opponent on first play even when ready. Never force watching all images. Play stays disabled until actual runtime readiness. Retry on preparation failure. Close before Play creates no match. Guest seen-state is local; optional account integration supplies account persistence. Player clicks open computer stories or minimal human profiles. Reopened stories do not pause games.
+
+## Sound
+Wooden-tabletop palette; sound defaults ON unless explicitly muted. Visible lightweight shared-header toggle, independent of login. Remember the device choice, respect browser restrictions and any available explicit no-sound preference. Reduced motion is not mute.
+
+Distinct physical cues: light lift/tick for selection; softer tick for preview; gentle release for cancellation; crisp clack for committed placement; distinct removal contact for captures; differentiated turn/result cues; restrained game-entry and introduction cues. Desktop preview waits 200 ms on a new legal destination; cancel on leave, so quick sweeps stay silent. Touch preview is immediate. Do not duplicate cues on renders, acknowledgements, reconnects or selection restoration. Successful placement cues require confirmation. Hidden pages, initial loads, ordinary buttons, logo and image cycling are silent; never replay missed sounds.
+
