@@ -321,7 +321,10 @@ test("current public names follow the account across browsers through the minima
       await expect(profileDialog).toContainText("Joined");
       await expect(person).toHaveAttribute("aria-expanded","true");
       await expect(person).toContainText(`@${username}`);
-      await person.click();
+      // Safari pointer clicks need not focus buttons. Exercise keyboard
+      // collapse explicitly to verify the focus-preservation contract.
+      await person.focus();
+      await person.press("Enter");
       await expect(profileDialog).toHaveCount(0);
       await expect(person).toBeFocused();
       const publicResponse = await spectator.request.get(new URL(`/api/profiles/${username.toLowerCase()}`, gameUrl).href);

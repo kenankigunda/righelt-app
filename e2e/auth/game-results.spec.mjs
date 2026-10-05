@@ -17,12 +17,16 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   await dialog.getByRole("button", { name: "Create account & continue", exact: true }).click();
   if (opponent === "friend") await page.getByRole("button",{name:"Close invite",exact:true}).click();
   await expect(page.getByTestId("game-shell")).toBeVisible();
+  // The invitation preview is also visible while its dismissal animates.
+  // Wait for the live shell before choosing the scenario import target.
+  await expect(page.getByTestId("game-shell")).toHaveAttribute("data-game-id", /^game-/);
   const gameId = await page.getByTestId("game-shell").getAttribute("data-game-id");
   const loaded = await page.evaluate(async ({ scenario, gameId, headers }) => {
     const response = await fetch("/api/shell/scenarios/import", { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ scenario, targetGameId: gameId, protocolVersion: 2 }) });
     return { status: response.status, body: await response.json() };
   }, { scenario, gameId, headers: creationHeaders });
   expect(loaded.status, JSON.stringify(loaded.body)).toBe(200);
+  expect(loaded.body.game.id).toBe(gameId);
   await expect(page.getByTestId("game-result")).toBeVisible();
   await expect(page.getByTestId("game-result").getByRole("heading", { name: "Win" })).toBeVisible();
   const review = page.getByRole("button", { name: "Review game" });

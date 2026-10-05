@@ -20,6 +20,13 @@ for (const width of [390, 480, 481, 768, 1440]) {
     expect(bounds.x).toBeGreaterThanOrEqual(0);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(width + 1);
     await dialog.evaluate(async node => { await Promise.all(node.getAnimations().map(animation => animation.finished.catch(() => {}))); });
+    // ResizeObserver can start the height transition after getAnimations()
+    // was read. Poll the settled geometry instead of sampling that race.
+    if (width > 480) await expect.poll(() => dialog.evaluate(node => {
+      const style = getComputedStyle(node);
+      const last = node.querySelector("[data-signin]");
+      return Math.abs(node.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom - parseFloat(style.borderBottomWidth) - parseFloat(style.paddingBottom));
+    })).toBeLessThan(0.5);
     const spacing = await dialog.evaluate(node => {
       const style = getComputedStyle(node);
       const last = node.querySelector('[data-signin]');
