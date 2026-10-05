@@ -15,7 +15,7 @@ class HealthTest(unittest.TestCase):
     def setUp(self):torch.set_num_threads(1)
     def fixture(self,directory,change):
         model=PolicyValueNet();optimizer=torch.optim.AdamW(model.parameters());updates=0
-        atomic_json(directory/'manifest.json',{'sha256':'test'})
+        atomic_json(directory/'manifest.json',{'sha256':'test','manifest':{'sourceRevision':'fixture'}})
         (directory/'supervisor-attempts.jsonl').write_text(json.dumps({'event':'started','id':'training','phase':'training','pid':0})+'\n'+json.dumps({'event':'finished','id':'training','phase':'training','reason':'completed'})+'\n')
         for index in (1,2):
             if index==1 or change:
