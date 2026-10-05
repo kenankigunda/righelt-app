@@ -19,7 +19,8 @@ from righelt_training.sequence import PREREQUISITE, digest, read
 class BootstrapTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(); self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name).resolve(); self.control = self.root/'sequence'; self.control.mkdir()
+        self.root = Path(self.temporary.name).resolve()/'.ai-runs'; self.root.mkdir()
+        self.control = self.root/'sequence'; self.control.mkdir()
         self.directory = self.root/'diagnostic'; self.directory.mkdir()
         self.clock = [1000.]
         self.source = {'sourceRevision': 'current', 'configSha256': CONFIG_SHA256,
@@ -48,7 +49,10 @@ class BootstrapTest(unittest.TestCase):
         for name in ('coreTests', 'trainerTests', 'exactReplay'):
             log = self.root/(name+'.log'); log.write_text('fixture proof')
             checks[name] = {'passed': True, 'evidence': str(log), 'sha256': digest(log)}
-        atomic_json(self.args['static_proof'], {**self.source, 'checks': checks})
+        repair = {'sourceRevision': 'current', 'cause': 'changed engine proof', 'artifactDisposition': 'retain verified recovery bundle',
+                  'regressionEvidence': [{'path': checks['coreTests']['evidence'], 'sha256': checks['coreTests']['sha256']}],
+                  'reviewEvidence': [{'path': checks['trainerTests']['evidence'], 'sha256': checks['trainerTests']['sha256']}]}
+        atomic_json(self.args['static_proof'], {**self.source, 'checks': checks, 'repair': repair})
         atomic_json(self.args['recovery_audit'], {'passed': True, 'sourceRevision': 'current', 'checkpoint': str(self.checkpoint),
                     'sha256': digest(self.checkpoint), 'updates': 3309, 'recoverySha256': 'recovery'})
         atomic_json(self.args['corpus'], {'states': [{'id': str(i)} for i in range(1000)]})
@@ -158,6 +162,54 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(self.allocation.accounting()[1], 458.080072)
         self.process.assert_not_called()
 
+    def test_missing_stale_or_changed_repair_proof_cannot_launch(self):
+        path = self.args['static_proof']; original = path.read_bytes()
+        for mutate in (lambda value: value.pop('repair'),
+                       lambda value: value['repair'].update(sourceRevision='old'),
+                       lambda value: value['repair'].update(reviewEvidence=[]),
+                       lambda value: value['repair']['reviewEvidence'][0].update(sha256='changed')):
+            self.mutate(path, mutate)
+            with self.assertRaisesRegex(ValueError, 'repair'): self.run_bootstrap()
+            path.write_bytes(original)
+        self.process.assert_not_called()
+
+    def test_generated_gate_amends_existing_manifest_through_real_supervisor_boundary(self):
+        from righelt_training import supervisor
+        from righelt_training.manifest import write_manifest, active_manifest
+        import sys
+        report = self.run_bootstrap(); gate = read(report['gate'])
+        historical = {'sourceRevision': 'historical', 'configSha256': CONFIG_SHA256, 'seed': 107,
+                      'stage': 'overnight', 'seconds': 43200, 'dependencies': [], 'lockHashes': {}}
+        original_hash = write_manifest(self.directory/'manifest.json', historical)
+        original_bytes = (self.directory/'manifest.json').read_bytes()
+        current = {**historical, 'sourceRevision': 'current'}
+        atomic_json(self.checkpoint.with_suffix('.json'), {'manifestSha256': 'prior', 'configSha256': CONFIG_SHA256})
+        argv = ['supervisor', '--run-dir', str(self.directory), '--activity-file', str(self.args['activity_file']),
+                '--gate-report', report['gate'], '--stage', 'overnight', '--seed', '107',
+                '--resume', str(self.checkpoint), '--export-parity', '--parity-corpus', str(self.args['corpus'])]
+        def completed(argv, env, log, budget, runtime, *rest):
+            self.assertEqual(runtime['command'], 'export-parity')
+            self.assertEqual(budget.seconds, 7200)
+            self.clock[0] += 5
+            return 'completed', SimpleNamespace(returncode=0)
+        # Fixed checkpoint fixture validation is covered separately. Exercise the
+        # actual existing-manifest amendment and accounting path, with no child.
+        with patch.object(supervisor, 'ROOT', self.root.parent), patch.object(sys, 'argv', argv), \
+                patch.object(supervisor, 'build_manifest', return_value=current), \
+                patch.object(supervisor, 'validate_reset_checkpoint'), patch.object(supervisor, 'validate_overnight_checkpoint'), \
+                patch.object(supervisor, 'manifest_hashes', return_value={'prior'}), \
+                patch.object(supervisor, 'run_phase', side_effect=completed), patch.object(supervisor, 'cleanup_owned'):
+            supervisor.main()
+        self.assertEqual((self.directory/'manifest.json').read_bytes(), original_bytes)
+        self.assertEqual(active_manifest(self.directory)['manifest'], current)
+        amendment = json.loads((self.directory/'source-amendments.jsonl').read_text())
+        self.assertEqual(amendment['oldManifest'], original_hash)
+        for key in ('cause', 'regressionEvidence', 'reviewEvidence', 'artifactDisposition'):
+            self.assertEqual(amendment[key], gate['repair'][key])
+        self.assertEqual(self.allocation.accounting()[0]['seconds'], 7200)
+        self.assertAlmostEqual(self.allocation.accounting()[1], 493.080072)
+        self.assertEqual(self.allocation.accounting()[2], [])
+
     def test_stale_snapshot_and_mismatched_activity_rejected(self):
         self.mutate(self.args['activity_file'], lambda value: value.update(developmentActive=True))
         with self.assertRaisesRegex(ValueError, 'activity file'): self.run_bootstrap()
@@ -207,6 +259,20 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(self.process.call_count, 3)
         self.assertEqual(list(self.directory.glob('bootstrap/*/gate.json')), [])
         self.assertAlmostEqual(self.allocation.accounting()[1], 464.080072)
+
+    def test_direct_interruption_cleans_up_and_charges_without_publishing(self):
+        def interrupted(*args):
+            self.clock[0] += 7
+            raise KeyboardInterrupt()
+        self.process.side_effect = interrupted
+        with self.assertRaises(KeyboardInterrupt): self.run_bootstrap()
+        self.cleanup.assert_called_once_with(self.directory)
+        self.assertAlmostEqual(self.allocation.accounting()[1], 465.080072)
+        self.assertEqual(self.allocation.accounting()[2], [])
+        self.assertEqual(list(self.directory.glob('bootstrap/*/gate.json')), [])
+        result = read(next(self.directory.glob('bootstrap/*/result.json')))
+        self.assertEqual(result['reason'], 'interrupted')
+        self.assertTrue(result['cleanupVerified'])
 
     def test_cleanup_uncertainty_stays_open_until_recovery_and_cannot_extend_budget(self):
         self.cleanup.side_effect = RuntimeError('cleanup uncertain')

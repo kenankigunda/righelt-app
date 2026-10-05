@@ -78,6 +78,15 @@ def validate_inputs(sequence, static_proof, recovery_audit, corpus, legacy_gate,
         check = static.get('checks', {}).get(name, {})
         if check.get('passed') is not True or not check.get('evidence') or digest(check['evidence']) != check.get('sha256'):
             raise ValueError('missing or changed static proof: ' + name)
+    repair = static.get('repair', {})
+    if (repair.get('sourceRevision') != identity['sourceRevision']
+            or not repair.get('cause') or not repair.get('artifactDisposition')):
+        raise ValueError('current-source reviewed repair record required')
+    for name in ('regressionEvidence', 'reviewEvidence'):
+        records = repair.get(name)
+        if (not isinstance(records, list) or not records
+                or any(not row.get('path') or digest(row['path']) != row.get('sha256') for row in records)):
+            raise ValueError('missing or changed repair evidence: ' + name)
     checkpoint = Path(sequence.config['recoveryCheckpoint']).resolve()
     if (checkpoint != (Path(policy.archive) / policy.checkpoint_relative).resolve()
             or digest(checkpoint) != policy.checkpoint_sha256):
@@ -185,6 +194,7 @@ def make_gate(attempt, identity, proof):
             'checks': {key: static['checks'][key] for key in ('coreTests', 'trainerTests', 'exactReplay')},
             'health': legacy['health'], 'progressReport': legacy['progressReport'],
             'inheritedHealthEvidence': {**identity['legacyGate'], 'sourceRevision': legacy['sourceRevision']},
+            'repair': static['repair'],
             'resumeCheckpoint': {**audit, 'auditPath': identity['recoveryAudit']['path'], 'auditSha256': identity['recoveryAudit']['sha256']},
             'bootstrapEvidence': proof_ref, 'productionPromotion': False}
     gate['checks']['exportParity'] = {'passed': True, 'heldoutStates': STATES, 'legalMasksPassed': True,

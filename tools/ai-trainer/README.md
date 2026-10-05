@@ -27,6 +27,8 @@ After verified cleanup and settled accounting, record `complete --phase diagnost
 
 Changed engine, representation, search or runtime inputs invalidate old parity evidence. The proof-only `righelt_training.bootstrap` entrypoint refreshes that evidence before the ordinary supervisor can launch. It requires the same cleared hold, all completion receipts, current observations, clean source, hashed static test proof, full checkpoint recovery audit and original inherited-health record. It cannot train, run an arena, create/reset an allocation or substitute a checkpoint.
 
+The static proof also carries the reviewed source amendment: current `sourceRevision`, `cause`, `artifactDisposition`, and nonempty `regressionEvidence`/`reviewEvidence` lists containing evidence paths and SHA256 hashes. The generated gate preserves this record so the ordinary supervisor can amend the historical manifest without overwriting it.
+
 ```sh
 PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.bootstrap --sequence-directory SEQUENCE_DIRECTORY --static-proof STATIC_JSON --recovery-audit AUDIT_JSON --corpus FROZEN_CORPUS_JSON --legacy-gate ORIGINAL_GATE_JSON --completion RECEIPTS_JSON --snapshot SNAPSHOT_JSON --activity-file ACTIVITY_JSON
 ```
