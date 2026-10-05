@@ -5,6 +5,7 @@ The caller must first publish successful trained-export-parity.json and keep its
 supervisor alive. The existing supervisor enforces operation-status.json even
 if a model forward stalls. Every invocation retains a separate immutable attempt.
 """
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -91,8 +92,16 @@ def identity_for(model, checkpoint, corpus, cases_path, directory, attempt):
     # later health/export phase cannot invalidate a completed observation.
     for name in ('trained-export-parity.json', 'runtime.json'):
         immutable(attempt / name, read(directory / name))
+    # The exporter may overwrite the checkpoint-named asset during a later
+    # export. Retained observations bind to these exact, immutable bytes.
+    asset_bytes = asset.read_bytes()
+    if hashlib.sha256(asset_bytes).hexdigest() != read(attempt / 'trained-export-parity.json')['export']['sha256']:
+        raise ValueError('development export changed after numeric parity')
+    snapshot = attempt / 'model.onnx'
+    with snapshot.open('xb') as stream:
+        stream.write(asset_bytes); stream.flush(); os.fsync(stream.fileno())
     identity = {**source, 'runtime': runtime_identity(), 'checkpoint': checkpoint_ref, 'corpus': reference(corpus),
-                'cases': reference(cases_path), 'export': reference(asset),
+                'cases': reference(cases_path), 'export': reference(snapshot), 'exportSourcePath': str(asset),
                 'parity': reference(attempt / 'trained-export-parity.json'), 'manifest': reference(manifest_path),
                 'runtimeRecord': reference(attempt / 'runtime.json'), 'modelWeightsSha256': model_weights(model)}
     if model.training or model_device(model) != 'mps' or identity['modelWeightsSha256'] != checkpoint_weights(checkpoint):

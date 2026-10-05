@@ -93,6 +93,23 @@ class DevelopmentCollectTest(unittest.TestCase):
         self.assertNotEqual(result['proof'], second['proof'])
         self.assertTrue(Path(result['proof']).exists())
 
+    def test_later_export_overwrite_does_not_change_retained_development_evidence(self):
+        result = self.run_collect(); expected = probe.read(result['report'])
+        identity = probe.read(result['proof'])['identity']
+        snapshot = Path(identity['export']['path']); original = Path(identity['exportSourcePath'])
+        self.assertNotEqual(snapshot, original)
+        self.assertEqual(snapshot.parent, Path(result['proof']).parent)
+        original.write_bytes(b'later export at the same checkpoint path')
+        self.assertEqual(probe.digest(snapshot), identity['export']['sha256'])
+        self.assertEqual(probe.report(self.cases, result['proof']), expected)
+
+    def test_export_changed_before_snapshot_cannot_publish_complete_proof(self):
+        asset = self.directory / 'trained-export' / (probe.digest(self.checkpoint) + '.onnx')
+        asset.write_bytes(b'changed after parity')
+        with self.assertRaisesRegex(ValueError, 'export changed'): self.run_collect()
+        proof = next((self.directory / 'development').glob('*/proof.json'))
+        self.assertFalse(probe.read(proof)['complete'])
+
     def test_resource_pause_before_start_executes_no_forward(self):
         result = self.run_collect(resource_check=lambda: False)
         self.assertFalse(result['complete']); self.assertEqual(self.model.calls, 0)
