@@ -1,6 +1,9 @@
 import { evaluatePasswordRequirements, normalizeDisplayName } from "../generated/packages/shared-types/src/auth.js";
 import { USERNAME_LOOKUP_DEBOUNCE_MS, USERNAME_LOOKUP_TIMEOUT_MS } from "../generated/packages/shared-types/src/auth-policy.js";
+import { animateDialogSize } from "./dialog-size.js";
 export const ACCOUNT_ENTRY_LAYOUT = "separate";
+export const ACCOUNT_SIGNUP_PROFILE = "username-only";
+const LOGIN_HINT_DELAY_MS = 5000;
 const escapeHtml = (value) =>
   String(value ?? "").replace(
     /[&<>"']/g,
@@ -31,9 +34,10 @@ export const createAccountDialog = ({
   dialog.dataset.testid = "account-dialog";
   dialog.setAttribute("aria-labelledby", "account-title");
   document.body.append(dialog);
+  const sizeAnimation = animateDialogSize(dialog);
   let mode = "login", lookupState = "idle", lookupName = "",
     blocklist = null, blocklistFlight = null, blocklistFailed = false, passwordTouched = false,
-    lookupTimer = null, lookupAbort = null, lookupRevision = 0,
+    hintTimer = null, hintRevision = 0, lookupTimer = null, lookupAbort = null, lookupRevision = 0,
     trigger = null, pending = null, values = {}, challengeToken = "", widget = null,
     flow = 0, submittingFlow = null, pendingLogoutGeneration = null, owner = {};
   const status = (text) => {
@@ -102,7 +106,26 @@ export const createAccountDialog = ({
     const hint = dialog.querySelector("[data-existing-hint]");
     if (hint) hint.hidden = !show;
   };
+  const cancelLoginHint = () => {
+    hintRevision++;
+    timers.clearTimeout(hintTimer);
+    hintTimer = null;
+    updateLoginHint();
+  };
+  const scheduleLoginHint = () => {
+    cancelLoginHint();
+    const username = dialog.querySelector('[name="username"]');
+    const password = dialog.querySelector('[name="password"]');
+    if (!username?.value.trim() || password?.value) return;
+    const revision = hintRevision, marker = flow;
+    hintTimer = timers.setTimeout(() => {
+      hintTimer = null;
+      if (revision !== hintRevision || marker !== flow || mode !== "login" || !dialog.open || document.activeElement === username || password?.value) return;
+      updateLoginHint(true);
+    }, LOGIN_HINT_DELAY_MS);
+  };
   const render = () => {
+    cancelLoginHint();
     clearChallenge(); passwordTouched = false;
     const session = controller.snapshot().session;
     let body = "", title = "Log in to start playing";
@@ -114,11 +137,12 @@ export const createAccountDialog = ({
       body = input("newPassword", "New password", { secret: true, autocomplete: "new-password" }) + checklist() + '<p>Changing your password signs you out on other devices.</p><div data-challenge></div><button type="submit">Change password</button>';
     } else if (mode === "register") {
       title = "Create account";
-      body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + '<p class="account-status small" role="status" data-username-status></p>' + input("password", "Password", { secret: true, visible: true, autocomplete: "new-password" }) + checklist() + input("displayName", "Display name (optional)", { autocomplete: "nickname", value: values.displayName || "", optional: true, placeholder: values.username || "Username" }) + '<p class="small" data-create-notice>Save your password. If you forget it and are signed out everywhere, you’ll need a new account.</p><div data-challenge></div><button type="submit">Create account & continue</button><a href="#sign-in" data-signin>Sign in</a>';
+      body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + '<p class="account-status small" role="status" data-username-status></p>' + input("password", "Password", { secret: true, visible: true, autocomplete: "new-password" }) + checklist() + '<p class="small" data-create-notice>Save your password. If you forget it and are signed out everywhere, you’ll need a new account.</p><div data-challenge></div><button type="submit">Create account & continue</button><button type="button" class="secondary" data-signin>Back to sign in</button>';
     } else {
       body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + input("password", "Password", { secret: true, autocomplete: "current-password" }) + '<p class="small" data-existing-hint hidden>Don’t have a password? <a href="#create-account" data-create-link>Create a new account.</a></p><details data-forgot hidden><summary>Forgot password?</summary><p>On another signed-in device, open Account → Change password. If you are signed out everywhere, you’ll need a new account. Your existing games remain with your original account.</p><button type="button" class="secondary" data-new-username>Choose another username</button></details><div data-challenge></div><button type="submit">Sign in</button><button type="button" class="secondary" data-create>Create account</button>';
     }
     dialog.innerHTML = `<form class="account-form" novalidate data-entry-mode="${mode === "register" ? "create" : mode}" data-lookup-state="${lookupState}"><h2 id="account-title" tabindex="-1">${title}</h2>${body}<p class="account-status" role="status" aria-live="polite" data-account-status></p><button type="button" class="secondary" data-cancel>Cancel</button></form>`;
+    sizeAnimation.refresh();
     updateLookup(); updateRequirements(); updateLoginHint();
     if (["register", "password"].includes(mode)) loadBlocklist();
     const marker = flow;
@@ -145,7 +169,6 @@ export const createAccountDialog = ({
   };
   const changeEntryMode = (next, empty = false) => {
     values.username = empty ? "" : dialog.querySelector('[name="username"]')?.value || values.username || "";
-    values.displayName = dialog.querySelector('[name="displayName"]')?.value ?? values.displayName ?? "";
     invalidateLookup(); flow++; owner = {}; mode = next;
     lookupState = "idle"; lookupName = "";
     render();
@@ -153,6 +176,8 @@ export const createAccountDialog = ({
   };
   const close = () => {
     pendingLogoutGeneration = null;
+    cancelLoginHint();
+    sizeAnimation.reset();
     invalidateLookup();
     flow++;
     owner = {};
@@ -246,13 +271,10 @@ export const createAccountDialog = ({
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   });
   const onInput = (event) => {
-    if (["password", "newPassword"].includes(event.target.name)) { passwordTouched = true; updateRequirements(); return; }
-    if (event.target.name === "displayName" && mode === "register") values.displayName = event.target.value;
+    if (["password", "newPassword"].includes(event.target.name)) { if (mode === "login") cancelLoginHint(); passwordTouched = true; updateRequirements(); return; }
     if (!["login", "register"].includes(mode) || event.target.name !== "username") return;
-    if (mode === "login") updateLoginHint();
+    if (mode === "login") cancelLoginHint();
     const previous = canonicalEntryUsername(values.username); values.username = event.target.value;
-    const display = dialog.querySelector('[name="displayName"]');
-    if (mode === "register" && display) display.placeholder = event.target.value || "Username";
     updateRequirements();
     if (mode !== "register" || previous === canonicalEntryUsername(values.username)) return;
     invalidateLookup(); clearChallenge(); lookupState = "idle"; lookupName = ""; updateLookup();
@@ -260,10 +282,13 @@ export const createAccountDialog = ({
   };
   dialog.addEventListener("input", onInput);
   dialog.addEventListener("change", onInput);
-  dialog.addEventListener("focusin", updateRequirements);
+  dialog.addEventListener("focusin", (event) => {
+    if (mode === "login" && event.target.name === "username") cancelLoginHint();
+    updateRequirements();
+  });
   dialog.addEventListener("focusout", (event) => {
     if (mode === "login" && event.target.name === "username")
-      updateLoginHint(Boolean(event.target.value.trim()));
+      scheduleLoginHint();
   });
   dialog.addEventListener("click", async (event) => {
     const button = event.target.closest("button, [data-create-link], [data-signin]");
@@ -296,7 +321,7 @@ export const createAccountDialog = ({
     const rejectField = (name, message) => { status(message); field(name)?.focus(); };
     if (["login", "register"].includes(mode) && !validEntryUsername(field("username")?.value)) { rejectField("username", "Use 3–24 letters, digits or underscores for your username."); return; }
     if (mode === "register" && lookupName === canonicalEntryUsername(field("username")?.value) && lookupState === "taken") { rejectField("username", messages.username_unavailable); return; }
-    if (["register", "account"].includes(mode) && !normalizeDisplayName(field("displayName")?.value, field("username")?.value || controller.snapshot().session.account?.username || "").ok) { rejectField("displayName", "Use a display name of up to 32 characters without control characters."); return; }
+    if (mode === "account" && !normalizeDisplayName(field("displayName")?.value, field("username")?.value || controller.snapshot().session.account?.username || "").ok) { rejectField("displayName", "Use a display name of up to 32 characters without control characters."); return; }
     if (mode === "login" && !field("password")?.value) { rejectField("password", "Enter your password."); return; }
     if (["register", "password"].includes(mode)) {
       passwordTouched = true;
@@ -317,7 +342,7 @@ export const createAccountDialog = ({
       }
       const token = challengeToken ? { challengeToken } : {};
       challengeToken = "";
-      await controller.act(operation, operation === "password" ? { newPassword: data.newPassword, ...token } : { username: data.username, password: data.password, ...(operation === "register" ? { displayName: data.displayName } : {}), ...token }, operationOwner);
+      await controller.act(operation, operation === "password" ? { newPassword: data.newPassword, ...token } : { username: data.username, password: data.password, ...token }, operationOwner);
       if (marker !== flow || !dialog.open) return;
       complete();
     } catch (error) {
@@ -326,7 +351,11 @@ export const createAccountDialog = ({
         lookupState = "taken"; lookupName = canonicalEntryUsername(data.username);
         updateLookup();
       }
-      if (error.code === "invalid_credentials" && operation === "login") dialog.querySelector("[data-forgot]").hidden = false;
+      if (error.code === "invalid_credentials" && operation === "login") {
+        cancelLoginHint();
+        updateLoginHint(true);
+        dialog.querySelector("[data-forgot]").hidden = false;
+      }
       status(messages[error.code] || "We could not confirm the result. Check your connection and account status before trying again.");
       if (error.body?.challengeRequired || widget !== null) await challenge();
     } finally {

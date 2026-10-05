@@ -2063,7 +2063,8 @@ textarea:focus-visible {
 .account-input-row [data-toggle] { position: absolute; right: .2rem; top: .2rem; bottom: .2rem; padding: .3rem .65rem; }
 .account-form [hidden] { display: none !important; }
 .account-password-requirements { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
-.account-password-requirements [data-state="unmet"] { font-weight: 600; }
+.account-password-requirements [data-state="met"] { color: #176b36; }
+.account-password-requirements [data-state="unmet"] { color: #b42318; font-weight: 600; }
 .account-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .account-status { margin: 0; overflow-wrap: anywhere; }
 .account-status:empty, .account-form [data-challenge]:empty { display: none; }

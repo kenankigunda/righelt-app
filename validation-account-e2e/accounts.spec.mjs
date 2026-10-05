@@ -12,6 +12,7 @@ const root=process.env.RIGHELT_VALIDATION_TARGET_ROOT||process.cwd();
 const capabilities=await candidateCapabilities(root);
 if(!capabilities.accounts)throw Error('Account proof requires the candidate account UI and real credential services');
 if(capabilities.separateAccountForms&&!capabilities.simplifiedAccounts)throw Error('Separate account forms require the simplified credential contract');
+if(capabilities.usernameOnlySignup&&!capabilities.separateAccountForms)throw Error('Username-only signup requires separate account forms');
 const createSubmitName=capabilities.simplifiedAccounts?'Create account & continue':'Create account';
 // Browser contract shared by the reviewed account and UX stacks. Do not load
 // candidate test helpers: that would load a second Playwright installation.
@@ -144,7 +145,16 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   await dialog(page).getByLabel('Username',{exact:true}).fill(username);
   await dialog(page).getByLabel('Password',{exact:true}).fill(password);
   if(capabilities.simplifiedAccounts){
-    if(capabilities.separateAccountForms){
+    if(capabilities.usernameOnlySignup){
+      await expect(dialog(page).locator('[name="displayName"]')).toHaveCount(0);
+      await dialog(page).getByRole('button',{name:'Back to sign in',exact:true}).click();
+      await expect(dialog(page).getByLabel('Password',{exact:true})).toHaveAttribute('type','password');
+      await expect(dialog(page).getByLabel('Password',{exact:true})).toHaveValue('');
+      await dialog(page).getByRole('button',{name:'Create account',exact:true}).click();
+      await dialog(page).getByLabel('Username',{exact:true}).fill(username);
+      await dialog(page).getByLabel('Password',{exact:true}).fill(password);
+      await expect(dialog(page).locator('[name="displayName"]')).toHaveCount(0);
+    }else if(capabilities.separateAccountForms){
       const displayName=dialog(page).getByLabel('Display name (optional)',{exact:true});
       await expect(displayName).toBeVisible();await expect(displayName).not.toHaveAttribute('required','');
       await displayName.fill('Validation Signup');
@@ -165,7 +175,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   }
   await expect(dialog(page)).not.toBeVisible();await expect(page.getByTestId('game-role')).toContainText('Player 1');
   expect(creates).toBe(1);
-  if(capabilities.separateAccountForms)expect((await session(page)).account.displayName).toBe('Validation Signup');
+  if(capabilities.separateAccountForms)expect((await session(page)).account.displayName).toBe(capabilities.usernameOnlySignup?username:'Validation Signup');
   const gameURL=page.url();
   const second=await browser.newContext(options(info));
   try{

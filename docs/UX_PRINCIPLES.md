@@ -148,6 +148,7 @@ Examples illustrating the spirit:
 - Motion should communicate causality, feedback, and state change without adding churn.
 - Favor short, confident transitions over flashy flourishes.
 - Pressed-state feedback should feel immediate. Release-state feedback should resolve as one short, coherent animation.
+- Animate changes in a surface’s size smoothly, including content appearing, disappearing, wrapping, or switching forms. Use a short, interruptible transition from the current size; preserve focus, readable text, scrolling, and viewport bounds. Avoid abrupt height jumps and blanket transitions on every property.
 - Animations that change layout should protect readability while moving.
 - Motion across related surfaces should feel synchronized when they are part of the same interaction.
 - Respect `prefers-reduced-motion: reduce` by disabling non-essential animation and preserving comprehension without movement.

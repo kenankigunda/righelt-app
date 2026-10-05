@@ -60,19 +60,20 @@ test("sign-in exposes both credentials immediately and never looks up usernames 
   assert.equal(f.acts[0][1].password, "short", "sign-in must not impose creation password policy");
 });
 
-test("separate forms retain username/display-name drafts and clear passwords on switches", async () => {
+test("separate forms retain username and clear passwords on switches", async () => {
   const f = fixture(); f.input("username", "Alice"); f.input("password", "private old password");
   await f.click("data-create"); await f.flush();
   assert.match(f.element.innerHTML, /<h2[^>]*>Create account<\/h2>/);
   assert.equal(f.document.activeElement, f.node('[name="username"]'));
   assert.equal(f.node('[name="password"]').value, ""); assert.equal(f.node('[name="password"]').type, "text");
-  assert.equal(f.node('[name="displayName"]').placeholder, "Alice"); assert.equal(f.node('[name="displayName"]').value, "");
-  f.input("displayName", "Alice Example"); f.input("password", "private new password");
+  assert.doesNotMatch(f.element.innerHTML, /name="displayName"/);
+  assert.match(f.element.innerHTML, /<button[^>]+data-signin>Back to sign in<\/button>/);
+  f.input("password", "private new password");
   await f.click("data-signin");
   assert.equal(f.node('[name="username"]').value, "Alice"); assert.equal(f.node('[name="password"]').value, "");
   await f.click("data-create");
-  assert.equal(f.node('[name="displayName"]').value, "Alice Example");
-  f.input("username", "Bob"); assert.equal(f.node('[name="displayName"]').placeholder, "Bob");
+  assert.equal(f.node('[name="username"]').value, "Alice");
+  assert.doesNotMatch(f.element.innerHTML, /name="displayName"/);
 });
 
 test("creation availability is debounced, advisory and never changes form or typed password", async () => {
@@ -118,7 +119,7 @@ test("blocklist failure is disclosed and server submission remains available", a
   f.input("username", "Alice"); f.input("password", "very unique password");
   assert.equal(f.node('[data-requirement="notCommon"]').dataset.state, "unavailable");
   assert.match(f.node('[data-requirement="notCommon"]').textContent, /checked when you submit/);
-  await f.submit(); assert.equal(f.acts[0][0], "register"); assert.equal(f.acts[0][1].displayName, "");
+  await f.submit(); assert.equal(f.acts[0][0], "register"); assert.equal(Object.hasOwn(f.acts[0][1], "displayName"), false);
 });
 
 test("live autofilled values receive validation even without input events", async () => {
@@ -154,25 +155,30 @@ test("repeated Enter cannot duplicate an account save while the request is pendi
 });
 
 
-test("sign-in creation hint waits for a nonempty username blur and resets when edited or reopened", async () => {
+test("sign-in hint waits five seconds after blur and cancels when credentials change", async () => {
   const f = fixture();
   const hint = () => f.node('[data-existing-hint]');
   const blur = () => f.listeners.get("focusout")({ target: f.node('[name="username"]') });
-  assert.equal(hint().hidden, true);
-  f.input("username", "Alice"); assert.equal(hint().hidden, true);
-  blur(); assert.equal(hint().hidden, false);
+  const wait = () => { for (const [id, { fn, ms }] of [...f.timers]) if (ms === 5000) { f.timers.delete(id); fn(); } };
+  await f.flush();
+  f.document.activeElement = f.node('[name="password"]');
+  f.input("username", "Alice"); blur(); assert.equal(hint().hidden, true);
+  wait(); assert.equal(hint().hidden, false);
   f.input("username", "Bob"); assert.equal(hint().hidden, true);
-  blur(); assert.equal(hint().hidden, false);
-  f.input("username", "   "); blur(); assert.equal(hint().hidden, true);
+  blur(); f.input("password", "x"); f.input("password", ""); wait(); assert.equal(hint().hidden, true);
+  blur(); f.listeners.get("focusin")({ target: f.node('[name="username"]') }); wait(); assert.equal(hint().hidden, true);
+  blur(); f.node('[name="password"]').value = "autofilled"; wait(); assert.equal(hint().hidden, true);
+  f.input("password", ""); f.input("username", "   "); blur(); wait(); assert.equal(hint().hidden, true);
   f.input("username", "Alice"); blur();
-  await f.click("data-create"); await f.click("data-signin");
-  assert.equal(hint().hidden, true);
-  assert.equal(f.lookups.length, 0);
+  await f.click("data-create"); await f.click("data-signin"); wait();
+  assert.equal(hint().hidden, true); assert.equal(f.lookups.length, 0);
 });
 
-test("creation places required credentials before optional display name", async () => {
-  const f = fixture(); await f.click("data-create");
-  const markup = f.element.innerHTML;
-  assert.ok(markup.indexOf('name="username"') < markup.indexOf('name="password"'));
-  assert.ok(markup.indexOf('name="password"') < markup.indexOf('name="displayName"'));
+test("incorrect credentials show the creation hint immediately; transport errors do not", async () => {
+  const f = fixture(); f.input("username", "Alice"); f.input("password", "wrong");
+  f.controller.act = async () => { throw { code: "temporarily_unavailable" }; };
+  await f.submit(); assert.equal(f.node('[data-existing-hint]').hidden, true);
+  f.controller.act = async () => { throw { code: "invalid_credentials" }; };
+  await f.submit(); assert.equal(f.node('[data-existing-hint]').hidden, false);
+  f.input("password", "next attempt"); assert.equal(f.node('[data-existing-hint]').hidden, true);
 });

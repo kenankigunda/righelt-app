@@ -57,7 +57,7 @@ test("explicit creation retains a taken username without changing forms or disab
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page).getByLabel("Username", { exact: true })).toBeFocused();
   await expect(dialog(page).locator("form")).toHaveAttribute("data-entry-mode", "create");
-  await dialog(page).getByRole("link", { name: "Sign in", exact: true }).click();
+  await dialog(page).getByRole("button", { name: "Back to sign in", exact: true }).click();
   await expect(dialog(page).getByLabel("Username", { exact: true })).toHaveValue(taken);
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveValue("");
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("type", "password");
@@ -66,34 +66,29 @@ test("explicit creation retains a taken username without changing forms or disab
   await expect(dialog(page)).not.toBeVisible();
 });
 
-test("creation keeps optional display name and password through username edits, clearing only secrets on a form switch", async ({ page }) => {
+test("creation keeps password through username edits, clears it on form switch, and defaults the display name to username", async ({ page }) => {
   await open(page);
   await create(page);
   const username = uniqueName();
   await enterUsername(page, username);
-  await expect(dialog(page).getByLabel("Display name (optional)", { exact: true })).toHaveAttribute("placeholder", username);
-  await dialog(page).getByLabel("Display name (optional)", { exact: true }).fill("Étoile 🌟");
+  await expect(dialog(page).getByLabel("Display name (optional)", { exact: true })).toHaveCount(0);
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   const changed = uniqueName();
   await enterUsername(page, changed);
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveValue(password);
-  await expect(dialog(page).getByLabel("Display name (optional)", { exact: true })).toHaveValue("Étoile 🌟");
-  await dialog(page).getByRole("link", { name: "Sign in", exact: true }).click();
+  await dialog(page).getByRole("button", { name: "Back to sign in", exact: true }).click();
   await expect(dialog(page).getByLabel("Username", { exact: true })).toHaveValue(changed);
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveValue("");
   const destination = page.url();
-  await dialog(page).getByLabel("Password", { exact: true }).focus();
-  await dialog(page).getByRole("link", { name: "Create a new account.", exact: true }).focus();
-  await page.keyboard.press("Enter");
+  await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
   await expect(dialog(page).getByLabel("Username", { exact: true })).toHaveValue(changed);
-  await expect(dialog(page).getByLabel("Display name (optional)", { exact: true })).toHaveValue("Étoile 🌟");
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveValue("");
   expect(page.url()).toBe(destination);
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
   await page.getByRole("button", { name: "Account", exact: true }).click();
-  await expect(dialog(page).getByLabel("Display name", { exact: true })).toHaveValue("Étoile 🌟");
+  await expect(dialog(page).getByLabel("Display name", { exact: true })).toHaveValue(changed);
 });
 
 test("creation checklist starts neutral and validates an eight-character password locally", async ({ page }) => {
@@ -104,9 +99,19 @@ test("creation checklist starts neutral and validates an eight-character passwor
     await expect(checklist.locator(`[data-requirement="${name}"]`)).toHaveAttribute("data-state", "neutral");
   await enterUsername(page, uniqueName());
   await dialog(page).getByLabel("Password", { exact: true }).fill("password");
-  await expect(checklist.locator('[data-requirement="notCommon"]')).toHaveAttribute("data-state", "unmet");
+  const common = checklist.locator('[data-requirement="notCommon"]');
+  await expect(common).toHaveAttribute("data-state", "unmet");
+  await expect(common).toContainText("not met");
+  const unmetColor = await common.evaluate(node => getComputedStyle(node).color);
+  const [unmetR, unmetG] = unmetColor.match(/[\d.]+/g).map(Number);
+  expect(unmetR).toBeGreaterThan(unmetG);
   await dialog(page).getByLabel("Password", { exact: true }).fill("Ax7!pQ2z");
   await expect(checklist.locator('[data-state="met"]')).toHaveCount(3);
+  await expect(common).toContainText("met");
+  const metColor = await common.evaluate(node => getComputedStyle(node).color);
+  const [metR, metG] = metColor.match(/[\d.]+/g).map(Number);
+  expect(metG).toBeGreaterThan(metR);
+  expect(metColor).not.toBe(unmetColor);
   await dialog(page).getByRole("button", { name: "Hide password", exact: true }).click();
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("type", "password");
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
@@ -171,6 +176,7 @@ test("forgotten-password help points to a signed-in device and offers a fresh ac
   await dialog(page).getByLabel("Password", { exact: true }).fill("An incorrect password 943");
   await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(dialog(page).locator("[data-account-status]")).not.toHaveText("");
+  await expect(dialog(page).locator("[data-existing-hint]")).toBeVisible();
   await dialog(page).locator("summary").filter({ hasText: "Forgot password?" }).click();
   await expect(dialog(page)).toContainText("Change password");
   await expect(dialog(page)).toContainText(/signed.in/);
@@ -241,22 +247,77 @@ test("an unavailable common-password list is disclosed without blocking authorit
 });
 
 
-test("sign-in creation hint appears only after a nonempty username loses focus", async ({ page }) => {
+test("sign-in creation hint waits five seconds after username blur without routing or looking up names", async ({ page }) => {
   let lookups = 0;
   page.on("request", request => { if (new URL(request.url()).pathname === "/api/auth/username") lookups++; });
   await open(page);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
   const hint = dialog(page).locator("[data-existing-hint]");
   const username = dialog(page).getByLabel("Username", { exact: true });
+  const secret = dialog(page).getByLabel("Password", { exact: true });
   await expect(hint).toBeHidden();
-  await expect(dialog(page).getByRole("button", { name: "Create account", exact: true })).toBeVisible();
-  await username.fill("NewPlayer"); await expect(hint).toBeHidden();
-  await page.keyboard.press("Tab"); await expect(hint).toBeVisible();
-  await expect(dialog(page).getByLabel("Password", { exact: true })).toBeFocused();
-  await username.fill("DifferentPlayer"); await expect(hint).toBeHidden();
-  await page.keyboard.press("Tab"); await expect(hint).toBeVisible();
-  await username.fill("   "); await page.keyboard.press("Tab"); await expect(hint).toBeHidden();
-  await username.fill("NewPlayer"); await page.keyboard.press("Tab");
+  await username.fill("NewPlayer");
+  await secret.focus();
+  await page.clock.fastForward(4999);
+  await expect(hint).toBeHidden();
+  await page.clock.fastForward(1);
+  await expect(hint).toBeVisible();
+  await expect(dialog(page).getByRole("heading", { name: "Log in to start playing" })).toBeVisible();
+  expect(lookups).toBe(0);
+  await page.clock.resume();
   await dialog(page).getByRole("link", { name: "Create a new account.", exact: true }).click();
   await expect(dialog(page).getByRole("heading", { name: "Create account", exact: true })).toBeVisible();
-  expect(lookups).toBe(0);
+});
+
+test("password input, username edits and refocus cancel the delayed sign-in hint", async ({ page }) => {
+  await open(page);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  const hint = dialog(page).locator("[data-existing-hint]");
+  const username = dialog(page).getByLabel("Username", { exact: true });
+  const secret = dialog(page).getByLabel("Password", { exact: true });
+  await username.fill("NewPlayer");
+  await secret.focus();
+  await page.clock.fastForward(4000);
+  await secret.fill("x");
+  await secret.fill("");
+  await page.clock.fastForward(6000);
+  await expect(hint).toBeHidden();
+  await username.focus();
+  await secret.focus();
+  await page.clock.fastForward(4000);
+  await username.focus();
+  await page.clock.fastForward(6000);
+  await expect(hint).toBeHidden();
+  await secret.focus();
+  await page.clock.fastForward(4000);
+  await username.fill("DifferentPlayer");
+  await page.clock.fastForward(6000);
+  await expect(hint).toBeHidden();
+  await username.fill("   ");
+  await secret.focus();
+  await page.clock.fastForward(6000);
+  await expect(hint).toBeHidden();
+  await page.clock.resume();
+});
+
+test("leaving sign-in or closing the dialog cancels its pending hint", async ({ page }) => {
+  await open(page);
+  await page.clock.install();
+  const username = dialog(page).getByLabel("Username", { exact: true });
+  const secret = dialog(page).getByLabel("Password", { exact: true });
+  await username.fill("NewPlayer");
+  await secret.focus();
+  await create(page);
+  await page.clock.fastForward(6000);
+  await dialog(page).getByRole("button", { name: "Back to sign in", exact: true }).click();
+  await expect(dialog(page).locator("[data-existing-hint]")).toBeHidden();
+  await secret.focus();
+  await page.keyboard.press("Escape");
+  await expect(dialog(page)).not.toBeVisible();
+  await page.clock.fastForward(6000);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(username).toHaveValue("");
+  await expect(dialog(page).locator("[data-existing-hint]")).toBeHidden();
 });
