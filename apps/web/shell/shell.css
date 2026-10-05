@@ -2093,7 +2093,6 @@ textarea:focus-visible {
   .account-dialog .account-username-status[data-state="pending"] { animation: none; background-image: none; }
 }
 
-.shell-header > [data-action="account-open"] { width: auto; flex: 0 0 auto; justify-self: end; align-self: center; }
 
 /* Public names must wrap within their panel, including unbroken usernames. */
 .participant-list > li { min-width: 0; }
