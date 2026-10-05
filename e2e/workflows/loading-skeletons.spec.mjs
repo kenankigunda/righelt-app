@@ -148,6 +148,7 @@ test("home pagination swaps only the active section into a skeleton while the ne
     await page.locator('[data-action="home-page-next"][data-home-section="my"]').click();
     await pageLoadSeen;
     await expect(page.getByTestId("home-section-skeleton").first()).toBeVisible();
+    await expect(page.getByTestId("home-create-game")).toHaveCount(1);
     await expect(page.getByTestId("home-create-game")).toBeVisible();
 
     releasePageLoad?.();

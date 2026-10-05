@@ -1,6 +1,19 @@
 export const icon = (name) => {
-  if (name === 'friend') return `<svg viewBox="0 0 120 96" aria-hidden="true" focusable="false"><g fill="none" stroke-linejoin="round" stroke-width="3"><path d="M16 74L59 51 105 74 62 94Z" fill="#fffdf6" stroke="#252b2d"/><path d="M37 63L81 85M60 51L62 94M82 63L38 85" stroke="#252b2d" opacity=".2"/><path d="M15 55V37L23 29H37L47 42V56L35 65Z" fill="#c2452f" stroke="#c2452f"/><path d="M105 55V37L97 29H83L73 42V56L85 65Z" fill="#2d67c7" stroke="#2d67c7"/><circle cx="30" cy="17" r="11" fill="#c2452f" stroke="#c2452f"/><circle cx="90" cy="17" r="11" fill="#2d67c7" stroke="#2d67c7"/><path d="M36 45L49 59 59 62" stroke="#fffdf6"/><path d="M84 45L71 59 63 66" stroke="#fffdf6"/><path d="M54 18L60 12 66 18M60 12V4" stroke="#252b2d"/><circle cx="52" cy="72" r="5" fill="#c2452f"/><circle cx="74" cy="75" r="5" fill="#2d67c7"/></g></svg>`;
-  const paths = { left:'M14 5l-7 7 7 7', right:'M10 5l7 7-7 7', close:'M6 6l12 12M6 18L18 6', sound:'M11 5L6 9H3v6h3l5 4V5zM15 8q6 4 0 8M18 5q10 7 0 14', muted:'M11 5L6 9H3v6h3l5 4V5zM16 9l6 6M16 15l6-6', friend:'M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM1 22v-3a7 7 0 0 1 14 0v3M18 3a4 4 0 0 1 0 8M18 14a6 6 0 0 1 5 6' };
-  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${paths[name]?`<path d="${paths[name]}"/>`:''}</svg>`;
+  const paths = {
+    scenarios:'M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z',
+    debug:'M8 7l2-3h4l2 3v12l-3 2h-2l-3-2ZM3 9h5M16 9h5M3 15h5M16 15h5M5 4l3 3M19 4l-3 3M5 21l3-3M19 21l-3-3M8 12h8',
+    account:'M9 3h6l3 3v4l-3 3H9l-3-3V6ZM3 22v-3l4-4h10l4 4v3',
+    left:'M15 4L7 12l8 8M7 12h13', right:'M9 4l8 8-8 8M4 12h13',
+    back:'M10 4l-7 7 7 7M3 11h12l5 5v5', close:'M5 5l14 14M5 19L19 5',
+    play:'M6 3h3l12 9L9 21H6Z',
+    invite:'M6 3h4l2 2v4l-2 2H6L4 9V5ZM2 21v-5l3-3h6l3 3v5M18 8v8M14 12h8',
+    copy:'M8 3h10l3 3v12h-3M3 7h10l3 3v11H6l-3-3Z',
+    rematch:'M4 9a8 8 0 0 1 14-4l3 3M21 3v5h-5M20 15a8 8 0 0 1-14 4l-3-3M3 21v-5h5',
+    sound:'M3 9h4l5-5v16l-5-5H3ZM16 8l3 4-3 4M19 5l4 7-4 7',
+    muted:'M3 9h4l5-5v16l-5-5H3ZM16 9l6 6M16 15l6-6'
+  };
+  return `<svg class="righelt-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="miter">${paths[name]?`<path d="${paths[name]}"/>`:''}</svg>`;
 };
 export const soundToggle = (enabled) => `<button class="ui-icon-button sound-toggle" data-action="toggle-sound" aria-label="${enabled?'Mute':'Enable'} sound" aria-pressed="${enabled}" title="Sound ${enabled?'on':'off'}">${icon(enabled?'sound':'muted')}</button>`;
+
+export const headerActionContent = (name, label) => `${icon(name)}<span class="header-action-label">${label}</span>`;

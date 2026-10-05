@@ -77,10 +77,10 @@ body { isolation:isolate; }
 .shell-route-transition-layer[data-direction="back"] .shell-route-transition-layer-swipe { scale:-1 1; }
 
 [data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:is(.opponent-choice,.ui-icon-button,.participant-profile):not(:disabled):hover { background:rgb(37 43 45 / 5%); color:var(--ink); border-color:transparent; box-shadow:none; }
-[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:not(.secondary):not(.opponent-choice):not(.ui-icon-button):not(.participant-profile):not(:disabled):hover { background:var(--action-hover); }
+[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:not(.cell):not(.secondary):not(.opponent-choice):not(.ui-icon-button):not(.participant-profile):not(:disabled):hover { background:var(--action-hover); }
 
 /* Surfaces share angular accents; controls keep their softer, tactile shape. */
-.brand-grid { mask-image:radial-gradient(ellipse 1050px 850px at var(--grid-origin-x,220px) var(--grid-origin-y,60px),#000 0%,rgb(0 0 0 / 65%) 30%,transparent 85%); }
+.brand-grid { mask-image:radial-gradient(ellipse 1050px 850px at var(--grid-origin-x,220px) var(--grid-origin-y,60px),#000 0%,rgb(0 0 0 / 65%) 30%,rgb(0 0 0 / 28%) 85%); }
 .home-refresh > .panel, .game-shell-frame .panel:not([data-shell-panel="board"]), .game-shell-mobile-panel .panel:not([data-shell-panel="board"]) {
   position:relative; border-radius:0 18px 0 18px;
   clip-path:polygon(20px 0,100% 0,100% calc(100% - 20px),calc(100% - 20px) 100%,0 100%,0 20px);
@@ -126,3 +126,146 @@ body { isolation:isolate; }
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel) section.panel::before { top:0;left:0;background:var(--player-p1);clip-path:polygon(0 0,100% 0,0 100%); }
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel) section.panel::after { bottom:0;right:0;background:var(--player-p2);clip-path:polygon(100% 0,100% 100%,0 100%); }
 .game-shell-frame [data-shell-panel="board"] { position:relative;border-radius:0 18px 0 18px;clip-path:polygon(20px 0,100% 0,100% calc(100% - 20px),calc(100% - 20px) 100%,0 100%,0 20px); }
+
+/* Four clipped corners and a shallow bevel give paper surfaces tangible depth. */
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
+.invite-gate-modal {
+  --corner-start:var(--player-p1);--corner-end:var(--player-p2);
+  position:relative;border-radius:0;
+  clip-path:polygon(18px 0,calc(100% - 18px) 0,100% 18px,100% calc(100% - 18px),calc(100% - 18px) 100%,18px 100%,0 calc(100% - 18px),0 18px);
+  background:linear-gradient(180deg,#fffefb 0%,var(--surface-raised) 15%,var(--surface-raised) 92%,#eee8dc 100%);
+  box-shadow:inset 0 2px 0 #fff,inset 0 -5px 0 rgb(66 48 25 / 9%),inset 1px 0 0 rgb(255 255 255 / 90%);
+  border:1px solid #e8e1d4;
+}
+.home-refresh > section.panel:nth-child(even),
+.layout-grid > .stack:first-child > section.panel:nth-child(even),
+.layout-grid > .stack:nth-child(3) > section.panel {
+  --corner-start:var(--player-p2);--corner-end:var(--player-p1);
+}
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::before {background:var(--corner-start);}
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::after {background:var(--corner-end);}
+.invite-gate section.panel::before,.invite-gate section.panel::after {content:'';position:absolute;width:30px;height:30px;pointer-events:none;}
+.invite-gate section.panel::before {top:0;left:0;clip-path:polygon(0 0,100% 0,0 100%);}
+.invite-gate section.panel::after {bottom:0;right:0;clip-path:polygon(100% 0,100% 100%,0 100%);}
+.home-refresh .mini-board-card {border-radius:0;clip-path:polygon(12px 0,calc(100% - 12px) 0,100% 12px,100% calc(100% - 12px),calc(100% - 12px) 100%,12px 100%,0 calc(100% - 12px),0 12px);background:linear-gradient(#fffefb,#faf7ef);box-shadow:inset 0 -3px 0 rgb(66 48 25 / 6%);}
+.invite-gate-modal {position:relative;top:auto;padding:24px 28px;margin-bottom:8px;}
+.invite-gate-modal h2 {margin:4px 40px 8px 0;}
+.invite-gate-modal .invite-choice-list {display:flex;flex-wrap:wrap;gap:12px;align-items:center;}
+.invite-gate-modal .invite-close {position:absolute;top:14px;right:14px;}
+.invite-gate-content {filter:none;opacity:.82;}
+.invite-gate-modal [role="status"]:empty {display:none;}
+[data-shell-panel="board"] .axis-label.col-axis {top:calc(100% + 8px);bottom:auto;left:50%;transform:translateX(-50%);}
+[data-shell-panel="board"] .axis-label.row-axis {left:auto;right:calc(100% + 8px);top:50%;transform:translateY(-50%);}
+[data-shell-panel="board"] .board-wrap {padding-bottom:32px;}
+@media(max-width:700px){.invite-gate-modal {padding:20px;}.invite-gate-modal .invite-choice-list {align-items:stretch;flex-direction:column;}}
+
+/* The wordmark has its own artwork and is intentionally unaffected. */
+.piece-token:is(.p1,.p2,.commander,.inactive) {border:0;border-radius:0;background:transparent;}
+.piece-token.p1 {color:var(--player-p1);}.piece-token.p2 {color:var(--player-p2);}
+.piece-symbol {display:block;width:100%;height:100%;fill:currentColor;overflow:visible;}
+.piece-token.inactive .piece-symbol {fill:var(--cell-fill,#fbf8f0);stroke:currentColor;stroke-width:1.8;}
+.supply-point-marker {width:16px;height:16px;color:var(--supply-owner);}
+.supply-point-marker::before,.supply-point-marker::after {display:none;}
+.cell:has(.piece-token:not(.ghost)) .supply-point-marker {inset:2px 2px auto auto;width:10px;height:10px;padding:1px;background:var(--cell-fill,#fbf8f0);border-radius:2px;}
+.swatch.supply-point {width:14px;height:14px;transform:none;border:0;border-radius:0;background:transparent;color:var(--supply-owner,var(--player-p1));}
+
+/* Layered stone: depth belongs outside the face, never in a dark inset band. */
+:root {
+  --stone-cut:18px;
+  --stone-outline:polygon(18px 0,calc(100% - 28px) 0,100% 28px,100% calc(100% - 46px),calc(100% - 8px) calc(100% - 38px),calc(100% - 8px) calc(100% - 18px),calc(100% - 26px) 100%,18px 100%,0 calc(100% - 18px),0 18px);
+  --stone-grain:url('../assets/stone-grain.svg');
+}
+body {background-image:var(--stone-grain);background-color:var(--surface-foundation);}
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
+.story-modal {
+  --stone-depth:6px;--stone-edge:#c9c0ad;--corner-start:transparent;--corner-end:transparent;
+  isolation:isolate;position:relative;overflow:visible;clip-path:none;border:0;border-radius:0;
+  background:transparent;box-shadow:none;
+  filter:drop-shadow(0 3px 3px rgb(54 45 30 / 16%));
+}
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::before,
+.story-modal::before {
+  content:'';position:absolute;inset:0;width:auto;height:auto;transform:none;pointer-events:none;z-index:-1;
+  clip-path:var(--stone-outline);
+  background:
+    linear-gradient(135deg,var(--corner-start) 0 24px,transparent 24px) top left / 40px 40px no-repeat,
+    linear-gradient(315deg,var(--corner-end) 0 24px,transparent 24px) bottom right / 40px 40px no-repeat,
+    var(--stone-grain),linear-gradient(135deg,#fffdf7,#f2ede1);
+  box-shadow:inset 0 1px 0 #fff,inset 1px 0 0 rgb(255 255 255 / 80%);
+}
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::after,
+.story-modal::after {
+  content:'';position:absolute;inset:0 0 calc(-1 * var(--stone-depth));width:auto;height:auto;transform:none;pointer-events:none;z-index:-2;
+  clip-path:var(--stone-outline);background:linear-gradient(115deg,#e4ddce,var(--stone-edge));
+}
+.home-refresh > section.panel {--corner-start:var(--player-p1);--corner-end:var(--player-p2);}
+.home-refresh > section.panel:nth-child(even) {--corner-start:var(--player-p2);--corner-end:var(--player-p1);}
+:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel:not([data-shell-panel="board"]) {--stone-depth:3px;}
+[data-shell-panel="board"] {--corner-start:var(--player-p1)!important;--corner-end:var(--player-p2)!important;}
+[data-shell-panel="board"][data-turn-side="blue"] {--corner-start:var(--player-p2)!important;--corner-end:var(--player-p1)!important;}
+:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel[data-shell-panel="board"]::before {
+  background:
+    linear-gradient(135deg,var(--corner-start) 0 24px,transparent 24px) top left / 40px 40px no-repeat,
+    linear-gradient(225deg,var(--corner-start) 0 24px,transparent 24px) top right / 40px 40px no-repeat,
+    linear-gradient(45deg,var(--corner-end) 0 24px,transparent 24px) bottom left / 40px 40px no-repeat,
+    linear-gradient(315deg,var(--corner-end) 0 24px,transparent 24px) bottom right / 40px 40px no-repeat,
+    var(--stone-grain),linear-gradient(135deg,#fffdf7,#f2ede1);
+}
+.story-modal {--corner-start:var(--player-p1);--corner-end:var(--player-p2);overflow:auto;max-height:calc(100dvh - 40px);}
+.home-refresh .opponent-picker {gap:20px;}
+.home-refresh button.opponent-choice,.home-refresh .mini-board-card {
+  position:relative;isolation:isolate;background:transparent;border:0;border-radius:0;clip-path:none;
+  box-shadow:none;filter:drop-shadow(0 2px 2px rgb(54 45 30 / 15%));
+}
+.home-refresh button.opponent-choice::before,.home-refresh .mini-board-card::before,
+.home-refresh button.opponent-choice::after,.home-refresh .mini-board-card::after {
+  content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;
+  clip-path:polygon(12px 0,calc(100% - 12px) 0,100% 12px,100% calc(100% - 12px),calc(100% - 12px) 100%,12px 100%,0 calc(100% - 12px),0 12px);
+  background:var(--stone-grain),linear-gradient(135deg,#fffef9,#f8f3e8);box-shadow:inset 0 1px #fff;
+}
+.home-refresh button.opponent-choice::after,.home-refresh .mini-board-card::after {inset:3px 0 -3px;z-index:-2;background:#d1c7b4;}
+.home-refresh button.opponent-choice {transition:translate 100ms ease-out; padding:16px 12px 20px;}
+.home-refresh button.opponent-choice:active {translate:0 2px;}
+.home-refresh button.opponent-choice img {height:132px;}
+.opponent-choice-arrow {position:absolute;right:12px;bottom:18px;color:var(--text-secondary);}
+.opponent-choice-arrow .righelt-icon {width:16px;height:16px;}
+.righelt-icon {width:20px;height:20px;flex:none;vertical-align:middle;}
+button:has(> .righelt-icon):not(.ui-icon-button) {display:inline-flex;align-items:center;justify-content:center;gap:9px;}
+[data-hover-capability="hover"] .home-refresh button.opponent-choice:not(:disabled):hover {background:transparent;box-shadow:none;}
+[data-hover-capability="hover"] .home-refresh button.opponent-choice:not(:disabled):hover::before {background:linear-gradient(rgb(37 43 45 / 3%),rgb(37 43 45 / 3%)),var(--stone-grain),#fffdf6;}
+.home-refresh button.opponent-choice:focus-visible {outline:2px solid var(--ink);outline-offset:5px;}
+@media(max-width:700px){.home-refresh .opponent-picker{gap:16px 12px;}.home-refresh button.opponent-choice img{height:116px;}.opponent-choice-arrow{right:9px;bottom:14px;}.home-refresh button.opponent-choice{padding:12px 8px 18px;}}
+@media(prefers-reduced-motion:reduce){.home-refresh button.opponent-choice{transition:none;}.home-refresh button.opponent-choice:active{translate:none;}}
+
+/* Interaction washes remain subordinate to pieces and illustrations. */
+[data-shell-panel="board"] .cell:is(.source,.target,.selected-piece) {background:color-mix(in srgb,var(--corner-start) 5%,var(--cell-fill));}
+[data-hover-capability="hover"] [data-shell-panel="board"] .cell:not(.unselectable):hover {background:color-mix(in srgb,var(--corner-start) 5%,var(--cell-fill));color:var(--ink);}
+/* Neutral supporting game surfaces; only the Board carries player corners. */
+:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel:not([data-shell-panel="board"]) {
+  --corner-start:transparent!important;--corner-end:transparent!important;
+  border:0;border-radius:0;background:transparent;clip-path:none;
+}
+/* Loading feedback moves across the control without fading its readable label. */
+button.button-pending,.button-link.button-pending {
+  opacity:1;background-image:linear-gradient(105deg,transparent 30%,rgb(255 255 255 / 24%) 50%,transparent 70%);
+  background-size:220% 100%;animation:righelt-loading-swipe 1.25s ease-in-out infinite;
+}
+@keyframes righelt-loading-swipe {from{background-position:180% 0;}to{background-position:-80% 0;}}
+@media(prefers-reduced-motion:reduce){button.button-pending,.button-link.button-pending{animation:none;background-image:none;}}
+/* Include child margins in the modal's measured natural height. */
+.modal-content {display:flow-root;}
+/* Quiet utility icons expand into labelled controls without replacing their nodes. */
+.shell-header button.header-icon-action {
+  display:inline-flex;align-items:center;justify-content:center;gap:0;min-width:44px;min-height:44px;
+  padding:10px;border:1px solid transparent;background:transparent;box-shadow:none;
+}
+.shell-header .header-utility-action {color:var(--text-secondary);}
+.header-icon-action .header-action-label {
+  display:inline-block;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;
+  transition:max-width 180ms ease-out,opacity 140ms ease-out,margin-left 180ms ease-out;
+  margin-left:0;
+}
+@media(hover:hover){.header-icon-action:hover .header-action-label{max-width:100px;opacity:1;margin-left:8px;}}
+.header-icon-action:focus-visible .header-action-label{max-width:100px;opacity:1;margin-left:8px;}
+.shell-header .header-icon-action:is(:hover,:focus-visible){background:rgb(37 43 45 / 4%);color:var(--ink);border-color:transparent;}
+@media(prefers-reduced-motion:reduce){.header-icon-action .header-action-label{transition:none;}}

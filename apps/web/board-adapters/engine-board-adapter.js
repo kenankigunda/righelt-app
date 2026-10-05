@@ -1,3 +1,4 @@
+import { renderPieceSymbol } from '../piece-symbols.js';
 export { createInitialState as createInitialBoardSnapshot } from '../generated/packages/game-engine/src/index.js';
 import { BOARD_SIZE, SUPPLY_POINTS } from "../generated/packages/game-engine/src/deterministic.js";
 import { getRushContinuationBlockingPiece } from "../generated/packages/game-engine/src/continuation.js";
@@ -313,7 +314,10 @@ function buildPieceToken(piece, ghost = false) {
   if (ghost) {
     token.classList.add("ghost");
   }
-  token.textContent = piece.kind === "commander" ? "C" : "";
+  token.setAttribute("role", "img");
+  if (ghost) token.setAttribute("aria-hidden", "true");
+  token.innerHTML = renderPieceSymbol(piece.kind);
+  token.setAttribute("aria-label", `${piece.owner === "P1" ? "Red" : "Blue"} ${piece.kind}`);
   return token;
 }
 
@@ -1319,7 +1323,9 @@ export function createEngineBoardAdapter() {
             } else if (row === BOARD_SIZE - 1 && col === 0) {
               supplyMarker.classList.add("supply-point-p2");
             }
-            supplyMarker.textContent = "◆";
+            supplyMarker.setAttribute("role", "img");
+            supplyMarker.innerHTML = renderPieceSymbol("supply");
+            supplyMarker.setAttribute("aria-label", `${row === 0 ? "Red" : "Blue"} supply point`);
             cell.appendChild(supplyMarker);
           }
 

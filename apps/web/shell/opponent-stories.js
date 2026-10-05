@@ -6,12 +6,12 @@ export const OPPONENT_STORIES = Object.freeze({
 });
 
 export const createStoryCarousel = ({ reducedMotion = false, now = () => performance.now(), setTimer = setTimeout, clearTimer = clearTimeout, onChange = () => {} } = {}) => {
-  let index = 0, paused = reducedMotion, hidden = false, hovered = false, focused = false, timer = null, remaining = 3000, started = 0;
+  let index = 0, paused = reducedMotion, hidden = false, timer = null, remaining = 3000, started = 0;
   const state = () => ({ index, paused, hidden });
   const stop = () => { if (timer !== null) { clearTimer(timer); timer = null; remaining = Math.max(0, remaining - (now() - started)); } };
-  const schedule = () => { if (paused || hidden || hovered || focused || timer !== null) return; started = now(); timer = setTimer(() => { timer = null; index = (index + 1) % 3; remaining = 3000; onChange(state()); schedule(); }, remaining); };
+  const schedule = () => { if (paused || hidden || timer !== null) return; started = now(); timer = setTimer(() => { timer = null; index = (index + 1) % 3; remaining = 3000; onChange(state()); schedule(); }, remaining); };
   schedule();
-  return { state, select(next) { if (![0, 1, 2].includes(next)) return; stop(); index = next; paused = true; remaining = 3000; onChange(state()); }, toggle() { if (reducedMotion) return; stop(); paused = !paused; onChange(state()); schedule(); }, visibility(value) { stop(); hidden = value; schedule(); }, hover(value) { stop(); hovered = value; schedule(); }, focus(value) { stop(); focused = value; schedule(); }, destroy: stop };
+  return { state, select(next) { if (![0, 1, 2].includes(next)) return; stop(); index = next; paused = true; remaining = 3000; onChange(state()); }, toggle() { if (reducedMotion) return; stop(); paused = !paused; onChange(state()); schedule(); }, visibility(value) { stop(); hidden = value; schedule(); }, keyboard() { stop(); paused=true; }, destroy: stop };
 };
 
 export const shouldShowOpponentIntroduction = (opponent, introduced, readiness) =>
@@ -48,10 +48,12 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
   };
   const onVisibility = () => carousel?.visibility(document.hidden);
   document.addEventListener("visibilitychange", onVisibility);
-  modal.element.addEventListener('pointerenter', event => { if(event.pointerType !== 'touch') carousel?.hover(true); });
-  modal.element.addEventListener('pointerleave', () => carousel?.hover(false));
-  modal.element.addEventListener('focusin', event => carousel?.focus(!event.target.matches('[data-modal-close]')));
-  modal.element.addEventListener('focusout', event => { if(!modal.element.contains(event.relatedTarget)) carousel?.focus(false); });
+  modal.element.addEventListener('keydown',event=>{
+    carousel?.keyboard();
+    if(event.key==='ArrowLeft' || event.key==='ArrowRight'){
+      event.preventDefault();carousel?.select((carousel.state().index+(event.key==='ArrowLeft'?2:1))%3);
+    }
+  });
   modal.element.addEventListener("click", async event => {
     if (event.target.closest("[data-story-result]")) { const id = gameId; modal.close(); onViewResult(id); return; }
     const caret = event.target.closest("[data-story-step]");
@@ -91,7 +93,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
         <div class="story-art">${story.scenes.map(([file, alt], i) => `<img data-story-image data-active="${i === 0}" aria-hidden="${i !== 0}" ${i ? "data-src" : "src"}="/assets/opponents/${file}.webp" width="960" height="640" alt="${alt}">`).join("")}</div>
         <button class="ui-icon-button story-caret" data-story-step="1" aria-label="Next story image">${icon('right')}</button></div>
         <div class="story-copy"><div class="story-heading"><h2 id="opponent-story-title">${story.name}</h2><span>${story.difficulty}</span></div>
-        <p class="opponent-story-copy">${story.story}</p><p role="status" data-story-readiness></p><div class="story-modal-actions">${mode === "intro" ? `<button data-story-play disabled>Play ${story.name}</button><button class="secondary" data-story-retry hidden>Retry</button>` : '<button data-modal-close>Return to game</button><button data-story-result hidden>View result</button>'}</div></div>`, options.trigger, options.mode === "revisit" ? null : () => document.querySelector(`button[data-opponent="${id}"]`));
+        <p class="opponent-story-copy">${story.story}</p><p role="status" data-story-readiness></p><div class="story-modal-actions">${mode === "intro" ? `<button data-story-play disabled>${icon('play')}Play ${story.name}</button><button class="secondary" data-story-retry hidden>Retry</button>` : `<button data-modal-close>${icon('back')}Return to game</button><button data-story-result hidden>View result</button>`}</div></div>`, options.trigger, options.mode === "revisit" ? null : () => document.querySelector(`button[data-opponent="${id}"]`));
       modal.element.dataset.opponent = id;
       modal.element.dataset.actionAffiliation = side === "p2" ? "blue" : "red";
       modal.element.querySelectorAll("img").forEach(img => img.addEventListener("error", () => { img.style.visibility = "hidden"; }));

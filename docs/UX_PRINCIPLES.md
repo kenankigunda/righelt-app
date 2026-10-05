@@ -265,3 +265,19 @@ Distinct physical cues: light lift/tick for selection; softer tick for preview; 
 - Invitations state their recipient purpose: red/blue for an open playing seat, purple for viewing. Merge players and invitation actions. Friend creation opens a dismissible Invite modal; copy confirms success without closing it. Recipient intent never replaces server authorization.
 - Introduction scenes rotate every three seconds; hover/focus pause, manual carets stop cycling for the visit, and reduced motion stays manual.
 - Board exceptions include lighter player-color hover and breathing room around coordinates, in addition to supply ownership color and sound. Preserve game geometry and established mouse/touch rules. Commander ideation is separate until approved.
+
+Latest section baseline: use red top-left and blue bottom-right clipped-corner accents consistently across sections, superseding selective section accents. Preserve clear content and controls; iterate from this shared treatment.
+
+## Layered playing surfaces, October 2026 review
+
+Righelt should feel playful, thoughtfully designed, and unmistakably like a game. The selected Layered playing surface reference now guides this pass: pronounced ivory stone grain, angular silhouettes, exposed layers and tactile depth on both sections and playable cards. Large sections may have stepped edges; cards use simpler four-corner cuts. Supporting rows remain flat. Depth is an outside edge and contact shadow, not a dark inset band. Keep text and artwork clear, and preserve established alignment, ordering and board interaction rules.
+
+Home sections alternate red/blue accents. On game pages, only the Board has colored corners: both top corners match the current player to play, both bottom corners use the opponent color. Other game sections remain neutral. The background grid aligns with the selected logo and remains visible everywhere, with greatest emphasis near the upper left. The logo remains unchanged.
+
+Interaction backgrounds are quiet washes, never large saturated fills that compete with pieces or illustrations. Use outlines for emphasis and retain clear keyboard focus. Images belong to their surrounding component, using transparent negative space and crisp contours. Start uses simple character portraits, and Friend uses red/blue hands and pieces in the same faceted style. Full scenes belong to introductions.
+
+CTA icons use familiar concepts expressed through Righelt's clipped and angular construction. Share one vector family and consistent weight; retain labels on primary actions and accessible names on icon controls. Keep texture and bevel out of small icons. Prefer readable loading swipes over spinners. Size changes should be short, interruptible and preserve focus, scrolling and viewport bounds. Reduced motion removes movement without implying muted sound.
+
+The latest carousel rule supersedes hover/focus pause: cycle every three seconds, continuing through hover and mere focus. Deliberate keyboard or caret input stops cycling for the visit; reduced motion is manual.
+
+The latest sound rule supersedes blanket background silence: ordinary cues require a visible, focused page. An incoming opponent move while away may play immediately and every thirty seconds until refocus. Coalesce events into one reminder cycle. Muting or leaving the game cancels it. Browser playback restrictions remain authoritative. No initial/replayed/reconnected events create reminders.

@@ -27,3 +27,29 @@ test('restored local commands and background actions are silent and never replay
  assert.equal(f.sound.observe({game:{id:'a',board:{state:game.currentSnapshot}},type:'event_appended',reason:'move_recorded',eventSeq:2,clientCommandId:'new'}),false);
  assert.equal(f.starts(),0);
 });
+test('inactive opponent moves create exactly one 30-second reminder until focus returns',()=>{
+ let focused=true,hidden=false;const timers=new Map();let n=0,starts=0;
+ const node=()=>({connect(){},disconnect(){},frequency:{},Q:{},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},start(){starts++},stop(){}});
+ const audio={state:'running',currentTime:0,sampleRate:8000,createBuffer:(_,n)=>({getChannelData:()=>new Float32Array(n)}),createBufferSource:node,createBiquadFilter:node,createGain:node,createOscillator:node};
+ const sound=createGameSound({createAudio:()=>audio,focused:()=>focused,hidden:()=>hidden,setTimer:(fn,ms)=>{timers.set(++n,{fn,ms});return n;},clearTimer:id=>timers.delete(id)});
+ sound.gesture();focused=false;sound.activityChanged();assert.equal(sound.play('move'),false);assert.equal(sound.play('intro'),false);
+ const event=seq=>({game:{id:'a',myRoles:['Player 1'],moves:[{actorSide:'P2',clientCommandId:`other-${seq}`}],board:{state:{pieces:[],outcome:{status:'ongoing'}}}},eventSeq:seq,clientCommandId:`other-${seq}`,type:'event_appended',reason:'move_recorded'});
+ assert.equal(sound.observe(event(1)),true);const first=starts;assert.equal(timers.size,1);assert.equal([...timers.values()][0].ms,30000);
+ assert.equal(sound.observe(event(2)),false);assert.equal(starts,first);assert.equal(timers.size,1);
+ hidden=true;const [id,timer]=[...timers][0];timers.delete(id);timer.fn();assert.equal(starts,first*2);assert.equal(timers.size,1);
+ focused=true;hidden=false;sound.activityChanged();assert.equal(timers.size,0);assert.equal(starts,first*2);
+});
+test('own moves from another tab, viewers and initial replay never create background reminders',()=>{
+ let focused=true;const timers=[];const sound=createGameSound({focused:()=>focused,setTimer:fn=>timers.push(fn),createAudio:()=>({state:'running'})});sound.gesture();focused=false;
+ for(const role of ['Player 1','Viewer'])assert.equal(sound.observe({game:{id:role,myRoles:[role],moves:[{actorSide:'P1'}]},eventSeq:1,type:'event_appended',reason:'move_recorded'}),false);
+ assert.equal(sound.observe({game:{id:'initial',myRoles:['Player 1'],moves:[{actorSide:'P2'}]},eventSeq:1,type:'event_appended',reason:'move_recorded'},{silent:true}),false);assert.equal(timers.length,0);
+});
+test('mute and leaving a game cancel outstanding incoming reminders without replay',()=>{
+ let focused=true;const timers=new Map();let id=0;
+ const sound=createGameSound({focused:()=>focused,setTimer:fn=>(timers.set(++id,fn),id),clearTimer:id=>timers.delete(id),createAudio:()=>({state:'suspended',resume:()=>Promise.resolve(),suspend:()=>Promise.resolve()})});
+ sound.gesture();focused=false;
+ const event=seq=>({game:{id:'a',myRoles:['Player 1'],moves:[{actorSide:'P2'}]},eventSeq:seq,type:'event_appended',reason:'move_recorded'});
+ sound.observe(event(1));assert.equal(timers.size,1);sound.toggle();assert.equal(timers.size,0);
+ sound.observe(event(2));assert.equal(timers.size,0);sound.toggle();assert.equal(timers.size,0);
+ sound.observe(event(3));assert.equal(timers.size,1);sound.leaveGame();assert.equal(timers.size,0);
+});
