@@ -2,82 +2,91 @@
   {
     "id": "babs-1-discovery",
     "src": "/assets/opponents/babs-1-discovery.webp",
-    "width": 960,
-    "height": 640,
+    "width": 1200,
+    "height": 800,
     "alt": "Babs discovers the board during a rainstorm.",
     "generation": "0d2d6857-e196-4c09-a2a3-c1be81272355",
-    "bytes": 72636
+    "bytes": 267978,
+    "background": "Transparent vignette integrated on #fffdf6"
   },
   {
     "id": "babs-2-rematch",
     "src": "/assets/opponents/babs-2-rematch.webp",
-    "width": 960,
-    "height": 640,
+    "width": 1200,
+    "height": 800,
     "alt": "Babs eagerly invites another match.",
     "generation": "9ffbfff4-7983-4c6a-a1e0-7a6625544ece",
-    "bytes": 73534
+    "bytes": 243116,
+    "background": "Transparent vignette integrated on #fffdf6"
   },
   {
     "id": "babs-3-research",
     "src": "/assets/opponents/babs-3-research.webp",
-    "width": 960,
-    "height": 640,
+    "width": 1200,
+    "height": 800,
     "alt": "Babs studies her growing collection of game notebooks.",
     "generation": "0d02fa5d-40a5-4cbe-b5ac-99434a61d61e",
-    "bytes": 93772
+    "bytes": 190228,
+    "background": "Transparent vignette integrated on #fffdf6"
   },
   {
     "id": "tau-1-gardens",
     "src": "/assets/opponents/tau-1-gardens.webp",
-    "width": 960,
-    "height": 640,
+    "width": 1200,
+    "height": 800,
     "alt": "Tau waters the village garden.",
-    "generation": "ed3277a2-0d9d-47be-a14c-ba8776cf8547",
-    "bytes": 120574
+    "generation": "exec-8dde4460-0d7f-4849-ba06-3d2c5fd972b5.png",
+    "bytes": 299444,
+    "background": "Transparent vignette integrated on #fffdf6"
   },
   {
     "id": "tau-2-connections",
     "src": "/assets/opponents/tau-2-connections.webp",
-    "width": 960,
-    "height": 640,
+    "width": 1200,
+    "height": 800,
     "alt": "Tau considers a board beside connected irrigation channels.",
-    "generation": "e5ecdf4d-bafa-47dd-98e7-8e1849e0f635",
-    "bytes": 99814
+    "generation": "exec-4199253a-f3e7-4916-9b89-6cca0017b496.png",
+    "bytes": 265494,
+    "background": "Transparent vignette integrated on #fffdf6"
   },
   {
     "id": "tau-3-patience",
     "src": "/assets/opponents/tau-3-patience.webp",
-    "width": 960,
-    "height": 640,
+    "width": 1200,
+    "height": 800,
     "alt": "Tau considers his move while Babs waits.",
-    "generation": "a8d74129-b518-4d3c-8c5b-770aac5a49f8",
-    "bytes": 101166
+    "generation": "exec-88af283e-5724-4fba-a679-f7a5271cb99f.png",
+    "bytes": 246018,
+    "background": "Transparent vignette integrated on #fffdf6"
   },
   {
     "id": "horus-1-watchtower",
     "src": "/assets/opponents/horus-1-watchtower.webp",
-    "width": 960,
-    "height": 640,
+    "width": 1200,
+    "height": 800,
     "alt": "Horus watches courtyard games from his tower.",
-    "generation": "ac14f178-27cc-4a8a-8953-4d3019b1bca8",
-    "bytes": 108358
+    "generation": "exec-7efe6b97-86f2-48cf-8e69-bce075dbb328.png",
+    "bytes": 221002,
+    "background": "Transparent vignette integrated on #fffdf6"
   },
   {
     "id": "horus-2-studying",
     "src": "/assets/opponents/horus-2-studying.webp",
-    "width": 960,
-    "height": 640,
+    "width": 1200,
+    "height": 800,
     "alt": "Horus studies the match below and his notes.",
-    "generation": "a62ce1b0-14e9-4bbd-8418-676cec226e1a",
-    "bytes": 97614
+    "generation": "exec-6289d85d-2110-4d85-b7ed-c34fcad0d9e6.png",
+    "bytes": 246992,
+    "background": "Transparent vignette integrated on #fffdf6"
   },
   {
     "id": "horus-3-opinion",
     "src": "/assets/opponents/horus-3-opinion.webp",
-    "width": 960,
-    "height": 640,
+    "width": 1200,
+    "height": 800,
     "alt": "Horus joins Babs and Tau to suggest a move.",
-    "generation": "92a2e177-c0a9-4bfa-9804-159648abb20d",
-    "bytes": 106820
+    "generation": "exec-0c438535-018f-4d76-812a-04c504dfee36.png",
+    "bytes": 276590,
+    "background": "Transparent vignette integrated on #fffdf6"
   }
 ]

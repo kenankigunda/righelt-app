@@ -23,3 +23,9 @@ The scene-specific prompt set was:
 Images were visually checked against these scenes and encoded with `cwebp -q 85 -resize 960 0`. No retouching, overlays or synthetic background fades were applied. All nine are 960×640 and together total 874,288 bytes. The UI should load only the selected opponent's first image eagerly, then defer subsequent scenes; artwork failure must leave the story and controls usable.
 
 The consuming story modal and its account/model integration are delivered separately. Adding these assets does not claim that computer-play readiness or first-encounter persistence is implemented.
+
+## Integrated artwork revision, 2026-10-04
+
+Supersedes the original opaque-background encoding above. All nine scenes now use true transparent negative space, preserving opaque character/object colors and crisp, intentional contours. The surrounding component supplies its exact surface color (#fffdf6 normally), including on hover. No CSS masks or feathered fades disguise rectangular image edges. This integrated treatment is required for future narrative artwork too.
+
+Tau and Horus were edited from the prior illustrations: preserve character identity, poses and story action; remove continuous landscape, plain wall, tablecloth and sky backgrounds; retain a few isolated garden/irrigation or watchtower/courtyard details; use roughly 40% transparent negative space around all edges. Babs uses the approved rainy discovery, eager rematch and notebook research vignettes, with the same transparency treatment. Production files are 1200×800 WebP, compressed with Sharp at quality 90 (Babs 92); current byte sizes and generation provenance are in manifest.json. Only compression/resizing followed tool generation.
