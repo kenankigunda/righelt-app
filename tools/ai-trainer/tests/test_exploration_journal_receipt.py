@@ -134,6 +134,75 @@ class ExplorationJournalTests(ScreenFixture):
 
 
 class ExplorationBudgetReceiptTests(ScreenFixture):
+    def foreign_allocation(self):
+        other = Allocation(self.root, self.root / 'other-six-hour'); other.directory.mkdir()
+        append(other.path, {'event': 'created', 'allocation': other.key, 'id': 'different-allocation',
+                            'seconds': 21600, 'continuation': self.contract})
+        return other
+
+    def repair_amendment(self):
+        current = {**self.plan['seedPlan']['source'], 'sourceRevision': 'b' * 40}
+        path = self.directory / 'identity-repair.json'
+        immutable(path, {'oldSourceRevision': self.plan['seedPlan']['source']['sourceRevision'],
+                         'newSourceRevision': current['sourceRevision'], 'cause': 'fixture repair',
+                         'artifactDisposition': 'quarantine-screen-pairs', 'reviewEvidence': [reference(__file__)],
+                         'regressionEvidence': [reference(__file__)]})
+        return reference(path), current
+
+    def test_terminal_publication_rejects_a_different_allocation(self):
+        other = self.foreign_allocation(); interval, _, _ = other.begin('exploration-screen')
+        self.advance(1800); other.finish(interval['id'], reason='fixture')
+        with self.assertRaisesRegex(ValueError, 'six-hour|canonical'):
+            terminal_baseline(other.directory / 'exploration-screen', self.plan_path, other, verify_plan=False)
+
+    def test_repair_publication_and_validator_reject_a_different_allocation(self):
+        other = self.foreign_allocation(); amendment, current = self.repair_amendment()
+        with patch('righelt_training.exploration_receipt.validate'):
+            with self.assertRaisesRegex(ValueError, 'six-hour|canonical'):
+                repair_baseline(other.directory / 'exploration-screen', self.plan_path, other, amendment, current)
+            repair_baseline(self.directory, self.plan_path, self.allocation, amendment, current)
+            with self.assertRaisesRegex(ValueError, 'six-hour|canonical'):
+                validate_receipt(self.directory / 'receipt-repair.json', other)
+
+    def test_relocated_normal_receipt_is_not_valid_for_the_original_allocation(self):
+        self.open(); publish(self.plan_path, self.launch_path, self.journal, self.budget)
+        moved = self.root / 'moved'; moved.mkdir()
+        path = moved / 'receipt.json'; path.write_bytes((self.directory / 'receipt.json').read_bytes())
+        with self.assertRaisesRegex(ValueError, 'canonical'):
+            validate_receipt(path, self.allocation, verify_plan=False)
+
+    def test_normal_publication_rejects_noncanonical_journal_before_writing(self):
+        self.open(); moved = self.root / 'moved-publication'; journal = Journal(moved, self.plan)
+        with self.assertRaisesRegex(ValueError, 'canonical'):
+            publish(self.plan_path, self.launch_path, journal, self.budget)
+        self.assertFalse((moved / 'publication-intent.json').exists())
+
+    def test_recovery_refuses_foreign_allocation_before_charging_publication_floor(self):
+        self.open()
+        with patch.object(self.budget, 'finish', side_effect=RuntimeError('crash')):
+            with self.assertRaises(RuntimeError): publish(self.plan_path, self.launch_path, self.journal, self.budget)
+        other = self.foreign_allocation()
+        with self.assertRaisesRegex(ValueError, 'six-hour|canonical'):
+            recover_publication(self.directory, other)
+        self.assertFalse(any(row['event'] == 'charge-floor' for row in other.events()))
+
+    def test_normal_receipt_rejects_changed_allocation_contract(self):
+        self.open(); publish(self.plan_path, self.launch_path, self.journal, self.budget)
+        original = self.allocation.path.read_text(); rows = [json.loads(line) for line in original.splitlines()]
+        changes = [{'id': 'another-allocation'}, {'seconds': 43200},
+                   {'continuation': {**self.contract, 'phase': 'twelve-hour'}},
+                   {'continuation': {**self.contract, 'reserveSeconds': 7200}},
+                   {'continuation': {**self.contract, 'recoverySha256': 'f' * 64}},
+                   {'continuation': {**self.contract, 'recoveryCheckpoint': '/other/checkpoint.pt'}}]
+        for change in changes:
+            with self.subTest(change=change):
+                altered = copy.deepcopy(rows); altered[0].update(change)
+                self.allocation.path.write_text(''.join(json.dumps(row) + '\n' for row in altered))
+                try:
+                    with self.assertRaisesRegex(ValueError, 'six-hour'):
+                        validate_receipt(self.directory / 'receipt.json', self.allocation, verify_plan=False)
+                finally: self.allocation.path.write_text(original)
+
     def test_aggregate_resumption_excludes_stopped_repair_and_protects_both_caps(self):
         self.open(); self.advance(1700); self.budget.finish('repair')
         self.advance(5000); self.open()

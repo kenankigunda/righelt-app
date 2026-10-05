@@ -35,15 +35,29 @@ def accounting(allocation):
     return {'creation': creation, 'global': closed + live, 'screen': screen, 'pending': pending, 'finished': finished}
 
 
+def validate_identity(allocation, plan, directory):
+    """Read-only binding shared by normal, recovery and receipt-validation paths.
+
+    Recovery can run without constructing ScreenBudget. It must still belong to
+    the same six-hour allocation and frozen checkpoint, in its canonical folder.
+    This deliberately grants no permission to begin or reuse an active interval.
+    """
+    canonical = allocation.directory / 'exploration-screen'
+    if Path(directory).resolve() != canonical:
+        raise ValueError('screen evidence must use the allocation\'s canonical screen directory')
+    state = accounting(allocation); creation = state['creation']; contract = creation.get('continuation', {})
+    if (creation['id'] != plan['seedPlan']['allocationId'] or creation['seconds'] != 21600
+            or contract.get('phase') != 'six-hour' or contract.get('reserveSeconds') != 3600
+            or contract.get('recoveryCheckpoint') != plan['seedPlan']['checkpoint']['path']
+            or contract.get('recoverySha256') != plan['seedPlan']['checkpoint']['sha256']):
+        raise ValueError('screen must belong to the approved six-hour continuation and frozen checkpoint')
+    return state
+
+
 class ScreenBudget:
     def __init__(self, allocation, plan):
         self.allocation = allocation; self.plan = plan
-        state = accounting(allocation); creation = state['creation']; contract = creation.get('continuation', {})
-        if (creation['id'] != plan['seedPlan']['allocationId'] or creation['seconds'] != 21600
-                or contract.get('phase') != 'six-hour' or contract.get('reserveSeconds') != 3600
-                or contract.get('recoveryCheckpoint') != plan['seedPlan']['checkpoint']['path']
-                or contract.get('recoverySha256') != plan['seedPlan']['checkpoint']['sha256']):
-            raise ValueError('screen must belong to the approved six-hour continuation and frozen checkpoint')
+        state = validate_identity(allocation, plan, allocation.directory / 'exploration-screen')
         if state['pending']: raise ValueError('screen cannot nest inside another accounting owner')
         self.interval = None
 
@@ -83,6 +97,9 @@ def publish(plan_path, launch_path, journal, budget):
     That conservative floor makes report and choice atomic without leaving a
     final file write outside accounting. Later admission requires settlement.
     """
+    if read(plan_path) != journal.plan or journal.plan != budget.plan:
+        raise ValueError('publication plan differs from frozen journal and budget')
+    validate_identity(budget.allocation, journal.plan, journal.directory)
     intent_path = journal.directory / 'publication-intent.json'
     receipt_path = journal.directory / 'receipt.json'
     if receipt_path.exists(): raise ValueError('screen already published; validate and reuse it')
@@ -115,6 +132,7 @@ def recover_publication(directory, allocation):
     directory = Path(directory); intent_path = directory / 'publication-intent.json'
     if not intent_path.exists(): return None
     intent = read(intent_path)
+    validate_identity(allocation, read(checked_ref(intent['plan'])), directory)
     # A floor can be absent only if interruption happened before compute stopped
     # and before publication. Recovery must preserve the reserved charge then.
     _, _, pending = allocation.accounting()
@@ -125,6 +143,7 @@ def recover_publication(directory, allocation):
 
 def validate_receipt(path, allocation, *, verify_plan=True):
     path = Path(path); receipt = read(path)
+    validate_identity(allocation, read(checked_ref(receipt['plan'])), path.parent)
     if receipt.get('kind') == KIND + '-resolution':
         return validate_resolution(path, allocation, verify_plan=verify_plan)
     if receipt.get('kind') == KIND + '-terminal':
@@ -168,7 +187,8 @@ def resolve_publication(directory, allocation, *, verify_plan=True):
     allocation remains spent; the caller's ordinary budget gate still applies.
     """
     directory = Path(directory); intent_path = directory / 'publication-intent.json'
-    intent = read(intent_path); state = accounting(allocation)
+    intent = read(intent_path)
+    state = validate_identity(allocation, read(checked_ref(intent['plan'])), directory)
     if state['pending']: raise ValueError('resolve publication only after verified cleanup and settlement')
     if state['screen'] == intent['report']['chargedSeconds']:
         raise ValueError('settled publication does not need baseline resolution')
@@ -191,7 +211,8 @@ def resolve_publication(directory, allocation, *, verify_plan=True):
 
 
 def validate_resolution(path, allocation, *, verify_plan=True):
-    value = read(path); intent = read(checked_ref(value['intent'])); state = accounting(allocation)
+    value = read(path); intent = read(checked_ref(value['intent']))
+    state = validate_identity(allocation, read(checked_ref(value['plan'])), Path(path).parent)
     if value.get('originalReceipt'): checked_ref(value['originalReceipt'])
     if (state['pending'] or state['finished'] != value['accounting']
             or state['screen'] == intent['report']['chargedSeconds']
@@ -210,13 +231,13 @@ def validate_resolution(path, allocation, *, verify_plan=True):
 
 def terminal_baseline(directory, plan_path, allocation, *, verify_plan=True):
     """Stop-only recovery when an overrun consumed publication's reserved time."""
-    directory = Path(directory); state = accounting(allocation)
+    directory = Path(directory); plan = read(plan_path)
+    state = validate_identity(allocation, plan, directory)
     if state['pending']: raise ValueError('terminal receipt requires settled accounting')
     remaining = min(LIMITS['screenSeconds'] - state['screen'],
                     state['creation']['seconds'] - state['global'] - LIMITS['validationReserveSeconds'])
     if remaining >= LIMITS['publicationSeconds']:
         raise ValueError('publication allowance remains; use the normal charged publication')
-    plan = read(plan_path)
     if verify_plan: validate(plan)
     journal = Journal(directory, plan); report, refs = report_from_journal(plan, journal, state['screen'])
     reason = 'publication reserve exhausted after verified cleanup; baseline retained without a second screen'
@@ -230,7 +251,8 @@ def terminal_baseline(directory, plan_path, allocation, *, verify_plan=True):
 
 
 def validate_terminal(path, allocation, *, verify_plan=True):
-    value = read(path); state = accounting(allocation); plan = read(checked_ref(value['plan']))
+    value = read(path); plan = read(checked_ref(value['plan']))
+    state = validate_identity(allocation, plan, Path(path).parent)
     if verify_plan: validate(plan)
     if (state['pending'] or state['finished'] != value['accounting'] or value['selectedRecipe'] != recipe_binding()
             or min(LIMITS['screenSeconds'] - state['screen'], state['creation']['seconds'] -
@@ -265,7 +287,8 @@ def checked_amendment(reference_value, plan, current_source=None):
 
 def repair_baseline(directory, plan_path, allocation, amendment_ref, current_source):
     """Reviewed incompatible-source recovery closes this screen; never remeasures."""
-    directory = Path(directory); plan = read(plan_path); state = accounting(allocation)
+    directory = Path(directory); plan = read(plan_path)
+    state = validate_identity(allocation, plan, directory)
     if state['pending']: raise ValueError('source repair requires stopped and settled compute')
     amendment = checked_amendment(amendment_ref, plan, current_source)
     journal = Journal(directory, plan)
@@ -285,7 +308,8 @@ def repair_baseline(directory, plan_path, allocation, amendment_ref, current_sou
 
 
 def validate_repair(path, allocation, *, verify_plan=True):
-    value = read(path); state = accounting(allocation); plan = read(checked_ref(value['plan']))
+    value = read(path); plan = read(checked_ref(value['plan']))
+    state = validate_identity(allocation, plan, Path(path).parent)
     if verify_plan: validate(plan)
     checked_amendment(value['amendment'], plan, value['sourceAfterRepair'])
     if state['pending'] or state['finished'] != value['accounting'] or value['selectedRecipe'] != recipe_binding():
