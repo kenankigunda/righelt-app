@@ -62,7 +62,7 @@ class DevelopmentCollectTest(unittest.TestCase):
     def search(self, state, model, device, seed, profile, bound_seconds):
         self.calls.append((seed, profile, bound_seconds)); self.clock[0] += .1
         frozen = self.rows[seed - 107]
-        inputs = torch.tensor(frozen['encoded']).reshape(1, 46, 10, 10)
+        inputs = torch.tensor(frozen['encoded'], dtype=torch.float32).reshape(1, 46, 10, 10)
         model(inputs)
         return {'status': 'ready', 'stopped': 'complete', 'actionIndex': frozen['legal'][0], 'value': .25,
                 'legality': {'complete': True, 'indices': frozen['legal']}, 'actions': [],
