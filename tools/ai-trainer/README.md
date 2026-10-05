@@ -2,6 +2,37 @@
 
 T-107 builds on the authoritative TypeScript engine and the versioned configuration in `packages/computer-player/config/experiment-v1.json`. The approved contract and gates live in the shared backlog's `backlog/docs/tickets/t-107/execution-plan.md`.
 
+## Conditional restart sequence
+
+The current launch contract is in the backlog's `next-training-sequence.md` and `run-control.md`. The diagnostic, six-hour continuation and conditional twelve-hour continuation have separate authorization and recovery lineage. The older initial/reset examples below describe historical operations; they must not create another allocation for this sequence.
+
+The private sequence configuration records both checkpoint hashes, the existing diagnostic allocation, the future run directories, required task IDs and any explicit `launchHold`. Before the first launch, require a completion receipt for every configured task and a fresh task snapshot showing no relevant development activity. A hold blocks claims even when an earlier prerequisite has finished. Later development activity invokes adaptive resource protection; it does not cancel the approved conditional progression.
+
+The sequence coordinator does not itself launch computation:
+
+```sh
+PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.sequence --directory SEQUENCE_DIRECTORY status
+PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.sequence --directory SEQUENCE_DIRECTORY claim --completion RECEIPTS_JSON --snapshot SNAPSHOT_JSON
+```
+
+Run the claimed diagnostic through `righelt_training.stage --diagnostic` with the original diagnostic directory, checkpoint942 as `--resume`, checkpoint842 as `--opponent-checkpoint`, stage `overnight`, and the current gate, activity and corpus paths. The restart workload freezes20 games in10 seat-swapped pairs, half normal starts and half held-out openings, with caching off. At least16 genuine terminal games must pass exact replay, and all20 attempts must be accounted for. Truncations and unfinished attempts stay in the denominator. Strict strength comparisons and sealed final evaluation retain their separate protocols.
+
+For an eligible continuation, the coordinator writes `contracts/six-hour.json` or `contracts/twelve-hour.json`. Pass that exact file to the stage runner with `--continuation`, using stage `initial` for six hours and `overnight` for twelve. The contract binds21600/43200 seconds, including3600/7200 seconds reserved for validation and reporting. It preserves the approved model, optimizer, random state, cursor and replay; it cannot reset the consumed diagnostic allowance or create a fourth stage.
+
+Fresh health requires100 new, unique, replay-verified terminal training games, actual new examples used in both losses with finite nonzero updates, and two new distinct recoverable trained checkpoints. The baseline, game receipts and sampled-example witnesses bind to the retained checkpoint lineage. Inherited data, copied trajectories, canary/evaluation games, orphan checkpoints and updates lost during rollback cannot satisfy that gate. A passing health gate permits the twelve-hour stage even when strength is inconclusive; correctness failures still block continuation.
+
+After verified cleanup and settled accounting, record `complete --phase diagnostic --evidence RUN/diagnostic-result.json`, or the matching six/twelve-hour phase with `RUN/stage-result.json`. Completion creates immutable stage evidence and a durable email intent. The mail coordinator has a separate lock, so delivery can retry while an eligible stage runs. An uncertain send requires sent-mail reconciliation before another attempt. A failed email does not revoke passed compute gates, and a successful email cannot make an unmet gate pass.
+
+### Refreshing stale launch proof
+
+Changed engine, representation, search or runtime inputs invalidate old parity evidence. The proof-only `righelt_training.bootstrap` entrypoint refreshes that evidence before the ordinary supervisor can launch. It requires the same cleared hold, all completion receipts, current observations, clean source, hashed static test proof, full checkpoint recovery audit and original inherited-health record. It cannot train, run an arena, create/reset an allocation or substitute a checkpoint.
+
+```sh
+PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.bootstrap --sequence-directory SEQUENCE_DIRECTORY --static-proof STATIC_JSON --recovery-audit AUDIT_JSON --corpus FROZEN_CORPUS_JSON --legacy-gate ORIGINAL_GATE_JSON --completion RECEIPTS_JSON --snapshot SNAPSHOT_JSON --activity-file ACTIVITY_JSON
+```
+
+The bootstrap charges one interval to the original diagnostic allowance, including resource waits. It checks the existing1000-state corpus against the current engine, exports the approved checkpoint, compares MPS/native and browser WASM numeric outputs, then checks all1000 bounded search results and tactical provenance. A20-state CI sample cannot satisfy this proof. Interrupted, stale or incomplete results do not publish a gate; uncertain cleanup leaves accounting open for conservative recovery. Completed proof preserves exact source, dependencies, runtime, corpus, model and artifact hashes, with inherited health explicitly labeled. If too little budget remains to finish the diagnostic, report it inconclusive rather than adding time.
+
 ## Setup and checks
 
 From the repository root:
