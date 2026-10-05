@@ -23,6 +23,16 @@ from .sequence import digest, immutable, read
 
 CATEGORIES = ('ordinary', 'push-available', 'rush', 'retreat', 'follow')
 PER_BUCKET = 2
+SEARCH_DEPENDENCIES = ('tools/ai-trainer/engine-worker.mjs', 'tools/ai-trainer/engine-operation-budget.mjs',
+                       'tools/ai-trainer/decision-replay.mjs', 'tools/ai-trainer/decision-provenance.mjs',
+                       'tools/ai-trainer/search-recovery.mjs', 'tools/ai-trainer/righelt_training/search_parity.py')
+
+
+def comparison_identity(identity):
+    """Native observations compare independently of browser/bootstrap plumbing."""
+    return {'config': identity['configSha256'], 'dependencies': identity['proofDependencies'],
+            'search': {name: identity['bootstrapDependencies'].get(name) for name in SEARCH_DEPENDENCIES},
+            'runtime': {name: identity['runtime'].get(name) for name in ('python', 'pythonExecutableSha256', 'torch', 'node')}}
 
 
 def checksum(value):
@@ -191,11 +201,22 @@ def report(cases_path, proof_path=None):
               'reason': 'complete bootstrap evidence not supplied', 'observations': [], 'acceptanceDecision': None}
     if not proof_path or not Path(proof_path).is_file(): return result
     result['proof'] = reference(proof_path); proof = read(proof_path)
-    if 'identity' not in proof or 'artifacts' not in proof:
+    stage = proof.get('kind') == 'stage-development-proof'
+    if 'identity' not in proof or (not stage and 'artifacts' not in proof):
         result.update(status='unsupported', reason='numeric/export output alone lacks complete bound search proof')
         return result
     if proof.get('complete') is not True or proof.get('passed') is not True:
         result.update(status='incomplete', reason='retained proof is not complete and passed')
+        return result
+    if stage:
+        from .development_collect import read_proof
+        try: identity, rows = read_proof(proof_path, cases)
+        except FileNotFoundError as error:
+            result.update(status='missing', reason='retained proof input or output missing: ' + str(error.filename))
+            return result
+        result.update(status='complete', reason=None, provenance=identity, observations=rows,
+                      proofScope='native development observations; no browser or acceptance claim')
+        checked_ref(result['proof']); checked_ref(cases_ref)
         return result
     try:
         proof, raw, search = retained_proof(proof_path, cases)
@@ -225,7 +246,7 @@ def compare(cases_path, before_path, after_path):
               'inputStatuses': [r['status'] for r in reports], 'changes': [], 'acceptanceDecision': None}
     if any(r['status'] != 'complete' for r in reports): return result
     left = before['provenance']; right = after['provenance']
-    if any(left[key] != right[key] for key in ('proofDependencies', 'bootstrapDependencies', 'configSha256', 'runtime', 'browserVersion')):
+    if comparison_identity(left) != comparison_identity(right):
         raise ValueError('comparison requires the same dependency footprint, config and runtime')
     if left['checkpoint']['sha256'] == right['checkpoint']['sha256']:
         raise ValueError('comparison requires distinct checkpoint identities, not renamed copies')
