@@ -4,6 +4,7 @@ import path from 'node:path';
 import { expect } from '@playwright/test';
 import {candidateCapabilities} from './capabilities.mjs';
 import { proof } from './proof.mjs';
+import {closeHostInvitation} from '../../e2e/support/app.mjs';
 
 export function selectTerminalScenario(catalog) {
   const scenario = catalog.scenarios?.find(item => item.title === 'Capture supply point to win by unsupplying the commander');
@@ -49,6 +50,8 @@ export async function proveResultsRematch({ page, info, root }) {
   await proof(page, info, 'friend-game-result', result);
   await page.reload();
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', id);
+  const historyTab=page.locator('[data-action="switch-game-panel"][data-panel="history"]');
+  if(await historyTab.isVisible())await historyTab.click();
   await expect(page.getByRole('button', { name: 'View result', exact: true })).toBeVisible();
   await expect(result).toHaveCount(0);
   await page.getByRole('button', { name: 'View result', exact: true }).click();
@@ -76,12 +79,13 @@ export async function proveResultsRematch({ page, info, root }) {
     const received = await response; assert.equal(received.status(), 200);
     const fresh = (await received.json()).game;
     assertFriendRematch(fresh, id, created.accountId);
+    await closeHostInvitation(page);
     await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', fresh.id);
     await expect(page.getByTestId('game-role')).toContainText('Player 1');
     await expect(page.locator('#app')).toHaveAttribute('data-action-affiliation', 'red');
     await expect(rematch).not.toBeVisible(); await settled(page);
     assert.equal(requests, 1, 'One rematch confirmation must issue exactly one creation');
-    const confirmed = await request(page, `/api/shell/games/${encodeURIComponent(fresh.id)}`);
+    const confirmed = await request(page, `/api/shell/games/${encodeURIComponent(fresh.id)}`, undefined, authProtocol);
     assert.equal(confirmed.status, 200); assertFriendRematch(confirmed.body.game, id, created.accountId);
     await page.getByTestId('game-board').scrollIntoViewIfNeeded();
     await proof(page, info, 'friend-rematch-created', page.getByTestId('game-board'));
