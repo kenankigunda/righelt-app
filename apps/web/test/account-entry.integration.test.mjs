@@ -20,7 +20,7 @@ function fixture({ failBlocklist = false } = {}) {
       const attrs = Object.fromEntries([...match[1].matchAll(/([\w-]+)="([^"]*)"/g)].map(part => [part[1], part[2]]));
       Object.assign(node(`[name="${attrs.name}"]`), attrs);
     }
-    for (const key of ["data-account-status", "data-username-status", "data-forgot"]) if (value.includes(key)) node(`[${key}]`);
+    for (const key of ["data-account-status", "data-username-status", "data-forgot", "data-existing-hint"]) if (value.includes(key)) node(`[${key}]`);
     for (const key of ["length", "differentFromUsername", "notCommon"]) if (value.includes(`data-requirement="${key}"`)) node(`[data-requirement="${key}"]`);
     node("button[type=submit]");
   } });
@@ -151,4 +151,28 @@ test("repeated Enter cannot duplicate an account save while the request is pendi
   await f.submit(); assert.equal(f.acts.length, 1);
   release(); await first;
   assert.equal(f.node("button[type=submit]").disabled, false);
+});
+
+
+test("sign-in creation hint waits for a nonempty username blur and resets when edited or reopened", async () => {
+  const f = fixture();
+  const hint = () => f.node('[data-existing-hint]');
+  const blur = () => f.listeners.get("focusout")({ target: f.node('[name="username"]') });
+  assert.equal(hint().hidden, true);
+  f.input("username", "Alice"); assert.equal(hint().hidden, true);
+  blur(); assert.equal(hint().hidden, false);
+  f.input("username", "Bob"); assert.equal(hint().hidden, true);
+  blur(); assert.equal(hint().hidden, false);
+  f.input("username", "   "); blur(); assert.equal(hint().hidden, true);
+  f.input("username", "Alice"); blur();
+  await f.click("data-create"); await f.click("data-signin");
+  assert.equal(hint().hidden, true);
+  assert.equal(f.lookups.length, 0);
+});
+
+test("creation places required credentials before optional display name", async () => {
+  const f = fixture(); await f.click("data-create");
+  const markup = f.element.innerHTML;
+  assert.ok(markup.indexOf('name="username"') < markup.indexOf('name="password"'));
+  assert.ok(markup.indexOf('name="password"') < markup.indexOf('name="displayName"'));
 });

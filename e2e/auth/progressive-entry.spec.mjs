@@ -82,6 +82,7 @@ test("creation keeps optional display name and password through username edits, 
   await expect(dialog(page).getByLabel("Username", { exact: true })).toHaveValue(changed);
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveValue("");
   const destination = page.url();
+  await dialog(page).getByLabel("Password", { exact: true }).focus();
   await dialog(page).getByRole("link", { name: "Create a new account.", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(dialog(page).getByLabel("Username", { exact: true })).toHaveValue(changed);
@@ -237,4 +238,25 @@ test("an unavailable common-password list is disclosed without blocking authorit
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
   await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+});
+
+
+test("sign-in creation hint appears only after a nonempty username loses focus", async ({ page }) => {
+  let lookups = 0;
+  page.on("request", request => { if (new URL(request.url()).pathname === "/api/auth/username") lookups++; });
+  await open(page);
+  const hint = dialog(page).locator("[data-existing-hint]");
+  const username = dialog(page).getByLabel("Username", { exact: true });
+  await expect(hint).toBeHidden();
+  await expect(dialog(page).getByRole("button", { name: "Create account", exact: true })).toBeVisible();
+  await username.fill("NewPlayer"); await expect(hint).toBeHidden();
+  await page.keyboard.press("Tab"); await expect(hint).toBeVisible();
+  await expect(dialog(page).getByLabel("Password", { exact: true })).toBeFocused();
+  await username.fill("DifferentPlayer"); await expect(hint).toBeHidden();
+  await page.keyboard.press("Tab"); await expect(hint).toBeVisible();
+  await username.fill("   "); await page.keyboard.press("Tab"); await expect(hint).toBeHidden();
+  await username.fill("NewPlayer"); await page.keyboard.press("Tab");
+  await dialog(page).getByRole("link", { name: "Create a new account.", exact: true }).click();
+  await expect(dialog(page).getByRole("heading", { name: "Create account", exact: true })).toBeVisible();
+  expect(lookups).toBe(0);
 });

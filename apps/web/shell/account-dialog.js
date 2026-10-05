@@ -98,6 +98,10 @@ export const createAccountDialog = ({
     const target = dialog.querySelector("[data-username-status]");
     if (target) target.textContent = ({ idle: "", pending: "Checking username…", available: "Username available.", taken: messages.username_unavailable, error: "Username availability is unavailable. You can still try creating your account." })[lookupState];
   };
+  const updateLoginHint = (show = false) => {
+    const hint = dialog.querySelector("[data-existing-hint]");
+    if (hint) hint.hidden = !show;
+  };
   const render = () => {
     clearChallenge(); passwordTouched = false;
     const session = controller.snapshot().session;
@@ -110,12 +114,12 @@ export const createAccountDialog = ({
       body = input("newPassword", "New password", { secret: true, autocomplete: "new-password" }) + checklist() + '<p>Changing your password signs you out on other devices.</p><div data-challenge></div><button type="submit">Change password</button>';
     } else if (mode === "register") {
       title = "Create account";
-      body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + '<p class="account-status small" role="status" data-username-status></p>' + input("displayName", "Display name (optional)", { autocomplete: "nickname", value: values.displayName || "", optional: true, placeholder: values.username || "Username" }) + input("password", "Password", { secret: true, visible: true, autocomplete: "new-password" }) + checklist() + '<p class="small" data-create-notice>Save your password. If you forget it and are signed out everywhere, you’ll need a new account.</p><div data-challenge></div><button type="submit">Create account & continue</button><a href="#sign-in" data-signin>Sign in</a>';
+      body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + '<p class="account-status small" role="status" data-username-status></p>' + input("password", "Password", { secret: true, visible: true, autocomplete: "new-password" }) + checklist() + input("displayName", "Display name (optional)", { autocomplete: "nickname", value: values.displayName || "", optional: true, placeholder: values.username || "Username" }) + '<p class="small" data-create-notice>Save your password. If you forget it and are signed out everywhere, you’ll need a new account.</p><div data-challenge></div><button type="submit">Create account & continue</button><a href="#sign-in" data-signin>Sign in</a>';
     } else {
-      body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + input("password", "Password", { secret: true, autocomplete: "current-password" }) + '<p class="small" data-existing-hint>Don’t have a password? <a href="#create-account" data-create-link>Create a new account.</a></p><details data-forgot hidden><summary>Forgot password?</summary><p>On another signed-in device, open Account → Change password. If you are signed out everywhere, you’ll need a new account. Your existing games remain with your original account.</p><button type="button" class="secondary" data-new-username>Choose another username</button></details><div data-challenge></div><button type="submit">Sign in</button><button type="button" class="secondary" data-create>Create account</button>';
+      body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + input("password", "Password", { secret: true, autocomplete: "current-password" }) + '<p class="small" data-existing-hint hidden>Don’t have a password? <a href="#create-account" data-create-link>Create a new account.</a></p><details data-forgot hidden><summary>Forgot password?</summary><p>On another signed-in device, open Account → Change password. If you are signed out everywhere, you’ll need a new account. Your existing games remain with your original account.</p><button type="button" class="secondary" data-new-username>Choose another username</button></details><div data-challenge></div><button type="submit">Sign in</button><button type="button" class="secondary" data-create>Create account</button>';
     }
     dialog.innerHTML = `<form class="account-form" novalidate data-entry-mode="${mode === "register" ? "create" : mode}" data-lookup-state="${lookupState}"><h2 id="account-title" tabindex="-1">${title}</h2>${body}<p class="account-status" role="status" aria-live="polite" data-account-status></p><button type="button" class="secondary" data-cancel>Cancel</button></form>`;
-    updateLookup(); updateRequirements();
+    updateLookup(); updateRequirements(); updateLoginHint();
     if (["register", "password"].includes(mode)) loadBlocklist();
     const marker = flow;
     queueMicrotask(() => { if (marker === flow && dialog.open) (dialog.querySelector("input") || dialog.querySelector("#account-title"))?.focus(); });
@@ -245,6 +249,7 @@ export const createAccountDialog = ({
     if (["password", "newPassword"].includes(event.target.name)) { passwordTouched = true; updateRequirements(); return; }
     if (event.target.name === "displayName" && mode === "register") values.displayName = event.target.value;
     if (!["login", "register"].includes(mode) || event.target.name !== "username") return;
+    if (mode === "login") updateLoginHint();
     const previous = canonicalEntryUsername(values.username); values.username = event.target.value;
     const display = dialog.querySelector('[name="displayName"]');
     if (mode === "register" && display) display.placeholder = event.target.value || "Username";
@@ -256,6 +261,10 @@ export const createAccountDialog = ({
   dialog.addEventListener("input", onInput);
   dialog.addEventListener("change", onInput);
   dialog.addEventListener("focusin", updateRequirements);
+  dialog.addEventListener("focusout", (event) => {
+    if (mode === "login" && event.target.name === "username")
+      updateLoginHint(Boolean(event.target.value.trim()));
+  });
   dialog.addEventListener("click", async (event) => {
     const button = event.target.closest("button, [data-create-link], [data-signin]");
     if (!button) return;

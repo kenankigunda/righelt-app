@@ -10,9 +10,13 @@ for (const width of [390, 768, 1440]) {
     await dialog.getByRole('button', { name: 'Create account', exact: true }).click();
     await expect(dialog.getByLabel('Username', { exact: true })).toBeFocused();
     await page.keyboard.press('Tab');
-    await expect(dialog.getByLabel('Display name (optional)', { exact: true })).toBeFocused();
-    await page.keyboard.press('Tab');
     await expect(dialog.getByLabel('Password', { exact: true })).toBeFocused();
+    await page.keyboard.press('Tab');
+    // Safari's default keyboard navigation may skip native buttons. In both
+    // modes the next editable field must be the optional display name.
+    const visibility = dialog.getByRole('button', { name: 'Hide password', exact: true });
+    if (await visibility.evaluate(node => node === document.activeElement)) await page.keyboard.press('Tab');
+    await expect(dialog.getByLabel('Display name (optional)', { exact: true })).toBeFocused();
     await expect(dialog.getByRole('checkbox')).toHaveCount(0);
     await expect(dialog).toContainText('If you forget it and are signed out everywhere');
     const bounds = await dialog.boundingBox();
