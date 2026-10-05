@@ -503,3 +503,37 @@ test("wrapped unavailable username feedback keeps its height while editing or cl
     expect((await secret.boundingBox()).y).toBeCloseTo(beforeY, 0);
   } finally { release(); await page.unrouteAll({ behavior: "wait" }); }
 });
+
+for (const gesture of ["pointer", "keyboard", "drag-away"]) test(`username feedback preserves a Back control during ${gesture} activation`, async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await open(page);
+  await create(page);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  let responded;
+  const response = new Promise(resolve => { responded = resolve; });
+  await page.route("**/api/auth/username", async route => {
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ ok: false, error: "temporarily_unavailable" }) });
+    responded();
+  });
+  await enterUsername(page, uniqueName());
+  await dialog(page).getByLabel("Password", { exact: true }).fill(password);
+  const back = dialog(page).getByRole("button", { name: "Back to sign in", exact: true });
+  const bounds = await back.boundingBox();
+  if (gesture === "keyboard") { await back.focus(); await page.keyboard.down("Space"); }
+  else { await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + 3); await page.mouse.down(); }
+  try {
+    await page.clock.fastForward(500);
+    await response;
+    await expect(dialog(page).locator("form")).toHaveAttribute("data-lookup-state", "error");
+    const pressed = await back.boundingBox();
+    expect(pressed.y).toBeCloseTo(bounds.y, 1);
+    if (gesture === "drag-away") await page.mouse.move(5, 5);
+    if (gesture === "keyboard") await page.keyboard.up("Space"); else await page.mouse.up();
+    await page.clock.fastForward(1);
+    await expect(dialog(page).locator("form")).toHaveAttribute("data-entry-mode", gesture === "drag-away" ? "create" : "login");
+    await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveValue(gesture === "drag-away" ? password : "");
+    if (gesture === "drag-away") await expect(dialog(page).locator("[data-username-status]")).toContainText("offline");
+  } finally { await page.mouse.up(); await page.keyboard.up("Space"); await page.clock.resume(); }
+});

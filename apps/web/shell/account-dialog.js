@@ -1,3 +1,4 @@
+import { createRenderGestureGate } from "./render-gesture.js";
 import { evaluatePasswordRequirements, normalizeDisplayName } from "../generated/packages/shared-types/src/auth.js";
 import { USERNAME_LOOKUP_DEBOUNCE_MS, USERNAME_LOOKUP_TIMEOUT_MS } from "../generated/packages/shared-types/src/auth-policy.js";
 import { animateDialogSize } from "./dialog-size.js";
@@ -64,12 +65,19 @@ export const createAccountDialog = ({
   const input = (name, label, { secret = false, visible = false, autocomplete = "", value = "", optional = false, placeholder = "", inlineSave = false } = {}) =>
     `<label for="account-${name}">${label}</label><div class="${secret || inlineSave ? "input-with-action" : "account-input-row"}"><input id="account-${name}" name="${name}" type="${secret && !visible ? "password" : "text"}" ${optional ? "" : "required"} autocomplete="${autocomplete}" ${autocomplete === "new-password" ? 'aria-describedby="account-password-requirements"' : ""} ${name === "username" ? 'autocapitalize="none" spellcheck="false"' : ""} placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value)}">${secret ? renderInputAction({ label: visible ? "Hide" : "Show", accessibleLabel: `${visible ? "Hide" : "Show"} ${label.toLowerCase()}`, action: "toggle-password", controls: `account-${name}` }) : inlineSave ? '<span class="account-autosave" data-state="idle"><span role="status" aria-live="polite" data-autosave-status>Autosaves</span>' + renderInputAction({ label: "Retry", action: "retry-account-save", controls: `account-${name}` }) + '</span>' : ""}</div>`;
   const checklist = () => '<ul class="account-password-requirements small" id="account-password-requirements" data-testid="password-requirements" aria-label="Password requirements"><li data-requirement="length">8–128 characters</li><li data-requirement="differentFromUsername">Different from your username</li><li data-requirement="notCommon">Not a common password</li></ul>';
+  const feedbackGesture = createRenderGestureGate({ schedule: timers.setTimeout, cancel: timers.clearTimeout, render: () => {
+    sizeAnimation.resume();
+    updateLookup();
+    updateRequirements();
+  } });
   const updateRequirements = () => {
     if (!["register", "password"].includes(mode)) return;
     const field = dialog.querySelector(`[name="${mode === "password" ? "newPassword" : "password"}"]`);
     if (!field) return;
     const username = mode === "password" ? controller.snapshot().session.account?.username : dialog.querySelector('[name="username"]')?.value;
     const requirements = evaluatePasswordRequirements(field.value, username || "", blocklist);
+    // Validation remains synchronous; only its visual feedback waits for release.
+    if (feedbackGesture.defer({})) return requirements;
     for (const [key, label] of [["length", "8–128 characters"], ["differentFromUsername", "Different from your username"], ["notCommon", "Not a common password"]]) {
       const node = dialog.querySelector(`[data-requirement="${key}"]`);
       if (!node) continue;
@@ -103,6 +111,7 @@ export const createAccountDialog = ({
     if (mode !== "register") return;
     const form = dialog.querySelector("form");
     if (form) form.dataset.lookupState = lookupState;
+    if (feedbackGesture.defer({})) return;
     const target = dialog.querySelector("[data-username-status]");
     if (target) {
       // Keep the largest revealed row, including wrapped errors, for this form.
@@ -312,13 +321,18 @@ export const createAccountDialog = ({
     const bounds = dialog.getBoundingClientRect();
     return event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom;
   };
+  const beginFeedbackGesture = () => { feedbackGesture.begin(); feedbackGesture.defer({}); sizeAnimation.pause(); };
+  const endFeedbackGesture = () => feedbackGesture.end();
+  for (const type of ["pointerup", "pointercancel", "keyup", "blur"]) globalThis.addEventListener?.(type, endFeedbackGesture);
   dialog.addEventListener("pointerdown", (event) => {
+    if (event.button === 0 && event.target.closest?.("button, a, summary")) beginFeedbackGesture();
     discardPress = Boolean(event.target.closest?.("[data-discard-account]"));
     backdropPress = event.button === 0 && event.target === dialog && outsideDialog(event);
   });
   dialog.addEventListener("pointercancel", () => { backdropPress = false; discardPress = false; });
   dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
   dialog.addEventListener("keydown", (event) => {
+    if (!event.repeat && [" ", "Enter"].includes(event.key) && event.target.closest?.("button, a, summary")) beginFeedbackGesture();
     if (event.key !== "Tab") return;
     const nodes = [...dialog.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href],summary,[tabindex="0"]')].filter(node => !node.closest("[hidden]"));
     const first = nodes[0], last = nodes.at(-1);
@@ -350,6 +364,7 @@ export const createAccountDialog = ({
       scheduleLoginHint();
   });
   dialog.addEventListener("click", async (event) => {
+    endFeedbackGesture();
     discardPress = false;
     const dismiss = backdropPress && event.target === dialog && outsideDialog(event);
     backdropPress = false;

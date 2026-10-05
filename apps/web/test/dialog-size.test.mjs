@@ -12,6 +12,7 @@ function fixture() {
     animate(frames, options) {
       let resolve, reject;
       const a = { frames, options, finished: new Promise((yes, no) => { resolve = yes; reject = no; }),
+        pause() { this.paused = true; }, play() { this.paused = false; },
         cancel() { visible = null; reject(); }, finish() { visible = null; resolve(); } };
       animations.push(a); return a;
     },
@@ -58,4 +59,21 @@ test("zoomed screen measurements are not reused as CSS-height keyframes", () => 
     if (original) globalThis.getComputedStyle = original;
     else delete globalThis.getComputedStyle;
   }
+});
+
+test("active control gestures pause resizing until activation has dispatched", () => {
+  const f = fixture();
+  f.size.pause();
+  f.resize(500);
+  assert.equal(f.animations.length, 0);
+  f.size.resume();
+  assert.deepEqual(f.animations[0].frames, [{ height: "300px" }, { height: "500px" }]);
+});
+
+ test("an in-flight height animation pauses and resumes without jumping", () => {
+  const f = fixture(); f.resize(500); f.at(350);
+  f.size.pause(); assert.equal(f.animations[0].paused, true);
+  assert.equal(f.dialog.getBoundingClientRect().height, 350);
+  f.size.resume(); assert.equal(f.animations[0].paused, false);
+  assert.equal(f.animations.length, 1);
 });

@@ -259,3 +259,20 @@ test("an empty sign-in password is neutral guidance and focuses Password", async
   assert.equal(f.document.activeElement, f.node('[name="password"]'));
   assert.equal(f.acts.length, 0);
 });
+
+
+test("a held control keeps current validation and flushes lookup plus checklist together", async () => {
+  const f = fixture(); await f.click("data-create"); await f.flush();
+  f.input("username", "NewName"); f.input("password", "password");
+  const target = { closest: () => ({}) };
+  f.listeners.get("pointerdown")({ button: 0, target });
+  f.debounce(); f.lookups[0].resolve({ exists: false }); await f.flush();
+  f.input("password", "password123");
+  assert.notEqual(f.node("[data-username-status]").dataset.state, "available");
+  await f.submit();
+  assert.equal(f.acts.length, 0, "held submit still enforces local common-password validation");
+  await f.click("unused");
+  for (const [id, { fn, ms }] of [...f.timers]) if (ms === 0) { f.timers.delete(id); fn(); }
+  assert.equal(f.node("[data-username-status]").dataset.state, "available");
+  assert.equal(f.node('[data-requirement="notCommon"]').dataset.state, "unmet");
+});

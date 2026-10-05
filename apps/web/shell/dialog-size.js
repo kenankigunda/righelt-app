@@ -3,7 +3,7 @@ export const animateDialogSize = (dialog, {
   Observer = globalThis.ResizeObserver,
   motion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)"),
 } = {}) => {
-  let previousHeight = 0, animation = null;
+  let previousHeight = 0, animation = null, paused = false, pendingResize = false;
   // CSS height is unzoomed; screen rectangles include CSS zoom and transforms.
   const height = () => {
     const cssHeight = Number.parseFloat(globalThis.getComputedStyle?.(dialog).height);
@@ -13,8 +13,10 @@ export const animateDialogSize = (dialog, {
     animation?.cancel();
     animation = null;
     previousHeight = 0;
+    paused = false; pendingResize = false;
   };
   const resize = () => {
+    if (paused) { pendingResize = true; return; }
     if (!dialog.open) { reset(); return; }
     const from = animation ? height() : previousHeight;
     animation?.cancel();
@@ -36,6 +38,12 @@ export const animateDialogSize = (dialog, {
     if (motion.matches) { reset(); if (dialog.open) previousHeight = height(); }
   });
   return {
+    pause() { paused = true; animation?.pause(); },
+    resume() {
+      paused = false;
+      if (pendingResize) { pendingResize = false; resize(); }
+      else animation?.play();
+    },
     refresh() {
       observer?.disconnect();
       const content = dialog.querySelector("form");
