@@ -119,11 +119,13 @@ test('modal size animation ends at its natural height without a final snap',asyn
 
 test('header utilities expand on hover and keyboard focus while retaining their actions',async({page})=>{
  await page.setViewportSize({width:1440,height:1000});await page.goto('/');
+ await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
  const scenarios=page.getByRole('button',{name:'Scenarios',exact:true});const debug=page.getByRole('button',{name:'Debug',exact:true});
  await expect(scenarios).toBeVisible();await expect(debug).toBeVisible();
- const initial=await scenarios.boundingBox();expect(initial.width).toBeLessThanOrEqual(46);
- await scenarios.hover();await expect.poll(async()=>(await scenarios.boundingBox()).width).toBeGreaterThan(90);
- await page.mouse.move(1,1);await debug.focus();await expect.poll(async()=>(await debug.boundingBox()).width).toBeGreaterThan(80);
+ // Live home refresh may replace a header node between visibility and measurement.
+ await expect.poll(async()=>(await scenarios.boundingBox())?.width??Infinity).toBeLessThanOrEqual(46);
+ await scenarios.hover();await expect.poll(async()=>(await scenarios.boundingBox())?.width??0).toBeGreaterThan(90);
+ await page.mouse.move(1,1);await debug.focus();await expect.poll(async()=>(await debug.boundingBox())?.width??0).toBeGreaterThan(80);
  await page.emulateMedia({reducedMotion:'reduce'});
  expect(await debug.locator('.header-action-label').evaluate(el=>getComputedStyle(el).transitionDuration)).toBe('0s');
  await page.keyboard.press('Enter');await expect(page.locator('[data-flyout="debug"]')).toBeVisible();
