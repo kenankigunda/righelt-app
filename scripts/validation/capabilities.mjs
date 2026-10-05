@@ -17,6 +17,7 @@ export async function candidateCapabilities(root) {
     playAccountEntry,
     simplifiedAccounts: await has('db/migrations/0015_remove_account_recovery.sql'),
     accounts: await has('apps/web/shell/account-controller.js'),
+    accountAutosave: await has('apps/web/shell/account-autosave.js'),
     profiles: await has('apps/web/shell/public-profile.js'),
     personalHome: await has('apps/web/shell/personal-home.js'),
     stories: await has('apps/web/shell/opponent-stories.js'),
