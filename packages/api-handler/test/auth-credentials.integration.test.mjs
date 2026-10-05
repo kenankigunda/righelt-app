@@ -279,6 +279,17 @@ test("account settings are guarded, public profile is minimal, and tutorial prog
       view: "explanatory",
       tutorial: "completed",
     });
+    const nameOnly = await a.call(
+      "/api/account",
+      { displayName: "Café 👋" },
+      { method: "PATCH" },
+    );
+    assert.equal(nameOnly.status, 200);
+    assert.deepEqual(nameOnly.data.account.preferences, {
+      view: "explanatory",
+      tutorial: "completed",
+    });
+    assert.deepEqual((await b.session()).data.account.preferences, nameOnly.data.account.preferences);
     await a.call(
       "/api/account",
       { preferences: { tutorial: "skipped" } },

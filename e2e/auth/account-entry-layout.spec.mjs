@@ -6,9 +6,11 @@ for (const width of [390, 768, 1440]) {
     await page.goto('/');
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     const dialog = page.getByTestId('account-dialog');
-    await expect(dialog.getByLabel('Password', { exact: true })).not.toBeVisible();
+    await expect(dialog.getByLabel('Password', { exact: true })).toBeVisible();
     await dialog.getByRole('button', { name: 'Create account', exact: true }).click();
     await expect(dialog.getByLabel('Username', { exact: true })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(dialog.getByLabel('Display name (optional)', { exact: true })).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(dialog.getByLabel('Password', { exact: true })).toBeFocused();
     await expect(dialog.getByRole('checkbox')).toHaveCount(0);

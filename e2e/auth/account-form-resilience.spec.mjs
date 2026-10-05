@@ -18,7 +18,7 @@ test("correctable creation errors preserve the username and allow correction wit
   await expect(dialog(page).locator("[data-account-status]")).not.toHaveText("");
   await expect(dialog(page).getByLabel("Username", { exact: true })).toHaveValue(username);
   expect((await dialog(page).boundingBox()).width).toBe(width);
-  await expect(dialog(page).getByLabel("Display name (optional)", { exact: true })).toHaveCount(0);
+  await expect(dialog(page).getByLabel("Display name (optional)", { exact: true })).toBeVisible();
   await expect(dialog(page).getByRole("checkbox")).toHaveCount(0);
   await dialog(page).getByLabel("Password", { exact: true }).fill("An accessible account password 428");
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();

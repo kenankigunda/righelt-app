@@ -27,20 +27,14 @@ test("a sign-in opened during pending logout survives its completion", async ({ 
     await expect(dialog(page)).not.toBeVisible();
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await dialog(page).getByLabel("Username", { exact: true }).fill(username);
-    // Credential lookup is blocked while revocation is unfinished. The form
-    // and entered name still belong to this sign-in attempt and must survive.
-    await expect(dialog(page).locator("form")).toHaveAttribute("data-lookup-state", "error");
-    await expect(dialog(page).getByLabel("Password", { exact: true })).not.toBeVisible();
+    await dialog(page).getByLabel("Password", { exact: true }).fill(password);
     // Observe the public local logout marker, not a timer or internal app hook.
     expect(await page.evaluate(() => Boolean(localStorage.getItem("righelt.account.logout-pending.v1")))).toBe(true);
     release();
     await expect.poll(() => page.evaluate(() => localStorage.getItem("righelt.account.logout-pending.v1"))).toBeNull();
     await expect(dialog(page)).toBeVisible();
     await expect(dialog(page).getByLabel("Username", { exact: true })).toHaveValue(username);
-    await expect(dialog(page).locator("form")).toHaveAttribute("data-lookup-state", "error");
-    await dialog(page).getByRole("button", { name: "Try again", exact: true }).click();
-    await expect(dialog(page).locator("form")).toHaveAttribute("data-lookup-state", "taken");
-    await dialog(page).getByLabel("Password", { exact: true }).fill(password);
+    await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveValue(password);
     await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(dialog(page)).not.toBeVisible();
     await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();

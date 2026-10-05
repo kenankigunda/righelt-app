@@ -2062,8 +2062,8 @@ textarea:focus-visible {
 .account-input-row:has([data-toggle]) input { padding-right: 4.5rem; }
 .account-input-row [data-toggle] { position: absolute; right: .2rem; top: .2rem; bottom: .2rem; padding: .3rem .65rem; }
 .account-form [hidden] { display: none !important; }
-.account-form [data-password-section] { display: grid; gap: .75rem; }
-.account-form [data-entry-heading] { margin: 0; font-size: 1rem; }
+.account-password-requirements { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+.account-password-requirements [data-state="unmet"] { font-weight: 600; }
 .account-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .account-status { margin: 0; overflow-wrap: anywhere; }
 .account-status:empty, .account-form [data-challenge]:empty { display: none; }

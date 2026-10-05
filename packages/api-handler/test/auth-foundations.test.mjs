@@ -67,3 +67,22 @@ test('private admission queues four and releases work on upstream failure',async
   assert.equal(results.filter(r=>r.status==='fulfilled'&&r.value.status===429).length,15);
   assert.equal(calls,5);assert.equal(admission.active,false);
 });
+
+test('live password feedback matches submission rules and the generated versioned list', async()=>{
+  const {evaluatePasswordRequirements}=await import('../../shared-types/src/auth.ts');
+  const {readFile}=await import('node:fs/promises');
+  const source=await readFile(new URL('../../shared-types/data/common-passwords.json',import.meta.url),'utf8');
+  const generated=await readFile(new URL('../../../apps/web/generated/packages/shared-types/data/common-passwords.json',import.meta.url),'utf8');
+  assert.equal(generated,source);
+  const list=new Set(JSON.parse(source).map(value=>value.normalize('NFC')));
+  for(const password of ['', 'a'.repeat(7), '🦉'.repeat(8), 'é'.repeat(128), '🦉'.repeat(129), 'e\u0301'.repeat(8), 'password', 'Password', ' USERNAME ', 'Username', 'a'.repeat(12)+'\ud800']) {
+    const checks=evaluatePasswordRequirements(password,' \tUsername ',list);
+    const normalized=normalizePassword(password);
+    assert.equal(checks.length,normalized.ok,password);
+    assert.equal(checks.length && checks.differentFromUsername && checks.notCommon,
+      normalized.ok && isPasswordAllowed(normalized.value,'username',list),password);
+  }
+  assert.equal(evaluatePasswordRequirements('Password','Username',list).notCommon,!list.has('Password'));
+  assert.equal(evaluatePasswordRequirements('Username','username',null).differentFromUsername,false);
+  assert.equal(evaluatePasswordRequirements('good password','Username',null).notCommon,null);
+});

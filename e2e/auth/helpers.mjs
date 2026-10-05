@@ -1,9 +1,13 @@
 import { expect } from "@playwright/test";
 
-// A username edit retires secrets; fill the password only after this exact
-// lookup has settled, including when the creation form was opened explicitly.
+// Sign-in never looks up names; registration availability is advisory. Helpers
+// type normally without adding an availability gate that the user does not have.
 export async function enterUsername(page, username) {
-  const dialog = page.getByTestId("account-dialog");
-  await dialog.getByLabel("Username", { exact: true }).fill(username);
-  await expect(dialog.locator("form")).toHaveAttribute("data-lookup-state", /^(available|taken)$/);
+  await page.getByTestId("account-dialog").getByLabel("Username", { exact: true }).fill(username);
+}
+
+export async function signOutAndOpenSignIn(page) {
+  await page.getByTestId("account-dialog").getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("righelt.account.logout-pending.v1"))).toBeNull();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
 }

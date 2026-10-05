@@ -1,4 +1,6 @@
-import { USERNAME_LOOKUP_DEBOUNCE_MS } from "../generated/packages/shared-types/src/auth-policy.js";
+import { evaluatePasswordRequirements, normalizeDisplayName } from "../generated/packages/shared-types/src/auth.js";
+import { USERNAME_LOOKUP_DEBOUNCE_MS, USERNAME_LOOKUP_TIMEOUT_MS } from "../generated/packages/shared-types/src/auth-policy.js";
+export const ACCOUNT_ENTRY_LAYOUT = "separate";
 const escapeHtml = (value) =>
   String(value ?? "").replace(
     /[&<>"']/g,
@@ -22,22 +24,23 @@ export const canonicalEntryUsername = (value) => String(value ?? "").replace(/^[
 export const validEntryUsername = (value) => /^[a-z0-9_]{3,24}$/.test(canonicalEntryUsername(value));
 export const createAccountDialog = ({
   controller, document = globalThis.document, onComplete = () => {},
-  onTutorial = () => {}, getSiteKey = () => null, timers = globalThis,
+  getSiteKey = () => null, timers = globalThis, fetcher = globalThis.fetch,
 } = {}) => {
   const dialog = document.createElement("dialog");
   dialog.className = "account-dialog";
   dialog.dataset.testid = "account-dialog";
   dialog.setAttribute("aria-labelledby", "account-title");
   document.body.append(dialog);
-  let mode = "entry", entryMode = "automatic", lookupState = "idle", lookupName = "", resolvedEntryMode = null,
+  let mode = "login", lookupState = "idle", lookupName = "",
+    blocklist = null, blocklistFlight = null, blocklistFailed = false, passwordTouched = false,
     lookupTimer = null, lookupAbort = null, lookupRevision = 0,
     trigger = null, pending = null, values = {}, challengeToken = "", widget = null,
-    flow = 0, pendingLogoutGeneration = null, owner = {};
+    flow = 0, submittingFlow = null, pendingLogoutGeneration = null, owner = {};
   const status = (text) => {
     const target = dialog.querySelector("[data-account-status]");
     if (target) target.textContent = text;
   };
-  const credentialMode = () => mode !== "entry" ? mode : entryMode === "create" || resolvedEntryMode === "register" ? "register" : "login";
+  const credentialMode = () => mode;
   const clearChallenge = () => {
     challengeToken = "";
     if (widget !== null) globalThis.turnstile?.remove(widget);
@@ -50,116 +53,99 @@ export const createAccountDialog = ({
     lookupAbort?.abort();
     lookupAbort = null;
   };
-  const input = (name, label, { secret = false, autocomplete = "", value = "" } = {}) =>
-    `<label for="account-${name}">${label}</label><div class="account-input-row"><input id="account-${name}" name="${name}" type="${secret ? "password" : "text"}" required autocomplete="${autocomplete}" ${name === "username" ? 'autocapitalize="none" spellcheck="false"' : ""} value="${escapeHtml(value)}">${secret ? `<button type="button" class="secondary" data-toggle="${name}" aria-label="Show ${label.toLowerCase()}">Show</button>` : ""}</div>`;
-  // Unfurl and change modes in place. Autofill, selection and focus retain their
-  // native input nodes; a lookup completion must never replace a typed password.
-  const updateEntry = ({ resetPassword = false } = {}) => {
-    if (mode !== "entry") return;
-    const form = dialog.querySelector("form");
-    if (!form) return;
-    form.dataset.lookupState = lookupState;
-    form.dataset.entryMode = entryMode;
-    const create = credentialMode() === "register";
-    const expanded = entryMode === "create" || ["available", "taken"].includes(lookupState);
-    const section = dialog.querySelector("[data-password-section]");
-    section.hidden = !expanded;
-    const password = dialog.querySelector('[name="password"]');
-    password.disabled = !expanded;
-    password.autocomplete = create ? "new-password" : "current-password";
-    if (resetPassword) {
-      password.value = "";
-      password.type = create ? "text" : "password";
-      const toggle = dialog.querySelector('[data-toggle="password"]');
-      toggle.textContent = create ? "Hide" : "Show";
-      toggle.setAttribute("aria-label", `${create ? "Hide" : "Show"} password`);
+  const input = (name, label, { secret = false, visible = false, autocomplete = "", value = "", optional = false, placeholder = "" } = {}) =>
+    `<label for="account-${name}">${label}</label><div class="account-input-row"><input id="account-${name}" name="${name}" type="${secret && !visible ? "password" : "text"}" ${optional ? "" : "required"} autocomplete="${autocomplete}" ${autocomplete === "new-password" ? 'aria-describedby="account-password-requirements"' : ""} ${name === "username" ? 'autocapitalize="none" spellcheck="false"' : ""} placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value)}">${secret ? `<button type="button" class="secondary" data-toggle="${name}" aria-label="${visible ? "Hide" : "Show"} ${label.toLowerCase()}">${visible ? "Hide" : "Show"}</button>` : ""}</div>`;
+  const checklist = () => '<ul class="account-password-requirements small" id="account-password-requirements" data-testid="password-requirements" aria-label="Password requirements"><li data-requirement="length">8–128 characters</li><li data-requirement="differentFromUsername">Different from your username</li><li data-requirement="notCommon">Not on the common-password list.</li></ul>';
+  const updateRequirements = () => {
+    if (!["register", "password"].includes(mode)) return;
+    const field = dialog.querySelector(`[name="${mode === "password" ? "newPassword" : "password"}"]`);
+    if (!field) return;
+    const username = mode === "password" ? controller.snapshot().session.account?.username : dialog.querySelector('[name="username"]')?.value;
+    const requirements = evaluatePasswordRequirements(field.value, username || "", blocklist);
+    for (const [key, label] of [["length", "8–128 characters"], ["differentFromUsername", "Different from your username"], ["notCommon", "Not on the common-password list."]]) {
+      const node = dialog.querySelector(`[data-requirement="${key}"]`);
+      if (!node) continue;
+      const state = !passwordTouched && !field.value ? "neutral" : requirements[key] === null ? "unavailable" : requirements[key] ? "met" : "unmet";
+      node.dataset.state = state;
+      node.textContent = `${{ neutral: "○", met: "✓", unmet: "✕", unavailable: "—" }[state]} ${label}${state === "unavailable" ? (blocklistFailed ? " — unavailable; checked when you submit" : " — checking") : state === "met" ? " — met" : state === "unmet" ? " — not met" : ""}`;
     }
-    dialog.querySelector("[data-entry-heading]").hidden = !create;
-    const submit = dialog.querySelector("button[type=submit]");
-    submit.hidden = !expanded;
-    submit.disabled = create && lookupState !== "available";
-    submit.textContent = create ? "Create account & continue" : "Sign in";
-    dialog.querySelector("[data-create]").hidden = create && expanded;
-    dialog.querySelector("[data-signin]").hidden = !create;
-    dialog.querySelector("[data-create-notice]").hidden = !create;
-    dialog.querySelector("[data-existing-hint]").hidden = create;
-    dialog.querySelector("[data-lookup-retry]").hidden = lookupState !== "error";
-    if (entryMode === "create" && lookupState === "taken") status(messages.username_unavailable);
+    return requirements;
+  };
+  const loadBlocklist = () => {
+    if (blocklist || blocklistFlight) return;
+    blocklistFailed = false;
+    const abort = new AbortController();
+    let timeout;
+    const loading = (async () => {
+      const response = await fetcher("/generated/packages/shared-types/data/common-passwords.json", { cache: "no-cache", credentials: "same-origin", signal: abort.signal });
+      if (!response.ok) throw new Error("blocklist_unavailable");
+      const values = await response.json();
+      if (!Array.isArray(values) || !values.every(value => typeof value === "string")) throw new Error("blocklist_unavailable");
+      return new Set(values.map(value => value.normalize("NFC")));
+    })();
+    const deadline = new Promise((_, reject) => { timeout = timers.setTimeout(() => { abort.abort(); reject(new Error("blocklist_timeout")); }, USERNAME_LOOKUP_TIMEOUT_MS); });
+    blocklistFlight = Promise.race([loading, deadline]).then(value => { blocklist = value; }, () => { blocklistFailed = true; }).finally(() => {
+      timers.clearTimeout(timeout); blocklistFlight = null;
+      // Resource completion only refreshes the current form's local values.
+      // It never carries credentials, advances a form, or submits an action.
+      if (dialog.open) updateRequirements();
+    });
+  };
+  const updateLookup = () => {
+    if (mode !== "register") return;
+    const form = dialog.querySelector("form");
+    if (form) form.dataset.lookupState = lookupState;
+    const target = dialog.querySelector("[data-username-status]");
+    if (target) target.textContent = ({ idle: "", pending: "Checking username…", available: "Username available.", taken: messages.username_unavailable, error: "Username availability is unavailable. You can still try creating your account." })[lookupState];
   };
   const render = () => {
-    clearChallenge();
+    clearChallenge(); passwordTouched = false;
     const session = controller.snapshot().session;
     let body = "", title = "Log in to start playing";
     if (mode === "account") {
       title = "Account";
-      body = `<p><bdi>${escapeHtml(session.account?.displayName)}</bdi> <span class="small">@${escapeHtml(session.account?.username)}</span></p><label for="account-displayName">Display name</label><input id="account-displayName" name="displayName" autocomplete="nickname" value="${escapeHtml(session.account?.displayName)}"><label for="account-view">View preference</label><select id="account-view" name="view"><option value="focused" ${session.account?.preferences?.view !== "explanatory" ? "selected" : ""}>Focused</option><option value="explanatory" ${session.account?.preferences?.view === "explanatory" ? "selected" : ""}>Explanatory</option></select><button type="submit">Save account settings</button><p data-testid="tutorial-status">Tutorial: ${escapeHtml(session.account?.preferences?.tutorial || "new")}</p><button type="button" data-tutorial>Replay tutorial</button><button type="button" data-mode="password">Change password</button><button type="button" data-mode="login">Switch account</button><button type="button" data-logout>Sign out</button>`;
+      body = `<p><span class="small">Username</span> <bdi>@${escapeHtml(session.account?.username)}</bdi></p>` + input("displayName", "Display name", { autocomplete: "nickname", value: session.account?.displayName || "", optional: true }) + '<button type="submit">Save</button><button type="button" data-mode="password">Change password</button><button type="button" data-logout>Sign out</button>';
     } else if (mode === "password") {
       title = "Change password";
-      body = input("newPassword", "New password", { secret: true, autocomplete: "new-password" }) + '<p class="small">Use 8–128 characters. Spaces and password managers are welcome.</p><p>Changing your password signs you out on other devices.</p><div data-challenge></div><button type="submit">Change password</button>';
+      body = input("newPassword", "New password", { secret: true, autocomplete: "new-password" }) + checklist() + '<p>Changing your password signs you out on other devices.</p><div data-challenge></div><button type="submit">Change password</button>';
+    } else if (mode === "register") {
+      title = "Create account";
+      body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + '<p class="account-status small" role="status" data-username-status></p>' + input("displayName", "Display name (optional)", { autocomplete: "nickname", value: values.displayName || "", optional: true, placeholder: values.username || "Username" }) + input("password", "Password", { secret: true, visible: true, autocomplete: "new-password" }) + checklist() + '<p class="small" data-create-notice>Save your password. If you forget it and are signed out everywhere, you’ll need a new account.</p><div data-challenge></div><button type="submit">Create account & continue</button><a href="#sign-in" data-signin>Sign in</a>';
     } else {
-      body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) +
-        '<section data-password-section hidden><h3 data-entry-heading hidden>Create an account</h3>' + input("password", "Password", { secret: true, autocomplete: "current-password" }) +
-        '<p class="small" data-create-notice hidden>Save your password. If you forget it and are signed out everywhere, you’ll need a new account.</p><p class="small" data-existing-hint>Don’t have a password? <a href="#create-account" data-create-link>Create a new account.</a></p><details data-forgot hidden><summary>Forgot password?</summary><p>On another signed-in device, open Account → Change password. If you are signed out everywhere, you’ll need a new account. Your existing games remain with your original account.</p><button type="button" class="secondary" data-new-username>Choose another username</button></details></section><div data-challenge></div><button type="submit" hidden>Sign in</button><button type="button" class="secondary" data-create>Create account</button><button type="button" class="secondary" data-signin hidden>Sign in</button><button type="button" class="secondary" data-lookup-retry hidden>Try again</button>';
+      body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + input("password", "Password", { secret: true, autocomplete: "current-password" }) + '<p class="small" data-existing-hint>Don’t have a password? <a href="#create-account" data-create-link>Create a new account.</a></p><details data-forgot hidden><summary>Forgot password?</summary><p>On another signed-in device, open Account → Change password. If you are signed out everywhere, you’ll need a new account. Your existing games remain with your original account.</p><button type="button" class="secondary" data-new-username>Choose another username</button></details><div data-challenge></div><button type="submit">Sign in</button><button type="button" class="secondary" data-create>Create account</button>';
     }
-    dialog.innerHTML = `<form class="account-form"><h2 id="account-title" tabindex="-1">${title}</h2>${body}<p class="account-status" role="status" aria-live="polite" data-account-status></p><button type="button" class="secondary" data-cancel>Cancel</button></form>`;
-    updateEntry({ resetPassword: true });
+    dialog.innerHTML = `<form class="account-form" novalidate data-entry-mode="${mode === "register" ? "create" : mode}" data-lookup-state="${lookupState}"><h2 id="account-title" tabindex="-1">${title}</h2>${body}<p class="account-status" role="status" aria-live="polite" data-account-status></p><button type="button" class="secondary" data-cancel>Cancel</button></form>`;
+    updateLookup(); updateRequirements();
+    if (["register", "password"].includes(mode)) loadBlocklist();
     const marker = flow;
-    queueMicrotask(() => { if (marker === flow && dialog.open) dialog.querySelector("input, #account-title")?.focus(); });
+    queueMicrotask(() => { if (marker === flow && dialog.open) (dialog.querySelector("input") || dialog.querySelector("#account-title"))?.focus(); });
   };
-  const checkUsername = async ({ focusPassword = false } = {}) => {
-    if (mode !== "entry") return;
+  const checkUsername = async () => {
+    if (mode !== "register") return;
     const field = dialog.querySelector('[name="username"]');
     const raw = field?.value || "", canonical = canonicalEntryUsername(raw);
-    if (canonical !== canonicalEntryUsername(values.username)) updateEntry({ resetPassword: true });
     values.username = raw;
     invalidateLookup();
-    if (!validEntryUsername(raw)) {
-      lookupState = "idle";
-      updateEntry();
-      status("Use 3–24 letters, digits or underscores for your username.");
-      return;
-    }
-    const revision = lookupRevision, marker = flow, selectedMode = entryMode, generation = controller.snapshot().generation;
-    lookupName = canonical;
-    lookupState = "pending";
-    lookupAbort = new AbortController();
-    updateEntry();
-    status("Checking username…");
+    if (!validEntryUsername(raw)) { lookupState = "idle"; updateLookup(); return; }
+    const revision = lookupRevision, marker = flow, generation = controller.snapshot().generation;
+    lookupName = canonical; lookupState = "pending"; lookupAbort = new AbortController(); updateLookup();
     try {
       const result = await controller.lookupUsername(raw, { signal: lookupAbort.signal });
-      if (marker !== flow || revision !== lookupRevision || !dialog.open || selectedMode !== entryMode || generation !== controller.snapshot().generation || canonical !== canonicalEntryUsername(field.value)) return;
+      if (mode !== "register" || marker !== flow || revision !== lookupRevision || !dialog.open || generation !== controller.snapshot().generation || canonical !== canonicalEntryUsername(field.value)) return;
       if (typeof result.exists !== "boolean") throw new Error("invalid_lookup_response");
-      const previousMode = credentialMode();
-      resolvedEntryMode = result.exists ? "login" : "register";
-      lookupState = result.exists ? "taken" : "available";
-      status("");
-      updateEntry({ resetPassword: previousMode !== credentialMode() });
-      if (focusPassword && !(entryMode === "create" && result.exists)) dialog.querySelector('[name="password"]')?.focus();
-    } catch (error) {
-      if (marker !== flow || revision !== lookupRevision || !dialog.open || generation !== controller.snapshot().generation) return;
-      lookupState = "error";
-      updateEntry();
-      status(messages[error.code] || "Could not check this username. Try again.");
+      lookupState = result.exists ? "taken" : "available"; updateLookup();
+    } catch {
+      if (mode !== "register" || marker !== flow || revision !== lookupRevision || !dialog.open || generation !== controller.snapshot().generation) return;
+      lookupState = "error"; updateLookup();
     }
   };
   const changeEntryMode = (next, empty = false) => {
-    invalidateLookup();
-    clearChallenge();
-    flow++;
-    owner = {};
-    entryMode = next;
-    const field = dialog.querySelector('[name="username"]');
-    if (empty && field) field.value = "";
-    values.username = field?.value || "";
-    lookupState = "idle";
-    lookupName = ""; resolvedEntryMode = null;
-    status("");
-    dialog.querySelector("[data-forgot]").hidden = true;
-    updateEntry({ resetPassword: true });
-    if (validEntryUsername(values.username)) {
-      if (next === "create") dialog.querySelector('[name="password"]')?.focus();
-      void checkUsername({ focusPassword: next !== "create" });
-    } else field?.focus();
+    values.username = empty ? "" : dialog.querySelector('[name="username"]')?.value || values.username || "";
+    values.displayName = dialog.querySelector('[name="displayName"]')?.value ?? values.displayName ?? "";
+    invalidateLookup(); flow++; owner = {}; mode = next;
+    lookupState = "idle"; lookupName = "";
+    render();
+    if (next === "register" && validEntryUsername(values.username)) lookupTimer = timers.setTimeout(() => void checkUsername(), USERNAME_LOOKUP_DEBOUNCE_MS);
   };
   const close = () => {
     pendingLogoutGeneration = null;
@@ -182,13 +168,12 @@ export const createAccountDialog = ({
     pending = intent;
     trigger = source || (document.activeElement !== document.body ? document.activeElement : null);
     values = {};
-    mode = ["account", "password"].includes(next) ? next : "entry";
-    entryMode = next === "register" ? "create" : "automatic";
+    mode = ["account", "password", "register"].includes(next) ? next : "login";
     lookupState = "idle";
-    lookupName = ""; resolvedEntryMode = null;
+    lookupName = "";
     const snapshot = controller.snapshot();
     pendingLogoutGeneration = snapshot.pendingLogout && !snapshot.session.authenticated ? snapshot.generation : null;
-    if (mode === "account" && !snapshot.session.authenticated) mode = "entry";
+    if (mode === "account" && !snapshot.session.authenticated) mode = "login";
     render();
     if (!dialog.open) dialog.showModal();
   };
@@ -250,47 +235,35 @@ export const createAccountDialog = ({
   };
   dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
   dialog.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && mode === "entry" && event.target.name === "username") {
-      event.preventDefault();
-      void checkUsername({ focusPassword: true });
-      return;
-    }
     if (event.key !== "Tab") return;
     const nodes = [...dialog.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href],summary,[tabindex="0"]')].filter(node => !node.closest("[hidden]"));
     const first = nodes[0], last = nodes.at(-1);
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   });
-  dialog.addEventListener("input", (event) => {
-    if (mode !== "entry" || event.target.name !== "username") return;
-    const previous = canonicalEntryUsername(values.username);
-    values.username = event.target.value;
-    if (previous === canonicalEntryUsername(values.username)) return;
-    invalidateLookup();
-    clearChallenge();
-    flow++;
-    owner = {};
-    lookupState = "idle";
-    lookupName = ""; resolvedEntryMode = null;
-    status("");
-    dialog.querySelector("[data-forgot]").hidden = true;
-    updateEntry({ resetPassword: true });
+  const onInput = (event) => {
+    if (["password", "newPassword"].includes(event.target.name)) { passwordTouched = true; updateRequirements(); return; }
+    if (event.target.name === "displayName" && mode === "register") values.displayName = event.target.value;
+    if (!["login", "register"].includes(mode) || event.target.name !== "username") return;
+    const previous = canonicalEntryUsername(values.username); values.username = event.target.value;
+    const display = dialog.querySelector('[name="displayName"]');
+    if (mode === "register" && display) display.placeholder = event.target.value || "Username";
+    updateRequirements();
+    if (mode !== "register" || previous === canonicalEntryUsername(values.username)) return;
+    invalidateLookup(); clearChallenge(); lookupState = "idle"; lookupName = ""; updateLookup();
     if (validEntryUsername(values.username)) lookupTimer = timers.setTimeout(() => void checkUsername(), USERNAME_LOOKUP_DEBOUNCE_MS);
-  });
+  };
+  dialog.addEventListener("input", onInput);
+  dialog.addEventListener("change", onInput);
+  dialog.addEventListener("focusin", updateRequirements);
   dialog.addEventListener("click", async (event) => {
-    const button = event.target.closest("button, [data-create-link]");
+    const button = event.target.closest("button, [data-create-link], [data-signin]");
     if (!button) return;
     if (button.hasAttribute("data-cancel")) { close(); return; }
-    if (button.hasAttribute("data-create") || button.hasAttribute("data-create-link")) { event.preventDefault(); changeEntryMode("create"); return; }
-    if (button.hasAttribute("data-signin")) { changeEntryMode("automatic"); return; }
-    if (button.hasAttribute("data-new-username")) { changeEntryMode("create", true); return; }
-    if (button.hasAttribute("data-lookup-retry")) { void checkUsername(); return; }
-    if (button.dataset.mode) {
-      invalidateLookup(); flow++; owner = {};
-      mode = button.dataset.mode === "login" ? "entry" : button.dataset.mode;
-      entryMode = "automatic"; lookupState = "idle"; lookupName = ""; resolvedEntryMode = null; values = {};
-      render(); return;
-    }
+    if (button.hasAttribute("data-create") || button.hasAttribute("data-create-link")) { event.preventDefault(); changeEntryMode("register"); return; }
+    if (button.hasAttribute("data-signin")) { event.preventDefault(); changeEntryMode("login"); return; }
+    if (button.hasAttribute("data-new-username")) { changeEntryMode("register", true); return; }
+    if (button.dataset.mode) { changeEntryMode(button.dataset.mode); return; }
     if (button.dataset.toggle) {
       const field = dialog.querySelector(`[name="${button.dataset.toggle}"]`);
       field.type = field.type === "password" ? "text" : "password";
@@ -298,7 +271,6 @@ export const createAccountDialog = ({
       button.setAttribute("aria-label", `${button.textContent} ${button.dataset.toggle === "newPassword" ? "new password" : "password"}`);
       return;
     }
-    if (button.hasAttribute("data-tutorial")) { close(); onTutorial(); return; }
     if (button.hasAttribute("data-logout")) {
       const marker = flow;
       await controller.logout();
@@ -309,49 +281,51 @@ export const createAccountDialog = ({
   dialog.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.target;
-    if (controller.snapshot().busy) return;
-    // Native autofill can change values without an input event. Revalidate its
-    // exact username before credential dispatch, without trusting old lookup.
-    if (mode === "entry") {
-      const current = canonicalEntryUsername(dialog.querySelector('[name="username"]').value);
-      if (current !== lookupName || !["available", "taken"].includes(lookupState)) { await checkUsername({ focusPassword: true }); return; }
-      if (entryMode === "create" && lookupState === "taken") { status(messages.username_unavailable); return; }
+    if (controller.snapshot().busy || submittingFlow === flow) return;
+    // Always inspect live values: native autofill need not emit input events.
+    const field = name => dialog.querySelector(`[name="${name}"]`);
+    const rejectField = (name, message) => { status(message); field(name)?.focus(); };
+    if (["login", "register"].includes(mode) && !validEntryUsername(field("username")?.value)) { rejectField("username", "Use 3–24 letters, digits or underscores for your username."); return; }
+    if (mode === "register" && lookupName === canonicalEntryUsername(field("username")?.value) && lookupState === "taken") { rejectField("username", messages.username_unavailable); return; }
+    if (["register", "account"].includes(mode) && !normalizeDisplayName(field("displayName")?.value, field("username")?.value || controller.snapshot().session.account?.username || "").ok) { rejectField("displayName", "Use a display name of up to 32 characters without control characters."); return; }
+    if (mode === "login" && !field("password")?.value) { rejectField("password", "Enter your password."); return; }
+    if (["register", "password"].includes(mode)) {
+      passwordTouched = true;
+      const requirements = updateRequirements();
+      if (requirements && Object.values(requirements).some(value => value === false)) { rejectField(mode === "password" ? "newPassword" : "password", "Choose a password that meets the requirements."); return; }
     }
-    if (!form.reportValidity()) return;
     const marker = flow, operationOwner = owner, operation = credentialMode();
+    submittingFlow = marker;
     const data = Object.fromEntries(new FormData(form));
     const buttons = [...form.querySelectorAll("button[type=submit]")];
     buttons.forEach(b => { b.disabled = true; });
     status("Working…");
     try {
       if (mode === "account") {
-        await controller.updateAccount({ displayName: data.displayName, preferences: { view: data.view } });
+        await controller.updateAccount({ displayName: data.displayName });
         if (marker === flow && dialog.open) { render(); status("Account settings saved."); onComplete(null); }
         return;
       }
       const token = challengeToken ? { challengeToken } : {};
       challengeToken = "";
-      await controller.act(operation, operation === "password" ? { newPassword: data.newPassword, ...token } : { username: data.username, password: data.password, ...token }, operationOwner);
+      await controller.act(operation, operation === "password" ? { newPassword: data.newPassword, ...token } : { username: data.username, password: data.password, ...(operation === "register" ? { displayName: data.displayName } : {}), ...token }, operationOwner);
       if (marker !== flow || !dialog.open) return;
       complete();
     } catch (error) {
       if (marker !== flow || !dialog.open) return;
       if (error.code === "username_unavailable" && operation === "register") {
-        entryMode = "create"; lookupState = "taken";
-        updateEntry({ resetPassword: true });
+        lookupState = "taken"; lookupName = canonicalEntryUsername(data.username);
+        updateLookup();
       }
       if (error.code === "invalid_credentials" && operation === "login") dialog.querySelector("[data-forgot]").hidden = false;
       status(messages[error.code] || "We could not confirm the result. Check your connection and account status before trying again.");
       if (error.body?.challengeRequired || widget !== null) await challenge();
     } finally {
-      if (marker === flow) { buttons.forEach(b => { b.disabled = false; }); updateEntry(); }
+      if (submittingFlow === marker) submittingFlow = null;
+      if (marker === flow) { buttons.forEach(b => { b.disabled = false; }); updateRequirements(); }
     }
   });
-  const refreshSession = () => {
-    if (!dialog.open || mode !== "account") return;
-    const node = dialog.querySelector('[data-testid="tutorial-status"]');
-    if (node) node.textContent = `Tutorial: ${controller.snapshot().session.account?.preferences?.tutorial || "new"}`;
-  };
+  const refreshSession = () => {};
   return {
     open, close, refreshSession,
     onTransition: ({ owner: transitionOwner, completedLogoutGeneration } = {}) => {

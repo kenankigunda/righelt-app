@@ -125,6 +125,21 @@ export function isPasswordAllowed(
     !blocklist.has(password) && password.toLowerCase() !== canonicalUsername
   );
 }
+/** Local feedback uses the same normalization and rejection rules as submission. */
+export function evaluatePasswordRequirements(
+  input: string,
+  username: string,
+  blocklist: ReadonlySet<string> | null,
+): { length: boolean; differentFromUsername: boolean; notCommon: boolean | null } {
+  const password = input.normalize("NFC");
+  const name = normalizeUsername(username);
+  const canonical = name.ok ? name.value.canonical : "";
+  return {
+    length: normalizePassword(input).ok,
+    differentFromUsername: isPasswordAllowed(password, canonical, new Set()),
+    notCommon: blocklist === null ? null : !blocklist.has(password),
+  };
+}
 export function safeContinuation(
   input: unknown,
   origin: string,
