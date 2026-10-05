@@ -47,6 +47,13 @@ export const setOfflineState = async (page, offline) => {
     .toBe(!offline);
 };
 
+export const closeHostInvitation = async page => {
+  // Authentication can close before its deferred game continuation mounts.
+  await page.getByTestId("game-shell").waitFor({state:"visible"});
+  const close = page.getByRole("button", {name:"Close invite", exact:true});
+  if (await close.isVisible()) await close.click();
+};
+
 export const createGameFromHome = async (page) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
@@ -57,6 +64,7 @@ export const createGameFromHome = async (page) => {
   await page.getByTestId("home-create-game").click();
   const createResponse = await createResponsePromise;
   await expect(page.getByTestId("game-shell")).toBeVisible();
+  await closeHostInvitation(page);
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
 
   const url = new URL(page.url());
