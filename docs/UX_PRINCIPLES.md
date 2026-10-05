@@ -281,3 +281,10 @@ CTA icons use familiar concepts expressed through Righelt's clipped and angular 
 The latest carousel rule supersedes hover/focus pause: cycle every three seconds, continuing through hover and mere focus. Deliberate keyboard or caret input stops cycling for the visit; reduced motion is manual.
 
 The latest sound rule supersedes blanket background silence: ordinary cues require a visible, focused page. An incoming opponent move while away may play immediately and every thirty seconds until refocus. Coalesce events into one reminder cycle. Muting or leaving the game cancels it. Browser playback restrictions remain authoritative. No initial/replayed/reconnected events create reminders.
+
+
+### Final first-pass interaction polish
+
+Hover feedback should suggest contact lightly: a short-dwell brush/rustle, not a click or committed move. Navigation can have distinct forward/back cues. Keep all ordinary feedback silent while inactive.
+
+Use restrained perspective and moving shadow for story artwork changes, with fixed readable copy. Reserve status space for brief confirmations and retain keyboard focus through asynchronous work. Let peripheral utilities reveal labels without competing with play. Background texture may breathe subtly, but its geometric alignment must remain stable.

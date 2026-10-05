@@ -33,17 +33,19 @@ export const createGameSound = ({
   // Each cue has a hard stop. Only the explicit incoming notification may sound away from the game.
   const play = (kind) => {
     if (!enabled || (kind !== 'incoming' && !active()) || !audio || audio.state !== 'running') return false;
-    const palette = {select:[1050,.018,.045],preview:[1450,.010,.025],cancel:[650,.012,.045],move:[820,.045,.075],capture:[510,.038,.105],turn:[1200,.024,.065],result:[560,.032,.16],enter:[720,.020,.09],intro:[970,.016,.08],incoming:[460,.03,.13]};
+    const palette = {select:[1050,.018,.045],preview:[1800,.003,.10],cancel:[650,.012,.045],move:[820,.045,.075],capture:[510,.038,.105],turn:[1200,.024,.065],result:[560,.032,.16],enter:[720,.020,.09],leave:[520,.018,.09],intro:[970,.016,.08],incoming:[460,.03,.13]};
     const [frequency, volume, duration] = palette[kind] || palette.select;
     try {
       const t = audio.currentTime;
       const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
       const data = buffer.getChannelData(0);
-      for (let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*Math.exp(-i/(audio.sampleRate*.008));
+      for (let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*Math.exp(-i/(audio.sampleRate*(kind==='preview'?.035:.008)));
       const source=audio.createBufferSource(), filter=audio.createBiquadFilter(), gain=audio.createGain();
-      source.buffer=buffer;filter.type='bandpass';filter.frequency.value=frequency;filter.Q.value=1.4;gain.gain.value=volume*3;
+      source.buffer=buffer;filter.type='bandpass';filter.frequency.value=frequency;filter.Q.value=kind==='preview'?.35:1.4;gain.gain.value=volume*3;
       source.connect(filter);filter.connect(gain);gain.connect(audio.destination);source.start(t);source.onended=()=>{source.disconnect();filter.disconnect();gain.disconnect();};
+      if(kind==='preview')return true;
       const oscillator=audio.createOscillator(), envelope=audio.createGain();oscillator.frequency.value=frequency;oscillator.type='sine';
+      if(kind==='enter' || kind==='leave'){oscillator.frequency.setValueAtTime?.(frequency,t);oscillator.frequency.exponentialRampToValueAtTime?.(kind==='enter'?1000:330,t+duration);}
       envelope.gain.setValueAtTime(volume,t);envelope.gain.exponentialRampToValueAtTime(.0001,t+duration);
       oscillator.connect(envelope);envelope.connect(audio.destination);oscillator.start(t);oscillator.stop(t+duration);oscillator.onended=()=>{oscillator.disconnect();envelope.disconnect();};
       return true;

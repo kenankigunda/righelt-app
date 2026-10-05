@@ -269,3 +269,48 @@ button.button-pending,.button-link.button-pending {
 .header-icon-action:focus-visible .header-action-label{max-width:100px;opacity:1;margin-left:8px;}
 .shell-header .header-icon-action:is(:hover,:focus-visible){background:rgb(37 43 45 / 4%);color:var(--ink);border-color:transparent;}
 @media(prefers-reduced-motion:reduce){.header-icon-action .header-action-label{transition:none;}}
+/* Matching four-corner cuts give the top pair equal broad bands and the bottom pair equal fine bands. */
+:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) [data-shell-panel="board"] {
+ --stone-outline:polygon(18px 0,calc(100% - 18px) 0,100% 18px,100% calc(100% - 18px),calc(100% - 18px) 100%,18px 100%,0 calc(100% - 18px),0 18px);
+}
+:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel[data-shell-panel="board"]::before {
+ background:linear-gradient(135deg,var(--corner-start) 0 24px,transparent 24px) top left / 40px 40px no-repeat,
+ linear-gradient(225deg,var(--corner-start) 0 24px,transparent 24px) top right / 40px 40px no-repeat,
+ linear-gradient(45deg,var(--corner-end) 0 16px,transparent 16px) bottom left / 40px 40px no-repeat,
+ linear-gradient(315deg,var(--corner-end) 0 16px,transparent 16px) bottom right / 40px 40px no-repeat,
+ var(--stone-grain),linear-gradient(135deg,#fffdf7,#f2ede1);
+}
+.overlay-key {display:flex;flex-wrap:wrap;gap:10px 16px;}
+.overlay-key > span {display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+.swatch.commander-key {width:16px;height:16px;border:0;background:transparent;color:var(--ink);}
+.home-refresh .mini-board-card {margin-bottom:5px;filter:drop-shadow(0 3px 2px rgb(54 45 30 / 22%));}
+.home-refresh .mini-board-card::after {inset:4px 0 -4px;background:#bdb19b;}
+.invite-feedback {min-height:32px;margin:12px 0 0;display:flex;align-items:center;gap:7px;font-size:14px;line-height:1.5;color:var(--text-secondary);}
+.invite-feedback[data-success="true"] {color:#316449;}
+.invite-feedback .righelt-icon {width:17px;height:17px;}
+html[data-page-active="false"] .shell-header button.ui-icon-button {background:transparent!important;box-shadow:none!important;border-color:transparent!important;transform:none!important;}
+html[data-page-active="false"] .home-refresh button.opponent-choice {background:transparent!important;box-shadow:none!important;transform:none!important;}
+html[data-page-active="false"] .home-refresh button.opponent-choice::before {background:var(--stone-grain),linear-gradient(135deg,#fffef9,#f8f3e8);}
+/* The grid breathes without moving its geometry out of alignment with the logo. */
+.brand-grid {
+ mask-image:radial-gradient(ellipse 1050px 850px at var(--grid-origin-x,220px) var(--grid-origin-y,60px),#000 0%,rgb(0 0 0 / 55%) 30%,rgb(0 0 0 / 20%) 85%),radial-gradient(ellipse 650px 650px at 100% 100%,rgb(0 0 0 / 85%),transparent 85%);
+ mask-composite:add;animation:righelt-grid-breathe 24s ease-in-out infinite;
+}
+@keyframes righelt-grid-breathe {0%,100%{opacity:.84;}50%{opacity:1;}}
+html[data-page-active="false"] .brand-grid {animation-play-state:paused;}
+.story-art {perspective:900px;}
+.story-art img {transform-origin:50% 50%;backface-visibility:hidden;transition:none;}
+.shell-flyout {background:var(--stone-grain),var(--surface-raised);border-color:#cfc5b3;box-shadow:-4px 0 0 #d2c8b7,-9px 0 18px rgb(54 45 30 / 12%);}
+.shell-flyout-header {background:transparent;border-bottom:1px solid #d4cbb9;align-items:center;padding-bottom:12px;}
+.shell-flyout-header h2 {margin:0;}
+.shell-flyout .panel {background:transparent;border:0;box-shadow:none;}
+@starting-style {.shell-flyout.is-open {transform:translateX(calc(100% + 2rem));opacity:0;}}
+@media(max-width:900px){
+ .shell-flyout {box-shadow:0 -3px 0 #d2c8b7,0 -8px 18px rgb(54 45 30 / 12%);}
+ @starting-style {.shell-flyout.is-open {transform:translateY(calc(100% + 1rem));opacity:0;}}
+}
+@media(prefers-reduced-motion:reduce){.brand-grid{animation:none;}.shell-flyout{transition:none;}}
+.story-art {overflow:hidden;}
+.story-turn-shade {position:absolute;inset:0 auto 0 0;width:20%;background:linear-gradient(90deg,transparent,#403726,transparent);opacity:0;pointer-events:none;filter:blur(8px);}
+@media(prefers-reduced-motion:reduce){.story-turn-shade{display:none;}}
+html[data-page-active="false"] .shell-header button.ui-icon-button {transition:none;}

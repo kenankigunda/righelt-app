@@ -70,12 +70,12 @@ test('top invitation preserves the selected role through pending copy and failur
  await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:()=>new Promise((resolve,reject)=>{window.finishCopy=resolve;window.failCopy=reject;})}}));
  await page.goto('/');await page.getByTestId('home-create-game').click();
  const modal=page.getByRole('dialog',{name:'Invite a friend'});await expect(modal).toBeVisible();
- const box=await modal.boundingBox();expect(box.y).toBeLessThan(250);
+ await expect.poll(()=>modal.evaluate(el=>el.getBoundingClientRect().top)).toBeLessThan(250);
  const background=page.locator('.invite-gate-content');await expect(background).toHaveAttribute('inert','');
- expect((await background.boundingBox()).y).toBeGreaterThan(box.y+box.height);
+ await expect.poll(()=>page.evaluate(()=>{const surface=document.querySelector('.invite-gate-modal');const behind=document.querySelector('.invite-gate-content');return surface && behind ? behind.getBoundingClientRect().top-surface.getBoundingClientRect().bottom : -1;})).toBeGreaterThan(0);
  const viewer=modal.locator('[data-invite-role="viewer"]');await viewer.focus();await page.keyboard.press('Enter');
  await expect.poll(()=>page.evaluate(()=>typeof window.finishCopy)).toBe('function');
- await page.evaluate(()=>window.finishCopy());await expect(viewer).toBeFocused();
+ await page.evaluate(()=>{window.finishCopy();delete window.failCopy;});await expect(viewer).not.toHaveAttribute('aria-busy','true');await expect(viewer).toBeFocused();
  await page.keyboard.press('Enter');await expect.poll(()=>page.evaluate(()=>typeof window.failCopy)).toBe('function');
  await page.evaluate(()=>window.failCopy(new Error('Clipboard denied')));
  await expect(modal.getByRole('textbox',{name:'Invitation link'})).toBeVisible();await expect(viewer).toBeFocused();
@@ -127,4 +127,46 @@ test('header utilities expand on hover and keyboard focus while retaining their 
  await page.emulateMedia({reducedMotion:'reduce'});
  expect(await debug.locator('.header-action-label').evaluate(el=>getComputedStyle(el).transitionDuration)).toBe('0s');
  await page.keyboard.press('Enter');await expect(page.locator('[data-flyout="debug"]')).toBeVisible();
+});
+
+test('sound hover is quiet and clears when the page loses focus',async({page})=>{
+ await page.goto('/');await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+ const sound=page.locator('.sound-toggle');await sound.hover();
+ await expect.poll(()=>sound.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe('rgba(37, 43, 45, 0.05)');
+ expect(await sound.evaluate(el=>getComputedStyle(el).boxShadow)).toBe('none');
+ await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
+ await expect.poll(()=>sound.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+});
+
+test('copy feedback keeps Players height stable and preserves keyboard focus',async({page})=>{
+ await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async()=>{}}}));
+ await page.goto('/');await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Close invite',exact:true}).click();
+ const panel=page.locator('[data-game-panel="join"]');const copy=panel.locator('[data-invite-role="blue"]');await copy.focus();
+ await page.evaluate(()=>document.fonts.ready);
+ await expect.poll(()=>panel.evaluate(el=>el.getAnimations().length)).toBe(0);
+ const before=(await panel.boundingBox()).height;await page.keyboard.press('Enter');
+ await expect(panel.getByRole('status')).toHaveText('Link copied');await expect(copy).toBeFocused();
+ expect(Math.abs((await panel.boundingBox()).height-before)).toBeLessThan(2);
+ await expect(panel.getByRole('status')).toHaveText('');expect(Math.abs((await panel.boundingBox()).height-before)).toBeLessThan(2);
+ await expect(page.getByText('Commander',{exact:true})).toBeVisible();
+});
+
+test('storybook turn animates artwork while story copy stays fixed',async({page})=>{
+ await page.goto('/');await page.locator('button[data-opponent="babs"]').click();
+ const modal=page.getByRole('dialog',{name:'Babs',exact:true});await expect(modal).toBeVisible();
+ const copy=modal.locator('.opponent-story-copy');const before=await copy.boundingBox();
+ await modal.getByRole('button',{name:'Next story image'}).click();
+ await expect(modal.locator('[data-story-image]').nth(1)).toHaveAttribute('data-active','true');
+ expect(await modal.locator('.story-turn-shade').evaluate(el=>el.getAnimations().length)).toBeGreaterThan(0);
+ expect((await copy.boundingBox()).y).toBeCloseTo(before.y,0);
+});
+
+for(const outcome of ['success','failure'])test(`Players restores the selected invitation role after delayed clipboard ${outcome}`,async({page})=>{
+ await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:()=>new Promise((resolve,reject)=>{window.completeClipboard=resolve;window.failClipboard=()=>reject(new Error('Clipboard unavailable'));})}}));
+ await page.goto('/');await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Close invite',exact:true}).click();
+ const panel=page.locator('[data-game-panel="join"]');const viewer=panel.locator('[data-invite-role="viewer"]');await viewer.focus();await page.keyboard.press('Enter');
+ await page.waitForFunction(()=>window.completeClipboard);await expect(viewer).toHaveAttribute('aria-busy','true');
+ await page.evaluate(outcome=>outcome==='success'?window.completeClipboard():window.failClipboard(),outcome);
+ await expect(viewer).not.toHaveAttribute('aria-busy','true');await expect(viewer).toBeFocused();
+ if(outcome==='failure')await expect(panel.getByRole('textbox',{name:'Invitation link'})).toBeVisible();
 });

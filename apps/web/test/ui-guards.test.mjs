@@ -105,7 +105,7 @@ test("game route live sync connection is not gated by participant role", () => {
 });
 
 test("optimistic game creation and history branch actions bypass the blocking busy wrapper", () => {
-  assert.match(source, /if \(action === "create-game" \|\| action === 'create-self-play'\) \{\s*gameSound\.play\('enter'\);\s*const handle = transport\.createGame\(\{ selfPlayMode: action === 'create-self-play' \}\);/s);
+  assert.match(source, /if \(action === "create-game" \|\| action === 'create-self-play'\) \{\s*const handle = transport\.createGame\(\{ selfPlayMode: action === 'create-self-play' \}\);/s);
   assert.match(source, /startGameEntryRouteTransition\(handle\.result\.id, "home"\);/);
   assert.match(source, /navigateTo\(buildGameHash\(handle\.result\.id, null, getCurrentFlyoutState\(\)\)\);/);
   assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*const handle = transport\.launchHistoryBranch\(/s);

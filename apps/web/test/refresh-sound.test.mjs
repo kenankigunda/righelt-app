@@ -53,3 +53,14 @@ test('mute and leaving a game cancel outstanding incoming reminders without repl
  sound.observe(event(2));assert.equal(timers.size,0);sound.toggle();assert.equal(timers.size,0);
  sound.observe(event(3));assert.equal(timers.size,1);sound.leaveGame();assert.equal(timers.size,0);
 });
+
+test('hover rustle has no pitched oscillator and waits for the dwell',()=>{
+ let oscillatorCount=0,bufferCount=0,pending,delay;
+ const node=()=>({connect(){},disconnect(){},frequency:{},Q:{},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},start(){},stop(){}});
+ const audio={state:'running',currentTime:0,sampleRate:8000,createBuffer:(_,n)=>({getChannelData:()=>new Float32Array(n)}),createBufferSource:()=>{bufferCount++;return node();},createBiquadFilter:node,createGain:node,createOscillator:()=>{oscillatorCount++;return node();}};
+ const sound=createGameSound({createAudio:()=>audio,setTimer:(fn,ms)=>{pending=fn;delay=ms;return 1;},clearTimer:()=>{pending=null;}});
+ sound.gesture();sound.interaction({kind:'preview-hover',key:'home:babs'});
+ assert.equal(delay,200);assert.equal(bufferCount,0);pending();assert.equal(bufferCount,1);assert.equal(oscillatorCount,0);
+ sound.play('move');assert.equal(oscillatorCount,1);
+ sound.interaction({kind:'preview-hover',key:'home:tau'});sound.cancelPreview();assert.equal(pending,null);
+});

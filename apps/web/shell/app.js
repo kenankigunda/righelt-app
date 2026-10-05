@@ -151,11 +151,14 @@ const accountDialog = createAccountDialog({ controller: account, onTutorial: () 
 const gameSound = createGameSound({ storage });
 const brand = createBrandController();
 createBrandGrid();
-document.addEventListener('pointerdown',()=>gameSound.gesture(),{passive:true});
+document.addEventListener('pointerdown',()=>{gameSound.gesture();gameSound.cancelPreview();},{passive:true});
 document.addEventListener('keydown',()=>gameSound.gesture());
 document.addEventListener('visibilitychange',()=>gameSound.activityChanged());
-window.addEventListener('blur',()=>gameSound.activityChanged());
-window.addEventListener('focus',()=>gameSound.activityChanged());
+const syncPageActivity = () => { document.documentElement.dataset.pageActive=String(!document.hidden && document.hasFocus()); };
+syncPageActivity();
+document.addEventListener('visibilitychange',syncPageActivity);
+window.addEventListener('blur',()=>{document.documentElement.dataset.pageActive='false';gameSound.activityChanged();});
+window.addEventListener('focus',()=>{syncPageActivity();gameSound.activityChanged();});
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 const boardAdapter = createEngineBoardAdapter();
 const hoverCapability = ensureHoverCapabilityController();
@@ -925,28 +928,17 @@ const clearCoordinatedFlyoutMotionStyles = () => {
 };
 const capturePanelHeights = () =>
   getAnimatedPanels().map((panelEl) => (panelEl instanceof HTMLElement ? panelEl.getBoundingClientRect().height : null));
+const panelSizeAnimations = new WeakMap();
+const panelPendingFocus = new WeakMap();
 const animatePanelHeightChange = (panelEl, fromHeight) => {
-  if (prefersReducedMotion() || !(panelEl instanceof HTMLElement) || !Number.isFinite(fromHeight)) {
-    return;
-  }
+  if (!(panelEl instanceof HTMLElement) || !Number.isFinite(fromHeight)) return;
+  panelSizeAnimations.get(panelEl)?.cancel();
+  panelSizeAnimations.delete(panelEl);
   const toHeight = panelEl.getBoundingClientRect().height;
-  if (Math.abs(toHeight - fromHeight) < 1) {
-    return;
-  }
-
-  panelEl.style.overflow = "hidden";
-  panelEl.style.height = `${fromHeight}px`;
-  void panelEl.offsetHeight;
-  panelEl.style.transition = "height 180ms ease";
-  panelEl.style.height = `${toHeight}px`;
-
-  const clearHeightAnimation = () => {
-    panelEl.style.transition = "";
-    panelEl.style.height = "";
-    panelEl.style.overflow = "";
-    panelEl.removeEventListener("transitionend", clearHeightAnimation);
-  };
-  panelEl.addEventListener("transitionend", clearHeightAnimation);
+  if (prefersReducedMotion() || Math.abs(toHeight-fromHeight)<1) return;
+  const animation=panelEl.animate([{height:`${fromHeight}px`},{height:`${toHeight}px`}],{duration:180,easing:'ease-out'});
+  panelSizeAnimations.set(panelEl,animation);
+  animation.onfinish=()=>{if(panelSizeAnimations.get(panelEl)===animation)panelSizeAnimations.delete(panelEl);};
 };
 const animatePanelHeightChanges = (previousPanelHeights) => {
   if (!appEl || !Array.isArray(previousPanelHeights) || previousPanelHeights.length === 0) {
@@ -2140,6 +2132,7 @@ const updateHeaderFields = () => {
   }
 };
 
+const renderInviteFeedback = () => `<div class="invite-feedback" role="status" aria-live="polite" data-success="${inviteFeedback === 'Link copied'}">${inviteFeedback ? `${icon(inviteFeedback === 'Link copied' ? 'check' : 'copy')}<span>${escapeHtml(inviteFeedback)}</span>` : ''}</div>`;
 const setInviteFeedback = (message) => {
   inviteFeedback = message;
   render({ animatePanels: false, includeBoard: false });
@@ -2375,7 +2368,7 @@ const scrollHomeSectionToTop = (sectionKey) => {
   });
 };
 
-const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something good.</h2><p class="home-start-description">A familiar rival? Or maybe a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer opponents are being prepared.</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
+const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new.</h2><p class="home-start-description">A familiar rival? Or maybe a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer opponents are being prepared.</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
 const renderHome = () => `<section class="stack home-refresh">${routeHydrated ? renderHomeGameSection('my') : renderHomeSectionSkeleton('Continue playing')}${renderStartChoices()}${routeHydrated ? getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('') : ''}</section>`;
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
@@ -2561,7 +2554,7 @@ const renderJoinInvitePanel = (game, inviteLink) => {
     ${renderParticipantsPanel(game)}
     ${pendingSeatNotice}
     ${joinInviteActions}
-    ${renderFeedbackReveal(inviteFeedback)}
+    ${renderInviteFeedback()}
     ${inviteFallback?.gameId === game.id ? `<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>` : ""}
     <div class="section-followup">
       <ul class="participant-list">${pendingRows}</ul>
@@ -2632,7 +2625,8 @@ const renderBoardPanel = (game) => `
     <div id="shell-board" class="board" data-testid="game-board"></div>
     <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
   </div>
-  <div class="overlay-key" aria-label="Overlay color key">
+  <div class="overlay-key" aria-label="Board legend">
+    <span><i class="swatch commander-key">${renderPieceSymbol('commander')}</i>Commander</span>
     <span><i class="swatch supply-point" style="--supply-owner:var(--player-${game.currentSnapshot?.sideToMove === 'P2' ? 'p2' : 'p1'})">${renderPieceSymbol('supply')}</i>Supply point</span>
     <span><i class="swatch supply"></i>Supply line</span>
     <span><i id="shell-command-legend-swatch" class="swatch command" style="${escapeHtml(
@@ -2994,7 +2988,26 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
     summaryEl.innerHTML = renderGameSummaryPanel(game);
   }
   if (joinEl instanceof HTMLElement) {
-    joinEl.innerHTML = renderJoinInvitePanel(game, inviteLink);
+    const markup=renderJoinInvitePanel(game, inviteLink);
+    if(joinEl.innerHTML !== markup){
+      const oldHeight=joinEl.getBoundingClientRect().height;
+      const focus=joinEl.contains(document.activeElement)?document.activeElement:null;
+      const selector=focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}`:null;
+      const selection=focus instanceof HTMLInputElement?[focus.selectionStart,focus.selectionEnd]:null;
+      if(selector)panelPendingFocus.set(joinEl,{selector,selection});
+      else if(document.activeElement !== document.body)panelPendingFocus.delete(joinEl);
+      joinEl.innerHTML=markup;
+      const savedFocus=panelPendingFocus.get(joinEl);
+      if(savedFocus){
+        const target=joinEl.querySelector(savedFocus.selector);
+        if(target && !target.disabled){
+          target.focus({preventScroll:true});
+          if(savedFocus.selection && target instanceof HTMLInputElement)target.setSelectionRange(...savedFocus.selection);
+          panelPendingFocus.delete(joinEl);
+        }else if(!isButtonPending(getCopyInviteButtonKey(game.id)))panelPendingFocus.delete(joinEl);
+      }
+      animatePanelHeightChange(joinEl,oldHeight);
+    }
   }
   if (participantsEl instanceof HTMLElement) {
     participantsEl.innerHTML = renderParticipantsPanel(game);
@@ -4119,7 +4132,7 @@ const renderHostInvite = game => renderInvitationSurface({host:true,background:r
   <p class="small invite-gate-kicker">Your game is ready</p><h2 id="invite-surface-title">Invite a friend</h2>
   <p>Copy a link and send it their way.</p>
   <div class="invite-choice-list">${invitationOptions(game).map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id)})}>${icon('copy')}${isButtonPending(getCopyInviteButtonKey(game.id))?'Preparing link…':option.label}</button>`).join('')}</div>
-  <p role="status">${escapeHtml(inviteFeedback)}</p>
+  ${renderInviteFeedback()}
   ${inviteFallback?.gameId===game.id?`<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>`:''}
 `});
 const openFriendInvite = gameId => {
@@ -4224,6 +4237,8 @@ window.addEventListener("hashchange", () => {
   if(hostInvite && (parsedRoute.name!=='game' || parsedRoute.gameId!==hostInvite.gameId)){hostInvite=null;inviteVisit++;}
   profileDialog.close();
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
+  if(previousRoute.name !== 'game' && currentRoute.name === 'game')gameSound.play('enter');
+  else if(previousRoute.name === 'game' && currentRoute.name !== 'game')gameSound.play('leave');
   if(previousRoute.name === 'game' && currentRoute.name === 'home') {
     gameSound.cancelPreview();restoreHomePending=true;
     startGameEntryRouteTransition(previousRoute.gameId,'game');
@@ -4301,6 +4316,16 @@ appEl.addEventListener("click", event => {
     void openBoardAccountGate(event.target.closest?.("button, [tabindex]"));
   }
 }, true);
+const homeHoverCard = target => target instanceof Element ? target.closest('.home-refresh .opponent-choice,.home-refresh .mini-board-card-link-surface') : null;
+appEl.addEventListener('pointerover',event=>{
+  if(event.pointerType==='touch' || document.documentElement.dataset.hoverCapability!=='hover')return;
+  const card=homeHoverCard(event.target);
+  if(card && card!==homeHoverCard(event.relatedTarget))gameSound.interaction({kind:'preview-hover',key:`home:${card.dataset.opponent || card.dataset.gameId || card.dataset.action}`});
+});
+appEl.addEventListener('pointerout',event=>{
+  const card=homeHoverCard(event.target);
+  if(card && card!==homeHoverCard(event.relatedTarget))gameSound.interaction({kind:'preview-leave'});
+});
 appEl.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof Element)) {
@@ -4417,7 +4442,6 @@ appEl.addEventListener("click", async (event) => {
   if (action === 'toggle-sound') { const enabled=gameSound.toggle();actionEl.innerHTML=icon(enabled?'sound':'muted');actionEl.setAttribute('aria-label',enabled?'Mute sound':'Enable sound');actionEl.setAttribute('aria-pressed',String(enabled));actionEl.title=`Sound ${enabled?'on':'off'}`;return; }
   if (action === 'opponent-story') { gameSound.play('intro'); storyDialog.open(actionEl.dataset.opponent,{trigger:actionEl}); return; }
   if (action === "create-game" || action === 'create-self-play') {
-    gameSound.play('enter');
     const handle = transport.createGame({ selfPlayMode: action === 'create-self-play' });
     startGameEntryRouteTransition(handle.result.id, "home");
     navigateTo(buildGameHash(handle.result.id, null, getCurrentFlyoutState()));
