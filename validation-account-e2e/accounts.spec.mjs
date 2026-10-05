@@ -276,16 +276,22 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
     await proof(page,info,'returning-personal-home-lower',resume);
     // Restore the intentional top-of-panel view before opening a story.
     await page.getByTestId('resume-slot').evaluate(element=>{element.scrollTop=0;});
-    if(capabilities.stories){
-      const priorCreates=creates;const babs=page.locator('button[data-opponent="babs"]');await babs.click();
-      const story=page.getByRole('dialog',{name:'Babs · Easy'});
-      await expect(story.locator('[data-story-play]')).toBeDisabled();
-      await expect(story.locator('[data-story-readiness]')).toContainText('Computer play is being prepared');
-      await expect.poll(()=>story.locator('[data-story-image]').first().evaluate(img=>img.complete&&img.naturalWidth===960)).toBe(true);
-      await fits(page,story);await proof(page,info,'unavailable-trained-story',story);
-      await page.keyboard.press('Escape');await expect(story).not.toBeVisible();await expect(babs).toBeFocused();
-      expect(creates).toBe(priorCreates);expect((await session(page)).account.preferences.introducedOpponents).toBe(0);
-    }
+  }
+  // Stories are a separate capability from the old personal-home module.
+  if(capabilities.stories){
+    await page.getByRole('link',{name:'Righelt',exact:true}).click();
+    await settledHome(page);
+    const priorPreferences=(await session(page)).account.preferences;
+    const priorIntroductions=await page.evaluate(()=>localStorage.getItem('righelt.introduced.v1'));
+    const priorCreates=creates;const babs=page.locator('button[data-opponent="babs"]');await babs.click();
+    const story=page.getByRole('dialog',{name:capabilities.personalHome?'Babs · Easy':'Babs',exact:true});
+    await expect(story.locator('[data-story-play]')).toBeDisabled();
+    await expect(story.locator('[data-story-readiness]')).toContainText(capabilities.personalHome?'Computer play is being prepared':'This opponent is still in training.');
+    await expect.poll(()=>story.locator('[data-story-image]').first().evaluate(img=>img.complete&&img.naturalWidth>0&&img.naturalHeight>0)).toBe(true);
+    await fits(page,story);await proof(page,info,'unavailable-trained-story',story);
+    await page.keyboard.press('Escape');await expect(story).not.toBeVisible();await expect(babs).toBeFocused();
+    expect(creates).toBe(priorCreates);expect((await session(page)).account.preferences).toEqual(priorPreferences);
+    expect(await page.evaluate(()=>localStorage.getItem('righelt.introduced.v1'))).toBe(priorIntroductions);
   }
   if(capabilities.results)await proveResultsRematch({page,info,root});
   if(process.env.RIGHELT_LEGACY_CONTINUITY_INPUT){
