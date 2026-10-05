@@ -245,6 +245,13 @@ def arena_arguments(args,artifact_root):
 
 
 def parity_arguments(args,artifact_root):
+    if getattr(args,'development_cases',None):
+        if not args.export_parity or not args.development_cases.resolve().is_relative_to(artifact_root.resolve()):
+            raise ValueError('development cases require supervised export inside archive')
+        from .development_probe import load_cases
+        cases=load_cases(args.development_cases)
+        if not args.parity_corpus or cases['corpus']['path']!=str(args.parity_corpus.resolve()):
+            raise ValueError('development cases differ from parity corpus')
     if getattr(args,'canary',False):
         if not args.parity_corpus or not args.parity_corpus.resolve().is_relative_to(artifact_root.resolve()):raise ValueError('canary requires archived parity corpus')
         return hashlib.sha256(args.parity_corpus.read_bytes()).hexdigest()
@@ -294,6 +301,7 @@ def main():
     parser.add_argument('--prepare-arena',action='store_true')
     parser.add_argument('--export-parity',action='store_true')
     parser.add_argument('--parity-corpus',type=Path)
+    parser.add_argument('--development-cases',type=Path)
     parser.add_argument('--candidate-checkpoint',type=Path)
     parser.add_argument('--opponent-checkpoint',type=Path)
     args=parser.parse_args()
@@ -378,6 +386,9 @@ def main():
         if parity_digest:
             runtime['parityCorpusSha256']=parity_digest
             runtime['parityCorpusPath']=str(args.parity_corpus.resolve())
+        runtime.pop('developmentCasesSha256',None)
+        if args.development_cases:
+            runtime['developmentCasesSha256']=hashlib.sha256(args.development_cases.read_bytes()).hexdigest()
         runtime['supervisorAttempt']=uuid.uuid4().hex
         if arena_digest:runtime['arenaPlanSha256']=arena_digest
         else:runtime.pop('arenaPlanSha256',None)
@@ -391,6 +402,7 @@ def main():
             argv=[sys.executable,'-m','righelt_training.export_parity','--run-dir',str(args.run_dir.resolve()),
                   '--checkpoint',str(args.resume.resolve()),'--corpus',str(args.parity_corpus.resolve()),
                   '--gate-report',str(args.gate_report.resolve())]
+            if args.development_cases:argv+=['--development-cases',str(args.development_cases.resolve())]
         elif args.prepare_arena:
             argv=[sys.executable,'-m','righelt_training.prepare_arena','--run-dir',str(args.run_dir.resolve()),
                   '--candidate-checkpoint',str(args.candidate_checkpoint.resolve()),'--opponent-checkpoint',str(args.opponent_checkpoint.resolve())]

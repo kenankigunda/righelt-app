@@ -154,3 +154,19 @@ PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_trainin
 The data report separates retained historical archives, observed attempts, retained data from the selected allocation and actual batch exposure. It reports controller/continuation coverage, families, exact states, policy entropy, visit coverage, unvisited prior mass and policy-target divergence. Missing legacy measurements remain unknown. Sampled positions from later-rolled-back updates remain observations, not fresh-health proof. The checkpoint recovery bundle, baseline and exact journal snapshots bind the report to its evidence.
 
 Start inventory selects training-family states deterministically across controllers and continuation phases, retaining family, source archive and ancestry. The optional replay allowance is at most 60 seconds total and ten seconds per source game. Only a complete independent authoritative replay can publish exact states. Unfinished sources remain visible and are not replaced. The command uses no model, records its source dependencies, and terminates its engine child on interruption. Omit `--verify-seconds` for an index without replay. Nothing consumes this inventory as a new self-play distribution; adopting archived starts is a separate experiment tracked by T-122.
+
+### Frozen development progress check
+
+Prepare the small fixed set from the existing 1,000-state export-validation corpus, without executing a model:
+
+```sh
+PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.development_probe prepare --corpus .ai-runs/control/parity-corpus.json --output .ai-runs/control/development-cases-v1.json
+```
+
+Selection takes the first two positions per controller/category (ordinary, push available, rush, retreat and follow), deduplicating overlaps. Missing coverage remains explicit. These are development positions, separate from sealed tactical and final match acceptance.
+
+For the next authorized diagnostic, six-hour and twelve-hour stages, pass `--development-cases /absolute/path/.ai-runs/control/development-cases-v1.json` to `righelt_training.stage`. The flag reaches only the existing supervised export phase. After numeric parity is saved, the collector reuses the loaded checkpoint for at most 60 seconds, bounded further by remaining phase time and resource availability. It uses eight simulations, temperature zero, zero value gap and the same per-position seeds as the bootstrap proof. It records raw model preferences, P1/controller values, searched choices and any authoritative terminal proofs. This is observational; it adds no health or strength threshold. An incomplete observation remains incomplete and does not erase successful numeric parity. Invalid outputs or inconsistent evidence remain correctness failures.
+
+Each attempt preserves its plan, source/runtime/checkpoint identity and individual case receipts under the run's `development/` directory. `development-latest.json` links the immutable proof and report. The supervisor's existing operation watchdog also bounds blocked inference; interruption cannot add compute time. No standalone collector command bypasses supervision.
+
+Use `development_probe report --cases CASES --proof COMPLETE_PROOF --output REPORT` to read a complete bootstrap proof or stage development proof. Use `development_probe compare --cases CASES --before BEFORE_REPORT --after AFTER_REPORT --output COMPARISON` for matched checkpoint observations. Both commands are read-only with respect to experiment artifacts and execute no model. Numeric export output alone is insufficient. Comparisons require matching frozen cases, engine/search/model dependencies and native runtime; unrelated browser plumbing need not match. A change in preferred moves or raw values does not establish improved playing strength.

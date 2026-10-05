@@ -33,6 +33,38 @@ def read(path):
     return json.loads(Path(path).read_text())
 
 
+def development_flags(args):
+    path=getattr(args,'development_cases',None)
+    return ['--development-cases',str(path.resolve())] if path else []
+
+
+def development_record(directory,args):
+    cases=getattr(args,'development_cases',None)
+    if not cases:return None
+    path=directory/'development-latest.json'
+    if not path.exists():return {'status':'missing','acceptanceDecision':None}
+    record=read(path)
+    if record.get('casesSha256')!=hashlib.sha256(cases.read_bytes()).hexdigest():
+        raise ValueError('development observation uses different frozen cases')
+    parity=read(directory/'trained-export-parity.json')
+    if any(record.get(k)!=parity.get(k) for k in ('checkpointSha256','sourceRevision')):
+        raise ValueError('development observation checkpoint/source mismatch')
+    for key in ('proof','report'):
+        if hashlib.sha256(Path(record[key]).read_bytes()).hexdigest()!=record[key+'Sha256']:
+            raise ValueError('development observation artifact changed')
+    proof,report=read(record['proof']),read(record['report'])
+    if (type(record.get('complete')) is not bool or proof.get('complete') is not record['complete']
+            or report.get('status')!=('complete' if record['complete'] else 'incomplete')):
+        raise ValueError('development observation completion mismatch')
+    return {**record,'status':'complete' if record['complete'] else 'incomplete','acceptanceDecision':None}
+
+
+def export_complete(data,directory,args):
+    # Missing optional observations never rerun an already proven numeric phase.
+    # The separate record still validates retained evidence before reporting it.
+    return data.get('complete') is True and data.get('numericPassed') is True
+
+
 def invoke_supervisor(argv):
     directory=Path(argv[argv.index("--run-dir")+1]) if "--run-dir" in argv else None
     process=subprocess.Popen(argv,cwd=ROOT)
@@ -70,7 +102,8 @@ def execute_diagnostic(args,invoke=None):
         if not proof.exists() or not valid(read(proof)):raise ValueError(f'diagnostic {name} incomplete')
         atomic_json(receipt,{'sourceRevision':result['sourceRevision'],'proofSha256':hashlib.sha256(proof.read_bytes()).hexdigest()})
     try:
-        phase('export',['--export-parity','--parity-corpus',str(args.parity_corpus.resolve())],directory/'trained-export-parity.json',lambda p:p.get('complete') is True and p.get('numericPassed') is True)
+        phase('export',['--export-parity','--parity-corpus',str(args.parity_corpus.resolve()),*development_flags(args)],directory/'trained-export-parity.json',lambda p:export_complete(p,directory,args))
+        result['developmentObservation']=development_record(directory,args)
         parity=read(directory/'trained-export-parity.json')
         if not parity.get('complete') or not parity.get('numericPassed'):raise ValueError('diagnostic export failed')
         phase('prepare',['--prepare-arena','--diagnostic',*pair],directory/'prepare-arena-result.json',lambda p:p.get('status')=='completed' and p.get('preparedPairs')==10)
@@ -145,7 +178,8 @@ def execute(args, invoke=None):
         if (directory/'latest.json').exists():checkpoint=Path(read(directory/'latest.json')['checkpoint'])
         phase('training',['--resume',str(checkpoint.resolve())] if checkpoint else [],'runner-result.json',lambda p:p.get('reason')=='validation-handoff')
         latest=Path(read(directory/'latest.json')['checkpoint']).resolve()
-        phase('export-parity',['--resume',str(latest),'--export-parity','--parity-corpus',str(args.parity_corpus.resolve())],'trained-export-parity.json',lambda p:p.get('complete') is True and p.get('numericPassed') is True)
+        phase('export-parity',['--resume',str(latest),'--export-parity','--parity-corpus',str(args.parity_corpus.resolve()),*development_flags(args)],'trained-export-parity.json',lambda p:export_complete(p,directory,args))
+        result['developmentObservation']=development_record(directory,args)
         parity=read(directory/'trained-export-parity.json')
         if not parity.get('complete') or not parity.get('numericPassed'):raise ValueError('trained export parity incomplete or failed')
         phase('health',['--resume',str(latest),'--health'],'health-report.json',lambda p:p.get('complete') is True)
@@ -195,6 +229,7 @@ def main():
     parser.add_argument('--stage',choices=('initial','overnight'),required=True)
     parser.add_argument('--seed',type=int,required=True);parser.add_argument('--resume',type=Path)
     parser.add_argument('--continuation',type=Path)
+    parser.add_argument('--development-cases',type=Path)
     parser.add_argument('--diagnostic',action='store_true');parser.add_argument('--opponent-checkpoint',type=Path)
     args=parser.parse_args()
     args.run_dir.parent.mkdir(parents=True,exist_ok=True)

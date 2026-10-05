@@ -14,6 +14,38 @@ from righelt_training.checkpoint import atomic_json
 
 
 class ExportParityTest(unittest.TestCase):
+    def test_optional_development_observation_preserves_numeric_proof_when_incomplete(self):
+        with tempfile.TemporaryDirectory() as d:
+            root,checkpoint,corpus,_=self.fixture(d)
+            cases=root/'cases.json';cases.write_text('{}')
+            runtime=json.loads((root/'runtime.json').read_text())
+            runtime['developmentCasesSha256']=hashlib.sha256(cases.read_bytes()).hexdigest()
+            atomic_json(root/'runtime.json',runtime)
+            seen=[]
+            def collect(*args,**kwargs):
+                proof=root/'dev-proof.json';observation=root/'dev-report.json'
+                proof.write_text(json.dumps({'complete':False}));observation.write_text(json.dumps({'status':'incomplete'}))
+                seen.append(json.loads((root/'trained-export-parity.json').read_text()))
+                kwargs['resource_check']()
+                return {'proof':str(proof),'report':str(observation),'complete':False,'reason':'budget'}
+            with patch('righelt_training.export_parity.verify_corpus',return_value=[{'encoded':[0.0]*4600}]*1000),patch('torch.backends.mps.is_available',return_value=True),patch('righelt_training.export_parity.load_checkpoint'),patch('righelt_training.export_parity.export_onnx',return_value={'sha256':'model'}):
+                report=evaluate(root,checkpoint,corpus,time.monotonic()+60,development_cases=cases,development_collector=collect,
+                                checker=lambda *a,**k:{'numericPassed':True,'maxAbsoluteError':[0,0]})
+            self.assertTrue(report['complete']);self.assertEqual(seen,[report])
+            from righelt_training.stage import development_record,export_complete
+            args=Namespace(development_cases=cases)
+            self.assertEqual(development_record(root,args)['status'],'incomplete')
+            self.assertTrue(export_complete(report,root,args))
+            pointer=root/'development-latest.json';record=json.loads(pointer.read_text())
+            pointer.unlink()
+            self.assertEqual(development_record(root,args)['status'],'missing')
+            self.assertTrue(export_complete(report,root,args))
+            pointer.write_text(json.dumps({**record,'complete':True}))
+            with self.assertRaisesRegex(ValueError,'completion mismatch'):development_record(root,args)
+            pointer.write_text(json.dumps(record))
+            (root/'dev-proof.json').write_text('changed')
+            with self.assertRaisesRegex(ValueError,'artifact changed'): development_record(root,args)
+
     def fixture(self,d):
         root=Path(d);checkpoint=root/'checkpoint.pt';checkpoint.write_bytes(b'trained')
         digest=hashlib.sha256(checkpoint.read_bytes()).hexdigest()
@@ -100,5 +132,21 @@ class ExportParityTest(unittest.TestCase):
                 old=getattr(args,field);setattr(args,field,value)
                 with self.assertRaises(ValueError):parity_arguments(args,root)
                 setattr(args,field,old)
+
+    def test_development_cases_require_matching_archived_corpus_and_export_phase(self):
+        with tempfile.TemporaryDirectory() as d:
+            root,checkpoint,corpus,_=self.fixture(d)
+            cases=root/'cases.json';cases.write_text('{}')
+            args=Namespace(export_parity=True,parity_corpus=corpus,arena_plan=None,prepare_arena=False,
+                           health=False,resume=checkpoint,run_dir=root,development_cases=cases)
+            with patch('righelt_training.development_probe.load_cases',return_value={'corpus':{'path':str(corpus.resolve())}}):
+                self.assertEqual(parity_arguments(args,root),hashlib.sha256(corpus.read_bytes()).hexdigest())
+                args.export_parity=False
+                with self.assertRaisesRegex(ValueError,'supervised export'):parity_arguments(args,root)
+                args.export_parity=True;args.development_cases=Path('/outside/cases.json')
+                with self.assertRaisesRegex(ValueError,'supervised export'):parity_arguments(args,root)
+            args.development_cases=cases
+            with patch('righelt_training.development_probe.load_cases',return_value={'corpus':{'path':'different'}}):
+                with self.assertRaisesRegex(ValueError,'differ'):parity_arguments(args,root)
 
 if __name__=='__main__':unittest.main()

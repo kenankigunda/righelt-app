@@ -10,11 +10,13 @@ from righelt_training.stage import execute
 
 
 class StageTests(unittest.TestCase):
-    def run_case(self,fail=None,healthy=True,resume=False,repeat=False,incomplete_arena=False,diagnostic=False,continuation=False,arena_reason='budget',exhausted_process=False):
+    def run_case(self,fail=None,healthy=True,resume=False,repeat=False,incomplete_arena=False,diagnostic=False,continuation=False,arena_reason='budget',exhausted_process=False,development=False):
         with TemporaryDirectory() as tmp:
             root=Path(tmp);run=root/'run';calls=[]
             args=SimpleNamespace(run_dir=run,activity_file=root/'activity',gate_report=root/'gates',parity_corpus=root/'corpus',stage='initial',seed=107,resume=root/'old.pt' if resume else None)
             args.gate_report.write_text(json.dumps({'sourceRevision':'test'}))
+            if development:
+                args.development_cases=root/'development-cases.json';args.development_cases.write_text('{}')
             if continuation:
                 args.continuation=root/'contract.json'
                 args.continuation.write_text(json.dumps({'sequenceId':'approved','phase':'six-hour','recoveryCheckpoint':str(root/'old.pt')}))
@@ -34,6 +36,13 @@ class StageTests(unittest.TestCase):
                 (run/'latest.pt').write_bytes(b'trained')
                 (run/'latest.json').write_text(json.dumps({'checkpoint':str(run/'latest.pt'),'sha256':hashlib.sha256(b'trained').hexdigest()}))
                 (run/'trained-export-parity.json').write_text(json.dumps({'complete':True,'numericPassed':True}))
+                if development and '--export-parity' in argv:
+                    proof=run/'dev-proof.json';report=run/'dev-report.json'
+                    proof.write_text(json.dumps({'complete':False}));report.write_text(json.dumps({'status':'incomplete'}))
+                    (run/'development-latest.json').write_text(json.dumps({'complete':False,'reason':'budget',
+                        'casesSha256':hashlib.sha256(args.development_cases.read_bytes()).hexdigest(),
+                        'proof':str(proof),'proofSha256':hashlib.sha256(proof.read_bytes()).hexdigest(),
+                        'report':str(report),'reportSha256':hashlib.sha256(report.read_bytes()).hexdigest()}))
                 (run/'health-report.json').write_text(json.dumps({'complete':True,'healthy':healthy,'checkpoints':[{'path':str(run/'latest.pt'),'weightsSha256':'new'},{'path':str(run/'first.pt'),'weightsSha256':'old'}]}))
                 (run/'prepare-arena-result.json').write_text(json.dumps({'status':'completed','plan':str(run/'plan.json'),'planSha256':'frozen'}))
                 proof=run/'evaluations'/'frozen';proof.mkdir(parents=True,exist_ok=True)
@@ -60,6 +69,15 @@ class StageTests(unittest.TestCase):
         self.assertIn('--export-parity',calls[2]);self.assertIn('--health',calls[3])
         self.assertIn('--prepare-arena',calls[4]);self.assertIn('--arena-plan',calls[5])
         for command in calls[2:]:self.assertIn('--resume',command)
+
+    def test_optional_development_check_uses_export_only_and_partial_does_not_block_health(self):
+        result,calls=self.run_case(development=True)
+        self.assertEqual(result['status'],'phases-finished')
+        self.assertEqual(result['developmentObservation']['status'],'incomplete')
+        self.assertEqual(sum('--development-cases' in command for command in calls),1)
+        self.assertIn('--development-cases',calls[2])
+        _,calls=self.run_case(development=True,repeat=True)
+        self.assertEqual(calls,[])
 
     def test_healthy_continuation_allows_inconclusive_strength_only(self):
         result,calls=self.run_case(continuation=True,incomplete_arena=True)
