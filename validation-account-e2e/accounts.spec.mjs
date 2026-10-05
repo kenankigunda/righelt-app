@@ -11,6 +11,8 @@ import {FRESH_ACCOUNT_WORKFLOW,RETAINED_ACCOUNT_WORKFLOW} from '../scripts/valid
 const root=process.env.RIGHELT_VALIDATION_TARGET_ROOT||process.cwd();
 const capabilities=await candidateCapabilities(root);
 if(!capabilities.accounts)throw Error('Account proof requires the candidate account UI and real credential services');
+if(capabilities.separateAccountForms&&!capabilities.simplifiedAccounts)throw Error('Separate account forms require the simplified credential contract');
+const createSubmitName=capabilities.simplifiedAccounts?'Create account & continue':'Create account';
 // Browser contract shared by the reviewed account and UX stacks. Do not load
 // candidate test helpers: that would load a second Playwright installation.
 async function submitPlayableAction(page,action,info){
@@ -97,7 +99,7 @@ async function registerStandalone(page,username){
   await page.goto('/');await page.getByRole('button',{name:'Sign in',exact:true}).click();
   await dialog(page).getByRole('button',{name:'Create account',exact:true}).click();
   await dialog(page).getByLabel('Username',{exact:true}).fill(username);await dialog(page).getByLabel('Password',{exact:true}).fill(password);
-  await dialog(page).getByRole('button',{name:capabilities.simplifiedAccounts?'Create account & continue':'Create account',exact:true}).click();
+  await dialog(page).getByRole('button',{name:createSubmitName,exact:true}).click();
   if(!capabilities.simplifiedAccounts){await dialog(page).getByLabel('I saved my recovery code').check();await dialog(page).getByRole('button',{name:'Continue',exact:true}).click();}
   await expect(dialog(page)).not.toBeVisible();
 }
@@ -130,7 +132,10 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   const trigger=dialog(page).getByLabel('Username',{exact:true});
   await expect(trigger).toHaveAttribute('autocomplete','username');
   await proof(page,info,'sign-in',dialog(page));
-  if(!capabilities.simplifiedAccounts){await dialog(page).getByLabel('Password',{exact:true}).fill('');
+  if(!capabilities.simplifiedAccounts||capabilities.separateAccountForms){
+  await expect(dialog(page).getByLabel('Password',{exact:true})).toBeVisible();
+  await expect(dialog(page).getByLabel('Password',{exact:true})).toBeEnabled();
+  await dialog(page).getByLabel('Password',{exact:true}).fill('');
   await dialog(page).getByRole('button',{name:'Sign in',exact:true}).click();}
   else {await expect(dialog(page).getByLabel('Password',{exact:true})).not.toBeVisible();await expect(dialog(page).getByLabel('Password',{exact:true})).toBeDisabled();}
   await expect(dialog(page)).toBeVisible();expect(creates).toBe(0);
@@ -139,10 +144,15 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   await dialog(page).getByLabel('Username',{exact:true}).fill(username);
   await dialog(page).getByLabel('Password',{exact:true}).fill(password);
   if(capabilities.simplifiedAccounts){
+    if(capabilities.separateAccountForms){
+      const displayName=dialog(page).getByLabel('Display name (optional)',{exact:true});
+      await expect(displayName).toBeVisible();await expect(displayName).not.toHaveAttribute('required','');
+      await displayName.fill('Validation Signup');
+    }
     await expect(dialog(page).getByLabel('Password',{exact:true})).toHaveAttribute('type','text');
     expect(creates).toBe(0);
     await fits(page,dialog(page));await proof(page,info,'account-creation',dialog(page),{mask:[dialog(page).getByLabel('Password',{exact:true})]});
-    await dialog(page).getByRole('button',{name:'Create account & continue',exact:true}).click();
+    await dialog(page).getByRole('button',{name:createSubmitName,exact:true}).click();
   }else{
   await dialog(page).getByRole('button',{name:'Create account',exact:true}).click();
   await expect(page.getByTestId('recovery-code')).toBeVisible();
@@ -154,7 +164,9 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   await dialog(page).getByRole('button',{name:'Continue',exact:true}).click();
   }
   await expect(dialog(page)).not.toBeVisible();await expect(page.getByTestId('game-role')).toContainText('Player 1');
-  expect(creates).toBe(1);const gameURL=page.url();
+  expect(creates).toBe(1);
+  if(capabilities.separateAccountForms)expect((await session(page)).account.displayName).toBe('Validation Signup');
+  const gameURL=page.url();
   const second=await browser.newContext(options(info));
   try{
     const other=await second.newPage();await other.goto(gameURL);await login(other,username);
@@ -170,9 +182,24 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   await accountOpen(page);
   if(capabilities.profiles){
     await dialog(page).getByLabel('Display name',{exact:true}).fill('Validation Player');
-    await dialog(page).getByLabel('View preference').selectOption('explanatory');
-    await dialog(page).getByRole('button',{name:'Save account settings'}).click();
-    await expect(dialog(page).locator('[data-account-status]')).toHaveText('Account settings saved.');
+    if(capabilities.separateAccountForms){
+      await expect(dialog(page).getByLabel('View preference')).toHaveCount(0);
+      await expect(dialog(page).getByTestId('tutorial-status')).toHaveCount(0);
+      await expect(dialog(page).getByRole('button',{name:'Replay tutorial',exact:true})).toHaveCount(0);
+      await expect(dialog(page).getByRole('button',{name:'Switch account',exact:true})).toHaveCount(0);
+    }else await dialog(page).getByLabel('View preference').selectOption('explanatory');
+    await dialog(page).getByRole('button',{name:capabilities.separateAccountForms?'Save':'Save account settings',exact:true}).click();
+    await expect.poll(async()=>(await session(page)).account.displayName).toBe('Validation Player');
+    if(capabilities.separateAccountForms){
+      // Preferences remain an account contract even when their controls leave
+      // Account. Exercise the real authenticated API, then retain its values.
+      const saved=await page.evaluate(async()=>{
+        const current=await(await fetch('/api/auth/session',{cache:'no-store'})).json();
+        const response=await fetch('/api/account',{method:'PATCH',headers:{'Content-Type':'application/json','X-Righelt-Auth':'1','X-Righelt-Session':current.contextId},body:JSON.stringify({preferences:{view:'explanatory',tutorial:'completed'}})});
+        return {status:response.status,body:await response.json()};
+      });
+      expect(saved.status).toBe(200);expect(saved.body.account.preferences.view).toBe('explanatory');expect(saved.body.account.preferences.tutorial).toBe('completed');
+    }
   }
   await fits(page,dialog(page));await proof(page,info,'account-settings',dialog(page));
   await dialog(page).getByRole('button',{name:'Sign out',exact:true}).click();
@@ -181,6 +208,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   await login(page,username);await expect(page.getByTestId('game-role')).toContainText('Player 1');
   const savedSession=await session(page);expect(savedSession.authenticated).toBe(true);
   if(capabilities.profiles){expect(savedSession.account.displayName).toBe('Validation Player');expect(savedSession.account.preferences.view).toBe('explanatory');}
+  if(capabilities.separateAccountForms)expect(savedSession.account.preferences.tutorial).toBe('completed');
   if(capabilities.personalHome){
     await page.getByRole('link',{name:'Righelt',exact:true}).click();
     await settledHome(page);
