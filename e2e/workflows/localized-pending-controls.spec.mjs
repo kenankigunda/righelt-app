@@ -42,12 +42,13 @@ test("copy invite waits for pending game creation and then copies the committed 
     });
 
     await page.getByTestId("home-create-game").click();
+    await page.getByRole("button", { name: "Close invite", exact: true }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
     await expect(page.getByTestId("copy-invite")).toBeVisible();
 
     await page.getByTestId("copy-invite").click();
 
-    await expect(page.getByTestId("copy-invite")).toHaveText("Creating invite...");
+    await expect(page.getByTestId("copy-invite")).toHaveText("Preparing link…");
     await expect(page.getByTestId("copy-invite")).toHaveAttribute("data-pending", "true");
     await expect.poll(async () => page.evaluate(() => window.__copiedTexts.length)).toBe(0);
 
@@ -57,8 +58,8 @@ test("copy invite waits for pending game creation and then copies the committed 
     const createBody = await createResponse.json();
     const expectedInviteToken = createBody?.game?.inviteToken;
 
-    await expect(page.getByTestId("copy-invite")).toHaveText("Invite someone else");
-    await expect(page.getByText("Invite link copied to clipboard")).toBeVisible();
+    await expect(page.getByTestId("copy-invite")).toHaveText("Invite someone to play as blue");
+    await expect(page.getByText("Link copied")).toBeVisible();
     await expect.poll(async () => page.evaluate(() => window.__copiedTexts[0] ?? null)).toContain(
       `#/invite/${expectedInviteToken}`,
     );
@@ -121,6 +122,7 @@ test("scenario update only pulses the clicked scenario button while the local wr
     await page.goto("/");
     await expect(page.getByTestId("home-create-game")).toBeVisible();
     await page.getByTestId("home-create-game").click();
+    await page.getByRole("button", { name: "Close invite", exact: true }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
     await page.getByRole("button", { name: "Scenarios" }).click();

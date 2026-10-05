@@ -254,3 +254,14 @@ Wooden-tabletop palette; sound defaults ON unless explicitly muted. Visible ligh
 
 Distinct physical cues: light lift/tick for selection; softer tick for preview; gentle release for cancellation; crisp clack for committed placement; distinct removal contact for captures; differentiated turn/result cues; restrained game-entry and introduction cues. Desktop preview waits 200 ms on a new legal destination; cancel on leave, so quick sweeps stay silent. Touch preview is immediate. Do not duplicate cues on renders, acknowledgements, reconnects or selection restoration. Successful placement cues require confirmation. Hidden pages, initial loads, ordinary buttons, logo and image cycling are silent; never replay missed sounds.
 
+
+## Review refinements: integrated, playful surfaces
+
+- Artwork belongs to its component: use true transparent negative space or an exactly matched plain surface, preserve intentional crisp edges, and avoid rectangular backgrounds or feathered disguises. Apply this consistently across every opponent, scene and choice illustration.
+- Use angular clipped corners prominently on cards and sections, selectively accented in red/blue. Colored accents meet the component edges. Soft primary buttons and restrained modal surfaces provide contrast without nested boxes.
+- The aligned background grid recedes with distance from the logo. Preserve the approved wordmark itself.
+- Remove implementation language and raw identifiers from normal play. Keep only copy that helps players choose, understand waiting, or recover. Explain consequences, not internal mechanisms.
+- Audio follows the visible action immediately, including local placement before server acknowledgement. Deduplicate by action identity; rejection remains visibly recoverable. Preserve deliberate mute, silent replay/background behavior, and 200 ms desktop hover settling. Built-in-speaker timing is the review baseline.
+- Invitations state their recipient purpose: red/blue for an open playing seat, purple for viewing. Merge players and invitation actions. Friend creation opens a dismissible Invite modal; copy confirms success without closing it. Recipient intent never replaces server authorization.
+- Introduction scenes rotate every three seconds; hover/focus pause, manual carets stop cycling for the visit, and reduced motion stays manual.
+- Board exceptions include lighter player-color hover and breathing room around coordinates, in addition to supply ownership color and sound. Preserve game geometry and established mouse/touch rules. Commander ideation is separate until approved.

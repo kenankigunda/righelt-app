@@ -62,6 +62,8 @@ export const createGameFromHome = async (page) => {
     return response.request().method() === "POST" && url.pathname === "/api/shell/games";
   });
   await page.getByTestId("home-create-game").click();
+  await expect(page.getByRole("dialog", { name: "Invite a friend" })).toBeVisible();
+  await page.getByRole("button", { name: "Close invite", exact: true }).click();
   const createResponse = await createResponsePromise;
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await closeHostInvitation(page);

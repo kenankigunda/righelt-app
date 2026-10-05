@@ -9,7 +9,7 @@ body { font-family:var(--font-family); background:var(--surface-foundation); }
 .shell-header-actions .nav-row { align-items:center; }
 :is(button,.button-link) { font-family:inherit; }
 :is(.shell-header,.shell-flyout,.home-refresh,.story-modal,.panel:not([data-shell-panel="board"])) :is(button,.button-link) { min-height:44px; border-radius:12px; font-weight:700; box-shadow:none; }
-:is(.shell-header,.shell-flyout,.home-refresh,.story-modal,.panel:not([data-shell-panel="board"])) :is(button,.button-link):not(.secondary):not(.ui-icon-button):not(.opponent-choice):not(.danger):not(.warn) { background:var(--action-color); color:white; }
+:is(.shell-header,.shell-flyout,.home-refresh,.story-modal,.panel:not([data-shell-panel="board"])) :is(button,.button-link):not(.secondary):not(.ui-icon-button):not(.opponent-choice):not(.participant-profile):not(.danger):not(.warn) { background:var(--action-color); color:white; }
 :is(.shell-header,.shell-flyout,.home-refresh,.story-modal,.panel:not([data-shell-panel="board"])) button.secondary { background:transparent; border-color:var(--divider); color:var(--ink); }
 button.ui-icon-button { display:inline-flex; justify-content:center; align-items:center; width:44px; height:44px; padding:10px; border:0; border-radius:50%; color:var(--ink); background:transparent; flex:none; box-shadow:none; }
 .ui-icon-button svg { width:24px; height:24px; }
@@ -34,7 +34,7 @@ button.opponent-choice:hover { background:var(--surface-foundation); border-colo
 .opponent-friend svg { width:64px; height:64px; }
 .home-start-footer { display:flex; align-items:center; gap:16px; margin-top:18px; flex-wrap:wrap; }
 .home-start-footer button { background:transparent; color:var(--text-secondary); border:0; }
-.game-shell-frame .panel:not([data-shell-panel="board"]), .game-shell-mobile-panel .panel { box-shadow:none; border-color:transparent; background:var(--surface-raised); border-radius:16px; }
+.game-shell-frame .panel:not([data-shell-panel="board"]), .game-shell-mobile-panel .panel:not([data-shell-panel="board"]) { box-shadow:none; border-color:transparent; background:var(--surface-raised); border-radius:16px; }
 .participant-list { list-style:none; padding:0; margin:0; display:grid; gap:14px; }
 .participant-list > li { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:0; min-width:0; line-height:1.5; }
 .participant-list .mono { font-family:inherit; overflow-wrap:anywhere; }
@@ -43,8 +43,8 @@ button.opponent-choice:hover { background:var(--surface-foundation); border-colo
 .alert { border:0; border-left:3px solid var(--info); border-radius:8px; background:color-mix(in srgb,var(--surface-raised),var(--info) 5%); }
 .story-modal { width:min(700px,calc(100vw - 24px)); max-height:calc(100dvh - 32px); overflow:auto; border:0; border-radius:24px; background:var(--surface-raised); color:var(--ink); padding:20px 18px 30px; box-shadow:0 20px 80px rgb(20 27 31 / 25%); }
 .story-modal::before,.story-modal::after { content:''; position:absolute; width:34px; height:7px; transform:rotate(-45deg); pointer-events:none; }
-.story-modal::before { left:-5px; top:9px; background:var(--player-red); }
-.story-modal::after { right:-5px; bottom:9px; background:var(--player-blue); }
+.story-modal::before { left:1px; top:9px; background:var(--player-red); }
+.story-modal::after { right:1px; bottom:9px; background:var(--player-blue); }
 .story-modal::backdrop { background:rgb(37 43 45 / 42%); backdrop-filter:blur(8px); }
 .story-close { position:absolute; right:12px; top:12px; z-index:2; }
 .story-art-wrap { display:grid; grid-template-columns:32px minmax(0,1fr) 32px; align-items:center; margin-top:8px; }
@@ -72,4 +72,57 @@ button.story-caret { width:44px; position:relative; margin-left:-6px; color:var(
 @media(prefers-reduced-motion:reduce) { .story-art img { transition:none; } }
 
 body { isolation:isolate; }
-[data-shell-panel="board"] { --accent:#0d7a5a; font-family:"Avenir Next","Segoe UI",sans-serif; }
+[data-shell-panel="board"] { --accent:#1f7a5a; font-family:"Avenir Next","Segoe UI",sans-serif; }
+
+.shell-route-transition-layer[data-direction="back"] .shell-route-transition-layer-swipe { scale:-1 1; }
+
+[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:is(.opponent-choice,.ui-icon-button,.participant-profile):not(:disabled):hover { background:rgb(37 43 45 / 5%); color:var(--ink); border-color:transparent; box-shadow:none; }
+[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:not(.secondary):not(.opponent-choice):not(.ui-icon-button):not(.participant-profile):not(:disabled):hover { background:var(--action-hover); }
+
+/* Surfaces share angular accents; controls keep their softer, tactile shape. */
+.brand-grid { mask-image:radial-gradient(ellipse 1050px 850px at var(--grid-origin-x,220px) var(--grid-origin-y,60px),#000 0%,rgb(0 0 0 / 65%) 30%,transparent 85%); }
+.home-refresh > .panel, .game-shell-frame .panel:not([data-shell-panel="board"]), .game-shell-mobile-panel .panel:not([data-shell-panel="board"]) {
+  position:relative; border-radius:0 18px 0 18px;
+  clip-path:polygon(20px 0,100% 0,100% calc(100% - 20px),calc(100% - 20px) 100%,0 100%,0 20px);
+}
+.home-start::before, [data-game-panel="join"]::before, .home-start::after {
+  content:''; position:absolute; width:30px; height:30px; pointer-events:none;
+}
+.home-start::before, [data-game-panel="join"]::before { top:0;left:0;background:var(--player-p1);clip-path:polygon(0 0,100% 0,0 100%); }
+.home-start::after { bottom:0;right:0;background:var(--player-p2);clip-path:polygon(100% 0,100% 100%,0 100%); }
+.home-refresh .mini-board-card { border-radius:0 12px 0 12px;clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px); }
+.story-modal::before,.story-modal::after { width:44px;height:44px;transform:none; }
+.story-modal::before { left:0;top:0;clip-path:polygon(0 0,100% 0,0 100%); }
+.story-modal::after { right:0;bottom:0;clip-path:polygon(100% 0,100% 100%,0 100%); }
+.opponent-friend svg { width:116px;height:96px; }
+.participant-list { margin:16px 0 24px; }
+.invite-illustration { width:116px;margin:8px auto 20px; }
+.invite-share-modal { max-width:520px; }
+.invite-share-modal h2 { font-size:30px;letter-spacing:-.04em;margin:0; }
+.invite-share-modal p { line-height:1.65; }
+.invite-link-field { width:100%;padding:12px;border:1px solid var(--divider);border-radius:8px;background:transparent;margin-bottom:16px; }
+.invite-action.invite-red { --action-color:var(--player-p1);--action-hover:#a93725; }
+.invite-action.invite-blue { --action-color:var(--player-p2);--action-hover:#2456a7; }
+:is(.panel,.story-modal) button.invite-action.invite-viewer { color:#7048a5;border-color:#7048a5;background:transparent; }
+[data-hover-capability="hover"] :is(.panel,.story-modal) button.invite-action.invite-viewer:hover { background:#f0eaf7;color:#593584; }
+/* Give coordinates air without changing the cells or their geometry. */
+[data-shell-panel="board"] .axis-label.col-axis { bottom:-18px; }
+[data-shell-panel="board"] .axis-label.row-axis { left:-18px; }
+
+[data-shell-panel="board"] .cell.target.target-side-p1:not(.continuation-member) { border-color:color-mix(in srgb,var(--player-p1) 35%,#cac7bd);box-shadow:none; }
+[data-shell-panel="board"] .cell.target.target-side-p2:not(.continuation-member) { border-color:color-mix(in srgb,var(--player-p2) 35%,#cac7bd);box-shadow:none; }
+[data-shell-panel="board"] .cell.target .piece-token.move-ghost { opacity:.22; }
+[data-shell-panel="board"] .board-wrap { padding-bottom:24px; }
+.invite-choice-row[hidden] { display:none; }
+
+[data-shell-panel="board"] { padding-inline:24px; }
+@media(max-width:700px) { [data-shell-panel="board"] { padding-inline:20px; } }
+
+/* Review baseline: every section carries the red/blue corner signature. */
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel) section.panel::before,
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel) section.panel::after {
+  content:'';position:absolute;width:30px;height:30px;pointer-events:none;
+}
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel) section.panel::before { top:0;left:0;background:var(--player-p1);clip-path:polygon(0 0,100% 0,0 100%); }
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel) section.panel::after { bottom:0;right:0;background:var(--player-p2);clip-path:polygon(100% 0,100% 100%,0 100%); }
+.game-shell-frame [data-shell-panel="board"] { position:relative;border-radius:0 18px 0 18px;clip-path:polygon(20px 0,100% 0,100% calc(100% - 20px),calc(100% - 20px) 100%,0 100%,0 20px); }

@@ -997,10 +997,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!state || !getUsesHoverTargetSelection() || host.canInteract?.(state) === false) {
       return;
     }
-    if(applyHoveredTarget(hoveredCoord)) controls.onInteractionSound?.({kind:'preview-hover',key:`${hoveredCoord.row}:${hoveredCoord.col}`});
+    if(applyHoveredTarget(hoveredCoord) && actionsAtTarget(hoveredCoord).length > 0) controls.onInteractionSound?.({kind:'preview-hover',key:`${hoveredCoord.row}:${hoveredCoord.col}`});
   };
 
   const handleBoardCellHoverEnd = (hoveredCoord) => {
+    controls.onInteractionSound?.({kind:'preview-leave'});
     if (!state || !getUsesHoverTargetSelection() || host.canInteract?.(state) === false) {
       return;
     }
@@ -1159,6 +1160,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       destroyedPieces: nextDestroyedPieces = [],
     } = {},
   ) => {
+    controls.onInteractionSound?.({kind:'preview-leave'});
     state = structuredClone(snapshot);
     legalActions = Array.isArray(incomingLegalActions) ? incomingLegalActions : [];
     overlayMode = nextOverlayMode;

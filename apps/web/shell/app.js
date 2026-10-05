@@ -3,6 +3,7 @@ import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js
 import { participantButton, participantName, createPublicProfileDialog } from './public-profile.js';
 import { createAccountController, safeAccountIntent } from './account-controller.js';
 import { createAccountDialog } from './account-dialog.js';
+import { invitationOptions } from './invitations.js';
 import { createIntroductionPreferences, createOpponentSession } from './opponent-session.js';
 import { renderWordmark, createBrandController, createBrandGrid, resolveActionAffiliation } from './brand.js';
 import { icon, soundToggle } from './ui.js';
@@ -11,8 +12,8 @@ import { createModal } from './modal.js';
 import { createOpponentStoryDialog, OPPONENT_STORIES } from './opponent-stories.js';
 import { recoveryMessage, sharedMutationActions } from "./recovery-view.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
-import { createEngineBoardAdapter } from "../board-adapters/engine-board-adapter.js";
-import { syncMiniBoardPreviews } from "../board/mini-board-preview.js";
+import { createEngineBoardAdapter, createInitialBoardSnapshot } from "../board-adapters/engine-board-adapter.js";
+import { createMiniBoardPreview, syncMiniBoardPreviews } from "../board/mini-board-preview.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
@@ -117,7 +118,6 @@ const ensureRouteTransitionLayer = () => {
 };
 
 ensureShellStylesheet();
-const refreshStylesheet = document.createElement('link'); refreshStylesheet.rel='stylesheet'; refreshStylesheet.href='./shell/refresh.css'; document.head.appendChild(refreshStylesheet);
 const routeTransitionLayerEl = ensureRouteTransitionLayer();
 if (appEl) {
   appEl.hidden = false;
@@ -180,6 +180,7 @@ let wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
 let lastWsStatusKey = toStableKey(wsStatus);
 let wsLastEvent = "none";
 let inviteFeedback = "";
+let inviteFallback = null;
 let inviteFeedbackTimer = null;
 let undoRequestFeedback = "";
 let undoRequestFeedbackGameId = null;
@@ -227,6 +228,9 @@ let homeSectionResizeFrame = 0;
 let activePanelSwipe = null;
 let panelTransitionResetTimer = null;
 let routeTransition = null;
+let homeReturnPosition = {y:0, gameId:null};
+let restoreHomePending = false;
+window.history.scrollRestoration = 'manual';
 let routeTransitionCoverTimer = null;
 let routeTransitionRevealTimer = null;
 let headerMenuOpen = false;
@@ -963,7 +967,7 @@ const getRouteTransitionRenderKey = () =>
   routeTransition ? `${routeTransition.type}:${routeTransition.fromRoute}:${routeTransition.toRoute}:${routeTransition.gameId}` : "none";
 const getRouteTransitionPhaseKey = () => routeTransition?.phase || "idle";
 const isGameEntryRouteTransitionActive = (route = currentRoute) =>
-  routeTransition?.type === "game-entry" && route?.name === "game" && route?.gameId === routeTransition.gameId;
+  routeTransition?.type === "game-entry" && (routeTransition.toRoute === "home" ? route?.name === "home" : route?.name === "game" && route?.gameId === routeTransition.gameId);
 const syncRouteTransitionLayer = () => {
   if (!(routeTransitionLayerEl instanceof HTMLElement)) {
     return;
@@ -971,6 +975,7 @@ const syncRouteTransitionLayer = () => {
   routeTransitionLayerEl.style.setProperty("--shell-game-entry-transition-ms", `${GAME_ENTRY_ROUTE_TRANSITION_MS}ms`);
   routeTransitionLayerEl.style.setProperty("--shell-game-entry-cover-ms", `${GAME_ENTRY_ROUTE_TRANSITION_COVER_MS}ms`);
   routeTransitionLayerEl.style.setProperty("--shell-game-entry-reveal-ms", `${GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS}ms`);
+  routeTransitionLayerEl.dataset.direction = routeTransition?.toRoute === "home" ? "back" : "forward";
   routeTransitionLayerEl.setAttribute("data-active", routeTransition ? "true" : "false");
   routeTransitionLayerEl.setAttribute("data-transition", routeTransition?.type || "none");
   routeTransitionLayerEl.setAttribute("data-phase", routeTransition?.phase || "idle");
@@ -1042,6 +1047,7 @@ const scheduleRouteTransitionCoverSettle = (gameId) => {
   }, GAME_ENTRY_ROUTE_TRANSITION_COVER_MS);
 };
 const startGameEntryRouteTransition = (gameId, fromRoute = currentRoute?.name || "unknown") => {
+  if(fromRoute === 'home') homeReturnPosition={y:window.scrollY,gameId};
   if (!gameId || prefersReducedMotion()) {
     clearRouteTransition({ renderNow: false });
     return;
@@ -1074,6 +1080,10 @@ const syncRouteTransitionForCurrentRoute = () => {
   syncRouteTransitionLayer();
 };
 const maybeRevealRouteTransition = () => {
+  if(restoreHomePending && currentRoute.name === 'home' && routeHydrated){
+    restoreHomePending=false;
+    window.requestAnimationFrame(()=>{if(currentRoute.name!=='home')return;window.scrollTo({top:homeReturnPosition.y,behavior:'instant'});const target=homeReturnPosition.gameId?appEl.querySelector(`.mini-board-card-link-surface[data-game-id="${CSS.escape(homeReturnPosition.gameId)}"]`):null;(target || appEl.querySelector('[data-testid="home-create-game"]'))?.focus({preventScroll:true});});
+  }
   if (!routeTransition || !isGameEntryRouteTransitionActive(currentRoute) || !routeHydrated) {
     return;
   }
@@ -2200,6 +2210,7 @@ const getInviteContextForGame = (game, routeName = currentRoute.name) => {
       inviteToken: resolvedInvite.inviteToken,
       inviteFromRole: resolvedInvite.inviteFromRole,
       inviteType,
+      intendedRole:currentRoute.inviteAs,
     };
   }
   return {
@@ -2335,7 +2346,7 @@ const renderHomeGameSection = (sectionKey) => {
       </div>
     </div>
     ${showEmptyState
-      ? `<p class="small home-games-empty">Your next good game starts here.</p>`
+      ? `<p class="small home-games-empty">Games you're currently playing will show up here.</p>`
       : `<div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
       <div class="home-games-carousel-track" data-home-carousel-track="${escapeHtml(sectionKey)}">
         <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
@@ -2359,7 +2370,7 @@ const scrollHomeSectionToTop = (sectionKey) => {
   });
 };
 
-const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something good.</h2><p class="home-start-description">A familiar rival. A new challenge. One more game.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${story.scenes[0][0]}.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><span class="opponent-friend">${icon('friend')}</span><strong>Friend</strong><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer opponents are being prepared.</span><button class="secondary" data-action="create-self-play">Play both sides</button></div></section>`;
+const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something good.</h2><p class="home-start-description">A familiar rival? Or maybe a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${story.scenes[0][0]}.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><span class="opponent-friend">${icon('friend')}</span><strong>Friend</strong><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer opponents are being prepared.</span><button class="secondary" data-action="create-self-play">Play both sides</button></div></section>`;
 const renderHome = () => `<section class="stack home-refresh">${routeHydrated ? renderHomeGameSection('my') : renderHomeSectionSkeleton('Continue playing')}${renderStartChoices()}${routeHydrated ? getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('') : ''}</section>`;
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
@@ -2537,17 +2548,16 @@ const renderJoinInvitePanel = (game, inviteLink) => {
           pendingKey: playAsBothButtonKey,
         })}>${isButtonPending(playAsBothButtonKey) ? "Claiming seats..." : "Play as both players"}</button>`
       : "",
-    `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-link="${escapeHtml(inviteLink)}" data-testid="copy-invite"${renderButtonStateAttributes({
-      pendingKey: copyInviteButtonKey,
-      disabled: !game.canInvite,
-    })}>${isButtonPending(copyInviteButtonKey) ? "Creating invite..." : "Invite someone else"}</button>`,
+    ...invitationOptions(game).map(option => `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="${option.role}" ${option.role==='viewer'?'data-testid="copy-viewer-invite"':'data-testid="copy-invite"'}${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:copyInviteButtonKey,disabled:!game.canInvite})}>${isButtonPending(copyInviteButtonKey)?'Preparing link…':option.label}</button>`),
   ]);
 
   return `
-    <h2 data-testid="join-invite-heading">Join / Invite</h2>
+    <h2 data-testid="join-invite-heading">Players</h2>
+    ${renderParticipantsPanel(game)}
     ${pendingSeatNotice}
     ${joinInviteActions}
     ${renderFeedbackReveal(inviteFeedback)}
+    ${inviteFallback?.gameId === game.id ? `<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>` : ""}
     <div class="section-followup">
       <ul class="participant-list">${pendingRows}</ul>
     </div>
@@ -2579,7 +2589,7 @@ const renderParticipantsPanel = (game) => {
           )
           .join("");
   return `
-    <h2>Participants</h2>
+
     <ul class="participant-list" data-testid="participants-list">${participantRows}${viewerRows}</ul>
   `;
 };
@@ -2651,7 +2661,7 @@ const renderGameShellFrame = (game) => `
         <div class="stack game-shell-mobile-panel" data-mobile-panel="players" data-shell-sticky-target="left" data-sticky-enabled="false">
           <section class="panel" data-game-panel="summary"></section>
           <section class="panel" data-game-panel="join"></section>
-          <section class="panel" data-game-panel="participants"></section>
+
         </div>
 
         <div class="stack game-shell-mobile-panel" data-mobile-panel="board" data-shell-sticky-target="board" data-sticky-enabled="false">
@@ -2730,13 +2740,19 @@ const createMarkupRoot = (markup) => {
 // Keep the enabled home control and its ancestor chain mounted while asynchronous
 // home sections update. Detaching a pressed/focused button loses native activation.
 const patchHomeAroundCreateControl = (markup) => {
-  const currentControl = appEl.querySelector('[data-testid="home-create-game"]');
+  const focusedControl=appEl.contains(document.activeElement) ? document.activeElement.closest('[data-action]') : null;
+  const focusedAction=focusedControl?.dataset.action;
+  const currentControl = appEl.querySelector('.home-start');
   const nextRoot = document.createElement("div");
   nextRoot.innerHTML = markup;
-  const nextControl = nextRoot.querySelector('[data-testid="home-create-game"]');
+  const nextControl = nextRoot.querySelector('.home-start');
   if (!currentControl || !nextControl) return false;
+  const pressedTop = currentControl.contains(pressedControlEl) ? currentControl.getBoundingClientRect().top : null;
   const comparableControl = currentControl.cloneNode(true);
+  comparableControl.style.removeProperty("margin-top");
+  if(!comparableControl.getAttribute("style"))comparableControl.removeAttribute("style");
   comparableControl.classList.remove("is-pressing");
+  comparableControl.querySelectorAll(".is-pressing,.is-releasing").forEach(el=>el.classList.remove("is-pressing","is-releasing"));
   if (!comparableControl.isEqualNode(nextControl)) return false;
   const pathTo = (control, root) => {
     const path = [];
@@ -2758,6 +2774,11 @@ const patchHomeAroundCreateControl = (markup) => {
       if (after) current.append(child.cloneNode(true)); else current.insertBefore(child.cloneNode(true), retained);
     }
   }
+  if(pressedTop !== null) {
+    const shift=pressedTop-currentControl.getBoundingClientRect().top;
+    if(shift>0)currentControl.style.marginTop=`${shift}px`;
+  }
+  if(focusedAction && !focusedControl.isConnected)appEl.querySelector(`[data-action="${CSS.escape(focusedAction)}"]`)?.focus({preventScroll:true});
   return true;
 };
 const updateMountedHeader = () => {
@@ -3037,7 +3058,7 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
       <div class="stack" data-shell-sticky-target="left" data-sticky-enabled="false">
         <section class="panel">${renderGameSummaryPanel(game)}</section>
         <section class="panel">${renderJoinInvitePanel(game, inviteLink)}</section>
-        <section class="panel">${renderParticipantsPanel(game)}</section>
+
       </div>
 
       <div class="stack" data-shell-sticky-target="board" data-sticky-enabled="false">
@@ -3197,20 +3218,20 @@ const renderInviteLanding = (inviteContext) => {
 
   const canJoinPlayer = game.canJoinAsPlayer && game.showJoinActions;
   const canJoinViewer = account.snapshot().enabled || game.canJoinAsViewer;
-  const playerActionLabel = inviteContext.inviteType === "player" ? "Join as player" : "Request to join as player";
+  const playerActionLabel = inviteContext.intendedRole && inviteContext.intendedRole !== 'viewer' ? `Play as ${inviteContext.intendedRole}` : inviteContext.inviteType === "player" ? "Join as player" : "Request to join as player";
   const inviteMessage =
     inviteContext.inviteType === "player"
-      ? `${inviteContext.inviteFromRole} shared a player invite.`
+      ? "You’re invited to play."
       : currentRoute.name === "game"
-        ? "You opened this game's direct link from a different device."
-        : "A non-player invite was shared with you.";
+        ? "Join this game to play or watch."
+        : "You’re invited to watch.";
   const playerExplainer = canJoinPlayer
     ? inviteContext.inviteType === "player"
-      ? "Joining as player will be applied immediately."
-      : "Joining as player will send a request to the approving player and add you as viewer in the interim."
+      ? ""
+      : "Ask a player to approve your seat. You can watch while you wait."
     : game.joinAsPlayerDisabledReason || "Player joining is unavailable.";
   const viewerExplainer = canJoinViewer
-    ? "Joining as viewer is applied immediately."
+    ? ""
     : game.joinAsViewerDisabledReason || "Viewer joining is unavailable.";
   const pendingNotice = game.pendingPlayerRequestSeat
     ? `<div class="alert">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
@@ -3222,11 +3243,11 @@ const renderInviteLanding = (inviteContext) => {
     <section class="invite-gate">
       <section class="panel invite-gate-modal">
         <p class="small invite-gate-kicker">Invite received</p>
-        <h2>Choose how to enter this game</h2>
-        <p>${colorizePlayerReferences(inviteMessage)} Join now to enter the live game route and receive updates.</p>
+        <h2>${inviteContext.intendedRole === "viewer" ? "Watch this game" : inviteContext.intendedRole ? "Take your seat" : "Choose how to enter this game"}</h2>
+        <p>${colorizePlayerReferences(inviteMessage)}</p>
         ${pendingNotice}
         <div class="invite-choice-list">
-          <div class="invite-choice-row">
+          <div class="invite-choice-row" ${inviteContext.intendedRole === "viewer" ? 'hidden' : ''}>
             <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-player"${renderButtonStateAttributes({
               pendingKey: joinPlayerButtonKey,
               disabled: !canJoinPlayer,
@@ -3248,7 +3269,7 @@ const renderInviteLanding = (inviteContext) => {
         <p class="small">
           ${
             canJoinPlayer || canJoinViewer
-              ? "The game preview is shown below, but it stays locked until you choose a role."
+              ? ""
               : "No join mode is currently available for this invite."
           }
         </p>
@@ -4013,8 +4034,8 @@ const makeAccountSyncStore = auth => createSyncStore({
   auth,
   fetcher: account.fetch,
   onAuthLost: () => account.authorityLost(),
-  onEvent: (payload) => {
-    gameSound.observe(payload,{silent:currentRoute.name!=='game' || payload?.game?.id!==currentRoute.gameId || Boolean(transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode)});
+  onEvent: (payload, context = {}) => {
+    gameSound.observe(payload,{silent:context.initial || currentRoute.name!=='game' || payload?.game?.id!==currentRoute.gameId || Boolean(transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode)});
     wsLastEvent = payload?.type
       ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
       : "unknown";
@@ -4057,13 +4078,48 @@ const makeAccountSyncStore = auth => createSyncStore({
 });
 let syncStore = makeAccountSyncStore(account.snapshot());
 let transport = syncStore;
+const inviteDialog = createModal({labelId:'invite-dialog-title',className:'invite-share-modal'});
+let inviteDialogGameId = null;
+const copyGameInvitation = async (gameId, role, status) => {
+  const input=status && inviteDialog.element.open ? inviteDialog.element.querySelector('[data-invite-link]') : null;
+  const active=()=>status ? (input?.isConnected && inviteDialog.element.open && inviteDialogGameId===gameId) : currentRoute.name==='game' && currentRoute.gameId===gameId;
+  if (status) status.textContent='Preparing link…';
+  try {
+    const handle=transport.getGameHandle?.(gameId);
+    if(handle?.status==='pending') await handle.committed;
+    if(!active())return;
+    const game=transport.getGameViewModel(gameId);
+    const option=invitationOptions(game).find(option=>option.role===role);
+    if(!option) throw new Error('That seat has been taken. Invite someone to view instead.');
+    const hash=buildInviteHash(option.token,getCurrentFlyoutState());
+    const link=`${window.location.origin}${window.location.pathname}${hash}${hash.includes('?')?'&':'?'}as=${role}`;
+    window.__righeltLastInvite=link;
+    if(input){input.value=link;input.hidden=false;}
+    try { await navigator.clipboard.writeText(link); if(!active())return;inviteFallback=null;if(status)status.textContent='Link copied';setInviteFeedback('Link copied'); }
+    catch { if(!active())return;if(status)status.textContent='Copy the link below to share it.';if(input){input.focus();input.select();}else {inviteFallback={gameId,link};setInviteFeedback('Copy the link below to share it.');} }
+  } catch(error) { if(!active())return;if(status)status.textContent=error.message || 'Could not prepare the link. Try again.';else setInviteFeedback('Could not prepare the link. Try again.'); }
+};
+const openFriendInvite = (gameId, trigger) => {
+  inviteDialogGameId=gameId;
+  const game=transport.getGameViewModel(gameId);
+  inviteDialog.open(`<button class="ui-icon-button story-close" data-modal-close aria-label="Close invite">${icon('close')}</button><div class="story-copy"><div class="invite-illustration">${icon('friend')}</div><h2 id="invite-dialog-title">Invite a friend</h2><p>A good game deserves good company. Copy a link and send it their way.</p><div class="story-modal-actions">${invitationOptions(game).map(option=>`<button class="invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}" data-share-role="${option.role}">${option.label}</button>`).join('')}</div><p role="status" data-invite-status></p><input class="invite-link-field" data-invite-link aria-label="Invitation link" readonly hidden><button class="secondary" data-modal-close>Back to game</button></div>`,trigger,()=>document.querySelector('[data-action="copy-invite"]'));
+};
+inviteDialog.element.addEventListener('click',async event=>{
+  const button=event.target.closest('[data-share-role]');if(!button || button.disabled)return;
+  button.disabled=true;
+  await copyGameInvitation(inviteDialogGameId,button.dataset.shareRole,inviteDialog.element.querySelector('[data-invite-status]'));
+  button.disabled=false;
+});
+const profileDialog=createModal({labelId:'guest-profile-title'});
 const getComputerReadiness = () => ({ state:'unavailable', message:'This opponent is still in training. Friend games are ready to play.' });
 const opponentSession = createOpponentSession({ preferences:createIntroductionPreferences(storage), getReadiness:getComputerReadiness, createGame:async()=>{throw new Error('Trained computer play is not available yet.');} });
 const storyDialog = createOpponentStoryDialog({ createModal, getReadiness:getComputerReadiness,
   onPlay: intent => opponentSession.play(intent), onClose:()=>opponentSession.cancel(),
+  onPresentation: () => { const root=document.createElement('div');root.className='story-presentation-board';root.setAttribute('aria-hidden','true');document.body.append(root);const preview=createMiniBoardPreview({rootEl:root,preview:{snapshot:createInitialBoardSnapshot(),previewKey:'intro'},createAdapter:createEngineBoardAdapter});return ()=>{preview.destroy();root.remove();}; },
 });
 
 const subscribeToTransport = () => transport.subscribe((change) => {
+  gameSound.local(change, transport.getGameViewModel(change?.gameId), {silent:currentRoute.name!=='game' || currentRoute.gameId!==change?.gameId || Boolean(transport.getGameViewModel(change?.gameId)?.inHistoryMode)});
   if (change?.type === "upgrade_required") {
     try {
       const key = "righelt.sync-v2-refresh";
@@ -4147,7 +4203,16 @@ window.addEventListener("hashchange", () => {
   const previousRoute = currentRoute;
   closeHeaderMenu();
   const parsedRoute = parseRouteFromHash(window.location.hash);
+  if(inviteDialog.element.open && (parsedRoute.name!=='game' || parsedRoute.gameId!==inviteDialogGameId)) inviteDialog.close();
+  profileDialog.close();
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
+  if(previousRoute.name === 'game' && currentRoute.name === 'home') {
+    gameSound.cancelPreview();restoreHomePending=true;
+    startGameEntryRouteTransition(previousRoute.gameId,'game');
+    if(routeTransition)routeTransition.toRoute='home';
+  } else if(previousRoute.name === 'home' && currentRoute.name === 'game') {
+    window.scrollTo({top:0,behavior:'instant'});
+  }
   syncRouteTransitionForCurrentRoute();
   const normalizedHash = buildHashForRoute(currentRoute);
   if (window.location.hash !== normalizedHash) {
@@ -4220,7 +4285,7 @@ appEl.addEventListener("click", event => {
 }, true);
 appEl.addEventListener("click", async (event) => {
   const target = event.target;
-  if (!(target instanceof HTMLElement)) {
+  if (!(target instanceof Element)) {
     return;
   }
 
@@ -4328,13 +4393,15 @@ appEl.addEventListener("click", async (event) => {
     }, 0);
   };
 
-  if (action === 'toggle-sound') { gameSound.toggle(); render({animatePanels:false,includeBoard:false}); return; }
+  if (action === 'guest-profile') { const id=actionEl.dataset.identityId;profileDialog.open(`<div class="story-copy"><h2 id="guest-profile-title">${id===transport.getIdentityId()?'You':'Guest player'}</h2><p class="small">Playing without an account</p><button data-modal-close>Back to game</button></div>`,actionEl);return; }
+  if (action === 'toggle-sound') { const enabled=gameSound.toggle();actionEl.innerHTML=icon(enabled?'sound':'muted');actionEl.setAttribute('aria-label',enabled?'Mute sound':'Enable sound');actionEl.setAttribute('aria-pressed',String(enabled));actionEl.title=`Sound ${enabled?'on':'off'}`;return; }
   if (action === 'opponent-story') { gameSound.play('intro'); storyDialog.open(actionEl.dataset.opponent,{trigger:actionEl}); return; }
   if (action === "create-game" || action === 'create-self-play') {
     gameSound.play('enter');
     const handle = transport.createGame({ selfPlayMode: action === 'create-self-play' });
     startGameEntryRouteTransition(handle.result.id, "home");
     navigateTo(buildGameHash(handle.result.id, null, getCurrentFlyoutState()));
+    if(action==='create-game') openFriendInvite(handle.result.id,actionEl);
     return;
   }
 
@@ -4471,27 +4538,8 @@ appEl.addEventListener("click", async (event) => {
     if (!gameId) {
       return;
     }
-    const gameHandle = transport.getGameHandle?.(gameId) ?? null;
-    const copyInvite = async () => {
-      if (gameHandle?.status === "pending") {
-        await gameHandle.committed;
-      }
-      const game = transport.getGameViewModel(gameId);
-      const inviteToken = game?.inviteToken || resolvedInvite?.inviteToken || gameId;
-      const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(inviteToken, getCurrentFlyoutState())}`;
-      let copied = false;
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(inviteLink);
-        copied = true;
-      }
-      window.__righeltLastInvite = inviteLink;
-      setInviteFeedback(copied ? "Invite link copied to clipboard" : "Clipboard unavailable");
-    };
-    if (gameHandle?.status === "pending") {
-      void withPendingButton(getCopyInviteButtonKey(gameId), copyInvite);
-      return;
-    }
-    await copyInvite();
+    await withPendingButton(getCopyInviteButtonKey(gameId),()=>copyGameInvitation(gameId,actionEl.dataset.inviteRole || 'viewer'));
+
     return;
   }
 
@@ -4883,7 +4931,7 @@ appEl.addEventListener("focusout", (event) => {
 
 appEl.addEventListener("pointerdown", (event) => {
   const target = event.target;
-  if (!(target instanceof HTMLElement)) {
+  if (!(target instanceof Element)) {
     return;
   }
   const controlEl = target.closest("button, .button-link, .mini-board-card-link-surface");
@@ -4901,7 +4949,9 @@ appEl.addEventListener("pointerdown", (event) => {
   startHistoryPress(actionEl);
 });
 
+window.addEventListener("pointercancel",()=>{document.querySelector(".home-start")?.style.removeProperty("margin-top");clearControlPress();});
 window.addEventListener("pointerup", (event) => {
+  window.setTimeout(()=>document.querySelector('.home-start')?.style.removeProperty('margin-top'),0);
   const target = event.target;
   if (pressedControlEl instanceof HTMLElement) {
     playControlReleaseBounce(pressedControlEl);

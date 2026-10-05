@@ -11,3 +11,19 @@ const fixture=()=>{
 test('default sound is on; explicit mute survives without accounts',()=>{const f=fixture();assert.equal(f.sound.enabled(),true);f.sound.toggle();assert.equal(f.sound.enabled(),false);assert.equal(createGameSound({storage:{getItem:()=> 'false'}}).enabled(),false);});
 test('settled hover produces one cue; leaving or hiding cancels it',()=>{const f=fixture();f.sound.gesture();f.sound.interaction({kind:'preview-hover',key:'1:1'});assert.equal(f.starts(),0);f.sound.interaction({kind:'preview-leave'});assert.equal(f.timers.size,0);f.sound.interaction({kind:'preview-hover',key:'1:2'});[...f.timers.values()][0]();assert.ok(f.starts()>0);const before=f.starts();f.sound.interaction({kind:'preview-hover',key:'1:2'});assert.equal(f.starts(),before);f.hide();assert.equal(f.sound.play('move'),false);});
 test('authoritative events sound once, while snapshots, rejected and replayed events stay silent',()=>{const f=fixture();f.sound.gesture();const event={game:{id:'a',board:{state:{outcome:{status:'ongoing'}}}},eventSeq:2,type:'snapshot',reason:'move_recorded'};assert.equal(f.sound.observe(event),false);assert.equal(f.sound.observe({...event,type:'event_appended',eventSeq:3}),true);assert.equal(f.sound.observe({...event,type:'event_appended',eventSeq:3}),false);assert.equal(f.sound.observe({...event,type:'event_appended',eventSeq:4,reason:'action_rejected'}),false);});
+test('local placement sounds immediately and its acknowledgement never repeats it',()=>{
+ const f=fixture();f.sound.gesture();const state={pieces:[{},{}],sideToMove:'P1',turnIndex:0,outcome:{status:'ongoing'}};
+ f.sound.local({gameId:'a',type:'authoritative_update'},{currentSnapshot:state});
+ const change={gameId:'a',type:'optimistic_enqueue',clientCommandId:'move-1'};
+ assert.equal(f.sound.local(change,{currentSnapshot:state}),true);const starts=f.starts();
+ assert.equal(f.sound.local(change,{currentSnapshot:state}),false);
+ assert.equal(f.sound.observe({game:{id:'a',board:{state}},type:'event_appended',reason:'move_recorded',eventSeq:1,clientCommandId:'move-1'}),false);
+ assert.equal(f.starts(),starts);
+});
+test('restored local commands and background actions are silent and never replay on acknowledgement',()=>{
+ const f=fixture();f.sound.gesture();const game={currentSnapshot:{pieces:[]}};
+ assert.equal(f.sound.local({gameId:'a',type:'journal_restored',clientCommandId:'old'},game),false);
+ assert.equal(f.sound.local({gameId:'a',type:'optimistic_enqueue',clientCommandId:'new'},game,{silent:true}),false);
+ assert.equal(f.sound.observe({game:{id:'a',board:{state:game.currentSnapshot}},type:'event_appended',reason:'move_recorded',eventSeq:2,clientCommandId:'new'}),false);
+ assert.equal(f.starts(),0);
+});

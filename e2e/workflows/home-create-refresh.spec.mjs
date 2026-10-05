@@ -58,6 +58,7 @@ for (const input of ['pointer', 'keyboard']) test(`home refresh preserves ${inpu
   await expect(button).toBeVisible();
   await expect(page.getByTestId('home-section-skeleton').first()).toBeVisible();
   await button.evaluate(element => { window.originalCreateButton = element; });
+  await button.scrollIntoViewIfNeeded();
   const box = await button.boundingBox();
   expect(box).not.toBeNull();
   if (input === "pointer") { await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); }

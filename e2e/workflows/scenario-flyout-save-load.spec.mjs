@@ -222,6 +222,7 @@ test("scenario flyout can save the current board and load that scenario into a n
     await page.goto("/");
     await expect(page.getByTestId("home-create-game")).toBeVisible();
     await page.getByTestId("home-create-game").click();
+    await page.getByRole("button", { name: "Close invite", exact: true }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
     const initialHistoryCount = await getHistoryMoveCount(page);
@@ -343,6 +344,7 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
     await page.goto("/");
     await expect(page.getByTestId("home-create-game")).toBeVisible();
     await page.getByTestId("home-create-game").click();
+    await page.getByRole("button", { name: "Close invite", exact: true }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
     await page.getByRole("button", { name: "Scenarios" }).click();
@@ -440,6 +442,7 @@ test("scenario flyout saves history-authored scenarios from the selected pre-mov
     await page.goto("/");
     await expect(page.getByTestId("home-create-game")).toBeVisible();
     await page.getByTestId("home-create-game").click();
+    await page.getByRole("button", { name: "Close invite", exact: true }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
     await page.getByRole("button", { name: "Scenarios" }).click();
@@ -541,6 +544,7 @@ test("scenario flyout updates an existing scenario from the selected history pre
     await page.goto("/");
     await expect(page.getByTestId("home-create-game")).toBeVisible();
     await page.getByTestId("home-create-game").click();
+    await page.getByRole("button", { name: "Close invite", exact: true }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
     await page.getByRole("button", { name: "Scenarios" }).click();
@@ -681,6 +685,7 @@ test("scenario load surfaces import failures without leaving the flyout stuck pe
     await page.goto("/");
     await expect(page.getByTestId("home-create-game")).toBeVisible();
     await page.getByTestId("home-create-game").click();
+    await page.getByRole("button", { name: "Close invite", exact: true }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 
     await page.getByRole("button", { name: "Scenarios" }).click();

@@ -21,6 +21,7 @@ test("create-game shows an alert banner when the server rejects the create respo
     await page.goto("/");
     await expect(page.getByTestId("home-create-game")).toBeVisible();
     await page.getByTestId("home-create-game").click();
+    await page.getByRole("button", { name: "Close invite", exact: true }).click();
 
     const failureBanner = page.getByTestId("sync-failure-banner");
     await expect(page.getByTestId("game-shell")).toBeVisible();

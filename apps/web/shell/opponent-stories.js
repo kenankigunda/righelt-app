@@ -6,12 +6,12 @@ export const OPPONENT_STORIES = Object.freeze({
 });
 
 export const createStoryCarousel = ({ reducedMotion = false, now = () => performance.now(), setTimer = setTimeout, clearTimer = clearTimeout, onChange = () => {} } = {}) => {
-  let index = 0, paused = reducedMotion, hidden = false, hovered = false, focused = false, timer = null, remaining = 6000, started = 0;
+  let index = 0, paused = reducedMotion, hidden = false, hovered = false, focused = false, timer = null, remaining = 3000, started = 0;
   const state = () => ({ index, paused, hidden });
   const stop = () => { if (timer !== null) { clearTimer(timer); timer = null; remaining = Math.max(0, remaining - (now() - started)); } };
-  const schedule = () => { if (paused || hidden || hovered || focused || timer !== null) return; started = now(); timer = setTimer(() => { timer = null; index = (index + 1) % 3; remaining = 6000; onChange(state()); schedule(); }, remaining); };
+  const schedule = () => { if (paused || hidden || hovered || focused || timer !== null) return; started = now(); timer = setTimer(() => { timer = null; index = (index + 1) % 3; remaining = 3000; onChange(state()); schedule(); }, remaining); };
   schedule();
-  return { state, select(next) { if (![0, 1, 2].includes(next)) return; stop(); index = next; paused = true; remaining = 6000; onChange(state()); }, toggle() { if (reducedMotion) return; stop(); paused = !paused; onChange(state()); schedule(); }, visibility(value) { stop(); hidden = value; schedule(); }, hover(value) { stop(); hovered = value; schedule(); }, focus(value) { stop(); focused = value; schedule(); }, destroy: stop };
+  return { state, select(next) { if (![0, 1, 2].includes(next)) return; stop(); index = next; paused = true; remaining = 3000; onChange(state()); }, toggle() { if (reducedMotion) return; stop(); paused = !paused; onChange(state()); schedule(); }, visibility(value) { stop(); hidden = value; schedule(); }, hover(value) { stop(); hovered = value; schedule(); }, focus(value) { stop(); focused = value; schedule(); }, destroy: stop };
 };
 
 export const shouldShowOpponentIntroduction = (opponent, introduced, readiness) =>
