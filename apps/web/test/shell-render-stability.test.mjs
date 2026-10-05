@@ -59,7 +59,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /aria-hidden="\$\{headerMenuOpen \? "false" : "true"\}"/);
   assert.match(source, /tabindex="\$\{headerMenuOpen \? "0" : "-1"\}"/);
   assert.doesNotMatch(source, /renderHeaderHomeAction/);
-  assert.doesNotMatch(source, />Home<\/(?:a|span)>/);
+  assert.doesNotMatch(source.slice(source.indexOf("const renderHeader ="), source.indexOf("const renderHome =")), />Home<\/(?:a|span)>/);
   assert.match(source, /const renderDebugContent = \(\) => \{[\s\S]*?<h2>Live Sync<\/h2>[\s\S]*?<h2>Engine Status<\/h2>[\s\S]*?<h2>Actions Diagnostics<\/h2>/s);
   assert.match(source, /const getDocumentTitle = \(\) => \{\s*const gameId = getCurrentViewedGameId\(\);\s*if \(gameId\) \{\s*return `\$\{formatDisplayGameId\(gameId\)\} \| Righelt`;\s*\}\s*return "Righelt";\s*\};/s);
   assert.match(source, /const failedOperations = transport\.getFailedOperations\?\.\(game\.id\) \?\? \[\];/);
@@ -163,7 +163,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /element\.style\.width = `\$\{toWidth\}px`;/);
   assert.match(source, /element\.style\.maxWidth = `\$\{toWidth\}px`;/);
   assert.match(source, /const capturePanelHeights = \(\) =>/);
-  assert.match(source, /const shouldPatchFlyoutsOnly = shouldPatchMountedFlyouts\(routeKey, baseRouteKey\);/);
+  assert.match(source, /const shouldPatchFlyoutsOnly = !hadResultView && activeResultGameId !== currentRoute\.gameId && shouldPatchMountedFlyouts\(routeKey, baseRouteKey\);/);
   assert.match(source, /const previousPanelHeights = animatePanels && !shouldPatchFlyoutsOnly \? capturePanelHeights\(\) : \[\];/);
   assert.match(source, /const previousFlyoutRects = animatePanels \? captureFlyoutRects\(\) : new Map\(\);/);
   assert.match(source, /const animatePanelHeightChange = \(panelEl, fromHeight\) => \{/);
@@ -305,7 +305,7 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /const canHydrateRouteFromLocalState = \(route = currentRoute\) => \{/);
   assert.match(source, /return Boolean\(transport\.getGameViewModel\(route\.gameId\)\);/);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
-  assert.match(source, /return hostInvite\?\.gameId !== game\.id && !getActiveApprovalRequest\(game\) && !getActiveRevertRequest\(game\) && !getActivePendingRevertRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
+  assert.match(source, /return activeResultGameId !== game\.id && hostInvite\?\.gameId !== game\.id && !getActiveApprovalRequest\(game\) && !getActiveRevertRequest\(game\) && !getActivePendingRevertRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
   assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*\}\);/s);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*updateMountedGameShell\(\{/s);
   assert.match(source, /const game = transport\.getGameViewModel\(gameId\);\s*if \(!routeHydrated && !game\) \{/s);

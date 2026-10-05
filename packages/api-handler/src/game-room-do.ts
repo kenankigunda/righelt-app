@@ -291,10 +291,12 @@ export class GameRoomDO {
       if (!identityId || !gameId) {
         return json({ ok: false, error: "invalid_identity" }, 400);
       }
+      if (body.creatorSide !== undefined && body.creatorSide !== "p1" && body.creatorSide !== "p2") return json({ ok: false, error: "invalid_creator_side" }, 400);
       const candidate = createInitialGame({
         gameId,
         identityId,
         selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
+        creatorSide: body.creatorSide === "p2" ? "p2" : "p1",
       });
       if (authActive(this.env)) candidate.ownershipMode = "account_v1";
       await this.persistCandidate(candidate, null);

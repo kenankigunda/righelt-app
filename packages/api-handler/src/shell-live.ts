@@ -290,6 +290,7 @@ export const handleLiveGameRequest = async (
     if (!identityId) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_identity" }, cacheControl: CACHE_NO_STORE };
     }
+    if (body.creatorSide !== undefined && body.creatorSide !== "p1" && body.creatorSide !== "p2") return { handled: true, status: 400, body: { ok: false, error: "invalid_creator_side" }, cacheControl: CACHE_NO_STORE };
     const gameId = requestedGameId ?? nextGameId();
     const response = await fetchGameRoom(request, env, gameId, "/create", {
       method: "POST",
@@ -298,6 +299,7 @@ export const handleLiveGameRequest = async (
         identityId,
         gameId,
         selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
+        creatorSide: body.creatorSide === "p2" ? "p2" : "p1",
       }),
     });
     return {

@@ -28,6 +28,7 @@ export const safeAccountIntent = (value) => {
   const allowed = [
     "create-game",
     "create-self-play",
+    "rematch",
     "join-player",
     "accept-invite-player",
     "play-as-both-players",

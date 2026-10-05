@@ -177,14 +177,14 @@ body { isolation:isolate; }
 }
 body {background-image:var(--stone-grain);background-color:var(--surface-foundation);}
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
-.story-modal {
+.story-modal,.game-result {
   --stone-depth:6px;--stone-edge:#c9c0ad;--corner-start:transparent;--corner-end:transparent;
   isolation:isolate;position:relative;overflow:visible;clip-path:none;border:0;border-radius:0;
   background:transparent;box-shadow:none;
   filter:drop-shadow(0 3px 3px rgb(54 45 30 / 16%));
 }
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::before,
-.story-modal::before {
+.story-modal::before,.game-result::before {
   content:'';position:absolute;inset:0;width:auto;height:auto;transform:none;pointer-events:none;z-index:-1;
   clip-path:var(--stone-outline);
   background:
@@ -194,7 +194,7 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
   box-shadow:inset 0 1px 0 #fff,inset 1px 0 0 rgb(255 255 255 / 80%);
 }
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::after,
-.story-modal::after {
+.story-modal::after,.game-result::after {
   content:'';position:absolute;inset:0 0 calc(-1 * var(--stone-depth));width:auto;height:auto;transform:none;pointer-events:none;z-index:-2;
   clip-path:var(--stone-outline);background:linear-gradient(115deg,#e4ddce,var(--stone-edge));
 }
@@ -340,3 +340,17 @@ html[data-page-active="false"] .shell-header button.ui-icon-button {transition:n
 }
 .account-dialog .account-autosave:not([data-state="error"]) > button { display:none; }
 .account-dialog .input-with-action:focus-within { border-color:var(--ink); box-shadow:0 0 0 2px color-mix(in srgb,var(--ink),transparent 82%); }
+
+/* Results and rematches share the layered surface and clear action hierarchy. */
+.game-result { max-width:660px; margin:32px auto 48px; padding:32px; --corner-start:var(--player-p1);--corner-end:var(--player-p2); }
+.game-result h1 {font-size:clamp(36px,7vw,56px);margin:12px 0;}
+.game-result .story-modal-actions {margin-top:24px;}
+.game-result .button-link {display:flex;align-items:center;justify-content:center;min-height:48px;text-decoration:none;}
+.rematch-modal label {display:grid;gap:8px;}
+.rematch-modal select {width:100%;min-height:48px;font:inherit;}
+.rematch-modal fieldset {border:0;padding:0;margin:20px 0;display:grid;gap:12px;}
+.rematch-modal legend {font-weight:700;padding:0;margin-bottom:8px;}
+.rematch-modal fieldset label {display:flex;align-items:center;gap:10px;min-height:44px;}
+.rematch-modal input[type="radio"] {appearance:auto;-webkit-appearance:radio;box-sizing:border-box;padding:0;border:0;border-radius:50%;background:transparent;box-shadow:none;min-width:20px;min-height:20px;width:20px;height:20px;margin:0;flex:none;accent-color:var(--player-p1);}
+.rematch-modal input[value="p2"] {accent-color:var(--player-p2);}
+@media(max-width:480px){.game-result{padding:24px;margin:16px 0 32px;}}

@@ -297,3 +297,9 @@ Login PR #112 merged at `67d9a6a7ccbceb2550e3bde630689ca736fcfdde`. UX PR #120 h
 Apply the shared Manrope, ivory stone surfaces, quiet text controls, affiliation-aware actions and angular close/account icons to sign-in, account creation, password change, Account and public profiles. Account is a compact header icon with an expanding label. Phone dialogs remain fullscreen, larger dialogs centered. Preserve all approved T-108 form behavior, autosave, delayed guidance, password visibility, gesture protection, session generation fencing and current public names. Public profiles stay minimal.
 
 Combine account ownership with unfinished-game filtering before home pagination. Retire invitation feedback, pending copies and sound reminders on account changes. Preserve self-play intent through sign-in. Adapt browser checks to Friend and the combined Players section without weakening account or multiplayer assertions. Production activation and physical-device acceptance remain separate.
+
+### Confirmed results and another game
+
+A result represents the acknowledged game outcome, never a pending local move. Open it automatically only for an observed live finish. Reloads, history browsing, hidden tabs, and open opponent stories do not interrupt the user. Keep an explicit result entry in History. If an acknowledged undo reopens the game, restore the playable board. Review moves focus to History, including delayed rendering during an input gesture.
+
+Play again offers a deliberate opponent and side choice, with the opposite side selected by default. Friend starts a fresh invitation and never forces the former opponent into another match. Self-play retains its chosen starting side through reloads. Unavailable trained opponents remain disabled. Closing the dialog or changing accounts cancels pending continuation. The optional creation-side field defaults to red for existing clients and changes no game rules.
