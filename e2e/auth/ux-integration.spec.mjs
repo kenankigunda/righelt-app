@@ -13,7 +13,7 @@ test('self-play resumes after account creation and uses the shared account and p
  await expect(dialog).not.toBeVisible();await expect(page).toHaveURL(/#\/game\//);
  await expect(page.getByRole('button',{name:'Close invite',exact:true})).toHaveCount(0);
  const account=page.getByTestId('account-open');await expect(account.locator('svg')).toBeVisible();
- await account.focus();await account.click();await expect(dialog.getByLabel('Display name',{exact:true})).toBeVisible();
+ await account.focus();await account.click();await expect(dialog.getByLabel('Display name',{exact:true})).toBeVisible();await expect(dialog.getByRole('button',{name:'Retry',exact:true})).not.toBeVisible();
  await page.screenshot({path:info.outputPath('account-wide.png')});
  await dialog.getByRole('button',{name:'Change password',exact:true}).click();await expect(dialog.getByLabel('New password',{exact:true})).toHaveAttribute('type','text');
  await dialog.getByRole('button',{name:'Back',exact:true}).click();await dialog.getByRole('button',{name:'Close',exact:true}).click();

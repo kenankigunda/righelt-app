@@ -338,3 +338,5 @@ html[data-page-active="false"] .shell-header button.ui-icon-button {transition:n
  .account-dialog { border:0; border-radius:0; box-shadow:none; padding:max(20px,env(safe-area-inset-top)) 20px max(20px,env(safe-area-inset-bottom)); }
  .shell-header .header-icon-action .header-action-label { max-width:0; opacity:0; }
 }
+.account-dialog .account-autosave:not([data-state="error"]) > button { display:none; }
+.account-dialog .input-with-action:focus-within { border-color:var(--ink); box-shadow:0 0 0 2px color-mix(in srgb,var(--ink),transparent 82%); }
