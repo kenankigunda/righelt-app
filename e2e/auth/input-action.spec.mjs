@@ -61,6 +61,14 @@ for (const { width, zoom } of [{ width: 320, zoom: 1 }, { width: 390, zoom: 1 },
     await dialog(page).getByRole("button", { name: "Change password", exact: true }).click();
     await expect(dialog(page).getByLabel("Current password", { exact: true })).toHaveCount(0);
     await proveInputAction(page, "New password", "password");
+    const passwordRequests = [];
+    page.on("request", request => { if (request.url().endsWith("/api/auth/password")) passwordRequests.push(request); });
+    await dialog(page).getByRole("button", { name: "Back", exact: true }).click();
+    await expect(dialog(page).getByRole("heading", { name: "Account", exact: true })).toBeVisible();
+    await expect(dialog(page).getByLabel("Display name", { exact: true })).toBeFocused();
+    await dialog(page).getByRole("button", { name: "Change password", exact: true }).click();
+    await expect(dialog(page).getByLabel("New password", { exact: true })).toHaveValue("");
+    expect(passwordRequests).toHaveLength(0);
     await dialog(page).getByRole("button", { name: "Close", exact: true }).click();
     await expect(dialog(page)).not.toBeVisible();
   });
