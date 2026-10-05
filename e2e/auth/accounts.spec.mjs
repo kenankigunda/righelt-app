@@ -27,6 +27,7 @@ async function register(page, username, { gate = false } = {}) {
   if (gate) {
     await expect(page).toHaveURL(/#\/game\//);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
+    await page.getByRole("button",{name:"Close invite",exact:true}).click();
   } else {
     await expect(page).toHaveURL(/#\/game\//);
     await page.goto("/");
@@ -62,7 +63,7 @@ test("registration helper waits for a failed bootstrap retry before submitting",
   const registration = register(page, uniqueName(), { gate: true }).then(value => ({ value }), error => ({ error }));
   try {
     await retry;
-    await expect(page.getByRole("button", { name: "Start new game", exact: true })).toBeVisible();
+    await expect(page.getByTestId("home-create-game")).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign in", exact: true })).not.toBeVisible();
     await expect(dialog(page)).not.toBeVisible();
     expect(registerRequests).toBe(0);
@@ -124,7 +125,7 @@ test("account forms support autofill, keyboard focus, narrow layouts and cancell
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
-  const trigger = page.getByRole("button", { name: "Start new game", exact: true });
+  const trigger = page.getByTestId("home-create-game");
   await trigger.click();
   await expect(dialog(page).getByLabel("Username", { exact: true })).toHaveAttribute("autocomplete", "username");
   await expect(dialog(page).getByLabel("Password", { exact: true })).toBeVisible();
@@ -368,7 +369,7 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
   });
   try {
   await page.goto("/");
-  const trigger = page.getByRole("button", { name: "Start new game", exact: true });
+  const trigger = page.getByTestId("home-create-game");
   await expect(trigger).toBeVisible();
   await waiting;
   if (gesture === "pointer") { await trigger.hover(); await page.mouse.down(); }
@@ -399,7 +400,7 @@ test("a stalled startup read recovers without granting guest play", async ({ pag
     await page.goto("/");
     await waitForAccountStartup(page);
     expect(requests).toBeGreaterThanOrEqual(2);
-    await page.getByRole("button", { name: "Start new game", exact: true }).click();
+    await page.getByTestId("home-create-game").click();
     await expect(dialog(page)).toBeVisible();
     await expect(page).not.toHaveURL(/#\/game\//);
   } finally { release(); }
@@ -505,7 +506,7 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
   page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates++; });
   try {
     await sibling.goto("/");
-    await page.getByRole("button", { name: "Start new game", exact: true }).click();
+    await page.getByTestId("home-create-game").click();
     await enterUsername(page, first);
     await dialog(page).getByLabel("Password", { exact: true }).fill(password);
     await page.evaluate(() => { window.__holdAccountLists = true; });
@@ -537,7 +538,7 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
 
 test('a failed continuation read preserves the play choice for explicit retry', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Start new game', exact: true }).click();
+  await page.getByTestId("home-create-game").click();
   await dialog(page).getByRole('button', { name: 'Create account', exact: true }).click();
   await enterUsername(page, uniqueName());
   await dialog(page).getByLabel('Password', { exact: true }).fill(password);

@@ -1,3 +1,4 @@
+import { icon } from './ui.js';
 import { createRenderGestureGate } from "./render-gesture.js";
 import { evaluatePasswordRequirements, normalizeDisplayName } from "../generated/packages/shared-types/src/auth.js";
 import { USERNAME_LOOKUP_DEBOUNCE_MS, USERNAME_LOOKUP_TIMEOUT_MS } from "../generated/packages/shared-types/src/auth-policy.js";
@@ -164,7 +165,7 @@ export const createAccountDialog = ({
     } else {
       body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + input("password", "Password", { secret: true, autocomplete: "current-password" }) + feedback + '<div class="account-help"><p data-existing-hint hidden>Don’t have a password? <a href="#create-account" data-create-link>Create a new account.</a></p><details data-forgot hidden><summary>Forgot password?</summary><p>On another signed-in device, open Account → Change password. If you are signed out everywhere, you’ll need a new account. Your existing games remain with your original account.</p><button type="button" class="secondary" data-new-username>Choose another username</button></details></div><div data-challenge></div><button type="submit">Sign in</button><button type="button" class="secondary" data-create>Create account</button>';
     }
-    dialog.innerHTML = `<form class="account-form" novalidate data-entry-mode="${mode === "register" ? "create" : mode}" data-lookup-state="${lookupState}"><div class="account-dialog-heading"><h2 id="account-title" tabindex="-1">${title}</h2><button type="button" class="secondary account-close" data-cancel aria-label="Close"><span aria-hidden="true">×</span></button></div>${body}${mode === "login" ? "" : feedback}</form>`;
+    dialog.innerHTML = `<form class="account-form" novalidate data-entry-mode="${mode === "register" ? "create" : mode}" data-lookup-state="${lookupState}"><div class="account-dialog-heading"><h2 id="account-title" tabindex="-1">${title}</h2><button type="button" class="secondary account-close" data-cancel aria-label="Close">${icon('close')}</button></div>${body}${mode === "login" ? "" : feedback}</form>`;
     if (mode === "account") {
       autosave?.cancel();
       const marker = flow, generation = controller.snapshot().generation;

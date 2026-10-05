@@ -8,7 +8,7 @@ test.beforeEach(async () => {
 test("correctable creation errors preserve the username and allow correction without leaving the form", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 700 });
   await page.goto("/");
-  await page.getByRole("button", { name: "Start new game", exact: true }).click();
+  await page.getByTestId("home-create-game").click();
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
   const username = `Form_${Date.now().toString(36)}`;
   await enterUsername(page, username);

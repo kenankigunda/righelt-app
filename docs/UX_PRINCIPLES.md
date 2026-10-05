@@ -288,3 +288,12 @@ The latest sound rule supersedes blanket background silence: ordinary cues requi
 Hover feedback should suggest contact lightly: a short-dwell brush/rustle, not a click or committed move. Navigation can have distinct forward/back cues. Keep all ordinary feedback silent while inactive.
 
 Use restrained perspective and moving shadow for story artwork changes, with fixed readable copy. Reserve status space for brief confirmations and retain keyboard focus through asynchronous work. Let peripheral utilities reveal labels without competing with play. Background texture may breathe subtly, but its geometric alignment must remain stable.
+
+
+## Login integration after prerequisite merge (2026-10-04)
+
+Login PR #112 merged at `67d9a6a7ccbceb2550e3bde630689ca736fcfdde`. UX PR #120 has been rebased onto that actual main revision. The independent guest foundation remains usable with accounts disabled. When accounts are enabled, T-108 owns the upfront account requirement, including self-play. This supersedes any reading of the earlier independence rule that would bypass the merged account policy.
+
+Apply the shared Manrope, ivory stone surfaces, quiet text controls, affiliation-aware actions and angular close/account icons to sign-in, account creation, password change, Account and public profiles. Account is a compact header icon with an expanding label. Phone dialogs remain fullscreen, larger dialogs centered. Preserve all approved T-108 form behavior, autosave, delayed guidance, password visibility, gesture protection, session generation fencing and current public names. Public profiles stay minimal.
+
+Combine account ownership with unfinished-game filtering before home pagination. Retire invitation feedback, pending copies and sound reminders on account changes. Preserve self-play intent through sign-in. Adapt browser checks to Friend and the combined Players section without weakening account or multiplayer assertions. Production activation and physical-device acceptance remain separate.

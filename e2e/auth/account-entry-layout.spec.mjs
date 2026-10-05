@@ -46,7 +46,7 @@ for (const width of [390, 480, 481, 768, 1440]) {
     await dialog.screenshot({ path: info.outputPath('account-entry.png') });
     await page.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();
-    await expect(page.getByRole('button', { name: 'Start new game', exact: true })).toBeFocused();
+    await expect(page.getByTestId("home-create-game")).toBeFocused();
   });
 }
 
@@ -165,7 +165,7 @@ test('Close, Escape and outside clicks dismiss while padding clicks and inside d
   await page.goto('/');
   await openPlaySignIn(page);
   const dialog = page.getByTestId('account-dialog');
-  const play = page.getByRole('button', { name: 'Start new game', exact: true });
+  const play = page.getByTestId("home-create-game");
   await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
   const close = dialog.getByRole('button', { name: 'Close', exact: true });
   await expect(close).toBeVisible();

@@ -1831,7 +1831,7 @@ const renderHeader = () => `
     ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p role="status">Connecting…</p>` : ""}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
-        ${account.snapshot().ready && account.snapshot().enabled && account.snapshot().available && account.snapshot().session.authenticated ? '<button class="secondary" type="button" data-action="account-open" data-testid="account-open">Account</button>' : ""}
+        ${account.snapshot().ready && account.snapshot().enabled && account.snapshot().available && account.snapshot().session.authenticated ? `<button class="secondary header-icon-action" type="button" data-action="account-open" data-testid="account-open" aria-label="Account" title="Account">${headerActionContent('account','Account')}</button>` : ""}
         ${soundToggle(gameSound.enabled())}${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
       </div>
     </div>
@@ -4111,8 +4111,8 @@ const closeFriendInvite = () => {
   document.querySelector('[data-action="copy-invite"]')?.focus({preventScroll:true});
 };
 const copyGameInvitation = async (gameId, role, fromHost=false) => {
-  const visit=inviteVisit;
-  const active=()=>currentRoute.name==='game' && currentRoute.gameId===gameId && (!fromHost || hostInvite?.gameId===gameId && visit===inviteVisit);
+  const visit=inviteVisit, generation=account.snapshot().generation;
+  const active=()=>generation===account.snapshot().generation && currentRoute.name==='game' && currentRoute.gameId===gameId && (!fromHost || hostInvite?.gameId===gameId && visit===inviteVisit);
   try {
     const handle=transport.getGameHandle?.(gameId);
     if(handle?.status==='pending')await handle.committed;
@@ -4170,6 +4170,8 @@ subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
   clearAccountContinuation();
+  hostInvite=null;inviteVisit++;inviteFeedback="";inviteFallback=null;
+  gameSound.leaveGame();storyDialog.close();profileDialog.close();
   const gameId = getCurrentViewedGameId();
   const visible = gameId ? transport.getAuthoritativeGame?.(gameId) : null;
   routeSyncRequestId++;
@@ -4367,7 +4369,7 @@ appEl.addEventListener("click", async (event) => {
   if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") { accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
-  const accountGatedActions = new Set(["create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
+  const accountGatedActions = new Set(["create-game","create-self-play","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
   if (accountGatedActions.has(action) && (!account.snapshot().ready || account.snapshot().pendingLogout)) {
     event.preventDefault();
     if (!await waitForAccountGate()) return;

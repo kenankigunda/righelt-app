@@ -43,6 +43,7 @@ async function sharedInvite(host) {
   const gameUrl = host.url();
   const players = host.getByRole("button", { name: "Players", exact: true });
   if (await players.isVisible()) await players.click();
+  await host.getByRole("button",{name:"Close invite",exact:true}).click();
   const invite = host.getByTestId("copy-invite");
   await expect(invite).toBeEnabled();
   // Exercise the share action: it waits for an optimistic game's real invite

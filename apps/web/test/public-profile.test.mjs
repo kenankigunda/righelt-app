@@ -18,6 +18,6 @@ test("public names are escaped and direction isolated with a profile link only f
   );
   assert.equal(
     participantName({ identityId: "<legacy>" }),
-    "<bdi>&lt;legacy&gt;</bdi>",
+    "<bdi>Guest player</bdi>",
   );
 });

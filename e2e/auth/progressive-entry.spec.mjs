@@ -377,7 +377,7 @@ test("public landing has no sign-in shortcut and keyboard play opens a cancellab
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveCount(0);
   const original = page.url();
-  const play = page.getByRole("button", { name: "Start new game", exact: true });
+  const play = page.getByTestId("home-create-game");
   await play.focus();
   await page.keyboard.press("Enter");
   await expect(dialog(page).getByRole("heading", { name: "Log in to start playing" })).toBeVisible();

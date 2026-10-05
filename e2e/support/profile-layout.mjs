@@ -13,7 +13,7 @@ assert.equal(normalizeUsername(`${profileLayoutUsername}x`).ok, false);
 
 // Runs as one browser task: never retain handles across a participant rerender.
 export function sampleParticipantGeometry() {
-  const panel = document.querySelector('[data-game-panel="participants"]');
+  const panel = document.querySelector('[data-game-panel="join"]') || document.querySelector('[data-game-panel="participants"]');
   const button = panel?.querySelector('[data-testid="participant-player-1"] button');
   if (!panel?.isConnected || !button?.isConnected) return null;
   const box = button.getBoundingClientRect();

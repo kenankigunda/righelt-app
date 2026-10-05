@@ -1,3 +1,4 @@
+import { icon } from './ui.js';
 const escape = (value) =>
   String(value ?? "").replace(
     /[&<>"']/g,
@@ -9,11 +10,11 @@ const escape = (value) =>
 export const participantName = (person) =>
   person?.profile
     ? `<bdi>${escape(person.profile.displayName)}</bdi> <span class="small"><bdi>@${escape(person.profile.username)}</bdi></span>`
-    : `<bdi>${escape(person?.identityId || "Unknown player")}</bdi>`;
+    : `<bdi>Guest player</bdi>`;
 export const participantButton = (person) =>
   person?.profile
     ? `<button class="secondary participant-profile" data-action="public-profile" data-username="${escape(person.profile.username)}">${participantName(person)}</button>`
-    : participantName(person);
+    : `<button class="participant-profile" data-action="guest-profile" data-identity-id="${escape(person?.identityId)}">${participantName(person)}</button>`;
 export const createPublicProfileDialog = ({
   document = globalThis.document,
   fetcher = fetch,
@@ -23,6 +24,9 @@ export const createPublicProfileDialog = ({
   dialog.dataset.testid = "public-profile";
   dialog.setAttribute("aria-labelledby", "public-profile-title");
   document.body.append(dialog);
+  let backdropPress = false;
+  const outside = event => {const r=dialog.getBoundingClientRect();return event.clientX<r.left || event.clientX>r.right || event.clientY<r.top || event.clientY>r.bottom;};
+  const heading = () => `<div class="account-dialog-heading"><h2 id="public-profile-title">Player profile</h2><button class="secondary account-close" data-profile-close aria-label="Close">${icon("close")}</button></div>`;
   let generation = 0,
     trigger;
   const close = () => {
@@ -35,8 +39,10 @@ export const createPublicProfileDialog = ({
     event.preventDefault();
     close();
   });
+  dialog.addEventListener("pointerdown",event=>{backdropPress=event.target===dialog && outside(event);});
   dialog.addEventListener("click", (event) => {
-    if (event.target.closest("[data-profile-close]")) close();
+    if (event.target.closest("[data-profile-close]") || backdropPress && event.target===dialog && outside(event)) close();
+    backdropPress=false;
   });
   return {
     close,
@@ -44,7 +50,7 @@ export const createPublicProfileDialog = ({
       const marker = ++generation;
       trigger = source;
       dialog.innerHTML =
-        '<h2 id="public-profile-title">Player profile</h2><p role="status">Loading…</p><button data-profile-close>Close</button>';
+        `<div class="public-profile-content">${heading()}<p role="status">Loading…</p></div>`;
       if (!dialog.open) dialog.showModal();
       try {
         const response = await fetcher(
@@ -61,7 +67,7 @@ export const createPublicProfileDialog = ({
               timeZone: "UTC",
             }).format(new Date(`${profile.joinedMonth}-01T00:00:00Z`))
           : "";
-        dialog.innerHTML = `<h2 id="public-profile-title">Player profile</h2><p>${participantName({ profile })}</p><p>Joined ${escape(joined)}</p><button data-profile-close>Close</button>`;
+        dialog.innerHTML = `<div class="public-profile-content">${heading()}<p>${participantName({ profile })}</p><p class="small">Joined ${escape(joined)}</p></div>`;
         dialog.querySelector("button").focus();
       } catch {
         if (marker === generation)

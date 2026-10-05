@@ -5,7 +5,7 @@ export async function enterUsername(page, username) {
 }
 
 export async function waitForAccountStartup(page) {
-  await expect(page.getByRole("button", { name: "Start new game", exact: true })).toBeVisible();
+  await expect(page.getByTestId("home-create-game")).toBeVisible();
   // Read one DOM state. Separate locator calls can straddle the transition
   // from Connecting to retry and falsely observe both indicators as absent.
   await expect.poll(() => page.evaluate(() => ({
@@ -18,6 +18,8 @@ export async function waitForAccountStartup(page) {
 // Resume from the existing board without creating a replacement game. On the
 // public home page the real Start new game action supplies the account gate.
 export async function openPlaySignIn(page) {
+  const inviteClose=page.getByRole("button",{name:"Close invite",exact:true});
+  if(await inviteClose.isVisible())await inviteClose.click();
   const board = page.locator("#shell-board button").first();
   if (new URL(page.url()).hash.startsWith("#/game/") || await board.isVisible()) {
     await expect(board).toBeVisible();
@@ -25,7 +27,7 @@ export async function openPlaySignIn(page) {
   }
   else {
     await waitForAccountStartup(page);
-    await page.getByRole("button", { name: "Start new game", exact: true }).click();
+    await page.getByTestId("home-create-game").click();
   }
   await expect(page.getByTestId("account-dialog")).toBeVisible();
 }
