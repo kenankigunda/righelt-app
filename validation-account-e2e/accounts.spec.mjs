@@ -83,12 +83,34 @@ async function settledHome(page){
   }
 }
 async function accountOpen(page){await page.getByRole('button',{name:'Account',exact:true}).click();await expect(dialog(page)).toBeVisible();}
+async function openSignedOutAccount(page){
+  if(!capabilities.playAccountEntry){
+    await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  }else{
+    await expect(page.getByTestId('account-open')).toHaveCount(0);
+    if(new URL(page.url()).hash.startsWith('#/game/')){
+      // A board click opens only account access, without a game or move intent.
+      await page.getByTestId('game-board').locator('.cell').first().click();
+    }else{
+      await settledHome(page);
+      await page.getByTestId('home-create-game').click();
+    }
+  }
+  await expect(dialog(page)).toBeVisible();
+}
 async function login(page,name,secret=password){
-  await page.getByRole('button',{name:'Sign in',exact:true}).click();
-  await dialog(page).getByLabel('Username',{exact:true}).fill(name);
-  await dialog(page).getByLabel('Password',{exact:true}).fill(secret);
-  await dialog(page).getByRole('button',{name:'Sign in',exact:true}).click();
-  await expect(dialog(page)).not.toBeVisible();
+  const sameGame=capabilities.playAccountEntry&&new URL(page.url()).hash.startsWith('#/game/');
+  const previousURL=page.url();let writes=0;
+  const observe=r=>{if(r.method()==='POST'&&(/^\/api\/shell\/games$|\/apply$/.test(new URL(r.url()).pathname)))writes++;};
+  if(sameGame)page.on('request',observe);
+  try{
+    await openSignedOutAccount(page);
+    await dialog(page).getByLabel('Username',{exact:true}).fill(name);
+    await dialog(page).getByLabel('Password',{exact:true}).fill(secret);
+    await dialog(page).getByRole('button',{name:'Sign in',exact:true}).click();
+    await expect(dialog(page)).not.toBeVisible();
+    if(sameGame){expect(page.url()).toBe(previousURL);expect(writes).toBe(0);}
+  }finally{if(sameGame)page.off('request',observe);}
 }
 async function gamePayload(page){return page.evaluate(async(protocol)=>{
   const s=await(await fetch('/api/auth/session')).json();
@@ -97,12 +119,13 @@ async function gamePayload(page){return page.evaluate(async(protocol)=>{
   if(!r.ok)throw Error(`Game: ${r.status}`);return (await r.json()).game;
 },capabilities.simplifiedAccounts?'2':'1');}
 async function registerStandalone(page,username){
-  await page.goto('/');await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.goto('/');await openSignedOutAccount(page);
   await dialog(page).getByRole('button',{name:'Create account',exact:true}).click();
   await dialog(page).getByLabel('Username',{exact:true}).fill(username);await dialog(page).getByLabel('Password',{exact:true}).fill(password);
   await dialog(page).getByRole('button',{name:createSubmitName,exact:true}).click();
   if(!capabilities.simplifiedAccounts){await dialog(page).getByLabel('I saved my recovery code').check();await dialog(page).getByRole('button',{name:'Continue',exact:true}).click();}
   await expect(dialog(page)).not.toBeVisible();
+  if(capabilities.playAccountEntry)await expect(page.getByTestId('game-role')).toContainText('Player 1');
 }
 test.beforeAll(async({browser},info)=>{
   if(!capabilities.cutover)return;
@@ -213,7 +236,10 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   }
   await fits(page,dialog(page));await proof(page,info,'account-settings',dialog(page));
   await dialog(page).getByRole('button',{name:'Sign out',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();
+  if(capabilities.playAccountEntry){
+    await expect(page.getByTestId('account-open')).toHaveCount(0);
+    expect((await session(page)).authenticated).toBe(false);
+  }else await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();
   await expect(page.getByTestId('game-board')).toBeVisible();
   await login(page,username);await expect(page.getByTestId('game-role')).toContainText('Player 1');
   const savedSession=await session(page);expect(savedSession.authenticated).toBe(true);
