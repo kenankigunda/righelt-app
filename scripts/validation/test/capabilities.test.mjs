@@ -12,7 +12,7 @@ test('account capabilities distinguish recovery, progressive, separate, minimal 
   await mkdir(path.join(root,'db/migrations'),{recursive:true});
   await writeFile(path.join(root,'apps/web/shell/account-controller.js'),'throw Error("candidate must not execute");');
   const old=await candidateCapabilities(root);
-  assert.equal(old.accounts,true);assert.equal(old.simplifiedAccounts,false);assert.equal(old.separateAccountForms,false);assert.equal(old.usernameOnlySignup,false);assert.equal(old.playAccountEntry,false);
+  assert.equal(old.accounts,true);assert.equal(old.accountAutosave,false);assert.equal(old.simplifiedAccounts,false);assert.equal(old.separateAccountForms,false);assert.equal(old.usernameOnlySignup,false);assert.equal(old.playAccountEntry,false);
   await writeFile(path.join(root,'db/migrations/0015_remove_account_recovery.sql'),'-- synthetic capability fixture');
   await writeFile(path.join(root,'apps/web/shell/account-dialog.js'),'// ACCOUNT_ENTRY_LAYOUT = "separate"\nexport const createAccountDialog=()=>{};');
   const progressive=await candidateCapabilities(root);
@@ -30,5 +30,8 @@ test('account capabilities distinguish recovery, progressive, separate, minimal 
   await writeFile(path.join(root,'apps/web/shell/account-dialog.js'),`export const ACCOUNT_ENTRY_LAYOUT = 'separate';\nexport const ACCOUNT_SIGNUP_PROFILE = "username-only";\nexport const ACCOUNT_ENTRY_POINTS = "play";\nthrow Error('candidate must not execute');`);
   const play=await candidateCapabilities(root);
   assert.equal(play.simplifiedAccounts,true);assert.equal(play.separateAccountForms,true);assert.equal(play.usernameOnlySignup,true);assert.equal(play.playAccountEntry,true);
+  await writeFile(path.join(root,'apps/web/shell/account-autosave.js'),"throw Error('candidate must not execute');");
+  const autosave=await candidateCapabilities(root);
+  assert.equal(autosave.accountAutosave,true);assert.equal(autosave.playAccountEntry,true);
  } finally {await rm(root,{recursive:true,force:true});}
 });

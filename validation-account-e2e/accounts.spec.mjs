@@ -221,7 +221,12 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
       await expect(dialog(page).getByRole('button',{name:'Replay tutorial',exact:true})).toHaveCount(0);
       await expect(dialog(page).getByRole('button',{name:'Switch account',exact:true})).toHaveCount(0);
     }else await dialog(page).getByLabel('View preference').selectOption('explanatory');
-    await dialog(page).getByRole('button',{name:capabilities.separateAccountForms?'Save':'Save account settings',exact:true}).click();
+    if(capabilities.accountAutosave){
+      await expect(dialog(page).getByRole('button',{name:/^Save(?: account settings)?$/})).toHaveCount(0);
+      // Blur through the keyboard, then prove the write through a fresh server
+      // session read. Merely observing local form state would miss a failed save.
+      await dialog(page).getByLabel('Display name',{exact:true}).press('Tab');
+    }else await dialog(page).getByRole('button',{name:capabilities.separateAccountForms?'Save':'Save account settings',exact:true}).click();
     await expect.poll(async()=>(await session(page)).account.displayName).toBe('Validation Player');
     if(capabilities.separateAccountForms){
       // Preferences remain an account contract even when their controls leave
