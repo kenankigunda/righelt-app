@@ -1,4 +1,4 @@
-import { enterUsername } from "./helpers.mjs";
+import { enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { test, expect } from "@playwright/test";
 import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
 
@@ -13,15 +13,17 @@ test.beforeEach(async () => {
 
 async function register(page, username, play = false) {
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await waitForAccountStartup(page);
   // Landing is public; an account overlay appears only after an explicit attempt.
   await expect(dialog(page)).not.toBeVisible();
-  await page.getByRole("button", { name: play ? "Start new game" : "Sign in", exact: true }).click();
+  await openPlaySignIn(page);
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
   await enterUsername(page, username);
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
+  await expect(page).toHaveURL(/#\/game\//);
+  if (!play) await page.goto("/");
   if (play) {
     await expect(page).toHaveURL(/#\/game\//);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
@@ -33,7 +35,7 @@ async function signOut(page) {
   await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
   await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
-  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
 }
 
 async function sharedInvite(host) {
@@ -114,14 +116,14 @@ for (const method of ["login", "registration"]) {
       await expect(visitor).toHaveURL(invite.url);
 
       if (method === "login") {
-        await dialog(visitor).getByRole("button", { name: "Cancel", exact: true }).click();
+        await dialog(visitor).getByRole("button", { name: "Close", exact: true }).click();
         await expect(dialog(visitor)).not.toBeVisible();
         await expect(visitor).toHaveURL(invite.url);
         expect(joins).toEqual([]);
         await visitor.getByTestId("invite-join-viewer").click();
         await expect(visitor).toHaveURL(/#\/game\//);
         await expect(visitor.getByTestId("game-board")).toBeVisible();
-        await expect(visitor.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+        await expect(visitor.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
         await expect(dialog(visitor)).not.toBeVisible();
         const before = await getHistoryMoveCount(visitor);
         await playHostMove(page);

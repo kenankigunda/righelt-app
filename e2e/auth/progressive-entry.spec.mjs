@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enterUsername } from "./helpers.mjs";
+import { enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { AUTH_REQUEST_HEADER, AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION } from "../../packages/shared-types/src/auth-policy.js";
 const dialog = page => page.getByTestId("account-dialog");
 const uniqueName = () => `Entry_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -10,7 +10,7 @@ test.beforeEach(async () => {
 });
 async function open(page) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await openPlaySignIn(page);
   await expect(dialog(page).getByRole("heading", { name: "Log in to start playing" })).toBeVisible();
 }
 async function create(page) {
@@ -36,6 +36,7 @@ test("sign-in immediately shows both fields and never looks up a username", asyn
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("type", "password");
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("autocomplete", "current-password");
   await expect(dialog(page).getByTestId("password-requirements")).toHaveCount(0);
+  await expect(dialog(page).locator(".account-help")).toBeHidden();
   await enterUsername(page, username);
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await page.keyboard.press("Enter");
@@ -116,9 +117,11 @@ test("creation checklist starts neutral and validates an eight-character passwor
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("type", "password");
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
-  await page.reload();
-  await page.getByRole("button", { name: "Start new game", exact: true }).click();
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  const gameUrl = page.url();
+  await page.reload();
+  await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  expect(page.url()).toBe(gameUrl);
 });
 
 test("obsolete availability results cannot overwrite a newer name or switch into sign-in", async ({ page }) => {
@@ -177,6 +180,26 @@ test("forgotten-password help points to a signed-in device and offers a fresh ac
   await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(dialog(page).locator("[data-account-status]")).not.toHaveText("");
   await expect(dialog(page).locator("[data-existing-hint]")).toBeVisible();
+  const errorLayout = await dialog(page).evaluate(node => {
+    const status = node.querySelector('[data-account-status]');
+    const hint = node.querySelector('[data-existing-hint]');
+    const secret = node.querySelector('[name="password"]');
+    return {
+      state: status.dataset.state, color: getComputedStyle(status).color,
+      top: status.getBoundingClientRect().top, bottom: status.getBoundingClientRect().bottom,
+      passwordBottom: secret.getBoundingClientRect().bottom, hintTop: hint.getBoundingClientRect().top,
+      hintFont: getComputedStyle(hint).fontSize, forgotFont: getComputedStyle(node.querySelector('summary')).fontSize,
+    };
+  });
+  expect(errorLayout.state).toBe("error");
+  expect(errorLayout.top).toBeGreaterThanOrEqual(errorLayout.passwordBottom);
+  expect(errorLayout.bottom).toBeLessThanOrEqual(errorLayout.hintTop);
+  const [red, green] = errorLayout.color.match(/[\d.]+/g).map(Number);
+  expect(red).toBeGreaterThan(green);
+  expect(errorLayout.hintFont).toBe(errorLayout.forgotFont);
+  const helpGap = await dialog(page).evaluate(node => node.querySelector('summary').getBoundingClientRect().top - node.querySelector('[data-existing-hint]').getBoundingClientRect().bottom);
+  expect(helpGap).toBeGreaterThanOrEqual(0);
+  expect(helpGap).toBeLessThanOrEqual(6);
   await dialog(page).locator("summary").filter({ hasText: "Forgot password?" }).click();
   await expect(dialog(page)).toContainText("Change password");
   await expect(dialog(page)).toContainText(/signed.in/);
@@ -317,7 +340,166 @@ test("leaving sign-in or closing the dialog cancels its pending hint", async ({ 
   await page.keyboard.press("Escape");
   await expect(dialog(page)).not.toBeVisible();
   await page.clock.fastForward(6000);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await openPlaySignIn(page);
   await expect(username).toHaveValue("");
   await expect(dialog(page).locator("[data-existing-hint]")).toBeHidden();
+});
+
+test("switching forms focuses password for a preserved username and username when empty", async ({ page }) => {
+  await open(page);
+  const username = dialog(page).getByLabel("Username", { exact: true });
+  const secret = dialog(page).getByLabel("Password", { exact: true });
+  await username.fill("FocusPlayer");
+  await secret.fill(password);
+  await create(page);
+  await expect(username).toHaveValue("FocusPlayer");
+  await expect(secret).toHaveValue("");
+  await expect(secret).toBeFocused();
+  await secret.fill(password);
+  await dialog(page).getByRole("button", { name: "Back to sign in", exact: true }).click();
+  await expect(username).toHaveValue("FocusPlayer");
+  await expect(secret).toHaveValue("");
+  await expect(secret).toBeFocused();
+  await username.fill("   ");
+  await create(page);
+  await expect(username).toBeFocused();
+  await dialog(page).getByRole("button", { name: "Back to sign in", exact: true }).click();
+  await expect(username).toBeFocused();
+});
+
+test("public landing has no sign-in shortcut and keyboard play opens a cancellable account gate", async ({ page }) => {
+  let creates = 0;
+  page.on("request", request => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates++;
+  });
+  await page.goto("/");
+  await waitForAccountStartup(page);
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveCount(0);
+  const original = page.url();
+  const play = page.getByRole("button", { name: "Start new game", exact: true });
+  await play.focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog(page).getByRole("heading", { name: "Log in to start playing" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog(page)).not.toBeVisible();
+  await expect(play).toBeFocused();
+  expect(page.url()).toBe(original);
+  expect(creates).toBe(0);
+});
+
+test("username availability uses matching status colors and an accessible reduced-motion loading state", async ({ page }) => {
+  let release, reached;
+  const held = new Promise(resolve => { release = resolve; });
+  const pending = new Promise(resolve => { reached = resolve; });
+  const first = uniqueName(), taken = uniqueName();
+  await page.route("**/api/auth/username", async route => {
+    const isTaken = route.request().postDataJSON().username === taken;
+    if (!isTaken) { reached(); await held; }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, exists: isTaken }) });
+  });
+  try {
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await open(page);
+    await create(page);
+    await enterUsername(page, first);
+    await pending;
+    const status = dialog(page).locator("[data-username-status]");
+    await expect(status).toHaveAttribute("data-state", "pending");
+    await expect(status).toContainText(/Checking/i);
+    await expect(status).toHaveCSS("animation-name", "account-loading-swipe");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(status).toHaveCSS("animation-name", "none");
+    await expect(status).toContainText(/Checking/i);
+    await dialog(page).getByLabel("Password", { exact: true }).fill(password);
+    const length = dialog(page).locator('[data-requirement="length"]');
+    await expect(length).toHaveAttribute("data-state", "met");
+    release();
+    await expect(status).toHaveAttribute("data-state", "available");
+    await expect(status).toHaveText(/^✓/);
+    expect(await status.evaluate(node => getComputedStyle(node).color)).toBe(await length.evaluate(node => getComputedStyle(node).color));
+    await enterUsername(page, taken);
+    await expect(status).toHaveAttribute("data-state", "taken");
+    await expect(status).toHaveText(/^✕/);
+    await dialog(page).getByLabel("Password", { exact: true }).fill(taken);
+    const different = dialog(page).locator('[data-requirement="differentFromUsername"]');
+    await expect(different).toHaveAttribute("data-state", "unmet");
+    expect(await status.evaluate(node => getComputedStyle(node).color)).toBe(await different.evaluate(node => getComputedStyle(node).color));
+  } finally { release(); await page.unrouteAll({ behavior: "wait" }); }
+});
+
+test("revealed username feedback reserves its row while valid edits debounce and incomplete edits stay quiet", async ({ page }) => {
+  let calls = 0, release;
+  const held = new Promise(resolve => { release = resolve; });
+  await page.route("**/api/auth/username", async route => {
+    calls++;
+    if (calls === 2) await held;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, exists: false }) }).catch(() => {});
+  });
+  try {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await open(page);
+    await create(page);
+    await enterUsername(page, uniqueName());
+    const status = dialog(page).locator("[data-username-status]");
+    const secret = dialog(page).getByLabel("Password", { exact: true });
+    await expect(status).toHaveAttribute("data-state", "available");
+    const rowHeight = (await status.boundingBox()).height;
+    const passwordY = (await secret.boundingBox()).y;
+    await page.clock.install();
+    await page.clock.pauseAt(new Date());
+    await enterUsername(page, uniqueName());
+    await expect(status).toHaveAttribute("data-state", "pending");
+    expect(calls).toBe(1);
+    expect((await secret.boundingBox()).y).toBeCloseTo(passwordY, 0);
+    await page.clock.fastForward(499);
+    expect(calls).toBe(1);
+    await page.clock.fastForward(1);
+    await expect.poll(() => calls).toBe(2);
+    await enterUsername(page, "");
+    await expect(status).toHaveAttribute("data-state", "idle");
+    await expect(status).toHaveText("");
+    expect((await status.boundingBox()).height).toBeCloseTo(rowHeight, 0);
+    expect((await secret.boundingBox()).y).toBeCloseTo(passwordY, 0);
+    await enterUsername(page, "a");
+    await page.clock.fastForward(1000);
+    await expect(status).toHaveText("");
+    expect(calls).toBe(2);
+    expect((await secret.boundingBox()).y).toBeCloseTo(passwordY, 0);
+    await page.clock.resume();
+  } finally { release(); await page.unrouteAll({ behavior: "wait" }); }
+});
+
+test("wrapped unavailable username feedback keeps its height while editing or clearing", async ({ page }) => {
+  let calls = 0, release;
+  const held = new Promise(resolve => { release = resolve; });
+  await page.route("**/api/auth/username", async route => {
+    if (++calls === 1) await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "temporarily_unavailable" }) });
+    else {
+      await held;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, exists: false }) }).catch(() => {});
+    }
+  });
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await open(page);
+    await create(page);
+    await enterUsername(page, uniqueName());
+    const status = dialog(page).locator("[data-username-status]");
+    const secret = dialog(page).getByLabel("Password", { exact: true });
+    await expect(status).toHaveAttribute("data-state", "error");
+    const errorHeight = (await status.boundingBox()).height;
+    expect(await status.evaluate(node => { const range = document.createRange(); range.selectNodeContents(node); return range.getClientRects().length; })).toBeGreaterThan(1);
+    const beforeY = (await secret.boundingBox()).y;
+    await enterUsername(page, uniqueName());
+    await expect(status).toHaveAttribute("data-state", "pending");
+    expect((await status.boundingBox()).height).toBeCloseTo(errorHeight, 0);
+    expect((await secret.boundingBox()).y).toBeCloseTo(beforeY, 0);
+    await expect.poll(() => calls).toBe(2);
+    await enterUsername(page, "");
+    await expect(status).toHaveText("");
+    expect((await status.boundingBox()).height).toBeCloseTo(errorHeight, 0);
+    expect((await secret.boundingBox()).y).toBeCloseTo(beforeY, 0);
+  } finally { release(); await page.unrouteAll({ behavior: "wait" }); }
 });

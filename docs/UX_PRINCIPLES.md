@@ -128,9 +128,14 @@ Examples illustrating the spirit:
 - The home page should follow the same screen-real-estate maximization rule as the game page instead of reserving extra horizontal chrome by default.
 - When we tighten mobile gutters for one primary shell route, treat that as a shared shell principle and document whether sibling routes should inherit it.
 
+## Writing Principle
+
+- Avoid em dashes and semicolons. Prefer commas, colons, or separate sentences, choosing the form that reads most clearly.
+
 ## Feedback Surface Principle
 
 - Feedback placement must match urgency and required action.
+- Style messages with a color that corresponds to their state: errors red, successful results green, and pending or informational messages neutral. Use clear wording and indicators as well, maintain sufficient contrast, and never imply success with color before a check completes.
 - Use lightweight, non-blocking surfaces for confirmations and informational updates.
 - Use stronger, more persistent treatment when there is user risk, system degradation, or another participant is waiting on a decision.
 - Notifications should have a stable and predictable home in each viewport mode.
@@ -143,10 +148,22 @@ Examples illustrating the spirit:
 - Treat hover styling as progressive enhancement only and do not make required behavior depend on hover availability.
 - When adding new interactive hover affordances, verify that non-hover and touch devices preserve the same required behavior without hidden-only states.
 
+## Input Action Principle
+
+- Buttons inside inputs use the shared `renderInputAction` component and `.input-with-action` layout. Keep them text-only and subtle, with a visible keyboard focus state and a usable touch target. Reserve their actual width so they never overlap entered text or extend beyond the field.
+
+## Modal Principle
+
+- Provide an accessible close button (×) in the top-right corner instead of a separate Cancel action for ordinary dismissal.
+- Close on an outside/backdrop click and Escape. A click inside the dialog or a drag that starts inside must not dismiss it.
+- Keep the close control available in full-screen mobile dialogs, where there is no outside area to click.
+- Keep keyboard focus inside the open dialog and restore focus to its trigger on dismissal. Preserve the underlying page and navigation state.
+
 ## Motion Principle
 
 - Motion should communicate causality, feedback, and state change without adding churn.
 - Favor short, confident transitions over flashy flourishes.
+- Prefer a subtle loading swipe over the affected text or component instead of a spinner. Keep the label readable and the layout stable; pair motion with meaningful status text, and show a static status when reduced motion is requested.
 - Pressed-state feedback should feel immediate. Release-state feedback should resolve as one short, coherent animation.
 - Animate changes in a surface’s size smoothly, including content appearing, disappearing, wrapping, or switching forms. Use a short, interruptible transition from the current size; preserve focus, readable text, scrolling, and viewport bounds. Avoid abrupt height jumps and blanket transitions on every property.
 - Animations that change layout should protect readability while moving.

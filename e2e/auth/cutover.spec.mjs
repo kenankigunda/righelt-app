@@ -1,4 +1,4 @@
-import { enterUsername } from "./helpers.mjs";
+import { enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { test, expect } from "@playwright/test";
 import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
 const password = "A cutover account test password 482";
@@ -10,19 +10,21 @@ test.beforeEach(async () => { await control("maintenance-off"); await control("r
 test.afterEach(async () => control("maintenance-off"));
 async function register(page, username, play = false) {
   await page.goto("/");
-  await page.getByRole("button", { name: play ? "Start new game" : "Sign in", exact: true }).click();
+  await openPlaySignIn(page);
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
   await enterUsername(page, username);
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
+  await expect(page).toHaveURL(/#\/game\//);
+  if (!play) await page.goto("/");
   if (play) await expect(page.getByTestId("game-role")).toContainText("Player 1");
 }
 async function canary(page) {
   await page.goto("/");
   const exists = (await page.request.get(new URL("/api/profiles/cutover_canary", page.url()).href)).ok();
   if (!exists) return register(page, "cutover_canary");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await openPlaySignIn(page);
   await enterUsername(page, "cutover_canary");
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
@@ -46,7 +48,7 @@ test("an old guest invite stays view-only and offers a fresh account game", asyn
   const url = page.url();
   await page.getByRole("button", { name: "Start new game", exact: true }).click();
   await expect(dialog(page)).toBeVisible();
-  await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  await dialog(page).getByRole("button", { name: "Close", exact: true }).click();
   expect(page.url()).toBe(url);
   await register(page, `Legacy_${Date.now().toString(36)}`);
   await page.goto(url);
