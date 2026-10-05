@@ -1,10 +1,12 @@
 import {mkdir,writeFile,cp,readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {renderThreadEvidence} from './thread-evidence.mjs';
 import {publicRun,hash} from './model.mjs';
 const assets=fileURLToPath(new URL('./assets/',import.meta.url));
 export async function renderReport(run,dir){
  await mkdir(dir,{recursive:true});await cp(assets,dir,{recursive:true});
+ await renderThreadEvidence(run,dir);
  const data=publicRun(run);
  for(const stage of data.stages) for(const item of stage.items){item.revision??=hash({result:item.status,assertions:item.assertions,images:item.images,findings:item.findings});}
  const json=JSON.stringify(data).replaceAll('<','\\u003c');

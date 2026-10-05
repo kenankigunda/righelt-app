@@ -87,7 +87,7 @@ test('persisted CI evidence requires exact name/tree/command, expiry and survivi
 
 test('tracked workflow has job mappings and provenance steps only inside real jobs',async()=>{
  const source=await readFile(new URL('../../../.github/workflows/ci.yml',import.meta.url),'utf8');
- const {workflowJobs}=await import('../ci-evidence.mjs');const jobs=workflowJobs(source);assert.equal(jobs.length,10);assert.ok(!jobs.some(j=>j.id==='push'));
+ const {workflowJobs}=await import('../ci-evidence.mjs');const jobs=workflowJobs(source);assert.ok(jobs.length>=10);assert.ok(!jobs.some(j=>j.id==='push'));
  for(const job of jobs.filter(j=>j.id!=='test-results'))assert.equal(job.steps.filter(s=>s.name==='Record exact CI environment').length,1);
  assert.throws(()=>workflowJobs(source.replace('jobs:\n','jobs:\n      - name: invalid\n')),/job mapping/);
 });

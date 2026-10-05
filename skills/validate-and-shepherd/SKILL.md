@@ -1,11 +1,15 @@
 ---
 name: validate-and-shepherd
-description: Validate local app changes or ordered PR sets with hosted visual evidence, repair source PRs, monitor readiness, and process the user's email merge authorizations. Use for integrated test passes, end-to-end evidence, or shepherding PRs to merge-ready.
+description: Validate local app changes or ordered PR sets with local Markdown evidence, repair source PRs, monitor readiness, and process the user's email merge authorizations. Use for integrated test passes, end-to-end evidence, or shepherding PRs to merge-ready.
 ---
 
 # Validate and shepherd
 
 Use the dedicated released `righelt-validation-tools` checkout, pinned to a merged revision. Resolve the candidate separately and pass `--candidate /absolute/path` to the released CLI. Paths to skill references and harness files belong to the released checkout; product reads and repairs belong to the explicit candidate. Never run a branch-local skill as the released policy or modify another task's dirty worktree. See `references/distribution.md`.
+
+## Evidence delivery
+
+Publishing is paused by default until the user explicitly resumes it. Do not enable `publicationEnabled` or restore a paused Pages project without that instruction. Pass `--no-publish` while paused; `publish` also honors the shared setting. Every report refresh writes `evidence.md` beside `run.json`. Deliver a concise summary directly in the Codex task and link this Markdown file, embedding representative inspected screenshots with absolute local paths. Include exact revisions, checks, reused evidence provenance, failures, gaps, readiness and next actions. The selection is bounded; inspect required originals and keep all raw evidence privately. Local reports preserve the full report inventory. No hosted smoke check or hosted URL is required while paused.
 
 ## Startup
 
@@ -28,18 +32,18 @@ Merging requires explicit chat authorization or a verified email command under `
 - Local: `node scripts/validation/cli.mjs local --candidate /absolute/path --base origin/main`. Integrated: `node scripts/validation/cli.mjs integrated --candidate /absolute/path --manifest FILE --out RUN_DIRECTORY`. Invoke these from the released tools checkout.
 - GitHub operations, including integrated runner invocations that fetch GitHub, require scoped outside-sandbox execution from the outset. Keep credentials in the OS keyring.
 - Validate behavior introduced by each stage and affected adjacent contracts. Reuse compatible baseline, current-head CI and unchanged upstream evidence with explicit provenance; do not repeat the full cumulative matrix at every intermediate checkpoint. Finish with the required integrated and retained-state proof. The runner records evidence but does not replace judgment. Mark unmapped affected areas as gaps.
-- Curate representative screenshots for changed surfaces at required sizes and states. Inspect every selected original, including failures; avoid reviewing unchanged duplicates. Keep all raw artifacts private and retain the report selection provenance. Record findings with `node scripts/validation/cli.mjs review --run RUN_JSON --stage stage-N --note FINDINGS`; then republish. Do not mark unseen screenshots reviewed.
+- Curate representative screenshots for changed surfaces at required sizes and states. Inspect every selected original, including failures; avoid reviewing unchanged duplicates. Keep all raw artifacts private and retain the report selection provenance. Record findings with `node scripts/validation/cli.mjs review --run RUN_JSON --stage stage-N --note FINDINGS`; then refresh the local report. Do not mark unseen screenshots reviewed.
 - Repair source PRs and rebuild aggregates from those sources. An integration-only repair is never readiness proof.
 - Preserve worktrees and checkpoint history. On failure read private logs and repair; the command returning nonzero is not a reason to end the task.
 - Use one bounded independent review of the coherent diff and evidence for browser behavior, accessibility, timing, merge authorization, or test validity. Re-review only changed findings or newly affected contracts after a repair; do not restart an unchanged full review. The Lead owns final acceptance.
 
 ## Monitor and deliver
 
-When updating a PR, follow [AGENTS.md §6.2](../../AGENTS.md#62-pr-writing). Refresh What was validated with the behaviors checked, methods, results, revision, and gaps. In Additional evidence, link both the immutable report and stable review page, clearly labeling partial or stale evidence. If publication is pending, blocked, or not applicable, say why. Preserve the product rationale and refresh diff links after source repairs. Missing evidence alone does not prevent review or waive readiness gates.
+When updating a PR, follow [AGENTS.md §6.2](../../AGENTS.md#62-pr-writing). Refresh What was validated with the behaviors checked, methods, results, revision, and gaps. In PR Additional evidence, state that publishing is paused and include a brief textual evidence summary with revisions and gaps; local filesystem links are only usable in the Codex task. When publication is explicitly enabled, link both the immutable report and stable review page, clearly labeling partial or stale evidence. If publication is pending, blocked, or not applicable, say why. Preserve the product rationale and refresh diff links after source repairs. Missing evidence alone does not prevent review or waive readiness gates.
 
 Read `references/email.md` for setup, digest batching, verified reply processing and the five-minute heartbeat. Use the app's automation tool, not an ad-hoc daemon. Create or resume a heartbeat only when scheduling is explicitly requested. Respect a paused schedule: record it and do not resume it implicitly when validating or replying. Reuse a matching automation, keep it quiet when unchanged, and stop it when tracked PRs are merged, closed or removed.
 
-Each handoff and digest identifies each PR's current revision, readiness, authorization, waiting conditions, next owner/action, immutable evidence URL, and stable review URL. No readiness claim before all required gates and independent review pass. Missing external permissions or mandatory human review remain explicit blockers. Never infer CI success from local results.
+Each handoff and digest identifies each PR's current revision, readiness, authorization, waiting conditions, next owner/action, local Markdown evidence path (or published URLs when explicitly enabled). No readiness claim before all required gates and independent review pass. Missing external permissions or mandatory human review remain explicit blockers. Never infer CI success from local results.
 
 ## Separate decisions
 

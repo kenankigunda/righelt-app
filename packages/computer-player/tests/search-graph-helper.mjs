@@ -33,4 +33,3 @@ const absolute=(source+'\n'+mock).replace(/(from\s+["'])(\.\.?\/[^"']+)(["'])/g,
   prefix+new URL(specifier+'.ts',new URL('../src/',import.meta.url)).href+suffix);
 const compiled=ts.transpileModule(absolute,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
 export const core=await import('data:text/javascript;base64,'+Buffer.from(compiled).toString('base64'));
-

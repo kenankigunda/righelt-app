@@ -9,7 +9,7 @@ node scripts/validation/cli.mjs local --candidate /absolute/candidate --base ori
 node scripts/validation/cli.mjs integrated --candidate /absolute/candidate --manifest /absolute/manifest.json --out /absolute/run-directory
 node scripts/validation/cli.mjs integrated --candidate /absolute/candidate --manifest /absolute/manifest.json --out /absolute/run-directory --resume
 node scripts/validation/cli.mjs local --candidate /absolute/candidate --resume /absolute/run-directory/run.json
-pnpm validate:publish --run /absolute/run-directory/run.json
+pnpm validate:report --run /absolute/run-directory/run.json
 ```
 
 Use a version 2 manifest with `repository`, `base`, ordered `prs`, and explicit `questions`. Each question names its acceptance question, relevant path prefixes, and final `checks`; optional `boundaryChecks` selects additional checks at affected feature boundaries. Each PR may name explicit boundary `tests` and a `rationale`. Unmapped product changes or a changed boundary without selected tests/checks block readiness. The final candidate runs the complete existing browser matrix. See `manifest-v2.example.json`; replace its example scope deliberately. Version 1 requires `--legacy` and is reserved for historical reproduction.
@@ -22,7 +22,7 @@ Use `import-ci --candidate PATH --repository OWNER/REPO --run-id ID --expected E
 
 Stopped checkpoints include private databases, generated configuration, stable secret, browser state and continuity records. Verify provenance, integrity, session expiry and referenced check/image artifacts before restoring an isolated copy. A missing, expired, corrupt or incompatible checkpoint regenerates from the nearest valid predecessor. Preserve every attempt and failed result.
 
-Report assembly and captions never invoke product tests. Run full viewer tests when report tooling changes; otherwise validate report data and image integrity and perform one final hosted smoke check. Save progress locally. Publish at human-review readiness, a material blocker requiring review, and final readiness.
+Report assembly and captions never invoke product tests. Run full viewer tests when report tooling changes; otherwise validate report data and image integrity and inspect the local Markdown summary; perform a hosted smoke check only when publication is explicitly enabled. Save progress locally. Deliver `evidence.md` directly in the Codex task at human-review readiness, a material blocker requiring review, and final readiness. Publishing is paused by default; resume only on explicit user instruction by restoring the project and setting `publicationEnabled: true` in shared settings. Missing hosted URLs do not block local evidence delivery.
 
 Run files and raw logs live under ignored test-results. Only site/ is publishable. The main manifest records private coordination state; never upload it wholesale. Report source includes a deliberately allowlisted public projection.
 

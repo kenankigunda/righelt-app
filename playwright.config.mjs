@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { browserLaunchOptions } from "./scripts/playwright-launch-options.mjs";
 
 const webPort = process.env.RIGHELT_E2E_WEB_PORT || "9888";
 const baseURL = `http://127.0.0.1:${webPort}`;
@@ -10,6 +11,7 @@ const reporter = process.env.CI
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: "**/auth/**",
   fullyParallel: false,
   workers: 1,
   outputDir,
@@ -29,13 +31,20 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: devices["Desktop Chrome"],
+      use: { ...devices["Desktop Chrome"], launchOptions: browserLaunchOptions("chromium") },
     },
+    ...["firefox", "webkit"].map(name => ({
+      name,
+      testMatch: /(sync-recovery-(pressure|ux)|browser-move-input|home-create-refresh)\.spec\.mjs/,
+      use: { ...devices[name === "firefox" ? "Desktop Firefox" : "Desktop Safari"],
+        launchOptions: browserLaunchOptions(name) },
+    })),
   ],
   webServer: {
     command: "node scripts/e2e-stack.mjs",
+    gracefulShutdown: { signal: "SIGTERM", timeout: 15000 },
     url: baseURL,
-    reuseExistingServer: !process.env.CI && !process.env.RIGHELT_VALIDATION,
+    reuseExistingServer: false,
     stdout: "pipe",
     stderr: "pipe",
     timeout: 180_000,

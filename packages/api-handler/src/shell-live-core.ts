@@ -102,7 +102,9 @@ export type TurnEntry = {
 };
 
 export type LiveGame = {
+  ownershipMode?: "legacy_guest" | "account_v1";
   id: string;
+  gameplayRevision: number;
   createdAt: string;
   lastMoveAt: string | null;
   updatedAt: string;
@@ -334,6 +336,7 @@ export const createInitialGame = ({
   const createdAt = now();
   return {
     id: gameId,
+    gameplayRevision: 0,
     createdAt,
     lastMoveAt: null,
     updatedAt: createdAt,
@@ -776,6 +779,7 @@ export const toStaticGameCard = (
   const myRole = findRoleForIdentity(
     {
       ...game,
+      gameplayRevision: 0,
       pendingJoinRequests: Array.isArray(game.pendingJoinRequests) ? game.pendingJoinRequests : [],
       historyIndexByIdentity: game.historyIndexByIdentity ?? {},
       pendingScenarioSelection: game.pendingScenarioSelection ?? null,

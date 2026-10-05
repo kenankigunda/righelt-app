@@ -1,0 +1,18 @@
+name = "righelt-t108-hash-engine"
+main = "hash-worker.mjs"
+compatibility_date = "2026-03-12"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+
+[[durable_objects.bindings]]
+name = "HASH"
+class_name = "HashProbe"
+
+[[migrations]]
+tag = "t108-probe-v1"
+new_sqlite_classes = ["HashProbe"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1

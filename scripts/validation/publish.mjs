@@ -18,6 +18,7 @@ function deploymentURLs(output,project){
  return {immutable:trusted(deployment),stable:alias?trusted(alias):trusted(deployment)};
 }
 export async function publish(run,dir,config,{execute=command,fetchImpl=fetch,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
+ if(config?.publicationEnabled!==true){run.publication={status:'disabled',reason:'Publishing is paused; review the local evidence summary in Codex.'};return run.publication;}
  const project=config.pagesProject;
  if(!project||!/^[a-z0-9-]+$/.test(project))throw Error('Configure a dedicated pagesProject first');
  const branch=`run-${run.id}`.toLowerCase().replace(/[^a-z0-9-]/g,'-').slice(0,60);

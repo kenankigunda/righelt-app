@@ -9,7 +9,7 @@ const e2eStackSource = readFileSync(path.join(repoRoot, "scripts", "e2e-stack.mj
 const playwrightConfigSource = readFileSync(path.join(repoRoot, "playwright.config.mjs"), "utf8");
 
 test("root scripts expose layered E2E commands", () => {
-  assert.equal(packageJson.scripts["e2e:install"], "playwright install chromium");
+  assert.equal(packageJson.scripts["e2e:install"], "playwright install chromium firefox webkit");
   assert.equal("test:e2e:smoke" in packageJson.scripts, false);
   assert.equal(packageJson.scripts["test:e2e"], "playwright test");
   assert.equal(packageJson.scripts["test:e2e:headed"], "playwright test --headed");
@@ -39,5 +39,5 @@ test("Playwright config boots the shared local stack and captures failure artifa
   assert.match(playwrightConfigSource, /trace: "retain-on-failure"/);
   assert.match(playwrightConfigSource, /screenshot: "only-on-failure"/);
   assert.match(playwrightConfigSource, /command: "node scripts\/e2e-stack\.mjs"/);
-  assert.match(playwrightConfigSource, /reuseExistingServer: !process\.env\.CI/);
+  assert.match(playwrightConfigSource, /reuseExistingServer: false/);
 });

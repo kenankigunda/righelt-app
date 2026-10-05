@@ -29,4 +29,3 @@ test('E-I01 real action, record and independent replay verify enabled provenance
   assert.equal(deterministicStateHash(replayDecision(state, legacy, fn => fn())), record.afterHash);
   assert.throws(() => validateExplorationProvenance({ ...record, trainingRecipe: null }), /recipe/);
 });
-
