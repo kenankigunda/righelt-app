@@ -6,6 +6,7 @@ import random
 import uuid
 import torch
 from .config import CONFIG_SHA256
+from .training_recipe import recipe_binding, validate_recipe, record_recipe
 
 
 def weights_sha256(state):
@@ -27,9 +28,10 @@ def atomic_json(path, data):
     finally:os.close(fd)
 
 
-def save_checkpoint(path, model, optimizer, *, round_index, updates, replay_ids, manifest_sha256, recovery_state=None):
+def save_checkpoint(path, model, optimizer, *, round_index, updates, replay_ids, manifest_sha256, recovery_state=None, training_recipe=None):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
-    data={'schema':1,'configSha256':CONFIG_SHA256,'manifestSha256':manifest_sha256,
+    recipe = recipe_binding() if training_recipe is None else validate_recipe(training_recipe)
+    data={'schema':1,'configSha256':CONFIG_SHA256,'manifestSha256':manifest_sha256,'trainingRecipe':recipe,
           'model':{k:v.detach().cpu() for k,v in model.state_dict().items()},
           'optimizer':optimizer.state_dict(),'round':round_index,'updates':updates,
           'replayIds':replay_ids,'pythonRng':random.getstate(),'torchRng':torch.get_rng_state()}
@@ -49,19 +51,24 @@ def save_checkpoint(path, model, optimizer, *, round_index, updates, replay_ids,
     finally:os.close(fd)
     digest=hashlib.sha256(path.read_bytes()).hexdigest()
     atomic_json(path.with_suffix('.json'),{'sha256':digest,'configSha256':CONFIG_SHA256,
-                                         'manifestSha256':manifest_sha256,'round':round_index,'updates':updates})
+                                         'manifestSha256':manifest_sha256,'round':round_index,'updates':updates,'trainingRecipe':recipe})
     if recovery_state is not None:
         atomic_json(path.with_suffix('.runner.json'),{'schema':2,'checkpointSha256':digest,
                     'recoverySha256':data['recoverySha256'],'state':data['recovery']['state']})
     return digest
 
 
-def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False):
+def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False, training_recipe=None):
     path=Path(path);meta=json.loads(path.with_suffix('.json').read_text())
     if hashlib.sha256(path.read_bytes()).hexdigest()!=meta['sha256']: raise ValueError('checkpoint checksum mismatch')
     data=torch.load(path,map_location='cpu',weights_only=True)
     if data['configSha256']!=CONFIG_SHA256 or data['manifestSha256']!=manifest_sha256:
         raise ValueError('checkpoint incompatible with run manifest')
+    recipe = record_recipe(data)
+    if record_recipe(meta) != recipe or ('trainingRecipe' in data) != ('trainingRecipe' in meta):
+        raise ValueError('checkpoint recipe metadata mismatch')
+    if training_recipe is not None and validate_recipe(training_recipe) != recipe:
+        raise ValueError('checkpoint training recipe mismatch')
     if any(meta.get(key)!=data[key] for key in ('configSha256','manifestSha256','round','updates')):
         raise ValueError('checkpoint metadata mismatch')
     recovery=data.get('recovery')
@@ -80,8 +87,8 @@ def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False):
     return data
 
 
-def load_checkpoint(path, model, optimizer=None, *, manifest_sha256, require_recovery=False):
-    data=inspect_checkpoint(path,manifest_sha256=manifest_sha256,require_recovery=require_recovery)
+def load_checkpoint(path, model, optimizer=None, *, manifest_sha256, require_recovery=False, training_recipe=None):
+    data=inspect_checkpoint(path,manifest_sha256=manifest_sha256,require_recovery=require_recovery,training_recipe=training_recipe)
     model.load_state_dict(data['model'])
     if optimizer is not None: optimizer.load_state_dict(data['optimizer'])
     random.setstate(data['pythonRng']);torch.set_rng_state(data['torchRng'])

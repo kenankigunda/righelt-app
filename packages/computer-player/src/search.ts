@@ -3,6 +3,7 @@ import type { Action, GameState } from "../../shared-types/src/engine";
 import { encodeState, experimentConfig as config, legalActionMap, scanLegalActions } from "./representation";
 import { terminalValue, transition } from "./transition";
 import { proveTactical, TacticalInterrupted, type TacticalStatus } from "./tactics";
+import { applyRootExploration, explorationEvidence, verifyTrainingRecipe, type RootExplorationEvidence, type RootExplorationRequest } from "./exploration";
 export type { TacticalStatus } from "./tactics";
 export const SEARCH_POLICY_VERSION = "model-fallback-v2";
 
@@ -13,6 +14,8 @@ export type Evaluator = (input: Float32Array, context: {
 export type SearchRequest = {
   state: GameState; seed: number; simulations?: number; temperature?: number;
   maxValueGap?: number; maxNodes?: number; deadlineMs?: number; signal?: AbortSignal; decisionCache?: boolean; observeEngine?: EngineComputationObserver;
+  /** Training self-play/development screen only. Browser and evaluation omit it. */
+  rootExploration?: RootExplorationRequest;
 };
 export type ActionReport = {
   executable: boolean | null; index: number; visits: number; prior: number; policyLogit: number; value: number | null;
@@ -36,7 +39,7 @@ export type SearchResult = ({
   status: "recovery"; reason: "terminal" | "no-legal-actions" | "incomplete-safety" | "no-completed-search";
   actions: ActionReport[]; nodes: number; simulations: number; elapsedMs: number; engineBudget: EngineBudget;
   stopped: "complete" | "deadline" | "node-limit";
-}) & { decisionCache?: DecisionCacheStats };
+}) & { decisionCache?: DecisionCacheStats; rootExploration?: RootExplorationEvidence };
 
 type Edge = { index: number; action: Action; prior: number; policyLogit: number; visits: number; sum: number; child?: Node; resolved?: GameState; transitionLimited?: boolean };
 type Node = { state: GameState; edges?: Edge[]; enumerationLimited?: boolean; value?: number; visits: number; sum: number };
@@ -62,12 +65,15 @@ export function seededRandom(seed: number): () => number {
  * This core checks cooperative cancellation between bounded operations, not during them. */
 export async function selectMove(request: SearchRequest, evaluator: Evaluator): Promise<SearchResult> {
   const started = performance.now();
+  const exploration = explorationEvidence(request.rootExploration, request.seed);
+  if (exploration) await verifyTrainingRecipe(exploration.recipe);
   const ruleCache = request.decisionCache ? new DecisionRuleCache() : undefined;
   const rules = <T>(operation: () => T): T => {
     const cached = () => withDecisionRuleCache(ruleCache, operation);
     return request.observeEngine ? withEngineComputationObserver(request.observeEngine, cached) : cached();
   };
-  const cacheEvidence = () => ruleCache ? { decisionCache: { ...ruleCache.stats } } : {};
+  const cacheEvidence = () => ({ ...(ruleCache ? { decisionCache: { ...ruleCache.stats } } : {}),
+    ...(exploration ? { rootExploration: exploration } : {}) });
   const random = seededRandom(request.seed);
   const simulations = request.simulations ?? config.search.selfPlaySimulations;
   const maxNodes = request.maxNodes ?? config.search.maxNodes;
@@ -399,6 +405,12 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
   }
   const notProvenLost = eligible.filter(edge => proofs.get(edge.index) !== "proven-loss");
   if (notProvenLost.length) eligible = notProvenLost;
+  // Root-only effective priors never replace raw model scores used by tactics,
+  // first visit, fallback, deeper PUCT or final choice. Draw once, before PUCT.
+  const rootPriors = exploration?.requested ? await applyRootExploration(exploration,
+    eligible.filter(edge => !!edge.child && !edge.child.enumerationLimited && !edge.transitionLimited && !limitedVisits.has(edge.index)),
+    simulations - completed, completed > 0 && eligible.some(edge => edge.visits > 0),
+    request.deadlineMs === undefined ? undefined : request.deadlineMs - reserveMs) : new Map<number, number>();
   try {
     while (completed < simulations) {
       check();
@@ -408,7 +420,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
       let selected = available[0];
       for (const edge of available) {
         const q = edge.visits ? edge.sum / edge.visits : root.value;
-        const score = rootSign * q + config.search.cPuct * edge.prior * Math.sqrt(Math.max(1, root.visits)) / (1 + edge.visits);
+        const score = rootSign * q + config.search.cPuct * (rootPriors.get(edge.index) ?? edge.prior) * Math.sqrt(Math.max(1, root.visits)) / (1 + edge.visits);
         if (score > best || (score === best && edge.index < selected.index)) { best = score; selected = edge; }
       }
       try { await visit(selected); }

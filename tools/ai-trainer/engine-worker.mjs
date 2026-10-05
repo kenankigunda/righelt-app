@@ -5,6 +5,7 @@ import { createEngineOperationBudget, EngineExpansionLimit } from './engine-oper
 import { searchRecovery } from './search-recovery.mjs';
 import { decisionProvenance } from './decision-provenance.mjs';
 import { replayDecision } from './decision-replay.mjs';
+import { trainingExplorationOptions } from './exploration-provenance.mjs';
 import { createHash } from 'node:crypto';
 import { createInitialState, deterministicStateHash, normalizeState, resolveToStability } from '../../packages/game-engine/src/index.ts';
 import { encodeState, selectMove, seededRandom, experimentConfig, SEARCH_POLICY_VERSION, encodeAction, verifyLegalSubset, legalActionMap as engineLegalActionMap, transition as engineTransition } from '../../packages/computer-player/src/index.ts';
@@ -56,6 +57,7 @@ export function ruleFingerprint(state) {
 class BudgetExpired extends Error { constructor(reason='deadline') { super(reason); this.reason=reason; } }
 async function main() {
   const job = await read();
+  const explorationOptions = trainingExplorationOptions(job);
   const budgetMs = job.budgetMs ?? 600_000;
   if (!Number.isFinite(budgetMs) || budgetMs <= 0 || budgetMs > 600_000) throw new Error('Invalid job bound');
   const deadline = performance.now() + budgetMs;
@@ -75,7 +77,7 @@ async function main() {
   };
   if (job.command === 'search') {
     let requestId=0;
-    const result=await selectMove({state:job.state,seed:job.seed,...searchOptions(job.profile),
+    const result=await selectMove({state:job.state,seed:job.seed,...searchOptions(job.profile),...explorationOptions,
       ...(job.verifyFallback ? {maxNodes:1} : {}),deadlineMs:deadline},async encoded=>{
       const id=++requestId;send({type:'evaluate',id,input:Array.from(encoded)});
       const reply=await read();if(reply.type!=='evaluation'||reply.id!==id)throw new Error('Inference response mismatch');return reply;
@@ -190,7 +192,7 @@ async function main() {
       const decisionController=state.sideToMove;
       const profile=arena ? job.profiles[decisionController] : {simulations:experimentConfig.search.selfPlaySimulations,temperature:1,maxValueGap:.1};
       diagnose(state,'search',n,seed,profile);
-      const result = await selectMove({ state, seed, ...searchOptions(profile), deadlineMs: deadline }, async encoded => {
+      const result = await selectMove({ state, seed, ...searchOptions(profile), ...explorationOptions, deadlineMs: deadline }, async encoded => {
         const id = ++requestId;
         send({ type: 'evaluate', id, modelSeat:decisionController, input: Array.from(encoded) });
         const reply = await read();
@@ -213,6 +215,7 @@ async function main() {
         id:committed.id,controller,action:committed.action,beforeHash,afterHash:committed.afterHash,
         seed,modelVersion:committed.modelVersion,profileVersion:committed.profileVersion,
         searchPolicyVersion:SEARCH_POLICY_VERSION,policyMask:committed.policyMask,fallback:committed.fallback,legality:committed.legality,
+        trainingRecipe:committed.trainingRecipe,rootExploration:committed.rootExploration,
         search:{...committed.search,actions:committed.fallback?committed.search.actions:undefined}}});
     }
   } catch (error) {

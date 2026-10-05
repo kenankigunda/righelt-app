@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "recipes": [
+    {
+      "id": "baseline-v1",
+      "definition": {
+        "schema": 1,
+        "rootExploration": false
+      },
+      "sha256": "04596d6da58c264c7513bed33433ad2d8b9b062e2e46fb589d975abfb77e0271"
+    },
+    {
+      "id": "root-dirichlet-v1",
+      "definition": {
+        "schema": 1,
+        "rootExploration": true,
+        "noiseWeight": 0.25,
+        "totalConcentration": 10.83,
+        "seedDerivation": "fnv1a32-root-recipe-v1",
+        "sampler": "marsaglia-tsang-bounded-v1",
+        "maxGammaAttempts": 128
+      },
+      "sha256": "3dca880a2598fd526cdc3aceca1044d2a2b0256d77b131bd75c489f689a4e5fd"
+    }
+  ]
+}

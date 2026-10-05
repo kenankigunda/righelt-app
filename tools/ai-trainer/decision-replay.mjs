@@ -15,6 +15,18 @@ export function replayDecision(state, record, bounded) {
   } else if (record.legal && JSON.stringify([...bounded(() => legalActionMap(state)).keys()]) !== JSON.stringify(record.legal)) {
     throw new Error('Replay legal mask mismatch');
   }
+  if ((record.policyMask ?? true) && record.policy !== undefined) {
+    if (!Array.isArray(record.policy) || !record.policy.length || new Set(record.policy.map(item => item.index)).size !== record.policy.length ||
+        record.policy.some(item => !Number.isSafeInteger(item.index) || !record.legal?.includes(item.index) ||
+          !Number.isFinite(item.probability) || item.probability < 0) ||
+        Math.abs(record.policy.reduce((sum, item) => sum + item.probability, 0) - 1) > 1e-10) throw new Error('Replay policy target mismatch');
+    if (record.search?.actions) {
+      const visits = record.policy.map(item => record.search.actions.find(action => action.index === item.index)?.visits);
+      const total = visits.reduce((sum, value) => sum + value, 0);
+      if (visits.some(value => !Number.isSafeInteger(value) || value < 0) || total <= 0 ||
+          record.policy.some((item, i) => Math.abs(item.probability - visits[i] / total) > 1e-10)) throw new Error('Replay policy visits mismatch');
+    }
+  }
   const next = bounded(() => transition(state, record.action));
   if (deterministicStateHash(next) !== record.afterHash) throw new Error('Replay after-state mismatch');
   return next;

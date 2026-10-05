@@ -2,6 +2,10 @@
 
 T-107 builds on the authoritative TypeScript engine and the versioned configuration in `packages/computer-player/config/experiment-v1.json`. The approved contract and gates live in the shared backlog's `backlog/docs/tickets/t-107/execution-plan.md`.
 
+Controlled root exploration is separately versioned in `packages/computer-player/config/training-recipes-v1.json`. The optional `root-dirichlet-v1` recipe changes only root PUCT priorities after the first raw-prior visit and tactical exclusion. It preserves eligible raw prior mass, uses its own seeded bounded sampler, and records raw/effective priors and the noise digest. Immediate/forced outcomes and fallback paths bypass it. Normal app, arena, diagnostic and export requests omit the option. A worker accepts it only on an explicit training job or development-screen arm, never from an ordinary profile field.
+
+Recipe identity is additive to manifests, decisions and checkpoints. Missing legacy identity means `baseline-v1`, while malformed or altered identities reject. The model configuration checksum, optimizer, archive and RNG checks remain authoritative. The optional primitives do not enable exploration in the runner: the supervised screen and its verified adoption receipt must be wired before sustained training can select the new recipe. No screen or training launch is part of this package.
+
 ## Conditional restart sequence
 
 The current launch contract is in the backlog's `next-training-sequence.md` and `run-control.md`. The diagnostic, six-hour continuation and conditional twelve-hour continuation have separate authorization and recovery lineage. The older initial/reset examples below describe historical operations; they must not create another allocation for this sequence.

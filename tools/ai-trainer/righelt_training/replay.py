@@ -6,6 +6,7 @@ from pathlib import Path
 from collections import deque
 from array import array
 from .config import CONFIG
+from .training_recipe import validate_decision_recipe
 
 
 def partition_for_family(family_id):
@@ -39,8 +40,11 @@ class ReplayBuffer:
         terminal=game['termination']=='terminal';outcome=game['outcome']['status']
         if terminal==(outcome=='ongoing'):raise ValueError('inconsistent value target')
         value={'p1_win':1.,'p2_win':-1.,'draw':0.,'ongoing':0.}[outcome]
+        # Validate all recipe bindings before mutating the replay buffer.
         for decision in game['decisions']:
-            position={k:decision[k] for k in ('id','legal','policy','policyMask','fallback','legality') if k in decision}
+            validate_decision_recipe(decision)
+        for decision in game['decisions']:
+            position={k:decision[k] for k in ('id','legal','policy','policyMask','fallback','legality','trainingRecipe') if k in decision}
             mask=decision.get('policyMask',True)
             fallback=decision.get('fallback')
             if type(mask) is not bool or (fallback is not None) != (not mask):
