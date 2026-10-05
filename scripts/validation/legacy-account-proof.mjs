@@ -17,7 +17,7 @@ const durableProjection = body => {
 };
 // An empty browser context deliberately excludes the authenticated caller's
 // cookies. Both the old protocol and a header-only protocol upgrade must fail.
-export async function proveLegacyMutationDenied({ browser, legacy, baseURL = 'https://127.0.0.1:9988', oldGame }) {
+export async function proveLegacyMutationDenied({ browser, legacy, baseURL = 'https://127.0.0.1:9988', oldGame, authProtocol = 1 }) {
   const { gameId, ...body } = legacyMutationContract(legacy);
   const context = await browser.newContext({ baseURL, ignoreHTTPSErrors: true, storageState: { cookies: [], origins: [] } });
   const url = `/api/shell/games/${encodeURIComponent(gameId)}`;
@@ -34,7 +34,7 @@ export async function proveLegacyMutationDenied({ browser, legacy, baseURL = 'ht
     if (oldGame) assert.deepEqual(before.moves, oldGame.moves, 'Authenticated and guest public history agree');
     for (const [headers, status, error] of [
       [{}, 426, 'upgrade_required'],
-      [{ 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': '1' }, 401, 'invalid_credentials'],
+      [{ 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': String(authProtocol) }, 401, 'invalid_credentials'],
     ]) {
       const response = await context.request.post(`${url}/join`, { headers: { Origin: baseURL, 'Content-Type': 'application/json', ...headers }, data: body });
       assert.equal(response.status(), status, 'Old guest mutation must fail at the expected authority gate');

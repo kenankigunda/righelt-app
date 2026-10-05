@@ -1,11 +1,23 @@
-import {access} from 'node:fs/promises';
+import {access,readFile} from 'node:fs/promises';
 import path from 'node:path';
 // Source capabilities select explicit contracts before tests run. A failed
 // assertion never changes contracts or downgrades account proof to guest proof.
 export async function candidateCapabilities(root) {
   const has = async file => { try { await access(path.join(root,file)); return true; } catch(e) { if(e.code==='ENOENT') return false; throw e; } };
+  let separateAccountForms=false, usernameOnlySignup=false, playAccountEntry=false;
+  try {
+    const dialog=await readFile(path.join(root,'apps/web/shell/account-dialog.js'),'utf8');
+    playAccountEntry=/^export const ACCOUNT_ENTRY_POINTS\s*=\s*['"]play['"];?$/m.test(dialog);
+    usernameOnlySignup=/^export const ACCOUNT_SIGNUP_PROFILE\s*=\s*['"]username-only['"];?$/m.test(dialog);
+    separateAccountForms=/^export const ACCOUNT_ENTRY_LAYOUT\s*=\s*['"]separate['"];?$/m.test(dialog);
+  } catch(error) { if(error.code!=='ENOENT') throw error; }
   return {
+    separateAccountForms,
+    usernameOnlySignup,
+    playAccountEntry,
+    simplifiedAccounts: await has('db/migrations/0015_remove_account_recovery.sql'),
     accounts: await has('apps/web/shell/account-controller.js'),
+    accountAutosave: await has('apps/web/shell/account-autosave.js'),
     profiles: await has('apps/web/shell/public-profile.js'),
     personalHome: await has('apps/web/shell/personal-home.js'),
     stories: await has('apps/web/shell/opponent-stories.js'),
