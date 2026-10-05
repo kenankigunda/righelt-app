@@ -80,17 +80,29 @@ export const createLiveTransportStore = ({
   fetcher = fetch,
   random = Math.random,
   shouldDeferCommandSend = () => false,
-  commandJournal = createCommandJournal(),
+  commandJournal = null,
+  auth = null,
   timing = SYNC_TIMING,
   beforeReconcile = async () => {},
 } = {}) => {
+  let active = true;
+  const assertActive = () => { if (!active) throw Object.assign(new Error("session_changed"), { code: "session_changed" }); };
+  commandJournal ??= createCommandJournal({
+    ...(auth?.enabled ? { databaseName: `righelt.online-commands.account-v1.${auth.session.contextId || "anonymous"}` } : {}),
+    isCurrent: () => active,
+  });
   const rawFetcher = fetcher;
-  fetcher = (url, init = {}) => {
+  fetcher = async (url, init = {}) => {
+    assertActive();
     if (init.method === "POST" && typeof init.body === "string") init = { ...init, body: JSON.stringify({ ...JSON.parse(init.body), protocolVersion: SYNC_PROTOCOL_VERSION }) };
-    return rawFetcher(url, init);
+    const response = await rawFetcher(url, init);
+    assertActive();
+    const json = response.json.bind(response);
+    response.json = async () => { const body = await json(); assertActive(); return body; };
+    return response;
   };
-  let identityId = loadIdentity(storage);
-  if (!identityId) {
+  let identityId = auth?.enabled ? auth.session.account?.id || "" : loadIdentity(storage);
+  if (!auth?.enabled && !identityId) {
     identityId = createIdentity(random);
     saveIdentity(storage, identityId);
   }
@@ -123,6 +135,7 @@ export const createLiveTransportStore = ({
   };
 
   const emitChange = (change) => {
+    if (!active) return;
     for (const listener of listeners) {
       listener(change);
     }
@@ -281,6 +294,7 @@ export const createLiveTransportStore = ({
   };
 
   const upsertGameSnapshot = ({ game, eventSeq = null, clientCommandId = null, changeType = "authoritative_update", publish = true }) => {
+    if (!active) return null;
     if (!game) {
       return null;
     }
@@ -379,6 +393,7 @@ export const createLiveTransportStore = ({
   };
 
   const scheduleRetry = (gameId, retryAttempt) => {
+    if (!active) return;
     const optimistic = getOptimisticState(gameId);
     if (optimistic.retryTimer) clearTimeout(optimistic.retryTimer);
     const delays = timing.retryDelaysMs;
@@ -401,6 +416,7 @@ export const createLiveTransportStore = ({
     return body;
   };
   const reconcileRequest = async (gameId, controller, isCurrent = () => true) => {
+    if (auth?.enabled && (!auth.session.authenticated || gameById.get(gameId)?.ownershipMode === "legacy_guest")) return null;
     await beforeReconcile(gameId);
     if (!isCurrent()) return null;
     const recoveryEpoch = getOptimisticState(gameId).mutationRecoveryEpoch;
@@ -416,6 +432,7 @@ export const createLiveTransportStore = ({
   };
 
   const sendNextPendingCommand = async (gameId, { retryAttempt = 0, reconcileFirst = false } = {}) => {
+    if (!active) return;
     const optimistic = getOptimisticState(gameId);
     if (optimistic.attempt || optimistic.retryTimer) return;
     const command = optimistic.pendingCommands[0];
@@ -473,12 +490,17 @@ export const createLiveTransportStore = ({
 
   const internalCommand = (envelope) => ({ envelope, kind: envelope.kind === "action" ? "apply" : "end-turn", clientCommandId: envelope.clientCommandId, state: clone(envelope.expectedState), action: envelope.payload.action, notation: envelope.payload.notation, queuedAt: new Date().toISOString() });
   const hydrateJournal = async (gameId) => {
+    assertActive();
+    if (auth?.enabled && (!auth.session.authenticated || gameById.get(gameId)?.ownershipMode !== "account_v1")) return;
     const optimistic = getOptimisticState(gameId);
     if (optimistic.hydrated) return;
     try {
       const saved = await commandJournal.list(identityId, gameId);
+      assertActive();
       for (const envelope of saved) if (!isSyncCommand(envelope) || envelope.fingerprint !== await commandFingerprint(envelope)) throw new Error("invalid_saved_command");
+      assertActive();
       for (const envelope of saved) {
+        if (auth?.enabled && envelope.authContextId !== auth.session.contextId) continue;
         if (optimistic.outcomes.has(envelope.clientCommandId)) { await commandJournal.remove(envelope); continue; }
         if (!optimistic.pendingCommands.some((entry) => entry.clientCommandId === envelope.clientCommandId)) optimistic.pendingCommands.push(internalCommand(envelope));
       }
@@ -498,21 +520,26 @@ export const createLiveTransportStore = ({
   const enqueueOptimisticCommand = async ({ gameId, command }) => {
     const optimistic = getOptimisticState(gameId);
     const admission = optimistic.admission.catch(() => {}).then(async () => {
+      assertActive();
+      if (auth?.enabled && (!auth.session.authenticated)) throw Object.assign(new Error("invalid_credentials"), { code: "invalid_credentials" });
       if (optimistic.storageBlocked || optimistic.connectionRecovering || optimistic.syncStatus === "confirming") throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
       const current = getGameViewModel(gameId);
       const predecessor = optimistic.pendingCommands.at(-1)?.envelope;
       const envelope = { protocolVersion: 2, gameId, identityId, clientCommandId: command.clientCommandId,
+        ...(auth?.enabled ? { authContextId: auth.session.contextId } : {}),
         kind: command.kind === "apply" ? "action" : "end_turn", payload: command.kind === "apply" ? { action: command.action, notation: command.notation } : {},
         expectedState: clone(command.state ?? current.board.state), expectedGameplayRevision: predecessor ? predecessor.expectedGameplayRevision + 1 : (gameById.get(gameId)?.gameplayRevision ?? 0),
         ...(command.kind === "end-turn" ? { expectedTurnIndex: current.board.state.turnIndex } : {}),
         ...(predecessor ? { predecessor: { clientCommandId: predecessor.clientCommandId, fingerprint: predecessor.fingerprint } } : {}),
       };
       envelope.fingerprint = await commandFingerprint(envelope);
+      assertActive();
       command.envelope = envelope;
       const projection = projectOptimisticGame({ authoritativeGame: gameById.get(gameId), identityId, queue: [...optimistic.pendingCommands, command] });
       if (!projection.ok) return projection;
       try { await commandJournal.admit(envelope); }
       catch (error) { optimistic.unsavedCommand = command; blockStorage(gameId, error); throw error; }
+      assertActive();
       optimistic.pendingCommands.push(command);
       optimistic.syncStatus = "applying-update";
       recalculateOptimisticGame(gameId);
@@ -557,12 +584,14 @@ export const createLiveTransportStore = ({
       await Promise.allSettled([...new Set(outstanding.map((entry) => entry.gameId))].map((pendingGameId) => reconcileGame(pendingGameId)));
       // Retry cleanup by exact receipt identity, retaining unresolved records.
       const saved = await commandJournal.list(identityId, gameId);
+      assertActive();
       for (const envelope of saved) if (!isSyncCommand(envelope) || envelope.fingerprint !== await commandFingerprint(envelope)) throw new Error("invalid_saved_command");
       for (const envelope of saved) if (optimistic.outcomes.has(envelope.clientCommandId)) await commandJournal.remove(envelope);
       if (optimistic.unsavedCommand) {
         const command = optimistic.unsavedCommand;
         await commandJournal.admit(command.envelope);
-        optimistic.pendingCommands.push(command);
+        assertActive();
+      optimistic.pendingCommands.push(command);
         optimistic.unsavedCommand = null;
         optimistic.syncStatus = "confirming";
       }
@@ -581,11 +610,10 @@ export const createLiveTransportStore = ({
       pageSize: String(pageSize),
       debug: debug ? "1" : "0",
     });
-    const response = await fetcher(`/api/shell/games?${params.toString()}`, {
+    const body = await boundedRequest(`/api/shell/games?${params.toString()}`, {
       method: "GET",
       cache: "no-store",
     });
-    const body = await mustOk(response);
     const gamesPage = Array.isArray(body.games) ? body.games.map((game) => normalizeStaticGameCard(game)) : [];
     for (const game of gamesPage) {
       homeGameCardById.set(game.id, game);
@@ -702,11 +730,10 @@ export const createLiveTransportStore = ({
   };
 
   const resolveInvite = async (inviteToken) => {
-    const response = await fetcher(`/api/shell/invites/${encodeURIComponent(inviteToken)}`, {
+    return boundedRequest(`/api/shell/invites/${encodeURIComponent(inviteToken)}`, {
       method: "GET",
       cache: "no-store",
     });
-    return mustOk(response);
   };
 
   const joinGame = async ({ gameId, mode, inviteFromRole = null, inviteToken = null }) => {
@@ -969,6 +996,10 @@ export const createLiveTransportStore = ({
     if (!game) {
       return null;
     }
+    if (auth?.enabled && (!auth.session.authenticated || game.ownershipMode === "legacy_guest")) {
+      return { ...game, canRecordMove:false,canEndTurn:false,canPlayAsBothPlayers:false,canUndoLastMove:false,canInvite:false,inviteToken:null,
+        ...(!auth.session.authenticated ? {legalActions:[]} : {}) };
+    }
     return game;
   };
 
@@ -1024,5 +1055,17 @@ export const createLiveTransportStore = ({
     getIdentityId,
     subscribe,
     unsubscribe,
+    retire() {
+      active = false;
+      listeners.clear();
+      for (const optimistic of optimisticStateByGameId.values()) {
+        clearTimeout(optimistic.retryTimer);
+        optimistic.attempt?.controller?.abort();
+        optimistic.attempt = null;
+        optimistic.pendingCommands = [];
+        optimistic.unsavedCommand = null;
+      }
+      void Promise.resolve(commandJournal.close?.()).catch(() => {});
+    },
   };
 };

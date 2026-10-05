@@ -22,8 +22,9 @@ export function canonicalCommandJson(value) {
     throw new Error("Command contains a non-JSON value");
 }
 export async function commandFingerprint(command) {
-    const { protocolVersion, gameId, identityId, clientCommandId, kind, payload, expectedState, expectedGameplayRevision, expectedTurnIndex, predecessor } = command;
+    const { protocolVersion, gameId, identityId, clientCommandId, kind, payload, expectedState, expectedGameplayRevision, expectedTurnIndex, predecessor, authContextId } = command;
     const intent = { protocolVersion, gameId, identityId, clientCommandId, kind, payload, expectedState, expectedGameplayRevision,
+        ...(authContextId === undefined ? {} : { authContextId }),
         ...(expectedTurnIndex === undefined ? {} : { expectedTurnIndex }), ...(predecessor === undefined ? {} : { predecessor }) };
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalCommandJson(intent)));
     return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -31,6 +32,8 @@ export async function commandFingerprint(command) {
 /** Structural validation; the server must recompute commandFingerprint before accepting supplied content. */
 export function isSyncCommand(value) {
     if (!record(value) || value.protocolVersion !== 2 || !nonempty(value.gameId) || !nonempty(value.identityId) || !commandId(value.clientCommandId) || !fingerprint(value.fingerprint))
+        return false;
+    if (value.authContextId !== undefined && (typeof value.authContextId !== "string" || !/^[a-f0-9]{64}$/.test(value.authContextId)))
         return false;
     if (!["move", "action", "end_turn"].includes(String(value.kind)) || !record(value.payload) || !record(value.expectedState) || !isSyncRevision(value.expectedGameplayRevision))
         return false;

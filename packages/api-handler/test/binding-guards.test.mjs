@@ -5,13 +5,13 @@ import { handleApiRequest } from "../src/index.ts";
 
 const buildEnv = () => ({
   DB: {
-    prepare() {
+    prepare(sql) {
       return {
         bind() {
           return this;
         },
         async first() {
-          return null;
+          return sql.includes("FROM account_cutover") ? {activated_at:null,maintenance:0,canary_account_id:null} : null;
         },
         async all() {
           return { results: [] };

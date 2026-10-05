@@ -1,3 +1,4 @@
+import { AUTH_PROTOCOL_VERSION, AUTH_PROTOCOL_HEADER, AUTH_REQUEST_HEADER, SESSION_CONTEXT_HEADER } from '../generated/packages/shared-types/src/auth-policy.js';
 import { createInitialState, listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
 import { buildLocalApiWsHost, isLocalDevHost } from "../local-dev-ports.js";
 import { createLiveTransportStore, validSyncSnapshot } from "./live-transport.js";
@@ -67,7 +68,7 @@ const createSessionId = () => {
   return `session-${Math.random().toString(16).slice(2)}-${Date.now()}`;
 };
 
-const createWsUrl = ({ identityId, gameId, sessionId, lastEventSeq }) => {
+const createWsUrl = ({ identityId, gameId, sessionId, lastEventSeq, auth }) => {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
   const params = new URLSearchParams({
     identityId,
@@ -75,7 +76,8 @@ const createWsUrl = ({ identityId, gameId, sessionId, lastEventSeq }) => {
     lastEventSeq: String(lastEventSeq ?? 0),
     protocolVersion: "2",
   });
-  const host = isLocalDevHost(window.location.hostname) ? buildLocalApiWsHost(window.location.port) : window.location.host;
+  if (auth?.enabled) { params.set("authProtocolVersion", String(AUTH_PROTOCOL_VERSION)); params.set("sessionContext", auth.session.contextId || ""); }
+  const host = window.location.protocol !== "https:" && isLocalDevHost(window.location.hostname) ? buildLocalApiWsHost(window.location.port) : window.location.host;
   return `${protocol}://${host}/api/shell/games/${encodeURIComponent(gameId)}/ws?${params.toString()}`;
 };
 
@@ -86,6 +88,9 @@ const createPresenceUrl = (gameId) => {
 
 export const createLiveSyncClient = ({
   identityId,
+  auth = null,
+  onAuthLost = () => {},
+  presenceFetcher = globalThis.fetch,
   getLastEventSeq = () => 0,
   onEvent,
   onError = () => {},
@@ -101,6 +106,7 @@ export const createLiveSyncClient = ({
   onReady = async () => {},
   visibilitySuspendGraceMs = VISIBILITY_SUSPEND_GRACE_MS,
 }) => {
+  let retired = false;
   const sockets = new Map();
   const reconnectTimers = new Map();
   const heartbeatTimers = new Map();
@@ -132,7 +138,7 @@ export const createLiveSyncClient = ({
 
   const isOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
 
-  const shouldKeepConnectionsActive = () => !isDocumentHidden() && isOnline();
+  const shouldKeepConnectionsActive = () => !retired && !isDocumentHidden() && isOnline();
 
   const clearReconnect = (gameId) => {
     const timer = reconnectTimers.get(gameId) ?? null;
@@ -151,7 +157,7 @@ export const createLiveSyncClient = ({
   };
 
   const sendPresenceHint = (gameId, type, { preferBeacon = false } = {}) => {
-    if (!gameId) {
+    if (!gameId || retired) {
       return;
     }
     const lastEventSeq = lastEventSeqByGameId.get(gameId) ?? 0;
@@ -174,7 +180,7 @@ export const createLiveSyncClient = ({
       return;
     }
     try {
-      if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      if (!auth?.enabled && typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
         const sent = navigator.sendBeacon(createPresenceUrl(gameId), new Blob([payload], { type: "application/json" }));
         recordMetric("presence_signal_sent", { gameId, signal: type, transport: sent ? "beacon" : "beacon_failed" });
         if (sent) {
@@ -184,10 +190,10 @@ export const createLiveSyncClient = ({
     } catch {
       // ignore
     }
-    if (typeof fetch === "function") {
-      void fetch(createPresenceUrl(gameId), {
+    if (typeof presenceFetcher === "function") {
+      void presenceFetcher(createPresenceUrl(gameId), {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...(auth?.enabled ? {[AUTH_REQUEST_HEADER]:"1",[AUTH_PROTOCOL_HEADER]:String(AUTH_PROTOCOL_VERSION),[SESSION_CONTEXT_HEADER]:auth.session.contextId || ""} : {}) },
         body: payload,
         keepalive: true,
       }).catch(() => {});
@@ -278,6 +284,7 @@ export const createLiveSyncClient = ({
   };
 
   const scheduleVisibilitySuspend = () => {
+    if (retired) return;
     clearVisibilitySuspend();
     if (!isDocumentHidden()) {
       return;
@@ -378,7 +385,7 @@ export const createLiveSyncClient = ({
     onRecovery({ gameId, reason: "connecting" });
     onStatus({ state: "connecting", gameId, reconnectAttempts });
 
-    const ws = new WebSocket(createWsUrl({ identityId, gameId, sessionId, lastEventSeq }));
+    const ws = new WebSocket(createWsUrl({ identityId, gameId, sessionId, lastEventSeq, auth }));
     sockets.set(gameId, ws);
     const generation = (generations.get(gameId) ?? 0) + 1;
     generations.set(gameId, generation);
@@ -417,6 +424,7 @@ export const createLiveSyncClient = ({
       if (!current()) return;
       try {
         const payload = JSON.parse(typeof event.data === "string" ? event.data : "{}");
+        if (auth?.enabled && payload.authProtocolVersion !== AUTH_PROTOCOL_VERSION) throw new Error("upgrade_required");
         if (payload.protocolVersion !== 2 || payload.gameId !== gameId || !isSyncRevision(payload.eventSeq)) throw new Error("invalid_socket_event");
         if (payload.type === "heartbeat_ack") {
           advertisedEventSeqByGameId.set(gameId, Math.max(advertisedEventSeqByGameId.get(gameId) ?? 0, payload.eventSeq));
@@ -447,8 +455,9 @@ export const createLiveSyncClient = ({
       onStatus({ state: "error", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
     });
 
-    ws.addEventListener("close", () => {
+    ws.addEventListener("close", (event) => {
       if (!current()) { closeReasonBySocket.delete(ws); return; }
+      if (auth?.enabled && event.code === 4001 && !retired) { retired = true; disconnectAll(); onAuthLost(); return; }
       const closeReason = closeReasonBySocket.get(ws) ?? "unexpected_close";
       closeReasonBySocket.delete(ws);
       clearHeartbeat(gameId);
@@ -568,6 +577,7 @@ export const createLiveSyncClient = ({
     disconnectGame,
     disconnectAll,
     disconnect: () => disconnectAll(),
+    retire: () => { retired = true; clearVisibilitySuspend(); disconnectAll(); },
     getDesiredGameIds: () => [...desiredGameIds],
   };
 };
@@ -875,6 +885,8 @@ const buildCommittedEndTurnResult = ({ transport, gameId, fallback }) => {
 
 export const createSyncStore = ({
   storage,
+  auth = null,
+  onAuthLost = () => {},
   fetcher = fetch,
   random = Math.random,
   onEvent = () => {},
@@ -886,6 +898,13 @@ export const createSyncStore = ({
   createTransportStore = createLiveTransportStore,
   createSyncClient = createLiveSyncClient,
 } = {}) => {
+  let active = true;
+  if (auth?.enabled) {
+    const base = storage, prefix = `righelt.account.${auth.session.contextId || "anonymous"}.`;
+    storage = { getItem: key => active ? base?.getItem(prefix + key) : null,
+      setItem: (key,value) => { if (active) base?.setItem(prefix + key,value); },
+      removeItem: key => { if (active) base?.removeItem(prefix + key); } };
+  }
   const operationManager = createOperationManager();
   let pendingLocalGames = readPendingLocalGames(storage);
   let activeGameId = null;
@@ -929,6 +948,7 @@ export const createSyncStore = ({
   };
   const transport = createTransportStore({
     storage,
+    auth,
     fetcher,
     random,
     commandJournal,
@@ -1109,6 +1129,9 @@ export const createSyncStore = ({
   });
 
   const liveSync = createSyncClient({
+    presenceFetcher: fetcher,
+    auth,
+    onAuthLost,
     identityId: transport.getIdentityId(),
     initialSnapshotTimeoutMs: timing?.requestTimeoutMs,
     inboundTimeoutMs: timing?.inboundTimeoutMs,
@@ -1121,6 +1144,7 @@ export const createSyncStore = ({
     },
     getLastEventSeq: (gameId) => (gameId ? transport.getLastEventSeq(gameId) : 0),
     onEvent: (payload, context = {}) => {
+      if (!active) return false;
       if (isAuthoritativeSyncEvent(payload)) {
         const applied = transport.applyLiveGameUpdate({
           game: payload.game,
@@ -1139,6 +1163,11 @@ export const createSyncStore = ({
   });
 
   const syncActiveGame = () => {
+    if (!active) return;
+    if (auth?.enabled && auth.pendingLogout) {
+      liveSync.disconnectAll();
+      return;
+    }
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       liveSync.disconnectAll();
       return;
@@ -1164,6 +1193,7 @@ export const createSyncStore = ({
 
   if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
     window.addEventListener("storage", (event) => {
+      if (!active) return;
       if (event.key !== PENDING_LOCAL_GAMES_KEY || !activeGameId) return;
       const gameId = activeGameId;
       try {
@@ -1197,6 +1227,7 @@ export const createSyncStore = ({
 
   return {
     ...transport,
+    retire() { active = false; activeGameId = null; liveSync.retire?.(); liveSync.disconnectAll(); transport.retire?.(); },
     loadGame: async (gameId, options = {}) => {
       const localPendingGame = transport.getGameViewModel(gameId) ?? getStoredPendingLocalGame(gameId);
       const hasPendingOperation = operationManager.getPendingOperations(gameId).length > 0;

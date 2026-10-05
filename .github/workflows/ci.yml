@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "apps/api/**"
+      - "apps/auth/**"
+      - "apps/auth-hash/**"
       - "apps/web/**"
       - "packages/api-handler/**"
       - "packages/game-engine/**"
@@ -13,6 +15,7 @@ on:
       - "e2e/**"
       - "package.json"
       - "playwright.config.mjs"
+      - "playwright.auth.config.mjs"
       - "playwright.validation.config.mjs"
       - "validation-e2e/**"
       - "pnpm-workspace.yaml"
@@ -27,6 +30,8 @@ on:
     branches: [main]
     paths:
       - "apps/api/**"
+      - "apps/auth/**"
+      - "apps/auth-hash/**"
       - "apps/web/**"
       - "packages/api-handler/**"
       - "packages/game-engine/**"
@@ -36,6 +41,7 @@ on:
       - "e2e/**"
       - "package.json"
       - "playwright.config.mjs"
+      - "playwright.auth.config.mjs"
       - "playwright.validation.config.mjs"
       - "validation-e2e/**"
       - "pnpm-workspace.yaml"
@@ -523,8 +529,73 @@ jobs:
           path: test-results/ci-provenance/e2e.json
           if-no-files-found: error
 
+  auth-e2e:
+    name: Account E2E
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Setup pnpm via Corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+
+      - name: Account fixture unit tests
+        run: pnpm test:auth-fixture
+
+      - name: E2E tests
+        env:
+          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/auth-e2e/results.xml
+          PLAYWRIGHT_OUTPUT_DIR: test-results/auth-e2e/artifacts
+          RIGHELT_AUTH_PROXY_DIAGNOSTICS: "1"
+        run: |
+          node --test scripts/auth-proxy-diagnostics.test.mjs
+          pnpm test:e2e:auth
+
+      - name: Upload E2E JUnit
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: junit-auth-e2e
+          path: test-results/auth-e2e/results.xml
+          if-no-files-found: ignore
+
+      - name: Upload E2E Playwright debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-auth-e2e-debug
+          path: test-results/auth-e2e/artifacts
+          if-no-files-found: ignore
+
+      - name: Record exact CI environment
+        if: always()
+        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/auth-e2e.json
+
+      - name: Upload exact CI environment
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-provenance-auth-e2e-${{ github.run_attempt }}
+          path: test-results/ci-provenance/auth-e2e.json
+          if-no-files-found: error
+
   test-results:
     name: Test results
+    permissions:
+      contents: read
+      actions: read
+      checks: write
     if: ${{ always() }}
     runs-on: ubuntu-latest
     needs:
@@ -539,15 +610,50 @@ jobs:
       - sync-stress
       - sync-runtime
       - e2e
+      - auth-e2e
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Download lane JUnit artifacts
-        uses: actions/download-artifact@v6
+      - name: Test JUnit artifact selection
+        run: node --test scripts/select-junit-artifacts.test.mjs
+
+      - name: Download latest lane JUnit artifacts
+        uses: actions/github-script@v8
         with:
-          pattern: junit-*
-          path: test-results/published
+          script: |
+            const { selectJUnitArtifacts } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/select-junit-artifacts.mjs`);
+            const runId = context.runId;
+            const { data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId });
+            const headSha = context.payload.pull_request?.head.sha || context.sha;
+            if (run.id !== runId || run.head_sha !== headSha) throw new Error('Workflow provenance changed');
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, { ...context.repo, run_id: runId, per_page: 100 });
+            const selected = selectJUnitArtifacts(artifacts, { runId, headSha });
+            core.info(JSON.stringify({ runId, headSha, selected }, null, 2));
+            const fs = await import('node:fs/promises');
+            const path = await import('node:path');
+            const { execFileSync } = await import('node:child_process');
+            const output = path.join(process.env.GITHUB_WORKSPACE, 'test-results/published');
+            await fs.mkdir(output, { recursive: true });
+            await fs.writeFile(path.join(output, 'selection.json'), JSON.stringify({ runId, headSha, selected }, null, 2));
+            for (const artifact of selected) {
+              // The download action's latest:true metadata lookup can discard
+              // rerun artifacts before filtering explicit IDs. Use the ID API.
+              const response = await github.rest.actions.downloadArtifact({ ...context.repo, artifact_id: artifact.id, archive_format: 'zip' });
+              const archive = path.join(process.env.RUNNER_TEMP, `junit-${artifact.id}.zip`);
+              await fs.writeFile(archive, Buffer.from(response.data));
+              const destination = path.join(output, artifact.name);
+              await fs.mkdir(destination, { recursive: true });
+              execFileSync('python3', ['scripts/extract-junit-artifact.py', archive, destination]);
+            }
+
+      - name: Preserve JUnit selection provenance
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-selection-provenance-${{ github.run_attempt }}
+          path: test-results/published/selection.json
+          if-no-files-found: ignore
 
       - name: Publish GitHub test results
         uses: mikepenz/action-junit-report@v6

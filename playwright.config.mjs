@@ -11,6 +11,7 @@ const reporter = process.env.CI
 
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: "**/auth/**",
   fullyParallel: false,
   workers: 1,
   outputDir,

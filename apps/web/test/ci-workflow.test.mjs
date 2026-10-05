@@ -33,7 +33,7 @@ test("CI uses split job-level checks and Node 22", () => {
   assert.match(workflow, /uses: actions\/checkout@v5/);
   assert.match(workflow, /uses: actions\/setup-node@v5/);
   assert.match(workflow, /uses: actions\/upload-artifact@v6/);
-  assert.match(workflow, /uses: actions\/download-artifact@v6/);
+  assert.match(workflow, /uses: actions\/github-script@v8/);
   assert.match(workflow, /name: Setup pnpm via Corepack/);
   assert.match(workflow, /corepack enable && corepack prepare pnpm@9 --activate/);
   assert.doesNotMatch(workflow, /pnpm\/action-setup@/);
@@ -91,8 +91,15 @@ test("CI emits JUnit from each lane and publishes a consolidated test-results ch
     /pnpm test:web:integration -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results\/web-integration\/results\.xml/,
   );
   assert.match(workflow, /PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results\/e2e\/results\.xml/);
-  assert.match(workflow, /uses: actions\/download-artifact@v6/);
-  assert.match(workflow, /pattern: junit-\*/);
+  assert.match(workflow, /uses: actions\/github-script@v8/);
+  const results = jobBlock("test-results");
+  assert.match(results, /run: node --test scripts\/select-junit-artifacts\.test\.mjs/);
+  assert.match(results, /selectJUnitArtifacts\(artifacts, \{ runId, headSha \}\)/);
+  assert.match(results, /downloadArtifact\(\{ \.\.\.context\.repo, artifact_id: artifact\.id, archive_format: 'zip' \}\)/);
+  assert.match(results, /scripts\/extract-junit-artifact\.py/);
+  assert.match(results, /test-selection-provenance-\$\{\{ github\.run_attempt \}\}/);
+  assert.match(results, /require_tests: false/);
+  assert.doesNotMatch(results, /uses: actions\/download-artifact/);
   assert.doesNotMatch(workflow, /merge-multiple: true/);
   assert.match(workflow, /uses: mikepenz\/action-junit-report@v6/);
   assert.match(workflow, /check_name: Test results/);

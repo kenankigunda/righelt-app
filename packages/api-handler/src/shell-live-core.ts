@@ -102,6 +102,7 @@ export type TurnEntry = {
 };
 
 export type LiveGame = {
+  ownershipMode?: "legacy_guest" | "account_v1";
   id: string;
   gameplayRevision: number;
   createdAt: string;

@@ -47,12 +47,14 @@ async function party(browser,baseURL) {
  return {...game,pages,faults,contexts};
 }
 async function move(page,gameId) {
- const action=await page.evaluate(async gameId=>{
+ const current=await page.evaluate(async gameId=>{
   const identityId=localStorage.getItem("righelt.identity.id.v1");
   const body=await (await fetch(`/api/shell/games/${gameId}?identityId=${identityId}`)).json();
-  return body.game.legalActions.find(a=>a.from&&a.to);
+  return {action:body.game.legalActions.find(a=>a.from&&a.to),canRecordMove:body.game.canRecordMove,myRole:body.game.myRole,turn:body.game.currentTurn?.playerSeat};
  },gameId);
- await submitPlayableAction(page,action);
+ expect(current.canRecordMove, `Move fixture requires authority: role=${current.myRole}, turn=${current.turn}`).toBe(true);
+ expect(current.action, 'Move fixture requires a legal board action').toBeTruthy();
+ await submitPlayableAction(page,current.action);
 }
 async function digest(page) {
  return page.evaluate(()=>({
@@ -196,37 +198,54 @@ test('E06 real IndexedDB commits admission atomically across tabs and aborts suc
  expect(await page.evaluate(()=>journal.list('identity').then(x=>x.length))).toBe(128);
 });
 
-test('E05 intentional history survives disconnection and home navigation',async({browser,baseURL},info)=>{
+for (const frozenRole of ['player', 'viewer']) {
+test(`E05 intentional ${frozenRole} history survives disconnection and home navigation`,async({browser,baseURL},info)=>{
  test.skip(info.project.name!=='chromium');const p=await party(browser,baseURL);try{
   await move(p.pages[0],p.gameId);await converged(p.pages);
-  await expect(p.pages[1].getByTestId('active-turn-label')).toContainText('Player 2');
-  const history=p.pages[2].getByTestId('history-move-item').first();const selected=await history.getAttribute('data-move-id');
-  await history.click();await expect(p.pages[2].getByTestId('history-return-live')).toBeVisible();
-  p.faults[2].receive=true;p.faults[2].http=true;
-  await move(p.pages[1],p.gameId);
+  const frozenIndex=frozenRole==='player'?1:2;
+  const actorIndex=frozenRole==='player'?0:1;
+  if(frozenRole==='player'){
+   // Return authority to Player 1 before freezing Player 2 in history.
+   await move(p.pages[1],p.gameId);await converged(p.pages);
+   const endTurn=p.pages[1].locator('[data-board-preview-action="end-turn"]');
+   if(await endTurn.isVisible()){await endTurn.click();await converged(p.pages);}
+  }
+  await expect(p.pages[actorIndex].getByTestId('active-turn-label')).toContainText(`Player ${actorIndex+1}`);
+  const frozen=p.pages[frozenIndex], actor=p.pages[actorIndex];
+  const history=frozen.getByTestId('history-move-item').first();const selected=await history.getAttribute('data-move-id');
+  const beforeLiveMove=await actor.getByTestId('history-move-item').count();
+  await history.click();await expect(frozen.getByTestId('history-return-live')).toBeVisible();
+  p.faults[frozenIndex].receive=true;p.faults[frozenIndex].http=true;
+  const commandIndex=p.faults[actorIndex].commands.length;
+  await move(actor,p.gameId);
   // A socket receipt can cancel the obsolete browser HTTP request; observe the durable response at the fault boundary.
-  await expect.poll(()=>p.faults[1].outcomes.some(outcome=>outcome.clientCommandId===p.faults[1].commands[0]?.clientCommandId&&outcome.outcome==='accepted')).toBe(true);
-  await expect(p.pages[0].getByTestId('history-move-item')).toHaveCount(2);
-  await expect(p.pages[1].getByTestId('history-move-item')).toHaveCount(2);
-  await p.pages[2].waitForTimeout(16000);
-  await expect(p.pages[2].getByTestId('history-move-item')).toHaveCount(1);
-  expect(await p.pages[2].getByTestId('history-move-item').first().getAttribute('data-move-id')).toBe(selected);
-  p.faults[2].receive=false;p.faults[2].http=false;const start=Date.now();
-  await expect(p.pages[2].getByTestId('sync-recovery-banner')).toHaveCount(0,{timeout:25000});
-  await expect(p.pages[2].getByTestId('history-return-live')).toBeVisible();
-  await expect(p.pages[2].getByTestId('history-move-item')).toHaveCount(2);
-  await expect(p.pages[2].locator('[data-testid="history-move-item"].is-selected')).toHaveAttribute('data-move-id',selected);
-  await p.pages[2].getByTestId('history-return-live').click();await converged(p.pages);
-  await evidence(info,'history-reconnect',start,p.faults);
-  await p.pages[2].goto(baseURL);await expect(p.pages[2].locator(`[data-game-id="${p.gameId}"]`).first()).toBeVisible();
-  await p.pages[2].goto(`${baseURL}${p.gameHash}`);await converged(p.pages);
+  await expect.poll(()=>{
+   const command=p.faults[actorIndex].commands[commandIndex];
+   return Boolean(command)&&p.faults[actorIndex].outcomes.some(outcome=>outcome.clientCommandId===command.clientCommandId&&outcome.outcome==='accepted');
+  }).toBe(true);
+  for(let i=0;i<p.pages.length;i++)if(i!==frozenIndex)await expect(p.pages[i].getByTestId('history-move-item')).toHaveCount(beforeLiveMove+1);
+  await frozen.waitForTimeout(16000);
+  await expect(frozen.getByTestId('history-move-item')).toHaveCount(beforeLiveMove);
+  expect(await frozen.getByTestId('history-move-item').first().getAttribute('data-move-id')).toBe(selected);
+  p.faults[frozenIndex].receive=false;p.faults[frozenIndex].http=false;const start=Date.now();
+  await expect(frozen.getByTestId('sync-recovery-banner')).toHaveCount(0,{timeout:25000});
+  await expect(frozen.getByTestId('history-return-live')).toBeVisible();
+  await expect(frozen.getByTestId('history-move-item')).toHaveCount(beforeLiveMove+1);
+  await expect(frozen.locator('[data-testid="history-move-item"].is-selected')).toHaveAttribute('data-move-id',selected);
+  await frozen.getByTestId('history-return-live').click();await converged(p.pages);
+  await evidence(info,`history-reconnect-${frozenRole}`,start,p.faults);
+  await frozen.goto(baseURL);await expect(frozen.locator(`[data-game-id="${p.gameId}"]`).first()).toBeVisible();
+  await frozen.goto(`${baseURL}${p.gameHash}`);await converged(p.pages);
  }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
 });
+}
 
 test('E07 new client rejects old protocol and one refresh preserves saved game',async({page},info)=>{
  const {gameId}=await createGameFromHome(page);await makeAnyLegalMove(page);const before=await digest(page);
  const fault=await wire(page);fault.legacy=true;let navigation=0;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigation++;});
  await page.reload();
+ // The expected automatic reload destroys the first document's context.
+ // Observe its navigation before evaluating storage in the settled document.
  await expect.poll(()=>navigation,{timeout:15000}).toBe(2);
  await page.waitForLoadState('domcontentloaded');
  expect(await page.evaluate(()=>sessionStorage.getItem('righelt.sync-v2-refresh'))).toBe('1');
