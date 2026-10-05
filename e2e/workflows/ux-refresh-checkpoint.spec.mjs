@@ -25,7 +25,7 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await page.keyboard.press('Escape');
  await expect(page.getByTestId('game-board')).toBeVisible();
  await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
- await expect(page.locator('[data-action="guest-profile"]').first()).toHaveText('You');
+ await expect(page.locator('[data-action="guest-profile"]').first()).toHaveText('Guest player');
  const supply=await page.locator('.supply-point-marker.supply-point-p1').first().evaluate(el=>({core:getComputedStyle(el.querySelector('svg')).fill}));
  expect(supply.core).toBe('rgb(194, 69, 47)');
  await page.screenshot({path:test.info().outputPath('game-desktop.png')});
@@ -59,10 +59,10 @@ test('Friend invite remains open after copy, viewer intent survives arrival, and
 
 test('home refresh preserves a pressed opponent and first home sound starts without waiting for navigation',async({page})=>{
  await page.addInitScript(()=>{window.audioCues=[];window.AudioContext=class{state='running';currentTime=0;sampleRate=8000;destination={};resume(){return Promise.resolve();}suspend(){return Promise.resolve();}createBuffer(_,n){return{getChannelData:()=>new Float32Array(n)}}node(){return{frequency:{},Q:{},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){},disconnect(){},start(){window.audioCues.push(performance.now())},stop(){}}}createBufferSource(){return this.node()}createBiquadFilter(){return this.node()}createGain(){return this.node()}createOscillator(){return this.node()}};});
- let release;const gate=new Promise(r=>release=r);await page.route('**/api/shell/games?**',async route=>{const response=await route.fetch();await gate;await route.fulfill({response});});
+ let fulfilled=0;let release;const gate=new Promise(r=>release=r);await page.route('**/api/shell/games?**',async route=>{const response=await route.fetch();await gate;await route.fulfill({response});fulfilled++;});
  await page.goto('/');const babs=page.locator('button[data-opponent="babs"]');await expect(babs).toBeVisible();await babs.scrollIntoViewIfNeeded();const box=await babs.boundingBox();
- await babs.evaluate(el=>window.pressedOpponent=el);await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();release();await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
- expect(await page.evaluate(()=>window.pressedOpponent.isConnected)).toBe(true);await page.mouse.up();await expect(page.getByRole('dialog',{name:'Babs',exact:true})).toBeVisible();
+ await babs.evaluate(el=>window.pressedOpponent=el);await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();release();await expect.poll(()=>fulfilled).toBeGreaterThan(0);
+ expect(await page.evaluate(()=>window.pressedOpponent.isConnected)).toBe(true);await page.mouse.up();await expect(page.getByRole('dialog',{name:'Babs',exact:true})).toBeVisible();await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
  expect(await page.evaluate(()=>window.audioCues.length)).toBe(2);await page.unrouteAll({behavior:'ignoreErrors'});
 });
 

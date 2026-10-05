@@ -108,7 +108,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /let flyoutRenderOrder = FLYOUT_KEYS\.filter\(\(key\) => currentRoute\[key\] === true\);/);
   assert.match(source, /const syncFlyoutRenderOrder = \(route = currentRoute\) => \{/);
   assert.match(source, /const setFlyoutOpenState = \(key, isOpen\) => \{/);
-  assert.match(source, /const getOpenFlyoutCount = \(route = currentRoute\) => FLYOUT_KEYS\.reduce\(\(count, key\) => count \+ Number\(route\?\.\[key\] === true\), 0\);/);
+  assert.match(source, /const getOpenFlyoutCount = \(route = currentRoute\) => document\.documentElement\.dataset\.accountFlyout === "true" \? 1 : FLYOUT_KEYS\.reduce\(\(count, key\) => count \+ Number\(route\?\.\[key\] === true\), 0\);/);
   assert.match(source, /const getWideFlyoutWidth = \(viewportWidth = window\.innerWidth\) => \{/);
   assert.match(source, /const getAvailableShellContentWidth = \(viewportWidth = window\.innerWidth, route = currentRoute\) => \{/);
   assert.match(source, /const SHELL_VIEWPORT_GUTTER_PX = 16;/);

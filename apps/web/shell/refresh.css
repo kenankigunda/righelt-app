@@ -76,7 +76,7 @@ body { isolation:isolate; }
 
 .shell-route-transition-layer[data-direction="back"] .shell-route-transition-layer-swipe { scale:-1 1; }
 
-[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:is(.opponent-choice,.ui-icon-button,.participant-profile):not(:disabled):hover { background:rgb(37 43 45 / 5%); color:var(--ink); border-color:transparent; box-shadow:none; }
+[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:is(.opponent-choice,.ui-icon-button):not(:disabled):hover { background:rgb(37 43 45 / 5%); color:var(--ink); border-color:transparent; box-shadow:none; }
 [data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:not(.cell):not(.secondary):not(.opponent-choice):not(.ui-icon-button):not(.participant-profile):not(:disabled):hover { background:var(--action-hover); }
 
 /* Surfaces share angular accents; controls keep their softer, tactile shape. */
@@ -177,14 +177,14 @@ body { isolation:isolate; }
 }
 body {background-image:var(--stone-grain);background-color:var(--surface-foundation);}
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
-.story-modal,.game-result {
+.story-modal,.game-result,.account-dialog[data-presentation="flyout"] {
   --stone-depth:6px;--stone-edge:#c9c0ad;--corner-start:transparent;--corner-end:transparent;
   isolation:isolate;position:relative;overflow:visible;clip-path:none;border:0;border-radius:0;
   background:transparent;box-shadow:none;
   filter:drop-shadow(0 3px 3px rgb(54 45 30 / 16%));
 }
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::before,
-.story-modal::before,.game-result::before {
+.story-modal::before,.game-result::before,.account-dialog[data-presentation="flyout"]::before {
   content:'';position:absolute;inset:0;width:auto;height:auto;transform:none;pointer-events:none;z-index:-1;
   clip-path:var(--stone-outline);
   background:
@@ -194,7 +194,7 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
   box-shadow:inset 0 1px 0 #fff,inset 1px 0 0 rgb(255 255 255 / 80%);
 }
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::after,
-.story-modal::after,.game-result::after {
+.story-modal::after,.game-result::after,.account-dialog[data-presentation="flyout"]::after {
   content:'';position:absolute;inset:0 0 calc(-1 * var(--stone-depth));width:auto;height:auto;transform:none;pointer-events:none;z-index:-2;
   clip-path:var(--stone-outline);background:linear-gradient(115deg,#e4ddce,var(--stone-edge));
 }
@@ -354,3 +354,34 @@ html[data-page-active="false"] .shell-header button.ui-icon-button {transition:n
 .rematch-modal input[type="radio"] {appearance:auto;-webkit-appearance:radio;box-sizing:border-box;padding:0;border:0;border-radius:50%;background:transparent;box-shadow:none;min-width:20px;min-height:20px;width:20px;height:20px;margin:0;flex:none;accent-color:var(--player-p1);}
 .rematch-modal input[value="p2"] {accent-color:var(--player-p2);}
 @media(max-width:480px){.game-result{padding:24px;margin:16px 0 32px;}}
+
+/* Account settings occupy the same side rail as the secondary tools. */
+.account-dialog[data-presentation="flyout"] {position:fixed;inset:0 0 0 auto;margin:0;width:var(--shell-flyout-wide-width);max-width:none;height:100dvh;max-height:100dvh;padding:28px;z-index:100;overflow-y:auto;--corner-start:var(--player-p1);--corner-end:var(--player-p2);animation:account-rail-enter 220ms ease-out;}
+.account-dialog[data-presentation="flyout"] .account-form {position:relative;}
+.account-player-signature {display:flex;align-items:center;gap:14px;margin:4px 0 24px;}
+.account-player-signature .player-emblem {width:64px;height:64px;color:var(--action-color);}
+html[data-account-flyout="true"] #app {width:100%;max-width:none;margin:1rem 0 2rem;padding-left:1rem;padding-right:calc(var(--shell-flyout-wide-width) + var(--shell-flyout-content-gap));}
+html[data-account-flyout="true"] .shell-flyout {visibility:hidden;pointer-events:none;}
+html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:var(--shell-main-max-width);margin:0 auto;}
+@keyframes account-rail-enter {from{transform:translateX(100%);}to{transform:translateX(0);}}
+.player-emblem {display:block;width:34px;height:34px;flex:none;color:var(--ink);}
+.player-emblem-face {fill:var(--surface-raised);stroke:currentColor;stroke-opacity:.22;stroke-width:1;}
+.player-emblem-edge {fill:none;stroke:currentColor;stroke-opacity:.35;stroke-width:1.8;}
+.participant-identity {display:inline-grid;max-width:100%;vertical-align:middle;min-width:0;}
+.player-name-stack {display:grid;gap:2px;text-align:left;min-width:0;}
+.player-name {font-weight:700;line-height:1.35;}
+.player-username {display:block;font-size:.78rem;font-weight:400;color:var(--muted);line-height:1.4;}
+.participant-identity[data-player-side="p1"] .player-emblem {color:var(--player-p1);}
+.participant-identity[data-player-side="p2"] .player-emblem {color:var(--player-p2);}
+.panel .participant-identity button.participant-profile {display:inline-flex;align-items:center;justify-content:flex-start;gap:10px;background:transparent;color:var(--ink);border:0;border-radius:0;padding:5px 0;box-shadow:none;max-width:100%;text-align:left;}
+[data-hover-capability="hover"] .panel .participant-identity button.participant-profile:not(:disabled):hover {background:transparent;box-shadow:none;transform:none;filter:none;}
+[data-hover-capability="hover"] .participant-profile:hover .player-name {text-decoration:underline;text-underline-offset:3px;}
+.player-profile-details {display:block;overflow:hidden;font-size:.85rem;color:var(--muted);}
+.player-profile-details > span {display:block;padding:6px 0 8px 44px;}
+@media(max-width:700px){.account-dialog[data-presentation="flyout"]{inset:0;width:100vw;max-width:100vw;height:100dvh;padding:max(24px,env(safe-area-inset-top)) 20px max(24px,env(safe-area-inset-bottom));}}
+@media(prefers-reduced-motion:reduce){.account-dialog[data-presentation="flyout"]{animation:none;}}
+
+.account-player-signature .player-name-stack {overflow-wrap:anywhere;}
+
+[data-testid="history-player-names"] {display:flex;flex-wrap:wrap;gap:12px 20px;}
+.history-player-name {display:grid;gap:2px;}

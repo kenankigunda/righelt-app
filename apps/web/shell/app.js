@@ -1,7 +1,7 @@
 import { getGameResult, createResultTransitions, createRematchDialog } from './game-result.js';
 import { createRouteHydration } from './route-hydration.js';
 import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js';
-import { participantButton, participantName, createPublicProfileDialog } from './public-profile.js';
+import { participantButton, participantName, createInlineProfiles } from './public-profile.js';
 import { createAccountController, safeAccountIntent } from './account-controller.js';
 import { createAccountDialog } from './account-dialog.js';
 import { renderPieceSymbol } from '../piece-symbols.js';
@@ -136,7 +136,7 @@ const createMemoryStorageFallback = () => {
 };
 
 const storage = (() => { try { return window.localStorage || createMemoryStorageFallback(); } catch { return createMemoryStorageFallback(); } })();
-const publicProfileDialog = createPublicProfileDialog();
+const inlineProfiles = createInlineProfiles();
 let accountInitialized = false;
 let accountStartupError = "";
 let accountContinuation = null;
@@ -148,6 +148,7 @@ const account = createAccountController({ storage,
 });
 const accountDialog = createAccountDialog({ controller: account, onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
   onComplete: intent => { void completeAccountContinuation(intent); },
+  onLayoutChange: () => render({animatePanels:false,includeBoard:false}),
 });
 const gameSound = createGameSound({ storage });
 const brand = createBrandController();
@@ -934,6 +935,7 @@ const capturePanelHeights = () =>
   getAnimatedPanels().map((panelEl) => (panelEl instanceof HTMLElement ? panelEl.getBoundingClientRect().height : null));
 const panelSizeAnimations = new WeakMap();
 const panelPendingFocus = new WeakMap();
+const joinMarkupByElement = new WeakMap();
 const animatePanelHeightChange = (panelEl, fromHeight) => {
   if (!(panelEl instanceof HTMLElement) || !Number.isFinite(fromHeight)) return;
   panelSizeAnimations.get(panelEl)?.cancel();
@@ -1152,7 +1154,7 @@ const setFlyoutOpenState = (key, isOpen) => {
     flyoutRenderOrder.push(key);
   }
 };
-const getOpenFlyoutCount = (route = currentRoute) => FLYOUT_KEYS.reduce((count, key) => count + Number(route?.[key] === true), 0);
+const getOpenFlyoutCount = (route = currentRoute) => document.documentElement.dataset.accountFlyout === "true" ? 1 : FLYOUT_KEYS.reduce((count, key) => count + Number(route?.[key] === true), 0);
 const getWideFlyoutWidth = (viewportWidth = window.innerWidth) => {
   const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize || "16") || 16;
   return Math.min(rootFontSize * 34, viewportWidth * 0.36);
@@ -2577,7 +2579,7 @@ const renderParticipantsPanel = (game) => {
       if (!entry.value) {
         return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: <span class="small">Open seat</span></li>`;
       }
-      return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: ${participantButton(entry.value)} ${formatStatus(entry.value.connected)}</li>`;
+      return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: ${participantButton(entry.value, {key:entry.label,side:entry.label === "Player 1" ? "p1" : "p2"})} ${formatStatus(entry.value.connected)}</li>`;
     })
     .join("");
 
@@ -2598,7 +2600,7 @@ const renderParticipantsPanel = (game) => {
 
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
-  const currentNames = [game.player1,game.player2].filter(person => person?.profile).map(participantName).join(" · ");
+  const currentNames = [...new Map([game.player1,game.player2].filter(person => person?.profile).map(person => [person.profile.username,person])).values()].map(person => `<span class="history-player-name">${participantName(person)}</span>`).join("");
   const selectedMove = typeof game.historyIndex === "number" && Array.isArray(game.moves) ? game.moves[game.historyIndex] ?? null : null;
   const historyMoveNumber = typeof selectedMove?.displayMoveNumber === "number" ? String(selectedMove.displayMoveNumber) : "?";
   const hasHistoryMoves = Array.isArray(game.moves) && game.moves.length > 0;
@@ -2994,14 +2996,15 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   }
   if (joinEl instanceof HTMLElement) {
     const markup=renderJoinInvitePanel(game, inviteLink);
-    if(joinEl.innerHTML !== markup){
+    if(joinMarkupByElement.get(joinEl) !== markup){
       const oldHeight=joinEl.getBoundingClientRect().height;
       const focus=joinEl.contains(document.activeElement)?document.activeElement:null;
-      const selector=focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}`:null;
+      const selector=focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}${focus.dataset.profileKey?`[data-profile-key="${CSS.escape(focus.dataset.profileKey)}"]`:''}`:null;
       const selection=focus instanceof HTMLInputElement?[focus.selectionStart,focus.selectionEnd]:null;
       if(selector)panelPendingFocus.set(joinEl,{selector,selection});
       else if(document.activeElement !== document.body)panelPendingFocus.delete(joinEl);
       joinEl.innerHTML=markup;
+      joinMarkupByElement.set(joinEl,markup);
       const savedFocus=panelPendingFocus.get(joinEl);
       if(savedFocus){
         const target=joinEl.querySelector(savedFocus.selector);
@@ -3782,6 +3785,7 @@ const captureScenarioDraftFocus = (baseRouteKey) => {
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (renderGesture.defer({ animatePanels, includeBoard })) return;
   const result = preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
+  inlineProfiles.sync();
   if (pendingResultReviewFocus === currentRoute.gameId && getGamePanel() === "history") {
     const heading = appEl.querySelector('[data-game-panel="history"] h2');
     if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }
@@ -4173,7 +4177,6 @@ const openFriendInvite = gameId => {
   render({animatePanels:false});window.scrollTo({top:0,behavior:'instant'});
   document.querySelector('[data-host-invite] [data-action="share-invite"]')?.focus({preventScroll:true});
 };
-const profileDialog=createModal({labelId:'guest-profile-title'});
 const rematchDialog = createRematchDialog({createModal,onStart:async({opponent,side},{isCurrent})=>{
   if(!await waitForAccountGate() || !isCurrent())return;
   if(!account.canPlay())throw new Error('Sign in to start another game.');
@@ -4214,7 +4217,7 @@ function resetAccountTransport(next) {
   clearAccountContinuation();
   resultTransitions.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();
   hostInvite=null;inviteVisit++;inviteFeedback="";inviteFallback=null;
-  gameSound.leaveGame();storyDialog.close();profileDialog.close();
+  gameSound.leaveGame();storyDialog.close();inlineProfiles.close();
   const gameId = getCurrentViewedGameId();
   const visible = gameId ? transport.getAuthoritativeGame?.(gameId) : null;
   routeSyncRequestId++;
@@ -4280,7 +4283,7 @@ window.addEventListener("hashchange", () => {
   const parsedRoute = parseRouteFromHash(window.location.hash);
   if(parsedRoute.name!=='game' || parsedRoute.gameId!==currentRoute.gameId)gameSound.leaveGame();
   if(hostInvite && (parsedRoute.name!=='game' || parsedRoute.gameId!==hostInvite.gameId)){hostInvite=null;inviteVisit++;}
-  profileDialog.close();
+  inlineProfiles.close();
   if(parsedRoute.gameId!==previousRoute.gameId){activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();}
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
   if(previousRoute.name !== 'game' && currentRoute.name === 'game')gameSound.play('enter');
@@ -4409,10 +4412,10 @@ appEl.addEventListener("click", async (event) => {
 
   const action = actionEl.getAttribute("data-action");
   const actionGameId = actionEl.getAttribute("data-game-id") || currentRoute.gameId;
-  if (action === "public-profile") { void publicProfileDialog.open(actionEl.getAttribute("data-username"), actionEl); return; }
+  if (action === "public-profile") { void inlineProfiles.open(actionEl.getAttribute("data-username"), actionEl); return; }
   if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
-  if (action === "account-open") { accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
+  if (action === "account-open") { if (accountDialog.isOpen()) { void accountDialog.close(); return; } accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
   const accountGatedActions = new Set(["create-game","create-self-play","rematch","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
   if (accountGatedActions.has(action) && (!account.snapshot().ready || account.snapshot().pendingLogout)) {
     event.preventDefault();
@@ -4490,7 +4493,7 @@ appEl.addEventListener("click", async (event) => {
 
   if(action==='close-invite'){closeFriendInvite();return;}
   if(action==='share-invite'){await withPendingButton(getCopyInviteButtonKey(actionEl.dataset.gameId),()=>copyGameInvitation(actionEl.dataset.gameId,actionEl.dataset.inviteRole,true));return;}
-  if (action === 'guest-profile') { const id=actionEl.dataset.identityId;profileDialog.open(`<div class="story-copy"><h2 id="guest-profile-title">${id===transport.getIdentityId()?'You':'Guest player'}</h2><p class="small">Playing without an account</p><button data-modal-close>Back to game</button></div>`,actionEl);return; }
+  if (action === 'guest-profile') { void inlineProfiles.open(null,actionEl);return; }
   if (action === 'toggle-sound') { const enabled=gameSound.toggle();actionEl.innerHTML=icon(enabled?'sound':'muted');actionEl.setAttribute('aria-label',enabled?'Mute sound':'Enable sound');actionEl.setAttribute('aria-pressed',String(enabled));actionEl.title=`Sound ${enabled?'on':'off'}`;return; }
   if (action === 'opponent-story') { gameSound.play('intro'); storyDialog.open(actionEl.dataset.opponent,{trigger:actionEl}); return; }
   if (action === "create-game" || action === 'create-self-play') {

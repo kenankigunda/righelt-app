@@ -303,3 +303,9 @@ Combine account ownership with unfinished-game filtering before home pagination.
 A result represents the acknowledged game outcome, never a pending local move. Open it automatically only for an observed live finish. Reloads, history browsing, hidden tabs, and open opponent stories do not interrupt the user. Keep an explicit result entry in History. If an acknowledged undo reopens the game, restore the playable board. Review moves focus to History, including delayed rendering during an input gesture.
 
 Play again offers a deliberate opponent and side choice, with the opposite side selected by default. Friend starts a fresh invitation and never forces the former opponent into another match. Self-play retains its chosen starting side through reloads. Unavailable trained opponents remain disabled. Closing the dialog or changing accounts cancels pending continuation. The optional creation-side field defaults to red for existing clients and changes no game rules.
+
+### Account settings and player identity
+
+Settings belong in a stone-cut side flyout that leaves the game usable on wider screens and fills the screen on phones. Sign-in and account creation remain modal. Settings and password changes share the account surface, branded action icons and player emblem. Keep credential behavior and session fencing unchanged.
+
+Player names are quiet text controls: display name first, username smaller underneath. Expand brief public details directly below the name, rather than opening a separate profile modal. Preserve the expanded player and focus during live updates. A deterministic angular emblem derives from the canonical username; its shape is stable and its accent follows the seat. Use charcoal when there is no seat affiliation. Prefer one expanded row at a time for this pass.

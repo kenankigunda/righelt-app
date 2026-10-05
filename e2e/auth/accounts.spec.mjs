@@ -318,10 +318,11 @@ test("current public names follow the account across browsers through the minima
       await expect(person).toContainText("Étoile 🌟");
       await person.click();
       const profileDialog = guest.getByTestId("public-profile");
-      await expect(profileDialog.getByRole("heading", { name: "Player profile" })).toBeVisible();
-      await expect(profileDialog).toContainText(`@${username}`);
-      await expect(profileDialog).toContainText("Étoile 🌟");
-      await profileDialog.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(profileDialog).toContainText("Joined");
+      await expect(person).toHaveAttribute("aria-expanded","true");
+      await expect(person).toContainText(`@${username}`);
+      await person.click();
+      await expect(profileDialog).toHaveCount(0);
       await expect(person).toBeFocused();
       const publicResponse = await spectator.request.get(new URL(`/api/profiles/${username.toLowerCase()}`, gameUrl).href);
       expect(publicResponse.headers()["cache-control"]).toBe("no-store");
@@ -579,5 +580,6 @@ test("long profile names wrap inside participants without covering the board", a
   expect(geometry.x + geometry.width).toBeLessThanOrEqual(geometry.panelX + geometry.panelWidth);
   expect(geometry.scrollWidth <= geometry.clientWidth + 1).toBe(true);
   await profile.click();
-  await expect(page.getByTestId("public-profile")).toContainText(displayName);
+  await expect(page.getByTestId("public-profile")).toContainText("Joined");
+  await expect(profile).toContainText(displayName);
 });
