@@ -1,8 +1,8 @@
+import { enterUsername } from "./helpers.mjs";
 import { test, expect } from "@playwright/test";
 import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
 
 const password = "A long invite test password 482";
-const replacement = "A recovered invite test password 963";
 const dialog = page => page.getByTestId("account-dialog");
 const uniqueName = () => `Invite_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
@@ -18,19 +18,14 @@ async function register(page, username, play = false) {
   await expect(dialog(page)).not.toBeVisible();
   await page.getByRole("button", { name: play ? "Start new game" : "Sign in", exact: true }).click();
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
-  await dialog(page).getByLabel("Username", { exact: true }).fill(username);
+  await enterUsername(page, username);
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
-  await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
-  await expect(page.getByTestId("recovery-code")).toBeVisible();
-  const code = await page.getByTestId("recovery-code").textContent();
-  await dialog(page).getByLabel("I saved my recovery code").check();
-  await dialog(page).getByRole("button", { name: "Continue", exact: true }).click();
+  await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
   if (play) {
     await expect(page).toHaveURL(/#\/game\//);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
   }
-  return code;
 }
 
 async function signOut(page) {
@@ -70,7 +65,7 @@ async function playHostMove(host) {
     const session = await (await fetch("/api/auth/session")).json();
     const gameId = decodeURIComponent(location.hash.match(/^#\/game\/([^?]+)/)[1]);
     const response = await fetch(`/api/shell/games/${encodeURIComponent(gameId)}`, {
-      headers: { "X-Righelt-Auth-Version": "1", "X-Righelt-Session": session.contextId },
+      headers: { "X-Righelt-Auth-Version": "2", "X-Righelt-Session": session.contextId },
     });
     if (!response.ok) throw Error(`Game read failed: ${response.status}`);
     const body = await response.json();
@@ -80,7 +75,7 @@ async function playHostMove(host) {
   await submitPlayableAction(host, action);
 }
 
-for (const method of ["login", "recovery"]) {
+for (const method of ["login", "registration"]) {
   test(`a shared player invite survives ${method} and preserves its destination`, async ({ page, browser }) => {
     const invite = await sharedInvite(page);
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
@@ -105,8 +100,7 @@ for (const method of ["login", "recovery"]) {
         };
       });
       const username = uniqueName();
-      const code = await register(visitor, username);
-      await signOut(visitor);
+      if (method === "login") { await register(visitor, username); await signOut(visitor); }
       const joins = [];
       visitor.on("request", request => {
         if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/join"))
@@ -135,7 +129,7 @@ for (const method of ["login", "recovery"]) {
         expect(joins).toEqual([]); // Public spectating must not claim an account seat.
         await visitor.goto(invite.url);
         await visitor.getByTestId("invite-join-player").click();
-        await dialog(visitor).getByLabel("Username", { exact: true }).fill(username);
+        await enterUsername(visitor, username);
         await dialog(visitor).getByLabel("Password", { exact: true }).fill(password);
         // The reset and continuation share this read. Neither may act before
         // it finishes, or duplicate the preserved join after release.
@@ -145,17 +139,11 @@ for (const method of ["login", "recovery"]) {
         expect(joins).toEqual([]);
         await visitor.evaluate(() => window.__releaseInviteRead());
       } else {
-        await dialog(visitor).getByRole("button", { name: "Recover account", exact: true }).click();
-        await dialog(visitor).getByLabel("Username", { exact: true }).fill(username);
-        await dialog(visitor).getByLabel("Recovery code", { exact: true }).fill(code);
-        await dialog(visitor).getByLabel("New password", { exact: true }).fill(replacement);
-        await dialog(visitor).getByRole("button", { name: "Prepare recovery", exact: true }).click();
-        await expect(visitor.getByTestId("recovery-code")).toBeVisible();
-        expect(await visitor.getByTestId("recovery-code").textContent()).not.toBe(code);
-        await expect(visitor).toHaveURL(invite.url);
+        await dialog(visitor).getByRole("button", { name: "Create account", exact: true }).click();
+        await enterUsername(visitor, username);
+        await dialog(visitor).getByLabel("Password", { exact: true }).fill(password);
         expect(joins).toEqual([]);
-        await dialog(visitor).getByLabel("I saved my recovery code").check();
-        await dialog(visitor).getByRole("button", { name: "Continue", exact: true }).click();
+        await dialog(visitor).getByRole("button", { name: "Create account & continue", exact: true }).click();
       }
       await expect(dialog(visitor)).not.toBeVisible();
       await expect(visitor.getByTestId("game-role")).toContainText("Player 2");

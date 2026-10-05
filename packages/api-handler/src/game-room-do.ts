@@ -255,7 +255,7 @@ export class GameRoomDO {
             throw new AuthProblem("session_changed", 409);
           }
           this.env = await withCutoverPolicy(this.env);
-          return json(sanitizeGameResponse(body, maintenanceAllowed(this.env,this.requestAuthority?.accountId) ? this.requestAuthority : this.requestAuthority ? {...this.requestAuthority,acknowledged:false} : null), response.status);
+          return json(sanitizeGameResponse(body, this.requestAuthority, !maintenanceAllowed(this.env,this.requestAuthority?.accountId)), response.status);
         } finally {
           this.requestAuthority = null;
         }
@@ -1173,7 +1173,7 @@ export class GameRoomDO {
       payload = await enrichAccountNames(payload as unknown as Record<string, unknown>, this.env.DB as unknown as AuthDatabase) as unknown as ServerEvent;
       this.env = await withCutoverPolicy(this.env);
       if (!session || !await this.authorizeSocket(session)) return;
-      payload = sanitizeGameResponse(payload as unknown as Record<string, unknown>, maintenanceAllowed(this.env,session.authority?.accountId) ? session.authority ?? null : session.authority ? {...session.authority,acknowledged:false} : null) as unknown as ServerEvent;
+      payload = sanitizeGameResponse(payload as unknown as Record<string, unknown>, session.authority ?? null, !maintenanceAllowed(this.env,session.authority?.accountId)) as unknown as ServerEvent;
     }
     try {
       socket.send(JSON.stringify({ ...payload, ...(authActive(this.env) ? { authProtocolVersion: AUTH_PROTOCOL_VERSION } : {}), protocolVersion: 2, gameId: this.getLoadedGameId() }));

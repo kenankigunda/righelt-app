@@ -36,3 +36,12 @@ test('walkthrough requires selected context checkpoints and exact workflows',()=
 test('walkthrough still requires full-wide behavioral pass without full-wide images',()=>{
  const rows=['mobile','mid-wide','full-wide'].map(v=>item(v,FRESH_ACCOUNT_WORKFLOW,v==='full-wide'?[]:['account-home']));verifyAccountEvidence(rows,{visualMode:'walkthrough',checkpoints:['account-home']});rows[2].status='failed';assert.throws(()=>verifyAccountEvidence(rows,{visualMode:'walkthrough',checkpoints:['account-home']}),/full-wide/);
 });
+
+
+test('simplified signup requires creation evidence and cannot be satisfied by retired recovery images',()=>{
+ const rows=['mobile','mid-wide','full-wide'].map(v=>item(v,FRESH_ACCOUNT_WORKFLOW,labels));
+ assert.throws(()=>verifyAccountEvidence(rows,{capabilities:{simplifiedAccounts:true}}),/account-creation/);
+ const revised=['mobile','mid-wide','full-wide'].map(v=>item(v,FRESH_ACCOUNT_WORKFLOW,labels.map(label=>label==='recovery-acknowledgment'?'account-creation':label)));
+ verifyAccountEvidence(revised,{capabilities:{simplifiedAccounts:true}});
+ assert.throws(()=>verifyAccountEvidence(revised),/recovery-acknowledgment/);
+});

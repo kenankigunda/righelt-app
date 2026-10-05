@@ -99,7 +99,6 @@ function smokeFixture({
       data = {
         authenticated: true,
         contextId: context,
-        recoveryAcknowledgmentRequired: false,
       };
     } else if (route === "/api/auth/session")
       data = { authenticated: !!session };
@@ -246,7 +245,7 @@ test("deployment CLI rejects absent legacy proof before invoking deployment tool
 
 test("deployment workflow supplies legacy proof to preflight, deploy and smoke", () => {
   const workflow = readFileSync(new URL("../../../.github/workflows/deploy.yml", import.meta.url), "utf8");
-  for (const name of ["Preflight configuration check", "Deploy private authentication services and API", "Verify acknowledged canary account"]) {
+  for (const name of ["Preflight configuration check", "Deploy private authentication services and API", "Verify authenticated canary account"]) {
     const step = workflow.split(`- name: ${name}\n`)[1]?.split("\n      - name:")[0];
     assert.ok(step, name);
     assert.match(step, /ACCOUNT_SMOKE_LEGACY_GAME_ID: \$\{\{ vars\.ACCOUNT_SMOKE_LEGACY_GAME_ID \}\}/);
@@ -260,7 +259,7 @@ test("deployment shares the explicit origin or canonical Pages fallback across p
   assert.equal(expression, "vars.RIGHELT_SITE_ORIGIN || format('https://{0}.pages.dev', vars.CLOUDFLARE_PAGES_PROJECT)");
   assert.equal((workflow.match(/RIGHELT_SITE_ORIGIN:/g) || []).length, 1, "steps inherit the single job-level origin");
   assert.match(workflow, /if \[ -z "\$CLOUDFLARE_PAGES_PROJECT" \]; then/);
-  for (const name of ["Preflight configuration check", "Deploy private authentication services and API", "Verify public Pages and private API boundaries", "Verify acknowledged canary account", "Verify account preparation remains closed"])
+  for (const name of ["Preflight configuration check", "Deploy private authentication services and API", "Verify public Pages and private API boundaries", "Verify authenticated canary account", "Verify account preparation remains closed"])
     assert.ok(workflow.includes(`- name: ${name}\n`), name);
   assert.match(workflow, /if: vars\.RIGHELT_AUTH_ENABLED == 'true' && !inputs\.prepare_accounts/);
   assert.match(workflow, /if: inputs\.prepare_accounts/);

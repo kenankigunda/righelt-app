@@ -4174,7 +4174,7 @@ window.addEventListener("load", () => {
 });
 
 // The first click may arrive while the initial cookie is still being read.
-// Resolve that session before choosing login versus recovery acknowledgment.
+// Resolve that session before choosing the appropriate account form.
 const waitForAccountGate = async () => {
   const hash = window.location.hash;
   let awaitedLogout = false;
@@ -4193,7 +4193,7 @@ const openBoardAccountGate = async source => {
   if (!await waitForAccountGate()) return;
   const state = account.snapshot();
   if (state.available === false || state.maintenance || account.canPlay() || accountDialog.isOpen()) return;
-  accountDialog.open(state.session.recoveryAcknowledgmentRequired ? "replacement" : "login", null, source);
+  accountDialog.open("login", null, source);
 };
 
 appEl.addEventListener("pointerdown", event => {
@@ -4258,7 +4258,7 @@ appEl.addEventListener("click", async (event) => {
     event.preventDefault();
     if (!account.snapshot().available || account.snapshot().maintenance) return;
     const intent = safeAccountIntent({ hash: window.location.hash, action, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });
-    accountDialog.open(account.snapshot().session.recoveryAcknowledgmentRequired ? "replacement" : "login", intent, actionEl);
+    accountDialog.open("login", intent, actionEl);
     return;
   }
   if (sharedMutationActions.has(action) && transport.getGameViewModel(actionGameId)?.sharedMutationsBlocked) return;

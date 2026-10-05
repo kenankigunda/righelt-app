@@ -22,7 +22,6 @@ export type GameAuthority = {
   accountId: string;
   tokenHash: string;
   contextId: string;
-  acknowledged: boolean;
   renew: boolean;
 };
 export type GameAuthEnv = {
@@ -45,7 +44,6 @@ export async function readGameAuthority(
         accountId: actor.account_id,
         tokenHash: actor.token_hash,
         contextId: actor.context_id,
-        acknowledged: actor.recovery_acknowledged === 1,
         renew: false,
       }
     : null;
@@ -57,11 +55,10 @@ export async function currentGameAuthority(
   if (env.AUTH_ENABLED !== "true") return false;
   const found = await authDatabase(env)
     .prepare(
-      `SELECT a.recovery_acknowledged FROM account_sessions s JOIN accounts a ON a.account_id=s.account_id WHERE s.token_hash=? AND s.context_id=? AND s.account_id=? AND s.revoked_at IS NULL AND s.expires_at>${DB_NOW} AND s.session_epoch=a.session_epoch`,
+      `SELECT 1 AS valid FROM account_sessions s JOIN accounts a ON a.account_id=s.account_id WHERE s.token_hash=? AND s.context_id=? AND s.account_id=? AND s.revoked_at IS NULL AND s.expires_at>${DB_NOW} AND s.session_epoch=a.session_epoch`,
     )
     .bind(authority.tokenHash, authority.contextId, authority.accountId)
-    .first<{ recovery_acknowledged: number }>();
-  if (found) authority.acknowledged = found.recovery_acknowledged === 1;
+    .first<{ valid: number }>();
   return Boolean(found);
 }
 export async function authorizeGameRequest(
@@ -127,11 +124,6 @@ export async function authorizeGameRequest(
     )
       throw new AuthProblem("identity_mismatch", 403);
     const operation = url.pathname.split("/").at(-1);
-    const viewOnly =
-      ["history", "live", "presence"].includes(operation ?? "") ||
-      (operation === "join" && body.mode === "viewer");
-    if (!viewOnly && !authority.acknowledged)
-      throw new AuthProblem("recovery_acknowledgment_required", 403);
     authority.renew = !["presence", "reconcile"].includes(operation ?? "");
     const headers = new Headers(request.headers);
     headers.delete("content-length");
@@ -155,7 +147,7 @@ export function gameGuardStatements(
   const db = authDatabase(env),
     id = randomToken();
   return [
-    sessionGuard(db, id, authority.tokenHash, authority.contextId, false),
+    sessionGuard(db, id, authority.tokenHash, authority.contextId),
     ...(authority.renew
       ? [
           db
@@ -176,7 +168,7 @@ export async function registerSessionRoom(
   const db = authDatabase(env),
     id = randomToken();
   await db.batch([
-    sessionGuard(db, id, authority.tokenHash, authority.contextId, false),
+    sessionGuard(db, id, authority.tokenHash, authority.contextId),
     db
       .prepare(
         "INSERT OR IGNORE INTO account_session_rooms(session_hash,room_id) VALUES(?,?)",
@@ -251,6 +243,7 @@ export async function deliverRevocations(
 export function sanitizeGameView(
   value: Record<string, unknown>,
   authority: GameAuthority | null,
+  readOnly = false,
 ): Record<string, unknown> {
   const game = value as unknown as import("./shell-live-core").LiveGame;
   const legacy = game.ownershipMode !== "account_v1";
@@ -281,7 +274,7 @@ export function sanitizeGameView(
   );
   if (!projected.myPendingRevertRequest && !projected.approvableRevertRequest)
     projected.pendingRevertRequest = null;
-  if (!authority || !authority.acknowledged || legacy) {
+  if (!authority || readOnly || legacy) {
     for (const key of [
       "canInvite",
       "canRecordMove",
@@ -294,7 +287,7 @@ export function sanitizeGameView(
     projected.canJoinAsPlayer = !legacy && projected.canJoinAsPlayer;
     projected.canJoinAsViewer = false;
   }
-  if (!authority || !authority.acknowledged) projected.legalActions = [];
+  if (!authority || readOnly) projected.legalActions = [];
   if (!player) projected.approvableRequesterIds = [];
   projected.ownershipMode = legacy ? "legacy_guest" : "account_v1";
   return projected;
@@ -303,12 +296,14 @@ import { withFullViewModel } from "./shell-live-core";
 export function sanitizeGameResponse(
   body: Record<string, unknown>,
   authority: GameAuthority | null,
+  readOnly = false,
 ): Record<string, unknown> {
   const result = { ...body };
   if (result.game && typeof result.game === "object")
     result.game = sanitizeGameView(
       result.game as Record<string, unknown>,
       authority,
+      readOnly,
     );
   const receipt = result.commandOutcome as { identityId?: string } | undefined;
   if (receipt?.identityId !== authority?.accountId) {

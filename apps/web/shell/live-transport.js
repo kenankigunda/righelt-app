@@ -521,7 +521,7 @@ export const createLiveTransportStore = ({
     const optimistic = getOptimisticState(gameId);
     const admission = optimistic.admission.catch(() => {}).then(async () => {
       assertActive();
-      if (auth?.enabled && (!auth.session.authenticated || auth.session.recoveryAcknowledgmentRequired)) throw Object.assign(new Error("invalid_credentials"), { code: "invalid_credentials" });
+      if (auth?.enabled && (!auth.session.authenticated)) throw Object.assign(new Error("invalid_credentials"), { code: "invalid_credentials" });
       if (optimistic.storageBlocked || optimistic.connectionRecovering || optimistic.syncStatus === "confirming") throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
       const current = getGameViewModel(gameId);
       const predecessor = optimistic.pendingCommands.at(-1)?.envelope;
@@ -996,9 +996,9 @@ export const createLiveTransportStore = ({
     if (!game) {
       return null;
     }
-    if (auth?.enabled && (!auth.session.authenticated || auth.session.recoveryAcknowledgmentRequired || game.ownershipMode === "legacy_guest")) {
+    if (auth?.enabled && (!auth.session.authenticated || game.ownershipMode === "legacy_guest")) {
       return { ...game, canRecordMove:false,canEndTurn:false,canPlayAsBothPlayers:false,canUndoLastMove:false,canInvite:false,inviteToken:null,
-        ...(!auth.session.authenticated || auth.session.recoveryAcknowledgmentRequired ? {legalActions:[]} : {}) };
+        ...(!auth.session.authenticated ? {legalActions:[]} : {}) };
     }
     return game;
   };

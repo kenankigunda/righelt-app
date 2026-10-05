@@ -25,7 +25,7 @@ test('actual D1 schema: uniqueness, immutable usernames, conditional guard rollb
   await assert.rejects(createAccount(db,'account-b','kenan'),/UNIQUE/);
   await assert.rejects(db.prepare("UPDATE accounts SET username='Other',username_canonical='other' WHERE account_id='account-a'").run(),/immutable/);
   await assert.rejects(db.prepare("UPDATE accounts SET tutorial_state='invalid'").run(),/CHECK/);
-  const expected={accountId:'account-a',credentialVersion:1,recoveryVersion:1,sessionEpoch:1};
+  const expected={accountId:'account-a',credentialVersion:1,sessionEpoch:1};
   const update=()=>db.prepare("UPDATE accounts SET credential_version=credential_version+1 WHERE account_id='account-a'");
   const batch=id=>db.batch([credentialGuard(db,id,expected),update(),clearTransactionGuard(db,id)]);
   const races=await Promise.allSettled([batch('guard-1'),batch('guard-2')]);
@@ -41,10 +41,7 @@ test('actual D1 schema: uniqueness, immutable usernames, conditional guard rollb
   assert.equal((await db.prepare('SELECT credential_version FROM accounts').first()).credential_version,2);
   assert.equal((await db.prepare('SELECT count(*) AS n FROM account_transaction_guards').first()).n,0);
   await db.prepare('INSERT INTO account_sessions(token_hash,account_id,session_epoch,context_id,created_at,last_activity_at,expires_at) VALUES(?,?,1,?,1000,1000,9999999999999)').bind(token,'account-a','browser-a').run();
-  const attempt=(id,context,ack=true)=>db.batch([sessionGuard(db,id,token,context,ack),db.prepare("UPDATE accounts SET display_name='authorized'"),clearTransactionGuard(db,id)]);
-  await assert.rejects(attempt('unack','browser-a'),/CHECK/);
-  await attempt('restricted','browser-a',false);
-  await db.prepare('UPDATE accounts SET recovery_acknowledged=1').run();
+  const attempt=(id,context)=>db.batch([sessionGuard(db,id,token,context),db.prepare("UPDATE accounts SET display_name='authorized'"),clearTransactionGuard(db,id)]);
   await attempt('valid','browser-a');
   const queued=sessionGuard(db,'expired',token,'browser-a');
   await db.prepare("UPDATE account_sessions SET expires_at=CAST(unixepoch('subsec') * 1000 AS INTEGER)").run();
@@ -87,5 +84,36 @@ test('actual workerd private admission/hash services: random salts, verification
   const burst=await Promise.all(Array.from({length:20},()=>send({operation:'hash',password})));
   assert.ok(burst.some(r=>r.status===429));assert.ok(burst.some(r=>r.status===200));assert.ok(burst.every(r=>r.status===200||r.status===429));
   assert.equal((await send({operation:'hash',password})).status,200);
+ } finally {await mf.dispose();}
+});
+
+test('forward recovery removal preserves accounts, active sessions and legacy games while retaining immutable cutover',async()=>{
+ const mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:{DB:'remove-recovery'}});
+ try {
+  const db=await mf.getD1Database('DB');
+  const {readdirSync}=await import('node:fs');
+  const dir=new URL('../../../db/migrations/',import.meta.url);
+  for(const name of readdirSync(dir).filter(n=>n.endsWith('.sql')&&n<'0015').sort())
+   await db.exec(readFileSync(new URL(name,dir),'utf8').replace(/--[^\n]*/g,'').replace(/\s+/g,' '));
+  await createAccount(db);
+  await db.prepare('INSERT INTO account_sessions(token_hash,account_id,session_epoch,context_id,created_at,last_activity_at,expires_at) VALUES(?,?,1,?,1000,1000,9999999999999)').bind(token,'account-a','browser-a').run();
+  // Seed an unacknowledged account: removing recovery cannot discard it or its session.
+  await db.prepare("INSERT INTO live_games(game_id,created_at,updated_at,latest_activity_at,state_json) VALUES('legacy','2026-01-01','2026-01-01','2026-01-01','{\"history\":[1,2,3]}')").run();
+  const beforeGames=(await db.prepare('SELECT * FROM live_games').all()).results;
+  const beforeAccount=await db.prepare('SELECT * FROM accounts').first();
+  const beforeSessions=(await db.prepare('SELECT * FROM account_sessions').all()).results;
+  const beforeTables=(await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'live_%'").all()).results;
+  await db.exec(readFileSync(new URL('0015_remove_account_recovery.sql',dir),'utf8').replace(/--[^\n]*/g,'').replace(/\s+/g,' '));
+  const {recovery_hash,recovery_version,recovery_acknowledged,...preserved}=beforeAccount;
+  assert.deepEqual(await db.prepare('SELECT * FROM accounts').first(),preserved);
+  assert.deepEqual((await db.prepare('SELECT * FROM live_games').all()).results,beforeGames);
+  assert.deepEqual((await db.prepare('SELECT * FROM account_sessions').all()).results,beforeSessions);
+  assert.deepEqual((await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'live_%'").all()).results,beforeTables);
+  assert.equal(await db.prepare("SELECT name FROM sqlite_master WHERE name='account_operations'").first(),null);
+  await db.batch([sessionGuard(db,'valid-after-removal',token,'browser-a'),clearTransactionGuard(db,'valid-after-removal')]);
+  await assert.rejects(db.prepare("UPDATE account_cutover SET activated_at=1,canary_account_id='missing'").run(),/account_cutover_immutable/);
+  await db.prepare("UPDATE account_cutover SET activated_at=1,canary_account_id='account-a'").run();
+  await assert.rejects(db.prepare('UPDATE account_cutover SET activated_at=NULL').run(),/account_cutover_immutable/);
+  await assert.rejects(db.prepare("UPDATE accounts SET username='renamed'").run(),/immutable/);
  } finally {await mf.dispose();}
 });

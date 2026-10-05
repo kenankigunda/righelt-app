@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {selectAccountControl} from '../account-stack.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, stat, rm, mkdir, symlink } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
@@ -155,4 +156,16 @@ test('early account UI gets its explicit local auth overlay without changing ret
  assert.match(configured,/database_id = "retained"/);
  assert.match(configured,/AUTH_HMAC_SECRET = "synthetic"/);
  assert.throws(()=>candidateConfig(source+'[vars]\nPARTIAL = "yes"\n',options),/Unsupported partial/);
+});
+
+
+test('simplified account cutover controls work without recovery columns and still require the chosen canary', () => {
+  for (const simplifiedAccounts of [false,true]) {
+    const calls=['/activate-cutover','/maintenance-off'].map(url=>selectAccountControl({method:'POST',url,hasCutover:true,simplifiedAccounts}));
+    const schema="CREATE TABLE accounts(account_id TEXT,username_canonical TEXT"+(simplifiedAccounts?'':',recovery_acknowledged INTEGER')+"); CREATE TABLE account_cutover(singleton INTEGER,activated_at INTEGER,maintenance INTEGER,canary_account_id TEXT); INSERT INTO account_cutover VALUES(1,NULL,1,NULL); INSERT INTO accounts VALUES('id','validation_canary'"+(simplifiedAccounts?'':',1')+");";
+    const script="import sqlite3,sys,json\ndb=sqlite3.connect(':memory:')\ndb.executescript(sys.stdin.read())\nprint(json.dumps(db.execute('SELECT maintenance,canary_account_id FROM account_cutover').fetchone()))";
+    const result=spawnSync('python3',['-c',script],{input:schema+calls.map(c=>c.sql+';').join(''),encoding:'utf8'});
+    assert.equal(result.status,0,result.stderr);assert.deepEqual(JSON.parse(result.stdout),[0,'id']);
+    assert.equal(calls.every(c=>c.sql.includes('recovery_acknowledged')), !simplifiedAccounts);
+  }
 });

@@ -154,9 +154,9 @@ test(
           now = Date.now();
         await db
           .prepare(
-            "INSERT OR IGNORE INTO accounts(account_id,username,username_canonical,display_name,created_at,password_hash,recovery_hash,recovery_acknowledged) VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT OR IGNORE INTO accounts(account_id,username,username_canonical,display_name,created_at,password_hash) VALUES(?,?,?,?,?,?)",
           )
-          .bind(id, id, id, id, now, "synthetic", "f".repeat(64), ack)
+          .bind(id, id, id, id, now, "synthetic")
           .run();
         await db
           .prepare("INSERT INTO account_sessions VALUES(?,?,1,?,?,?,?,NULL)")
@@ -171,7 +171,7 @@ test(
         Origin: "https://test",
         "Content-Type": "application/json",
         "X-Righelt-Auth": "1",
-        "X-Righelt-Auth-Version": "1",
+        "X-Righelt-Auth-Version": "2",
         ...(actor
           ? {
               Cookie: `__Host-righelt_session=${actor.token}`,
@@ -526,7 +526,7 @@ test(
       );
       const raceActor = await seed("alice", 4);
       const admission = await runtime.dispatchFetch(
-        `https://test/direct/ws?authProtocolVersion=1&sessionContext=${raceActor.context}&sessionId=race&lastEventSeq=0`,
+        `https://test/direct/ws?authProtocolVersion=2&sessionContext=${raceActor.context}&sessionId=race&lastEventSeq=0`,
         {
           headers: {
             ...headers(raceActor),
@@ -551,7 +551,7 @@ test(
 
       const connect = async (actor) => {
         const response = await runtime.dispatchFetch(
-          `https://test/direct/ws?authProtocolVersion=1&sessionContext=${actor?.context ?? ""}&sessionId=s${sockets.length}&lastEventSeq=0`,
+          `https://test/direct/ws?authProtocolVersion=2&sessionContext=${actor?.context ?? ""}&sessionId=s${sockets.length}&lastEventSeq=0`,
           {
             headers: {
               ...headers(actor),
@@ -571,21 +571,11 @@ test(
         await eventually(() => messages.length);
         return { socket, messages };
       };
-      await db
-        .prepare(
-          "UPDATE accounts SET recovery_acknowledged=0 WHERE account_id='alice'",
-        )
-        .run();
       const player = await connect(a),
         spectator = await connect(null);
-      assert.equal(player.messages[0].game.canRecordMove, false);
+      assert.equal(player.messages[0].game.canRecordMove, true);
       assert.equal(player.messages[0].game.player1.profile.displayName, "Current Alice");
       assert.equal(spectator.messages[0].game.player1.profile.displayName, "Current Alice");
-      await db
-        .prepare(
-          "UPDATE accounts SET recovery_acknowledged=1 WHERE account_id='alice'",
-        )
-        .run();
       await call(
         "/direct/join",
         b,

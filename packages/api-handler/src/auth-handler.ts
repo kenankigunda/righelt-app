@@ -7,7 +7,6 @@ import {
   isPasswordAllowed,
   SESSION_CONTEXT_HEADER,
   SESSION_IDLE_MS,
-  FLOW_TTL_MS,
   SCRYPT_PARAMETERS,
   type SessionState,
   type HashInput,
@@ -25,14 +24,9 @@ import {
 import {
   randomToken,
   tokenHash,
-  createRecoveryCode,
-  normalizeRecoveryCode,
   authCookie,
   clearAuthCookie,
   readAuthCookie,
-  recoverySessionToken,
-  recoveryOperationContext,
-  equalTokenDigests,
 } from "./auth-security";
 import {
   DB_NOW,
@@ -58,20 +52,6 @@ type Actor = AccountRow & {
   issued_epoch: number;
   read_at: number;
 };
-type Operation = {
-  flow_hash: string;
-  account_id: string;
-  kind: "recovery" | "recovery_code";
-  credential_version: number;
-  recovery_version: number;
-  session_epoch: number;
-  initiating_session_hash: string | null;
-  password_hash: string | null;
-  replacement_recovery_hash: string;
-  expires_at: number;
-  completed_at: number | null;
-  issued_session_hash: string | null;
-};
 const blocklist = new Set(
   passwords.map((password) => password.normalize("NFC")),
 );
@@ -81,7 +61,6 @@ const actorSelect = `SELECT a.*,s.token_hash,s.context_id,s.expires_at,s.session
 const versions = (account: AccountRow) => ({
   accountId: account.account_id,
   credentialVersion: account.credential_version,
-  recoveryVersion: account.recovery_version,
   sessionEpoch: account.session_epoch,
 });
 const json = (body: unknown, status = 200, cookies: string[] = []) => {
@@ -108,7 +87,6 @@ function sessionState(actor: Actor | null): SessionState {
     },
     contextId: actor.context_id,
     expiresAt: actor.expires_at,
-    recoveryAcknowledgmentRequired: actor.recovery_acknowledged !== 1,
   };
 }
 export async function authenticatedActor(
@@ -235,22 +213,6 @@ function revoke(
       .bind(...values),
   ];
 }
-async function retireBrowserFlow(
-  db: AuthDatabase,
-  request: Request,
-): Promise<AuthStatement[]> {
-  const token = readAuthCookie(request, "flow");
-  if (!token) return [];
-  const hash = await tokenHash(token);
-  return [
-    ...revoke(
-      db,
-      "s.token_hash IN (SELECT issued_session_hash FROM account_operations WHERE flow_hash=?)",
-      [hash],
-    ),
-    db.prepare("DELETE FROM account_operations WHERE flow_hash=?").bind(hash),
-  ];
-}
 async function guarded(
   db: AuthDatabase,
   guards: AuthStatement[],
@@ -287,122 +249,10 @@ async function sessionResponse(
   return json({ ok: true, ...sessionState(actor), ...extra }, 200, [
     authCookie(
       token,
-      "session",
       Math.max(0, Math.floor((actor.expires_at - actor.read_at) / 1000)),
     ),
     ...cookies,
   ]);
-}
-function operationGuard(
-  db: AuthDatabase,
-  id: string,
-  flowHash: string,
-): AuthStatement {
-  return db
-    .prepare(
-      `INSERT INTO account_transaction_guards(guard_id,valid) VALUES(?,COALESCE((SELECT 1 FROM account_operations WHERE flow_hash=? AND completed_at IS NULL AND expires_at>${DB_NOW}),0))`,
-    )
-    .bind(id, flowHash);
-}
-async function flowOperation(
-  db: AuthDatabase,
-  flowHash: string,
-): Promise<Operation | null> {
-  return db
-    .prepare(
-      `SELECT * FROM account_operations WHERE flow_hash=? AND expires_at>${DB_NOW}`,
-    )
-    .bind(flowHash)
-    .first<Operation>();
-}
-async function finishRecovery(
-  db: AuthDatabase,
-  env: AuthEnv,
-  flowToken: string,
-  operation: Operation,
-  actor: Actor | null,
-): Promise<Response> {
-  const token = await recoverySessionToken(env.AUTH_HMAC_SECRET!, flowToken),
-    hash = await tokenHash(token);
-  const readRetry = async () => {
-    const account = await db
-      .prepare("SELECT * FROM accounts WHERE account_id=?")
-      .bind(operation.account_id)
-      .first<AccountRow>();
-    if (
-      operation.issued_session_hash !== hash ||
-      !account ||
-      account.credential_version !== operation.credential_version + 1 ||
-      account.recovery_version !== operation.recovery_version + 1 ||
-      account.session_epoch !== operation.session_epoch + 1
-    )
-      throw new AuthProblem("stale_operation", 409);
-    return await sessionResponse(db, token, {}, []);
-  };
-  if (operation.completed_at !== null) return await readRetry();
-  const ids = [randomToken(), randomToken(), ...(actor ? [randomToken()] : [])];
-  const expected = {
-    accountId: operation.account_id,
-    credentialVersion: operation.credential_version,
-    recoveryVersion: operation.recovery_version,
-    sessionEpoch: operation.session_epoch,
-  };
-  try {
-    await guarded(
-      db,
-      [
-        credentialGuard(db, ids[0], expected),
-        operationGuard(db, ids[1], operation.flow_hash),
-        ...(actor
-          ? [
-              sessionGuard(
-                db,
-                ids[2],
-                actor.token_hash,
-                actor.context_id,
-                false,
-              ),
-            ]
-          : []),
-      ],
-      [
-        db
-          .prepare(
-            "UPDATE accounts SET password_hash=?,recovery_hash=?,credential_version=credential_version+1,recovery_version=recovery_version+1,session_epoch=session_epoch+1,recovery_acknowledged=1 WHERE account_id=?",
-          )
-          .bind(
-            operation.password_hash,
-            operation.replacement_recovery_hash,
-            operation.account_id,
-          ),
-        ...revoke(db, "s.account_id=?", [operation.account_id]),
-        ...(actor && actor.account_id !== operation.account_id
-          ? revoke(db, "s.token_hash=?", [actor.token_hash])
-          : []),
-        addSession(
-          db,
-          hash,
-          operation.account_id,
-          operation.session_epoch + 1,
-          randomToken(),
-        ),
-        db
-          .prepare(
-            `UPDATE account_operations SET completed_at=${DB_NOW},issued_session_hash=? WHERE flow_hash=?`,
-          )
-          .bind(hash, operation.flow_hash),
-      ],
-      ids,
-    );
-  } catch (error) {
-    if (!(error instanceof AuthProblem) || error.code !== "stale_operation")
-      throw error;
-    const completed = await flowOperation(db, operation.flow_hash);
-    if (!completed || completed.completed_at === null) throw error;
-    operation = completed;
-    return await readRetry();
-  }
-  return await sessionResponse(db, token);
 }
 export async function handleAuthRequest(
   request: Request,
@@ -450,9 +300,13 @@ export async function handleAuthRequest(
       !rawEnv.HASH_SERVICE ||
       !/^[a-f0-9]{64}$/.test(rawEnv.AUTH_HMAC_SECRET ?? "") ||
       !rawEnv.AUTH_ALLOWED_ORIGINS
-    ) throw new AuthProblem("temporarily_unavailable", 503);
+    )
+      throw new AuthProblem("temporarily_unavailable", 503);
     if (request.method === "GET" && path === "/api/auth/session")
-      return json({ ok: true, ...sessionState(await authenticatedActor(request, env)) });
+      return json({
+        ok: true,
+        ...sessionState(await authenticatedActor(request, env)),
+      });
     if (request.method !== (path === "/api/account" ? "PATCH" : "POST"))
       throw new AuthProblem("invalid_input", 405);
     const body = await authBody(request, env);
@@ -460,25 +314,8 @@ export async function handleAuthRequest(
     if (
       actor &&
       request.headers.get(SESSION_CONTEXT_HEADER) !== actor.context_id
-    ) {
-      // A completion response can apply its cookie before the response body is
-      // lost. Only the matching completed flow may retry with the old context.
-      const flow =
-        path === "/api/auth/recovery/finish"
-          ? readAuthCookie(request, "flow")
-          : null;
-      const completed = flow
-        ? await flowOperation(db, await tokenHash(flow))
-        : null;
-      if (
-        !completed ||
-        completed.kind !== "recovery" ||
-        completed.completed_at === null ||
-        completed.issued_session_hash !== actor.token_hash ||
-        completed.account_id !== actor.account_id
-      )
-        throw new AuthProblem("session_changed", 409);
-    }
+    )
+      throw new AuthProblem("session_changed", 409);
     if (path === "/api/account") {
       const current = requireActor(actor),
         parsed = validateAccountPatch(body, current.username);
@@ -487,7 +324,7 @@ export async function handleAuthRequest(
         id = randomToken();
       await guarded(
         db,
-        [sessionGuard(db, id, current.token_hash, current.context_id, false)],
+        [sessionGuard(db, id, current.token_hash, current.context_id)],
         [
           db
             .prepare(
@@ -506,7 +343,7 @@ export async function handleAuthRequest(
       return await sessionResponse(db, readAuthCookie(request)!);
     }
     const attempt = async (
-      kind: "register" | "login" | "recovery" | "change",
+      kind: "register" | "login" | "change" | "username",
       identity: string,
     ) => {
       const rate = await admitAuthAttempt(db, env, request, kind, identity);
@@ -520,6 +357,17 @@ export async function handleAuthRequest(
         );
       return rate;
     };
+    if (path === "/api/auth/username") {
+      exactKeys(body, ["username"]);
+      const name = normalizeUsername(body.username);
+      if (!name.ok) throw new AuthProblem("invalid_input");
+      await attempt("username", "");
+      const found = await db
+        .prepare("SELECT 1 AS found FROM accounts WHERE username_canonical=?")
+        .bind(name.value.canonical)
+        .first();
+      return json({ ok: true, exists: Boolean(found) });
+    }
     if (path === "/api/auth/register") {
       exactKeys(
         body,
@@ -538,8 +386,7 @@ export async function handleAuthRequest(
       const encoded = await encodePassword(env, password),
         accountId = crypto.randomUUID(),
         token = randomToken(),
-        hash = await tokenHash(token),
-        code = createRecoveryCode();
+        hash = await tokenHash(token);
       const transitionId = actor ? randomToken() : null;
       try {
         await db.batch([
@@ -550,13 +397,12 @@ export async function handleAuthRequest(
                   transitionId!,
                   actor.token_hash,
                   actor.context_id,
-                  false,
                 ),
               ]
             : []),
           db
             .prepare(
-              `INSERT INTO accounts(account_id,username,username_canonical,display_name,created_at,password_hash,recovery_hash) VALUES(?,?,?,?,${DB_NOW},?,?)`,
+              `INSERT INTO accounts(account_id,username,username_canonical,display_name,created_at,password_hash) VALUES(?,?,?,?,${DB_NOW},?)`,
             )
             .bind(
               accountId,
@@ -564,7 +410,6 @@ export async function handleAuthRequest(
               name.value.canonical,
               display.value,
               encoded,
-              await tokenHash(normalizeRecoveryCode(code)!),
             ),
           addSession(db, hash, accountId, 1, randomToken()),
           ...(actor
@@ -573,7 +418,6 @@ export async function handleAuthRequest(
                 clearTransactionGuard(db, transitionId!),
               ]
             : []),
-          ...(await retireBrowserFlow(db, request)),
         ]);
       } catch (error) {
         if (
@@ -586,12 +430,7 @@ export async function handleAuthRequest(
           throw new AuthProblem("stale_operation", 409);
         throw error;
       }
-      return await sessionResponse(
-        db,
-        token,
-        { recoveryCode: code, recoveryVersion: 1 },
-        [clearAuthCookie("flow")],
-      );
+      return await sessionResponse(db, token);
     }
     if (path === "/api/auth/login") {
       exactKeys(body, ["username", "password"], ["challengeToken"]);
@@ -630,14 +469,12 @@ export async function handleAuthRequest(
                   transitionId!,
                   actor.token_hash,
                   actor.context_id,
-                  false,
                 ),
               ]
             : []),
         ],
         [
           ...(actor ? revoke(db, "s.token_hash=?", [actor.token_hash]) : []),
-          ...(await retireBrowserFlow(db, request)),
           addSession(
             db,
             await tokenHash(token),
@@ -648,99 +485,38 @@ export async function handleAuthRequest(
         ],
         [id, ...(transitionId ? [transitionId] : [])],
       );
-      return await sessionResponse(db, token, {}, [clearAuthCookie("flow")]);
+      return await sessionResponse(db, token);
     }
     if (path === "/api/auth/logout") {
       exactKeys(body, []);
-      const token = readAuthCookie(request),
-        flowToken = readAuthCookie(request, "flow");
-      const hashes: string[] = [];
-      if (token) hashes.push(await tokenHash(token));
-      const flowHash = flowToken ? await tokenHash(flowToken) : null;
-      const writes: AuthStatement[] = [];
-      if (flowHash) {
-        writes.push(
-          ...revoke(
-            db,
-            "s.token_hash IN (SELECT issued_session_hash FROM account_operations WHERE flow_hash=?)",
-            [flowHash],
-          ),
-        );
-        writes.push(
-          db
-            .prepare("DELETE FROM account_operations WHERE flow_hash=?")
-            .bind(flowHash),
-        );
-      }
-      for (const hash of new Set(hashes))
-        writes.push(...revoke(db, "s.token_hash=?", [hash]));
-      if (writes.length) await db.batch(writes);
-      return json({ ok: true, authenticated: false }, 200, [
-        clearAuthCookie(),
-        clearAuthCookie("flow"),
-      ]);
+      const token = readAuthCookie(request);
+      if (token)
+        await db.batch(revoke(db, "s.token_hash=?", [await tokenHash(token)]));
+      return json({ ok: true, authenticated: false }, 200, [clearAuthCookie()]);
     }
+
     if (path === "/api/auth/activity") {
       exactKeys(body, []);
       const current = requireActor(actor),
         id = randomToken();
       await guarded(
         db,
-        [sessionGuard(db, id, current.token_hash, current.context_id, false)],
+        [sessionGuard(db, id, current.token_hash, current.context_id)],
         [renewal(db, current.token_hash)],
         [id],
       );
       return await sessionResponse(db, readAuthCookie(request)!);
     }
-    if (path === "/api/auth/recovery-code/acknowledge") {
-      exactKeys(body, ["saved", "recoveryVersion"]);
-      const current = requireActor(actor);
-      if (
-        body.saved !== true ||
-        body.recoveryVersion !== current.recovery_version
-      )
-        throw new AuthProblem("stale_operation", 409);
-      const ids = [randomToken(), randomToken()];
-      await guarded(
-        db,
-        [
-          credentialGuard(db, ids[0], versions(current)),
-          sessionGuard(
-            db,
-            ids[1],
-            current.token_hash,
-            current.context_id,
-            false,
-          ),
-        ],
-        [
-          db
-            .prepare(
-              "UPDATE accounts SET recovery_acknowledged=1 WHERE account_id=?",
-            )
-            .bind(current.account_id),
-          renewal(db, current.token_hash),
-        ],
-        ids,
-      );
-      return await sessionResponse(db, readAuthCookie(request)!);
-    }
     if (path === "/api/auth/password") {
-      exactKeys(body, ["currentPassword", "newPassword"]);
+      exactKeys(body, ["newPassword"]);
       const current = requireActor(actor);
-      await attempt("change", current.token_hash);
-      const old = passwordValue(
-          body.currentPassword,
-          current.username_canonical,
-          false,
-        ),
-        next = passwordValue(
-          body.newPassword,
-          current.username_canonical,
-          true,
-        );
-      if (!(await verifyPassword(env, old, current.password_hash)))
-        throw new AuthProblem("invalid_credentials", 401);
+      // Account-scoped before hashing: session rotation and other browsers share the budget.
+      await attempt("change", current.account_id);
+      const next = passwordValue(
+        body.newPassword,
+        current.username_canonical,
+        true,
+      );
       const encoded = await encodePassword(env, next),
         token = randomToken(),
         ids = [randomToken(), randomToken()];
@@ -748,13 +524,7 @@ export async function handleAuthRequest(
         db,
         [
           credentialGuard(db, ids[0], versions(current)),
-          sessionGuard(
-            db,
-            ids[1],
-            current.token_hash,
-            current.context_id,
-            false,
-          ),
+          sessionGuard(db, ids[1], current.token_hash, current.context_id),
         ],
         [
           db
@@ -773,175 +543,7 @@ export async function handleAuthRequest(
         ],
         ids,
       );
-      return await sessionResponse(db, token, {}, [clearAuthCookie("flow")]);
-    }
-    if (
-      path === "/api/auth/recovery/prepare" ||
-      path === "/api/auth/recovery-code/prepare"
-    ) {
-      const recovery = path === "/api/auth/recovery/prepare";
-      let account: AccountRow;
-      let encoded: string | null = null;
-      if (recovery) {
-        exactKeys(
-          body,
-          ["username", "recoveryCode", "newPassword"],
-          ["challengeToken"],
-        );
-        const name = normalizeUsername(body.username);
-        if (!name.ok) throw new AuthProblem("invalid_input");
-        const rate = await attempt("recovery", name.value.canonical),
-          code = normalizeRecoveryCode(body.recoveryCode);
-        const found = await db
-          .prepare("SELECT * FROM accounts WHERE username_canonical=?")
-          .bind(name.value.canonical)
-          .first<AccountRow>();
-        if (
-          !code ||
-          !found ||
-          !equalTokenDigests(await tokenHash(code), found.recovery_hash)
-        ) {
-          await markAuthFailure(db, rate.failureKey);
-          throw new AuthProblem("invalid_credentials", 401);
-        }
-        account = found;
-        encoded = await encodePassword(
-          env,
-          passwordValue(body.newPassword, account.username_canonical, true),
-        );
-      } else {
-        exactKeys(body, ["currentPassword"]);
-        const current = requireActor(actor);
-        await attempt("change", current.token_hash);
-        account = current;
-        if (
-          !(await verifyPassword(
-            env,
-            passwordValue(
-              body.currentPassword,
-              current.username_canonical,
-              false,
-            ),
-            current.password_hash,
-          ))
-        )
-          throw new AuthProblem("invalid_credentials", 401);
-      }
-      const code = createRecoveryCode(),
-        flowToken = randomToken(),
-        flowHash = await tokenHash(flowToken),
-        ids = [randomToken()];
-      const guards = [credentialGuard(db, ids[0], versions(account))];
-      if (!recovery) {
-        ids.push(randomToken());
-        guards.push(
-          sessionGuard(db, ids[1], actor!.token_hash, actor!.context_id, false),
-        );
-      }
-      const writes = [
-        db
-          .prepare(
-            `INSERT INTO account_operations(flow_hash,account_id,kind,credential_version,recovery_version,session_epoch,initiating_session_hash,password_hash,replacement_recovery_hash,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,${DB_NOW},${DB_NOW}+?)`,
-          )
-          .bind(
-            flowHash,
-            account.account_id,
-            recovery ? "recovery" : "recovery_code",
-            account.credential_version,
-            account.recovery_version,
-            account.session_epoch,
-            recovery ? null : actor!.token_hash,
-            encoded,
-            await tokenHash(normalizeRecoveryCode(code)!),
-            FLOW_TTL_MS,
-          ),
-      ];
-      if (!recovery) writes.push(renewal(db, actor!.token_hash));
-      await guarded(db, guards, writes, ids);
-      return json(
-        {
-          ok: true,
-          recoveryCode: code,
-          recoveryVersion: account.recovery_version + 1,
-          operationContext: await recoveryOperationContext(flowToken),
-        },
-        200,
-        [
-          authCookie(flowToken, "flow"),
-          ...(!recovery ? [authCookie(readAuthCookie(request)!)] : []),
-        ],
-      );
-    }
-    if (
-      path === "/api/auth/recovery/finish" ||
-      path === "/api/auth/recovery-code/finish"
-    ) {
-      exactKeys(body, ["saved", "recoveryVersion", "operationContext"]);
-      if (body.saved !== true) throw new AuthProblem("invalid_input");
-      const flowToken = readAuthCookie(request, "flow");
-      if (!flowToken || typeof body.operationContext !== "string" ||
-          !equalTokenDigests(body.operationContext, await recoveryOperationContext(flowToken)))
-        throw new AuthProblem("stale_operation", 409);
-      const operation = await flowOperation(db, await tokenHash(flowToken));
-      const recovery = path === "/api/auth/recovery/finish";
-      if (
-        !operation ||
-        operation.kind !== (recovery ? "recovery" : "recovery_code") ||
-        body.recoveryVersion !== operation.recovery_version + 1
-      )
-        throw new AuthProblem("stale_operation", 409);
-      if (recovery)
-        return await finishRecovery(db, env, flowToken, operation, actor);
-      const current = requireActor(actor);
-      if (
-        operation.initiating_session_hash !== current.token_hash ||
-        operation.account_id !== current.account_id
-      )
-        throw new AuthProblem("stale_operation", 409);
-      if (operation.completed_at !== null) {
-        if (
-          current.recovery_version !== operation.recovery_version + 1 ||
-          current.credential_version !== operation.credential_version ||
-          current.session_epoch !== operation.session_epoch
-        )
-          throw new AuthProblem("stale_operation", 409);
-        return await sessionResponse(db, readAuthCookie(request)!);
-      }
-      const ids = [randomToken(), randomToken(), randomToken()];
-      await guarded(
-        db,
-        [
-          credentialGuard(db, ids[0], {
-            accountId: operation.account_id,
-            credentialVersion: operation.credential_version,
-            recoveryVersion: operation.recovery_version,
-            sessionEpoch: operation.session_epoch,
-          }),
-          operationGuard(db, ids[1], operation.flow_hash),
-          sessionGuard(
-            db,
-            ids[2],
-            current.token_hash,
-            current.context_id,
-            false,
-          ),
-        ],
-        [
-          db
-            .prepare(
-              "UPDATE accounts SET recovery_hash=?,recovery_version=recovery_version+1,recovery_acknowledged=1 WHERE account_id=?",
-            )
-            .bind(operation.replacement_recovery_hash, current.account_id),
-          db
-            .prepare(
-              `UPDATE account_operations SET completed_at=${DB_NOW} WHERE flow_hash=?`,
-            )
-            .bind(operation.flow_hash),
-          renewal(db, current.token_hash),
-        ],
-        ids,
-      );
-      return await sessionResponse(db, readAuthCookie(request)!);
+      return await sessionResponse(db, token);
     }
     return json({ ok: false, error: "not_found" }, 404);
   } catch (error) {

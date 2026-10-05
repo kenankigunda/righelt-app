@@ -35,7 +35,7 @@ async function fixture() {
     document: dom.document, eventTarget: new EventTarget(), channelFactory: null,
     storage: { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) },
     fetcher: async url => {
-      if (url.endsWith("/bootstrap")) return Response.json({ authProtocolVersion: 1, accountsRequired: true });
+      if (url.endsWith("/bootstrap")) return Response.json({ authProtocolVersion: 2, accountsRequired: true });
       if (url.endsWith("/logout")) { reached(); await held; session = { authenticated: false }; }
       return Response.json({ ok: true, ...session });
     },
@@ -58,7 +58,7 @@ test("completed old logout does not retire a newer sign-in dialog", async () => 
     assert.equal(f.dialog.isOpen(), false, "initial retirement must clear old account fields");
     f.dialog.open("login");
     const loginMarkup = f.element.innerHTML;
-    assert.match(loginMarkup, /Sign in/);
+    assert.match(loginMarkup, /Pick up your games anywhere/);
     await assert.rejects(f.controller.act("login", {}), /logout_pending/, "new login cannot acquire authority before revocation completes");
     f.release(); await logout;
     assert.equal(f.controller.snapshot().pendingLogout, false);

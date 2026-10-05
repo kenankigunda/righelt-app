@@ -54,7 +54,7 @@ test("origin, method, unknown endpoint and query parameters remain fail closed",
 
 test("downstream cutover controls retain fixed SQL and never retry busy", async () => {
   const expected = new Map([
-    ["/activate-cutover", "UPDATE account_cutover SET activated_at=COALESCE(activated_at,CAST(unixepoch('subsec')*1000 AS INTEGER)),maintenance=1,canary_account_id=(SELECT account_id FROM accounts WHERE username_canonical='cutover_canary' AND recovery_acknowledged=1) WHERE singleton=1"],
+    ["/activate-cutover", "UPDATE account_cutover SET activated_at=COALESCE(activated_at,CAST(unixepoch('subsec')*1000 AS INTEGER)),maintenance=1,canary_account_id=(SELECT account_id FROM accounts WHERE username_canonical='cutover_canary') WHERE singleton=1"],
     ["/maintenance-on", "UPDATE account_cutover SET maintenance=1 WHERE singleton=1 AND activated_at IS NOT NULL"],
     ["/maintenance-off", "UPDATE account_cutover SET maintenance=0 WHERE singleton=1 AND activated_at IS NOT NULL"],
   ]);

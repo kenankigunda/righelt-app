@@ -9,7 +9,7 @@ import {
   privateCounterKey,
   validateChallenge,
 } from "../src/auth-controls.ts";
-import { equalTokenDigests, authCookie } from "../src/auth-security.ts";
+import { authCookie } from "../src/auth-security.ts";
 const env = {
   AUTH_ALLOWED_ORIGINS: "https://righelt.test,https://preview.test",
   TURNSTILE_SECRET: "synthetic-secret",
@@ -175,17 +175,9 @@ test("bundled runtime dictionary is reproducible from pinned unmodified source",
     source.toString("utf8").split(/\r?\n/).filter(Boolean),
   );
 });
-test("digest comparison examines fixed-length digests; cookie retries use remaining server lifetime", () => {
+test("cookies use remaining server lifetime", () => {
   const digest = "a".repeat(64);
-  assert.equal(equalTokenDigests(digest, digest), true);
-  for (const other of [
-    "b" + digest.slice(1),
-    digest.slice(1) + "b",
-    "a".repeat(63),
-    "invalid",
-  ])
-    assert.equal(equalTokenDigests(digest, other), false);
-  assert.match(authCookie(digest, "session", 120), /Max-Age=120;/);
-  assert.throws(() => authCookie(digest, "session", 2592001));
-  assert.throws(() => authCookie(digest, "session", -1));
+  assert.match(authCookie(digest, 120), /Max-Age=120;/);
+  assert.throws(() => authCookie(digest, 2592001));
+  assert.throws(() => authCookie(digest, -1));
 });

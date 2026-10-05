@@ -68,12 +68,12 @@ const handleApiRequestInternal = async (request: Request, env: ApiEnv): Promise<
     const authority = authActive(env) ? await readGameAuthority(request, env) : null;
     if (initialAuthority && (!authority || authority.contextId !== initialAuthority.contextId)) throw new AuthProblem("session_changed", 409);
     const accountGame = (liveResponse.body.game as { ownershipMode?: string } | undefined)?.ownershipMode === "account_v1";
-    const body = authActive(env) || accountGame ? sanitizeGameResponse(liveResponse.body, maintenanceAllowed(env,authority?.accountId) ? authority : authority ? {...authority,acknowledged:false} : null) : liveResponse.body;
+    const body = authActive(env) || accountGame ? sanitizeGameResponse(liveResponse.body, authority, !maintenanceAllowed(env,authority?.accountId)) : liveResponse.body;
     if (authActive(env)) body.authProtocolVersion = AUTH_PROTOCOL_VERSION;
     const response = json(body, liveResponse.status, liveResponse.cacheControl);
     if (authActive(env) && request.method === 'POST' && response.status < 400) {
       const actor = await authenticatedActor(request, env as unknown as AuthEnv), token = readAuthCookie(request);
-      if (actor && token) response.headers.append('Set-Cookie', authCookie(token, 'session', Math.max(0, Math.floor((actor.expires_at - actor.read_at) / 1000))));
+      if (actor && token) response.headers.append('Set-Cookie', authCookie(token, Math.max(0, Math.floor((actor.expires_at - actor.read_at) / 1000))));
     }
     return response;
   }

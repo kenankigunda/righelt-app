@@ -2,6 +2,7 @@ import { parseRouteFromHash } from "./routes.js";
 import {
   AUTH_PROTOCOL_VERSION,
   AUTH_BOOTSTRAP_TIMEOUT_MS,
+  USERNAME_LOOKUP_TIMEOUT_MS,
   AUTH_PROTOCOL_HEADER,
   AUTH_REQUEST_HEADER,
   SESSION_CONTEXT_HEADER,
@@ -154,7 +155,6 @@ export const createAccountController = ({
           account: input.account,
           contextId: input.contextId,
           expiresAt: input.expiresAt,
-          recoveryAcknowledgmentRequired: input.recoveryAcknowledgmentRequired,
         }
       : { authenticated: false };
     if (
@@ -165,9 +165,7 @@ export const createAccountController = ({
       next.expiresAt = Math.max(next.expiresAt, session.expiresAt);
     if (
       session.contextId !== next.contextId ||
-      session.authenticated !== next.authenticated ||
-      session.recoveryAcknowledgmentRequired !==
-        next.recoveryAcknowledgmentRequired
+      session.authenticated !== next.authenticated
     )
       retire(next, broadcast, owner);
     else {
@@ -210,15 +208,15 @@ export const createAccountController = ({
   const request = async (
     path,
     body,
-    { context = session.contextId, epoch = generation, signal } = {},
+    { context = session.contextId, epoch = generation, signal, readOnly = false } = {},
   ) => {
     const controller = new AbortController();
     controllers.add(controller);
     signal?.addEventListener("abort", () => controller.abort(), { once: true });
     if (signal?.aborted) controller.abort();
     try {
-      const response = await track(
-        (body === undefined ? (work) => work() : cookieRequest)(() => {
+      const response = await (readOnly ? (promise) => promise : track)(
+        (body === undefined || readOnly ? (work) => work() : cookieRequest)(() => {
           if (epoch !== generation || controller.signal.aborted)
             throw failure("session_changed");
           return fetcher(path, {
@@ -370,6 +368,32 @@ export const createAccountController = ({
         authorityLost();
     }
   };
+  // Availability is a read despite its JSON POST: it never queues a cookie
+  // mutation, acquires credential authority, or blocks another account action.
+  const lookupUsername = async (username, { signal } = {}) => {
+    if (!ready) throw failure("auth_not_ready");
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    signal?.addEventListener("abort", cancel, { once: true });
+    if (signal?.aborted) controller.abort();
+    let timer;
+    const deadline = new Promise((_, reject) => {
+      timer = bootstrapTimers.setTimeout(() => {
+        controller.abort();
+        reject(failure("temporarily_unavailable"));
+      }, USERNAME_LOOKUP_TIMEOUT_MS);
+      timer?.unref?.();
+    });
+    try {
+      return await Promise.race([
+        request("/api/auth/username", { username }, { signal: controller.signal, readOnly: true }),
+        deadline,
+      ]);
+    } finally {
+      bootstrapTimers.clearTimeout(timer);
+      signal?.removeEventListener("abort", cancel);
+    }
+  };
   const act = async (operation, body, owner = null) => {
     if (!ready) throw failure("auth_not_ready");
     if (readPending()) throw failure("logout_pending");
@@ -385,7 +409,7 @@ export const createAccountController = ({
       if (typeof result.authenticated === "boolean")
         accept(
           result,
-          ["login", "register", "password", "recovery/finish"].includes(
+          ["login", "register", "password"].includes(
             operation,
           ),
           owner,
@@ -506,7 +530,7 @@ export const createAccountController = ({
       void finishLogout().catch(() => publish());
       return;
     }
-    // A password/recovery commit closes its old socket before its new response
+    // A password commit closes its old socket before its new response
     // body necessarily arrives. Let that credential result settle first.
     if (busy) {
       authorityLossPending = true;
@@ -576,6 +600,7 @@ export const createAccountController = ({
     start,
     hydrate,
     activity,
+    lookupUsername,
     act,
     logout,
     fetch: authenticatedFetch,
@@ -585,7 +610,6 @@ export const createAccountController = ({
     canPlay: () =>
       !enabled ||
       (available && !maintenance && session.authenticated &&
-        !session.recoveryAcknowledgmentRequired &&
         !readPending()),
     destroy() {
       destroyed = true;

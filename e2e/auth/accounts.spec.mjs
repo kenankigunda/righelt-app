@@ -1,3 +1,4 @@
+import { enterUsername } from "./helpers.mjs";
 import { profileLayoutDisplayName, sampleParticipantGeometry } from "../support/profile-layout.mjs";
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
@@ -21,24 +22,18 @@ async function register(page, username, { gate = false } = {}) {
   await page.getByRole("button", { name: gate ? "Start new game" : "Sign in", exact: true }).click();
   await expect(dialog(page)).toBeVisible();
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
-  await dialog(page).getByLabel("Username", { exact: true }).fill(username);
+  await enterUsername(page, username);
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
-  await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
-  await expect(dialog(page).getByRole("heading", { name: "Save your recovery code" })).toBeVisible();
-  const code = await page.getByTestId("recovery-code").textContent();
-  expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{4}(?:[ -][0-9A-HJKMNP-TV-Z]{4}){7}$/);
-  await dialog(page).getByLabel("I saved my recovery code").check();
-  await dialog(page).getByRole("button", { name: "Continue", exact: true }).click();
+  await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
   if (gate) {
     await expect(page).toHaveURL(/#\/game\//);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
   }
-  return code;
 }
 async function signIn(page, username, secret = password) {
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await dialog(page).getByLabel("Username", { exact: true }).fill(username);
+  await enterUsername(page, username);
   await dialog(page).getByLabel("Password", { exact: true }).fill(secret);
   await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
@@ -85,7 +80,7 @@ async function makeAccountMove(page) {
     const session = await (await fetch("/api/auth/session")).json();
     const gameId = decodeURIComponent(location.hash.match(/^#\/game\/([^?]+)/)[1]);
     const response = await fetch(`/api/shell/games/${encodeURIComponent(gameId)}`, {
-      headers: { "X-Righelt-Auth-Version": "1", "X-Righelt-Session": session.contextId },
+      headers: { "X-Righelt-Auth-Version": "2", "X-Righelt-Session": session.contextId },
     });
     if (!response.ok) throw new Error(`Game read failed: ${response.status}`);
     const body = await response.json();
@@ -123,38 +118,6 @@ test("registration preserves the play attempt and the same seat works in another
   } finally { await second.close(); }
 });
 
-test("recovery rotates credentials and revokes another browser without hiding the board", async ({ page, browser }) => {
-  const username = uniqueName();
-  const code = await register(page, username, { gate: true });
-  const gameUrl = page.url();
-  const second = await browser.newContext({ ignoreHTTPSErrors: true });
-  try {
-    const other = await second.newPage();
-    await other.goto(gameUrl);
-    await other.getByRole("button", { name: "Sign in", exact: true }).click();
-    await dialog(other).getByRole("button", { name: "Recover account", exact: true }).click();
-    await dialog(other).getByLabel("Username", { exact: true }).fill(username);
-    await dialog(other).getByLabel("Recovery code", { exact: true }).fill(code.toLowerCase().replaceAll("-", " "));
-    await dialog(other).getByLabel("New password", { exact: true }).fill(replacement);
-    await dialog(other).getByRole("button", { name: "Prepare recovery", exact: true }).click();
-    await expect(other.getByTestId("recovery-code")).toBeVisible();
-    expect(await other.getByTestId("recovery-code").textContent()).not.toBe(code);
-    await expect(page.getByTestId("game-role")).toContainText("Player 1");
-    await dialog(other).getByLabel("I saved my recovery code").check();
-    await dialog(other).getByRole("button", { name: "Continue", exact: true }).click();
-    await expect(dialog(other)).not.toBeVisible();
-    await expect(other.getByTestId("game-role")).toContainText("Player 1");
-    // Local workerd can delay delivery of a server-initiated close frame (~10s).
-    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible({ timeout: 15000 });
-    await expect(page.getByTestId("game-board")).toBeVisible();
-    await page.reload();
-    await expect(page.getByTestId("game-shell")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-    await signIn(page, username, replacement);
-    await expect(page.getByTestId("game-role")).toContainText("Player 1");
-  } finally { await second.close(); }
-});
-
 test("account forms support autofill, keyboard focus, narrow layouts and cancellation", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -162,13 +125,15 @@ test("account forms support autofill, keyboard focus, narrow layouts and cancell
   const trigger = page.getByRole("button", { name: "Sign in", exact: true });
   await trigger.click();
   await expect(dialog(page).getByLabel("Username", { exact: true })).toHaveAttribute("autocomplete", "username");
-  await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("autocomplete", "current-password");
+  await expect(dialog(page).getByLabel("Password", { exact: true })).not.toBeVisible();
+  await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
+  await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("autocomplete", "new-password");
   const axe = await new AxeBuilder({ page }).include('[data-testid="account-dialog"]').analyze();
   expect(axe.violations).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("account-narrow.png") });
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
-  await dialog(page).getByRole("button", { name: "Show password", exact: true }).click();
-  await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("type", "text");
+  await dialog(page).getByRole("button", { name: "Hide password", exact: true }).click();
+  await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("type", "password");
   await dialog(page).getByRole("button", { name: "Cancel", exact: true }).focus();
   await page.keyboard.press("Tab");
   await expect(dialog(page).getByLabel("Username", { exact: true })).toBeFocused();
@@ -194,7 +159,8 @@ test("password change and browser logout revoke the correct sessions across tabs
     await signIn(other, username);
     await account(page);
     await dialog(page).getByRole("button", { name: "Change password", exact: true }).click();
-    await dialog(page).getByLabel("Current password", { exact: true }).fill(password);
+    await expect(dialog(page).getByLabel("Current password", { exact: true })).toHaveCount(0);
+    await expect(dialog(page).getByLabel("New password", { exact: true })).toHaveAttribute("type", "password");
     await dialog(page).getByLabel("New password", { exact: true }).fill(replacement);
     await dialog(page).getByRole("button", { name: "Change password", exact: true }).click();
     await expect(dialog(page)).not.toBeVisible();
@@ -286,7 +252,7 @@ test("a delayed renewal cookie cannot overwrite an account switch", async ({ pag
   await arrived;
   await account(page);
   await dialog(page).getByRole("button", { name: "Switch account", exact: true }).click();
-  await dialog(page).getByLabel("Username", { exact: true }).fill(first);
+  await enterUsername(page, first);
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   let loginIssued = false;
   const observe = request => { if (new URL(request.url()).pathname === "/api/auth/login") loginIssued = true; };
@@ -303,58 +269,6 @@ test("a delayed renewal cookie cannot overwrite an account switch", async ({ pag
   expect(state.account.username).toBe(first);
   await account(page);
   await expect(dialog(page)).toContainText(`@${first}`);
-});
-
-test("interrupted registration resumes with a replacement recovery code and an explicit save", async ({ page }) => {
-  const username = uniqueName();
-  await page.goto("/");
-  await page.getByRole("button", { name: "Start new game", exact: true }).click();
-  await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
-  await dialog(page).getByLabel("Username", { exact: true }).fill(username);
-  await dialog(page).getByLabel("Password", { exact: true }).fill(password);
-  await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
-  await expect(page.getByTestId("recovery-code")).toBeVisible();
-  const firstCode = await page.getByTestId("recovery-code").textContent();
-  await dialog(page).getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(dialog(page)).toBeVisible();
-  expect(new URL(page.url()).hash).not.toContain("game/");
-  await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
-  let releaseSession, heldSession;
-  const sessionHeld = new Promise(resolve => { heldSession = resolve; });
-  const sessionReleased = new Promise(resolve => { releaseSession = resolve; });
-  const holdSession = async route => {
-    const response = await route.fetch();
-    heldSession();
-    await sessionReleased;
-    await route.fulfill({ response });
-  };
-  await page.route("**/api/auth/session", holdSession);
-  await page.reload();
-  await sessionHeld;
-  await page.getByRole("button", { name: "Start new game", exact: true }).click();
-  releaseSession();
-  await page.unrouteAll({ behavior: "wait" });
-  await expect(dialog(page).getByRole("heading", { name: "Replace recovery code" })).toBeVisible();
-  await dialog(page).getByLabel("Current password", { exact: true }).fill(password);
-  await dialog(page).getByRole("button", { name: "Prepare replacement code", exact: true }).click();
-  await expect(page.getByTestId("recovery-code")).toBeVisible();
-  const code = await page.getByTestId("recovery-code").textContent();
-  expect(code).not.toBe(firstCode);
-  await dialog(page).getByRole("button", { name: "Copy recovery code", exact: true }).click();
-  await expect(dialog(page).locator("[data-account-status]")).toContainText(/Recovery code copied|Copy failed/);
-  const downloadPromise = page.waitForEvent("download");
-  await dialog(page).getByRole("button", { name: "Download recovery code", exact: true }).click();
-  const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe("righelt-recovery-code.txt");
-  const { readFile } = await import("node:fs/promises");
-  const content = await readFile(await download.path(), "utf8");
-  expect(content).toContain(username);
-  expect(content).toContain(code);
-  expect(content).toContain(new URL(page.url()).origin);
-  expect(content).not.toContain(password);
-  await dialog(page).getByLabel("I saved my recovery code").check();
-  await dialog(page).getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByTestId("game-role")).toContainText("Player 1");
 });
 
 test("current public names and view preferences follow the account across browsers", async ({ page, browser }) => {
@@ -497,7 +411,7 @@ test("switching accounts in another tab retires the old settings form", async ({
     await dialog(page).getByLabel("Display name", { exact: true }).fill("Unsaved first account name");
     await account(sibling);
     await dialog(sibling).getByRole("button", { name: "Switch account", exact: true }).click();
-    await dialog(sibling).getByLabel("Username", { exact: true }).fill(second);
+    await enterUsername(sibling, second);
     await dialog(sibling).getByLabel("Password", { exact: true }).fill(password);
     await dialog(sibling).getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(dialog(sibling)).not.toBeVisible();
@@ -533,7 +447,7 @@ test("keyboard board activation opens sign in without losing the board", async (
     await expect.poll(() => getHistoryMoveCount(page)).toBeGreaterThan(before);
     await expect(cell).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect(dialog(page).getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
+    await expect(dialog(page).getByRole("heading", { name: "Pick up your games anywhere", exact: true })).toBeVisible();
     await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
     expect(page.url()).toBe(gameUrl);
     await expect(page.getByTestId("game-board")).toBeVisible();
@@ -559,7 +473,7 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
   });
   const first = uniqueName(), second = uniqueName();
   // This case covers continuation retirement, not registration form mechanics.
-  // Create real acknowledged accounts in the isolated API fixture cookie jar;
+  // Create real accounts in the isolated API fixture cookie jar;
   // the browser remains anonymous and still performs both actual UI logins.
   for (const username of [second, first]) {
     const headers = {
@@ -574,11 +488,6 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
     const session = await registered.json();
     expect(session.account.username).toBe(username);
     const sessionHeaders = { ...headers, [SESSION_CONTEXT_HEADER]: session.contextId };
-    const acknowledged = await request.post("/api/auth/recovery-code/acknowledge", {
-      headers: sessionHeaders, data: { saved: true, recoveryVersion: session.recoveryVersion },
-    });
-    expect(acknowledged.status()).toBe(200);
-    expect((await acknowledged.json()).recoveryAcknowledgmentRequired).toBe(false);
     const loggedOut = await request.post("/api/auth/logout", { headers: sessionHeaders, data: {} });
     expect(loggedOut.status()).toBe(200);
   }
@@ -589,7 +498,7 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
   try {
     await sibling.goto("/");
     await page.getByRole("button", { name: "Start new game", exact: true }).click();
-    await dialog(page).getByLabel("Username", { exact: true }).fill(first);
+    await enterUsername(page, first);
     await dialog(page).getByLabel("Password", { exact: true }).fill(password);
     await page.evaluate(() => { window.__holdAccountLists = true; });
     await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
@@ -598,7 +507,7 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
     await expect(sibling.getByRole("button", { name: "Account", exact: true })).toBeVisible();
     await account(sibling);
     await dialog(sibling).getByRole("button", { name: "Switch account", exact: true }).click();
-    await dialog(sibling).getByLabel("Username", { exact: true }).fill(second);
+    await enterUsername(sibling, second);
     await dialog(sibling).getByLabel("Password", { exact: true }).fill(password);
     await dialog(sibling).getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(dialog(sibling)).not.toBeVisible();
@@ -622,10 +531,8 @@ test('a failed continuation read preserves the play choice for explicit retry', 
   await page.goto('/');
   await page.getByRole('button', { name: 'Start new game', exact: true }).click();
   await dialog(page).getByRole('button', { name: 'Create account', exact: true }).click();
-  await dialog(page).getByLabel('Username', { exact: true }).fill(uniqueName());
+  await enterUsername(page, uniqueName());
   await dialog(page).getByLabel('Password', { exact: true }).fill(password);
-  await dialog(page).getByRole('button', { name: 'Create account', exact: true }).click();
-  await expect(dialog(page).getByRole('heading', { name: 'Save your recovery code' })).toBeVisible();
   let denyReads = true;
   let creates = 0;
   page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/shell/games') creates++; });
@@ -633,8 +540,7 @@ test('a failed continuation read preserves the play choice for explicit retry', 
     if (denyReads) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'temporarily_unavailable' }) });
     else await route.continue();
   });
-  await dialog(page).getByLabel('I saved my recovery code').check();
-  await dialog(page).getByRole('button', { name: 'Continue', exact: true }).click();
+  await dialog(page).getByRole('button', { name: 'Create account & continue', exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
   expect(creates).toBe(0);

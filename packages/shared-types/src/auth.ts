@@ -8,7 +8,6 @@ export type AuthErrorCode =
   | "invalid_input"
   | "invalid_credentials"
   | "username_unavailable"
-  | "recovery_acknowledgment_required"
   | "stale_operation"
   | "session_changed"
   | "identity_mismatch"
@@ -36,7 +35,6 @@ export type SessionState =
       account: AuthenticatedAccount;
       contextId: string;
       expiresAt: number;
-      recoveryAcknowledgmentRequired: boolean;
     };
 export type AuthFailure = {
   ok: false;
@@ -55,19 +53,9 @@ export type LoginInput = {
   password: string;
   challengeToken?: string;
 };
-export type RecoveryPrepareInput = {
-  username: string;
-  recoveryCode: string;
-  newPassword: string;
-  challengeToken?: string;
-};
-export type SavedCodeInput = { saved: true; recoveryVersion: number };
-export type PreparedRecovery = {
-  recoveryCode: string;
-  recoveryVersion: number;
-  operationContext: string;
-};
-export type RecoveryFinishInput = SavedCodeInput & { operationContext: string };
+export type UsernameLookupInput = { username: string };
+export type UsernameLookupResult = { ok: true; exists: boolean };
+export type PasswordChangeInput = { newPassword: string };
 export type HashInput =
   | { operation: "hash"; password: string }
   | { operation: "verify"; password: string; encoded: string };

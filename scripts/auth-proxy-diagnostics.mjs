@@ -27,9 +27,7 @@ export function classifyProxyRejection(error, request, oldUrl, newUrl) {
     pathname = allowed(new URL(request.url).pathname, [
       "/api/auth/register", "/api/auth/login", "/api/auth/logout",
       "/api/auth/session", "/api/auth/activity", "/api/auth/password",
-      "/api/auth/recovery/prepare", "/api/auth/recovery/finish",
-      "/api/auth/recovery-code/prepare", "/api/auth/recovery-code/finish",
-      "/api/auth/recovery-code/acknowledge",
+      "/api/auth/username",
     ]);
   } catch {}
   const message = member(error, "message").toLowerCase();

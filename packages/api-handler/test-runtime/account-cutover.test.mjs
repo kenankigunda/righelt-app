@@ -53,9 +53,9 @@ test(
           now = Date.now();
         await db
           .prepare(
-            "INSERT INTO accounts(account_id,username,username_canonical,display_name,created_at,password_hash,recovery_hash,recovery_acknowledged) VALUES(?,?,?,?,?,?,?,1)",
+            "INSERT INTO accounts(account_id,username,username_canonical,display_name,created_at,password_hash) VALUES(?,?,?,?,?,?)",
           )
-          .bind(id, id, id, id, now, "synthetic", "f".repeat(64))
+          .bind(id, id, id, id, now, "synthetic")
           .run();
         await db
           .prepare("INSERT INTO account_sessions VALUES(?,?,1,?,?,?,?,NULL)")
@@ -72,7 +72,7 @@ test(
             Origin: "https://test",
             "Content-Type": "application/json",
             "X-Righelt-Auth": "1",
-            "X-Righelt-Auth-Version": "1",
+            "X-Righelt-Auth-Version": "2",
             ...(actor
               ? {
                   Cookie: `__Host-righelt_session=${actor.token}`,

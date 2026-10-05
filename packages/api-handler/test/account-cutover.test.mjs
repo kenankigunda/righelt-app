@@ -70,7 +70,7 @@ test("maintenance actor permission never creates a credential bypass", () => {
   assert.equal(result.before.length, 1);
   assert.equal(result.after.length, 1);
   assert.match(statements[0].sql, /s\.expires_at>CAST\(unixepoch\('subsec'\)/);
-  assert.match(statements[0].sql, /recovery_acknowledged=1/);
+  assert.doesNotMatch(statements[0].sql, /recovery/);
   assert.deepEqual(statements[0].args.slice(1), [
     "game",
     "canary",

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeUsername, normalizeDisplayName, normalizePassword, isPasswordAllowed, safeContinuation } from '../../shared-types/src/auth.ts';
-import { authCookie, clearAuthCookie, readAuthCookie, randomToken, tokenHash, createRecoveryCode, normalizeRecoveryCode, sessionExpired, sessionExpiry, recoverySessionToken, recoveryOperationContext } from '../src/auth-security.ts';
+import { authCookie, clearAuthCookie, readAuthCookie, randomToken, tokenHash, sessionExpired, sessionExpiry } from '../src/auth-security.ts';
 import { hashPassword, verifyPassword, parseHash } from '../../../apps/auth-hash/hash.mjs';
 import { PasswordAdmissionDO } from '../../../apps/auth/index.mjs';
 
@@ -19,7 +19,9 @@ test('password policy counts normalized code points, preserves spaces and permit
   assert.equal(normalizePassword('  abcdefghij  ').value,'  abcdefghij  ');
   assert.equal(normalizePassword('é'.repeat(11)+'e\u0301').value,'é'.repeat(12));
   assert.equal(normalizePassword('🦉'.repeat(128)).ok,true);
-  for(const value of ['a'.repeat(11),'🦉'.repeat(129),'a'.repeat(12)+'\ud800',null]) assert.equal(normalizePassword(value).ok,false);
+  assert.equal(normalizePassword('e\u0301'.repeat(8)).value,'é'.repeat(8));
+  assert.equal(normalizePassword('🦉'.repeat(8)).ok,true);
+  for(const value of ['a'.repeat(7),'🦉'.repeat(129),'a'.repeat(12)+'\ud800',null]) assert.equal(normalizePassword(value).ok,false);
   assert.equal(isPasswordAllowed('CommonPassword12','kenan',new Set(['CommonPassword12'])),false);
   assert.equal(isPasswordAllowed('KeNaN','kenan',new Set()),false);
   assert.equal(isPasswordAllowed(' common password ','kenan',new Set(['common password'])),true);
@@ -29,12 +31,9 @@ test('continuation only permits same-origin internal routes',()=>{
   assert.equal(safeContinuation('/game/abc?invite=xyz#board',origin),'/game/abc?invite=xyz#board');
   for(const value of ['https://evil.test','//evil.test','/\\evil.test','/\n/evil.test','javascript:alert(1)',null]) assert.equal(safeContinuation(value,origin),null);
 });
-test('opaque tokens/recovery codes have roundtrip entropy and do not leak through cookie scope',async()=>{
+test('opaque tokens have roundtrip entropy and do not leak through cookie scope',async()=>{
   const token=randomToken();assert.match(token,/^[a-f0-9]{64}$/);assert.notEqual(token,randomToken());
   assert.equal((await tokenHash(token)).length,64);assert.notEqual(await tokenHash(token),token);
-  const code=createRecoveryCode();assert.match(code,/^[0-9A-HJKMNP-TV-Z]{4}(?:-[0-9A-HJKMNP-TV-Z]{4}){7}$/);
-  assert.equal(normalizeRecoveryCode(code.toLowerCase().replaceAll('-',' ')),code.replaceAll('-',''));
-  assert.equal(normalizeRecoveryCode('I'.repeat(32)),null);
   const cookie=authCookie(token);assert.match(cookie,/Max-Age=2592000; Secure; HttpOnly; SameSite=Lax$/);assert.doesNotMatch(cookie,/Domain=/);
   const request=value=>new Request('https://site.test',{headers:{Cookie:value}});
   assert.equal(readAuthCookie(request(cookie)),token);
@@ -42,12 +41,12 @@ test('opaque tokens/recovery codes have roundtrip entropy and do not leak throug
   assert.match(clearAuthCookie(),/Max-Age=0/);
   assert.throws(()=>authCookie('token; injected=true'));
   assert.equal(sessionExpiry(1000),2592001000);assert.equal(sessionExpired(1000,1000),true);assert.equal(sessionExpired(1001,1000),false);
-  const key=randomToken(),flow=randomToken();
-  assert.equal(await recoverySessionToken(key,flow),await recoverySessionToken(key,flow));
-  assert.notEqual(await recoverySessionToken(key,flow),await recoverySessionToken(key,randomToken()));
+
 });
 test('fixed versioned scrypt format uses independent random salts and rejects altered parameters',()=>{
   const password='synthetic-password-123';const encoded=hashPassword(password), second=hashPassword(password);
+  assert.equal(verifyPassword('eight-88',hashPassword('eight-88')),true);
+  assert.throws(()=>hashPassword('seven-7'));
   assert.notEqual(encoded,second);assert.equal(parseHash(encoded).salt.length,16);
   assert.equal(verifyPassword(password,encoded),true);assert.equal(verifyPassword('incorrect-password-123',encoded),false);
   for(const value of [encoded.replace('$16384$','$1024$'),encoded.replace('scrypt$1','scrypt$2'),encoded+'0','invalid']) {assert.equal(parseHash(value),null);assert.equal(verifyPassword(password,value),false);}
@@ -67,15 +66,4 @@ test('private admission queues four and releases work on upstream failure',async
   assert.deepEqual(await failed.json(),{error:'temporarily_unavailable'});
   assert.equal(results.filter(r=>r.status==='fulfilled'&&r.value.status===429).length,15);
   assert.equal(calls,5);assert.equal(admission.active,false);
-});
-
-test('public recovery confirmation contexts are stable, flow-specific and domain-separated',async()=>{
-  const flow=randomToken();
-  const context=await recoveryOperationContext(flow);
-  assert.match(context,/^[a-f0-9]{64}$/);
-  assert.equal(context,await recoveryOperationContext(flow));
-  assert.notEqual(context,flow);
-  assert.notEqual(context,await tokenHash(flow));
-  assert.notEqual(context,await recoveryOperationContext(randomToken()));
-  await assert.rejects(recoveryOperationContext('invalid'));
 });

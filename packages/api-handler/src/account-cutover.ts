@@ -76,7 +76,7 @@ export function cutoverWritePermit(
   const db = primaryAuthDatabase(env.DB as AuthDatabase),
     id = randomToken();
   const valid = authority
-    ? `COALESCE((SELECT 1 FROM account_sessions s JOIN accounts a ON a.account_id=s.account_id JOIN account_cutover c ON c.singleton=1 WHERE s.token_hash=? AND s.context_id=? AND s.account_id=? AND s.revoked_at IS NULL AND s.expires_at>${DB_NOW} AND s.session_epoch=a.session_epoch AND a.recovery_acknowledged=1 AND (c.maintenance=0 OR c.canary_account_id=a.account_id)),0)`
+    ? `COALESCE((SELECT 1 FROM account_sessions s JOIN accounts a ON a.account_id=s.account_id JOIN account_cutover c ON c.singleton=1 WHERE s.token_hash=? AND s.context_id=? AND s.account_id=? AND s.revoked_at IS NULL AND s.expires_at>${DB_NOW} AND s.session_epoch=a.session_epoch AND (c.maintenance=0 OR c.canary_account_id=a.account_id)),0)`
     : systemPresence
       ? "(SELECT CASE WHEN maintenance=0 THEN 1 ELSE 0 END FROM account_cutover WHERE singleton=1)"
       : "0";

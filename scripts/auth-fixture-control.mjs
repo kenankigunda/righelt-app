@@ -1,6 +1,6 @@
 // Local test control only. Retries are restricted to the idempotent rate-limit reset.
 const operations = new Map([
-  ["/activate-cutover", "UPDATE account_cutover SET activated_at=COALESCE(activated_at,CAST(unixepoch('subsec')*1000 AS INTEGER)),maintenance=1,canary_account_id=(SELECT account_id FROM accounts WHERE username_canonical='cutover_canary' AND recovery_acknowledged=1) WHERE singleton=1"],
+  ["/activate-cutover", "UPDATE account_cutover SET activated_at=COALESCE(activated_at,CAST(unixepoch('subsec')*1000 AS INTEGER)),maintenance=1,canary_account_id=(SELECT account_id FROM accounts WHERE username_canonical='cutover_canary') WHERE singleton=1"],
   ["/maintenance-on", "UPDATE account_cutover SET maintenance=1 WHERE singleton=1 AND activated_at IS NOT NULL"],
   ["/maintenance-off", "UPDATE account_cutover SET maintenance=0 WHERE singleton=1 AND activated_at IS NOT NULL"],
   ["/reset-limits", "DELETE FROM account_rate_limits"],

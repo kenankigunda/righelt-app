@@ -10,7 +10,6 @@ const authority = {
   accountId: "alice",
   tokenHash: "a".repeat(64),
   contextId: "b".repeat(64),
-  acknowledged: true,
   renew: false,
 };
 const game = () => ({
@@ -22,16 +21,16 @@ const game = () => ({
   ownershipMode: "account_v1",
 });
 test("public, restricted and legacy projections expose no seat credentials or analysis", () => {
-  for (const [value, actor] of [
+  for (const [value, actor, readOnly] of [
     [game(), null],
-    [game(), { ...authority, acknowledged: false }],
+    [game(), authority, true],
     [{ ...game(), ownershipMode: "legacy_guest" }, authority],
   ]) {
-    const view = sanitizeGameView(value, actor);
+    const view = sanitizeGameView(value, actor, readOnly);
     assert.equal(view.inviteTokens, undefined);
     assert.equal(view.inviteToken, null);
     assert.equal(view.canRecordMove, false);
-    if (!actor?.acknowledged) assert.deepEqual(view.legalActions, []);
+    if (!actor || readOnly) assert.deepEqual(view.legalActions, []);
   }
 });
 test("repeated account projection preserves selected history and actor invitation only", () => {

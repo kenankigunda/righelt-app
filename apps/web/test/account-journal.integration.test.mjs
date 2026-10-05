@@ -22,7 +22,6 @@ const auth = (id, context) => ({
     authenticated: true,
     account: { id },
     contextId: context.repeat(64),
-    recoveryAcknowledgmentRequired: false,
   },
 });
 const game = () => {

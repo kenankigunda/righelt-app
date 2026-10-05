@@ -117,7 +117,7 @@ export async function admitAuthAttempt(
   db: AuthDatabase,
   env: AuthControlsEnv,
   request: Request,
-  kind: "register" | "login" | "recovery" | "change",
+  kind: "register" | "login" | "change" | "username",
   identity: string,
 ): Promise<{
   challenge: boolean;
@@ -131,19 +131,24 @@ export async function admitAuthAttempt(
   const window = kind === "register" ? 3600000 : 900000;
   const definitions =
     kind === "register"
-      ? [{ key: `register:${ip}`, limit: 5 }]
-      : kind === "change"
-        ? [{ key: `change:${principal}`, limit: 5 }]
-        : [
-            { key: `verify:${ip}:${principal}`, limit: 10 },
-            { key: `verify-ip:${ip}`, limit: 50 },
-            { key: `verify-user:${principal}`, limit: 50 },
-          ];
+      ? [{ key: `register:${ip}`, limit: 5, window }]
+      : kind === "username"
+        ? [
+            { key: `username-minute:${ip}`, limit: 60, window: 60000 },
+            { key: `username-quarter:${ip}`, limit: 300, window: 900000 },
+          ]
+        : kind === "change"
+          ? [{ key: `change:${principal}`, limit: 5, window }]
+          : [
+              { key: `verify:${ip}:${principal}`, limit: 10, window },
+              { key: `verify-ip:${ip}`, limit: 50, window },
+              { key: `verify-user:${principal}`, limit: 50, window },
+            ];
   const results = await db.batch([
     db.prepare(
       `DELETE FROM account_rate_limits WHERE bucket_key IN (SELECT bucket_key FROM account_rate_limits WHERE expires_at<=${DB_NOW} LIMIT 100)`,
     ),
-    ...definitions.map(({ key }) =>
+    ...definitions.map(({ key, window }) =>
       db
         .prepare(
           `INSERT INTO account_rate_limits(bucket_key,attempts,failures,expires_at) VALUES(?,1,0,${DB_NOW}+?) ON CONFLICT(bucket_key) DO UPDATE SET attempts=CASE WHEN expires_at<=${DB_NOW} THEN 1 ELSE attempts+1 END,failures=CASE WHEN expires_at<=${DB_NOW} THEN 0 ELSE failures END,expires_at=CASE WHEN expires_at<=${DB_NOW} THEN ${DB_NOW}+? ELSE expires_at END RETURNING *,${DB_NOW} AS now`,
@@ -172,7 +177,7 @@ export async function admitAuthAttempt(
     challenge:
       kind === "register"
         ? rows[0].attempts > 2
-        : kind === "change"
+        : kind === "change" || kind === "username"
           ? false
           : rows[0].failures >= 3,
     failureKey: definitions[0].key,

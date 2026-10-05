@@ -6,7 +6,6 @@ import {
   LOGOUT_PENDING_KEY,
   AUTH_CHANGE_KEY,
 } from "../shell/account-controller.js";
-import { recoveryDownloadText } from "../shell/account-dialog.js";
 const storage = () => {
   const values = new Map();
   return {
@@ -20,7 +19,6 @@ const state = (id = "alice", context = "a") => ({
   account: { id, username: id, displayName: id },
   contextId: context.repeat(64),
   expiresAt: Date.now() + 86400000,
-  recoveryAcknowledgmentRequired: false,
 });
 const setup = () => {
   let session = { authenticated: false },
@@ -36,7 +34,7 @@ const setup = () => {
     calls.push([url, init]);
     if (offline) throw new Error("offline");
     if (url.endsWith("/bootstrap"))
-      return Response.json({ authProtocolVersion: 1, accountsRequired: true });
+      return Response.json({ authProtocolVersion: 2, accountsRequired: true });
     if (url.endsWith("/logout")) session = { authenticated: false };
     if (url.endsWith("/login"))
       session = state(JSON.parse(init.body).username, "b");
@@ -78,7 +76,7 @@ test("authentication does not hydrate a guest identity and mutations carry only 
     fixture.calls.at(-1)[1].headers["X-Righelt-Session"],
     "b".repeat(64),
   );
-  assert.equal(fixture.calls.at(-1)[1].headers["X-Righelt-Auth-Version"], "1");
+  assert.equal(fixture.calls.at(-1)[1].headers["X-Righelt-Auth-Version"], "2");
   fixture.client.destroy();
 });
 test("A to B to A retires each generation; delayed response bodies cannot restore authority", async () => {
@@ -139,7 +137,7 @@ test("cross-tab account notification retires local authority before asynchronous
 test("missing auth negotiation fails closed while explicitly disabled mode remains compatible", async () => {
   for (const [body, expected] of [
     [{ protocolVersion: 2 }, false],
-    [{ authProtocolVersion: 1, accountsRequired: false }, true],
+    [{ authProtocolVersion: 2, accountsRequired: false }, true],
   ]) {
     const client = createAccountController({
       fetcher: async () => Response.json(body),
@@ -154,7 +152,7 @@ test("missing auth negotiation fails closed while explicitly disabled mode remai
     client.destroy();
   }
 });
-test("continuation retains only allowed navigation choices, and recovery download contains no password", () => {
+test("continuation retains only allowed navigation choices", () => {
   assert.deepEqual(
     safeAccountIntent({
       hash: "#/invite/abc",
@@ -171,15 +169,7 @@ test("continuation retains only allowed navigation choices, and recovery downloa
     "#/javascript:alert(1)",
   ])
     assert.equal(safeAccountIntent({ hash, action: "create-game" }), null);
-  const text = recoveryDownloadText({
-    site: "https://test",
-    username: "alice",
-    code: "CODE",
-    password: "never-download",
-  });
-  assert.match(text, /alice/);
-  assert.match(text, /CODE/);
-  assert.ok(!text.includes("never-download"));
+
 });
 
 test("denied browser storage cannot suppress logout or restore authority while offline", async () => {
@@ -204,7 +194,7 @@ test("denied browser storage cannot suppress logout or restore authority while o
       if (offline) throw new Error("offline");
       if (url.endsWith("/bootstrap"))
         return Response.json({
-          authProtocolVersion: 1,
+          authProtocolVersion: 2,
           accountsRequired: true,
         });
       if (url.endsWith("/logout")) {
@@ -241,7 +231,7 @@ test("credential transition waits for cookie-renewing game response headers", as
       calls.push(url);
       if (url.endsWith("/bootstrap"))
         return Response.json({
-          authProtocolVersion: 1,
+          authProtocolVersion: 2,
           accountsRequired: true,
         });
       if (url === "/game") {
@@ -288,7 +278,7 @@ test("logout cancels a credential transition queued behind a prior renewal", asy
       calls.push(url);
       if (url.endsWith("/bootstrap"))
         return Response.json({
-          authProtocolVersion: 1,
+          authProtocolVersion: 2,
           accountsRequired: true,
         });
       if (url === "/game") {
@@ -331,7 +321,7 @@ test("old socket revocation during password commit does not abort the replacemen
     fetcher: async (url) => {
       if (url.endsWith("/bootstrap"))
         return Response.json({
-          authProtocolVersion: 1,
+          authProtocolVersion: 2,
           accountsRequired: true,
         });
       if (url.endsWith("/password")) {
@@ -343,7 +333,6 @@ test("old socket revocation during password commit does not abort the replacemen
   });
   await client.start();
   const changed = client.act("password", {
-    currentPassword: "old password",
     newPassword: "new password",
   });
   await entered;
@@ -391,7 +380,7 @@ test("BroadcastChannel retires sibling authority during offline logout with stor
   const fetcher = async (url) => {
     if (offline) throw Error("offline");
     if (url.endsWith("/bootstrap"))
-      return Response.json({ authProtocolVersion: 1, accountsRequired: true });
+      return Response.json({ authProtocolVersion: 2, accountsRequired: true });
     if (url.endsWith("/logout")) session = { authenticated: false };
     return Response.json(session);
   };
@@ -443,7 +432,7 @@ test("failed credential reconciliation retires deferred revoked authority", asyn
     fetcher: async (url) => {
       if (url.endsWith("/bootstrap"))
         return Response.json({
-          authProtocolVersion: 1,
+          authProtocolVersion: 2,
           accountsRequired: true,
         });
       if (url.endsWith("/password")) {
@@ -480,7 +469,7 @@ test("delayed game error body defers authority loss until password response sett
     fetcher: async (url) => {
       if (url.endsWith("/bootstrap"))
         return Response.json({
-          authProtocolVersion: 1,
+          authProtocolVersion: 2,
           accountsRequired: true,
         });
       if (url === "/game") return { json: () => body };
@@ -519,7 +508,7 @@ test("expiry reached during credential work reconciles after that work finishes"
     fetcher: async (url) => {
       if (url.endsWith("/bootstrap"))
         return Response.json({
-          authProtocolVersion: 1,
+          authProtocolVersion: 2,
           accountsRequired: true,
         });
       if (url.endsWith("/password")) {
@@ -556,7 +545,7 @@ test("online event drains an unfinished offline logout before retrying revocatio
     fetcher: async (url) => {
       if (url.endsWith("/bootstrap"))
         return Response.json({
-          authProtocolVersion: 1,
+          authProtocolVersion: 2,
           accountsRequired: true,
         });
       if (offline) {
@@ -615,7 +604,7 @@ test("pending logout retries early online failure with capped backoff and cancel
     fetcher: async (url) => {
       if (url.endsWith("/bootstrap"))
         return Response.json({
-          authProtocolVersion: 1,
+          authProtocolVersion: 2,
           accountsRequired: true,
         });
       requests++;
@@ -685,7 +674,7 @@ test("same-session settings serialize through response body without retiring the
     fetcher: async (url, init) => {
       if (url.endsWith("/bootstrap"))
         return Response.json({
-          authProtocolVersion: 1,
+          authProtocolVersion: 2,
           accountsRequired: true,
         });
       if (url === "/api/account") {
@@ -736,7 +725,7 @@ test("late hydration and activity metadata cannot replace newer account settings
       fetcher: async (url) => {
         if (url.endsWith("/bootstrap"))
           return Response.json({
-            authProtocolVersion: 1,
+            authProtocolVersion: 2,
             accountsRequired: true,
           });
         if (url === "/api/account") {
@@ -784,7 +773,7 @@ test("an older same-context session read cannot shorten a renewed session expiry
     fetcher: async (url) => {
       if (url.endsWith("/bootstrap"))
         return Response.json({
-          authProtocolVersion: 1,
+          authProtocolVersion: 2,
           accountsRequired: true,
         });
       if (url === "/api/account") {
@@ -832,7 +821,7 @@ test("hung startup is bounded, aborted, and late bootstrap cannot overwrite a su
           return held;
         }
         return Response.json({
-          authProtocolVersion: 1,
+          authProtocolVersion: 2,
           accountsRequired: true,
         });
       }
@@ -850,7 +839,7 @@ test("hung startup is bounded, aborted, and late bootstrap cannot overwrite a su
   assert.equal(client.snapshot().ready, false);
   await client.start();
   const accepted = client.snapshot();
-  release(Response.json({ authProtocolVersion: 1, accountsRequired: false }));
+  release(Response.json({ authProtocolVersion: 2, accountsRequired: false }));
   await new Promise((r) => setTimeout(r, 0));
   assert.equal(client.snapshot().enabled, true);
   assert.equal(client.snapshot().generation, accepted.generation);
@@ -879,12 +868,12 @@ test("only the initiating local credential operation owns its session transition
 test('required but unavailable accounts hydrate public browsing without restoring guest play',async()=>{
  const calls=[];
  const controller=createAccountController({storage:storage(),eventTarget:new EventTarget(),fetcher:async route=>{
-  calls.push(route);assert.equal(route,'/api/shell/bootstrap');return Response.json({authProtocolVersion:1,accountsRequired:true,accountsAvailable:false,maintenance:true});
+  calls.push(route);assert.equal(route,'/api/shell/bootstrap');return Response.json({authProtocolVersion:2,accountsRequired:true,accountsAvailable:false,maintenance:true});
  }});
  try{await controller.start();assert.equal(controller.snapshot().ready,true);assert.equal(controller.snapshot().enabled,true);assert.equal(controller.snapshot().available,false);assert.equal(controller.canPlay(),false);await controller.hydrate();assert.equal(calls.length,1);}finally{controller.destroy();}
 });
 test('maintenance keeps an authenticated session but denies play',async()=>{
- const controller=createAccountController({storage:storage(),eventTarget:new EventTarget(),fetcher:async route=>Response.json(route==='/api/shell/bootstrap'?{authProtocolVersion:1,accountsRequired:true,accountsAvailable:true,maintenance:true}:state())});
+ const controller=createAccountController({storage:storage(),eventTarget:new EventTarget(),fetcher:async route=>Response.json(route==='/api/shell/bootstrap'?{authProtocolVersion:2,accountsRequired:true,accountsAvailable:true,maintenance:true}:state())});
  try{await controller.start();assert.equal(controller.snapshot().session.authenticated,true);assert.equal(controller.canPlay(),false);}finally{controller.destroy();}
 });
 
@@ -894,10 +883,10 @@ test("startup is not ready until the cookie session has been hydrated", async ()
   const waiting = new Promise(resolve => { entered = resolve; });
   const held = new Promise(resolve => { release = resolve; });
   const controller = createAccountController({ storage: storage(), eventTarget: new EventTarget(), fetcher: async route => {
-    if (route === "/api/shell/bootstrap") return Response.json({ authProtocolVersion: 1, accountsRequired: true });
+    if (route === "/api/shell/bootstrap") return Response.json({ authProtocolVersion: 2, accountsRequired: true });
     entered();
     await held;
-    return Response.json({ ...state(), recoveryAcknowledgmentRequired: true });
+    return Response.json(state());
   } });
   try {
     const started = controller.start();
@@ -907,7 +896,76 @@ test("startup is not ready until the cookie session has been hydrated", async ()
     release();
     await started;
     assert.equal(controller.snapshot().ready, true);
-    assert.equal(controller.snapshot().session.recoveryAcknowledgmentRequired, true);
-    assert.equal(controller.canPlay(), false);
+    assert.equal(controller.snapshot().session.authenticated, true);
+    assert.equal(controller.canPlay(), true);
   } finally { release(); controller.destroy(); }
+});
+
+test("username lookup is a protected read and does not acquire the cookie lock or busy state", async () => {
+  let locks = 0, lookupInit, release;
+  const held = new Promise(resolve => { release = resolve; });
+  const client = createAccountController({ storage: storage(), eventTarget: null, document: null,
+    locks: { request: async (_, __, work) => { locks++; return work(); } },
+    fetcher: async (url, init) => {
+      if (url.endsWith("bootstrap")) return Response.json({ authProtocolVersion: 2, accountsRequired: true });
+      if (url.endsWith("username")) { lookupInit = init; return held; }
+      return Response.json(state());
+    },
+  });
+  try {
+    await client.start();
+    const before = client.snapshot();
+    const lookup = client.lookupUsername("Alice");
+    assert.equal(client.snapshot().busy, false);
+    assert.equal(locks, 0);
+    assert.equal(lookupInit.method, "POST");
+    assert.equal(lookupInit.cache, "no-store");
+    assert.equal(lookupInit.headers["X-Righelt-Session"], before.session.contextId);
+    assert.deepEqual(JSON.parse(lookupInit.body), { username: "Alice" });
+    // A hanging availability read cannot block a credential mutation.
+    await client.act("password", { newPassword: "another good password" });
+    release(Response.json({ ok: true, exists: true }));
+    assert.deepEqual(await lookup, { ok: true, exists: true });
+    assert.equal(locks, 1);
+    assert.equal(client.snapshot().generation, before.generation);
+  } finally { release(Response.json({ ok: true, exists: true })); client.destroy(); }
+});
+
+test("username lookup deadline includes a hanging response body and aborts late output", async () => {
+  let deadline, release, signal;
+  const held = new Promise(resolve => { release = resolve; });
+  const client = createAccountController({ storage: storage(), eventTarget: null, document: null,
+    bootstrapTimers: { setTimeout(fn, delay) { assert.equal(delay, 5000); deadline = fn; return 1; }, clearTimeout() {} },
+    fetcher: async (url, init) => {
+      if (url.endsWith("bootstrap")) return Response.json({ authProtocolVersion: 2, accountsRequired: true });
+      if (url.endsWith("username")) { signal = init.signal; return { ok: true, json: () => held }; }
+      return Response.json({ authenticated: false });
+    },
+  });
+  try {
+    await client.start();
+    const lookup = client.lookupUsername("Alice");
+    const rejection = assert.rejects(lookup, /temporarily_unavailable/);
+    deadline(); await rejection;
+    assert.equal(signal.aborted, true);
+    release({ ok: true, exists: true });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(client.snapshot().session.authenticated, false);
+    assert.equal(client.snapshot().busy, false);
+  } finally { release({ ok: true, exists: true }); client.destroy(); }
+});
+
+test("account retirement fences a delayed username lookup", async () => {
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const client = createAccountController({ storage: storage(), eventTarget: null, document: null,
+    fetcher: async url => url.endsWith("bootstrap") ? Response.json({ authProtocolVersion: 2, accountsRequired: true }) : url.endsWith("username") ? held : Response.json(state()),
+  });
+  try {
+    await client.start();
+    const lookup = client.lookupUsername("Alice");
+    const rejection = assert.rejects(lookup, /session_changed/);
+    client.retire(); release(Response.json({ ok: true, exists: true }));
+    await rejection;
+  } finally { release(Response.json({ ok: true, exists: true })); client.destroy(); }
 });

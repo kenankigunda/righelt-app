@@ -13,7 +13,6 @@ export type AuthDatabase = {
 export type AccountVersions = {
   accountId: string;
   credentialVersion: number;
-  recoveryVersion: number;
   sessionEpoch: number;
 };
 export type AccountRow = {
@@ -23,11 +22,8 @@ export type AccountRow = {
   display_name: string;
   created_at: number;
   password_hash: string;
-  recovery_hash: string;
   credential_version: number;
-  recovery_version: number;
   session_epoch: number;
-  recovery_acknowledged: number;
   tutorial_state: "new" | "completed" | "skipped";
   view_preference: "focused" | "explanatory";
 };
@@ -54,13 +50,12 @@ export function credentialGuard(
 ): AuthStatement {
   return db
     .prepare(
-      `INSERT INTO account_transaction_guards (guard_id, valid) VALUES (?, COALESCE((SELECT 1 FROM accounts WHERE account_id = ? AND credential_version = ? AND recovery_version = ? AND session_epoch = ?), 0))`,
+      `INSERT INTO account_transaction_guards (guard_id, valid) VALUES (?, COALESCE((SELECT 1 FROM accounts WHERE account_id = ? AND credential_version = ? AND session_epoch = ?), 0))`,
     )
     .bind(
       guardId,
       expected.accountId,
       expected.credentialVersion,
-      expected.recoveryVersion,
       expected.sessionEpoch,
     );
 }
@@ -69,13 +64,12 @@ export function sessionGuard(
   guardId: string,
   tokenHash: string,
   contextId: string,
-  requireAcknowledgment = true,
 ): AuthStatement {
   return db
     .prepare(
-      `INSERT INTO account_transaction_guards (guard_id, valid) VALUES (?, COALESCE((SELECT 1 FROM account_sessions s JOIN accounts a ON a.account_id = s.account_id WHERE s.token_hash = ? AND s.context_id = ? AND s.revoked_at IS NULL AND s.expires_at > ${DB_NOW} AND s.session_epoch = a.session_epoch AND (? = 0 OR a.recovery_acknowledged = 1)), 0))`,
+      `INSERT INTO account_transaction_guards (guard_id, valid) VALUES (?, COALESCE((SELECT 1 FROM account_sessions s JOIN accounts a ON a.account_id = s.account_id WHERE s.token_hash = ? AND s.context_id = ? AND s.revoked_at IS NULL AND s.expires_at > ${DB_NOW} AND s.session_epoch = a.session_epoch), 0))`,
     )
-    .bind(guardId, tokenHash, contextId, requireAcknowledgment ? 1 : 0);
+    .bind(guardId, tokenHash, contextId);
 }
 export function clearTransactionGuard(
   db: AuthDatabase,

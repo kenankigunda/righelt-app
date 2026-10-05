@@ -94,8 +94,8 @@ export async function accountSmoke({
         await client.call("/api/auth/login", { username, password }),
         "Login",
       );
-      if (!login.authenticated || login.recoveryAcknowledgmentRequired)
-        throw Error("Smoke account must already be acknowledged");
+      if (!login.authenticated)
+        throw Error("Smoke account must be authenticated");
     }
     const game = requireOk(
       await a.call("/api/shell/games", { selfPlayMode: true }),
@@ -142,7 +142,6 @@ export async function accountSmoke({
     if (spoof.status !== 403) throw Error("Spoofed identity accepted");
     requireOk(
       await a.call("/api/auth/password", {
-        currentPassword: password,
         newPassword: password,
       }),
       "Session revocation",
