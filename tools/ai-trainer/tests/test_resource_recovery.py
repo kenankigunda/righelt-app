@@ -29,13 +29,16 @@ class ResourceRecoveryTest(unittest.TestCase):
     def sample(self,pressure='normal'):
         return Sample(1000+self.now,None,None,0,pressure,GIB,40*GIB,500*GIB,0,True)
     def sleep(self,seconds):self.now+=seconds
+    def pressure_once_after_first_launch(self):
+        pressures=iter(('normal','warning'))
+        self.host.sample.side_effect=lambda:self.sample(next(pressures,'normal'))
     def run_phase(self,seconds=600):
         return s.run_phase(['python','runner','--resume','old.pt'],{},None,Budget(0,seconds),self.runtime,
                            self.directory,self.directory,self.directory/'activity.json',clock=lambda:self.now,sleep=self.sleep)
     def test_pressure_wait_remains_charged_and_resumes_latest_checkpoint(self):
-        self.host.sample.side_effect=[self.sample(),self.sample('warning'),self.sample()]
+        self.pressure_once_after_first_launch()
         result,_=self.run_phase()
-        self.assertEqual(result,'completed');self.assertGreater(self.now,0)
+        self.assertEqual(result,'completed');self.assertEqual(self.now,125)
         self.assertEqual(self.start.call_count,2);self.assertEqual(self.cleanup.call_count,2)
         argv=self.start.call_args.args[0]
         self.assertEqual(argv[argv.index('--resume')+1],str(self.directory/'latest.pt'))
@@ -63,6 +66,18 @@ class ResourceRecoveryTest(unittest.TestCase):
         self.assertTrue(all(args[-1]==123 for args in self.telemetry if len(args)==4))
         assigned=json.loads((self.directory/'allocation.json').read_text())
         self.assertTrue(assigned['paused']);self.assertEqual(assigned['reason'],'device-memory-unknown')
+    def test_stale_peak_allocation_is_replaced_before_every_runner_launch(self):
+        (self.directory/'allocation.json').write_text(json.dumps({'workers':8,'memory_gib':32,'paused':False}))
+        snapshots=[]
+        def started(*args,**kwargs):
+            snapshots.append(json.loads((self.directory/'allocation.json').read_text()))
+            return self.process
+        self.start.side_effect=started
+        self.assertEqual(self.run_phase()[0],'completed')
+        self.assertEqual(len(snapshots),2)
+        for record in snapshots:
+            self.assertTrue(record['paused']);self.assertEqual(record['workers'],0)
+            self.assertEqual(record['memory_gib'],16)
     def test_correctness_and_repair_failures_are_not_automatically_retried(self):
         for reason in ('runner-failed','operation-timeout','telemetry-failed','validation-handoff-timeout'):
             with self.subTest(reason=reason):
@@ -83,7 +98,7 @@ class ResourceRecoveryTest(unittest.TestCase):
 
     def test_allocation_ledger_charges_wait_without_new_interval_and_excludes_repair(self):
         from righelt_training.allocation import Allocation
-        self.host.sample.side_effect=[self.sample(),self.sample('warning'),self.sample()]
+        self.pressure_once_after_first_launch()
         with patch('righelt_training.allocation.time.monotonic',side_effect=lambda:self.now),patch('righelt_training.allocation.time.time',side_effect=lambda:1000+self.now),patch('righelt_training.allocation.psutil.boot_time',return_value=1),patch('righelt_training.allocation.identity',return_value={'pid':123,'created':2}):
             ledger=Allocation(self.directory,self.directory/'run');ledger.create('initial')
             interval,_,_=ledger.begin('training')

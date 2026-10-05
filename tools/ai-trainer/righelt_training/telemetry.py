@@ -87,5 +87,13 @@ class Telemetry:
             amount,device_known=read_device_memory(self.device_memory_file,self.runner_pid)
             rss+=amount
         size=artifact_bytes(self.artifacts)
+        # Track allocated swap growth across runner restarts. On Darwin psutil's
+        # sout can reflect general page-outs, so it is not a swap-growth signal.
+        # Stable historical usage is not pressure; unavailable usage fails closed.
+        try:
+            swap_used=psutil.swap_memory().used
+        except (OSError,psutil.Error):
+            swap_used=None
         return Sample(now,observed,active,max(0,psutil.cpu_percent()*psutil.cpu_count()-owned_cpu),pressure,rss,
-                      psutil.virtual_memory().available,psutil.disk_usage(self.artifacts).free,size,device_known)
+                      psutil.virtual_memory().available,psutil.disk_usage(self.artifacts).free,size,device_known,
+                      swap_used)

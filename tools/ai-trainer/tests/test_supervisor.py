@@ -16,6 +16,68 @@ class QuietTelemetry:
         return Sample(now,None,None,0,'normal',GIB,40*GIB,500*GIB,0)
 
 class SupervisorTest(unittest.TestCase):
+    def simulate_resources(self, sample, end=40, operation=None):
+        from unittest.mock import Mock,patch
+        now=[0.];process=Mock(pid=123,returncode=0)
+        process.poll.side_effect=lambda:None if now[0]<end else 0
+        telemetry=Mock();telemetry.sample.side_effect=lambda:sample(now[0])
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            if operation:(root/'operation-status.json').write_text(json.dumps(operation))
+            with patch('righelt_training.supervisor.stop_group') as stop:
+                reason=supervise(process,Budget(0,600),AdaptivePolicy(),telemetry,root,
+                    clock=lambda:now[0],sleep=lambda seconds:now.__setitem__(0,now[0]+seconds))
+            events=[json.loads(line) for line in (root/'resource-events.jsonl').read_text().splitlines()]
+            return reason,now[0],events,stop.call_count
+
+    def test_startup_grace_is_separate_from_five_second_sample_and_memory_cooldown(self):
+        def sample(now):return Sample(now,now,False,0,'normal',GIB,40*GIB,500*GIB,0,now>=15)
+        reason,elapsed,events,_=self.simulate_resources(sample,end=16)
+        self.assertEqual(reason,'completed');self.assertEqual(elapsed,16)
+        self.assertEqual([r['sample']['now'] for r in events],[0,5,10,15])
+        self.assertTrue(all(row['allocation']['workers']==0 for row in events[:3]))
+        self.assertFalse(events[-1]['allocation']['paused'])
+        self.assertEqual(events[-1]['allocation']['workers'],2)
+
+    def test_never_started_heartbeat_is_bounded_and_does_not_retry(self):
+        reason,elapsed,_,_=self.simulate_resources(lambda now:Sample(now,now,False,0,'normal',GIB,40*GIB,500*GIB,0,False))
+        self.assertEqual(reason,'device-memory-startup-timeout');self.assertEqual(elapsed,30)
+
+    def test_pressure_and_operation_deadline_override_startup_grace(self):
+        reason,elapsed,_,_=self.simulate_resources(lambda now:Sample(now,now,False,0,'normal',GIB,7*GIB,500*GIB,0,False))
+        self.assertEqual(reason,'resource-pressure-stop');self.assertEqual(elapsed,5)
+        reason,elapsed,_,_=self.simulate_resources(
+            lambda now:Sample(now,now,False,0,'normal',GIB,40*GIB,500*GIB,0,False),
+            operation={'pid':123,'status':'running','deadlineMonotonic':3})
+        self.assertEqual(reason,'operation-timeout');self.assertEqual(elapsed,3)
+
+    def test_lost_heartbeat_after_start_has_no_new_grace(self):
+        reason,elapsed,_,_=self.simulate_resources(lambda now:Sample(now,now,False,0,'normal',GIB,40*GIB,500*GIB,0,now==0))
+        self.assertEqual(reason,'resource-pressure-stop');self.assertEqual(elapsed,10)
+
+    def test_pressure_stops_real_runner_and_descendant_on_next_sample(self):
+        import psutil
+        from righelt_training.processes import stop_group,register_owned,cleanup_owned
+        class Pressure:
+            def sample(self):return Sample(now[0],now[0],False,0,'normal',GIB,7*GIB,500*GIB,0)
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);pid_file=root/'child.pid';now=[0.]
+            script="import subprocess,sys,time; from pathlib import Path; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); Path(sys.argv[1]).write_text(str(child.pid)); time.sleep(60)"
+            process=start_group([sys.executable,'-c',script,str(pid_file)])
+            try:
+                register_owned(root,process)
+                until=time.monotonic()+3
+                while not pid_file.exists() and time.monotonic()<until:time.sleep(.01)
+                self.assertTrue(pid_file.exists());child_pid=int(pid_file.read_text())
+                reason=supervise(process,Budget(0,600),AdaptivePolicy(),Pressure(),root,
+                    clock=lambda:now[0],sleep=lambda seconds:now.__setitem__(0,now[0]+seconds))
+                self.assertEqual(reason,'resource-pressure-stop');self.assertEqual(now[0],5)
+                self.assertIsNotNone(process.returncode)
+                cleanup_owned(root)
+                self.assertFalse(psutil.pid_exists(child_pid) and psutil.Process(child_pid).status()!=psutil.STATUS_ZOMBIE)
+            finally:
+                stop_group(process);cleanup_owned(root)
+
     def test_automatic_handoff_uses_original_boundary_once(self):
         with tempfile.TemporaryDirectory() as d:
             runtime={'startedMonotonic':100,'deadlineMonotonic':21700,'command':'training','manifestSha256':'manifest'}

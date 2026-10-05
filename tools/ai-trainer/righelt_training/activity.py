@@ -5,7 +5,7 @@ import math
 from pathlib import Path
 import time
 from .checkpoint import atomic_json
-from .config import CONFIG
+from .resource_policy import LIMITS
 
 
 def observation(envelope, now=None):
@@ -13,7 +13,7 @@ def observation(envelope, now=None):
     observed=envelope['observedAt']
     if isinstance(observed,bool) or not isinstance(observed,(float,int)) or not math.isfinite(observed):
         raise ValueError('invalid observation time')
-    if not 0<=now-observed<=CONFIG['resources']['activityFreshSeconds']:
+    if not 0<=now-observed<=LIMITS['activityFreshSeconds']:
         raise ValueError('task snapshot is stale or from the future')
     project=envelope['projectId'];excluded=envelope['excludedThreadId']
     expected=set(envelope['expectedThreadIds'])

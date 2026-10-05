@@ -20,6 +20,7 @@ import time
 import torch
 from .checkpoint import atomic_json, save_checkpoint, load_checkpoint
 from .config import CONFIG, ROOT
+from .resource_policy import LIMITS
 from .curriculum import Curriculum
 from .model import PolicyValueNet
 from .replay import ReplayBuffer, save_game
@@ -219,7 +220,7 @@ class Runner:
         if allocation.get('stop'):
             return {**allocation, 'paused': True, 'workers': 0}
         workers = allocation['workers']
-        if not isinstance(workers, int) or not 0 <= workers <= CONFIG['resources']['maxWorkers']:
+        if isinstance(workers, bool) or not isinstance(workers, int) or not 0 <= workers <= LIMITS['maxWorkers']:
             raise ValueError('invalid allocation')
         return allocation
 

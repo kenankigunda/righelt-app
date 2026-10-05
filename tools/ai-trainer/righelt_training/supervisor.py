@@ -19,6 +19,7 @@ from .manifest import build_manifest,write_manifest,active_manifest,amend_manife
 from .allocation import Allocation,validate_continuation,BudgetExhausted
 from .processes import start_group,stop_group,install_stop_handlers,register_owned,cleanup_owned
 from .resources import AdaptivePolicy
+from .resource_policy import LIMITS,manifest_fields
 from .telemetry import Telemetry,read_device_memory
 from .resume import validate_reset_checkpoint,validate_continuation_checkpoint
 
@@ -88,8 +89,9 @@ def request_validation_handoff(run_dir,runtime,now):
 
 
 def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sleep=time.sleep,sample_seconds=None,runtime=None):
-    sample_seconds=sample_seconds or CONFIG['resources']['sampleSeconds']
+    sample_seconds=sample_seconds or LIMITS['sampleSeconds']
     next_sample=clock();paused_since=None
+    startup_deadline=next_sample+LIMITS['startupHeartbeatSeconds'];device_seen=False
     events=Path(run_dir)/'resource-events.jsonl'
     try:
         while process.poll() is None:
@@ -115,6 +117,7 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
                     stop_group(process)
                     return 'telemetry-failed'
                 allocation=policy.decide(sample)
+                device_seen=device_seen or sample.device_memory_known
                 atomic_json(Path(run_dir)/'allocation.json',{**allocation.record(),'observedAt':sample.now})
                 with events.open('a') as f:
                     f.write(json.dumps({'sample':asdict(sample),'allocation':allocation.record()},allow_nan=False)+'\n');f.flush()
@@ -122,7 +125,15 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
                     stop_group(process)
                     return allocation.reason
                 if allocation.paused:
-                    if paused_since is None:
+                    if allocation.reason=='device-memory-unknown' and not device_seen:
+                        # Import/initialization can exceed one five-second
+                        # sample. This bounded grace grants no worker permits,
+                        # never suppresses host pressure or operation deadlines,
+                        # and never restarts indefinitely after a missing beat.
+                        if now>=startup_deadline:
+                            stop_group(process)
+                            return 'device-memory-startup-timeout'
+                    elif paused_since is None:
                         paused_since=now
                         # The runner checkpoints between bounded operations. A blocked runner
                         # cannot defeat this external watchdog or extend the run budget.
@@ -169,7 +180,7 @@ def wait_for_resources(budget,policy,telemetry,run_dir,runtime,*,clock=time.mono
             stream.write(json.dumps({'event':'charged-resource-wait','sample':asdict(sample),'allocation':assigned.record()})+'\n')
         if assigned.stop:return assigned.reason
         if not assigned.paused:return 'resources-ready'
-        delay=min(CONFIG['resources']['sampleSeconds'],budget.remaining(clock()))
+        delay=min(LIMITS['sampleSeconds'],budget.remaining(clock()))
         if runtime['command']=='training':delay=min(delay,max(0,validation_boundary(runtime,clock())-clock()))
         sleep(delay)
     return 'budget-expired'
@@ -195,7 +206,7 @@ def run_phase(argv,env,log,budget,runtime,run_dir,artifact_root,activity_file,*,
             if '--resume' in argv:argv[argv.index('--resume')+1]=str(path)
             else:argv+=['--resume',str(path)]
         validate_training_window(runtime,clock())
-        atomic_json(directory/'allocation.json',{'workers':0,'memory_gib':CONFIG['resources']['minMemoryGiB'],
+        atomic_json(directory/'allocation.json',{'workers':0,'memory_gib':LIMITS['minMemoryGiB'],
                     'paused':True,'stop':False,'reason':'device-memory-unknown','observedAt':time.time()})
         process=start_group(['/usr/bin/nice','-n','10',*argv],cwd=ROOT,env=env,stdout=log,stderr=log)
         try:
@@ -351,7 +362,8 @@ def main():
     manifest_path=args.run_dir/'manifest.json'
     if manifest_path.exists():
         original=active_manifest(args.run_dir)
-        if any(original['manifest'][key]!=manifest[key] for key in ('sourceRevision','configSha256','seed','stage','dependencies','lockHashes')):
+        if any(original['manifest'].get(key)!=manifest[key] for key in (
+                'sourceRevision','configSha256','seed','stage','dependencies','lockHashes',*manifest_fields())):
             original=amend_manifest(args.run_dir,manifest,json.loads(args.gate_report.read_text()).get('repair',{}))
         digest=original['sha256']
         runtime=json.loads(runtime_path.read_text()) if runtime_path.exists() else {}
@@ -393,8 +405,8 @@ def main():
         if arena_digest:runtime['arenaPlanSha256']=arena_digest
         else:runtime.pop('arenaPlanSha256',None)
         atomic_json(runtime_path,runtime)
-        atomic_json(args.run_dir/'allocation.json',{'workers':CONFIG['resources']['minWorkers'],
-                    'memory_gib':CONFIG['resources']['minMemoryGiB'],'paused':False,'stop':False,
+        atomic_json(args.run_dir/'allocation.json',{'workers':LIMITS['minWorkers'],
+                    'memory_gib':LIMITS['minMemoryGiB'],'paused':False,'stop':False,
                     'reason':'initial-conservative','observedAt':time.time()})
         if args.canary:
             argv=[sys.executable,'-m','righelt_training.canary','--run-dir',str(args.run_dir.resolve()),'--corpus',str(args.parity_corpus.resolve())]

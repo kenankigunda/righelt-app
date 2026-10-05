@@ -6,6 +6,7 @@ import subprocess
 import sys
 from .config import CONFIG,CONFIG_SHA256,ROOT
 from .checkpoint import atomic_json
+from .resource_policy import manifest_fields
 
 
 def build_manifest(seed,stage):
@@ -16,7 +17,7 @@ def build_manifest(seed,stage):
     revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     return {'schema':1,'sourceRevision':revision,'configSha256':CONFIG_SHA256,'config':CONFIG,
             'python':platform.python_version(),'platform':platform.platform(),'seed':seed,'stage':stage,
-            'resourcePolicy':'adaptive-v1','seconds':CONFIG['resources']['initialSeconds' if stage=='initial' else 'overnightSeconds'],
+            **manifest_fields(),'seconds':CONFIG['resources']['initialSeconds' if stage=='initial' else 'overnightSeconds'],
             'dependencies':subprocess.check_output([sys.executable,'-m','pip','freeze'],text=True).splitlines(),
             'lockHashes':{p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in ['pnpm-lock.yaml','tools/ai-trainer/requirements.lock']}}
 
