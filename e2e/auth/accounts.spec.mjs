@@ -292,8 +292,7 @@ test("current public names follow the account across browsers through the minima
     await dialog(other).getByRole("button", { name: "Close", exact: true }).click();
     await account(page);
     await dialog(page).getByLabel("Display name", { exact: true }).fill("Étoile 🌟");
-    await dialog(page).getByRole("button", { name: "Save", exact: true }).click();
-    await expect(dialog(page).locator("[data-account-status]")).toHaveText("Account settings saved.");
+    await expect(dialog(page).locator("[data-autosave-status]")).toHaveText("Saved");
     await dialog(page).getByRole("button", { name: "Close", exact: true }).click();
     expect(page.url()).toBe(gameUrl);
     await other.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
@@ -560,8 +559,7 @@ test("long profile names wrap inside participants without covering the board", a
   await account(page);
   const displayName = profileLayoutDisplayName;
   await dialog(page).getByLabel("Display name", { exact: true }).fill(displayName);
-  await dialog(page).getByRole("button", { name: "Save", exact: true }).click();
-  await expect(dialog(page).locator("[data-account-status]")).toHaveText("Account settings saved.");
+  await expect(dialog(page).locator("[data-autosave-status]")).toHaveText("Saved");
   await dialog(page).getByRole("button", { name: "Close", exact: true }).click();
   const profile = page.getByTestId("participant-player-1").getByRole("button");
   await expect(profile).toContainText(displayName);

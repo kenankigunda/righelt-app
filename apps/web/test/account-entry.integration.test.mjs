@@ -8,7 +8,7 @@ function fixture({ failBlocklist = false } = {}) {
   let tick = 0, generation = 0, markup = "";
   const document = { body: { append() {} }, activeElement: null, querySelector() { return null; } };
   function node(key) {
-    if (!nodes.has(key)) nodes.set(key, { value: "", type: "text", hidden: false, disabled: false, dataset: {}, textContent: "", setAttribute(name, value) { this[name] = value; }, focus() { document.activeElement = this; }, closest() { return null; }, querySelectorAll() { return []; } });
+    if (!nodes.has(key)) nodes.set(key, { value: "", type: "text", hidden: false, disabled: false, dataset: {}, parentElement: { dataset: {} }, textContent: "", setAttribute(name, value) { this[name] = value; }, focus() { document.activeElement = this; }, closest() { return null; }, querySelectorAll() { return []; } });
     return nodes.get(key);
   }
   const query = key => key === "input" ? [...nodes.values()].find(value => value.name) : nodes.get(key) || null;
@@ -20,7 +20,7 @@ function fixture({ failBlocklist = false } = {}) {
       const attrs = Object.fromEntries([...match[1].matchAll(/([\w-]+)="([^"]*)"/g)].map(part => [part[1], part[2]]));
       Object.assign(node(`[name="${attrs.name}"]`), attrs);
     }
-    for (const key of ["data-account-status", "data-username-status", "data-forgot", "data-existing-hint"]) if (value.includes(key)) node(`[${key}]`);
+    for (const key of ["data-autosave-status", "data-account-status", "data-username-status", "data-forgot", "data-existing-hint"]) if (value.includes(key)) node(`[${key}]`);
     for (const key of ["length", "differentFromUsername", "notCommon"]) if (value.includes(`data-requirement="${key}"`)) node(`[data-requirement="${key}"]`);
     node("button[type=submit]");
   } });
@@ -141,7 +141,8 @@ test("live autofilled values receive validation even without input events", asyn
 test("Account offers only display-name save and credential actions; password change needs no old password", async () => {
   const f = fixture(); f.dialog.open("account");
   assert.doesNotMatch(f.element.innerHTML, /View preference|Replay tutorial|Switch account|Tutorial:/);
-  assert.match(f.element.innerHTML, />Save<\/button>/);
+  assert.doesNotMatch(f.element.innerHTML, />Save<\/button>/);
+  assert.match(f.element.innerHTML, /data-autosave-status/);
   f.input("displayName", "New Name"); await f.submit(); assert.deepEqual(f.acts[0], ["updateAccount", { displayName: "New Name" }]);
   f.dialog.open("password"); await f.flush();
   assert.equal(f.node('[name="newPassword"]').type, "password");
@@ -156,10 +157,9 @@ test("repeated Enter cannot duplicate an account save while the request is pendi
   f.controller.updateAccount = async patch => { f.acts.push(["updateAccount", patch]); await held; };
   f.input("displayName", "Saved once");
   const first = f.submit();
-  assert.equal(f.node("button[type=submit]").disabled, true);
-  await f.submit(); assert.equal(f.acts.length, 1);
-  release(); await first;
-  assert.equal(f.node("button[type=submit]").disabled, false);
+  const second = f.submit(); assert.equal(f.acts.length, 1);
+  release(); await first; await second;
+  assert.equal(f.node("[data-autosave-status]").textContent, "Saved");
 });
 
 
@@ -247,8 +247,8 @@ test("account feedback declares pending, success and error states with concise i
   release(); await submitting;
   assert.equal(f.node("[data-account-status]").dataset.state, "error");
   assert.equal(f.node("[data-account-status]").textContent, "Usernames use 3–24 letters, digits or underscores. Passwords need 8–128 characters.");
-  f.dialog.open("account"); f.input("displayName", "Alice"); await f.submit();
-  assert.equal(f.node("[data-account-status]").dataset.state, "success");
+  f.dialog.open("account"); f.input("displayName", "New Alice"); await f.submit();
+  assert.equal(f.node("[data-autosave-status]").textContent, "Saved");
 });
 
 

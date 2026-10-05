@@ -1,6 +1,7 @@
 import { evaluatePasswordRequirements, normalizeDisplayName } from "../generated/packages/shared-types/src/auth.js";
 import { USERNAME_LOOKUP_DEBOUNCE_MS, USERNAME_LOOKUP_TIMEOUT_MS } from "../generated/packages/shared-types/src/auth-policy.js";
 import { animateDialogSize } from "./dialog-size.js";
+import { createAccountAutosave } from "./account-autosave.js";
 import { renderInputAction } from "./input-action.js";
 export const ACCOUNT_ENTRY_LAYOUT = "separate";
 export const ACCOUNT_SIGNUP_PROFILE = "username-only";
@@ -37,11 +38,12 @@ export const createAccountDialog = ({
   dialog.setAttribute("aria-labelledby", "account-title");
   document.body.append(dialog);
   const sizeAnimation = animateDialogSize(dialog);
+  let autosave = null;
   let mode = "login", lookupState = "idle", lookupName = "", lookupRevealed = false,
     blocklist = null, blocklistFlight = null, blocklistFailed = false, passwordTouched = false,
     hintTimer = null, hintRevision = 0, lookupTimer = null, lookupAbort = null, lookupRevision = 0,
     trigger = null, pending = null, values = {}, challengeToken = "", widget = null,
-    flow = 0, submittingFlow = null, pendingLogoutGeneration = null, owner = {}, backdropPress = false;
+    flow = 0, submittingFlow = null, pendingLogoutGeneration = null, owner = {}, backdropPress = false, discardPress = false;
   const status = (text, state) => {
     const target = dialog.querySelector("[data-account-status]");
     if (target) { target.textContent = text; target.dataset.state = state; }
@@ -59,8 +61,8 @@ export const createAccountDialog = ({
     lookupAbort?.abort();
     lookupAbort = null;
   };
-  const input = (name, label, { secret = false, visible = false, autocomplete = "", value = "", optional = false, placeholder = "" } = {}) =>
-    `<label for="account-${name}">${label}</label><div class="${secret ? "input-with-action" : "account-input-row"}"><input id="account-${name}" name="${name}" type="${secret && !visible ? "password" : "text"}" ${optional ? "" : "required"} autocomplete="${autocomplete}" ${autocomplete === "new-password" ? 'aria-describedby="account-password-requirements"' : ""} ${name === "username" ? 'autocapitalize="none" spellcheck="false"' : ""} placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value)}">${secret ? renderInputAction({ label: visible ? "Hide" : "Show", accessibleLabel: `${visible ? "Hide" : "Show"} ${label.toLowerCase()}`, action: "toggle-password", controls: `account-${name}` }) : ""}</div>`;
+  const input = (name, label, { secret = false, visible = false, autocomplete = "", value = "", optional = false, placeholder = "", inlineSave = false } = {}) =>
+    `<label for="account-${name}">${label}</label><div class="${secret || inlineSave ? "input-with-action" : "account-input-row"}"><input id="account-${name}" name="${name}" type="${secret && !visible ? "password" : "text"}" ${optional ? "" : "required"} autocomplete="${autocomplete}" ${autocomplete === "new-password" ? 'aria-describedby="account-password-requirements"' : ""} ${name === "username" ? 'autocapitalize="none" spellcheck="false"' : ""} placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value)}">${secret ? renderInputAction({ label: visible ? "Hide" : "Show", accessibleLabel: `${visible ? "Hide" : "Show"} ${label.toLowerCase()}`, action: "toggle-password", controls: `account-${name}` }) : inlineSave ? '<span class="account-autosave" data-state="idle"><span role="status" aria-live="polite" data-autosave-status>Autosaves</span>' + renderInputAction({ label: "Retry", action: "retry-account-save", controls: `account-${name}` }) + '</span>' : ""}</div>`;
   const checklist = () => '<ul class="account-password-requirements small" id="account-password-requirements" data-testid="password-requirements" aria-label="Password requirements"><li data-requirement="length">8–128 characters</li><li data-requirement="differentFromUsername">Different from your username</li><li data-requirement="notCommon">Not a common password</li></ul>';
   const updateRequirements = () => {
     if (!["register", "password"].includes(mode)) return;
@@ -143,7 +145,7 @@ export const createAccountDialog = ({
     const feedback = '<p class="account-status" role="status" aria-live="polite" data-account-status></p>';
     if (mode === "account") {
       title = "Account";
-      body = `<p><span class="small">Username</span> <bdi>@${escapeHtml(session.account?.username)}</bdi></p>` + input("displayName", "Display name", { autocomplete: "nickname", value: session.account?.displayName || "", optional: true }) + '<button type="submit">Save</button><button type="button" data-mode="password">Change password</button><button type="button" data-logout>Sign out</button>';
+      body = `<p><span class="small">Username</span> <bdi>@${escapeHtml(session.account?.username)}</bdi></p>` + input("displayName", "Display name", { autocomplete: "nickname", value: session.account?.displayName || "", optional: true, inlineSave: true }) + '<button type="button" data-mode="password">Change password</button><button type="button" data-logout>Sign out</button><button type="button" class="secondary" data-discard-account hidden>Discard changes</button>';
     } else if (mode === "password") {
       title = "Change password";
       body = input("newPassword", "New password", { secret: true, autocomplete: "new-password" }) + checklist() + '<p>Changing your password signs you out on other devices.</p><div data-challenge></div><button type="submit">Change password</button><button type="button" class="secondary" data-mode="account">Back</button>';
@@ -154,6 +156,26 @@ export const createAccountDialog = ({
       body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + input("password", "Password", { secret: true, autocomplete: "current-password" }) + feedback + '<div class="account-help"><p data-existing-hint hidden>Don’t have a password? <a href="#create-account" data-create-link>Create a new account.</a></p><details data-forgot hidden><summary>Forgot password?</summary><p>On another signed-in device, open Account → Change password. If you are signed out everywhere, you’ll need a new account. Your existing games remain with your original account.</p><button type="button" class="secondary" data-new-username>Choose another username</button></details></div><div data-challenge></div><button type="submit">Sign in</button><button type="button" class="secondary" data-create>Create account</button>';
     }
     dialog.innerHTML = `<form class="account-form" novalidate data-entry-mode="${mode === "register" ? "create" : mode}" data-lookup-state="${lookupState}"><div class="account-dialog-heading"><h2 id="account-title" tabindex="-1">${title}</h2><button type="button" class="secondary account-close" data-cancel aria-label="Close"><span aria-hidden="true">×</span></button></div>${body}${mode === "login" ? "" : feedback}</form>`;
+    if (mode === "account") {
+      autosave?.cancel();
+      const marker = flow, generation = controller.snapshot().generation;
+      autosave = createAccountAutosave({
+        initial: session.account?.displayName || "", timers,
+        validate: value => normalizeDisplayName(value, session.account?.username || ""),
+        isCurrent: () => marker === flow && generation === controller.snapshot().generation && dialog.open,
+        save: displayName => controller.updateAccount({ displayName }),
+        report: (state) => {
+          const target = dialog.querySelector("[data-autosave-status]");
+          if (!target) return;
+          target.parentElement.dataset.state = state;
+          const discard = dialog.querySelector("[data-discard-account]");
+          if (discard) discard.hidden = !["invalid", "error"].includes(state);
+          target.textContent = { saving: "Saving…", saved: "Saved", invalid: "Not saved", error: "Not saved" }[state];
+          status(state === "invalid" ? "Use a display name of up to 32 characters without control characters." : state === "error" ? "Could not save. Check your connection and retry." : "", state === "invalid" || state === "error" ? "error" : "info");
+          if (state === "saved") onComplete(null);
+        },
+      });
+    }
     sizeAnimation.refresh();
     updateLookup(); updateRequirements(); updateLoginHint();
     if (["register", "password"].includes(mode)) loadBlocklist();
@@ -184,14 +206,18 @@ export const createAccountDialog = ({
       lookupState = "error"; updateLookup();
     }
   };
-  const changeEntryMode = (next, empty = false) => {
+  const changeEntryMode = async (next, empty = false) => {
+    if (mode === "account" && autosave?.dirty() && !await autosave.flush()) return;
+    autosave?.cancel(); autosave = null;
     values.username = empty ? "" : dialog.querySelector('[name="username"]')?.value || values.username || "";
     invalidateLookup(); flow++; owner = {}; mode = next;
     lookupState = "idle"; lookupName = ""; lookupRevealed = false;
     render();
     if (next === "register" && validEntryUsername(values.username)) lookupTimer = timers.setTimeout(() => void checkUsername(), USERNAME_LOOKUP_DEBOUNCE_MS);
   };
-  const close = () => {
+  const close = async (discard = false) => {
+    if (!discard && mode === "account" && autosave?.dirty() && !await autosave.flush()) return;
+    autosave?.cancel(); autosave = null;
     pendingLogoutGeneration = null;
     backdropPress = false;
     cancelLoginHint();
@@ -209,6 +235,7 @@ export const createAccountDialog = ({
     restored?.focus?.();
   };
   const open = (next = "login", intent = null, source = null) => {
+    autosave?.cancel(); autosave = null;
     invalidateLookup();
     flow++;
     owner = {};
@@ -286,9 +313,10 @@ export const createAccountDialog = ({
     return event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom;
   };
   dialog.addEventListener("pointerdown", (event) => {
+    discardPress = Boolean(event.target.closest?.("[data-discard-account]"));
     backdropPress = event.button === 0 && event.target === dialog && outsideDialog(event);
   });
-  dialog.addEventListener("pointercancel", () => { backdropPress = false; });
+  dialog.addEventListener("pointercancel", () => { backdropPress = false; discardPress = false; });
   dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
   dialog.addEventListener("keydown", (event) => {
     if (event.key !== "Tab") return;
@@ -298,6 +326,7 @@ export const createAccountDialog = ({
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   });
   const onInput = (event) => {
+    if (mode === "account" && event.target.name === "displayName") { autosave?.change(event.target.value); return; }
     if (["password", "newPassword"].includes(event.target.name)) { if (mode === "login") cancelLoginHint(); passwordTouched = true; updateRequirements(); return; }
     if (!["login", "register"].includes(mode) || event.target.name !== "username") return;
     if (mode === "login") cancelLoginHint();
@@ -316,20 +345,24 @@ export const createAccountDialog = ({
     updateRequirements();
   });
   dialog.addEventListener("focusout", (event) => {
+    if (mode === "account" && event.target.name === "displayName" && !discardPress && !event.relatedTarget?.closest?.("[data-discard-account]")) { autosave?.change(event.target.value); void autosave?.flush(); }
     if (mode === "login" && event.target.name === "username")
       scheduleLoginHint();
   });
   dialog.addEventListener("click", async (event) => {
+    discardPress = false;
     const dismiss = backdropPress && event.target === dialog && outsideDialog(event);
     backdropPress = false;
     if (dismiss) { close(); return; }
     const button = event.target.closest("button, [data-create-link], [data-signin]");
     if (!button) return;
+    if (button.hasAttribute("data-discard-account")) { void close(true); return; }
     if (button.hasAttribute("data-cancel")) { close(); return; }
     if (button.hasAttribute("data-create") || button.hasAttribute("data-create-link")) { event.preventDefault(); changeEntryMode("register"); return; }
     if (button.hasAttribute("data-signin")) { event.preventDefault(); changeEntryMode("login"); return; }
     if (button.hasAttribute("data-new-username")) { changeEntryMode("register", true); return; }
     if (button.dataset.mode) { changeEntryMode(button.dataset.mode); return; }
+    if (button.dataset.inputAction === "retry-account-save") { await autosave?.flush(); return; }
     if (button.dataset.inputAction === "toggle-password") {
       const field = document.getElementById(button.getAttribute("aria-controls"));
       if (!field || !dialog.contains(field)) return;
@@ -348,6 +381,7 @@ export const createAccountDialog = ({
   dialog.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.target;
+    if (mode === "account") { autosave?.change(dialog.querySelector('[name="displayName"]')?.value || ""); await autosave?.flush(); return; }
     if (controller.snapshot().busy || submittingFlow === flow) return;
     // Always inspect live values: native autofill need not emit input events.
     const field = name => dialog.querySelector(`[name="${name}"]`);
@@ -368,11 +402,6 @@ export const createAccountDialog = ({
     buttons.forEach(b => { b.disabled = true; });
     status("Working…", "pending");
     try {
-      if (mode === "account") {
-        await controller.updateAccount({ displayName: data.displayName });
-        if (marker === flow && dialog.open) { render(); status("Account settings saved.", "success"); onComplete(null); }
-        return;
-      }
       const token = challengeToken ? { challengeToken } : {};
       challengeToken = "";
       await controller.act(operation, operation === "password" ? { newPassword: data.newPassword, ...token } : { username: data.username, password: data.password, ...token }, operationOwner);
@@ -401,7 +430,7 @@ export const createAccountDialog = ({
     open, close, refreshSession,
     onTransition: ({ owner: transitionOwner, completedLogoutGeneration } = {}) => {
       if (dialog.open && pendingLogoutGeneration !== null && completedLogoutGeneration === pendingLogoutGeneration) { pendingLogoutGeneration = null; return; }
-      if (dialog.open && transitionOwner !== owner) close();
+      if (dialog.open && transitionOwner !== owner) void close(true);
     },
     isOpen: () => dialog.open, element: dialog,
   };
