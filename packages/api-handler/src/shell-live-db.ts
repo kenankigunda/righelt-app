@@ -745,13 +745,23 @@ const getHomeSectionWhereClause = ({ identityId, section, debug }: Omit<HomeSect
   }
 
   const playerMatchSql = "(COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)";
-  const sectionSql = section === "my" ? `${playerMatchSql}${accountMode ? " AND ownership_mode = 'account_v1'" : ""}` : accountMode ? `(NOT ${playerMatchSql} OR ownership_mode = 'legacy_guest')` : `NOT ${playerMatchSql}`;
+  const unfinished = "COALESCE(json_extract(CASE WHEN json_valid(state_json) THEN state_json ELSE '{}' END, '$.board.state.outcome.status'), 'ongoing') = 'ongoing'";
+  const ownedGameSql = accountMode ? `(${playerMatchSql} AND ownership_mode = 'account_v1')` : playerMatchSql;
+  const sectionSql = section === "my" ? `${ownedGameSql} AND (${unfinished})` : `(NOT ${ownedGameSql} OR NOT (${unfinished}))`;
   const smokeSql = debug ? "AND has_smoke_identity = 0" : "AND has_smoke_identity = 0";
   return {
     sql: `WHERE ${sectionSql} ${smokeSql}`,
     params: [identityId] as unknown[],
   };
 };
+
+// Order before pagination. Push retreat is the opposing player's decision.
+const homeOrderSql = (section: string) => section === 'my' ? `
+ CASE WHEN (CASE WHEN
+ ((json_extract(CASE WHEN json_valid(state_json) THEN state_json ELSE '{}' END, '$.turns[#-1].playerSeat') = 'Player 2') !=
+ (COALESCE(json_extract(CASE WHEN json_valid(state_json) THEN state_json ELSE '{}' END, '$.board.state.continuation.type'), '') = 'push' AND COALESCE(json_extract(CASE WHEN json_valid(state_json) THEN state_json ELSE '{}' END, '$.board.state.continuation.phase'), '') = 'retreat'))
+ THEN player2_identity_id ELSE player1_identity_id END) = ?1 THEN 0 ELSE 1 END,
+ latest_activity_at DESC, game_id ASC` : 'latest_activity_at DESC, created_at DESC, game_id ASC';
 
 export const countHomeSectionGames = async (
   env: LiveGameEnv,
@@ -779,7 +789,7 @@ export const listHomeSectionGameProjectionPage = async (
   const result = await env.DB.prepare(
     `SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision${(env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true") ? ", ownership_mode" : ""} FROM ${LIVE_GAMES_TABLE}
      ${where.sql}
-     ORDER BY latest_activity_at DESC, created_at DESC
+     ORDER BY ${homeOrderSql(section)}
      LIMIT ?${where.params.length + 1}
      OFFSET ?${where.params.length + 2}`,
   )
@@ -803,7 +813,7 @@ export const listHomeSectionStaticGameCardPage = async (
   const result = await env.DB.prepare(
     `SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision${(env.AUTH_REQUIRED === "true" || env.AUTH_ENABLED === "true") ? ", ownership_mode" : ""} FROM ${LIVE_GAMES_TABLE}
      ${where.sql}
-     ORDER BY latest_activity_at DESC, created_at DESC
+     ORDER BY ${homeOrderSql(section)}
      LIMIT ?${where.params.length + 1}
      OFFSET ?${where.params.length + 2}`,
   )
