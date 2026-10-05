@@ -32,6 +32,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check:web-engine-generated": "node scripts/check-web-engine-generated.mjs",
     "check:ticket-workflow": "node scripts/check-ticket-workflow-setup.mjs",
+    "setup:https": "node scripts/setup-local-https.mjs",
     "setup:workspace": "bash scripts/setup-workspace.sh",
     "test": "pnpm typecheck && pnpm check:web-engine-generated && pnpm test:unit && pnpm test:integration && pnpm test:e2e && pnpm test:responsive && node scripts/validation/test/report-browser.mjs",
     "test:unit": "pnpm test:engine:unit && pnpm test:web:unit && pnpm test:validation",
