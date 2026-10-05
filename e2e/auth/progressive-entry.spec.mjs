@@ -11,7 +11,7 @@ test.beforeEach(async () => {
 async function open(page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(dialog(page).getByRole("heading", { name: "Pick up your games anywhere" })).toBeVisible();
+  await expect(dialog(page).getByRole("heading", { name: "Log in to start playing" })).toBeVisible();
 }
 async function existingAccount(request, baseURL) {
   const username = uniqueName();
@@ -40,6 +40,15 @@ test("explicit creation opens before typing and a taken username never switches 
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveValue("");
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("type", "password");
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("autocomplete", "current-password");
+  await expect(dialog(page).getByRole("heading", { name: "Enter password", exact: true })).toHaveCount(0);
+  await expect(dialog(page)).not.toContainText("Enter your username to sign in");
+  const route = page.url();
+  await dialog(page).getByRole("link", { name: "Create a new account.", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog(page).locator("form")).toHaveAttribute("data-entry-mode", "create");
+  await expect(dialog(page)).toContainText("That username is taken. Choose another.");
+  expect(page.url()).toBe(route);
+  await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();

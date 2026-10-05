@@ -58,7 +58,7 @@ test("completed old logout does not retire a newer sign-in dialog", async () => 
     assert.equal(f.dialog.isOpen(), false, "initial retirement must clear old account fields");
     f.dialog.open("login");
     const loginMarkup = f.element.innerHTML;
-    assert.match(loginMarkup, /Pick up your games anywhere/);
+    assert.match(loginMarkup, /Log in to start playing/);
     await assert.rejects(f.controller.act("login", {}), /logout_pending/, "new login cannot acquire authority before revocation completes");
     f.release(); await logout;
     assert.equal(f.controller.snapshot().pendingLogout, false);

@@ -447,7 +447,7 @@ test("keyboard board activation opens sign in without losing the board", async (
     await expect.poll(() => getHistoryMoveCount(page)).toBeGreaterThan(before);
     await expect(cell).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect(dialog(page).getByRole("heading", { name: "Pick up your games anywhere", exact: true })).toBeVisible();
+    await expect(dialog(page).getByRole("heading", { name: "Log in to start playing", exact: true })).toBeVisible();
     await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
     expect(page.url()).toBe(gameUrl);
     await expect(page.getByTestId("game-board")).toBeVisible();

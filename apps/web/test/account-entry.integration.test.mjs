@@ -22,7 +22,7 @@ function fixture() {
     async act(...args) { acts.push(args); },
   };
   const dialog = createAccountDialog({ controller, document, timers: { setTimeout(fn, ms) { assert.equal(ms, 500); timers.set(++tick, fn); return tick; }, clearTimeout(id) { timers.delete(id); } } });
-  const click = (attribute) => listeners.get("click")({ target: { closest: () => ({ dataset: {}, hasAttribute: name => name === attribute }) } });
+  const click = (attribute) => listeners.get("click")({ preventDefault() {}, target: { closest: () => ({ dataset: {}, hasAttribute: name => name === attribute }) } });
   const type = (value) => { const target = node('[name="username"]'); target.value = value; listeners.get("input")({ target }); };
   const flush = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
   const debounce = () => { for (const [id, fn] of [...timers]) { timers.delete(id); fn(); } };
