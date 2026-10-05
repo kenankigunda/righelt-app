@@ -162,7 +162,7 @@ test("password change and browser logout revoke the correct sessions across tabs
     await account(page);
     await dialog(page).getByRole("button", { name: "Change password", exact: true }).click();
     await expect(dialog(page).getByLabel("Current password", { exact: true })).toHaveCount(0);
-    await expect(dialog(page).getByLabel("New password", { exact: true })).toHaveAttribute("type", "password");
+    await expect(dialog(page).getByLabel("New password", { exact: true })).toHaveAttribute("type", "text");
     await expect(dialog(page).getByTestId("password-requirements")).toBeVisible();
     await dialog(page).getByLabel("New password", { exact: true }).fill(replacement);
     await expect(dialog(page).getByTestId("password-requirements").locator('[data-state="met"]')).toHaveCount(3);

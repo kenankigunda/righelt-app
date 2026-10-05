@@ -145,7 +145,7 @@ test("Account offers only display-name save and credential actions; password cha
   assert.match(f.element.innerHTML, /data-autosave-status/);
   f.input("displayName", "New Name"); await f.submit(); assert.deepEqual(f.acts[0], ["updateAccount", { displayName: "New Name" }]);
   f.dialog.open("password"); await f.flush();
-  assert.equal(f.node('[name="newPassword"]').type, "password");
+  assert.equal(f.node('[name="newPassword"]').type, "text");
   f.input("newPassword", "a new private password"); await f.submit();
   assert.deepEqual(f.acts[1].slice(0, 2), ["password", { newPassword: "a new private password" }]);
 });

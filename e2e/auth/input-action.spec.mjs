@@ -60,7 +60,7 @@ for (const { width, zoom } of [{ width: 320, zoom: 1 }, { width: 390, zoom: 1 },
     await page.getByRole("button", { name: "Account", exact: true }).click();
     await dialog(page).getByRole("button", { name: "Change password", exact: true }).click();
     await expect(dialog(page).getByLabel("Current password", { exact: true })).toHaveCount(0);
-    await proveInputAction(page, "New password", "password");
+    await proveInputAction(page, "New password", "text");
     const passwordRequests = [];
     page.on("request", request => { if (request.url().endsWith("/api/auth/password")) passwordRequests.push(request); });
     await dialog(page).getByRole("button", { name: "Back", exact: true }).click();

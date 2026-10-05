@@ -226,3 +226,8 @@ Examples illustrating the spirit:
 ### Simple account edits autosave
 
 Save lightweight account fields automatically after a short typing pause or on blur. Show Autosaves, Saving…, Saved, or Not saved in the field's inline action position. Use the shared subtle loading swipe while saving and state-appropriate text colors. Keep input and focus stable, serialize writes so the latest edit wins, and preserve drafts after errors with Retry and an explicit discard option. Credential changes remain deliberate submissions.
+
+
+### Make new passwords easy to verify
+
+Show newly chosen passwords by default during account creation and password changes, with an accessible Hide control. Help people catch typing mistakes before they commit a password and risk losing access. Sign-in passwords remain hidden initially, with Show available.
