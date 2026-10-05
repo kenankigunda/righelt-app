@@ -5,6 +5,7 @@ import path from 'node:path';
 export async function candidateCapabilities(root) {
   const has = async file => { try { await access(path.join(root,file)); return true; } catch(e) { if(e.code==='ENOENT') return false; throw e; } };
   return {
+    simplifiedAccounts: await has('db/migrations/0015_remove_account_recovery.sql'),
     accounts: await has('apps/web/shell/account-controller.js'),
     profiles: await has('apps/web/shell/public-profile.js'),
     personalHome: await has('apps/web/shell/personal-home.js'),

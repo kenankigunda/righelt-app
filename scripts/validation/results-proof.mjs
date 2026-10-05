@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from '@playwright/test';
+import {candidateCapabilities} from './capabilities.mjs';
 import { proof } from './proof.mjs';
 
 export function selectTerminalScenario(catalog) {
@@ -17,12 +18,12 @@ export function assertFriendRematch(game, previousId, accountId) {
   assert.equal(game.player2, null, 'A friend rematch must leave the peer seat empty');
   assert.equal(game.board?.state?.outcome?.status, 'ongoing');
 }
-async function request(page, route, body) {
-  return page.evaluate(async ({ route, body }) => {
+async function request(page, route, body, authProtocol) {
+  return page.evaluate(async ({ route, body, authProtocol }) => {
     const session = await (await fetch('/api/auth/session')).json();
-    const response = await fetch(route, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': '1', 'X-Righelt-Session': session.contextId }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    const response = await fetch(route, { method: body === undefined ? 'GET' : 'POST', headers: { 'Content-Type': 'application/json', 'X-Righelt-Auth': '1', 'X-Righelt-Auth-Version': String(authProtocol), 'X-Righelt-Session': session.contextId }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, body: await response.json(), accountId: session.account?.id };
-  }, { route, body });
+  }, { route, body, authProtocol });
 }
 async function settled(page) {
   const transition = page.locator('.shell-route-transition-layer');
@@ -31,15 +32,16 @@ async function settled(page) {
 // Uses real creation/import handlers and the candidate's own catalog. The
 // terminal outcome is delivered through the live channel, never DOM injection.
 export async function proveResultsRematch({ page, info, root }) {
+  const authProtocol = (await candidateCapabilities(root)).simplifiedAccounts ? 2 : 1;
   const scenario = selectTerminalScenario(JSON.parse(await readFile(path.join(root, 'apps/web/scenarios/catalog.json'), 'utf8')));
-  const created = await request(page, '/api/shell/games', { selfPlayMode: false, creatorSide: 'p2' });
+  const created = await request(page, '/api/shell/games', { selfPlayMode: false, creatorSide: 'p2' }, authProtocol);
   assert.equal(created.status, 200);
   const id = created.body.game.id;
   await page.goto(`/#/game/${encodeURIComponent(id)}`);
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', id);
   await expect(page.getByTestId('game-role')).toContainText('Player 2');
   await settled(page);
-  const imported = await request(page, '/api/shell/scenarios/import', { scenario, targetGameId: id, protocolVersion: 2 });
+  const imported = await request(page, '/api/shell/scenarios/import', { scenario, targetGameId: id, protocolVersion: 2 }, authProtocol);
   assert.equal(imported.status, 200);
   const result = page.getByTestId('game-result');
   await expect(result).toBeVisible();
