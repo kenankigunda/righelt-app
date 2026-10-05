@@ -15,7 +15,7 @@ import time
 from righelt_training.config import CONFIG
 from righelt_training.learning_data import report, phase_of, exposure, search_metrics, sha, checkpoint_games, journal_snapshot, inherited_games
 from righelt_training.replay import partition_for_family
-from righelt_training.start_inventory import candidates, verify_inventory
+from righelt_training.start_inventory import candidates, verify_inventory, source_snapshot
 
 
 def game(identity='one', phase='none', terminal=True):
@@ -119,6 +119,15 @@ class LearningDataTest(unittest.TestCase):
 
 
 class InventoryTest(unittest.TestCase):
+    def test_inventory_dependency_identity_reads_current_config_bytes(self):
+        from righelt_training.config import ROOT, CONFIG_PATH
+        before = source_snapshot()
+        actual_sha = sha
+        with patch('righelt_training.start_inventory.sha', side_effect=lambda p: 'changed' if Path(p) == CONFIG_PATH else actual_sha(p)):
+            after = source_snapshot()
+        self.assertNotEqual(before, after)
+        self.assertEqual(after[str(CONFIG_PATH.relative_to(ROOT))], 'changed')
+
     def test_inventory_sigterm_cleans_up_its_engine_child(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); archive=root/'archive'; archive.write_text('bound')

@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import time
 
-from .config import ROOT
+from .config import ROOT, CONFIG_PATH
 from .fresh_health import immutable_json
 from .learning_data import checkpoint_games, phase_of, sha, validate_game
 
@@ -17,7 +17,8 @@ def source_snapshot():
              'tools/ai-trainer/decision-provenance.mjs', 'tools/ai-trainer/engine-operation-budget.mjs',
              'tools/ai-trainer/righelt_training/start_inventory.py', 'tools/ai-trainer/righelt_training/runner.py',
              'tools/ai-trainer/righelt_training/learning_data.py')
-    return {**dependency_inventory(), **{name: sha(ROOT / name) for name in files}}
+    return {**dependency_inventory(), **{name: sha(ROOT / name) for name in files},
+            str(CONFIG_PATH.relative_to(ROOT)): sha(CONFIG_PATH)}
 
 
 def candidates(archives, limit=16):
