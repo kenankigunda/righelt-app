@@ -56,3 +56,31 @@ test('E-I01 actual worker enables explicit development arm and rejects unsupport
     assert.equal(rejected.messages[0].type, 'error'); assert.match(rejected.messages[0].message, /restricted/);
   }
 });
+
+test('E-I02 screen records an independently replayed development decision without producing a training game', async () => {
+  const recipe = trainingRecipe('root-dirichlet-v1');
+  const state = resolveToStability(createInitialState());
+  const searched = await run({ command: 'search', partition: 'development', kind: 'exploration-screen',
+    rootExploration: { purpose: 'development-screen', recipe }, state, seed: 108,
+    profile: { simulations: 8, temperature: 1, maxValueGap: .1 }, budgetMs: 5000 });
+  assert.equal(searched.code, 0, searched.stderr);
+  const result = searched.messages[0].result;
+  const job = { command: 'exploration-record', partition: 'development', kind: 'exploration-screen',
+    id: 'fixed-screen-slot', state, result, seed: 108, recipe, budgetMs: 5000 };
+  const recorded = await run(job);
+  assert.equal(recorded.code, 0, recorded.stderr); assert.equal(recorded.evaluations, 0);
+  const proof = recorded.messages[0].proof;
+  assert.equal(recorded.messages[0].type, 'exploration-recorded');
+  assert.equal(proof.trainingData, false); assert.equal(proof.partition, 'development');
+  assert.equal(proof.record.policyMask, true); assert.equal(proof.replay.passed, true);
+  assert.deepEqual(proof.nextState, result.nextState);
+  assert.equal(proof.record.rootExploration.applied, true);
+  assert.equal(proof.record.actionIndex, result.actionIndex);
+  assert.equal(proof.record.id, 'fixed-screen-slot');
+  for (const change of [{ partition: 'train' }, { seed: 109 }, { recipe: trainingRecipe() },
+    { result: { ...result, nextState: { ...result.nextState, turnIndex: result.nextState.turnIndex + 1 } } }]) {
+    const rejected = await run({ ...job, ...change });
+    assert.equal(rejected.code, 1); assert.equal(rejected.evaluations, 0);
+    assert.equal(rejected.messages[0].type, 'error');
+  }
+});

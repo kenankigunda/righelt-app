@@ -6,6 +6,7 @@ import { searchRecovery } from './search-recovery.mjs';
 import { decisionProvenance } from './decision-provenance.mjs';
 import { replayDecision } from './decision-replay.mjs';
 import { trainingExplorationOptions } from './exploration-provenance.mjs';
+import { explorationRecord } from './exploration-record.mjs';
 import { createHash } from 'node:crypto';
 import { createInitialState, deterministicStateHash, normalizeState, resolveToStability } from '../../packages/game-engine/src/index.ts';
 import { encodeState, selectMove, seededRandom, experimentConfig, SEARCH_POLICY_VERSION, encodeAction, verifyLegalSubset, legalActionMap as engineLegalActionMap, transition as engineTransition } from '../../packages/computer-player/src/index.ts';
@@ -75,6 +76,10 @@ async function main() {
     writeFileSync(temporary,JSON.stringify({schema:1,jobId:job.id,modelVersion:job.modelVersion,phase,decision,seed,profile,state}));
     renameSync(temporary,job.diagnosticPath);
   };
+  if (job.command === 'exploration-record') {
+    send({ type: 'exploration-recorded', proof: explorationRecord(job, bounded), engineBudget: engineBudget.stats });
+    return;
+  }
   if (job.command === 'search') {
     let requestId=0;
     const result=await selectMove({state:job.state,seed:job.seed,...searchOptions(job.profile),...explorationOptions,
