@@ -1,26 +1,13 @@
+import { HTTPS_VARIABLES as VARIABLES, defaultCertificateDirectory, validateCertificate } from './local-https-certificate.mjs';
+import { validateIssuer, verifySystemTrust, verifyLocalHttpsUrl } from './local-https.mjs';
+export { defaultCertificateDirectory, validateCertificate } from './local-https-certificate.mjs';
 import { execFileSync } from 'node:child_process';
-import { X509Certificate, createPrivateKey } from 'node:crypto';
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const START = '# BEGIN Righelt local HTTPS';
 const END = '# END Righelt local HTTPS';
-const VARIABLES = ['WRANGLER_HTTPS_CERT_PATH', 'WRANGLER_HTTPS_KEY_PATH'];
-export const defaultCertificateDirectory = () => path.join(os.homedir(), '.config', 'righelt', 'https');
-
-export function validateCertificate(certPem, keyPem, now = Date.now()) {
-  const cert = new X509Certificate(certPem);
-  if (Date.parse(cert.validFrom) > now || Date.parse(cert.validTo) < now + 30 * 86400_000) {
-    throw Error('Local certificate is not valid for the next 30 days. Run setup:https --renew.');
-  }
-  if (!cert.checkHost('localhost') || !cert.checkIP('127.0.0.1') || !cert.checkIP('::1')) {
-    throw Error('Local certificate must cover localhost, 127.0.0.1 and ::1. Run setup:https --renew.');
-  }
-  if (!cert.checkPrivateKey(createPrivateKey(keyPem))) throw Error('Local certificate and private key do not match.');
-  return cert;
-}
 
 export function updateEnvironment(source, certDirectory) {
   // Keep dotenv expansion unambiguous, including on Windows and paths with spaces.
@@ -68,33 +55,52 @@ export function configureCheckout(root, certDirectory) {
   return changes.map(change => change.file);
 }
 
-export function setupLocalHttps(args = process.argv.slice(2)) {
+export async function setupLocalHttps(args = process.argv.slice(2)) {
   let root = path.resolve(import.meta.dirname, '..');
   let certDirectory = defaultCertificateDirectory();
   let allWorktrees = false;
   let renew = false;
+  let check = false;
+  let installTrust = false;
+  let url;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--all-worktrees') allWorktrees = true;
     else if (arg === '--renew') renew = true;
+    else if (arg === '--check') check = true;
+    else if (arg === '--install-trust') installTrust = true;
+    else if (arg === '--url') {
+      url = args[++index];
+      if (!url || url.startsWith('--')) throw Error('--url requires a URL.');
+    }
     else if (arg === '--root' || arg === '--cert-dir') {
       const value = args[++index];
       if (!value || value.startsWith('--')) throw Error(`${arg} requires a path.`);
       if (arg === '--root') root = path.resolve(value);
       else certDirectory = path.resolve(value);
     } else if (arg === '--help') {
-      console.log('Usage: pnpm setup:https [--all-worktrees] [--renew] [--root PATH] [--cert-dir PATH]\nCreates/reuses a local certificate and configures ignored Wrangler .env.local files.\nDoes not install trust, restart servers, or enable HTTPS on existing HTTP servers.');
+      console.log('Usage: pnpm setup:https [--all-worktrees] [--renew] [--install-trust] [--check] [--url https://localhost:PORT] [--root PATH] [--cert-dir PATH]\n--check is read-only. --url verifies the live certificate and system trust.\n--install-trust explicitly installs the mkcert CA; servers are never restarted.');
       return;
     } else throw Error(`Unknown argument: ${arg}`);
   }
+  if (check && (renew || installTrust || allWorktrees)) throw Error('--check cannot be combined with mutation options.');
   const certFile = path.join(certDirectory, 'localhost.pem');
   const keyFile = path.join(certDirectory, 'localhost-key.pem');
-  if (renew || (!existsSync(certFile) && !existsSync(keyFile))) {
+  if (!check && (renew || (!existsSync(certFile) && !existsSync(keyFile)))) {
     mkdirSync(certDirectory, { recursive: true, mode: 0o700 });
     execFileSync('mkcert', ['-cert-file', certFile, '-key-file', keyFile, 'localhost', '127.0.0.1', '::1'], { stdio: 'inherit' });
   }
   if (!existsSync(certFile) || !existsSync(keyFile)) throw Error('Incomplete certificate pair. Run setup:https --renew.');
   const cert = validateCertificate(readFileSync(certFile), readFileSync(keyFile));
+  const caRoot = execFileSync('mkcert', ['-CAROOT'], { encoding: 'utf8' }).trim();
+  validateIssuer(readFileSync(certFile), readFileSync(path.join(caRoot, 'rootCA.pem')));
+  if (installTrust) execFileSync('mkcert', ['-install'], { stdio: 'inherit' });
+  if (check) {
+    if (url) await verifyLocalHttpsUrl(url, readFileSync(certFile));
+    else verifySystemTrust(certFile);
+    console.log(url ? `Verified live certificate and system trust: ${url}` : 'Certificate, current mkcert CA and macOS trust verified. Browser-specific trust still requires a strict browser check.');
+    return;
+  }
   chmodSync(keyFile, 0o600);
   const roots = allWorktrees
     ? execFileSync('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: root, encoding: 'utf8' }).split('\0').filter(field => field.startsWith('worktree ')).map(field => field.slice(9))
@@ -110,8 +116,9 @@ export function setupLocalHttps(args = process.argv.slice(2)) {
   }
   console.log(`Certificate expires: ${cert.validTo}\nTrust the mkcert CA once on this computer, then restart local HTTPS servers.\nNew worktrees: rerun setup:https --all-worktrees. HTTP and hosted deployments are unchanged.`);
   if (failed) throw Error('Some checkouts could not be configured; existing custom settings were preserved.');
+  if (url) await verifyLocalHttpsUrl(url, readFileSync(certFile));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  try { setupLocalHttps(); } catch (error) { console.error(error.message); process.exitCode = 1; }
+  try { await setupLocalHttps(); } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
