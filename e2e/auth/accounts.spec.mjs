@@ -388,29 +388,52 @@ test("tutorial skipping and completion persist without manual replay resetting t
 });
 
 for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load during a ${gesture} gesture does not swallow the play gate click`, async ({ page }) => {
-  let release, held;
-  const waiting = new Promise(resolve => { held = resolve; });
+  let release;
   const released = new Promise(resolve => { release = resolve; });
+  const heldSections = new Set();
+  const creates = [];
+  page.on("request", request => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates.push(request);
+  });
   await page.route(/\/api\/shell\/games(?:\?|$)/, async route => {
-    const response = await route.fetch();
-    held();
+    const request = route.request();
+    const section = new URL(request.url()).searchParams.get("section");
+    if (request.method() !== "GET" || !["my", "other"].includes(section)) return route.continue();
+    heldSections.add(section);
     await released;
-    await route.fulfill({ response });
+    // Release the browser's real request without a second Node/TLS fetch.
+    await route.continue();
   });
   try {
-  await page.goto("/");
-  const trigger = page.getByRole("button", { name: "Start new game", exact: true });
-  await expect(trigger).toBeVisible();
-  await waiting;
-  if (gesture === "pointer") { await trigger.hover(); await page.mouse.down(); }
-  else { await trigger.focus(); await page.keyboard.down("Space"); }
-  const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/shell/games");
-  release();
-  await refreshed;
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  if (gesture === "pointer") await page.mouse.up();
-  else await page.keyboard.up("Space");
-  await expect(dialog(page)).toBeVisible();
+    await page.goto("/");
+    const trigger = page.getByRole("button", { name: "Start new game", exact: true });
+    await expect(trigger).toBeVisible();
+    await expect.poll(() => [...heldSections].sort()).toEqual(["my", "other"]);
+    const originalTrigger = await trigger.elementHandle();
+    expect(originalTrigger).not.toBeNull();
+    if (gesture === "pointer") { await trigger.hover(); await page.mouse.down(); }
+    else { await trigger.focus(); await page.keyboard.down("Space"); }
+    // Home loading awaits both sections. Finish both while activation is held.
+    const refreshed = Promise.all(["my", "other"].map(async section => {
+      const response = await page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return response.request().method() === "GET" && url.pathname === "/api/shell/games" && url.searchParams.get("section") === section;
+      });
+      expect(response.ok()).toBe(true);
+      expect(await response.finished()).toBeNull();
+    }));
+    release();
+    await refreshed;
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(await originalTrigger.evaluate(element => element.isConnected), "Home loading must preserve the pressed control").toBe(true);
+    if (gesture === "keyboard") expect(await originalTrigger.evaluate(element => document.activeElement === element)).toBe(true);
+    expect(creates).toHaveLength(0);
+    await expect(dialog(page)).not.toBeVisible();
+    if (gesture === "pointer") await page.mouse.up();
+    else await page.keyboard.up("Space");
+    await expect(dialog(page)).toBeVisible();
+    expect(creates).toHaveLength(0);
+    await expect(page).not.toHaveURL(/#\/game\//);
   } finally {
     release();
     await page.unrouteAll({ behavior: "wait" });
