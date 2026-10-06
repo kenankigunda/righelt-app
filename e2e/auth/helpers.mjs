@@ -37,3 +37,15 @@ export async function signOutAndOpenSignIn(page) {
   await expect.poll(() => page.evaluate(() => localStorage.getItem("righelt.account.logout-pending.v1"))).toBeNull();
   await openPlaySignIn(page);
 }
+
+// Home authentication resumes the chosen Friend introduction, never silently
+// creates a match. Tests must explicitly choose whether to play or dismiss it.
+export async function continueFriendIntroduction(page, {play = true} = {}) {
+  const story=page.getByRole('dialog',{name:'Friend',exact:true});
+  await expect(story).toBeVisible();
+  if (!play) {await story.getByRole('button',{name:'Close opponent story',exact:true}).click();return;}
+  await story.getByRole('button',{name:'Start a friend game',exact:true}).click();
+  await expect(page).toHaveURL(/#\/game\//);
+  await expect(page.getByTestId('game-role')).toContainText('Player 1');
+  await page.getByRole('button',{name:'Close invite',exact:true}).click();
+}

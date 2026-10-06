@@ -1,4 +1,4 @@
-import { enterUsername, openPlaySignIn, waitForAccountStartup, signOutAndOpenSignIn } from "./helpers.mjs";
+import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup, signOutAndOpenSignIn } from "./helpers.mjs";
 import { profileLayoutDisplayName, sampleParticipantGeometry } from "../support/profile-layout.mjs";
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
@@ -36,11 +36,13 @@ async function register(page, username, { gate = false } = {}) {
   }
 }
 async function signIn(page, username, secret = password) {
+  const fromHome=!new URL(page.url()).hash.startsWith("#/game/");
   await openPlaySignIn(page);
   await enterUsername(page, username);
   await dialog(page).getByLabel("Password", { exact: true }).fill(secret);
   await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
+  if(fromHome)await continueFriendIntroduction(page,{play:false});
 }
 
 test("registration helper waits for a failed bootstrap retry before submitting", async ({ page }) => {
@@ -266,6 +268,7 @@ test("a delayed renewal cookie cannot overwrite an account switch", async ({ pag
     await dialog(page).getByLabel("Password", { exact: true }).fill(password);
     await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(dialog(page)).not.toBeVisible();
+    await continueFriendIntroduction(page,{play:false});
     release();
     await page.unrouteAll({ behavior: "wait" });
     const state = await page.evaluate(async () => (await fetch("/api/auth/session", { cache: "no-store" })).json());

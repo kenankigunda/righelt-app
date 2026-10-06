@@ -287,8 +287,8 @@ for(const size of [{width:1440,height:900},{width:375,height:667},{width:900,hei
  await expect(dialog.getByRole('button',{name:'Close opponent story'})).toBeInViewport();
  const bounds=await dialog.evaluate(el=>({outer:el.scrollHeight-el.clientHeight,rect:el.getBoundingClientRect().toJSON(),inner:el.querySelector('.modal-content').getBoundingClientRect().toJSON(),button:el.querySelector('[data-story-play]').getBoundingClientRect().toJSON()}));
  expect(bounds.outer).toBeLessThanOrEqual(1);expect(bounds.rect.top).toBeGreaterThanOrEqual(0);expect(bounds.rect.bottom).toBeLessThanOrEqual(size.height);
- expect(bounds.inner.bottom-bounds.button.bottom).toBeGreaterThanOrEqual(28);
- await dialog.getByRole('button',{name:'Close opponent story'}).click();await page.getByTestId('home-create-game').click();await expect(content).toHaveJSProperty('scrollTop',0);await page.screenshot({path:test.info().outputPath(`friend-${size.width}.png`)});
+ expect(bounds.rect.bottom-bounds.button.bottom).toBeGreaterThanOrEqual(28);
+ await dialog.getByRole('button',{name:'Close opponent story'}).click();await page.getByTestId('home-create-game').click();await expect(content).toHaveJSProperty('scrollTop',0);await expect(action).toBeEnabled();await page.screenshot({path:test.info().outputPath(`friend-${size.width}.png`)});
 });
 
 test('legend follows rendered overlays and commander follows selected ownership',async({page})=>{
@@ -300,7 +300,7 @@ test('legend follows rendered overlays and commander follows selected ownership'
  })).toBe(true);};
  await page.locator('#shell-board .cell:has(.piece-token.p2)').first().click();await check();
  expect(await legend.locator('.commander-key').evaluate(el=>getComputedStyle(el).color)).toBe(await legend.locator('.command').evaluate(el=>getComputedStyle(el).color));
- expect(await legend.locator('.supply-point').evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(await legend.locator('.commander-key').evaluate(el=>getComputedStyle(el).color));
+ expect(await legend.locator('.supply-point svg').evaluate(el=>getComputedStyle(el).fill)).toBe(await legend.locator('.commander-key').evaluate(el=>getComputedStyle(el).color));
  await page.locator('#shell-board .cell:has(.piece-token.p1)').first().click();await check();
  await page.locator('#shell-board .cell:has(.piece-token.p1)').first().click();await check();
 });
@@ -341,4 +341,29 @@ test('an open flyout retains its node and animation state across game navigation
  await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase','idle');
  expect(await flyout.evaluate(el=>el===window.retainedFlyout)).toBe(true);
  expect(await page.evaluate(()=>window.flyoutAnimationRestarts)).toBe(0);
+});
+
+test('commander windows mask paths and center dots in real and ghost states',async({page})=>{
+ await page.goto('/');await page.getByRole('button',{name:'Play both sides',exact:true}).click();
+ const source=page.locator('#shell-board .cell:has(.piece-token.p1.commander:not(.ghost))').first();await source.click();
+ await expect(page.locator('#shell-board .commander.move-ghost').first()).toBeVisible();
+ await expect.poll(()=>page.locator('#shell-board .cell').evaluateAll(cells=>cells.flatMap(el=>el.getAnimations()).filter(a=>a.playState==='running').length)).toBe(0);
+ const states=await page.locator('#shell-board .commander').evaluateAll(tokens=>tokens.map(token=>{
+  const cutout=token.querySelector('.commander-cutout'),cell=token.closest('.cell');
+  const ctx=document.createElement('canvas').getContext('2d');
+  const rgba=color=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=color;ctx.fillRect(0,0,1,1);return [...ctx.getImageData(0,0,1,1).data];};
+  return {fill:rgba(getComputedStyle(cutout).fill),background:rgba(getComputedStyle(cell).backgroundColor),opacity:getComputedStyle(token).opacity,cutoutOpacity:getComputedStyle(cutout).opacity};
+ }));
+ expect(states.length).toBeGreaterThan(1);for(const state of states){expect(state.fill).toEqual(state.background);expect(state.opacity).toBe('1');expect(state.cutoutOpacity).toBe('1');}
+ await page.screenshot({path:test.info().outputPath('commander-masked-window.png')});
+});
+
+test('scroll viewport stays inside clipped modal corners when enlarged',async({page})=>{
+ await page.setViewportSize({width:900,height:600});await page.goto('/');await page.getByTestId('home-create-game').click();
+ await page.addStyleTag({content:'.story-modal {font-size:125%;} .opponent-story-copy {font-size:22px!important;}'});
+ const dialog=page.getByRole('dialog',{name:'Friend',exact:true}),content=dialog.locator('.modal-content');
+ await expect.poll(()=>content.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
+ const geometry=await dialog.evaluate(el=>{const outer=el.getBoundingClientRect(),inner=el.querySelector('.modal-content').getBoundingClientRect();return {top:inner.top-outer.top,bottom:outer.bottom-inner.bottom,left:inner.left-outer.left,right:outer.right-inner.right};});
+ expect(geometry.top).toBeGreaterThanOrEqual(24);expect(geometry.bottom).toBeGreaterThanOrEqual(24);expect(geometry.left).toBeGreaterThanOrEqual(10);expect(geometry.right).toBeGreaterThanOrEqual(10);
+ await content.evaluate(el=>el.scrollTop=el.scrollHeight);await expect(dialog.getByRole('button',{name:'Start a friend game'})).toBeInViewport();await expect(dialog.getByRole('button',{name:'Close opponent story'})).toBeInViewport();
 });

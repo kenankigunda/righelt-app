@@ -2521,9 +2521,8 @@ const renderJoinInvitePanel = (game, inviteLink) => {
   const joinPlayerButtonKey = getJoinButtonKey("player", game.id);
   const playAsBothButtonKey = getPlayAsBothButtonKey(game.id);
   const copyInviteButtonKey = getCopyInviteButtonKey(game.id);
-  const pendingSeatNotice = game.pendingPlayerRequestSeat
-    ? `<div class="alert" data-testid="pending-player-request-notice">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
-    : "";
+  // Pending approval is explained once in the blocking invitation surface.
+  const pendingSeatNotice = "";
   const pendingRows =
     game.pendingJoinRequests.length === 0
       ? ""

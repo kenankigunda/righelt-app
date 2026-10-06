@@ -23,7 +23,7 @@ test("direct-link join request can be approved and stays correct through history
     await acceptPendingRequest(creatorPage);
 
     await expect(requesterPage.getByTestId("game-role")).toContainText("Player 2");
-    await expect(creatorPage.getByTestId("participant-player-2")).toContainText("Connected");
+    await expect(creatorPage.getByTestId("participant-player-2").getByRole("img",{name:"Connected",exact:true})).toBeVisible();
 
     const requesterHistoryCount = await getHistoryMoveCount(requesterPage);
     await makeAnyLegalMove(creatorPage, "p1");

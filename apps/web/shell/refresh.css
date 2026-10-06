@@ -238,8 +238,8 @@ button:has(> .righelt-icon):not(.ui-icon-button) {display:inline-flex;align-item
 @media(prefers-reduced-motion:reduce){.home-refresh button.opponent-choice{transition:none;}.home-refresh button.opponent-choice:active{translate:none;}}
 
 /* Interaction washes remain subordinate to pieces and illustrations. */
-[data-shell-panel="board"] .cell:is(.source,.target,.selected-piece) {background:color-mix(in srgb,var(--corner-start) 5%,var(--cell-fill));}
-[data-hover-capability="hover"] [data-shell-panel="board"] .cell:not(.unselectable):hover {background:color-mix(in srgb,var(--corner-start) 5%,var(--cell-fill));color:var(--ink);}
+[data-shell-panel="board"] .cell:is(.source,.target,.selected-piece) {--cell-surface:color-mix(in srgb,var(--corner-start) 5%,var(--cell-fill));background:var(--cell-surface);}
+[data-hover-capability="hover"] [data-shell-panel="board"] .cell:not(.unselectable):hover {--cell-surface:color-mix(in srgb,var(--corner-start) 5%,var(--cell-fill));background:var(--cell-surface);color:var(--ink);}
 /* Neutral supporting game surfaces; only the Board carries player corners. */
 :is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel:not([data-shell-panel="board"]) {
   --corner-start:transparent!important;--corner-end:transparent!important;
@@ -421,17 +421,17 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .story-art-wrap[data-single-image="true"] {grid-template-columns:minmax(0,1fr);}
 
 /* The surface owns decoration; only the padded content viewport may scroll. */
-.story-modal {padding:0;overflow:hidden;}
-.story-modal .modal-content {box-sizing:border-box;max-height:calc(100dvh - 40px);overflow:auto;overscroll-behavior:contain;padding:52px 28px 32px;scrollbar-gutter:stable;}
+.story-modal {padding:24px 10px;overflow:hidden;}
+.story-modal .modal-content {box-sizing:border-box;max-height:calc(100dvh - 88px);overflow:auto;overscroll-behavior:contain;padding:28px 18px 8px;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--divider) transparent;}
 .story-modal .modal-controls {position:absolute;inset:0 0 auto;height:52px;z-index:3;pointer-events:none;}
 .story-modal .modal-controls button {pointer-events:auto;}
 .story-modal .story-art-wrap {margin:0 0 20px;}
-.story-modal .story-art {height:clamp(140px,30dvh,280px);aspect-ratio:auto;}
+.story-modal .story-art {height:auto;aspect-ratio:3/2;width:100%;}
 .story-modal .story-copy {padding:0;}
 .story-modal .story-heading {flex-wrap:wrap;gap:4px 14px;}
 .story-modal .story-heading h2 {font-size:clamp(30px,5vw,40px);}
 .story-modal .story-modal-actions {margin-top:16px;}
-@media(max-width:700px){.story-modal .modal-content {padding:52px 22px 30px;}.story-modal .story-art {height:clamp(120px,25dvh,220px);}}
+@media(max-width:700px){.story-modal .modal-content {padding:28px 12px 6px;}}
 
 /* Empty identities keep the same icon/name geometry, with quiet neutral marks. */
 [data-testid="participants-list"] .participant-empty {padding-left:0;gap:var(--identity-gap);}
@@ -471,3 +471,17 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .shell-game-alert.alert::before {content:'';position:absolute;left:14px;top:23px;width:7px;height:7px;background:var(--info);transform:rotate(45deg);}
 .shell-game-alert.alert.warn::before {background:var(--warning);}
 .shell-game-alert.alert.danger::before {background:var(--danger);}
+
+/* The commander window is a solid part of the square, including ghost previews. */
+.cell .commander-cutout {fill:var(--cell-surface,var(--cell-fill));stroke:none;opacity:1;}
+.cell .piece-token.commander {opacity:1;z-index:2;}
+.cell .piece-stack {z-index:2;}
+.cell .piece-stack .piece-token.stacked-underlay {z-index:0;}
+.cell .piece-stack .piece-token.stacked-top {z-index:1;}
+.cell .piece-token.commander.ghost .piece-body {opacity:.35;}
+[data-shell-panel="board"] .cell.target .piece-token.commander.move-ghost .piece-body {opacity:.22;}
+.story-modal .modal-content::-webkit-scrollbar {width:6px;height:6px;}
+.story-modal .modal-content::-webkit-scrollbar-thumb {background:var(--divider);border-radius:3px;}
+.story-modal .modal-content::-webkit-scrollbar-track {background:transparent;}
+
+[data-shell-panel="board"] .cell.target .piece-token.commander.move-ghost {opacity:1;}

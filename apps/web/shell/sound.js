@@ -22,7 +22,7 @@ export const createGameSound = ({
   let enabled = true, audio, reminderTimer = null, pendingIncoming = false;
   const sequences = new Map(), localCommands = new Set(), localStates = new Map();
   const active = () => !hidden() && focused();
-  const cue = (state, previous, fallback='move') => state?.outcome?.status && state.outcome.status !== 'ongoing' ? 'result' : previous?.pieces?.length > state?.pieces?.length ? 'capture' : previous && (previous.sideToMove !== state?.sideToMove || previous.turnIndex !== state?.turnIndex) ? 'turn' : fallback;
+  const cue = (state, previous, fallback='move', confirmed=true) => confirmed && state?.outcome?.status && state.outcome.status !== 'ongoing' ? 'result' : previous?.pieces?.length > state?.pieces?.length ? 'capture' : previous && (previous.sideToMove !== state?.sideToMove || previous.turnIndex !== state?.turnIndex) ? 'turn' : fallback;
   try { enabled = storage?.getItem(SOUND_KEY) !== 'false'; } catch {}
   const cancelPreview = () => {}; // Hover never schedules audio. Retained for interaction reset callers.
   const clearIncoming = () => { if (reminderTimer !== null) clearTimer(reminderTimer); reminderTimer = null; pendingIncoming = false; };
@@ -104,19 +104,22 @@ export const createGameSound = ({
       if(change.type!=='optimistic_enqueue' || !change.clientCommandId || localCommands.has(change.clientCommandId))return false;
       localCommands.add(change.clientCommandId);
       if(localCommands.size>1024)localCommands.delete(localCommands.values().next().value);
-      cancelPreview();return !silent && play(cue(state,previous));
+      cancelPreview();return !silent && play(cue(state,previous,'move',false));
     },
     observe(payload,{silent=false}={}){
       const id=payload?.game?.id, seq=payload?.eventSeq;
       if(!id || !Number.isSafeInteger(seq))return false;
       const previous=sequences.get(id);if(previous && seq<=previous.seq)return false;
-      sequences.set(id,{seq,pieces:payload.game.board?.state?.pieces?.length});
+      const state=payload.game.board?.state;
+      const terminal=Boolean(state?.outcome?.status && state.outcome.status!=='ongoing');
+      sequences.set(id,{seq,pieces:state?.pieces?.length,terminal});
       // Initial snapshots, replay and local acknowledgements never notify.
-      if(silent || localCommands.has(payload.clientCommandId) || payload.type!=='event_appended' || !['move_recorded','turn_ended','moves_reverted'].includes(payload.reason))return false;
+      if(silent || payload.type!=='event_appended' || !['move_recorded','turn_ended','moves_reverted'].includes(payload.reason))return false;
       if(!active())return payload.reason==='move_recorded' && isOpponentMove(payload.game,payload.clientCommandId) ? incoming() : false;
       clearIncoming();
+      if(terminal && !previous?.terminal)return play('result');
+      if(localCommands.has(payload.clientCommandId) || terminal)return false;
       if(payload.reason === "moves_reverted")return play("history-back");
-      const state=payload.game.board?.state;
       return play(state?.outcome?.status && state.outcome.status!=='ongoing'?'result':previous?.pieces>state?.pieces?.length?'capture':payload.reason==='turn_ended'?'turn':'move');
     },
   };

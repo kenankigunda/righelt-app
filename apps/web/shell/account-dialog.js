@@ -281,7 +281,7 @@ export const createAccountDialog = ({
     dialog.replaceChildren();
     const action = trigger?.closest?.("[data-action]")?.getAttribute("data-action");
     const restored = trigger?.isConnected ? trigger : action ? document.querySelector(`[data-action="${CSS.escape(action)}"]`) : document.querySelector('[data-action="account-open"]');
-    restored?.focus?.();
+    restored?.focus?.({preventScroll:true});
   };
   const open = (next = "login", intent = null, source = null) => {
     autosave?.cancel(); autosave = null;

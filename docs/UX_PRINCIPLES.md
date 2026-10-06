@@ -238,7 +238,7 @@ Show newly chosen passwords by default during account creation and password chan
 Righelt should feel playful, thoughtfully designed, and unmistakably like a game. Visuals, motion, sound, language, and interactions work together to make play tangible and enjoyable while preserving clarity and ease of use. Preserve the rationale behind preexisting interaction, layout, spacing, alignment, and responsive decisions.
 
 ## Boundaries
-Ship independently of T-108 login; preserve guest play. Keep account gates, migrations, and account policy in T-108. Keep original board geometry, controls, and mouse/touch input rules. Exceptions: supply markers use their owner's piece color, the legend uses the active player color, and action-specific sounds. Defer refresh-added Explain/expanded help and changed confirmation behavior to T-118. Keep results/rematch flows. Bypass the placeholder tutorial; T-009 owns the real interactive lesson, T-117 character-hosted instruction. Do not describe the placeholder as implemented interactive teaching.
+Ship independently of T-108 login; preserve guest play. Keep account gates, migrations, and account policy in T-108. Keep original board geometry, controls, and mouse/touch input rules. Exceptions: supply markers use their owner's piece color, the legend uses the selected piece owner or active player color, and action-specific sounds. Defer refresh-added Explain/expanded help and changed confirmation behavior to T-118. Keep results/rematch flows. Bypass the placeholder tutorial; T-009 owns the real interactive lesson, T-117 character-hosted instruction. Do not describe the placeholder as implemented interactive teaching.
 
 ## Visual system
 Keep the selected vector logo unchanged as a quality benchmark, not a shape template for every component. Faithfully translate approved intro references: warm ivory, generous spacing, rounded primary actions, restrained shadows and small red/blue corner accents. Use reusable buttons, icon controls, alerts, headings, metadata/participant rows, cards and modals. Avoid boxes inside boxes; use spacing before borders. Self-host Google Fonts OFL Manrope. Primary actions follow the user's affiliation, red when unknown, never the logo's animated turn. Strengthen the background grid and derive its cell scale and origin from the rendered logo motif, recalculating on resize.
@@ -246,14 +246,14 @@ Keep the selected vector logo unchanged as a quality benchmark, not a shape temp
 Keep Continue playing / Start / Other games. Restore established card placement, alignment, reserved optional row heights, pagination and natural document scrolling. Remove fixed-height nested scrolling. Use small integrated illustrated opponent choices and an intentional Friend icon. Restyle game surroundings while keeping swipe panels and Board / Players / History tabs. Replace Join/Invite and Participants bullets with structured lightweight rows. Keep forward transitions and reverse Back/browser Back transitions with focus and scroll restoration.
 
 ## Opponent stories
-Keep exact approved story copy and three scenes per opponent. Plain artwork areas and substantial outer negative space must match the card color exactly; crisp selective edges and continuous wall/tablecloth space, not generic feathered fades. Intro is a modal over an obscured inert board. Full story stays fixed. Six-second cycling; hover/focus pauses; manual left/right carets stop automatic cycling for the visit; reduced motion is manual. No numeric or pause/resume controls. Carets have accessible names and touch targets.
+Keep exact approved story copy and three scenes per opponent. Plain artwork areas and substantial outer negative space must match the card color exactly; crisp selective edges and continuous wall/tablecloth space, not generic feathered fades. Intro is a modal over an obscured inert board. Full story stays fixed. Three-second cycling continues through hover and focus; deliberate left/right caret or keyboard actions stop automatic cycling for the visit; reduced motion is manual. No numeric or pause/resume controls. Carets have accessible names and touch targets.
 
 Show each opponent on first play even when ready. Never force watching all images. Play stays disabled until actual runtime readiness. Retry on preparation failure. Close before Play creates no match. Guest seen-state is local; optional account integration supplies account persistence. Player clicks open computer stories or minimal human profiles. Reopened stories do not pause games.
 
 ## Sound
 Wooden-tabletop palette; sound defaults ON unless explicitly muted. Visible lightweight shared-header toggle, independent of login. Remember the device choice, respect browser restrictions and any available explicit no-sound preference. Reduced motion is not mute.
 
-Distinct physical cues: light lift/tick for selection; softer tick for preview; gentle release for cancellation; crisp clack for committed placement; distinct removal contact for captures; differentiated turn/result cues; restrained game-entry and introduction cues. Desktop preview waits 200 ms on a new legal destination; cancel on leave, so quick sweeps stay silent. Touch preview is immediate. Do not duplicate cues on renders, acknowledgements, reconnects or selection restoration. Successful placement cues require confirmation. Hidden pages, initial loads, ordinary buttons, logo and image cycling are silent; never replay missed sounds.
+Distinct physical cues: light lift/tick for selection; softer tick for preview; gentle release for cancellation; crisp clack for committed placement; distinct removal contact for captures; differentiated turn/result cues; restrained game-entry and introduction cues. Hover is silent. Deliberate click, tap, or keyboard preview gets immediate feedback. Do not duplicate cues on renders, acknowledgements, reconnects or selection restoration. Immediate tactile placement feedback is deduplicated against acknowledgements. Result cues require confirmation. Hidden pages, initial loads, ordinary buttons, logo and image cycling are silent; never replay missed sounds.
 
 
 ## Review refinements: integrated, playful surfaces
@@ -262,9 +262,9 @@ Distinct physical cues: light lift/tick for selection; softer tick for preview; 
 - Use angular clipped corners prominently on cards and sections, selectively accented in red/blue. Colored accents meet the component edges. Soft primary buttons and restrained modal surfaces provide contrast without nested boxes.
 - The aligned background grid recedes with distance from the logo. Preserve the approved wordmark itself.
 - Remove implementation language and raw identifiers from normal play. Keep only copy that helps players choose, understand waiting, or recover. Explain consequences, not internal mechanisms.
-- Audio follows the visible action immediately, including local placement before server acknowledgement. Deduplicate by action identity; rejection remains visibly recoverable. Preserve deliberate mute, silent replay/background behavior, and 200 ms desktop hover settling. Built-in-speaker timing is the review baseline.
+- Audio follows the visible action immediately, including local placement before server acknowledgement. Deduplicate by action identity; rejection remains visibly recoverable. Preserve deliberate mute, silent replay/background behavior, and silent hover. Built-in-speaker timing is the review baseline.
 - Invitations state their recipient purpose: red/blue for an open playing seat, purple for viewing. Merge players and invitation actions. Friend creation opens a dismissible Invite modal; copy confirms success without closing it. Recipient intent never replaces server authorization.
-- Introduction scenes rotate every three seconds; hover/focus pause, manual carets stop cycling for the visit, and reduced motion stays manual.
+- Introduction scenes rotate every three seconds; hover/focus stay silent and do not pause, manual carets or deliberate keyboard actions stop cycling for the visit, and reduced motion stays manual.
 - Board exceptions include lighter player-color hover and breathing room around coordinates, in addition to supply ownership color and sound. Preserve game geometry and established mouse/touch rules. Commander ideation is separate until approved.
 
 Latest section baseline: use red top-left and blue bottom-right clipped-corner accents consistently across sections, superseding selective section accents. Preserve clear content and controls; iterate from this shared treatment.
@@ -319,7 +319,7 @@ Hide Continue playing once loading confirms there are no unfinished games. Group
 
 Use the same compact presence indicator on home cards and player rows. Keep the display name primary and the username quiet underneath. Opening a profile expands its row rather than wrapping the surrounding controls. A prepared player invitation appears in the vacant seat as Awaiting player, without claiming it has been delivered.
 
-Navigation sound starts with the route reveal and shares its duration. Keep the reduced-motion cue independent from animation. All close icon controls use the same lightweight branded cross and 44px target. Section headings share Manrope and a single weight token. All four Board corner accents are thin, with the top pair in the current player's color and the bottom pair in the opponent's color. This supersedes the earlier thick-top rule.
+Navigation sound follows both route cover and reveal phases with matching easing and a silent covered hold. Keep the reduced-motion cue independent from animation. All close icon controls use the same lightweight branded cross and 44px target. Section headings share Manrope and a single weight token. All four Board corner accents are thin, with the top pair in the current player's color and the bottom pair in the opponent's color. This supersedes the earlier thick-top rule.
 
 The current navigation sound experiment is a soft unpitched swoosh rising on entry and falling on exit, following the swipe. This is separate from the wooden palette for board interaction and remains open for a later focused sound-design pass.
 
@@ -337,7 +337,7 @@ Group an identity's emblem, display name, secondary username, and connection sta
 
 ### Overlay surface and scrolling contract
 
-The shared modal surface owns its stone decoration and persistent close control. A single padded inner viewport owns content scrolling. Never let decorative layers create scrollable overflow. Bound artwork height by the viewport rather than allowing image aspect ratio alone to determine dialog height. Reserve real space below the last action and around clipped corners. Short screens, enlarged text, and longer copy may require inner scrolling, but all content and actions must remain reachable without scrolling the background. Test both fitting and overflowing content, resize while open, and scroll restoration after dismissal. Apply this structure to new overlays rather than adding opponent-specific overflow patches.
+The shared modal surface owns its stone decoration and persistent close control. A single padded inner viewport owns content scrolling. Never let decorative layers create scrollable overflow. Size artwork from the available width and its natural aspect ratio. Bound the scrolling viewport, not the scene scale. Reserve real space below the last action and around clipped corners. Short screens, enlarged text, and longer copy may require inner scrolling, but all content and actions must remain reachable without scrolling the background. Test both fitting and overflowing content, resize while open, and scroll restoration after dismissal. Apply this structure to new overlays rather than adding opponent-specific overflow patches.
 
 
 ## Current sound contract (October 5, supersedes earlier hover experiments)
@@ -361,7 +361,7 @@ Sections use balanced top and bottom content insets. Internal rhythm comes from 
 
 Artwork is part of its surrounding component, not an inset rectangle with softened edges. Scenes occupy their intended card space generously. The component's plain surface continues into substantial negative space within the scene, using exact surface color or clean transparency. Preserve crisp selective edges, coherent scene props across story frames, and the established scale. Do not shrink artwork into an isolated vignette to solve layout overflow, or use feathered halos to disguise a rectangular image. Solve overflow through the shared content viewport, responsive composition, and balanced spacing. Character-only Start illustrations are intentionally simpler but follow the same integration rule.
 
-Friend artwork followup: replace the human scene with two new animal characters playing together in the established Righelt style, after functional and layout repairs. Preserve the large integrated scene treatment. Empty-viewer iconography uses quiet unoccupied-group outlines, never a slash or prohibition mark.
+Friend artwork uses hands and an inviting tabletop, without human faces or animal characters. Preserve the large integrated scene treatment. Empty-viewer iconography uses quiet unoccupied-group outlines, never a slash or prohibition mark.
 
 
 ## Stable surroundings, current-state guidance, and blocking invitations
@@ -375,3 +375,14 @@ Notices inside an existing surface use an unboxed status marker, text, and clear
 The legend explains only the current board visualization. Commander and supply point stay present and share the active or selected piece's owner color. Command and supply lines appear only when their paths are drawn. Group strength appears only when an actual group-strength badge is visible, not merely when highlighted group members exist. Legend changes resize the section smoothly, including interrupted transitions.
 
 Artwork that includes gameplay uses the current Righelt board and piece vocabulary: clipped unit pieces, the stepped commander with its open horizontal center, and the angular supply-point arch. Use the shared piece-symbol source and rendered board as references. Avoid generic checker discs. Preserve the characters, scene continuity, large composition, and surface-integrated negative space while updating the game details.
+
+
+Overlay scrollbars belong inside the clipped surface. Keep an inset scrolling viewport clear of all angled corners, with quiet native scrollbar styling, persistent close controls, and one scroll owner. Preserve this geometry at browser zoom and short viewport heights. Fit art to width and allow needed content scrolling rather than shrinking illustrations into thumbnails.
+
+Friend's Start card uses the animated hands. Its narrative overlay expands those hands into a welcoming Righelt board and tabletop scene, without full human figures or animals. Animal characters are exclusive to computer opponents. Illustrated supply points always occupy opposing corner squares, never interior squares.
+
+Commander windows match the square's current fill but are opaque. Move-preview and command/supply paths and center dots must not show through, including ghost and selected states. Keep opacity on the colored piece body, not its cutout fill.
+
+Immediate local move feedback is tactile input feedback. A result cue requires the first confirmed terminal transition. Rejected optimistic finishing moves must not sound like a win. A matching acknowledgement suppresses repeated placement feedback but must still deliver a newly confirmed result once. Account focus restoration uses preventScroll, matching the shared overlay contract.
+
+Shared piece stacks own their elevation above paths. Individual commander masking must preserve the stack's internal underlay/top order. Browser coverage exercises both ordinary commander previews and a commander pushed beneath a unit. Pending approval has one accessible foreground status, never a duplicate notice in the inert preview.

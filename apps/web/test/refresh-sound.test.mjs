@@ -72,3 +72,22 @@ test('navigation cues finish with the requested reveal duration',()=>{
  sound.play('enter',{duration:.2});sound.play('leave',{duration:.2});
  assert.deepEqual(stops,[10.2,10.2]);
 });
+
+
+test('result sound requires confirmation even when the optimistic move finishes the game',()=>{
+ const frequencies=[];
+ const node=()=>({connect(){},disconnect(){},frequency:{value:0},Q:{},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},start(){},stop(){}});
+ const audio={state:'running',currentTime:0,sampleRate:8000,createBuffer:(_,n)=>({getChannelData:()=>new Float32Array(n)}),createBufferSource:node,createBiquadFilter:node,createGain:node,createOscillator:()=>{const n=node();n.start=()=>frequencies.push(n.frequency.value);return n;}};
+ const sound=createGameSound({createAudio:()=>audio});sound.gesture();
+ const ongoing={pieces:[{},{}],sideToMove:'P1',outcome:{status:'ongoing'}};
+ const terminal={...ongoing,outcome:{status:'won'}};
+ const event=(seq,state,commandId,reason='move_recorded')=>({game:{id:'a',board:{state}},eventSeq:seq,clientCommandId:commandId,type:'event_appended',reason});
+ sound.observe(event(1,ongoing),{silent:true});
+ sound.local({gameId:'a',type:'optimistic_enqueue',clientCommandId:'rejected'},{currentSnapshot:terminal});
+ sound.observe(event(2,ongoing,'rejected','action_rejected'));
+ assert.equal(frequencies.includes(560),false);
+ sound.local({gameId:'a',type:'optimistic_enqueue',clientCommandId:'accepted'},{currentSnapshot:terminal});
+ assert.equal(frequencies.includes(560),false);
+ sound.observe(event(3,terminal,'accepted'));sound.observe(event(3,terminal,'accepted'));sound.observe(event(4,terminal,'accepted','turn_ended'));
+ assert.equal(frequencies.filter(x=>x===560).length,1);
+});
