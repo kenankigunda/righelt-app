@@ -146,7 +146,9 @@ test("home pagination preserves its heading and cards while the next page loads"
     });
 
     const section=page.locator('[data-home-section-root="my"]');
+    await expect(section.locator('.mini-board-card-link').first()).toBeVisible();
     const before=await section.locator('.mini-board-card-link').allTextContents();
+    expect(before.length).toBeGreaterThan(0);
     await section.locator('h2').evaluate(el=>window.retainedPaginationHeading=el);
     await page.locator('[data-action="home-page-next"][data-home-section="my"]').click();
     await pageLoadSeen;

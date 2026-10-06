@@ -29,9 +29,12 @@ test("create-game shows an alert banner when the server rejects the create respo
       "Game creation failed. The server could not create this game. Return home and try again.",
     );
     await expect(failureBanner.getByRole("button", { name: "Dismiss" })).toBeVisible();
-    const surface = await failureBanner.evaluate(el=>({radius:getComputedStyle(el).borderRadius,clip:getComputedStyle(el).clipPath,background:getComputedStyle(el).backgroundColor}));
-    expect(surface.radius).toBe("0px");
-    expect(surface.clip).toContain("polygon");
+    await expect(async () => {
+      const surface = await failureBanner.evaluate(el=>({connected:el.isConnected,radius:getComputedStyle(el).borderRadius,clip:getComputedStyle(el).clipPath}));
+      expect(surface.connected).toBe(true);
+      expect(surface.radius).toBe("0px");
+      expect(surface.clip).toContain("polygon");
+    }).toPass({timeout:10000});
     await page.screenshot({path:test.info().outputPath('failure-notice.png')});
     await expect(page.getByText("Latest: Game creation failed")).toBeVisible();
     await page.waitForTimeout(4_000);
