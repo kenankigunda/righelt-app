@@ -27,6 +27,10 @@ Ask only for significant product decisions or structural changes: conflicting go
 
 Merging requires explicit chat authorization or a verified email command under `references/email.md`. Report review completion is personal progress, never merge authorization. Reopening a previously merged PR does not restore its consumed authorization.
 
+## Task resources
+
+Read `docs/ai/RESOURCE_MANAGEMENT.md` from this released checkout. Validation checks use its supervised launchers. Track any separately launched candidate previews and task-created tabs, clean them up at completion or interruption, and close owned disposable UI through supported tools. Report unsupported UI cleanup. Pressure exit code 75 means incomplete validation. Preserve logs, defer heavy work until recovery, and explicitly retry. Never quit Codex or stop another task's resources.
+
 ## Execute and inspect
 
 - Local: `node scripts/validation/cli.mjs local --candidate /absolute/path --base origin/main`. Integrated: `node scripts/validation/cli.mjs integrated --candidate /absolute/path --manifest FILE --out RUN_DIRECTORY`. Invoke these from the released tools checkout.

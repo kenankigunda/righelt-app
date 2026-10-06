@@ -1,3 +1,4 @@
+import { cliPath, supervise } from './resources/supervisor.mjs';
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm, mkdir } from "node:fs/promises";
@@ -25,7 +26,7 @@ let controlServer;
 let restartActive = false;
 const stopChild = async child => {
  intentionalStops.add(child);
- const signal = value => { try { if (child.spawnargs.includes("--persist-to") && child.spawnargs.includes("dev")) process.kill(-child.pid,value); else child.kill(value); } catch {} };
+ const signal = value => { try { child.kill(value); } catch {} };
  const stopped = new Promise(resolve=>child.once("exit",resolve));
  signal("SIGTERM");
  const timer=setTimeout(()=>signal("SIGKILL"),5000);
@@ -60,7 +61,7 @@ const waitForHttp = async (url, label, timeoutMs = DEFAULT_E2E_READY_TIMEOUT_MS)
 };
 
 const spawnLogged = (label, command, args, options) => {
-  const child = spawn(command, args, {
+  const child = spawn(process.execPath, [cliPath, "run", "--kind", "preview", "--", command, ...args], {
     ...options,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -163,7 +164,7 @@ const run = async () => {
       "--persist-to",
       apiPersistPath,
     ],
-    { cwd: repoRoot, detached: true },
+    { cwd: repoRoot },
   );
   let apiChild = startApi();
   // Test-runner-only loopback control: not served by Pages or the application Worker.
@@ -195,7 +196,9 @@ const run = async () => {
   console.log(`[e2e-stack] ready at ${webOrigin} with API ${apiOrigin}`);
 };
 
-await run().catch(async (error) => {
+if (!process.env.RIGHELT_RESOURCE_RUN) {
+  process.exitCode = (await supervise([process.execPath, ...process.argv.slice(1)], { kind: 'preview' })).code;
+} else await run().catch(async (error) => {
   console.error("[e2e-stack] failed to start", error);
   await shutdown(1);
 });

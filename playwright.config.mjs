@@ -41,7 +41,7 @@ export default defineConfig({
     })),
   ],
   webServer: {
-    command: "node scripts/e2e-stack.mjs",
+    command: "node scripts/resources/cli.mjs run --kind preview -- node scripts/e2e-stack.mjs",
     gracefulShutdown: { signal: "SIGTERM", timeout: 15000 },
     url: baseURL,
     reuseExistingServer: false,

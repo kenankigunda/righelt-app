@@ -82,3 +82,7 @@ Open the report with the contextual walkthrough and confidence summary. Captions
 Bound independent review to changed behavior, coverage and concrete risks; stop once its acceptance questions are answered. Further stress runs, browser permutations, screenshots or diagnostics require an explicit unresolved risk. Introduced or materially worsened defects require repair. Escalate serious pre-existing defects; record unrelated minor issues separately. An unreproduced intermittent failure may remain disclosed after appropriate diagnostics and a successful final pass unless evidence indicates an introduced security, data-integrity or core-flow blocker. Preserve its failure history.
 
 Explicit merge approval supplies human acceptance without image-by-image sign-off. Activation-only requirements do not block merging code proven safe while disabled, including automatic deployment behavior. Keep product merge and activation authorization separate. Authoritative policy remains `docs/ai/PR_WORKFLOW.md`.
+
+## Resource interruption
+
+Check commands are supervised under the released resource policy. A memory-pressure cancellation is recorded as incomplete (exit 75), retains its private log, and must not create a successful reuse receipt. Retry only after recovery. Close owned temporary preview tabs through supported tools and report unavailable UI cleanup. See `docs/ai/RESOURCE_MANAGEMENT.md`.
