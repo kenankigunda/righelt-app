@@ -15,7 +15,7 @@ export async function ensureInstallation(cwd,{execute=command,log}={}) {
  const lock=path.join(cwd,'node_modules/.pnpm/lock.yaml');
  let installedLockHash;try{installedLockHash=hash(await readFile(lock));}catch{}
  if(installed?.key===key&&installedLockHash&&installed.installedLockHash===installedLockHash)return {status:'reused',key};
- await execute(['pnpm','install','--frozen-lockfile','--ignore-scripts'],{cwd,log,maxOutputBytes:log?4000:undefined});
+ await execute(['pnpm','install','--frozen-lockfile','--ignore-scripts'],{cwd,log,supervised:true,maxOutputBytes:log?4000:undefined});
  await saveJSON(file,{key,installedLockHash:hash(await readFile(lock)),at:new Date().toISOString()});return {status:'passed',key};
 }
 const checkPaths={
@@ -42,8 +42,8 @@ export async function executeCheck({cwd,argv,env,name,log,execute=command,cacheD
  const compatible=provenance.compatibility??provenance;
  const file=cacheDir&&path.join(cacheDir,hash(compatible)+'.json');
  if(reuse&&file){const prior=await loadSuccessfulEvidence(file,compatible);if(prior)return {...prior,status:'passed',reused:true,reusedProvenance:prior.provenance,provenance,duration:0};}
- const result=await execute(argv,{cwd,env,log,maxOutputBytes:6000,allowFailure:true});
- const record={name,status:result.code===0?'passed':'failed',duration:result.duration,outputBytes:result.outputBytes??0,summaryBytes:Buffer.byteLength(result.output??''),code:result.code??null,signal:result.signal??null,provenance,log};
+ const result=await execute(argv,{cwd,env,log,supervised:true,maxOutputBytes:6000,allowFailure:true});
+ const record={name,status:result.code===0?'passed':'failed',duration:result.duration,outputBytes:result.outputBytes??0,summaryBytes:Buffer.byteLength(result.output??''),code:result.code??null,signal:result.signal??null,incomplete:result.code===75,provenance,log};
  if(result.code===0&&file)await saveSuccessfulEvidence(file,{provenance:compatible,result:record,artifacts:[log],expiresAt:new Date(Date.now()+86400000).toISOString()});
  return record;
 }

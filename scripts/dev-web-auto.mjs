@@ -1,3 +1,4 @@
+import { supervise } from './resources/supervisor.mjs';
 import { spawn } from "node:child_process";
 import http from "node:http";
 import { watch, promises as fs } from "node:fs";
@@ -435,5 +436,6 @@ export const runDevWebAuto = async () => {
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await runDevWebAuto();
+  if (!process.env.RIGHELT_RESOURCE_RUN) process.exitCode = (await supervise([process.execPath, ...process.argv.slice(1)], { kind: 'preview' })).code;
+  else await runDevWebAuto();
 }

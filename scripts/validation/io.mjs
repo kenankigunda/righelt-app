@@ -1,3 +1,4 @@
+import { supervisedArgv } from '../resources/supervisor.mjs';
 import {readFile,writeFile,mkdir,rename} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -7,7 +8,7 @@ import {writeSync} from 'node:fs';
 export const configPath=()=>process.env.RIGHELT_VALIDATION_CONFIG || path.join(os.homedir(),'.config','righelt','validation.json');
 export async function readJSON(file,fallback) {try{return JSON.parse(await readFile(file,'utf8'));}catch(e){if(e.code==='ENOENT' && fallback!==undefined)return fallback;throw e;}}
 export async function saveJSON(file,value) {await mkdir(path.dirname(file),{recursive:true});const tmp=`${file}.${process.pid}.tmp`;await writeFile(tmp,JSON.stringify(value,null,2)+'\n',{mode:0o600});await rename(tmp,file);}
-export async function command(argv,{cwd=process.cwd(),env={},log,allowFailure=false,maxOutputBytes,logStdoutOnly=false}={}) {
+export async function command(argv,{cwd=process.cwd(),env={},log,allowFailure=false,maxOutputBytes,logStdoutOnly=false,supervised=false}={}) {
   if(logStdoutOnly&&!log)throw Error('stdout-only logging requires a log');
   if(maxOutputBytes!==undefined && (!log || !Number.isSafeInteger(maxOutputBytes) || maxOutputBytes<1))throw Error('Bounded output requires a log and a positive byte limit');
   const start=Date.now();let output='',tail=Buffer.alloc(0),outputBytes=0,handle,writeError;
@@ -15,7 +16,9 @@ export async function command(argv,{cwd=process.cwd(),env={},log,allowFailure=fa
   let result;
   try {
     result=await new Promise((resolve,reject)=>{
-      const child=spawn(argv[0],argv.slice(1),{cwd,env:{...process.env,pnpm_config_verify_deps_before_run:'false',...env},stdio:['ignore','pipe','pipe']});
+      const mergedEnv={...process.env,pnpm_config_verify_deps_before_run:'false',...env};
+      const launch=supervised?supervisedArgv(argv,mergedEnv):argv;
+      const child=spawn(launch[0],launch.slice(1),{cwd,env:mergedEnv,stdio:['ignore','pipe','pipe']});
       child.on('error',reject);
       for(const stream of [child.stdout,child.stderr])stream.on('data',chunk=>{
         try {

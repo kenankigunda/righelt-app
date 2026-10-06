@@ -63,3 +63,7 @@ Whenever you change parent-workspace guidance, permissions, or settings, update 
 ## Validation and shepherding
 
 For end-to-end evidence, integrated PR validation, and autonomous repairs, read the released `__VALIDATION_TOOLS__/skills/validate-and-shepherd/SKILL.md`. Use its CLI with `--candidate /absolute/path` for the intended app checkout. The installed tools stay pinned to a merged revision; a candidate branch is not the tooling source. If the released checkout is missing, report the missing installation and prepare the explicit installer command; do not silently use an unmerged candidate skill. Review readiness, merge authorization, and deployment activation are separate. A paused schedule stays paused until explicitly resumed.
+
+## Task resources
+
+Follow the app repo's `docs/ai/RESOURCE_MANAGEMENT.md`. Use supervised launchers for temporary previews and heavy jobs, track run/tab ownership, and clean up task-owned resources at completion or interruption. Memory-pressure cancellation is incomplete validation. Keep Codex and unrelated resources open.
