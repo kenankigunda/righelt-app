@@ -1,3 +1,5 @@
+import { localHttpsEnvironment } from '../local-https.mjs';
+import { cliPath } from '../resources/supervisor.mjs';
 import {candidateCapabilities} from './capabilities.mjs';
 // Versioned validation fixture. Runs candidate code; never rewrites candidate scripts.
 import { spawn } from 'node:child_process';
@@ -183,7 +185,7 @@ export async function startAccountStack({ root = resolveCandidateRoot(), persist
   onStopReady(stop);
   const run = (args, { cwd = root, service = false, capture = false } = {}) => {
     assertRunning(stopping);
-    const child = spawn('pnpm', args, { cwd, stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit', detached: true });
+    const child = spawn(process.execPath, [cliPath, 'run', '--kind', service ? 'preview' : 'heavy', '--', 'pnpm', ...args], { cwd, env: args.includes('https') ? localHttpsEnvironment({ cwd }) : process.env, stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit', detached: true });
     children.add(child);
     if (child.pid) groups.add(child.pid);
     let output = '', errors = '';

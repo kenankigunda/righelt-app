@@ -1,3 +1,5 @@
+import { localHttpsEnvironment } from './local-https.mjs';
+import { supervise } from './resources/supervisor.mjs';
 import { spawn } from "node:child_process";
 import http from "node:http";
 import { watch, promises as fs } from "node:fs";
@@ -10,6 +12,7 @@ const args = process.argv.slice(2);
 const port = args[0] ?? "8788";
 const watchBackend = args.includes("--watch-backend");
 const withApi = args.includes("--with-api");
+const withHttps = args.includes("--https");
 const localApiPort = String(resolveLocalApiPort(port));
 const localApiPersistPath = buildLocalApiPersistPath(port);
 const LOCAL_API_ORIGIN = buildLocalApiOrigin(port);
@@ -375,13 +378,14 @@ const startApiWrangler = () => {
 };
 
 const startPagesWrangler = () => {
-  pagesWrangler = spawn("pnpm", ["exec", "wrangler", "pages", "dev", ".", "--port", port], {
+  pagesWrangler = spawn("pnpm", ["exec", "wrangler", "pages", "dev", ".", "--port", port, ...(withHttps ? ["--local-protocol", "https"] : [])], {
     cwd: webCwd,
+    env: withHttps ? localHttpsEnvironment({ cwd: webCwd }) : process.env,
     stdio: ["inherit", "pipe", "pipe"],
   });
   attachChild(pagesWrangler, { openBrowser: true, label: "pages dev" });
   openTimer = setTimeout(() => {
-    openBrowserForUrl(`http://localhost:${port}`);
+    openBrowserForUrl(`${withHttps ? 'https' : 'http'}://localhost:${port}`);
   }, 2000);
 };
 
@@ -435,5 +439,6 @@ export const runDevWebAuto = async () => {
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await runDevWebAuto();
+  if (!process.env.RIGHELT_RESOURCE_RUN) process.exitCode = (await supervise([process.execPath, ...process.argv.slice(1)], { kind: 'preview' })).code;
+  else await runDevWebAuto();
 }

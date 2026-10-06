@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {closeHostInvitation} from '../e2e/support/app.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import {readFile,writeFile} from 'node:fs/promises';
 import {candidateCapabilities} from '../scripts/validation/capabilities.mjs';
@@ -47,6 +48,13 @@ const count=page=>page.getByTestId('history-move-item').count();
 const options=info=>({baseURL:'https://127.0.0.1:9988',ignoreHTTPSErrors:true,viewport:info.project.use.viewport,isMobile:info.project.use.isMobile,hasTouch:info.project.use.hasTouch});
 async function fits(page,locator){
   await expect(locator).toBeVisible();
+  // Geometry belongs to the settled surface, not its deliberate entrance.
+  // Infinite decorative motion must not hold this check open.
+  await locator.evaluate(async element => {
+    await Promise.all(element.getAnimations({subtree:true})
+      .filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime))
+      .map(animation => animation.finished.catch(() => {})));
+  });
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2)).toBe(true);
   const box=await locator.boundingBox();expect(box.x).toBeGreaterThanOrEqual(-1);expect(box.x+box.width).toBeLessThanOrEqual(page.viewportSize().width+1);
 }
@@ -109,6 +117,7 @@ async function login(page,name,secret=password){
     await dialog(page).getByLabel('Password',{exact:true}).fill(secret);
     await dialog(page).getByRole('button',{name:'Sign in',exact:true}).click();
     await expect(dialog(page)).not.toBeVisible();
+    if(capabilities.playAccountEntry&&!sameGame)await closeHostInvitation(page);
     if(sameGame){expect(page.url()).toBe(previousURL);expect(writes).toBe(0);}
   }finally{if(sameGame)page.off('request',observe);}
 }
@@ -125,7 +134,10 @@ async function registerStandalone(page,username){
   await dialog(page).getByRole('button',{name:createSubmitName,exact:true}).click();
   if(!capabilities.simplifiedAccounts){await dialog(page).getByLabel('I saved my recovery code').check();await dialog(page).getByRole('button',{name:'Continue',exact:true}).click();}
   await expect(dialog(page)).not.toBeVisible();
-  if(capabilities.playAccountEntry)await expect(page.getByTestId('game-role')).toContainText('Player 1');
+  if(capabilities.playAccountEntry){
+    await closeHostInvitation(page);
+    await expect(page.getByTestId('game-role')).toContainText('Player 1');
+  }
 }
 test.beforeAll(async({browser},info)=>{
   if(!capabilities.cutover)return;
@@ -196,7 +208,8 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   await dialog(page).getByLabel('I saved my recovery code').check();
   await dialog(page).getByRole('button',{name:'Continue',exact:true}).click();
   }
-  await expect(dialog(page)).not.toBeVisible();await expect(page.getByTestId('game-role')).toContainText('Player 1');
+  await expect(dialog(page)).not.toBeVisible();
+  await closeHostInvitation(page);await expect(page.getByTestId('game-role')).toContainText('Player 1');
   expect(creates).toBe(1);
   if(capabilities.separateAccountForms)expect((await session(page)).account.displayName).toBe(capabilities.usernameOnlySignup?username:'Validation Signup');
   const gameURL=page.url();
@@ -243,7 +256,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   await dialog(page).getByRole('button',{name:'Sign out',exact:true}).click();
   if(capabilities.playAccountEntry){
     await expect(page.getByTestId('account-open')).toHaveCount(0);
-    expect((await session(page)).authenticated).toBe(false);
+    await expect.poll(async()=>(await session(page)).authenticated).toBe(false);
   }else await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();
   await expect(page.getByTestId('game-board')).toBeVisible();
   await login(page,username);await expect(page.getByTestId('game-role')).toContainText('Player 1');
@@ -263,16 +276,22 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
     await proof(page,info,'returning-personal-home-lower',resume);
     // Restore the intentional top-of-panel view before opening a story.
     await page.getByTestId('resume-slot').evaluate(element=>{element.scrollTop=0;});
-    if(capabilities.stories){
-      const priorCreates=creates;const babs=page.locator('button[data-opponent="babs"]');await babs.click();
-      const story=page.getByRole('dialog',{name:'Babs · Easy'});
-      await expect(story.locator('[data-story-play]')).toBeDisabled();
-      await expect(story.locator('[data-story-readiness]')).toContainText('Computer play is being prepared');
-      await expect.poll(()=>story.locator('[data-story-image]').first().evaluate(img=>img.complete&&img.naturalWidth===960)).toBe(true);
-      await fits(page,story);await proof(page,info,'unavailable-trained-story',story);
-      await page.keyboard.press('Escape');await expect(story).not.toBeVisible();await expect(babs).toBeFocused();
-      expect(creates).toBe(priorCreates);expect((await session(page)).account.preferences.introducedOpponents).toBe(0);
-    }
+  }
+  // Stories are a separate capability from the old personal-home module.
+  if(capabilities.stories){
+    await page.getByRole('link',{name:'Righelt',exact:true}).click();
+    await settledHome(page);
+    const priorPreferences=(await session(page)).account.preferences;
+    const priorIntroductions=await page.evaluate(()=>localStorage.getItem('righelt.introduced.v1'));
+    const priorCreates=creates;const babs=page.locator('button[data-opponent="babs"]');await babs.click();
+    const story=page.getByRole('dialog',{name:capabilities.personalHome?'Babs · Easy':'Babs',exact:true});
+    await expect(story.locator('[data-story-play]')).toBeDisabled();
+    await expect(story.locator('[data-story-readiness]')).toContainText(capabilities.personalHome?'Computer play is being prepared':'This opponent is still in training.');
+    await expect.poll(()=>story.locator('[data-story-image]').first().evaluate(img=>img.complete&&img.naturalWidth>0&&img.naturalHeight>0)).toBe(true);
+    await fits(page,story);await proof(page,info,'unavailable-trained-story',story);
+    await page.keyboard.press('Escape');await expect(story).not.toBeVisible();await expect(babs).toBeFocused();
+    expect(creates).toBe(priorCreates);expect((await session(page)).account.preferences).toEqual(priorPreferences);
+    expect(await page.evaluate(()=>localStorage.getItem('righelt.introduced.v1'))).toBe(priorIntroductions);
   }
   if(capabilities.results)await proveResultsRematch({page,info,root});
   if(process.env.RIGHELT_LEGACY_CONTINUITY_INPUT){

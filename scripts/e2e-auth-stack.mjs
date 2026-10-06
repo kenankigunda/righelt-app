@@ -1,4 +1,5 @@
 // Isolated local account stack. No remote resources or production auth flags are changed.
+import { localHttpsEnvironment } from "./local-https.mjs";
 import { spawn } from "node:child_process";
 import { createAuthFixtureControl } from "./auth-fixture-control.mjs";
 import { createServer } from "node:http";
@@ -22,7 +23,7 @@ let control;
 let proxyDiagnosticsInstallation;
 
 function run(args, { cwd = root, service = false, captureStderr = false } = {}) {
-  const child = spawn("pnpm", args, { cwd, stdio: captureStderr ? ["inherit", "inherit", "pipe"] : "inherit", detached: service });
+  const child = spawn("pnpm", args, { cwd, env: args.includes("https") ? localHttpsEnvironment({ cwd }) : process.env, stdio: captureStderr ? ["inherit", "inherit", "pipe"] : "inherit", detached: service });
   if (service) {
     children.add(child);
     child.on("exit", code => { children.delete(child); if (!stopping) void shutdown(code || 1); });
