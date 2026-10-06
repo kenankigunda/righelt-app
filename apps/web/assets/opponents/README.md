@@ -1,31 +1,21 @@
-# Opponent story artwork
+# Righelt story artwork
 
-T-087 pass-one assets, generated with the built-in image-generation tool on 2026-10-03. These are narrative illustrations, not diagrams of legal board positions. No generated text or interface is used.
+T-087 narrative illustrations generated with the built-in image-generation tool, revised October 6, 2026. Production WebP files are self-contained. `manifest.json` records scene IDs, descriptive text, dimensions, byte sizes, and generation provenance.
 
-`manifest.json` records the three scenes for each opponent, descriptive alt text, intrinsic dimensions, encoded byte sizes and source generation IDs. The original tool outputs are retained by the generation service/local image history. The production deliverables here are self-contained WebP files; runtime must not reference that local history.
+## Current visual contract
 
-## Art direction and prompts
+Scenes fill their card generously. Plain ivory walls, linen, paving and negative space continue the card surface (#fffdf6). Use crisp selective boundaries, never fuzzy vignettes, feathered fades, halos, or CSS masks to hide a rectangular image. The scene scale follows available width and a 3:2 aspect ratio. The shared modal provides scrolling when needed rather than shrinking the art.
 
-All prompts specify standalone 3:2 illustrations, angular geometric painted facets, consistent character identities, crisp selective edges, and ivory walls/tablecloths/parapets as actual scene surfaces. They exclude fuzzy vignettes, feathering, gradient fades, text, UI and logos. Existing story drafts and the accepted integrated-art modal in `righelt-backlog/backlog/assets/ppa-ux/` supplied composition and character references. The approved modal supplied art treatment only, never its superseded background wordmark.
+Babs retains the rainy window, shelf, lantern, books and chair across discovery, rematch and research. Tau retains his golden shell and garden irrigation setting. Horus retains his watchtower and courtyard setting. Each opponent has three scenes and the approved fixed story.
 
-The scene-specific prompt set was:
+Game imagery uses faceted cut-corner units, stepped commanders with horizontal windows, and stepped supply arches. Supply markers occupy corner squares, never interior squares. These are narrative scenes, not legal-position diagrams or substitutes for the actual board renderer.
 
-1. Babs discovers a board during a rainstorm: cream rabbit, navy neckerchief, curious joyful expression, rainy village window, lantern, trailing plant, red and blue round game pieces; replace the old vignette with an ivory wall and tablecloth.
-2. Babs eagerly invites a rematch with paws spread over a reset board, cheerful sunny room and score notebooks; preserve the first scene's identity and framing.
-3. Babs studies an impressive collection of research notebooks, pencil in paw, diagrams without readable text, cheerfully determined after a lost game.
-4. Tau, a friendly green tortoise with a golden shell, waters village garden beds beside stone irrigation channels. Ivory garden wall and paving replace the old vignette.
-5. Tau considers a board beside connected irrigation channels, illustrating the lesson of supply lines; clean ivory tablecloth fills the foreground.
-6. Tau carefully considers a move while Babs rests her chin on her paws in amused patience; keep both identities consistent.
-7. Horus, a slate-blue falcon with cream chest and golden eye, watches courtyard games from an ivory watchtower parapet.
-8. Horus leans forward to study the game below, with a notebook of abstract red and blue diagrams; a closer viewpoint distinguishes this from the first scene.
-9. Horus comes down to suggest a move to Babs and Tau, who listen with amused surprise; confident friendly rivalry, never cruelty.
+Friend is represented by hands only. The compact Start illustration retains the red/blue hand treatment. The larger introduction shows an invitation through an open palm, board, mugs and place settings. No full human figures or animal characters appear in Friend artwork. Animals remain exclusive to computer opponents. The earlier chair invitation is a preserved exploratory direction, not a runtime asset.
 
-Images were visually checked against these scenes and encoded with `cwebp -q 85 -resize 960 0`. No retouching, overlays or synthetic background fades were applied. All nine are 960×640 and together total 874,288 bytes. The UI should load only the selected opponent's first image eagerly, then defer subsequent scenes; artwork failure must leave the story and controls usable.
+## Final prompt set and processing
 
-The consuming story modal and its account/model integration are delivered separately. Adding these assets does not claim that computer-play readiness or first-encounter persistence is implemented.
+The built-in edits preserve character identities, story actions and composition while replacing fuzzy boundaries with crisp architectural or garden edges and continuous ivory. Board edits reference the actual `apps/web/piece-symbols.js` shapes and explicitly require corner supply arches. Babs's wooden tabletop was replaced with ivory linen so its bottom edge meets the card naturally. Friend expands the approved faceted red/blue hands into a tabletop invitation, using the same piece references.
 
-## Integrated artwork revision, 2026-10-04
+The final generated files were inspected before encoding. Only resizing and WebP encoding followed generation (`cwebp -q 90 -resize 1200 800`), with no synthetic fades or retouching. Tau's gardening scene has no gameplay and retains its clean transparent negative space. Friend also uses clean transparency. All revised scenes use clean transparent negative space so the actual card texture continues between crisp scene elements. No blend mode approximates the surface color. Inspect every future revision in the actual component at mobile and desktop sizes, including transitions, before accepting it.
 
-Supersedes the original opaque-background encoding above. All nine scenes now use true transparent negative space, preserving opaque character/object colors and crisp, intentional contours. The surrounding component supplies its exact surface color (#fffdf6 normally), including on hover. No CSS masks or feathered fades disguise rectangular image edges. This integrated treatment is required for future narrative artwork too.
-
-Tau and Horus were edited from the prior illustrations: preserve character identity, poses and story action; remove continuous landscape, plain wall, tablecloth and sky backgrounds; retain a few isolated garden/irrigation or watchtower/courtyard details; use roughly 40% transparent negative space around all edges. Babs uses the approved rainy discovery, eager rematch and notebook research vignettes, with the same transparency treatment. Production files are 1200×800 WebP, compressed with Sharp at quality 90 (Babs 92); current byte sizes and generation provenance are in manifest.json. Only compression/resizing followed tool generation.
+Load the first image eagerly and defer subsequent scenes. A failed image must leave the story and controls usable. Artwork does not establish trained-computer readiness.

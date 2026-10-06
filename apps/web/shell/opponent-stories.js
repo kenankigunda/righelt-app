@@ -5,7 +5,7 @@ export const OPPONENT_STORIES = Object.freeze({
   horus: { name: "Horus", difficulty: "Hard", bit: 4, story: "Horus learned to play in a watchtower, studying matches in the courtyard below. He eventually came down to explain what everyone was doing wrong. Unfortunately, he was usually right.", scenes: [["horus-1-watchtower", "Horus observes the courtyard from a watchtower."], ["horus-2-studying", "Horus studies a match in the courtyard below."], ["horus-3-opinion", "Horus offers his opinion at the game table."]] },
 });
 
-export const FRIEND_STORY = {name:"Friend",difficulty:"A rivalry of your own",story:"Every good rivalry starts with an invitation. Bring someone who knows your tricks, or someone who thinks they do. Settle in, trade a few surprises, and leave room for the inevitable rematch.",scenes:[["friend-introduction","Two friends settle into a friendly red-versus-blue match."]],playLabel:"Start a friend game"};
+export const FRIEND_STORY = {name:"Friend",difficulty:"A rivalry of your own",story:"Every good rivalry starts with an invitation. Bring someone who knows your tricks, or someone who thinks they do. Settle in, trade a few surprises, and leave room for the inevitable rematch.",scenes:[["friend-introduction","Red and blue sleeved hands make room for a friend at a Righelt board, with mugs and inviting place settings."]],playLabel:"Start a friend game"};
 
 export const createStoryCarousel = ({ reducedMotion = false, now = () => performance.now(), setTimer = setTimeout, clearTimer = clearTimeout, onChange = () => {} } = {}) => {
   let index = 0, paused = reducedMotion, hidden = false, timer = null, remaining = 3000, started = 0;

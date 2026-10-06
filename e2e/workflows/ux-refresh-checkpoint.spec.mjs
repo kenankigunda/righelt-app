@@ -18,6 +18,7 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await expect(dialog.locator('[data-story-position], [data-story-pause]')).toHaveCount(0);
  await dialog.getByRole('button',{name:'Next story image'}).click();
  await expect(dialog.locator('[data-story-image]').nth(1)).toHaveAttribute('data-active','true');
+ await expect.poll(()=>dialog.locator('.story-art').evaluate(el=>el.getAnimations({subtree:true}).filter(a=>a.playState==='running').length)).toBe(0);
  await page.screenshot({path:test.info().outputPath('babs-desktop.png')});
  const a11y=await new AxeBuilder({page}).include('dialog[open]').analyze();expect(a11y.violations).toEqual([]);
  await page.keyboard.press('Escape');await expect(page.locator('button[data-opponent="babs"]')).toBeFocused();
