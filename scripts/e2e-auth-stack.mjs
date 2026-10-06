@@ -1,6 +1,6 @@
 // Isolated local account stack. No remote resources or production auth flags are changed.
 import { localHttpsEnvironment } from "./local-https.mjs";
-import { spawn } from "node:child_process";
+import { spawnAuthStackCommand, stopAuthStackCommand } from "./auth-stack-process.mjs";
 import { createAuthFixtureControl } from "./auth-fixture-control.mjs";
 import { createServer } from "node:http";
 import { get } from "node:https";
@@ -23,10 +23,12 @@ let control;
 let proxyDiagnosticsInstallation;
 
 function run(args, { cwd = root, service = false, captureStderr = false } = {}) {
-  const child = spawn("pnpm", args, { cwd, env: args.includes("https") ? localHttpsEnvironment({ cwd }) : process.env, stdio: captureStderr ? ["inherit", "inherit", "pipe"] : "inherit", detached: service });
+  if (stopping) throw new Error("Account stack is stopping");
+  const child = spawnAuthStackCommand(args, { cwd, env: args.includes("https") ? localHttpsEnvironment({ cwd }) : process.env, service, captureStderr });
+  children.add(child);
+  child.on("close", () => children.delete(child));
   if (service) {
-    children.add(child);
-    child.on("exit", code => { children.delete(child); if (!stopping) void shutdown(code || 1); });
+    child.on("close", code => { if (!stopping) void shutdown(code || 1); });
     return child;
   }
   return new Promise((resolve, reject) => {
@@ -45,12 +47,8 @@ async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
   control?.close();
-  await Promise.all([...children].map(child => new Promise(resolve => {
-    const kill = signal => { try { process.kill(-child.pid, signal); } catch {} };
-    child.once("exit", resolve);
-    kill("SIGTERM");
-    setTimeout(() => { kill("SIGKILL"); resolve(); }, 5000).unref();
-  })));
+  const cleaned = await Promise.all([...children].map(stopAuthStackCommand));
+  if (cleaned.some(ok => !ok)) code = 1;
   try { const restore = await proxyDiagnosticsInstallation; await restore?.(); }
   catch (error) { console.error(error); code = 1; }
   await rm(temporary, { recursive: true, force: true });
