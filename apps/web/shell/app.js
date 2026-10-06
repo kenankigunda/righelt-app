@@ -1,3 +1,4 @@
+import { patchSectionContent } from "./dom-patch.js";
 import { SWIPE_EASING_CSS } from './navigation-motion.js';
 import { getGameResult, createResultTransitions, createRematchDialog } from './game-result.js';
 import { createRouteHydration } from './route-hydration.js';
@@ -2753,20 +2754,6 @@ const createMarkupRoot = (markup) => {
 };
 // Keep the enabled home control and its ancestor chain mounted while asynchronous
 // home sections update. Detaching a pressed/focused button loses native activation.
-const patchSectionContent = (current,next) => {
-  for(const attr of [...current.attributes])if(!next.hasAttribute(attr.name))current.removeAttribute(attr.name);
-  for(const attr of next.attributes)if(current.getAttribute(attr.name)!==attr.value)current.setAttribute(attr.name,attr.value);
-  const old=[...current.childNodes],fresh=[...next.childNodes];
-  fresh.forEach((child,index)=>{
-    const existing=old[index];
-    if(!existing){current.append(child.cloneNode(true));return;}
-    if(existing.nodeType===child.nodeType && existing.nodeName===child.nodeName){
-      if(child.nodeType===Node.TEXT_NODE){if(existing.textContent!==child.textContent)existing.textContent=child.textContent;}
-      else if(child instanceof Element)patchSectionContent(existing,child);
-    }else existing.replaceWith(child.cloneNode(true));
-  });
-  old.slice(fresh.length).forEach(child=>child.remove());
-};
 const patchHomeAroundCreateControl = (markup) => {
   const focusedControl=appEl.contains(document.activeElement) ? document.activeElement.closest('[data-action]') : null;
   const focusedAction=focusedControl?.dataset.action;
