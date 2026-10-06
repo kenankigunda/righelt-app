@@ -20,36 +20,36 @@ for (const width of [390, 480, 481, 768, 1440]) {
     expect(bounds.x).toBeGreaterThanOrEqual(0);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(width + 1);
     await dialog.evaluate(async node => { await Promise.all(node.getAnimations().map(animation => animation.finished.catch(() => {}))); });
-    // ResizeObserver can start the height transition after getAnimations()
-    // was read. Poll the settled geometry instead of sampling that race.
-    if (width > 480) await expect.poll(() => dialog.evaluate(node => {
-      const style = getComputedStyle(node);
-      const last = node.querySelector("[data-signin]");
-      return Math.abs(node.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom - parseFloat(style.borderBottomWidth) - parseFloat(style.paddingBottom));
-    })).toBeLessThan(0.5);
-    const spacing = await dialog.evaluate(node => {
-      const style = getComputedStyle(node);
-      const last = node.querySelector('[data-signin]');
-      return {
-        top: parseFloat(style.paddingTop), bottom: parseFloat(style.paddingBottom),
-        gap: node.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom - parseFloat(style.borderBottomWidth),
-      };
-    });
-    const settledBounds = await dialog.boundingBox();
-    if (width > 480) {
-      expect(settledBounds.x).toBeGreaterThan(0);
-      expect(settledBounds.y).toBeGreaterThan(0);
-      expect(settledBounds.width).toBeLessThan(width);
-      expect(settledBounds.height).toBeLessThan(900);
-      expect(spacing.bottom).toBeCloseTo(spacing.top, 1);
-      expect(spacing.gap).toBeCloseTo(spacing.bottom, 0);
-    } else {
-      expect(spacing.bottom).toBeGreaterThanOrEqual(16);
-      expect(settledBounds.x).toBeCloseTo(0, 0);
-      expect(settledBounds.y).toBeCloseTo(0, 0);
-      expect(settledBounds.width).toBeCloseTo(width, 0);
-      expect(settledBounds.height).toBeCloseTo(900, 0);
-    }
+    // ResizeObserver may retarget between frames. Measure all related geometry
+    // atomically and retain every acceptance bound while waiting for settlement.
+    await expect(async () => {
+      const { spacing, settledBounds } = await dialog.evaluate(node => {
+        const style = getComputedStyle(node);
+        const bounds = node.getBoundingClientRect();
+        const last = node.querySelector('[data-signin]').getBoundingClientRect();
+        return {
+          settledBounds: bounds.toJSON(),
+          spacing: {
+            top: parseFloat(style.paddingTop), bottom: parseFloat(style.paddingBottom),
+            gap: bounds.bottom - last.bottom - parseFloat(style.borderBottomWidth),
+          },
+        };
+      });
+      if (width > 480) {
+        expect(settledBounds.x).toBeGreaterThan(0);
+        expect(settledBounds.y).toBeGreaterThan(0);
+        expect(settledBounds.width).toBeLessThan(width);
+        expect(settledBounds.height).toBeLessThan(900);
+        expect(spacing.bottom).toBeCloseTo(spacing.top, 1);
+        expect(spacing.gap).toBeCloseTo(spacing.bottom, 0);
+      } else {
+        expect(spacing.bottom).toBeGreaterThanOrEqual(16);
+        expect(settledBounds.x).toBeCloseTo(0, 0);
+        expect(settledBounds.y).toBeCloseTo(0, 0);
+        expect(settledBounds.width).toBeCloseTo(width, 0);
+        expect(settledBounds.height).toBeCloseTo(900, 0);
+      }
+    }).toPass({ timeout: 10000 });
     await dialog.screenshot({ path: info.outputPath('account-entry.png') });
     await page.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();

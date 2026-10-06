@@ -264,7 +264,9 @@ for (const width of [375, 900, 1440]) test(`identity hierarchy remains aligned a
  await page.setViewportSize({width,height:1100});await page.goto('/');
  await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();await page.getByRole('button',{name:'Close invite',exact:true}).click();
  await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase','idle');
- const playersTab=page.getByRole('button',{name:'Players',exact:true});if(await playersTab.isVisible()){await playersTab.click();await expect(playersTab).toHaveAttribute('aria-pressed','true');}
+ const playersTab=page.getByRole('button',{name:'Players',exact:true});
+ await expect(page.locator('#app')).toHaveAttribute('data-shell-layout-mode',width<=900?'narrow':'wide');
+ if(width<=900){await expect(playersTab).toBeVisible();await playersTab.click();await expect(playersTab).toHaveAttribute('aria-pressed','true');}
  const list=page.getByTestId('participants-list');await expect(list).toBeVisible();await page.evaluate(()=>document.fonts.ready);
  if(await playersTab.isVisible()) {
    // Focus/scrollIntoView must not create a second horizontal scroll position

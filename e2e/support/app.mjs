@@ -289,14 +289,20 @@ export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
 };
 
 export const openHistoryAndReturnLive = async (page) => {
-  await expect(historyMoveItems(page).first()).toBeVisible();
-  await historyMoveItems(page).first().click();
-  await expect(page.getByTestId("history-return-live")).toBeVisible();
+  await openHistoryMode(page);
   await page.getByTestId("history-return-live").click();
   await expect(page.getByTestId("history-return-live")).toHaveCount(0);
 };
 
 export const openHistoryMode = async (page, moveIndex = 0) => {
+  const tab = page.locator('[data-action="switch-game-panel"][data-panel="history"]');
+  // Deliberately reveal the panel instead of scrolling a transformed offscreen pane.
+  await expect(page.locator("#app")).toHaveAttribute("data-shell-layout-mode", /^(narrow|wide)$/);
+  if (await page.locator("#app").getAttribute("data-shell-layout-mode") === "narrow") {
+    await expect(tab).toBeVisible();
+    await tab.click();
+    await expect(tab).toHaveAttribute("aria-pressed", "true");
+  }
   await expect(historyMoveItems(page).nth(moveIndex)).toBeVisible();
   await historyMoveItems(page).nth(moveIndex).click();
   await expect(page.getByTestId("history-return-live")).toBeVisible();
