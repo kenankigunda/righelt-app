@@ -173,7 +173,7 @@ body { isolation:isolate; }
 :root {
   --stone-cut:18px;
   --stone-outline:polygon(18px 0,calc(100% - 28px) 0,100% 28px,100% calc(100% - 46px),calc(100% - 8px) calc(100% - 38px),calc(100% - 8px) calc(100% - 18px),calc(100% - 26px) 100%,18px 100%,0 calc(100% - 18px),0 18px);
-  --stone-grain:url('../assets/stone-grain.svg');
+  --stone-grain:url('../assets/stone-grain.webp');
 }
 body {background-image:var(--stone-grain);background-color:var(--surface-foundation);}
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
@@ -316,7 +316,7 @@ html[data-page-active="false"] .brand-grid {animation-play-state:paused;}
 html[data-page-active="false"] .shell-header button.ui-icon-button {transition:none;}
 
 /* Accounts use the same quiet stone and action language without changing forms. */
-.account-dialog { color:var(--ink); background: url('../assets/stone-grain.svg'),var(--surface-raised); border:1px solid var(--divider); border-radius:18px; padding:24px; box-shadow:0 4px 0 #c8beaa,0 16px 44px rgb(45 39 27 / 22%); }
+.account-dialog { color:var(--ink); background: url('../assets/stone-grain.webp'),var(--surface-raised); border:1px solid var(--divider); border-radius:18px; padding:24px; box-shadow:0 4px 0 #c8beaa,0 16px 44px rgb(45 39 27 / 22%); }
 .account-dialog::backdrop { background:rgb(31 35 34 / 42%); backdrop-filter:blur(5px); }
 .account-dialog h2 { font-size:26px; letter-spacing:-.035em; }
 .account-dialog button { display:inline-flex; align-items:center; justify-content:center; gap:8px; border-radius:12px; font-weight:700; }

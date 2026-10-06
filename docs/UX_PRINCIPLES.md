@@ -390,3 +390,11 @@ Shared piece stacks own their elevation above paths. Individual commander maskin
 ### One owner for panel movement
 
 A transformed panel strip owns its horizontal position. Its clipping viewport must not also scroll horizontally through focus or `scrollIntoView`; use non-scrollable clipping, with vertical scrolling inside the active panel. Regression checks exercise real panel actions and accidental programmatic scroll offsets. Overlay scroll assertions begin after the home surface is mounted and its loading placeholders settle, so an earlier hydration layout shift is not mistaken for modal movement.
+
+### Texture must not compete with interaction
+
+Keep static decorative grain as a pre-rendered, lossless alpha tile rather than recomputing procedural filters across every surface. Preserve the original SVG as the editable source. Rebuild `stone-grain.webp` with `scripts/render-stone-grain.mjs` through the resource supervisor (requires Chromium and `cwebp`). Keep surface colors, grain scale, motion, and transparency unchanged. Evaluate rendering performance as well as appearance when adding decorative effects.
+
+### Respect component ownership during updates
+
+A parent refresh may update a component's inputs, but must not delete DOM owned by its mounted renderer. Preserve mini-board children and runtime attributes when patching home cards, then let the preview controller repaint changed state. Test unchanged refreshes and subsequent data changes, not just first mount. This also preserves the stable headings and controls surrounding nested updates.
