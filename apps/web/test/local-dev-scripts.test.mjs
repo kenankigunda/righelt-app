@@ -26,19 +26,19 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
 
   assert.equal(
     scripts["dev:api:a"],
-    "pnpm --dir apps/api exec wrangler dev --config wrangler.toml --port 8792 --persist-to ../../.wrangler/state/api-local-dev-a",
+    "node scripts/resources/cli.mjs run --kind preview -- pnpm --dir apps/api exec wrangler dev --config wrangler.toml --port 8792 --persist-to ../../.wrangler/state/api-local-dev-a",
   );
   assert.equal(
     scripts["dev:api:b"],
-    "pnpm --dir apps/api exec wrangler dev --config wrangler.toml --port 8793 --persist-to ../../.wrangler/state/api-local-dev-b",
+    "node scripts/resources/cli.mjs run --kind preview -- pnpm --dir apps/api exec wrangler dev --config wrangler.toml --port 8793 --persist-to ../../.wrangler/state/api-local-dev-b",
   );
   assert.equal(
     scripts["dev:api:c"],
-    "pnpm --dir apps/api exec wrangler dev --config wrangler.toml --port 8794 --persist-to ../../.wrangler/state/api-local-dev-c",
+    "node scripts/resources/cli.mjs run --kind preview -- pnpm --dir apps/api exec wrangler dev --config wrangler.toml --port 8794 --persist-to ../../.wrangler/state/api-local-dev-c",
   );
-  assert.equal(scripts["dev:all:a"], "node scripts/dev-web-auto.mjs 8789 --with-api");
-  assert.equal(scripts["dev:all:b"], "node scripts/dev-web-auto.mjs 8790 --with-api");
-  assert.equal(scripts["dev:all:c"], "node scripts/dev-web-auto.mjs 8791 --with-api");
+  assert.equal(scripts["dev:all:a"], "node scripts/resources/cli.mjs run --kind preview -- node scripts/dev-web-auto.mjs 8789 --with-api");
+  assert.equal(scripts["dev:all:b"], "node scripts/resources/cli.mjs run --kind preview -- node scripts/dev-web-auto.mjs 8790 --with-api");
+  assert.equal(scripts["dev:all:c"], "node scripts/resources/cli.mjs run --kind preview -- node scripts/dev-web-auto.mjs 8791 --with-api");
   assert.equal(scripts["check:web-engine-generated"], "node scripts/check-web-engine-generated.mjs");
   assert.equal(scripts["check:ticket-workflow"], "node scripts/check-ticket-workflow-setup.mjs");
   assert.match(scripts.test, /^pnpm typecheck && pnpm check:web-engine-generated && /);
@@ -56,8 +56,8 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.equal(scripts["test:web:integration"], "node apps/web/test/run-web-tests.mjs --layer integration");
   assert.equal(scripts["e2e:install"], "playwright install chromium firefox webkit");
   assert.equal("test:e2e:smoke" in scripts, false);
-  assert.equal(scripts["test:e2e"], "playwright test");
-  assert.equal(scripts["test:e2e:headed"], "playwright test --headed");
+  assert.equal(scripts["test:e2e"], "node scripts/resources/cli.mjs run --kind heavy -- playwright test");
+  assert.equal(scripts["test:e2e:headed"], "node scripts/resources/cli.mjs run --kind heavy -- playwright test --headed");
 });
 
 test("root package scripts expose only db-prefixed local migration commands", () => {
