@@ -38,7 +38,8 @@ def model_weights(model):
 
 
 def model_device(model):
-    return str(next(model.parameters()).device)
+    # PyTorch reports indexed MPS devices (mps:0) after moving the model.
+    return next(model.parameters()).device.type
 
 
 def checkpoint_weights(path):

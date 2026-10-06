@@ -1,6 +1,7 @@
 """CPU tensor/process doubles only; no neural model, MPS, export or engine runs."""
 from contextlib import ExitStack
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -15,7 +16,8 @@ import test_development_probe as fixtures
 class FakeModel:
     training = False
 
-    def __init__(self): self.calls = 0; self.weight = torch.tensor([1.])
+    def __init__(self): self.calls = 0; self.weight = torch.tensor([1.]); self.device = 'mps:0'
+    def parameters(self): return iter([SimpleNamespace(device=torch.device(self.device))])
     def state_dict(self): return {'weight': self.weight}
     def __call__(self, inputs):
         self.calls += 1
@@ -53,7 +55,7 @@ class DevelopmentCollectTest(unittest.TestCase):
             'corpusSha256': probe.digest(self.corpus), 'export': {'sha256': probe.digest(asset)}})
         self.rows = probe.corpus_rows(self.corpus); self.calls = []
         stack = self.enterContext(ExitStack())
-        for target, value in (('source_identity', self.source), ('runtime_identity', self.runtime), ('model_device', 'mps')):
+        for target, value in (('source_identity', self.source), ('runtime_identity', self.runtime)):
             stack.enter_context(patch.object(collect, target, return_value=value))
         stack.enter_context(patch('os.getppid', return_value=41)); stack.enter_context(patch('os.getpid', return_value=42))
         stack.enter_context(patch('os.getpgrp', return_value=42))
@@ -166,6 +168,15 @@ class DevelopmentCollectTest(unittest.TestCase):
         self.model.weight -= 1
         with patch.object(collect, 'source_identity', side_effect=[self.source, {**self.source, 'sourceRevision': 'd' * 40}]):
             with self.assertRaisesRegex(ValueError, 'source or runtime changed'): self.run_collect()
+
+    def test_device_backend_and_eval_mode_are_required_before_any_forward(self):
+        for device, training in (('cpu', False), ('cuda:0', False), ('mps:0', True)):
+            with self.subTest(device=device, training=training):
+                self.model.device = device; self.model.training = training
+                with self.assertRaisesRegex(ValueError, 'loaded development model'): self.run_collect()
+                self.assertEqual(self.model.calls, 0)
+        self.model.device = 'mps:0'; self.model.training = False
+        self.assertTrue(self.run_collect()['complete'])
 
     def test_interruption_preserves_failure_receipt_and_external_watchdog_bound(self):
         captured = []
