@@ -2992,7 +2992,7 @@ const scheduleGameShellStickyLayout = () => {
   });
 };
 
-const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = null, includeBoard = true } = {}) => {
+const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = null, includeBoard = true, animatePanels = false } = {}) => {
   const shellRoot = getMountedGameShellRoot();
   if (!(shellRoot instanceof HTMLElement) || !game) {
     return false;
@@ -3020,6 +3020,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   if (joinEl instanceof HTMLElement) {
     const markup=renderJoinInvitePanel(game, inviteLink);
     if(joinMarkupByElement.get(joinEl) !== markup){
+      const animateJoin = animatePanels && !routeTransition && joinMarkupByElement.has(joinEl);
       const oldHeight=joinEl.getBoundingClientRect().height;
       const focus=joinEl.contains(document.activeElement)?document.activeElement:null;
       const selector=focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}${focus.dataset.profileKey?`[data-profile-key="${CSS.escape(focus.dataset.profileKey)}"]`:''}`:null;
@@ -3037,7 +3038,11 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
           panelPendingFocus.delete(joinEl);
         }else if(!isButtonPending(getCopyInviteButtonKey(game.id)))panelPendingFocus.delete(joinEl);
       }
-      animatePanelHeightChange(joinEl,oldHeight);
+      if (animateJoin) animatePanelHeightChange(joinEl,oldHeight);
+      else {
+        panelSizeAnimations.get(joinEl)?.cancel();
+        panelSizeAnimations.delete(joinEl);
+      }
     }
   }
   if (participantsEl instanceof HTMLElement) {
@@ -3885,6 +3890,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
       game: transport.getGameViewModel(currentRoute.gameId),
       inviteFromRole: currentRoute.inviteFromRole,
       includeBoard,
+      animatePanels,
     });
     restoreScenarioDraftFocus?.();
     return;
@@ -3968,6 +3974,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
         game: transport.getGameViewModel(currentRoute.gameId),
         inviteFromRole: currentRoute.inviteFromRole,
         includeBoard,
+        animatePanels,
       })) return;
     }
     mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));

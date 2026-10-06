@@ -3,6 +3,14 @@ import AxeBuilder from '@axe-core/playwright';
 
 test('guest home, tactile toggle, Babs modal and original board remain usable',async({page})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>{
+   window.entryPanelAnimations=[];
+   const animate=Element.prototype.animate;
+   Element.prototype.animate=function(frames,options){
+     if(this.matches('[data-game-panel="join"]') && Array.isArray(frames) && frames.some(frame=>'height' in frame))window.entryPanelAnimations.push(frames);
+     return animate.call(this,frames,options);
+   };
+ });
  await page.goto('/');
  await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
  await expect(page.getByRole('heading',{name:'Continue playing'})).toHaveCount(0);
@@ -33,6 +41,10 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await expect(page.locator('[data-action="guest-profile"]').first()).toHaveText('Guest player');
  const supply=await page.locator('.supply-point-marker.supply-point-p1').first().evaluate(el=>({core:getComputedStyle(el.querySelector('svg')).fill}));
  expect(supply.core).toBe('rgb(194, 69, 47)');
+ await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase','idle');
+ expect(await page.evaluate(()=>window.entryPanelAnimations)).toEqual([]);
+ const playersPanel=page.locator('[data-game-panel="join"]');
+ await expect.poll(()=>playersPanel.evaluate(el=>el.getBoundingClientRect().bottom-el.lastElementChild.getBoundingClientRect().bottom)).toBeGreaterThanOrEqual(0);
  await page.screenshot({path:test.info().outputPath('game-desktop.png')});
  await page.goBack();await expect(page.getByRole('heading',{name:'Continue playing'})).toBeVisible();
  await expect(page.getByTestId('home-create-game')).toBeEnabled();expect(errors).toEqual([]);

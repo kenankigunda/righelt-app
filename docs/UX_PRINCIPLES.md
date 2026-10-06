@@ -398,3 +398,5 @@ Keep static decorative grain as a pre-rendered, lossless alpha tile rather than 
 ### Respect component ownership during updates
 
 A parent refresh may update a component's inputs, but must not delete DOM owned by its mounted renderer. Preserve mini-board children and runtime attributes when patching home cards, then let the preview controller repaint changed state. Test unchanged refreshes and subsequent data changes, not just first mount. This also preserves the stable headings and controls surrounding nested updates.
+
+Initial section population uses its natural height. Animate size only between two populated states on the same page, and honor explicit no-animation renders and route transitions. Content must not spill beyond a collapsed decorative shell during initial game entry. Regression evidence should inspect the transition itself as well as the settled screenshot.

@@ -86,7 +86,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /data-shell-sticky-target="left" data-sticky-enabled="false"/);
   assert.match(source, /data-shell-sticky-target="board" data-sticky-enabled="false"/);
   assert.match(source, /data-game-panel="history"/);
-  assert.match(source, /const updateMountedGameShell = \(\{ game, inviteFromRole = null, inviteToken = null, includeBoard = true \} = \{\}\) => \{/);
+  assert.match(source, /const updateMountedGameShell = \(\{ game, inviteFromRole = null, inviteToken = null, includeBoard = true, animatePanels = false \} = \{\}\) => \{/);
   assert.match(source, /if \(includeBoard \|\| mountedBoardGameId === game\.id \|\| !document\.querySelector\("#shell-board \.cell"\)\) \{\s*mountBoardForGame\(game\);\s*\}/s);
   assert.match(source, /const getMountedHeaderEl = \(\) =>/);
   assert.match(source, /const updateMountedHeader = \(\) => \{/);
@@ -306,7 +306,7 @@ test("transport subscriptions drive immediate game-shell updates", () => {
   assert.match(source, /return Boolean\(transport\.getGameViewModel\(route\.gameId\)\);/);
   assert.match(source, /const shouldUseIncrementalGameShell = \(gameId = currentRoute\.gameId\) => \{/);
   assert.match(source, /return !game\.pendingPlayerRequestSeat && activeResultGameId !== game\.id && hostInvite\?\.gameId !== game\.id && !getActiveApprovalRequest\(game\) && !getActiveRevertRequest\(game\) && !getActivePendingRevertRequest\(game\) && doesMountedFlyoutStateMatchRoute\(\);/);
-  assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*\}\);/s);
+  assert.match(source, /updateMountedGameShell\(\{\s*game: transport\.getGameViewModel\(currentRoute\.gameId\),[\s\S]*includeBoard,\s*animatePanels,\s*\}\);/s);
   assert.match(source, /if \(currentRoute\.name === "game"\) \{\s*if \(shouldUseIncrementalGameShell\(\)\) \{\s*(?:if \()?updateMountedGameShell\(\{/s);
   assert.match(source, /const game = transport\.getGameViewModel\(gameId\);\s*if \(!routeHydrated && !game\) \{/s);
   assert.match(source, /if \(canHydrateRouteFromLocalState\(currentRoute\)\) \{\s*routeHydrated = true;\s*syncLiveChannels\(\);\s*render\(\);\s*maybeRevealRouteTransition\(\);\s*return;\s*\}/s);
