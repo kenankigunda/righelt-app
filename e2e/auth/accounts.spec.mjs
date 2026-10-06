@@ -295,7 +295,13 @@ test("current public names follow the account across browsers through the minima
     await expect(dialog(page).locator("[data-autosave-status]")).toHaveText("Saved");
     await dialog(page).getByRole("button", { name: "Close", exact: true }).click();
     expect(page.url()).toBe(gameUrl);
+    // The account dialog snapshots the session when it opens. Wait for the
+    // foreground refresh body before opening it, especially on slower WebKit.
+    const refreshed = other.waitForResponse(response =>
+      new URL(response.url()).pathname === "/api/auth/session" && response.status() === 200);
     await other.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    const refreshedSession = await (await refreshed).json();
+    expect(refreshedSession.account.displayName).toBe("Étoile 🌟");
     await account(other);
     await expect(dialog(other).getByLabel("Display name", { exact: true })).toHaveValue("Étoile 🌟");
     await dialog(other).getByRole("button", { name: "Close", exact: true }).click();
