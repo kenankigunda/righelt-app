@@ -194,8 +194,9 @@ for (const opponent of ['babs','tau','horus']) test(`${opponent} story has no de
 
  test('opponent stories preserve background scroll on open and close',async({page})=>{
  await page.setViewportSize({width:375,height:600});await page.goto('/');
+ const card=page.locator('button[data-opponent="horus"]');await expect(card).toBeVisible();
  await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
- const card=page.locator('button[data-opponent="horus"]');await card.scrollIntoViewIfNeeded();
+ await card.scrollIntoViewIfNeeded();
  const before=await page.evaluate(()=>scrollY);expect(before).toBeGreaterThan(0);
  await card.click();await expect(page.getByRole('dialog',{name:'Horus',exact:true})).toBeVisible();
  await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(before);
@@ -265,7 +266,15 @@ for (const width of [375, 900, 1440]) test(`identity hierarchy remains aligned a
  await expect(page.locator('#shell-route-transition-layer')).toHaveAttribute('data-phase','idle');
  const playersTab=page.getByRole('button',{name:'Players',exact:true});if(await playersTab.isVisible()){await playersTab.click();await expect(playersTab).toHaveAttribute('aria-pressed','true');}
  const list=page.getByTestId('participants-list');await expect(list).toBeVisible();await page.evaluate(()=>document.fonts.ready);
+ if(await playersTab.isVisible()) {
+   // Focus/scrollIntoView must not create a second horizontal scroll position
+   // in the viewport whose transform already selects the current panel.
+   const viewport=page.locator('.game-shell-track-wrap');
+   await viewport.evaluate(el=>{el.scrollLeft=100;});
+   await expect.poll(()=>viewport.evaluate(el=>el.scrollLeft)).toBe(0);
+ }
  await expect.poll(()=>page.locator('.panel').evaluateAll(items=>items.reduce((n,el)=>n+el.getAnimations().length,0))).toBe(0);
+ await expect(async()=>{
  const measurements=await list.evaluate(el=>{
   const row=el.querySelector('li'), label=row.firstElementChild, button=row.querySelector('button'), emblem=button.querySelector('.player-emblem'),name=button.querySelector('.player-name-stack'),status=button.querySelector('.connection-status-icon');
   const rect=e=>e.getBoundingClientRect();
@@ -275,6 +284,7 @@ for (const width of [375, 900, 1440]) test(`identity hierarchy remains aligned a
  expect(measurements.identityGap).toBeLessThanOrEqual(10);expect(measurements.statusGap).toBeLessThanOrEqual(10);
  for(const x of measurements.emptyX)expect(Math.abs(x-measurements.nameX)).toBeLessThan(1);
  expect(measurements.overflow).toBe(false);
+ }).toPass({timeout:10000});
  await list.locator('button').first().click();await expect(list.getByTestId('public-profile')).toBeVisible();
  await expect.poll(()=>list.locator('[data-profile-slot]').evaluateAll(items=>items.reduce((n,el)=>n+el.getAnimations().length,0))).toBe(0);
  await page.screenshot({path:test.info().outputPath(`identity-${width}.png`),fullPage:true});

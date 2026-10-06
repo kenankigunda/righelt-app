@@ -633,7 +633,9 @@ button.button-pending,
 #app[data-shell-route="game"][data-shell-layout-mode="narrow"] .game-shell-track-wrap {
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  /* The transform owns horizontal navigation. Hidden would allow focus or
+     scrollIntoView to introduce a second, conflicting horizontal offset. */
+  overflow: clip;
 }
 
 #app[data-shell-route="game"][data-shell-layout-mode="narrow"] .game-shell-track {

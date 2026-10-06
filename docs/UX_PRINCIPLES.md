@@ -386,3 +386,7 @@ Commander windows match the square's current fill but are opaque. Move-preview a
 Immediate local move feedback is tactile input feedback. A result cue requires the first confirmed terminal transition. Rejected optimistic finishing moves must not sound like a win. A matching acknowledgement suppresses repeated placement feedback but must still deliver a newly confirmed result once. Account focus restoration uses preventScroll, matching the shared overlay contract.
 
 Shared piece stacks own their elevation above paths. Individual commander masking must preserve the stack's internal underlay/top order. Browser coverage exercises both ordinary commander previews and a commander pushed beneath a unit. Pending approval has one accessible foreground status, never a duplicate notice in the inert preview.
+
+### One owner for panel movement
+
+A transformed panel strip owns its horizontal position. Its clipping viewport must not also scroll horizontally through focus or `scrollIntoView`; use non-scrollable clipping, with vertical scrolling inside the active panel. Regression checks exercise real panel actions and accidental programmatic scroll offsets. Overlay scroll assertions begin after the home surface is mounted and its loading placeholders settle, so an earlier hydration layout shift is not mistaken for modal movement.
