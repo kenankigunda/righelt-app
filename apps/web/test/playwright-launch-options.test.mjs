@@ -83,3 +83,11 @@ test("launcher fails closed when its browser target is missing", { skip: process
   assert.match(result.stderr, /Missing WebKit executable/);
   assert.equal(result.stdout, "");
 });
+
+ test("Linux CI WebKit configures null audio output without disabling WebAudio", () => {
+  const env = {CI:"true", FORWARD_MARKER:"retained"};
+  assert.deepEqual(browserLaunchOptions("webkit", {platform:"linux",env}), {executablePath:undefined,env:{...env,ALSOFT_DRIVERS:"null"}});
+  assert.equal(browserLaunchOptions("webkit", {platform:"linux",env:{...env,ALSOFT_DRIVERS:"pulse"}}).env.ALSOFT_DRIVERS,"pulse");
+  assert.deepEqual(browserLaunchOptions("chromium", {platform:"linux",env}), {executablePath:undefined});
+  assert.equal(env.ALSOFT_DRIVERS,undefined);
+});

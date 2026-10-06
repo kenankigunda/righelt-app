@@ -12,6 +12,11 @@ export const browserLaunchOptions = (name, {
   webkitExecutablePath = () => webkit.executablePath(),
 } = {}) => {
   const executablePath = env[`RIGHELT_${name.toUpperCase()}_EXECUTABLE`];
+  // Headless Linux runners have no sound card. Keep WebAudio processing enabled
+  // with OpenAL's null output instead of repeatedly probing missing devices.
+  if (platform === "linux" && name === "webkit" && env.CI) {
+    return { executablePath, env: { ...env, ALSOFT_DRIVERS: env.ALSOFT_DRIVERS || "null" } };
+  }
   if (platform !== "darwin" || name !== "webkit") return { executablePath };
   return {
     executablePath: fileURLToPath(new URL("./webkit-no-window-animations.sh", import.meta.url)),
