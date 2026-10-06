@@ -6,8 +6,13 @@ export async function enterUsername(page, username) {
 
 export async function waitForAccountStartup(page) {
   await expect(page.getByRole("button", { name: "Start new game", exact: true })).toBeVisible();
-  await expect.poll(async () => await page.locator('[data-action="retry-account-startup"]').count()
-    + await page.getByRole("status").filter({ hasText: /^Connecting…$/ }).count()).toBe(0);
+  // Read one DOM state. Separate locator calls can straddle the transition
+  // from Connecting to retry and falsely observe both indicators as absent.
+  await expect.poll(() => page.evaluate(() => ({
+    header: Boolean(document.querySelector('.shell-header')),
+    retry: Boolean(document.querySelector('[data-action="retry-account-startup"]')),
+    connecting: [...document.querySelectorAll('[role="status"]')].some(node => /^Connecting…$/.test(node.textContent.trim())),
+  }))).toEqual({ header: true, retry: false, connecting: false });
 }
 
 // Resume from the existing board without creating a replacement game. On the
