@@ -31,12 +31,32 @@ export const createGameSound = ({
     try { audio ||= createAudio(); if (audio.state === 'suspended') void audio.resume().catch(() => {}); } catch {}
   };
   // Each cue has a hard stop. Only the explicit incoming notification may sound away from the game.
-  const play = (kind) => {
+  const play = (kind, {duration: transitionDuration} = {}) => {
     if (!enabled || (kind !== 'incoming' && !active()) || !audio || audio.state !== 'running') return false;
     const palette = {select:[1050,.018,.045],preview:[1800,.003,.10],cancel:[650,.012,.045],move:[820,.045,.075],capture:[510,.038,.105],turn:[1200,.024,.065],result:[560,.032,.16],enter:[720,.020,.09],leave:[520,.018,.09],intro:[970,.016,.08],incoming:[460,.03,.13]};
-    const [frequency, volume, duration] = palette[kind] || palette.select;
+    const [frequency, volume, cueDuration] = palette[kind] || palette.select;
+    const duration = (kind === "enter" || kind === "leave") && Number.isFinite(transitionDuration) ? Math.max(.04, Math.min(1, transitionDuration)) : cueDuration;
     try {
       const t = audio.currentTime;
+      if (kind === 'enter' || kind === 'leave') {
+        // The electrical rise/fall follows the branded swipe, distinct from
+        // the wooden contact sounds used for actual board actions.
+        const up = kind === 'enter';
+        const oscillator = audio.createOscillator(), filter = audio.createBiquadFilter(), envelope = audio.createGain();
+        oscillator.type = 'sawtooth';
+        oscillator.frequency.setValueAtTime(up ? 180 : 1600, t);
+        oscillator.frequency.exponentialRampToValueAtTime(up ? 1600 : 180, t + duration);
+        filter.type = 'lowpass';filter.Q.value = 1.2;
+        filter.frequency.setValueAtTime(up ? 700 : 3200, t);
+        filter.frequency.exponentialRampToValueAtTime(up ? 3200 : 700, t + duration);
+        envelope.gain.setValueAtTime(.0001, t);
+        envelope.gain.exponentialRampToValueAtTime(.012, t + duration * .3);
+        envelope.gain.exponentialRampToValueAtTime(.0001, t + duration);
+        oscillator.connect(filter);filter.connect(envelope);envelope.connect(audio.destination);
+        oscillator.start(t);oscillator.stop(t + duration);
+        oscillator.onended = () => {oscillator.disconnect();filter.disconnect();envelope.disconnect();};
+        return true;
+      }
       const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
       const data = buffer.getChannelData(0);
       for (let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*Math.exp(-i/(audio.sampleRate*(kind==='preview'?.035:.008)));
@@ -45,7 +65,6 @@ export const createGameSound = ({
       source.connect(filter);filter.connect(gain);gain.connect(audio.destination);source.start(t);source.onended=()=>{source.disconnect();filter.disconnect();gain.disconnect();};
       if(kind==='preview')return true;
       const oscillator=audio.createOscillator(), envelope=audio.createGain();oscillator.frequency.value=frequency;oscillator.type='sine';
-      if(kind==='enter' || kind==='leave'){oscillator.frequency.setValueAtTime?.(frequency,t);oscillator.frequency.exponentialRampToValueAtTime?.(kind==='enter'?1000:330,t+duration);}
       envelope.gain.setValueAtTime(volume,t);envelope.gain.exponentialRampToValueAtTime(.0001,t+duration);
       oscillator.connect(envelope);envelope.connect(audio.destination);oscillator.start(t);oscillator.stop(t+duration);oscillator.onended=()=>{oscillator.disconnect();envelope.disconnect();};
       return true;

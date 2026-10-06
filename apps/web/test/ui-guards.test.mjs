@@ -209,8 +209,7 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /const renderHomeStartButton = \(\) =>/);
   assert.match(source, /data-action="create-game"/);
   assert.match(source, /home-games-section-controls home-games-section-controls-\$\{escapeHtml\(placement\)\}/);
-  assert.match(source, /const shouldAlwaysRender = sectionKey === "my";/);
-  assert.match(source, /const showEmptyState = section\.totalGames === 0;/);
+  assert.match(source, /if \(games.length === 0 \|\| section.totalGames === 0\)/);
   assert.match(source, /const showHeaderPaging = showPaging && section\.visibleColumnCount > 1;/);
   assert.match(source, /const showFooterPaging = showPaging && section\.visibleColumnCount === 1;/);
   assert.match(source, /const hasHeaderAction = false;/);
@@ -232,7 +231,6 @@ test("home uses per-section pagination and renders the smoke section only in deb
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "header" \}\)/);
   assert.match(source, /renderHomeSectionControls\(sectionKey, section, \{ placement: "footer" \}\)/);
   assert.match(source, /hasHeaderAction \? renderHomeStartButton\(\) : ""/);
-  assert.match(source, /<p class="small home-games-empty">Games you're currently playing will show up here\.<\/p>/);
   assert.match(source, /const scrollHomeSectionToTop = \(sectionKey\) => \{/);
   assert.match(source, /if \(getShellLayoutMode\(\) !== "narrow" \|\| !\(appEl instanceof HTMLElement\)\) \{\s*return;\s*\}/s);
   assert.match(source, /sectionEl\.scrollIntoView\(\{\s*behavior: "smooth",\s*block: "start",\s*\}\);/s);

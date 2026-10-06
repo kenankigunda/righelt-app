@@ -309,3 +309,15 @@ Play again offers a deliberate opponent and side choice, with the opposite side 
 Settings belong in a stone-cut side flyout that leaves the game usable on wider screens and fills the screen on phones. Sign-in and account creation remain modal. Settings and password changes share the account surface, branded action icons and player emblem. Keep credential behavior and session fencing unchanged.
 
 Player names are quiet text controls: display name first, username smaller underneath. Expand brief public details directly below the name, rather than opening a separate profile modal. Preserve the expanded player and focus during live updates. A deterministic angular emblem derives from the canonical username; its shape is stable and its accent follows the seat. Use charcoal when there is no seat affiliation. Prefer one expanded row at a time for this pass.
+
+### Preserve place when opening an overlay
+
+Opening, changing, and dismissing a dialog must preserve the background page's scroll position. Move focus into the dialog without scrolling the page, then return it to the triggering control without moving the viewport. An overlay is an interruption within the current place, not navigation to a new place. Decorative layers must not create scrollbars. Keep real scrolling available when content exceeds the viewport.
+
+Hide Continue playing once loading confirms there are no unfinished games. Group the board legend by meaning: Commander above Command line, Supply point above Supply line, and Group strength at the top right.
+
+Use the same compact presence indicator on home cards and player rows. Keep the display name primary and the username quiet underneath. Opening a profile expands its row rather than wrapping the surrounding controls. A prepared player invitation appears in the vacant seat as Awaiting player, without claiming it has been delivered.
+
+Navigation sound starts with the route reveal and shares its duration. Keep the reduced-motion cue independent from animation. All close icon controls use the same lightweight branded cross and 44px target. Section headings share Manrope and a single weight token. All four Board corner accents are thin, with the top pair in the current player's color and the bottom pair in the opponent's color. This supersedes the earlier thick-top rule.
+
+The current navigation sound experiment is a quiet electric charge rising on entry and falling on exit, following the swipe. This is separate from the wooden palette for board interaction and remains open for a later focused sound-design pass.

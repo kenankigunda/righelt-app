@@ -193,6 +193,7 @@ let wsLastEvent = "none";
 let inviteFeedback = "";
 let inviteFallback = null;
 let hostInvite = null;
+const preparedPlayerInvitations = new Map();
 let inviteVisit = 0;
 let inviteFeedbackTimer = null;
 let undoRequestFeedback = "";
@@ -322,8 +323,7 @@ const renderPendingStateAttributes = ({ className = "", pending = false, disable
   return `${classAttr}${pendingAttr}${disabledAttr}`;
 };
 
-const formatStatus = (connected) =>
-  connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip disconnected">Disconnected</span>';
+const formatStatus = (connected) => renderConnectionStatusIcon(connected ? "connected" : "disconnected", connected ? "Connected" : "Disconnected");
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getControlSeatForTurn = (state, turnOwnerSeat) => {
   const continuation = state?.continuation;
@@ -351,7 +351,7 @@ const renderRoleLabel = (role, game = null) => {
   return `<strong>${escapeHtml(role || "Unknown")}</strong>`;
 };
 const renderConnectionStatusIcon = (status, label) =>
-  `<span class="connection-status-icon is-${escapeHtml(status)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
+  `<span class="connection-status-icon is-${escapeHtml(status)}" role="img" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
 const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => {
   if (!verbose) {
     if (!participant) {
@@ -1018,6 +1018,7 @@ const beginRouteTransitionReveal = (gameId) => {
     return;
   }
   routeTransition.phase = "revealing";
+  gameSound.play(routeTransition.toRoute === "home" ? "leave" : "enter", {duration:GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS / 1000});
   syncRouteTransitionLayer();
   render({ animatePanels: false, includeBoard: false });
   if (routeTransitionRevealTimer) {
@@ -2053,7 +2054,7 @@ const renderFlyout = ({ title, variant, closeAction, body }) => `
   <aside class="shell-flyout shell-flyout-${variant} is-open" data-flyout="${variant}">
     <header class="shell-flyout-header">
       <h2>${title}</h2>
-      <button class="flyout-close-button" type="button" aria-label="Close ${title}" data-action="${closeAction}">x</button>
+      <button class="ui-icon-button flyout-close-button" type="button" aria-label="Close ${title}" data-action="${closeAction}">${icon('close')}</button>
     </header>
     <div class="shell-flyout-scroll shell-flyout-scroll-${variant}">
       ${body}
@@ -2327,11 +2328,9 @@ const renderHomeGameSection = (sectionKey) => {
     return renderHomeSectionSkeleton(section.title);
   }
   const games = section.gameIds.map((gameId) => transport.getHomeGameCard(gameId)).filter(Boolean);
-  const shouldAlwaysRender = sectionKey === "my";
-  if (!Array.isArray(games) || (!shouldAlwaysRender && (games.length === 0 || section.totalGames === 0))) {
+  if (games.length === 0 || section.totalGames === 0) {
     return "";
   }
-  const showEmptyState = section.totalGames === 0;
   const showPaging = section.totalPages > 1;
   const showHeaderPaging = showPaging && section.visibleColumnCount > 1;
   const showFooterPaging = showPaging && section.visibleColumnCount === 1;
@@ -2349,13 +2348,11 @@ const renderHomeGameSection = (sectionKey) => {
         ${hasHeaderAction ? renderHomeStartButton() : ""}
       </div>
     </div>
-    ${showEmptyState
-      ? `<p class="small home-games-empty">Games you're currently playing will show up here.</p>`
-      : `<div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
+    <div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
       <div class="home-games-carousel-track" data-home-carousel-track="${escapeHtml(sectionKey)}">
         <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
       </div>
-    </div>`}
+    </div>
     ${showFooterPaging ? renderHomeSectionControls(sectionKey, section, { placement: "footer" }) : ""}
   </section>`;
 };
@@ -2374,7 +2371,7 @@ const scrollHomeSectionToTop = (sectionKey) => {
   });
 };
 
-const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new.</h2><p class="home-start-description">A familiar rival? Or maybe a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer opponents are being prepared.</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
+const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer opponents are being prepared.</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
 const renderHome = () => `<section class="stack home-refresh">${routeHydrated ? renderHomeGameSection('my') : renderHomeSectionSkeleton('Continue playing')}${renderStartChoices()}${routeHydrated ? getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('') : ''}</section>`;
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
@@ -2577,9 +2574,10 @@ const renderParticipantsPanel = (game) => {
   const participantRows = participants
     .map((entry) => {
       if (!entry.value) {
-        return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: <span class="small">Open seat</span></li>`;
+        const pending = preparedPlayerInvitations.get(game.id) === (entry.label === "Player 1" ? "red" : "blue");
+        return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)} <span class="small" ${pending ? 'data-testid="pending-invitation"' : ''}>${pending ? 'Awaiting player' : 'Open seat'}</span></li>`;
       }
-      return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: ${participantButton(entry.value, {key:entry.label,side:entry.label === "Player 1" ? "p1" : "p2"})} ${formatStatus(entry.value.connected)}</li>`;
+      return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)} ${participantButton(entry.value, {key:entry.label,side:entry.label === "Player 1" ? "p1" : "p2"})} ${formatStatus(entry.value.connected)}</li>`;
     })
     .join("");
 
@@ -2589,7 +2587,7 @@ const renderParticipantsPanel = (game) => {
       : game.viewers
           .map(
             (viewer) =>
-              `<li data-testid="participant-viewer">Viewer: ${participantButton(viewer)} ${formatStatus(viewer.connected)}</li>`,
+              `<li data-testid="participant-viewer"><span>Viewer</span> ${participantButton(viewer)} ${formatStatus(viewer.connected)}</li>`,
           )
           .join("");
   return `
@@ -2635,11 +2633,11 @@ const renderBoardPanel = (game) => `
   <div class="overlay-key" aria-label="Board legend">
     <span><i class="swatch commander-key">${renderPieceSymbol('commander')}</i>Commander</span>
     <span><i class="swatch supply-point" style="--supply-owner:var(--player-${game.currentSnapshot?.sideToMove === 'P2' ? 'p2' : 'p1'})">${renderPieceSymbol('supply')}</i>Supply point</span>
-    <span><i class="swatch supply"></i>Supply line</span>
+    <span><i class="swatch group"></i>Group strength</span>
     <span><i id="shell-command-legend-swatch" class="swatch command" style="${escapeHtml(
       getCommandLegendSwatchStyle(game.currentSnapshot ?? null),
     )}"></i>Command line</span>
-    <span><i class="swatch group"></i>Group strength</span>
+    <span><i class="swatch supply"></i>Supply line</span>
   </div>
 `;
 
@@ -4157,6 +4155,7 @@ const copyGameInvitation = async (gameId, role, fromHost=false) => {
     const game=transport.getGameViewModel(gameId);
     const option=invitationOptions(game).find(option=>option.role===role);
     if(!option)throw new Error('That seat has been taken. Invite someone to view instead.');
+    if(role !== "viewer") preparedPlayerInvitations.set(gameId, role);
     const hash=buildInviteHash(option.token,getCurrentFlyoutState());
     const link=`${window.location.origin}${window.location.pathname}${hash}${hash.includes('?')?'&':'?'}as=${role}`;
     window.__righeltLastInvite=link;
@@ -4216,7 +4215,7 @@ accountInitialized = true;
 function resetAccountTransport(next) {
   clearAccountContinuation();
   resultTransitions.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();
-  hostInvite=null;inviteVisit++;inviteFeedback="";inviteFallback=null;
+  hostInvite=null;inviteVisit++;inviteFeedback="";inviteFallback=null;preparedPlayerInvitations.clear();
   gameSound.leaveGame();storyDialog.close();inlineProfiles.close();
   const gameId = getCurrentViewedGameId();
   const visible = gameId ? transport.getAuthoritativeGame?.(gameId) : null;
@@ -4286,8 +4285,8 @@ window.addEventListener("hashchange", () => {
   inlineProfiles.close();
   if(parsedRoute.gameId!==previousRoute.gameId){activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();}
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
-  if(previousRoute.name !== 'game' && currentRoute.name === 'game')gameSound.play('enter');
-  else if(previousRoute.name === 'game' && currentRoute.name !== 'game')gameSound.play('leave');
+  if(previousRoute.name !== 'game' && currentRoute.name === 'game' && !routeTransition)gameSound.play('enter');
+  else if(previousRoute.name === 'game' && currentRoute.name !== 'game' && (currentRoute.name !== 'home' || prefersReducedMotion()))gameSound.play('leave');
   if(previousRoute.name === 'game' && currentRoute.name === 'home') {
     gameSound.cancelPreview();restoreHomePending=true;
     startGameEntryRouteTransition(previousRoute.gameId,'game');

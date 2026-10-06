@@ -4,7 +4,9 @@ import AxeBuilder from '@axe-core/playwright';
 test('guest home, tactile toggle, Babs modal and original board remain usable',async({page})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('/');
- await expect(page.getByRole('heading',{name:'Continue playing'})).toBeVisible();
+ await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+ await expect(page.getByRole('heading',{name:'Continue playing'})).toHaveCount(0);
+ await expect(page.getByRole('heading',{name:'Start something new',exact:true})).toBeVisible();
  const sound=page.getByRole('button',{name:'Mute sound',exact:true});
  await sound.locator('svg').click();
  await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeFocused();
@@ -24,6 +26,11 @@ test('guest home, tactile toggle, Babs modal and original board remain usable',a
  await expect(page.getByRole('dialog',{name:'Invite a friend'})).toBeVisible();
  await page.keyboard.press('Escape');
  await expect(page.getByTestId('game-board')).toBeVisible();
+ const legend=page.locator('.overlay-key > span');
+ await expect(legend).toHaveText(['Commander','Supply point','Group strength','Command line','Supply line']);
+ const cells=await legend.evaluateAll(items=>items.map(el=>({x:el.getBoundingClientRect().x,y:el.getBoundingClientRect().y})));
+ expect(cells[3].x).toBe(cells[0].x);expect(cells[4].x).toBe(cells[1].x);
+ expect(cells[2].y).toBe(cells[0].y);expect(cells[3].y).toBeGreaterThan(cells[0].y);
  await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(0);
  await expect(page.locator('[data-action="guest-profile"]').first()).toHaveText('Guest player');
  const supply=await page.locator('.supply-point-marker.supply-point-p1').first().evaluate(el=>({core:getComputedStyle(el.querySelector('svg')).fill}));
@@ -148,6 +155,8 @@ test('copy feedback keeps Players height stable and preserves keyboard focus',as
  await expect.poll(()=>panel.evaluate(el=>el.getAnimations().length)).toBe(0);
  const before=(await panel.boundingBox()).height;await page.keyboard.press('Enter');
  await expect(panel.getByRole('status')).toHaveText('Link copied');await expect(copy).toBeFocused();
+ await expect(panel.getByTestId('pending-invitation')).toHaveText('Awaiting player');
+ await expect(panel.getByTestId('participant-player-1').getByRole('img',{name:'Connected',exact:true})).toBeVisible();
  expect(Math.abs((await panel.boundingBox()).height-before)).toBeLessThan(2);
  await expect(panel.getByRole('status')).toHaveText('');expect(Math.abs((await panel.boundingBox()).height-before)).toBeLessThan(2);
  await expect(page.getByText('Commander',{exact:true})).toBeVisible();
@@ -171,4 +180,37 @@ for(const outcome of ['success','failure'])test(`Players restores the selected i
  await page.evaluate(outcome=>outcome==='success'?window.completeClipboard():window.failClipboard(),outcome);
  await expect(viewer).not.toHaveAttribute('aria-busy','true');await expect(viewer).toBeFocused();
  if(outcome==='failure')await expect(panel.getByRole('textbox',{name:'Invitation link'})).toBeVisible();
+});
+
+for (const opponent of ['babs','tau','horus']) test(`${opponent} story has no decorative scroll overflow`,async({page})=>{
+ await page.setViewportSize({width:1440,height:1100});await page.goto('/');
+ await page.locator(`button[data-opponent="${opponent}"]`).click();
+ const dialog=page.locator('dialog[open]');
+ await expect.poll(()=>dialog.evaluate(el=>el.scrollHeight-el.clientHeight)).toBe(0);
+ await expect.poll(()=>dialog.evaluate(el=>el.scrollWidth-el.clientWidth)).toBe(0);
+ await page.setViewportSize({width:812,height:375});
+ const play=dialog.getByRole('button',{name:new RegExp('Play '+opponent,'i')});
+ await play.scrollIntoViewIfNeeded();await expect(play).toBeInViewport({ratio:1});
+});
+
+ test('opponent stories preserve background scroll on open and close',async({page})=>{
+ await page.setViewportSize({width:375,height:600});await page.goto('/');
+ await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
+ const card=page.locator('button[data-opponent="horus"]');await card.scrollIntoViewIfNeeded();
+ const before=await page.evaluate(()=>scrollY);expect(before).toBeGreaterThan(0);
+ await card.click();await expect(page.getByRole('dialog',{name:'Horus',exact:true})).toBeVisible();
+ await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(before);
+ await page.keyboard.press('Escape');await expect(card).toBeFocused();
+ await expect.poll(()=>page.evaluate(()=>scrollY)).toBe(before);
+ });
+
+test('game sections share heading weight and compact player presence',async({page})=>{
+ await page.setViewportSize({width:1440,height:1100});await page.goto('/');
+ await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Close invite',exact:true}).click();
+ const row=page.getByTestId('participant-player-1');await expect(row.getByRole('img',{name:'Connected',exact:true})).toBeVisible();
+ const weights=await page.locator('.panel h2').evaluateAll(items=>items.map(el=>getComputedStyle(el).fontWeight));
+ expect(weights.length).toBeGreaterThan(2);expect(new Set(weights).size).toBe(1);
+ await page.evaluate(()=>document.fonts.ready);
+ await expect.poll(()=>page.locator('.panel').evaluateAll(items=>items.reduce((sum,el)=>sum+el.getAnimations().length,0))).toBe(0);
+ await page.screenshot({path:test.info().outputPath('game-refined-desktop.png')});
 });

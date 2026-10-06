@@ -33,5 +33,5 @@ export const createModal = ({ document = globalThis.document, labelId, className
   };
   element.addEventListener("cancel", event => { event.preventDefault(); close(); });
   element.addEventListener("click", event => { if (event.target.closest("[data-modal-close]")) close(); });
-  return { element, close, open(html, source = document.activeElement, findTrigger = null) { trigger = source; resolveTrigger = findTrigger; element.dataset.actionAffiliation = document.querySelector("#app")?.dataset.actionAffiliation || "red"; content.innerHTML = html; if (!element.open) element.showModal(); element.querySelector("[autofocus], button")?.focus(); }, destroy() { close(); resizeObserver?.disconnect(); element.remove(); } };
+  return { element, close, open(html, source = document.activeElement, findTrigger = null) { trigger = source; resolveTrigger = findTrigger; element.dataset.actionAffiliation = document.querySelector("#app")?.dataset.actionAffiliation || "red"; content.innerHTML = html; const view = document.defaultView; const position = {left:view.scrollX, top:view.scrollY, behavior:"instant"}; if (!element.open) element.showModal(); element.querySelector("[autofocus], button")?.focus({preventScroll:true}); view.scrollTo(position); }, destroy() { close(); resizeObserver?.disconnect(); element.remove(); } };
 };

@@ -64,3 +64,12 @@ test('hover rustle has no pitched oscillator and waits for the dwell',()=>{
  sound.play('move');assert.equal(oscillatorCount,1);
  sound.interaction({kind:'preview-hover',key:'home:tau'});sound.cancelPreview();assert.equal(pending,null);
 });
+
+test('navigation cues finish with the requested reveal duration',()=>{
+ const stops=[];
+ const node=()=>({connect(){},disconnect(){},frequency:{setValueAtTime(){},exponentialRampToValueAtTime(){}},Q:{},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},start(){},stop(at){stops.push(at)}});
+ const audio={state:'running',currentTime:10,sampleRate:8000,createBuffer:(_,n)=>({getChannelData:()=>new Float32Array(n)}),createBufferSource:node,createBiquadFilter:node,createGain:node,createOscillator:node};
+ const sound=createGameSound({createAudio:()=>audio,hidden:()=>false,focused:()=>true});sound.gesture();
+ sound.play('enter',{duration:.2});sound.play('leave',{duration:.2});
+ assert.deepEqual(stops,[10.2,10.2]);
+});

@@ -1804,23 +1804,6 @@ textarea:focus-visible {
   font-size: 1.1rem;
 }
 
-.flyout-close-button {
-  min-width: 2rem;
-  min-height: 2rem;
-  padding: 0.25rem 0.55rem;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ink);
-  border-color: var(--line);
-  line-height: 1;
-  font-size: 1rem;
-}
-
-.flyout-close-button:hover,
-.flyout-close-button:focus-visible {
-  background: rgba(29, 45, 53, 0.08);
-}
-
 .debug-panel {
   margin: 0;
   display: grid;
