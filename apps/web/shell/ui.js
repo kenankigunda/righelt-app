@@ -5,6 +5,7 @@ export const icon = (name) => {
     check:'M4 12l5 5L21 5',
     scenarios:'M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z',
     debug:'M8 7l2-3h4l2 3v12l-3 2h-2l-3-2ZM3 9h5M16 9h5M3 15h5M16 15h5M5 4l3 3M19 4l-3 3M5 21l3-3M19 21l-3-3M8 12h8',
+    'account-none':'M6 4h4l2 2v4l-2 2H6l-2-2V6ZM2 22v-5l3-3h6l3 3v5M16 5h3l2 2v3l-2 2h-3M17 15h2l3 3v4',
     account:'M9 3h6l3 3v4l-3 3H9l-3-3V6ZM3 22v-3l4-4h10l4 4v3',
     left:'M15 4L7 12l8 8M7 12h13', right:'M9 4l8 8-8 8M4 12h13',
     back:'M10 4l-7 7 7 7M3 11h12l5 5v5', close:'M5 5l14 14M5 19L19 5',

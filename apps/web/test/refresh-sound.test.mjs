@@ -9,7 +9,7 @@ const fixture=()=>{
  return {sound,timers,data,starts:()=>starts,hide:()=>{hidden=true;sound.hide();}};
 };
 test('default sound is on; explicit mute survives without accounts',()=>{const f=fixture();assert.equal(f.sound.enabled(),true);f.sound.toggle();assert.equal(f.sound.enabled(),false);assert.equal(createGameSound({storage:{getItem:()=> 'false'}}).enabled(),false);});
-test('settled hover produces one cue; leaving or hiding cancels it',()=>{const f=fixture();f.sound.gesture();f.sound.interaction({kind:'preview-hover',key:'1:1'});assert.equal(f.starts(),0);f.sound.interaction({kind:'preview-leave'});assert.equal(f.timers.size,0);f.sound.interaction({kind:'preview-hover',key:'1:2'});[...f.timers.values()][0]();assert.ok(f.starts()>0);const before=f.starts();f.sound.interaction({kind:'preview-hover',key:'1:2'});assert.equal(f.starts(),before);f.hide();assert.equal(f.sound.play('move'),false);});
+test('hover and pointer leave never sound or schedule audio',()=>{const f=fixture();f.sound.gesture();for(const kind of ['preview-hover','preview-leave']){f.sound.interaction({kind,key:'1:1'});assert.equal(f.sound.play(kind),false);}assert.equal(f.starts(),0);assert.equal(f.timers.size,0);f.sound.interaction({kind:'preview'});assert.ok(f.starts()>0);});
 test('authoritative events sound once, while snapshots, rejected and replayed events stay silent',()=>{const f=fixture();f.sound.gesture();const event={game:{id:'a',board:{state:{outcome:{status:'ongoing'}}}},eventSeq:2,type:'snapshot',reason:'move_recorded'};assert.equal(f.sound.observe(event),false);assert.equal(f.sound.observe({...event,type:'event_appended',eventSeq:3}),true);assert.equal(f.sound.observe({...event,type:'event_appended',eventSeq:3}),false);assert.equal(f.sound.observe({...event,type:'event_appended',eventSeq:4,reason:'action_rejected'}),false);});
 test('local placement sounds immediately and its acknowledgement never repeats it',()=>{
  const f=fixture();f.sound.gesture();const state={pieces:[{},{}],sideToMove:'P1',turnIndex:0,outcome:{status:'ongoing'}};
@@ -54,15 +54,14 @@ test('mute and leaving a game cancel outstanding incoming reminders without repl
  sound.observe(event(3));assert.equal(timers.size,1);sound.leaveGame();assert.equal(timers.size,0);
 });
 
-test('hover rustle has no pitched oscillator and waits for the dwell',()=>{
- let oscillatorCount=0,bufferCount=0,pending,delay;
+test('page and flyout cues have forward and reverse feedback without pitched notes',()=>{
+ let oscillators=0,buffers=0;
  const node=()=>({connect(){},disconnect(){},frequency:{},Q:{},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},start(){},stop(){}});
- const audio={state:'running',currentTime:0,sampleRate:8000,createBuffer:(_,n)=>({getChannelData:()=>new Float32Array(n)}),createBufferSource:()=>{bufferCount++;return node();},createBiquadFilter:node,createGain:node,createOscillator:()=>{oscillatorCount++;return node();}};
- const sound=createGameSound({createAudio:()=>audio,setTimer:(fn,ms)=>{pending=fn;delay=ms;return 1;},clearTimer:()=>{pending=null;}});
- sound.gesture();sound.interaction({kind:'preview-hover',key:'home:babs'});
- assert.equal(delay,200);assert.equal(bufferCount,0);pending();assert.equal(bufferCount,1);assert.equal(oscillatorCount,0);
- sound.play('move');assert.equal(oscillatorCount,1);
- sound.interaction({kind:'preview-hover',key:'home:tau'});sound.cancelPreview();assert.equal(pending,null);
+ const audio={state:'running',currentTime:0,sampleRate:8000,createBuffer:(_,n)=>({getChannelData:()=>new Float32Array(n)}),createBufferSource:()=>{buffers++;return node();},createBiquadFilter:node,createGain:node,createOscillator:()=>{oscillators++;return node();}};
+ audio.suspend=()=>Promise.resolve();
+ const sound=createGameSound({createAudio:()=>audio});sound.gesture();
+ for(const kind of ['page','page-back','flyout','flyout-back'])assert.equal(sound.play(kind),true);
+ assert.equal(buffers,4);assert.equal(oscillators,0);sound.toggle();assert.equal(sound.play('page'),false);
 });
 
 test('navigation cues finish with the requested reveal duration',()=>{

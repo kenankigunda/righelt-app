@@ -155,7 +155,8 @@ Examples illustrating the spirit:
 ## Modal Principle
 
 - Provide an accessible close button (×) in the top-right corner instead of a separate Cancel action for ordinary dismissal.
-- Close on an outside/backdrop click and Escape. A click inside the dialog or a drag that starts inside must not dismiss it.
+- Ordinary overlay cards and modals close on an outside/backdrop click or Escape. A click inside the dialog or a drag that starts inside must not dismiss it.
+- Strictly blocking overlays are the exception: when access to the underlying page is not allowed until a required decision is resolved, outside clicks and Escape must not bypass that decision. Provide an explicit permitted action or exit. Dimming or temporarily making the background inert does not alone make an ordinary modal strictly blocking.
 - Keep the close control available in full-screen mobile dialogs, where there is no outside area to click.
 - Keep keyboard focus inside the open dialog and restore focus to its trigger on dismissal. Preserve the underlying page and navigation state.
 
@@ -320,4 +321,57 @@ Use the same compact presence indicator on home cards and player rows. Keep the 
 
 Navigation sound starts with the route reveal and shares its duration. Keep the reduced-motion cue independent from animation. All close icon controls use the same lightweight branded cross and 44px target. Section headings share Manrope and a single weight token. All four Board corner accents are thin, with the top pair in the current player's color and the bottom pair in the opponent's color. This supersedes the earlier thick-top rule.
 
-The current navigation sound experiment is a quiet electric charge rising on entry and falling on exit, following the swipe. This is separate from the wooden palette for board interaction and remains open for a later focused sound-design pass.
+The current navigation sound experiment is a soft unpitched swoosh rising on entry and falling on exit, following the swipe. This is separate from the wooden palette for board interaction and remains open for a later focused sound-design pass.
+
+### Consistent perceived loudness
+
+Balance cues by perceived loudness, not identical gain values. Broad noise, bright frequencies, longer durations, and repeated pulses can sound louder than short wooden ticks at the same peak level. Treat the accepted board cues as the reference. Keep navigation swooshes at a similar or quieter perceived intensity, with smooth onset and release. Validate the balance by listening across the actual flow, including both swipe phases, and refine with real-device feedback. The current swoosh gain was reduced from .055 to .017 (about 10 dB) as the first listening adjustment.
+
+Flyout placement owns its motion direction at every width. Open and close through the actual attached edge without shrinking the surface into a different axis. Fullscreen phone account settings enter from below. Modal cards are fixed to the viewport, lock background scrolling, and release a shared nested scroll lock on close. Route entry preserves its transition through pending hash navigation. Section height animation applies only within the same page, never between unrelated home and game sections. Navigation sound follows both cover and reveal phases using the same easing, with silence while covered.
+
+
+### Align by meaning
+
+Group an identity's emblem, display name, secondary username, and connection state together. Use a larger gap to separate that group from role or seat labels. Keep presence beside the name rather than at the opposite edge of a panel. Empty states reserve the emblem space and align with name text. Expanded details align with that same text. Shared rows and icon actions should preserve these relationships across widths, long names, missing values, and live updates.
+
+
+### Overlay surface and scrolling contract
+
+The shared modal surface owns its stone decoration and persistent close control. A single padded inner viewport owns content scrolling. Never let decorative layers create scrollable overflow. Bound artwork height by the viewport rather than allowing image aspect ratio alone to determine dialog height. Reserve real space below the last action and around clipped corners. Short screens, enlarged text, and longer copy may require inner scrolling, but all content and actions must remain reachable without scrolling the background. Test both fitting and overflowing content, resize while open, and scroll restoration after dismissal. Apply this structure to new overlays rather than adding opponent-specific overflow patches.
+
+
+## Current sound contract (October 5, supersedes earlier hover experiments)
+
+- Hover, pointer sweeps, focus alone, logo animation, and automatic story cycling are silent. Sounds follow deliberate clicks, taps, key presses, or genuine new game events. Do not reintroduce the previous 200 ms hover rustle.
+- Piece selection uses a light wooden tick, deliberate destination preview a softer cue, deselection a release, and moves/captures/turns/results distinct tabletop cues. Never announce rejected actions as successful. Local feedback and server acknowledgements must not duplicate each other.
+- Entering/leaving a game uses a quiet unpitched swoosh in two phases, matched to the cover/reveal durations and easing, with silence during the covered hold. Exit reverses the direction.
+- Deliberate section pagination uses a quiet forward/reverse page cue when a successful page change starts. Initial loads, refreshes, failed requests, and unchanged pages are silent. Reduced motion still permits the cue.
+- Flyouts have paired entry/exit cues on actual user-requested opening/closing, including Account settings. Content refreshes, page changes underneath, and responsive repositioning do not replay them.
+- Story opening/closing and History browsing/returning use paired forward/reverse cues. Automatic scene changes stay silent. Confirmed undo has a return cue, pending or rejected undo does not claim success.
+- Ordinary cues require a visible, focused page. A genuine incoming opponent move is the explicit exception: one reminder cycle repeats every 30 seconds until refocus. Coalesce additional moves. Mute, game exit, and account retirement cancel reminders. Initial state, replay, and reconnect never start one.
+- Sound defaults on, respects saved mute and browser playback restrictions, and never queues stale blocked cues. The shared header toggle works without login. Reduced motion does not mute sound.
+- Balance perceived loudness against the accepted wooden cues. Swooshes and brighter/longer noise may need lower gain. Every source ends and disconnects. Sound supplements visible feedback.
+
+## Section spacing contract
+
+Sections use balanced top and bottom content insets. Internal rhythm comes from shared gaps, not accumulated trailing margins or empty placeholders. Hide empty feedback/followup rows; do not reserve invisible space beneath the final action. Preserve responsive readability and stone corner clearance. Empty identities use lightweight greyscale icons in the same icon slot as occupied identities.
+
+
+## Integrated artwork is the standard for every image
+
+Artwork is part of its surrounding component, not an inset rectangle with softened edges. Scenes occupy their intended card space generously. The component's plain surface continues into substantial negative space within the scene, using exact surface color or clean transparency. Preserve crisp selective edges, coherent scene props across story frames, and the established scale. Do not shrink artwork into an isolated vignette to solve layout overflow, or use feathered halos to disguise a rectangular image. Solve overflow through the shared content viewport, responsive composition, and balanced spacing. Character-only Start illustrations are intentionally simpler but follow the same integration rule.
+
+Friend artwork followup: replace the human scene with two new animal characters playing together in the established Righelt style, after functional and layout repairs. Preserve the large integrated scene treatment. Empty-viewer iconography uses quiet unoccupied-group outlines, never a slash or prohibition mark.
+
+
+## Stable surroundings, current-state guidance, and blocking invitations
+
+Nested loading must not remount or animate the surrounding section title, navigation, or open flyout. Preserve stable section identities and cached content during refresh. Animate the changing content only. Tests must retain actual DOM references across refreshes and verify focus and open-state continuity, rather than only checking identical text afterward.
+
+A player request awaiting approval keeps the invitation surface at the top. The game remains visible as a strongly subdued preview, inert to pointer, touch, and keyboard input. Approval removes the gate. Do not offer duplicate join actions or suggest the pending requester can interact with the game while it remains blocked.
+
+Notices inside an existing surface use an unboxed status marker, text, and clearly grouped actions. A standalone notice can own one cut surface. Avoid rounded pastel alert boxes nested inside stone panels. Shared components own padding, empty-state collapse, and spacing between messages and actions. Test both empty and populated messages so hidden content cannot reserve accidental space.
+
+The legend explains only the current board visualization. Commander and supply point stay present and share the active or selected piece's owner color. Command and supply lines appear only when their paths are drawn. Group strength appears only when an actual group-strength badge is visible, not merely when highlighted group members exist. Legend changes resize the section smoothly, including interrupted transitions.
+
+Artwork that includes gameplay uses the current Righelt board and piece vocabulary: clipped unit pieces, the stepped commander with its open horizontal center, and the angular supply-point arch. Use the shared piece-symbol source and rendered board as references. Avoid generic checker discs. Preserve the characters, scene continuity, large composition, and surface-integrated negative space while updating the game details.

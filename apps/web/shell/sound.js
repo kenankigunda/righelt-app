@@ -1,6 +1,6 @@
+import { swipeProgress } from './navigation-motion.js';
 // Device preference is independent of authentication. Only deliberate mute is inherited.
 export const SOUND_KEY = 'righelt.device.sound-enabled';
-export const PREVIEW_SETTLE_MS = 200;
 export const INCOMING_REMINDER_MS = 30_000;
 
 export const isOpponentMove = (game, commandId) => {
@@ -19,12 +19,12 @@ export const createGameSound = ({
   setTimer = setTimeout,
   clearTimer = clearTimeout,
 } = {}) => {
-  let enabled = true, audio, timer = null, hoverKey = null, reminderTimer = null, pendingIncoming = false;
+  let enabled = true, audio, reminderTimer = null, pendingIncoming = false;
   const sequences = new Map(), localCommands = new Set(), localStates = new Map();
   const active = () => !hidden() && focused();
   const cue = (state, previous, fallback='move') => state?.outcome?.status && state.outcome.status !== 'ongoing' ? 'result' : previous?.pieces?.length > state?.pieces?.length ? 'capture' : previous && (previous.sideToMove !== state?.sideToMove || previous.turnIndex !== state?.turnIndex) ? 'turn' : fallback;
   try { enabled = storage?.getItem(SOUND_KEY) !== 'false'; } catch {}
-  const cancelPreview = () => { if (timer !== null) clearTimer(timer); timer = null; hoverKey = null; };
+  const cancelPreview = () => {}; // Hover never schedules audio. Retained for interaction reset callers.
   const clearIncoming = () => { if (reminderTimer !== null) clearTimer(reminderTimer); reminderTimer = null; pendingIncoming = false; };
   const gesture = () => {
     if (!enabled || !active()) return;
@@ -32,40 +32,41 @@ export const createGameSound = ({
   };
   // Each cue has a hard stop. Only the explicit incoming notification may sound away from the game.
   const play = (kind, {duration: transitionDuration} = {}) => {
+    if (kind === 'preview-hover' || kind === 'preview-leave') return false;
     if (!enabled || (kind !== 'incoming' && !active()) || !audio || audio.state !== 'running') return false;
-    const palette = {select:[1050,.018,.045],preview:[1800,.003,.10],cancel:[650,.012,.045],move:[820,.045,.075],capture:[510,.038,.105],turn:[1200,.024,.065],result:[560,.032,.16],enter:[720,.020,.09],leave:[520,.018,.09],intro:[970,.016,.08],incoming:[460,.03,.13]};
+    const palette = {select:[1050,.018,.045],preview:[1800,.003,.10],page:[1400,.004,.16],'page-back':[1400,.004,.16],flyout:[970,.012,.12],'flyout-back':[970,.012,.12],history:[1400,.004,.10],'history-back':[1400,.004,.10],cancel:[650,.012,.045],move:[820,.045,.075],capture:[510,.038,.105],turn:[1200,.024,.065],result:[560,.032,.16],enter:[720,.020,.09],leave:[520,.018,.09],intro:[970,.016,.08],'intro-back':[970,.016,.08],incoming:[460,.03,.13]};
     const [frequency, volume, cueDuration] = palette[kind] || palette.select;
     const duration = (kind === "enter" || kind === "leave") && Number.isFinite(transitionDuration) ? Math.max(.04, Math.min(1, transitionDuration)) : cueDuration;
     try {
       const t = audio.currentTime;
       if (kind === 'enter' || kind === 'leave') {
-        // The electrical rise/fall follows the branded swipe, distinct from
-        // the wooden contact sounds used for actual board actions.
+        // A breathy noise sweep follows the swipe without a pitched note.
         const up = kind === 'enter';
-        const oscillator = audio.createOscillator(), filter = audio.createBiquadFilter(), envelope = audio.createGain();
-        oscillator.type = 'sawtooth';
-        oscillator.frequency.setValueAtTime(up ? 180 : 1600, t);
-        oscillator.frequency.exponentialRampToValueAtTime(up ? 1600 : 180, t + duration);
-        filter.type = 'lowpass';filter.Q.value = 1.2;
-        filter.frequency.setValueAtTime(up ? 700 : 3200, t);
-        filter.frequency.exponentialRampToValueAtTime(up ? 3200 : 700, t + duration);
-        envelope.gain.setValueAtTime(.0001, t);
-        envelope.gain.exponentialRampToValueAtTime(.012, t + duration * .3);
-        envelope.gain.exponentialRampToValueAtTime(.0001, t + duration);
-        oscillator.connect(filter);filter.connect(envelope);envelope.connect(audio.destination);
-        oscillator.start(t);oscillator.stop(t + duration);
-        oscillator.onended = () => {oscillator.disconnect();filter.disconnect();envelope.disconnect();};
+        const source = audio.createBufferSource(), filter = audio.createBiquadFilter(), envelope = audio.createGain();
+        const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
+        const samples = buffer.getChannelData(0);
+        for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+        source.buffer = buffer;
+        filter.type = 'bandpass';filter.Q.value = .45;
+        for (let i=0;i<=32;i++) {
+          const elapsed=i/32, progress=swipeProgress(elapsed);
+          filter.frequency.setValueAtTime(up ? 450 + 1350*progress : 1800 - 1350*progress, t+duration*elapsed);
+          envelope.gain.setValueAtTime(Math.max(.0001,.017*Math.sin(Math.PI*progress)),t+duration*elapsed);
+        }
+        source.connect(filter);filter.connect(envelope);envelope.connect(audio.destination);
+        source.start(t);source.stop(t + duration);
+        source.onended = () => {source.disconnect();filter.disconnect();envelope.disconnect();};
         return true;
       }
       const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * duration), audio.sampleRate);
       const data = buffer.getChannelData(0);
-      for (let i=0;i<data.length;i++) data[i]=(Math.random()*2-1)*Math.exp(-i/(audio.sampleRate*(kind==='preview'?.035:.008)));
+      for (let i=0;i<data.length;i++){const reverse=['intro-back','history-back','page-back','flyout-back'].includes(kind);const offset=reverse?data.length-1-i:i;data[i]=(Math.random()*2-1)*Math.exp(-offset/(audio.sampleRate*(['preview','history','history-back','page','page-back','flyout','flyout-back'].includes(kind)?.035:.008)));}
       const source=audio.createBufferSource(), filter=audio.createBiquadFilter(), gain=audio.createGain();
       source.buffer=buffer;filter.type='bandpass';filter.frequency.value=frequency;filter.Q.value=kind==='preview'?.35:1.4;gain.gain.value=volume*3;
       source.connect(filter);filter.connect(gain);gain.connect(audio.destination);source.start(t);source.onended=()=>{source.disconnect();filter.disconnect();gain.disconnect();};
-      if(kind==='preview')return true;
+      if(['preview','history','history-back','page','page-back','flyout','flyout-back'].includes(kind))return true;
       const oscillator=audio.createOscillator(), envelope=audio.createGain();oscillator.frequency.value=frequency;oscillator.type='sine';
-      envelope.gain.setValueAtTime(volume,t);envelope.gain.exponentialRampToValueAtTime(.0001,t+duration);
+      if(kind==='intro-back'){envelope.gain.setValueAtTime(.0001,t);envelope.gain.exponentialRampToValueAtTime(volume,t+duration*.85);envelope.gain.exponentialRampToValueAtTime(.0001,t+duration);}else{envelope.gain.setValueAtTime(volume,t);envelope.gain.exponentialRampToValueAtTime(.0001,t+duration);}
       oscillator.connect(envelope);envelope.connect(audio.destination);oscillator.start(t);oscillator.stop(t+duration);oscillator.onended=()=>{oscillator.disconnect();envelope.disconnect();};
       return true;
     } catch { return false; }
@@ -93,8 +94,8 @@ export const createGameSound = ({
     leaveGame(){cancelPreview();clearIncoming();},
     interaction({kind,key}){
       if(!active()){cancelPreview();return;}
-      if(kind==='preview-hover'){if(hoverKey===key)return;cancelPreview();hoverKey=key;timer=setTimer(()=>{timer=null;play('preview');},PREVIEW_SETTLE_MS);return;}
-      cancelPreview();if(kind!=='preview-leave')play(kind);
+      if(kind==='preview-hover' || kind==='preview-leave')return;
+      play(kind);
     },
     local(change, game, {silent=false}={}) {
       const id=change?.gameId, state=game?.currentSnapshot;
@@ -111,9 +112,10 @@ export const createGameSound = ({
       const previous=sequences.get(id);if(previous && seq<=previous.seq)return false;
       sequences.set(id,{seq,pieces:payload.game.board?.state?.pieces?.length});
       // Initial snapshots, replay and local acknowledgements never notify.
-      if(silent || localCommands.has(payload.clientCommandId) || payload.type!=='event_appended' || !['move_recorded','turn_ended'].includes(payload.reason))return false;
+      if(silent || localCommands.has(payload.clientCommandId) || payload.type!=='event_appended' || !['move_recorded','turn_ended','moves_reverted'].includes(payload.reason))return false;
       if(!active())return payload.reason==='move_recorded' && isOpponentMove(payload.game,payload.clientCommandId) ? incoming() : false;
       clearIncoming();
+      if(payload.reason === "moves_reverted")return play("history-back");
       const state=payload.game.board?.state;
       return play(state?.outcome?.status && state.outcome.status!=='ongoing'?'result':previous?.pieces>state?.pieces?.length?'capture':payload.reason==='turn_ended'?'turn':'move');
     },

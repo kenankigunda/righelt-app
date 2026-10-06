@@ -1,3 +1,4 @@
+import { lockOverlayScroll } from './overlay-scroll.js';
 import { icon } from './ui.js';
 import { renderPlayerEmblem } from './player-emblem.js';
 import { createRenderGestureGate } from "./render-gesture.js";
@@ -33,7 +34,7 @@ export const canonicalEntryUsername = (value) => String(value ?? "").replace(/^[
 export const validEntryUsername = (value) => /^[a-z0-9_]{3,24}$/.test(canonicalEntryUsername(value));
 export const createAccountDialog = ({
   controller, document = globalThis.document, onComplete = () => {},
-  getSiteKey = () => null, timers = globalThis, fetcher = globalThis.fetch, onLayoutChange = () => {},
+  getSiteKey = () => null, timers = globalThis, fetcher = globalThis.fetch, onLayoutChange = () => {}, onSound = () => {},
 } = {}) => {
   const dialog = document.createElement("dialog");
   dialog.className = "account-dialog";
@@ -47,19 +48,26 @@ export const createAccountDialog = ({
     hintTimer = null, hintRevision = 0, lookupTimer = null, lookupAbort = null, lookupRevision = 0,
     trigger = null, pending = null, values = {}, challengeToken = "", widget = null,
     flow = 0, submittingFlow = null, pendingLogoutGeneration = null, owner = {}, backdropPress = false, discardPress = false;
+  let releaseScroll = null;
   const phone = globalThis.matchMedia?.('(max-width:700px)');
   const isSettings = () => mode === 'account' || mode === 'password';
   const present = () => {
+    dialog.classList.remove('is-closing');
     const flyout = isSettings();
+    if(flyout && !dialog.open)onSound("flyout");
     dialog.dataset.presentation = flyout ? 'flyout' : 'modal';
     dialog.dataset.actionAffiliation = document.querySelector('#app')?.dataset?.actionAffiliation || 'red';
     const modal = !flyout || Boolean(phone?.matches);
+    if (modal) releaseScroll ||= lockOverlayScroll(document);
+    else {releaseScroll?.();releaseScroll = null;}
     const focused = document.activeElement;
+    const position = {left:document.defaultView.scrollX,top:document.defaultView.scrollY,behavior:"instant"};
     if (dialog.open && dialog.matches?.(':modal') !== modal) dialog.close();
     if (!dialog.open) {
       if (modal || !dialog.show) dialog.showModal(); else dialog.show();
     }
-    if (focused && dialog.contains?.(focused)) focused.focus();
+    if (focused && dialog.contains?.(focused)) focused.focus({preventScroll:true});
+    document.defaultView.scrollTo(position);
     if (document.documentElement?.dataset) document.documentElement.dataset.accountFlyout = String(flyout && !phone?.matches);
     onLayoutChange();
   };
@@ -247,6 +255,14 @@ export const createAccountDialog = ({
   };
   const close = async (discard = false) => {
     if (!discard && mode === "account" && autosave?.dirty() && !await autosave.flush()) return;
+    if (!discard && isSettings() && dialog.open)onSound("flyout-back");
+    if (!discard && isSettings() && dialog.open && !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      const closingFlow = flow;
+      dialog.classList.add('is-closing');
+      await new Promise(resolve => setTimeout(resolve, 180));
+      if (flow !== closingFlow) return;
+    }
+    dialog.classList.remove('is-closing');
     autosave?.cancel(); autosave = null;
     pendingLogoutGeneration = null;
     backdropPress = false;
@@ -259,6 +275,7 @@ export const createAccountDialog = ({
     values = {};
     clearChallenge();
     dialog.close();
+    releaseScroll?.();releaseScroll = null;
     if (document.documentElement?.dataset) document.documentElement.dataset.accountFlyout = "false";
     onLayoutChange();
     dialog.replaceChildren();

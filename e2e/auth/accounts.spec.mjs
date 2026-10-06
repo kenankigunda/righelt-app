@@ -24,6 +24,7 @@ async function register(page, username, { gate = false } = {}) {
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
+  await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
   if (gate) {
     await expect(page).toHaveURL(/#\/game\//);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
@@ -559,6 +560,7 @@ test('a failed continuation read preserves the play choice for explicit retry', 
   expect(creates).toBe(0);
   denyReads = false;
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
   await expect(page).toHaveURL(/#\/game\//);
   await expect(page.getByTestId('game-role')).toContainText('Player 1');
   expect(creates).toBe(1);

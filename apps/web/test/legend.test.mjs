@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getCommandLegendColor, getCommandLegendSwatchStyle } from "../legend.js";
+import { getCommandLegendColor, getCommandLegendSwatchStyle, updateLegendVisibility } from "../legend.js";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
 const shellAppSource = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
@@ -58,4 +58,29 @@ test("command legend swatch renders as a dashed line", () => {
 test("supply legend swatch renders as a dashed green line", () => {
   assert.match(stylesSource, /\.swatch\.supply\s*\{[\s\S]*color:\s*#2f8e63;/s);
   assert.match(stylesSource, /\.swatch\.supply::before,\s*\.swatch\.command::before\s*\{[\s\S]*border-top:\s*3px dashed currentColor;/s);
+});
+
+
+test("same legend visibility retains running animation; changed visibility restarts from current height", () => {
+  const item = { hidden: true }, animations = [];
+  let cancelled = 0, currentHeight = 20;
+  const legend = {
+    querySelector: () => item,
+    getBoundingClientRect: () => ({height: currentHeight}),
+    getAnimations: () => animations,
+    get scrollHeight() { return item.hidden ? 20 : 50; },
+    animate: frames => animations.push({frames, cancel() { cancelled++; }})
+  };
+  updateLegendVisibility(legend, {command: true});
+  assert.equal(animations.length, 1);
+  updateLegendVisibility(legend, {command: true});
+  assert.equal(animations.length, 1);
+  assert.equal(cancelled, 0);
+  currentHeight = 35;
+  updateLegendVisibility(legend, {command: false});
+  assert.equal(cancelled, 1);
+  assert.deepEqual(animations[1].frames, [{height: '35px'}, {height: '20px'}]);
+  updateLegendVisibility(legend, {command: true}, true);
+  assert.equal(item.hidden, false);
+  assert.equal(animations.length, 2);
 });

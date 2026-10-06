@@ -11,9 +11,9 @@ export const participantName = (person) =>
   person?.profile
     ? `<span class="player-name"><bdi>${escape(person.profile.displayName || person.profile.username)}</bdi></span><span class="player-username"><bdi>@${escape(person.profile.username)}</bdi></span>`
     : `<bdi>Guest player</bdi>`;
-export const participantButton = (person, {key = person?.profile?.username || person?.identityId || "guest", side = "neutral"} = {}) => {
+export const participantButton = (person, {key = person?.profile?.username || person?.identityId || "guest", side = "neutral", presence = ""} = {}) => {
   const username = person?.profile?.username;
-  return `<span class="participant-identity" data-player-side="${escape(side)}"><button class="participant-profile" data-profile-key="${escape(key)}" aria-expanded="false" data-action="${username ? "public-profile" : "guest-profile"}" ${username ? `data-username="${escape(username)}"` : `data-identity-id="${escape(person?.identityId)}"`}>${renderPlayerEmblem(username || "guest")}<span class="player-name-stack">${participantName(person)}</span></button><span class="player-profile-details" data-profile-slot="${escape(key)}"></span></span>`;
+  return `<span class="participant-identity" data-player-side="${escape(side)}"><button class="participant-profile" data-profile-key="${escape(key)}" aria-expanded="false" data-action="${username ? "public-profile" : "guest-profile"}" ${username ? `data-username="${escape(username)}"` : `data-identity-id="${escape(person?.identityId)}"`}>${renderPlayerEmblem(username || "guest")}<span class="player-name-stack">${participantName(person)}</span>${presence}</button><span class="player-profile-details" data-profile-slot="${escape(key)}"></span></span>`;
 };
 export const formatJoinedMonth = month => /^\d{4}-(0[1-9]|1[0-2])$/.test(month)
   ? new Intl.DateTimeFormat("en", {year:"numeric",month:"long",timeZone:"UTC"}).format(new Date(`${month}-01T00:00:00Z`)) : "";

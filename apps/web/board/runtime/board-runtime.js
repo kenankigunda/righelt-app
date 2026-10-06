@@ -443,6 +443,11 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       currentActionType: getActionType(),
       selectedPieceOverlayPhase,
     });
+    controls.onVisualsUpdated?.({
+      command: Boolean(elements.overlayLinesEl?.querySelector('[data-legend-kind="command"]')),
+      supply: Boolean(elements.overlayLinesEl?.querySelector('[data-legend-kind="supply"]')),
+      group: Boolean(elements.boardEl?.querySelector('.group-strength-badge')),
+    });
   };
 
   const renderStatus = () => {

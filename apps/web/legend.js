@@ -15,3 +15,20 @@ export function applyCommandLegendSwatch(element, snapshot, selectedPieceId = nu
   }
   element.style.setProperty("--swatch-command-color", getCommandLegendColor(snapshot, selectedPieceId));
 }
+
+// Ignore identical visual updates so ordinary board renders cannot interrupt motion.
+export function updateLegendVisibility(legend, visible, reducedMotion = false) {
+  if (!legend) return;
+  const changes = Object.entries(visible).flatMap(([key, value]) => {
+    const item = legend.querySelector(`[data-legend-entry="${key}"]`);
+    return item && item.hidden === value ? [{ item, hidden: !value }] : [];
+  });
+  if (!changes.length) return;
+  const from = legend.getBoundingClientRect().height;
+  legend.getAnimations().forEach(animation => animation.cancel());
+  for (const { item, hidden } of changes) item.hidden = hidden;
+  const to = legend.scrollHeight;
+  if (!reducedMotion && from !== to) {
+    legend.animate([{ height: `${from}px` }, { height: `${to}px` }], { duration: 180, easing: 'ease-out' });
+  }
+}

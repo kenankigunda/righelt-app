@@ -582,7 +582,7 @@ export function createEngineBoardAdapter() {
     };
   };
 
-  const drawPath = (path, stroke, dashPattern = null, offsetsBySegmentKey = null) => {
+  const drawPath = (path, stroke, dashPattern = null, offsetsBySegmentKey = null, legendKind = null) => {
     if (!overlayLinesEl || !path || path.length < 2) {
       return;
     }
@@ -604,6 +604,7 @@ export function createEngineBoardAdapter() {
       line.setAttribute("y1", String(start.y + offset.y));
       line.setAttribute("x2", String(end.x + offset.x));
       line.setAttribute("y2", String(end.y + offset.y));
+      if (legendKind) line.setAttribute("data-legend-kind", legendKind);
       line.setAttribute("stroke", stroke);
       line.setAttribute("stroke-width", "3");
       line.setAttribute("stroke-linecap", "round");
@@ -852,8 +853,8 @@ export function createEngineBoardAdapter() {
       commandPath,
     );
     if (drawSupplyCommand) {
-      drawPath(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey);
-      drawPath(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey);
+      drawPath(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey, "supply");
+      drawPath(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey, "command");
     }
 
     if (!drawActionPreviews) {

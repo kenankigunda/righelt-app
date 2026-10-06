@@ -41,7 +41,7 @@ test("copy invite waits for pending game creation and then copies the committed 
       return response.request().method() === "POST" && url.pathname === "/api/shell/games";
     });
 
-    await page.getByTestId("home-create-game").click();
+    await page.getByTestId("home-create-game").click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
     await page.getByRole("button", { name: "Close invite", exact: true }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
     await expect(page.getByTestId("copy-invite")).toBeVisible();
@@ -121,7 +121,7 @@ test("scenario update only pulses the clicked scenario button while the local wr
   try {
     await page.goto("/");
     await expect(page.getByTestId("home-create-game")).toBeVisible();
-    await page.getByTestId("home-create-game").click();
+    await page.getByTestId("home-create-game").click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
     await page.getByRole("button", { name: "Close invite", exact: true }).click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
 

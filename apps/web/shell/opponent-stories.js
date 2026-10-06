@@ -5,6 +5,8 @@ export const OPPONENT_STORIES = Object.freeze({
   horus: { name: "Horus", difficulty: "Hard", bit: 4, story: "Horus learned to play in a watchtower, studying matches in the courtyard below. He eventually came down to explain what everyone was doing wrong. Unfortunately, he was usually right.", scenes: [["horus-1-watchtower", "Horus observes the courtyard from a watchtower."], ["horus-2-studying", "Horus studies a match in the courtyard below."], ["horus-3-opinion", "Horus offers his opinion at the game table."]] },
 });
 
+export const FRIEND_STORY = {name:"Friend",difficulty:"A rivalry of your own",story:"Every good rivalry starts with an invitation. Bring someone who knows your tricks, or someone who thinks they do. Settle in, trade a few surprises, and leave room for the inevitable rematch.",scenes:[["friend-introduction","Two friends settle into a friendly red-versus-blue match."]],playLabel:"Start a friend game"};
+
 export const createStoryCarousel = ({ reducedMotion = false, now = () => performance.now(), setTimer = setTimeout, clearTimer = clearTimeout, onChange = () => {} } = {}) => {
   let index = 0, paused = reducedMotion, hidden = false, timer = null, remaining = 3000, started = 0;
   const state = () => ({ index, paused, hidden });
@@ -39,7 +41,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
       const previous=images[previousIndex];
       for(const image of images)image.getAnimations?.().forEach(animation=>animation.cancel());
       if(previous && previous !== selected && !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches){
-        const direction=(index-previousIndex+3)%3===2?-1:1;
+        const direction=(index-previousIndex+3)%3===2?1:-1;
         previous.animate?.([{opacity:1,transform:'perspective(900px) rotateY(0deg)',filter:'brightness(1)'},{opacity:0,transform:`perspective(900px) rotateY(${direction*18}deg)`,filter:'brightness(.94)'}],{duration:520,easing:'ease-in-out'});
         const shade=modal.element.querySelector('.story-turn-shade');
         shade?.getAnimations().forEach(animation=>animation.cancel());
@@ -79,7 +81,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
       const result = retry ? await onRetry(intent.opponent) : await onPlay(intent);
       if (request !== session || !modal.element.open) return;
       busy = false;
-      if (result?.state === "started") modal.close();
+      if (result?.state === "started") modal.close("play");
       else { refresh(); if (result?.message) modal.element.querySelector("[data-story-readiness]").textContent = result.message; }
     } catch {
       if (request !== session || !modal.element.open) return;
@@ -95,21 +97,22 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
     refresh,
     setMatchStatus(text, finished = false) { if (!modal.element.open || mode !== "revisit") return; modal.element.querySelector("[data-story-readiness]").textContent = text; const result = modal.element.querySelector("[data-story-result]"); if (result) result.hidden = !finished; },
     open(id, options = {}) {
-      const story = OPPONENT_STORIES[id]; if (!story) return;
+      const story = id === "friend" ? FRIEND_STORY : OPPONENT_STORIES[id]; if (!story) return;
+      const multipleScenes = story.scenes.length > 1;
       session++; destroyPresentation(); carousel?.destroy(); opponent = id; side = options.side || "p1"; mode = options.mode || "intro"; gameId = options.gameId || null; busy = false;
       destroyPresentation = mode === "intro" ? onPresentation() : () => {};
       const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches || false;
       modal.open(`<button class="ui-icon-button story-close" data-modal-close aria-label="Close opponent story">${icon('close')}</button>
-        <div class="story-art-wrap"><button class="ui-icon-button story-caret" data-story-step="-1" aria-label="Previous story image">${icon('left')}</button>
+        <div class="story-art-wrap" data-single-image="${!multipleScenes}">${multipleScenes ? `<button class="ui-icon-button story-caret" data-story-step="-1" aria-label="Previous story image">${icon('left')}</button>` : ""}
         <div class="story-art">${story.scenes.map(([file, alt], i) => `<img data-story-image data-active="${i === 0}" aria-hidden="${i !== 0}" ${i ? "data-src" : "src"}="/assets/opponents/${file}.webp" width="960" height="640" alt="${alt}">`).join("")}<span class="story-turn-shade" aria-hidden="true"></span></div>
-        <button class="ui-icon-button story-caret" data-story-step="1" aria-label="Next story image">${icon('right')}</button></div>
+        ${multipleScenes ? `<button class="ui-icon-button story-caret" data-story-step="1" aria-label="Next story image">${icon('right')}</button>` : ""}</div>
         <div class="story-copy"><div class="story-heading"><h2 id="opponent-story-title">${story.name}</h2><span>${story.difficulty}</span></div>
-        <p class="opponent-story-copy">${story.story}</p><p role="status" data-story-readiness></p><div class="story-modal-actions">${mode === "intro" ? `<button data-story-play disabled>${icon('play')}Play ${story.name}</button><button class="secondary" data-story-retry hidden>Retry</button>` : `<button data-modal-close>${icon('back')}Return to game</button><button data-story-result hidden>View result</button>`}</div></div>`, options.trigger, options.mode === "revisit" ? null : () => document.querySelector(`button[data-opponent="${id}"]`));
+        <p class="opponent-story-copy">${story.story}</p><p role="status" data-story-readiness></p><div class="story-modal-actions">${mode === "intro" ? `<button data-story-play disabled>${icon('play')}${story.playLabel || `Play ${story.name}`}</button><button class="secondary" data-story-retry hidden>Retry</button>` : `<button data-modal-close>${icon('back')}Return to game</button><button data-story-result hidden>View result</button>`}</div></div>`, options.trigger, options.mode === "revisit" ? null : () => document.querySelector(`button[data-opponent="${id}"]`));
       modal.element.dataset.opponent = id;
       modal.element.dataset.actionAffiliation = side === "p2" ? "blue" : "red";
       modal.element.querySelectorAll("img").forEach(img => img.addEventListener("error", () => { img.style.visibility = "hidden"; }));
-      carousel = createStoryCarousel({ reducedMotion: reduced, onChange: syncImages });
-      carousel.visibility(document.hidden);
+      carousel = multipleScenes ? createStoryCarousel({ reducedMotion: reduced, onChange: syncImages }) : null;
+      carousel?.visibility(document.hidden);
       refresh();
     },
   };

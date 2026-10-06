@@ -8,7 +8,7 @@ import { createAccountDialog } from "../shell/account-dialog.js";
 function documentBoundary() {
   const listeners = new Map();
   const element = {
-    dataset: {}, open: false, innerHTML: "",
+    dataset: {}, open: false, innerHTML: "", classList:{add(){},remove(){}},
     setAttribute() {}, querySelector() { return null; },
     addEventListener(name, callback) { listeners.set(name, callback); },
     showModal() { this.open = true; }, close() { this.open = false; },
@@ -16,6 +16,8 @@ function documentBoundary() {
   };
   const document = new EventTarget();
   document.body = { append() {} };
+  document.documentElement = {style:{},dataset:{}};
+  document.defaultView = {scrollX:0,scrollY:0,scrollTo(){}};
   document.activeElement = document.body;
   document.visibilityState = "visible";
   document.createElement = () => element;

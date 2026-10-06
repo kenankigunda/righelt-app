@@ -36,6 +36,7 @@ test("correctable creation errors preserve the username and allow correction wit
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveValue("An accessible account password 428");
   expect(requests).toBe(1);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
+  await page.getByRole("button", { name: "Start a friend game", exact: true }).click();
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
   expect(requests).toBe(2);
 });
