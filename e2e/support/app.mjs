@@ -66,6 +66,9 @@ export const continueFriendIntroduction = async (page, {friendIntroduction = fal
 export const createGameFromHome = async (page, capabilities = {friendIntroduction:true}) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
+  // This general-suite fixture starts after guest startup succeeds. A cold
+  // bootstrap can fail and retry while the shell already displays its cards.
+  await waitForLegacyIdentity(page);
   const createResponsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return response.request().method() === "POST" && url.pathname === "/api/shell/games";
