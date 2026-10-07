@@ -294,9 +294,10 @@ html[data-page-active="false"] .home-refresh button.opponent-choice::before {bac
 /* The grid breathes without moving its geometry out of alignment with the logo. */
 .brand-grid {
  mask-image:radial-gradient(ellipse 1050px 850px at var(--grid-origin-x,220px) var(--grid-origin-y,60px),#000 0%,rgb(0 0 0 / 55%) 30%,rgb(0 0 0 / 20%) 85%),radial-gradient(ellipse 650px 650px at 100% 100%,rgb(0 0 0 / 85%),transparent 85%);
- /* Cache the masked grid while its opacity changes, rather than repainting it. */
+ /* Quantize this very faint fade: each step changes a full-strength grid line
+    by less than one RGB level, avoiding continuous full-viewport repaint work. */
  will-change:opacity;
- mask-composite:add;animation:righelt-grid-breathe 24s ease-in-out infinite;
+ mask-composite:add;animation:righelt-grid-breathe 24s steps(24,end) infinite;
 }
 @keyframes righelt-grid-breathe {0%,100%{opacity:.84;}50%{opacity:1;}}
 html[data-page-active="false"] .brand-grid {animation-play-state:paused;}

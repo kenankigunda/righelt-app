@@ -1,10 +1,6 @@
 name: WebKit rendering diagnostic
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - scripts/diagnose-webkit-rendering.mjs
-      - .github/workflows/webkit-rendering-diagnostic.yml
 permissions:
   contents: read
 jobs:

@@ -110,9 +110,10 @@ test('carousel keeps cycling under hover and focus but stops after a caret',asyn
 
 test('board has four turn-colored corners, neutral surroundings and a light hover wash',async({page})=>{
  await page.goto('/');await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();await page.getByRole('button',{name:'Close invite',exact:true}).click();
- const board=page.locator('[data-shell-panel="board"]');await expect(board).toHaveAttribute('data-turn-side','red');
- const gradients=await board.evaluate(el=>getComputedStyle(el,'::before').backgroundImage);
- expect(gradients.match(/linear-gradient/g).length).toBeGreaterThanOrEqual(4);
+ const board=page.locator('[data-shell-panel="board"]');await expect(board).toBeVisible();await expect(board).toHaveAttribute('data-turn-side','red');
+ // Closing Invite and finishing route entry can replace the panel node.
+ // Read connection and styles together, then wait for the same four accents.
+ await expect.poll(()=>board.evaluate(el=>el.isConnected?(getComputedStyle(el,'::before').backgroundImage.match(/linear-gradient/g)??[]).length:0)).toBeGreaterThanOrEqual(4);
  const neutral=await page.locator('[data-game-panel="join"]').evaluate(el=>getComputedStyle(el).getPropertyValue('--corner-start').trim());expect(neutral).toBe('transparent');
  await expect(board.getByRole('img',{name:'Red commander',exact:true})).toBeVisible();
  const cell=board.locator('.cell').filter({has:page.locator('.piece-token.p1')}).first();await cell.hover();

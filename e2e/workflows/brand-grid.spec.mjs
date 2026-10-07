@@ -34,3 +34,24 @@ test('grid keeps its paint inputs stable across unrelated app updates and realig
   await page.setViewportSize({width:375,height:812});
   await expect(assertAligned).toPass();
 });
+
+
+test('grid breathing uses quiet bounded updates without moving geometry and respects reduced motion',async({page})=>{
+  await page.goto('/');
+  await expect(page.getByTestId('home-create-game')).toBeVisible();
+  const proof=await page.locator('.brand-grid').evaluate(grid=>{
+    const animation=grid.getAnimations().find(item=>item.animationName==='righelt-grid-breathe');
+    if(!animation)throw new Error('Expected the grid breathing animation');
+    animation.pause();
+    const geometry=grid.getBoundingClientRect().toJSON();
+    const at=time=>{animation.currentTime=time;return Number(getComputedStyle(grid).opacity);};
+    return {first:at(1050),nearby:at(1150),later:at(2050),low:at(0),high:at(12000),geometry,after:grid.getBoundingClientRect().toJSON()};
+  });
+  expect(proof.nearby).toBe(proof.first);
+  expect(proof.later).toBeGreaterThan(proof.first);
+  expect(proof.later-proof.first).toBeLessThan(.02);
+  expect(proof.low).toBeCloseTo(.84);expect(proof.high).toBeCloseTo(1);
+  expect(proof.after).toEqual(proof.geometry);
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await expect.poll(()=>page.locator('.brand-grid').evaluate(grid=>grid.getAnimations().length)).toBe(0);
+});
