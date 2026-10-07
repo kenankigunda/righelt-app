@@ -33,6 +33,7 @@ jobs:
           done
           if [ "$ready" != true ]; then cat test-results/webkit-rendering-diagnostic/stack.log; exit 1; fi
           node scripts/resources/cli.mjs run --kind heavy -- node scripts/diagnose-webkit-rendering.mjs --url http://127.0.0.1:9888 --rounds 2 --trace on
+          node scripts/resources/cli.mjs run --kind heavy -- node scripts/diagnose-webkit-rendering.mjs --url http://127.0.0.1:9888 --rounds 2 --trace snapshots --out test-results/webkit-rendering-diagnostic/snapshots-only
       - name: Preserve measurements, traces, and stack logs
         if: always()
         uses: actions/upload-artifact@v4

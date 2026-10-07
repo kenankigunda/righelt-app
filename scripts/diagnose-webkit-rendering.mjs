@@ -13,7 +13,7 @@ const option = (key, fallback) => {
   return index < 0 ? fallback : args[index + 1];
 };
 if (args.includes('--help')) {
-  console.log('Usage: supervised node scripts/diagnose-webkit-rendering.mjs --url URL [--out DIR] [--rounds 2] [--trace on|off]');
+  console.log('Usage: supervised node scripts/diagnose-webkit-rendering.mjs --url URL [--out DIR] [--rounds 2] [--trace on|snapshots|off]');
   process.exit(0);
 }
 if (!process.env.RIGHELT_RESOURCE_RUN) throw new Error('Run through scripts/resources/cli.mjs run --kind heavy.');
@@ -21,7 +21,7 @@ const url = new URL(option('--url', 'http://127.0.0.1:9888')).href;
 const output = resolve(option('--out', 'test-results/webkit-rendering-diagnostic'));
 const rounds = Number(option('--rounds', '2'));
 const trace = option('--trace', 'on');
-if (!Number.isInteger(rounds) || rounds < 1 || rounds > 5 || !['on', 'off'].includes(trace)) throw new Error('Invalid rounds or trace option.');
+if (!Number.isInteger(rounds) || rounds < 1 || rounds > 5 || !['on', 'snapshots', 'off'].includes(trace)) throw new Error('Invalid rounds or trace option.');
 const variants = [
   { name: 'baseline', css: '' },
   { name: 'grid-disabled', css: '.brand-grid { display:none!important; }' },
@@ -54,7 +54,7 @@ try {
       const sample = { id, variant:variant.name, css:variant.css, startedAt:new Date().toISOString() };
       report.samples.push(sample);
       try {
-        if (trace === 'on') await context.tracing.start({ screenshots:true, snapshots:true, sources:true });
+        if (trace !== 'off') await context.tracing.start({ screenshots:trace === 'on', snapshots:true, sources:true });
         const page = await context.newPage();
         page.setDefaultTimeout(20_000);
         await page.goto(url, { waitUntil:'domcontentloaded' });
@@ -112,7 +112,7 @@ try {
       } catch (error) {
         sample.error = String(error.stack || error);
       } finally {
-        if(trace === 'on') await context.tracing.stop({path:resolve(output, `${id}.zip`)}).catch(error => {sample.traceError=String(error);});
+        if(trace !== 'off') await context.tracing.stop({path:resolve(output, `${id}.zip`)}).catch(error => {sample.traceError=String(error);});
         await context.close();
         await save();
         console.log(JSON.stringify({id,clickMs:sample.clickMs,pointerDelayMs:sample.pointerDelayMs,frames:sample.frames,error:sample.error}));
