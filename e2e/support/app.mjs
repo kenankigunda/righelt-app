@@ -54,7 +54,16 @@ export const closeHostInvitation = async page => {
   if (await close.isVisible()) await close.click();
 };
 
-export const createGameFromHome = async (page) => {
+// Selected from source capabilities before proof starts. A missing expected
+// introduction fails; it must never silently fall back to the legacy flow.
+export const continueFriendIntroduction = async (page, {friendIntroduction = false} = {}) => {
+  if (!friendIntroduction) return;
+  const story=page.getByRole('dialog',{name:'Friend',exact:true});
+  await story.waitFor({state:'visible'});
+  await story.getByRole('button',{name:'Start a friend game',exact:true}).click();
+};
+
+export const createGameFromHome = async (page, capabilities = {}) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
   const createResponsePromise = page.waitForResponse((response) => {
@@ -62,6 +71,7 @@ export const createGameFromHome = async (page) => {
     return response.request().method() === "POST" && url.pathname === "/api/shell/games";
   });
   await page.getByTestId("home-create-game").click();
+  await continueFriendIntroduction(page, capabilities);
   const createResponse = await createResponsePromise;
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await closeHostInvitation(page);

@@ -35,3 +35,17 @@ test('account capabilities distinguish recovery, progressive, separate, minimal 
   assert.equal(autosave.accountAutosave,true);assert.equal(autosave.playAccountEntry,true);
  } finally {await rm(root,{recursive:true,force:true});}
 });
+
+test('Friend introduction is an explicit source capability, independent of computer stories',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'friend-capabilities-'));
+ try{
+  const directory=path.join(root,'apps/web/shell');await mkdir(directory,{recursive:true});
+  assert.equal((await candidateCapabilities(root)).friendIntroduction,false);
+  const file=path.join(directory,'opponent-stories.js');
+  await writeFile(file,'export const OPPONENT_STORIES = {};\n// export const FRIEND_STORY = {};');
+  assert.equal((await candidateCapabilities(root)).stories,true);
+  assert.equal((await candidateCapabilities(root)).friendIntroduction,false);
+  await writeFile(file,'export const FRIEND_STORY = {};\nthrow Error("Do not execute candidate code");');
+  assert.equal((await candidateCapabilities(root)).friendIntroduction,true);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
