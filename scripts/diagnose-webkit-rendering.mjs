@@ -13,7 +13,7 @@ const option = (key, fallback) => {
   return index < 0 ? fallback : args[index + 1];
 };
 if (args.includes('--help')) {
-  console.log('Usage: supervised node scripts/diagnose-webkit-rendering.mjs --url URL [--out DIR] [--rounds 2] [--trace on|snapshots|off]');
+  console.log('Usage: supervised node scripts/diagnose-webkit-rendering.mjs --url URL [--out DIR] [--rounds 2] [--trace on|snapshots|off] [--variants baseline,grid-wrapper-animation,grid-static,baseline-repeat]');
   process.exit(0);
 }
 if (!process.env.RIGHELT_RESOURCE_RUN) throw new Error('Run through scripts/resources/cli.mjs run --kind heavy.');
@@ -22,7 +22,7 @@ const output = resolve(option('--out', 'test-results/webkit-rendering-diagnostic
 const rounds = Number(option('--rounds', '2'));
 const trace = option('--trace', 'on');
 if (!Number.isInteger(rounds) || rounds < 1 || rounds > 5 || !['on', 'snapshots', 'off'].includes(trace)) throw new Error('Invalid rounds or trace option.');
-const variants = [
+const availableVariants = [
   { name: 'baseline', css: '' },
   { name: 'grid-disabled', css: '.brand-grid { display:none!important; }' },
   { name: 'surface-filters-disabled', css: ':is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,.home-refresh .mini-board-card,button.opponent-choice { filter:none!important; }' },
@@ -30,8 +30,12 @@ const variants = [
   { name: 'grid-unmasked', css: '.brand-grid { mask:none!important; -webkit-mask:none!important; }' },
   { name: 'grid-static', css: '.brand-grid { animation:none!important; }' },
   { name: 'grid-unmasked-static', css: '.brand-grid { mask:none!important; -webkit-mask:none!important; animation:none!important; }' },
+  { name: 'grid-wrapper-animation', css: '', wrapGrid:true },
   { name: 'baseline-repeat', css: '' },
 ];
+const selection=option('--variants',availableVariants.map(variant=>variant.name).join(',')).split(',');
+if(selection.length<3 || selection[0]!=='baseline' || selection.at(-1)!=='baseline-repeat' || new Set(selection).size!==selection.length || selection.some(name=>!availableVariants.some(variant=>variant.name===name)))throw new Error('Variants must be unique known names with baseline first and baseline-repeat last.');
+const variants=selection.map(name=>availableVariants.find(variant=>variant.name===name));
 const percentile = (values, fraction) => {
   const sorted = [...values].sort((a,b) => a-b);
   return sorted.length ? sorted[Math.ceil(sorted.length * fraction)-1] : null;
@@ -39,7 +43,7 @@ const percentile = (values, fraction) => {
 await mkdir(output, { recursive:true });
 const report = {
   revision:execFileSync('git', ['rev-parse','HEAD'], { encoding:'utf8' }).trim(),
-  platform:process.platform, node:process.version, url, trace, rounds,
+  platform:process.platform, node:process.version, url, trace, rounds, variants:selection,
   device:devices['Desktop Safari'], startedAt:new Date().toISOString(),
   note:'Fresh anonymous context per sample. Same home and first Friend click. No match creation. Diagnostic CSS only. Baseline repeated to expose drift. Frame sample bounded at 8s; trace capture is held constant.',
   samples:[],
@@ -75,12 +79,31 @@ try {
           grid.style.backgroundSize=`${width}px ${height}px`;
           grid.style.backgroundPosition=`${pattern.getAttribute('x')}px ${pattern.getAttribute('y')}px`;
         });
+        if(variant.wrapGrid) sample.wrapper=await page.evaluate(()=>{
+          const grid=document.querySelector('.brand-grid'), style=getComputedStyle(grid);
+          const animation=style.animation, willChange=style.willChange;
+          const phase=grid.getAnimations().find(effect=>effect.animationName==='righelt-grid-breathe')?.currentTime;
+          const before=grid.getBoundingClientRect().toJSON();
+          const wrapper=document.createElement('div');wrapper.className='diagnostic-grid-wrapper';
+          wrapper.setAttribute('aria-hidden','true');
+          Object.assign(wrapper.style,{position:'fixed',inset:'0',width:'100%',height:'100%',pointerEvents:'none',zIndex:'-1',animation,willChange});
+          grid.before(wrapper);wrapper.append(grid);
+          grid.style.setProperty('animation','none','important');
+          Object.assign(grid.style,{position:'absolute',zIndex:'auto',opacity:'1',willChange:'auto'});
+          const animatedWrapper=wrapper.getAnimations().find(effect=>effect.animationName==='righelt-grid-breathe');
+          if(animatedWrapper && typeof phase==='number')animatedWrapper.currentTime=phase;
+          const after=grid.getBoundingClientRect().toJSON();
+          if(['x','y','width','height'].some(key=>before[key]!==after[key]))throw new Error('Wrapper intervention changed grid geometry');
+          if(!animatedWrapper)throw new Error('Wrapper intervention failed to retain grid animation');
+          return {animation,phase,before,after};
+        });
         sample.computed = await page.evaluate(() => ({
           gridDisplay:getComputedStyle(document.querySelector('.brand-grid')).display,
           gridWillChange:getComputedStyle(document.querySelector('.brand-grid')).willChange,
           gridMaskImage:getComputedStyle(document.querySelector('.brand-grid')).maskImage,
           gridWebkitMaskImage:getComputedStyle(document.querySelector('.brand-grid')).webkitMaskImage,
           gridAnimationName:getComputedStyle(document.querySelector('.brand-grid')).animationName,
+          wrapperAnimationName:document.querySelector('.diagnostic-grid-wrapper')?getComputedStyle(document.querySelector('.diagnostic-grid-wrapper')).animationName:null,
           sectionFilters:[...document.querySelectorAll('.home-refresh section.panel, .home-refresh > section.panel, button.opponent-choice')].map(el => ({tag:el.className, filter:getComputedStyle(el).filter})),
           viewport:[innerWidth,innerHeight,devicePixelRatio],
         }));
