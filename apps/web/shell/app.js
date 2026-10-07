@@ -843,10 +843,9 @@ const getFlyoutContentGapPx = () =>
 const getShellMainMaxWidthPx = () =>
   getCssPixelValue(window.getComputedStyle(document.documentElement).getPropertyValue("--shell-main-max-width"), 1200);
 const getWideShellPaddingRightPx = (openFlyoutCount, viewportWidth = window.innerWidth) => {
-  if (openFlyoutCount <= 0) {
-    return 0;
-  }
-  return (getWideFlyoutWidth(viewportWidth) * openFlyoutCount) + getFlyoutContentGapPx();
+  const reserved = (getWideFlyoutWidth(viewportWidth) * openFlyoutCount) + getFlyoutContentGapPx();
+  if (openFlyoutCount <= 0 || viewportWidth - reserved - SHELL_VIEWPORT_GUTTER_PX < SHELL_WIDE_SCREEN_MIN_WIDTH) return 0;
+  return reserved;
 };
 const getWideMainContentWidthPx = (openFlyoutCount, viewportWidth = window.innerWidth) => {
   const rightReserved = openFlyoutCount > 0 ? getWideShellPaddingRightPx(openFlyoutCount, viewportWidth) : SHELL_VIEWPORT_GUTTER_PX;
@@ -1182,7 +1181,9 @@ const getAvailableShellContentWidth = (viewportWidth = window.innerWidth, route 
   if (openFlyoutCount === 0) {
     return Math.max(0, viewportWidth - totalHorizontalGutter);
   }
-  return Math.max(0, viewportWidth - (getWideFlyoutWidth(viewportWidth) * openFlyoutCount) - totalHorizontalGutter);
+  const remaining = viewportWidth - (getWideFlyoutWidth(viewportWidth) * openFlyoutCount) - totalHorizontalGutter;
+  // A utility should not force a previously usable page into a cramped layout.
+  return remaining >= SHELL_WIDE_SCREEN_MIN_WIDTH ? remaining : Math.max(0, viewportWidth - totalHorizontalGutter);
 };
 const getShellLayoutModeForRoute = (route = currentRoute, viewportWidth = window.innerWidth) =>
   (getAvailableShellContentWidth(viewportWidth, route) >= SHELL_WIDE_SCREEN_MIN_WIDTH ? "wide" : "narrow");
@@ -1198,7 +1199,7 @@ const normalizeRouteFlyoutState = (route, { preferredFlyoutKey = null } = {}) =>
   return {
     ...routeWithPersistedPreferences,
     ...resolveFlyoutState(routeWithPersistedPreferences, {
-      allowStacking: getShellLayoutModeForRoute(routeWithPersistedPreferences) === "wide",
+      allowStacking: window.innerWidth - getWideFlyoutWidth() * FLYOUT_KEYS.filter(key => routeWithPersistedPreferences[key]).length - SHELL_VIEWPORT_GUTTER_PX * 2 >= SHELL_WIDE_SCREEN_MIN_WIDTH,
       preferredKey: preferredFlyoutKey,
     }),
   };
@@ -1386,6 +1387,7 @@ const syncShellLayoutMode = () => {
       appEl.setAttribute(`data-${key}-open`, currentRoute[key] ? "true" : "false");
     });
     appEl.setAttribute("data-flyout-count", String(getOpenFlyoutCount()));
+    appEl.dataset.flyoutOverlay = String(window.innerWidth - getWideFlyoutWidth() * getOpenFlyoutCount() - SHELL_VIEWPORT_GUTTER_PX * 2 < SHELL_WIDE_SCREEN_MIN_WIDTH);
     appEl.setAttribute("data-shell-content-width", String(Math.round(getAvailableShellContentWidth())));
   }
   return layoutMode;
@@ -1851,8 +1853,9 @@ const renderHeader = () => `
     ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p role="status">Connecting…</p>` : ""}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
-        ${account.snapshot().ready && account.snapshot().enabled && account.snapshot().available && account.snapshot().session.authenticated ? `<button class="secondary header-icon-action" type="button" data-action="account-open" data-testid="account-open" aria-label="Account" title="Account">${headerActionContent('account','Account')}</button>` : ""}
-        ${soundToggle(gameSound.enabled())}${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
+        ${soundToggle(gameSound.enabled())}
+        <button class="secondary header-icon-action" type="button" data-action="account-open" data-testid="account-open" data-authenticated="${account.snapshot().session.authenticated}" aria-label="Account" title="Account" ${!account.snapshot().ready || !account.snapshot().enabled || !account.snapshot().available ? 'disabled' : ''}>${headerActionContent('account','Account')}</button>
+        ${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
       </div>
     </div>
   </header>
@@ -4378,6 +4381,13 @@ window.addEventListener("hashchange", () => {
 });
 
 window.addEventListener("resize", () => {
+  const normalized = normalizeRouteFlyoutState(currentRoute, { preferredFlyoutKey: flyoutRenderOrder.at(-1) });
+  if (FLYOUT_KEYS.some(key => Boolean(normalized[key]) !== Boolean(currentRoute[key]))) {
+    currentRoute = normalized;
+    saveDebugFlyoutOpen(storage, Boolean(currentRoute.debug));
+    window.history.replaceState(null, "", buildHashForRoute(currentRoute));
+    render({ animatePanels: false, includeBoard: false });
+  }
   scheduleGameShellStickyLayout();
   scheduleResponsiveHomeSectionPageSizes();
 });
@@ -4422,6 +4432,27 @@ appEl.addEventListener("click", event => {
     void openBoardAccountGate(event.target.closest?.("button, [tabindex]"));
   }
 }, true);
+let utilityCloseFlight = null;
+const closeUtilityFlyouts = () => utilityCloseFlight ||= (async () => {
+  const surfaces = [...appEl.querySelectorAll('.shell-flyout.is-open')];
+  if (!surfaces.length) return;
+  gameSound.play('flyout-back');
+  surfaces.forEach(el => el.classList.add('is-closing'));
+  if (!prefersReducedMotion()) await delay(FLYOUT_MOTION_MS);
+  saveDebugFlyoutOpen(storage, false);
+  currentRoute = {...currentRoute, debug:false, scenarios:false};
+  flyoutRenderOrder = [];
+  window.history.replaceState(null, '', buildHashForRoute(currentRoute));
+  render({animatePanels:false,includeBoard:false});
+})().finally(() => { utilityCloseFlight = null; });
+// Passive page space dismisses utilities. Links, buttons, form fields, board
+// cells and other actionable content keep their own click and current state.
+appEl.addEventListener('click', event => {
+  const target = event.target;
+  if (!(target instanceof Element) || target.closest('.shell-header,.shell-flyout,dialog,button,a,input,select,textarea,label,[role="button"],[data-action],[tabindex],[contenteditable="true"]')) return;
+  if (accountDialog.isOpen() && accountDialog.element.dataset.presentation === 'flyout') void accountDialog.close();
+  else void closeUtilityFlyouts();
+});
 appEl.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof Element)) {
@@ -4462,7 +4493,17 @@ appEl.addEventListener("click", async (event) => {
   if (action === "public-profile") { void inlineProfiles.open(actionEl.getAttribute("data-username"), actionEl); return; }
   if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
-  if (action === "account-open") { if (accountDialog.isOpen()) { void accountDialog.close(); return; } accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
+  if (action === "account-open") {
+    if (accountDialog.isOpen()) { void accountDialog.close(); return; }
+    await closeUtilityFlyouts();
+    accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, appEl.querySelector('[data-action="account-open"]')); return;
+  }
+  if (action === "open-debug" || action === "open-scenarios") {
+    if (utilityCloseFlight) await utilityCloseFlight;
+    if (accountDialog.isOpen() && !await accountDialog.close()) return;
+    const otherKey = action === "open-debug" ? "scenarios" : "debug";
+    if (currentRoute[otherKey] && window.innerWidth - getWideFlyoutWidth() * 2 - SHELL_VIEWPORT_GUTTER_PX * 2 < SHELL_WIDE_SCREEN_MIN_WIDTH) await closeUtilityFlyouts();
+  }
   const accountGatedActions = new Set(["create-game","create-self-play","rematch","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
   if (accountGatedActions.has(action) && (!account.snapshot().ready || account.snapshot().pendingLogout)) {
     event.preventDefault();

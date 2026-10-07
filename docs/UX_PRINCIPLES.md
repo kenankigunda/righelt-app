@@ -413,3 +413,14 @@ Opponent introductions should expose their Play action without scrolling at comm
 An illustration must end intentionally inside its component. Props, sleeves, and other foreground elements must not be arbitrarily sliced at an inset image boundary. Use complete crisp silhouettes and clean transparent negative space so the actual card surface continues into the scene. Do not hide a cutoff with feathered masks or shrink the scene into a thumbnail.
 
 Hover intensity follows the control's role. Lightweight inline text actions, including ending a rush, use the same quiet surface token as icon controls. They must never inherit the saturated fill or shadow of primary CTAs merely because they are buttons inside a panel. Keep readable text, clear focus, and silent hover. Test the actual composed page so broader selector overrides cannot bypass this rule.
+
+
+### One utility system and source-linked overlays
+
+Keep sound immediately to the left of Account in one header control group. Account stays visible when signed out and opens sign-in. Authenticated Account opens settings. When account service is unavailable the visible control is disabled, without blocking browsing.
+
+Account, Scenarios, and Debug share the cut-stone utility surface, consistent inset scrolling, headings, and lightweight close controls. Opening Account replaces other utilities. Opening Scenarios or Debug replaces Account only after pending settings have saved successfully. Failed saves remain visible and prevent accidental loss. A click on passive main-page space dismisses an open utility. Actionable elements keep their own behavior and do not implicitly dismiss it.
+
+A utility must not squeeze a usable medium-width page into an awkward narrower layout. Reserve side space only when the main content still meets its normal wide-layout minimum. Otherwise overlay the utility while preserving page geometry and keeping header controls reachable. Right-attached surfaces enter and exit from the right, bottom-attached surfaces from below. Fullscreen phone Account settings retain their established modal behavior.
+
+A modal opened from a card or control should grow from that source and dismiss back toward it. Use one shared motion implementation, preserve background scroll and focus restoration, and use the paired opening/closing sounds already defined. A decorative exit copy may finish the visual transition after the real dialog has released its focus trap and scroll lock. Such copies must be inert, hidden from accessibility tools, and removed after animation. Reduced motion removes the transform entirely. If the source is missing or offscreen, omit source motion rather than inventing an origin. Game-entry transitions continue to own motion when Play starts a match.

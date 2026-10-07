@@ -225,10 +225,10 @@ test("a lost registration response inspects the session without creating twice",
   await enterUsername(page, uniqueName());
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
   expect(creates).toBe(1);
   await page.reload();
-  await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
 });
 
 test("registration collision stays in creation and never retries as login", async ({ page, request, baseURL }) => {
@@ -268,7 +268,7 @@ test("an unavailable common-password list is disclosed without blocking authorit
   await expect(dialog(page).getByRole("button", { name: "Create account & continue", exact: true })).toBeEnabled();
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
-  await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
 });
 
 
@@ -369,7 +369,7 @@ test("switching forms focuses password for a preserved username and username whe
   await expect(username).toBeFocused();
 });
 
-test("public landing has no sign-in shortcut and keyboard play opens a cancellable account gate", async ({ page }) => {
+test("public landing keeps Account visible and keyboard play opens a cancellable account gate", async ({ page }) => {
   let creates = 0;
   page.on("request", request => {
     if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates++;
@@ -377,7 +377,8 @@ test("public landing has no sign-in shortcut and keyboard play opens a cancellab
   await page.goto("/");
   await waitForAccountStartup(page);
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
   const original = page.url();
   const play = page.getByTestId("home-create-game");
   await play.focus();
