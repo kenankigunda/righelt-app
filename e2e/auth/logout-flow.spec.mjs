@@ -39,7 +39,7 @@ test("a play attempt during pending logout waits for revocation before opening s
     await dialog(page).getByLabel("Password", { exact: true }).fill(password);
     await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(dialog(page)).not.toBeVisible();
-    await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
   } finally {
     release();
     await page.unrouteAll({ behavior: "wait" });

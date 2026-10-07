@@ -36,7 +36,7 @@ async function signOut(page) {
   await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
   await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
-  await expect(page.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
 }
 
 async function sharedInvite(host) {
@@ -124,7 +124,7 @@ for (const method of ["login", "registration"]) {
         await visitor.getByTestId("invite-join-viewer").click();
         await expect(visitor).toHaveURL(/#\/game\//);
         await expect(visitor.getByTestId("game-board")).toBeVisible();
-        await expect(visitor.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+        await expect(visitor.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
         await expect(dialog(visitor)).not.toBeVisible();
         const before = await getHistoryMoveCount(visitor);
         await playHostMove(page);

@@ -337,7 +337,7 @@ Group an identity's emblem, display name, secondary username, and connection sta
 
 ### Overlay surface and scrolling contract
 
-The shared modal surface owns its stone decoration and persistent close control. A single padded inner viewport owns content scrolling. Never let decorative layers create scrollable overflow. Size artwork from the available width and its natural aspect ratio. Bound the scrolling viewport, not the scene scale. Reserve real space below the last action and around clipped corners. Short screens, enlarged text, and longer copy may require inner scrolling, but all content and actions must remain reachable without scrolling the background. Test both fitting and overflowing content, resize while open, and scroll restoration after dismissal. Apply this structure to new overlays rather than adding opponent-specific overflow patches.
+The shared modal surface owns its stone decoration and persistent close control. A single padded inner viewport owns content scrolling. Never let decorative layers create scrollable overflow. Compose artwork and copy together using the available width and height. Use a generous side-by-side composition on wide screens and a stacked composition on phones. Keep the primary action visible on first opening at common default-zoom viewports. Bound the scrolling viewport and preserve the scene aspect ratio. Reserve real space below the last action and around clipped corners. Short screens, enlarged text, and longer copy may require inner scrolling, but all content and actions must remain reachable without scrolling the background. Test both fitting and overflowing content, resize while open, and scroll restoration after dismissal. Apply this structure to new overlays rather than adding opponent-specific overflow patches.
 
 
 ## Current sound contract (October 5, supersedes earlier hover experiments)
@@ -377,7 +377,7 @@ The legend explains only the current board visualization. Commander and supply p
 Artwork that includes gameplay uses the current Righelt board and piece vocabulary: clipped unit pieces, the stepped commander with its open horizontal center, and the angular supply-point arch. Use the shared piece-symbol source and rendered board as references. Avoid generic checker discs. Preserve the characters, scene continuity, large composition, and surface-integrated negative space while updating the game details.
 
 
-Overlay scrollbars belong inside the clipped surface. Keep an inset scrolling viewport clear of all angled corners, with quiet native scrollbar styling, persistent close controls, and one scroll owner. Preserve this geometry at browser zoom and short viewport heights. Fit art to width and allow needed content scrolling rather than shrinking illustrations into thumbnails.
+Overlay scrollbars belong inside the clipped surface. Keep an inset scrolling viewport clear of all angled corners, with quiet native scrollbar styling, persistent close controls, and one scroll owner. Preserve this geometry at browser zoom and short viewport heights. Recompose wide introductions with art beside copy, preserve generous scene scale, and allow needed content scrolling at high zoom rather than shrinking illustrations into thumbnails.
 
 Friend's Start card uses the animated hands. Its narrative overlay expands those hands into a welcoming Righelt board and tabletop scene, without full human figures or animals. Animal characters are exclusive to computer opponents. Illustrated supply points always occupy opposing corner squares, never interior squares.
 
@@ -404,3 +404,26 @@ Initial section population uses its natural height. Animate size only between tw
 Decorative geometry should only change when its measured inputs change. Nested content updates, equal-size logo replacement, and no-op resize events must not rewrite the full-page grid. When scrolling changes only the origin, preserve its pitch and path. Regression checks should cover unchanged updates as well as real responsive realignment.
 
 Decoration must not delay deliberate actions. The background grid is static for this pass, following the October 7 decision. Preserve its logo alignment, corner emphasis, quieter center, mask and line colors at fixed opacity 1. This supersedes the requested breathing cycle and its stepped implementation. Controlled Linux WebKit measurements found that multiple animated grids added substantial frame-stability delays. Static rendering removed that additional cost. Any future motion must first demonstrate equivalent responsiveness with multiple pages open, and respect reduced motion and inactive pages. A new wrapper, canvas or animation scheduler is not inherently faster.
+
+
+
+### Introduction fit and quiet hover
+
+Opponent introductions should expose their Play action without scrolling at common default-zoom laptop, tablet, and phone sizes. Recompose wide introductions with artwork beside copy before reducing scene prominence. On narrow screens balance artwork height, readable fixed story text, and action spacing. Never crop important scene content to make a dialog fit. High zoom, enlarged text, and genuinely short viewports retain the single inset scrolling viewport and persistent close control. Tests inspect the initial action position without scrolling it into view, then separately test real overflow and resizing.
+
+An illustration must end intentionally inside its component. Props, sleeves, and other foreground elements must not be arbitrarily sliced at an inset image boundary. Use complete crisp silhouettes and clean transparent negative space so the actual card surface continues into the scene. Do not hide a cutoff with feathered masks or shrink the scene into a thumbnail.
+
+Hover intensity follows the control's role. Lightweight inline text actions, including ending a rush, use the same quiet surface token as icon controls. They must never inherit the saturated fill or shadow of primary CTAs merely because they are buttons inside a panel. Keep readable text, clear focus, and silent hover. Test the actual composed page so broader selector overrides cannot bypass this rule.
+
+
+### One utility system and source-linked overlays
+
+Keep sound immediately to the left of Account in one header control group. Account stays visible when signed out and opens sign-in. Authenticated Account opens settings. When account service is unavailable the visible control is disabled, without blocking browsing.
+
+Account, Scenarios, and Debug share the cut-stone utility surface, consistent inset scrolling, headings, and lightweight close controls. Opening Account replaces other utilities. Opening Scenarios or Debug replaces Account only after pending settings have saved successfully. Failed saves remain visible and prevent accidental loss. A click on passive main-page space dismisses an open utility. Actionable elements keep their own behavior and do not implicitly dismiss it.
+
+A utility must not squeeze a usable medium-width page into an awkward narrower layout. Reserve side space only when the main content still meets its normal wide-layout minimum. Otherwise overlay the utility while preserving page geometry and keeping header controls reachable. Right-attached surfaces enter and exit from the right, bottom-attached surfaces from below. Fullscreen phone Account settings retain their established modal behavior.
+
+A modal opened from a card or control should grow from that source and dismiss back toward it. Use one shared motion implementation, preserve background scroll and focus restoration, and use the paired opening/closing sounds already defined. A decorative exit copy may finish the visual transition after the real dialog has released its focus trap and scroll lock. Such copies must be inert, hidden from accessibility tools, and removed after animation. Reduced motion removes the transform entirely. If the source is missing or offscreen, omit source motion rather than inventing an origin. Game-entry transitions continue to own motion when Play starts a match.
+
+Geometry acceptance checks wait for actual finite entry motion to finish before measuring the settled component. Keep motion behavior in dedicated tests, including reduced motion, and do not replace completion waits with fixed sleeps or disable effects to satisfy layout assertions. Shared test helpers should distinguish source transforms from deliberately inspected height animations.

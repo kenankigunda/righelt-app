@@ -1,3 +1,4 @@
+import { animateOverlayEntry, animateOverlayExit } from './overlay-motion.js';
 import { lockOverlayScroll } from './overlay-scroll.js';
 import { icon } from './ui.js';
 import { renderPlayerEmblem } from './player-emblem.js';
@@ -9,7 +10,9 @@ import { createAccountAutosave } from "./account-autosave.js";
 import { renderInputAction } from "./input-action.js";
 export const ACCOUNT_ENTRY_LAYOUT = "separate";
 export const ACCOUNT_SIGNUP_PROFILE = "username-only";
+// Play remains a supported entry contract; Account is also always in the header.
 export const ACCOUNT_ENTRY_POINTS = "play";
+export const ACCOUNT_HEADER_ENTRY = "always";
 const LOGIN_HINT_DELAY_MS = 5000;
 const escapeHtml = (value) =>
   String(value ?? "").replace(
@@ -43,6 +46,7 @@ export const createAccountDialog = ({
   document.body.append(dialog);
   const sizeAnimation = animateDialogSize(dialog);
   let autosave = null;
+  let entryAnimation = null;
   let mode = "login", lookupState = "idle", lookupName = "", lookupRevealed = false,
     blocklist = null, blocklistFlight = null, blocklistFailed = false, passwordTouched = false,
     hintTimer = null, hintRevision = 0, lookupTimer = null, lookupAbort = null, lookupRevision = 0,
@@ -65,6 +69,7 @@ export const createAccountDialog = ({
     if (dialog.open && dialog.matches?.(':modal') !== modal) dialog.close();
     if (!dialog.open) {
       if (modal || !dialog.show) dialog.showModal(); else dialog.show();
+      if (!flyout) entryAnimation = animateOverlayEntry(dialog, trigger);
     }
     if (focused && dialog.contains?.(focused)) focused.focus({preventScroll:true});
     document.defaultView.scrollTo(position);
@@ -254,13 +259,13 @@ export const createAccountDialog = ({
     if (next === "register" && validEntryUsername(values.username)) lookupTimer = timers.setTimeout(() => void checkUsername(), USERNAME_LOOKUP_DEBOUNCE_MS);
   };
   const close = async (discard = false) => {
-    if (!discard && mode === "account" && autosave?.dirty() && !await autosave.flush()) return;
+    if (!discard && mode === "account" && autosave?.dirty() && !await autosave.flush()) return false;
     if (!discard && isSettings() && dialog.open)onSound("flyout-back");
     if (!discard && isSettings() && dialog.open && !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
       const closingFlow = flow;
       dialog.classList.add('is-closing');
       await new Promise(resolve => setTimeout(resolve, 180));
-      if (flow !== closingFlow) return;
+      if (flow !== closingFlow) return false;
     }
     dialog.classList.remove('is-closing');
     autosave?.cancel(); autosave = null;
@@ -274,14 +279,18 @@ export const createAccountDialog = ({
     pending = null;
     values = {};
     clearChallenge();
+    entryAnimation?.cancel();entryAnimation = null;
+    const action = trigger?.closest?.("[data-action]")?.getAttribute("data-action");
+    const resolveSource = () => trigger?.isConnected ? trigger : action ? document.querySelector(`[data-action="${CSS.escape(action)}"]`) : document.querySelector('[data-action="account-open"]');
+    releaseScroll?.();releaseScroll = null;
+    if (!discard && !isSettings()) animateOverlayExit(dialog, resolveSource());
     dialog.close();
     releaseScroll?.();releaseScroll = null;
     if (document.documentElement?.dataset) document.documentElement.dataset.accountFlyout = "false";
     onLayoutChange();
     dialog.replaceChildren();
-    const action = trigger?.closest?.("[data-action]")?.getAttribute("data-action");
-    const restored = trigger?.isConnected ? trigger : action ? document.querySelector(`[data-action="${CSS.escape(action)}"]`) : document.querySelector('[data-action="account-open"]');
-    restored?.focus?.({preventScroll:true});
+    resolveSource()?.focus?.({preventScroll:true});
+    return true;
   };
   const open = (next = "login", intent = null, source = null) => {
     autosave?.cancel(); autosave = null;

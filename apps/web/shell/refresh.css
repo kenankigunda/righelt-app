@@ -13,7 +13,7 @@ body { font-family:var(--font-family); background:var(--surface-foundation); }
 :is(.shell-header,.shell-flyout,.home-refresh,.story-modal,.panel:not([data-shell-panel="board"])) button.secondary { background:transparent; border-color:var(--divider); color:var(--ink); }
 button.ui-icon-button { display:inline-flex; justify-content:center; align-items:center; width:44px; height:44px; padding:10px; border:0; border-radius:50%; color:var(--ink); background:transparent; flex:none; box-shadow:none; }
 .ui-icon-button svg { width:24px; height:24px; }
-[data-hover-capability="hover"] button.ui-icon-button:hover { background:rgb(37 43 45 / 6%); }
+[data-hover-capability="hover"] button.ui-icon-button:hover { background:var(--surface-hover-quiet); }
 button:disabled { opacity:1; }
 .home-refresh { gap:32px; }
 .home-refresh > .panel { border:0; background:var(--surface-raised); border-radius:var(--radius-card); padding:24px; box-shadow:var(--shadow-raised); }
@@ -76,8 +76,8 @@ body { isolation:isolate; }
 
 .shell-route-transition-layer[data-direction="back"] .shell-route-transition-layer-swipe { scale:-1 1; }
 
-[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:is(.opponent-choice,.ui-icon-button):not(:disabled):hover { background:rgb(37 43 45 / 5%); color:var(--ink); border-color:transparent; box-shadow:none; }
-[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:not(.cell):not(.secondary):not(.opponent-choice):not(.ui-icon-button):not(.participant-profile):not(:disabled):hover { background:var(--action-hover); }
+[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:is(.opponent-choice,.ui-icon-button):not(:disabled):hover { background:var(--surface-hover-quiet); color:var(--ink); border-color:transparent; box-shadow:none; }
+[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:not(.cell):not(.board-preview-inline-button):not(.secondary):not(.opponent-choice):not(.ui-icon-button):not(.participant-profile):not(:disabled):hover { background:var(--action-hover); }
 
 /* Surfaces share angular accents; controls keep their softer, tactile shape. */
 .brand-grid { mask-image:radial-gradient(ellipse 1050px 850px at var(--grid-origin-x,220px) var(--grid-origin-y,60px),#000 0%,rgb(0 0 0 / 65%) 30%,rgb(0 0 0 / 28%) 85%); }
@@ -177,14 +177,14 @@ body { isolation:isolate; }
 }
 body {background-image:var(--stone-grain);background-color:var(--surface-foundation);}
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
-.story-modal,.game-result,.account-dialog[data-presentation="flyout"] {
+.story-modal,.game-result,.shell-flyout,.account-dialog[data-presentation="flyout"] {
   --stone-depth:6px;--stone-edge:#c9c0ad;--corner-start:transparent;--corner-end:transparent;
   isolation:isolate;position:relative;overflow:visible;clip-path:none;border:0;border-radius:0;
   background:transparent;box-shadow:none;
   filter:drop-shadow(0 3px 3px rgb(54 45 30 / 16%));
 }
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::before,
-.story-modal::before,.game-result::before,.account-dialog[data-presentation="flyout"]::before {
+.story-modal::before,.game-result::before,.shell-flyout::before,.account-dialog[data-presentation="flyout"]::before {
   content:'';position:absolute;inset:0;width:auto;height:auto;transform:none;pointer-events:none;z-index:-1;
   clip-path:var(--stone-outline);
   background:
@@ -194,7 +194,7 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
   box-shadow:inset 0 1px 0 #fff,inset 1px 0 0 rgb(255 255 255 / 80%);
 }
 :is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::after,
-.story-modal::after,.game-result::after,.account-dialog[data-presentation="flyout"]::after {
+.story-modal::after,.game-result::after,.shell-flyout::after,.account-dialog[data-presentation="flyout"]::after {
   content:'';position:absolute;inset:0 0 calc(-1 * var(--stone-depth));width:auto;height:auto;transform:none;pointer-events:none;z-index:-2;
   clip-path:var(--stone-outline);background:linear-gradient(115deg,#e4ddce,var(--stone-edge));
 }
@@ -359,7 +359,7 @@ html[data-page-active="false"] .shell-header button.ui-icon-button {transition:n
 .account-player-signature {display:flex;align-items:center;gap:14px;margin:4px 0 24px;}
 .account-player-signature .player-emblem {width:64px;height:64px;color:var(--action-color);}
 html[data-account-flyout="true"] #app {width:100%;max-width:none;margin:1rem 0 2rem;padding-left:1rem;padding-right:calc(var(--shell-flyout-wide-width) + var(--shell-flyout-content-gap));}
-html[data-account-flyout="true"] .shell-flyout {visibility:hidden;pointer-events:none;}
+
 html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:var(--shell-main-max-width);margin:0 auto;}
 @keyframes account-rail-enter {from{transform:translate(var(--flyout-offset-x),var(--flyout-offset-y));}to{transform:translate(0,0);}}
 .account-dialog[data-presentation="flyout"].is-closing {animation:none;transform:translate(var(--flyout-offset-x),var(--flyout-offset-y));opacity:0;pointer-events:none;}
@@ -406,7 +406,7 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 
 /* Close controls share the lightweight icon-button treatment everywhere. */
 :is(.shell-flyout,.story-modal,.account-dialog,.panel) button.ui-icon-button {border-radius:50%;color:var(--ink);background:transparent;box-shadow:none;}
-[data-hover-capability="hover"] :is(.shell-flyout,.story-modal,.account-dialog,.panel) button.ui-icon-button:hover {background:rgb(37 43 45 / 6%);transform:none;filter:none;}
+[data-hover-capability="hover"] :is(.shell-flyout,.story-modal,.account-dialog,.panel) button.ui-icon-button:hover {background:var(--surface-hover-quiet);transform:none;filter:none;}
 
 :root {--section-heading-weight:700;}
 :is(.panel,.shell-flyout) h2 {font-family:Manrope,sans-serif;font-weight:var(--section-heading-weight);letter-spacing:-.035em;}
@@ -483,3 +483,45 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .story-modal .modal-content::-webkit-scrollbar-track {background:transparent;}
 
 [data-shell-panel="board"] .cell.target .piece-token.commander.move-ghost {opacity:1;}
+
+/* Introduction composition keeps the action in the first viewport. Wide screens
+   place the generous illustration beside the story rather than above it. */
+.opponent-story-modal .story-art {max-height:32dvh;}
+.opponent-story-modal .story-art-wrap {margin-bottom:12px;}
+.opponent-story-modal .opponent-story-copy {line-height:1.55;margin:10px 0 12px;}
+.opponent-story-modal .story-modal-actions {margin-top:12px;}
+@media(min-width:760px) {
+ .opponent-story-modal {width:min(1120px,calc(100vw - 40px));}
+ .opponent-story-modal .modal-content {display:grid;grid-template-columns:minmax(0,1.35fr) minmax(280px,1fr);gap:24px;align-items:center;padding-top:24px;padding-bottom:16px;}
+ .opponent-story-modal .story-art-wrap {margin:0;}
+ .opponent-story-modal .story-art {max-height:none;}
+}
+
+/* Inline board actions share the quiet hover surface with icon controls. They
+   must not inherit the saturated primary-action hover fill. */
+[data-hover-capability="hover"] .board-preview-inline-button:not(:disabled):hover {
+ background:var(--surface-hover-quiet);color:var(--ink);border-color:var(--divider);box-shadow:none;filter:none;
+}
+
+/* Utility rails share Account's cut-stone surface, with one inset scroll owner. */
+.shell-flyout {position:relative;padding:28px;--corner-start:var(--player-p1);--corner-end:var(--player-p2);background:transparent;box-shadow:none;border:0;}
+.shell-flyout-header {padding:0 0 24px;border:0;}
+.shell-flyout-scroll {padding:0;scrollbar-width:thin;scrollbar-color:var(--divider) transparent;}
+@media(min-width:901px) {
+ #app[data-flyout-overlay="true"][data-flyout-count]:not([data-flyout-count="0"]) {padding-right:1rem;}
+ #app[data-flyout-overlay="true"][data-flyout-count] .shell-main-content {width:100%;max-width:var(--shell-main-max-width);}
+ #app[data-flyout-overlay="true"]:not([data-flyout-count="0"]) .shell-header {width:calc(100% - var(--shell-flyout-wide-width) - var(--shell-flyout-content-gap));}
+}
+
+@media(min-width:701px) {
+ html[data-account-flyout="true"] #app[data-flyout-overlay="true"] {padding-right:1rem;}
+ html[data-account-flyout="true"] #app[data-flyout-overlay="true"] .shell-main-content {width:100%;max-width:var(--shell-main-max-width);}
+ html[data-account-flyout="true"] #app[data-flyout-overlay="true"] .shell-header {width:calc(100% - var(--shell-flyout-wide-width) - var(--shell-flyout-content-gap));}
+}
+/* Header controls remain one ordered group when a rail leaves less header space. */
+@media(min-width:701px) {
+#app[data-flyout-overlay="true"]:not([data-flyout-count="0"]) .shell-header {grid-template-columns:minmax(0,1fr) auto;}
+#app[data-flyout-overlay="true"]:not([data-flyout-count="0"]) .shell-header-actions {grid-column:2;}
+#app[data-flyout-overlay="true"]:not([data-flyout-count="0"]) .shell-header-actions .nav-row {flex-wrap:nowrap;width:auto;}
+
+}
