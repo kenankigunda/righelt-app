@@ -370,7 +370,16 @@ test('an open flyout retains its node and animation state across game navigation
 });
 
 test('commander windows mask paths and center dots in real and ghost states',async({page})=>{
- await page.goto('/');await page.getByRole('button',{name:'Play both sides',exact:true}).click();
+ await page.goto('/');
+ const created=page.waitForResponse(response=>response.request().method()==='POST' && new URL(response.url()).pathname==='/api/shell/games');
+ await page.getByRole('button',{name:'Play both sides',exact:true}).click();
+ expect((await created).ok()).toBe(true);
+ await expect(page.getByTestId('game-shell')).toBeVisible();
+ await expect(page.getByTestId('game-role')).toContainText('both players');
+ // Optimistic entry can show cells while reconciliation still blocks input.
+ // Test the window rendering after entry settles, with exactly one selection.
+ await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
+ await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
  const source=page.locator('#shell-board .cell:has(.piece-token.p1.commander:not(.ghost))').first();await source.click();
  await expect(page.locator('#shell-board .commander.move-ghost').first()).toBeVisible();
  await expect.poll(()=>page.locator('#shell-board .cell').evaluateAll(cells=>cells.flatMap(el=>el.getAnimations()).filter(a=>a.playState==='running').length)).toBe(0);
