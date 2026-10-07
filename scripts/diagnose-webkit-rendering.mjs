@@ -28,6 +28,7 @@ const availableVariants = [
   { name: 'surface-filters-disabled', css: ':is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,.home-refresh .mini-board-card,button.opponent-choice { filter:none!important; }' },
   { name: 'grid-tiled-image', css: '.brand-grid > rect { display:none!important; }', tileGrid:true },
   { name: 'grid-unmasked', css: '.brand-grid { mask:none!important; -webkit-mask:none!important; }' },
+  { name: 'grid-stepped', css: '.brand-grid { animation-timing-function:steps(24,end)!important; }' },
   { name: 'grid-static', css: '.brand-grid { animation:none!important; }' },
   { name: 'grid-unmasked-static', css: '.brand-grid { mask:none!important; -webkit-mask:none!important; animation:none!important; }' },
   { name: 'grid-wrapper-animation', css: '', wrapGrid:true },
