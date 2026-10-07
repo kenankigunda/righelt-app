@@ -36,22 +36,24 @@ test('grid keeps its paint inputs stable across unrelated app updates and realig
 });
 
 
-test('grid breathing uses quiet bounded updates without moving geometry and respects reduced motion',async({page})=>{
+test('grid stays static across activity and motion preferences without moving geometry',async({page})=>{
   await page.goto('/');
   await expect(page.getByTestId('home-create-game')).toBeVisible();
-  const proof=await page.locator('.brand-grid').evaluate(grid=>{
-    const animation=grid.getAnimations().find(item=>item.animationName==='righelt-grid-breathe');
-    if(!animation)throw new Error('Expected the grid breathing animation');
-    animation.pause();
-    const geometry=grid.getBoundingClientRect().toJSON();
-    const at=time=>{animation.currentTime=time;return Number(getComputedStyle(grid).opacity);};
-    return {first:at(1050),nearby:at(1150),later:at(2050),low:at(0),high:at(12000),geometry,after:grid.getBoundingClientRect().toJSON()};
+  const read=()=>page.locator('.brand-grid').evaluate(grid=>{
+    const style=getComputedStyle(grid);
+    return {animations:grid.getAnimations().length,opacity:style.opacity,willChange:style.willChange,mask:style.maskImage,geometry:grid.getBoundingClientRect().toJSON()};
   });
-  expect(proof.nearby).toBe(proof.first);
-  expect(proof.later).toBeGreaterThan(proof.first);
-  expect(proof.later-proof.first).toBeLessThan(.02);
-  expect(proof.low).toBeCloseTo(.84);expect(proof.high).toBeCloseTo(1);
-  expect(proof.after).toEqual(proof.geometry);
+  const initial=await read();
+  expect(initial.animations).toBe(0);
+  expect(initial.opacity).toBe('1');
+  expect(initial.willChange).toBe('auto');
+  expect(initial.mask).toContain('radial-gradient');
+  await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
+  expect(await read()).toEqual(initial);
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  expect(await read()).toEqual(initial);
   await page.emulateMedia({reducedMotion:'reduce'});
-  await expect.poll(()=>page.locator('.brand-grid').evaluate(grid=>grid.getAnimations().length)).toBe(0);
+  expect(await read()).toEqual(initial);
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  expect(await read()).toEqual(initial);
 });

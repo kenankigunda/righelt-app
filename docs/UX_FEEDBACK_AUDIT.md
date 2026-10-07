@@ -6,7 +6,7 @@ October 6, 2026. Canonical PR: #120. This records the latest decision where earl
 |---|---|
 | Preserve existing principles and guest play | Original board geometry and desktop/touch rules retained. Guest and account browser suites run separately. Login #112 is already merged. |
 | Brand and visual system | Selected logo retained; Manrope; shared cut-stone surfaces, four clipped corners, bevels, restrained depth, affiliation-aware actions and recognizable branded icons. |
-| Background grid | Logo-aligned grid, stronger top-left and bottom-right, quieter but present center, slow subtle motion, reduced-motion alternative. |
+| Background grid | Logo-aligned grid, stronger top-left and bottom-right, quieter but present center. Static treatment approved October 7 to avoid measured multi-page WebKit rendering delays, superseding slow subtle motion. |
 | Home structure | Continue playing → Start → Other games, no empty Continue playing, natural scrolling, aligned cards, reserved metadata and existing pagination. Latest requested copy retained. |
 | Fixed surroundings during reload | Cached cards and actual heading nodes survive pagination/loading. Open flyouts persist while routes change underneath. Browser tests retain DOM references. |
 | Sections and Players hierarchy | Shared title weight and balanced insets. Emblem/name/presence form one group apart from seat label. Grey empty-state icons, no prohibition slash, compact presence, display name before username, inline profile details. |

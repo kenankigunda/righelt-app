@@ -19,6 +19,9 @@ async function wire(page) {
   if(fault.legacy && /\/reconcile$/.test(new URL(route.request().url()).pathname)){await route.fulfill({status:404,json:{ok:false,error:"not_found"}});return;}
   if(fault.http || (fault.loseReply && /\/reconcile$/.test(new URL(route.request().url()).pathname))){await route.abort();return;}
   const mutation=route.request().method()==='POST'&&/\/apply$/.test(new URL(route.request().url()).pathname);
+  // Loss of an admitted move begins at submission, not during pointer setup.
+  // Otherwise a slow browser can enter recovery and reject the click entirely.
+  if(mutation&&fault.loseAtApply){fault.loseAtApply=false;fault.receive=true;fault.loseReply=true;}
   if(mutation)fault.commands.push(route.request().postDataJSON());
   if(mutation&&fault.holdApply){await route.abort();return;}
   const response=await route.fetch({timeout:5000});
@@ -146,8 +149,9 @@ test('E06 same identity tabs reconcile one journal without duplicating a committ
  const p=await party(browser,baseURL);try{
   const twin=await p.contexts[0].newPage();const tf=await wire(twin);
   await twin.goto(`${baseURL}${p.gameHash}`);await expect(twin.getByTestId('game-role')).toContainText('Player 1');
-  p.faults[0].receive=true;p.faults[0].loseReply=true;
+  p.faults[0].loseAtApply=true;
   await move(p.pages[0],p.gameId);
+  await expect.poll(()=>p.faults[0].commands.length).toBeGreaterThan(0);
   await twin.reload();
   p.faults[0].receive=false;p.faults[0].loseReply=false;const start=Date.now();
   await converged(p.pages);await expect.poll(async()=>JSON.stringify(await digest(twin))).toBe(JSON.stringify(await digest(p.pages[0])));
