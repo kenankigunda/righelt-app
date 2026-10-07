@@ -291,16 +291,11 @@ button.button-pending,.button-link.button-pending {
 html[data-page-active="false"] .shell-header button.ui-icon-button {background:transparent!important;box-shadow:none!important;border-color:transparent!important;transform:none!important;}
 html[data-page-active="false"] .home-refresh button.opponent-choice {background:transparent!important;box-shadow:none!important;transform:none!important;}
 html[data-page-active="false"] .home-refresh button.opponent-choice::before {background:var(--stone-grain),linear-gradient(135deg,#fffef9,#f8f3e8);}
-/* The grid breathes without moving its geometry out of alignment with the logo. */
+/* Keep the full-viewport grid static: decoration must not delay interaction. */
 .brand-grid {
  mask-image:radial-gradient(ellipse 1050px 850px at var(--grid-origin-x,220px) var(--grid-origin-y,60px),#000 0%,rgb(0 0 0 / 55%) 30%,rgb(0 0 0 / 20%) 85%),radial-gradient(ellipse 650px 650px at 100% 100%,rgb(0 0 0 / 85%),transparent 85%);
- /* Quantize this very faint fade: each step changes a full-strength grid line
-    by less than one RGB level, avoiding continuous full-viewport repaint work. */
- will-change:opacity;
- mask-composite:add;animation:righelt-grid-breathe 24s steps(24,end) infinite;
+ mask-composite:add;opacity:1;
 }
-@keyframes righelt-grid-breathe {0%,100%{opacity:.84;}50%{opacity:1;}}
-html[data-page-active="false"] .brand-grid {animation-play-state:paused;}
 .story-art {perspective:900px;}
 .story-art img {transform-origin:50% 50%;backface-visibility:hidden;transition:none;}
 .shell-flyout {background:var(--stone-grain),var(--surface-raised);border-color:#cfc5b3;box-shadow:-4px 0 0 #d2c8b7,-9px 0 18px rgb(54 45 30 / 12%);}
@@ -312,7 +307,7 @@ html[data-page-active="false"] .brand-grid {animation-play-state:paused;}
  .shell-flyout {box-shadow:0 -3px 0 #d2c8b7,0 -8px 18px rgb(54 45 30 / 12%);}
  @starting-style {.shell-flyout.is-open {transform:translate(var(--flyout-offset-x),var(--flyout-offset-y));opacity:0;}}
 }
-@media(prefers-reduced-motion:reduce){.brand-grid{animation:none;}.shell-flyout{transition:none;}}
+@media(prefers-reduced-motion:reduce){.shell-flyout{transition:none;}}
 .story-art {overflow:hidden;}
 .story-turn-shade {position:absolute;inset:0 auto 0 0;width:20%;background:linear-gradient(90deg,transparent,#403726,transparent);opacity:0;pointer-events:none;filter:blur(8px);}
 @media(prefers-reduced-motion:reduce){.story-turn-shade{display:none;}}
