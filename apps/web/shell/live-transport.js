@@ -676,11 +676,11 @@ export const createLiveTransportStore = ({
     return getGameViewModel(gameId);
   };
 
-  const createGame = async ({ selfPlayMode = false, gameId = null } = {}) => {
+  const createGame = async ({ selfPlayMode = false, gameId = null, creatorSide = "p1" } = {}) => {
     const response = await fetcher("/api/shell/games", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ identityId, selfPlayMode, gameId }),
+      body: JSON.stringify({ identityId, selfPlayMode, gameId, creatorSide }),
     });
     const body = await mustOk(response);
     return upsertGame(body.game);

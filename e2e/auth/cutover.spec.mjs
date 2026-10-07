@@ -1,4 +1,4 @@
-import { enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
+import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { test, expect } from "@playwright/test";
 import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
 const password = "A cutover account test password 482";
@@ -16,6 +16,7 @@ async function register(page, username, play = false) {
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
+  await continueFriendIntroduction(page);
   await expect(page).toHaveURL(/#\/game\//);
   if (!play) await page.goto("/");
   if (play) await expect(page.getByTestId("game-role")).toContainText("Player 1");
@@ -61,6 +62,7 @@ test("an old guest invite stays view-only and offers a fresh account game", asyn
   const denied = await request(page, "/api/shell/games/cutover-legacy-fixture/join", { mode: "player" });
   expect(denied.body.error).toBe("legacy_read_only");
   await page.getByRole("button", { name: "Start new game", exact: true }).click();
+  await continueFriendIntroduction(page);
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
   expect(page.url()).not.toBe(url);
 });

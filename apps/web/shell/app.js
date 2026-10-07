@@ -1,18 +1,29 @@
+import { patchSectionContent } from "./dom-patch.js";
+import { SWIPE_EASING_CSS } from './navigation-motion.js';
+import { getGameResult, createResultTransitions, createRematchDialog } from './game-result.js';
 import { createRouteHydration } from './route-hydration.js';
 import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js';
-import { participantButton, participantName, createPublicProfileDialog } from './public-profile.js';
+import { participantButton, participantName, createInlineProfiles } from './public-profile.js';
 import { createAccountController, safeAccountIntent } from './account-controller.js';
 import { createAccountDialog } from './account-dialog.js';
+import { renderPieceSymbol } from '../piece-symbols.js';
+import { invitationOptions, renderInvitationSurface } from './invitations.js';
+import { createIntroductionPreferences, createOpponentSession } from './opponent-session.js';
+import { renderWordmark, createBrandController, createBrandGrid, resolveActionAffiliation } from './brand.js';
+import { icon, soundToggle, headerActionContent } from './ui.js';
+import { createGameSound } from './sound.js';
+import { createModal } from './modal.js';
+import { createOpponentStoryDialog, OPPONENT_STORIES } from './opponent-stories.js';
 import { recoveryMessage, sharedMutationActions } from "./recovery-view.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
-import { createEngineBoardAdapter } from "../board-adapters/engine-board-adapter.js";
-import { syncMiniBoardPreviews } from "../board/mini-board-preview.js";
+import { createEngineBoardAdapter, createInitialBoardSnapshot } from "../board-adapters/engine-board-adapter.js";
+import { createMiniBoardPreview, syncMiniBoardPreviews } from "../board/mini-board-preview.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
 import { createSyncStore } from "./sync-store.js";
 import { ensureHoverCapabilityController } from "../hover-capability.js";
-import { applyCommandLegendSwatch, getCommandLegendSwatchStyle } from "../legend.js";
+import { applyCommandLegendSwatch, getCommandLegendColor, getCommandLegendSwatchStyle, updateLegendVisibility } from "../legend.js";
 import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from "./persistence.js";
 import {
   buildHistoryBranchSeedFromGame,
@@ -90,6 +101,7 @@ const ensureShellStylesheet = () => {
   link.rel = "stylesheet";
   link.href = "./shell/shell.css";
   document.head.appendChild(link);
+
 };
 
 const ensureRouteTransitionLayer = () => {
@@ -126,7 +138,7 @@ const createMemoryStorageFallback = () => {
 };
 
 const storage = (() => { try { return window.localStorage || createMemoryStorageFallback(); } catch { return createMemoryStorageFallback(); } })();
-const publicProfileDialog = createPublicProfileDialog();
+const inlineProfiles = createInlineProfiles();
 let accountInitialized = false;
 let accountStartupError = "";
 let accountContinuation = null;
@@ -136,9 +148,21 @@ const account = createAccountController({ storage,
   onTransition: (next, source) => { if (accountInitialized) { accountDialog.onTransition(source); resetAccountTransport(next); } },
   onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); } },
 });
-const accountDialog = createAccountDialog({ controller: account, onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
+const accountDialog = createAccountDialog({ controller: account, onSound:kind=>gameSound.play(kind), onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
   onComplete: intent => { void completeAccountContinuation(intent); },
+  onLayoutChange: () => render({animatePanels:false,includeBoard:false}),
 });
+const gameSound = createGameSound({ storage });
+const brand = createBrandController();
+createBrandGrid();
+document.addEventListener('pointerdown',()=>{gameSound.gesture();gameSound.cancelPreview();},{passive:true});
+document.addEventListener('keydown',()=>gameSound.gesture());
+document.addEventListener('visibilitychange',()=>gameSound.activityChanged());
+const syncPageActivity = () => { document.documentElement.dataset.pageActive=String(!document.hidden && document.hasFocus()); };
+syncPageActivity();
+document.addEventListener('visibilitychange',syncPageActivity);
+window.addEventListener('blur',()=>{document.documentElement.dataset.pageActive='false';gameSound.activityChanged();});
+window.addEventListener('focus',()=>{syncPageActivity();gameSound.activityChanged();});
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 const boardAdapter = createEngineBoardAdapter();
 const hoverCapability = ensureHoverCapabilityController();
@@ -153,6 +177,9 @@ const toStableKey = (value) => {
   return JSON.stringify(value);
 };
 
+const resultTransitions = createResultTransitions();
+let activeResultGameId = null;
+let pendingResultReviewFocus = null;
 let currentRoute = parseRouteFromHash(window.location.hash);
 let mountedBoardGameId = null;
 let mountedHistoryMoveIndex = null;
@@ -166,6 +193,10 @@ let wsStatus = { state: "disconnected", gameId: null, reconnectAttempts: 0 };
 let lastWsStatusKey = toStableKey(wsStatus);
 let wsLastEvent = "none";
 let inviteFeedback = "";
+let inviteFallback = null;
+let hostInvite = null;
+const preparedPlayerInvitations = new Map();
+let inviteVisit = 0;
 let inviteFeedbackTimer = null;
 let undoRequestFeedback = "";
 let undoRequestFeedbackGameId = null;
@@ -213,6 +244,9 @@ let homeSectionResizeFrame = 0;
 let activePanelSwipe = null;
 let panelTransitionResetTimer = null;
 let routeTransition = null;
+let homeReturnPosition = {y:0, gameId:null};
+let restoreHomePending = false;
+window.history.scrollRestoration = 'manual';
 let routeTransitionCoverTimer = null;
 let routeTransitionRevealTimer = null;
 let headerMenuOpen = false;
@@ -291,8 +325,7 @@ const renderPendingStateAttributes = ({ className = "", pending = false, disable
   return `${classAttr}${pendingAttr}${disabledAttr}`;
 };
 
-const formatStatus = (connected) =>
-  connected ? '<span class="status-chip live">Connected</span>' : '<span class="status-chip disconnected">Disconnected</span>';
+const formatStatus = (connected) => renderConnectionStatusIcon(connected ? "connected" : "disconnected", connected ? "Connected" : "Disconnected");
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
 const getControlSeatForTurn = (state, turnOwnerSeat) => {
   const continuation = state?.continuation;
@@ -320,7 +353,7 @@ const renderRoleLabel = (role, game = null) => {
   return `<strong>${escapeHtml(role || "Unknown")}</strong>`;
 };
 const renderConnectionStatusIcon = (status, label) =>
-  `<span class="connection-status-icon is-${escapeHtml(status)}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
+  `<span class="connection-status-icon is-${escapeHtml(status)}" role="img" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
 const renderPlayerSlotStatus = (seat, participant, { verbose = false } = {}) => {
   if (!verbose) {
     if (!participant) {
@@ -826,6 +859,14 @@ const captureFlyoutRects = (layoutMode = getShellLayoutMode()) =>
       element instanceof HTMLElement ? element.getBoundingClientRect() : null,
     ]),
   );
+// Placement CSS owns the motion vector, independently of content layout mode.
+const getFlyoutEntryOffset = (element, rect) => {
+  const style = getComputedStyle(element);
+  return {
+    deltaX: getCssPixelValue(style.getPropertyValue('--flyout-offset-x')) * rect.width / 100,
+    deltaY: getCssPixelValue(style.getPropertyValue('--flyout-offset-y')) * rect.height / 100,
+  };
+};
 const animateFlyoutShift = (element, { deltaX = 0, deltaY = 0, fromOpacity = 1, fromWidth = null, toWidth = null } = {}) => {
   if (prefersReducedMotion() || !(element instanceof HTMLElement)) {
     return;
@@ -882,8 +923,7 @@ const animateFlyoutPositionChanges = (previousRects) => {
       return;
     }
     animateFlyoutShift(element, {
-      deltaX: layoutMode === "wide" ? nextRect.width : 0,
-      deltaY: layoutMode === "wide" ? 0 : nextRect.height,
+      ...getFlyoutEntryOffset(element, nextRect),
       fromOpacity: 0,
     });
   });
@@ -902,28 +942,18 @@ const clearCoordinatedFlyoutMotionStyles = () => {
 };
 const capturePanelHeights = () =>
   getAnimatedPanels().map((panelEl) => (panelEl instanceof HTMLElement ? panelEl.getBoundingClientRect().height : null));
+const panelSizeAnimations = new WeakMap();
+const panelPendingFocus = new WeakMap();
+const joinMarkupByElement = new WeakMap();
 const animatePanelHeightChange = (panelEl, fromHeight) => {
-  if (prefersReducedMotion() || !(panelEl instanceof HTMLElement) || !Number.isFinite(fromHeight)) {
-    return;
-  }
+  if (!(panelEl instanceof HTMLElement) || !Number.isFinite(fromHeight)) return;
+  panelSizeAnimations.get(panelEl)?.cancel();
+  panelSizeAnimations.delete(panelEl);
   const toHeight = panelEl.getBoundingClientRect().height;
-  if (Math.abs(toHeight - fromHeight) < 1) {
-    return;
-  }
-
-  panelEl.style.overflow = "hidden";
-  panelEl.style.height = `${fromHeight}px`;
-  void panelEl.offsetHeight;
-  panelEl.style.transition = "height 180ms ease";
-  panelEl.style.height = `${toHeight}px`;
-
-  const clearHeightAnimation = () => {
-    panelEl.style.transition = "";
-    panelEl.style.height = "";
-    panelEl.style.overflow = "";
-    panelEl.removeEventListener("transitionend", clearHeightAnimation);
-  };
-  panelEl.addEventListener("transitionend", clearHeightAnimation);
+  if (prefersReducedMotion() || Math.abs(toHeight-fromHeight)<1) return;
+  const animation=panelEl.animate([{height:`${fromHeight}px`},{height:`${toHeight}px`}],{duration:180,easing:'ease-out'});
+  panelSizeAnimations.set(panelEl,animation);
+  animation.onfinish=()=>{if(panelSizeAnimations.get(panelEl)===animation)panelSizeAnimations.delete(panelEl);};
 };
 const animatePanelHeightChanges = (previousPanelHeights) => {
   if (!appEl || !Array.isArray(previousPanelHeights) || previousPanelHeights.length === 0) {
@@ -949,14 +979,16 @@ const getRouteTransitionRenderKey = () =>
   routeTransition ? `${routeTransition.type}:${routeTransition.fromRoute}:${routeTransition.toRoute}:${routeTransition.gameId}` : "none";
 const getRouteTransitionPhaseKey = () => routeTransition?.phase || "idle";
 const isGameEntryRouteTransitionActive = (route = currentRoute) =>
-  routeTransition?.type === "game-entry" && route?.name === "game" && route?.gameId === routeTransition.gameId;
+  routeTransition?.type === "game-entry" && (routeTransition.toRoute === "home" ? route?.name === "home" : route?.name === "game" && route?.gameId === routeTransition.gameId);
 const syncRouteTransitionLayer = () => {
   if (!(routeTransitionLayerEl instanceof HTMLElement)) {
     return;
   }
+  document.documentElement.style.setProperty("--shell-game-entry-easing", SWIPE_EASING_CSS);
   routeTransitionLayerEl.style.setProperty("--shell-game-entry-transition-ms", `${GAME_ENTRY_ROUTE_TRANSITION_MS}ms`);
   routeTransitionLayerEl.style.setProperty("--shell-game-entry-cover-ms", `${GAME_ENTRY_ROUTE_TRANSITION_COVER_MS}ms`);
   routeTransitionLayerEl.style.setProperty("--shell-game-entry-reveal-ms", `${GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS}ms`);
+  routeTransitionLayerEl.dataset.direction = routeTransition?.toRoute === "home" ? "back" : "forward";
   routeTransitionLayerEl.setAttribute("data-active", routeTransition ? "true" : "false");
   routeTransitionLayerEl.setAttribute("data-transition", routeTransition?.type || "none");
   routeTransitionLayerEl.setAttribute("data-phase", routeTransition?.phase || "idle");
@@ -996,6 +1028,7 @@ const beginRouteTransitionReveal = (gameId) => {
     return;
   }
   routeTransition.phase = "revealing";
+  gameSound.play(routeTransition.toRoute === "home" ? "leave" : "enter", {duration:GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS / 1000});
   syncRouteTransitionLayer();
   render({ animatePanels: false, includeBoard: false });
   if (routeTransitionRevealTimer) {
@@ -1027,7 +1060,8 @@ const scheduleRouteTransitionCoverSettle = (gameId) => {
     settleRouteTransitionCover(gameId);
   }, GAME_ENTRY_ROUTE_TRANSITION_COVER_MS);
 };
-const startGameEntryRouteTransition = (gameId, fromRoute = currentRoute?.name || "unknown") => {
+const startGameEntryRouteTransition = (gameId, fromRoute = currentRoute?.name || "unknown", toRoute = 'game') => {
+  if(fromRoute === 'home') homeReturnPosition={y:window.scrollY,gameId};
   if (!gameId || prefersReducedMotion()) {
     clearRouteTransition({ renderNow: false });
     return;
@@ -1036,7 +1070,7 @@ const startGameEntryRouteTransition = (gameId, fromRoute = currentRoute?.name ||
   routeTransition = {
     type: "game-entry",
     fromRoute,
-    toRoute: "game",
+    toRoute,
     gameId,
     phase: "covering",
   };
@@ -1046,6 +1080,7 @@ const startGameEntryRouteTransition = (gameId, fromRoute = currentRoute?.name ||
     void routeTransitionLayerEl.offsetHeight;
     routeTransitionLayerEl.classList.add("is-running");
   }
+  gameSound.play(toRoute === "home" ? "leave" : "enter", {duration:GAME_ENTRY_ROUTE_TRANSITION_COVER_MS / 1000});
   scheduleRouteTransitionCoverSettle(gameId);
 };
 const syncRouteTransitionForCurrentRoute = () => {
@@ -1053,13 +1088,19 @@ const syncRouteTransitionForCurrentRoute = () => {
     syncRouteTransitionLayer();
     return;
   }
-  if (prefersReducedMotion() || !isGameEntryRouteTransitionActive(currentRoute)) {
+  const hashRoute = parseRouteFromHash(window.location.hash);
+  const navigationPending = currentRoute.name === routeTransition.fromRoute && isGameEntryRouteTransitionActive(hashRoute);
+  if (prefersReducedMotion() || (!isGameEntryRouteTransitionActive(currentRoute) && !navigationPending)) {
     clearRouteTransition({ renderNow: false });
     return;
   }
   syncRouteTransitionLayer();
 };
 const maybeRevealRouteTransition = () => {
+  if(restoreHomePending && currentRoute.name === 'home' && routeHydrated){
+    restoreHomePending=false;
+    window.requestAnimationFrame(()=>{if(currentRoute.name!=='home')return;window.scrollTo({top:homeReturnPosition.y,behavior:'instant'});const target=homeReturnPosition.gameId?appEl.querySelector(`.mini-board-card-link-surface[data-game-id="${CSS.escape(homeReturnPosition.gameId)}"]`):null;(target || appEl.querySelector('[data-testid="home-create-game"]'))?.focus({preventScroll:true});});
+  }
   if (!routeTransition || !isGameEntryRouteTransitionActive(currentRoute) || !routeHydrated) {
     return;
   }
@@ -1127,7 +1168,7 @@ const setFlyoutOpenState = (key, isOpen) => {
     flyoutRenderOrder.push(key);
   }
 };
-const getOpenFlyoutCount = (route = currentRoute) => FLYOUT_KEYS.reduce((count, key) => count + Number(route?.[key] === true), 0);
+const getOpenFlyoutCount = (route = currentRoute) => document.documentElement.dataset.accountFlyout === "true" ? 1 : FLYOUT_KEYS.reduce((count, key) => count + Number(route?.[key] === true), 0);
 const getWideFlyoutWidth = (viewportWidth = window.innerWidth) => {
   const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize || "16") || 16;
   return Math.min(rootFontSize * 34, viewportWidth * 0.36);
@@ -1261,17 +1302,17 @@ const syncNarrowHeaderMenuDom = () => {
 };
 const renderHeaderWideActions = () => `
   <button
-    class="secondary${currentRoute.scenarios ? " is-active" : ""}"
+    class="secondary header-icon-action header-utility-action${currentRoute.scenarios ? " is-active" : ""}"
     type="button"
     data-action="${currentRoute.scenarios ? "close-scenarios" : "open-scenarios"}"
     aria-pressed="${currentRoute.scenarios ? "true" : "false"}"
-  >Scenarios</button>
+  aria-label="Scenarios" title="Scenarios">${headerActionContent('scenarios','Scenarios')}</button>
   <button
-    class="secondary${currentRoute.debug ? " is-active" : ""}"
+    class="secondary header-icon-action header-utility-action${currentRoute.debug ? " is-active" : ""}"
     type="button"
     data-action="${currentRoute.debug ? "close-debug" : "open-debug"}"
     aria-pressed="${currentRoute.debug ? "true" : "false"}"
-  >Debug</button>
+  aria-label="Debug" title="Debug">${headerActionContent('debug','Debug')}</button>
 `;
 const renderHeaderNarrowMenu = () => {
   const menuId = "shell-header-menu";
@@ -1801,7 +1842,7 @@ const renderTurnHistory = (game) => {
 const renderHeader = () => `
   <header class="shell-header">
     <div class="shell-header-main">
-      <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Righelt</a></h1>
+      <h1><a class="shell-header-title-link" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">${renderWordmark(brand.getState())}</a></h1>
     </div>
     ${renderHeaderAlertZone()}
     ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
@@ -1810,8 +1851,8 @@ const renderHeader = () => `
     ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p role="status">Connecting…</p>` : ""}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
-        ${account.snapshot().ready && account.snapshot().enabled && account.snapshot().available && account.snapshot().session.authenticated ? '<button class="secondary" type="button" data-action="account-open" data-testid="account-open">Account</button>' : ""}
-        ${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
+        ${account.snapshot().ready && account.snapshot().enabled && account.snapshot().available && account.snapshot().session.authenticated ? `<button class="secondary header-icon-action" type="button" data-action="account-open" data-testid="account-open" aria-label="Account" title="Account">${headerActionContent('account','Account')}</button>` : ""}
+        ${soundToggle(gameSound.enabled())}${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
       </div>
     </div>
   </header>
@@ -2026,7 +2067,7 @@ const renderFlyout = ({ title, variant, closeAction, body }) => `
   <aside class="shell-flyout shell-flyout-${variant} is-open" data-flyout="${variant}">
     <header class="shell-flyout-header">
       <h2>${title}</h2>
-      <button class="flyout-close-button" type="button" aria-label="Close ${title}" data-action="${closeAction}">x</button>
+      <button class="ui-icon-button flyout-close-button" type="button" aria-label="Close ${title}" data-action="${closeAction}">${icon('close')}</button>
     </header>
     <div class="shell-flyout-scroll shell-flyout-scroll-${variant}">
       ${body}
@@ -2111,6 +2152,7 @@ const updateHeaderFields = () => {
   }
 };
 
+const renderInviteFeedback = () => `<div class="invite-feedback" role="status" aria-live="polite" data-success="${inviteFeedback === 'Link copied'}">${inviteFeedback ? `${icon(inviteFeedback === 'Link copied' ? 'check' : 'copy')}<span>${escapeHtml(inviteFeedback)}</span>` : ''}</div>`;
 const setInviteFeedback = (message) => {
   inviteFeedback = message;
   render({ animatePanels: false, includeBoard: false });
@@ -2171,6 +2213,7 @@ const markInviteChoiceCommitted = (gameId) => {
 };
 
 const getInviteContextForGame = (game, routeName = currentRoute.name) => {
+  if (game?.pendingPlayerRequestSeat) return {gameId:game.id,inviteType:"pending"};
   if (account.snapshot().enabled && (routeName === "game" || game?.ownershipMode === "legacy_guest")) return null;
   if (!game || game.myRole !== "Guest") {
     return null;
@@ -2186,6 +2229,7 @@ const getInviteContextForGame = (game, routeName = currentRoute.name) => {
       inviteToken: resolvedInvite.inviteToken,
       inviteFromRole: resolvedInvite.inviteFromRole,
       inviteType,
+      intendedRole:currentRoute.inviteAs,
     };
   }
   return {
@@ -2294,23 +2338,21 @@ const renderHomeStartButton = () =>
 
 const renderHomeGameSection = (sectionKey) => {
   const section = getHomeSection(sectionKey);
-  if (isHomeSectionPending(sectionKey)) {
-    return renderHomeSectionSkeleton(section.title, { showStartButton: sectionKey === "my" });
+  if ((isHomeSectionPending(sectionKey) || !routeHydrated) && section.gameIds.length === 0) {
+    return renderHomeSectionSkeleton(sectionKey === "my" ? "Continue playing" : section.title,{sectionKey});
   }
   const games = section.gameIds.map((gameId) => transport.getHomeGameCard(gameId)).filter(Boolean);
-  const shouldAlwaysRender = sectionKey === "my";
-  if (!Array.isArray(games) || (!shouldAlwaysRender && (games.length === 0 || section.totalGames === 0))) {
+  if (games.length === 0 || section.totalGames === 0) {
     return "";
   }
-  const showEmptyState = section.totalGames === 0;
   const showPaging = section.totalPages > 1;
   const showHeaderPaging = showPaging && section.visibleColumnCount > 1;
   const showFooterPaging = showPaging && section.visibleColumnCount === 1;
-  const hasHeaderAction = sectionKey === "my";
+  const hasHeaderAction = false;
   return `<section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}">
       <div class="home-games-section-header" data-home-header-has-action="${hasHeaderAction ? "true" : "false"}" data-home-header-paging="${showHeaderPaging ? "true" : "false"}">
       <div class="home-games-section-heading">
-        <h2>${escapeHtml(section.title)}</h2>
+        <h2>${sectionKey === "my" ? "Continue playing" : escapeHtml(section.title)}</h2>
         <p class="small">${section.totalGames === 1 ? "1 game" : `${section.totalGames} games`}</p>
       </div>
       <div class="home-games-section-header-center">
@@ -2320,13 +2362,11 @@ const renderHomeGameSection = (sectionKey) => {
         ${hasHeaderAction ? renderHomeStartButton() : ""}
       </div>
     </div>
-    ${showEmptyState
-      ? `<p class="small home-games-empty">No games yet.</p>`
-      : `<div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
+    <div class="home-games-carousel" data-home-carousel="${escapeHtml(sectionKey)}">
       <div class="home-games-carousel-track" data-home-carousel-track="${escapeHtml(sectionKey)}">
         <div class="mini-board-card-list" data-game-count="${games.length}">${games.map((game) => renderHomeGameCard(game)).join("")}</div>
       </div>
-    </div>`}
+    </div>
     ${showFooterPaging ? renderHomeSectionControls(sectionKey, section, { placement: "footer" }) : ""}
   </section>`;
 };
@@ -2345,23 +2385,8 @@ const scrollHomeSectionToTop = (sectionKey) => {
   });
 };
 
-const renderHome = () => {
-  if (!routeHydrated) {
-    return `
-      <section class="stack">
-        ${getVisibleHomeSectionKeys().map((sectionKey) => renderHomeSectionSkeleton(getHomeSection(sectionKey).title, { showStartButton: sectionKey === "my" })).join("")}
-      </section>
-    `;
-  }
-  const sectionHtml = getVisibleHomeSectionKeys().map((sectionKey) => renderHomeGameSection(sectionKey)).join("");
-  const listHtml = sectionHtml || `<section class="panel"><p class="small">No games yet.</p></section>`;
-
-  return `
-    <section class="stack">
-      ${listHtml}
-    </section>
-  `;
-};
+const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer opponents are being prepared.</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
+const renderHome = () => `<section class="stack home-refresh">${renderHomeGameSection('my')}${renderStartChoices()}${getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('')}</section>`;
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
   isBuildingGameAlerts = true;
@@ -2398,8 +2423,8 @@ const renderHomeCardSkeleton = () => `
   </article>
 `;
 
-const renderHomeSectionSkeleton = (title, { showStartButton = false } = {}) => `
-  <section class="panel home-games-section" data-testid="home-section-skeleton">
+const renderHomeSectionSkeleton = (title, { showStartButton = false, sectionKey = "my" } = {}) => `
+  <section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}" data-testid="home-section-skeleton">
     <div class="home-games-section-header" data-home-header-has-action="${showStartButton ? "true" : "false"}" data-home-header-paging="false">
       <div class="home-games-section-heading">
         <h2>${escapeHtml(title)}</h2>
@@ -2465,7 +2490,7 @@ const renderInvitePageSkeleton = () => `
         <div class="skeleton-pulse skeleton-button"></div>
       </div>
     </section>
-    <div class="invite-gate-content" aria-hidden="true">
+    <div class="invite-gate-content" aria-hidden="true" inert>
       ${renderGameViewSkeleton()}
     </div>
   </section>
@@ -2497,12 +2522,11 @@ const renderJoinInvitePanel = (game, inviteLink) => {
   const joinPlayerButtonKey = getJoinButtonKey("player", game.id);
   const playAsBothButtonKey = getPlayAsBothButtonKey(game.id);
   const copyInviteButtonKey = getCopyInviteButtonKey(game.id);
-  const pendingSeatNotice = game.pendingPlayerRequestSeat
-    ? `<div class="alert" data-testid="pending-player-request-notice">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
-    : "";
+  // Pending approval is explained once in the blocking invitation surface.
+  const pendingSeatNotice = "";
   const pendingRows =
     game.pendingJoinRequests.length === 0
-      ? "<li class=\"small\">No pending join requests</li>"
+      ? ""
       : game.pendingJoinRequests
           .map(
             (request) => {
@@ -2532,26 +2556,23 @@ const renderJoinInvitePanel = (game, inviteLink) => {
           pendingKey: joinPlayerButtonKey,
         })}>${isButtonPending(joinPlayerButtonKey) ? "Joining..." : "Join as player"}</button>`
       : "",
+    ...invitationOptions(game).map(option => `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="${option.role}" ${option.role==='viewer'?'data-testid="copy-viewer-invite"':'data-testid="copy-invite"'}${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:copyInviteButtonKey,disabled:!game.canInvite})}>${icon('invite')}${isButtonPending(copyInviteButtonKey)?'Preparing link…':option.label}</button>`),
     game.canPlayAsBothPlayers
       ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({
           className: "secondary",
           pendingKey: playAsBothButtonKey,
         })}>${isButtonPending(playAsBothButtonKey) ? "Claiming seats..." : "Play as both players"}</button>`
       : "",
-    `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-link="${escapeHtml(inviteLink)}" data-testid="copy-invite"${renderButtonStateAttributes({
-      pendingKey: copyInviteButtonKey,
-      disabled: !game.canInvite,
-    })}>${isButtonPending(copyInviteButtonKey) ? "Creating invite..." : "Invite someone else"}</button>`,
   ]);
 
   return `
-    <h2 data-testid="join-invite-heading">Join / Invite</h2>
+    <h2 data-testid="join-invite-heading">Players</h2>
+    ${renderParticipantsPanel(game)}
     ${pendingSeatNotice}
     ${joinInviteActions}
-    ${renderFeedbackReveal(inviteFeedback)}
-    <div class="section-followup">
-      <ul class="participant-list">${pendingRows}</ul>
-    </div>
+    ${renderInviteFeedback()}
+    ${inviteFallback?.gameId === game.id ? `<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>` : ""}
+    ${pendingRows ? `<div class="section-followup"><ul class="participant-list">${pendingRows}</ul></div>` : ""}
   `;
 };
 
@@ -2564,30 +2585,31 @@ const renderParticipantsPanel = (game) => {
   const participantRows = participants
     .map((entry) => {
       if (!entry.value) {
-        return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: <span class="small">Open seat</span></li>`;
+        const pending = preparedPlayerInvitations.get(game.id) === (entry.label === "Player 1" ? "red" : "blue");
+        return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)} <span class="small participant-empty" ${pending ? 'data-testid="pending-invitation"' : ''}>${icon('account')}<span>${pending ? 'Awaiting player' : 'Open seat'}</span></span></li>`;
       }
-      return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)}: ${participantButton(entry.value)} ${formatStatus(entry.value.connected)}</li>`;
+      return `<li data-testid="participant-${escapeHtml(entry.label.toLowerCase().replace(/\s+/g, "-"))}">${renderSeatLabel(entry.label)} ${participantButton(entry.value, {key:entry.label,side:entry.label === "Player 1" ? "p1" : "p2",presence:formatStatus(entry.value.connected)})}</li>`;
     })
     .join("");
 
   const viewerRows =
     game.viewers.length === 0
-      ? '<li>Viewers: <span class="small">None</span></li>'
+      ? `<li><span>Viewers</span><span class="small participant-empty">${icon('account-none')}<span>None</span></span></li>`
       : game.viewers
           .map(
             (viewer) =>
-              `<li data-testid="participant-viewer">Viewer: ${participantButton(viewer)} ${formatStatus(viewer.connected)}</li>`,
+              `<li data-testid="participant-viewer"><span>Viewer</span> ${participantButton(viewer,{presence:formatStatus(viewer.connected)})}</li>`,
           )
           .join("");
   return `
-    <h2>Participants</h2>
+
     <ul class="participant-list" data-testid="participants-list">${participantRows}${viewerRows}</ul>
   `;
 };
 
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
-  const currentNames = [game.player1,game.player2].filter(person => person?.profile).map(participantName).join(" · ");
+  const currentNames = [...new Map([game.player1,game.player2].filter(person => person?.profile).map(person => [person.profile.username,person])).values()].map(person => `<span class="history-player-name">${participantName(person)}</span>`).join("");
   const selectedMove = typeof game.historyIndex === "number" && Array.isArray(game.moves) ? game.moves[game.historyIndex] ?? null : null;
   const historyMoveNumber = typeof selectedMove?.displayMoveNumber === "number" ? String(selectedMove.displayMoveNumber) : "?";
   const hasHistoryMoves = Array.isArray(game.moves) && game.moves.length > 0;
@@ -2601,6 +2623,7 @@ const renderHistoryPanel = (game) => {
   return `
     <h2>History</h2>
     ${currentNames ? `<p class="small" data-testid="history-player-names">${currentNames}</p>` : ""}
+    ${getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button>` : ""}
     <div class="section-followup">
       ${historyBanner}
       <ol class="history-list" data-testid="history-list">${historyRows}</ol>
@@ -2618,13 +2641,14 @@ const renderBoardPanel = (game) => `
     <div id="shell-board" class="board" data-testid="game-board"></div>
     <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
   </div>
-  <div class="overlay-key" aria-label="Overlay color key">
-    <span><i class="swatch supply-point"></i>Supply point</span>
-    <span><i class="swatch supply"></i>Supply line</span>
-    <span><i id="shell-command-legend-swatch" class="swatch command" style="${escapeHtml(
+  <div class="overlay-key" aria-label="Board legend">
+    <span><i class="swatch commander-key">${renderPieceSymbol('commander')}</i>Commander</span>
+    <span><i class="swatch supply-point" style="--supply-owner:var(--player-${game.currentSnapshot?.sideToMove === 'P2' ? 'p2' : 'p1'})">${renderPieceSymbol('supply')}</i>Supply point</span>
+    <span data-legend-entry="group" hidden><i class="swatch group"></i>Group strength</span>
+    <span data-legend-entry="command" hidden><i id="shell-command-legend-swatch" class="swatch command" style="${escapeHtml(
       getCommandLegendSwatchStyle(game.currentSnapshot ?? null),
     )}"></i>Command line</span>
-    <span><i class="swatch group"></i>Group strength</span>
+    <span data-legend-entry="supply" hidden><i class="swatch supply"></i>Supply line</span>
   </div>
 `;
 
@@ -2652,11 +2676,11 @@ const renderGameShellFrame = (game) => `
         <div class="stack game-shell-mobile-panel" data-mobile-panel="players" data-shell-sticky-target="left" data-sticky-enabled="false">
           <section class="panel" data-game-panel="summary"></section>
           <section class="panel" data-game-panel="join"></section>
-          <section class="panel" data-game-panel="participants"></section>
+
         </div>
 
         <div class="stack game-shell-mobile-panel" data-mobile-panel="board" data-shell-sticky-target="board" data-sticky-enabled="false">
-          <section class="panel" data-shell-panel="board">
+          <section class="panel" data-shell-panel="board" data-turn-side="${game.currentSnapshot?.sideToMove === 'P2' ? 'blue' : 'red'}">
             ${renderBoardPanel(game)}
           </section>
         </div>
@@ -2731,13 +2755,19 @@ const createMarkupRoot = (markup) => {
 // Keep the enabled home control and its ancestor chain mounted while asynchronous
 // home sections update. Detaching a pressed/focused button loses native activation.
 const patchHomeAroundCreateControl = (markup) => {
-  const currentControl = appEl.querySelector('[data-testid="home-create-game"]');
+  const focusedControl=appEl.contains(document.activeElement) ? document.activeElement.closest('[data-action]') : null;
+  const focusedAction=focusedControl?.dataset.action;
+  const currentControl = appEl.querySelector('.home-start');
   const nextRoot = document.createElement("div");
   nextRoot.innerHTML = markup;
-  const nextControl = nextRoot.querySelector('[data-testid="home-create-game"]');
+  const nextControl = nextRoot.querySelector('.home-start');
   if (!currentControl || !nextControl) return false;
+  const pressedTop = currentControl.contains(pressedControlEl) ? currentControl.getBoundingClientRect().top : null;
   const comparableControl = currentControl.cloneNode(true);
+  comparableControl.style.removeProperty("margin-top");
+  if(!comparableControl.getAttribute("style"))comparableControl.removeAttribute("style");
   comparableControl.classList.remove("is-pressing");
+  comparableControl.querySelectorAll(".is-pressing,.is-releasing").forEach(el=>el.classList.remove("is-pressing","is-releasing"));
   if (!comparableControl.isEqualNode(nextControl)) return false;
   const pathTo = (control, root) => {
     const path = [];
@@ -2752,13 +2782,24 @@ const patchHomeAroundCreateControl = (markup) => {
       for (const attribute of [...current.attributes]) if (!next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
       for (const attribute of next.attributes) current.setAttribute(attribute.name, attribute.value);
     }
-    for (const child of [...current.childNodes]) if (child !== retained) child.remove();
+    const sectionNodes = new Map([...current.children].filter(el=>el.hasAttribute('data-home-section-root')).map(el=>[el.dataset.homeSectionRoot,el]));
+    const nextSectionKeys = new Set([...next.children].filter(el=>el.hasAttribute('data-home-section-root')).map(el=>el.dataset.homeSectionRoot));
+    for (const child of [...current.childNodes]) if (!(child instanceof HTMLElement && nextSectionKeys.has(child.dataset.homeSectionRoot)) && child !== retained && !(child instanceof HTMLElement && child.matches("[data-shell-flyouts]"))) child.remove();
     let after = false;
     for (const child of next.childNodes) {
       if (child === replacement) { after = true; continue; }
+      if(child instanceof HTMLElement && child.matches("[data-shell-flyouts]"))continue;
+      const section=child instanceof HTMLElement ? sectionNodes.get(child.dataset.homeSectionRoot) : null;
+      if(section){patchSectionContent(section,child);continue;}
       if (after) current.append(child.cloneNode(true)); else current.insertBefore(child.cloneNode(true), retained);
     }
   }
+  if(pressedTop !== null) {
+    const shift=pressedTop-currentControl.getBoundingClientRect().top;
+    if(shift>0)currentControl.style.marginTop=`${shift}px`;
+  }
+  updateMountedFlyouts();
+  if(focusedAction && !focusedControl.isConnected)appEl.querySelector(`[data-action="${CSS.escape(focusedAction)}"]`)?.focus({preventScroll:true});
   return true;
 };
 const updateMountedHeader = () => {
@@ -2842,7 +2883,15 @@ const updateMountedFlyouts = () => {
     return false;
   }
   if (currentFlyoutStack instanceof HTMLElement) {
-    currentFlyoutStack.replaceWith(nextFlyoutStack);
+    const keys = new Set([...nextFlyoutStack.children].map(el=>el.dataset.flyout));
+    for(const child of [...currentFlyoutStack.children]) if(!keys.has(child.dataset.flyout))child.remove();
+    for(const [index,next] of [...nextFlyoutStack.children].entries()) {
+      const existing=currentFlyoutStack.querySelector(`[data-flyout="${next.dataset.flyout}"]`);
+      if(!existing){currentFlyoutStack.insertBefore(next,currentFlyoutStack.children[index] || null);continue;}
+      const scroll=existing.querySelector('.shell-flyout-scroll'), nextScroll=next.querySelector('.shell-flyout-scroll');
+      if(scroll && nextScroll && scroll.innerHTML !== nextScroll.innerHTML){const top=scroll.scrollTop;scroll.innerHTML=nextScroll.innerHTML;scroll.scrollTop=top;}
+      if(currentFlyoutStack.children[index] !== existing)currentFlyoutStack.insertBefore(existing,currentFlyoutStack.children[index] || null);
+    }
   } else {
     shellPageEl.append(nextFlyoutStack);
   }
@@ -2943,12 +2992,13 @@ const scheduleGameShellStickyLayout = () => {
   });
 };
 
-const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = null, includeBoard = true } = {}) => {
+const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = null, includeBoard = true, animatePanels = false } = {}) => {
   const shellRoot = getMountedGameShellRoot();
   if (!(shellRoot instanceof HTMLElement) || !game) {
     return false;
   }
 
+  shellRoot.querySelector('[data-shell-panel="board"]')?.setAttribute('data-turn-side',game.currentSnapshot?.sideToMove === 'P2' ? 'blue' : 'red');
   const alertsEl = document.getElementById("shell-game-alerts");
   const summaryEl = shellRoot.querySelector('[data-game-panel="summary"]');
   const joinEl = shellRoot.querySelector('[data-game-panel="join"]');
@@ -2968,7 +3018,32 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
     summaryEl.innerHTML = renderGameSummaryPanel(game);
   }
   if (joinEl instanceof HTMLElement) {
-    joinEl.innerHTML = renderJoinInvitePanel(game, inviteLink);
+    const markup=renderJoinInvitePanel(game, inviteLink);
+    if(joinMarkupByElement.get(joinEl) !== markup){
+      const animateJoin = animatePanels && !routeTransition && joinMarkupByElement.has(joinEl);
+      const oldHeight=joinEl.getBoundingClientRect().height;
+      const focus=joinEl.contains(document.activeElement)?document.activeElement:null;
+      const selector=focus?.matches('.invite-link-field')?'.invite-link-field':focus?.dataset.action?`[data-action="${CSS.escape(focus.dataset.action)}"]${focus.dataset.inviteRole?`[data-invite-role="${CSS.escape(focus.dataset.inviteRole)}"]`:''}${focus.dataset.profileKey?`[data-profile-key="${CSS.escape(focus.dataset.profileKey)}"]`:''}`:null;
+      const selection=focus instanceof HTMLInputElement?[focus.selectionStart,focus.selectionEnd]:null;
+      if(selector)panelPendingFocus.set(joinEl,{selector,selection});
+      else if(document.activeElement !== document.body)panelPendingFocus.delete(joinEl);
+      joinEl.innerHTML=markup;
+      joinMarkupByElement.set(joinEl,markup);
+      const savedFocus=panelPendingFocus.get(joinEl);
+      if(savedFocus){
+        const target=joinEl.querySelector(savedFocus.selector);
+        if(target && !target.disabled){
+          target.focus({preventScroll:true});
+          if(savedFocus.selection && target instanceof HTMLInputElement)target.setSelectionRange(...savedFocus.selection);
+          panelPendingFocus.delete(joinEl);
+        }else if(!isButtonPending(getCopyInviteButtonKey(game.id)))panelPendingFocus.delete(joinEl);
+      }
+      if (animateJoin) animatePanelHeightChange(joinEl,oldHeight);
+      else {
+        panelSizeAnimations.get(joinEl)?.cancel();
+        panelSizeAnimations.delete(joinEl);
+      }
+    }
   }
   if (participantsEl instanceof HTMLElement) {
     participantsEl.innerHTML = renderParticipantsPanel(game);
@@ -2976,7 +3051,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
   if (historyEl instanceof HTMLElement) {
     historyEl.innerHTML = renderHistoryPanel(game);
   }
-  if (includeBoard || mountedBoardGameId === game.id) {
+  if (includeBoard || mountedBoardGameId === game.id || !document.querySelector("#shell-board .cell")) {
     mountBoardForGame(game);
   }
   applySharedMutationGates(game);
@@ -3018,7 +3093,7 @@ const shouldUseIncrementalGameShell = (gameId = currentRoute.gameId) => {
   if (!game) {
     return false;
   }
-  return !getActiveApprovalRequest(game) && !getActiveRevertRequest(game) && !getActivePendingRevertRequest(game) && doesMountedFlyoutStateMatchRoute();
+  return !game.pendingPlayerRequestSeat && activeResultGameId !== game.id && hostInvite?.gameId !== game.id && !getActiveApprovalRequest(game) && !getActiveRevertRequest(game) && !getActivePendingRevertRequest(game) && doesMountedFlyoutStateMatchRoute();
 };
 
 const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) => {
@@ -3038,11 +3113,11 @@ const renderGameContent = (gameId, inviteFromRole = null, inviteToken = null) =>
       <div class="stack" data-shell-sticky-target="left" data-sticky-enabled="false">
         <section class="panel">${renderGameSummaryPanel(game)}</section>
         <section class="panel">${renderJoinInvitePanel(game, inviteLink)}</section>
-        <section class="panel">${renderParticipantsPanel(game)}</section>
+
       </div>
 
       <div class="stack" data-shell-sticky-target="board" data-sticky-enabled="false">
-        <section class="panel" data-shell-panel="board">
+        <section class="panel" data-shell-panel="board" data-turn-side="${game.currentSnapshot?.sideToMove === 'P2' ? 'blue' : 'red'}">
           ${renderBoardPanel(game)}
         </section>
       </div>
@@ -3084,7 +3159,7 @@ const renderApprovalGate = (game, request) => {
           </div>
         </div>
       </section>
-      <div class="invite-gate-content" aria-hidden="true">
+      <div class="invite-gate-content" aria-hidden="true" inert>
         ${background}
       </div>
     </section>
@@ -3122,7 +3197,7 @@ const renderRevertApprovalGate = (game, request) => {
           </div>
         </div>
       </section>
-      <div class="invite-gate-content" aria-hidden="true">
+      <div class="invite-gate-content" aria-hidden="true" inert>
         ${background}
       </div>
     </section>
@@ -3152,11 +3227,18 @@ const renderRevertWaitingGate = (game, request) => {
           </div>
         </div>
       </section>
-      <div class="invite-gate-content" aria-hidden="true">
+      <div class="invite-gate-content" aria-hidden="true" inert>
         ${background}
       </div>
     </section>
   `;
+};
+
+const renderResult = game => {
+  const result = getGameResult(transport.getAuthoritativeGame(game.id), transport.getIdentityId());
+  if (!result) return "";
+  const names = game.selfPlayMode ? "Self-play" : [game.player1, game.player2].map((person, i) => person?.profile?.displayName || `Player ${i + 1}`).join(" vs ");
+  return `<section class="panel game-result" data-testid="game-result"><p class="small">Game finished</p><h1 tabindex="-1">${escapeHtml(result.title)}</h1><p>${escapeHtml(result.reason)}</p><p>${escapeHtml(names)}</p><p class="small">Game ${escapeHtml(formatDisplayGameId(game.id))}</p><div class="story-modal-actions"><button data-action="analysis" data-game-id="${escapeHtml(game.id)}">${icon('back')}Review game</button><button class="secondary" data-action="rematch" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Play again</button><a class="button-link secondary" href="#/">Home</a></div></section>`;
 };
 
 const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
@@ -3167,6 +3249,8 @@ const renderGame = (gameId, inviteFromRole = null, inviteToken = null) => {
   if (!game) {
     return renderGameContent(gameId, inviteFromRole, inviteToken);
   }
+  if (activeResultGameId === gameId && getGameResult(transport.getAuthoritativeGame(game.id), transport.getIdentityId())) return renderResult(game);
+  if(hostInvite?.gameId === gameId)return renderHostInvite(game);
   const approvalRequest = getActiveApprovalRequest(game);
   if (approvalRequest) {
     return renderApprovalGate(game, approvalRequest);
@@ -3196,22 +3280,27 @@ const renderInviteLanding = (inviteContext) => {
     return background;
   }
 
+  if(game.pendingPlayerRequestSeat)return renderInvitationSurface({background,content:`
+    <p class="small invite-gate-kicker">Invitation</p><h2 id="invite-surface-title">Waiting for approval</h2>
+    <p role="status" data-testid="pending-player-request-notice">A player needs to approve your request to join as ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</p>
+    <p class="small">The game will open here when your seat is approved.</p>
+    <div class="invite-choice-list"><a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Back home</a></div>`});
   const canJoinPlayer = game.canJoinAsPlayer && game.showJoinActions;
   const canJoinViewer = account.snapshot().enabled || game.canJoinAsViewer;
-  const playerActionLabel = inviteContext.inviteType === "player" ? "Join as player" : "Request to join as player";
+  const playerActionLabel = inviteContext.intendedRole && inviteContext.intendedRole !== 'viewer' ? `Play as ${inviteContext.intendedRole}` : inviteContext.inviteType === "player" ? "Join as player" : "Request to join as player";
   const inviteMessage =
     inviteContext.inviteType === "player"
-      ? `${inviteContext.inviteFromRole} shared a player invite.`
+      ? "You’re invited to play."
       : currentRoute.name === "game"
-        ? "You opened this game's direct link from a different device."
-        : "A non-player invite was shared with you.";
+        ? "Join this game to play or watch."
+        : "You’re invited to watch.";
   const playerExplainer = canJoinPlayer
     ? inviteContext.inviteType === "player"
-      ? "Joining as player will be applied immediately."
-      : "Joining as player will send a request to the approving player and add you as viewer in the interim."
+      ? ""
+      : "Ask a player to approve your seat."
     : game.joinAsPlayerDisabledReason || "Player joining is unavailable.";
   const viewerExplainer = canJoinViewer
-    ? "Joining as viewer is applied immediately."
+    ? ""
     : game.joinAsViewerDisabledReason || "Viewer joining is unavailable.";
   const pendingNotice = game.pendingPlayerRequestSeat
     ? `<div class="alert">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
@@ -3219,15 +3308,13 @@ const renderInviteLanding = (inviteContext) => {
   const joinPlayerButtonKey = getJoinButtonKey("player", game.id);
   const joinViewerButtonKey = getJoinButtonKey("viewer", game.id);
 
-  return `
-    <section class="invite-gate">
-      <section class="panel invite-gate-modal">
+  return renderInvitationSurface({background,content:`
         <p class="small invite-gate-kicker">Invite received</p>
-        <h2>Choose how to enter this game</h2>
-        <p>${colorizePlayerReferences(inviteMessage)} Join now to enter the live game route and receive updates.</p>
+        <h2 id="invite-surface-title">${inviteContext.intendedRole === "viewer" ? "Watch this game" : inviteContext.intendedRole ? "Take your seat" : "Choose how to enter this game"}</h2>
+        <p>${colorizePlayerReferences(inviteMessage)}</p>
         ${pendingNotice}
         <div class="invite-choice-list">
-          <div class="invite-choice-row">
+          <div class="invite-choice-row" ${inviteContext.intendedRole === "viewer" ? 'hidden' : ''}>
             <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-player"${renderButtonStateAttributes({
               pendingKey: joinPlayerButtonKey,
               disabled: !canJoinPlayer,
@@ -3249,16 +3336,11 @@ const renderInviteLanding = (inviteContext) => {
         <p class="small">
           ${
             canJoinPlayer || canJoinViewer
-              ? "The game preview is shown below, but it stays locked until you choose a role."
+              ? ""
               : "No join mode is currently available for this invite."
           }
         </p>
-      </section>
-      <div class="invite-gate-content" aria-hidden="true">
-        ${background}
-      </div>
-    </section>
-  `;
+  `});
 };
 
 const renderTutorial = (gameId) => {
@@ -3326,6 +3408,7 @@ const mountBoardForGame = (game) => {
     return;
   }
 
+  document.querySelector('[data-shell-panel="board"]')?.setAttribute('data-turn-side', game.currentSnapshot?.sideToMove === 'P2' ? 'blue' : 'red');
   applySharedMutationGates(game);
   updateRecoveryAnnouncement(game);
   const snapshot = game.currentSnapshot ?? null;
@@ -3376,15 +3459,19 @@ const mountBoardForGame = (game) => {
         gameId: game.id,
         canInteract: () => {
           const view = transport.getGameViewModel(game.id);
-          return canControlLiveBoard(view);
+          return hostInvite?.gameId !== game.id && canControlLiveBoard(view);
         },
       }),
       controls: {
+        onInteractionSound: event => gameSound.interaction(event),
         getAllowFreeSelection: () => false,
         getSupportsHover: () => hoverCapability.getSupportsHover(),
         getForceClickTargetSelection: () => Boolean(currentRoute.scenarios),
+        onVisualsUpdated: visible => updateLegendVisibility(document.querySelector('.overlay-key'), visible, prefersReducedMotion()),
         onStateUpdated: ({ state, selectedPieceId }) => {
           applyCommandLegendSwatch(document.getElementById("shell-command-legend-swatch"), state, selectedPieceId);
+          applyCommandLegendSwatch(document.querySelector(".commander-key"), state, selectedPieceId);
+          document.querySelector('.swatch.supply-point')?.style.setProperty('--supply-owner',getCommandLegendColor(state,selectedPieceId));
         },
       },
     });
@@ -3600,6 +3687,7 @@ const loadHomeSectionPage = async (
     slideDirection: nextDirection,
     animationToken: nextDirection === "none" ? previous.animationToken : previous.animationToken + 1,
   });
+  if(nextDirection !== "none")gameSound.play(nextDirection === "prev" ? "page-back" : "page");
 };
 
 const syncResponsiveHomeSectionPageSizes = async () => {
@@ -3732,16 +3820,36 @@ const captureScenarioDraftFocus = (baseRouteKey) => {
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (renderGesture.defer({ animatePanels, includeBoard })) return;
-  return preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
+  const result = preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
+  inlineProfiles.sync();
+  if (pendingResultReviewFocus === currentRoute.gameId && getGamePanel() === "history") {
+    const heading = appEl.querySelector('[data-game-panel="history"] h2');
+    if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }
+  }
+  return result;
 };
 const renderContent = ({ animatePanels, includeBoard }) => {
+  const hadResultView = Boolean(appEl.querySelector('.game-result'));
+  const resultFocus = document.activeElement?.closest('.game-result') ? {action:document.activeElement.getAttribute('data-action'),href:document.activeElement.getAttribute('href')} : null;
+  if(currentRoute.name==='game' && routeHydrated){
+    const game=transport.getGameViewModel(currentRoute.gameId), confirmed=transport.getAuthoritativeGame(currentRoute.gameId);
+    if (activeResultGameId === currentRoute.gameId && confirmed?.board?.state?.outcome && !getGameResult(confirmed, transport.getIdentityId())) activeResultGameId = null;
+    if(resultTransitions.observe(confirmed,{inHistory:game?.inHistoryMode,hidden:document.hidden,storyOpen:storyDialog.isOpen()}))activeResultGameId=currentRoute.gameId;
+    if(storyDialog.gameId()===currentRoute.gameId && getGameResult(confirmed,transport.getIdentityId()))storyDialog.setMatchStatus('Game finished',true);
+  }
   document.title = getDocumentTitle();
   syncRouteTransitionForCurrentRoute();
   const routeKey = getRouteRenderKey();
   const baseRouteKey = getBaseRouteRenderKey();
   const restoreScenarioDraftFocus = captureScenarioDraftFocus(baseRouteKey);
-  const shouldPatchFlyoutsOnly = shouldPatchMountedFlyouts(routeKey, baseRouteKey);
-  const previousPanelHeights = animatePanels && !shouldPatchFlyoutsOnly ? capturePanelHeights() : [];
+  const inviteActiveElement = document.activeElement;
+  const restoreInviteFocus = Boolean(hostInvite && (inviteActiveElement?.closest('.invite-gate-modal') || inviteActiveElement === document.body));
+  if (hostInvite && inviteActiveElement?.closest('.invite-gate-modal')) {
+    if (inviteActiveElement.matches('.invite-link-field')) hostInvite.focusTarget = {selector:'.invite-link-field',start:inviteActiveElement.selectionStart,end:inviteActiveElement.selectionEnd};
+    else if (inviteActiveElement.dataset.action) hostInvite.focusTarget = {selector:`[data-action="${CSS.escape(inviteActiveElement.dataset.action)}"]${inviteActiveElement.dataset.inviteRole ? `[data-invite-role="${CSS.escape(inviteActiveElement.dataset.inviteRole)}"]` : ''}`};
+  }
+  const shouldPatchFlyoutsOnly = !hadResultView && activeResultGameId !== currentRoute.gameId && shouldPatchMountedFlyouts(routeKey, baseRouteKey);
+  const previousPanelHeights = animatePanels && !shouldPatchFlyoutsOnly && baseRouteKey === lastRenderedBaseRouteKey && !routeTransition ? capturePanelHeights() : [];
   const previousFlyoutRects = animatePanels ? captureFlyoutRects() : new Map();
   syncShellLayoutMode();
   if (shouldPatchFlyoutsOnly) {
@@ -3782,6 +3890,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
       game: transport.getGameViewModel(currentRoute.gameId),
       inviteFromRole: currentRoute.inviteFromRole,
       includeBoard,
+      animatePanels,
     });
     restoreScenarioDraftFocus?.();
     return;
@@ -3810,10 +3919,25 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     body = renderNotFound();
   }
 
+  brand.setHome(currentRoute.name === 'home');
+  appEl.dataset.actionAffiliation = resolveActionAffiliation({game:transport.getGameViewModel(currentRoute.gameId),identityId:transport.getIdentityId()});
   const nextMarkup = `<div class="shell-page-shell"><div class="shell-main-content">${renderHeader()}${body}</div>${renderFlyouts()}</div>`;
   if (nextMarkup !== lastRenderedMarkup) {
-    if (currentRoute.name !== "home" || !patchHomeAroundCreateControl(nextMarkup)) appEl.innerHTML = nextMarkup;
+    if (currentRoute.name !== "home" || !patchHomeAroundCreateControl(nextMarkup)) {
+      const currentMain=appEl.querySelector('.shell-main-content');
+      const nextMain=createMarkupRoot(nextMarkup)?.querySelector('.shell-main-content');
+      if(currentMain && nextMain){currentMain.replaceWith(nextMain);updateMountedFlyouts();}
+      else appEl.innerHTML = nextMarkup;
+    }
     restoreScenarioDraftFocus?.();
+    if(hostInvite && !hostInvite.focused){document.querySelector('[data-host-invite] [data-action="share-invite"]')?.focus({preventScroll:true});hostInvite.focused=true;}
+    if (restoreInviteFocus && hostInvite?.focusTarget) {
+      const target = document.querySelector(`.invite-gate-modal ${hostInvite.focusTarget.selector}`);
+      if (target && !target.disabled) {
+        target.focus({preventScroll:true});
+        if (target instanceof HTMLInputElement) target.setSelectionRange(hostInvite.focusTarget.start,hostInvite.focusTarget.end);
+      } else document.querySelector('.invite-gate-modal')?.focus({preventScroll:true});
+    }
     lastRenderedMarkup = nextMarkup;
     lastRenderedMainMarkup = `<div class="shell-main-content">${renderHeader()}${body}</div>`;
     lastRenderedFlyoutMarkup = renderFlyouts();
@@ -3830,6 +3954,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     lastRenderedBaseRouteKey = baseRouteKey;
     lastRenderedTransitionPhaseKey = getRouteTransitionPhaseKey();
   }
+  if(resultFocus?.action || resultFocus?.href)appEl.querySelector(resultFocus.action ? `.game-result [data-action="${CSS.escape(resultFocus.action)}"]` : `.game-result a[href="${CSS.escape(resultFocus.href)}"]`)?.focus({preventScroll:true});
   syncFlyoutAwareLinks();
   syncCopyInviteLinks();
   updateHeaderFields();
@@ -3837,6 +3962,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   reconcileMiniBoardPreviews();
   animateHomeSectionTransitions();
   syncScenarioAuthoringControls();
+  if(currentRoute.name==='game' && activeResultGameId===currentRoute.gameId){destroyMountedBoardRuntime();if(!hadResultView)appEl.querySelector('.game-result h1')?.focus({preventScroll:true});return;}
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
@@ -3844,12 +3970,12 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   }
   if (currentRoute.name === "game") {
     if (shouldUseIncrementalGameShell()) {
-      updateMountedGameShell({
+      if (updateMountedGameShell({
         game: transport.getGameViewModel(currentRoute.gameId),
         inviteFromRole: currentRoute.inviteFromRole,
         includeBoard,
-      });
-      return;
+        animatePanels,
+      })) return;
     }
     mountBoardForGame(transport.getGameViewModel(currentRoute.gameId));
     scheduleGameShellStickyLayout();
@@ -3939,6 +4065,11 @@ const retryAccountContinuation = async () => {
   render({ animatePanels: false });
   const intent = pending.intent;
   if (!intent || !account.canPlay() || intent.hash !== window.location.hash) return;
+  if (intent.action === "rematch") {
+    const result = getGameResult(transport.getAuthoritativeGame(intent.gameId), transport.getIdentityId());
+    if (result) rematchDialog.open(result, appEl.querySelector('[data-action="view-result"]'));
+    return;
+  }
   const selector = `[data-action="${CSS.escape(intent.action)}"]${intent.gameId ? `[data-game-id="${CSS.escape(intent.gameId)}"]` : ""}${intent.moveIndex ? `[data-move-index="${CSS.escape(intent.moveIndex)}"]` : ""}`;
   appEl.querySelector(selector)?.click();
 };
@@ -4010,7 +4141,8 @@ const makeAccountSyncStore = auth => createSyncStore({
   auth,
   fetcher: account.fetch,
   onAuthLost: () => account.authorityLost(),
-  onEvent: (payload) => {
+  onEvent: (payload, context = {}) => {
+    gameSound.observe(payload,{silent:context.initial || currentRoute.name!=='game' || payload?.game?.id!==currentRoute.gameId || Boolean(transport.getGameViewModel(currentRoute.gameId)?.inHistoryMode)});
     wsLastEvent = payload?.type
       ? `${payload.type}${payload?.reason ? `:${payload.reason}` : ""}`
       : "unknown";
@@ -4053,7 +4185,74 @@ const makeAccountSyncStore = auth => createSyncStore({
 });
 let syncStore = makeAccountSyncStore(account.snapshot());
 let transport = syncStore;
+const closeFriendInvite = () => {
+  hostInvite=null;inviteVisit++;render({animatePanels:false});
+  document.querySelector('[data-action="copy-invite"]')?.focus({preventScroll:true});
+};
+const copyGameInvitation = async (gameId, role, fromHost=false) => {
+  const visit=inviteVisit, generation=account.snapshot().generation;
+  const active=()=>generation===account.snapshot().generation && currentRoute.name==='game' && currentRoute.gameId===gameId && (!fromHost || hostInvite?.gameId===gameId && visit===inviteVisit);
+  try {
+    const handle=transport.getGameHandle?.(gameId);
+    if(handle?.status==='pending')await handle.committed;
+    if(!active())return;
+    const game=transport.getGameViewModel(gameId);
+    const option=invitationOptions(game).find(option=>option.role===role);
+    if(!option)throw new Error('That seat has been taken. Invite someone to view instead.');
+    if(role !== "viewer") preparedPlayerInvitations.set(gameId, role);
+    const hash=buildInviteHash(option.token,getCurrentFlyoutState());
+    const link=`${window.location.origin}${window.location.pathname}${hash}${hash.includes('?')?'&':'?'}as=${role}`;
+    window.__righeltLastInvite=link;
+    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied'); }
+    catch { if(!active())return;inviteFallback={gameId,link};setInviteFeedback('Copy the link below to share it.'); }
+  }catch(error){if(active())setInviteFeedback(error.message || 'Could not prepare the link. Try again.');}
+};
+const renderHostInvite = game => renderInvitationSurface({host:true,background:renderGameContent(game.id),content:`
+  <button class="ui-icon-button invite-close" data-action="close-invite" aria-label="Close invite">${icon('close')}</button>
+  <p class="small invite-gate-kicker">Your game is ready</p><h2 id="invite-surface-title">Invite a friend</h2>
+  <p>Copy a link and send it their way.</p>
+  <div class="invite-choice-list">${invitationOptions(game).map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id)})}>${icon('copy')}${isButtonPending(getCopyInviteButtonKey(game.id))?'Preparing link…':option.label}</button>`).join('')}</div>
+  ${renderInviteFeedback()}
+  ${inviteFallback?.gameId===game.id?`<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>`:''}
+`});
+const openFriendInvite = gameId => {
+  hostInvite={gameId};inviteVisit++;inviteFeedback='';inviteFallback=null;
+  // A render while hash navigation is pending still sees Home and cancels
+  // the game-entry transition. Let the destination render own its invitation.
+  if(currentRoute.name === 'game' && currentRoute.gameId === gameId) render({animatePanels:false});
+  window.requestAnimationFrame(() => {
+    if(currentRoute.name !== 'game' || currentRoute.gameId !== gameId || hostInvite?.gameId !== gameId) return;
+    window.scrollTo({top:0,behavior:'instant'});
+    document.querySelector('[data-host-invite] [data-action="share-invite"]')?.focus({preventScroll:true});
+  });
+};
+const rematchDialog = createRematchDialog({createModal,onStart:async({opponent,side},{isCurrent})=>{
+  if(!await waitForAccountGate() || !isCurrent())return;
+  if(!account.canPlay())throw new Error('Sign in to start another game.');
+  if(!['self','friend'].includes(opponent))throw new Error('This opponent is still in training.');
+  const handle=transport.createGame({selfPlayMode:opponent==='self',creatorSide:side});
+  rematchDialog.close();activeResultGameId=null;
+  startGameEntryRouteTransition(handle.result.id,'game');navigateTo(buildGameHash(handle.result.id,null,getCurrentFlyoutState()));
+  if(opponent==='friend')openFriendInvite(handle.result.id);
+}});
+const getComputerReadiness = () => ({ state:'unavailable', message:'This opponent is still in training. Friend games are ready to play.' });
+const opponentSession = createOpponentSession({ preferences:createIntroductionPreferences(storage), getReadiness:getComputerReadiness, createGame:async()=>{throw new Error('Trained computer play is not available yet.');} });
+const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: opponent => opponent === 'friend' ? {state:'ready',message:'Send an invitation. Let the rivalry begin.'} : getComputerReadiness(),
+  onPlay: intent => {
+    if(intent.opponent !== 'friend') return opponentSession.play(intent);
+    if(!account.canPlay()) return {state:'error',message:'Sign in to start your game.'};
+    storyDialog.close('play');
+    const handle=transport.createGame({selfPlayMode:false});
+    startGameEntryRouteTransition(handle.result.id,currentRoute.name);
+    navigateTo(buildGameHash(handle.result.id,null,getCurrentFlyoutState()));
+    openFriendInvite(handle.result.id);
+    return {state:'started'};
+  }, onClose:reason=>{opponentSession.cancel();if(reason === 'dismiss')gameSound.play('intro-back');},
+  onPresentation: () => { const root=document.createElement('div');root.className='story-presentation-board';root.setAttribute('aria-hidden','true');document.body.append(root);const preview=createMiniBoardPreview({rootEl:root,preview:{snapshot:createInitialBoardSnapshot(),previewKey:'intro'},createAdapter:createEngineBoardAdapter});return ()=>{preview.destroy();root.remove();}; },
+});
+
 const subscribeToTransport = () => transport.subscribe((change) => {
+  gameSound.local(change, transport.getGameViewModel(change?.gameId), {silent:currentRoute.name!=='game' || currentRoute.gameId!==change?.gameId || Boolean(transport.getGameViewModel(change?.gameId)?.inHistoryMode)});
   if (change?.type === "upgrade_required") {
     try {
       const key = "righelt.sync-v2-refresh";
@@ -4074,6 +4273,9 @@ subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
   clearAccountContinuation();
+  resultTransitions.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();
+  hostInvite=null;inviteVisit++;inviteFeedback="";inviteFallback=null;preparedPlayerInvitations.clear();
+  gameSound.leaveGame();storyDialog.close();inlineProfiles.close();
   const gameId = getCurrentViewedGameId();
   const visible = gameId ? transport.getAuthoritativeGame?.(gameId) : null;
   routeSyncRequestId++;
@@ -4137,7 +4339,19 @@ window.addEventListener("hashchange", () => {
   const previousRoute = currentRoute;
   closeHeaderMenu();
   const parsedRoute = parseRouteFromHash(window.location.hash);
+  if(parsedRoute.name!=='game' || parsedRoute.gameId!==currentRoute.gameId)gameSound.leaveGame();
+  if(hostInvite && (parsedRoute.name!=='game' || parsedRoute.gameId!==hostInvite.gameId)){hostInvite=null;inviteVisit++;}
+  inlineProfiles.close();
+  if(parsedRoute.gameId!==previousRoute.gameId){activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();}
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
+  if(previousRoute.name !== 'game' && currentRoute.name === 'game' && !routeTransition)gameSound.play('enter');
+  else if(previousRoute.name === 'game' && currentRoute.name !== 'game' && (currentRoute.name !== 'home' || prefersReducedMotion()))gameSound.play('leave');
+  if(previousRoute.name === 'game' && currentRoute.name === 'home') {
+    gameSound.cancelPreview();restoreHomePending=true;
+    startGameEntryRouteTransition(previousRoute.gameId,'game','home');
+  } else if(previousRoute.name === 'home' && currentRoute.name === 'game') {
+    window.scrollTo({top:0,behavior:'instant'});
+  }
   syncRouteTransitionForCurrentRoute();
   const normalizedHash = buildHashForRoute(currentRoute);
   if (window.location.hash !== normalizedHash) {
@@ -4210,7 +4424,7 @@ appEl.addEventListener("click", event => {
 }, true);
 appEl.addEventListener("click", async (event) => {
   const target = event.target;
-  if (!(target instanceof HTMLElement)) {
+  if (!(target instanceof Element)) {
     return;
   }
 
@@ -4245,11 +4459,11 @@ appEl.addEventListener("click", async (event) => {
 
   const action = actionEl.getAttribute("data-action");
   const actionGameId = actionEl.getAttribute("data-game-id") || currentRoute.gameId;
-  if (action === "public-profile") { void publicProfileDialog.open(actionEl.getAttribute("data-username"), actionEl); return; }
+  if (action === "public-profile") { void inlineProfiles.open(actionEl.getAttribute("data-username"), actionEl); return; }
   if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
-  if (action === "account-open") { accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
-  const accountGatedActions = new Set(["create-game","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
+  if (action === "account-open") { if (accountDialog.isOpen()) { void accountDialog.close(); return; } accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
+  const accountGatedActions = new Set(["create-game","create-self-play","rematch","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
   if (accountGatedActions.has(action) && (!account.snapshot().ready || account.snapshot().pendingLogout)) {
     event.preventDefault();
     if (!await waitForAccountGate()) return;
@@ -4261,8 +4475,15 @@ appEl.addEventListener("click", async (event) => {
     accountDialog.open("login", intent, actionEl);
     return;
   }
+  if (action === "view-result") { if (!getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId())) return; activeResultGameId = actionGameId; render({ animatePanels: false }); return; }
+  if (action === "analysis") { pendingResultReviewFocus = actionGameId; activeResultGameId = null; render({ animatePanels: false }); navigateTo(buildGameHash(actionGameId, null, getCurrentGameHashState("history"))); return; }
+  if (action === "rematch") {
+    const result = getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId());
+    if(result)rematchDialog.open(result,actionEl);return;
+  }
   if (sharedMutationActions.has(action) && transport.getGameViewModel(actionGameId)?.sharedMutationsBlocked) return;
   const animateFlyoutClose = async (flyoutKey, closeFlyout) => {
+    gameSound.play("flyout-back");
     const flyoutEl = appEl?.querySelector?.(`[data-flyout="${flyoutKey}"]`);
     const mainContentEl = appEl?.querySelector?.(".shell-main-content");
     const layoutMode = getShellLayoutMode();
@@ -4295,20 +4516,11 @@ appEl.addEventListener("click", async (event) => {
           mainContentEl.style.width = `${nextMainWidth}px`;
           mainContentEl.style.maxWidth = `${nextMainWidth}px`;
         }
-        flyoutEl.style.transition = `transform ${FLYOUT_MOTION_MS}ms ease, opacity ${FLYOUT_MOTION_MS}ms ease, width ${FLYOUT_MOTION_MS}ms ease, max-width ${FLYOUT_MOTION_MS}ms ease`;
-        flyoutEl.classList.add("is-closing");
-        flyoutEl.style.width = "0px";
-        flyoutEl.style.maxWidth = "0px";
-      } else {
-        flyoutEl.style.transition = "none";
-        flyoutEl.style.height = `${flyoutEl.getBoundingClientRect().height}px`;
-        flyoutEl.style.maxHeight = `${flyoutEl.getBoundingClientRect().height}px`;
-        void flyoutEl.offsetHeight;
-        flyoutEl.style.transition = `transform ${FLYOUT_MOTION_MS}ms ease, opacity ${FLYOUT_MOTION_MS}ms ease, height ${FLYOUT_MOTION_MS}ms ease, max-height ${FLYOUT_MOTION_MS}ms ease`;
-        flyoutEl.classList.add("is-closing");
-        flyoutEl.style.height = "0px";
-        flyoutEl.style.maxHeight = "0px";
       }
+      // Slide the intact surface out through its placement edge. Shrinking its
+      // dimensions also shrinks percentage translation and causes a collapse.
+      flyoutEl.style.transition = `transform ${FLYOUT_MOTION_MS}ms ease, opacity ${FLYOUT_MOTION_MS}ms ease`;
+      flyoutEl.classList.add("is-closing");
       await delay(FLYOUT_MOTION_MS);
     }
     setFlyoutOpenState(flyoutKey, false);
@@ -4318,10 +4530,17 @@ appEl.addEventListener("click", async (event) => {
     }, 0);
   };
 
-  if (action === "create-game") {
-    const handle = transport.createGame({ selfPlayMode: false });
+  if(action==='close-invite'){closeFriendInvite();return;}
+  if(action==='share-invite'){await withPendingButton(getCopyInviteButtonKey(actionEl.dataset.gameId),()=>copyGameInvitation(actionEl.dataset.gameId,actionEl.dataset.inviteRole,true));return;}
+  if (action === 'guest-profile') { void inlineProfiles.open(null,actionEl);return; }
+  if (action === 'toggle-sound') { const enabled=gameSound.toggle();actionEl.innerHTML=icon(enabled?'sound':'muted');actionEl.setAttribute('aria-label',enabled?'Mute sound':'Enable sound');actionEl.setAttribute('aria-pressed',String(enabled));actionEl.title=`Sound ${enabled?'on':'off'}`;return; }
+  if (action === 'opponent-story') { gameSound.play('intro'); storyDialog.open(actionEl.dataset.opponent,{trigger:actionEl}); return; }
+  if (action === "create-game" || action === 'create-self-play') {
+    if(action === 'create-game'){gameSound.play('intro');storyDialog.open('friend',{trigger:actionEl});return;}
+    const handle = transport.createGame({ selfPlayMode: action === 'create-self-play' });
     startGameEntryRouteTransition(handle.result.id, "home");
     navigateTo(buildGameHash(handle.result.id, null, getCurrentFlyoutState()));
+    if(action==='create-game') openFriendInvite(handle.result.id,actionEl);
     return;
   }
 
@@ -4420,7 +4639,7 @@ appEl.addEventListener("click", async (event) => {
       });
       markInviteChoiceCommitted(gameId);
       if (result.pendingApproval) {
-        setInviteFeedback("Player join request sent. You are now viewing the game while approval is pending.");
+        setInviteFeedback("");
       }
       if (currentRoute.name === "invite" || currentRoute.name === "game") {
         navigateTo(buildGameHash(gameId, null, getCurrentGameHashState(currentRoute.name === "game" ? getGamePanel() : DEFAULT_GAME_PANEL)));
@@ -4458,27 +4677,8 @@ appEl.addEventListener("click", async (event) => {
     if (!gameId) {
       return;
     }
-    const gameHandle = transport.getGameHandle?.(gameId) ?? null;
-    const copyInvite = async () => {
-      if (gameHandle?.status === "pending") {
-        await gameHandle.committed;
-      }
-      const game = transport.getGameViewModel(gameId);
-      const inviteToken = game?.inviteToken || resolvedInvite?.inviteToken || gameId;
-      const inviteLink = `${window.location.origin}${window.location.pathname}${buildInviteHash(inviteToken, getCurrentFlyoutState())}`;
-      let copied = false;
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(inviteLink);
-        copied = true;
-      }
-      window.__righeltLastInvite = inviteLink;
-      setInviteFeedback(copied ? "Invite link copied to clipboard" : "Clipboard unavailable");
-    };
-    if (gameHandle?.status === "pending") {
-      void withPendingButton(getCopyInviteButtonKey(gameId), copyInvite);
-      return;
-    }
-    await copyInvite();
+    await withPendingButton(getCopyInviteButtonKey(gameId),()=>copyGameInvitation(gameId,actionEl.dataset.inviteRole || 'viewer'));
+
     return;
   }
 
@@ -4525,6 +4725,7 @@ appEl.addEventListener("click", async (event) => {
     playHistoryReleaseBounce(actionEl);
     await animateHistoryDeselection(actionEl);
     transport.selectHistoryMove({ gameId, moveIndex });
+    if(transport.getGameViewModel(gameId)?.inHistoryMode)gameSound.play("history");
     return;
   }
 
@@ -4535,6 +4736,7 @@ appEl.addEventListener("click", async (event) => {
     playHistoryReleaseBounce(actionEl);
     await animateHistoryDeselection(actionEl);
     transport.returnToLive({ gameId });
+    gameSound.play("history-back");
     return;
   }
 
@@ -4550,6 +4752,7 @@ appEl.addEventListener("click", async (event) => {
   if (action === "open-debug") {
     if (!currentRoute.debug) {
       saveDebugFlyoutOpen(storage, true);
+      gameSound.play("flyout");
       setFlyoutOpenState("debug", true);
       currentRoute = normalizeRouteFlyoutState({ ...currentRoute, debug: true }, { preferredFlyoutKey: "debug" });
       if (currentRoute.name === "home") {
@@ -4562,6 +4765,7 @@ appEl.addEventListener("click", async (event) => {
   }
   if (action === "open-scenarios") {
     if (!currentRoute.scenarios) {
+      gameSound.play("flyout");
       setFlyoutOpenState("scenarios", true);
       navigateTo(toggleScenariosHash(window.location.hash));
     }
@@ -4870,7 +5074,7 @@ appEl.addEventListener("focusout", (event) => {
 
 appEl.addEventListener("pointerdown", (event) => {
   const target = event.target;
-  if (!(target instanceof HTMLElement)) {
+  if (!(target instanceof Element)) {
     return;
   }
   const controlEl = target.closest("button, .button-link, .mini-board-card-link-surface");
@@ -4888,7 +5092,9 @@ appEl.addEventListener("pointerdown", (event) => {
   startHistoryPress(actionEl);
 });
 
+window.addEventListener("pointercancel",()=>{document.querySelector(".home-start")?.style.removeProperty("margin-top");clearControlPress();});
 window.addEventListener("pointerup", (event) => {
+  window.setTimeout(()=>document.querySelector('.home-start')?.style.removeProperty('margin-top'),0);
   const target = event.target;
   if (pressedControlEl instanceof HTMLElement) {
     playControlReleaseBounce(pressedControlEl);
@@ -4921,6 +5127,13 @@ window.addEventListener("click", (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
+  const invitation=document.querySelector('.invite-gate-modal[role="dialog"]');
+  if(invitation && event.key==='Escape' && hostInvite){event.preventDefault();closeFriendInvite();return;}
+  if(invitation && event.key==='Tab'){
+    const controls=[...invitation.querySelectorAll('button:not(:disabled),a[href],input:not([disabled])')].filter(el=>el.getClientRects().length);
+    const index=controls.indexOf(document.activeElement);
+    if(index<0 || event.shiftKey && index===0 || !event.shiftKey && index===controls.length-1){event.preventDefault();controls[event.shiftKey?controls.length-1:0]?.focus();}
+  }
   const target = event.target;
   if (
     target instanceof HTMLElement &&

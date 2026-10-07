@@ -50,6 +50,7 @@ export const parseRouteFromHash = (hash) => {
     return withFlyoutState({
       name: "invite",
       inviteToken: decodeURIComponent(parts[1]),
+      ...(["red","blue","viewer"].includes(query.get("as")) ? {inviteAs:query.get("as")} : {}),
     }, query);
   }
 
@@ -159,8 +160,10 @@ const buildHashForParsedRoute = (parsed, flyouts) => {
   switch (parsed.name) {
     case "game":
       return buildGameHash(parsed.gameId, parsed.inviteFromRole, { ...flyouts, panel: parsed.panel });
-    case "invite":
-      return buildInviteHash(parsed.inviteToken, flyouts);
+    case "invite": {
+      const hash=buildInviteHash(parsed.inviteToken, flyouts);
+      return ["red","blue","viewer"].includes(parsed.inviteAs) ? `${hash}${hash.includes('?')?'&':'?'}as=${parsed.inviteAs}` : hash;
+    }
     case "tutorial":
       return buildTutorialHash(parsed.gameId, flyouts);
     case "home":

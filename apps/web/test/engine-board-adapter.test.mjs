@@ -1127,9 +1127,9 @@ test("project previews use a plus badge while move-style previews use lightweigh
   assert.match(adapterSource, /const supplyPath = normalizeOverlayPath\(getSupplyPathForPiece\(snapshot, piece\)\);/);
   assert.match(adapterSource, /const commandPath = normalizeOverlayPath\(getCommandPathForPiece\(snapshot, piece\)\);/);
   assert.match(adapterSource, /buildSharedPathSegmentOffsetMaps\(\s*supplyPath,\s*commandPath,\s*\)/s);
-  assert.match(adapterSource, /drawPath\(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey\);/);
+  assert.match(adapterSource, /drawPath\(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey, "supply"\);/);
   assert.match(adapterSource, /const commandStroke = PREVIEW_STROKE_BY_OWNER\[piece\.owner\] \?\? PREVIEW_STROKE_BY_OWNER\.P1;/);
-  assert.match(adapterSource, /drawPath\(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey\);/);
+  assert.match(adapterSource, /drawPath\(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey, "command"\);/);
   assert.doesNotMatch(adapterSource, /drawPath\(commandPath, "#2470c7"\)/);
 });
 

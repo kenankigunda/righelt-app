@@ -969,3 +969,7 @@ test("account retirement fences a delayed username lookup", async () => {
     await rejection;
   } finally { release(Response.json({ ok: true, exists: true })); client.destroy(); }
 });
+
+test('self-play survives the account gate as a safe local action',()=>{
+ assert.deepEqual(safeAccountIntent({hash:'#/',action:'create-self-play'}),{hash:'#/',action:'create-self-play'});
+});

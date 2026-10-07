@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
+import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { AUTH_REQUEST_HEADER, AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION } from "../../packages/shared-types/src/auth-policy.js";
 const dialog = page => page.getByTestId("account-dialog");
 const uniqueName = () => `Entry_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -88,6 +88,7 @@ test("creation keeps password through username edits, clears it on form switch, 
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
+  await continueFriendIntroduction(page,{play:false});
   await page.getByRole("button", { name: "Account", exact: true }).click();
   await expect(dialog(page).getByLabel("Display name", { exact: true })).toHaveValue(changed);
 });
@@ -117,6 +118,7 @@ test("creation checklist starts neutral and validates an eight-character passwor
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("type", "password");
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
+  await continueFriendIntroduction(page);
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
   const gameUrl = page.url();
   await page.reload();
@@ -377,7 +379,7 @@ test("public landing has no sign-in shortcut and keyboard play opens a cancellab
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveCount(0);
   const original = page.url();
-  const play = page.getByRole("button", { name: "Start new game", exact: true });
+  const play = page.getByTestId("home-create-game");
   await play.focus();
   await page.keyboard.press("Enter");
   await expect(dialog(page).getByRole("heading", { name: "Log in to start playing" })).toBeVisible();

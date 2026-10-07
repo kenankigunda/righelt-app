@@ -63,7 +63,7 @@ export const continueFriendIntroduction = async (page, {friendIntroduction = fal
   await story.getByRole('button',{name:'Start a friend game',exact:true}).click();
 };
 
-export const createGameFromHome = async (page, capabilities = {}) => {
+export const createGameFromHome = async (page, capabilities = {friendIntroduction:true}) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
   const createResponsePromise = page.waitForResponse((response) => {
@@ -72,6 +72,7 @@ export const createGameFromHome = async (page, capabilities = {}) => {
   });
   await page.getByTestId("home-create-game").click();
   await continueFriendIntroduction(page, capabilities);
+  await expect(page.getByRole("dialog", { name: "Invite a friend" })).toBeVisible();
   const createResponse = await createResponsePromise;
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await closeHostInvitation(page);
@@ -88,6 +89,9 @@ export const createGameFromHome = async (page, capabilities = {}) => {
   // This shared action is gated by the same local recovery state as board input.
   await expect(page.locator('[data-action="play-as-both-players"]')).toBeEnabled();
   await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
+  // Responsive controls must be observed after entry finishes, not during
+  // the temporary cover/reveal state that can hide and replace their nodes.
+  await expect(page.locator("[data-shell-transition-phase]")).toHaveAttribute("data-shell-transition-phase", "idle");
 
   return {
     gameHash: url.hash,
@@ -298,14 +302,20 @@ export const makeAnyLegalMove = async (page, ownerClass = "p1") => {
 };
 
 export const openHistoryAndReturnLive = async (page) => {
-  await expect(historyMoveItems(page).first()).toBeVisible();
-  await historyMoveItems(page).first().click();
-  await expect(page.getByTestId("history-return-live")).toBeVisible();
+  await openHistoryMode(page);
   await page.getByTestId("history-return-live").click();
   await expect(page.getByTestId("history-return-live")).toHaveCount(0);
 };
 
 export const openHistoryMode = async (page, moveIndex = 0) => {
+  const tab = page.locator('[data-action="switch-game-panel"][data-panel="history"]');
+  // Deliberately reveal the panel instead of scrolling a transformed offscreen pane.
+  await expect(page.locator("#app")).toHaveAttribute("data-shell-layout-mode", /^(narrow|wide)$/);
+  if (await page.locator("#app").getAttribute("data-shell-layout-mode") === "narrow") {
+    await expect(tab).toBeVisible();
+    await tab.click();
+    await expect(tab).toHaveAttribute("aria-pressed", "true");
+  }
   await expect(historyMoveItems(page).nth(moveIndex)).toBeVisible();
   await historyMoveItems(page).nth(moveIndex).click();
   await expect(page.getByTestId("history-return-live")).toBeVisible();

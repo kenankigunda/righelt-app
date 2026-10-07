@@ -1,0 +1,38 @@
+name: WebKit rendering diagnostic
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: corepack enable && corepack prepare pnpm@9 --activate
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm exec playwright install --with-deps webkit
+      - name: Compare rendering interventions against the same local application
+        run: |
+          mkdir -p test-results/webkit-rendering-diagnostic
+          node scripts/resources/cli.mjs run --kind preview -- node scripts/e2e-stack.mjs > test-results/webkit-rendering-diagnostic/stack.log 2>&1 &
+          stack_pid=$!
+          trap 'kill -TERM "$stack_pid" 2>/dev/null || true; wait "$stack_pid" || true' EXIT
+          ready=false
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:9888/ > /dev/null; then ready=true; break; fi
+            if ! kill -0 "$stack_pid" 2>/dev/null; then cat test-results/webkit-rendering-diagnostic/stack.log; exit 1; fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then cat test-results/webkit-rendering-diagnostic/stack.log; exit 1; fi
+          node scripts/resources/cli.mjs run --kind heavy -- node scripts/diagnose-webkit-rendering.mjs --url http://127.0.0.1:9888 --rounds 2 --trace on --variants baseline,grid-stepped,grid-static,baseline-repeat
+      - name: Preserve measurements, traces, and stack logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webkit-rendering-diagnostic
+          path: test-results/webkit-rendering-diagnostic
+          if-no-files-found: error

@@ -1,0 +1,111 @@
+[
+  {
+    "id": "babs-1-discovery",
+    "src": "/assets/opponents/babs-1-discovery.webp",
+    "width": 1200,
+    "height": 800,
+    "alt": "Babs discovers the board during a rainstorm.",
+    "generation": "02f5c703-d1c9-47ca-b5f7-09a110e091ce",
+    "bytes": 234754,
+    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
+    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+  },
+  {
+    "id": "babs-2-rematch",
+    "src": "/assets/opponents/babs-2-rematch.webp",
+    "width": 1200,
+    "height": 800,
+    "alt": "Babs eagerly invites another match.",
+    "generation": "6049fa43-936f-4678-b47e-a58599473c14",
+    "bytes": 239196,
+    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
+    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+  },
+  {
+    "id": "babs-3-research",
+    "src": "/assets/opponents/babs-3-research.webp",
+    "width": 1200,
+    "height": 800,
+    "alt": "Babs studies her growing collection of game notebooks.",
+    "generation": "9728c6b9-ab30-4329-aea0-80e1e356322c",
+    "bytes": 251482,
+    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
+    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+  },
+  {
+    "id": "tau-1-gardens",
+    "src": "/assets/opponents/tau-1-gardens.webp",
+    "width": 1200,
+    "height": 800,
+    "alt": "Tau waters the village garden.",
+    "generation": "exec-8dde4460-0d7f-4849-ba06-3d2c5fd972b5.png",
+    "bytes": 299444,
+    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades"
+  },
+  {
+    "id": "tau-2-connections",
+    "src": "/assets/opponents/tau-2-connections.webp",
+    "width": 1200,
+    "height": 800,
+    "alt": "Tau considers a board beside connected irrigation channels.",
+    "generation": "49d088e3-c016-47f1-97ff-bb9836ec58e1",
+    "bytes": 256524,
+    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
+    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+  },
+  {
+    "id": "tau-3-patience",
+    "src": "/assets/opponents/tau-3-patience.webp",
+    "width": 1200,
+    "height": 800,
+    "alt": "Tau considers his move while Babs waits.",
+    "generation": "84ff3aca-a360-4130-ba8d-891d02f63716",
+    "bytes": 245306,
+    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
+    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+  },
+  {
+    "id": "horus-1-watchtower",
+    "src": "/assets/opponents/horus-1-watchtower.webp",
+    "width": 1200,
+    "height": 800,
+    "alt": "Horus watches courtyard games from his tower.",
+    "generation": "8d40afce-ee34-4633-9068-cf7a581d7c8e",
+    "bytes": 220484,
+    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
+    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+  },
+  {
+    "id": "horus-2-studying",
+    "src": "/assets/opponents/horus-2-studying.webp",
+    "width": 1200,
+    "height": 800,
+    "alt": "Horus studies the match below and his notes.",
+    "generation": "d422159d-5e61-491f-b854-74d71ac73883",
+    "bytes": 236620,
+    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
+    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+  },
+  {
+    "id": "horus-3-opinion",
+    "src": "/assets/opponents/horus-3-opinion.webp",
+    "width": 1200,
+    "height": 800,
+    "alt": "Horus joins Babs and Tau to suggest a move.",
+    "generation": "c4c06839-3984-4fc4-b3a1-f7b9a8c230ab",
+    "bytes": 268988,
+    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
+    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+  },
+  {
+    "id": "friend-introduction",
+    "src": "/assets/opponents/friend-introduction.webp",
+    "alt": "Red and blue sleeved hands make room for a friend at a Righelt board, with mugs and inviting place settings.",
+    "width": 1200,
+    "height": 800,
+    "generation": "91cf6b55-1da3-42d1-8bec-a90afc862fc3",
+    "bytes": 152996,
+    "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
+    "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
+  }
+]

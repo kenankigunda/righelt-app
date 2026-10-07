@@ -27,6 +27,7 @@ test("home pagination refreshes correctly when a moved game reorders onto an ear
 
     await pageTwoCard.click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
+    await page.getByRole("button", {name:"Play as both players",exact:true}).click();
     const initialHistoryCount = await getHistoryMoveCount(page);
     await makeAnyLegalMove(page, "p1");
     await expect

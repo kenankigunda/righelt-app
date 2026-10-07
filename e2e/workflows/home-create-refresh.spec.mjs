@@ -25,6 +25,7 @@ test('early create waits for guest bootstrap without opening account sign-in', a
     const created = page.waitForResponse(response => response.request().method() === 'POST'
       && new URL(response.url()).pathname === '/api/shell/games');
     release();
+    await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
     expect((await created).ok()).toBe(true);
     await expect(page).toHaveURL(/#\/game\//);
     await expect(page.getByTestId('game-role')).toContainText('Player 1');
@@ -58,6 +59,7 @@ for (const input of ['pointer', 'keyboard']) test(`home refresh preserves ${inpu
   await expect(button).toBeVisible();
   await expect(page.getByTestId('home-section-skeleton').first()).toBeVisible();
   await button.evaluate(element => { window.originalCreateButton = element; });
+  await button.scrollIntoViewIfNeeded();
   const box = await button.boundingBox();
   expect(box).not.toBeNull();
   if (input === "pointer") { await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); }
@@ -74,6 +76,9 @@ for (const input of ['pointer', 'keyboard']) test(`home refresh preserves ${inpu
     expect(connected, 'A response must not detach the pressed create control').toBe(true);
     expect(creates).toHaveLength(0);
     if (input === "pointer") await page.mouse.up(); else await page.keyboard.up("Space");
+    await expect(page.getByRole('dialog',{name:'Friend',exact:true})).toBeVisible();
+    expect(creates).toHaveLength(0);
+    await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
     await expect.poll(() => creates.length).toBe(1);
     await expect(page.getByTestId('game-shell')).toBeVisible();
     await expect(page.getByTestId('game-role')).toContainText('Player 1');
