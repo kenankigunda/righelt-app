@@ -32,7 +32,7 @@ jobs:
             sleep 1
           done
           if [ "$ready" != true ]; then cat test-results/webkit-rendering-diagnostic/stack.log; exit 1; fi
-          node scripts/resources/cli.mjs run --kind heavy -- node scripts/diagnose-webkit-rendering.mjs --url http://127.0.0.1:9888 --rounds 2 --trace on --variants baseline,grid-wrapper-animation,grid-static,baseline-repeat
+          node scripts/resources/cli.mjs run --kind heavy -- node scripts/diagnose-webkit-rendering.mjs --url http://127.0.0.1:9888 --rounds 2 --trace on --variants baseline,grid-raster-canvas,grid-static,baseline-repeat
       - name: Preserve measurements, traces, and stack logs
         if: always()
         uses: actions/upload-artifact@v4

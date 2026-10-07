@@ -31,6 +31,7 @@ const availableVariants = [
   { name: 'grid-static', css: '.brand-grid { animation:none!important; }' },
   { name: 'grid-unmasked-static', css: '.brand-grid { mask:none!important; -webkit-mask:none!important; animation:none!important; }' },
   { name: 'grid-wrapper-animation', css: '', wrapGrid:true },
+  { name: 'grid-raster-canvas', css: '', rasterGrid:true },
   { name: 'baseline-repeat', css: '' },
 ];
 const selection=option('--variants',availableVariants.map(variant=>variant.name).join(',')).split(',');
@@ -45,7 +46,7 @@ const report = {
   revision:execFileSync('git', ['rev-parse','HEAD'], { encoding:'utf8' }).trim(),
   platform:process.platform, node:process.version, url, trace, rounds, variants:selection,
   device:devices['Desktop Safari'], startedAt:new Date().toISOString(),
-  note:'Fresh anonymous context per sample. Same home and first Friend click. No match creation. Diagnostic CSS only. Baseline repeated to expose drift. Frame sample bounded at 8s; trace capture is held constant.',
+  note:'Fresh anonymous context per sample. Same home and first Friend click. No match creation. Diagnostic rendering interventions only; raster preparation reported separately. Baseline repeated to expose drift. Frame sample bounded at 8s; trace capture is held constant.',
   samples:[],
 };
 const save = () => writeFile(resolve(output, 'report.json'), JSON.stringify(report, null, 2));
@@ -97,6 +98,46 @@ try {
           if(!animatedWrapper)throw new Error('Wrapper intervention failed to retain grid animation');
           return {animation,phase,before,after};
         });
+        if(variant.rasterGrid) sample.raster=await page.evaluate(async()=>{
+          const started=performance.now();
+          const grid=document.querySelector('.brand-grid'), style=getComputedStyle(grid);
+          const before=grid.getBoundingClientRect().toJSON(), ratio=devicePixelRatio;
+          const pattern=grid.querySelector('pattern');
+          if(!pattern || before.x!==0 || before.y!==0)throw new Error('Raster diagnostic requires the current viewport-aligned SVG grid');
+          const sourceMask=style.maskImage || style.webkitMaskImage;
+          // Match the current two masks explicitly: this diagnostic must fail
+          // rather than silently flatten a different approved corner treatment.
+          if(!/1050px 850px/.test(sourceMask) || !/650px 650px/.test(sourceMask) ||
+            !/0\.55/.test(sourceMask) || !/0\.2\)/.test(sourceMask) || !/0\.85/.test(sourceMask))throw new Error('Unexpected grid mask; update diagnostic equivalence first');
+          const originX=parseFloat(style.getPropertyValue('--grid-origin-x'));
+          const originY=parseFloat(style.getPropertyValue('--grid-origin-y'));
+          if(!Number.isFinite(originX)||!Number.isFinite(originY))throw new Error('Grid origin has not settled');
+          const animation=style.animation, phase=grid.getAnimations().find(effect=>effect.animationName==='righelt-grid-breathe')?.currentTime;
+          const serializedPattern=pattern.outerHTML;
+          // Rasterize the existing pattern at device resolution once. Two white
+          // alpha gradients combine source-over, matching CSS mask-composite:add.
+          // This preserves the actual logo-derived pitch/origin/path/stroke.
+          const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${before.width}" height="${before.height}" viewBox="0 0 ${before.width} ${before.height}"><defs>${serializedPattern}
+            <radialGradient id="diagnostic-corner-a" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1" gradientTransform="translate(${originX} ${originY}) scale(1050 850)"><stop offset="0" stop-color="white"/><stop offset=".3" stop-color="white" stop-opacity=".55"/><stop offset=".85" stop-color="white" stop-opacity=".2"/></radialGradient>
+            <radialGradient id="diagnostic-corner-b" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1" gradientTransform="translate(${before.width} ${before.height}) scale(650 650)"><stop offset="0" stop-color="white" stop-opacity=".85"/><stop offset=".85" stop-color="white" stop-opacity="0"/></radialGradient>
+            <mask id="diagnostic-baked-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${before.width}" height="${before.height}" style="mask-type:alpha"><rect width="100%" height="100%" fill="url(#diagnostic-corner-a)"/><rect width="100%" height="100%" fill="url(#diagnostic-corner-b)"/></mask></defs><rect width="100%" height="100%" fill="url(#${pattern.id})" mask="url(#diagnostic-baked-mask)"/></svg>`;
+          const bitmap=new Image();bitmap.src=`data:image/svg+xml,${encodeURIComponent(svg)}`;
+          await bitmap.decode();
+          const canvas=document.createElement('canvas');canvas.width=Math.ceil(before.width*ratio);canvas.height=Math.ceil(before.height*ratio);
+          const context=canvas.getContext('2d');context.drawImage(bitmap,0,0,canvas.width,canvas.height);
+          canvas.className='brand-grid diagnostic-raster-grid';canvas.setAttribute('aria-hidden','true');
+          canvas.style.cssText=grid.style.cssText;
+          canvas.style.setProperty('mask','none','important');canvas.style.setProperty('-webkit-mask','none','important');
+          canvas.style.setProperty('animation',animation);
+          grid.before(canvas);grid.classList.remove('brand-grid');grid.classList.add('diagnostic-source-grid');grid.style.display='none';
+          const effect=canvas.getAnimations().find(effect=>effect.animationName==='righelt-grid-breathe');
+          if(effect && typeof phase==='number')effect.currentTime=phase;
+          if(!effect)throw new Error('Raster diagnostic lost breathing animation');
+          const after=canvas.getBoundingClientRect().toJSON();
+          if(['x','y','width','height'].some(key=>before[key]!==after[key]))throw new Error('Raster diagnostic changed grid geometry');
+          window.diagnosticGridPattern=serializedPattern;
+          return {sourceMask,originX,originY,pattern:serializedPattern,animation,phase,before,after,bitmap:[canvas.width,canvas.height],preparationMs:performance.now()-started};
+        });
         sample.computed = await page.evaluate(() => ({
           gridDisplay:getComputedStyle(document.querySelector('.brand-grid')).display,
           gridWillChange:getComputedStyle(document.querySelector('.brand-grid')).willChange,
@@ -138,6 +179,10 @@ try {
         sample.frames.medianMs = percentile(sample.frames.intervals, .5);
         sample.frames.p95Ms = percentile(sample.frames.intervals, .95);
         await page.screenshot({path:resolve(output, `${id}-home.png`)});
+        if(variant.rasterGrid) {
+          sample.raster.patternUnchanged=await page.evaluate(()=>document.querySelector('.diagnostic-source-grid pattern').outerHTML===window.diagnosticGridPattern);
+          if(!sample.raster.patternUnchanged)throw new Error('Logo/grid geometry changed after rasterization; sample is not comparable');
+        }
         sample.completedAt = new Date().toISOString();
       } catch (error) {
         sample.error = String(error.stack || error);
