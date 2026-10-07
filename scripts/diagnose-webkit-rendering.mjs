@@ -26,6 +26,7 @@ const variants = [
   { name: 'baseline', css: '' },
   { name: 'grid-disabled', css: '.brand-grid { display:none!important; }' },
   { name: 'surface-filters-disabled', css: ':is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,.home-refresh .mini-board-card,button.opponent-choice { filter:none!important; }' },
+  { name: 'grid-tiled-image', css: '.brand-grid > rect { display:none!important; }', tileGrid:true },
   { name: 'baseline-repeat', css: '' },
 ];
 const percentile = (values, fraction) => {
@@ -46,7 +47,7 @@ report.browserVersion = browser.version();
 try {
   for (let round=0; round<rounds; round++) {
     // Reverse the two interventions on the second round to reduce ordering bias.
-    const order = round % 2 ? [variants[0], variants[2], variants[1], variants[3]] : variants;
+    const order = round % 2 ? [variants[0], variants[3], variants[2], variants[1], variants[4]] : variants;
     for (const variant of order) {
       const id = `${round+1}-${variant.name}`;
       const context = await browser.newContext({ ...devices['Desktop Safari'] });
@@ -62,6 +63,14 @@ try {
         await page.waitForFunction(() => !document.querySelector('[data-testid="home-section-skeleton"]'));
         // Baseline receives the same style insertion/reflow boundary.
         await page.addStyleTag({ content:variant.css || '/* diagnostic baseline */' });
+        if(variant.tileGrid) await page.evaluate(()=>{
+          const grid=document.querySelector('.brand-grid'), pattern=grid.querySelector('pattern'), path=pattern.querySelector('path');
+          const width=pattern.getAttribute('width'),height=pattern.getAttribute('height');
+          const tile=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${path.outerHTML}</svg>`;
+          grid.style.backgroundImage=`url("data:image/svg+xml,${encodeURIComponent(tile)}")`;
+          grid.style.backgroundSize=`${width}px ${height}px`;
+          grid.style.backgroundPosition=`${pattern.getAttribute('x')}px ${pattern.getAttribute('y')}px`;
+        });
         sample.computed = await page.evaluate(() => ({
           gridDisplay:getComputedStyle(document.querySelector('.brand-grid')).display,
           gridWillChange:getComputedStyle(document.querySelector('.brand-grid')).willChange,
