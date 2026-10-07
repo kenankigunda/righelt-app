@@ -18,6 +18,7 @@ async function register(page,name,timings){
  await page.goto('https://127.0.0.1:9988/',{waitUntil:'domcontentloaded'});
  await expect(page.getByTestId('home-create-game')).toBeVisible();
  await page.waitForFunction(()=>document.querySelector('.shell-header')&&!document.querySelector('[data-action="retry-account-startup"]')&&![...document.querySelectorAll('[role="status"]')].some(n=>n.textContent.trim()==='Connecting…'));
+ await page.evaluate(()=>window.__installGridDiscrete());
  await time('play-both',()=>page.getByRole('button',{name:'Play both sides',exact:true}).click());
  const dialog=page.getByTestId('account-dialog');
  await time('create-account',()=>dialog.getByRole('button',{name:'Create account',exact:true}).click());
@@ -37,9 +38,10 @@ try{
  async function context(label){const ctx=await browser.newContext({...devices['Desktop Safari'],ignoreHTTPSErrors:true});contexts.push({ctx,label});await ctx.tracing.start({screenshots:true,snapshots:true,sources:true});await ctx.addInitScript(mode=>{
  document.addEventListener('DOMContentLoaded',()=>{
   const style=document.createElement('style');style.textContent=mode==='static'?'.brand-grid{animation:none!important}':'/* baseline */';document.head.append(style);
+  window.__installGridDiscrete=()=>{
   if(mode!=='discrete')return;
   const grid=document.querySelector('.brand-grid');
-  if(!grid)throw new Error('Diagnostic grid must exist before DOMContentLoaded');
+  if(!grid)throw new Error('Diagnostic grid must exist after home readiness');
   const motion=matchMedia('(prefers-reduced-motion:reduce)');
   const animation=grid.getAnimations().find(a=>a.animationName==='righelt-grid-breathe');
   if(!animation)throw new Error('Diagnostic expected existing CSS grid motion');
@@ -56,6 +58,7 @@ try{
   new MutationObserver(sync).observe(document.documentElement,{attributes:true,attributeFilter:['data-page-active']});
   document.addEventListener('visibilitychange',sync);motion.addEventListener('change',sync);addEventListener('pagehide',()=>clearTimeout(timer));
   window.__gridDiscreteProof=proof;window.__gridDiscreteState=()=>({updates,elapsed:elapsed+(paused?0:performance.now()-started),paused,reduced,opacity:grid.style.opacity});sync();
+  };
  },{once:true});
  },variant.mode);const page=await ctx.newPage();page.setDefaultTimeout(20000);return page;}
  let background;
