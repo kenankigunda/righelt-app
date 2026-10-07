@@ -152,7 +152,7 @@ test('header utilities expand on hover and keyboard focus while retaining their 
 test('sound hover is quiet and clears when the page loses focus',async({page})=>{
  await page.goto('/');await expect(page.getByTestId('home-section-skeleton')).toHaveCount(0);
  const sound=page.locator('.sound-toggle');await sound.hover();
- await expect.poll(()=>sound.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe('rgba(37, 43, 45, 0.05)');
+ await expect.poll(()=>sound.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe('rgba(37, 43, 45, 0.06)');
  expect(await sound.evaluate(el=>getComputedStyle(el).boxShadow)).toBe('none');
  await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
  await expect.poll(()=>sound.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
@@ -385,7 +385,8 @@ test('commander windows mask paths and center dots in real and ghost states',asy
 });
 
 test('scroll viewport stays inside clipped modal corners when enlarged',async({page})=>{
- await page.setViewportSize({width:900,height:600});await page.goto('/');await page.getByTestId('home-create-game').click();
+ // Effective viewport at high browser zoom, where deliberate inner scrolling is needed.
+ await page.setViewportSize({width:450,height:400});await page.goto('/');await page.getByTestId('home-create-game').click();
  await page.addStyleTag({content:'.story-modal {font-size:125%;} .opponent-story-copy {font-size:22px!important;}'});
  const dialog=page.getByRole('dialog',{name:'Friend',exact:true}),content=dialog.locator('.modal-content');
  await expect.poll(()=>content.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);

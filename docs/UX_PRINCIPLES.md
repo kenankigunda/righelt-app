@@ -337,7 +337,7 @@ Group an identity's emblem, display name, secondary username, and connection sta
 
 ### Overlay surface and scrolling contract
 
-The shared modal surface owns its stone decoration and persistent close control. A single padded inner viewport owns content scrolling. Never let decorative layers create scrollable overflow. Size artwork from the available width and its natural aspect ratio. Bound the scrolling viewport, not the scene scale. Reserve real space below the last action and around clipped corners. Short screens, enlarged text, and longer copy may require inner scrolling, but all content and actions must remain reachable without scrolling the background. Test both fitting and overflowing content, resize while open, and scroll restoration after dismissal. Apply this structure to new overlays rather than adding opponent-specific overflow patches.
+The shared modal surface owns its stone decoration and persistent close control. A single padded inner viewport owns content scrolling. Never let decorative layers create scrollable overflow. Compose artwork and copy together using the available width and height. Use a generous side-by-side composition on wide screens and a stacked composition on phones. Keep the primary action visible on first opening at common default-zoom viewports. Bound the scrolling viewport and preserve the scene aspect ratio. Reserve real space below the last action and around clipped corners. Short screens, enlarged text, and longer copy may require inner scrolling, but all content and actions must remain reachable without scrolling the background. Test both fitting and overflowing content, resize while open, and scroll restoration after dismissal. Apply this structure to new overlays rather than adding opponent-specific overflow patches.
 
 
 ## Current sound contract (October 5, supersedes earlier hover experiments)
@@ -377,7 +377,7 @@ The legend explains only the current board visualization. Commander and supply p
 Artwork that includes gameplay uses the current Righelt board and piece vocabulary: clipped unit pieces, the stepped commander with its open horizontal center, and the angular supply-point arch. Use the shared piece-symbol source and rendered board as references. Avoid generic checker discs. Preserve the characters, scene continuity, large composition, and surface-integrated negative space while updating the game details.
 
 
-Overlay scrollbars belong inside the clipped surface. Keep an inset scrolling viewport clear of all angled corners, with quiet native scrollbar styling, persistent close controls, and one scroll owner. Preserve this geometry at browser zoom and short viewport heights. Fit art to width and allow needed content scrolling rather than shrinking illustrations into thumbnails.
+Overlay scrollbars belong inside the clipped surface. Keep an inset scrolling viewport clear of all angled corners, with quiet native scrollbar styling, persistent close controls, and one scroll owner. Preserve this geometry at browser zoom and short viewport heights. Recompose wide introductions with art beside copy, preserve generous scene scale, and allow needed content scrolling at high zoom rather than shrinking illustrations into thumbnails.
 
 Friend's Start card uses the animated hands. Its narrative overlay expands those hands into a welcoming Righelt board and tabletop scene, without full human figures or animals. Animal characters are exclusive to computer opponents. Illustrated supply points always occupy opposing corner squares, never interior squares.
 
@@ -404,3 +404,12 @@ Initial section population uses its natural height. Animate size only between tw
 Decorative geometry should only change when its measured inputs change. Nested content updates, equal-size logo replacement, and no-op resize events must not rewrite the full-page grid. When scrolling changes only the origin, preserve its pitch and path. Regression checks should cover unchanged updates as well as real responsive realignment.
 
 Subtle decoration must not demand continuous full-page repaints. The grid retains its 24-second breathing cycle and opacity range, with 24 small opacity steps in each half-cycle. Each step changes even the strongest grid line by less than one RGB level. Preserve its logo alignment, corner emphasis, inactive-page pause, and reduced-motion alternative. Measure interaction stalls before adopting rendering optimizations; a new wrapper or canvas is not inherently faster.
+
+
+### Introduction fit and quiet hover
+
+Opponent introductions should expose their Play action without scrolling at common default-zoom laptop, tablet, and phone sizes. Recompose wide introductions with artwork beside copy before reducing scene prominence. On narrow screens balance artwork height, readable fixed story text, and action spacing. Never crop important scene content to make a dialog fit. High zoom, enlarged text, and genuinely short viewports retain the single inset scrolling viewport and persistent close control. Tests inspect the initial action position without scrolling it into view, then separately test real overflow and resizing.
+
+An illustration must end intentionally inside its component. Props, sleeves, and other foreground elements must not be arbitrarily sliced at an inset image boundary. Use complete crisp silhouettes and clean transparent negative space so the actual card surface continues into the scene. Do not hide a cutoff with feathered masks or shrink the scene into a thumbnail.
+
+Hover intensity follows the control's role. Lightweight inline text actions, including ending a rush, use the same quiet surface token as icon controls. They must never inherit the saturated fill or shadow of primary CTAs merely because they are buttons inside a panel. Keep readable text, clear focus, and silent hover. Test the actual composed page so broader selector overrides cannot bypass this rule.

@@ -101,10 +101,10 @@
     "id": "friend-introduction",
     "src": "/assets/opponents/friend-introduction.webp",
     "alt": "Red and blue sleeved hands make room for a friend at a Righelt board, with mugs and inviting place settings.",
-    "width": 1200,
-    "height": 800,
-    "generation": "91cf6b55-1da3-42d1-8bec-a90afc862fc3",
-    "bytes": 152996,
+    "width": 1536,
+    "height": 1024,
+    "generation": "2e5a3015-7164-4182-b516-aaf14719c5d8",
+    "bytes": 165750,
     "background": "Clean transparent negative space reveals the actual card surface; crisp scene boundaries, no feathered fades",
     "pieces": "Righelt cut-stone pieces; supply arches in corner squares"
   }

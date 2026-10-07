@@ -21,7 +21,7 @@ export const shouldShowOpponentIntroduction = (opponent, introduced, readiness) 
 
 export const createOpponentStoryDialog = ({ createModal, document = globalThis.document, getReadiness, onPlay, onRetry = () => {}, onViewResult = () => {}, onPresentation = () => () => {}, onClose = () => {} }) => {
   let opponent, side, carousel, mode, gameId, busy = false, session = 0, destroyPresentation = () => {};
-  const modal = createModal({ document, labelId: "opponent-story-title", onClose: reason => { session++; busy = false; destroyPresentation(); destroyPresentation = () => {}; carousel?.destroy(); carousel = null; onClose(reason); } });
+  const modal = createModal({ document, labelId: "opponent-story-title", className: "opponent-story-modal", onClose: reason => { session++; busy = false; destroyPresentation(); destroyPresentation = () => {}; carousel?.destroy(); carousel = null; onClose(reason); } });
   const refresh = () => {
     if (!modal.element.open) return;
     const readiness = getReadiness(opponent);
