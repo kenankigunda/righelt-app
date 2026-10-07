@@ -89,6 +89,9 @@ export const createGameFromHome = async (page, capabilities = {friendIntroductio
   // This shared action is gated by the same local recovery state as board input.
   await expect(page.locator('[data-action="play-as-both-players"]')).toBeEnabled();
   await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
+  // Responsive controls must be observed after entry finishes, not during
+  // the temporary cover/reveal state that can hide and replace their nodes.
+  await expect(page.locator("[data-shell-transition-phase]")).toHaveAttribute("data-shell-transition-phase", "idle");
 
   return {
     gameHash: url.hash,
