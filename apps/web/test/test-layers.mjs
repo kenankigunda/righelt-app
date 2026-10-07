@@ -1,6 +1,7 @@
 export const WEB_UNIT_TEST_FILES = Object.freeze([
   "account-controller.test.mjs",
   "dom-patch.test.mjs",
+  "brand-grid.test.mjs",
   "auth-startup-helper.test.mjs",
   "render-gesture.test.mjs",
   "public-profile.test.mjs",
