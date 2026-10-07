@@ -524,6 +524,9 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
  html[data-account-flyout="true"] #app[data-flyout-overlay="true"] .shell-header {width:calc(100% - var(--shell-flyout-wide-width) - var(--shell-flyout-content-gap));}
 }
 /* Header controls remain one ordered group when a rail leaves less header space. */
+@media(min-width:701px) {
 #app[data-flyout-overlay="true"]:not([data-flyout-count="0"]) .shell-header {grid-template-columns:minmax(0,1fr) auto;}
 #app[data-flyout-overlay="true"]:not([data-flyout-count="0"]) .shell-header-actions {grid-column:2;}
-.shell-header-actions .nav-row {flex-wrap:nowrap;width:auto;}
+#app[data-flyout-overlay="true"]:not([data-flyout-count="0"]) .shell-header-actions .nav-row {flex-wrap:nowrap;width:auto;}
+
+}

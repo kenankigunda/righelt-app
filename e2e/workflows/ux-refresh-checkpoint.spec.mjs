@@ -1,3 +1,4 @@
+import { waitForOverlayEntry } from "../support/overlay-motion.mjs";
 import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
@@ -177,6 +178,7 @@ test('copy feedback preserves focus and collapses its space when empty',async({p
 test('storybook turn animates artwork while story copy stays fixed',async({page})=>{
  await page.goto('/');await page.locator('button[data-opponent="babs"]').click();
  const modal=page.getByRole('dialog',{name:'Babs',exact:true});await expect(modal).toBeVisible();
+ await waitForOverlayEntry(modal);
  const copy=modal.locator('.opponent-story-copy');const before=await copy.boundingBox();
  await modal.getByRole('button',{name:'Next story image'}).click();
  await expect(modal.locator('[data-story-image]').nth(1)).toHaveAttribute('data-active','true');

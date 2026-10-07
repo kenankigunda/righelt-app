@@ -1,3 +1,4 @@
+import { waitForOverlayEntry } from "../support/overlay-motion.mjs";
 import { expect } from "@playwright/test";
 
 export async function enterUsername(page, username) {
@@ -30,6 +31,7 @@ export async function openPlaySignIn(page) {
     await page.getByTestId("home-create-game").click();
   }
   await expect(page.getByTestId("account-dialog")).toBeVisible();
+  await waitForOverlayEntry(page.getByTestId("account-dialog"));
 }
 
 export async function signOutAndOpenSignIn(page) {
