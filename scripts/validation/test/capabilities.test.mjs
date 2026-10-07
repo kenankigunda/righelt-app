@@ -49,3 +49,18 @@ test('Friend introduction is an explicit source capability, independent of compu
   assert.equal((await candidateCapabilities(root)).friendIntroduction,true);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+
+test('always-visible Account header is an explicit independent capability',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'account-header-capability-'));
+ try{
+  const directory=path.join(root,'apps/web/shell');await mkdir(directory,{recursive:true});
+  const file=path.join(directory,'account-dialog.js');
+  assert.equal((await candidateCapabilities(root)).alwaysVisibleAccount,false);
+  await writeFile(file,'// export const ACCOUNT_HEADER_ENTRY = "always";');
+  assert.equal((await candidateCapabilities(root)).alwaysVisibleAccount,false);
+  await writeFile(file,'export const ACCOUNT_HEADER_ENTRY = "always";\nexport const ACCOUNT_ENTRY_POINTS = "play";\nthrow Error("Never execute candidate source");');
+  const result=await candidateCapabilities(root);
+  assert.equal(result.alwaysVisibleAccount,true);assert.equal(result.playAccountEntry,true);
+ }finally{await rm(root,{recursive:true,force:true});}
+});

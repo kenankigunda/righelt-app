@@ -1,6 +1,41 @@
 import { test, expect } from '@playwright/test';
 import { createGameFromHome, makeAnyLegalMove, getHistoryMoveCount } from '../support/app.mjs';
 
+test('creation helper waits for guest startup recovery before choosing Friend', async ({ page }) => {
+  let requests = 0, release, retryStarted;
+  const held = new Promise(resolve => { release = resolve; });
+  const retry = new Promise(resolve => { retryStarted = resolve; });
+  await page.addInitScript(() => {
+    window.friendClicks = 0;
+    document.addEventListener('click', event => {
+      if (event.target.closest?.('[data-testid="home-create-game"]')) window.friendClicks++;
+    }, true);
+  });
+  await page.route('**/api/shell/bootstrap', async route => {
+    if (++requests === 1) {
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'local_api_unavailable' }) });
+      return;
+    }
+    retryStarted();
+    await held;
+    await route.continue();
+  });
+  const creation = createGameFromHome(page).then(value => ({ value }), error => ({ error }));
+  try {
+    await retry;
+    expect(await page.evaluate(() => window.friendClicks)).toBe(0);
+    await expect(page.getByRole('dialog', { name: 'Friend', exact: true })).not.toBeVisible();
+    release();
+    const outcome = await creation;
+    if (outcome.error) throw outcome.error;
+    expect(await page.evaluate(() => window.friendClicks)).toBe(1);
+    await expect(page.getByTestId('game-role')).toContainText('Player 1');
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
 test('creation helper waits for initial synchronization before the first board activation', async ({ page }) => {
   let release;
   const held = new Promise(resolve => { release = resolve; });
