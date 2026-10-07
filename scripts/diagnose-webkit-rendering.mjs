@@ -27,6 +27,9 @@ const variants = [
   { name: 'grid-disabled', css: '.brand-grid { display:none!important; }' },
   { name: 'surface-filters-disabled', css: ':is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,.home-refresh .mini-board-card,button.opponent-choice { filter:none!important; }' },
   { name: 'grid-tiled-image', css: '.brand-grid > rect { display:none!important; }', tileGrid:true },
+  { name: 'grid-unmasked', css: '.brand-grid { mask:none!important; -webkit-mask:none!important; }' },
+  { name: 'grid-static', css: '.brand-grid { animation:none!important; }' },
+  { name: 'grid-unmasked-static', css: '.brand-grid { mask:none!important; -webkit-mask:none!important; animation:none!important; }' },
   { name: 'baseline-repeat', css: '' },
 ];
 const percentile = (values, fraction) => {
@@ -46,8 +49,9 @@ const browser = await webkit.launch({ headless:true, ...browserLaunchOptions('we
 report.browserVersion = browser.version();
 try {
   for (let round=0; round<rounds; round++) {
-    // Reverse the two interventions on the second round to reduce ordering bias.
-    const order = round % 2 ? [variants[0], variants[3], variants[2], variants[1], variants[4]] : variants;
+    // Keep baseline bookends and reverse all interventions on alternate rounds.
+    const interventions=variants.slice(1,-1);
+    const order=[variants[0],...(round % 2 ? interventions.reverse() : interventions),variants.at(-1)];
     for (const variant of order) {
       const id = `${round+1}-${variant.name}`;
       const context = await browser.newContext({ ...devices['Desktop Safari'] });
@@ -74,6 +78,9 @@ try {
         sample.computed = await page.evaluate(() => ({
           gridDisplay:getComputedStyle(document.querySelector('.brand-grid')).display,
           gridWillChange:getComputedStyle(document.querySelector('.brand-grid')).willChange,
+          gridMaskImage:getComputedStyle(document.querySelector('.brand-grid')).maskImage,
+          gridWebkitMaskImage:getComputedStyle(document.querySelector('.brand-grid')).webkitMaskImage,
+          gridAnimationName:getComputedStyle(document.querySelector('.brand-grid')).animationName,
           sectionFilters:[...document.querySelectorAll('.home-refresh section.panel, .home-refresh > section.panel, button.opponent-choice')].map(el => ({tag:el.className, filter:getComputedStyle(el).filter})),
           viewport:[innerWidth,innerHeight,devicePixelRatio],
         }));
