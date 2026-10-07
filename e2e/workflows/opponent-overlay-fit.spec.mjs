@@ -1,3 +1,4 @@
+import { waitForOverlayEntry } from "../support/overlay-motion.mjs";
 import {test,expect} from '@playwright/test';
 
 for (const viewport of [{width:1366,height:768},{width:1024,height:640},{width:390,height:844},{width:375,height:667}]) {
@@ -8,6 +9,7 @@ for (const viewport of [{width:1366,height:768},{width:1024,height:640},{width:3
    await trigger.click();
    const dialog=page.getByRole('dialog');await expect(dialog).toBeVisible();
    await expect(dialog.locator('[data-story-image]').first()).toHaveJSProperty('complete',true);
+   await waitForOverlayEntry(dialog);
    // Inspect the initial presentation. Scrolling to the CTA would hide this regression.
    await expect(dialog.locator('[data-story-play]')).toBeInViewport({ratio:1});
    await expect(dialog.locator('.modal-content')).toHaveJSProperty('scrollTop',0);

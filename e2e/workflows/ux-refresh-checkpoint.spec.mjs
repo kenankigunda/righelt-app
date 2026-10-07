@@ -401,6 +401,7 @@ test('scroll viewport stays inside clipped modal corners when enlarged',async({p
  await page.addStyleTag({content:'.story-modal {font-size:125%;} .opponent-story-copy {font-size:22px!important;}'});
  const dialog=page.getByRole('dialog',{name:'Friend',exact:true}),content=dialog.locator('.modal-content');
  await expect.poll(()=>content.evaluate(el=>el.scrollHeight>el.clientHeight)).toBe(true);
+ await waitForOverlayEntry(dialog);
  const geometry=await dialog.evaluate(el=>{const outer=el.getBoundingClientRect(),inner=el.querySelector('.modal-content').getBoundingClientRect();return {top:inner.top-outer.top,bottom:outer.bottom-inner.bottom,left:inner.left-outer.left,right:outer.right-inner.right};});
  expect(geometry.top).toBeGreaterThanOrEqual(24);expect(geometry.bottom).toBeGreaterThanOrEqual(24);expect(geometry.left).toBeGreaterThanOrEqual(10);expect(geometry.right).toBeGreaterThanOrEqual(10);
  await content.evaluate(el=>el.scrollTop=el.scrollHeight);await expect(dialog.getByRole('button',{name:'Start a friend game'})).toBeInViewport();await expect(dialog.getByRole('button',{name:'Close opponent story'})).toBeInViewport();
