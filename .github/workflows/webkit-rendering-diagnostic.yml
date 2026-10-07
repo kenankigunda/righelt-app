@@ -18,17 +18,17 @@ jobs:
       - name: Compare rendering interventions against the same local application
         run: |
           mkdir -p test-results/webkit-rendering-diagnostic
-          node scripts/resources/cli.mjs run --kind preview -- node scripts/e2e-stack.mjs > test-results/webkit-rendering-diagnostic/stack.log 2>&1 &
+          node scripts/resources/cli.mjs run --kind preview -- node scripts/e2e-auth-stack.mjs > test-results/webkit-rendering-diagnostic/stack.log 2>&1 &
           stack_pid=$!
           trap 'kill -TERM "$stack_pid" 2>/dev/null || true; wait "$stack_pid" || true' EXIT
           ready=false
           for attempt in $(seq 1 120); do
-            if curl --fail --silent http://127.0.0.1:9888/ > /dev/null; then ready=true; break; fi
+            if curl --insecure --fail --silent https://127.0.0.1:9988/ > /dev/null; then ready=true; break; fi
             if ! kill -0 "$stack_pid" 2>/dev/null; then cat test-results/webkit-rendering-diagnostic/stack.log; exit 1; fi
             sleep 1
           done
           if [ "$ready" != true ]; then cat test-results/webkit-rendering-diagnostic/stack.log; exit 1; fi
-          node scripts/resources/cli.mjs run --kind heavy -- node scripts/diagnose-webkit-rendering.mjs --url http://127.0.0.1:9888 --rounds 2 --trace on --variants baseline,grid-stepped,grid-static,baseline-repeat
+          node scripts/resources/cli.mjs run --kind heavy -- node scripts/diagnose-webkit-contexts.mjs
       - name: Preserve measurements, traces, and stack logs
         if: always()
         uses: actions/upload-artifact@v4
