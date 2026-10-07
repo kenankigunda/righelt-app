@@ -12,6 +12,7 @@ export const ACCOUNT_ENTRY_LAYOUT = "separate";
 export const ACCOUNT_SIGNUP_PROFILE = "username-only";
 // Play remains a supported entry contract; Account is also always in the header.
 export const ACCOUNT_ENTRY_POINTS = "play";
+export const ACCOUNT_HEADER_ENTRY = "always";
 const LOGIN_HINT_DELAY_MS = 5000;
 const escapeHtml = (value) =>
   String(value ?? "").replace(
