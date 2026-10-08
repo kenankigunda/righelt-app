@@ -1,6 +1,7 @@
 import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { test, expect } from "@playwright/test";
 import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
+import { AUTH_REQUEST_HEADER, AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION, SESSION_CONTEXT_HEADER } from "../../packages/shared-types/src/auth-policy.js";
 
 const password = "A long invite test password 482";
 const dialog = page => page.getByTestId("account-dialog");
@@ -31,12 +32,23 @@ async function register(page, username, play = false) {
   }
 }
 
-async function signOut(page) {
-  await page.getByRole("button", { name: "Account", exact: true }).click();
-  await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
-  await expect(dialog(page)).not.toBeVisible();
-  await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
-  await expect(page.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+async function returningAccount(request, baseURL, username) {
+  // Provision only the login prerequisite in an isolated API cookie jar.
+  // The shared invite and the visitor's entire login journey stay in the UI.
+  const headers = {
+    Origin: new URL(baseURL).origin,
+    [AUTH_REQUEST_HEADER]: "1",
+    [AUTH_PROTOCOL_HEADER]: String(AUTH_PROTOCOL_VERSION),
+  };
+  const registered = await request.post("/api/auth/register", { headers, data: { username, password } });
+  expect(registered.status()).toBe(200);
+  const session = await registered.json();
+  expect(session.account.username).toBe(username);
+  expect(session.contextId).toBeTruthy();
+  const loggedOut = await request.post("/api/auth/logout", {
+    headers: { ...headers, [SESSION_CONTEXT_HEADER]: session.contextId }, data: {},
+  });
+  expect(loggedOut.status()).toBe(200);
 }
 
 async function sharedInvite(host) {
@@ -79,7 +91,7 @@ async function playHostMove(host) {
 }
 
 for (const method of ["login", "registration"]) {
-  test(`a shared player invite survives ${method} and preserves its destination`, async ({ page, browser }) => {
+  test(`a shared player invite survives ${method} and preserves its destination`, async ({ page, browser, request, baseURL }) => {
     const invite = await sharedInvite(page);
     const context = await browser.newContext({ ignoreHTTPSErrors: true });
     let visitor;
@@ -103,7 +115,7 @@ for (const method of ["login", "registration"]) {
         };
       });
       const username = uniqueName();
-      if (method === "login") { await register(visitor, username); await signOut(visitor); }
+      if (method === "login") await returningAccount(request, baseURL, username);
       const joins = [];
       visitor.on("request", request => {
         if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/join"))

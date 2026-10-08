@@ -454,6 +454,11 @@ test("tutorial skipping and completion persist without manual replay resetting t
 });
 
 for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load during a ${gesture} gesture does not swallow the play gate click`, async ({ page }) => {
+  // Hold application time only while preparing the deliberately parked reads.
+  // Real input actionability can take longer than the normal read deadline.
+  const clockStart = new Date("2026-01-01T00:00:00Z");
+  await page.clock.install({ time: clockStart });
+  await page.clock.pauseAt(new Date(clockStart.getTime() + 60 * 60 * 1000));
   let release;
   const released = new Promise(resolve => { release = resolve; });
   const heldSections = new Set();
@@ -475,11 +480,14 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
     const trigger = page.getByTestId("home-create-game");
     await expect(trigger).toBeVisible();
     await expect.poll(() => [...heldSections].sort()).toEqual(["my", "other"]);
+    await expect(page.getByTestId("home-section-skeleton")).toHaveCount(2);
     const originalTrigger = await trigger.elementHandle();
     expect(originalTrigger).not.toBeNull();
     if (gesture === "pointer") { await trigger.hover(); await page.mouse.down(); }
     else { await trigger.focus(); await page.keyboard.down("Space"); }
     // Home loading awaits both sections. Finish both while activation is held.
+    // The unchanged application deadline applies once real reads can proceed.
+    await page.clock.resume();
     const refreshed = Promise.all(["my", "other"].map(async section => {
       const response = await page.waitForResponse(response => {
         const url = new URL(response.url());
@@ -498,11 +506,20 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
     if (gesture === "pointer") await page.mouse.up();
     else await page.keyboard.up("Space");
     await expect(dialog(page)).toBeVisible();
+    // Rendering is deferred while activation is held. Check its success after
+    // release, so an error path cannot masquerade as a finished home load.
+    await expect(page.getByText("Loading games...", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.__righeltLastError)).toBeFalsy();
     expect(creates).toHaveLength(0);
     await expect(page).not.toHaveURL(/#\/game\//);
   } finally {
     release();
-    await page.unrouteAll({ behavior: "wait" });
+    if (!page.isClosed()) {
+      await page.clock.resume();
+      if (gesture === "pointer") await page.mouse.up();
+      else await page.keyboard.up("Space");
+      await page.unrouteAll({ behavior: "wait" });
+    }
   }
 });
 
