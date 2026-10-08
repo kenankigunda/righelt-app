@@ -91,9 +91,9 @@ test("registration helper waits for a failed bootstrap retry before submitting",
   }
 });
 test("registration helper retries one failed continuation read without repeating account or game creation", async ({ page }) => {
-  let registrations = 0, creates = 0, failedReads = 0, retriedReads = 0, release, entered;
+  let registrations = 0, creates = 0, failedReads = 0, retriedReads = 0, release, failed;
   const held = new Promise(resolve => { release = resolve; });
-  const retry = new Promise(resolve => { entered = resolve; });
+  const readFailed = new Promise(resolve => { failed = resolve; });
   page.on("request", request => {
     const path = new URL(request.url()).pathname;
     if (request.method() === "POST" && path === "/api/auth/register") registrations++;
@@ -101,17 +101,26 @@ test("registration helper retries one failed continuation read without repeating
   });
   await page.route("**/api/shell/games?**", async route => {
     if (registrations && new URL(route.request().url()).searchParams.get("section") === "other") {
-      if (!failedReads) { failedReads++; await route.abort("connectionreset"); return; }
+      if (!failedReads) {
+        failedReads++;
+        await route.abort("connectionreset");
+        failed();
+        return;
+      }
       retriedReads++;
-      entered();
       await held;
     }
     await route.continue();
   });
   const registration = register(page, uniqueName(), { gate: true }).then(value => ({ value }), error => ({ error }));
+  const stoppedBeforeRetry = registration.then(outcome => {
+    throw outcome.error ?? new Error("Registration completed before the held continuation retry");
+  });
   try {
-    await expect.poll(() => retriedReads).toBe(1);
-    await retry;
+    // Navigation and registration have their own waits. Start this assertion's
+    // existing budget only after the failure whose recovery it measures.
+    await Promise.race([readFailed, stoppedBeforeRetry]);
+    await Promise.race([expect.poll(() => retriedReads).toBe(1), stoppedBeforeRetry]);
     expect(registrations).toBe(1);
     expect(creates).toBe(0);
     await expect(page.getByRole("button", { name: "Start a friend game", exact: true })).not.toBeVisible();
@@ -124,6 +133,7 @@ test("registration helper retries one failed continuation read without repeating
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
   } finally {
     release();
+    await registration;
     await page.unrouteAll({ behavior: "wait" });
   }
 });
