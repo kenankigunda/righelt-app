@@ -9,7 +9,8 @@ import { randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { LOCAL_DEV_PORT_VARIANTS, resolveLocalApiPort } from "../apps/web/local-dev-ports.js";
-import { installProxyDiagnostics } from "./auth-proxy-diagnostics.mjs";
+import { installProxyRepair } from "./auth-proxy-diagnostics.mjs";
+import { observeAuthService } from "./auth-stack-diagnostics.mjs";
 
 const root = process.cwd();
 const webPort = String(LOCAL_DEV_PORT_VARIANTS.find(variant => variant.suffix === "auth-e2e").webPort);
@@ -18,17 +19,28 @@ const origin = `https://127.0.0.1:${webPort}`;
 const temporary = await mkdtemp(path.join(os.tmpdir(), "righelt-auth-e2e-"));
 const persist = path.join(temporary, "state");
 const children = new Set();
+const serviceReceipts = [];
+const runId = path.basename(temporary);
+const privateLogs = path.join(root, "test-results/auth-stack-private", runId);
+const diagnostics = path.join(root, "test-results/auth-stack-diagnostics", runId);
+let diagnosticsFailed = false;
 let stopping = false;
 let control;
 let proxyDiagnosticsInstallation;
 
-function run(args, { cwd = root, service = false, captureStderr = false } = {}) {
+function run(args, { cwd = root, service = null, captureStderr = false } = {}) {
   if (stopping) throw new Error("Account stack is stopping");
-  const child = spawnAuthStackCommand(args, { cwd, env: args.includes("https") ? localHttpsEnvironment({ cwd }) : process.env, service, captureStderr });
+  const env = args.includes("https") ? localHttpsEnvironment({ cwd }) : { ...process.env };
+  const logDirectory = path.join(privateLogs, service || "setup");
+  const child = spawnAuthStackCommand(args, { cwd, env: { ...env, WRANGLER_LOG_PATH: logDirectory }, service: Boolean(service), captureStderr });
   children.add(child);
   child.on("close", () => children.delete(child));
   if (service) {
-    child.on("close", code => { if (!stopping) void shutdown(code || 1); });
+    serviceReceipts.push(observeAuthService(child, { service, logDirectory,
+      outputFile: path.join(diagnostics, `${service}.json`), isStopping: () => stopping,
+      onUnexpectedExit: code => { void shutdown(code); },
+      onDiagnosticError: () => { diagnosticsFailed = true; console.error("[auth-e2e] Could not record service exit diagnostics"); },
+    }));
     return child;
   }
   return new Promise((resolve, reject) => {
@@ -48,7 +60,10 @@ async function shutdown(code = 0) {
   stopping = true;
   control?.close();
   const cleaned = await Promise.all([...children].map(stopAuthStackCommand));
-  if (cleaned.some(ok => !ok)) code = 1;
+  const receipts = await Promise.all(serviceReceipts);
+  // A concurrent external shutdown must not hide an initiating service exit
+  // while its diagnostic file is still being read.
+  if (cleaned.some(ok => !ok) || diagnosticsFailed || receipts.some(receipt => !receipt.expected)) code = 1;
   try { const restore = await proxyDiagnosticsInstallation; await restore?.(); }
   catch (error) { console.error(error); code = 1; }
   await rm(temporary, { recursive: true, force: true });
@@ -74,10 +89,9 @@ async function ready(url) {
   throw new Error(`Local account stack not ready: ${url}`);
 }
 try {
-  if (process.env.RIGHELT_AUTH_PROXY_DIAGNOSTICS === "1") {
-    proxyDiagnosticsInstallation = installProxyDiagnostics();
-    await proxyDiagnosticsInstallation;
-  }
+  // Test-only backport of the reviewed worker-identity fix. No request retries.
+  proxyDiagnosticsInstallation = installProxyRepair();
+  await proxyDiagnosticsInstallation;
   await mkdir(persist, { recursive: true });
   const apiConfig = path.join(temporary, "api.toml");
   let api = await readFile(path.join(root, "apps/api/wrangler.toml"), "utf8");
@@ -112,7 +126,7 @@ try {
   await writeFile(fixtureFile,seedSql);
   await run([...d1,"execute","DB","--config",apiConfig,"--local","--persist-to",persist,"--file",fixtureFile]);
   run(["exec", "wrangler", "dev", ...configs.flatMap(file => ["--config", file]), "--local", "--port", apiPort,
-    "--inspector-port", "9997", "--persist-to", persist], { service: true });
+    "--inspector-port", "9997", "--persist-to", persist], { service: "api" });
   await ready(`http://127.0.0.1:${apiPort}/api/health`);
   // Test-runner-only loopback control; never exposed through Pages or application routes.
   // Fixed SQL operations only, rejecting browser-origin requests. This is not an auth bypass.
@@ -121,7 +135,7 @@ try {
       { captureStderr: true })
   )).listen(Number(webPort) + 100, "127.0.0.1");
   run(["exec", "wrangler", "pages", "dev", ".", "--port", webPort, "--local-protocol", "https", "--inspector-port", "9998"],
-    { cwd: path.join(root, "apps/web"), service: true });
+    { cwd: path.join(root, "apps/web"), service: "web" });
   await ready(origin);
   console.log(`[auth-e2e] Ready at ${origin}`);
 } catch (error) {

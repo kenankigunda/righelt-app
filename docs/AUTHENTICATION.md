@@ -57,6 +57,10 @@ The pinned local runtime delays some HTTP-triggered socket close handshakes by a
 
 The runner has a separate loopback-only fixture endpoint on port 10088. It accepts fixed fixture operations to clear rate-limit counters, expire sessions, activate the immutable canary cutover and change maintenance. The cutover runbook lists their exact scope. Browser-origin requests are rejected. These operations are absent from the application Worker and Pages routes. Hard limits remain enabled during each case.
 
+The isolated stack applies a source-guarded backport of [Wrangler's worker-origin comparison fix](https://github.com/cloudflare/workers-sdk/pull/14593) to the pinned 4.67.0 dependency and restores its original bytes on cleanup. Failed reads against an unchanged worker now fail promptly instead of waiting for a reload that never occurred. Genuine reload behavior remains unchanged, and mutations are never automatically retried. This does not prevent or explain intermittent underlying connection loss. A dependency update must replace or re-review the guarded backport, not bypass its source check.
+
+Each service exit records its supervisor identity, code, signal and fixed error categories in `test-results/auth-stack-diagnostics`. CI uploads these safe receipts. Raw Wrangler logs remain in the ignored `test-results/auth-stack-private` directory locally and are not uploaded because they can contain bindings or request data. Missing raw logs and unrecognized errors remain unknown. Unexpected service exits still fail the stack and trigger descendant cleanup.
+
 The account suite runs separately from the existing guest-mode regression suite, and both are included in `pnpm test` and CI. Local runtime results do not establish deployed hashing resource use, actual Durable Object hibernation, or physical iPhone/in-app-browser acceptance.
 
 The public `AUTH_TURNSTILE_SITE_KEY` value is included in account-enabled bootstrap responses. Keep `TURNSTILE_SECRET` server-side. Without a configured public key, a required challenge stops the form with a temporary-unavailable message; it never bypasses rate limits.

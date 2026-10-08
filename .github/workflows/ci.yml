@@ -565,9 +565,8 @@ jobs:
         env:
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/auth-e2e/results.xml
           PLAYWRIGHT_OUTPUT_DIR: test-results/auth-e2e/artifacts
-          RIGHELT_AUTH_PROXY_DIAGNOSTICS: "1"
         run: |
-          node --test scripts/auth-proxy-diagnostics.test.mjs
+          node --test scripts/auth-proxy-diagnostics.test.mjs scripts/auth-proxy-identity.test.mjs scripts/auth-stack-diagnostics.test.mjs
           pnpm test:e2e:auth
 
       - name: Upload E2E JUnit
@@ -585,6 +584,14 @@ jobs:
           name: playwright-auth-e2e-debug
           path: test-results/auth-e2e/artifacts
           if-no-files-found: ignore
+
+      - name: Upload sanitized account server exit diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: auth-stack-diagnostics-${{ github.run_attempt }}
+          path: test-results/auth-stack-diagnostics
+          if-no-files-found: warn
 
       - name: Record exact CI environment
         if: always()

@@ -54,18 +54,23 @@ export function classifyProxyRejection(error, request, oldUrl, newUrl) {
   };
 }
 
-export function instrumentProxySource(source, version) {
+export function prepareProxySource(source, version) {
   if (version !== VERSION || hash(source) !== SOURCE_HASH || source.split(TARGET).length !== 2)
     throw new Error("Auth proxy diagnostics require the exact reviewed Wrangler 4.67.0 source");
   const diagnostic = `        try { console.error("[auth-e2e-proxy-rejection]", JSON.stringify((${classifyProxyRejection.toString()})(error, request, userWorkerUrl, newUserWorkerUrl))); } catch {}\n`;
-  return source.replace(TARGET, TARGET + diagnostic);
+  // Backport workers-sdk#14593. The forwarded URL includes the request path
+  // and query, while the current worker URL is a base URL. Compare identities
+  // so an unchanged worker's failed read cannot be parked as a phantom reload.
+  return source.replace(TARGET, TARGET + diagnostic)
+    .replace("if (userWorkerUrl.href === newUserWorkerUrl?.href)",
+      "if (userWorkerUrl.origin === newUserWorkerUrl?.origin)");
 }
 
-export async function installProxyDiagnostics(packageFile = createRequire(import.meta.url).resolve("wrangler/package.json")) {
+export async function installProxyRepair(packageFile = createRequire(import.meta.url).resolve("wrangler/package.json")) {
   const metadata = JSON.parse(await readFile(packageFile, "utf8"));
   const file = path.join(path.dirname(packageFile), "wrangler-dist/ProxyWorker.js");
   const original = await readFile(file, "utf8");
-  const patched = instrumentProxySource(original, metadata.version);
+  const patched = prepareProxySource(original, metadata.version);
   await writeFile(file, patched);
   let restored = false;
   return async () => {
