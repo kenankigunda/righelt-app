@@ -32,7 +32,8 @@ function run(args, { cwd = root, service = null, captureStderr = false } = {}) {
   if (stopping) throw new Error("Account stack is stopping");
   const env = args.includes("https") ? localHttpsEnvironment({ cwd }) : { ...process.env };
   const logDirectory = path.join(privateLogs, service || "setup");
-  const child = spawnAuthStackCommand(args, { cwd, env: { ...env, WRANGLER_LOG_PATH: logDirectory }, service: Boolean(service), captureStderr });
+  const child = spawnAuthStackCommand(args, { cwd, env: { ...env, WRANGLER_LOG_PATH: logDirectory,
+    RIGHELT_AUTH_FRESH_CONNECTIONS: service ? "1" : "0" }, service: Boolean(service), captureStderr });
   children.add(child);
   child.on("close", () => children.delete(child));
   if (service) {

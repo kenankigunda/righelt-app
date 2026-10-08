@@ -566,7 +566,7 @@ jobs:
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/auth-e2e/results.xml
           PLAYWRIGHT_OUTPUT_DIR: test-results/auth-e2e/artifacts
         run: |
-          node --test scripts/auth-proxy-diagnostics.test.mjs scripts/auth-proxy-identity.test.mjs scripts/auth-stack-diagnostics.test.mjs
+          node --test scripts/auth-proxy-diagnostics.test.mjs scripts/auth-proxy-identity.test.mjs scripts/auth-stack-diagnostics.test.mjs scripts/auth-worker-connections.test.mjs scripts/auth-worker-runtime.test.mjs
           pnpm test:e2e:auth
 
       - name: Upload E2E JUnit

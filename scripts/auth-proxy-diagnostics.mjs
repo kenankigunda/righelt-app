@@ -5,6 +5,7 @@ import path from "node:path";
 
 const VERSION = "4.67.0";
 const SOURCE_HASH = "9810e87b168d4b1d27c553b1342ca939566810b5920e8f11cf32012188a522b2";
+const RUNTIME_HASH = "5597846c83fce5efd353be1f77270d976b1ccde8f7a40aa99b929f8d7c296758";
 const TARGET = "        const newUserWorkerUrl = this.proxyData && urlFromParts(this.proxyData.userWorkerUrl);\n";
 const hash = source => createHash("sha256").update(source).digest("hex");
 
@@ -66,18 +67,37 @@ export function prepareProxySource(source, version) {
       "if (userWorkerUrl.origin === newUserWorkerUrl?.origin)");
 }
 
+export function prepareRuntimeSource(source, version) {
+  const ready = "const userWorkerUrl = await this.#mf.ready;";
+  const dispose = "await this.#mf?.dispose();";
+  if (version !== VERSION || hash(source) !== RUNTIME_HASH
+    || source.split(ready).length !== 3 || source.split(dispose).length !== 3)
+    throw new Error("Account worker connections require the exact reviewed Wrangler 4.67.0 runtime");
+  const helper = `await import(${JSON.stringify(new URL("./auth-worker-connections.mjs", import.meta.url).href)})`;
+  return source.replaceAll(ready,
+    `const userWorkerUrl = await (${helper}).workerConnectionOrigin(this, await this.#mf.ready, () => id === this.#currentBundleId);`)
+    .replaceAll(dispose, `await (${helper}).closeWorkerConnections(this);\n        ${dispose}`);
+}
+
 export async function installProxyRepair(packageFile = createRequire(import.meta.url).resolve("wrangler/package.json")) {
   const metadata = JSON.parse(await readFile(packageFile, "utf8"));
-  const file = path.join(path.dirname(packageFile), "wrangler-dist/ProxyWorker.js");
-  const original = await readFile(file, "utf8");
-  const patched = prepareProxySource(original, metadata.version);
-  await writeFile(file, patched);
-  let restored = false;
-  return async () => {
-    if (restored) return;
-    if (await readFile(file, "utf8") !== patched)
-      throw new Error("Auth proxy diagnostics source changed during the run; refusing to overwrite it");
-    await writeFile(file, original);
-    restored = true;
+  const entries = [];
+  for (const [name, prepare] of [["ProxyWorker.js", prepareProxySource], ["cli.js", prepareRuntimeSource]]) {
+    const file = path.join(path.dirname(packageFile), "wrangler-dist", name);
+    const original = await readFile(file, "utf8");
+    entries.push({ file, original, patched: prepare(original, metadata.version), written: false });
+  }
+  const restore = async () => {
+    let changed = false;
+    for (const entry of entries) {
+      if (!entry.written) continue;
+      if (await readFile(entry.file, "utf8") !== entry.patched) { changed = true; continue; }
+      await writeFile(entry.file, entry.original); entry.written = false;
+    }
+    if (changed) throw new Error("Auth proxy source changed during the run; refusing to overwrite it");
   };
+  try {
+    for (const entry of entries) { await writeFile(entry.file, entry.patched); entry.written = true; }
+  } catch (error) { await restore(); throw error; }
+  return restore;
 }
