@@ -13,6 +13,14 @@ async function open(page) {
   await openPlaySignIn(page);
   await expect(dialog(page).getByRole("heading", { name: "Log in to start playing" })).toBeVisible();
 }
+// Install before navigation so native and controlled timer IDs never mix.
+// The one-hour gap exceeds this suite's entire test budget, keeping the pause
+// target ahead of browser time even when a protocol call is delayed.
+async function installRunningClock(page) {
+  const start = new Date("2026-01-01T00:00:00Z");
+  await page.clock.install({ time: start });
+  return new Date(start.getTime() + 60 * 60 * 1000);
+}
 async function create(page) {
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
   await expect(dialog(page).getByRole("heading", { name: "Create account", exact: true })).toBeVisible();
@@ -275,9 +283,9 @@ test("an unavailable common-password list is disclosed without blocking authorit
 test("sign-in creation hint waits five seconds after username blur without routing or looking up names", async ({ page }) => {
   let lookups = 0;
   page.on("request", request => { if (new URL(request.url()).pathname === "/api/auth/username") lookups++; });
+  const pauseAt = await installRunningClock(page);
   await open(page);
-  await page.clock.install();
-  await page.clock.pauseAt(new Date());
+  await page.clock.pauseAt(pauseAt);
   const hint = dialog(page).locator("[data-existing-hint]");
   const username = dialog(page).getByLabel("Username", { exact: true });
   const secret = dialog(page).getByLabel("Password", { exact: true });
@@ -296,9 +304,9 @@ test("sign-in creation hint waits five seconds after username blur without routi
 });
 
 test("password input, username edits and refocus cancel the delayed sign-in hint", async ({ page }) => {
+  const pauseAt = await installRunningClock(page);
   await open(page);
-  await page.clock.install();
-  await page.clock.pauseAt(new Date());
+  await page.clock.pauseAt(pauseAt);
   const hint = dialog(page).locator("[data-existing-hint]");
   const username = dialog(page).getByLabel("Username", { exact: true });
   const secret = dialog(page).getByLabel("Password", { exact: true });
@@ -328,8 +336,8 @@ test("password input, username edits and refocus cancel the delayed sign-in hint
 });
 
 test("leaving sign-in or closing the dialog cancels its pending hint", async ({ page }) => {
-  await open(page);
   await page.clock.install();
+  await open(page);
   const username = dialog(page).getByLabel("Username", { exact: true });
   const secret = dialog(page).getByLabel("Password", { exact: true });
   await username.fill("NewPlayer");
@@ -440,6 +448,7 @@ test("revealed username feedback reserves its row while valid edits debounce and
   });
   try {
     await page.emulateMedia({ reducedMotion: "reduce" });
+    const pauseAt = await installRunningClock(page);
     await open(page);
     await create(page);
     await enterUsername(page, uniqueName());
@@ -448,8 +457,7 @@ test("revealed username feedback reserves its row while valid edits debounce and
     await expect(status).toHaveAttribute("data-state", "available");
     const rowHeight = (await status.boundingBox()).height;
     const passwordY = (await secret.boundingBox()).y;
-    await page.clock.install();
-    await page.clock.pauseAt(new Date());
+    await page.clock.pauseAt(pauseAt);
     await enterUsername(page, uniqueName());
     await expect(status).toHaveAttribute("data-state", "pending");
     expect(calls).toBe(1);
@@ -509,10 +517,10 @@ test("wrapped unavailable username feedback keeps its height while editing or cl
 for (const gesture of ["pointer", "keyboard", "drag-away"]) test(`username feedback preserves a Back control during ${gesture} activation`, async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 900 });
   await page.emulateMedia({ reducedMotion: "reduce" });
+  const pauseAt = await installRunningClock(page);
   await open(page);
   await create(page);
-  await page.clock.install();
-  await page.clock.pauseAt(new Date());
+  await page.clock.pauseAt(pauseAt);
   let responded;
   const response = new Promise(resolve => { responded = resolve; });
   await page.route("**/api/auth/username", async route => {

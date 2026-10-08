@@ -24,7 +24,16 @@ async function register(page, username, { gate = false } = {}) {
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
-  await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
+  const play = page.getByRole("button", { name: "Start a friend game", exact: true });
+  const retry = page.locator('[data-action="retry-account-continuation"]');
+  await expect(play.or(retry)).toBeVisible();
+  // A failed post-auth read retains the original play choice. Use its explicit
+  // recovery once, without registering again or choosing a replacement game.
+  if (await retry.isVisible()) {
+    await expect(page.getByRole("alert")).toHaveText("The page could not finish loading. Try again.");
+    await retry.click();
+  }
+  await play.click();
   if (gate) {
     await expect(page).toHaveURL(/#\/game\//);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
@@ -81,6 +90,44 @@ test("registration helper waits for a failed bootstrap retry before submitting",
     await page.unrouteAll({ behavior: "wait" });
   }
 });
+test("registration helper retries one failed continuation read without repeating account or game creation", async ({ page }) => {
+  let registrations = 0, creates = 0, failedReads = 0, retriedReads = 0, release, entered;
+  const held = new Promise(resolve => { release = resolve; });
+  const retry = new Promise(resolve => { entered = resolve; });
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "POST" && path === "/api/auth/register") registrations++;
+    if (request.method() === "POST" && path === "/api/shell/games") creates++;
+  });
+  await page.route("**/api/shell/games?**", async route => {
+    if (registrations && new URL(route.request().url()).searchParams.get("section") === "other") {
+      if (!failedReads) { failedReads++; await route.abort("connectionreset"); return; }
+      retriedReads++;
+      entered();
+      await held;
+    }
+    await route.continue();
+  });
+  const registration = register(page, uniqueName(), { gate: true }).then(value => ({ value }), error => ({ error }));
+  try {
+    await expect.poll(() => retriedReads).toBe(1);
+    await retry;
+    expect(registrations).toBe(1);
+    expect(creates).toBe(0);
+    await expect(page.getByRole("button", { name: "Start a friend game", exact: true })).not.toBeVisible();
+    release();
+    const outcome = await registration;
+    if (outcome.error) throw outcome.error;
+    expect(failedReads).toBe(1);
+    expect(registrations).toBe(1);
+    expect(creates).toBe(1);
+    await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
+
 async function makeAccountMove(page) {
   const action = await page.evaluate(async () => {
     const session = await (await fetch("/api/auth/session")).json();
