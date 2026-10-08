@@ -54,16 +54,17 @@ export const createFakeD1 = () => {
       return rows.filter(
         (row) =>
           row.has_smoke_identity === 0 &&
-          (row.player1_identity_id === identityId || row.player2_identity_id === identityId),
+          (row.player1_identity_id === identityId || row.player2_identity_id === identityId) &&
+          (JSON.parse(row.state_json).board?.state?.outcome?.status ?? "ongoing") === "ongoing",
       );
     }
-    if (normalized.includes("WHERE NOT (COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)")) {
+    if (normalized.includes("WHERE (NOT (COALESCE(player1_identity_id, '') = ?1 OR COALESCE(player2_identity_id, '') = ?1)")) {
       const identityId = params[0];
       return rows.filter(
         (row) =>
           row.has_smoke_identity === 0 &&
-          row.player1_identity_id !== identityId &&
-          row.player2_identity_id !== identityId,
+          ((row.player1_identity_id !== identityId && row.player2_identity_id !== identityId) ||
+           (JSON.parse(row.state_json).board?.state?.outcome?.status ?? "ongoing") !== "ongoing"),
       );
     }
     return rows;

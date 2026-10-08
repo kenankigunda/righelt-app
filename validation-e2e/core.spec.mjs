@@ -20,7 +20,7 @@ test('create, move, viewer live update, reload and reconnect',async({page,contex
  if(info.project.use.hasTouch)expect(await page.evaluate(()=>navigator.maxTouchPoints>0&&!matchMedia('(any-hover: hover)').matches)).toBe(true);
  const options=info.project.use;const viewerContext=await browser.newContext({baseURL,viewport:options.viewport,isMobile:options.isMobile,hasTouch:options.hasTouch});const viewer=await viewerContext.newPage();
  try{
-  const {gameHash}=await createGameFromHome(page);
+  const {gameHash}=await createGameFromHome(page,capabilities);
   const players=page.locator('[data-action="switch-game-panel"][data-panel="players"]');if(await players.isVisible())await players.click();
   await page.getByRole('button',{name:'Play as both players',exact:true}).click();
   await expect(page.getByRole('button',{name:'Play as both players',exact:true})).toHaveCount(0);

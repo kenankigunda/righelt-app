@@ -1,4 +1,4 @@
-import { enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
+import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { test, expect } from "@playwright/test";
 import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
 
@@ -22,6 +22,7 @@ async function register(page, username, play = false) {
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
+  await continueFriendIntroduction(page);
   await expect(page).toHaveURL(/#\/game\//);
   if (!play) await page.goto("/");
   if (play) {

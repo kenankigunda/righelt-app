@@ -20,19 +20,15 @@ test("participant badges show disconnect and reconnect transitions for the joine
     await acceptPendingRequest(owner.page);
 
     await expect(guest.page.getByTestId("game-role")).toContainText("Player 2");
-    await expect(owner.page.getByTestId("participant-player-2")).toContainText("Connected");
+    await expect(owner.page.getByTestId("participant-player-2").getByRole("img",{name:"Connected",exact:true})).toBeVisible();
 
     const guestGameUrl = guest.page.url();
     await guest.page.goto("about:blank");
-    await expect
-      .poll(async () => owner.page.getByTestId("participant-player-2").textContent())
-      .toContain("Disconnected");
+    await expect(owner.page.getByTestId("participant-player-2").getByRole("img",{name:"Disconnected",exact:true})).toBeVisible();
 
     await guest.page.goto(guestGameUrl);
     await expect(guest.page.getByTestId("game-role")).toContainText("Player 2");
-    await expect
-      .poll(async () => owner.page.getByTestId("participant-player-2").textContent())
-      .toContain("Connected");
+    await expect(owner.page.getByTestId("participant-player-2").getByRole("img",{name:"Connected",exact:true})).toBeVisible();
   } finally {
     await closeContextQuietly(owner.context);
     await closeContextQuietly(guest.context);

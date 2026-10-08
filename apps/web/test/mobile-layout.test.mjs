@@ -239,7 +239,7 @@ test("wide-screen shell sticky columns only target the left and board stacks", (
   );
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-flyout\s*\{[\s\S]*transform:\s*translateY\(calc\(100%\s*\+\s*1rem\)\);/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-flyout\s*\{[\s\S]*--flyout-offset-x:\s*0%;\s*--flyout-offset-y:\s*100%;/s,
   );
   assert.match(
     shellStylesSource,
@@ -247,7 +247,7 @@ test("wide-screen shell sticky columns only target the left and board stacks", (
   );
   assert.match(
     shellStylesSource,
-    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-flyout\.is-closing\s*\{[\s\S]*transform:\s*translateY\(100%\);/s,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*\.shell-flyout\.is-closing\s*\{[\s\S]*transform:\s*translate\(var\(--flyout-offset-x\),\s*var\(--flyout-offset-y\)\);/s,
   );
 });
 

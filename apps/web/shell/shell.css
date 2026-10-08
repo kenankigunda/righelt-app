@@ -128,11 +128,11 @@ body {
 }
 
 .shell-route-transition-layer[data-phase="revealing"] .shell-route-transition-layer-backdrop {
-  animation: shell-game-entry-backdrop-out var(--shell-game-entry-reveal-ms, 200ms) cubic-bezier(0.18, 0.72, 0.24, 1) forwards;
+  animation: shell-game-entry-backdrop-out var(--shell-game-entry-reveal-ms, 200ms) var(--shell-game-entry-easing) forwards;
 }
 
 .shell-route-transition-layer[data-phase="covering"] .shell-route-transition-layer-swipe {
-  animation: shell-game-entry-swipe-in var(--shell-game-entry-cover-ms, 160ms) cubic-bezier(0.18, 0.72, 0.24, 1) forwards;
+  animation: shell-game-entry-swipe-in var(--shell-game-entry-cover-ms, 160ms) var(--shell-game-entry-easing) forwards;
 }
 
 .shell-route-transition-layer[data-phase="covered"] .shell-route-transition-layer-swipe {
@@ -140,11 +140,11 @@ body {
 }
 
 .shell-route-transition-layer[data-phase="revealing"] .shell-route-transition-layer-swipe {
-  animation: shell-game-entry-swipe-out var(--shell-game-entry-reveal-ms, 200ms) cubic-bezier(0.18, 0.72, 0.24, 1) forwards;
+  animation: shell-game-entry-swipe-out var(--shell-game-entry-reveal-ms, 200ms) var(--shell-game-entry-easing) forwards;
 }
 
 #app[data-shell-transition-active="true"][data-shell-transition="game-entry"][data-shell-transition-phase="revealing"][data-shell-route="game"] .shell-main-content {
-  animation: shell-game-entry-content-reveal var(--shell-game-entry-reveal-ms, 200ms) cubic-bezier(0.18, 0.72, 0.24, 1);
+  animation: shell-game-entry-content-reveal var(--shell-game-entry-reveal-ms, 200ms) var(--shell-game-entry-easing);
 }
 
 #app[data-shell-transition-active="true"][data-shell-transition="game-entry"][data-shell-transition-phase="revealing"][data-shell-route="game"] .game-shell-frame,
@@ -435,7 +435,7 @@ button.secondary,
   box-shadow: 0 1px 0 rgba(17, 45, 39, 0.1);
 }
 
-[data-hover-capability="hover"] :is(.shell-header, .shell-flyout, .panel:not([data-shell-panel="board"])) button:not(.secondary):not(.warn):not(.danger):not(:disabled):hover,
+[data-hover-capability="hover"] :is(.shell-header, .shell-flyout, .panel:not([data-shell-panel="board"])) button:not(.secondary):not(.warn):not(.danger):not(.ui-icon-button):not(.opponent-choice):not(.participant-profile):not(:disabled):hover,
 [data-hover-capability="hover"] :is(.shell-header, .shell-flyout, .panel:not([data-shell-panel="board"])) .button-link:not(.secondary):not([aria-disabled="true"]):hover {
   background: #0b6f52;
   border-color: rgba(255, 255, 255, 0.72);
@@ -633,7 +633,9 @@ button.button-pending,
 #app[data-shell-route="game"][data-shell-layout-mode="narrow"] .game-shell-track-wrap {
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  /* The transform owns horizontal navigation. Hidden would allow focus or
+     scrollIntoView to introduce a second, conflicting horizontal offset. */
+  overflow: clip;
 }
 
 #app[data-shell-route="game"][data-shell-layout-mode="narrow"] .game-shell-track {
@@ -925,7 +927,7 @@ button.is-pressing,
 
 button.button-release-bounce,
 .button-link.button-release-bounce {
-  animation: history-item-release 140ms cubic-bezier(0.18, 0.72, 0.24, 1);
+  animation: history-item-release 140ms var(--shell-game-entry-easing);
 }
 
 .participant-list,
@@ -984,7 +986,7 @@ button.button-release-bounce,
 }
 
 .history-item.history-item-release {
-  animation: history-item-release 140ms cubic-bezier(0.18, 0.72, 0.24, 1);
+  animation: history-item-release 140ms var(--shell-game-entry-easing);
 }
 
 .history-item.history-item-pending {
@@ -1308,7 +1310,7 @@ button.button-release-bounce,
 }
 
 .mini-board-card-link-surface.button-release-bounce {
-  animation: history-item-release 140ms cubic-bezier(0.18, 0.72, 0.24, 1);
+  animation: history-item-release 140ms var(--shell-game-entry-easing);
 }
 
 .home-games-section + .home-games-section {
@@ -1741,6 +1743,8 @@ textarea:focus-visible {
 }
 
 .shell-flyout {
+  --flyout-offset-x:100%;
+  --flyout-offset-y:0%;
   position: static;
   width: min(26rem, 100vw);
   height: 100vh;
@@ -1749,7 +1753,7 @@ textarea:focus-visible {
   border: 1px solid var(--line);
   border-radius: 0;
   box-shadow: 0 24px 60px rgba(29, 45, 53, 0.18);
-  transform: translateX(calc(100% + 2rem));
+  transform: translate(var(--flyout-offset-x),var(--flyout-offset-y));
   opacity: 0;
   pointer-events: none;
   transition:
@@ -1768,7 +1772,7 @@ textarea:focus-visible {
 }
 
 .shell-flyout.is-closing {
-  transform: translateX(100%);
+  transform: translate(var(--flyout-offset-x),var(--flyout-offset-y));
   opacity: 0;
   pointer-events: none;
 }
@@ -1802,23 +1806,6 @@ textarea:focus-visible {
 .shell-flyout-header h2 {
   margin: 0 0 1rem;
   font-size: 1.1rem;
-}
-
-.flyout-close-button {
-  min-width: 2rem;
-  min-height: 2rem;
-  padding: 0.25rem 0.55rem;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ink);
-  border-color: var(--line);
-  line-height: 1;
-  font-size: 1rem;
-}
-
-.flyout-close-button:hover,
-.flyout-close-button:focus-visible {
-  background: rgba(29, 45, 53, 0.08);
 }
 
 .debug-panel {
@@ -2023,7 +2010,9 @@ textarea:focus-visible {
     max-height: 50vh;
     flex: 0 1 50vh;
     min-height: 0;
-    transform: translateY(calc(100% + 1rem));
+    --flyout-offset-x:0%;
+    --flyout-offset-y:100%;
+    transform: translate(var(--flyout-offset-x),var(--flyout-offset-y));
     border-left: 0;
     border-right: 0;
     border-bottom: 0;
@@ -2035,7 +2024,7 @@ textarea:focus-visible {
   }
 
   .shell-flyout.is-closing {
-    transform: translateY(100%);
+    transform: translate(var(--flyout-offset-x),var(--flyout-offset-y));
   }
 
   .shell-header-menu-root {

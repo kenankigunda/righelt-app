@@ -6,13 +6,13 @@ import { createAccountDialog, canonicalEntryUsername, validEntryUsername } from 
 function fixture({ failBlocklist = false } = {}) {
   const listeners = new Map(), nodes = new Map(), timers = new Map(), lookups = [], acts = [], assets = [];
   let tick = 0, generation = 0, markup = "";
-  const document = { body: { append() {} }, activeElement: null, querySelector() { return null; } };
+  const document = { documentElement:{style:{},dataset:{}},defaultView:{scrollX:0,scrollY:0,scrollTo(){}}, body: { append() {} }, activeElement: null, querySelector() { return null; } };
   function node(key) {
     if (!nodes.has(key)) nodes.set(key, { value: "", type: "text", hidden: false, disabled: false, dataset: {}, parentElement: { dataset: {} }, textContent: "", setAttribute(name, value) { this[name] = value; }, focus() { document.activeElement = this; }, closest() { return null; }, querySelectorAll() { return []; } });
     return nodes.get(key);
   }
   const query = key => key === "input" ? [...nodes.values()].find(value => value.name) : nodes.get(key) || null;
-  const element = { dataset: {}, open: false, setAttribute() {}, addEventListener(key, fn) { listeners.set(key, fn); }, showModal() { this.open = true; }, close() { this.open = false; }, replaceChildren() { nodes.clear(); markup = ""; }, querySelector: query, querySelectorAll() { return []; } };
+  const element = { classList:{add(){},remove(){}},dataset: {}, open: false, setAttribute() {}, addEventListener(key, fn) { listeners.set(key, fn); }, showModal() { this.open = true; }, close() { this.open = false; }, replaceChildren() { nodes.clear(); markup = ""; }, querySelector: query, querySelectorAll() { return []; } };
   Object.defineProperty(element, "innerHTML", { get: () => markup, set(value) {
     markup = value; nodes.clear(); const form = node("form"); form.querySelectorAll = () => [node("button[type=submit]")];
     form.dataset.entryMode = value.match(/data-entry-mode="([^"]+)"/)?.[1];

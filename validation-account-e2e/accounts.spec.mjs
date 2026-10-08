@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-import {closeHostInvitation} from '../e2e/support/app.mjs';
+import {closeHostInvitation,continueFriendIntroduction} from '../e2e/support/app.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import {readFile,writeFile} from 'node:fs/promises';
 import {candidateCapabilities} from '../scripts/validation/capabilities.mjs';
@@ -86,9 +86,10 @@ async function settledHome(page){
     await expect(page.getByTestId('resume-slot')).toBeVisible();
     await expect(page.getByTestId('resume-slot').locator('[aria-busy="true"]')).toHaveCount(0);
     await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
-  }else{
-    await expect(page.locator('[data-home-section-root="my"]')).toBeVisible();
   }
+  // Empty Continue playing sections are intentionally absent. Readiness belongs
+  // to the visible action and completed loaders, not the presence of game cards.
+  await expect(page.getByTestId('home-create-game')).toBeEnabled();
 }
 async function accountOpen(page){await page.getByRole('button',{name:'Account',exact:true}).click();await expect(dialog(page)).toBeVisible();}
 async function openSignedOutAccount(page){
@@ -117,7 +118,10 @@ async function login(page,name,secret=password){
     await dialog(page).getByLabel('Password',{exact:true}).fill(secret);
     await dialog(page).getByRole('button',{name:'Sign in',exact:true}).click();
     await expect(dialog(page)).not.toBeVisible();
-    if(capabilities.playAccountEntry&&!sameGame)await closeHostInvitation(page);
+    if(capabilities.playAccountEntry&&!sameGame){
+      await continueFriendIntroduction(page,capabilities);
+      await closeHostInvitation(page);
+    }
     if(sameGame){expect(page.url()).toBe(previousURL);expect(writes).toBe(0);}
   }finally{if(sameGame)page.off('request',observe);}
 }
@@ -135,6 +139,7 @@ async function registerStandalone(page,username){
   if(!capabilities.simplifiedAccounts){await dialog(page).getByLabel('I saved my recovery code').check();await dialog(page).getByRole('button',{name:'Continue',exact:true}).click();}
   await expect(dialog(page)).not.toBeVisible();
   if(capabilities.playAccountEntry){
+    await continueFriendIntroduction(page,capabilities);
     await closeHostInvitation(page);
     await expect(page.getByTestId('game-role')).toContainText('Player 1');
   }
@@ -209,6 +214,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   await dialog(page).getByRole('button',{name:'Continue',exact:true}).click();
   }
   await expect(dialog(page)).not.toBeVisible();
+  await continueFriendIntroduction(page,capabilities);
   await closeHostInvitation(page);await expect(page.getByTestId('game-role')).toContainText('Player 1');
   expect(creates).toBe(1);
   if(capabilities.separateAccountForms)expect((await session(page)).account.displayName).toBe(capabilities.usernameOnlySignup?username:'Validation Signup');

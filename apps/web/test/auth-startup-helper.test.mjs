@@ -19,6 +19,7 @@ test('startup wait cannot combine observations from connecting and retry renders
   }
   const page = {
     getByRole: role => new Locator(role),
+    getByTestId: id => new Locator(id),
     locator: () => new Locator('retry'),
     evaluate: async callback => {
       const current = phase;

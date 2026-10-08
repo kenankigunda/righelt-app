@@ -1,4 +1,4 @@
-import { enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
+import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { test, expect } from "@playwright/test";
 const dialog = page => page.getByTestId("account-dialog");
 
@@ -14,6 +14,7 @@ test("a play attempt during pending logout waits for revocation before opening s
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
+  await continueFriendIntroduction(page,{play:false});
   await page.getByRole("button", { name: "Account", exact: true }).click();
   let release, reached;
   const held = new Promise(resolve => { release = resolve; });

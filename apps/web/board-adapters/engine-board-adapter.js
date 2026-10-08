@@ -1,3 +1,5 @@
+import { renderPieceSymbol } from '../piece-symbols.js';
+export { createInitialState as createInitialBoardSnapshot } from '../generated/packages/game-engine/src/index.js';
 import { BOARD_SIZE, SUPPLY_POINTS } from "../generated/packages/game-engine/src/deterministic.js";
 import { getRushContinuationBlockingPiece } from "../generated/packages/game-engine/src/continuation.js";
 import {
@@ -312,7 +314,10 @@ function buildPieceToken(piece, ghost = false) {
   if (ghost) {
     token.classList.add("ghost");
   }
-  token.textContent = piece.kind === "commander" ? "C" : "";
+  token.setAttribute("role", "img");
+  if (ghost) token.setAttribute("aria-hidden", "true");
+  token.innerHTML = renderPieceSymbol(piece.kind);
+  token.setAttribute("aria-label", `${piece.owner === "P1" ? "Red" : "Blue"} ${piece.kind}`);
   return token;
 }
 
@@ -577,7 +582,7 @@ export function createEngineBoardAdapter() {
     };
   };
 
-  const drawPath = (path, stroke, dashPattern = null, offsetsBySegmentKey = null) => {
+  const drawPath = (path, stroke, dashPattern = null, offsetsBySegmentKey = null, legendKind = null) => {
     if (!overlayLinesEl || !path || path.length < 2) {
       return;
     }
@@ -599,6 +604,7 @@ export function createEngineBoardAdapter() {
       line.setAttribute("y1", String(start.y + offset.y));
       line.setAttribute("x2", String(end.x + offset.x));
       line.setAttribute("y2", String(end.y + offset.y));
+      if (legendKind) line.setAttribute("data-legend-kind", legendKind);
       line.setAttribute("stroke", stroke);
       line.setAttribute("stroke-width", "3");
       line.setAttribute("stroke-linecap", "round");
@@ -847,8 +853,8 @@ export function createEngineBoardAdapter() {
       commandPath,
     );
     if (drawSupplyCommand) {
-      drawPath(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey);
-      drawPath(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey);
+      drawPath(supplyPath, "#2f8e63", "2 6", supplyOffsetsBySegmentKey, "supply");
+      drawPath(commandPath, commandStroke, "2 6", commandOffsetsBySegmentKey, "command");
     }
 
     if (!drawActionPreviews) {
@@ -1318,7 +1324,9 @@ export function createEngineBoardAdapter() {
             } else if (row === BOARD_SIZE - 1 && col === 0) {
               supplyMarker.classList.add("supply-point-p2");
             }
-            supplyMarker.textContent = "◆";
+            supplyMarker.setAttribute("role", "img");
+            supplyMarker.innerHTML = renderPieceSymbol("supply");
+            supplyMarker.setAttribute("aria-label", `${row === 0 ? "Red" : "Blue"} supply point`);
             cell.appendChild(supplyMarker);
           }
 

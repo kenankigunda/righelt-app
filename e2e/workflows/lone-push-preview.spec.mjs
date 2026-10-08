@@ -99,3 +99,21 @@ test("lone auto-selected push targets render the nudge preview and submit the pu
     await closeContextQuietly(context);
   }
 });
+
+
+test("a pushed commander stays below the attacking unit while its window masks board paths", async ({browser,baseURL})=>{
+ const {context,page}=await createIsolatedPage(browser);
+ try {
+  const scenario=structuredClone(LONE_PUSH_PREVIEW_SCENARIO);
+  for(const state of [scenario.initialState,scenario.resultingState]) {
+   state.pieces.find(p=>p.id==='C2').position={row:9,col:9};
+   state.pieces.find(p=>p.id==='U2-2').position={row:9,col:0};
+  }
+  await importScenarioGame(page,scenario,baseURL);
+  await getBoardCell(page,{row:8,col:9}).click();
+  const stack=getBoardCell(page,{row:9,col:9}).locator('[data-push-preview-stack="1"]');
+  await expect(stack.locator('.commander.stacked-underlay')).toBeVisible();
+  const order=await stack.evaluate(el=>({stack:Number(getComputedStyle(el).zIndex),under:Number(getComputedStyle(el.querySelector('.stacked-underlay')).zIndex),top:Number(getComputedStyle(el.querySelector('.stacked-top')).zIndex),opacity:getComputedStyle(el.querySelector('.commander')).opacity}));
+  expect(order.stack).toBeGreaterThanOrEqual(2);expect(order.under).toBeLessThan(order.top);expect(order.opacity).toBe('1');
+ } finally {await closeContextQuietly(context);}
+});

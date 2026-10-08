@@ -16,10 +16,24 @@ test("home cards render, open the full game, and refresh after live progress", a
     const { gameId } = await createGameFromHome(page);
 
     await page.getByRole("link", { name: "Righelt" }).click();
-    const homeCard = page.locator(`[data-game-id="${gameId}"]`).first();
+    const homeCard = page.locator(`.mini-board-card-link-surface[data-game-id="${gameId}"]`).first();
     await expect(homeCard).toBeVisible();
     await expect(homeCard.locator("[data-mini-board-preview]")).toBeVisible();
     await expect(homeCard).toContainText("Move 1");
+    const preview = homeCard.locator('[data-mini-board-preview]');
+    await expect(preview.locator('.cell').first()).toBeVisible();
+    // Exercise the parent patch against a real mounted renderer, including its
+    // unchanged-key fast path. Declarative markup contains no renderer children.
+    await homeCard.evaluate(async card => {
+      const { patchSectionContent } = await import('/shell/dom-patch.js');
+      const root = card.querySelector('[data-mini-board-preview]');
+      window.retainedPreviewCell = root.querySelector('.cell');
+      const next = card.cloneNode(true);
+      next.querySelector('[data-mini-board-preview]').replaceChildren();
+      patchSectionContent(card,next);
+    });
+    expect(await preview.evaluate(root => root.contains(window.retainedPreviewCell))).toBe(true);
+    await expect(preview).toHaveClass(/mini-board-preview-root/);
 
     await homeCard.click();
     await expect(page.getByTestId("game-shell")).toBeVisible();
@@ -34,7 +48,7 @@ test("home cards render, open the full game, and refresh after live progress", a
       .toBeGreaterThan(historyCount);
 
     await page.getByRole("link", { name: "Righelt" }).click();
-    const updatedCard = page.locator(`[data-game-id="${gameId}"]`).first();
+    const updatedCard = page.locator(`.mini-board-card-link-surface[data-game-id="${gameId}"]`).first();
     await expect(updatedCard).toBeVisible();
     await expect(updatedCard).toContainText("Move 2");
     await expect(updatedCard.locator(".mini-board-preview-status")).toContainText("Player 2 to play");

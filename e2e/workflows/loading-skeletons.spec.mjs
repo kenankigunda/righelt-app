@@ -120,7 +120,7 @@ test("invite route shows a skeleton while invite resolution is pending", async (
   }
 });
 
-test("home pagination swaps only the active section into a skeleton while the next page loads", async ({ browser }) => {
+test("home pagination preserves its heading and cards while the next page loads", async ({ browser }) => {
   const { context, page } = await createIsolatedPage(browser);
   let releasePageLoad = null;
   const allowPageLoad = new Promise((resolve) => {
@@ -145,15 +145,26 @@ test("home pagination swaps only the active section into a skeleton while the ne
       });
     });
 
+    const section=page.locator('[data-home-section-root="my"]');
+    await expect(section.locator('.mini-board-card-link').first()).toBeVisible();
+    const before=await section.locator('.mini-board-card-link').allTextContents();
+    expect(before.length).toBeGreaterThan(0);
+    await section.locator('h2').evaluate(el=>window.retainedPaginationHeading=el);
     await page.locator('[data-action="home-page-next"][data-home-section="my"]').click();
     await pageLoadSeen;
-    await expect(page.getByTestId("home-section-skeleton").first()).toBeVisible();
+    await expect(page.getByTestId("home-section-skeleton")).toHaveCount(0);
+    expect(await section.locator('h2').evaluate(el=>el===window.retainedPaginationHeading)).toBe(true);
+    expect(await section.locator('.mini-board-card-link').allTextContents()).toEqual(before);
+    await expect(section.locator('[data-action="home-page-next"]')).toHaveAttribute('aria-busy','true');
+    await expect(page.getByTestId("home-create-game")).toHaveCount(1);
     await expect(page.getByTestId("home-create-game")).toBeVisible();
 
     releasePageLoad?.();
+    await expect.poll(()=>section.locator('.mini-board-card-link').allTextContents()).not.toEqual(before);
 
     await expect(page.locator('[data-action="home-page-next"][data-home-section="my"]')).toBeVisible();
   } finally {
+    releasePageLoad?.();
     await closeContextQuietly(context);
   }
 });

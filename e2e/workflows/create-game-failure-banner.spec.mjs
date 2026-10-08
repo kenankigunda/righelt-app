@@ -20,7 +20,8 @@ test("create-game shows an alert banner when the server rejects the create respo
 
     await page.goto("/");
     await expect(page.getByTestId("home-create-game")).toBeVisible();
-    await page.getByTestId("home-create-game").click();
+    await page.getByTestId("home-create-game").click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
+    await page.getByRole("button", { name: "Close invite", exact: true }).click();
 
     const failureBanner = page.getByTestId("sync-failure-banner");
     await expect(page.getByTestId("game-shell")).toBeVisible();
@@ -28,6 +29,13 @@ test("create-game shows an alert banner when the server rejects the create respo
       "Game creation failed. The server could not create this game. Return home and try again.",
     );
     await expect(failureBanner.getByRole("button", { name: "Dismiss" })).toBeVisible();
+    await expect(async () => {
+      const surface = await failureBanner.evaluate(el=>({connected:el.isConnected,radius:getComputedStyle(el).borderRadius,clip:getComputedStyle(el).clipPath}));
+      expect(surface.connected).toBe(true);
+      expect(surface.radius).toBe("0px");
+      expect(surface.clip).toContain("polygon");
+    }).toPass({timeout:10000});
+    await page.screenshot({path:test.info().outputPath('failure-notice.png')});
     await expect(page.getByText("Latest: Game creation failed")).toBeVisible();
     await page.waitForTimeout(4_000);
     await expect(page.getByTestId("game-shell")).toBeVisible();

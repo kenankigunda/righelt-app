@@ -1,3 +1,6 @@
+import { lockOverlayScroll } from './overlay-scroll.js';
+import { icon } from './ui.js';
+import { renderPlayerEmblem } from './player-emblem.js';
 import { createRenderGestureGate } from "./render-gesture.js";
 import { evaluatePasswordRequirements, normalizeDisplayName } from "../generated/packages/shared-types/src/auth.js";
 import { USERNAME_LOOKUP_DEBOUNCE_MS, USERNAME_LOOKUP_TIMEOUT_MS } from "../generated/packages/shared-types/src/auth-policy.js";
@@ -31,7 +34,7 @@ export const canonicalEntryUsername = (value) => String(value ?? "").replace(/^[
 export const validEntryUsername = (value) => /^[a-z0-9_]{3,24}$/.test(canonicalEntryUsername(value));
 export const createAccountDialog = ({
   controller, document = globalThis.document, onComplete = () => {},
-  getSiteKey = () => null, timers = globalThis, fetcher = globalThis.fetch,
+  getSiteKey = () => null, timers = globalThis, fetcher = globalThis.fetch, onLayoutChange = () => {}, onSound = () => {},
 } = {}) => {
   const dialog = document.createElement("dialog");
   dialog.className = "account-dialog";
@@ -45,6 +48,30 @@ export const createAccountDialog = ({
     hintTimer = null, hintRevision = 0, lookupTimer = null, lookupAbort = null, lookupRevision = 0,
     trigger = null, pending = null, values = {}, challengeToken = "", widget = null,
     flow = 0, submittingFlow = null, pendingLogoutGeneration = null, owner = {}, backdropPress = false, discardPress = false;
+  let releaseScroll = null;
+  const phone = globalThis.matchMedia?.('(max-width:700px)');
+  const isSettings = () => mode === 'account' || mode === 'password';
+  const present = () => {
+    dialog.classList.remove('is-closing');
+    const flyout = isSettings();
+    if(flyout && !dialog.open)onSound("flyout");
+    dialog.dataset.presentation = flyout ? 'flyout' : 'modal';
+    dialog.dataset.actionAffiliation = document.querySelector('#app')?.dataset?.actionAffiliation || 'red';
+    const modal = !flyout || Boolean(phone?.matches);
+    if (modal) releaseScroll ||= lockOverlayScroll(document);
+    else {releaseScroll?.();releaseScroll = null;}
+    const focused = document.activeElement;
+    const position = {left:document.defaultView.scrollX,top:document.defaultView.scrollY,behavior:"instant"};
+    if (dialog.open && dialog.matches?.(':modal') !== modal) dialog.close();
+    if (!dialog.open) {
+      if (modal || !dialog.show) dialog.showModal(); else dialog.show();
+    }
+    if (focused && dialog.contains?.(focused)) focused.focus({preventScroll:true});
+    document.defaultView.scrollTo(position);
+    if (document.documentElement?.dataset) document.documentElement.dataset.accountFlyout = String(flyout && !phone?.matches);
+    onLayoutChange();
+  };
+  phone?.addEventListener('change', () => { if (dialog.open) present(); });
   const status = (text, state) => {
     const target = dialog.querySelector("[data-account-status]");
     if (target) { target.textContent = text; target.dataset.state = state; }
@@ -154,7 +181,7 @@ export const createAccountDialog = ({
     const feedback = '<p class="account-status" role="status" aria-live="polite" data-account-status></p>';
     if (mode === "account") {
       title = "Account";
-      body = `<p><span class="small">Username</span> <bdi>@${escapeHtml(session.account?.username)}</bdi></p>` + input("displayName", "Display name", { autocomplete: "nickname", value: session.account?.displayName || "", optional: true, inlineSave: true }) + '<button type="button" data-mode="password">Change password</button><button type="button" data-logout>Sign out</button><button type="button" class="secondary" data-discard-account hidden>Discard changes</button>';
+      body = input("displayName", "Display name", { autocomplete: "nickname", value: session.account?.displayName || "", optional: true, inlineSave: true }) + `<button type="button" data-mode="password">${icon('key')}Change password</button><button type="button" data-logout>${icon('exit')}Sign out</button><button type="button" class="secondary" data-discard-account hidden>Discard changes</button>`;
     } else if (mode === "password") {
       title = "Change password";
       body = input("newPassword", "New password", { secret: true, visible: true, autocomplete: "new-password" }) + checklist() + '<p>Changing your password signs you out on other devices.</p><div data-challenge></div><button type="submit">Change password</button><button type="button" class="secondary" data-mode="account">Back</button>';
@@ -164,7 +191,8 @@ export const createAccountDialog = ({
     } else {
       body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + input("password", "Password", { secret: true, autocomplete: "current-password" }) + feedback + '<div class="account-help"><p data-existing-hint hidden>Don’t have a password? <a href="#create-account" data-create-link>Create a new account.</a></p><details data-forgot hidden><summary>Forgot password?</summary><p>On another signed-in device, open Account → Change password. If you are signed out everywhere, you’ll need a new account. Your existing games remain with your original account.</p><button type="button" class="secondary" data-new-username>Choose another username</button></details></div><div data-challenge></div><button type="submit">Sign in</button><button type="button" class="secondary" data-create>Create account</button>';
     }
-    dialog.innerHTML = `<form class="account-form" novalidate data-entry-mode="${mode === "register" ? "create" : mode}" data-lookup-state="${lookupState}"><div class="account-dialog-heading"><h2 id="account-title" tabindex="-1">${title}</h2><button type="button" class="secondary account-close" data-cancel aria-label="Close"><span aria-hidden="true">×</span></button></div>${body}${mode === "login" ? "" : feedback}</form>`;
+    const emblem = isSettings() ? `<div class="account-player-signature">${renderPlayerEmblem(session.account?.username)}<span class="player-name-stack"><strong><bdi>${escapeHtml(session.account?.displayName || session.account?.username)}</bdi></strong><span class="player-username"><bdi>@${escapeHtml(session.account?.username)}</bdi></span></span></div>` : '';
+    dialog.innerHTML = `<form class="account-form" novalidate data-entry-mode="${mode === "register" ? "create" : mode}" data-lookup-state="${lookupState}"><div class="account-dialog-heading"><h2 id="account-title" tabindex="-1">${title}</h2><button type="button" class="ui-icon-button account-close" data-cancel aria-label="Close">${icon('close')}</button></div>${emblem}${body}${mode === "login" ? "" : feedback}</form>`;
     if (mode === "account") {
       autosave?.cancel();
       const marker = flow, generation = controller.snapshot().generation;
@@ -222,10 +250,19 @@ export const createAccountDialog = ({
     invalidateLookup(); flow++; owner = {}; mode = next;
     lookupState = "idle"; lookupName = ""; lookupRevealed = false;
     render();
+    present();
     if (next === "register" && validEntryUsername(values.username)) lookupTimer = timers.setTimeout(() => void checkUsername(), USERNAME_LOOKUP_DEBOUNCE_MS);
   };
   const close = async (discard = false) => {
     if (!discard && mode === "account" && autosave?.dirty() && !await autosave.flush()) return;
+    if (!discard && isSettings() && dialog.open)onSound("flyout-back");
+    if (!discard && isSettings() && dialog.open && !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      const closingFlow = flow;
+      dialog.classList.add('is-closing');
+      await new Promise(resolve => setTimeout(resolve, 180));
+      if (flow !== closingFlow) return;
+    }
+    dialog.classList.remove('is-closing');
     autosave?.cancel(); autosave = null;
     pendingLogoutGeneration = null;
     backdropPress = false;
@@ -238,10 +275,13 @@ export const createAccountDialog = ({
     values = {};
     clearChallenge();
     dialog.close();
+    releaseScroll?.();releaseScroll = null;
+    if (document.documentElement?.dataset) document.documentElement.dataset.accountFlyout = "false";
+    onLayoutChange();
     dialog.replaceChildren();
     const action = trigger?.closest?.("[data-action]")?.getAttribute("data-action");
     const restored = trigger?.isConnected ? trigger : action ? document.querySelector(`[data-action="${CSS.escape(action)}"]`) : document.querySelector('[data-action="account-open"]');
-    restored?.focus?.();
+    restored?.focus?.({preventScroll:true});
   };
   const open = (next = "login", intent = null, source = null) => {
     autosave?.cancel(); autosave = null;
@@ -259,7 +299,7 @@ export const createAccountDialog = ({
     pendingLogoutGeneration = snapshot.pendingLogout && !snapshot.session.authenticated ? snapshot.generation : null;
     if (mode === "account" && !snapshot.session.authenticated) mode = "login";
     render();
-    if (!dialog.open) dialog.showModal();
+    present();
   };
   const complete = () => { const intent = pending; close(); onComplete(intent); };
   const challenge = async () => {
@@ -333,7 +373,8 @@ export const createAccountDialog = ({
   dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
   dialog.addEventListener("keydown", (event) => {
     if (!event.repeat && [" ", "Enter"].includes(event.key) && event.target.closest?.("button, a, summary")) beginFeedbackGesture();
-    if (event.key !== "Tab") return;
+    if (event.key === "Escape" && dialog.dataset.presentation === 'flyout' && !phone?.matches) {event.preventDefault();void close();return;}
+    if (event.key !== "Tab" || dialog.dataset.presentation === 'flyout' && !phone?.matches) return;
     const nodes = [...dialog.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href],summary,[tabindex="0"]')].filter(node => !node.closest("[hidden]"));
     const first = nodes[0], last = nodes.at(-1);
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
