@@ -525,11 +525,24 @@ test("a stalled startup read recovers without granting guest play", async ({ pag
   } finally { release(); }
 });
 
-test("switching accounts in another tab retires the old settings form", async ({ page }) => {
+test("switching accounts in another tab retires the old settings form", async ({ page, request, baseURL }) => {
   const first = uniqueName(), second = uniqueName();
-  await register(page, second);
-  await account(page);
-  await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
+  // The spare account is a prerequisite. Keep its setup outside the browser
+  // cookie jar so this case spends its budget on the actual cross-tab switch.
+  const headers = {
+    Origin: new URL(baseURL).origin,
+    [AUTH_REQUEST_HEADER]: "1",
+    [AUTH_PROTOCOL_HEADER]: String(AUTH_PROTOCOL_VERSION),
+  };
+  const registered = await request.post("/api/auth/register", { headers, data: { username: second, password } });
+  expect(registered.status()).toBe(200);
+  const session = await registered.json();
+  expect(session.account.username).toBe(second);
+  expect(session.contextId).toBeTruthy();
+  const loggedOut = await request.post("/api/auth/logout", {
+    headers: { ...headers, [SESSION_CONTEXT_HEADER]: session.contextId }, data: {},
+  });
+  expect(loggedOut.status()).toBe(200);
   await register(page, first);
   const sibling = await page.context().newPage();
   try {
