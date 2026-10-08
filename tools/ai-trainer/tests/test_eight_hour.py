@@ -164,6 +164,26 @@ class EightHourTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(policy.registry_path(self.root, 'approved').exists())
 
+    def test_concurrent_cli_claims_and_restart_reuse_one_allocation(self):
+        policy.register(self.sequence.directory,self.amendment)
+        receipt=self.root/'receipt.json';snapshot=self.root/'snapshot.json'
+        immutable(receipt,self.receipt);immutable(snapshot,self.snapshot)
+        argv=[sys.executable,'-m','righelt_training.sequence','--directory',str(self.sequence.directory),
+              'claim','--completion',str(receipt),'--snapshot',str(snapshot)]
+        processes=[subprocess.Popen(argv,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True) for _ in range(2)]
+        outputs=[p.communicate(timeout=20) for p in processes]
+        successful=[json.loads(out) for p,(out,err) in zip(processes,outputs) if p.returncode==0]
+        self.assertTrue(successful)
+        for p,(out,err) in zip(processes,outputs):
+            if p.returncode:self.assertIn('BlockingIOError',err)
+        recovered=json.loads(subprocess.check_output(argv,text=True,timeout=20))
+        self.assertTrue(all(row==recovered for row in successful))
+        from righelt_training.allocation import rows
+        created=[row for row in rows(self.root/'allocation-events.jsonl')
+                 if row['event']=='created' and row.get('continuation',{}).get('sequenceId')=='approved']
+        self.assertEqual(len(created),1)
+        self.assertEqual(created[0]['seconds'],28800)
+
     def test_both_recipes_complete_and_stop_even_when_health_is_good(self):
         for enabled in (False, True):
             with self.subTest(enabled=enabled), tempfile.TemporaryDirectory() as d:
