@@ -7,6 +7,7 @@ import { decisionProvenance } from './decision-provenance.mjs';
 import { replayDecision } from './decision-replay.mjs';
 import { trainingExplorationOptions } from './exploration-provenance.mjs';
 import { explorationRecord } from './exploration-record.mjs';
+import { jobBudgetMs } from './worker-budget.mjs';
 import { createHash } from 'node:crypto';
 import { createInitialState, deterministicStateHash, normalizeState, resolveToStability } from '../../packages/game-engine/src/index.ts';
 import { encodeState, selectMove, seededRandom, experimentConfig, SEARCH_POLICY_VERSION, encodeAction, verifyLegalSubset, legalActionMap as engineLegalActionMap, transition as engineTransition } from '../../packages/computer-player/src/index.ts';
@@ -69,8 +70,7 @@ async function main() {
     throw new Error('Invalid training adoption binding');
   }
   const adoptionFields = adoption === undefined ? {} : { trainingRecipe: job.trainingRecipe, explorationAdoption: adoption };
-  const budgetMs = job.budgetMs ?? 600_000;
-  if (!Number.isFinite(budgetMs) || budgetMs <= 0 || budgetMs > 600_000) throw new Error('Invalid job bound');
+  const budgetMs = jobBudgetMs(job);
   const deadline = performance.now() + budgetMs;
   const check = () => { if (performance.now() >= deadline) throw new BudgetExpired(); };
   const engineBudget=createEngineOperationBudget(job.command,experimentConfig.search.maxNodes,check);

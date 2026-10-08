@@ -84,6 +84,7 @@ def amend_manifest(directory,manifest,repair):
 
 
 SCREEN_PROOF_PATHS=('tools/ai-trainer/exploration-record.mjs','tools/ai-trainer/engine-worker.mjs',
+    'tools/ai-trainer/worker-budget.mjs','tools/ai-trainer/tests/worker-budget.test.mjs',
     'tools/ai-trainer/righelt_training/exploration_plan.py','tools/ai-trainer/righelt_training/exploration_metrics.py',
     'tools/ai-trainer/righelt_training/exploration_journal.py','tools/ai-trainer/righelt_training/exploration_receipt.py',
     'tools/ai-trainer/righelt_training/exploration_screen.py','tools/ai-trainer/righelt_training/exploration_worker.py',

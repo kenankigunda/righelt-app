@@ -1,5 +1,7 @@
 import copy
 import json
+import subprocess
+import threading
 from pathlib import Path
 import tempfile
 import time
@@ -7,7 +9,7 @@ import unittest
 from unittest.mock import Mock,patch
 from righelt_training.admission import estimate,observe,restore_observations
 from righelt_training.curriculum import Curriculum
-from righelt_training.runner import Runner,default_state,CONFIG
+from righelt_training.runner import Runner,default_state,CONFIG,ROOT,ENGINE,engine_command,stop_worker
 
 
 class AdmissionTest(unittest.TestCase):
@@ -76,6 +78,72 @@ class AdmissionTest(unittest.TestCase):
             self.assertLess(job['budgetMs'],723000)
             self.assertEqual(runner.state['admissionDurations'],evidence)
             self.assertEqual(runner.state['nextJob'],1)
+
+    def test_extended_admission_budget_crosses_real_worker_protocol_and_replays(self):
+        # Use a one-decision terminal catalog position, not model training or a
+        # long wall-clock wait. The actual admitted job crosses Python -> Node.
+        script = '''
+import {readFileSync} from 'node:fs';
+import {resolveToStability} from './packages/game-engine/src/index.ts';
+import {transition,terminalValue} from './packages/computer-player/src/index.ts';
+import {catalogActions} from './packages/computer-player/tests/catalog-helper.mjs';
+const catalog=JSON.parse(readFileSync('apps/web/scenarios/catalog.json'));
+const scenario=catalog.scenarios.find(s=>s.title==='Commander surrounded loss of supply');
+let state=resolveToStability(structuredClone(scenario.initialState)),winning;
+for(const action of catalogActions(scenario)){
+ const next=transition(state,action);
+ if(terminalValue(next)===(state.sideToMove==='P1'?1:-1)){winning=state;break;}
+ state=next;
+}
+if(!winning)throw new Error('Missing one-decision terminal fixture');
+console.log(JSON.stringify(winning));
+'''
+        root=json.loads(subprocess.check_output(['node','--import','tsx','--input-type=module','-e',script],cwd=ROOT,text=True,timeout=10))
+        with tempfile.TemporaryDirectory() as directory:
+            runner=self.runner(directory)
+            runner.exploration_adoption={'path':str(Path(directory).resolve()/'fixture-adoption.json'),'sha256':'a'*64}
+            pending={'command':'generate','id':'protocol-game','seed':107,'kind':'normal',
+                     'partition':'train','familyId':'protocol-fixture','initialState':root}
+            runner.state['pendingGenerationJob']=pending
+            observe(runner.state,directory,job_id='slow',kind='normal',phase='generation',seconds=570,censored=True)
+            job=runner.next_generation_job(runner.generation_round_deadline())
+            self.assertGreater(job['budgetMs'],710000)
+            self.assertEqual(job['initialState'],root)
+            # Keep the normal bidirectional inference protocol alive, using
+            # deterministic fixture values rather than loading model weights.
+            with tempfile.TemporaryFile() as errors:
+                process=subprocess.Popen(['node','--import','tsx',str(ENGINE)],cwd=ROOT,
+                    stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=errors)
+                watchdog=threading.Timer(10,lambda:process.kill() if process.poll() is None else None)
+                watchdog.start()
+                result=None
+                try:
+                    process.stdin.write((json.dumps(job)+'\n').encode());process.stdin.flush()
+                    for line in process.stdout:
+                        message=json.loads(line)
+                        if message['type']=='evaluate':
+                            reply={'type':'evaluation','id':message['id'],'policyLogits':[0]*2801,'value':.25}
+                            process.stdin.write((json.dumps(reply)+'\n').encode());process.stdin.flush()
+                        elif message['type']!='decision-progress':result=message
+                    code=process.wait(timeout=2)
+                    errors.seek(0)
+                    self.assertEqual(code,0,(result,errors.read().decode()))
+                finally:
+                    try:stop_worker(process)
+                    finally:watchdog.cancel();watchdog.join()
+            self.assertIsNotNone(result)
+            self.assertEqual(result['type'],'game')
+            game=result['game']
+            self.assertEqual(game['termination'],'terminal')
+            self.assertEqual(len(game['decisions']),1)
+            self.assertEqual((game['id'],game['seed']),(pending['id'],pending['seed']))
+            self.assertEqual(game['trainingRecipe'],job['trainingRecipe'])
+            self.assertEqual(game['decisions'][0]['trainingRecipe'],job['trainingRecipe'])
+            self.assertEqual(game['explorationAdoption'],runner.exploration_adoption)
+            self.assertEqual(game['decisions'][0]['explorationAdoption'],runner.exploration_adoption)
+            replay=engine_command({'command':'replay','game':game,'budgetMs':5000},timeout=10)
+            self.assertEqual(replay['type'],'replayed')
+            self.assertEqual(replay['hash'],game['finalHash'])
 
     def test_extended_round_uses_saved_elapsed_time_and_does_not_renew_when_polled(self):
         with tempfile.TemporaryDirectory() as directory:
