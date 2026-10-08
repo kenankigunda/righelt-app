@@ -1,6 +1,6 @@
 """Budgeted local experiment child. Supervisor owns permission and hard limits."""
-from .budget import effective_deadline
-from .admission import estimate as admission_estimate, observe as observe_duration, restore_observations
+from .budget import effective_deadline,validation_boundary
+from .admission import KINDS,CHECKPOINT_ALLOWANCE,estimate as admission_estimate, observe as observe_duration, restore_observations
 from .allocation import rows
 from .fallback_report import add_game as add_fallback_game
 import argparse
@@ -365,9 +365,7 @@ class Runner:
                 self.event('admission-deferred',id=job['id'],kind=job['kind'],bound=bound,
                            remainingSeconds=max(0,round_deadline-time.monotonic()))
                 self.checkpoint()
-            if bound['requiredSeconds']>CONFIG['training']['generationSeconds']:
-                self.state['admissionStop']='observed-game-bound-exceeds-round'
-            elif self.deadline-time.monotonic()-10<bound['requiredSeconds']:
+            if min(self.deadline,validation_boundary(self.runtime))-time.monotonic()-10<bound['requiredSeconds']:
                 self.state['admissionStop']='insufficient-generation-runway'
             return None
         # Persist consumption before spawning. Recovery never reuses a live or
@@ -393,11 +391,29 @@ class Runner:
                          phase='generation',seconds=time.monotonic()-worker['startedMonotonic'],censored=censored)
         worker['durationRecorded']=True
 
-    def generate_round(self):
-        self.state.pop('admissionStop',None)
+    def generation_round_deadline(self):
         if self.state['generationStartedMonotonic'] is None:
             self.state['generationStartedMonotonic'] = time.monotonic()
-        round_deadline = min(self.deadline - 10, self.state['generationStartedMonotonic'] + CONFIG['training']['generationSeconds'])
+        # The configured round is a cadence, not a maximum game duration. Keep
+        # conservative censored estimates and allow the slowest observed kind
+        # plus an admission-checkpoint margin. Anchor to saved elapsed time;
+        # neither polling nor recovery grants a fresh round or validation time.
+        seconds=max(CONFIG['training']['generationSeconds'],
+                    max(admission_estimate(self.state,kind)['requiredSeconds'] for kind in KINDS)+CHECKPOINT_ALLOWANCE)
+        return min(self.deadline-10,validation_boundary(self.runtime)-10,
+                   self.state['generationStartedMonotonic']+seconds)
+
+    def generate_round(self):
+        self.state.pop('admissionStop',None)
+        round_deadline = self.generation_round_deadline()
+        pending=self.state.get('pendingGenerationJob')
+        required=admission_estimate(self.state,pending['kind'])['requiredSeconds'] if pending else 0
+        # Re-evaluate a restored wait before an expired round can fall through
+        # to training. A new runtime may have different remaining time, but the
+        # deferred job and its measured bound remain authoritative.
+        if min(self.deadline,validation_boundary(self.runtime))-time.monotonic()<=required+10:
+            self.state['admissionStop']='insufficient-generation-runway'
+            return
         selector = selectors.DefaultSelector()
         workers = {}
         launched = self.state['generationLaunched']
@@ -510,6 +526,7 @@ class Runner:
     def run(self):
         self.checkpoint()
         handoff=None
+        awaiting_generation_handoff=False
         while self.deadline - time.monotonic() >= 40:
             handoff=self.handoff_requested()
             if handoff:break
@@ -518,12 +535,20 @@ class Runner:
                 break
             if allocation['paused']:
                 self.maybe_checkpoint(); time.sleep(min(1, max(0, self.deadline - time.monotonic()))); continue
+            if awaiting_generation_handoff:
+                # The pending difficult job cannot fit before validation. Wait
+                # for the supervisor's normal handoff, charging this time, rather
+                # than skipping its identity or repeatedly training old data.
+                self.maybe_checkpoint(); time.sleep(min(1, max(0, self.deadline - time.monotonic()))); continue
             elapsed = time.monotonic() - self.started
             if self.curriculum.observe(elapsed, self.state['terminalGames'], self.state['truncatedGames'], self.state['completedGames']):
                 self.state['curriculumSwitched'] = True
                 self.event('curriculum-change', weights=CONFIG['training']['fallbackCurriculum'])
             if self.state['phase'] == 'generation':
                 self.generate_round()
+                if self.state.get('admissionStop')=='insufficient-generation-runway':
+                    awaiting_generation_handoff=True
+                    continue
                 if self.state.get('admissionStop'):break
                 handoff=self.handoff_requested()
                 if handoff:break

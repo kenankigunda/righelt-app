@@ -31,3 +31,15 @@ def effective_deadline(runtime):
     deadline=runtime['deadlineMonotonic']
     if 'deadlineWall' in runtime:deadline=min(deadline,time.monotonic()+max(0,runtime['deadlineWall']-time.time()))
     return deadline
+
+
+def validation_boundary(runtime,now=None):
+    duration=runtime['deadlineMonotonic']-runtime['startedMonotonic']
+    reserve=runtime.get('reserveSeconds',duration/6)
+    if type(reserve) not in (int,float) or not 0<reserve<duration:
+        raise ValueError('invalid validation reserve')
+    boundary=runtime['deadlineMonotonic']-reserve
+    if 'deadlineWall' in runtime:
+        now=time.monotonic() if now is None else now
+        boundary=min(boundary,now+(runtime['deadlineWall']-reserve-time.time()))
+    return boundary

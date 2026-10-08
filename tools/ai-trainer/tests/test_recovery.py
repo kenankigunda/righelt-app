@@ -17,6 +17,7 @@ from righelt_training.replay import ReplayBuffer
 from righelt_training.config import ROOT
 from righelt_training.manifest import write_manifest
 from righelt_training.replay import partition_for_family
+from righelt_training.admission import observe,estimate
 
 class RecoveryTest(unittest.TestCase):
     def setUp(self):torch.set_num_threads(1)
@@ -49,6 +50,24 @@ class RecoveryTest(unittest.TestCase):
             self.assertEqual(len({first,second,third}),3);self.assertEqual(Path(first).read_bytes(),original)
             self.assertLess(abs(time.monotonic()-runner.state['generationStartedMonotonic']-12),2)
             with self.assertRaises(FileExistsError):save_checkpoint(Path(first),runner.model,runner.optimizer,round_index=0,updates=0,replay_ids=[],manifest_sha256='test')
+
+    def test_slow_pending_game_survives_cpu_checkpoint_recovery_with_remaining_round(self):
+        with tempfile.TemporaryDirectory() as d:
+            runner=self.runner(d)
+            runner.state['pendingGenerationJob']={'id':'initial-game-107-363','kind':'simple','seed':3621781493}
+            runner.state['generationStartedMonotonic']=time.monotonic()-120
+            observe(runner.state,d,job_id='censored',kind='simple',phase='generation',seconds=570,censored=True)
+            runner.checkpoint();checkpoint=Path(json.loads((Path(d)/'latest.json').read_text())['checkpoint'])
+            expected=json.loads(json.dumps(runner.state))
+            runner.state=default_state();runner.restore(checkpoint)
+            runner.deadline=time.monotonic()+28800
+            runner.runtime={'startedMonotonic':runner.deadline-28800,'deadlineMonotonic':runner.deadline,'reserveSeconds':3600}
+            self.assertEqual(runner.state['pendingGenerationJob'],expected['pendingGenerationJob'])
+            self.assertEqual(runner.state['admissionDurations'],expected['admissionDurations'])
+            self.assertEqual(runner.state['admissionJournalCursor'],1)
+            self.assertEqual(estimate(runner.state,'simple')['requiredSeconds'],742.5)
+            remaining=runner.generation_round_deadline()-time.monotonic()
+            self.assertGreater(remaining,630);self.assertLess(remaining,633)
 
     def relocation(self, root, *, source_stage='overnight', destination_seed=107, phase='generation'):
         source=self.runner(root/'source');source.directory.mkdir()

@@ -12,7 +12,7 @@ import time
 import uuid
 import psutil
 
-from .budget import Budget
+from .budget import Budget,validation_boundary
 from .checkpoint import atomic_json
 from .config import CONFIG,CONFIG_SHA256,ROOT
 from .manifest import build_manifest,write_manifest,active_manifest,amend_manifest,manifest_hashes,dependency_inventory
@@ -51,18 +51,6 @@ def validate_gate_report(report, source_revision, stage):
             or health.get('trainedExportParityPassed') is not True or health.get('unfinishedAttempts',[])
             or health.get('progressReportPublished') is not True):
             raise ValueError('overnight health or progress-report gate missing')
-
-
-def validation_boundary(runtime,now=None):
-    duration=runtime['deadlineMonotonic']-runtime['startedMonotonic']
-    reserve=runtime.get('reserveSeconds',duration/6)
-    if type(reserve) not in (int,float) or not 0<reserve<duration:
-        raise ValueError('invalid validation reserve')
-    boundary=runtime['deadlineMonotonic']-reserve
-    if 'deadlineWall' in runtime:
-        now=time.monotonic() if now is None else now
-        boundary=min(boundary,now+(runtime['deadlineWall']-reserve-time.time()))
-    return boundary
 
 
 def validate_training_window(runtime,now):

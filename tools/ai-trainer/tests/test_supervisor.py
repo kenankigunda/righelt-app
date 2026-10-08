@@ -221,6 +221,13 @@ class SupervisorTest(unittest.TestCase):
         from righelt_training.manifest import dependency_inventory
         report['proofDependencies']=dependency_inventory()
         validate_gate_report(report,'rev','initial')
+        boundary_dependency='tools/ai-trainer/righelt_training/budget.py'
+        self.assertIn(boundary_dependency,report['proofDependencies'])
+        original=report['proofDependencies'].pop(boundary_dependency)
+        with self.assertRaisesRegex(ValueError,'dependency inventory'):validate_gate_report(report,'rev','initial')
+        report['proofDependencies'][boundary_dependency]='tampered'
+        with self.assertRaisesRegex(ValueError,'dependency inventory'):validate_gate_report(report,'rev','initial')
+        report['proofDependencies'][boundary_dependency]=original
         with self.assertRaises(ValueError):validate_gate_report(report,'changed','initial')
         with self.assertRaises(ValueError):validate_gate_report(report,'rev','overnight')
 
