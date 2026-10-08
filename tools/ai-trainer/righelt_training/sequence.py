@@ -13,9 +13,10 @@ import time
 from .allocation import Allocation,append,rows,CONTINUATION_LIMITS
 from .checkpoint import atomic_json
 from .activity import observation
+from . import continuation_policy as policy
 
 PREREQUISITE='01a10362-d1f0-7790-8163-088cad20761e'
-PHASES=('diagnostic','six-hour','twelve-hour')
+PHASES=(*policy.LEGACY_PHASES,'eight-hour')
 
 
 def digest(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -70,13 +71,20 @@ class Sequence:
 
     def report_path(self,phase):return self.directory/'reports'/f'{phase}.json'
 
+    def amendment(self):
+        found=policy.registered(self.root,self.config['sequenceId'])
+        if found and found[0]['sequenceConfig']!=policy.reference(self.path):
+            raise ValueError('registered amendment belongs to another sequence configuration')
+        return found
+
     def next_phase(self):
-        for phase in PHASES:
+        amendment=self.amendment()
+        for phase in (('diagnostic','eight-hour') if amendment else policy.LEGACY_PHASES):
             path=self.report_path(phase)
             if not path.exists():return phase
             self.ensure_mail_intent(phase)
             report=read(path)
-            if not report.get('advancementEligible'):return None
+            if not report.get('advancementEligible') and not (phase=='diagnostic' and amendment):return None
         return None
 
     def claim(self,receipt,envelope):
@@ -91,7 +99,8 @@ class Sequence:
             observation(envelope)
             if not completion.exists():raise ValueError('sequence launch receipt missing')
         if not completion.exists():immutable(completion,receipt)
-        directory=Path(self.config[{'diagnostic':'diagnosticDirectory','six-hour':'sixHourDirectory','twelve-hour':'twelveHourDirectory'}[phase]])
+        amendment=self.amendment()
+        directory=Path(amendment[0]['runDirectory'] if phase=='eight-hour' else self.config[{'diagnostic':'diagnosticDirectory','six-hour':'sixHourDirectory','twelve-hour':'twelveHourDirectory'}[phase]])
         allocation=Allocation(self.root,directory)
         if phase=='diagnostic':
             creation,charged,pending=allocation.accounting()
@@ -101,16 +110,18 @@ class Sequence:
             if charged>=creation['seconds']:raise ValueError('diagnostic budget exhausted')
             contract=None
         else:
-            prior=self.report_path('diagnostic' if phase=='six-hour' else 'six-hour')
+            initial=phase in policy.INITIAL_PHASES
+            prior=self.report_path('diagnostic' if initial else 'six-hour')
             report=read(prior)
-            checkpoint=self.config['recoveryCheckpoint'] if phase=='six-hour' else report['recoveryCheckpoint']
-            sha=self.config['recoverySha256'] if phase=='six-hour' else report['recoverySha256']
-            evidence=Path(report['evidence']) if phase=='six-hour' else prior
-            if phase=='six-hour' and digest(evidence)!=report['evidenceSha256']:raise ValueError('diagnostic proof changed')
+            checkpoint=self.config['recoveryCheckpoint'] if initial else report['recoveryCheckpoint']
+            sha=self.config['recoverySha256'] if initial else report['recoverySha256']
+            evidence=Path(report['evidence']) if initial else prior
+            if initial and digest(evidence)!=report['evidenceSha256']:raise ValueError('diagnostic proof changed')
             seconds,reserve=CONTINUATION_LIMITS[phase]
             contract={'sequenceId':self.config['sequenceId'],'phase':phase,'budgetSeconds':seconds,'reserveSeconds':reserve,
                 'preserveState':True,'freshHealth':True,'recoveryCheckpoint':checkpoint,'recoverySha256':sha,
                 'predecessorEvidence':str(evidence),'predecessorEvidenceSha256':digest(evidence)}
+            if phase=='eight-hour':contract[policy.FIELD]=amendment[1]
             from . import exploration_adoption
             existing=self.directory/'contracts'/f'{phase}.json'
             if existing.exists():
@@ -148,7 +159,7 @@ class Sequence:
                 and proof.get('scheduledGames')==20 and proof.get('terminalGames',0)>=16
                 and proof.get('workload')=='restart-diagnostic-20-v1')
         else:
-            passed=(proof.get('advancementEligible') is True and proof.get('health',{}).get('healthy') is True
+            passed=((proof.get('advancementEligible') is True or (phase=='eight-hour' and proof.get('experimentComplete') is True)) and proof.get('health',{}).get('healthy') is True
                 and proof.get('health',{}).get('freshHealthRequired') is True
                 and proof.get('sequenceId')==self.config['sequenceId'] and proof.get('phase')==phase)
             from . import exploration_adoption
@@ -168,6 +179,9 @@ class Sequence:
         report={**proof,'sequenceId':self.config['sequenceId'],'phase':phase,
                 'evidence':str(Path(evidence).resolve()),'evidenceSha256':digest(evidence),'advancementEligible':passed,
                 'allocationId':creation['id'],'budgetSeconds':creation['seconds'],'chargedSeconds':charged}
+        if phase=='eight-hour':
+            policy.authorize(read(claim['contract']),self.root,claim['runDirectory'])
+            report.update(advancementEligible=False,continuationAllowed=False)
         immutable(self.report_path(phase),report)
         self.ensure_mail_intent(phase)
         return report
@@ -210,6 +224,7 @@ def main():
     import fcntl
     parser=argparse.ArgumentParser();parser.add_argument('--directory',type=Path,required=True)
     sub=parser.add_subparsers(dest='command',required=True)
+    amend=sub.add_parser('register-amendment');amend.add_argument('--evidence',type=Path,required=True)
     claim=sub.add_parser('claim');claim.add_argument('--completion',type=Path,required=True);claim.add_argument('--snapshot',type=Path,required=True)
     done=sub.add_parser('complete');done.add_argument('--phase',choices=PHASES,required=True);done.add_argument('--evidence',type=Path,required=True)
     mail=sub.add_parser('mail');mail.add_argument('--phase',choices=PHASES,required=True);mail.add_argument('--action',choices=('status','claim','sent','uncertain','confirmed-not-sent'),default='status');mail.add_argument('--receipt',type=Path)
@@ -218,7 +233,11 @@ def main():
     with lock_path.open('a+') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         sequence=Sequence(args.directory)
-        if args.command=='claim':result=sequence.claim(read(args.completion),read(args.snapshot))
+        if args.command=='register-amendment':
+            with (sequence.root/'supervisor.lock').open('a+') as supervisor:
+                fcntl.flock(supervisor,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                result=policy.register(args.directory,args.evidence)
+        elif args.command=='claim':result=sequence.claim(read(args.completion),read(args.snapshot))
         elif args.command=='complete':result=sequence.complete(args.phase,args.evidence)
         elif args.command=='mail':result=sequence.mail(args.phase,args.action,read(args.receipt) if args.receipt else None)
         else:result={'nextPhase':sequence.next_phase(),'launchHold':sequence.config.get('launchHold')}

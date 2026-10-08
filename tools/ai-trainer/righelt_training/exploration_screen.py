@@ -255,6 +255,10 @@ class Screen:
                                     'chargeFloor': self.allocation.charge_floor(intent['interval']),
                                     'selectedRecipe': intent['report']['selectedRecipe']})
             return validate_receipt(receipt_path, self.allocation)
+        if creation.get('continuation', {}).get('phase') == 'eight-hour':
+            from .continuation_policy import validate_source
+            validate_source(creation['continuation'], self.allocation.root, self.allocation.directory,
+                            source_identity()['sourceRevision'], read(self.gate_path))
         self.budget = ScreenBudget(self.allocation, self.plan)
         self.journal.interrupted(self.budget.state()['screen'])
         if any(row['status'] == 'correctness-error' for row in self.journal.results()[0]):

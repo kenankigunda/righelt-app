@@ -72,6 +72,18 @@ class ExplorationScreenTests(ScreenFixture):
         for mock in mocks: mock.start(); self.addCleanup(mock.stop)
         return calls, live
 
+    def test_direct_eight_hour_screen_checks_source_before_opening_interval(self):
+        calls,live=self.fixture()
+        creation,charged,pending=self.allocation.accounting()
+        changed={**creation,'continuation':{**creation['continuation'],'phase':'eight-hour'}}
+        with patch.object(self.allocation,'accounting',return_value=(changed,charged,pending)), \
+             patch('righelt_training.exploration_screen.source_identity',return_value={'sourceRevision':'wrong'}), \
+             patch('righelt_training.continuation_policy.validate_source',side_effect=ValueError('source bridge missing')) as admission, \
+             patch.object(self.allocation,'begin') as begin:
+            with self.assertRaisesRegex(ValueError,'source bridge'):self.screen.run()
+            admission.assert_called_once();begin.assert_not_called()
+        self.assertFalse(calls);self.assertFalse(live)
+
     def test_full_fixed_screen_publishes_atomic_choice_and_reuses_it_without_second_dispatch(self):
         calls, live = self.fixture()
         receipt = self.screen.run()

@@ -4,6 +4,7 @@ from pathlib import Path
 import psutil
 
 from .allocation import BudgetExhausted
+from .continuation_policy import INITIAL_PHASES, LIMITS as CONTINUATION_LIMITS, authorize
 from .development_probe import checked_ref, reference
 from .exploration_journal import Journal
 from .exploration_metrics import summarize
@@ -45,18 +46,19 @@ def validate_identity(allocation, plan, directory):
     """Read-only binding shared by normal, recovery and receipt-validation paths.
 
     Recovery can run without constructing ScreenBudget. It must still belong to
-    the same six-hour allocation and frozen checkpoint, in its canonical folder.
+    the same initial allocation and frozen checkpoint, in its canonical folder.
     This deliberately grants no permission to begin or reuse an active interval.
     """
     canonical = allocation.directory / 'exploration-screen'
     if Path(directory).resolve() != canonical:
         raise ValueError('screen evidence must use the allocation\'s canonical screen directory')
     state = accounting(allocation); creation = state['creation']; contract = creation.get('continuation', {})
-    if (creation['id'] != plan['seedPlan']['allocationId'] or creation['seconds'] != 21600
-            or contract.get('phase') != 'six-hour' or contract.get('reserveSeconds') != 3600
+    authorize(contract, allocation.root, allocation.directory)
+    if (creation['id'] != plan['seedPlan']['allocationId'] or contract.get('phase') not in INITIAL_PHASES
+            or (creation['seconds'], contract.get('reserveSeconds')) != CONTINUATION_LIMITS[contract['phase']]
             or contract.get('recoveryCheckpoint') != plan['seedPlan']['checkpoint']['path']
             or contract.get('recoverySha256') != plan['seedPlan']['checkpoint']['sha256']):
-        raise ValueError('screen must belong to the approved six-hour continuation and frozen checkpoint')
+        raise ValueError('screen must belong to the approved initial continuation and frozen checkpoint')
     return state
 
 

@@ -39,7 +39,7 @@ class ScreenFixture(unittest.TestCase):
         self.plan, _, _ = fixture_plan(checkpoint=reference(checkpoint))
         self.allocation = Allocation(self.root, self.root / 'six-hour')
         self.allocation.directory.mkdir()
-        self.contract = {'phase': 'six-hour', 'reserveSeconds': 3600,
+        self.contract = {'sequenceId': 'screen-fixture', 'phase': 'six-hour', 'reserveSeconds': 3600,
                          'recoveryCheckpoint': self.plan['seedPlan']['checkpoint']['path'],
                          'recoverySha256': self.plan['seedPlan']['checkpoint']['sha256']}
         append(self.allocation.path, {'event': 'created', 'allocation': self.allocation.key, 'id': 'fixture-allocation',
@@ -152,16 +152,16 @@ class ExplorationBudgetReceiptTests(ScreenFixture):
     def test_terminal_publication_rejects_a_different_allocation(self):
         other = self.foreign_allocation(); interval, _, _ = other.begin('exploration-screen')
         self.advance(1800); other.finish(interval['id'], reason='fixture')
-        with self.assertRaisesRegex(ValueError, 'six-hour|canonical'):
+        with self.assertRaisesRegex(ValueError, 'initial|canonical'):
             terminal_baseline(other.directory / 'exploration-screen', self.plan_path, other, verify_plan=False)
 
     def test_repair_publication_and_validator_reject_a_different_allocation(self):
         other = self.foreign_allocation(); amendment, current = self.repair_amendment()
         with patch('righelt_training.exploration_receipt.validate'):
-            with self.assertRaisesRegex(ValueError, 'six-hour|canonical'):
+            with self.assertRaisesRegex(ValueError, 'initial|canonical'):
                 repair_baseline(other.directory / 'exploration-screen', self.plan_path, other, amendment, current)
             repair_baseline(self.directory, self.plan_path, self.allocation, amendment, current)
-            with self.assertRaisesRegex(ValueError, 'six-hour|canonical'):
+            with self.assertRaisesRegex(ValueError, 'initial|canonical'):
                 validate_receipt(self.directory / 'receipt-repair.json', other)
 
     def test_relocated_normal_receipt_is_not_valid_for_the_original_allocation(self):
@@ -182,7 +182,7 @@ class ExplorationBudgetReceiptTests(ScreenFixture):
         with patch.object(self.budget, 'finish', side_effect=RuntimeError('crash')):
             with self.assertRaises(RuntimeError): publish(self.plan_path, self.launch_path, self.journal, self.budget)
         other = self.foreign_allocation()
-        with self.assertRaisesRegex(ValueError, 'six-hour|canonical'):
+        with self.assertRaisesRegex(ValueError, 'initial|canonical'):
             recover_publication(self.directory, other)
         self.assertFalse(any(row['event'] == 'charge-floor' for row in other.events()))
 
@@ -199,7 +199,7 @@ class ExplorationBudgetReceiptTests(ScreenFixture):
                 altered = copy.deepcopy(rows); altered[0].update(change)
                 self.allocation.path.write_text(''.join(json.dumps(row) + '\n' for row in altered))
                 try:
-                    with self.assertRaisesRegex(ValueError, 'six-hour'):
+                    with self.assertRaisesRegex(ValueError, 'initial'):
                         validate_receipt(self.directory / 'receipt.json', self.allocation, verify_plan=False)
                 finally: self.allocation.path.write_text(original)
 

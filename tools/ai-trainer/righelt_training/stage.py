@@ -97,7 +97,10 @@ def prepare_exploration(args, continuation, invoke):
         raise ValueError('screen continuation differs from claimed allocation')
     from .bootstrap import source_identity
     from .supervisor import validate_gate_report
-    validate_gate_report(read(args.gate_report),source_identity()['sourceRevision'],'initial')
+    from .continuation_policy import validate_source
+    revision=source_identity()['sourceRevision'];gate=read(args.gate_report)
+    validate_gate_report(gate,revision,'initial')
+    validate_source(continuation,directory.parent,directory,revision,gate)
     plan=directory/'exploration-screen'/'plan.json'
     if not plan.exists():
         cases=getattr(args,'development_cases',None)
@@ -164,6 +167,13 @@ def execute(args, invoke=None):
             '--activity-file',str(args.activity_file.resolve()),'--gate-report',str(args.gate_report.resolve()),
             '--stage',args.stage,'--seed',str(args.seed)]
     continuation=read(args.continuation) if getattr(args,'continuation',None) else None
+    terminal=directory/'experiment-finished.json'
+    if terminal.exists():
+        from .continuation_policy import checked
+        stopped=read(terminal)
+        if not continuation or stopped.get('continuationSha256')!=contract_hash(continuation):
+            raise ValueError('finished experiment continuation changed')
+        checked(stopped['result'],directory)
     if continuation:common+=['--continuation',str(args.continuation.resolve())]
     if invoke is None:
         invoke=invoke_supervisor
@@ -177,7 +187,10 @@ def execute(args, invoke=None):
     completed=directory/'stage-result.json'
     if continuation and completed.exists():
         prior=read(completed)
-        if (prior.get('advancementEligible') is True and prior.get('sourceRevision')==revision
+        finished=(prior.get('advancementEligible') is True or
+                  (continuation['phase']=='eight-hour' and prior.get('experimentComplete') is True
+                   and prior.get('continuationAllowed') is False and prior.get('advancementEligible') is False))
+        if (finished and prior.get('sourceRevision')==revision
             and prior.get('sequenceId')==continuation['sequenceId'] and prior.get('phase')==continuation['phase']
             and prior.get('continuationSha256')==contract_hash(continuation)
             and prior.get('explorationAdoption')==binding
@@ -189,6 +202,12 @@ def execute(args, invoke=None):
             if hashlib.sha256(Path(prior['recoveryCheckpoint']).read_bytes()).hexdigest()!=prior['recoverySha256']:
                 raise ValueError('completed stage recovery checkpoint changed')
             return prior
+        if terminal.exists() or (continuation['phase']=='eight-hour' and prior.get('experimentComplete') is True):
+            raise ValueError('finished experiment evidence/source changed; do not repeat computation')
+    def strength_ready():
+        return bool(result.get('healthPassed') or
+                    (continuation and continuation['phase']=='eight-hour' and result.get('healthAudited')))
+
     def phase(name,flags,proof_name=None,valid=lambda data:True):
         receipt_path=directory/'phase-receipts'/f'{name}.json'
         proof=directory/proof_name if proof_name else None
@@ -200,7 +219,7 @@ def execute(args, invoke=None):
 
         result['phase']=name
         if directory.exists():atomic_json(directory/'stage-result.json',result)
-        optional_strength=bool(continuation and result.get('healthPassed') and name in ('prepare-validation','validation'))
+        optional_strength=bool(continuation and strength_ready() and name in ('prepare-validation','validation'))
         if optional_strength and remaining_budget(directory)<=0:raise PhaseIncomplete(name,'budget-expired')
         invoke(common+flags)
         report=read(directory/'supervisor-result.json')
@@ -215,6 +234,7 @@ def execute(args, invoke=None):
         checkpoint=args.resume
         if (directory/'latest.json').exists():checkpoint=Path(read(directory/'latest.json')['checkpoint'])
         phase('training',['--resume',str(checkpoint.resolve())] if checkpoint else [],'runner-result.json',lambda p:p.get('reason')=='validation-handoff')
+        result['trainingFinished']=True
         latest=Path(read(directory/'latest.json')['checkpoint']).resolve()
         phase('export-parity',['--resume',str(latest),'--export-parity','--parity-corpus',str(args.parity_corpus.resolve()),*development_flags(args)],'trained-export-parity.json',lambda p:export_complete(p,directory,args))
         result['developmentObservation']=development_record(directory,args)
@@ -225,10 +245,16 @@ def execute(args, invoke=None):
         if binding and (health.get('explorationAdoption')!=binding or health.get('trainingRecipe')!=result['trainingRecipe']):
             raise ValueError('health differs from selected recipe')
         result['health']=health
-        if not health.get('healthy'):raise ValueError('pipeline health gate unmet')
-        result['healthPassed']=True
         if continuation:result['healthBindings']=health_bindings(directory)
-        checkpoints=health['checkpoints'];candidate=checkpoints[0]
+        result['healthAudited']=True
+        if not health.get('healthy') and not (continuation and continuation['phase']=='eight-hour'):
+            raise ValueError('pipeline health gate unmet')
+        result['healthPassed']=health.get('healthy') is True
+        checkpoints=health['checkpoints']
+        if not checkpoints and continuation and continuation['phase']=='eight-hour':
+            result['strengthEvaluation']={'status':'unavailable','reason':'no-fresh-trained-candidate'}
+            raise PhaseIncomplete('prepare-validation','no-fresh-trained-candidate')
+        candidate=checkpoints[0]
         opponent={'path':continuation['recoveryCheckpoint']} if continuation else next((p for p in checkpoints[1:] if p['weightsSha256']!=candidate['weightsSha256']),None)
         if opponent is None:raise ValueError('distinct evaluation checkpoints unavailable')
         pair=['--candidate-checkpoint',candidate['path'],'--opponent-checkpoint',opponent['path']]
@@ -236,7 +262,7 @@ def execute(args, invoke=None):
         plan=read(directory/'prepare-arena-result.json')
         if plan.get('status')!='completed':raise ValueError('validation workload preparation incomplete')
         phase('validation',['--resume',str(latest),'--arena-plan',plan['plan'],*pair],f"evaluations/{plan['planSha256']}/report.json",lambda p:p.get('mode','strict')=='strict' and p.get('status')=='completed' and p.get('completePairs')==100 and p.get('completedGames')==200 and p.get('identity',{}).get('planSha256')==plan['planSha256'])
-        result.update(status='phases-finished',reason='Inspect arena evidence and publish progress before considering the conditional overnight stage.')
+        result.update(status='phases-finished',reason='Inspect arena evidence and publish the experiment outcome.')
         result['advancementEligible']=bool(continuation and result.get('healthPassed'))
     except PhaseIncomplete as error:
         result['reason']=str(error)
@@ -245,8 +271,10 @@ def execute(args, invoke=None):
         allowed={'budget','budget-expired','budget-exhausted-before-phase','resource-stop','resource-pause','node-limit','deadline',
                  'inference-budget','verification-budget','budget-or-resource-stop','opening-attempt-limit',
                  'verification-unfinished','search-recovery'}
-        result['advancementEligible']=bool(continuation and result.get('healthPassed') and
+        if continuation and continuation['phase']=='eight-hour':allowed.add('no-fresh-trained-candidate')
+        result['boundedStrengthUnfinished']=bool(continuation and strength_ready() and
             error.phase in ('prepare-validation','validation') and error.reason in allowed)
+        result['advancementEligible']=bool(result['boundedStrengthUnfinished'] and result.get('healthPassed'))
     except (ValueError,OSError,KeyError,subprocess.SubprocessError) as error:
         result['reason']=str(error)
     if 'plan' in locals():
@@ -254,10 +282,20 @@ def execute(args, invoke=None):
         if arena_report.exists():result['strengthEvaluation']=read(arena_report)
     if continuation:
         result.update(sequenceId=continuation['sequenceId'],phase=continuation['phase'],continuationSha256=contract_hash(continuation))
+        if continuation['phase']=='eight-hour':
+            finished=bool(result.get('trainingFinished') and result.get('healthAudited') and
+                          (result.get('status')=='phases-finished' or result.get('boundedStrengthUnfinished')))
+            result.update(experimentComplete=finished,advancementEligible=False,continuationAllowed=False)
         if (directory/'latest.json').exists():
             latest=read(directory/'latest.json')
             result.update(recoveryCheckpoint=latest['checkpoint'],recoverySha256=latest['sha256'])
-    if directory.exists():atomic_json(directory/'stage-result.json',result)
+    if directory.exists():
+        atomic_json(directory/'stage-result.json',result)
+        if continuation and continuation['phase']=='eight-hour' and result.get('experimentComplete'):
+            from .sequence import immutable
+            from .continuation_policy import reference
+            immutable(terminal,{'schema':1,'continuationSha256':contract_hash(continuation),
+                                'result':reference(directory/'stage-result.json')})
     return result
 
 

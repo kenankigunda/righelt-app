@@ -55,10 +55,13 @@ def validate_gate_report(report, source_revision, stage):
 
 def validation_boundary(runtime,now=None):
     duration=runtime['deadlineMonotonic']-runtime['startedMonotonic']
-    boundary=runtime['startedMonotonic']+duration*5/6
+    reserve=runtime.get('reserveSeconds',duration/6)
+    if type(reserve) not in (int,float) or not 0<reserve<duration:
+        raise ValueError('invalid validation reserve')
+    boundary=runtime['deadlineMonotonic']-reserve
     if 'deadlineWall' in runtime:
         now=time.monotonic() if now is None else now
-        boundary=min(boundary,now+(runtime['deadlineWall']-duration/6-time.time()))
+        boundary=min(boundary,now+(runtime['deadlineWall']-reserve-time.time()))
     return boundary
 
 
@@ -334,7 +337,8 @@ def main():
     manifest=build_manifest(args.seed,args.stage)
     continuation=json.loads(args.continuation.read_text()) if args.continuation else None
     if continuation:
-        if args.stage!=('initial' if continuation['phase']=='six-hour' else 'overnight'):
+        from .continuation_policy import INITIAL_PHASES
+        if args.stage!=('initial' if continuation['phase'] in INITIAL_PHASES else 'overnight'):
             raise ValueError('continuation stage mismatch')
         manifest.update(continuation=continuation,seconds=continuation['budgetSeconds'])
     # Continuations prove fresh predecessor health through their bound contract;
@@ -346,6 +350,9 @@ def main():
     if continuation:allocation.create_continuation(continuation)
     else:allocation.create(args.stage)
     validate_continuation(args.run_dir,manifest)
+    if continuation:
+        from .continuation_policy import validate_source
+        validate_source(continuation,artifact_root,args.run_dir,manifest['sourceRevision'],json.loads(args.gate_report.read_text()))
     allocation.recover_abandoned(cleanup_owned)
     adoption=exploration_adoption.admission(args.run_dir,continuation)
     if adoption:
@@ -391,6 +398,8 @@ def main():
         runtime.update(schema=2,startedMonotonic=started,deadlineMonotonic=now+remaining,startedWall=wall-charged,
                        deadlineWall=wall+remaining,manifestSha256=digest,stage=args.stage,seed=args.seed,
                        bootTime=psutil.boot_time(),elapsedBefore=charged,allocationInterval=interval['id'],allocationId=allocation.accounting()[0]['id'])
+        if continuation:runtime['reserveSeconds']=continuation['reserveSeconds']
+        else:runtime.pop('reserveSeconds',None)
         if adoption:runtime.update(trainingRecipe=adoption['trainingRecipe'],explorationAdoption=adoption['explorationAdoption'])
         if phase=='canary':runtime.update(deadlineMonotonic=now+min(600,remaining),deadlineWall=wall+min(600,remaining))
         if args.resume:

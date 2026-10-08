@@ -1,7 +1,8 @@
-"""One immutable training recipe choice, carried from six hours into twelve."""
+"""One immutable training recipe choice for each authorized initial allocation."""
 from pathlib import Path
 
 from .allocation import Allocation
+from .continuation_policy import INITIAL_PHASES
 from .development_probe import checked_ref, reference
 from .exploration_receipt import validate_receipt
 from .sequence import immutable, read
@@ -32,7 +33,7 @@ def publish(directory, receipt_path):
     creation, _, pending = allocation.accounting()
     if pending: raise ValueError('adoption requires settled computation')
     contract = creation.get('continuation')
-    if not required(contract) or contract['phase'] != 'six-hour': raise ValueError('only six-hour screen may select a recipe')
+    if not required(contract) or contract['phase'] not in INITIAL_PHASES: raise ValueError('only initial-allocation screen may select a recipe')
     if Path(receipt_path).resolve() != locate_receipt(directory).resolve(): raise ValueError('superseded screen selection')
     receipt = validate_receipt(receipt_path, allocation)
     plan = read(checked_ref(receipt['plan']))
@@ -59,7 +60,7 @@ def validate(binding, *, directory=None, mode='admission'):
     if Path(binding['path']).resolve() != source / 'recipe-adoption.json': raise ValueError('noncanonical recipe adoption')
     allocation = Allocation(source.parent, source)
     creation, _, _ = allocation.accounting(); contract = creation.get('continuation')
-    if (not required(contract) or contract['phase'] != 'six-hour' or creation['id'] != value['allocationId']
+    if (not required(contract) or contract['phase'] not in INITIAL_PHASES or creation['id'] != value['allocationId']
             or contract['sequenceId'] != value['sequenceId']):
         raise ValueError('adoption belongs to another source allocation')
     if checked_ref(value['receipt']).resolve() != locate_receipt(source).resolve(): raise ValueError('superseded adoption receipt')
@@ -75,8 +76,8 @@ def validate(binding, *, directory=None, mode='admission'):
         target_contract = target_creation.get('continuation')
         if not required(target_contract) or target_contract['sequenceId'] != value['sequenceId']:
             raise ValueError('adoption differs from target sequence')
-        if target_contract['phase'] == 'six-hour':
-            if target != source or target_creation['id'] != value['allocationId']: raise ValueError('wrong six-hour adoption allocation')
+        if target_contract['phase'] in INITIAL_PHASES:
+            if target != source or target_creation['id'] != value['allocationId']: raise ValueError('wrong initial adoption allocation')
         elif target_contract['phase'] == 'twelve-hour':
             if target_contract.get(FIELD) != binding: raise ValueError('overnight recipe choice changed')
         else: raise ValueError('adoption has unsupported phase')
@@ -85,7 +86,7 @@ def validate(binding, *, directory=None, mode='admission'):
 
 def for_allocation(directory, continuation, *, mode='admission'):
     if not required(continuation): return None
-    binding = reference(Path(directory) / 'recipe-adoption.json') if continuation['phase'] == 'six-hour' else continuation.get(FIELD)
+    binding = reference(Path(directory) / 'recipe-adoption.json') if continuation['phase'] in INITIAL_PHASES else continuation.get(FIELD)
     validate(binding, directory=directory, mode=mode)
     return binding
 
@@ -132,13 +133,13 @@ def first_manifest_source(manifest, repair):
 
 
 def checkpoint_recipe(checkpoint, data, *, recipe, binding=None, continuation=None):
-    """Only the exact authorized six-hour starting bundle may predate adoption."""
+    """Only the exact authorized initial starting bundle may predate adoption."""
     actual = record_recipe(data)
     if binding is None:
         if actual != recipe or FIELD in data: raise ValueError('checkpoint recipe differs from experiment')
         return
     adoption = read_binding(binding)
-    starting = (continuation and continuation['phase'] == 'six-hour'
+    starting = (continuation and continuation['phase'] in INITIAL_PHASES
                 and Path(checkpoint).resolve() == Path(adoption['startingCheckpoint']['path'])
                 and reference(checkpoint) == adoption['startingCheckpoint'])
     if starting:

@@ -10,7 +10,7 @@ from righelt_training.stage import execute
 
 
 class StageTests(unittest.TestCase):
-    def run_case(self,fail=None,healthy=True,resume=False,repeat=False,incomplete_arena=False,diagnostic=False,continuation=False,arena_reason='budget',exhausted_process=False,development=False):
+    def run_case(self,fail=None,healthy=True,resume=False,repeat=False,incomplete_arena=False,diagnostic=False,continuation=False,arena_reason='budget',exhausted_process=False,development=False,phase='six-hour',tamper_finished=False,checkpoint_count=2):
         with TemporaryDirectory() as tmp:
             root=Path(tmp);run=root/'run';calls=[]
             args=SimpleNamespace(run_dir=run,activity_file=root/'activity',gate_report=root/'gates',parity_corpus=root/'corpus',stage='initial',seed=107,resume=root/'old.pt' if resume else None)
@@ -19,7 +19,7 @@ class StageTests(unittest.TestCase):
                 args.development_cases=root/'development-cases.json';args.development_cases.write_text('{}')
             if continuation:
                 args.continuation=root/'contract.json'
-                args.continuation.write_text(json.dumps({'sequenceId':'approved','phase':'six-hour','recoveryCheckpoint':str(root/'old.pt')}))
+                args.continuation.write_text(json.dumps({'sequenceId':'approved','phase':phase,'recoveryCheckpoint':str(root/'old.pt')}))
             if exhausted_process:
                 run.mkdir();allocation=Allocation(root,run);allocation.create('initial')
             def invoke(argv):
@@ -43,15 +43,48 @@ class StageTests(unittest.TestCase):
                         'casesSha256':hashlib.sha256(args.development_cases.read_bytes()).hexdigest(),
                         'proof':str(proof),'proofSha256':hashlib.sha256(proof.read_bytes()).hexdigest(),
                         'report':str(report),'reportSha256':hashlib.sha256(report.read_bytes()).hexdigest()}))
-                (run/'health-report.json').write_text(json.dumps({'complete':True,'healthy':healthy,'checkpoints':[{'path':str(run/'latest.pt'),'weightsSha256':'new'},{'path':str(run/'first.pt'),'weightsSha256':'old'}]}))
+                (run/'health-report.json').write_text(json.dumps({'complete':True,'healthy':healthy,'checkpoints':[{'path':str(run/'latest.pt'),'weightsSha256':'new'},{'path':str(run/'first.pt'),'weightsSha256':'old'}][:checkpoint_count]}))
                 (run/'prepare-arena-result.json').write_text(json.dumps({'status':'completed','plan':str(run/'plan.json'),'planSha256':'frozen'}))
                 proof=run/'evaluations'/'frozen';proof.mkdir(parents=True,exist_ok=True)
                 (proof/'report.json').write_text(json.dumps({'mode':'diagnostic' if diagnostic else 'strict','reason':arena_reason if incomplete_arena else 'completion evidence incomplete','status':'inconclusive' if incomplete_arena else 'completed','completePairs':99 if incomplete_arena else 100,'completedGames':198 if incomplete_arena else 200,'identity':{'planSha256':'frozen'}}))
             with (nullcontext() if exhausted_process else patch('righelt_training.stage.remaining_budget',return_value=500)):result=execute(args,invoke)
             if repeat:
+                if tamper_finished:
+                    (run/'stage-result.json').write_text('{}')
                 calls.clear()
                 with (nullcontext() if exhausted_process else patch('righelt_training.stage.remaining_budget',return_value=500)):result=execute(args,invoke)
             return result,calls
+
+    def test_eight_hour_result_is_terminal_without_repeating_final_work(self):
+        for healthy in (True,False):
+            result,calls=self.run_case(continuation=True,phase='eight-hour',healthy=healthy,repeat=True)
+            self.assertTrue(result['experimentComplete']);self.assertEqual(calls,[])
+            self.assertFalse(result['advancementEligible']);self.assertFalse(result['continuationAllowed'])
+            self.assertEqual(result['health']['healthy'],healthy)
+        for healthy in (True,False):
+            result,calls=self.run_case(continuation=True,phase='eight-hour',healthy=healthy,incomplete_arena=True,repeat=True)
+            self.assertTrue(result['experimentComplete']);self.assertEqual(calls,[])
+        result,calls=self.run_case(continuation=True,phase='eight-hour',healthy=False)
+        self.assertTrue(any('--arena-plan' in c for c in calls))
+        self.assertFalse(result['healthPassed'])
+
+    def test_finished_eight_hour_report_cannot_be_changed_then_reentered(self):
+        with self.assertRaisesRegex(ValueError,'evidence changed'):
+            self.run_case(continuation=True,phase='eight-hour',repeat=True,tamper_finished=True)
+
+    def test_eight_hour_zero_or_one_new_checkpoint_is_reported_honestly(self):
+        result,calls=self.run_case(continuation=True,phase='eight-hour',healthy=False,checkpoint_count=0)
+        self.assertTrue(result['experimentComplete']);self.assertFalse(result['healthPassed'])
+        self.assertEqual(result['strengthEvaluation']['reason'],'no-fresh-trained-candidate')
+        self.assertFalse(any('--arena-plan' in c for c in calls))
+        result,calls=self.run_case(continuation=True,phase='eight-hour',healthy=False,checkpoint_count=0,repeat=True)
+        self.assertEqual(calls,[]);self.assertTrue(result['experimentComplete'])
+        result,calls=self.run_case(continuation=True,phase='eight-hour',healthy=False,checkpoint_count=1)
+        self.assertTrue(any('--arena-plan' in c for c in calls));self.assertTrue(result['experimentComplete'])
+
+    def test_eight_hour_correctness_failure_is_not_a_completed_experiment(self):
+        result,_=self.run_case(continuation=True,phase='eight-hour',incomplete_arena=True,arena_reason='correctness-failure')
+        self.assertFalse(result['experimentComplete']);self.assertFalse(result['advancementEligible'])
 
     def test_exhausted_supervisor_result_and_crash_resume_preserve_health(self):
         result,calls=self.run_case(continuation=True,exhausted_process=True)
