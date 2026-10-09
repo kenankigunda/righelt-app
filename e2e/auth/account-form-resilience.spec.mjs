@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
+import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 const dialog = page => page.getByTestId("account-dialog");
 test.beforeEach(async () => {
   expect((await fetch("http://127.0.0.1:10088/reset-limits", { method: "POST" })).status).toBe(200);
@@ -8,7 +8,7 @@ test.beforeEach(async () => {
 test("correctable creation errors preserve the username and allow correction without leaving the form", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 700 });
   await page.goto("/");
-  await page.getByTestId("home-create-game").click();
+  await openPlaySignIn(page);
   await dialog(page).getByRole("button", { name: "Create account", exact: true }).click();
   const username = `Form_${Date.now().toString(36)}`;
   await enterUsername(page, username);
@@ -36,7 +36,7 @@ test("correctable creation errors preserve the username and allow correction wit
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveValue("An accessible account password 428");
   expect(requests).toBe(1);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
-  await page.getByRole("button", { name: "Start a friend game", exact: true }).click();
+  await continueFriendIntroduction(page);
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
   expect(requests).toBe(2);
 });

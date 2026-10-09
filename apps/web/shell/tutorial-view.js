@@ -8,7 +8,7 @@ import {renderPieceSymbol} from '../piece-symbols.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const renderHostGuidance = host => `<div class="lesson-host"><img src="/assets/opponents/${host}-portrait.webp" width="174" height="116" alt="${esc(host[0].toUpperCase()+host.slice(1))}, your teacher"><div><p class="lesson-host-name">${esc(host[0].toUpperCase()+host.slice(1))}</p><p class="lesson-host-line">${esc(HOST_LINES[host].welcome)}</p></div></div>`;
 export const renderChapterNavigation = value => `<details class="lesson-chapters"><summary>Chapter ${value.chapter+1} of ${value.chapters.length}: ${esc(value.chapters[value.chapter].title)}</summary><nav aria-label="Tutorial chapters">${value.chapters.map((c,i)=>`<button class="secondary" data-lesson-chapter="${i}" ${!value.replay&&i>value.unlockedChapter&&!value.completed.includes(c.id)?'disabled':''} aria-current="${i===value.chapter?'step':'false'}">${value.completed.includes(c.id)?icon('check'):''}${esc(c.title)}</button>`).join('')}</nav></details>`;
-export const createTutorialView = ({controller,onFinish,onExit,onSound=()=>{},supportsHover=()=>false}) => {
+export const createTutorialView = ({controller,onFinish,onExit,onRetry=()=>{},onSound=()=>{},supportsHover=()=>false}) => {
  let root=null,runtime=null,key='',snapshot=null,accountStage=false,boardApplying=false;
  const mount=element=>{
   if(root===element)return;
@@ -19,7 +19,7 @@ export const createTutorialView = ({controller,onFinish,onExit,onSound=()=>{},su
   host.applyAction=async (...args)=>{boardApplying=true;try{return await apply(...args);}finally{boardApplying=false;}};
   runtime=createBoardRuntime({boardAdapter:createEngineBoardAdapter(),host,controls:{getSupportsHover:supportsHover,getAllowFreeSelection:()=>false,onInteractionSound:event=>{if(['select','preview','cancel'].includes(event.kind))controller.activity();onSound(event);},onActionResult:value=>{if(value?.accepted)onSound({kind:'move'});},onStateUpdated:value=>{queueMicrotask(()=>controller.inspect(value));highlight();},onVisualsUpdated:value=>{for(const name of ['command','supply','group'])root.querySelector(`[data-legend-entry="${name}"]`).hidden=!value[name];}}});
   runtime.bindElements({boardEl:root.querySelector('.board'),overlayLinesEl:root.querySelector('.overlay-lines'),boardPreviewLabelEl:root.querySelector('[data-lesson-preview]'),boardTurnIndicatorEl:root.querySelector('[data-lesson-turn]')});
-  root.addEventListener('click',click);root.addEventListener('change',change);update();root.querySelector('[data-lesson-title]').focus({preventScroll:true});
+  root.addEventListener('click',click);root.addEventListener('change',change);root.addEventListener('keydown',keydown);update();root.querySelector('[data-lesson-title]').focus({preventScroll:true});
  };
  const click=event=>{
   if(event.target.closest('.cell'))controller.activity();
@@ -31,8 +31,9 @@ export const createTutorialView = ({controller,onFinish,onExit,onSound=()=>{},su
   if(button.hasAttribute('data-lesson-skip')&&controller.skip())root.querySelector('[data-lesson-title]').focus({preventScroll:true});
   if(button.hasAttribute('data-lesson-skip-all'))onFinish('skipped');
   if(button.hasAttribute('data-lesson-exit'))onExit();
-  if(button.hasAttribute('data-lesson-account-retry'))onFinish(controller.current().progress.result||'completed');
+  if(button.hasAttribute('data-lesson-account-retry'))onRetry();
  };
+ const keydown=event=>{if(accountStage&&event.key==='Escape'){event.preventDefault();onExit();}};
  const change=event=>{if(event.target.hasAttribute('data-lesson-host-picker'))controller.setHost(event.target.value);};
  const highlight=()=>{if(!root||!runtime)return;const value=controller.current();root.querySelectorAll('.lesson-target').forEach(n=>n.classList.remove('lesson-target'));if(!value.hint)return;const target=value.exercise.action?.to||value.state.pieces.find(p=>p.id===value.exercise.inspect)?.position;if(target)root.querySelector(`.cell[data-row="${target.row}"][data-col="${target.col}"]`)?.classList.add('lesson-target');};
  const update=()=>{
@@ -56,6 +57,6 @@ export const createTutorialView = ({controller,onFinish,onExit,onSound=()=>{},su
  };
  const showAccount=element=>{accountStage=true;controller.pause();root.querySelector('.lesson-layout').hidden=true;root.querySelector('[data-lesson-account]').hidden=false;root.querySelector('[data-account-host]').innerHTML=renderHostGuidance(controller.current().host);if(element)root.querySelector('[data-account-form]').append(element);globalThis.scrollTo?.({top:0,behavior:'instant'});};
  const accountStatus=(text,retry=false)=>{root.querySelector('[data-lesson-account-status]').textContent=text;root.querySelector('[data-lesson-account-retry]').hidden=!retry;};
- const destroy=()=>{if(root){root.removeEventListener('click',click);root.removeEventListener('change',change);}runtime?.destroy();runtime=null;root=null;};
+ const destroy=()=>{if(root){root.removeEventListener('click',click);root.removeEventListener('change',change);root.removeEventListener('keydown',keydown);}runtime?.destroy();runtime=null;root=null;};
  return {mount,update,destroy,showAccount,accountStatus};
 };

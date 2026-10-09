@@ -55,7 +55,7 @@ import {
 } from "./routes.js";
 import { createTutorialController } from "./tutorial.js";
 import { createTutorialView } from "./tutorial-view.js";
-import { needsTutorial, readTutorialProgress } from "./tutorial-progress.js";
+import { needsTutorial, readTutorialProgress, savedTutorialResult, writeTutorialProgress } from "./tutorial-progress.js";
 
 const appEl = document.getElementById("app");
 const dismissedRecoveryNotices = new Map();
@@ -168,10 +168,11 @@ window.addEventListener('blur',()=>{document.documentElement.dataset.pageActive=
 window.addEventListener('focus',()=>{syncPageActivity();gameSound.activityChanged();});
 let onboarding = null;
 let onboardingBypass = null;
+let tutorialExitFocus = null;
 let tutorialMountedRoot = null;
 let tutorialResult = null;
 const tutorial = createTutorialController({ storage, onChange: () => tutorialView?.update() });
-const tutorialView = createTutorialView({ controller:tutorial, supportsHover:()=>hoverCapability.getSupportsHover(), onSound:event=>gameSound.interaction(event), onFinish:result=>{void finishOnboarding(result);}, onExit:()=>exitOnboarding() });
+const tutorialView = createTutorialView({ controller:tutorial, supportsHover:()=>hoverCapability.getSupportsHover(), onSound:event=>gameSound.interaction(event), onFinish:result=>{void finishOnboarding(result);}, onExit:()=>exitOnboarding(), onRetry:()=>{void finishOnboarding(tutorialResult);} });
 const tutorialAccount = accountDialog;
 document.addEventListener('visibilitychange',()=>{if(currentRoute.name==='tutorial'){if(document.hidden)tutorial.pause();else if(!tutorialAccount.isOpen())tutorial.resume();}});
 const boardAdapter = createEngineBoardAdapter();
@@ -3361,10 +3362,12 @@ const mountTutorial = () => {
   tutorialMountedRoot=root;
   tutorial.start({host:onboarding?.host||'horus',replay:onboarding?.manual??true});
   tutorialView.mount(root);
-  if(onboarding?.skipLesson)void finishOnboarding(readTutorialProgress(storage).result||'skipped');
+  if(onboarding?.skipLesson)void finishOnboarding(savedTutorialResult({account:account.snapshot().session.account,progress:readTutorialProgress(storage)}));
 };
 const exitOnboarding = () => {
   const hash=onboarding?.intent?.hash||buildHomeHash();
+  const intent=onboarding?.intent;
+  tutorialExitFocus={hash,action:intent?.action==='return-game'?'restart-tutorial':intent?.action==='computer-game'?'opponent-story':intent?.action||'learn-to-play',gameId:intent?.action==='return-game'?null:intent?.gameId,opponent:intent?.opponent};
   onboarding=null;tutorialResult=null;tutorial.pause();opponentSession.cancel();void tutorialAccount.close(true);navigateTo(hash);
 };
 const beginOnboarding = (intent,{host='horus',manual=false}={}) => {
@@ -3375,7 +3378,8 @@ const beginOnboarding = (intent,{host='horus',manual=false}={}) => {
 };
 const finishOnboarding = async result => {
   if(currentRoute.name!=='tutorial' || onboarding?.continuing)return;
-  tutorialResult=result;tutorial.finish(result);
+  if(!tutorial.finish(result)){if(!onboarding?.skipLesson)return;writeTutorialProgress(storage,{...readTutorialProgress(storage),result});}
+  tutorialResult=result;
   if(!onboarding)onboarding={intent:null,host:tutorial.current().host,manual:true,continuing:false};
   const visit=onboarding;
   if(account.snapshot().enabled&&!account.canPlay()){
@@ -4162,6 +4166,7 @@ const startRouteSync = ({ renderStart = true } = {}) => {
       routeHydrated = true;
       render({ animatePanels: false, includeBoard: false });
       maybeRevealRouteTransition();
+      if(tutorialExitFocus?.hash===window.location.hash){const focus=tutorialExitFocus;tutorialExitFocus=null;const selector=`[data-action="${CSS.escape(focus.action)}"]${focus.gameId?`[data-game-id="${CSS.escape(focus.gameId)}"]`:''}${focus.opponent?`[data-opponent="${CSS.escape(focus.opponent)}"]`:''}`;appEl.querySelector(selector)?.focus({preventScroll:true});}
       if(onboardingBypass?.hash===window.location.hash){const intent=onboardingBypass;const button=appEl.querySelector(`[data-action="${CSS.escape(intent.action)}"][data-game-id="${CSS.escape(intent.gameId)}"]`);if(button)button.click();else onboardingBypass=null;}
     }
   })();

@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import {test,expect} from '@playwright/test';
-import {AUTH_REQUEST_HEADER,AUTH_PROTOCOL_HEADER,AUTH_PROTOCOL_VERSION} from '../../packages/shared-types/src/auth-policy.js';
+import {AUTH_REQUEST_HEADER,AUTH_PROTOCOL_HEADER,AUTH_PROTOCOL_VERSION,SESSION_CONTEXT_HEADER} from '../../packages/shared-types/src/auth-policy.js';
 const password='Tutorial account password 428';
 const name=()=>`Lesson_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,5)}`;
 test.beforeEach(async()=>{expect((await fetch('http://127.0.0.1:10088/reset-limits',{method:'POST'})).status).toBe(200);});
@@ -13,6 +13,7 @@ test('Friend introduction leads to Horus, skip leads to integrated creation, and
  expect((await new AxeBuilder({page}).include('[data-lesson-account]').analyze()).violations).toEqual([]);
  await page.screenshot({path:'test-results/tutorial-account-wide.png'});await createAccount(page,name());await expect(page).toHaveURL(/#\/game\//);await expect(page.getByTestId('game-role')).toContainText('Player 1');await expect.poll(()=>creates).toBe(1);
  const preference=await page.evaluate(async()=> (await (await fetch('/api/auth/session')).json()).account.preferences.tutorial);expect(preference).toBe('skipped');
+ await page.getByRole('button',{name:'Close invite',exact:true}).click();const replay=page.locator('[data-action="restart-tutorial"]');await replay.click();await page.locator('.lesson-layout [data-lesson-exit]').click();await expect(replay).toBeFocused();
 });
 test('returning signed-out device goes directly to integrated login and Back creates nothing',async({page})=>{
  await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'});
@@ -41,4 +42,13 @@ test('cross-tab sign-out retires a delayed lesson continuation',async({page,base
   await sibling.getByRole('button',{name:'Account',exact:true}).click();await sibling.getByTestId('account-dialog').getByRole('button',{name:'Sign out',exact:true}).click();
   await expect(page).toHaveURL(/#\/$/);release();await expect(page.getByTestId('home-create-game')).toBeVisible();expect(creates).toBe(0);
  }finally{release();await page.unrouteAll({behavior:'wait'});await sibling.close();}
+});
+
+test('retry preserves skipped account status over completed device status',async({page,baseURL})=>{
+ const headers={Origin:new URL(baseURL).origin,[AUTH_REQUEST_HEADER]:'1',[AUTH_PROTOCOL_HEADER]:String(AUTH_PROTOCOL_VERSION)};
+ const registration=await page.request.post('/api/auth/register',{headers,data:{username:name(),password}});const body=await registration.json();
+ expect((await page.request.patch('/api/account',{headers:{...headers,[SESSION_CONTEXT_HEADER]:body.contextId},data:{preferences:{tutorial:'skipped'}}})).ok()).toBe(true);
+ await page.addInitScript(()=>localStorage.setItem('righelt.lesson.progress.v1',JSON.stringify({completed:[],result:'completed'})));
+ const results=[];await page.route('**/api/account',async route=>{if(route.request().method()!=='PATCH')return route.continue();results.push(route.request().postDataJSON().preferences.tutorial);if(results.length===1)await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'temporarily_unavailable'})});else await route.continue();});
+ await friendLesson(page);await expect(page.locator('[data-lesson-account-retry]')).toBeVisible();await page.locator('[data-lesson-account-retry]').click();await expect(page).toHaveURL(/#\/game\//);expect(results).toEqual(['skipped','skipped']);
 });

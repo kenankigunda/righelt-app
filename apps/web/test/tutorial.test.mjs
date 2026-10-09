@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createTutorialController,TUTORIAL_TIMING} from '../shell/tutorial.js';
 import {TUTORIAL_CHAPTERS} from '../shell/tutorial-lessons.js';
-import {needsTutorial,readTutorialProgress} from '../shell/tutorial-progress.js';
+import {needsTutorial,readTutorialProgress,savedTutorialResult} from '../shell/tutorial-progress.js';
 import {createTutorialBoardHost} from '../board/hosts/tutorial-host.js';
 import {validateAction} from '../generated/packages/game-engine/src/legal.js';
 const storage=()=>{const m=new Map();return {getItem:k=>m.get(k)||null,setItem:(k,v)=>m.set(k,v)};};
@@ -33,4 +33,10 @@ test('account state owns automatic entry and device state owns signed-out entry'
  assert.equal(needsTutorial({account:{preferences:{tutorial:'completed'}},progress:{result:null}}),false);
  assert.equal(needsTutorial({progress:{result:'skipped'}}),false);
  assert.deepEqual(readTutorialProgress({getItem:()=>'{bad'}),{completed:[],result:null});
+});
+
+test('bypassed lesson uses account result instead of upgrading from unrelated device progress',()=>{
+ assert.equal(savedTutorialResult({account:{preferences:{tutorial:'skipped'}},progress:{result:'completed'}}),'skipped');
+ assert.equal(savedTutorialResult({account:{preferences:{tutorial:'completed'}},progress:{result:null}}),'completed');
+ assert.equal(savedTutorialResult({progress:{result:'completed'}}),'completed');
 });

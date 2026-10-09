@@ -6,3 +6,5 @@ export const readTutorialProgress = storage => {
 };
 export const writeTutorialProgress = (storage,progress) => {try {storage?.setItem(TUTORIAL_PROGRESS_KEY,JSON.stringify(progress));}catch{}};
 export const needsTutorial = ({account,progress,legacyCompleted=false}) => account?.preferences ? account.preferences.tutorial==='new' : !progress.result && !legacyCompleted;
+
+export const savedTutorialResult = ({account,progress}) => ['completed','skipped'].includes(account?.preferences?.tutorial) ? account.preferences.tutorial : progress.result || 'skipped';
