@@ -3882,6 +3882,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
     const heading = appEl.querySelector('[data-game-panel="history"] h2');
     if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }
   }
+  if(routeHydrated&&tutorialExitFocus?.hash===window.location.hash){const focus=tutorialExitFocus;const selector=`[data-action="${CSS.escape(focus.action)}"]${focus.gameId?`[data-game-id="${CSS.escape(focus.gameId)}"]`:''}${focus.opponent?`[data-opponent="${CSS.escape(focus.opponent)}"]`:''}`;const target=appEl.querySelector(selector);if(target){target.focus({preventScroll:true});tutorialExitFocus=null;}}
   return result;
 };
 const renderContent = ({ animatePanels, includeBoard }) => {
@@ -4166,7 +4167,6 @@ const startRouteSync = ({ renderStart = true } = {}) => {
       routeHydrated = true;
       render({ animatePanels: false, includeBoard: false });
       maybeRevealRouteTransition();
-      if(tutorialExitFocus?.hash===window.location.hash){const focus=tutorialExitFocus;tutorialExitFocus=null;const selector=`[data-action="${CSS.escape(focus.action)}"]${focus.gameId?`[data-game-id="${CSS.escape(focus.gameId)}"]`:''}${focus.opponent?`[data-opponent="${CSS.escape(focus.opponent)}"]`:''}`;appEl.querySelector(selector)?.focus({preventScroll:true});}
       if(onboardingBypass?.hash===window.location.hash){const intent=onboardingBypass;const button=appEl.querySelector(`[data-action="${CSS.escape(intent.action)}"][data-game-id="${CSS.escape(intent.gameId)}"]`);if(button)button.click();else onboardingBypass=null;}
     }
   })();
@@ -4537,7 +4537,7 @@ appEl.addEventListener("click", async (event) => {
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") { if (accountDialog.isOpen()) { void accountDialog.close(); return; } accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
   if(action==='learn-to-play'||action==='restart-tutorial'){beginOnboarding(currentRoute.gameId?{hash:window.location.hash,action:'return-game',gameId:currentRoute.gameId}:null,{manual:true});return;}
-  const lessonEntryActions=new Set(['create-self-play','join-player','accept-invite-player','join-viewer','accept-invite-viewer']);
+  const lessonEntryActions=new Set(['create-self-play','join-player','accept-invite-player']);
   const bypass=onboardingBypass && onboardingBypass.hash===window.location.hash && onboardingBypass.action===action && onboardingBypass.gameId===actionGameId;
   if(bypass)onboardingBypass=null;
   if(!bypass && account.snapshot().enabled && lessonEntryActions.has(action)){

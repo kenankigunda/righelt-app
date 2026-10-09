@@ -47,7 +47,11 @@ export async function continueFriendIntroduction(page, {play = true} = {}) {
   if (!play) {await story.getByRole('button',{name:'Close opponent story',exact:true}).click();return;}
   await story.getByRole('button',{name:'Start a friend game',exact:true}).click();
   await expect(page).toHaveURL(/#\/(tutorial(?:$|\/)|game\/)/);
-  if(new URL(page.url()).hash.startsWith('#/tutorial'))await page.locator('[data-lesson-skip-all]').click();
+  // A saved result briefly passes through the tutorial route while its account
+  // acknowledgment completes. Only skip when an actual lesson is displayed.
+  const skip=page.locator('[data-lesson-skip-all]');
+  await expect.poll(async()=>new URL(page.url()).hash.startsWith('#/game/')||await skip.isVisible()).toBe(true);
+  if(await skip.isVisible())await skip.click();
   await expect(page).toHaveURL(/#\/game\//);
   await expect(page.getByTestId('game-role')).toContainText('Player 1');
   await page.getByRole('button',{name:'Close invite',exact:true}).click();
