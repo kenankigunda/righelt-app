@@ -239,6 +239,37 @@ test("expiry leaves the board visible and signing in restores the same seat", as
   expect(await getHistoryMoveCount(page)).toBe(before);
 });
 
+test("logout retries a stalled session read while keeping local play blocked", async ({ page }) => {
+  await register(page, uniqueName(), { gate: true });
+  await account(page);
+  let reads = 0, release, started;
+  const held = new Promise(resolve => { release = resolve; });
+  const entered = new Promise(resolve => { started = resolve; });
+  await page.route("**/api/auth/session", async route => {
+    if (++reads === 1) {
+      started();
+      await held;
+      await route.abort().catch(() => {});
+    } else await route.continue();
+  });
+  try {
+    await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
+    await entered;
+    await expect(page.getByText("Sign-out pending", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+    await expect(page.getByTestId("game-board")).toBeVisible();
+    // This is the existing ten-second assertion budget, including the bounded
+    // attempt and ordinary retry. A stalled read must not suppress recovery.
+    await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
+    expect(reads).toBeGreaterThanOrEqual(2);
+    const session = await page.evaluate(async () => (await fetch("/api/auth/session")).json());
+    expect(session.authenticated).toBe(false);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
+
 test("a delayed renewal cookie cannot overwrite an account switch", async ({ page }) => {
   const first = uniqueName(), second = uniqueName();
   await register(page, first);
