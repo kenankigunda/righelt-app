@@ -4302,11 +4302,11 @@ const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: oppon
     if(intent.opponent !== 'friend') {
       if(getComputerReadiness().state!=='ready')return opponentSession.play(intent);
       storyDialog.close('play');
-      beginOnboarding({hash:buildHomeHash(),action:'computer-game',opponent:intent.opponent,side:intent.side},{host:intent.opponent});
+      beginOnboarding({hash:window.location.hash,action:'computer-game',opponent:intent.opponent,side:intent.side},{host:intent.opponent});
       return {state:'started'};
     }
     storyDialog.close('play');
-    if(account.snapshot().enabled){beginOnboarding({hash:buildHomeHash(),action:'create-game'},{host:'horus'});return {state:'started'};}
+    if(account.snapshot().enabled){beginOnboarding({hash:window.location.hash,action:'create-game'},{host:'horus'});return {state:'started'};}
     if(!account.canPlay()) return {state:'error',message:'Sign in to start your game.'};
     const handle=transport.createGame({selfPlayMode:false});
     startGameEntryRouteTransition(handle.result.id,currentRoute.name);

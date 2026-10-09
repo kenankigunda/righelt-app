@@ -113,7 +113,7 @@ for (const method of ["login", "registration"]) {
       await expect(visitor.getByTestId("invite-join-player")).toBeVisible();
       await expect(dialog(visitor)).not.toBeVisible();
       await visitor.getByTestId("invite-join-player").click();
-      await expect(visitor).toHaveURL(/#\/tutorial$/);
+      await expect(visitor).toHaveURL(/#\/tutorial(?:$|\/)/);
       if(method==='registration')await visitor.locator('[data-lesson-skip-all]').click();
       await expect(dialog(visitor)).toBeVisible();
       await expect(dialog(visitor)).toHaveAttribute('data-presentation','inline');
