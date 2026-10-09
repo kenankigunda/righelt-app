@@ -33,7 +33,19 @@ async function register(page, username, { gate = false } = {}) {
     await expect(page.getByRole("alert")).toHaveText("The page could not finish loading. Try again.");
     await retry.click();
   }
-  await play.click();
+  // The game URL and Player 1 role are optimistic. Finish the real creation
+  // before a caller can navigate away and cancel its pending mutation.
+  const [creation] = await Promise.all([
+    page.waitForResponse(response => response.request().method() === "POST"
+      && new URL(response.url()).pathname === "/api/shell/games", { timeout: 10000 }),
+    play.click(),
+  ]);
+  expect(creation.status()).toBe(200);
+  const { game } = await creation.json();
+  const requestedId = creation.request().postDataJSON().gameId;
+  expect(requestedId).toBeTruthy();
+  expect(game.id).toBe(requestedId);
+  await expect(page).toHaveURL(new RegExp(`#/game/${encodeURIComponent(game.id)}(?:\\?|$)`));
   if (gate) {
     await expect(page).toHaveURL(/#\/game\//);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
@@ -53,6 +65,53 @@ async function signIn(page, username, secret = password) {
   await expect(dialog(page)).not.toBeVisible();
   if(fromHome)await continueFriendIntroduction(page,{play:false});
 }
+
+test("registration helper does not return home when game creation fails", async ({ page }) => {
+  let release, started, creates = 0, homeNavigations = 0;
+  const held = new Promise(resolve => { release = resolve; });
+  const creationStarted = new Promise(resolve => { started = resolve; });
+  const navigated = frame => {
+    if (frame !== page.mainFrame()) return;
+    const url = new URL(frame.url());
+    if (url.pathname === "/" && !url.hash) homeNavigations++;
+  };
+  page.on("framenavigated", navigated);
+  // Fail one native creation before it reaches the server. The optimistic
+  // game URL must not let registration return home without a confirmed game.
+  await page.route("**/api/shell/games", async route => {
+    if (route.request().method() !== "POST") return route.continue();
+    creates++;
+    started();
+    await held;
+    await route.abort("aborted");
+  });
+  const registration = register(page, uniqueName()).then(
+    () => ({}), error => ({ error }),
+  );
+  const stoppedEarly = registration.then(outcome => {
+    throw outcome.error ?? new Error("Registration returned before game creation was released");
+  });
+  stoppedEarly.catch(() => {});
+  try {
+    await Promise.race([creationStarted, stoppedEarly]);
+    await Promise.race([
+      expect(page.getByTestId("game-role")).toContainText("Player 1"),
+      stoppedEarly,
+    ]);
+    expect(creates).toBe(1);
+    release();
+    const outcome = await registration;
+    expect(outcome.error).toBeTruthy();
+    expect(creates).toBe(1);
+    expect(homeNavigations).toBe(1);
+    await expect(page).toHaveURL(/#\/game\//);
+  } finally {
+    release();
+    await registration;
+    await page.unrouteAll({ behavior: "wait" });
+    page.off("framenavigated", navigated);
+  }
+});
 
 test("registration helper waits for a failed bootstrap retry before submitting", async ({ page }) => {
   let bootstrapRequests = 0, registerRequests = 0, release, retryStarted;

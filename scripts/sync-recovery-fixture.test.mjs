@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import http from 'node:http';
-import {once} from 'node:events';
+import {once,EventEmitter} from 'node:events';
 import {chromium} from '@playwright/test';
-import {wire, party} from '../e2e/support/sync-recovery-fixture.mjs';
+import {wire, party,closeContexts} from '../e2e/support/sync-recovery-fixture.mjs';
 
 // This controlled peer demonstrates the auxiliary client's failure boundary.
 // It does not claim to reproduce the unobserved Linux packet ordering in CI.
@@ -43,7 +43,7 @@ test(`native browser prerequisites avoid an auxiliary pooled disconnect (${dropA
   await context.addCookies([{name:'fixture',value:'same-session',url:backend.url}]);
   // Preserve route errors as evidence while allowing the expected negative
   // control to finish and close its browser and sockets.
-  const observedPage={routeWebSocket:page.routeWebSocket.bind(page),route:(pattern,handler)=>page.route(pattern,async route=>{
+  const observedPage={context:()=>context,unrouteAll:page.unrouteAll.bind(page),once:page.once.bind(page),off:page.off.bind(page),isClosed:page.isClosed.bind(page),routeWebSocket:page.routeWebSocket.bind(page),route:(pattern,handler)=>page.route(pattern,async route=>{
    try{await handler(route);}catch(error){routeErrors.push(error.message);await route.abort();}
   })};
   const fault=await wire(observedPage,{interceptHttp:false});
@@ -99,12 +99,115 @@ for(const failure of ['context','page','wire'])test(`party setup closes every ac
  const browser={newContext:async()=>{
   const id=created++;
   if(failure==='context'&&id===1)throw cause;
-  return {newPage:async()=>{
+  const context={newPage:async()=>{
    if(failure==='page')throw cause;
-   return {routeWebSocket:async()=>{throw cause;}};
+   const page=new EventEmitter();page.context=()=>context;page.unrouteAll=async()=>{};page.routeWebSocket=async()=>{throw cause;};return page;
   },unrouteAll:async()=>{unrouted.push(id);if(id===0)throw new Error('cleanup route error');},close:async()=>{closed.push(id);}};
+  return context;
  }};
- await assert.rejects(party(browser,'http://unused'),error=>error===cause);
+ await assert.rejects(party(browser,'http://unused'),error=>error instanceof AggregateError&&error.cause===cause&&error.errors[0]===cause);
  const expected=failure==='context'?[0]:[0,1,2];
  assert.deepEqual(unrouted.sort(),expected);assert.deepEqual(closed.sort(),expected);
+});
+
+function socketFixture() {
+ const page=new EventEmitter(),context={unrouteAll:async()=>{},close:async()=>{page.emit('close');}};
+ page.context=()=>context;page.isClosed=()=>false;page.route=async()=>{};page.unrouteAll=async()=>{};
+ page.routeWebSocket=async(pattern,handler)=>{page.open=()=>{
+  const sent=[],closures=[],upstreamClosures=[];let receive,pageClose,serverClose;
+  const server={onMessage:f=>{receive=f;},onClose:f=>{serverClose=f;},close:async options=>{upstreamClosures.push(options);}};
+  const socket={connectToServer:()=>server,send:message=>{sent.push(message);},onClose:f=>{pageClose=f;},close:async options=>{closures.push(options);}};
+  handler(socket);
+  return {sent,closures,upstreamClosures,message:value=>receive(value),pageClose:(...args)=>pageClose?.(...args),serverClose:(...args)=>serverClose?.(...args)};
+ };};
+ return {page,context};
+}
+for(const boundary of ['page','socket','server','dispose'])test(`lifecycle cancels delayed delivery at ${boundary} closure`,async t=>{
+ t.mock.timers.enable({apis:['setTimeout','Date']});
+ const {page,context}=socketFixture();const fault=await wire(page);const socket=page.open();
+ socket.message('pending');
+ if(boundary==='page')page.emit('close');
+ if(boundary==='socket')await socket.pageClose(1000,'done');
+ if(boundary==='server')await socket.serverClose(1001,'restart');
+ if(boundary==='dispose')await closeContexts([context]);
+ t.mock.timers.tick(100);
+ assert.deepEqual(socket.sent,[]);assert.equal(fault.lastInbound,0);
+ if(boundary==='socket')assert.deepEqual(socket.upstreamClosures,[{code:1000,reason:'done'}]);
+ if(boundary==='server')assert.deepEqual(socket.closures,[{code:1001,reason:'restart'}]);
+});
+test('lifecycle retains latency and receive loss and isolates socket replacement',async t=>{
+ t.mock.timers.enable({apis:['setTimeout','Date']});
+ const {page}=socketFixture();const fault=await wire(page);const first=page.open(),second=page.open();
+ first.message('old');second.message('new');await first.serverClose(1001,'restart');
+ t.mock.timers.tick(99);assert.deepEqual(second.sent,[]);t.mock.timers.tick(1);
+ assert.deepEqual(first.sent,[]);assert.deepEqual(second.sent,['new']);assert.ok(fault.lastInbound>0);
+ fault.receive=true;second.message('lost');t.mock.timers.tick(100);assert.deepEqual(second.sent,['new']);
+ fault.receive=false;second.message('restored');t.mock.timers.tick(100);assert.deepEqual(second.sent,['new','restored']);
+});
+test('lifecycle teardown waits for every context close before completing',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ const releases=[],closed=[];let settled=false;
+ const contexts=[0,1].map(id=>({unrouteAll:async()=>{},close:()=>new Promise(resolve=>releases.push(()=>{closed.push(id);resolve();}))}));
+ const cleanup=closeContexts(contexts).then(()=>{settled=true;});
+ try{
+  for(let i=0;i<20;i++)await Promise.resolve();
+  assert.equal(releases.length,2);
+  t.mock.timers.tick(3001);for(let i=0;i<20;i++)await Promise.resolve();
+  assert.equal(settled,false,'teardown must not abandon pending context.close');
+  releases[0]();for(let i=0;i<20;i++)await Promise.resolve();assert.equal(settled,false);
+ }finally{releases.forEach(release=>release());await cleanup;}
+ assert.equal(settled,true);assert.deepEqual([...new Set(closed)].sort(),[0,1]);
+});
+test('lifecycle cleanup disposes twin pages and closes all contexts despite an unroute failure',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ const a=socketFixture(),b=socketFixture();b.page.context=()=>a.context;
+ await wire(a.page);await wire(b.page);const one=a.page.open(),two=b.page.open();one.message('one');two.message('two');
+ let closes=0;a.context.unrouteAll=async()=>{throw new Error('unroute failed');};a.context.close=async()=>{closes++;};
+ const other={unrouteAll:async()=>{},close:async()=>{closes++;}};
+ await assert.rejects(closeContexts([a.context,other]),/cleanup failed/i);
+ t.mock.timers.tick(100);assert.deepEqual(one.sent,[]);assert.deepEqual(two.sent,[]);assert.equal(closes,2);
+});
+
+test('lifecycle disposal is idempotent and still propagates both socket closes',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ const {page,context}=socketFixture();await wire(page);const socket=page.open();let closes=0;
+ context.close=async()=>{closes++;page.emit('close');};
+ socket.message('pending');await Promise.all([closeContexts([context,context]),closeContexts([context])]);
+ await socket.pageClose(1000,'page');await socket.pageClose(1000,'page');
+ await socket.serverClose(1001,'server');await socket.serverClose(1001,'server');
+ t.mock.timers.tick(100);
+ assert.equal(closes,1);assert.deepEqual(socket.sent,[]);
+ assert.deepEqual(socket.upstreamClosures,[{code:1000,reason:'page'}]);
+ assert.deepEqual(socket.closures,[{code:1001,reason:'server'}]);
+ assert.equal(page.listenerCount('close'),0);assert.equal(page.listenerCount('crash'),0);
+});
+test('lifecycle waits for each page HTTP handler separately from context routes',async()=>{
+ let release,closed=false,contextUnrouted=false,twinUnrouted=false;
+ const a=socketFixture(),b=socketFixture();b.page.context=()=>a.context;
+ await wire(a.page);await wire(b.page);
+ a.page.unrouteAll=async options=>{
+  assert.equal(options.behavior,'wait');await new Promise(resolve=>{release=resolve;});
+ };
+ b.page.unrouteAll=async options=>{assert.equal(options.behavior,'wait');twinUnrouted=true;};
+ a.context.unrouteAll=async options=>{assert.equal(options.behavior,'wait');contextUnrouted=true;};
+ a.context.close=async()=>{closed=true;};
+ const cleanup=closeContexts([a.context]);
+ try{
+  for(let i=0;i<20;i++)await Promise.resolve();
+  assert.equal(contextUnrouted,true);assert.equal(twinUnrouted,true);
+  assert.equal(closed,false,'pending page route must prevent context closure');assert.equal(typeof release,'function');
+ }finally{release?.();await cleanup;}
+ assert.equal(closed,true);
+});
+test('lifecycle attempts every page route and context close while retaining cleanup failures',async()=>{
+ const a=socketFixture(),b=socketFixture();b.page.context=()=>a.context;
+ await wire(a.page);await wire(b.page);const attempted=[];
+ a.page.unrouteAll=async()=>{attempted.push('page');throw new Error('page failure');};
+ b.page.unrouteAll=async()=>{attempted.push('twin');};
+ a.context.unrouteAll=async()=>{attempted.push('context');throw new Error('context failure');};
+ a.context.close=async()=>{attempted.push('close');throw new Error('close failure');};
+ await assert.rejects(closeContexts([a.context]),error=>{
+  assert.deepEqual(error.errors[0].errors.map(e=>e.message),['page failure','context failure','close failure']);return true;
+ });
+ assert.deepEqual(attempted,['page','twin','context','close']);
 });

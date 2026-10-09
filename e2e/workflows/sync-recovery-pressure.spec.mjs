@@ -1,7 +1,7 @@
 import {mkdir,writeFile} from 'node:fs/promises';
 import {test, expect} from '@playwright/test';
 import {createGameFromHome,makeAnyLegalMove,submitPlayableAction} from '../support/app.mjs';
-import {wire,party} from '../support/sync-recovery-fixture.mjs';
+import {wire,party,closeContexts} from '../support/sync-recovery-fixture.mjs';
 
 async function move(page,gameId) {
  const current=await page.evaluate(async gameId=>{
@@ -50,7 +50,7 @@ test('E01 lost committed response and socket receipt converge automatically',asy
   p.faults[0].receive=false;p.faults[0].loseReply=false;const start=Date.now();
   await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,'lost-response',start,p.faults);
   const ids=p.faults[0].commands.map(c=>c.clientCommandId);expect(new Set(ids).size).toBe(1);
- }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
+ }finally{await closeContexts(p.contexts);}
 });
 
 test('E02 silent online receive loss triggers watchdog and survives interrupted recovery',async({browser,baseURL},info)=>{
@@ -72,7 +72,7 @@ test('E02 silent online receive loss triggers watchdog and survives interrupted 
   await p.pages[1].waitForTimeout(1000);
   p.faults[1].receive=false;p.faults[1].http=false;const start=Date.now();
   await converged(p.pages);await evidence(info,'silent-online',start,p.faults,{detectionMs});
- }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
+ }finally{await closeContexts(p.contexts);}
 });
 
 test('E04 reload unresolved journal then visibility resume preserves original ID and roles',async({browser,baseURL},info)=>{
@@ -96,7 +96,7 @@ test('E04 reload unresolved journal then visibility resume preserves original ID
   });
   await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,'reload-resume',start,p.faults);
   expect(p.faults[0].commands.every(c=>c.clientCommandId===id)).toBe(true);
- }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
+ }finally{await closeContexts(p.contexts);}
 });
 
 test('E06 same identity tabs reconcile one journal without duplicating a committed move',async({browser,baseURL},info)=>{
@@ -112,7 +112,7 @@ test('E06 same identity tabs reconcile one journal without duplicating a committ
   expect((await digest(p.pages[0])).history).toHaveLength(1);
   await evidence(info,'same-identity-tabs',start,[...p.faults,tf]);
   expect(new Set([...p.faults[0].commands,...tf.commands].map(c=>c.clientCommandId)).size).toBe(1);
- }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
+ }finally{await closeContexts(p.contexts);}
 });
 
 for(const phase of ['before','after'])test(`E03 actual Worker restart ${phase} commit resolves the pending sender`,async({browser,baseURL,request},info)=>{
@@ -125,7 +125,7 @@ for(const phase of ['before','after'])test(`E03 actual Worker restart ${phase} c
   const response=await request.post(`http://127.0.0.1:${Number(new URL(baseURL).port)+100}/restart`);expect(response.ok()).toBe(true);
   p.faults[0].receive=false;p.faults[0].loseReply=false;p.faults[0].holdApply=false;const start=Date.now();
   await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,`worker-restart-${phase}-commit`,start,p.faults);
- }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
+ }finally{await closeContexts(p.contexts);}
 });
 
 test('E06 real IndexedDB commits admission atomically across tabs and aborts successful writes',async({page,context})=>{
@@ -194,7 +194,7 @@ test(`E05 intentional ${frozenRole} history survives disconnection and home navi
   await evidence(info,`history-reconnect-${frozenRole}`,start,p.faults);
   await frozen.goto(baseURL);await expect(frozen.locator(`[data-game-id="${p.gameId}"]`).first()).toBeVisible();
   await frozen.goto(`${baseURL}${p.gameHash}`);await converged(p.pages);
- }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
+ }finally{await closeContexts(p.contexts);}
 });
 }
 
@@ -252,5 +252,5 @@ test('E05 home reload recovers unopened journal games and retains pending card',
   await expect(p.pages[0].locator(`[data-game-id="${p.gameId}"]`).first()).not.toContainText('Recovering');
   await p.pages[0].goto(`${baseURL}${p.gameHash}`);await converged(p.pages);
   await evidence(info,'home-journal-reload',start,p.faults);
- }finally{await Promise.all(p.contexts.map(c=>c.close()));}
+ }finally{await closeContexts(p.contexts);}
 });
