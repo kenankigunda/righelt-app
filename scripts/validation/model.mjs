@@ -86,6 +86,8 @@ export function coverage(files) {
   const areas = new Set(['core']); const unmapped=[];
   for(const file of files) {
     if (/^(apps\/|packages\/|db\/|e2e\/)/.test(file)) areas.add('app');
+    else if (/^tools\/ai-trainer\//.test(file)) { areas.add('tooling'); areas.add('ai-trainer'); }
+    else if (/^tools\/ai-benchmark\//.test(file)) { areas.add('tooling'); areas.add('ai-benchmark'); }
     else if (/^tools\/t108-feasibility\//.test(file)) areas.add('tooling');
     else if (/^(\.npmrc|validation-(?:account-)?e2e\/|scripts\/|skills\/|\.agents\/|docs\/|\.github\/|AGENTS\.md|README\.md|package\.json|pnpm-|playwright|tsconfig|\.gitignore)/.test(file)) areas.add('tooling');
     else unmapped.push(file);

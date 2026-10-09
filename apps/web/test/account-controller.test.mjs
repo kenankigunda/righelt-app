@@ -656,6 +656,75 @@ test("pending logout retries early online failure with capped backoff and cancel
   assert.equal(requests, after);
 });
 
+for (const stalledStep of ["session", "logout", "logout-body"]) {
+  test(`a stalled ${stalledStep} during logout expires before recovery retries`, async () => {
+    const deadlines = new Map(), retries = new Map(), store = storage();
+    let nextTimer = 0, stall = false, stalledSignal, release, logouts = 0;
+    let session = state();
+    const timers = entries => ({
+      setTimeout(fn, delay) { entries.set(++nextTimer, { fn, delay }); return nextTimer; },
+      clearTimeout(id) { entries.delete(id); },
+    });
+    const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+    const client = createAccountController({
+      storage: store, eventTarget: new EventTarget(), document: null,
+      logoutTimers: timers(deadlines), retryTimers: timers(retries),
+      fetcher: async (url, init) => {
+        if (url.endsWith("/bootstrap"))
+          return Response.json({ authProtocolVersion: 2, accountsRequired: true });
+        if (stall && url.endsWith(stalledStep === "session" ? "/session" : "/logout")) {
+          stalledSignal = init.signal;
+          // Also prove that a transport which settles late cannot complete an
+          // expired logout. The abort is observable but deliberately ignored.
+          const held = new Promise(resolve => { release = resolve; });
+          return stalledStep === "logout-body" ? { ok: true, json: () => held } : held;
+        }
+        if (url.endsWith("/logout")) { logouts++; session = { authenticated: false }; }
+        return Response.json(session);
+      },
+    });
+    try {
+      await client.start();
+      stall = true;
+      const pending = client.logout();
+      await settle();
+      assert.equal(client.canPlay(), false);
+      assert.equal(client.snapshot().pendingLogout, true);
+      assert.equal(deadlines.size, 1, "each logout attempt needs an operation deadline");
+      const { fn, delay } = [...deadlines.values()][0];
+      assert.equal(delay, 5000);
+      fn();
+      await pending;
+      assert.equal(stalledSignal.aborted, true);
+      assert.equal(deadlines.size, 0);
+      assert.equal(retries.size, 1);
+      assert.ok(store.getItem(LOGOUT_PENDING_KEY));
+      assert.equal(client.snapshot().pendingLogout, true);
+      await assert.rejects(client.fetch("/api/shell/games"), /logout_pending/);
+      // Let the abandoned transport return before retry. It must not clear the
+      // pending marker, regain authority, or perform a second mutation.
+      release(stalledStep === "logout-body" ? { ok: true } : Response.json(session));
+      await settle();
+      assert.equal(client.snapshot().pendingLogout, true);
+      assert.equal(logouts, 0);
+      stall = false;
+      const [id, retry] = [...retries][0];
+      retries.delete(id);
+      retry.fn();
+      await settle();
+      assert.equal(logouts, 1);
+      assert.equal(client.snapshot().pendingLogout, false);
+      assert.equal(client.canPlay(), false);
+      assert.equal(store.getItem(LOGOUT_PENDING_KEY), null);
+      assert.equal(deadlines.size, 0);
+      assert.equal(retries.size, 0);
+    } finally {
+      client.destroy();
+      release?.(Response.json({ authenticated: false }));
+    }
+  });
+}
+
 test("same-session settings serialize through response body without retiring the account generation", async () => {
   let release,
     starts = 0,

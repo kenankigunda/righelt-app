@@ -9,6 +9,7 @@ on:
       - "apps/web/**"
       - "packages/api-handler/**"
       - "packages/game-engine/**"
+      - "packages/computer-player/**"
       - "packages/shared-types/**"
       - "db/migrations/**"
       - "db/ops/**"
@@ -35,6 +36,7 @@ on:
       - "apps/web/**"
       - "packages/api-handler/**"
       - "packages/game-engine/**"
+      - "packages/computer-player/**"
       - "packages/shared-types/**"
       - "db/migrations/**"
       - "db/ops/**"
@@ -148,6 +150,9 @@ jobs:
       - name: Engine unit tests
         run: pnpm test:engine:unit -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/engine-unit/results.xml
 
+      - name: Trained search tests
+        run: pnpm test:computer-player:unit
+
       - name: Upload engine unit JUnit
         if: always()
         uses: actions/upload-artifact@v6
@@ -229,6 +234,9 @@ jobs:
 
       - name: Engine integration tests
         run: pnpm test:engine:integration -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/engine-integration/results.xml
+
+      - name: Trained transition integration tests
+        run: pnpm test:computer-player:integration
 
       - name: Upload engine integration JUnit
         if: always()
@@ -473,6 +481,9 @@ jobs:
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium firefox webkit
 
+      - name: Sync recovery transport fixture tests
+        run: node --test scripts/sync-recovery-fixture.test.mjs
+
       - name: E2E tests
         env:
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/e2e/results.xml
@@ -557,9 +568,9 @@ jobs:
         env:
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/auth-e2e/results.xml
           PLAYWRIGHT_OUTPUT_DIR: test-results/auth-e2e/artifacts
-          RIGHELT_AUTH_PROXY_DIAGNOSTICS: "1"
         run: |
-          node --test scripts/auth-proxy-diagnostics.test.mjs
+          node --test scripts/auth-proxy-diagnostics.test.mjs scripts/auth-proxy-identity.test.mjs scripts/auth-proxy-failures.test.mjs scripts/auth-proxy-launcher.test.mjs scripts/auth-stack-diagnostics.test.mjs scripts/auth-worker-connections.test.mjs scripts/auth-worker-runtime.test.mjs
+          node --test scripts/auth-proxy-cli.test.mjs
           pnpm test:e2e:auth
 
       - name: Upload E2E JUnit
@@ -577,6 +588,14 @@ jobs:
           name: playwright-auth-e2e-debug
           path: test-results/auth-e2e/artifacts
           if-no-files-found: ignore
+
+      - name: Upload sanitized account server exit diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: auth-stack-diagnostics-${{ github.run_attempt }}
+          path: test-results/auth-stack-diagnostics
+          if-no-files-found: warn
 
       - name: Record exact CI environment
         if: always()

@@ -1,3 +1,4 @@
+import { checkEngineComputation, isEngineComputationObserved, observeEngineComputation } from "./computation-guard";
 import type { Action, GameState, Piece, ValidationResult } from "./types";
 import {
   buildContinuationSuccessorState,
@@ -171,69 +172,77 @@ function isCoordinateSuppliedForOwner(
   owner: "P1" | "P2",
   target: { row: number; col: number },
 ): boolean {
-  const enemyBlockedByEdge = new Set<string>();
-  for (const edge of buildCommandEdgesForPieces(pieces)) {
-    if (edge.owner === owner) {
-      continue;
-    }
-
-    if (edge.from.row === edge.to.row) {
-      const row = edge.from.row;
-      const startCol = Math.min(edge.from.col, edge.to.col) + 1;
-      const endCol = Math.max(edge.from.col, edge.to.col);
-      for (let col = startCol; col < endCol; col += 1) {
-        enemyBlockedByEdge.add(coordinateKey(row, col));
-      }
-      continue;
-    }
-
-    if (edge.from.col === edge.to.col) {
-      const col = edge.from.col;
-      const startRow = Math.min(edge.from.row, edge.to.row) + 1;
-      const endRow = Math.max(edge.from.row, edge.to.row);
-      for (let row = startRow; row < endRow; row += 1) {
-        enemyBlockedByEdge.add(coordinateKey(row, col));
-      }
-    }
-  }
-
-  const occupiedByCoordinate = new Map(pieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece]));
-  const supplyPoint = SUPPLY_POINTS[owner];
-  const targetKey = coordinateKey(target.row, target.col);
-  const supplyKey = coordinateKey(supplyPoint.row, supplyPoint.col);
-
-  const isTraversable = (row: number, col: number): boolean => {
-    if (enemyBlockedByEdge.has(coordinateKey(row, col))) {
-      return false;
-    }
-    const occupant = occupiedByCoordinate.get(coordinateKey(row, col));
-    return !occupant || occupant.owner === owner;
-  };
-
-  const visited = new Set<string>();
-  if (!isTraversable(supplyPoint.row, supplyPoint.col)) {
-    return false;
-  }
-  visited.add(supplyKey);
-  const queue: { row: number; col: number }[] = [{ ...supplyPoint }];
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) {
-      break;
-    }
-
-    for (const next of sortedOrthogonalNeighbors(current.row, current.col)) {
-      const nextKey = coordinateKey(next.row, next.col);
-      if (visited.has(nextKey) || !isTraversable(next.row, next.col)) {
+  const observed = isEngineComputationObserved();
+  if (observed) observeEngineComputation({ type: "supply-start" });
+  try {
+    const enemyBlockedByEdge = new Set<string>();
+    for (const edge of buildCommandEdgesForPieces(pieces)) {
+      if (edge.owner === owner) {
         continue;
       }
-      visited.add(nextKey);
-      queue.push(next);
-    }
-  }
 
-  return visited.has(targetKey);
+      if (edge.from.row === edge.to.row) {
+        const row = edge.from.row;
+        const startCol = Math.min(edge.from.col, edge.to.col) + 1;
+        const endCol = Math.max(edge.from.col, edge.to.col);
+        for (let col = startCol; col < endCol; col += 1) {
+          enemyBlockedByEdge.add(coordinateKey(row, col));
+        }
+        continue;
+      }
+
+      if (edge.from.col === edge.to.col) {
+        const col = edge.from.col;
+        const startRow = Math.min(edge.from.row, edge.to.row) + 1;
+        const endRow = Math.max(edge.from.row, edge.to.row);
+        for (let row = startRow; row < endRow; row += 1) {
+          enemyBlockedByEdge.add(coordinateKey(row, col));
+        }
+      }
+    }
+
+    const occupiedByCoordinate = new Map(pieces.map((piece) => [coordinateKey(piece.position.row, piece.position.col), piece]));
+    const supplyPoint = SUPPLY_POINTS[owner];
+    const targetKey = coordinateKey(target.row, target.col);
+    const supplyKey = coordinateKey(supplyPoint.row, supplyPoint.col);
+
+    const isTraversable = (row: number, col: number): boolean => {
+      if (enemyBlockedByEdge.has(coordinateKey(row, col))) {
+        return false;
+      }
+      const occupant = occupiedByCoordinate.get(coordinateKey(row, col));
+      return !occupant || occupant.owner === owner;
+    };
+
+    const visited = new Set<string>();
+    if (!isTraversable(supplyPoint.row, supplyPoint.col)) {
+      return false;
+    }
+    if (supplyKey === targetKey) return true;
+    visited.add(supplyKey);
+    const queue: { row: number; col: number }[] = [{ ...supplyPoint }];
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) {
+        break;
+      }
+
+      for (const next of sortedOrthogonalNeighbors(current.row, current.col)) {
+        const nextKey = coordinateKey(next.row, next.col);
+        if (visited.has(nextKey) || !isTraversable(next.row, next.col)) {
+          continue;
+        }
+        if (nextKey === targetKey) return true;
+        visited.add(nextKey);
+        queue.push(next);
+      }
+    }
+
+    return false;
+  } finally {
+    if (observed) observeEngineComputation({ type: "supply-end" });
+  }
 }
 
 function wouldCoordinateBeSuppliedForOwner(
@@ -341,53 +350,6 @@ function enemyAdjacentCount(state: GameState, owner: "P1" | "P2", center: { row:
   return state.pieces.filter((piece) => piece.owner !== owner && isAnyAdjacent(piece.position, center)).length;
 }
 
-function getPushRetreatActions(state: GameState): Action[] {
-  if (!state.continuation || state.continuation.type !== "push" || state.continuation.phase !== "retreat") {
-    return [];
-  }
-
-  const pushedPiece = state.continuation.pushedPieceId
-    ? state.pieces.find((piece) => piece.id === state.continuation?.pushedPieceId)
-    : undefined;
-  if (!pushedPiece) {
-    return [];
-  }
-
-  return [
-    { row: pushedPiece.position.row - 1, col: pushedPiece.position.col },
-    { row: pushedPiece.position.row + 1, col: pushedPiece.position.col },
-    { row: pushedPiece.position.row, col: pushedPiece.position.col - 1 },
-    { row: pushedPiece.position.row, col: pushedPiece.position.col + 1 },
-  ].map((to) => ({
-    type: "retreat" as const,
-    actorId: pushedPiece.id,
-    from: pushedPiece.position,
-    to,
-  })).filter((candidate) => validateAction(state, candidate).ok);
-}
-
-function getPushFollowActions(state: GameState): Action[] {
-  if (!state.continuation || state.continuation.type !== "push" || state.continuation.phase !== "follow") {
-    return [];
-  }
-
-  const followPoint = state.continuation.followPoint;
-  if (!followPoint) {
-    return [];
-  }
-
-  const allowedPieces = new Set(state.continuation.followGroupPieceIds ?? []);
-  return state.pieces
-    .filter((piece) => piece.owner === state.sideToMove && (allowedPieces.size === 0 || allowedPieces.has(piece.id)))
-    .map((piece) => ({
-      type: "follow" as const,
-      actorId: piece.id,
-      from: piece.position,
-      to: followPoint,
-    }))
-    .filter((candidate) => validateAction(state, candidate).ok);
-}
-
 function validateContinuation(state: GameState, action: Action): ValidationResult | null {
   if (!state.continuation) {
     return null;
@@ -428,70 +390,105 @@ function validateContinuation(state: GameState, action: Action): ValidationResul
   return null;
 }
 
-export function listLegalActions(state: GameState): Action[] {
-  if (state.outcome.status !== "ongoing") {
-    return [];
-  }
+const ORTHOGONAL_OFFSETS = [[-1, 0], [0, -1], [0, 1], [1, 0]] as const;
+const RUSH_OFFSETS = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]] as const;
 
-  if (state.continuation) {
-    if (state.continuation.type === "rush") {
-      const rushActions = state.pieces
-        .filter((piece) => piece.owner === state.sideToMove)
-        .flatMap((piece) => {
-          const actions: Action[] = [];
-          for (let rowDelta = -1; rowDelta <= 1; rowDelta += 1) {
-            for (let colDelta = -1; colDelta <= 1; colDelta += 1) {
-              if (rowDelta === 0 && colDelta === 0) {
-                continue;
-              }
-              actions.push({
-                type: "rush",
-                actorId: piece.id,
-                from: piece.position,
-                to: {
-                  row: piece.position.row + rowDelta,
-                  col: piece.position.col + colDelta,
-                },
-              });
-            }
-          }
-          return actions.filter((candidate) => validateAction(state, candidate).ok);
-        });
-      const actions = [...rushActions];
-      if (validateAction(state, { type: "pass" }).ok) {
-        actions.push({ type: "pass" });
+/** Cheap action shapes only. Validation remains authoritative and may be expensive.
+ * The order of legal results matches the complete historical enumeration. */
+export function* legalActionCandidates(state: GameState): Generator<Action> {
+  if (state.outcome.status !== "ongoing") return;
+  const continuation = state.continuation;
+  if (continuation?.type === "push") {
+    if (continuation.phase === "retreat") {
+      const piece = state.pieces.find(candidate => candidate.id === continuation.pushedPieceId);
+      if (!piece) return;
+      for (const to of [
+        { row: piece.position.row - 1, col: piece.position.col },
+        { row: piece.position.row + 1, col: piece.position.col },
+        { row: piece.position.row, col: piece.position.col - 1 },
+        { row: piece.position.row, col: piece.position.col + 1 },
+      ]) {
+        if (!outOfBounds(to)) yield { type: "retreat", actorId: piece.id, from: piece.position, to };
       }
-      return actions;
-    }
-
-    return state.continuation.phase === "retreat" ? getPushRetreatActions(state) : getPushFollowActions(state);
-  }
-
-  const actions: Action[] = [{ type: "pass" }];
-  const withTargets = ["move", "project", "rush", "push"] as const;
-
-  for (const piece of state.pieces.filter((candidate) => candidate.owner === state.sideToMove)) {
-    for (const type of withTargets) {
-      for (let row = 0; row < BOARD_SIZE; row += 1) {
-        for (let col = 0; col < BOARD_SIZE; col += 1) {
-          const action: Action = {
-            type,
-            actorId: piece.id,
-            from: { ...piece.position },
-            to: { row, col },
-          };
-          if (validateAction(state, action).ok) {
-            actions.push(action);
-          }
+    } else if (continuation.followPoint && !outOfBounds(continuation.followPoint)) {
+      const allowed = new Set(continuation.followGroupPieceIds ?? []);
+      for (const piece of state.pieces) {
+        if (piece.owner === state.sideToMove && (allowed.size === 0 || allowed.has(piece.id)) &&
+            isOrthogonallyAdjacent(piece.position, continuation.followPoint)) {
+          yield { type: "follow", actorId: piece.id, from: piece.position, to: continuation.followPoint };
         }
       }
     }
+    return;
   }
+  if (!continuation) yield { type: "pass" };
+  for (const piece of state.pieces) {
+    if (piece.owner !== state.sideToMove) continue;
+    const types = continuation ? ["rush"] as const : ["move", "project", "rush", "push"] as const;
+    for (const type of types) {
+      const distance = type === "project" ? 2 : 1;
+      const offsets = type === "rush" ? RUSH_OFFSETS : ORTHOGONAL_OFFSETS;
+      for (const [rowDelta, colDelta] of offsets) {
+        const to = { row: piece.position.row + rowDelta * distance, col: piece.position.col + colDelta * distance };
+        if (!outOfBounds(to)) yield { type, actorId: piece.id, from: { ...piece.position }, to };
+      }
+    }
+  }
+  if (continuation?.type === "rush") yield { type: "pass" };
+}
 
+export type LegalActionEvidence =
+  | { action: Action; status: "legal" | "illegal"; validation: ValidationResult }
+  | { action: Action; status: "unknown" };
+export type LegalActionEnumeration = { actions: Action[]; results: LegalActionEvidence[]; complete: boolean };
+export type LegalActionEnumerationOptions = {
+  /** Return undefined only for a caller-recognized, candidate-local resource limit.
+   * Global deadlines, cancellation and correctness exceptions must propagate. */
+  validate?: (state: GameState, action: Action) => ValidationResult | undefined;
+  /** Receives completed evidence immediately, even if a later candidate throws. */
+  onResult?: (result: LegalActionEvidence) => void;
+};
+
+function candidateEvidence(state: GameState, action: Action,
+  validate: (state: GameState, action: Action) => ValidationResult | undefined): LegalActionEvidence {
+  const observed = isEngineComputationObserved();
+  if (observed) observeEngineComputation({ type: "candidate", action });
+  const validation = validate(state, action);
+  const result: LegalActionEvidence = validation === undefined
+    ? { action, status: "unknown" }
+    : { action, status: validation.ok ? "legal" : "illegal", validation };
+  if (observed) observeEngineComputation({ type: "candidate-result", action, status: result.status });
+  return result;
+}
+
+/** A subset is never presented as the complete legal list. No exceptions are swallowed. */
+export function enumerateLegalActions(state: GameState, options: LegalActionEnumerationOptions = {}): LegalActionEnumeration {
+  const result: LegalActionEnumeration = { actions: [], results: [], complete: true };
+  for (const action of legalActionCandidates(state)) {
+    const evidence = candidateEvidence(state, action, options.validate ?? validateAction);
+    result.results.push(evidence);
+    if (evidence.status === "legal") result.actions.push(action);
+    if (evidence.status === "unknown") result.complete = false;
+    options.onResult?.(evidence);
+  }
+  return result;
+}
+
+/** Existing callers still receive all legal actions or an exception, never a subset. */
+export function listLegalActions(state: GameState): Action[] {
+  const actions: Action[] = [];
+  const observed = isEngineComputationObserved();
+  for (const action of legalActionCandidates(state)) {
+    if (observed) observeEngineComputation({ type: "candidate", action });
+    const validation = validateAction(state, action);
+    if (observed) observeEngineComputation({ type: "candidate-result", action, status: validation.ok ? "legal" : "illegal" });
+    if (validation.ok) actions.push(action);
+  }
   return actions;
 }
 
 export function validateAction(state: GameState, action: Action): ValidationResult {
+  checkEngineComputation();
   if (state.outcome.status !== "ongoing") {
     return {
       ok: false,

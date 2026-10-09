@@ -44,8 +44,8 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.match(scripts.test, /^pnpm typecheck && pnpm check:web-engine-generated && /);
   assert.equal(scripts["test:ci-report-selection"], "node --test scripts/select-junit-artifacts.test.mjs");
   assert.equal(scripts["test:auth-fixture"], "node --test scripts/auth-fixture-control.test.mjs");
-  assert.equal(scripts["test:unit"], "pnpm test:engine:unit && pnpm test:web:unit && pnpm test:auth-fixture && pnpm test:validation && pnpm test:ci-report-selection");
-  assert.equal(scripts["test:integration"], "pnpm test:engine:integration && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web:integration && pnpm test:sync-stress && pnpm test:sync-runtime");
+  assert.equal(scripts["test:unit"], "pnpm test:engine:unit && pnpm test:web:unit && pnpm test:auth-fixture && pnpm test:computer-player:unit && pnpm test:validation && pnpm test:ci-report-selection");
+  assert.equal(scripts["test:integration"], "pnpm test:engine:integration && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web:integration && pnpm test:sync-stress && pnpm test:sync-runtime && pnpm test:computer-player:integration");
   assert.equal(scripts["test:engine"], "node scripts/run-node-tests.mjs packages/game-engine/test");
   assert.equal(scripts["test:engine:unit"], "node scripts/run-node-tests.mjs packages/game-engine/test/unit");
   assert.equal(scripts["test:engine:integration"], "node scripts/run-node-tests.mjs packages/game-engine/test/integration");

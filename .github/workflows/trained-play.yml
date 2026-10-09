@@ -1,0 +1,77 @@
+name: Trained play foundations
+on:
+  pull_request:
+    paths:
+      - 'packages/computer-player/**'
+      - 'tools/ai-trainer/**'
+      - 'tools/ai-benchmark/**'
+      - 'scripts/build-ai-benchmark.mjs'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/trained-play.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/computer-player/**'
+      - 'tools/ai-trainer/**'
+      - 'tools/ai-benchmark/**'
+      - 'scripts/build-ai-benchmark.mjs'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/trained-play.yml'
+permissions:
+  contents: read
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Install authoritative engine test dependencies
+        run: |
+          corepack enable && corepack prepare pnpm@9 --activate
+          pnpm install --frozen-lockfile=false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Install CPU test environment
+        run: |
+          python -m venv tools/ai-trainer/.venv
+          tools/ai-trainer/.venv/bin/python -m pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+          tools/ai-trainer/.venv/bin/python -m pip install -r tools/ai-trainer/requirements.lock
+      - name: Model and experiment tests
+        env:
+          PYTHONPATH: tools/ai-trainer
+        run: pnpm test:trainer
+      - name: CPU export smoke test
+        env:
+          PYTHONPATH: tools/ai-trainer
+        run: tools/ai-trainer/.venv/bin/python -m righelt_training.preflight
+      - name: Generate held-out browser proof assets
+        env:
+          PYTHONPATH: tools/ai-trainer
+        run: |
+          node --import tsx tools/ai-trainer/parity-corpus.mjs 1000 /tmp/ai-corpus.json
+          tools/ai-trainer/.venv/bin/python -m righelt_training.parity --corpus /tmp/ai-corpus.json --output /tmp/ai-export --reference-output /tmp/ai-reference.json
+          tools/ai-trainer/.venv/bin/python -m righelt_training.search_parity --corpus /tmp/ai-corpus.json --output /tmp/ai-search-reference.json --device cpu --limit 20 --seconds 120
+          node scripts/build-ai-benchmark.mjs --out /tmp/ai-browser --model /tmp/ai-export/model.onnx --corpus /tmp/ai-corpus.json
+      - name: Install proof browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Browser worker and full WASM parity
+        env:
+          AI_BENCHMARK_DIR: /tmp/ai-browser
+          AI_BENCHMARK_REFERENCE: /tmp/ai-reference.json
+          AI_BENCHMARK_REPORT: /tmp/ai-wasm-report.json
+          AI_BENCHMARK_SEARCH_REFERENCE: /tmp/ai-search-reference.json
+          AI_BENCHMARK_SEARCH_REPORT: /tmp/ai-search-report.json
+        run: node --test tools/ai-benchmark/tests/*.test.mjs
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: trained-play-browser-proof
+          path: |
+            /tmp/ai-wasm-report.json
+            /tmp/ai-search-report.json
+          if-no-files-found: ignore

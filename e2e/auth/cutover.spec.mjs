@@ -1,6 +1,7 @@
 import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { test, expect } from "@playwright/test";
 import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
+import { AUTH_REQUEST_HEADER, AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION } from "../../packages/shared-types/src/auth-policy.js";
 const password = "A cutover account test password 482";
 const dialog = page => page.getByTestId("account-dialog");
 async function control(action) {
@@ -21,15 +22,24 @@ async function register(page, username, play = false) {
   if (!play) await page.goto("/");
   if (play) await expect(page.getByTestId("game-role")).toContainText("Player 1");
 }
-async function canary(page) {
-  await page.goto("/");
-  const exists = (await page.request.get(new URL("/api/profiles/cutover_canary", page.url()).href)).ok();
-  if (!exists) return register(page, "cutover_canary");
-  await openPlaySignIn(page);
-  await enterUsername(page, "cutover_canary");
-  await dialog(page).getByLabel("Password", { exact: true }).fill(password);
-  await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(dialog(page)).not.toBeVisible();
+async function canary(page, baseURL) {
+  // Use this isolated browser context's real cookie jar to prepare the canary.
+  // Owner registration and all maintenance interactions stay in the browser.
+  const origin = new URL(baseURL).origin;
+  const profile = await page.request.get(`${origin}/api/profiles/cutover_canary`);
+  expect([200, 404]).toContain(profile.status());
+  const response = await page.request.post(`${origin}/api/auth/${profile.status() === 200 ? "login" : "register"}`, {
+    headers: { Origin: origin, [AUTH_REQUEST_HEADER]: "1", [AUTH_PROTOCOL_HEADER]: String(AUTH_PROTOCOL_VERSION) },
+    data: { username: "cutover_canary", password },
+  });
+  expect(response.status()).toBe(200);
+  const session = await response.json();
+  expect(session.account.username).toBe("cutover_canary");
+  expect(session.contextId).toBeTruthy();
+  await page.goto(origin);
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+  const browserSession = await page.evaluate(async () => (await fetch("/api/auth/session")).json());
+  expect(browserSession.account.username).toBe("cutover_canary");
 }
 async function request(page, path, body) {
   return page.evaluate(async ({ path, body }) => {
@@ -67,7 +77,7 @@ test("an old guest invite stays view-only and offers a fresh account game", asyn
   expect(page.url()).not.toBe(url);
 });
 
-test("cutover maintenance preserves public boards and confines smoke writes to the canary", async ({ page, browser }) => {
+test("cutover maintenance preserves public boards and confines smoke writes to the canary", async ({ page, browser, baseURL }) => {
   await register(page, `Cutover_${Date.now().toString(36)}`, true);
   const gameUrl = page.url();
   const gameId = decodeURIComponent(new URL(gameUrl).hash.match(/^#\/game\/([^?]+)/)[1]);
@@ -76,7 +86,7 @@ test("cutover maintenance preserves public boards and confines smoke writes to t
   const spectator = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
     const smoke = await isolated.newPage();
-    await canary(smoke);
+    await canary(smoke, baseURL);
     await control("activate-cutover");
     await page.reload();
     await expect(page.getByTestId("game-board")).toBeVisible();

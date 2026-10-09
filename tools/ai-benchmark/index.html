@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Righelt trained-play measurement</title>
+<style>body{font:16px system-ui;max-width:48rem;margin:2rem auto;padding:0 1rem}button,input,select{font:inherit;padding:.6rem}input{max-width:90%;width:32rem}label{display:block;margin:1rem 0}pre{white-space:pre-wrap;overflow-wrap:anywhere}button{margin:.3rem}</style>
+<h1>Trained-play measurement</h1><p>Experimental profiles and provisional time limits. This diagnostic page records every failure and interruption; it does not approve an opponent for release. Keep it in the foreground while measuring.</p>
+<label>Device and OS <input id="device" placeholder="iPhone 13 mini, iOS 26.6.2"></label>
+<label>Actual network conditions <input id="network" placeholder="Carrier, LTE/5G, signal and location; or desktop test network"></label>
+<label>Preparation <select id="cache"><option value="cold">Cold: download all model/runtime assets</option><option value="warm">Warm: use checksum-verified cache</option></select></label>
+<label>Experimental profile <select id="profile"><option value="all">All three</option><option>Babs</option><option>Tau</option><option>Horus</option></select></label>
+<button id="prepare">Prepare model</button><button id="run" disabled>Measure 1,000 steps + 100 sequences per profile</button>
+<button id="parity" disabled>Evaluate 1,000 parity states</button><button id="stop">Stop</button><button id="save">Save timing report</button>
+<p role="status" id="status">Ready to prepare. Diagnostic position downloads are excluded from model preparation timing.</p><pre id="report"></pre>
+<script type="module" src="page.js"></script></html>

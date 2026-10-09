@@ -37,6 +37,15 @@ test('known T108 feasibility tooling is mapped without accepting unrelated tools
  assert.equal(coverage([...known,'apps/web/shell/app.js']).files.length,0);
 });
 
+test('AI tooling selects dedicated checks without accepting similarly named directories',()=>{
+ const selected=coverage(['tools/ai-trainer/engine-worker.mjs','tools/ai-benchmark/worker.mjs']);
+ assert.deepEqual(selected.areas,['core','tooling','ai-trainer','ai-benchmark']);
+ assert.deepEqual(selected.unmapped,[]);
+ const unknown=['tools/ai-trainer-other/file.py','tools/ai-benchmark.mjs','tools/unknown/file.mjs'];
+ assert.deepEqual(coverage(unknown).unmapped,unknown);
+ assert.equal(coverage(['docs/ai/PR_WORKFLOW.md']).areas.includes('ai-trainer'),false);
+});
+
 test('account proof directory is mapped without accepting unrelated validation folders',()=>{
  const known=['validation-account-e2e/accounts.spec.mjs','playwright.validation-account.config.mjs'];
  assert.deepEqual(coverage(known).unmapped,[]);

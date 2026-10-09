@@ -69,6 +69,10 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
    checks=checks.filter(([name])=>policy.selected.includes(name));
    if(policy.tests?.length)checks.splice(2,0,['Boundary E2E',['pnpm','test:e2e',...policy.tests,'--project=chromium']]);
   }
+  // Changed AI tooling requires its candidate-owned checks. Missing scripts fail
+  // through pnpm; never turn absent coverage into a successful skipped lane.
+  const aiChecks=[...(selection.areas.includes('ai-trainer')?[['Trainer checks',['pnpm','test:trainer']]]:[]),...(selection.areas.includes('ai-benchmark')?[['AI benchmark checks',['pnpm','test:ai-benchmark']]]:[])];
+  checks.push(...aiChecks);
   const prerequisites=new Set(['Typecheck','Generated runtime']);
   let prerequisiteFailure=null;
   const runCheck=async(name,argv,checkCwd=cwd)=>{

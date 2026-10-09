@@ -1,5 +1,6 @@
 export const AUTH_PROTOCOL_VERSION: 2;
 export const AUTH_BOOTSTRAP_TIMEOUT_MS: number;
+export const AUTH_LOGOUT_ATTEMPT_TIMEOUT_MS: number;
 export const SESSION_COOKIE: '__Host-righelt_session';
 export const SESSION_IDLE_MS: number;
 export const ACTIVITY_THROTTLE_MS: number;

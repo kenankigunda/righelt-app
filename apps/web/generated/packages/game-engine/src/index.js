@@ -9,3 +9,5 @@ export * from "./replay.js";
 export * from "./serialize.js";
 export * from "./resolve.js";
 export * from "./continuation.js";
+export * from "./computation-guard.js";
+export * from "./decision-cache.js";

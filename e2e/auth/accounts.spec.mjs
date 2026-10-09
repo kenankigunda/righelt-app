@@ -24,7 +24,28 @@ async function register(page, username, { gate = false } = {}) {
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
-  await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
+  const play = page.getByRole("button", { name: "Start a friend game", exact: true });
+  const retry = page.locator('[data-action="retry-account-continuation"]');
+  await expect(play.or(retry)).toBeVisible();
+  // A failed post-auth read retains the original play choice. Use its explicit
+  // recovery once, without registering again or choosing a replacement game.
+  if (await retry.isVisible()) {
+    await expect(page.getByRole("alert")).toHaveText("The page could not finish loading. Try again.");
+    await retry.click();
+  }
+  // The game URL and Player 1 role are optimistic. Finish the real creation
+  // before a caller can navigate away and cancel its pending mutation.
+  const [creation] = await Promise.all([
+    page.waitForResponse(response => response.request().method() === "POST"
+      && new URL(response.url()).pathname === "/api/shell/games", { timeout: 10000 }),
+    play.click(),
+  ]);
+  expect(creation.status()).toBe(200);
+  const { game } = await creation.json();
+  const requestedId = creation.request().postDataJSON().gameId;
+  expect(requestedId).toBeTruthy();
+  expect(game.id).toBe(requestedId);
+  await expect(page).toHaveURL(new RegExp(`#/game/${encodeURIComponent(game.id)}(?:\\?|$)`));
   if (gate) {
     await expect(page).toHaveURL(/#\/game\//);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
@@ -44,6 +65,53 @@ async function signIn(page, username, secret = password) {
   await expect(dialog(page)).not.toBeVisible();
   if(fromHome)await continueFriendIntroduction(page,{play:false});
 }
+
+test("registration helper does not return home when game creation fails", async ({ page }) => {
+  let release, started, creates = 0, homeNavigations = 0;
+  const held = new Promise(resolve => { release = resolve; });
+  const creationStarted = new Promise(resolve => { started = resolve; });
+  const navigated = frame => {
+    if (frame !== page.mainFrame()) return;
+    const url = new URL(frame.url());
+    if (url.pathname === "/" && !url.hash) homeNavigations++;
+  };
+  page.on("framenavigated", navigated);
+  // Fail one native creation before it reaches the server. The optimistic
+  // game URL must not let registration return home without a confirmed game.
+  await page.route("**/api/shell/games", async route => {
+    if (route.request().method() !== "POST") return route.continue();
+    creates++;
+    started();
+    await held;
+    await route.abort("aborted");
+  });
+  const registration = register(page, uniqueName()).then(
+    () => ({}), error => ({ error }),
+  );
+  const stoppedEarly = registration.then(outcome => {
+    throw outcome.error ?? new Error("Registration returned before game creation was released");
+  });
+  stoppedEarly.catch(() => {});
+  try {
+    await Promise.race([creationStarted, stoppedEarly]);
+    await Promise.race([
+      expect(page.getByTestId("game-role")).toContainText("Player 1"),
+      stoppedEarly,
+    ]);
+    expect(creates).toBe(1);
+    release();
+    const outcome = await registration;
+    expect(outcome.error).toBeTruthy();
+    expect(creates).toBe(1);
+    expect(homeNavigations).toBe(1);
+    await expect(page).toHaveURL(/#\/game\//);
+  } finally {
+    release();
+    await registration;
+    await page.unrouteAll({ behavior: "wait" });
+    page.off("framenavigated", navigated);
+  }
+});
 
 test("registration helper waits for a failed bootstrap retry before submitting", async ({ page }) => {
   let bootstrapRequests = 0, registerRequests = 0, release, retryStarted;
@@ -81,6 +149,54 @@ test("registration helper waits for a failed bootstrap retry before submitting",
     await page.unrouteAll({ behavior: "wait" });
   }
 });
+test("registration helper retries one failed continuation read without repeating account or game creation", async ({ page }) => {
+  let registrations = 0, creates = 0, failedReads = 0, retriedReads = 0, release, failed;
+  const held = new Promise(resolve => { release = resolve; });
+  const readFailed = new Promise(resolve => { failed = resolve; });
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "POST" && path === "/api/auth/register") registrations++;
+    if (request.method() === "POST" && path === "/api/shell/games") creates++;
+  });
+  await page.route("**/api/shell/games?**", async route => {
+    if (registrations && new URL(route.request().url()).searchParams.get("section") === "other") {
+      if (!failedReads) {
+        failedReads++;
+        await route.abort("connectionreset");
+        failed();
+        return;
+      }
+      retriedReads++;
+      await held;
+    }
+    await route.continue();
+  });
+  const registration = register(page, uniqueName(), { gate: true }).then(value => ({ value }), error => ({ error }));
+  const stoppedBeforeRetry = registration.then(outcome => {
+    throw outcome.error ?? new Error("Registration completed before the held continuation retry");
+  });
+  try {
+    // Navigation and registration have their own waits. Start this assertion's
+    // existing budget only after the failure whose recovery it measures.
+    await Promise.race([readFailed, stoppedBeforeRetry]);
+    await Promise.race([expect.poll(() => retriedReads).toBe(1), stoppedBeforeRetry]);
+    expect(registrations).toBe(1);
+    expect(creates).toBe(0);
+    await expect(page.getByRole("button", { name: "Start a friend game", exact: true })).not.toBeVisible();
+    release();
+    const outcome = await registration;
+    if (outcome.error) throw outcome.error;
+    expect(failedReads).toBe(1);
+    expect(registrations).toBe(1);
+    expect(creates).toBe(1);
+    await expect(page.getByTestId("game-role")).toContainText("Player 1");
+  } finally {
+    release();
+    await registration;
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
+
 async function makeAccountMove(page) {
   const action = await page.evaluate(async () => {
     const session = await (await fetch("/api/auth/session")).json();
@@ -239,6 +355,37 @@ test("expiry leaves the board visible and signing in restores the same seat", as
   expect(await getHistoryMoveCount(page)).toBe(before);
 });
 
+test("logout retries a stalled session read while keeping local play blocked", async ({ page }) => {
+  await register(page, uniqueName(), { gate: true });
+  await account(page);
+  let reads = 0, release, started;
+  const held = new Promise(resolve => { release = resolve; });
+  const entered = new Promise(resolve => { started = resolve; });
+  await page.route("**/api/auth/session", async route => {
+    if (++reads === 1) {
+      started();
+      await held;
+      await route.abort().catch(() => {});
+    } else await route.continue();
+  });
+  try {
+    await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
+    await entered;
+    await expect(page.getByText("Sign-out pending", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+    await expect(page.getByTestId("game-board")).toBeVisible();
+    // This is the existing ten-second assertion budget, including the bounded
+    // attempt and ordinary retry. A stalled read must not suppress recovery.
+    await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
+    expect(reads).toBeGreaterThanOrEqual(2);
+    const session = await page.evaluate(async () => (await fetch("/api/auth/session")).json());
+    expect(session.authenticated).toBe(false);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
+
 test("a delayed renewal cookie cannot overwrite an account switch", async ({ page }) => {
   const first = uniqueName(), second = uniqueName();
   await register(page, first);
@@ -366,32 +513,72 @@ test("tutorial skipping and completion persist without manual replay resetting t
 });
 
 for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load during a ${gesture} gesture does not swallow the play gate click`, async ({ page }) => {
-  let release, held;
-  const waiting = new Promise(resolve => { held = resolve; });
+  // Hold application time only while preparing the deliberately parked reads.
+  // Real input actionability can take longer than the normal read deadline.
+  const clockStart = new Date("2026-01-01T00:00:00Z");
+  await page.clock.install({ time: clockStart });
+  await page.clock.pauseAt(new Date(clockStart.getTime() + 60 * 60 * 1000));
+  let release;
   const released = new Promise(resolve => { release = resolve; });
+  const heldSections = new Set();
+  const creates = [];
+  page.on("request", request => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates.push(request);
+  });
   await page.route(/\/api\/shell\/games(?:\?|$)/, async route => {
-    const response = await route.fetch();
-    held();
+    const request = route.request();
+    const section = new URL(request.url()).searchParams.get("section");
+    if (request.method() !== "GET" || !["my", "other"].includes(section)) return route.continue();
+    heldSections.add(section);
     await released;
-    await route.fulfill({ response });
+    // Release the browser's real request without a second Node/TLS fetch.
+    await route.continue();
   });
   try {
-  await page.goto("/");
-  const trigger = page.getByTestId("home-create-game");
-  await expect(trigger).toBeVisible();
-  await waiting;
-  if (gesture === "pointer") { await trigger.hover(); await page.mouse.down(); }
-  else { await trigger.focus(); await page.keyboard.down("Space"); }
-  const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/shell/games");
-  release();
-  await refreshed;
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  if (gesture === "pointer") await page.mouse.up();
-  else await page.keyboard.up("Space");
-  await expect(dialog(page)).toBeVisible();
+    await page.goto("/");
+    const trigger = page.getByTestId("home-create-game");
+    await expect(trigger).toBeVisible();
+    await expect.poll(() => [...heldSections].sort()).toEqual(["my", "other"]);
+    await expect(page.getByTestId("home-section-skeleton")).toHaveCount(2);
+    const originalTrigger = await trigger.elementHandle();
+    expect(originalTrigger).not.toBeNull();
+    if (gesture === "pointer") { await trigger.hover(); await page.mouse.down(); }
+    else { await trigger.focus(); await page.keyboard.down("Space"); }
+    // Home loading awaits both sections. Finish both while activation is held.
+    // The unchanged application deadline applies once real reads can proceed.
+    await page.clock.resume();
+    const refreshed = Promise.all(["my", "other"].map(async section => {
+      const response = await page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return response.request().method() === "GET" && url.pathname === "/api/shell/games" && url.searchParams.get("section") === section;
+      });
+      expect(response.ok()).toBe(true);
+      expect(await response.finished()).toBeNull();
+    }));
+    release();
+    await refreshed;
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(await originalTrigger.evaluate(element => element.isConnected), "Home loading must preserve the pressed control").toBe(true);
+    if (gesture === "keyboard") expect(await originalTrigger.evaluate(element => document.activeElement === element)).toBe(true);
+    expect(creates).toHaveLength(0);
+    await expect(dialog(page)).not.toBeVisible();
+    if (gesture === "pointer") await page.mouse.up();
+    else await page.keyboard.up("Space");
+    await expect(dialog(page)).toBeVisible();
+    // Rendering is deferred while activation is held. Check its success after
+    // release, so an error path cannot masquerade as a finished home load.
+    await expect(page.getByText("Loading games...", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.__righeltLastError)).toBeFalsy();
+    expect(creates).toHaveLength(0);
+    await expect(page).not.toHaveURL(/#\/game\//);
   } finally {
     release();
-    await page.unrouteAll({ behavior: "wait" });
+    if (!page.isClosed()) {
+      await page.clock.resume();
+      if (gesture === "pointer") await page.mouse.up();
+      else await page.keyboard.up("Space");
+      await page.unrouteAll({ behavior: "wait" });
+    }
   }
 });
 
@@ -414,11 +601,24 @@ test("a stalled startup read recovers without granting guest play", async ({ pag
   } finally { release(); }
 });
 
-test("switching accounts in another tab retires the old settings form", async ({ page }) => {
+test("switching accounts in another tab retires the old settings form", async ({ page, request, baseURL }) => {
   const first = uniqueName(), second = uniqueName();
-  await register(page, second);
-  await account(page);
-  await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
+  // The spare account is a prerequisite. Keep its setup outside the browser
+  // cookie jar so this case spends its budget on the actual cross-tab switch.
+  const headers = {
+    Origin: new URL(baseURL).origin,
+    [AUTH_REQUEST_HEADER]: "1",
+    [AUTH_PROTOCOL_HEADER]: String(AUTH_PROTOCOL_VERSION),
+  };
+  const registered = await request.post("/api/auth/register", { headers, data: { username: second, password } });
+  expect(registered.status()).toBe(200);
+  const session = await registered.json();
+  expect(session.account.username).toBe(second);
+  expect(session.contextId).toBeTruthy();
+  const loggedOut = await request.post("/api/auth/logout", {
+    headers: { ...headers, [SESSION_CONTEXT_HEADER]: session.contextId }, data: {},
+  });
+  expect(loggedOut.status()).toBe(200);
   await register(page, first);
   const sibling = await page.context().newPage();
   try {
