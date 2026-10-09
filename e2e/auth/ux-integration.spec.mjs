@@ -5,6 +5,7 @@ test('self-play resumes after account creation and uses the shared account and p
  expect((await fetch(`http://127.0.0.1:${Number(process.env.RIGHELT_AUTH_E2E_WEB_PORT || 9988)+100}/reset-limits`,{method:'POST'})).status).toBe(200);
  await page.goto('/');await waitForAccountStartup(page);
  await page.getByRole('button',{name:'Play both sides',exact:true}).click();
+ await page.locator('[data-lesson-skip-all]').click();
  const dialog=page.getByTestId('account-dialog');await expect(dialog).toBeVisible();
  await dialog.getByRole('button',{name:'Create account',exact:true}).click();
  await dialog.getByLabel('Username',{exact:true}).fill(`Ux_${Date.now().toString(36)}`);
@@ -39,6 +40,7 @@ test('self-play resumes after account creation and uses the shared account and p
  try {
  const guest=await watcher.newPage();await guest.goto(new URL('/',page.url()).href);
  await guest.getByRole('button',{name:'Play both sides',exact:true}).click();
+ await guest.locator('[data-lesson-skip-all]').click();
  const entry=guest.getByTestId('account-dialog');await entry.getByRole('button',{name:'Create account',exact:true}).click();
  await entry.getByLabel('Username',{exact:true}).fill(`Viewer_${Date.now().toString(36)}`);await entry.getByLabel('Password',{exact:true}).fill('Another account password 482');
  await entry.getByRole('button',{name:'Create account & continue',exact:true}).click();await expect(entry).not.toBeVisible();
