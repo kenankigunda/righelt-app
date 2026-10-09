@@ -11,6 +11,7 @@ import path from "node:path";
 import { LOCAL_DEV_PORT_VARIANTS, resolveLocalApiPort } from "../apps/web/local-dev-ports.js";
 import { installProxyRepair } from "./auth-proxy-diagnostics.mjs";
 import { observeAuthService } from "./auth-stack-diagnostics.mjs";
+import { createProxyFailureJournal, completeProxyFailureJournal } from "./auth-proxy-failures.mjs";
 
 const root = process.cwd();
 const webPort = String(LOCAL_DEV_PORT_VARIANTS.find(variant => variant.suffix === "auth-e2e").webPort);
@@ -27,17 +28,22 @@ let diagnosticsFailed = false;
 let stopping = false;
 let control;
 let proxyDiagnosticsInstallation;
+const failureDirectory = process.env.RIGHELT_AUTH_FAILURE_DIRECTORY;
+const failureRunId = process.env.RIGHELT_AUTH_FAILURE_RUN_ID;
+let failureJournalReady = false;
 
 function run(args, { cwd = root, service = null, captureStderr = false } = {}) {
   if (stopping) throw new Error("Account stack is stopping");
   const env = args.includes("https") ? localHttpsEnvironment({ cwd }) : { ...process.env };
   const logDirectory = path.join(privateLogs, service || "setup");
   const child = spawnAuthStackCommand(args, { cwd, env: { ...env, WRANGLER_LOG_PATH: logDirectory,
+    RIGHELT_AUTH_FAILURE_SERVICE: service || "setup",
     RIGHELT_AUTH_FRESH_CONNECTIONS: service ? "1" : "0" }, service: Boolean(service), captureStderr });
   children.add(child);
   child.on("close", () => children.delete(child));
   if (service) {
     serviceReceipts.push(observeAuthService(child, { service, logDirectory,
+      requireProxyReceiptLogs: true, failureDirectory, failureRunId,
       outputFile: path.join(diagnostics, `${service}.json`), isStopping: () => stopping,
       onUnexpectedExit: code => { void shutdown(code); },
       onDiagnosticError: () => { diagnosticsFailed = true; console.error("[auth-e2e] Could not record service exit diagnostics"); },
@@ -67,6 +73,9 @@ async function shutdown(code = 0) {
   if (cleaned.some(ok => !ok) || diagnosticsFailed || receipts.some(receipt => !receipt.expected)) code = 1;
   try { const restore = await proxyDiagnosticsInstallation; await restore?.(); }
   catch (error) { console.error(error); code = 1; }
+  try {
+    if (!failureJournalReady || await completeProxyFailureJournal(failureDirectory, failureRunId, code === 0)) code = 1;
+  } catch { console.error("[auth-e2e] Failure accounting did not complete"); code = 1; }
   await rm(temporary, { recursive: true, force: true });
   process.exit(code);
 }
@@ -90,6 +99,8 @@ async function ready(url) {
   throw new Error(`Local account stack not ready: ${url}`);
 }
 try {
+  await createProxyFailureJournal(failureDirectory, failureRunId);
+  failureJournalReady = true;
   // Test-only backport of the reviewed worker-identity fix. No request retries.
   proxyDiagnosticsInstallation = installProxyRepair();
   await proxyDiagnosticsInstallation;

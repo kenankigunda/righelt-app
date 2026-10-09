@@ -61,7 +61,7 @@
     "deploy:prod": "pnpm deploy:api && pnpm deploy:web",
     "test:sync-stress": "node scripts/run-node-tests.mjs packages/api-handler/test-stress",
     "test:auth-fixture": "node --test scripts/auth-fixture-control.test.mjs",
-    "test:e2e:auth": "node scripts/resources/cli.mjs run --kind heavy -- playwright test --config playwright.auth.config.mjs",
+    "test:e2e:auth": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/run-auth-e2e.mjs",
     "validate:local": "node scripts/validation/cli.mjs local",
     "validate:integrated": "node scripts/validation/cli.mjs integrated",
     "validate:report": "node scripts/validation/cli.mjs report",
