@@ -54,6 +54,8 @@ import {
   toggleScenariosHash,
 } from "./routes.js";
 import { createTutorialController } from "./tutorial.js";
+import { createTutorialView } from "./tutorial-view.js";
+import { needsTutorial, readTutorialProgress } from "./tutorial-progress.js";
 
 const appEl = document.getElementById("app");
 const dismissedRecoveryNotices = new Map();
@@ -149,7 +151,8 @@ const account = createAccountController({ storage,
   onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); } },
 });
 const accountDialog = createAccountDialog({ controller: account, onSound:kind=>gameSound.play(kind), onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
-  onComplete: intent => { void completeAccountContinuation(intent); },
+  onComplete: intent => { if(currentRoute.name==='tutorial' && tutorialResult)void finishOnboarding(tutorialResult);else void completeAccountContinuation(intent); },
+  onDismiss: () => { if(currentRoute.name==='tutorial')exitOnboarding(); },
   onLayoutChange: () => render({animatePanels:false,includeBoard:false}),
 });
 const gameSound = createGameSound({ storage });
@@ -163,7 +166,14 @@ syncPageActivity();
 document.addEventListener('visibilitychange',syncPageActivity);
 window.addEventListener('blur',()=>{document.documentElement.dataset.pageActive='false';gameSound.activityChanged();});
 window.addEventListener('focus',()=>{syncPageActivity();gameSound.activityChanged();});
-const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
+let onboarding = null;
+let onboardingBypass = null;
+let tutorialMountedRoot = null;
+let tutorialResult = null;
+const tutorial = createTutorialController({ storage, onChange: () => tutorialView?.update() });
+const tutorialView = createTutorialView({ controller:tutorial, supportsHover:()=>hoverCapability.getSupportsHover(), onSound:event=>gameSound.interaction(event), onFinish:result=>{void finishOnboarding(result);}, onExit:()=>exitOnboarding() });
+const tutorialAccount = accountDialog;
+document.addEventListener('visibilitychange',()=>{if(currentRoute.name==='tutorial'){if(document.hidden)tutorial.pause();else if(!tutorialAccount.isOpen())tutorial.resume();}});
 const boardAdapter = createEngineBoardAdapter();
 const hoverCapability = ensureHoverCapabilityController();
 assertGameBoardAdapter(boardAdapter);
@@ -1851,7 +1861,7 @@ const renderHeader = () => `
     ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p role="status">Connecting…</p>` : ""}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
-        ${account.snapshot().ready && account.snapshot().enabled && account.snapshot().available && account.snapshot().session.authenticated ? `<button class="secondary header-icon-action" type="button" data-action="account-open" data-testid="account-open" aria-label="Account" title="Account">${headerActionContent('account','Account')}</button>` : ""}
+        ${account.snapshot().ready && account.snapshot().enabled && account.snapshot().available ? `<button class="secondary header-icon-action" type="button" data-action="account-open" data-testid="account-open" aria-label="${account.snapshot().session.authenticated ? 'Account' : 'Sign in'}" title="${account.snapshot().session.authenticated ? 'Account' : 'Sign in'}">${headerActionContent('account',account.snapshot().session.authenticated ? 'Account' : 'Sign in')}</button>` : ""}
         ${soundToggle(gameSound.enabled())}${isNarrowHeaderMode() ? renderHeaderNarrowMenu() : renderHeaderWideActions()}
       </div>
     </div>
@@ -2385,7 +2395,7 @@ const scrollHomeSectionToTop = (sectionKey) => {
   });
 };
 
-const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer opponents are being prepared.</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
+const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><button class="secondary" data-action="learn-to-play">Learn to play</button><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer opponents are being prepared.</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
 const renderHome = () => `<section class="stack home-refresh">${renderHomeGameSection('my')}${renderStartChoices()}${getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('')}</section>`;
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
@@ -2641,6 +2651,7 @@ const renderBoardPanel = (game) => `
     <div id="shell-board" class="board" data-testid="game-board"></div>
     <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
   </div>
+  <button class="secondary" data-action="restart-tutorial">Learn to play again</button>
   <div class="overlay-key" aria-label="Board legend">
     <span><i class="swatch commander-key">${renderPieceSymbol('commander')}</i>Commander</span>
     <span><i class="swatch supply-point" style="--supply-owner:var(--player-${game.currentSnapshot?.sideToMove === 'P2' ? 'p2' : 'p1'})">${renderPieceSymbol('supply')}</i>Supply point</span>
@@ -3343,21 +3354,62 @@ const renderInviteLanding = (inviteContext) => {
   `});
 };
 
-const renderTutorial = (gameId) => {
-  const state = tutorial.current();
-  return `
-    <section class="panel">
-      <h2>Tutorial ${renderPlaceholderBadge()}</h2>
-      <p class="small">Step ${state.index + 1} of ${state.total}</p>
-      <p>${escapeHtml(state.step)}</p>
-      <div class="row">
-        <button data-action="tutorial-next">Next</button>
-        <button class="secondary" data-action="tutorial-skip">Skip Step</button>
-        <button class="secondary" data-action="tutorial-skip-all" data-game-id="${escapeHtml(gameId || "")}">Skip tutorial</button>
-        <button class="secondary" data-action="tutorial-complete" data-game-id="${escapeHtml(gameId || "")}">Finish Tutorial</button>
-      </div>
-    </section>
-  `;
+const renderTutorial = () => '<section data-tutorial-root aria-label="Learn to play"></section>';
+const mountTutorial = () => {
+  const root=appEl.querySelector('[data-tutorial-root]');
+  if(!root || root===tutorialMountedRoot)return;
+  tutorialMountedRoot=root;
+  tutorial.start({host:onboarding?.host||'horus',replay:onboarding?.manual??true});
+  tutorialView.mount(root);
+  if(onboarding?.skipLesson)void finishOnboarding(readTutorialProgress(storage).result||'skipped');
+};
+const exitOnboarding = () => {
+  const hash=onboarding?.intent?.hash||buildHomeHash();
+  onboarding=null;tutorialResult=null;tutorial.pause();opponentSession.cancel();void tutorialAccount.close(true);navigateTo(hash);
+};
+const beginOnboarding = (intent,{host='horus',manual=false}={}) => {
+  const progress=readTutorialProgress(storage);
+  const skipLesson=!manual&&!needsTutorial({account:account.snapshot().session.account,progress,legacyCompleted:storage.getItem('righelt.tutorial.done.v1')==='1'});
+  onboarding={intent,host,manual,skipLesson,continuing:false};tutorialResult=null;
+  navigateTo(buildTutorialHash(intent?.gameId||null));
+};
+const finishOnboarding = async result => {
+  if(currentRoute.name!=='tutorial' || onboarding?.continuing)return;
+  tutorialResult=result;tutorial.finish(result);
+  if(!onboarding)onboarding={intent:null,host:tutorial.current().host,manual:true,continuing:false};
+  const visit=onboarding;
+  if(account.snapshot().enabled&&!account.canPlay()){
+    if(!tutorialAccount.isOpen())tutorialAccount.openInline('login');
+    tutorialView.showAccount(tutorialAccount.element);return;
+  }
+  visit.continuing=true;tutorialView.showAccount(null);tutorialView.accountStatus('Getting ready…');
+  const generation=account.snapshot().generation;
+  try {
+    if(account.snapshot().enabled)await account.updateAccount({preferences:{tutorial:result}});
+    else saveTutorialCompleted(storage,true);
+    if(onboarding!==visit||currentRoute.name!=='tutorial'||generation!==account.snapshot().generation)return;
+    const intent=visit.intent;
+    if(!intent){onboarding=null;tutorialResult=null;navigateTo(currentRoute.gameId?buildGameHash(currentRoute.gameId):buildHomeHash());return;}
+    if(intent.action==='create-game'||intent.action==='create-self-play'){
+      if(!account.canPlay())throw new Error('Sign in to start your game.');
+      const handle=transport.createGame({selfPlayMode:intent.action==='create-self-play'});
+      onboarding=null;tutorialResult=null;
+      startGameEntryRouteTransition(handle.result.id,'tutorial');navigateTo(buildGameHash(handle.result.id));
+      if(intent.action==='create-game')openFriendInvite(handle.result.id);return;
+    }
+    if(intent.action==='computer-game'){
+      const started=await opponentSession.play(intent);
+      if(onboarding!==visit||currentRoute.name!=='tutorial'||generation!==account.snapshot().generation)return;
+      if(started.state!=='started')throw new Error('Could not start the opponent game.');
+      onboarding=null;tutorialResult=null;return;
+    }
+    if(intent.action==='return-game'){onboarding=null;tutorialResult=null;navigateTo(intent.hash);return;}
+    onboarding=null;tutorialResult=null;onboardingBypass=intent;
+    navigateTo(intent.hash);
+  } catch {
+    if(onboarding!==visit||currentRoute.name!=='tutorial')return;
+    visit.continuing=false;tutorialView.accountStatus('Could not save your lesson progress. Try again.',true);
+  }
 };
 
 const renderNotFound = () => `
@@ -3896,6 +3948,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     return;
   }
 
+  if(currentRoute.name==='tutorial' && tutorialMountedRoot?.isConnected){updateMountedHeader();tutorialView.update();return;}
   let body = "";
   if (currentRoute.name === "home") {
     body = renderHome();
@@ -3963,6 +4016,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   animateHomeSectionTransitions();
   syncScenarioAuthoringControls();
   if(currentRoute.name==='game' && activeResultGameId===currentRoute.gameId){destroyMountedBoardRuntime();if(!hadResultView)appEl.querySelector('.game-result h1')?.focus({preventScroll:true});return;}
+  if(currentRoute.name==='tutorial'){destroyMountedBoardRuntime();mountTutorial();return;}
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
@@ -4108,6 +4162,7 @@ const startRouteSync = ({ renderStart = true } = {}) => {
       routeHydrated = true;
       render({ animatePanels: false, includeBoard: false });
       maybeRevealRouteTransition();
+      if(onboardingBypass?.hash===window.location.hash){const intent=onboardingBypass;const button=appEl.querySelector(`[data-action="${CSS.escape(intent.action)}"][data-game-id="${CSS.escape(intent.gameId)}"]`);if(button)button.click();else onboardingBypass=null;}
     }
   })();
 };
@@ -4239,9 +4294,15 @@ const getComputerReadiness = () => ({ state:'unavailable', message:'This opponen
 const opponentSession = createOpponentSession({ preferences:createIntroductionPreferences(storage), getReadiness:getComputerReadiness, createGame:async()=>{throw new Error('Trained computer play is not available yet.');} });
 const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: opponent => opponent === 'friend' ? {state:'ready',message:'Send an invitation. Let the rivalry begin.'} : getComputerReadiness(),
   onPlay: intent => {
-    if(intent.opponent !== 'friend') return opponentSession.play(intent);
-    if(!account.canPlay()) return {state:'error',message:'Sign in to start your game.'};
+    if(intent.opponent !== 'friend') {
+      if(getComputerReadiness().state!=='ready')return opponentSession.play(intent);
+      storyDialog.close('play');
+      beginOnboarding({hash:buildHomeHash(),action:'computer-game',opponent:intent.opponent,side:intent.side},{host:intent.opponent});
+      return {state:'started'};
+    }
     storyDialog.close('play');
+    if(account.snapshot().enabled){beginOnboarding({hash:buildHomeHash(),action:'create-game'},{host:'horus'});return {state:'started'};}
+    if(!account.canPlay()) return {state:'error',message:'Sign in to start your game.'};
     const handle=transport.createGame({selfPlayMode:false});
     startGameEntryRouteTransition(handle.result.id,currentRoute.name);
     navigateTo(buildGameHash(handle.result.id,null,getCurrentFlyoutState()));
@@ -4272,6 +4333,7 @@ const subscribeToTransport = () => transport.subscribe((change) => {
 subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
+  if(onboarding && !tutorialAccount.isOpen()){onboarding=null;tutorialResult=null;tutorial.pause();queueMicrotask(()=>{if(currentRoute.name==='tutorial')navigateTo(buildHomeHash());});}
   clearAccountContinuation();
   resultTransitions.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();
   hostInvite=null;inviteVisit++;inviteFeedback="";inviteFallback=null;preparedPlayerInvitations.clear();
@@ -4312,6 +4374,9 @@ const syncLiveChannels = () => {
 const navigateTo = (hash) => {
   clearAccountContinuation();
   const parsedRoute = parseRouteFromHash(hash);
+  if(currentRoute.name==='tutorial'&&parsedRoute.name!=='tutorial'){
+    tutorial.pause();tutorialView.destroy();tutorialMountedRoot=null;void tutorialAccount.close(true);onboarding=null;tutorialResult=null;
+  }
   const preferredFlyoutKey = FLYOUT_KEYS.find((key) => parsedRoute[key] && !currentRoute[key]) ?? null;
   const nextRoute = normalizeRouteFlyoutState(parsedRoute, { preferredFlyoutKey });
   const nextHash = buildHashForRoute(nextRoute);
@@ -4343,6 +4408,9 @@ window.addEventListener("hashchange", () => {
   if(hostInvite && (parsedRoute.name!=='game' || parsedRoute.gameId!==hostInvite.gameId)){hostInvite=null;inviteVisit++;}
   inlineProfiles.close();
   if(parsedRoute.gameId!==previousRoute.gameId){activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();}
+  if(previousRoute.name==='tutorial' && parsedRoute.name!=='tutorial'){
+    tutorial.pause();tutorialView.destroy();tutorialMountedRoot=null;void tutorialAccount.close(true);onboarding=null;tutorialResult=null;
+  }
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
   if(previousRoute.name !== 'game' && currentRoute.name === 'game' && !routeTransition)gameSound.play('enter');
   else if(previousRoute.name === 'game' && currentRoute.name !== 'game' && (currentRoute.name !== 'home' || prefersReducedMotion()))gameSound.play('leave');
@@ -4463,12 +4531,23 @@ appEl.addEventListener("click", async (event) => {
   if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") { if (accountDialog.isOpen()) { void accountDialog.close(); return; } accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
+  if(action==='learn-to-play'||action==='restart-tutorial'){beginOnboarding(currentRoute.gameId?{hash:window.location.hash,action:'return-game',gameId:currentRoute.gameId}:null,{manual:true});return;}
+  const lessonEntryActions=new Set(['create-self-play','join-player','accept-invite-player','join-viewer','accept-invite-viewer']);
+  const bypass=onboardingBypass && onboardingBypass.hash===window.location.hash && onboardingBypass.action===action && onboardingBypass.gameId===actionGameId;
+  if(bypass)onboardingBypass=null;
+  if(!bypass && account.snapshot().enabled && lessonEntryActions.has(action)){
+    if(!await waitForAccountGate())return;
+    const progress=readTutorialProgress(storage);
+    if(!account.canPlay()||needsTutorial({account:account.snapshot().session.account,progress})){
+      beginOnboarding({hash:window.location.hash,action,gameId:actionGameId});return;
+    }
+  }
   const accountGatedActions = new Set(["create-game","create-self-play","rematch","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
   if (accountGatedActions.has(action) && (!account.snapshot().ready || account.snapshot().pendingLogout)) {
     event.preventDefault();
     if (!await waitForAccountGate()) return;
   }
-  if (accountGatedActions.has(action) && !account.canPlay()) {
+  if (accountGatedActions.has(action) && action!=="create-game" && !account.canPlay()) {
     event.preventDefault();
     if (!account.snapshot().available || account.snapshot().maintenance) return;
     const intent = safeAccountIntent({ hash: window.location.hash, action, gameId: actionGameId, moveIndex: actionEl.getAttribute("data-move-index") });
@@ -4854,24 +4933,6 @@ appEl.addEventListener("click", async (event) => {
       expandedUndoneGroups.add(groupKey);
     }
     render({ animatePanels: false, includeBoard: false });
-    return;
-  }
-
-  if (action === "tutorial-next" || action === "tutorial-skip") {
-    tutorial.next();
-    render({ animatePanels: false, includeBoard: false });
-    return;
-  }
-
-  if (action === "tutorial-complete" || action === "tutorial-skip-all") {
-    if (account.snapshot().enabled && account.snapshot().session.authenticated) {
-      const epoch = account.snapshot().generation;
-      try { await account.updateAccount({ preferences: { tutorial: action === "tutorial-complete" ? "completed" : "skipped" } }); if (account.snapshot().generation !== epoch) return; }
-      catch { window.__righeltLastError = "Could not save tutorial progress. Try again."; return; }
-    } else if (!account.snapshot().enabled) saveTutorialCompleted(storage, true);
-    tutorial.reset();
-    const gameId = actionEl.getAttribute("data-game-id");
-    navigateTo(gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : buildHomeHash(getCurrentFlyoutState()));
     return;
   }
 

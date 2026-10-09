@@ -404,3 +404,14 @@ Initial section population uses its natural height. Animate size only between tw
 Decorative geometry should only change when its measured inputs change. Nested content updates, equal-size logo replacement, and no-op resize events must not rewrite the full-page grid. When scrolling changes only the origin, preserve its pitch and path. Regression checks should cover unchanged updates as well as real responsive realignment.
 
 Decoration must not delay deliberate actions. The background grid is static for this pass, following the October 7 decision. Preserve its logo alignment, corner emphasis, quieter center, mask and line colors at fixed opacity 1. This supersedes the requested breathing cycle and its stepped implementation. Controlled Linux WebKit measurements found that multiple animated grids added substantial frame-stability delays. Static rendering removed that additional cost. Any future motion must first demonstrate equivalent responsiveness with multiple pages open, and respect reduced motion and inactive pages. A new wrapper, canvas or animation scheduler is not inherently faster.
+
+
+### Hosted lessons stay at the table
+
+Use the shared tutorial host, chapter navigation and board runtime when teaching rules. Horus is the default teacher. A host adds personality in short lines while the instruction stays precise and identical across teachers. Keep the portrait visibly integrated beside the board on wide layouts and above it on phones. Teacher selection belongs to manual replay.
+
+Preserve the mounted board and controls during lesson updates. Ordinary successes advance automatically, while chapter endings and important outcomes wait for Continue. Automatically offer a quiet hint after four seconds without meaningful input, then Skip step after seven. Reset those timers on deliberate board interaction and pause them while the page is hidden or the account step is open. Hover, focus and automatic progress stay silent. Use existing tabletop sounds only for deliberate input. Reduced motion keeps hints static.
+
+Chapter navigation is provisional and owned by one renderer so it can be simplified without rewriting lessons. First runs expose the current and completed chapters. Manual replay exposes every chapter. Persist completed chapters, then restart an unfinished chapter from its initial position.
+
+For play entry, keep introduction, lesson and account creation in one flow. Reuse the account form inside the lesson surface, with the teacher still present. Non-play account actions retain their modal presentation. Create a match only after authentication and progress have been acknowledged. Back must create nothing, and a changed account or route must retire the old continuation.
