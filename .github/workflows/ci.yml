@@ -481,6 +481,9 @@ jobs:
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium firefox webkit
 
+      - name: Sync recovery transport fixture tests
+        run: node --test scripts/sync-recovery-fixture.test.mjs
+
       - name: E2E tests
         env:
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/e2e/results.xml
