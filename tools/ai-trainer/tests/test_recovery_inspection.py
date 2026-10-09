@@ -97,5 +97,26 @@ class RecoveryInspectionTests(unittest.TestCase):
             full.return_value['updates'] = 43
             with self.assertRaisesRegex(ValueError, 'update count'): inspection.inspect_request(request)
 
+    def test_worker_entry_requires_live_parent_group_and_matching_charged_owner(self):
+        directory = self.root / '.ai-runs' / 'run'; directory.mkdir(parents=True)
+        request = {**self.runtime, 'directory': str(directory)}
+        runtime = {**self.runtime, 'supervisorPid': 12, 'bootTime': 5, 'deadlineMonotonic': 999}
+        (directory / 'runtime.json').write_text(json.dumps(runtime))
+        pending = {'id': 'open', 'owner': {'pid': 12, 'created': 7}}
+        with patch.object(inspection, 'ROOT', self.root), patch.object(inspection.os, 'getppid', return_value=12), \
+             patch.object(inspection.os, 'getpid', return_value=13), patch.object(inspection.os, 'getpgrp', return_value=13), \
+             patch.object(inspection.time, 'monotonic', return_value=100), patch('psutil.boot_time', return_value=5), \
+             patch('righelt_training.allocation.identity', return_value={'pid': 12, 'created': 7}), \
+             patch('righelt_training.allocation.Allocation.accounting', return_value=({'id': 'new'}, 0, [pending])) as accounting:
+            inspection.verify_supervision(request)
+            with patch.object(inspection.os, 'getppid', return_value=99):
+                with self.assertRaisesRegex(ValueError, 'live native supervisor'): inspection.verify_supervision(request)
+            with patch.object(inspection.os, 'getpgrp', return_value=12):
+                with self.assertRaisesRegex(ValueError, 'live native supervisor'): inspection.verify_supervision(request)
+            accounting.return_value = ({'id': 'new'}, 0, [])
+            with self.assertRaisesRegex(ValueError, 'charged owner'): inspection.verify_supervision(request)
+            accounting.return_value = ({'id': 'new'}, 0, [{**pending, 'owner': {'pid': 12, 'created': 8}}])
+            with self.assertRaisesRegex(ValueError, 'charged owner'): inspection.verify_supervision(request)
+
 
 if __name__ == '__main__': unittest.main()

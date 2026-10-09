@@ -54,6 +54,24 @@ def inspect_request(request):
             'manifestSha256': metadata['manifestSha256'], 'state': data['recovery']['state']}
 
 
+def verify_supervision(request):
+    from .allocation import Allocation, identity
+    from .budget import effective_deadline
+    import psutil
+    directory = Path(request['directory']).resolve()
+    if not directory.is_relative_to((ROOT / '.ai-runs').resolve()):
+        raise ValueError('recovery inspection outside supervised archive')
+    runtime = read(directory / 'runtime.json')
+    if (runtime.get('supervisorPid') != os.getppid() or os.getpgrp() != os.getpid()
+            or runtime.get('bootTime') != psutil.boot_time() or effective_deadline(runtime) <= time.monotonic()
+            or any(runtime.get(k) != request.get(k) for k in ('allocationId', 'allocationInterval', 'manifestSha256'))):
+        raise ValueError('recovery inspection requires its live native supervisor')
+    creation, _, pending = Allocation(directory.parent, directory).accounting()
+    if (creation['id'] != request['allocationId'] or len(pending) != 1
+            or pending[0]['id'] != request['allocationInterval'] or pending[0]['owner'] != identity(os.getppid())):
+        raise ValueError('recovery inspection has no matching charged owner')
+
+
 def inspect_owned(directory, runtime, budget, checkpoint, *, gate=None, continuation=None,
                   latest=None, clock=time.monotonic, sleep=time.sleep):
     """The native supervisor owns this worker inside an already open interval."""
@@ -112,7 +130,9 @@ def main():
     parser.add_argument('--request', type=Path, required=True)
     parser.add_argument('--result', type=Path, required=True)
     args = parser.parse_args(); ref = reference(args.request)
-    result = inspect_request(read(args.request))
+    request = read(args.request)
+    verify_supervision(request)
+    result = inspect_request(request)
     if reference(args.request) != ref: raise ValueError('recovery request changed')
     atomic_json(args.result, {**result, 'request': ref})
 
