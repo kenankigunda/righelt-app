@@ -113,11 +113,13 @@ for (const method of ["login", "registration"]) {
       await expect(visitor.getByTestId("invite-join-player")).toBeVisible();
       await expect(dialog(visitor)).not.toBeVisible();
       await visitor.getByTestId("invite-join-player").click();
+      await expect(visitor).toHaveURL(/#\/tutorial(?:$|\/)/);
+      if(method==='registration')await visitor.locator('[data-lesson-skip-all]').click();
       await expect(dialog(visitor)).toBeVisible();
-      await expect(visitor).toHaveURL(invite.url);
+      await expect(dialog(visitor)).toHaveAttribute('data-presentation','inline');
 
       if (method === "login") {
-        await dialog(visitor).getByRole("button", { name: "Close", exact: true }).click();
+        await visitor.locator('[data-lesson-account] [data-lesson-exit]').click();
         await expect(dialog(visitor)).not.toBeVisible();
         await expect(visitor).toHaveURL(invite.url);
         expect(joins).toEqual([]);
@@ -132,6 +134,7 @@ for (const method of ["login", "registration"]) {
         expect(joins).toEqual([]); // Public spectating must not claim an account seat.
         await visitor.goto(invite.url);
         await visitor.getByTestId("invite-join-player").click();
+        await expect(dialog(visitor)).toBeVisible();
         await enterUsername(visitor, username);
         await dialog(visitor).getByLabel("Password", { exact: true }).fill(password);
         // The reset and continuation share this read. Neither may act before

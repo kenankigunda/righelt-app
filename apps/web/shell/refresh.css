@@ -128,7 +128,7 @@ body { isolation:isolate; }
 .game-shell-frame [data-shell-panel="board"] { position:relative;border-radius:0 18px 0 18px;clip-path:polygon(20px 0,100% 0,100% calc(100% - 20px),calc(100% - 20px) 100%,0 100%,0 20px); }
 
 /* Four clipped corners and a shallow bevel give paper surfaces tangible depth. */
-:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate,[data-tutorial-root]) section.panel,
 .invite-gate-modal {
   --corner-start:var(--player-p1);--corner-end:var(--player-p2);
   position:relative;border-radius:0;
@@ -142,8 +142,8 @@ body { isolation:isolate; }
 .layout-grid > .stack:nth-child(3) > section.panel {
   --corner-start:var(--player-p2);--corner-end:var(--player-p1);
 }
-:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::before {background:var(--corner-start);}
-:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::after {background:var(--corner-end);}
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate,[data-tutorial-root]) section.panel::before {background:var(--corner-start);}
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate,[data-tutorial-root]) section.panel::after {background:var(--corner-end);}
 .invite-gate section.panel::before,.invite-gate section.panel::after {content:'';position:absolute;width:30px;height:30px;pointer-events:none;}
 .invite-gate section.panel::before {top:0;left:0;clip-path:polygon(0 0,100% 0,0 100%);}
 .invite-gate section.panel::after {bottom:0;right:0;clip-path:polygon(100% 0,100% 100%,0 100%);}
@@ -176,14 +176,14 @@ body { isolation:isolate; }
   --stone-grain:url('../assets/stone-grain.webp');
 }
 body {background-image:var(--stone-grain);background-color:var(--surface-foundation);}
-:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel,
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate,[data-tutorial-root]) section.panel,
 .story-modal,.game-result,.account-dialog[data-presentation="flyout"] {
   --stone-depth:6px;--stone-edge:#c9c0ad;--corner-start:transparent;--corner-end:transparent;
   isolation:isolate;position:relative;overflow:visible;clip-path:none;border:0;border-radius:0;
   background:transparent;box-shadow:none;
   filter:drop-shadow(0 3px 3px rgb(54 45 30 / 16%));
 }
-:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::before,
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate,[data-tutorial-root]) section.panel::before,
 .story-modal::before,.game-result::before,.account-dialog[data-presentation="flyout"]::before {
   content:'';position:absolute;inset:0;width:auto;height:auto;transform:none;pointer-events:none;z-index:-1;
   clip-path:var(--stone-outline);
@@ -193,17 +193,17 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
     var(--stone-grain),linear-gradient(135deg,#fffdf7,#f2ede1);
   box-shadow:inset 0 1px 0 #fff,inset 1px 0 0 rgb(255 255 255 / 80%);
 }
-:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel::after,
+:is(.home-refresh,.game-shell-frame,.game-shell-mobile-panel,.invite-gate,[data-tutorial-root]) section.panel::after,
 .story-modal::after,.game-result::after,.account-dialog[data-presentation="flyout"]::after {
   content:'';position:absolute;inset:0 0 calc(-1 * var(--stone-depth));width:auto;height:auto;transform:none;pointer-events:none;z-index:-2;
   clip-path:var(--stone-outline);background:linear-gradient(115deg,#e4ddce,var(--stone-edge));
 }
 .home-refresh > section.panel {--corner-start:var(--player-p1);--corner-end:var(--player-p2);}
 .home-refresh > section.panel:nth-child(even) {--corner-start:var(--player-p2);--corner-end:var(--player-p1);}
-:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel:not([data-shell-panel="board"]) {--stone-depth:3px;}
+:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate,[data-tutorial-root]) section.panel:not([data-shell-panel="board"]) {--stone-depth:3px;}
 [data-shell-panel="board"] {--corner-start:var(--player-p1)!important;--corner-end:var(--player-p2)!important;}
 [data-shell-panel="board"][data-turn-side="blue"] {--corner-start:var(--player-p2)!important;--corner-end:var(--player-p1)!important;}
-:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel[data-shell-panel="board"]::before {
+:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate,[data-tutorial-root]) section.panel[data-shell-panel="board"]::before {
   background:
     linear-gradient(135deg,var(--corner-start) 0 16px,transparent 16px) top left / 40px 40px no-repeat,
     linear-gradient(225deg,var(--corner-start) 0 16px,transparent 16px) top right / 40px 40px no-repeat,
@@ -241,7 +241,7 @@ button:has(> .righelt-icon):not(.ui-icon-button) {display:inline-flex;align-item
 [data-shell-panel="board"] .cell:is(.source,.target,.selected-piece) {--cell-surface:color-mix(in srgb,var(--corner-start) 5%,var(--cell-fill));background:var(--cell-surface);}
 [data-hover-capability="hover"] [data-shell-panel="board"] .cell:not(.unselectable):hover {--cell-surface:color-mix(in srgb,var(--corner-start) 5%,var(--cell-fill));background:var(--cell-surface);color:var(--ink);}
 /* Neutral supporting game surfaces; only the Board carries player corners. */
-:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel:not([data-shell-panel="board"]) {
+:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate,[data-tutorial-root]) section.panel:not([data-shell-panel="board"]) {
   --corner-start:transparent!important;--corner-end:transparent!important;
   border:0;border-radius:0;background:transparent;clip-path:none;
 }
@@ -270,10 +270,10 @@ button.button-pending,.button-link.button-pending {
 .shell-header .header-icon-action:is(:hover,:focus-visible){background:rgb(37 43 45 / 4%);color:var(--ink);border-color:transparent;}
 @media(prefers-reduced-motion:reduce){.header-icon-action .header-action-label{transition:none;}}
 /* Matching four-corner cuts give the top pair equal broad bands and the bottom pair equal fine bands. */
-:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) [data-shell-panel="board"] {
+:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate,[data-tutorial-root]) [data-shell-panel="board"] {
  --stone-outline:polygon(18px 0,calc(100% - 18px) 0,100% 18px,100% calc(100% - 18px),calc(100% - 18px) 100%,18px 100%,0 calc(100% - 18px),0 18px);
 }
-:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel[data-shell-panel="board"]::before {
+:is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate,[data-tutorial-root]) section.panel[data-shell-panel="board"]::before {
  background:linear-gradient(135deg,var(--corner-start) 0 16px,transparent 16px) top left / 40px 40px no-repeat,
  linear-gradient(225deg,var(--corner-start) 0 16px,transparent 16px) top right / 40px 40px no-repeat,
  linear-gradient(45deg,var(--corner-end) 0 16px,transparent 16px) bottom left / 40px 40px no-repeat,
@@ -483,3 +483,42 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .story-modal .modal-content::-webkit-scrollbar-track {background:transparent;}
 
 [data-shell-panel="board"] .cell.target .piece-token.commander.move-ghost {opacity:1;}
+/* Shared lesson and onboarding surfaces use the approved stone/piece language. */
+.lesson-layout {display:grid;grid-template-columns:minmax(240px, .8fr) minmax(0,1.6fr);gap:24px;align-items:start;max-width:1180px;margin-inline:auto;}
+.lesson-guidance,.lesson-account {padding:24px;}
+.lesson-host {display:flex;gap:12px;align-items:center;}
+.lesson-host img {width:clamp(90px,12vw,174px);height:auto;object-fit:contain;flex:none;}
+.lesson-host-name {font-weight:800;margin:0;}
+.lesson-host-line {font-size:14px;line-height:1.5;margin:4px 0 0;color:var(--text-secondary);}
+.lesson-instruction {margin-block:20px;}
+.lesson-instruction h2 {margin:0 0 12px;}
+.lesson-instruction p {line-height:1.6;}
+.lesson-feedback[data-state="error"] {color:var(--player-p1);}
+.lesson-feedback[data-state="success"] {font-weight:600;}
+.lesson-chapters {margin-block:16px;}
+.lesson-chapters summary {cursor:pointer;min-height:44px;display:flex;align-items:center;font-size:14px;}
+.lesson-chapters nav,.lesson-actions,.lesson-board-actions {display:flex;flex-wrap:wrap;gap:8px;}
+.lesson-chapters nav {flex-direction:column;margin-top:8px;}
+.lesson-chapters [aria-current="step"] {outline:2px solid var(--action-color);outline-offset:2px;}
+.lesson-host-picker {display:flex;gap:8px;align-items:center;margin-top:16px;}
+.lesson-hint {border-left:3px solid var(--action-color);padding-left:12px;}
+.lesson-board {min-width:0;padding:20px;}
+.lesson-board .board-wrap {margin-inline:auto;}
+.lesson-board-actions {margin-top:16px;}
+.lesson-board .cell.lesson-target {outline:3px solid var(--action-color);outline-offset:-4px;animation:lesson-hint 1.2s ease-in-out 2;}
+.lesson-account {max-width:660px;margin-inline:auto;}
+.account-dialog.account-inline {height:auto;min-height:0;position:relative;inset:auto;width:100%;max-width:none;max-height:none;margin:16px 0 0;padding:0;overflow:visible;background:transparent;border:0;box-shadow:none;clip-path:none;}
+.account-inline::before,.account-inline::after {display:none;}
+.account-inline .account-form {padding:0;}
+.account-inline .account-dialog-heading h2 {font-size:24px;}
+.account-inline .account-close {display:none;}
+.lesson-layout[hidden],.lesson-account[hidden],.account-inline[hidden],.lesson-host-picker[hidden] {display:none;}
+@keyframes lesson-hint {50% {outline-color:color-mix(in srgb,var(--action-color),transparent 65%);}}
+@media(max-width:760px){.lesson-layout {grid-template-columns:minmax(0,1fr);gap:16px;}.lesson-guidance {padding:16px;}.lesson-host img {width:90px;}.lesson-host-line {font-size:13px;}.lesson-instruction {margin-block:12px;}.lesson-chapters {margin-block:8px;}.lesson-board {padding:12px;}.lesson-account {padding:16px;}}
+@media(prefers-reduced-motion:reduce){.lesson-board .cell.lesson-target {animation:none;}}
+[data-tutorial-root] [hidden] {display:none !important;}
+
+.lesson-board {font-family:inherit;}
+@media(max-width:760px){.lesson-instruction h2 {font-size:20px;margin-bottom:8px;}.lesson-instruction p {font-size:14px;line-height:1.5;margin-block:8px;}.lesson-chapters {margin-block:4px;}.lesson-host-picker {margin-top:10px;}}
+
+[data-lesson-title]:focus {outline:none;}

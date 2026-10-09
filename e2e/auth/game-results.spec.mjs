@@ -10,12 +10,13 @@ for (const opponent of ["self", "friend"]) test(`real ${opponent} terminal game 
   await page.goto("/");
   await page.getByTestId("home-create-game").waitFor();
   await (opponent === "self" ? page.getByRole("button", {name:"Play both sides", exact:true}) : page.getByTestId("home-create-game")).click();
+  if(opponent==='friend')await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
+  await page.locator('[data-lesson-skip-all]').click();
   const dialog = page.getByTestId("account-dialog");
   await dialog.getByRole("button", { name: "Create account", exact: true }).click();
   await dialog.getByLabel("Username", { exact: true }).fill(`Result_${Date.now().toString(36)}`);
   await dialog.getByLabel("Password", { exact: true }).fill("A result account test password 482");
   await dialog.getByRole("button", { name: "Create account & continue", exact: true }).click();
-  if (opponent === "friend") await page.getByRole("button",{name:"Start a friend game",exact:true}).click();
   if (opponent === "friend") await page.getByRole("button",{name:"Close invite",exact:true}).click();
   await expect(page.getByTestId("game-shell")).toBeVisible();
   // The invitation preview is also visible while its dismissal animates.

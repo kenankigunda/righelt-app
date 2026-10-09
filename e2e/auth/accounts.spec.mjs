@@ -1,3 +1,4 @@
+import {completeLesson} from "../support/tutorial.mjs";
 import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup, signOutAndOpenSignIn } from "./helpers.mjs";
 import { profileLayoutDisplayName, sampleParticipantGeometry } from "../support/profile-layout.mjs";
 import { test, expect } from "@playwright/test";
@@ -24,11 +25,10 @@ async function register(page, username, { gate = false } = {}) {
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
-  await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
+  await continueFriendIntroduction(page);
   if (gate) {
     await expect(page).toHaveURL(/#\/game\//);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
-    await page.getByRole("button",{name:"Close invite",exact:true}).click();
   } else {
     await expect(page).toHaveURL(/#\/game\//);
     await page.goto("/");
@@ -128,7 +128,7 @@ test("account forms support autofill, keyboard focus, narrow layouts and cancell
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
-  const trigger = page.getByTestId("home-create-game");
+  const trigger = page.locator('[data-action="account-open"]');
   await trigger.click();
   await expect(dialog(page).getByLabel("Username", { exact: true })).toHaveAttribute("autocomplete", "username");
   await expect(dialog(page).getByLabel("Password", { exact: true })).toBeVisible();
@@ -350,7 +350,8 @@ test("tutorial skipping and completion persist without manual replay resetting t
   await expect(page).toHaveURL(/#\/(?:\?|$)/);
   await expect.poll(() => tutorialPreference(page)).toBe("skipped");
   await page.goto("/#/tutorial");
-  await page.getByRole("button", { name: "Finish Tutorial", exact: true }).click();
+  await completeLesson(page);
+  await page.locator("[data-lesson-continue]").click();
   await expect(page).toHaveURL(/#\/(?:\?|$)/);
   const separate = await browser.newContext({ ignoreHTTPSErrors: true });
   try {
@@ -388,7 +389,7 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   if (gesture === "pointer") await page.mouse.up();
   else await page.keyboard.up("Space");
-  await expect(dialog(page)).toBeVisible();
+  await expect(page.getByRole('dialog',{name:'Friend',exact:true})).toBeVisible();
   } finally {
     release();
     await page.unrouteAll({ behavior: "wait" });
@@ -408,7 +409,7 @@ test("a stalled startup read recovers without granting guest play", async ({ pag
     await page.goto("/");
     await waitForAccountStartup(page);
     expect(requests).toBeGreaterThanOrEqual(2);
-    await page.getByTestId("home-create-game").click();
+    await openPlaySignIn(page);
     await expect(dialog(page)).toBeVisible();
     await expect(page).not.toHaveURL(/#\/game\//);
   } finally { release(); }
@@ -514,7 +515,8 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
   page.on("request", request => { if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates++; });
   try {
     await sibling.goto("/");
-    await page.getByTestId("home-create-game").click();
+    await waitForAccountStartup(sibling);
+    await openPlaySignIn(page);
     await enterUsername(page, first);
     await dialog(page).getByLabel("Password", { exact: true }).fill(password);
     await page.evaluate(() => { window.__holdAccountLists = true; });
@@ -546,7 +548,7 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
 
 test('a failed continuation read preserves the play choice for explicit retry', async ({ page }) => {
   await page.goto('/');
-  await page.getByTestId("home-create-game").click();
+  await openPlaySignIn(page);
   await dialog(page).getByRole('button', { name: 'Create account', exact: true }).click();
   await enterUsername(page, uniqueName());
   await dialog(page).getByLabel('Password', { exact: true }).fill(password);
@@ -563,7 +565,7 @@ test('a failed continuation read preserves the play choice for explicit retry', 
   expect(creates).toBe(0);
   denyReads = false;
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
+  await continueFriendIntroduction(page);
   await expect(page).toHaveURL(/#\/game\//);
   await expect(page.getByTestId('game-role')).toContainText('Player 1');
   expect(creates).toBe(1);

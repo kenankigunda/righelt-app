@@ -34,13 +34,14 @@ export const canonicalEntryUsername = (value) => String(value ?? "").replace(/^[
 export const validEntryUsername = (value) => /^[a-z0-9_]{3,24}$/.test(canonicalEntryUsername(value));
 export const createAccountDialog = ({
   controller, document = globalThis.document, onComplete = () => {},
-  getSiteKey = () => null, timers = globalThis, fetcher = globalThis.fetch, onLayoutChange = () => {}, onSound = () => {},
+  inline = false, onDismiss = () => {}, getSiteKey = () => null, timers = globalThis, fetcher = globalThis.fetch, onLayoutChange = () => {}, onSound = () => {},
 } = {}) => {
   const dialog = document.createElement("dialog");
   dialog.className = "account-dialog";
   dialog.dataset.testid = "account-dialog";
   dialog.setAttribute("aria-labelledby", "account-title");
   document.body.append(dialog);
+
   const sizeAnimation = animateDialogSize(dialog);
   let autosave = null;
   let mode = "login", lookupState = "idle", lookupName = "", lookupRevealed = false,
@@ -53,6 +54,7 @@ export const createAccountDialog = ({
   const isSettings = () => mode === 'account' || mode === 'password';
   const present = () => {
     dialog.classList.remove('is-closing');
+    if (inline) { if(!dialog.open)dialog.show(); dialog.classList.add('account-inline'); dialog.dataset.presentation = 'inline';  onLayoutChange(); return; }
     const flyout = isSettings();
     if(flyout && !dialog.open)onSound("flyout");
     dialog.dataset.presentation = flyout ? 'flyout' : 'modal';
@@ -221,7 +223,7 @@ export const createAccountDialog = ({
       if (marker !== flow || !dialog.open) return;
       const first = ["register", "login"].includes(mode) && values.username?.trim()
         ? dialog.querySelector('[name="password"]') : dialog.querySelector("input");
-      (first || dialog.querySelector("#account-title"))?.focus();
+      (first || dialog.querySelector("#account-title"))?.focus({preventScroll:inline});
     });
   };
   const checkUsername = async () => {
@@ -254,6 +256,7 @@ export const createAccountDialog = ({
     if (next === "register" && validEntryUsername(values.username)) lookupTimer = timers.setTimeout(() => void checkUsername(), USERNAME_LOOKUP_DEBOUNCE_MS);
   };
   const close = async (discard = false) => {
+    const wasInline = inline;
     if (!discard && mode === "account" && autosave?.dirty() && !await autosave.flush()) return;
     if (!discard && isSettings() && dialog.open)onSound("flyout-back");
     if (!discard && isSettings() && dialog.open && !globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
@@ -281,7 +284,9 @@ export const createAccountDialog = ({
     dialog.replaceChildren();
     const action = trigger?.closest?.("[data-action]")?.getAttribute("data-action");
     const restored = trigger?.isConnected ? trigger : action ? document.querySelector(`[data-action="${CSS.escape(action)}"]`) : document.querySelector('[data-action="account-open"]');
-    restored?.focus?.({preventScroll:true});
+    if (wasInline) { inline=false; dialog.classList.remove("account-inline"); dialog.removeAttribute("role"); document.body.append(dialog); }
+    else restored?.focus?.({preventScroll:true});
+    if (wasInline && !discard) onDismiss();
   };
   const open = (next = "login", intent = null, source = null) => {
     autosave?.cancel(); autosave = null;
@@ -301,7 +306,7 @@ export const createAccountDialog = ({
     render();
     present();
   };
-  const complete = () => { const intent = pending; close(); onComplete(intent); };
+  const complete = () => { const intent = pending; close(true); onComplete(intent); };
   const challenge = async () => {
     const marker = flow,
       sitekey = getSiteKey();
@@ -374,7 +379,7 @@ export const createAccountDialog = ({
   dialog.addEventListener("keydown", (event) => {
     if (!event.repeat && [" ", "Enter"].includes(event.key) && event.target.closest?.("button, a, summary")) beginFeedbackGesture();
     if (event.key === "Escape" && dialog.dataset.presentation === 'flyout' && !phone?.matches) {event.preventDefault();void close();return;}
-    if (event.key !== "Tab" || dialog.dataset.presentation === 'flyout' && !phone?.matches) return;
+    if (inline || event.key !== "Tab" || dialog.dataset.presentation === 'flyout' && !phone?.matches) return;
     const nodes = [...dialog.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href],summary,[tabindex="0"]')].filter(node => !node.closest("[hidden]"));
     const first = nodes[0], last = nodes.at(-1);
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
@@ -484,6 +489,7 @@ export const createAccountDialog = ({
   const refreshSession = () => {};
   return {
     open, close, refreshSession,
+    openInline(next="login", intent=null) { inline=true; open(next,intent); },
     onTransition: ({ owner: transitionOwner, completedLogoutGeneration } = {}) => {
       if (dialog.open && pendingLogoutGeneration !== null && completedLogoutGeneration === pendingLogoutGeneration) { pendingLogoutGeneration = null; return; }
       if (dialog.open && transitionOwner !== owner) void close(true);

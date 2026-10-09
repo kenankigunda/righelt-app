@@ -966,7 +966,7 @@ export function createEngineBoardAdapter() {
       return {
         live: true,
         history: false,
-        tutorial: false,
+        tutorial: true,
       };
     },
 
@@ -1231,6 +1231,11 @@ export function createEngineBoardAdapter() {
           cell.dataset.col = String(col);
 
           const cellPieces = findPiecesAt(snapshot, row, col);
+          const contents = cellPieces.map(piece => `${piece.owner === 'P1' ? 'Red' : 'Blue'} ${piece.kind}`);
+          for (const [owner, point] of Object.entries(SUPPLY_POINTS)) {
+            if (point.row === row && point.col === col) contents.push(`${owner === 'P1' ? 'Red' : 'Blue'} supply point`);
+          }
+          cell.setAttribute('aria-label', `Row ${row}, column ${col}: ${contents.join(', ') || 'empty square'}`);
           const selectedActorForPushPreview =
             overlay?.mode === "interactive" && effectiveSelection.selectedPieceId
               ? findPieceById(snapshot, effectiveSelection.selectedPieceId)
