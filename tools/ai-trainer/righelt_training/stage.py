@@ -10,6 +10,8 @@ from .checkpoint import atomic_json
 from .config import ROOT
 from .processes import install_stop_handlers,cleanup_owned
 from .allocation import Allocation,contract_hash
+from .continuation_policy import BOUNDED_PHASES, FOLLOWUP_PHASE
+from .followup_policy import POLICY as FOLLOWUP_POLICY
 
 
 class PhaseIncomplete(ValueError):
@@ -86,7 +88,7 @@ def prepare_exploration(args, continuation, invoke):
     from . import exploration_adoption as adoption
     if not adoption.required(continuation):return None
     directory=args.run_dir.resolve()
-    if continuation['phase']=='twelve-hour':
+    if continuation['phase'] in ('twelve-hour', FOLLOWUP_PHASE):
         return adoption.for_allocation(directory,continuation,mode='provenance')
     if (directory/'recipe-adoption.json').exists():
         # Read-only recovery may encounter an abandoned training interval. The
@@ -188,7 +190,7 @@ def execute(args, invoke=None):
     if continuation and completed.exists():
         prior=read(completed)
         finished=(prior.get('advancementEligible') is True or
-                  (continuation['phase']=='eight-hour' and prior.get('experimentComplete') is True
+                  (continuation['phase'] in BOUNDED_PHASES and prior.get('experimentComplete') is True
                    and prior.get('continuationAllowed') is False and prior.get('advancementEligible') is False))
         if (finished and prior.get('sourceRevision')==revision
             and prior.get('sequenceId')==continuation['sequenceId'] and prior.get('phase')==continuation['phase']
@@ -202,11 +204,11 @@ def execute(args, invoke=None):
             if hashlib.sha256(Path(prior['recoveryCheckpoint']).read_bytes()).hexdigest()!=prior['recoverySha256']:
                 raise ValueError('completed stage recovery checkpoint changed')
             return prior
-        if terminal.exists() or (continuation['phase']=='eight-hour' and prior.get('experimentComplete') is True):
+        if terminal.exists() or (continuation['phase'] in BOUNDED_PHASES and prior.get('experimentComplete') is True):
             raise ValueError('finished experiment evidence/source changed; do not repeat computation')
     def strength_ready():
         return bool(result.get('healthPassed') or
-                    (continuation and continuation['phase']=='eight-hour' and result.get('healthAudited')))
+                    (continuation and continuation['phase'] in BOUNDED_PHASES and result.get('healthAudited')))
 
     def phase(name,flags,proof_name=None,valid=lambda data:True):
         receipt_path=directory/'phase-receipts'/f'{name}.json'
@@ -247,11 +249,11 @@ def execute(args, invoke=None):
         result['health']=health
         if continuation:result['healthBindings']=health_bindings(directory)
         result['healthAudited']=True
-        if not health.get('healthy') and not (continuation and continuation['phase']=='eight-hour'):
+        if not health.get('healthy') and not (continuation and continuation['phase'] in BOUNDED_PHASES):
             raise ValueError('pipeline health gate unmet')
         result['healthPassed']=health.get('healthy') is True
         checkpoints=health['checkpoints']
-        if not checkpoints and continuation and continuation['phase']=='eight-hour':
+        if not checkpoints and continuation and continuation['phase'] in BOUNDED_PHASES:
             result['strengthEvaluation']={'status':'unavailable','reason':'no-fresh-trained-candidate'}
             raise PhaseIncomplete('prepare-validation','no-fresh-trained-candidate')
         candidate=checkpoints[0]
@@ -261,7 +263,16 @@ def execute(args, invoke=None):
         phase('prepare-validation',['--resume',str(latest),'--prepare-arena',*pair],'prepare-arena-result.json',lambda p:p.get('status')=='completed')
         plan=read(directory/'prepare-arena-result.json')
         if plan.get('status')!='completed':raise ValueError('validation workload preparation incomplete')
-        phase('validation',['--resume',str(latest),'--arena-plan',plan['plan'],*pair],f"evaluations/{plan['planSha256']}/report.json",lambda p:p.get('mode','strict')=='strict' and p.get('status')=='completed' and p.get('completePairs')==100 and p.get('completedGames')==200 and p.get('identity',{}).get('planSha256')==plan['planSha256'])
+        followup=bool(continuation and continuation['phase']==FOLLOWUP_PHASE)
+        def valid_strength(p):
+            identity=p.get('identity',{}).get('planSha256')==plan['planSha256']
+            if followup:
+                return (identity and p.get('workload')==FOLLOWUP_POLICY['workload'] and p.get('mode')=='diagnostic'
+                    and p.get('allAttemptsAccounted') is True and p.get('strengthAcceptanceEligible') is False
+                    and p.get('completePairs')==FOLLOWUP_POLICY['pairs'] and p.get('completedGames')==2*FOLLOWUP_POLICY['pairs']
+                    and p.get('status')=='completed' and p.get('statistics') is None)
+            return identity and p.get('mode','strict')=='strict' and p.get('status')=='completed' and p.get('completePairs')==100 and p.get('completedGames')==200
+        phase('validation',['--resume',str(latest),'--arena-plan',plan['plan'],*pair],f"evaluations/{plan['planSha256']}/report.json",valid_strength)
         result.update(status='phases-finished',reason='Inspect arena evidence and publish the experiment outcome.')
         result['advancementEligible']=bool(continuation and result.get('healthPassed'))
     except PhaseIncomplete as error:
@@ -271,7 +282,8 @@ def execute(args, invoke=None):
         allowed={'budget','budget-expired','budget-exhausted-before-phase','resource-stop','resource-pause','node-limit','deadline',
                  'inference-budget','verification-budget','budget-or-resource-stop','opening-attempt-limit',
                  'verification-unfinished','search-recovery'}
-        if continuation and continuation['phase']=='eight-hour':allowed.add('no-fresh-trained-candidate')
+        if continuation and continuation['phase'] in BOUNDED_PHASES:allowed.add('no-fresh-trained-candidate')
+        if continuation and continuation['phase']==FOLLOWUP_PHASE:allowed.add('diagnostic-incomplete-matches')
         result['boundedStrengthUnfinished']=bool(continuation and strength_ready() and
             error.phase in ('prepare-validation','validation') and error.reason in allowed)
         result['advancementEligible']=bool(result['boundedStrengthUnfinished'] and result.get('healthPassed'))
@@ -282,7 +294,7 @@ def execute(args, invoke=None):
         if arena_report.exists():result['strengthEvaluation']=read(arena_report)
     if continuation:
         result.update(sequenceId=continuation['sequenceId'],phase=continuation['phase'],continuationSha256=contract_hash(continuation))
-        if continuation['phase']=='eight-hour':
+        if continuation['phase'] in BOUNDED_PHASES:
             finished=bool(result.get('trainingFinished') and result.get('healthAudited') and
                           (result.get('status')=='phases-finished' or result.get('boundedStrengthUnfinished')))
             result.update(experimentComplete=finished,advancementEligible=False,continuationAllowed=False)
@@ -291,7 +303,7 @@ def execute(args, invoke=None):
             result.update(recoveryCheckpoint=latest['checkpoint'],recoverySha256=latest['sha256'])
     if directory.exists():
         atomic_json(directory/'stage-result.json',result)
-        if continuation and continuation['phase']=='eight-hour' and result.get('experimentComplete'):
+        if continuation and continuation['phase'] in BOUNDED_PHASES and result.get('experimentComplete'):
             from .sequence import immutable
             from .continuation_policy import reference
             immutable(terminal,{'schema':1,'continuationSha256':contract_hash(continuation),

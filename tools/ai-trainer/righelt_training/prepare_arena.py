@@ -14,6 +14,7 @@ from .config import CONFIG_SHA256
 from .curriculum import family_for_root
 from .replay import partition_for_family
 from .runner import engine_command
+from .followup_policy import POLICY as FOLLOWUP_POLICY, PHASE as FOLLOWUP_PHASE
 
 PROFILE={'simulations':64,'temperature':0,'maxValueGap':0}
 PROFILE_VERSION='learning-comparison-64-greedy-v1'
@@ -29,7 +30,9 @@ def checkpoint_identity(path):
 
 def prepare(directory,candidate,opponent,*,clock=time.monotonic,command=engine_command,experiment_root=None,diagnostic=False):
     directory=Path(directory);runtime=json.loads((directory/'runtime.json').read_text())
-    deadline=effective_deadline(runtime)
+    followup=runtime.get('continuationPhase')==FOLLOWUP_PHASE
+    if followup:diagnostic=True
+    deadline=effective_deadline(runtime)-(FOLLOWUP_POLICY['cleanupSeconds'] if followup else 0)
     result_path=directory/'prepare-arena-result.json'
     result={'schema':1,'status':'inconclusive','reason':'preparation-unfinished','partition':'validation',
             'deadlineMonotonic':runtime['deadlineMonotonic'],'productionPromotion':False}
@@ -50,8 +53,9 @@ def prepare(directory,candidate,opponent,*,clock=time.monotonic,command=engine_c
         return True
     heartbeat()
     if not ready():return result
-    count=10 if diagnostic else 100
-    identity={'mode':'diagnostic' if diagnostic else 'strict','workload':RESTART_WORKLOAD if diagnostic else None,
+    count=FOLLOWUP_POLICY['pairs'] if followup else 10 if diagnostic else 100
+    workload=FOLLOWUP_POLICY['workload'] if followup else RESTART_WORKLOAD if diagnostic else None
+    identity={'mode':'diagnostic' if diagnostic else 'strict','workload':workload,
               'candidate':checkpoint_identity(candidate),'opponent':checkpoint_identity(opponent),
               'seed':runtime['seed'],'allocationId':runtime.get('allocationId',runtime['manifestSha256']),'configSha256':CONFIG_SHA256}
     key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
@@ -87,9 +91,11 @@ def prepare(directory,candidate,opponent,*,clock=time.monotonic,command=engine_c
         if len(state['pairs'])<count:
             result['reason']='budget-or-resource-stop' if attempts<10000 else 'opening-attempt-limit'
             atomic_json(result_path,result);return result
+        pairs=state['pairs']
+        if followup:pairs=[p for i in range(count//2) for p in (state['pairs'][i],state['pairs'][i+count//2])]
         plan={'configSha256':CONFIG_SHA256,'partition':'validation','purpose':'incumbent',
-              'candidate':identity['candidate'],'opponent':identity['opponent'],'pairs':state['pairs'],'bootstrapSeed':runtime['seed']}
-        if diagnostic:plan.update(mode='diagnostic',workload=RESTART_WORKLOAD,decisionCache=False)
+              'candidate':identity['candidate'],'opponent':identity['opponent'],'pairs':pairs,'bootstrapSeed':runtime['seed']}
+        if diagnostic:plan.update(mode='diagnostic',workload=workload,decisionCache=False)
         def verification_ready():
             if not ready():raise TimeoutError('preparation resource/budget stop')
         try:

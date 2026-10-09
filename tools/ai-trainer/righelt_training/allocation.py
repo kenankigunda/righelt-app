@@ -8,7 +8,7 @@ import hashlib
 import math
 import psutil
 from .config import CONFIG
-from .continuation_policy import LIMITS as CONTINUATION_LIMITS, INITIAL_PHASES, authorize
+from .continuation_policy import LIMITS as CONTINUATION_LIMITS, INITIAL_PHASES, authorize, stage_for_phase
 from .budget_extension import effective_creation, original_seconds
 
 
@@ -115,7 +115,7 @@ class Allocation:
             if (row['event']=='created' and prior.get('sequenceId')==contract['sequenceId']
                 and prior.get('phase')==contract['phase']):
                 raise ValueError('sequence phase allocation already claimed')
-        record={'event':'created','allocation':self.key,'stage':'initial' if contract['phase'] in INITIAL_PHASES else 'overnight',
+        record={'event':'created','allocation':self.key,'stage':stage_for_phase(contract['phase']),
                 'seconds':contract['budgetSeconds'],'id':uuid.uuid4().hex,'observedAt':time.time(),
                 'continuation':contract,'contractSha256':contract_hash(contract),
                 'authorization':contract.get('sequenceAmendment','T-107 approved conditional sequence 2026-10-04')}

@@ -46,7 +46,11 @@ class StageTests(unittest.TestCase):
                 (run/'health-report.json').write_text(json.dumps({'complete':True,'healthy':healthy,'checkpoints':[{'path':str(run/'latest.pt'),'weightsSha256':'new'},{'path':str(run/'first.pt'),'weightsSha256':'old'}][:checkpoint_count]}))
                 (run/'prepare-arena-result.json').write_text(json.dumps({'status':'completed','plan':str(run/'plan.json'),'planSha256':'frozen'}))
                 proof=run/'evaluations'/'frozen';proof.mkdir(parents=True,exist_ok=True)
-                (proof/'report.json').write_text(json.dumps({'mode':'diagnostic' if diagnostic else 'strict','reason':arena_reason if incomplete_arena else 'completion evidence incomplete','status':'inconclusive' if incomplete_arena else 'completed','completePairs':99 if incomplete_arena else 100,'completedGames':198 if incomplete_arena else 200,'identity':{'planSha256':'frozen'}}))
+                record={'mode':'diagnostic' if diagnostic else 'strict','reason':arena_reason if incomplete_arena else 'completion evidence incomplete','status':'inconclusive' if incomplete_arena else 'completed','completePairs':99 if incomplete_arena else 100,'completedGames':198 if incomplete_arena else 200,'identity':{'planSha256':'frozen'}}
+                if phase=='eight-hour-followup':record.update(mode='diagnostic',workload='followup-exploratory-8-v1',
+                    completePairs=1 if incomplete_arena else 4,completedGames=2 if incomplete_arena else 8,
+                    allAttemptsAccounted=not incomplete_arena,strengthAcceptanceEligible=False,statistics=None)
+                (proof/'report.json').write_text(json.dumps(record))
             with (nullcontext() if exhausted_process else patch('righelt_training.stage.remaining_budget',return_value=500)):result=execute(args,invoke)
             if repeat:
                 if tamper_finished:
@@ -67,6 +71,21 @@ class StageTests(unittest.TestCase):
         result,calls=self.run_case(continuation=True,phase='eight-hour',healthy=False)
         self.assertTrue(any('--arena-plan' in c for c in calls))
         self.assertFalse(result['healthPassed'])
+
+    def test_followup_closes_after_full_or_bounded_evaluation_without_repeating(self):
+        for healthy in (True,False):
+            for incomplete in (True,False):
+                result,calls=self.run_case(continuation=True,phase='eight-hour-followup',healthy=healthy,
+                    incomplete_arena=incomplete,repeat=True)
+                self.assertTrue(result['experimentComplete']);self.assertEqual(calls,[])
+                self.assertFalse(result['advancementEligible']);self.assertFalse(result['continuationAllowed'])
+                self.assertFalse(result['strengthEvaluation']['strengthAcceptanceEligible'])
+                self.assertIsNone(result['strengthEvaluation']['statistics'])
+                self.assertEqual(result['healthPassed'],healthy)
+        result,calls=self.run_case(continuation=True,phase='eight-hour-followup',incomplete_arena=True,arena_reason='engine-recovery-review-required')
+        self.assertFalse(result['experimentComplete'])
+        with self.assertRaisesRegex(ValueError,'evidence changed'):
+            self.run_case(continuation=True,phase='eight-hour-followup',repeat=True,tamper_finished=True)
 
     def test_finished_eight_hour_report_cannot_be_changed_then_reentered(self):
         with self.assertRaisesRegex(ValueError,'evidence changed'):

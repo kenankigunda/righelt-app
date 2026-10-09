@@ -59,4 +59,4 @@ docs/tickets/
 .venv/
 __pycache__/
 *.pyc
-.ai-runs/
+.ai-runs

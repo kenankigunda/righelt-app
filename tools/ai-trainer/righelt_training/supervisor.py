@@ -21,7 +21,8 @@ from .processes import start_group,stop_group,install_stop_handlers,register_own
 from .resources import AdaptivePolicy
 from .resource_policy import LIMITS,manifest_fields
 from .telemetry import Telemetry,read_device_memory
-from .resume import validate_reset_checkpoint,validate_continuation_checkpoint
+from .resume import validate_reset_checkpoint
+from .recovery_inspection import inspect_owned
 
 
 def begin_phase(allocation,phase,directory,manifest_digest):
@@ -143,19 +144,17 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
         stop_group(process)
 
 
-def latest_recovery(run_dir,runtime):
-    from .checkpoint import inspect_checkpoint
+def latest_recovery(run_dir,runtime,budget):
     directory=Path(run_dir);latest=json.loads((directory/'latest.json').read_text())
     path=Path(latest['checkpoint']).resolve()
     if not path.is_relative_to((directory/'checkpoints').resolve()):raise ValueError('recovery checkpoint outside run')
     if hashlib.sha256(path.read_bytes()).hexdigest()!=latest['sha256']:raise ValueError('latest recovery checkpoint changed')
     metadata=json.loads(path.with_suffix('.json').read_text())
     if metadata['manifestSha256'] not in manifest_hashes(directory):raise ValueError('recovery checkpoint lineage unauthorized')
-    data=inspect_checkpoint(path,manifest_sha256=metadata['manifestSha256'],require_recovery=True)
-    if latest.get('updates')!=data['updates']:raise ValueError('latest recovery update count changed')
+    data=inspect_owned(directory,runtime,budget,path,latest=directory/'latest.json')
     runtime.update(parentCheckpoint=str(path),parentCheckpointManifestSha256=metadata['manifestSha256'])
     atomic_json(directory/'runtime.json',runtime)
-    return path,data['recovery']['state']
+    return path,data['state']
 
 
 def wait_for_resources(budget,policy,telemetry,run_dir,runtime,*,clock=time.monotonic,sleep=time.sleep):
@@ -186,7 +185,7 @@ def run_phase(argv,env,log,budget,runtime,run_dir,artifact_root,activity_file,*,
         reason=wait_for_resources(budget,policy,Telemetry(artifact_root,activity_file),directory,runtime,clock=clock,sleep=sleep)
         if reason not in ('resources-ready','validation-boundary'):return reason,process
         if runtime['command']=='training' and (recovering or reason=='validation-boundary'):
-            path,state=latest_recovery(directory,runtime)
+            path,state=latest_recovery(directory,runtime,budget)
             if budget.remaining(clock())<=0:return 'budget-expired',process
             if clock()>=validation_boundary(runtime,clock()):
                 atomic_json(directory/'runner-result.json',{'schema':1,'status':'stopped','reason':'validation-handoff',
@@ -242,7 +241,11 @@ def arena_arguments(args,artifact_root):
         if not path.resolve().is_relative_to(artifact_root.resolve()):raise ValueError('arena checkpoints must remain in experiment archive')
     if prepare:return None
     from .arena import read_frozen_plan
-    _,digest=read_frozen_plan(args.arena_plan)
+    plan,digest=read_frozen_plan(args.arena_plan)
+    from .followup_policy import PHASE, POLICY
+    contract=json.loads(args.continuation.read_text()) if getattr(args,'continuation',None) else {}
+    if (contract.get('phase')==PHASE)!=(plan.get('workload')==POLICY['workload']):
+        raise ValueError('arena workload differs from authorized experiment')
     return digest
 
 
@@ -322,11 +325,13 @@ def main():
     # Kernel lock survives no crashed process, prevents competing supervisors.
     lock=(artifact_root/'supervisor.lock').open('a+')
     fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-    manifest=build_manifest(args.seed,args.stage)
     continuation=json.loads(args.continuation.read_text()) if args.continuation else None
+    from .followup_policy import validate_launch
+    validate_launch(continuation,args.seed,args.stage)
+    manifest=build_manifest(args.seed,args.stage)
     if continuation:
-        from .continuation_policy import INITIAL_PHASES
-        if args.stage!=('initial' if continuation['phase'] in INITIAL_PHASES else 'overnight'):
+        from .continuation_policy import stage_for_phase
+        if args.stage!=stage_for_phase(continuation['phase']):
             raise ValueError('continuation stage mismatch')
         manifest.update(continuation=continuation,seconds=continuation['budgetSeconds'])
     # Continuations prove fresh predecessor health through their bound contract;
@@ -348,7 +353,7 @@ def main():
     exploration_adoption.manifest_binding(args.run_dir,manifest)
     if continuation:
         if not args.resume:raise ValueError('continuation requires trained recovery checkpoint')
-        validate_continuation_checkpoint(args.resume,json.loads(args.gate_report.read_text()),continuation,args.run_dir)
+        # The model/recovery inspection runs inside the charged phase below.
     elif args.stage=='overnight' and not (args.run_dir/'latest.json').exists():
         gate=json.loads(args.gate_report.read_text())
         creation=allocation.accounting()[0]
@@ -380,16 +385,20 @@ def main():
     try:
         now=time.monotonic();wall=time.time()
         total=allocation.accounting()[0]['seconds']
-        budget=Budget(now-charged,total,wall+remaining)
-        if phase=='canary':budget=Budget(now,min(600,remaining),wall+min(600,remaining))
-        started=now-charged
-        runtime.update(schema=2,startedMonotonic=started,deadlineMonotonic=now+remaining,startedWall=wall-charged,
-                       deadlineWall=wall+remaining,manifestSha256=digest,stage=args.stage,seed=args.seed,
+        budget=Budget(interval['monotonic']-charged,total,interval['wall']+remaining)
+        if phase=='canary':budget=Budget(interval['monotonic'],min(600,remaining),interval['wall']+min(600,remaining))
+        started=interval['monotonic']-charged
+        runtime.update(schema=2,startedMonotonic=started,deadlineMonotonic=interval['monotonic']+remaining,startedWall=interval['wall']-charged,
+                       deadlineWall=interval['wall']+remaining,manifestSha256=digest,stage=args.stage,seed=args.seed,
                        bootTime=psutil.boot_time(),elapsedBefore=charged,allocationInterval=interval['id'],allocationId=allocation.accounting()[0]['id'])
-        if continuation:runtime['reserveSeconds']=continuation['reserveSeconds']
-        else:runtime.pop('reserveSeconds',None)
+        if continuation:
+            runtime['reserveSeconds']=continuation['reserveSeconds']
+            runtime['continuationPhase']=continuation['phase']
+        else:
+            runtime.pop('reserveSeconds',None)
+            runtime.pop('continuationPhase',None)
         if adoption:runtime.update(trainingRecipe=adoption['trainingRecipe'],explorationAdoption=adoption['explorationAdoption'])
-        if phase=='canary':runtime.update(deadlineMonotonic=now+min(600,remaining),deadlineWall=wall+min(600,remaining))
+        if phase=='canary':runtime.update(deadlineMonotonic=interval['monotonic']+min(600,remaining),deadlineWall=interval['wall']+min(600,remaining))
         if args.resume:
             metadata=json.loads(args.resume.with_suffix('.json').read_text())
             checkpoint_directory=args.resume.resolve().parent.parent
@@ -414,6 +423,19 @@ def main():
         if arena_digest:runtime['arenaPlanSha256']=arena_digest
         else:runtime.pop('arenaPlanSha256',None)
         atomic_json(runtime_path,runtime)
+        record_attempt(args.run_dir,{'event':'started','id':runtime['supervisorAttempt'],'phase':runtime['command'],'pid':os.getpid()})
+        if continuation:
+            try:
+                inspect_owned(args.run_dir,runtime,budget,args.resume,gate=args.gate_report,continuation=continuation)
+            except (TimeoutError,ValueError,RuntimeError) as error:
+                reason='operation-timeout' if isinstance(error,TimeoutError) else 'setup-failed'
+                record_attempt(args.run_dir,{'event':'finished','id':runtime['supervisorAttempt'],'phase':runtime['command'],'reason':reason})
+                atomic_json(args.run_dir/'supervisor-result.json',{'reason':reason,'error':str(error),
+                    'elapsedSeconds':time.monotonic()-started,'budgetSeconds':budget.seconds,'productionPromotion':False})
+                raise
+            # Inspection consumes the same immutable phase deadline before the phase worker starts.
+            if budget.remaining(time.monotonic())<=0:raise BudgetExhausted('recovery inspection exhausted phase budget')
+            validate_training_window(runtime,time.monotonic())
         atomic_json(args.run_dir/'allocation.json',{'workers':LIMITS['minWorkers'],
                     'memory_gib':LIMITS['minMemoryGiB'],'paused':False,'stop':False,
                     'reason':'initial-conservative','observedAt':time.time()})
@@ -438,7 +460,6 @@ def main():
             argv=[sys.executable,'-m','righelt_training.runner','--run-dir',str(args.run_dir.resolve()),'--seed',str(args.seed),'--stage',args.stage]
             if args.resume:argv+=['--resume',str(args.resume.resolve())]
         env={**os.environ,'PYTHONPATH':str(ROOT/'tools/ai-trainer')}
-        record_attempt(args.run_dir,{'event':'started','id':runtime['supervisorAttempt'],'phase':runtime['command'],'pid':os.getpid()})
         with (args.run_dir/'runner.log').open('a') as log:
             reason='interrupted'
             reason,process=run_phase(argv,env,log,budget,runtime,args.run_dir,artifact_root,args.activity_file)

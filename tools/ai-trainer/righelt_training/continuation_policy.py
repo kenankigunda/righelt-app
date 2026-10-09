@@ -7,8 +7,15 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from .followup_policy import PHASE as FOLLOWUP_PHASE, POLICY as FOLLOWUP_POLICY
 
-LIMITS = {'six-hour': (21600, 3600), 'eight-hour': (28800, 3600), 'twelve-hour': (43200, 7200)}
+LIMITS = {'six-hour': (21600, 3600), 'eight-hour': (28800, 3600), 'twelve-hour': (43200, 7200),
+          FOLLOWUP_PHASE: (FOLLOWUP_POLICY['budgetSeconds'], FOLLOWUP_POLICY['reserveSeconds'])}
+BOUNDED_PHASES = frozenset(('eight-hour', FOLLOWUP_PHASE))
+
+def stage_for_phase(phase):
+    return 'initial' if phase in ('six-hour', 'eight-hour', FOLLOWUP_PHASE) else 'overnight'
+
 INITIAL_PHASES = frozenset(('six-hour', 'eight-hour'))
 LEGACY_PHASES = ('diagnostic', 'six-hour', 'twelve-hour')
 KIND = 'single-eight-hour-v1'
@@ -153,6 +160,9 @@ def register(directory, amendment_path):
 
 def authorize(contract, root, directory=None):
     """Shared admission for new allocations, recovery and sequence progression."""
+    if contract.get('phase') == FOLLOWUP_PHASE:
+        from .followup_policy import authorize as authorize_followup
+        return authorize_followup(contract, root, directory)
     found = registered(root, contract['sequenceId'])
     if found is None:
         if contract.get('phase') == 'eight-hour' or FIELD in contract:
@@ -196,6 +206,10 @@ def ensure_compute_open(creation, root, directory):
     if not contract: return
     value = authorize(contract, root, directory)
     if value is None: return
+    if contract['phase'] == FOLLOWUP_PHASE:
+        from .followup_policy import ensure_open
+        ensure_open(directory)
+        return
     report = Path(value['sequenceConfig']['path']).parent / 'reports' / 'eight-hour.json'
     stage = Path(directory) / 'stage-result.json'
     if report.exists() or (Path(directory)/'experiment-finished.json').exists() or (stage.exists() and read(stage).get('experimentComplete') is True):

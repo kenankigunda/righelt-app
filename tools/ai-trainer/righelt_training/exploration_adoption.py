@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from .allocation import Allocation
-from .continuation_policy import INITIAL_PHASES
+from .continuation_policy import INITIAL_PHASES, FOLLOWUP_PHASE
 from .development_probe import checked_ref, reference
 from .exploration_receipt import validate_receipt
 from .sequence import immutable, read
@@ -78,7 +78,7 @@ def validate(binding, *, directory=None, mode='admission'):
             raise ValueError('adoption differs from target sequence')
         if target_contract['phase'] in INITIAL_PHASES:
             if target != source or target_creation['id'] != value['allocationId']: raise ValueError('wrong initial adoption allocation')
-        elif target_contract['phase'] == 'twelve-hour':
+        elif target_contract['phase'] in ('twelve-hour', FOLLOWUP_PHASE):
             if target_contract.get(FIELD) != binding: raise ValueError('overnight recipe choice changed')
         else: raise ValueError('adoption has unsupported phase')
     return value

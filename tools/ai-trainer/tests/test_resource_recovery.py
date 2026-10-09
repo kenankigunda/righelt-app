@@ -139,14 +139,15 @@ class LatestRecoveryTest(unittest.TestCase):
             root=Path(d);(root/'checkpoints').mkdir();path=root/'checkpoints/new.pt';path.write_bytes(b'checkpoint')
             (root/'latest.json').write_text(json.dumps({'checkpoint':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'updates':9}))
             path.with_suffix('.json').write_text(json.dumps({'manifestSha256':'old'}))
-            with patch.object(s,'manifest_hashes',return_value={'old','new'}),patch('righelt_training.checkpoint.inspect_checkpoint',return_value={'updates':9,'recovery':{'state':{'updates':9}}}) as inspect:
+            with patch.object(s,'manifest_hashes',return_value={'old','new'}),patch.object(s,'inspect_owned',return_value={'updates':9,'state':{'updates':9}}) as inspect:
                 runtime={'manifestSha256':'new','deadlineMonotonic':600}
-                checkpoint,state=s.latest_recovery(root,runtime)
-                inspect.assert_called_once_with(path.resolve(),manifest_sha256='old',require_recovery=True)
+                checkpoint,state=s.latest_recovery(root,runtime,Budget(0,600))
+                inspect.assert_called_once_with(root,runtime,Budget(0,600),path.resolve(),latest=root/'latest.json')
                 self.assertEqual(state['updates'],9);self.assertEqual(runtime['parentCheckpoint'],str(path.resolve()))
                 self.assertEqual(runtime['deadlineMonotonic'],600)
+                inspect.side_effect=ValueError('latest recovery update count changed')
                 latest=json.loads((root/'latest.json').read_text());latest['updates']=10
                 (root/'latest.json').write_text(json.dumps(latest))
-                with self.assertRaisesRegex(ValueError,'update count'):s.latest_recovery(root,runtime)
+                with self.assertRaisesRegex(ValueError,'update count'):s.latest_recovery(root,runtime,Budget(0,600))
                 path.write_bytes(b'tamper')
-                with self.assertRaisesRegex(ValueError,'changed'):s.latest_recovery(root,runtime)
+                with self.assertRaisesRegex(ValueError,'changed'):s.latest_recovery(root,runtime,Budget(0,600))

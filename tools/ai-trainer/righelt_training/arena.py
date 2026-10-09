@@ -22,6 +22,7 @@ from .runner import stop_worker,verify_game,engine_command
 from .replay import partition_for_family
 from .curriculum import family_for_root
 from .fallback_report import add_game as add_fallback_game,observed_report
+from .followup_policy import POLICY as FOLLOWUP_POLICY, PHASE as FOLLOWUP_PHASE
 
 
 def partition_identities(plan):
@@ -122,7 +123,8 @@ def infer(model,encoded,device,monitor=None):
 def play_game(job,models,deadline,device,*,allocation=lambda:{'paused':False,'workers':1},checkpoint=lambda:None,monitor=None):
     remaining=deadline-time.monotonic()
     if remaining<20:return {'status':'unfinished','reason':'budget'}
-    game_deadline=min(deadline-10,time.monotonic()+600)
+    game_seconds=FOLLOWUP_POLICY['gameSeconds'] if job.get('evaluationWorkload')==FOLLOWUP_POLICY['workload'] else 600
+    game_deadline=min(deadline-10,time.monotonic()+game_seconds)
     job={**job,'command':'arena','budgetMs':max(1,(game_deadline-time.monotonic())*1000)}
     process=subprocess.Popen(['node','--import','tsx',str(ROOT/'tools/ai-trainer/engine-worker.mjs')],cwd=ROOT,
                              stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
@@ -192,8 +194,15 @@ RESTART_WORKLOAD='restart-diagnostic-20-v1'
 def workload_pairs(plan):
     mode=validate_mode(plan)
     workload=plan.get('workload')
-    if workload is not None and workload!=RESTART_WORKLOAD:raise ValueError('unknown evaluation workload')
-    count=10 if workload==RESTART_WORKLOAD else 100
+    if workload is not None and workload not in (RESTART_WORKLOAD,FOLLOWUP_POLICY['workload']):raise ValueError('unknown evaluation workload')
+    count=FOLLOWUP_POLICY['pairs'] if workload==FOLLOWUP_POLICY['workload'] else 10 if workload==RESTART_WORKLOAD else 100
+    if workload==FOLLOWUP_POLICY['workload']:
+        for who in ('candidate','opponent'):
+            entry=plan.get(who,{})
+            if entry.get('profile')!=FOLLOWUP_POLICY['profile'] or entry.get('profileVersion')!=FOLLOWUP_POLICY['profileVersion']:
+                raise ValueError('follow-up exploratory profiles must stay identical and frozen')
+        if [p.get('kind') for p in plan.get('pairs',[])]!=['normal','heldout']*(count//2):
+            raise ValueError('follow-up pairs must interleave frozen opening kinds')
     if workload and (mode!='diagnostic' or plan.get('purpose')!='incumbent' or plan.get('decisionCache') is not False):
         raise ValueError('restart workload requires validation diagnostic with caching off')
     pairs=plan.get('pairs',[])
@@ -237,6 +246,7 @@ def load_frozen_models(plan,paths,device):
 def make_job(plan,pair,candidate_seat,digest):
     seats={candidate_seat:'candidate',('P2' if candidate_seat=='P1' else 'P1'):'opponent'}
     return {'id':f"{digest}:{pair['id']}:{candidate_seat}",'familyId':pair['familyId'],
+            **({'evaluationWorkload':FOLLOWUP_POLICY['workload']} if plan.get('workload')==FOLLOWUP_POLICY['workload'] else {}),
             'decisionCache':False,
             'seed':pair['seed'],'partition':plan['partition'],'kind':'normal' if pair['kind']=='normal' else 'simple',
             'initialState':None if pair['kind']=='normal' else pair['initialState'],
@@ -299,6 +309,10 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
     deadline=effective_deadline(runtime)
     plan,digest=read_frozen_plan(plan_path)
     diagnostic=validate_mode(plan)=='diagnostic'
+    followup=plan.get('workload')==FOLLOWUP_POLICY['workload']
+    if followup:
+        if runtime.get('continuationPhase')!=FOLLOWUP_PHASE:raise ValueError('follow-up workload needs its own authorized allocation')
+        deadline-=FOLLOWUP_POLICY['cleanupSeconds']
     identity={'planSha256':digest,'allocationId':runtime.get('allocationId',runtime['manifestSha256']),'configSha256':CONFIG_SHA256}
     output=directory/'evaluations'/digest;output.mkdir(parents=True,exist_ok=True)
     state_path=output/'state.json'
@@ -363,6 +377,12 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
     if reason=='complete' and plan['partition']=='final':open_plan(plan_path,experiment_root=experiment_root)
     for pair in plan['pairs']:
         if reason!='complete':break
+        if followup:
+            remaining_seats=[seat for seat in ('P1','P2') if expected[(pair['id'],seat)]['id'] not in state['records']
+                and not any(a['pairId']==pair['id'] and a['candidateSeat']==seat for a in state['attempts'])]
+            runway=len(remaining_seats)*FOLLOWUP_POLICY['gameSeconds']+FOLLOWUP_POLICY['pairVerificationSeconds']
+            if remaining_seats and deadline-clock()<runway:
+                reason='budget';break
         for seat in ('P1','P2'):
             job=expected[(pair['id'],seat)]
             if job['id'] in state['records']:continue
@@ -388,7 +408,7 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
                     except (TimeoutError,subprocess.TimeoutExpired):result={'status':'unfinished','reason':'verification-budget'}
                     else:result={'status':'completed','game':game}
                 else:
-                    with monitor.operation('arena-game',min(610,deadline-clock())) if monitor else nullcontext():
+                    with monitor.operation('arena-game',min((FOLLOWUP_POLICY['gameSeconds'] if followup else 600)+10,deadline-clock())) if monitor else nullcontext():
                         result=player({**job,'decisionLogPath':str(output/'decision-events.jsonl')},by_seat,deadline,device,allocation=allocation,checkpoint=heartbeat,monitor=monitor)
                 if result.get('status') not in ('completed','unfinished'):
                     raise ValueError('invalid arena result status')
@@ -443,6 +463,11 @@ def run_arena(plan_path,run_directory,models,device,*,clock=time.monotonic,playe
                 for reason in sorted({(a.get('reason') or 'interrupted') for a in unfinished})}}
     if diagnostic:report.update(diagnostic_gate(plan,state['records'],state['attempts']))
     report['workload']=plan.get('workload')
+    if followup:
+        report.update(unstartedGames=len(expected)-len({(a['pairId'],a['candidateSeat']) for a in state['attempts']}),
+            exploratoryOnly=True,plannedOpeningMix={'normal':FOLLOWUP_POLICY['pairs']//2,'heldout':FOLLOWUP_POLICY['pairs']//2},
+            completedPairMix={kind:sum(p['kind']==kind for p in pairs) for kind in ('normal','heldout')},
+            cleanupSeconds=FOLLOWUP_POLICY['cleanupSeconds'],gameSeconds=FOLLOWUP_POLICY['gameSeconds'])
     report.update(acceptedReplayGames=len(state['records']),acceptedFallback=accepted_fallback,supervisionAvailability=supervision)
     events=output/'decision-events.jsonl'
     if events.exists():

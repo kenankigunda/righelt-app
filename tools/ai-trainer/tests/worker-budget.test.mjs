@@ -3,6 +3,15 @@ import assert from 'node:assert/strict';
 import { experimentConfig } from '../../../packages/computer-player/src/index.ts';
 import { jobBudgetMs } from '../worker-budget.mjs';
 
+test('only the validation follow-up arena workload admits its frozen longer game bound', () => {
+  const job = { command: 'arena', partition: 'validation', evaluationWorkload: 'followup-exploratory-8-v1', budgetMs: 1_800_000 };
+  assert.equal(jobBudgetMs(job), 1_800_000);
+  assert.throws(() => jobBudgetMs({ ...job, budgetMs: 1_800_001 }), /Invalid job bound/);
+  for (const changed of [{ partition: 'final' }, { partition: 'train' }, { command: 'search' }, { evaluationWorkload: 'unregistered' }]) {
+    assert.throws(() => jobBudgetMs({ ...job, ...changed }), /Invalid job bound/);
+  }
+});
+
 test('worker budget retains the default and accepts explicit admitted training windows', () => {
   const maximum = Math.max(experimentConfig.resources.initialSeconds, experimentConfig.resources.overnightSeconds) * 1000;
   assert.equal(jobBudgetMs({ command: 'generate', partition: 'train' }), 600_000);

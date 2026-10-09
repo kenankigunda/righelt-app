@@ -31,6 +31,31 @@ class PrepareArenaTest(unittest.TestCase):
             self.assertEqual(plan['mode'],'diagnostic');self.assertFalse(plan['decisionCache'])
             self.assertEqual(sum(p['kind']=='heldout' for p in plan['pairs']),5)
 
+    def test_followup_preparation_freezes_interleaved_small_probe_and_reuses_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            root,runtime,paths=self.setup_run(d)
+            runtime['continuationPhase']='eight-hour-followup';runtime['deadlineMonotonic']=time.monotonic()+7200
+            (root/'runtime.json').write_text(json.dumps(runtime))
+            state=next(simple_root(s) for s in range(1000) if partition_for_family(family_for_root(simple_root(s)))=='validation')
+            def generate(job,timeout):
+                return {'type':'opening-generated','state':{**state,'turnIndex':job['seed']},'actions':[{'type':'pass'}],
+                        'initial':False,'fingerprint':str(job['seed'])}
+            with patch('righelt_training.arena.engine_command',side_effect=lambda job,timeout:{'initial':False,'fingerprint':str(job['state']['turnIndex'])}):
+                result=prepare(root,*paths,command=generate,experiment_root=root/'registry')
+            plan=json.loads(Path(result['plan']).read_text())['plan']
+            self.assertEqual(result['preparedPairs'],4);self.assertEqual(plan['workload'],'followup-exploratory-8-v1')
+            self.assertEqual([p['kind'] for p in plan['pairs']],['normal','heldout','normal','heldout'])
+            self.assertEqual(plan['candidate']['profile'],plan['opponent']['profile'])
+            self.assertEqual(plan['mode'],'diagnostic');self.assertFalse(plan['decisionCache'])
+            resumed=prepare(root,*paths,command=lambda *a,**k:self.fail('must not regenerate'),experiment_root=root/'registry')
+            self.assertEqual(resumed['planSha256'],result['planSha256'])
+            contract=root/'contract.json';contract.write_text(json.dumps({'phase':'eight-hour-followup'}))
+            args=Namespace(run_dir=root,resume=paths[0],prepare_arena=False,arena_plan=Path(result['plan']),health=False,
+                candidate_checkpoint=paths[0],opponent_checkpoint=paths[1],continuation=contract)
+            self.assertEqual(arena_arguments(args,root),result['planSha256'])
+            contract.write_text(json.dumps({'phase':'eight-hour'}))
+            with self.assertRaisesRegex(ValueError,'authorized experiment'):arena_arguments(args,root)
+
     def setup_run(self,d):
         root=Path(d);now=time.monotonic()
         runtime={'allocationId':'allocation','seed':107,'manifestSha256':'test','deadlineMonotonic':now+600}
