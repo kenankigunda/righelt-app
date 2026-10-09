@@ -30,6 +30,14 @@ def install_stop_handlers():
     signal.signal(signal.SIGTERM,stop)
 
 
+def has_exited(process):
+    """A zombie cannot compute. Unreadable state is not evidence of exit."""
+    import psutil
+    try:return not process.is_running() or process.status()==psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:return True
+    except psutil.AccessDenied:return False
+
+
 # Ownership is independently readable by the coordinator if a supervisor stalls.
 def register_owned(directory,process):
     from .allocation import append,identity
@@ -77,9 +85,14 @@ def cleanup_owned(directory,owner=None):
                 # The token, creation time and same user establish ownership;
                 # group numbers alone never do. Process.kill checks PID reuse.
                 if process.uids().real!=os.getuid():continue
+                if has_exited(process):continue
                 group=os.getpgid(process.pid)
                 try:token=process.environ().get('RIGHELT_COMPUTE_GROUP_TOKEN')
                 except psutil.AccessDenied:
+                    # Exit can race the environment read after the first status
+                    # sample. Require fresh exit evidence, never infer it from
+                    # denied access alone.
+                    if has_exited(process):continue
                     # A known group must be inspectable to verify cleanup. An
                     # unrelated protected process grants no authority to kill it.
                     if any(record['group']==group for record in records):raise

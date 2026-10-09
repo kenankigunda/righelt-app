@@ -91,7 +91,7 @@ SCREEN_PROOF_PATHS=('tools/ai-trainer/exploration-record.mjs','tools/ai-trainer/
     'tools/ai-trainer/righelt_training/allocation.py','tools/ai-trainer/righelt_training/processes.py',
     'tools/ai-trainer/tests/exploration-worker.test.mjs','tools/ai-trainer/tests/test_exploration_plan_metrics.py',
     'tools/ai-trainer/tests/test_exploration_journal_receipt.py','tools/ai-trainer/tests/test_exploration_screen.py',
-    'tools/ai-trainer/tests/test_exploration_process.py')
+    'tools/ai-trainer/tests/test_exploration_process.py','tools/ai-trainer/tests/test_processes.py')
 
 ADOPTION_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for name in (
     'exploration_adoption','continuation_policy','budget_extension','sequence','stage','supervisor','budget','runner','checkpoint','fresh_health','health','manifest')) + (

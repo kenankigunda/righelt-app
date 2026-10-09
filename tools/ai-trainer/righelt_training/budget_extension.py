@@ -79,22 +79,24 @@ def effective_creation(events, root, directory):
 def owned_compute_absent(directory):
     """Read-only check also finds detached descendants after their leader exits."""
     from .allocation import rows
+    from .processes import has_exited
     records = rows(Path(directory)/'process-ownership.jsonl')
     tokens = {r['groupToken'] for r in records if r.get('groupToken')}
     earliest = min((r['created'] for r in records), default=float('inf'))
     for process in psutil.process_iter():
         try:
             born = process.create_time()
-            if born < earliest or process.uids().real != os.getuid() or process.status() == psutil.STATUS_ZOMBIE:
+            if born < earliest or process.uids().real != os.getuid() or has_exited(process):
                 continue
             exact = any(process.pid == r['pid'] and born == r['created'] for r in records)
             if exact: return False
             try: token = process.environ().get('RIGHELT_COMPUTE_GROUP_TOKEN')
             except psutil.AccessDenied:
+                if has_exited(process): continue
                 if any(os.getpgid(process.pid) == r.get('group') for r in records): raise
                 continue
             if token in tokens: return False
-        except psutil.NoSuchProcess: continue
+        except (psutil.NoSuchProcess, ProcessLookupError): continue
     return True
 
 

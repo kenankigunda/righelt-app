@@ -6,10 +6,89 @@ import time
 import psutil
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 from righelt_training.processes import start_group,stop_group,register_owned,cleanup_owned
 from righelt_training.allocation import append
 
 class ProcessTest(unittest.TestCase):
+    def denied_candidate(self, directory, statuses, running=True, group=40001):
+        append(Path(directory)/'process-ownership.jsonl',{'pid':40001,'created':100,
+            'group':40001,'owner':os.getpid(),'groupToken':'owned-test-token'})
+        process=Mock(pid=40002)
+        process.create_time.return_value=101
+        process.uids.return_value=SimpleNamespace(real=os.getuid())
+        process.is_running.return_value=running
+        process.status.side_effect=statuses
+        process.environ.side_effect=psutil.AccessDenied(process.pid)
+        return process,group
+
+    def test_cleanup_does_not_read_environment_of_observed_zombie(self):
+        with tempfile.TemporaryDirectory() as directory:
+            process,group=self.denied_candidate(directory,[psutil.STATUS_ZOMBIE])
+            with patch('righelt_training.allocation.alive',return_value=False),patch('psutil.process_iter',return_value=[process]),patch('os.getpgid',return_value=group):
+                cleanup_owned(directory)
+            process.environ.assert_not_called();process.kill.assert_not_called()
+
+    def test_cleanup_rechecks_exit_after_environment_permission_race(self):
+        with tempfile.TemporaryDirectory() as directory:
+            process,group=self.denied_candidate(directory,[psutil.STATUS_RUNNING,psutil.STATUS_ZOMBIE])
+            with patch('righelt_training.allocation.alive',return_value=False),patch('psutil.process_iter',return_value=[process]),patch('os.getpgid',return_value=group):
+                cleanup_owned(directory)
+            process.environ.assert_called_once();process.kill.assert_not_called()
+
+    def test_cleanup_permission_denial_never_proves_live_or_unknown_owned_exit(self):
+        for state in (psutil.STATUS_RUNNING,psutil.STATUS_STOPPED,psutil.AccessDenied(40002)):
+            with self.subTest(state=state),tempfile.TemporaryDirectory() as directory:
+                process,group=self.denied_candidate(directory,[state,state])
+                with patch('righelt_training.allocation.alive',return_value=False),patch('psutil.process_iter',return_value=[process]),patch('os.getpgid',return_value=group):
+                    with self.assertRaises(psutil.AccessDenied):cleanup_owned(directory)
+                process.kill.assert_not_called()
+
+    def test_cleanup_does_not_signal_unrelated_protected_process(self):
+        with tempfile.TemporaryDirectory() as directory:
+            process,group=self.denied_candidate(directory,[psutil.STATUS_RUNNING,psutil.STATUS_RUNNING],group=50001)
+            with patch('righelt_training.allocation.alive',return_value=False),patch('psutil.process_iter',return_value=[process]),patch('os.getpgid',return_value=group):
+                cleanup_owned(directory)
+            process.kill.assert_not_called()
+
+    def test_reaped_leader_zombie_in_token_discovery_needs_no_environment(self):
+        # Sibling processes in one group let this test retain an unreaped zombie
+        # after the registered leader exits. Neither is our ancestry witness.
+        with tempfile.TemporaryDirectory() as directory:
+            token='zombie-discovery-fixture'
+            env={**os.environ,'RIGHELT_COMPUTE_GROUP_TOKEN':token}
+            leader=subprocess.Popen([sys.executable,'-c','import sys;sys.stdin.read()'],
+                stdin=subprocess.PIPE,process_group=0,env=env)
+            leader._righelt_group_token=token
+            child=None
+            try:
+                register_owned(directory,leader)
+                child=subprocess.Popen([sys.executable,'-c','import sys;sys.stdin.read()'],
+                    stdin=subprocess.PIPE,process_group=leader.pid,env=env)
+                zombie=psutil.Process(child.pid)
+                leader.stdin.close();leader.wait(timeout=3)
+                self.assertFalse(psutil.pid_exists(leader.pid))
+                group=os.getpgid(child.pid)
+                self.assertEqual(group,leader.pid)
+                child.stdin.close()
+                until=time.monotonic()+3
+                while zombie.status()!=psutil.STATUS_ZOMBIE:
+                    if time.monotonic()>=until:self.fail('fixture did not become a zombie')
+                    time.sleep(.01)
+                # macOS getpgid may report ESRCH for a zombie. Inject the last
+                # witnessed group and a denied environment read. The zombie
+                # state and absent group leader are real on the current host.
+                with patch('psutil.process_iter',return_value=[zombie]),patch('os.getpgid',return_value=group),patch.object(zombie,'environ',side_effect=psutil.AccessDenied(child.pid)) as environment:
+                    cleanup_owned(directory)
+                environment.assert_not_called()
+            finally:
+                for process in (child,leader):
+                    if process is not None:
+                        if process.stdin and not process.stdin.closed:process.stdin.close()
+                        if process.poll() is None:process.kill()
+                        process.wait(timeout=3)
+
     def test_busy_child_is_actually_killed(self):
         p=start_group([sys.executable,'-c','while True: pass'])
         stop_group(p)

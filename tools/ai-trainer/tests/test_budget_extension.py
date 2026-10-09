@@ -178,5 +178,28 @@ class BudgetExtensionTests(unittest.TestCase):
         self.assertIsNone(self.sequence.next_phase())
         with self.assertRaisesRegex(ValueError,'finished'):self.allocation.begin('training')
 
+    def test_absence_rechecks_zombie_after_environment_permission_race(self):
+        append(self.run/'process-ownership.jsonl',{'pid':123,'created':1,'group':123,'groupToken':'owned'})
+        child=Mock(pid=456)
+        child.create_time.return_value=2;child.uids.return_value.real=extension.os.getuid()
+        child.is_running.return_value=True
+        child.status.side_effect=[extension.psutil.STATUS_RUNNING,extension.psutil.STATUS_ZOMBIE]
+        child.environ.side_effect=extension.psutil.AccessDenied(pid=456)
+        with patch.object(extension.psutil,'process_iter',return_value=[child]),patch.object(extension.os,'getpgid',return_value=123):
+            self.assertTrue(extension.owned_compute_absent(self.run))
+        child.environ.assert_called_once();child.kill.assert_not_called()
+
+    def test_absence_never_infers_exit_from_live_or_unknown_permission_denial(self):
+        append(self.run/'process-ownership.jsonl',{'pid':123,'created':1,'group':123,'groupToken':'owned'})
+        for state in (extension.psutil.STATUS_RUNNING,extension.psutil.STATUS_STOPPED,extension.psutil.AccessDenied(456)):
+            with self.subTest(state=state):
+                child=Mock(pid=456)
+                child.create_time.return_value=2;child.uids.return_value.real=extension.os.getuid()
+                child.is_running.return_value=True;child.status.side_effect=[state,state]
+                child.environ.side_effect=extension.psutil.AccessDenied(pid=456)
+                with patch.object(extension.psutil,'process_iter',return_value=[child]),patch.object(extension.os,'getpgid',return_value=123):
+                    with self.assertRaises(extension.psutil.AccessDenied):extension.owned_compute_absent(self.run)
+                child.kill.assert_not_called()
+
 
 if __name__=='__main__':unittest.main()
