@@ -399,6 +399,10 @@ def main():
             runtime['parentCheckpoint']=str(args.resume.resolve())
         runtime['supervisorPid']=os.getpid()
         runtime['command']=phase
+        creation=allocation.accounting()[0]
+        runtime['budgetSeconds']=creation['seconds']
+        if creation.get('budgetExtension'):runtime['budgetExtension']=creation['budgetExtension']
+        else:runtime.pop('budgetExtension',None)
         validate_training_window(runtime,time.monotonic())
         if parity_digest:
             runtime['parityCorpusSha256']=parity_digest

@@ -9,6 +9,7 @@ import math
 import psutil
 from .config import CONFIG
 from .continuation_policy import LIMITS as CONTINUATION_LIMITS, INITIAL_PHASES, authorize
+from .budget_extension import effective_creation, original_seconds
 
 
 def append(path,row):
@@ -88,7 +89,7 @@ def validate_continuation(directory,manifest):
         return None
     validate_contract(contract,directory.parent,directory)
     if (creation.get('continuation')!=contract or creation.get('contractSha256')!=contract_hash(contract)
-        or creation['seconds']!=contract['budgetSeconds'] or manifest.get('seconds')!=contract['budgetSeconds']):
+        or original_seconds(creation)!=contract['budgetSeconds'] or manifest.get('seconds')!=contract['budgetSeconds']):
         raise ValueError('manifest continuation differs from authorized allocation')
     return contract
 
@@ -154,7 +155,7 @@ class Allocation:
                 if row['id'] in ends or row['id'] not in starts:raise ValueError('invalid accounting completion')
                 ends[row['id']]=row
         charged=sum(r['chargedSeconds'] for r in ends.values())
-        return events[0],charged,[r for key,r in starts.items() if key not in ends]
+        return effective_creation(events,self.root,self.directory),charged,[r for key,r in starts.items() if key not in ends]
 
     def recover_abandoned(self,cleanup):
         _,_,pending=self.accounting()
@@ -167,6 +168,8 @@ class Allocation:
         creation,charged,pending=self.accounting()
         from .continuation_policy import ensure_compute_open
         ensure_compute_open(creation,self.root,self.directory)
+        if creation.get('budgetExtension') and phase not in ('training','export-parity','health','prepare-arena','arena'):
+            raise ValueError('training extension cannot repeat exploration or diagnostic phases')
         if pending:raise ValueError('unsettled accounting interval')
         remaining=max(0,creation['seconds']-charged)
         if remaining<=0:raise BudgetExhausted('approved supervised budget exhausted')

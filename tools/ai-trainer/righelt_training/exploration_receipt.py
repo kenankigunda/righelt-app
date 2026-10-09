@@ -4,6 +4,7 @@ from pathlib import Path
 import psutil
 
 from .allocation import BudgetExhausted
+from .budget_extension import original_seconds
 from .continuation_policy import INITIAL_PHASES, LIMITS as CONTINUATION_LIMITS, authorize
 from .development_probe import checked_ref, reference
 from .exploration_journal import Journal
@@ -55,7 +56,7 @@ def validate_identity(allocation, plan, directory):
     state = accounting(allocation); creation = state['creation']; contract = creation.get('continuation', {})
     authorize(contract, allocation.root, allocation.directory)
     if (creation['id'] != plan['seedPlan']['allocationId'] or contract.get('phase') not in INITIAL_PHASES
-            or (creation['seconds'], contract.get('reserveSeconds')) != CONTINUATION_LIMITS[contract['phase']]
+            or (original_seconds(creation), contract.get('reserveSeconds')) != CONTINUATION_LIMITS[contract['phase']]
             or contract.get('recoveryCheckpoint') != plan['seedPlan']['checkpoint']['path']
             or contract.get('recoverySha256') != plan['seedPlan']['checkpoint']['sha256']):
         raise ValueError('screen must belong to the approved initial continuation and frozen checkpoint')
@@ -79,7 +80,7 @@ class ScreenBudget:
     def remaining(self):
         state = self.state()
         return max(0., min(LIMITS['screenSeconds'] - state['screen'],
-                          state['creation']['seconds'] - state['global'] - LIMITS['validationReserveSeconds']))
+                          original_seconds(state['creation']) - state['global'] - LIMITS['validationReserveSeconds']))
 
     def admit_pair(self): return self.remaining() >= LIMITS['pairAdmissionSeconds']
 
@@ -179,7 +180,7 @@ def validate_receipt(path, allocation, *, verify_plan=True, mode='admission'):
     if abs(sum(row['chargedSeconds'] for row in prefix) - receipt['allocationChargedAtPublication']) > 1e-6:
         raise ValueError('screen allocation settlement differs from receipt')
     if (state['screen'] > LIMITS['screenSeconds'] or receipt['allocationChargedAtPublication'] >
-            state['creation']['seconds'] - LIMITS['validationReserveSeconds']):
+            original_seconds(state['creation']) - LIMITS['validationReserveSeconds']):
         raise ValueError('screen publication exceeded aggregate allowance or validation reserve')
     report, refs = report_from_journal(plan, journal, state['screen'])
     if refs != receipt['outcomes'] or report != receipt['report'] or receipt['selectedRecipe'] != report['selectedRecipe']:
@@ -243,7 +244,7 @@ def terminal_baseline(directory, plan_path, allocation, *, verify_plan=True):
     state = validate_identity(allocation, plan, directory)
     if state['pending']: raise ValueError('terminal receipt requires settled accounting')
     remaining = min(LIMITS['screenSeconds'] - state['screen'],
-                    state['creation']['seconds'] - state['global'] - LIMITS['validationReserveSeconds'])
+                    original_seconds(state['creation']) - state['global'] - LIMITS['validationReserveSeconds'])
     if remaining >= LIMITS['publicationSeconds']:
         raise ValueError('publication allowance remains; use the normal charged publication')
     if verify_plan: validate(plan)
@@ -263,7 +264,7 @@ def validate_terminal(path, allocation, *, verify_plan=True, mode='admission'):
     state = validate_identity(allocation, plan, Path(path).parent)
     if verify_plan: validate(plan)
     if (unsettled(state, mode) or state['finished'] != value['accounting'] or value['selectedRecipe'] != recipe_binding()
-            or min(LIMITS['screenSeconds'] - state['screen'], state['creation']['seconds'] -
+            or min(LIMITS['screenSeconds'] - state['screen'], original_seconds(state['creation']) -
                    value['allocationChargedSeconds'] - LIMITS['validationReserveSeconds']) >= LIMITS['publicationSeconds']):
         raise ValueError('invalid terminal baseline accounting')
     # Later training accounting may exist, but cannot erase the charged prefix.

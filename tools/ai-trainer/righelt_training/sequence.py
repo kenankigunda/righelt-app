@@ -179,6 +179,8 @@ class Sequence:
         report={**proof,'sequenceId':self.config['sequenceId'],'phase':phase,
                 'evidence':str(Path(evidence).resolve()),'evidenceSha256':digest(evidence),'advancementEligible':passed,
                 'allocationId':creation['id'],'budgetSeconds':creation['seconds'],'chargedSeconds':charged}
+        if creation.get('budgetExtension'):
+            report.update(originalBudgetSeconds=creation['originalSeconds'],budgetExtension=creation['budgetExtension'])
         if phase=='eight-hour':
             policy.authorize(read(claim['contract']),self.root,claim['runDirectory'])
             report.update(advancementEligible=False,continuationAllowed=False)

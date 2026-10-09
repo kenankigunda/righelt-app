@@ -221,7 +221,8 @@ class SupervisorTest(unittest.TestCase):
         from righelt_training.manifest import dependency_inventory
         report['proofDependencies']=dependency_inventory()
         validate_gate_report(report,'rev','initial')
-        for boundary_dependency in ('tools/ai-trainer/righelt_training/budget.py','tools/ai-trainer/worker-budget.mjs'):
+        for boundary_dependency in ('tools/ai-trainer/righelt_training/budget.py','tools/ai-trainer/worker-budget.mjs',
+                                    'tools/ai-trainer/righelt_training/budget_extension.py','tools/ai-trainer/tests/test_budget_extension.py'):
             with self.subTest(dependency=boundary_dependency):
                 self.assertIn(boundary_dependency,report['proofDependencies'])
                 original=report['proofDependencies'].pop(boundary_dependency)
