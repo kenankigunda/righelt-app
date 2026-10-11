@@ -1,3 +1,4 @@
+import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { test, expect } from "@playwright/test";
 import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { AUTH_REQUEST_HEADER, AUTH_PROTOCOL_HEADER, AUTH_PROTOCOL_VERSION } from "../../packages/shared-types/src/auth-policy.js";
@@ -6,7 +7,7 @@ const uniqueName = () => `Entry_${Date.now().toString(36)}_${Math.random().toStr
 const password = "Account browser password 428";
 
 test.beforeEach(async () => {
-  expect((await fetch("http://127.0.0.1:10088/reset-limits", { method: "POST" })).status).toBe(200);
+  expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`, { method: "POST" })).status).toBe(200);
 });
 async function open(page) {
   await page.goto("/");

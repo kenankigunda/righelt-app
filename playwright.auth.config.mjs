@@ -5,12 +5,14 @@ const variant = LOCAL_DEV_PORT_VARIANTS.find(item => item.suffix === "auth-e2e")
 const baseURL = `https://127.0.0.1:${variant.webPort}`;
 export default defineConfig({
   testDir: "./e2e/auth",
+  testIgnore: process.env.RIGHELT_AUTH_CONTROLS === "only" ? undefined : ["**/accounts.spec.mjs", "**/cutover.spec.mjs"],
+  testMatch: process.env.RIGHELT_AUTH_CONTROLS === "only" ? ["**/accounts.spec.mjs", "**/cutover.spec.mjs"] : undefined,
   fullyParallel: false,
   workers: 1,
   timeout: 60000,
   expect: { timeout: 10000 },
   outputDir: process.env.PLAYWRIGHT_OUTPUT_DIR || "test-results/auth/artifacts",
-  reporter: process.env.CI ? [["github"], ["line"], ["junit", { outputFile: process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE || "test-results/auth/results.xml" }]] : [["list"]],
+  reporter: [...(process.env.CI ? [["github"], ["line"], ["junit", { outputFile: process.env.PLAYWRIGHT_JUNIT_OUTPUT_FILE || "test-results/auth/results.xml" }]] : [["list"]]), ...(process.env.RIGHELT_TEST_OBSERVATIONS ? [["./scripts/testing/browser-reporter.mjs"]] : [])],
   use: { baseURL, ignoreHTTPSErrors: true, viewport: { width: 1440, height: 1100 },
     trace: "retain-on-failure", screenshot: "only-on-failure" },
   projects: ["chromium", "firefox", "webkit"].map(name => ({ name,

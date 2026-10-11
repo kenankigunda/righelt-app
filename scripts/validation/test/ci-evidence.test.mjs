@@ -85,9 +85,9 @@ test('persisted CI evidence requires exact name/tree/command, expiry and survivi
  await writeFile(imported.receipts.Typecheck.evidence[0].archive,'corrupt');assert.equal(await loadCIReceipt(file,options),null);
 });
 
-test('tracked workflow has job mappings and provenance steps only inside real jobs',async()=>{
+test('tracked workflow exposes catalog lanes and an independent fail-closed aggregator',async()=>{
  const source=await readFile(new URL('../../../.github/workflows/ci.yml',import.meta.url),'utf8');
- const {workflowJobs}=await import('../ci-evidence.mjs');const jobs=workflowJobs(source);assert.ok(jobs.length>=10);assert.ok(!jobs.some(j=>j.id==='push'));
- for(const job of jobs.filter(j=>j.id!=='test-results'))assert.equal(job.steps.filter(s=>s.name==='Record exact CI environment').length,1);
- assert.throws(()=>workflowJobs(source.replace('jobs:\n','jobs:\n      - name: invalid\n')),/job mapping/);
+ const {workflowJobs}=await import('../ci-evidence.mjs');const jobs=workflowJobs(source);assert.equal(jobs.length,8);assert.ok(!jobs.some(j=>j.id==='push'));
+ for(const job of jobs.filter(j=>j.id!=='full-validation'))assert.equal(job.steps.filter(s=>s.name==='Validate suite').length,1);
+ assert.ok(jobs.find(j=>j.id==='full-validation').steps.some(s=>s.name==='Require all jobs and exact suite receipts'));
 });

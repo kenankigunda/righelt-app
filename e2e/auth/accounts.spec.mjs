@@ -1,3 +1,4 @@
+import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup, signOutAndOpenSignIn } from "./helpers.mjs";
 import { profileLayoutDisplayName, sampleParticipantGeometry } from "../support/profile-layout.mjs";
 import { test, expect } from "@playwright/test";
@@ -10,7 +11,7 @@ const replacement = "A different browser test password 963";
 const dialog = page => page.getByTestId("account-dialog");
 const uniqueName = () => `User_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 const control = async action => {
-  const response = await fetch(`http://127.0.0.1:10088/${action}`, { method: "POST" });
+  const response = await fetch(`${AUTH_CONTROL_ORIGIN}/${action}`, { method: "POST" });
   expect(response.status).toBe(200);
 };
 test.beforeEach(async () => control("reset-limits"));

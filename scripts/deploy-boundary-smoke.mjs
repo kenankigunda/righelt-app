@@ -1,3 +1,4 @@
+import { requireDeploymentOrigin } from "./deployment-origin.mjs";
 import { fileURLToPath } from "node:url";
 export async function boundarySmoke({
   origin,
@@ -5,11 +6,8 @@ export async function boundarySmoke({
   preparation = false,
   fetcher = fetch,
 }) {
-  if (!origin || !privateOrigin)
-    throw Error("Pages and former direct API origins required");
-  for (const value of [origin, privateOrigin])
-    if (new URL(value).origin !== value || !value.startsWith("https://"))
-      throw Error("Exact HTTPS origins required");
+  requireDeploymentOrigin(origin, "RIGHELT_SITE_ORIGIN");
+  requireDeploymentOrigin(privateOrigin, "CLOUDFLARE_API_BASE_URL");
   const health = await fetcher(new URL("/api/health", origin), {
     signal: AbortSignal.timeout(15000),
   });

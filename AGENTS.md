@@ -34,6 +34,8 @@ The parent workspace files must make it obvious that `/Users/kenankigunda/Docume
 
 ## 4) Testing Policy
 
+The suite catalog, focused selection and rollout rules are documented in `docs/ai/TESTING_STRATEGY.md`. Focused checks are advisory. Full validation remains required before merge.
+
 - Testing layers are standardized repo-wide:
   - `unit test` = one module/component in isolation
   - `integration test` = multiple components/subsystems or contract boundaries together
@@ -44,7 +46,7 @@ The parent workspace files must make it obvious that `/Users/kenankigunda/Docume
 - If tests cannot run, state why and what remains unverified.
 - Prefer deterministic, non-watch test commands in agent execution.
 - Add and/or extend a comprehensive test set for the changed behavior, with explicit regression-focused assertions.
-- Every behavioral change is expected to add or update `unit + integration` coverage unless it is purely non-functional.
+- Choose coverage at the lowest layer that proves the changed contract; do not duplicate assertions merely to satisfy multiple test labels. Keep browser semantics in browser integration and real authority, persistence and workflow proof in E2E.
 - Every touched workflow must explicitly consider whether its `E2E` coverage should be added or expanded.
 - Keep workflow success proof in `E2E` and keep variant/permutation depth in `integration` tests to avoid redundant browser matrices.
 - Treat regression hardening as a default requirement for every change: run the full relevant test pass, add or extend tests for the changed behavior, cover nearby/adjacent workflows that could be affected, and include edge cases or tricky state transitions that could plausibly regress.

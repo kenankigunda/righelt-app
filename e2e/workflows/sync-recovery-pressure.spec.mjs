@@ -1,20 +1,39 @@
 import {mkdir,writeFile} from 'node:fs/promises';
-import {test, expect} from '@playwright/test';
+import {test as base, expect} from '@playwright/test';
+import {createFaultLifecycle, disposeFaultContexts as cleanup} from '../support/fault-lifecycle.mjs';
+const owned = new WeakMap();
+const test = base.extend({
+ faultCleanup: [async ({context}, use, info) => {
+  const resources = {faults: new Map(), contexts: new Set()};
+  owned.set(info, resources);
+  try { await use(); } finally {
+   try { await cleanup(resources, [...resources.faults.keys()]); }
+   finally { owned.delete(info); }
+  }
+ }, {auto: true}],
+});
+async function cleanupParty(p) { await cleanup(owned.get(test.info()), p.contexts); }
+
 import {createGameFromHome,openDirectGameLink,requestPlayerJoin,acceptPendingRequest,joinAsViewer,makeAnyLegalMove,submitPlayableAction} from '../support/app.mjs';
 
 // Fault controls live at the browser transport boundary, never in production endpoints.
 async function wire(page) {
+ const lifecycle = createFaultLifecycle();
+ const resources = owned.get(test.info());
+ const faults = resources.faults.get(page.context()) || [];
+ resources.faults.set(page.context(), [...faults, lifecycle]);
  const fault={receive:false,http:false,loseReply:false, requests:0,snapshots:0,bytes:0,commands:[],outcomes:[],latency:100,lastInbound:0};
  await page.routeWebSocket(/\/api\/shell\/games\//, socket=>{
   const server=socket.connectToServer();
   server.onMessage(message=>{
+   if(lifecycle.disposed) return;
    fault.bytes+=Buffer.byteLength(message);
    let data;try{data=JSON.parse(message);if(fault.legacy){delete data.protocolVersion;message=JSON.stringify(data);}}catch{}
    if(data?.game)fault.snapshots++;
-   if(!fault.receive){setTimeout(()=>{fault.lastInbound=Date.now();socket.send(message);},fault.latency);}
+   if(!fault.receive){lifecycle.schedule(()=>{fault.lastInbound=Date.now();socket.send(message);},fault.latency);}
   });
  });
- await page.route('**/api/shell/games/**',async route=>{
+ await page.route('**/api/shell/games/**',route=>lifecycle.run(async()=>{
   fault.requests++;
   if(fault.legacy && /\/reconcile$/.test(new URL(route.request().url()).pathname)){await route.fulfill({status:404,json:{ok:false,error:"not_found"}});return;}
   if(fault.http || (fault.loseReply && /\/reconcile$/.test(new URL(route.request().url()).pathname))){await route.abort();return;}
@@ -25,7 +44,9 @@ async function wire(page) {
   if(mutation)fault.commands.push(route.request().postDataJSON());
   if(mutation&&fault.holdApply){await route.abort();return;}
   const response=await route.fetch({timeout:5000});
+  if(lifecycle.disposed){await route.abort();return;}
   let body=await response.body();
+  if(lifecycle.disposed){await route.abort();return;}
   if(fault.legacy){try{const parsed=JSON.parse(body);if(parsed.game){delete parsed.protocolVersion;body=Buffer.from(JSON.stringify(parsed));}}catch{}}
   fault.bytes+=body.length;
   try{const parsed=JSON.parse(body);if(parsed.game)fault.snapshots++;if(mutation)fault.outcomes.push(...(parsed.commandOutcomes??[]));}catch{}
@@ -33,21 +54,35 @@ async function wire(page) {
    fault.interruptNextRecovery=false;fault.interruptedRecoveries=(fault.interruptedRecoveries||0)+1;fault.http=true;await route.abort();return;
   }
   if(mutation&&fault.loseReply){await route.abort();return;}
-  await new Promise(resolve=>setTimeout(resolve,fault.latency));
+  await lifecycle.wait(fault.latency);
+  if(lifecycle.disposed){await route.abort();return;}
   await route.fulfill({response,body});
- });
+ }));
  return fault;
 }
 async function party(browser,baseURL) {
- const contexts=await Promise.all([1,2,3].map(()=>browser.newContext()));
- const pages=await Promise.all(contexts.map(c=>c.newPage()));
- const faults=await Promise.all(pages.map(wire));
+ const resources=owned.get(test.info()), contexts=[];
+ try {
+ for(let i=0;i<3;i++) {
+  const context=await browser.newContext();contexts.push(context);
+  resources.contexts.add(context);resources.faults.set(context, []);
+ }
+ // Drain parallel setup before cleanup, even if one operation fails.
+ const settledPages=await Promise.allSettled(contexts.map(c=>c.newPage()));
+ const pageErrors=settledPages.filter(r=>r.status==='rejected').map(r=>r.reason);
+ if(pageErrors.length) throw new AggregateError(pageErrors,'Recovery page setup failed');
+ const pages=settledPages.map(r=>r.value);
+ const settledFaults=await Promise.allSettled(pages.map(wire));
+ const faultErrors=settledFaults.filter(r=>r.status==='rejected').map(r=>r.reason);
+ if(faultErrors.length) throw new AggregateError(faultErrors,'Recovery fault setup failed');
+ const faults=settledFaults.map(r=>r.value);
  const game=await createGameFromHome(pages[0]);
  await openDirectGameLink(pages[1],baseURL,game.gameHash);await requestPlayerJoin(pages[1]);await acceptPendingRequest(pages[0]);
  await openDirectGameLink(pages[2],baseURL,game.gameHash);await joinAsViewer(pages[2]);
  for(const page of pages)await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
  faults.forEach(f=>{f.requests=0;f.snapshots=0;f.bytes=0;});
  return {...game,pages,faults,contexts};
+ }catch(error){await cleanup(resources,contexts);throw error;}
 }
 async function move(page,gameId) {
  const current=await page.evaluate(async gameId=>{
@@ -96,7 +131,7 @@ test('E01 lost committed response and socket receipt converge automatically',asy
   p.faults[0].receive=false;p.faults[0].loseReply=false;const start=Date.now();
   await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,'lost-response',start,p.faults);
   const ids=p.faults[0].commands.map(c=>c.clientCommandId);expect(new Set(ids).size).toBe(1);
- }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
+ }finally{await cleanupParty(p);}
 });
 
 test('E02 silent online receive loss triggers watchdog and survives interrupted recovery',async({browser,baseURL},info)=>{
@@ -118,7 +153,7 @@ test('E02 silent online receive loss triggers watchdog and survives interrupted 
   await p.pages[1].waitForTimeout(1000);
   p.faults[1].receive=false;p.faults[1].http=false;const start=Date.now();
   await converged(p.pages);await evidence(info,'silent-online',start,p.faults,{detectionMs});
- }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
+ }finally{await cleanupParty(p);}
 });
 
 test('E04 reload unresolved journal then visibility resume preserves original ID and roles',async({browser,baseURL},info)=>{
@@ -142,7 +177,7 @@ test('E04 reload unresolved journal then visibility resume preserves original ID
   });
   await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,'reload-resume',start,p.faults);
   expect(p.faults[0].commands.every(c=>c.clientCommandId===id)).toBe(true);
- }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
+ }finally{await cleanupParty(p);}
 });
 
 test('E06 same identity tabs reconcile one journal without duplicating a committed move',async({browser,baseURL},info)=>{
@@ -158,7 +193,7 @@ test('E06 same identity tabs reconcile one journal without duplicating a committ
   expect((await digest(p.pages[0])).history).toHaveLength(1);
   await evidence(info,'same-identity-tabs',start,[...p.faults,tf]);
   expect(new Set([...p.faults[0].commands,...tf.commands].map(c=>c.clientCommandId)).size).toBe(1);
- }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
+ }finally{await cleanupParty(p);}
 });
 
 for(const phase of ['before','after'])test(`E03 actual Worker restart ${phase} commit resolves the pending sender`,async({browser,baseURL,request},info)=>{
@@ -171,7 +206,7 @@ for(const phase of ['before','after'])test(`E03 actual Worker restart ${phase} c
   const response=await request.post(`http://127.0.0.1:${Number(new URL(baseURL).port)+100}/restart`);expect(response.ok()).toBe(true);
   p.faults[0].receive=false;p.faults[0].loseReply=false;p.faults[0].holdApply=false;const start=Date.now();
   await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,`worker-restart-${phase}-commit`,start,p.faults);
- }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
+ }finally{await cleanupParty(p);}
 });
 
 test('E06 real IndexedDB commits admission atomically across tabs and aborts successful writes',async({page,context})=>{
@@ -240,7 +275,7 @@ test(`E05 intentional ${frozenRole} history survives disconnection and home navi
   await evidence(info,`history-reconnect-${frozenRole}`,start,p.faults);
   await frozen.goto(baseURL);await expect(frozen.locator(`[data-game-id="${p.gameId}"]`).first()).toBeVisible();
   await frozen.goto(`${baseURL}${p.gameHash}`);await converged(p.pages);
- }finally{await Promise.all(p.contexts.map(async c=>{await c.unrouteAll({behavior:"ignoreErrors"});await Promise.race([c.close(),new Promise(resolve=>setTimeout(resolve,3000))]);}));}
+ }finally{await cleanupParty(p);}
 });
 }
 
@@ -298,5 +333,5 @@ test('E05 home reload recovers unopened journal games and retains pending card',
   await expect(p.pages[0].locator(`[data-game-id="${p.gameId}"]`).first()).not.toContainText('Recovering');
   await p.pages[0].goto(`${baseURL}${p.gameHash}`);await converged(p.pages);
   await evidence(info,'home-journal-reload',start,p.faults);
- }finally{await Promise.all(p.contexts.map(c=>c.close()));}
+ }finally{await cleanupParty(p);}
 });
