@@ -189,6 +189,35 @@ const createMountedAdapter = () => {
 const getCell = (boardEl, row, col) =>
   boardEl.children.find((child) => Number(child.dataset.row) === row && Number(child.dataset.col) === col) ?? null;
 
+test("live board renders preserve cell identity and clear obsolete decorations", async () => {
+  await withFakeDocument(() => {
+    const { adapter, boardEl } = createMountedAdapter();
+    const payload = {
+      snapshot: { sideToMove: "P1", pieces: [], continuation: null },
+      selection: { selectedPieceId: null, source: null, target: null },
+      overlay: { mode: "interactive" }, legalActions: [], selectedPieceMoves: [], selectedPieceMovePreviews: [],
+    };
+    adapter.render(payload);
+    const original = getCell(boardEl, 4, 3);
+    original.setAttribute("data-removal-label", "Removed");
+    original.setAttribute("data-disallow-reason", "Blocked");
+    original.setAttribute("data-inactive-label", "Inactive");
+    original.classList.add("source", "disallowed-preview");
+    adapter.render(payload);
+    assert.equal(getCell(boardEl, 4, 3), original);
+    assert.equal(boardEl.children.length, 100);
+    assert.equal(original.classList.contains("source"), false);
+    assert.equal(original.getAttribute("data-removal-label"), null);
+    assert.equal(original.getAttribute("data-disallow-reason"), null);
+    assert.equal(original.getAttribute("data-inactive-label"), null);
+    adapter.render({ ...payload, interactionMode: "static" });
+    assert.notEqual(getCell(boardEl, 4, 3), original);
+    assert.equal(getCell(boardEl, 4, 3).tagName, "DIV");
+    adapter.render(payload);
+    assert.equal(getCell(boardEl, 4, 3).tagName, "BUTTON");
+  });
+});
+
 test("retreat stack click selects pushed piece as retreat actor", () => {
   const adapter = createEngineBoardAdapter();
   const snapshot = {

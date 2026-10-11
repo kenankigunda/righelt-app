@@ -52,17 +52,17 @@ function normalizeContinuation(value) {
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([pieceId, frozenState]) => [pieceId, { ...frozenState }]))
         : undefined;
+    const { followPoint, followGroupPieceIds, rushedPieceIds, rushChainPieceIds, pushedPieceId, frozenPieceStatesById: _frozenPieceStatesById, ...context } = value;
+    // Optional fields must stay absent so optimistic snapshots can be fingerprinted
+    // exactly as their JSON wire representation before the server responds.
     return {
-        ...value,
-        followPoint: value.followPoint ? cloneCoordinate(value.followPoint) : undefined,
-        followGroupPieceIds: value.followGroupPieceIds
-            ? [...value.followGroupPieceIds].sort((a, b) => a.localeCompare(b))
-            : undefined,
-        rushedPieceIds: value.rushedPieceIds ? [...value.rushedPieceIds].sort((a, b) => a.localeCompare(b)) : undefined,
-        rushChainPieceIds: value.rushChainPieceIds
-            ? [...value.rushChainPieceIds].sort((a, b) => a.localeCompare(b))
-            : undefined,
-        frozenPieceStatesById,
+        ...context,
+        ...(pushedPieceId === undefined ? {} : { pushedPieceId }),
+        ...(followPoint ? { followPoint: cloneCoordinate(followPoint) } : {}),
+        ...(followGroupPieceIds ? { followGroupPieceIds: [...followGroupPieceIds].sort((a, b) => a.localeCompare(b)) } : {}),
+        ...(rushedPieceIds ? { rushedPieceIds: [...rushedPieceIds].sort((a, b) => a.localeCompare(b)) } : {}),
+        ...(rushChainPieceIds ? { rushChainPieceIds: [...rushChainPieceIds].sort((a, b) => a.localeCompare(b)) } : {}),
+        ...(frozenPieceStatesById ? { frozenPieceStatesById } : {}),
     };
 }
 function normalizeSupplyArtifacts(artifacts) {
@@ -134,13 +134,13 @@ export function normalizeState(state) {
         pieces: normalizePieces(state.pieces),
         continuation: normalizeContinuation(state.continuation),
         outcome: { ...state.outcome },
-        artifacts: state.artifacts
-            ? {
-                mode: state.artifacts.mode,
-                supply: normalizeSupplyArtifacts(state.artifacts.supply),
-                command: normalizeCommandArtifact(state.artifacts.command),
-                groups: normalizeGroupArtifact(state.artifacts.groups),
-            }
-            : undefined,
+        ...(state.artifacts
+            ? { artifacts: {
+                    mode: state.artifacts.mode,
+                    supply: normalizeSupplyArtifacts(state.artifacts.supply),
+                    command: normalizeCommandArtifact(state.artifacts.command),
+                    groups: normalizeGroupArtifact(state.artifacts.groups),
+                } }
+            : {}),
     };
 }

@@ -560,6 +560,7 @@ export function createEngineBoardAdapter() {
   let onCellHoverStart = null;
   let onCellHoverEnd = null;
   let cellByCoordinateKey = new Map();
+  let renderedInteractionMode = null;
 
   const setOverlayViewBox = () => {
     if (!boardEl || !overlayLinesEl) {
@@ -976,6 +977,10 @@ export function createEngineBoardAdapter() {
         boardEl.removeEventListener("mouseover", onBoardMouseOver);
         boardEl.removeEventListener("mouseout", onBoardMouseOut);
       }
+      if (boardEl !== options.boardEl) {
+        cellByCoordinateKey = new Map();
+        renderedInteractionMode = null;
+      }
       boardEl = options.boardEl;
       overlayLinesEl = options.overlayLinesEl;
       interactionMode = options.interactionMode === "static" ? "static" : "interactive";
@@ -1005,6 +1010,7 @@ export function createEngineBoardAdapter() {
       onCellHoverStart = null;
       onCellHoverEnd = null;
       cellByCoordinateKey = new Map();
+      renderedInteractionMode = null;
     },
 
     getPieceAt(snapshot, coord) {
@@ -1119,11 +1125,16 @@ export function createEngineBoardAdapter() {
       }
 
       const effectiveInteractionMode = renderInteractionMode === "static" ? "static" : interactionMode;
-      boardEl.innerHTML = "";
+      // Keep the activation target mounted through live updates and hover
+      // renders. Replacing a pressed button prevents a native click on release.
+      if (renderedInteractionMode !== effectiveInteractionMode || cellByCoordinateKey.size !== BOARD_SIZE * BOARD_SIZE) {
+        boardEl.innerHTML = "";
+        cellByCoordinateKey = new Map();
+      }
+      renderedInteractionMode = effectiveInteractionMode;
       if (boardEl?.setAttribute) {
         boardEl.setAttribute("data-interaction-mode", effectiveInteractionMode);
       }
-      cellByCoordinateKey = new Map();
       const removalByCoordinateKey = new Map(
         (Array.isArray(removalEffects) ? removalEffects : []).map((effect) => [coordKey(effect.position), effect]),
       );
@@ -1144,7 +1155,13 @@ export function createEngineBoardAdapter() {
 
       for (let row = 0; row < BOARD_SIZE; row += 1) {
         for (let col = 0; col < BOARD_SIZE; col += 1) {
-          const cell = document.createElement(effectiveInteractionMode === "static" ? "div" : "button");
+          const key = `${row},${col}`;
+          const existingCell = cellByCoordinateKey.get(key);
+          const cell = existingCell ?? document.createElement(effectiveInteractionMode === "static" ? "div" : "button");
+          cell.innerHTML = "";
+          cell.removeAttribute("data-removal-label");
+          cell.removeAttribute("data-disallow-reason");
+          cell.removeAttribute("data-inactive-label");
           if (effectiveInteractionMode === "interactive") {
             cell.type = "button";
           } else {
@@ -1390,8 +1407,8 @@ export function createEngineBoardAdapter() {
             cell.appendChild(rowAxis);
           }
 
-          boardEl.appendChild(cell);
-          cellByCoordinateKey.set(`${row},${col}`, cell);
+          if (!existingCell) boardEl.appendChild(cell);
+          cellByCoordinateKey.set(key, cell);
         }
       }
 
