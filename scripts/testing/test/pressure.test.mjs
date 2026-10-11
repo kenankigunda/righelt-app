@@ -151,6 +151,27 @@ test("CI reuse binds the named suite to its canonical command", async () => {
   );
 });
 
+test("fixture exits distinguish persisted guardian teardown from active and missing guardians", async () => {
+  const { recordUnexpectedExit } = await import("../stack-status.mjs");
+  const { existsSync } = await import("node:fs");
+  const dir = mkdtempSync(path.join(os.tmpdir(), "righelt-teardown-"));
+  const keys = ["RIGHELT_RESOURCE_REGISTRY", "RIGHELT_RESOURCE_RUN", "RIGHELT_TEST_STACK_STATUS"];
+  const prior = keys.map(key => process.env[key]);
+  try {
+    process.env.RIGHELT_RESOURCE_REGISTRY = dir;
+    process.env.RIGHELT_RESOURCE_RUN = "guardian";
+    for (const status of ["stopping", "running", "missing"]) {
+      process.env.RIGHELT_TEST_STACK_STATUS = path.join(dir, `${status}.json`);
+      writeFileSync(path.join(dir, "guardian.json"), status === "missing" ? "invalid" : JSON.stringify({ status }));
+      recordUnexpectedExit("api", 130, null);
+      assert.equal(existsSync(process.env.RIGHELT_TEST_STACK_STATUS), status !== "stopping");
+    }
+  } finally {
+    keys.forEach((key, index) => { if (prior[index] === undefined) delete process.env[key]; else process.env[key] = prior[index]; });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("partial rerun retains untouched lanes but rejects foreign or ambiguous artifacts", async () => {
   const { selectSuiteArtifacts } = await import("../select-artifacts.mjs");
   const artifact = (name, time) => ({
