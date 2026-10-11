@@ -4,24 +4,17 @@ import { createGameFromHome, makeAnyLegalMove, getHistoryMoveCount } from '../su
 test('authoritative HTTP creation permits the first move while initial socket synchronization is unavailable', async ({ page }) => {
   let release;
   const held = new Promise(resolve => { release = resolve; });
-  let received = false, finished = false, closing = false, creation;
-  await page.addInitScript(() => {
-    const NativeSocket = window.WebSocket;
-    window.__receivedSocketSeq = 0;
-    window.WebSocket = class extends NativeSocket {
-      constructor(...args) {
-        super(...args);
-        this.addEventListener('message', event => {
-          const frame = JSON.parse(event.data);
-          // Track delivered frames. The test then waits for rendering and checks move identity.
-          queueMicrotask(() => { window.__receivedSocketSeq = Math.max(window.__receivedSocketSeq, frame.eventSeq || 0); });
-        });
-      }
-    };
-  });
+  let received = false, deliveredSeq = 0, finished = false, closing = false, creation;
   await page.routeWebSocket(/\/api\/shell\/games\/[^/]+\/ws/, socket => {
     const server = socket.connectToServer();
-    server.onMessage(async message => { received = true; await held; if (!closing) socket.send(message); });
+    server.onMessage(async message => {
+      received = true;
+      await held;
+      if (!closing) {
+        socket.send(message);
+        deliveredSeq = Math.max(deliveredSeq, JSON.parse(String(message)).eventSeq || 0);
+      }
+    });
   });
   try {
     creation = createGameFromHome(page).then(value => { finished = true; return value; });
@@ -38,9 +31,9 @@ test('authoritative HTTP creation permits the first move while initial socket sy
     }, gameId);
     const originalMoveId = recorded.game.moves[0].moveId;
     expect(originalMoveId).toBeTruthy();
-    expect(await page.evaluate(() => window.__receivedSocketSeq)).toBe(0);
+    expect(deliveredSeq, 'the socket fault must remain active through the recorded move').toBe(0);
     release();
-    await expect.poll(() => page.evaluate(() => window.__receivedSocketSeq)).toBeGreaterThanOrEqual(recorded.eventSeq);
+    await expect.poll(() => deliveredSeq).toBeGreaterThanOrEqual(recorded.eventSeq);
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0);
     expect(await getHistoryMoveCount(page)).toBe(1);

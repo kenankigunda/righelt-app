@@ -64,9 +64,9 @@ body {
 @media (max-width: 430px) {
   .board-preview-label {
     font-size: 1.15rem;
-    /* Selection instructions wrap to three lines on phones. Reserve that space
-       so changing to a shorter hover preview cannot move the board mid-input. */
-    min-height: calc(3 * 1.45em);
+    /* Reserve three lines and room for coordinate-chip font metrics so shorter
+       hover previews cannot move the board mid-input. Content can still grow. */
+    min-height: calc(3 * 1.45em + 0.1em);
   }
 }
 
