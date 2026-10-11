@@ -462,8 +462,16 @@ export const exportScenarioFromGame = (
   };
 };
 
+const resolveImportedState = (state: GameState) => {
+  const imported = clone(state);
+  if (imported.continuation?.type === "push" && !imported.continuation.attackerOwner) {
+    imported.continuation.attackerOwner = getTurnOwnerSideForState(imported);
+  }
+  return resolveToStability(imported, { artifactMode: "full" });
+};
+
 export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) => {
-  const initial = resolveToStability(clone(scenario.initialState), { artifactMode: "full" });
+  const initial = resolveImportedState(scenario.initialState);
   game.board.state = initial;
   game.moves = [];
   game.turns = [
@@ -506,7 +514,7 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
 };
 
 export const reconcileGameToScenarioResultingState = (game: LiveGame, scenario: ScenarioRecord) => {
-  const reconciled = resolveToStability(clone(scenario.resultingState), { artifactMode: "full" });
+  const reconciled = resolveImportedState(scenario.resultingState);
   reconciled.sideToMove = scenario.resultingState.sideToMove;
   reconciled.turnIndex = scenario.resultingState.turnIndex;
   game.board.state = reconciled;
