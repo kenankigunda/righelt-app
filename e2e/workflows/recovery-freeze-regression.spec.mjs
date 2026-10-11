@@ -8,10 +8,10 @@ const piece=(id,owner,kind,row,col)=>({id,owner,kind,position:{row,col},supplied
 const scenario={formatVersion:2,id:"6288b956-a647-4e40-9c89-e45c5ea4cf22",title:"Recovery continuation regression",description:"Disposable push retreat follow fixture",incorrect:false,initialState:{boardSize:10,sideToMove:"P1",turnIndex:0,continuation:null,outcome:{status:"ongoing"},pieces:[piece("C1","P1","commander",0,0),piece("C2","P2","commander",9,9),piece("A1","P1","unit",4,1),piece("A2","P1","unit",3,1),piece("D1","P2","unit",4,2)]},moves:[]};
 
 test("guest play-both push retreat follow recovers with healthy HTTP and unavailable sockets",async({page,baseURL},info)=>{
- let socketsUnavailable=false,losePush=true;const commands=[];
+ let socketsUnavailable=false,losePush=true;const commands=[], sockets=[];
  await page.routeWebSocket(/\/api\/shell\/games\//,socket=>{
   if(socketsUnavailable){socket.close({code:1012,reason:"Test deployment transition"});return;}
-  const server=socket.connectToServer();server.onMessage(message=>{if(!socketsUnavailable)socket.send(message);});
+  sockets.push(socket);const server=socket.connectToServer();server.onMessage(message=>{if(!socketsUnavailable)socket.send(message);});
  });
  const {gameId}=await importScenarioGame(page,scenario,baseURL);
  const players=page.getByRole("button",{name:"Players",exact:true});if(await players.isVisible())await players.click();
@@ -19,11 +19,12 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  const boardTab=page.getByRole("button",{name:"Board",exact:true});if(await boardTab.isVisible())await boardTab.click();
  await page.route(`**/api/shell/games/${gameId}/apply`,async route=>{
   const envelope=route.request().postDataJSON();commands.push(envelope);
-  if(envelope.payload?.action?.type==="push"&&losePush){socketsUnavailable=true;losePush=false;await route.fetch();await route.abort();return;}
+  if(envelope.payload?.action?.type==="push"&&losePush){socketsUnavailable=true;losePush=false;sockets.forEach(socket=>socket.close({code:1012,reason:"Test deployment transition"}));await route.fetch();await route.abort();return;}
   await route.continue();
  });
  let game=await currentGame(page,gameId);const push=game.legalActions.find(a=>a.type==="push");expect(push).toBeTruthy();
  await submitPlayableAction(page,push);
+ await expect.poll(async()=> (await currentGame(page,gameId)).moves.length,{timeout:10000}).toBe(1);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0,{timeout:10000});
  game=await currentGame(page,gameId);expect(game.board.state.continuation.phase).toBe("retreat");
  await expect(page.locator("#shell-board-preview-label")).toContainText("Choose where to retreat");
