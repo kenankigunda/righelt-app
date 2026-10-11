@@ -58,6 +58,7 @@ test("obsolete lookup completion cannot update a dismissed form", async ({
     await page.evaluate(() => window.accountFixture.open("register"));
     release();
     await completed;
+    await page.waitForFunction(() => window.accountFixture.lookupSettled() > 0);
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page.locator('[name="username"]')).toHaveValue("");
     await expect(page.locator("form")).toHaveAttribute(
