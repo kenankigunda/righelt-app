@@ -2042,7 +2042,7 @@ const renderDebugContent = () => {
     <section class="panel debug-panel">
       <h2>Recent issues</h2>
       <button class="secondary" data-action="clear-diagnostics">Clear diagnostics</button>
-      ${issueDiagnostics.list().map(report => renderDiagnosticDisclosure(report.id)).join("")}
+      ${issueDiagnostics.list().map(report => `<article class="recent-issue"><p class="small">${escapeHtml(new Date(report.startedAt).toISOString())} · ${escapeHtml(report.initial.operation ?? "Issue")} · ${report.resolvedAt ? "Resolved" : "Open"}</p>${renderDiagnosticDisclosure(report.id, "recent")}</article>`).join("")}
       <h2>Live Sync</h2>
       <pre class="debug-pre">Identity <span id="shell-debug-identity" class="mono">${escapeHtml(transport.getIdentityId())}</span>
 Live sync: <span id="shell-debug-live-sync" class="mono">${escapeHtml(`${wsStatus.state}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`)}</span>
@@ -4497,7 +4497,7 @@ appEl.addEventListener("click", async (event) => {
     const id = actionEl.dataset.incidentId;
     const diagnostic = actionEl.closest(".issue-diagnostic");
     if (action === "dismiss-diagnostic") { diagnostic?.remove(); render({ animatePanels: false, includeBoard: false }); return; }
-    if (diagnostic) { diagnostic.outerHTML = renderDiagnosticDisclosure(id); appEl.querySelector(`[data-incident-id="${id}"] [data-action="${action}"]`)?.focus({ preventScroll: true }); }
+    if (diagnostic) { const scope = diagnostic.dataset.diagnosticScope; diagnostic.outerHTML = renderDiagnosticDisclosure(id, scope); appEl.querySelector(`[data-incident-id="${id}"][data-diagnostic-scope="${scope}"] [data-action="${action}"]`)?.focus({ preventScroll: true }); }
     return;
   }
   if (action === "clear-diagnostics") { issueDiagnostics.clear(); render({ animatePanels: false }); return; }
