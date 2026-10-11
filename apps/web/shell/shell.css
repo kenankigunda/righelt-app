@@ -2126,4 +2126,4 @@ textarea:focus-visible {
   .board-wrap[data-reconnecting="true"] .reconnect-background { animation: none; background: rgb(49 94 139 / 4%); }
 }
 
-.board-wrap > .loading-pieces { position: absolute; right: 8px; top: 8px; opacity: .35; color: var(--muted); z-index: -1; }
+.board-wrap > .loading-pieces { position: absolute; right: 8px; bottom: -22px; opacity: .35; color: var(--muted); z-index: -1; }
