@@ -229,6 +229,7 @@ export const createLiveTransportStore = ({
     next.confirmationOverdue = optimistic.confirmationOverdue || Boolean(optimistic.pendingCommands.length && optimistic.confirmDeadlineAt && Date.now() >= optimistic.confirmDeadlineAt);
     next.recoveryStartedAt = optimistic.recoveryStartedAt ?? null;
     next.recoveryEpisodeId = optimistic.recoveryEpisodeId ?? null;
+    next.recoveryGeneration = optimistic.recoveryGeneration ?? 0;
     next.recoveryIssue = optimistic.recoveryIssue ?? null;
     next.incidentId = optimistic.incidentId ?? null;
     next.recovering = optimistic.connectionRecovering === true || optimistic.syncStatus === "confirming";
@@ -361,7 +362,7 @@ export const createLiveTransportStore = ({
       appliedEventSeq: lastEventSeqByGameId.get(gameId), authoritativeState: authoritative?.board?.state,
       tentativeState: optimistic.derivedGame?.board?.state, action: command?.action,
       browser: globalThis.navigator?.userAgent, visibility: globalThis.document?.visibilityState, online: globalThis.navigator?.onLine,
-      clientBuild: globalThis.__righeltClientBuild ?? "unavailable", retry: optimistic.retryAttempt, generation: optimistic.recoveryEpisodeId,
+      clientBuild: globalThis.__righeltClientBuild ?? "unavailable", retry: Math.max(optimistic.retryAttempt ?? 0, optimistic.recoveryRetryAttempt ?? 0), generation: optimistic.recoveryGeneration ?? 0, recoveryEpisodeId: optimistic.recoveryEpisodeId ?? "unavailable",
       elapsedMs: Math.max(0, Date.now() - (optimistic.recoveryStartedAt ?? (Date.parse(optimistic.pendingCommands[0]?.queuedAt) || Date.now()))),
       ...optimistic.connectionEvidence,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, mode: authoritative?.selfPlayMode ? "play_both" : "multiplayer",
@@ -627,6 +628,7 @@ export const createLiveTransportStore = ({
     const optimistic = getOptimisticState(gameId);
     if (optimistic.recoveryPromise) return optimistic.recoveryPromise;
     const owner = {}; optimistic.recoveryOwner = owner;
+    optimistic.recoveryGeneration = (optimistic.recoveryGeneration ?? 0) + 1;
     clearTimeout(optimistic.recoveryRetryTimer); optimistic.recoveryRetryTimer = null;
     const current = () => active && optimistic.recoveryOwner === owner;
     let timer;

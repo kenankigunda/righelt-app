@@ -1,7 +1,7 @@
 // Local, explicitly allowlisted evidence. Never store whole requests or game models.
 export const DIAGNOSTIC_LIMITS = Object.freeze({ ageMs: 86400000, events: 200, reports: 20, bytes: 1048576 });
 const KEY = "righelt.issues.v1";
-const fields = new Set("gameId gameLink mode browser clientBuild serverBuild deploymentVersion commandId fingerprint requestId status durationMs elapsedMs socketGeneration deadlineMs stage retry generation closeCode closeClean online visibility pendingCount appliedEventSeq advertisedEventSeq gameplayRevision operation code receipt authoritativeState tentativeState action continuation timezone".split(" "));
+const fields = new Set("gameId gameLink mode browser clientBuild serverBuild deploymentVersion commandId fingerprint requestId status durationMs elapsedMs socketGeneration deadlineMs stage retry generation recoveryEpisodeId closeCode closeClean online visibility pendingCount appliedEventSeq advertisedEventSeq gameplayRevision operation code receipt authoritativeState tentativeState action continuation timezone".split(" "));
 const safe = (value, depth = 0) => {
   if (depth > 12) return "[truncated]";
   if (value === undefined) return "[unavailable]";
