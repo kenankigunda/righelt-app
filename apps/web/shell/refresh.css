@@ -1,4 +1,5 @@
 @import url('../design-tokens.css');
+@import url('./loading.css');
 @font-face { font-family: Manrope; src: url('../assets/fonts/Manrope-variable.ttf') format('truetype'); font-weight: 200 800; font-display: swap; }
 :root { --font-family: Manrope, 'Avenir Next', sans-serif; --player-p1:#c2452f; --player-p2:#2d67c7; --radius-card:20px; --shell-elevated-surface:var(--surface-raised); }
 body { font-family:var(--font-family); background:var(--surface-foundation); }
@@ -245,13 +246,6 @@ button:has(> .righelt-icon):not(.ui-icon-button) {display:inline-flex;align-item
   --corner-start:transparent!important;--corner-end:transparent!important;
   border:0;border-radius:0;background:transparent;clip-path:none;
 }
-/* Loading feedback moves across the control without fading its readable label. */
-button.button-pending,.button-link.button-pending {
-  opacity:1;background-image:linear-gradient(105deg,transparent 30%,rgb(255 255 255 / 24%) 50%,transparent 70%);
-  background-size:220% 100%;animation:righelt-loading-swipe 1.25s ease-in-out infinite;
-}
-@keyframes righelt-loading-swipe {from{background-position:180% 0;}to{background-position:-80% 0;}}
-@media(prefers-reduced-motion:reduce){button.button-pending,.button-link.button-pending{animation:none;background-image:none;}}
 /* Include child margins in the modal's measured natural height. */
 .modal-content {display:flow-root;}
 /* Quiet utility icons expand into labelled controls without replacing their nodes. */

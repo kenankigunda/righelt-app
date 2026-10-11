@@ -26,7 +26,10 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
     if (!modal.element.open) return;
     const readiness = getReadiness(opponent);
     const play = modal.element.querySelector("[data-story-play]");
-    if (play) play.disabled = busy || readiness.state !== "ready";
+    if (play) { play.disabled = busy || readiness.state !== "ready"; play.dataset.loadingState = busy ? "pending" : "idle"; play.setAttribute("aria-busy",String(busy)); }
+    const status = modal.element.querySelector("[data-story-readiness]");
+    status.dataset.loadingMessage = "Preparing your opponent is taking a little longer than usual.";
+    status.dataset.loadingState = readiness.state === "preparing" ? "pending" : "idle";
     modal.element.querySelector("[data-story-readiness]").textContent = readiness.message || (readiness.state === "ready" ? "Ready to play" : "Preparing opponent…");
     const retry = modal.element.querySelector("[data-story-retry]");
     if (retry) retry.hidden = readiness.state !== "error";

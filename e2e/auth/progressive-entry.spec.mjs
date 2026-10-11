@@ -411,9 +411,11 @@ test("username availability uses matching status colors and an accessible reduce
     const status = dialog(page).locator("[data-username-status]");
     await expect(status).toHaveAttribute("data-state", "pending");
     await expect(status).toContainText(/Checking/i);
-    await expect(status).toHaveCSS("animation-name", "account-loading-swipe");
-    await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(status).toHaveCSS("animation-name", "none");
+    await expect(status.locator('.loading-pieces')).toBeVisible();
+    await expect(status.locator('.loading-pieces i').first()).toHaveCSS("animation-name", "righelt-piece-setting");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(status.locator('.loading-pieces i').first()).toHaveCSS("animation-name", "none");
     await expect(status).toContainText(/Checking/i);
     await dialog(page).getByLabel("Password", { exact: true }).fill(password);
     const length = dialog(page).locator('[data-requirement="length"]');

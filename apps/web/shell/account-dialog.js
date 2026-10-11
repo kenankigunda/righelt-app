@@ -153,6 +153,8 @@ export const createAccountDialog = ({
       if (lookupState !== "idle") lookupRevealed = true;
       target.dataset.revealed = String(lookupRevealed);
       target.dataset.state = lookupState;
+      target.dataset.loadingMessage = "Checking this username is taking a little longer than usual.";
+      target.dataset.loadingState = lookupState === "pending" ? "pending" : "idle";
       target.textContent = ({ idle: "", pending: "○ Checking username…", available: "✓ Username available.", taken: `✕ ${messages.username_unavailable}`, error: "○ Availability check is offline. You can still try creating your account." })[lookupState];
     }
   };
@@ -189,12 +191,12 @@ export const createAccountDialog = ({
       body = input("displayName", "Display name", { autocomplete: "nickname", value: session.account?.displayName || "", optional: true, inlineSave: true }) + `<button type="button" data-mode="password">${icon('key')}Change password</button><button type="button" data-logout>${icon('exit')}Sign out</button><button type="button" class="secondary" data-discard-account hidden>Discard changes</button>`;
     } else if (mode === "password") {
       title = "Change password";
-      body = input("newPassword", "New password", { secret: true, visible: true, autocomplete: "new-password" }) + checklist() + '<p>Changing your password signs you out on other devices.</p><div data-challenge></div><button type="submit">Change password</button><button type="button" class="secondary" data-mode="account">Back</button>';
+      body = input("newPassword", "New password", { secret: true, visible: true, autocomplete: "new-password" }) + checklist() + '<p>Changing your password signs you out on other devices.</p><div data-challenge></div><button type="submit" data-loading-state="idle">Change password</button><button type="button" class="secondary" data-mode="account">Back</button>';
     } else if (mode === "register") {
       title = "Create account";
-      body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + '<p class="account-status account-username-status small" role="status" data-username-status></p>' + input("password", "Password", { secret: true, visible: true, autocomplete: "new-password" }) + checklist() + '<p class="small" data-create-notice>Save your password. If you forget it and are signed out everywhere, you’ll need a new account.</p><div data-challenge></div><button type="submit">Create account & continue</button><button type="button" class="secondary" data-signin>Back to sign in</button>';
+      body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + '<p class="account-status account-username-status small" role="status" data-username-status></p>' + input("password", "Password", { secret: true, visible: true, autocomplete: "new-password" }) + checklist() + '<p class="small" data-create-notice>Save your password. If you forget it and are signed out everywhere, you’ll need a new account.</p><div data-challenge></div><button type="submit" data-loading-state="idle">Create account & continue</button><button type="button" class="secondary" data-signin>Back to sign in</button>';
     } else {
-      body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + input("password", "Password", { secret: true, autocomplete: "current-password" }) + feedback + '<div class="account-help"><p data-existing-hint hidden>Don’t have a password? <a href="#create-account" data-create-link>Create a new account.</a></p><details data-forgot hidden><summary>Forgot password?</summary><p>On another signed-in device, open Account → Change password. If you are signed out everywhere, you’ll need a new account. Your existing games remain with your original account.</p><button type="button" class="secondary" data-new-username>Choose another username</button></details></div><div data-challenge></div><button type="submit">Sign in</button><button type="button" class="secondary" data-create>Create account</button>';
+      body = input("username", "Username", { autocomplete: "username", value: values.username || "" }) + input("password", "Password", { secret: true, autocomplete: "current-password" }) + feedback + '<div class="account-help"><p data-existing-hint hidden>Don’t have a password? <a href="#create-account" data-create-link>Create a new account.</a></p><details data-forgot hidden><summary>Forgot password?</summary><p>On another signed-in device, open Account → Change password. If you are signed out everywhere, you’ll need a new account. Your existing games remain with your original account.</p><button type="button" class="secondary" data-new-username>Choose another username</button></details></div><div data-challenge></div><button type="submit" data-loading-state="idle">Sign in</button><button type="button" class="secondary" data-create>Create account</button>';
     }
     const emblem = isSettings() ? `<div class="account-player-signature">${renderPlayerEmblem(session.account?.username)}<span class="player-name-stack"><strong><bdi>${escapeHtml(session.account?.displayName || session.account?.username)}</bdi></strong><span class="player-username"><bdi>@${escapeHtml(session.account?.username)}</bdi></span></span></div>` : '';
     dialog.innerHTML = `<form class="account-form" novalidate data-entry-mode="${mode === "register" ? "create" : mode}" data-lookup-state="${lookupState}"><div class="account-dialog-heading"><h2 id="account-title" tabindex="-1">${title}</h2><button type="button" class="ui-icon-button account-close" data-cancel aria-label="Close">${icon('close')}</button></div>${emblem}${body}${mode === "login" ? "" : feedback}</form>`;
@@ -212,6 +214,8 @@ export const createAccountDialog = ({
           target.parentElement.dataset.state = state;
           const discard = dialog.querySelector("[data-discard-account]");
           if (discard) discard.hidden = !["invalid", "error"].includes(state);
+          target.dataset.loadingMessage = "Saving your changes is taking a little longer than usual.";
+          target.dataset.loadingState = state === "saving" ? "pending" : "idle";
           target.textContent = { saving: "Saving…", saved: "Saved", invalid: "Not saved", error: "Not saved" }[state];
           status(state === "invalid" ? "Use a display name of up to 32 characters without control characters." : state === "error" ? "Could not save. Check your connection and retry." : "", state === "invalid" || state === "error" ? "error" : "info");
           if (state === "saved") onComplete(null);
@@ -464,7 +468,7 @@ export const createAccountDialog = ({
     submittingFlow = marker;
     const data = Object.fromEntries(new FormData(form));
     const buttons = [...form.querySelectorAll("button[type=submit]")];
-    buttons.forEach(b => { b.disabled = true; });
+    buttons.forEach(b => { b.disabled = true; b.dataset.loadingState = "pending"; b.setAttribute("aria-busy","true"); });
     status("Working…", "pending");
     try {
       const token = challengeToken ? { challengeToken } : {};
@@ -487,7 +491,7 @@ export const createAccountDialog = ({
       if (error.body?.challengeRequired || widget !== null) await challenge();
     } finally {
       if (submittingFlow === marker) submittingFlow = null;
-      if (marker === flow) { buttons.forEach(b => { b.disabled = false; }); updateRequirements(); }
+      if (marker === flow) { buttons.forEach(b => { b.disabled = false; b.dataset.loadingState = "idle"; b.removeAttribute("aria-busy"); }); updateRequirements(); }
     }
   });
   const refreshSession = () => {};

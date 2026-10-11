@@ -1,3 +1,4 @@
+import { mountLoadingFeedback, loadingAttributes } from "./loading.js";
 import { patchSectionContent } from "./dom-patch.js";
 import { SWIPE_EASING_CSS } from './navigation-motion.js';
 import { getGameResult, createResultTransitions, createRematchDialog } from './game-result.js';
@@ -56,6 +57,7 @@ import {
 import { createTutorialController } from "./tutorial.js";
 
 const appEl = document.getElementById("app");
+mountLoadingFeedback(document);
 const dismissedRecoveryNotices = new Map();
 // This node survives header/panel rendering, including repeated heartbeat snapshots.
 const syncAnnouncement = document.createElement("div");
@@ -308,8 +310,8 @@ const renderButtonStateAttributes = ({ className = "", pendingKey = null, disabl
   }
   const classAttr = classes.length > 0 ? ` class="${classes.join(" ")}"` : "";
   const pendingAttr = isButtonPending(pendingKey) ? ' data-pending="true" aria-busy="true"' : "";
-  const disabledAttr = disabled ? " disabled" : "";
-  return `${classAttr}${pendingAttr}${disabledAttr}`;
+  const disabledAttr = disabled || isButtonPending(pendingKey) ? " disabled" : "";
+  return `${classAttr}${pendingAttr}${disabledAttr}${pendingKey ? ` data-loading-key="${escapeHtml(pendingKey)}"` : ""}`;
 };
 const renderPendingStateAttributes = ({ className = "", pending = false, disabled = false } = {}) => {
   const classes = className
@@ -321,8 +323,8 @@ const renderPendingStateAttributes = ({ className = "", pending = false, disable
   }
   const classAttr = classes.length > 0 ? ` class="${classes.join(" ")}"` : "";
   const pendingAttr = pending ? ' data-pending="true" aria-busy="true"' : "";
-  const disabledAttr = disabled ? " disabled" : "";
-  return `${classAttr}${pendingAttr}${disabledAttr}`;
+  const disabledAttr = disabled || pending ? " disabled" : "";
+  return `${classAttr}${pendingAttr}${disabledAttr} data-loading-state="${pending ? "pending" : "idle"}"`;
 };
 
 const formatStatus = (connected) => renderConnectionStatusIcon(connected ? "connected" : "disconnected", connected ? "Connected" : "Disconnected");
@@ -1850,7 +1852,7 @@ const renderHeader = () => `
     ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
     ${account.snapshot().pendingLogout ? '<span role="status">Sign-out pending</span>' : ''}
     ${accountContinuationError ? `<p role="alert">The page could not finish loading. Try again.</p><button class="secondary" data-action="retry-account-continuation">Try again</button>` : ""}
-    ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p role="status">Connecting…</p>` : ""}
+    ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p class="loading-region" ${loadingAttributes("account-startup", "Connecting is taking a little longer than usual.")}><span class="sr-only" role="status">Connecting…</span></p>` : ""}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
         ${soundToggle(gameSound.enabled())}
@@ -1912,7 +1914,7 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
   const canUpdateScenario = canAuthorScenarios && Boolean(selectedScenario);
   if (scenarioLoadPending) {
     return `
-      <section class="panel debug-panel scenario-panel scenario-panel-load" data-testid="scenario-load-skeleton">
+      <section class="panel debug-panel scenario-panel scenario-panel-load loading-region" ${loadingAttributes("scenarios", "The scenarios are taking a little longer to load.")} data-testid="scenario-load-skeleton">
         <h2>Load a scenario</h2>
         <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
         <div class="skeleton-pulse skeleton-line"></div>
@@ -2427,11 +2429,11 @@ const renderHomeCardSkeleton = () => `
 `;
 
 const renderHomeSectionSkeleton = (title, { showStartButton = false, sectionKey = "my" } = {}) => `
-  <section class="panel home-games-section" data-home-section-root="${escapeHtml(sectionKey)}" data-testid="home-section-skeleton">
+  <section class="panel home-games-section loading-region" ${loadingAttributes(`home:${sectionKey}`, "Your games are taking a little longer to load.")} data-home-section-root="${escapeHtml(sectionKey)}" data-testid="home-section-skeleton">
     <div class="home-games-section-header" data-home-header-has-action="${showStartButton ? "true" : "false"}" data-home-header-paging="false">
       <div class="home-games-section-heading">
         <h2>${escapeHtml(title)}</h2>
-        <p class="small">Loading games...</p>
+        <p class="small">Games</p>
       </div>
       <div class="home-games-section-header-center"></div>
       <div class="home-games-section-header-actions">
@@ -2449,42 +2451,21 @@ const renderHomeSectionSkeleton = (title, { showStartButton = false, sectionKey 
 const renderGameViewSkeleton = () => `
   <section class="layout-grid layout-grid-skeleton" data-testid="game-view-skeleton">
     <div class="stack">
-      <section class="panel skeleton-panel">
-        <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
-        <div class="skeleton-pulse skeleton-line"></div>
-        <div class="skeleton-pulse skeleton-line skeleton-line-short"></div>
-      </section>
-      <section class="panel skeleton-panel">
-        <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
-        <div class="skeleton-pulse skeleton-button"></div>
-        <div class="skeleton-pulse skeleton-line skeleton-line-short"></div>
-      </section>
-      <section class="panel skeleton-panel">
-        <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
-        <div class="skeleton-pulse skeleton-line"></div>
-        <div class="skeleton-pulse skeleton-line skeleton-line-short"></div>
-      </section>
+      <section class="panel skeleton-panel"><h2>Game</h2><div class="skeleton-pulse skeleton-line"></div><div class="skeleton-pulse skeleton-line skeleton-line-short"></div></section>
+      <section class="panel skeleton-panel"><h2>Players</h2><div class="skeleton-pulse skeleton-line"></div><div class="skeleton-pulse skeleton-line"></div></section>
     </div>
     <div class="stack">
-      <section class="panel skeleton-panel">
-        <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
-        <div class="skeleton-pulse skeleton-board"></div>
+      <section class="panel skeleton-panel loading-region" ${loadingAttributes(`game:${currentRoute.gameId || "invite"}`, "Your game is taking a little longer to load.")}>
+        <h2>Board</h2><div class="loading-board-silhouette" aria-hidden="true"></div>
       </section>
     </div>
-    <div class="stack">
-      <section class="panel skeleton-panel">
-        <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
-        <div class="skeleton-pulse skeleton-line"></div>
-        <div class="skeleton-pulse skeleton-line"></div>
-        <div class="skeleton-pulse skeleton-line skeleton-line-short"></div>
-      </section>
-    </div>
+    <div class="stack"><section class="panel skeleton-panel"><h2>History</h2><div class="skeleton-pulse skeleton-line"></div><div class="skeleton-pulse skeleton-line skeleton-line-short"></div></section></div>
   </section>
 `;
 
 const renderInvitePageSkeleton = () => `
   <section class="invite-gate" data-testid="invite-view-skeleton">
-    <section class="panel invite-gate-modal skeleton-panel">
+    <section class="panel invite-gate-modal skeleton-panel loading-region" ${loadingAttributes("invite", "Your invitation is taking a little longer to load.")}>
       <div class="skeleton-pulse skeleton-line skeleton-line-kicker"></div>
       <div class="skeleton-pulse skeleton-line skeleton-line-title"></div>
       <div class="skeleton-pulse skeleton-line"></div>
@@ -2542,7 +2523,7 @@ const renderJoinInvitePanel = (game, inviteLink) => {
                 className: "secondary",
                 pendingKey: approveRequestButtonKey,
                 disabled: !Array.isArray(game.approvableRequesterIds) || !game.approvableRequesterIds.includes(request.identityId),
-              })}>${isButtonPending(approveRequestButtonKey) ? "Approving..." : "Approve"}</button>
+              })}>Approve</button>
             </li>`;
             },
           )
@@ -2552,19 +2533,19 @@ const renderJoinInvitePanel = (game, inviteLink) => {
       ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="join-viewer"${renderButtonStateAttributes({
           className: "secondary",
           pendingKey: joinViewerButtonKey,
-        })}>${isButtonPending(joinViewerButtonKey) ? "Joining..." : "Join as viewer"}</button>`
+        })}>Join as viewer</button>`
       : "",
     game.canJoinAsPlayer && game.showJoinActions
       ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" data-testid="join-player"${renderButtonStateAttributes({
           pendingKey: joinPlayerButtonKey,
-        })}>${isButtonPending(joinPlayerButtonKey) ? "Joining..." : "Join as player"}</button>`
+        })}>Join as player</button>`
       : "",
-    ...invitationOptions(game).map(option => `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="${option.role}" ${option.role==='viewer'?'data-testid="copy-viewer-invite"':'data-testid="copy-invite"'}${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:copyInviteButtonKey,disabled:!game.canInvite})}>${icon('invite')}${isButtonPending(copyInviteButtonKey)?'Preparing link…':option.label}</button>`),
+    ...invitationOptions(game).map(option => `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="${option.role}" ${option.role==='viewer'?'data-testid="copy-viewer-invite"':'data-testid="copy-invite"'}${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:copyInviteButtonKey,disabled:!game.canInvite})}>${icon('invite')}${option.label}</button>`),
     game.canPlayAsBothPlayers
       ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({
           className: "secondary",
           pendingKey: playAsBothButtonKey,
-        })}>${isButtonPending(playAsBothButtonKey) ? "Claiming seats..." : "Play as both players"}</button>`
+        })}>Play as both players</button>`
       : "",
   ]);
 
@@ -3321,7 +3302,7 @@ const renderInviteLanding = (inviteContext) => {
             <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-player"${renderButtonStateAttributes({
               pendingKey: joinPlayerButtonKey,
               disabled: !canJoinPlayer,
-            })}>${isButtonPending(joinPlayerButtonKey) ? "Joining..." : escapeHtml(playerActionLabel)}</button>
+            })}>${escapeHtml(playerActionLabel)}</button>
             <span class="small invite-choice-note">${escapeHtml(playerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
@@ -3329,7 +3310,7 @@ const renderInviteLanding = (inviteContext) => {
               className: "secondary",
               pendingKey: joinViewerButtonKey,
               disabled: !canJoinViewer,
-            })}>${isButtonPending(joinViewerButtonKey) ? "Joining..." : "Join as viewer"}</button>
+            })}>Join as viewer</button>
             <span class="small invite-choice-note">${escapeHtml(viewerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
@@ -4214,7 +4195,7 @@ const renderHostInvite = game => renderInvitationSurface({host:true,background:r
   <button class="ui-icon-button invite-close" data-action="close-invite" aria-label="Close invite">${icon('close')}</button>
   <p class="small invite-gate-kicker">Your game is ready</p><h2 id="invite-surface-title">Invite a friend</h2>
   <p>Copy a link and send it their way.</p>
-  <div class="invite-choice-list">${invitationOptions(game).map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id)})}>${icon('copy')}${isButtonPending(getCopyInviteButtonKey(game.id))?'Preparing link…':option.label}</button>`).join('')}</div>
+  <div class="invite-choice-list">${invitationOptions(game).map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id)})}>${icon('copy')}${option.label}</button>`).join('')}</div>
   ${renderInviteFeedback()}
   ${inviteFallback?.gameId===game.id?`<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>`:''}
 `});
