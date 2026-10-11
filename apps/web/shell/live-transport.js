@@ -232,7 +232,7 @@ export const createLiveTransportStore = ({
     next.recoveryGeneration = optimistic.recoveryGeneration ?? 0;
     next.recoveryIssue = optimistic.recoveryIssue ?? null;
     next.incidentId = optimistic.incidentId ?? null;
-    next.recovering = optimistic.connectionRecovering === true || optimistic.syncStatus === "confirming";
+    next.recovering = optimistic.connectionRecovering === true || optimistic.syncStatus === "confirming" || next.confirmationOverdue;
     next.upgradeRequired = optimistic.upgradeRequired === true;
     next.storageLimitReached = optimistic.storageError?.code === "command_limit_reached" || /limit/.test(optimistic.storageError?.message ?? "");
     next.sharedMutationsBlocked = optimistic.storageBlocked || next.recovering || next.upgradeRequired;
@@ -578,8 +578,8 @@ export const createLiveTransportStore = ({
     const admission = optimistic.admission.catch(() => {}).then(async () => {
       assertActive();
       if (auth?.enabled && (!auth.session.authenticated)) throw Object.assign(new Error("invalid_credentials"), { code: "invalid_credentials" });
-      if (optimistic.storageBlocked || optimistic.connectionRecovering || optimistic.syncStatus === "confirming") throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
       const current = getGameViewModel(gameId);
+      if (current?.sharedMutationsBlocked) throw Object.assign(new Error("sync_recovering"), { code: "sync_recovering" });
       const predecessor = optimistic.pendingCommands.at(-1)?.envelope;
       const envelope = { protocolVersion: 2, gameId, identityId, clientCommandId: command.clientCommandId, submittedAt: Date.parse(command.queuedAt) || Date.now(),
         ...(auth?.enabled ? { authContextId: auth.session.contextId } : {}),
@@ -1095,10 +1095,12 @@ export const createLiveTransportStore = ({
     if (!optimistic.derivedGame) {
       recalculateOptimisticGame(gameId);
     }
-    const game = optimistic.derivedGame;
-    if (!game) {
+    if (!optimistic.derivedGame) {
       return null;
     }
+    // Browser suspension can advance deadlines before scheduled callbacks run.
+    // Refresh time-dependent safety flags even when the board projection is cached.
+    const game = decorateGameWithSync(optimistic.derivedGame, gameId);
     if (auth?.enabled && (!auth.session.authenticated || game.ownershipMode === "legacy_guest")) {
       return { ...game, canRecordMove:false,canEndTurn:false,canPlayAsBothPlayers:false,canUndoLastMove:false,canInvite:false,inviteToken:null,
         ...(!auth.session.authenticated ? {legalActions:[]} : {}) };

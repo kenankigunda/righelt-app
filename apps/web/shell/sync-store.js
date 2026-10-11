@@ -348,7 +348,9 @@ export const createLiveSyncClient = ({
     owner.promise = Promise.resolve().then(() => onReconcile({ gameId, reason })).then(() => {
       if (repairOwners.get(gameId) !== owner || !desiredGameIds.has(gameId)) return;
       recordMetric("recovery_reconciled", { gameId, reason });
-      if (shouldKeepConnectionsActive()) connect(gameId);
+      // HTTP has restored authoritative state. A failed background socket must
+      // not immediately reopen and re-block that evidence in this same pass.
+      if (shouldKeepConnectionsActive() && !sockets.has(gameId)) scheduleReconnect(gameId);
     }).catch((error) => {
       if (repairOwners.get(gameId) !== owner) return;
       onError(error);
@@ -385,7 +387,6 @@ export const createLiveSyncClient = ({
     const sessionId = createSessionId();
     sessionIdByGameId.set(gameId, sessionId);
     lastEventSeqByGameId.set(gameId, lastEventSeq);
-    onRecovery({ gameId, reason: "connecting" });
     onStatus({ state: "connecting", gameId, reconnectAttempts });
 
     const ws = new WebSocket(createWsUrl({ identityId, gameId, sessionId, lastEventSeq, auth }));
@@ -485,7 +486,8 @@ export const createLiveSyncClient = ({
       onStatus({ state: "closed", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
       recordMetric("socket_closed", { gameId, reason: closeReason });
       if (desiredGameIds.has(gameId)) {
-        scheduleReconnect(gameId);
+        // Receipt/snapshot recovery starts now, independently of socket backoff.
+        void repair(gameId, "socket_closed");
       }
     });
   };

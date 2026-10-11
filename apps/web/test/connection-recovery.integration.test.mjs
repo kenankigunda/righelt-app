@@ -74,3 +74,17 @@ test("fallback retires the old socket and HTTP restores play independently of so
   old.receive({ ...snapshot, type: "state_sync", gameId: f.gameId, eventSeq: snapshot.eventSeq + 99 });
   assert.equal(f.store.getLastEventSeq(f.gameId), snapshot.eventSeq);
 });
+
+test("socket close starts HTTP recovery without waiting for reconnect readiness", async (t) => {
+  const f = await setup(t, { timeout: 1000 });
+  f.store.setActiveGameId(f.gameId); const original = f.sockets[0]; original.emit("open");
+  const snapshot = await f.current(); original.receive({ ...snapshot, protocolVersion:2, gameId:f.gameId, type:"state_sync" });
+  await until(() => !f.store.getGameViewModel(f.gameId).recovering);
+  original.close();
+  await until(() => f.reconciles.length === 1 && !f.store.getGameViewModel(f.gameId).recovering);
+  assert.equal(f.sockets.length, 2);
+  assert.equal(f.sockets[1].readyState, 0, "HTTP recovery cannot depend on socket readiness");
+  const game = f.store.getGameViewModel(f.gameId);
+  assert.equal(game.sharedMutationsBlocked, false);
+  assert.equal(game.canRecordMove, true);
+});
