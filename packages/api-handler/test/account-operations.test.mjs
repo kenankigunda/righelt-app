@@ -1,14 +1,63 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boundarySmoke } from "../../../scripts/deploy-boundary-smoke.mjs";
 import { cutoverSql } from "../../../scripts/account-cutover.mjs";
-import { validateDeployment } from "../../../scripts/deploy-account-services.mjs";
+import { validateDeployment, wranglerEnvironment } from "../../../scripts/deploy-account-services.mjs";
 import { accountSmoke } from "../../../scripts/account-smoke.mjs";
 const origin = "https://site.test",
   privateOrigin = "https://api.test";
+test("Wrangler receives credentials without the application origin override or parent mutation", () => {
+  const env = { CLOUDFLARE_API_BASE_URL: privateOrigin, CLOUDFLARE_API_TOKEN: "synthetic-token", CLOUDFLARE_ACCOUNT_ID: "synthetic-account", PATH: "/synthetic/path" };
+  const child = wranglerEnvironment(env);
+  assert.deepEqual(child, { CLOUDFLARE_API_TOKEN: "synthetic-token", CLOUDFLARE_ACCOUNT_ID: "synthetic-account", PATH: "/synthetic/path" });
+  assert.equal(env.CLOUDFLARE_API_BASE_URL, privateOrigin);
+});
+for (const enabled of ["false", "true"]) test(`deployment CLI isolates Wrangler's endpoint for every command with auth ${enabled}`, () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "righelt-deploy-env-"));
+  try {
+    const receipt = path.join(directory, "calls.jsonl");
+    writeFileSync(path.join(directory, "pnpm"), `#!${process.execPath}\n` + `
+      const fs = require("node:fs");
+      fs.appendFileSync(process.env.TEST_DEPLOY_RECEIPT, JSON.stringify({
+        args: process.argv.slice(2), override: process.env.CLOUDFLARE_API_BASE_URL ?? null,
+        token: process.env.CLOUDFLARE_API_TOKEN, account: process.env.CLOUDFLARE_ACCOUNT_ID,
+        input: process.argv.includes("bulk") ? JSON.parse(fs.readFileSync(0, "utf8")) : null,
+      }) + "\\n");
+    `, { mode: 0o755 });
+    const env = {
+      PATH: directory, TEST_DEPLOY_RECEIPT: receipt,
+      RIGHELT_SITE_ORIGIN: origin, CLOUDFLARE_API_BASE_URL: privateOrigin,
+      CLOUDFLARE_API_TOKEN: "synthetic-token", CLOUDFLARE_ACCOUNT_ID: "synthetic-account",
+      RIGHELT_AUTH_ENABLED: enabled, AUTH_HMAC_SECRET: "a".repeat(64),
+      TURNSTILE_SECRET: "synthetic-challenge", AUTH_TURNSTILE_SITE_KEY: "public-key",
+      ACCOUNT_SMOKE_USERNAME: "synthetic-canary", ACCOUNT_SMOKE_PASSWORD: "synthetic-password",
+      ACCOUNT_SMOKE_LEGACY_GAME_ID: "legacy",
+    };
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL("../../../scripts/deploy-account-services.mjs", import.meta.url))], { env, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    const calls = readFileSync(receipt, "utf8").trim().split("\n").map(line => JSON.parse(line));
+    assert.equal(calls.length, enabled === "true" ? 4 : 3);
+    for (const call of calls) {
+      assert.equal(call.override, null, "application origin must not replace Cloudflare's management endpoint");
+      assert.equal(call.token, env.CLOUDFLARE_API_TOKEN);
+      assert.equal(call.account, env.CLOUDFLARE_ACCOUNT_ID);
+      assert.deepEqual(call.args.slice(0, 2), ["exec", "wrangler"]);
+    }
+    assert.deepEqual(calls.slice(0, 3).map(call => call.args.slice(2, 5)), [
+      ["deploy", "--config", "apps/auth-hash/wrangler.toml"],
+      ["deploy", "--config", "apps/auth/wrangler.toml"],
+      ["deploy", "--config", "apps/api/wrangler.toml"],
+    ]);
+    assert.ok(calls[2].args.includes(`AUTH_ENABLED:${enabled}`));
+    assert.ok(calls[2].args.includes(`AUTH_ALLOWED_ORIGINS:${origin}`));
+    if (enabled === "true") assert.deepEqual(calls[3].input, { AUTH_HMAC_SECRET: env.AUTH_HMAC_SECRET, TURNSTILE_SECRET: env.TURNSTILE_SECRET });
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
 test("deployment boundary requires provider rejection, never timeout or arbitrary failure", async () => {
   const run = (result) =>
     boundarySmoke({

@@ -5,12 +5,20 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 const run = (args, input) => {
   const result = spawnSync("pnpm", ["exec", "wrangler", ...args], {
+    env: wranglerEnvironment(process.env),
     stdio: input === undefined ? "inherit" : ["pipe", "inherit", "inherit"],
     input,
   });
   if (result.status !== 0)
     throw Error("Account service deployment command failed");
 };
+export function wranglerEnvironment(env) {
+  const childEnv = { ...env };
+  // This application boundary setting is also Wrangler's control-plane override.
+  // Validate it in the parent, but let Wrangler use its default Cloudflare API.
+  delete childEnv.CLOUDFLARE_API_BASE_URL;
+  return childEnv;
+}
 export function validateDeployment(env) {
   const enabled = env.RIGHELT_AUTH_ENABLED || "false";
   if (!["true", "false"].includes(enabled))
