@@ -1,10 +1,10 @@
-import { SYNC_LIMITS, isSyncCommand } from "../generated/packages/shared-types/src/sync-protocol.js";
+import { SYNC_TIMING, SYNC_LIMITS, isSyncCommand } from "../generated/packages/shared-types/src/sync-protocol.js";
 
 const journalError = (code, cause) => Object.assign(new Error(code, { cause }), { code });
 const keyOf = (command) => [command.identityId, command.gameId, command.clientCommandId];
 
 /** All admission and cleanup operations serialize through one IndexedDB store across tabs. */
-export const createCommandJournal = ({ indexedDB = globalThis.indexedDB, databaseName = "righelt.online-commands.v2", isCurrent = () => true } = {}) => {
+export const createCommandJournal = ({ indexedDB = globalThis.indexedDB, databaseName = "righelt.online-commands.v2", isCurrent = () => true, timeoutMs = SYNC_TIMING.requestTimeoutMs } = {}) => {
   let connection;
   const open = () => {
     if (connection) return connection;
@@ -12,12 +12,14 @@ export const createCommandJournal = ({ indexedDB = globalThis.indexedDB, databas
       if (!indexedDB) { reject(journalError("journal_unavailable")); return; }
       const request = indexedDB.open(databaseName, 1);
       let failed = false;
+      const timer = setTimeout(() => { failed = true; reject(journalError("journal_timeout")); }, timeoutMs);
       request.onupgradeneeded = () => {
         if (!request.result.objectStoreNames.contains("commands")) request.result.createObjectStore("commands", { keyPath: ["identityId", "gameId", "clientCommandId"] });
       };
-      request.onblocked = () => { failed = true; reject(journalError("journal_blocked")); };
-      request.onerror = () => reject(journalError("journal_open_failed", request.error));
+      request.onblocked = () => { clearTimeout(timer); failed = true; reject(journalError("journal_blocked")); };
+      request.onerror = () => { clearTimeout(timer); reject(journalError("journal_open_failed", request.error)); };
       request.onsuccess = () => {
+        clearTimeout(timer);
         if (failed) { request.result.close(); return; }
         const db = request.result;
         db.onversionchange = () => { db.close(); connection = null; };
@@ -31,9 +33,14 @@ export const createCommandJournal = ({ indexedDB = globalThis.indexedDB, databas
     if (!isCurrent()) throw journalError("session_changed");
     return new Promise((resolve, reject) => {
       const tx = db.transaction("commands", mode);
-      let value, failure;
-      tx.oncomplete = () => resolve(value);
-      tx.onabort = () => reject(failure || journalError("journal_transaction_failed", tx.error));
+      let value, failure, expired = false;
+      const timer = setTimeout(() => {
+        expired = true; failure = journalError("journal_timeout");
+        try { tx.abort(); } catch {}
+        reject(failure);
+      }, timeoutMs);
+      tx.oncomplete = () => { clearTimeout(timer); if (!expired && isCurrent()) resolve(value); else reject(journalError("session_changed")); };
+      tx.onabort = () => { clearTimeout(timer); reject(failure || journalError("journal_transaction_failed", tx.error)); };
       tx.onerror = () => {}; // abort is the terminal event; a successful request is not a commit.
       try { work(tx.objectStore("commands"), (result) => { value = result; }, (error) => { failure = error; tx.abort(); }); }
       catch (error) { failure = error; tx.abort(); }

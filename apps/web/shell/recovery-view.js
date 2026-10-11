@@ -1,3 +1,4 @@
+import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
 // Personal viewing intent is local to a tab; snapshots cannot move a reader's selection.
 export const historyMoveKey = (move) => move.moveId ?? (move.clientCommandId ? `pending:${move.clientCommandId}` : null);
 export const applyHistoryIntent = (game, intent, identityId) => {
@@ -11,7 +12,7 @@ export const applyHistoryIntent = (game, intent, identityId) => {
       return Math.abs(ai - intent.position) - Math.abs(bi - intent.position) || ai - bi;
     })[0] ?? moves[Math.min(intent.position, moves.length - 1)];
     intent.moveId = selected ? historyMoveKey(selected) : null;
-    intent.notice = selected ? "History changed. Showing the nearest available move." : "History changed. Showing the current board.";
+    intent.notice = selected ? "History changed. Showing the closest available move." : "History changed. You’re back at the current board.";
   }
   if (selected) {
     intent.moveId = historyMoveKey(selected);
@@ -44,18 +45,20 @@ export const applyHistoryIntent = (game, intent, identityId) => {
   return game;
 };
 
-export const recoveryMessage = (game) => {
-  if (game.upgradeRequired) return "This game needs an update. Refresh to continue.";
+export const recoveryMessage = (game, now = Date.now()) => {
+  if (game.upgradeRequired) return "Righelt has an update. Refresh to keep playing.";
   if (game.storageBlocked) return game.storageLimitReached
-    ? "Earlier moves are still being checked. Wait for them to finish before making another move."
-    : game.unsavedCommand ? "Your browser couldn't save this move. It wasn't sent."
-      : "Your browser couldn't save recovery information. Retry saving to continue.";
+    ? "Still recording earlier moves. Please wait before making another."
+    : game.unsavedCommand ? "We couldn’t save your move. Please try again."
+      : "We’re having trouble saving. Please try again.";
   if (!game.recovering && game.syncStatus !== "confirming" && !game.confirmationOverdue) return "";
-  const plural = game.pendingCommandCount > 1;
+  if (["session_changed", "invalid_credentials"].includes(game.recoveryIssue)) return "Please sign in again to continue.";
+  if (game.recoveryIssue === "invalid_response") return "We couldn’t record your move. Please reconnect.";
   if (game.pendingCommandCount > 0) return game.confirmationOverdue
-    ? `Your ${plural ? "moves are" : "move is"} still being checked.`
-    : `Checking your ${plural ? "moves" : "move"}…`;
-  return "Reconnecting. Your board will update shortly.";
+    ? "It’s taking a while to record your move. Hang tight!" : "Recording your move";
+  if (game.recoveryIssue) return "We couldn’t record your move. Please reconnect.";
+  if (game.recoveryStartedAt && now - game.recoveryStartedAt < SYNC_TIMING.reconnectAlertMs) return "";
+  return "Reconnecting. We’ll be right back!";
 };
 
 export const sharedMutationActions = new Set([

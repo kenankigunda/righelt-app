@@ -1,0 +1,22 @@
+/* Static surfaces; small pieces alone communicate loading. */
+.skeleton-pulse { animation:none; background:color-mix(in srgb,var(--ink,#26302f) 6%,transparent); border-radius:0; clip-path:polygon(6px 0,calc(100% - 6px) 0,100% 6px,100% calc(100% - 6px),calc(100% - 6px) 100%,6px 100%,0 calc(100% - 6px),0 6px); }
+button.button-pending,.button-link.button-pending,.account-username-status[data-state="pending"],.account-autosave[data-state="saving"] { animation:none;background-image:none; }
+.loading-pieces { display:inline-flex;gap:3px;align-items:center;justify-content:center;width:1.4em;height:1.25em;flex:none;color:var(--action-color,var(--player-red,#b92d38));pointer-events:none;visibility:hidden; }
+.loading-pieces i { display:block;width:.3em;height:.3em;background:currentColor;clip-path:polygon(25% 0,75% 0,100% 25%,100% 75%,75% 100%,25% 100%,0 75%,0 25%);animation:righelt-piece-setting 1.4s ease-out infinite both;animation-play-state:paused; }
+.loading-pieces i:nth-child(2){animation-delay:.16s}.loading-pieces i:nth-child(3){animation-delay:.32s}
+[data-loading-phase="visible"] > .loading-pieces,[data-loading-phase="slow"] > .loading-pieces {visibility:visible}
+[data-loading-phase="visible"] > .loading-pieces i,[data-loading-phase="slow"] > .loading-pieces i {animation-play-state:running}
+@keyframes righelt-piece-setting {0%,12%{transform:translateY(-.24em);opacity:.2}35%,80%{transform:translateY(0);opacity:1}100%{transform:translateY(0);opacity:.2}}
+.loading-control {position:relative}
+.loading-control:not(:has(svg))::before {content:'';display:inline-block;flex:none;width:1.4em;height:1em;margin-inline-end:.35em;vertical-align:middle}
+.loading-control > .loading-pieces {position:absolute;inset-inline-start:1em;top:50%;transform:translateY(-50%);color:currentColor}
+.loading-control[data-loading-phase]:has(svg) > svg {visibility:hidden}
+.loading-control[data-loading-phase="quiet"]:has(svg) > svg {visibility:visible}
+.loading-control > svg {flex:none}
+.loading-region {position:relative}
+.loading-region > .loading-pieces {margin-block:.5rem}
+.loading-context {display:block;font-size:.875rem;color:var(--muted,#64706f);margin-block:.4rem 0}
+.loading-board-silhouette {aspect-ratio:1; width:100%; background:repeating-linear-gradient(to right,transparent 0 calc(10% - 1px),rgb(75 80 74 / 12%) calc(10% - 1px) 10%),repeating-linear-gradient(to bottom,transparent 0 calc(10% - 1px),rgb(75 80 74 / 12%) calc(10% - 1px) 10%);border:1px solid rgb(75 80 74 / 12%);border-radius:4px}
+[data-loading-hidden] .loading-pieces i {animation-play-state:paused!important}
+@media(prefers-reduced-motion:reduce){.loading-pieces i{animation:none!important;transform:none;opacity:1}}
+.loading-control:is(.secondary,.button-link) > .loading-pieces {color:var(--action-color,var(--player-red,#b92d38))}

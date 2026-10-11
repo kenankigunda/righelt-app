@@ -1670,3 +1670,70 @@ test('invite reads bound response-body completion and never retry automatically'
   assert.equal(calls, 1);
   store.retire();
 });
+
+// Regression: receipt recovery is independent of replacement socket readiness.
+test("HTTP recovery resumes mutations without waiting for an unavailable socket", async () => {
+  const game = buildLiveGame();
+  const store = createLiveTransportStore({ storage: createMemoryStorage(), beforeReconcile: () => new Promise(() => {}),
+    commandJournal: { list: async () => [], remove: async () => {}, admit: async () => {} },
+    timing: { requestTimeoutMs: 20, recoveryPassMs: 60, confirmationBudgetMs: 100, retryDelaysMs: [10], retryJitter: 0 },
+    fetcher: async () => Response.json({ protocolVersion: 2, gameId: game.id, eventSeq: 2, gameplayRevision: 0, game, commandOutcomes: [] }) });
+  store.applyLiveGameUpdate({ game, eventSeq: 1 });
+  store.setConnectionRecovering(game.id, true);
+  await Promise.race([store.reconcileGame(game.id), new Promise((_, reject) => setTimeout(() => reject(Error("recovery held by socket")), 150))]);
+  assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked, false);
+  store.retire();
+});
+test("stalled hydration releases recovery ownership and allows another pass", async () => {
+  const game = buildLiveGame(); let stalled = true;
+  const store = createLiveTransportStore({ storage: createMemoryStorage(),
+    commandJournal: { list: () => stalled ? new Promise(() => {}) : Promise.resolve([]), remove: async () => {}, admit: async () => {} },
+    timing: { requestTimeoutMs: 10, recoveryPassMs: 25, confirmationBudgetMs: 100, retryDelaysMs: [10], retryJitter: 0 },
+    fetcher: async () => Response.json({ protocolVersion: 2, gameId: game.id, eventSeq: 2, gameplayRevision: 0, game, commandOutcomes: [] }) });
+  store.applyLiveGameUpdate({ game, eventSeq: 1 }); store.setConnectionRecovering(game.id, true);
+  await assert.rejects(store.reconcileGame(game.id), /recovery_timeout/);
+  stalled = false; await store.reconcileGame(game.id);
+  assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked, false); store.retire();
+});
+
+test("timed-out recovery retries HTTP even without another socket ready event", async () => {
+  const game=buildLiveGame();let reads=0;
+  const store=createLiveTransportStore({storage:createMemoryStorage(),commandJournal:{list:()=>++reads===1?new Promise(()=>{}):Promise.resolve([]),remove:async()=>{}},
+   timing:{requestTimeoutMs:10,recoveryPassMs:20,confirmationBudgetMs:100,retryDelaysMs:[5],retryJitter:0},
+   fetcher:async()=>Response.json({protocolVersion:2,gameId:game.id,eventSeq:2,gameplayRevision:0,game,commandOutcomes:[]})});
+  store.applyLiveGameUpdate({game,eventSeq:1});store.setConnectionRecovering(game.id,true);
+  await assert.rejects(store.reconcileGame(game.id),/recovery_timeout/);
+  for(let i=0;i<30&&store.getGameViewModel(game.id).recovering;i++)await new Promise(r=>setTimeout(r,5));
+  assert.equal(store.getGameViewModel(game.id).recovering,false);assert.ok(reads>=2);store.retire();
+});
+test("retirement settles an in-progress recovery and ignores late hydration",async()=>{
+ const game=buildLiveGame();let release;const store=createLiveTransportStore({storage:createMemoryStorage(),commandJournal:{list:()=>new Promise(r=>{release=r}),close:async()=>{}},fetcher:async()=>{throw Error("retired fetch");}});
+ store.applyLiveGameUpdate({game,eventSeq:1});const recovery=store.reconcileGame(game.id);await tick();store.retire();
+ await assert.rejects(recovery,/session_changed/);release([]);await tick();
+});
+
+test("recovery deadline preserves a pending command and retries its accepted receipt",async()=>{
+ const game=buildLiveGame(), storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,"id-a");let envelope, recovered=false;
+ const action=game.legalActions[0], acknowledged=buildAcknowledgedGame(game,action);
+ const store=createLiveTransportStore({storage,commandJournal:{list:async()=>[],admit:async()=>{},remove:async()=>{}},
+  timing:{requestTimeoutMs:200,recoveryPassMs:20,confirmationBudgetMs:100,retryDelaysMs:[5],retryJitter:0},
+  fetcher:async(url,init)=>{if(url.endsWith("apply")){envelope=JSON.parse(init.body);return new Promise(()=>{});}recovered=true;return commandResponse({ok:true,game:acknowledged,eventSeq:2,clientCommandId:envelope.clientCommandId});}});
+ store.applyLiveGameUpdate({game,eventSeq:1});await store.applyGameAction({gameId:game.id,state:game.board.state,action});
+ const original=structuredClone(envelope);store.setConnectionRecovering(game.id,true);await assert.rejects(store.reconcileGame(game.id),/recovery_timeout/);
+ assert.equal(store.getGameViewModel(game.id).pendingCommandCount,1);
+ for(let i=0;i<30&&store.getGameViewModel(game.id).pendingCommandCount;i++)await new Promise(r=>setTimeout(r,5));
+ assert.ok(recovered);assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked,false);assert.deepEqual(envelope,original);store.retire();
+});
+
+test("manual reconnect supersedes an old snapshot wait and requests a fresh snapshot",async()=>{
+ const game=buildLiveGame();let release;const requests=[];
+ const store=createLiveTransportStore({storage:createMemoryStorage(),commandJournal:{list:async()=>[],close:async()=>{}},fetcher:async(_url,init)=>{
+  requests.push(JSON.parse(init.body));if(requests.length===1)return new Promise(resolve=>release=resolve);
+  return Response.json({protocolVersion:2,gameId:game.id,eventSeq:2,gameplayRevision:game.gameplayRevision??0,game,commandOutcomes:[]});
+ }});
+ store.applyLiveGameUpdate({game,eventSeq:1});store.setConnectionRecovering(game.id,true);
+ const old=store.reconcileGame(game.id);const retired=assert.rejects(old,/recovery_superseded/);await tick();
+ store.prepareSafeReconnect(game.id);const fresh=store.reconcileGame(game.id);
+ release(Response.json({protocolVersion:2,gameId:game.id,eventSeq:1,gameplayRevision:game.gameplayRevision??0,commandOutcomes:[]}));
+ await retired;await fresh;assert.equal(requests[1].knownSnapshotEventSeq,0);assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked,false);store.retire();
+});

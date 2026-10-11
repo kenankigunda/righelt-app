@@ -32,7 +32,7 @@ const createGameIdMismatchError = (operationLabel, expectedGameId, actualGameId)
     "game_id_mismatch",
   );
 
-const GAME_CREATION_FAILED_BANNER = "Game creation failed. The server could not create this game. Return home and try again.";
+const GAME_CREATION_FAILED_BANNER = "We couldn’t start your game. Head home and try again.";
 const ROLLBACK_FAILURE_PREFIX = "rollback:";
 
 const clone = (value) => structuredClone(value);
@@ -210,7 +210,7 @@ export const createLiveSyncClient = ({
       }
       return;
     }
-    if (closeReason.startsWith("intentional_suspend:") || closeReason === "network_offline" || closeReason === "pagehide") onRecovery({ gameId, reason: closeReason });
+    if (closeReason.startsWith("intentional_suspend:") || closeReason === "network_offline" || closeReason === "pagehide") onRecovery({ gameId, reason: closeReason, socketGeneration: generations.get(gameId), advertisedEventSeq: advertisedEventSeqByGameId.get(gameId) ?? 0 });
     if (closeReason.startsWith("intentional_suspend:")) {
       sendPresenceHint(gameId, "inactive");
     } else if (closeReason === "intentional_disconnect") {
@@ -319,7 +319,7 @@ export const createLiveSyncClient = ({
     clearReconnect(gameId);
     const reconnectAttempts = reconnectAttemptsByGameId.get(gameId) ?? 0;
     const jitter = 0.8 + Math.random() * 0.4;
-    const delay = Math.round(Math.min(reconnectMaxMs, reconnectBaseMs * 2 ** reconnectAttempts) * jitter);
+    const delay = Math.round(Math.min(reconnectMaxMs, reconnectBaseMs * 2 ** reconnectAttempts * jitter));
     reconnectAttemptsByGameId.set(gameId, reconnectAttempts + 1);
     recordMetric("reconnect_scheduled", { gameId, reconnectAttempts: reconnectAttempts + 1, delayMs: delay });
     reconnectTimers.set(
@@ -335,6 +335,7 @@ export const createLiveSyncClient = ({
 
   const repair = (gameId, reason) => {
     if (!desiredGameIds.has(gameId)) return Promise.resolve();
+    if (reason === "manual_reconnect") repairOwners.delete(gameId);
     if (repairOwners.has(gameId)) return repairOwners.get(gameId).promise;
     const owner = {};
     repairOwners.set(gameId, owner);
@@ -343,6 +344,7 @@ export const createLiveSyncClient = ({
     clearReconnect(gameId);
     cleanupSocket(gameId, { closeReason: `recovery:${reason}` });
     reconnectGates.get(gameId)?.resolve(); reconnectGates.delete(gameId);
+    if (shouldKeepConnectionsActive()) connect(gameId);
     owner.promise = Promise.resolve().then(() => onReconcile({ gameId, reason })).then(() => {
       if (repairOwners.get(gameId) !== owner || !desiredGameIds.has(gameId)) return;
       recordMetric("recovery_reconciled", { gameId, reason });
@@ -356,6 +358,7 @@ export const createLiveSyncClient = ({
   };
 
   const connect = (gameId) => {
+    if (retired) return;
     if (!gameId) {
       return;
     }
@@ -462,7 +465,7 @@ export const createLiveSyncClient = ({
       closeReasonBySocket.delete(ws);
       clearHeartbeat(gameId);
       clearTimeout(connection.initialTimer); clearTimeout(connection.watchdog); connection.resolveInitial(); connectionState.delete(gameId);
-      onRecovery({ gameId, reason: closeReason });
+      onRecovery({ gameId, reason: closeReason, closeCode: event.code, closeClean: event.wasClean, socketGeneration: generation, advertisedEventSeq: advertisedEventSeqByGameId.get(gameId) ?? 0 });
       const reconnectGate = {};
       reconnectGate.promise = new Promise((resolve) => { reconnectGate.resolve = resolve; });
       reconnectGates.set(gameId, reconnectGate);
@@ -512,8 +515,13 @@ export const createLiveSyncClient = ({
     }
   };
 
+  const lifecycleListeners = [];
+  const listen = (target, name, handler) => {
+    const guarded = (...args) => { if (!retired) handler(...args); };
+    target.addEventListener(name, guarded); lifecycleListeners.push(() => target.removeEventListener?.(name, guarded));
+  };
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
-    document.addEventListener("visibilitychange", () => {
+    listen(document, "visibilitychange", () => {
       if (isDocumentHidden()) {
         scheduleVisibilitySuspend();
         return;
@@ -530,26 +538,30 @@ export const createLiveSyncClient = ({
   }
 
   if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-    window.addEventListener("online", () => {
+    listen(window, "online", () => {
       for (const gameId of sockets.keys()) {
         refreshHeartbeatLoop(gameId);
       }
       resumeDesiredConnections();
     });
 
-    window.addEventListener("offline", () => {
+    listen(window, "offline", () => {
       for (const gameId of [...sockets.keys()]) {
         cleanupSocket(gameId, { closeReason: "network_offline" });
       }
     });
 
-    window.addEventListener("pagehide", () => {
+    listen(window, "pagehide", () => {
       for (const gameId of [...sockets.keys()]) {
         cleanupSocket(gameId, { closeReason: "pagehide" });
       }
     });
 
-    window.addEventListener("beforeunload", () => {
+    listen(window, "pageshow", () => {
+      resumeDesiredConnections();
+      for (const gameId of desiredGameIds) void repair(gameId, "pageshow");
+    });
+    listen(window, "beforeunload", () => {
       for (const gameId of [...sockets.keys()]) {
         sendPresenceHint(gameId, "disconnecting", { preferBeacon: true });
       }
@@ -577,7 +589,8 @@ export const createLiveSyncClient = ({
     disconnectGame,
     disconnectAll,
     disconnect: () => disconnectAll(),
-    retire: () => { retired = true; clearVisibilitySuspend(); disconnectAll(); },
+    reconnectSafely: gameId => repair(gameId, "manual_reconnect"),
+    retire: () => { for (const remove of lifecycleListeners) remove(); retired = true; clearVisibilitySuspend(); disconnectAll(); },
     getDesiredGameIds: () => [...desiredGameIds],
   };
 };
@@ -956,7 +969,7 @@ export const createSyncStore = ({
     commandJournal,
     timing,
     beforeReconcile: (gameId, options) => options?.initialLoad && liveSync.prepareInitialLoad
-      ? liveSync.prepareInitialLoad(gameId) : liveSync.waitForInitialSnapshot?.(gameId),
+      ? liveSync.prepareInitialLoad(gameId) : Promise.resolve(),
     shouldDeferCommandSend: (gameId, command) => {
       void command;
       return isPendingOptimisticGameCreation(gameId);
@@ -1114,18 +1127,18 @@ export const createSyncStore = ({
     if (change?.type === "optimistic_rollback" && clientCommandId) {
       failOperation(
         clientCommandId,
-        createOperationError(failureNotice || "The game changed before your move could be completed. Check the board and try again.", "optimistic_rollback"),
+        createOperationError(failureNotice || "Board changed before your move was recorded. Check it and try again.", "optimistic_rollback"),
       );
       const rejectedMoves = operationManager.getFailedOperations(gameId).filter((handle) => handle.error?.code === "optimistic_rollback").length;
-      const notice = failureNotice || "The game changed before your move could be completed. Check the board and try again.";
+      const notice = failureNotice || "Board changed before your move was recorded. Check it and try again.";
       upsertRollbackFailure(gameId, rejectedMoves > 1 ? notice.replace("your move could", "your moves could") : notice);
     }
     if (change?.type === "optimistic_desynced" && clientCommandId) {
       failOperation(
         clientCommandId,
-        createOperationError("Sync failed before the optimistic command could be confirmed.", "optimistic_desynced"),
+        createOperationError("We couldn’t record your move. Please reconnect.", "optimistic_desynced"),
       );
-      upsertRollbackFailure(gameId, failureNotice || "Sync failed before the optimistic command could be confirmed.");
+      upsertRollbackFailure(gameId, failureNotice || "We couldn’t record your move. Please reconnect.");
     }
 
   });
@@ -1138,7 +1151,7 @@ export const createSyncStore = ({
     initialSnapshotTimeoutMs: timing?.requestTimeoutMs,
     inboundTimeoutMs: timing?.inboundTimeoutMs,
     heartbeatMs: timing?.heartbeatIntervalMs,
-    onRecovery: ({ gameId }) => transport.setConnectionRecovering?.(gameId, true),
+    onRecovery: ({ gameId, closeCode, closeClean, socketGeneration, advertisedEventSeq }) => transport.setConnectionRecovering?.(gameId, true, { closeCode, closeClean, socketGeneration, advertisedEventSeq }),
     onReconcile: ({ gameId }) => transport.reconcileGame?.(gameId),
     onReady: async ({ gameId, isCurrent = () => true }) => {
       if (transport.getGameViewModel(gameId)?.pendingCommandCount > 0) await transport.reconcileGame?.(gameId);
@@ -1193,8 +1206,11 @@ export const createSyncStore = ({
     }
   };
 
+  const storeListeners = [];
+  const listenToStore = (name, handler) => { const guarded = event => { if (active) handler(event); }; window.addEventListener(name, guarded); storeListeners.push(() => window.removeEventListener?.(name, guarded)); };
+  const manualRecoveries = new Map();
   if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-    window.addEventListener("storage", (event) => {
+    listenToStore("storage", (event) => {
       if (!active) return;
       if (event.key !== PENDING_LOCAL_GAMES_KEY || !activeGameId) return;
       const gameId = activeGameId;
@@ -1219,17 +1235,23 @@ export const createSyncStore = ({
         }).catch(onError);
       }
     });
-    window.addEventListener("online", () => {
+    listenToStore("online", () => {
       syncActiveGame();
     });
-    window.addEventListener("offline", () => {
+    listenToStore("offline", () => {
       liveSync.disconnectAll();
     });
   }
 
   return {
     ...transport,
-    retire() { active = false; activeGameId = null; liveSync.retire?.(); liveSync.disconnectAll(); transport.retire?.(); },
+    reconnectSafely: gameId => {
+      if (manualRecoveries.has(gameId)) return manualRecoveries.get(gameId);
+      transport.prepareSafeReconnect?.(gameId);
+      const attempt = Promise.resolve(liveSync.reconnectSafely?.(gameId) ?? transport.reconcileGame(gameId)).finally(() => { if (manualRecoveries.get(gameId) === attempt) manualRecoveries.delete(gameId); });
+      manualRecoveries.set(gameId, attempt); return attempt;
+    },
+    retire() { active = false; storeListeners.splice(0).forEach(remove => remove()); activeGameId = null; liveSync.retire?.(); liveSync.disconnectAll(); transport.retire?.(); },
     loadGame: async (gameId, options = {}) => {
       const localPendingGame = transport.getGameViewModel(gameId) ?? getStoredPendingLocalGame(gameId);
       const hasPendingOperation = operationManager.getPendingOperations(gameId).length > 0;

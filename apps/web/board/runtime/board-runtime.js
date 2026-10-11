@@ -416,7 +416,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!pushedPiece) {
       return null;
     }
-    const suffix = currentPieceId === pushedPiece.id ? "Select a square to retreat to:" : "Select it to retreat:";
+    const suffix = currentPieceId === pushedPiece.id ? "Choose where to retreat:" : "Select your piece to choose where to retreat:";
     return `Your piece at ${renderBoardPreviewCoordinate(pushedPiece.position)} has been pushed! ${escapeHtml(suffix)}`;
   };
 
@@ -538,7 +538,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       } else if (selectedPieceOverlayPhase === "actionPreviews") {
         if (selectedSource) {
           setBoardPreviewPromptHtml(
-            `Selected piece at ${renderBoardPreviewCoordinate(selectedSource)}. Select a square to move to or click piece again.`,
+            `Choose where to move your piece at ${renderBoardPreviewCoordinate(selectedSource)}, or select it again for more options.`,
           );
         } else {
           setBoardPreviewPrompt(

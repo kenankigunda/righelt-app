@@ -60,13 +60,14 @@ test("WS-first recovery coalesces concurrent HTTP triggers and sends the unchang
   assert.equal(f.store.getGameViewModel(f.gameId).pendingCommandCount, 0);
 });
 
-test("fallback retires the initial socket before HTTP and a cursor-matched reopen needs no second snapshot", async (t) => {
+test("fallback retires the old socket and HTTP restores play independently of socket readiness", async (t) => {
   const f = await setup(t, { timeout: 20 });
   f.store.setActiveGameId(f.gameId); const old = f.sockets[0]; old.emit("open");
   await until(() => f.sockets.length === 2);
-  assert.equal(old.readyState, 3); assert.equal(f.reconciles.length, 1);
+  assert.equal(old.readyState, 3); await until(() => f.reconciles.length === 1);
   const snapshot = await f.current(); const next = f.sockets[1];
-  assert.equal(new URL(next.url).searchParams.get("lastEventSeq"), String(snapshot.eventSeq));
+  assert.equal(new URL(next.url).searchParams.get("lastEventSeq"), "0");
+  await until(() => f.store.getLastEventSeq(f.gameId) === snapshot.eventSeq);
   next.emit("open"); next.receive({ type: "heartbeat_ack", protocolVersion: 2, gameId: f.gameId, eventSeq: snapshot.eventSeq });
   await until(() => f.store.getGameViewModel(f.gameId).recovering === false);
   assert.equal(f.wire.filter((payload) => payload.game).length, 1);

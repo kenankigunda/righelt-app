@@ -108,7 +108,22 @@ const handleApiRequestInternal = async (request: Request, env: ApiEnv): Promise<
 };
 
 export const handleApiRequest = async (request: Request, env: ApiEnv): Promise<Response> => {
-  try { return await handleApiRequestInternal(request, env); }
-  catch (error) { if (authActive(env) || error instanceof AuthProblem) return authErrorResponse(error); throw error; }
+  const incoming = request.headers.get("X-Righelt-Request-Id") ?? "";
+  const requestId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(incoming) ? incoming : crypto.randomUUID();
+  const headers = new Headers(request.headers); headers.set("X-Righelt-Request-Id", requestId);
+  request = new Request(request, { headers });
+  const started = Date.now();
+  let response: Response;
+  try { response = await handleApiRequestInternal(request, env); }
+  catch (error) { if (authActive(env) || error instanceof AuthProblem) response = authErrorResponse(error); else throw error; }
+  // WebSocket upgrade responses must retain their platform-specific socket.
+  if (response.status !== 101) {
+    const headers = new Headers(response.headers);
+    headers.set("X-Righelt-Request-Id", requestId);
+    headers.set("X-Righelt-Server-Build", String((env as ApiEnv & { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? "unavailable"));
+    response = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  }
+  console.info(JSON.stringify({ event: "api_request_completed", requestId, path: new URL(request.url).pathname, status: response.status, serverBuild: (env as ApiEnv & { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? "unavailable", durationMs: Date.now() - started }));
+  return response;
 };
 export { GameRoomDO };

@@ -631,7 +631,7 @@ test("silent foreground sockets recover without an offline event and coalesce re
   await until(() => repairs === 1);
   assert.equal(old.readyState, 3); assert.equal(globalThis.navigator.onLine, true);
   old.emit("error"); old.emit("close"); old.emit("message", { data: JSON.stringify(snapshot("g", 2)) });
-  await flushAsync(10); assert.equal(repairs, 1); assert.equal(MockSocket.instances.length, 1);
+  await flushAsync(10); assert.equal(repairs, 1); assert.equal(MockSocket.instances.length, 2);
   release(); await until(() => MockSocket.instances.length === 2);
   const next = MockSocket.instances[1]; assert.match(next.url, /lastEventSeq=1/);
   next.emit("open"); next.emit("message", { data: JSON.stringify({ type: "heartbeat_ack", protocolVersion: 2, gameId: "g", eventSeq: 1 }) });
@@ -644,10 +644,10 @@ test("initial socket timeout retires its generation before HTTP and reopen uses 
     return new Promise((resolve) => { release = () => { cursor = 8; resolve(); }; });
   } });
   client.connectGame("g"); const old = MockSocket.instances[0]; old.emit("open");
-  await until(() => repairs === 1); await client.waitForInitialSnapshot("g");
+  await until(() => repairs === 1); assert.equal(MockSocket.instances.length, 2);
   old.emit("message", { data: JSON.stringify(snapshot("g", 999)) });
   release(); await until(() => MockSocket.instances.length === 2);
-  assert.match(MockSocket.instances[1].url, /lastEventSeq=8/);
+  assert.match(MockSocket.instances[1].url, /lastEventSeq=3/); // Socket reconnect is independent; HTTP advances the authoritative cursor.
   assert.equal(client.getAdvertisedEventSeq("g"), 0);
 });
 
@@ -678,4 +678,16 @@ test("initial waits are bounded while reconnect is suspended and disconnect rele
   await assert.rejects(client.waitForInitialSnapshot("g"), /initial_snapshot_wait_timeout/);
   const waiting = client.waitForInitialSnapshot("g"); client.disconnectGame("g"); await waiting;
   assert.deepEqual(client.getDesiredGameIds(), []);
+});
+
+test("pageshow restores desired games and retired lifecycle handlers stay inert", async t => {
+  let repairs = 0; const client = controlledClient(t, { onReconcile: async () => { repairs++; } });
+  client.connectGame("g");
+  globalThis.window.dispatchEvent("pagehide");
+  globalThis.window.dispatchEvent("pageshow");
+  await until(() => repairs === 1);
+  assert.ok(MockSocket.instances.length >= 2);
+  client.retire(); const count = MockSocket.instances.length;
+  globalThis.window.dispatchEvent("pageshow"); globalThis.window.dispatchEvent("online"); client.connectGame("g");
+  await flushAsync(5); assert.equal(MockSocket.instances.length, count);
 });

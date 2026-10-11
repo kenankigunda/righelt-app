@@ -541,7 +541,7 @@ test("integration sync store keeps a failed create-game stub locally hydratable 
   assert.equal(failedGame.id, createHandle.result.id);
   assert.equal(
     store.getFailedOperations(createHandle.result.id)[0]?.error?.message,
-    "Game creation failed. The server could not create this game. Return home and try again.",
+    "We couldn’t start your game. Head home and try again.",
   );
   assert.equal(failedGame.notifications[0], "Game creation failed");
   assert.deepEqual(syncClientCalls, [], "a game that never persisted must never open a recovery socket");

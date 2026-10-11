@@ -60,3 +60,22 @@ test("unavailable, open error, and blocked journal openings fail closed and can 
     await assert.rejects(journal.list("actor"), /journal_(open_failed|blocked)/);
   }
 });
+
+test("journal open deadline rejects and closes a late successful connection", async () => {
+  let request, closed = false;
+  const journal = createCommandJournal({ timeoutMs: 10, indexedDB: { open() { return request = {}; } } });
+  await assert.rejects(journal.list("actor"), /journal_timeout/);
+  request.result = { close() { closed = true; } }; request.onsuccess();
+  assert.equal(closed, true);
+});
+
+test("stalled journal transactions abort at the deadline and ignore late completion", async () => {
+ for (const operation of ["list", "admit", "remove"]) {
+  let tx, aborted=false;
+  const journal=createCommandJournal({timeoutMs:10,indexedDB:{open(){const request={};queueMicrotask(()=>{request.result={transaction(){return tx={objectStore(){return {getAll(){return {}},get(){return {}}};},abort(){aborted=true;}};},close(){}};request.onsuccess();});return request;}}});
+  const envelope=await command(`stalled-${operation}`);
+  const promise=operation==="list"?journal.list("actor"):journal[operation](envelope);
+  await assert.rejects(promise,/journal_timeout/);assert.equal(aborted,true);
+  tx.oncomplete();await journal.close();
+ }
+});

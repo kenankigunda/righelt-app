@@ -1,3 +1,6 @@
+import { latestRequestEvidence } from "./request-evidence.js";
+import { issueDiagnostics } from "./issue-diagnostics.js";
+import { renderDiagnosticDisclosure, handleDiagnosticAction, isDiagnosticOpen } from "./diagnostic-disclosure.js";
 import { lockOverlayScroll } from './overlay-scroll.js';
 import { icon } from './ui.js';
 import { renderPlayerEmblem } from './player-emblem.js';
@@ -21,14 +24,14 @@ const escapeHtml = (value) =>
   );
 const messages = {
   invalid_input: "Usernames use 3–24 letters, digits or underscores. Passwords need 8–128 characters.",
-  invalid_credentials: "The username or password is incorrect.",
-  username_unavailable: "That username is taken. Choose another.",
+  invalid_credentials: "Username and password don’t match. Please try again.",
+  username_unavailable: "That username is taken. Try another.",
   session_changed: "Your session changed. Please try again.",
   identity_mismatch: "Your session changed. Please sign in again.",
-  rate_limited: "Too many attempts. Wait before trying again.",
-  temporarily_unavailable: "The service is temporarily unavailable. Your entries are still here. Please try again.",
-  logout_pending: "Sign-out pending. Reconnect to finish signing out.",
-  upgrade_required: "Please refresh to update Righelt.",
+  rate_limited: "Too many attempts. Please wait before trying again.",
+  temporarily_unavailable: "Trouble connecting. Your entries are still here. Please try again.",
+  logout_pending: "Sign-out isn’t complete. Please reconnect to finish.",
+  upgrade_required: "Righelt has an update. Refresh to keep playing.",
 };
 export const canonicalEntryUsername = (value) => String(value ?? "").replace(/^[\t\n\v\f\r ]+|[\t\n\v\f\r ]+$/g, "").toLowerCase();
 export const validEntryUsername = (value) => /^[a-z0-9_]{3,24}$/.test(canonicalEntryUsername(value));
@@ -72,9 +75,19 @@ export const createAccountDialog = ({
     onLayoutChange();
   };
   phone?.addEventListener('change', () => { if (dialog.open) present(); });
-  const status = (text, state) => {
+  const status = (text, state, error = null) => {
     const target = dialog.querySelector("[data-account-status]");
-    if (target) { target.textContent = text; target.dataset.state = state; }
+    if (target) {
+      target.textContent = text; target.dataset.state = state;
+      const expected = [messages.invalid_credentials, messages.username_unavailable, messages.rate_limited, messages.invalid_input].includes(text) || /Use a display name|Password|Username must|Enter /i.test(text);
+      if (state === "error" && !expected) {
+        const id = issueDiagnostics.capture(`account:${mode}`, { ...(error?.diagnosticEvidence ?? latestRequestEvidence("account")), operation: "account", stage: "failed", code: error?.code ?? "unavailable" });
+        target.insertAdjacentHTML?.("beforeend", renderDiagnosticDisclosure(id));
+      } else {
+        if (state !== "pending") issueDiagnostics.resolve(`account:${mode}`);
+        for (const report of issueDiagnostics.list().filter(r => r.key === `account:${mode}` && isDiagnosticOpen(r.id))) target.insertAdjacentHTML?.("beforeend", renderDiagnosticDisclosure(report.id));
+      }
+    }
   };
   const credentialMode = () => mode;
   const clearChallenge = () => {
@@ -148,7 +161,7 @@ export const createAccountDialog = ({
       if (lookupState !== "idle") lookupRevealed = true;
       target.dataset.revealed = String(lookupRevealed);
       target.dataset.state = lookupState;
-      target.textContent = ({ idle: "", pending: "○ Checking username…", available: "✓ Username available.", taken: `✕ ${messages.username_unavailable}`, error: "○ Availability check is offline. You can still try creating your account." })[lookupState];
+      target.textContent = ({ idle: "", pending: "○ Checking username", available: "✓ Username available.", taken: `✕ ${messages.username_unavailable}`, error: "We couldn’t check that username. You can still try creating your account." })[lookupState];
     }
   };
   const updateLoginHint = (show = false) => {
@@ -201,14 +214,14 @@ export const createAccountDialog = ({
         validate: value => normalizeDisplayName(value, session.account?.username || ""),
         isCurrent: () => marker === flow && generation === controller.snapshot().generation && dialog.open,
         save: displayName => controller.updateAccount({ displayName }),
-        report: (state) => {
+        report: (state, error) => {
           const target = dialog.querySelector("[data-autosave-status]");
           if (!target) return;
           target.parentElement.dataset.state = state;
           const discard = dialog.querySelector("[data-discard-account]");
           if (discard) discard.hidden = !["invalid", "error"].includes(state);
-          target.textContent = { saving: "Saving…", saved: "Saved", invalid: "Not saved", error: "Not saved" }[state];
-          status(state === "invalid" ? "Use a display name of up to 32 characters without control characters." : state === "error" ? "Could not save. Check your connection and retry." : "", state === "invalid" || state === "error" ? "error" : "info");
+          target.textContent = { saving: "Saving", saved: "Saved", invalid: "Not saved", error: "Not saved" }[state];
+          status(state === "invalid" ? "Use a display name of up to 32 characters without control characters." : state === "error" ? "We couldn’t save your changes. Please try again." : "", state === "invalid" || state === "error" ? "error" : "info", error);
           if (state === "saved") onComplete(null);
         },
       });
@@ -312,7 +325,7 @@ export const createAccountDialog = ({
     }
     if (!sitekey) {
       status(
-        "Verification is temporarily unavailable. Please try again later.", "error",
+        "Verification is unavailable right now. Please try again later.", "error",
       );
       return;
     }
@@ -348,13 +361,13 @@ export const createAccountDialog = ({
           },
           "error-callback": () => {
             challengeToken = "";
-            status("Verification is unavailable. Please try again.", "error");
+            status("Verification is unavailable right now. Please try again later.", "error");
           },
         },
       );
     } catch {
       if (marker === flow)
-        status("Verification is unavailable. Please try again.", "error");
+        status("Verification is unavailable right now. Please try again later.", "error");
     }
   };
   const outsideDialog = (event) => {
@@ -405,6 +418,8 @@ export const createAccountDialog = ({
       scheduleLoginHint();
   });
   dialog.addEventListener("click", async (event) => {
+    const diagnosticAction = event.target.closest?.('[data-action="toggle-diagnostic"], [data-action="copy-diagnostic"], [data-action="dismiss-diagnostic"]');
+    if (["toggle-diagnostic", "copy-diagnostic", "dismiss-diagnostic"].includes(diagnosticAction?.dataset?.action)) { event.stopPropagation?.(); await handleDiagnosticAction(diagnosticAction); const node = diagnosticAction.closest(".issue-diagnostic"); if (node) { node.outerHTML = renderDiagnosticDisclosure(diagnosticAction.dataset.incidentId); dialog.querySelector(`[data-incident-id="${diagnosticAction.dataset.incidentId}"] button`)?.focus({ preventScroll: true }); } return; }
     endFeedbackGesture();
     discardPress = false;
     const dismiss = backdropPress && event.target === dialog && outsideDialog(event);
@@ -456,7 +471,7 @@ export const createAccountDialog = ({
     const data = Object.fromEntries(new FormData(form));
     const buttons = [...form.querySelectorAll("button[type=submit]")];
     buttons.forEach(b => { b.disabled = true; });
-    status("Working…", "pending");
+    status("Working", "pending");
     try {
       const token = challengeToken ? { challengeToken } : {};
       challengeToken = "";
@@ -474,7 +489,7 @@ export const createAccountDialog = ({
         updateLoginHint(true);
         dialog.querySelector("[data-forgot]").hidden = false;
       }
-      status(messages[error.code] || "We could not confirm the result. Check your connection and account status before trying again.", error.code === "logout_pending" ? "pending" : "error");
+      status(messages[error.code] || "We couldn’t confirm whether that worked. Check your account before trying again.", error.code === "logout_pending" ? "pending" : "error", error);
       if (error.body?.challengeRequired || widget !== null) await challenge();
     } finally {
       if (submittingFlow === marker) submittingFlow = null;

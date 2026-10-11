@@ -43,7 +43,7 @@ export const createInlineProfiles = ({document = globalThis.document, fetcher = 
     const key = source.dataset.profileKey;
     if (state?.key === key) {close();return;}
     const marker = ++generation;
-    state = {key,text:username ? 'Loading…' : 'Playing as a guest.'};sync();
+    state = {key,text:username ? 'Loading' : 'Playing as a guest.'};sync();
     if (!username) return;
     try {
       const response = await fetcher(`/api/profiles/${encodeURIComponent(username)}`,{cache:'no-store'});

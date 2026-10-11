@@ -4,7 +4,7 @@ import type { AuthDatabase } from './auth-db';
 import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
 import { authorizeGameRequest, authActive, authErrorResponse, currentGameAuthority, gameGuardStatements, registerSessionRoom, sanitizeGameResponse, type GameAuthority } from './auth-game';
 import { AuthProblem } from './auth-controls';
-import { deterministicStateHash } from "../../game-engine/src/hash";
+import { equivalentGameStates, deterministicStateHash } from "../../game-engine/src/hash";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import { readSyncBody, SyncBodyError } from "./sync-body";
 import { commandFingerprint, isReconcileRequest, isSyncCommand, type SyncCommand, type CommandOutcome, type CommandReceipt } from "../../shared-types/src/sync-protocol";
@@ -72,6 +72,7 @@ const json = (body: unknown, status = 200) =>
   });
 
 type DurableObjectStateLike = {
+  waitUntil?: (promise: Promise<unknown>) => void;
   blockConcurrencyWhile?: <T>(callback: () => Promise<T>) => Promise<T>;
   acceptWebSocket?: (socket: WebSocket) => void;
   getWebSockets?: () => WebSocket[];
@@ -178,9 +179,11 @@ export class GameRoomDO {
   private readonly state: DurableObjectStateLike;
   private env: LiveGameEnv;
   private game: LiveGame | null = null;
+  private requestId: string | null = null;
   private requestAuthority: GameAuthority | null = null;
   private requestedGameId: string | null = null;
   private eventSeq = 0;
+  private deliveryTail: Promise<unknown> = Promise.resolve();
   private mutationTail: Promise<unknown> = Promise.resolve();
   private needsDurableReload = false;
   private readonly sessions = new Map<WebSocket, SessionRecord>();
@@ -196,6 +199,8 @@ export class GameRoomDO {
         at: new Date().toISOString(),
         gameId: this.getLoadedGameId(),
         eventSeq: this.eventSeq,
+        requestId: this.requestId,
+        serverBuild: this.env.CF_VERSION_METADATA?.id ?? "unavailable",
         ...payload,
       }),
     );
@@ -216,14 +221,16 @@ export class GameRoomDO {
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const queuedAt = Date.now();
     const result = this.mutationTail.then(async () => {
+      const started = Date.now();
       if (this.needsDurableReload) {
         this.game = null;
         this.eventSeq = 0;
         await this.ensureLoaded();
         this.needsDurableReload = false;
       }
-      return operation();
+      try { return await operation(); } finally { this.logDiagnostic("info", "live_server_queue_timing", { queueWaitMs: started - queuedAt, operationMs: Date.now() - started }); this.requestId = null; }
     });
     this.mutationTail = result.catch(() => undefined);
     return result;
@@ -234,6 +241,7 @@ export class GameRoomDO {
       return await this.enqueue(async () => {
         this.env = await withCutoverPolicy(this.env);
         this.requestAuthority = null;
+        this.requestId = request.headers.get("X-Righelt-Request-Id");
         try {
           if (authActive(this.env) && new URL(request.url).pathname === "/auth-recheck") {
             await this.recheckSockets();
@@ -1005,7 +1013,7 @@ export class GameRoomDO {
       game: clone(game),
     };
     await this.persistCandidate(game, presenceEvent, undefined, true);
-    await this.broadcast(presenceEvent, excludedSocket);
+    this.scheduleBroadcast(presenceEvent, excludedSocket);
   }
 
   private async commit(
@@ -1042,7 +1050,7 @@ export class GameRoomDO {
 
     await this.persistCandidate(input.game, event);
     this.logDiagnostic("info", "live_server_commit_event", { type: event.type }, true);
-    await this.broadcast(event);
+    this.scheduleBroadcast(event);
   }
 
   private async handleSyncCommand(path: string, body: Record<string, unknown>, game: LiveGame) {
@@ -1071,7 +1079,7 @@ export class GameRoomDO {
     const current = this.game!;
     const commandOutcomes = commands.map((command) => outcomes.get(command.clientCommandId)!);
     const result = commandOutcomes[0];
-    const stored = !reconcile ? await loadCommandReceipt(this.env, game.id, commands[0].clientCommandId) : null;
+    const stored = !reconcile ? result as CommandReceipt & { result?: Record<string, unknown> } : null;
     const move = !reconcile ? current.moves.find((move) => move.clientCommandId === commands[0].clientCommandId) : undefined;
     return json({ ok: true, protocolVersion: 2, gameId: game.id, eventSeq: this.eventSeq, gameplayRevision: current.gameplayRevision, commandOutcomes,
       ...(!reconcile || body.knownSnapshotEventSeq !== this.eventSeq ? { game: withViewModel(current, String(body.identityId)) } : {}),
@@ -1100,7 +1108,7 @@ export class GameRoomDO {
       if (parent.outcome === "rejected") return reject("predecessor_rejected");
     } else if (command.expectedGameplayRevision > game.gameplayRevision) return reject("invalid_dependency");
     const expectedState = asGameState(command.expectedState);
-    const sameBoard = expectedState && deterministicStateHash(resolveToStability(expectedState, { artifactMode: "full" })) === deterministicStateHash(resolveToStability(game.board.state, { artifactMode: "full" }));
+    const sameBoard = expectedState && equivalentGameStates(expectedState, game.board.state);
     if (command.expectedGameplayRevision !== game.gameplayRevision || !sameBoard || (command.kind === "end_turn" && command.expectedTurnIndex !== game.board.state.turnIndex)) return reject("stale_state");
     if (!execute) return outcome("unknown", "not_recorded");
     const role = findRoleForIdentity(game, command.identityId);
@@ -1124,7 +1132,7 @@ export class GameRoomDO {
     } } as CommandReceipt;
     const event: EventAppendedEvent = { type: "event_appended", reason: command.kind === "end_turn" ? "turn_ended" : "move_recorded", eventSeq: this.eventSeq + 1, clientCommandId: command.clientCommandId, game: clone(game) };
     await this.persistCandidate(game, event, accepted);
-    await this.broadcast(event);
+    this.scheduleBroadcast(event);
     return accepted;
   }
 
@@ -1134,6 +1142,7 @@ export class GameRoomDO {
     const permit = cutoverWritePermit(this.env,game.id,this.requestAuthority,systemPresence);
     if (!authActive(this.env) && game.ownershipMode === "account_v1") throw new AuthProblem("temporarily_unavailable", 503);
     if (authActive(this.env) && !this.requestAuthority && !systemPresence) throw new AuthProblem("invalid_credentials", 401);
+    const started = Date.now();
     const base = this.eventSeq;
     const gameplay = (value: LiveGame | null) => value ? JSON.stringify([value.board, value.moves, value.turns]) : null;
     game.gameplayRevision = (this.game?.gameplayRevision ?? 0) + (this.game && gameplay(this.game) !== gameplay(game) ? 1 : 0);
@@ -1159,26 +1168,40 @@ export class GameRoomDO {
     }
     this.game = clone(game);
     this.eventSeq = base + 1;
+    this.logDiagnostic("info", "live_server_commit_completed", { commandId: receipt?.clientCommandId ?? null, databaseMs: Date.now() - started, gameplayRevision: game.gameplayRevision });
   }
 
-  private async broadcast(event: ServerEvent, excludedSocket?: WebSocket) {
+  private scheduleBroadcast(event: ServerEvent, excludedSocket?: WebSocket) {
+    const captured = clone(event);
+    const env = this.env;
+    const requestId = this.requestId;
+    this.deliveryTail = this.deliveryTail.then(() => this.broadcast(captured, excludedSocket, env, requestId)).catch(error => {
+      this.logDiagnostic("error", "live_server_delivery_failed", { error: String(error), deliveryEventSeq: "eventSeq" in captured ? captured.eventSeq : null });
+    });
+    this.state.waitUntil?.(this.deliveryTail);
+  }
+
+  private async broadcast(event: ServerEvent, excludedSocket?: WebSocket, capturedEnv = this.env, requestId = this.requestId) {
+    const started = Date.now();
+    const env = await withCutoverPolicy(capturedEnv);
+    const enriched = authActive(env) ? await enrichAccountNames(event as unknown as Record<string, unknown>, env.DB as unknown as AuthDatabase) as unknown as ServerEvent : event;
     for (const session of this.sessions.values()) {
       if (session.socket === excludedSocket) continue;
-      await this.send(session.socket, eventForSession(event, session.identityId));
+      await this.send(session.socket, eventForSession(enriched, session.identityId), env, true);
     }
+    this.logDiagnostic("info", "live_server_delivery_completed", { requestId, durationMs: Date.now() - started, deliveryEventSeq: "eventSeq" in event ? event.eventSeq : null });
   }
 
-  private async send(socket: WebSocket, payload: ServerEvent) {
-    this.env = await withCutoverPolicy(this.env);
+  private async send(socket: WebSocket, payload: ServerEvent, preparedEnv?: LiveGameEnv, namesPrepared = false) {
+    const env = preparedEnv ?? await withCutoverPolicy(this.env);
     const session = this.sessions.get(socket);
-    if (authActive(this.env)) {
-      payload = await enrichAccountNames(payload as unknown as Record<string, unknown>, this.env.DB as unknown as AuthDatabase) as unknown as ServerEvent;
-      this.env = await withCutoverPolicy(this.env);
-      if (!session || !await this.authorizeSocket(session)) return;
-      payload = sanitizeGameResponse(payload as unknown as Record<string, unknown>, session.authority ?? null, !maintenanceAllowed(this.env,session.authority?.accountId)) as unknown as ServerEvent;
+    if (authActive(env)) {
+      if (!namesPrepared) payload = await enrichAccountNames(payload as unknown as Record<string, unknown>, env.DB as unknown as AuthDatabase) as unknown as ServerEvent;
+      if (!session || !await this.authorizeSocket(session, env)) return;
+      payload = sanitizeGameResponse(payload as unknown as Record<string, unknown>, session.authority ?? null, !maintenanceAllowed(env,session.authority?.accountId)) as unknown as ServerEvent;
     }
     try {
-      socket.send(JSON.stringify({ ...payload, ...(authActive(this.env) ? { authProtocolVersion: AUTH_PROTOCOL_VERSION } : {}), protocolVersion: 2, gameId: this.getLoadedGameId() }));
+      socket.send(JSON.stringify({ ...payload, ...(authActive(env) ? { authProtocolVersion: AUTH_PROTOCOL_VERSION } : {}), protocolVersion: 2, gameId: this.getLoadedGameId() }));
     } catch {
       const session = this.sessions.get(socket);
       this.sessions.delete(socket);
@@ -1206,10 +1229,10 @@ export class GameRoomDO {
     try { socket.close(4001, 'session_changed'); } catch {}
   }
 
-  private async authorizeSocket(session: SessionRecord): Promise<boolean> {
+  private async authorizeSocket(session: SessionRecord, env = this.env): Promise<boolean> {
     if (session.authVersion !== AUTH_PROTOCOL_VERSION) { this.closeUnauthorizedSocket(session.socket); return false; }
     if (!session.authority) return true;
-    try { if (await currentGameAuthority(this.env, session.authority)) return true; } catch {}
+    try { if (await currentGameAuthority(env, session.authority)) return true; } catch {}
     this.closeUnauthorizedSocket(session.socket);
     return false;
   }
