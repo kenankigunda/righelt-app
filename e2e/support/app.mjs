@@ -251,7 +251,10 @@ const getFirstPlayableAction = async (page) =>
 export const selectPlayableAction = async (page, action) => {
   const cell = position => page.locator(`[data-testid="game-board"] .cell[data-row="${position.row}"][data-col="${position.col}"]`);
   const target = cell(action.to);
-  await cell(action.from).click();
+  const source = cell(action.from);
+  // Continuations select their required actor automatically. Clicking it again
+  // cycles the overlay away from action previews instead of selecting a move.
+  if (!await source.evaluate(el => el.classList.contains("source"))) await source.click();
   const supportsHover = await page.locator('html').getAttribute('data-hover-capability') === 'hover';
   if (supportsHover) await target.hover();
   else await target.click();

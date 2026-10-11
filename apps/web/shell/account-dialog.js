@@ -51,7 +51,7 @@ export const createAccountDialog = ({
     hintTimer = null, hintRevision = 0, lookupTimer = null, lookupAbort = null, lookupRevision = 0,
     trigger = null, pending = null, values = {}, challengeToken = "", widget = null,
     flow = 0, submittingFlow = null, pendingLogoutGeneration = null, owner = {}, backdropPress = false, discardPress = false;
-  let releaseScroll = null;
+  let releaseScroll = null, lookupErrorCode = null;
   const phone = globalThis.matchMedia?.('(max-width:700px)');
   const isSettings = () => mode === 'account' || mode === 'password';
   const present = () => {
@@ -96,6 +96,8 @@ export const createAccountDialog = ({
     widget = null;
   };
   const invalidateLookup = () => {
+    issueDiagnostics.resolve("account:username_lookup");
+    lookupErrorCode = null;
     lookupRevision++;
     timers.clearTimeout(lookupTimer);
     lookupTimer = null;
@@ -161,7 +163,11 @@ export const createAccountDialog = ({
       if (lookupState !== "idle") lookupRevealed = true;
       target.dataset.revealed = String(lookupRevealed);
       target.dataset.state = lookupState;
-      target.textContent = ({ idle: "", pending: "○ Checking username", available: "✓ Username available.", taken: `✕ ${messages.username_unavailable}`, error: "We couldn’t check that username. You can still try creating your account." })[lookupState];
+      const focused = target.contains?.(document.activeElement) ? document.activeElement : null;
+      const focusedAction = focused?.dataset?.action, focusedIncident = focused?.dataset?.incidentId;
+      target.textContent = ({ idle: "", pending: "○ Checking username", available: "✓ Username available.", taken: `✕ ${messages.username_unavailable}`, error: lookupErrorCode === "rate_limited" ? messages.rate_limited : "We couldn’t check that username. You can still try creating your account." })[lookupState];
+      for (const report of issueDiagnostics.list().filter(r => r.key === "account:username_lookup" && (!r.resolvedAt || isDiagnosticOpen(r.id)))) target.insertAdjacentHTML?.("beforeend", renderDiagnosticDisclosure(report.id, "username-lookup"));
+      if (focusedAction && focusedIncident) target.querySelector(`[data-action="${focusedAction}"][data-incident-id="${focusedIncident}"]`)?.focus({ preventScroll: true });
     }
   };
   const updateLoginHint = (show = false) => {
@@ -250,9 +256,12 @@ export const createAccountDialog = ({
       const result = await controller.lookupUsername(raw, { signal: lookupAbort.signal });
       if (mode !== "register" || marker !== flow || revision !== lookupRevision || !dialog.open || generation !== controller.snapshot().generation || canonical !== canonicalEntryUsername(field.value)) return;
       if (typeof result.exists !== "boolean") throw new Error("invalid_lookup_response");
+      issueDiagnostics.resolve("account:username_lookup");
       lookupState = result.exists ? "taken" : "available"; updateLookup();
-    } catch {
+    } catch (error) {
       if (mode !== "register" || marker !== flow || revision !== lookupRevision || !dialog.open || generation !== controller.snapshot().generation) return;
+      lookupErrorCode = error?.code;
+      if (lookupErrorCode !== "rate_limited") issueDiagnostics.capture("account:username_lookup", { ...(error?.diagnosticEvidence ?? latestRequestEvidence("account")), operation: "username_lookup", stage: "failed", code: lookupErrorCode ?? "unavailable" });
       lookupState = "error"; updateLookup();
     }
   };
@@ -419,7 +428,7 @@ export const createAccountDialog = ({
   });
   dialog.addEventListener("click", async (event) => {
     const diagnosticAction = event.target.closest?.('[data-action="toggle-diagnostic"], [data-action="copy-diagnostic"], [data-action="dismiss-diagnostic"]');
-    if (["toggle-diagnostic", "copy-diagnostic", "dismiss-diagnostic"].includes(diagnosticAction?.dataset?.action)) { event.stopPropagation?.(); await handleDiagnosticAction(diagnosticAction); const node = diagnosticAction.closest(".issue-diagnostic"); if (node) { node.outerHTML = renderDiagnosticDisclosure(diagnosticAction.dataset.incidentId); dialog.querySelector(`[data-incident-id="${diagnosticAction.dataset.incidentId}"] button`)?.focus({ preventScroll: true }); } return; }
+    if (["toggle-diagnostic", "copy-diagnostic", "dismiss-diagnostic"].includes(diagnosticAction?.dataset?.action)) { event.stopPropagation?.(); await handleDiagnosticAction(diagnosticAction); const node = diagnosticAction.closest(".issue-diagnostic"); if (node) { node.outerHTML = renderDiagnosticDisclosure(diagnosticAction.dataset.incidentId, node.dataset.diagnosticScope); dialog.querySelector(`[data-incident-id="${diagnosticAction.dataset.incidentId}"] button`)?.focus({ preventScroll: true }); } return; }
     endFeedbackGesture();
     discardPress = false;
     const dismiss = backdropPress && event.target === dialog && outsideDialog(event);
