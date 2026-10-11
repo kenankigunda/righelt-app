@@ -60,8 +60,8 @@ test("obsolete lookup completion cannot update a dismissed form", async ({
     await completed;
     await page.waitForFunction(() => window.accountFixture.lookupSettled() > 0);
     await expect(page.getByRole("dialog")).toBeVisible();
-    await expect(page.locator('[name="username"]')).toHaveValue("");
-    await expect(page.locator("form")).toHaveAttribute(
+    await expect(page.getByRole("dialog").locator('[name="username"]')).toHaveValue("");
+    await expect(page.getByRole("dialog").locator("form")).toHaveAttribute(
       "data-lookup-state",
       "idle",
     );
@@ -90,7 +90,7 @@ test("reduced motion prevents content-size animations", async ({ page }) => {
   });
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.evaluate(() => window.accountFixture.open("register"));
-  await expect(page.locator("form")).toHaveAttribute(
+  await expect(page.getByRole("dialog").locator("form")).toHaveAttribute(
     "data-entry-mode",
     "create",
   );

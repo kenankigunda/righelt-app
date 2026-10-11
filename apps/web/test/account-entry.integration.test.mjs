@@ -8,7 +8,7 @@ function fixture({ failBlocklist = false } = {}) {
   let tick = 0, generation = 0, markup = "";
   const document = { documentElement:{style:{},dataset:{}},defaultView:{scrollX:0,scrollY:0,scrollTo(){}}, body: { append() {} }, activeElement: null, querySelector() { return null; } };
   function node(key) {
-    if (!nodes.has(key)) nodes.set(key, { value: "", type: "text", hidden: false, disabled: false, dataset: {}, parentElement: { dataset: {} }, textContent: "", setAttribute(name, value) { this[name] = value; }, focus() { document.activeElement = this; }, closest() { return null; }, querySelectorAll() { return []; } });
+    if (!nodes.has(key)) nodes.set(key, { value: "", type: "text", hidden: false, disabled: false, dataset: {}, parentElement: { dataset: {} }, textContent: "", setAttribute(name, value) { this[name] = value; }, removeAttribute(name) { delete this[name]; }, focus() { document.activeElement = this; }, closest() { return null; }, querySelectorAll() { return []; } });
     return nodes.get(key);
   }
   const query = key => key === "input" ? [...nodes.values()].find(value => value.name) : nodes.get(key) || null;
