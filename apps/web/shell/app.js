@@ -1,5 +1,6 @@
 import { mountLoadingFeedback } from "./loading.js";
 import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
+import { latestRequestEvidence } from "./request-evidence.js";
 import { issueDiagnostics } from "./issue-diagnostics.js";
 import { renderDiagnosticDisclosure, handleDiagnosticAction, isDiagnosticOpen, closeDiagnostic } from "./diagnostic-disclosure.js";
 import { patchSectionContent } from "./dom-patch.js";
@@ -170,6 +171,7 @@ document.addEventListener('visibilitychange',syncPageActivity);
 window.addEventListener('blur',()=>{document.documentElement.dataset.pageActive='false';gameSound.activityChanged();});
 window.addEventListener('focus',()=>{syncPageActivity();gameSound.activityChanged();});
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
+let tutorialSavingError = null;
 const boardAdapter = createEngineBoardAdapter();
 const hoverCapability = ensureHoverCapabilityController();
 assertGameBoardAdapter(boardAdapter);
@@ -3369,6 +3371,7 @@ const renderTutorial = (gameId) => {
       <h2>Tutorial ${renderPlaceholderBadge()}</h2>
       <p class="small">Step ${state.index + 1} of ${state.total}</p>
       <p>${escapeHtml(state.step)}</p>
+      ${tutorialSavingError ? `<div role="alert" data-testid="tutorial-saving-error"><p>${escapeHtml(tutorialSavingError.message)}</p>${renderDiagnosticDisclosure(tutorialSavingError.incidentId)}</div>` : issueDiagnostics.list().filter(report => report.key === "tutorial-saving" && isDiagnosticOpen(report.id)).map(report => renderDiagnosticDisclosure(report.id)).join("")}
       <div class="row">
         <button data-action="tutorial-next">Next</button>
         <button class="secondary" data-action="tutorial-skip">Skip Step</button>
@@ -4912,8 +4915,17 @@ appEl.addEventListener("click", async (event) => {
     if (account.snapshot().enabled && account.snapshot().session.authenticated) {
       const epoch = account.snapshot().generation;
       try { await account.updateAccount({ preferences: { tutorial: action === "tutorial-complete" ? "completed" : "skipped" } }); if (account.snapshot().generation !== epoch) return; }
-      catch { window.__righeltLastError = "Could not save tutorial progress. Try again."; return; }
+      catch (error) {
+        if (account.snapshot().generation !== epoch) return;
+        const message = "We couldn’t save your lesson progress. Please try again.";
+        tutorialSavingError = { message, incidentId: issueDiagnostics.capture("tutorial-saving", { ...latestRequestEvidence("account"), operation: "lesson_progress", stage: "failed", code: error?.code ?? "unavailable" }) };
+        window.__righeltLastError = message;
+        render({ animatePanels: false, includeBoard: false });
+        return;
+      }
     } else if (!account.snapshot().enabled) saveTutorialCompleted(storage, true);
+    tutorialSavingError = null;
+    issueDiagnostics.resolve("tutorial-saving");
     tutorial.reset();
     const gameId = actionEl.getAttribute("data-game-id");
     navigateTo(gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : buildHomeHash(getCurrentFlyoutState()));
