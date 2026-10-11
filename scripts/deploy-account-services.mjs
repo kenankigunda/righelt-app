@@ -1,4 +1,5 @@
 // Called only by the deployment workflow; never by tests or application code.
+import { requireDeploymentOrigin } from "./deployment-origin.mjs";
 import { requireLegacyGameId } from "./account-smoke.mjs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -14,13 +15,8 @@ export function validateDeployment(env) {
   const enabled = env.RIGHELT_AUTH_ENABLED || "false";
   if (!["true", "false"].includes(enabled))
     throw Error("RIGHELT_AUTH_ENABLED must be true or false");
-  const origin = env.RIGHELT_SITE_ORIGIN;
-  if (
-    !origin ||
-    new URL(origin).origin !== origin ||
-    !origin.startsWith("https://")
-  )
-    throw Error("RIGHELT_SITE_ORIGIN must be one exact HTTPS origin");
+  const origin = requireDeploymentOrigin(env.RIGHELT_SITE_ORIGIN, "RIGHELT_SITE_ORIGIN");
+  requireDeploymentOrigin(env.CLOUDFLARE_API_BASE_URL, "CLOUDFLARE_API_BASE_URL");
   if (
     enabled === "true" &&
     (!/^[a-f0-9]{64}$/.test(env.AUTH_HMAC_SECRET || "") ||

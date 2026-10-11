@@ -167,7 +167,7 @@ test("account smoke fails unsafe cookie paths, missing revocation and accepted s
 
 test("deployment configuration fails before writes for missing credentials or invalid preparation", () => {
   const env = {
-    RIGHELT_SITE_ORIGIN: origin,
+    RIGHELT_SITE_ORIGIN: origin, CLOUDFLARE_API_BASE_URL: privateOrigin,
     RIGHELT_AUTH_ENABLED: "true",
     AUTH_HMAC_SECRET: "a".repeat(64),
     TURNSTILE_SECRET: "synthetic",
@@ -212,7 +212,7 @@ test("account smoke rejects missing or blank legacy proof before any network cal
 
 test("ordinary enabled deployment requires legacy proof; disabled and preparation remain valid", () => {
   const env = {
-    RIGHELT_SITE_ORIGIN: origin, RIGHELT_AUTH_ENABLED: "true",
+    RIGHELT_SITE_ORIGIN: origin, CLOUDFLARE_API_BASE_URL: privateOrigin, RIGHELT_AUTH_ENABLED: "true",
     AUTH_HMAC_SECRET: "a".repeat(64), TURNSTILE_SECRET: "synthetic",
     AUTH_TURNSTILE_SITE_KEY: "public", ACCOUNT_SMOKE_USERNAME: "canary",
     ACCOUNT_SMOKE_PASSWORD: "synthetic password",
@@ -230,7 +230,7 @@ test("ordinary enabled deployment requires legacy proof; disabled and preparatio
 test("deployment CLI rejects absent legacy proof before invoking deployment tooling", () => {
   for (const legacyGameId of [undefined, "", " ", "\t\n"]) {
     const env = {
-      PATH: "", RIGHELT_SITE_ORIGIN: origin, RIGHELT_AUTH_ENABLED: "true",
+      PATH: "", RIGHELT_SITE_ORIGIN: origin, CLOUDFLARE_API_BASE_URL: privateOrigin, RIGHELT_AUTH_ENABLED: "true",
       AUTH_HMAC_SECRET: "a".repeat(64), TURNSTILE_SECRET: "synthetic",
       AUTH_TURNSTILE_SITE_KEY: "public", ACCOUNT_SMOKE_USERNAME: "canary",
       ACCOUNT_SMOKE_PASSWORD: "synthetic password",
@@ -267,8 +267,8 @@ test("deployment shares the explicit origin or canonical Pages fallback across p
   // The exact expression above locks GitHub's short-circuit selection. Exercise its
   // two resulting origins against real preflight and public/private smoke logic.
   for (const selectedOrigin of ["https://righelt-dev.pages.dev", "https://play.custom.test"]) {
-    assert.deepEqual(validateDeployment({ RIGHELT_SITE_ORIGIN: selectedOrigin }), { enabled: "false", origin: selectedOrigin });
-    const cli = spawnSync(process.execPath, [fileURLToPath(new URL("../../../scripts/deploy-account-services.mjs", import.meta.url)), "--check-only"], { env: { PATH: "", RIGHELT_SITE_ORIGIN: selectedOrigin }, encoding: "utf8" });
+    assert.deepEqual(validateDeployment({ RIGHELT_SITE_ORIGIN: selectedOrigin, CLOUDFLARE_API_BASE_URL: privateOrigin }), { enabled: "false", origin: selectedOrigin });
+    const cli = spawnSync(process.execPath, [fileURLToPath(new URL("../../../scripts/deploy-account-services.mjs", import.meta.url)), "--check-only"], { env: { PATH: "", RIGHELT_SITE_ORIGIN: selectedOrigin, CLOUDFLARE_API_BASE_URL: privateOrigin }, encoding: "utf8" });
     assert.equal(cli.status, 0, cli.stderr);
     const calls = [];
     assert.deepEqual(await boundarySmoke({ origin: selectedOrigin, privateOrigin, fetcher: async url => {
@@ -278,7 +278,7 @@ test("deployment shares the explicit origin or canonical Pages fallback across p
         : new Response("", { status: 404, headers: { server: "cloudflare" } });
     } }), { ok: true });
     assert.deepEqual(calls, [`${selectedOrigin}/api/health`, `${privateOrigin}/api/health`]);
-    assert.throws(() => validateDeployment({ RIGHELT_SITE_ORIGIN: selectedOrigin, RIGHELT_AUTH_ENABLED: "true" }), /secret/);
+    assert.throws(() => validateDeployment({ RIGHELT_SITE_ORIGIN: selectedOrigin, CLOUDFLARE_API_BASE_URL: privateOrigin, RIGHELT_AUTH_ENABLED: "true" }), /secret/);
   }
   for (const invalidOrigin of ["http://custom.test", "https://custom.test/path", "https://custom.test/", "https://a.test,https://b.test"]) {
     assert.throws(() => validateDeployment({ RIGHELT_SITE_ORIGIN: invalidOrigin }));
@@ -286,4 +286,25 @@ test("deployment shares the explicit origin or canonical Pages fallback across p
     await assert.rejects(boundarySmoke({ origin: invalidOrigin, privateOrigin, fetcher: async () => { calls++; } }));
     assert.equal(calls, 0, "invalid explicit origin cannot proceed to a smoke request");
   }
+});
+
+test('both deployment origins fail preflight and smoke before side effects', async () => {
+ for(const setting of ['RIGHELT_SITE_ORIGIN','CLOUDFLARE_API_BASE_URL']) {
+  for(const invalid of [undefined,'','https://host.test/','https://host.test/path','http://host.test','https://user:password@host.test','https://host.test?x=1','https://host.test#fragment','invalid']) {
+   const env={RIGHELT_SITE_ORIGIN:origin,CLOUDFLARE_API_BASE_URL:privateOrigin,[setting]:invalid};
+   assert.throws(()=>validateDeployment(env),new RegExp(setting));
+   const cli=spawnSync(process.execPath,[fileURLToPath(new URL('../../../scripts/deploy-account-services.mjs',import.meta.url))],{env:{PATH:'',...Object.fromEntries(Object.entries(env).filter(([,v])=>v!==undefined))},encoding:'utf8'});
+   assert.equal(cli.status,1);assert.match(cli.stderr,new RegExp(setting));assert.doesNotMatch(cli.stderr,/deployment command failed/);
+   let calls=0;
+   await assert.rejects(boundarySmoke({origin:env.RIGHELT_SITE_ORIGIN,privateOrigin:env.CLOUDFLARE_API_BASE_URL,fetcher:async()=>{calls++;}}),new RegExp(setting));
+   assert.equal(calls,0);
+  }
+ }
+});
+test('workflow passes the private origin to both preflight and deployment validation',()=>{
+ const workflow=readFileSync(new URL('../../../.github/workflows/deploy.yml',import.meta.url),'utf8');
+ for(const name of ['Preflight configuration check','Deploy private authentication services and API']) {
+  const step=workflow.split(`- name: ${name}\n`)[1]?.split('\n      - name:')[0];
+  assert.match(step,/CLOUDFLARE_API_BASE_URL: \$\{\{ vars\.CLOUDFLARE_API_BASE_URL \}\}/);
+ }
 });
