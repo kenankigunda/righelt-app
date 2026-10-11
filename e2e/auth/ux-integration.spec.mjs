@@ -1,8 +1,9 @@
+import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import {test,expect} from '@playwright/test';
 import {waitForAccountStartup} from './helpers.mjs';
 
 test('self-play resumes after account creation and uses the shared account and profile controls',async({page,browser},info)=>{
- expect((await fetch(`http://127.0.0.1:${Number(process.env.RIGHELT_AUTH_E2E_WEB_PORT || 9988)+100}/reset-limits`,{method:'POST'})).status).toBe(200);
+ expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`,{method:'POST'})).status).toBe(200);
  await page.goto('/');await waitForAccountStartup(page);
  await page.getByRole('button',{name:'Play both sides',exact:true}).click();
  const dialog=page.getByTestId('account-dialog');await expect(dialog).toBeVisible();

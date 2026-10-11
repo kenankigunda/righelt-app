@@ -1,668 +1,833 @@
-name: CI
-
-on:
-  pull_request:
-    paths:
-      - "apps/api/**"
-      - "apps/auth/**"
-      - "apps/auth-hash/**"
-      - "apps/web/**"
-      - "packages/api-handler/**"
-      - "packages/game-engine/**"
-      - "packages/shared-types/**"
-      - "db/migrations/**"
-      - "db/ops/**"
-      - "e2e/**"
-      - "package.json"
-      - "playwright.config.mjs"
-      - "playwright.auth.config.mjs"
-      - "playwright.validation.config.mjs"
-      - "validation-e2e/**"
-      - "pnpm-workspace.yaml"
-      - "pnpm-lock.yaml"
-      - "scripts/**"
-      - "tsconfig.json"
-      - "tsconfig.base.json"
-      - ".github/workflows/ci.yml"
-      - ".github/workflows/deploy.yml"
-      - ".github/workflows/db-retention-cleanup.yml"
-  push:
-    branches: [main]
-    paths:
-      - "apps/api/**"
-      - "apps/auth/**"
-      - "apps/auth-hash/**"
-      - "apps/web/**"
-      - "packages/api-handler/**"
-      - "packages/game-engine/**"
-      - "packages/shared-types/**"
-      - "db/migrations/**"
-      - "db/ops/**"
-      - "e2e/**"
-      - "package.json"
-      - "playwright.config.mjs"
-      - "playwright.auth.config.mjs"
-      - "playwright.validation.config.mjs"
-      - "validation-e2e/**"
-      - "pnpm-workspace.yaml"
-      - "pnpm-lock.yaml"
-      - "scripts/**"
-      - "tsconfig.json"
-      - "tsconfig.base.json"
-      - ".github/workflows/ci.yml"
-      - ".github/workflows/deploy.yml"
-      - ".github/workflows/db-retention-cleanup.yml"
-
-permissions:
-  contents: read
-  checks: write
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
-jobs:
-  typecheck:
-    name: Typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm via Corepack
-        run: corepack enable && corepack prepare pnpm@9 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Record exact CI environment
-        if: always()
-        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/typecheck.json
-
-      - name: Upload exact CI environment
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-provenance-typecheck-${{ github.run_attempt }}
-          path: test-results/ci-provenance/typecheck.json
-          if-no-files-found: error
-
-  generated-web-runtime:
-    name: Generated web runtime
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm via Corepack
-        run: corepack enable && corepack prepare pnpm@9 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
-
-      - name: Generated web runtime is up to date
-        run: pnpm check:web-engine-generated
-
-      - name: Record exact CI environment
-        if: always()
-        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/generated-web-runtime.json
-
-      - name: Upload exact CI environment
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-provenance-generated-web-runtime-${{ github.run_attempt }}
-          path: test-results/ci-provenance/generated-web-runtime.json
-          if-no-files-found: error
-
-  engine-unit:
-    name: Engine unit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm via Corepack
-        run: corepack enable && corepack prepare pnpm@9 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
-
-      - name: Engine unit tests
-        run: pnpm test:engine:unit -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/engine-unit/results.xml
-
-      - name: Upload engine unit JUnit
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: junit-engine-unit
-          path: test-results/engine-unit/results.xml
-          if-no-files-found: ignore
-
-      - name: Record exact CI environment
-        if: always()
-        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/engine-unit.json
-
-      - name: Upload exact CI environment
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-provenance-engine-unit-${{ github.run_attempt }}
-          path: test-results/ci-provenance/engine-unit.json
-          if-no-files-found: error
-
-  web-unit:
-    name: Web unit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm via Corepack
-        run: corepack enable && corepack prepare pnpm@9 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
-
-      - name: Web unit tests
-        run: pnpm test:web:unit -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/web-unit/results.xml
-
-      - name: Upload web unit JUnit
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: junit-web-unit
-          path: test-results/web-unit/results.xml
-          if-no-files-found: ignore
-
-      - name: Record exact CI environment
-        if: always()
-        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/web-unit.json
-
-      - name: Upload exact CI environment
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-provenance-web-unit-${{ github.run_attempt }}
-          path: test-results/ci-provenance/web-unit.json
-          if-no-files-found: error
-
-  engine-integration:
-    name: Engine integration
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm via Corepack
-        run: corepack enable && corepack prepare pnpm@9 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
-
-      - name: Engine integration tests
-        run: pnpm test:engine:integration -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/engine-integration/results.xml
-
-      - name: Upload engine integration JUnit
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: junit-engine-integration
-          path: test-results/engine-integration/results.xml
-          if-no-files-found: ignore
-
-      - name: Record exact CI environment
-        if: always()
-        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/engine-integration.json
-
-      - name: Upload exact CI environment
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-provenance-engine-integration-${{ github.run_attempt }}
-          path: test-results/ci-provenance/engine-integration.json
-          if-no-files-found: error
-
-  api-handler-integration:
-    name: API handler integration
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm via Corepack
-        run: corepack enable && corepack prepare pnpm@9 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
-
-      - name: API handler integration tests
-        run: pnpm test:api-handler -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/api-handler-integration/results.xml
-
-      - name: Upload API handler integration JUnit
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: junit-api-handler-integration
-          path: test-results/api-handler-integration/results.xml
-          if-no-files-found: ignore
-
-      - name: Record exact CI environment
-        if: always()
-        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/api-handler-integration.json
-
-      - name: Upload exact CI environment
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-provenance-api-handler-integration-${{ github.run_attempt }}
-          path: test-results/ci-provenance/api-handler-integration.json
-          if-no-files-found: error
-
-  api-worker-integration:
-    name: API worker integration
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm via Corepack
-        run: corepack enable && corepack prepare pnpm@9 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
-
-      - name: API worker integration tests
-        run: pnpm test:api-worker -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/api-worker-integration/results.xml
-
-      - name: Upload API worker integration JUnit
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: junit-api-worker-integration
-          path: test-results/api-worker-integration/results.xml
-          if-no-files-found: ignore
-
-      - name: Record exact CI environment
-        if: always()
-        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/api-worker-integration.json
-
-      - name: Upload exact CI environment
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-provenance-api-worker-integration-${{ github.run_attempt }}
-          path: test-results/ci-provenance/api-worker-integration.json
-          if-no-files-found: error
-
-  web-integration:
-    name: Web integration
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm via Corepack
-        run: corepack enable && corepack prepare pnpm@9 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
-
-      - name: Web integration tests
-        run: pnpm test:web:integration -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/web-integration/results.xml
-
-      - name: Upload web integration JUnit
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: junit-web-integration
-          path: test-results/web-integration/results.xml
-          if-no-files-found: ignore
-
-      - name: Record exact CI environment
-        if: always()
-        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/web-integration.json
-
-      - name: Upload exact CI environment
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-provenance-web-integration-${{ github.run_attempt }}
-          path: test-results/ci-provenance/web-integration.json
-          if-no-files-found: error
-
-  sync-stress:
-    name: Sync seeded fault stress
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-      - name: Setup pnpm via Corepack
-        run: corepack enable && corepack prepare pnpm@9 --activate
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
-      - name: Sync seeded fault stress
-        run: pnpm test:sync-stress -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/sync-stress/results.xml
-      - name: Upload sync-stress JUnit
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: junit-sync-stress
-          path: test-results/sync-stress/results.xml
-          if-no-files-found: ignore
-      - name: Upload deterministic failure schedules
-        if: failure()
-        uses: actions/upload-artifact@v6
-        with:
-          name: sync-failure-schedules
-          path: test-results/sync-stress/traces
-          if-no-files-found: ignore
-
-      - name: Record exact CI environment
-        if: always()
-        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/sync-stress.json
-      - name: Upload exact CI environment
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-provenance-sync-stress-${{ github.run_attempt }}
-          path: test-results/ci-provenance/sync-stress.json
-          if-no-files-found: error
-
-  sync-runtime:
-    name: Sync Workers and D1
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-      - name: Setup pnpm via Corepack
-        run: corepack enable && corepack prepare pnpm@9 --activate
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
-      - name: Sync Workers and D1
-        run: pnpm test:sync-runtime -- --reporter spec --reporter junit --reporter-destination stdout --reporter-destination test-results/sync-runtime/results.xml
-      - name: Upload sync-runtime JUnit
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: junit-sync-runtime
-          path: test-results/sync-runtime/results.xml
-          if-no-files-found: ignore
-
-      - name: Record exact CI environment
-        if: always()
-        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/sync-runtime.json
-      - name: Upload exact CI environment
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-provenance-sync-runtime-${{ github.run_attempt }}
-          path: test-results/ci-provenance/sync-runtime.json
-          if-no-files-found: error
-
-  e2e:
-    name: E2E
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm via Corepack
-        run: corepack enable && corepack prepare pnpm@9 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
-
-      - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
-
-      - name: E2E tests
-        env:
-          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/e2e/results.xml
-          PLAYWRIGHT_OUTPUT_DIR: test-results/e2e/artifacts
-        run: pnpm test:e2e
-
-      - name: Responsive app workflows
-        env:
-          PLAYWRIGHT_OUTPUT_DIR: test-results/e2e-responsive/artifacts
-        run: pnpm test:responsive
-
-      - name: Evidence report browser tests
-        run: node scripts/validation/test/report-browser.mjs
-
-      - name: Validation tooling tests
-        if: always()
-        run: pnpm test:validation
-
-      - name: Upload E2E JUnit
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: junit-e2e
-          path: test-results/e2e/results.xml
-          if-no-files-found: ignore
-
-      - name: Upload E2E Playwright debug artifacts
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: playwright-e2e-debug
-          path: |
-            test-results/e2e/artifacts
-            test-results/e2e-responsive/artifacts
-          if-no-files-found: ignore
-
-      - name: Upload sync recovery measurements
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: sync-recovery-measurements
-          path: test-results/sync-recovery
-          if-no-files-found: ignore
-
-      - name: Record exact CI environment
-        if: always()
-        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/e2e.json
-
-      - name: Upload exact CI environment
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-provenance-e2e-${{ github.run_attempt }}
-          path: test-results/ci-provenance/e2e.json
-          if-no-files-found: error
-
-  auth-e2e:
-    name: Account E2E
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
-      - name: Setup pnpm via Corepack
-        run: corepack enable && corepack prepare pnpm@9 --activate
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile=false
-
-      - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
-
-      - name: Account fixture unit tests
-        run: pnpm test:auth-fixture
-
-      - name: E2E tests
-        env:
-          PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/auth-e2e/results.xml
-          PLAYWRIGHT_OUTPUT_DIR: test-results/auth-e2e/artifacts
-          RIGHELT_AUTH_PROXY_DIAGNOSTICS: "1"
-        run: |
-          node --test scripts/auth-proxy-diagnostics.test.mjs
-          pnpm test:e2e:auth
-
-      - name: Upload E2E JUnit
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: junit-auth-e2e
-          path: test-results/auth-e2e/results.xml
-          if-no-files-found: ignore
-
-      - name: Upload E2E Playwright debug artifacts
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: playwright-auth-e2e-debug
-          path: test-results/auth-e2e/artifacts
-          if-no-files-found: ignore
-
-      - name: Record exact CI environment
-        if: always()
-        run: node scripts/validation/ci-provenance.mjs --out test-results/ci-provenance/auth-e2e.json
-
-      - name: Upload exact CI environment
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-provenance-auth-e2e-${{ github.run_attempt }}
-          path: test-results/ci-provenance/auth-e2e.json
-          if-no-files-found: error
-
-  test-results:
-    name: Test results
-    permissions:
-      contents: read
-      actions: read
-      checks: write
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    needs:
-      - typecheck
-      - generated-web-runtime
-      - engine-unit
-      - web-unit
-      - engine-integration
-      - api-handler-integration
-      - api-worker-integration
-      - web-integration
-      - sync-stress
-      - sync-runtime
-      - e2e
-      - auth-e2e
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Test JUnit artifact selection
-        run: node --test scripts/select-junit-artifacts.test.mjs
-
-      - name: Download latest lane JUnit artifacts
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const { selectJUnitArtifacts } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/select-junit-artifacts.mjs`);
-            const runId = context.runId;
-            const { data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId });
-            const headSha = context.payload.pull_request?.head.sha || context.sha;
-            if (run.id !== runId || run.head_sha !== headSha) throw new Error('Workflow provenance changed');
-            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, { ...context.repo, run_id: runId, per_page: 100 });
-            const selected = selectJUnitArtifacts(artifacts, { runId, headSha });
-            core.info(JSON.stringify({ runId, headSha, selected }, null, 2));
-            const fs = await import('node:fs/promises');
-            const path = await import('node:path');
-            const { execFileSync } = await import('node:child_process');
-            const output = path.join(process.env.GITHUB_WORKSPACE, 'test-results/published');
-            await fs.mkdir(output, { recursive: true });
-            await fs.writeFile(path.join(output, 'selection.json'), JSON.stringify({ runId, headSha, selected }, null, 2));
-            for (const artifact of selected) {
-              // The download action's latest:true metadata lookup can discard
-              // rerun artifacts before filtering explicit IDs. Use the ID API.
-              const response = await github.rest.actions.downloadArtifact({ ...context.repo, artifact_id: artifact.id, archive_format: 'zip' });
-              const archive = path.join(process.env.RUNNER_TEMP, `junit-${artifact.id}.zip`);
-              await fs.writeFile(archive, Buffer.from(response.data));
-              const destination = path.join(output, artifact.name);
-              await fs.mkdir(destination, { recursive: true });
-              execFileSync('python3', ['scripts/extract-junit-artifact.py', archive, destination]);
+{
+  "name": "CI",
+  "on": {
+    "pull_request": {
+      "types": [
+        "opened",
+        "synchronize",
+        "reopened",
+        "ready_for_review"
+      ]
+    },
+    "push": {
+      "branches": [
+        "main"
+      ]
+    },
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "concurrency": {
+    "group": "ci-${{ github.event.pull_request.number || github.ref }}",
+    "cancel-in-progress": "${{ github.event_name == 'pull_request' }}"
+  },
+  "env": {
+    "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24": "true"
+  },
+  "jobs": {
+    "node": {
+      "name": "node / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 60,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "include": [
+            {
+              "suite": "typecheck",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "node-0"
+            },
+            {
+              "suite": "generated",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "node-1"
+            },
+            {
+              "suite": "engine-unit",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "node-2"
+            },
+            {
+              "suite": "web-unit",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "node-3"
+            },
+            {
+              "suite": "engine-integration",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "node-4"
+            },
+            {
+              "suite": "api-handler",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "node-5"
+            },
+            {
+              "suite": "api-worker",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "node-6"
+            },
+            {
+              "suite": "web-integration",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "node-7"
+            },
+            {
+              "suite": "sync-stress",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "node-8"
+            },
+            {
+              "suite": "sync-runtime",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "node-9"
             }
-
-      - name: Preserve JUnit selection provenance
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-selection-provenance-${{ github.run_attempt }}
-          path: test-results/published/selection.json
-          if-no-files-found: ignore
-
-      - name: Publish GitHub test results
-        uses: mikepenz/action-junit-report@v6
-        with:
-          check_name: Test results
-          report_paths: test-results/published/**/*.xml
-          fail_on_failure: false
-          require_tests: false
-          check_annotations: true
-          job_summary: true
-          detailed_summary: true
-          comment: false
+          ]
+        }
+      },
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Record advisory selection",
+          "run": "pnpm test:plan --base origin/main"
+        },
+        {
+          "name": "Validate suite",
+          "env": {
+            "SUITE": "${{ matrix.suite }}",
+            "PROJECT": "${{ matrix.project }}",
+            "SHARD": "${{ matrix.shard }}",
+            "SHARDS": "${{ matrix.shards }}"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "browser-integration": {
+      "name": "browser-integration / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 60,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "include": [
+            {
+              "suite": "browser-integration",
+              "project": "chromium",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "browser-integration-0"
+            },
+            {
+              "suite": "browser-integration",
+              "project": "firefox",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "browser-integration-1"
+            },
+            {
+              "suite": "browser-integration",
+              "project": "webkit",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "browser-integration-2"
+            }
+          ]
+        }
+      },
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browsers",
+          "env": {
+            "PROJECT": "${{ matrix.project }}"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Record advisory selection",
+          "run": "pnpm test:plan --base origin/main"
+        },
+        {
+          "name": "Validate suite",
+          "env": {
+            "SUITE": "${{ matrix.suite }}",
+            "PROJECT": "${{ matrix.project }}",
+            "SHARD": "${{ matrix.shard }}",
+            "SHARDS": "${{ matrix.shards }}"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "e2e": {
+      "name": "e2e / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 60,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "include": [
+            {
+              "suite": "e2e",
+              "project": "chromium",
+              "shard": 1,
+              "shards": 2,
+              "artifact": "e2e-0"
+            },
+            {
+              "suite": "e2e",
+              "project": "chromium",
+              "shard": 2,
+              "shards": 2,
+              "artifact": "e2e-1"
+            },
+            {
+              "suite": "e2e",
+              "project": "firefox",
+              "shard": 1,
+              "shards": 2,
+              "artifact": "e2e-2"
+            },
+            {
+              "suite": "e2e",
+              "project": "firefox",
+              "shard": 2,
+              "shards": 2,
+              "artifact": "e2e-3"
+            },
+            {
+              "suite": "e2e",
+              "project": "webkit",
+              "shard": 1,
+              "shards": 2,
+              "artifact": "e2e-4"
+            },
+            {
+              "suite": "e2e",
+              "project": "webkit",
+              "shard": 2,
+              "shards": 2,
+              "artifact": "e2e-5"
+            }
+          ]
+        }
+      },
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browsers",
+          "env": {
+            "PROJECT": "${{ matrix.project }}"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Record advisory selection",
+          "run": "pnpm test:plan --base origin/main"
+        },
+        {
+          "name": "Validate suite",
+          "env": {
+            "SUITE": "${{ matrix.suite }}",
+            "PROJECT": "${{ matrix.project }}",
+            "SHARD": "${{ matrix.shard }}",
+            "SHARDS": "${{ matrix.shards }}"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "auth-e2e": {
+      "name": "auth-e2e / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 60,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "include": [
+            {
+              "suite": "auth-e2e",
+              "project": "chromium",
+              "shard": 1,
+              "shards": 2,
+              "artifact": "auth-e2e-0"
+            },
+            {
+              "suite": "auth-e2e",
+              "project": "chromium",
+              "shard": 2,
+              "shards": 2,
+              "artifact": "auth-e2e-1"
+            },
+            {
+              "suite": "auth-e2e",
+              "project": "firefox",
+              "shard": 1,
+              "shards": 2,
+              "artifact": "auth-e2e-2"
+            },
+            {
+              "suite": "auth-e2e",
+              "project": "firefox",
+              "shard": 2,
+              "shards": 2,
+              "artifact": "auth-e2e-3"
+            },
+            {
+              "suite": "auth-e2e",
+              "project": "webkit",
+              "shard": 1,
+              "shards": 2,
+              "artifact": "auth-e2e-4"
+            },
+            {
+              "suite": "auth-e2e",
+              "project": "webkit",
+              "shard": 2,
+              "shards": 2,
+              "artifact": "auth-e2e-5"
+            },
+            {
+              "suite": "auth-controls",
+              "project": "chromium",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "auth-e2e-6"
+            },
+            {
+              "suite": "auth-controls",
+              "project": "firefox",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "auth-e2e-7"
+            },
+            {
+              "suite": "auth-controls",
+              "project": "webkit",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "auth-e2e-8"
+            }
+          ]
+        }
+      },
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browsers",
+          "env": {
+            "PROJECT": "${{ matrix.project }}"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Record advisory selection",
+          "run": "pnpm test:plan --base origin/main"
+        },
+        {
+          "name": "Validate suite",
+          "env": {
+            "SUITE": "${{ matrix.suite }}",
+            "PROJECT": "${{ matrix.project }}",
+            "SHARD": "${{ matrix.shard }}",
+            "SHARDS": "${{ matrix.shards }}"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "responsive": {
+      "name": "responsive / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 60,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "include": [
+            {
+              "suite": "responsive",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "responsive-0"
+            }
+          ]
+        }
+      },
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browsers",
+          "env": {
+            "PROJECT": "${{ matrix.project }}"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Record advisory selection",
+          "run": "pnpm test:plan --base origin/main"
+        },
+        {
+          "name": "Validate suite",
+          "env": {
+            "SUITE": "${{ matrix.suite }}",
+            "PROJECT": "${{ matrix.project }}",
+            "SHARD": "${{ matrix.shard }}",
+            "SHARDS": "${{ matrix.shards }}"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "tooling": {
+      "name": "tooling / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 60,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "include": [
+            {
+              "suite": "tooling",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "tooling-0"
+            },
+            {
+              "suite": "report-viewer",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "tooling-1"
+            }
+          ]
+        }
+      },
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browsers",
+          "env": {
+            "PROJECT": "${{ matrix.project }}"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Record advisory selection",
+          "run": "pnpm test:plan --base origin/main"
+        },
+        {
+          "name": "Validate suite",
+          "env": {
+            "SUITE": "${{ matrix.suite }}",
+            "PROJECT": "${{ matrix.project }}",
+            "SHARD": "${{ matrix.shard }}",
+            "SHARDS": "${{ matrix.shards }}"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "performance": {
+      "name": "performance / ${{ matrix.suite }} ${{ matrix.project }} ${{ matrix.shard }}",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 60,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "include": [
+            {
+              "suite": "performance",
+              "project": "",
+              "shard": 1,
+              "shards": 1,
+              "artifact": "performance-0"
+            }
+          ]
+        }
+      },
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Install browsers",
+          "env": {
+            "PROJECT": "${{ matrix.project }}"
+          },
+          "run": "node scripts/testing/install-browsers.mjs"
+        },
+        {
+          "name": "Record advisory selection",
+          "run": "pnpm test:plan --base origin/main"
+        },
+        {
+          "name": "Validate suite",
+          "env": {
+            "SUITE": "${{ matrix.suite }}",
+            "PROJECT": "${{ matrix.project }}",
+            "SHARD": "${{ matrix.shard }}",
+            "SHARDS": "${{ matrix.shards }}"
+          },
+          "run": "node scripts/testing/ci-run.mjs"
+        },
+        {
+          "name": "Preserve evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "suite-${{ matrix.artifact }}-${{ github.run_attempt }}",
+            "path": "test-results/",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "full-validation": {
+      "permissions": {
+        "contents": "read",
+        "actions": "read"
+      },
+      "name": "Full validation",
+      "if": "always()",
+      "runs-on": "ubuntu-latest",
+      "needs": [
+        "node",
+        "browser-integration",
+        "e2e",
+        "auth-e2e",
+        "responsive",
+        "tooling",
+        "performance"
+      ],
+      "steps": [
+        {
+          "name": "Checkout",
+          "uses": "actions/checkout@v5",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "${{ github.event.pull_request.head.sha || github.sha }}"
+          }
+        },
+        {
+          "name": "Setup pnpm",
+          "uses": "pnpm/action-setup@v4",
+          "with": {
+            "version": "9.15.9"
+          }
+        },
+        {
+          "name": "Setup Node",
+          "uses": "actions/setup-node@v5",
+          "with": {
+            "node-version": "22",
+            "cache": "pnpm"
+          }
+        },
+        {
+          "name": "Install dependencies",
+          "run": "pnpm install --frozen-lockfile"
+        },
+        {
+          "name": "Select latest exact-run evidence",
+          "id": "artifacts",
+          "uses": "actions/github-script@v8",
+          "with": {
+            "script": "const {selectSuiteArtifacts}=await import(process.env.GITHUB_WORKSPACE+'/scripts/testing/select-artifacts.mjs');\nconst {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:context.runId});\nconst artifacts=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id:context.runId,per_page:100});\nconst selected=selectSuiteArtifacts(artifacts,{runId:context.runId,headSha:run.head_sha});\nif(!selected.length)throw new Error('No suite evidence');\ncore.setOutput('ids',selected.map(a=>a.id).join(','));"
+          }
+        },
+        {
+          "name": "Download suite evidence",
+          "uses": "actions/download-artifact@v5",
+          "with": {
+            "artifact-ids": "${{ steps.artifacts.outputs.ids }}",
+            "path": "test-results/full",
+            "merge-multiple": true
+          }
+        },
+        {
+          "name": "Require all jobs and exact suite receipts",
+          "env": {
+            "RIGHELT_JOB_RESULTS": "${{ toJSON(needs) }}"
+          },
+          "run": "node scripts/testing/ci-verify.mjs"
+        },
+        {
+          "name": "Preserve full inventory",
+          "if": "always()",
+          "uses": "actions/upload-artifact@v6",
+          "with": {
+            "name": "full-validation-${{ github.run_attempt }}",
+            "path": "test-results/full/full.json",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    }
+  }
+}

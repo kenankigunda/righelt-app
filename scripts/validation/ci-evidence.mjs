@@ -1,3 +1,4 @@
+import {importCatalogCI} from './suite-ci-evidence.mjs';
 import {readFile,mkdir} from 'node:fs/promises';
 import path from 'node:path';
 import {command,saveJSON} from './io.mjs';
@@ -13,6 +14,7 @@ export function checkoutCommit(log){
 }
 // Deliberately supports this repository's indented workflow, not arbitrary YAML or shell programs.
 export function workflowJobs(text){
+ if(text.trimStart().startsWith('{')){const document=JSON.parse(text);return Object.entries(document.jobs??{}).map(([id,job])=>({id,name:job.name,runner:job['runs-on'],steps:(job.steps??[]).map(s=>({name:s.name,commands:s.run?[s.run]:[],body:JSON.stringify(s)})),body:JSON.stringify(job)}));}
  const section=text.split(/^jobs:\s*$/m)[1];if(!section||!/^\s*\n  [a-z][a-z0-9-]*:\n/.test(section))throw Error('Workflow jobs must begin with a job mapping');
  const jobs=[];const blocks=section.matchAll(/^  ([a-z][a-z0-9-]*):\n([\s\S]*?)(?=^  [a-z][a-z0-9-]*:\n|$(?![\s\S]))/gm);
  for(const [,id,body] of blocks){
@@ -58,6 +60,7 @@ export async function importCI({repository,runId,cwd,outDir,expected,execute=com
  const pkg=JSON.parse(await readFile(path.join(cwd,'package.json'),'utf8'));
  const workflowAtHead=await api(`contents/.github/workflows/ci.yml?ref=${run.head_sha}`);
  const workflow=Buffer.from(workflowAtHead.content??'','base64').toString('utf8');if(!workflow)throw Error('Workflow source unavailable');
+ if(workflow.trimStart().startsWith('{'))return importCatalogCI({repository,run,cwd,outDir,expected,api,call,execute});
  const definitions=workflowJobs(workflow);
  const jobsPage=await api(`actions/runs/${runId}/jobs?filter=latest&per_page=100`);
  if(jobsPage.total_count>100)throw Error('Unsupported job pagination');

@@ -57,6 +57,9 @@ export async function supervise(argv, { kind = 'heavy', keep = false, timeoutMs 
     cancelReason = reason;
     stopping = (async () => {
       record.status = 'stopping'; record.reason = reason; wakeWait?.();
+      // Nested commands can distinguish guardian-requested teardown from a
+      // service dying during execution before nested cleanup signals arrive.
+      await persist();
       // Explicit nested guardians may own separate groups (Playwright web servers and restartable APIs).
       // Their parent-run IDs establish task ownership. Let them verify their groups before stopping ours.
       const nested = unix ? (await records()).filter(r => r.parentRun === id && r.id !== id) : [];
