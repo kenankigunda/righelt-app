@@ -135,12 +135,14 @@ export function normalizeState(state) {
         continuation: normalizeContinuation(state.continuation),
         outcome: { ...state.outcome },
         ...(state.artifacts
-            ? { artifacts: {
+            ? {
+                artifacts: {
                     mode: state.artifacts.mode,
                     supply: normalizeSupplyArtifacts(state.artifacts.supply),
                     command: normalizeCommandArtifact(state.artifacts.command),
                     groups: normalizeGroupArtifact(state.artifacts.groups),
-                } }
+                },
+            }
             : {}),
     };
 }
