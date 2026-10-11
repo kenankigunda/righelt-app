@@ -1737,3 +1737,20 @@ test("manual reconnect supersedes an old snapshot wait and requests a fresh snap
  release(Response.json({protocolVersion:2,gameId:game.id,eventSeq:1,gameplayRevision:game.gameplayRevision??0,commandOutcomes:[]}));
  await retired;await fresh;assert.equal(requests[1].knownSnapshotEventSeq,0);assert.equal(store.getGameViewModel(game.id).sharedMutationsBlocked,false);store.retire();
 });
+
+for(const lateCommit of [false,true])test(`uncertain admission ${lateCommit?"committed late":"was not committed"} recovers the original command exactly once`,async()=>{
+ const game=buildLiveGame(),storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,"id-a");let saved=[],admissions=0,applies=0,original;
+ const journal={list:async(_identity,gameId)=>saved.filter(e=>!gameId||e.gameId===gameId),admit:async envelope=>{
+  admissions++;original??=structuredClone(envelope);
+  if(admissions===1){if(lateCommit)saved=[structuredClone(envelope)];throw Object.assign(Error("journal_timeout"),{code:"journal_timeout"});}
+  if(!saved.some(e=>e.clientCommandId===envelope.clientCommandId))saved.push(structuredClone(envelope));
+ },remove:async envelope=>{saved=saved.filter(e=>e.clientCommandId!==envelope.clientCommandId);},close:async()=>{}};
+ const store=createLiveTransportStore({storage,commandJournal:journal,fetcher:async(url,init)=>{
+  const body=JSON.parse(init.body);if(String(url).endsWith("/reconcile"))return Response.json({protocolVersion:2,gameId:game.id,eventSeq:1,gameplayRevision:0,game,commandOutcomes:body.commands.map(e=>({gameId:game.id,identityId:e.identityId,clientCommandId:e.clientCommandId,fingerprint:e.fingerprint,outcome:"unknown",reason:null,eventSeq:1,gameplayRevision:0}))});
+  applies++;assert.deepEqual(body,original);return commandResponse({game:buildAcknowledgedGame(game,body.payload.action,body.clientCommandId),clientCommandId:body.clientCommandId,eventSeq:2});
+ }});
+ store.applyLiveGameUpdate({game,eventSeq:1});await assert.rejects(store.applyGameAction({gameId:game.id,state:game.board.state,action:game.legalActions[0]}),/journal_timeout/);
+ assert.equal(applies,0);assert.equal(store.getGameViewModel(game.id).storageBlocked,true);
+ await store.retrySaving(game.id);await tick();assert.equal(applies,1);assert.equal(admissions,lateCommit?1:2);
+ assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);assert.equal(store.getGameViewModel(game.id).storageBlocked,false);assert.deepEqual(saved,[]);store.retire();
+});

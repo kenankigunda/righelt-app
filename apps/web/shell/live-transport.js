@@ -688,11 +688,13 @@ export const createLiveTransportStore = ({
       for (const envelope of saved) if (optimistic.outcomes.has(envelope.clientCommandId)) await commandJournal.remove(envelope);
       if (optimistic.unsavedCommand) {
         const command = optimistic.unsavedCommand;
-        await commandJournal.admit(command.envelope);
-        assertActive();
-      optimistic.pendingCommands.push(command);
+        if (!optimistic.outcomes.has(command.clientCommandId)) {
+          await commandJournal.admit(command.envelope);
+          assertActive();
+          if (!optimistic.pendingCommands.some(entry => entry.clientCommandId === command.clientCommandId)) optimistic.pendingCommands.push(command);
+          optimistic.syncStatus = "confirming";
+        }
         optimistic.unsavedCommand = null;
-        optimistic.syncStatus = "confirming";
       }
       optimistic.storageBlocked = false;
       optimistic.hydrated = false;
