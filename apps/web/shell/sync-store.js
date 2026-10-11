@@ -255,13 +255,13 @@ export const createLiveSyncClient = ({
     }
   };
 
-  const resumeDesiredConnections = () => {
+  const resumeDesiredConnections = (reason) => {
     if (!shouldKeepConnectionsActive()) {
       return;
     }
     suspendedForInvisibility = false;
     for (const gameId of desiredGameIds) {
-      connect(gameId);
+      void repair(gameId, reason);
     }
   };
 
@@ -343,14 +343,16 @@ export const createLiveSyncClient = ({
     recordMetric("recovery_started", { gameId, reason });
     clearReconnect(gameId);
     cleanupSocket(gameId, { closeReason: `recovery:${reason}` });
-    reconnectGates.get(gameId)?.resolve(); reconnectGates.delete(gameId);
-    if (shouldKeepConnectionsActive()) connect(gameId);
+    if (shouldKeepConnectionsActive()) {
+      if (["manual_reconnect", "pageshow", "visibility_resumed", "network_online"].includes(reason)) connect(gameId);
+      else scheduleReconnect(gameId);
+    }
     owner.promise = Promise.resolve().then(() => onReconcile({ gameId, reason })).then(() => {
       if (repairOwners.get(gameId) !== owner || !desiredGameIds.has(gameId)) return;
       recordMetric("recovery_reconciled", { gameId, reason });
       // HTTP has restored authoritative state. A failed background socket must
       // not immediately reopen and re-block that evidence in this same pass.
-      if (shouldKeepConnectionsActive() && !sockets.has(gameId)) scheduleReconnect(gameId);
+      if (shouldKeepConnectionsActive() && !sockets.has(gameId) && !reconnectTimers.has(gameId)) scheduleReconnect(gameId);
     }).catch((error) => {
       if (repairOwners.get(gameId) !== owner) return;
       onError(error);
@@ -410,6 +412,7 @@ export const createLiveSyncClient = ({
     const finishInitial = () => {
       if (connection.initialDone) return;
       connection.initialDone = true;
+      reconnectAttemptsByGameId.set(gameId, 0);
       clearTimeout(connection.initialTimer);
       connection.resolveInitial();
       void Promise.resolve(onReady({ gameId, generation, isCurrent: current })).catch(() => { if (current()) void repair(gameId, "reconciliation_failed"); });
@@ -419,8 +422,7 @@ export const createLiveSyncClient = ({
     ws.addEventListener("open", () => {
       if (!current()) return;
       refreshWatchdog();
-      reconnectAttemptsByGameId.set(gameId, 0);
-      onStatus({ state: "connected", gameId, reconnectAttempts: 0 });
+      onStatus({ state: "connected", gameId, reconnectAttempts: reconnectAttemptsByGameId.get(gameId) ?? 0 });
       refreshHeartbeatLoop(gameId);
     });
 
@@ -532,10 +534,7 @@ export const createLiveSyncClient = ({
       for (const gameId of sockets.keys()) {
         refreshHeartbeatLoop(gameId);
       }
-      resumeDesiredConnections();
-      for (const gameId of desiredGameIds) {
-        if (connectionState.get(gameId)?.initialDone) void repair(gameId, "visibility_resumed");
-      }
+      resumeDesiredConnections("visibility_resumed");
     });
   }
 
@@ -544,7 +543,7 @@ export const createLiveSyncClient = ({
       for (const gameId of sockets.keys()) {
         refreshHeartbeatLoop(gameId);
       }
-      resumeDesiredConnections();
+      resumeDesiredConnections("network_online");
     });
 
     listen(window, "offline", () => {
@@ -560,8 +559,7 @@ export const createLiveSyncClient = ({
     });
 
     listen(window, "pageshow", () => {
-      resumeDesiredConnections();
-      for (const gameId of desiredGameIds) void repair(gameId, "pageshow");
+      resumeDesiredConnections("pageshow");
     });
     listen(window, "beforeunload", () => {
       for (const gameId of [...sockets.keys()]) {

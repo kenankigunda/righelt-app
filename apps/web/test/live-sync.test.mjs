@@ -334,9 +334,10 @@ test("live sync heartbeats only while visible and online, then resume after reco
     documentMock.hidden = false;
     documentMock.visibilityState = "visible";
     documentMock.dispatchEvent("visibilitychange");
+    const resumed = MockSocket.instances.at(-1); resumed.emit("open");
     await flushAsync(12);
-    const resumedHeartbeats = MockSocket.instances[0].sent.filter((payload) => JSON.parse(payload).type === "heartbeat").length;
-    assert.equal(resumedHeartbeats > hiddenCountAfter, true);
+    const resumedHeartbeats = resumed.sent.filter((payload) => JSON.parse(payload).type === "heartbeat").length;
+    assert.equal(resumedHeartbeats >= 2, true);
 
     globalThis.navigator.onLine = false;
     windowMock.dispatchEvent("offline");
@@ -346,9 +347,9 @@ test("live sync heartbeats only while visible and online, then resume after reco
 
     globalThis.navigator.onLine = true;
     windowMock.dispatchEvent("online");
-    MockSocket.instances[1].emit("open");
+    const recovered = MockSocket.instances.at(-1); recovered.emit("open");
     await flushAsync(12);
-    const recoveredHeartbeats = MockSocket.instances[1].sent.filter((payload) => JSON.parse(payload).type === "heartbeat").length;
+    const recoveredHeartbeats = recovered.sent.filter((payload) => JSON.parse(payload).type === "heartbeat").length;
     assert.equal(recoveredHeartbeats >= 2, true);
     client.disconnectAll();
   } finally {
@@ -644,7 +645,7 @@ test("initial socket timeout retires its generation before HTTP and reopen uses 
     return new Promise((resolve) => { release = () => { cursor = 8; resolve(); }; });
   } });
   client.connectGame("g"); const old = MockSocket.instances[0]; old.emit("open");
-  await until(() => repairs === 1); assert.equal(MockSocket.instances.length, 2);
+  await until(() => repairs === 1); await until(() => MockSocket.instances.length === 2);
   old.emit("message", { data: JSON.stringify(snapshot("g", 999)) });
   release(); await until(() => MockSocket.instances.length === 2);
   assert.match(MockSocket.instances[1].url, /lastEventSeq=3/); // Socket reconnect is independent; HTTP advances the authoritative cursor.
@@ -690,4 +691,28 @@ test("pageshow restores desired games and retired lifecycle handlers stay inert"
   client.retire(); const count = MockSocket.instances.length;
   globalThis.window.dispatchEvent("pageshow"); globalThis.window.dispatchEvent("online"); client.connectGame("g");
   await flushAsync(5); assert.equal(MockSocket.instances.length, count);
+});
+
+test("socket failures reconcile immediately but retain increasing capped reconnect backoff", async (t) => {
+  const originals = { WebSocket:globalThis.WebSocket, window:globalThis.window, document:globalThis.document, random:Math.random };
+  let reconciles = 0; const delays = [];
+  globalThis.WebSocket = MockSocket; globalThis.window = createMockWindow(); globalThis.document = createMockDocument();
+  MockSocket.instances = []; Math.random = () => 0.5;
+  t.mock.timers.enable({apis:["setTimeout"]});
+  const client = createLiveSyncClient({identityId:"backoff-test",onEvent(){},onReconcile:async()=>{reconciles++;},reconnectBaseMs:5,reconnectMaxMs:20,onMetric:metric=>{if(metric.type==="reconnect_scheduled")delays.push(metric.delayMs);}});
+  try {
+    client.connectGame("backoff-game");
+    for (const [index,delay] of [5,10,20,20].entries()) {
+      const socket = MockSocket.instances.at(-1); socket.emit("open"); socket.close();
+      for(let i=0;i<10;i++)await Promise.resolve();
+      assert.equal(reconciles,index+1,"HTTP finishes before the socket retry");
+      assert.equal(MockSocket.instances.length,index+1);
+      t.mock.timers.tick(delay-1); assert.equal(MockSocket.instances.length,index+1);
+      t.mock.timers.tick(1); assert.equal(MockSocket.instances.length,index+2);
+    }
+    assert.deepEqual(delays,[5,10,20,20]);
+  } finally {
+    client.disconnectAll(); t.mock.timers.reset(); Math.random = originals.random;
+    for(const key of ["WebSocket","window","document"])globalThis[key]=originals[key];
+  }
 });
