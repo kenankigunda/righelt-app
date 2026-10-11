@@ -51,7 +51,8 @@ async function shutdown(code = 0) {
     const kill = signal => { try { process.kill(-child.pid, signal); } catch {} };
     child.once("exit", resolve);
     kill("SIGTERM");
-    setTimeout(() => { kill("SIGKILL"); resolve(); }, 5000).unref();
+    // Leave time for the supervisor's grace period and ownership verification.
+    setTimeout(() => { kill("SIGKILL"); resolve(); }, 9000).unref();
   })));
   try { const restore = await proxyDiagnosticsInstallation; await restore?.(); }
   catch (error) { console.error(error); code = 1; }

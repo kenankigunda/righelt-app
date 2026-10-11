@@ -30,8 +30,9 @@ const stopChild = async child => {
  const signal = value => { try { child.kill(value); } catch {} };
  const stopped = new Promise(resolve=>child.once("exit",resolve));
  signal("SIGTERM");
- const timer=setTimeout(()=>signal("SIGKILL"),5000);
- await Promise.race([stopped,new Promise(resolve=>setTimeout(resolve,6000))]);
+ // Give the supervisor its five-second grace period and cleanup verification.
+ const timer=setTimeout(()=>signal("SIGKILL"),9000);
+ await Promise.race([stopped,new Promise(resolve=>setTimeout(resolve,10000))]);
  clearTimeout(timer);
  signal("SIGKILL");
 };
