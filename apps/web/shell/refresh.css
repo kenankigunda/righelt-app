@@ -483,3 +483,24 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .story-modal .modal-content::-webkit-scrollbar-track {background:transparent;}
 
 [data-shell-panel="board"] .cell.target .piece-token.commander.move-ghost {opacity:1;}
+
+/* Computer play and inspection share the main app's quiet secondary surfaces. */
+.computer-play,.debug-summary,.debug-section-body { display:grid; gap:.75rem; }
+.computer-play:empty { display:none; }
+.computer-play p,.debug-summary p,.debug-section-body p { margin:0; }
+.computer-play { padding-block:.5rem 1rem; }
+.computer-status-line,.computer-progress,.computer-actions { display:flex; gap:.65rem; align-items:center; flex-wrap:wrap; }
+.computer-status-line { justify-content:space-between; }
+.computer-progress progress { flex:1; min-width:8rem; accent-color:var(--player-p1); }
+.debug-section { border-top:1px solid var(--line); padding-block:.75rem; min-width:0; }
+.debug-section summary { min-height:44px; cursor:pointer; display:flex; align-items:center; font-weight:700; }
+.debug-section summary::before { content:'+'; margin-right:.65rem; }
+.debug-section[open] summary::before { content:'−'; }
+.debug-section-body { padding-block:.25rem .75rem; }
+.debug-section-body label { display:grid; gap:.4rem; }
+.debug-section-body textarea { width:100%; min-height:6rem; resize:vertical; }
+.debug-section-body .debug-pre { max-height:24rem; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
+.debug-history { list-style:none; padding:0; display:grid; gap:.4rem; }
+.debug-history button { text-align:left; max-width:100%; overflow-wrap:anywhere; }
+
+.debug-facts{display:grid;grid-template-columns:minmax(7rem,1fr) minmax(0,2fr);gap:.5rem 1rem;margin:0}.debug-facts dt{font-weight:650}.debug-facts dd{margin:0;overflow-wrap:anywhere}.debug-table-scroll{max-width:100%;overflow:auto}.debug-table-scroll table{border-collapse:collapse;width:100%;font-size:.85rem}.debug-table-scroll th,.debug-table-scroll td{padding:.5rem;text-align:left;border-bottom:1px solid var(--line)}.debug-table-scroll caption{text-align:left;padding:.5rem 0;font-weight:650}

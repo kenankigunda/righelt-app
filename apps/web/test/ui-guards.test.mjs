@@ -56,7 +56,7 @@ test("game, join/invite, and history use shared section spacing structure", () =
   assert.match(source, /class="section-stack"/);
   assert.match(
     source,
-    /<div class="section-followup">\s*\$\{historyBanner\}\s*<ol class="history-list"[^>]*>\$\{historyRows\}<\/ol>/s,
+    /<div class="section-followup">\s*\$\{historyBanner\}.*?<ol class="history-list"[^>]*>\$\{historyRows\}<\/ol>/s,
   );
   assert.match(source, /history-empty-line history-return-live"><button class="secondary" data-action="return-live"/);
 });
@@ -108,7 +108,7 @@ test("optimistic game creation and history branch actions bypass the blocking bu
   assert.match(source, /if \(action === "create-game" \|\| action === 'create-self-play'\) \{[\s\S]*storyDialog\.open\('friend'[\s\S]*const handle = transport\.createGame\(\{ selfPlayMode: action === 'create-self-play' \}\);/s);
   assert.match(source, /startGameEntryRouteTransition\(handle\.result\.id, "home"\);/);
   assert.match(source, /navigateTo\(buildGameHash\(handle\.result\.id, null, getCurrentFlyoutState\(\)\)\);/);
-  assert.match(source, /if \(action === "launch-history-branch"\) \{[\s\S]*const handle = transport\.launchHistoryBranch\(/s);
+  assert.match(source, /const branchDialog = createRematchDialog\([\s\S]*const handle = transport\.launchHistoryBranch\(/s);
   assert.match(source, /const nextHash = buildGameHash\(handle\.result\.game\.id, null, \{/s);
   assert.doesNotMatch(source, /if \(action === "create-game"\) \{[\s\S]*await transport\.createGame/s);
 });
@@ -124,7 +124,7 @@ test("revert actions bypass the blocking busy wrapper and use optimistic sync-st
   assert.match(source, /if \(action === "accept-revert-request"\) \{[\s\S]*transport\.approveRevertRequest\(\{ gameId, requestId \}\);/s);
   assert.match(source, /if \(action === "reject-revert-request"\) \{[\s\S]*transport\.rejectRevertRequest\(\{ gameId, requestId \}\);/s);
   assert.match(source, /if \(action === "rescind-revert-request"\) \{[\s\S]*transport\.rescindRevertRequest\(\{ gameId, requestId \}\);/s);
-  assert.match(source, /if \(action === "revert-to-move" \|\| action === "undo-last-move"\) \{[\s\S]*transport\.requestRevertToMove\(\{ gameId, targetMoveId: moveId \}\);/s);
+  assert.match(source, /if \(action === "revert-to-move" \|\| action === "undo-last-move"\) \{[\s\S]*transport\.requestRevertToMove\(\{ gameId, targetMoveId \}\);/s);
   assert.doesNotMatch(source, /if \(action === "accept-revert-request"\) \{[\s\S]*await transport\.approveRevertRequest/s);
   assert.doesNotMatch(source, /if \(action === "revert-to-move" \|\| action === "undo-last-move"\) \{[\s\S]*await transport\.requestRevertToMove/s);
 });

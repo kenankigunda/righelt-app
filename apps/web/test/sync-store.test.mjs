@@ -1319,3 +1319,18 @@ test("blue self-play keeps its side in pending storage before server acknowledgm
   assert.equal(persisted[handle.result.id].selfPlayStartSide, "p2");
   release(); await handle.committed;
 });
+
+test('archived undo reaches the server without fabricating an optimistic restore', async () => {
+  const { transport, games } = createTransportHarness();
+  const game = createRevertReadyGame();
+  game.moves = Array.from({ length: 200 }, (_, i) => ({ ...game.moves[0], moveId: `retained-${i + 6}`, index: i }));
+  games.set('game-revert', game);
+  let payload;
+  const store = createSyncStore({ storage: createMemoryStorage(), createTransportStore: () => ({ ...transport,
+    requestRevertToMove: async value => { payload = value; return game; },
+  }), createSyncClient: () => ({ connectGame() {}, disconnectGame() {}, disconnectAll() {}, getDesiredGameIds: () => [] }) });
+  const handle = store.requestRevertToMove({ gameId: 'game-revert', targetMoveId: 'evicted-1' });
+  assert.deepEqual(handle.result.board, game.board);
+  await handle.committed;
+  assert.equal(payload.targetMoveId, 'evicted-1');
+});

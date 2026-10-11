@@ -5,6 +5,7 @@ export const createFakeD1 = () => {
   const shellInvites = new Map();
   const shellEvents = new Map();
   const receipts = new Map();
+  const archive = new Map(), checkpoints = new Map(), notes = new Map(), attempts = new Map();
   const tombstones = new Map();
   const executors = new WeakMap();
   let batchFailureIndex = null;
@@ -82,6 +83,23 @@ export const createFakeD1 = () => {
       executeRun() {
         writes.push({ query: normalized, params: [...params] });
 
+        if (normalized.startsWith('INSERT INTO live_decision_archive')) {
+          const [game_id, decision_id, event_seq, event_ordinal, gameplay_revision, payload_json] = params, key = JSON.stringify([game_id, decision_id]);
+          if (archive.has(key)) throw new Error('UNIQUE constraint failed: live_decision_archive');
+          archive.set(key, { game_id, decision_id, event_seq, event_ordinal, gameplay_revision, payload_json }); return { success: true };
+        }
+        if (normalized.startsWith('INSERT INTO live_position_checkpoints')) {
+          const [game_id, gameplay_revision, state_json] = params, key = JSON.stringify([game_id, gameplay_revision]);
+          if (checkpoints.has(key)) throw new Error('UNIQUE constraint failed: live_position_checkpoints');
+          checkpoints.set(key, { game_id, gameplay_revision, state_json }); return { success: true };
+        }
+        if (normalized.startsWith('INSERT INTO live_decision_notes')) { const [game_id, account_id, decision_id, note_json] = params; notes.set(JSON.stringify(params.slice(0,3)), { game_id, account_id, decision_id, note_json }); return { success: true }; }
+        if (normalized.startsWith('DELETE FROM live_decision_notes')) { notes.delete(JSON.stringify(params)); return { success: true }; }
+        if (normalized.startsWith('INSERT INTO live_decision_attempts')) {
+          const [game_id, account_id, attempt_id, kind, payload_json] = params, key = JSON.stringify(params.slice(0,3));
+          if (attempts.has(key)) throw new Error('UNIQUE constraint failed: live_decision_attempts');
+          attempts.set(key, { sequence: attempts.size + 1, game_id, account_id, attempt_id, kind, payload_json }); return { success: true };
+        }
         if (normalized.includes("INSERT INTO live_games")) {
           const [gameId, createdAt, updatedAt, latestActivityAt, player1IdentityId, player2IdentityId, hasSmoke, stateJson, eventSeq = 0, gameplayRevision = 0, commitBaseEventSeq = null] =
             params;
@@ -152,6 +170,8 @@ export const createFakeD1 = () => {
       async first() {
         if (normalized.startsWith("SELECT activated_at,maintenance,canary_account_id FROM account_cutover")) return {activated_at:null,maintenance:0,canary_account_id:null};
         reads.push({ query: normalized, params: [...params] });
+        if (normalized.includes('FROM live_decision_archive')) return structuredClone(archive.get(JSON.stringify(params.slice(0,2))) ?? null);
+        if (normalized.includes('FROM live_decision_attempts')) { const row = attempts.get(JSON.stringify(params.slice(0,3))); return structuredClone(row?.kind === params[3] ? row : null); }
         if (normalized.includes("FROM live_command_receipts")) return structuredClone(receipts.get(JSON.stringify(params.slice(0, 2))) ?? null);
         if (normalized.includes("FROM live_legacy_command_tombstones")) return structuredClone(tombstones.get(JSON.stringify(params.slice(0, 2))) ?? null);
 
@@ -203,6 +223,13 @@ export const createFakeD1 = () => {
         throw new Error(`Unsupported first query: ${normalized}`);
       },
       async all() {
+        if (normalized.includes('FROM live_decision_attempts')) return { results: structuredClone([...attempts.values()].filter(row => row.game_id === params[0] && row.account_id === params[1] && row.kind === params[2] && row.sequence > params[3]).sort((a,b) => a.sequence - b.sequence).slice(0,params[4])) };
+
+        if (normalized.includes('FROM live_decision_archive')) {
+          const [gameId, after, ordinal, limit] = params;
+          return { results: structuredClone([...archive.values()].filter(row => row.game_id === gameId && (row.event_seq > after || (row.event_seq === after && row.event_ordinal > ordinal))).sort((a,b) => a.event_seq - b.event_seq || a.event_ordinal - b.event_ordinal).slice(0,limit)) };
+        }
+        if (normalized.includes('FROM live_decision_notes')) return { results: structuredClone([...notes.values()].filter(row => row.game_id === params[0] && row.account_id === params[1])) };
         reads.push({ query: normalized, params: [...params] });
 
         if (normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq FROM live_games") || normalized.includes("SELECT game_id, created_at, updated_at, state_json, event_seq, gameplay_revision FROM live_games")) {
@@ -245,7 +272,7 @@ export const createFakeD1 = () => {
     prepare,
     async batch(statements) {
       // Execute synchronously so reads cannot observe intermediate statements.
-      const tables = [shellGames, shellInvites, shellEvents, receipts, tombstones];
+      const tables = [shellGames, shellInvites, shellEvents, receipts, tombstones, archive, checkpoints, notes, attempts];
       const snapshots = tables.map((table) => structuredClone(table));
       const failAt = batchFailureIndex;
       batchFailureIndex = null;
@@ -274,6 +301,7 @@ export const createFakeD1 = () => {
       shellInvites.clear();
       shellEvents.clear();
       receipts.clear();
+      archive.clear(); checkpoints.clear(); notes.clear(); attempts.clear();
       tombstones.clear();
       batchFailureIndex = null;
       loseBatchResponse = false;

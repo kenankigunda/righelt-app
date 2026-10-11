@@ -1,3 +1,4 @@
+import { parseComputerControl } from '../../shared-types/src/computer-play';
 import type { CutoverPolicy } from './account-cutover';
 import type { ServerEvent } from "../../shared-types/src/events";
 import {
@@ -583,6 +584,9 @@ const normalizePersistedGame = (
   }
 
   const game: LiveGame = {
+    ...(parsed.lastRestoration && typeof parsed.lastRestoration === "object" ? { lastRestoration: parsed.lastRestoration as LiveGame["lastRestoration"] } : {}),
+    ...(parsed.computer === undefined ? {} : { computer: parseComputerControl(parsed.computer) }),
+    ...(Number.isSafeInteger(parsed.archiveStartRevision) ? { archiveStartRevision: Number(parsed.archiveStartRevision) } : {}),
     ...(parsed.ownershipMode === "account_v1" ? { ownershipMode: "account_v1" as const } : {}),
     id: typeof parsed.id === "string" && parsed.id ? parsed.id : row.game_id,
     createdAt: typeof parsed.createdAt === "string" && parsed.createdAt ? parsed.createdAt : row.created_at || row.updated_at || now(),
@@ -702,6 +706,7 @@ const normalizePersistedStaticGameCard = (
       pendingJoinRequests: normalizeJoinRequests(parsed.pendingJoinRequests, mismatches),
       pendingScenarioSelection: normalizeScenarioSavedSelection(parsed.pendingScenarioSelection, mismatches),
       moveCount: moves.length,
+      ...(parsed.computer === undefined ? {} : { computer: parseComputerControl(parsed.computer) }),
       previewSnapshot: boardState,
     },
     identityId,

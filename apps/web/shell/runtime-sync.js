@@ -21,6 +21,7 @@ export const shouldResetBoardSelection = ({
   nextSnapshot,
   currentSelection,
   nextLegalActions,
+  freeSelection = false,
 }) => {
   if (!currentSelection?.source) {
     return false;
@@ -48,7 +49,7 @@ export const shouldResetBoardSelection = ({
     }
   }
 
-  if (!currentSelection.target) {
+  if (!currentSelection.target || freeSelection) {
     return false;
   }
 

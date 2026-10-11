@@ -40,3 +40,10 @@ test("cancelled rematch gate cannot create or close a reopened dialog", async ()
   release(); await pending;
   assert.equal(created, 0); assert.equal(element.open, true);
 });
+
+test('spectators of computer games see a neutral winner', () => {
+  const played = { ...game('p1_win'), computer: { seats: { p1: null, p2: 'horus' }, manual: false } };
+  assert.equal(getGameResult(played, 'red').title, 'Win');
+  assert.equal(getGameResult(played, 'spectator').title, 'Player 1 wins');
+  assert.equal(getGameResult(played, null).side, null);
+});

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { getGameResult } from "../shell/game-result.js";
+import { participantName, participantDisplayName } from "../shell/public-profile.js";
 import { createRenderGestureGate } from "../shell/render-gesture.js";
 
 const source = readFileSync(new URL("../shell/app.js", import.meta.url), "utf8");
@@ -90,7 +91,7 @@ test("authoritative terminal rollback clears result state so the board can remou
 test("optimistic terminal state cannot expose a result or open it before confirmation", () => {
   const optimistic = {id:"g",board:{state:{outcome:{status:"p1_win"}}},player1:{identityId:"me"}};
   let confirmed = {...optimistic,board:{state:{outcome:{status:"ongoing"}}}};
-  const context = {getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon:()=>"",renderTurnHistory:()=>"",participantName:()=>"",render:()=>{},activeResultGameId:null};
+  const context = {getDecisionDebugState: () => ({ items: [], cursor: null }), getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon:()=>"",renderTurnHistory:()=>"",participantName,participantDisplayName,render:()=>{},activeResultGameId:null};
   runInNewContext(`${extract("const renderResult =", "const renderGame =")}
     ${extract("const renderHistoryPanel =", "const renderBoardPanel =")}
     globalThis.result = renderResult;globalThis.history = renderHistoryPanel;
@@ -102,4 +103,22 @@ test("optimistic terminal state cannot expose a result or open it before confirm
   assert.match(context.result(optimistic),/>Win</);
   assert.match(context.history(optimistic),/data-action="view-result"/);
   context.openResult();assert.equal(context.activeResultGameId,"g");
+});
+
+test("computer seats have distinct human, watch, history and result labels despite shared authority", () => {
+  const person = {identityId:'me', profile:{username:'owner', displayName:'Owner'}};
+  const game = {id:'g', player1:person, player2:{...person, computerProfile:'babs'}, selfPlayMode:true, computer:{seats:{p1:null,p2:'babs'},manual:false}, board:{state:{outcome:{status:'p1_win'}}}, moves:[]};
+  const context = {isPlayerRole:role=>['Player 1','Player 2'].includes(role),escapeHtml:String,participantName,participantDisplayName,getGameResult,transport:{getIdentityId:()=> 'me',getAuthoritativeGame:()=>game},getDecisionDebugState:()=>({items:[],cursor:null}),formatDisplayGameId:String,icon:()=>'',renderTurnHistory:()=>''};
+  runInNewContext(`${extract('const playerToneClassForSeat =','const renderConnectionStatusIcon =')}
+    ${extract('const renderResult =','const renderGame =')}
+    ${extract('const renderHistoryPanel =','const renderBoardPanel =')}
+    globalThis.role = renderRoleLabel; globalThis.result = renderResult; globalThis.history = renderHistoryPanel;`, context);
+  assert.match(context.role('Player 1', game), />Player 1</);
+  assert.match(context.role('Player 1', {...game,player1:{...person,computerProfile:'tau'},player2:person}), />Player 2</);
+  assert.match(context.role('Player 1', {...game,player1:{...person,computerProfile:'tau'}}), /watching computers/);
+  assert.match(context.role('Viewer', game), />Viewer</);
+  assert.match(context.role('Player 1', {...game,player2:person}), /both players/);
+  assert.match(context.result(game), /Owner vs Babs/);
+  const history = context.history(game);
+  assert.match(history, />Owner</); assert.match(history, />Babs</);
 });

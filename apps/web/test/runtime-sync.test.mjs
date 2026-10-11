@@ -197,3 +197,11 @@ test("shell board mount skips reload for matching authoritative ack after an opt
     true,
   );
 });
+
+test('frozen capture preserves an inspect-only target across updates without admitting a live move', () => {
+  const state = { sideToMove: 'P1', turnIndex: 0, pieces: [{ id: 'p', position: { row: 3, col: 4 } }] };
+  const input = { currentSnapshot: state, nextSnapshot: structuredClone(state), currentSelection: { selectedPieceId: 'p', source: { row: 3, col: 4 }, target: { row: 5, col: 4 } }, nextLegalActions: [] };
+  assert.equal(shouldResetBoardSelection(input), true);
+  assert.equal(shouldResetBoardSelection({ ...input, freeSelection: true }), false);
+  assert.equal(shouldResetBoardSelection({ ...input, freeSelection: true, nextSnapshot: { ...state, pieces: [] } }), true);
+});

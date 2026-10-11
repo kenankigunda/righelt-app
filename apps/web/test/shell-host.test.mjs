@@ -323,3 +323,13 @@ test("shell host derives selected piece moves from cached legal actions without 
     [true, true],
   );
 });
+
+test('frozen inspection lookups stay on the capture and cannot submit commands', async () => {
+  const frozen = { sideToMove: 'P1', turnIndex: 0, continuation: null, pieces: [{ id: 'C1', owner: 'P1', kind: 'commander', position: { row: 3, col: 3 }, supplied: true, commanded: true }] };
+  const live = { ...frozen, turnIndex: 99, pieces: [] };
+  const host = createShellBoardHost({ transport: { getGameViewModel: () => ({ currentSnapshot: live, legalActions: [] }), applyGameAction: () => { throw Error('must not submit'); } }, gameId: 'g', canInteract: () => false, canSelect: () => true, getInspectionSnapshot: () => frozen });
+  assert.equal(host.canSelect(), true); assert.equal(host.canInteract(), false);
+  assert.deepEqual((await host.loadLegalActions(live)).state, frozen);
+  assert.deepEqual((await host.loadPieceMoves(live, 'C1')).state, frozen);
+  assert.equal((await host.applyAction(frozen, { type: 'pass' })).validation.code, 'inspection_only');
+});

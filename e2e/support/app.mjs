@@ -329,6 +329,7 @@ export const launchHistoryBranchFromMove = async (page, moveIndex = 0) => {
   });
   const popupPromise = page.waitForEvent("popup");
   await page.locator('[data-action="launch-history-branch"]').click();
+  await page.getByRole('dialog', { name: 'Create a new game here' }).getByRole('button', { name: 'Start game' }).click();
   const [popup, branchResponse] = await Promise.all([popupPromise, branchResponsePromise]);
   await popup.waitForLoadState("domcontentloaded");
   const branchBody = await branchResponse.json();
@@ -343,6 +344,7 @@ export const openPendingHistoryBranchFromMove = async (page, moveIndex = 0) => {
   await openHistoryMode(page, moveIndex);
   const popupPromise = page.waitForEvent("popup");
   await page.locator('[data-action="launch-history-branch"]').click();
+  await page.getByRole('dialog', { name: 'Create a new game here' }).getByRole('button', { name: 'Start game' }).click();
   const popup = await popupPromise;
   await popup.waitForLoadState("domcontentloaded");
   return {

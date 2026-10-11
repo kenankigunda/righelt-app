@@ -913,7 +913,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const handleBoardCellClick = (clickedCoord) => {
-    if (!state || host.canInteract?.(state) === false) {
+    if (!state || (host.canSelect ?? host.canInteract)?.(state) === false) {
       return;
     }
 

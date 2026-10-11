@@ -1,3 +1,4 @@
+import { computerProfileFor, type ComputerControl, type ComputerProfile, type ComputerProof } from '../../shared-types/src/computer-play';
 import { applyAction } from "../../game-engine/src/apply";
 import { BOARD_SIZE } from "../../game-engine/src/deterministic";
 import { deterministicStateHash } from "../../game-engine/src/hash";
@@ -10,6 +11,7 @@ import { isUuidV4 } from "../../shared-types/src/validation";
 import type { Action, GameState } from "../../game-engine/src/types";
 
 export type Participant = {
+  computerProfile?: ComputerProfile | null;
   identityId: string;
   connected: boolean;
   joinedAt: string;
@@ -42,6 +44,7 @@ export type MoveEntry = {
   notation: string;
   action: Action;
   clientCommandId?: string | null;
+  computerProof?: ComputerProof;
   undone?: boolean;
   undoneAt?: string | null;
   undoneByIdentityId?: string | null;
@@ -103,6 +106,9 @@ export type TurnEntry = {
 
 export type LiveGame = {
   ownershipMode?: "legacy_guest" | "account_v1";
+  computer?: ComputerControl;
+  archiveStartRevision?: number;
+  lastRestoration?: { decisionId: string; at: string };
   id: string;
   gameplayRevision: number;
   createdAt: string;
@@ -370,7 +376,7 @@ export const createInitialGame = ({
         index: initial.turnIndex ?? 0,
         startedAt: createdAt,
         endedAt: null,
-        playerSeat: getSeatForSide(initial.sideToMove),
+        playerSeat: getSeatForSide(initial.continuation?.owner ?? initial.sideToMove),
         status: "active",
         moveIndexes: [],
         lastMoveAt: null,
@@ -471,7 +477,7 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
       index: initial.turnIndex ?? 0,
       startedAt: game.createdAt,
       endedAt: null,
-      playerSeat: getSeatForSide(initial.sideToMove),
+      playerSeat: getSeatForSide(initial.continuation?.owner ?? initial.sideToMove),
       status: "active",
       moveIndexes: [],
       lastMoveAt: null,
@@ -519,7 +525,7 @@ export const reconcileGameToScenarioResultingState = (game: LiveGame, scenario: 
       index: targetTurnIndex,
       startedAt: game.createdAt,
       endedAt: null,
-      playerSeat: getSeatForSide(reconciled.sideToMove),
+      playerSeat: getSeatForSide(reconciled.continuation?.owner ?? reconciled.sideToMove),
       status: "active",
       moveIndexes: [],
       lastMoveAt: null,
@@ -534,7 +540,7 @@ export const reconcileGameToScenarioResultingState = (game: LiveGame, scenario: 
       turn.endedAt = turn.lastMoveAt ?? turn.endedAt ?? game.createdAt;
       continue;
     }
-    turn.playerSeat = getSeatForSide(reconciled.sideToMove);
+    turn.playerSeat = getSeatForSide(reconciled.continuation?.owner ?? reconciled.sideToMove);
     turn.status = "active";
     turn.endedAt = null;
     turn.lastMoveAt = turn.moveIndexes.length > 0 ? game.moves[turn.moveIndexes[turn.moveIndexes.length - 1]]?.at ?? null : null;
@@ -777,6 +783,7 @@ export const toStaticGameCard = (
     moves?: LiveGame["moves"];
     moveCount?: number;
     previewSnapshot?: GameState | null;
+    computer?: ComputerControl;
   },
   identityId: string,
 ): StaticGameCard => {
@@ -811,8 +818,8 @@ export const toStaticGameCard = (
     previewSelection: game.pendingScenarioSelection ?? null,
     myRole,
     canJoinAsPlayer,
-    player1: game.player1 ?? null,
-    player2: game.player2 ?? null,
+    player1: game.player1 ? { ...game.player1, ...(game.computer && !game.computer.manual ? { computerProfile: game.computer.seats.p1 } : {}) } : null,
+    player2: game.player2 ? { ...game.player2, ...(game.computer && !game.computer.manual ? { computerProfile: game.computer.seats.p2 } : {}) } : null,
   };
 };
 
@@ -865,6 +872,7 @@ export const withFullViewModel = (game: LiveGame, identityId: string) => {
   const turnOwnerIdentity = getSeatIdentity(game, turnOwnerSeat);
   const isPlayer = myRole === "Player 1" || myRole === "Player 2";
   const legalNow = listLegalActions(game.board.state);
+  const computerTurn = computerProfileFor(game.computer, getSideForSeat(controlSeat), game.board.state.turnIndex ?? 0);
   const approvableRequesterIds = pendingJoinRequests
     .filter((request) => getApproverIdentityForSeat(game, request.requestedSeat) === identityId)
     .map((request) => request.identityId);
@@ -894,6 +902,10 @@ export const withFullViewModel = (game: LiveGame, identityId: string) => {
 
   return {
     ...clone(game),
+    ...(game.computer ? {
+      player1: game.player1 ? { ...clone(game.player1), computerProfile: game.computer.manual ? null : game.computer.seats.p1 } : null,
+      player2: game.player2 ? { ...clone(game.player2), computerProfile: game.computer.manual ? null : game.computer.seats.p2 } : null,
+    } : {}),
     historyIndexByIdentity: undefined,
     historyIndex,
     myRole,
@@ -904,7 +916,7 @@ export const withFullViewModel = (game: LiveGame, identityId: string) => {
     pendingScenarioSelection,
     canJoinAsPlayer: !joinAsPlayerDisabledReason,
     canJoinAsViewer: !joinAsViewerDisabledReason,
-    canPlayAsBothPlayers: Boolean(getClaimableDualSeat(game, identityId)),
+    canPlayAsBothPlayers: !game.computer && Boolean(getClaimableDualSeat(game, identityId)),
     joinAsPlayerDisabledReason,
     joinAsViewerDisabledReason,
     canInvite: true,
@@ -915,10 +927,12 @@ export const withFullViewModel = (game: LiveGame, identityId: string) => {
           ? inviteTokens.player2
           : inviteTokens.viewer,
     showJoinActions: true,
-    canRecordMove: isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
+    computerTurn,
+    canControlComputer: game.computer?.ownerId === identityId,
+    canRecordMove: !computerTurn && isPlayer && !inHistoryMode && sideToMoveIdentity === identityId && legalNow.length > 0,
     legalActions: legalNow,
     canEndTurn:
-      isPlayer &&
+      !computerTurn && isPlayer &&
       !inHistoryMode &&
       controlSeat === turnOwnerSeat &&
       turnOwnerIdentity === identityId &&
@@ -1082,7 +1096,7 @@ const rebuildTurnsFromActiveMoves = (game: LiveGame, referenceState: GameState) 
       index: move.turnIndex,
       startedAt: move.at,
       endedAt: null,
-      playerSeat: getSeatForSide(move.actorSide),
+      playerSeat: getSeatForSide(move.selectionSnapshot.continuation?.owner ?? move.actorSide),
       status: "complete",
       moveIndexes: [],
       lastMoveAt: null,
@@ -1096,12 +1110,12 @@ const rebuildTurnsFromActiveMoves = (game: LiveGame, referenceState: GameState) 
     index: activeTurnIndex,
     startedAt: now(),
     endedAt: null,
-    playerSeat: getSeatForSide(referenceState.sideToMove),
+    playerSeat: getSeatForSide(referenceState.continuation?.owner ?? referenceState.sideToMove),
     status: "active",
     moveIndexes: [],
     lastMoveAt: null,
   };
-  activeTurn.playerSeat = getSeatForSide(referenceState.sideToMove);
+  activeTurn.playerSeat = getSeatForSide(referenceState.continuation?.owner ?? referenceState.sideToMove);
   activeTurn.status = "active";
   activeTurn.endedAt = null;
   turnsByIndex.set(activeTurnIndex, activeTurn);
@@ -1131,18 +1145,20 @@ const toSavedSelectionFromMove = (move: MoveEntry) => {
   } satisfies ScenarioSavedSelection;
 };
 
-export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requesterIdentityId: string) => {
+export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requesterIdentityId: string, archivedTarget?: MoveEntry) => {
   const targetIndex = game.moves.findIndex((move) => move.moveId === targetMoveId);
-  if (targetIndex < 0) {
+  if (targetIndex < 0 && !archivedTarget) {
     return { ok: false as const, error: "move_not_found" };
   }
-  const targetMove = game.moves[targetIndex];
+  const targetMove = targetIndex < 0 ? archivedTarget! : game.moves[targetIndex];
   const revertedAt = now();
-  for (let index = targetIndex; index < game.moves.length; index += 1) {
+  for (let index = Math.max(0, targetIndex); index < game.moves.length; index += 1) {
     game.moves[index].undone = true;
     game.moves[index].undoneAt = revertedAt;
     game.moves[index].undoneByIdentityId = requesterIdentityId;
   }
+  game.lastRestoration = { decisionId: targetMove.moveId, at: revertedAt };
+  if (game.computer) { game.computer.generation++; game.computer.lease = null; game.computer.singleStep = false; game.computer.takeoverTurn = null; }
   game.board.state = clone(targetMove.selectionSnapshot);
   game.pendingScenarioSelection = toSavedSelectionFromMove(targetMove);
   game.initialSelectionAction = clone(targetMove.action);

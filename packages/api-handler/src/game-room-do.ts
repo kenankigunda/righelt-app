@@ -1,3 +1,6 @@
+import { canonicalCommandJson } from '../../shared-types/src/sync-protocol';
+import { archiveStatements, readDecision, readDecisionPage, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
+import { COMPUTER_LIMITS, changeComputerControl, computerCommandError, createComputerControl, parseComputerSeats, type ComputerProof } from '../../shared-types/src/computer-play';
 import { withCutoverPolicy, maintenanceAllowed, cutoverWritePermit } from './account-cutover';
 import { enrichAccountNames } from './account-profiles';
 import type { AuthDatabase } from './auth-db';
@@ -298,6 +301,17 @@ export class GameRoomDO {
         selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
         creatorSide: body.creatorSide === "p2" ? "p2" : "p1",
       });
+      if (body.computer !== undefined) {
+        const seats = parseComputerSeats(body.computer);
+        if (!authActive(this.env) || !this.requestAuthority) throw new AuthProblem("invalid_credentials", 401);
+        if (!seats) return json({ ok: false, error: "invalid_computer_seats" }, 400);
+        candidate.computer = createComputerControl(identityId, seats);
+        candidate.selfPlayMode = true;
+        const owner = candidate.player1 ?? candidate.player2!;
+        candidate.player1 = clone(owner);
+        candidate.player2 = clone(owner);
+        candidate.notifications = ["Game created"];
+      }
       if (authActive(this.env)) candidate.ownershipMode = "account_v1";
       await this.persistCandidate(candidate, null);
       return json({ ok: true, game: withViewModel(candidate, identityId), eventSeq: this.eventSeq });
@@ -318,21 +332,6 @@ export class GameRoomDO {
         identityId,
         selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
       });
-      const sourceGame = authActive(this.env) || (body.sourceGame as LiveGame | undefined)?.ownershipMode === "account_v1" ? null : body.sourceGame && typeof body.sourceGame === "object" ? (body.sourceGame as LiveGame) : null;
-      const participantCopyMode = sourceGame
-        ? parseLaunchParticipantCopyMode(body.participantCopyMode) ?? resolveLaunchParticipantCopyMode(sourceGame, identityId)
-        : null;
-      if (sourceGame) {
-        if (participantCopyMode === "copy_source_participants") {
-          applyLaunchParticipantCopyMode(sourceGame, candidate, identityId, participantCopyMode);
-        } else {
-          candidate.player1 = null;
-          candidate.player2 = null;
-          candidate.viewers = [];
-          candidate.pendingJoinRequests = [];
-        }
-        candidate.selfPlayMode = body.selfPlayMode === true || body.playgroundMode === true;
-      }
       applyScenarioToGame(candidate, scenario);
       if (
         shouldReconcileImportedScenarioResultingState(
@@ -343,10 +342,19 @@ export class GameRoomDO {
       ) {
         reconcileGameToScenarioResultingState(candidate, scenario);
       }
-      if (sourceGame && participantCopyMode && participantCopyMode !== "copy_source_participants") {
-        applyLaunchParticipantCopyMode(sourceGame, candidate, identityId, participantCopyMode);
-      } else if (participantCopyMode !== "copy_source_participants") {
-        assignIdentityToScenarioSeat(candidate, identityId, getSeatForSide(candidate.board.state.sideToMove));
+      const creatorSeat = body.creatorSide === "p1" ? "Player 1" : body.creatorSide === "p2" ? "Player 2" : getSeatForSide(candidate.board.state.sideToMove);
+      assignIdentityToScenarioSeat(candidate, identityId, creatorSeat);
+      if (body.computer !== undefined) {
+        const seats = parseComputerSeats(body.computer);
+        if (!authActive(this.env) || !this.requestAuthority) throw new AuthProblem("invalid_credentials", 401);
+        if (!seats) return json({ ok: false, error: "invalid_computer_seats" }, 400);
+        candidate.computer = createComputerControl(identityId, seats);
+        candidate.selfPlayMode = true;
+        const owner = candidate.player1 ?? candidate.player2!;
+        candidate.player1 = clone(owner); candidate.player2 = clone(owner);
+      } else if (candidate.selfPlayMode) {
+        const owner = candidate.player1 ?? candidate.player2!;
+        candidate.player1 = clone(owner); candidate.player2 = clone(owner);
       }
       candidate.initialSelectionAction = initialSelectionAction ? clone(initialSelectionAction) : null;
       if (authActive(this.env)) candidate.ownershipMode = "account_v1";
@@ -354,7 +362,7 @@ export class GameRoomDO {
       return json({ ok: true, game: withViewModel(candidate, identityId), eventSeq: this.eventSeq });
     }
 
-    const body = ["/moves", "/apply", "/end-turn", "/reconcile"].includes(path) ? await readSyncBody(request) : await parseBody(request);
+    const body = path === '/decision-attempt' ? await readSyncBody(request, COMPUTER_LIMITS.attemptBytes) : ["/moves", "/apply", "/end-turn", "/reconcile", '/decision-history', '/decision-attempts', '/decision-notes'].includes(path) ? await readSyncBody(request) : await parseBody(request);
     const identityId = asIdentity(body.identityId);
     if (!identityId) {
       return json({ ok: false, error: "invalid_identity" }, 400);
@@ -366,12 +374,73 @@ export class GameRoomDO {
     }
     const game = loaded;
     if (!authActive(this.env) && game.ownershipMode === "account_v1") throw new AuthProblem("temporarily_unavailable", 503);
-    if (authActive(this.env) && game.ownershipMode !== "account_v1" && !["/legal", "/piece-moves", "/piece-actions"].includes(path)) throw new AuthProblem("legacy_read_only", 403);
+    if (authActive(this.env) && game.ownershipMode !== "account_v1" && !["/legal", "/piece-moves", "/piece-actions", '/decision-history', '/decision-attempts', '/decision-attempt', '/decision-notes'].includes(path)) throw new AuthProblem("legacy_read_only", 403);
     if (["/moves", "/apply", "/end-turn", "/reconcile"].includes(path)) {
       return this.handleSyncCommand(path, body, game);
     }
     if (!["/history", "/live", "/presence", "/legal", "/piece-actions", "/piece-moves"].includes(path) && body.protocolVersion !== 2) {
       return json({ ok: false, error: "upgrade_required", protocolVersion: 2 }, 426);
+    }
+
+    if (request.method === 'POST' && path === '/decision-history') {
+      if (game.archiveStartRevision === undefined) {
+        const cursor = body.cursor as { eventSeq?: unknown; ordinal?: unknown } | null;
+        const after = cursor?.ordinal ?? -1;
+        if (!Number.isSafeInteger(after) || Number(after) < -1 || (cursor && cursor.eventSeq !== this.eventSeq)) return json({ ok: false, error: 'invalid_history_cursor' }, 400);
+        const retained = [
+          { id: 'initial', kind: 'initial', revision: game.gameplayRevision, eventSeq: this.eventSeq, ordinal: 0, at: game.createdAt, state: game.moves[0]?.selectionSnapshot ?? game.board.state, partial: true },
+          ...game.moves.map((move, index) => ({ id: move.moveId, kind: 'decision', revision: game.gameplayRevision, eventSeq: this.eventSeq, ordinal: index + 1, at: move.at, move, partial: true })),
+        ].filter(entry => entry.ordinal > Number(after));
+        const items = retained.slice(0, COMPUTER_LIMITS.historyPage), last = items.at(-1);
+        return json({ ok: true, items, nextCursor: retained.length > items.length && last ? { eventSeq: this.eventSeq, ordinal: last.ordinal } : null, partial: true });
+      }
+      try { return json({ ok: true, ...(await readDecisionPage(this.env, game.id, body.cursor)), partial: (game.archiveStartRevision ?? 1) > 0 }); }
+      catch (error) { if ((error as Error).message === 'invalid_history_cursor') return json({ ok: false, error: 'invalid_history_cursor' }, 400); throw error; }
+    }
+    if (request.method === 'POST' && path === '/decision-attempts') {
+      if (!this.requestAuthority) throw new AuthProblem('invalid_credentials', 401);
+      if (!['computer', 'analysis'].includes(String(body.kind))) return json({ ok: false, error: 'invalid_attempt' }, 400);
+      const owner = body.kind === 'computer' ? game.computer?.ownerId : identityId;
+      if (!owner) return json({ ok: true, items: [], nextCursor: null });
+      try { return json({ ok: true, ...(await readAttemptPage(this.env, game.id, owner, String(body.kind), body.cursor)) }); }
+      catch (error) { if ((error as Error).message === 'invalid_attempt_cursor') return json({ ok: false, error: 'invalid_attempt_cursor' }, 400); throw error; }
+    }
+    if (request.method === 'POST' && path === '/decision-attempt') {
+      if (!this.requestAuthority) throw new AuthProblem('invalid_credentials', 401);
+      if (typeof body.attemptId !== 'string' || !['computer', 'analysis'].includes(String(body.kind))) return json({ ok: false, error: 'invalid_attempt' }, 400);
+      const attemptOwner = body.kind === 'computer' ? game.computer?.ownerId : identityId;
+      if (!attemptOwner) return json({ ok: false, error: 'invalid_attempt' }, 400);
+      const saved = await readAttempt(this.env, game.id, attemptOwner, body.attemptId, String(body.kind));
+      if (body.operation !== 'write') return json({ ok: true, attempt: saved });
+      if (attemptOwner !== identityId) return json({ ok: false, error: 'computer_owner_required' }, 403);
+      if (saved) return canonicalCommandJson(saved) === canonicalCommandJson(body.attempt) ? json({ ok: true, attempt: saved }) : json({ ok: false, error: "attempt_id_conflict" }, 409);
+      let statement;
+      try { statement = attemptStatement(this.env, game.id, identityId, body.attemptId, String(body.kind), body.attempt); }
+      catch { return json({ ok: false, error: 'invalid_attempt' }, 400); }
+      await this.persistCandidate(game, null, undefined, false, [statement]);
+      return json({ ok: true });
+    }
+    if (request.method === 'POST' && path === '/decision-notes') {
+      if (!this.requestAuthority) throw new AuthProblem('invalid_credentials', 401);
+      if (body.operation === 'write') {
+        const retainedDecision = game.archiveStartRevision === undefined && (body.decisionId === 'initial' || game.moves.some(move => move.moveId === body.decisionId));
+        if (typeof body.decisionId !== 'string' || (!retainedDecision && !await readDecision(this.env, game.id, body.decisionId))) return json({ ok: false, error: 'decision_not_found' }, 404);
+        let statement;
+        try { statement = noteStatement(this.env, game.id, identityId, body.decisionId, body.note); }
+        catch { return json({ ok: false, error: 'invalid_decision_note' }, 400); }
+        await this.persistCandidate(game, null, undefined, false, [statement]);
+      }
+      return json({ ok: true, notes: await readDecisionNotes(this.env, game.id, identityId) });
+    }
+
+    if (request.method === "POST" && path === "/computer-control") {
+      if (!game.computer) return json({ ok: false, error: "not_computer_game" }, 409);
+      try {
+        game.computer = changeComputerControl(game.computer, { ownerId: identityId, authContextId: this.requestAuthority?.contextId ?? '', deviceId: body.deviceId, generation: body.generation, action: body.action, turnIndex: getActiveTurn(game)?.index ?? game.board.state.turnIndex ?? 0, now: Date.now() });
+      } catch (error) { return json({ ok: false, error: (error as Error).message }, 409); }
+      game.updatedAt = now();
+      await this.commit({ type: "event_appended", reason: "computer_control_changed", game });
+      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
     }
 
     if (request.method === "POST" && path === "/presence") {
@@ -508,7 +577,7 @@ export class GameRoomDO {
         this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, error: "role_not_allowed" });
         return json({ ok: false, error: "role_not_allowed" }, 403);
       }
-      const targetMove = game.moves.find((move) => move.moveId === targetMoveId);
+      const targetMove = game.moves.find((move) => move.moveId === targetMoveId) ?? (await readDecision(this.env, game.id, targetMoveId))?.move;
       if (!targetMove) {
         this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, targetMoveId, error: "move_not_found" });
         return json({ ok: false, error: "move_not_found" }, 404);
@@ -521,7 +590,7 @@ export class GameRoomDO {
       const approverIdentityId = getApproverIdentityForSeat(game, requesterSeat);
       const autoApprove = !approverIdentityId || approverIdentityId === identityId;
       if (autoApprove) {
-        const reverted = applyRevertToMove(game, targetMoveId, identityId);
+        const reverted = applyRevertToMove(game, targetMoveId, identityId, targetMove);
         if (!reverted.ok) {
           this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, targetMoveId, error: reverted.error });
           return json({ ok: false, error: reverted.error }, 409);
@@ -584,7 +653,8 @@ export class GameRoomDO {
         );
         return json({ ok: false, error: "approval_not_allowed" }, 403);
       }
-      const reverted = applyRevertToMove(game, pendingRevertRequest.targetMoveId, pendingRevertRequest.requesterIdentityId);
+      const archivedTarget = (await readDecision(this.env, game.id, pendingRevertRequest.targetMoveId))?.move;
+      const reverted = applyRevertToMove(game, pendingRevertRequest.targetMoveId, pendingRevertRequest.requesterIdentityId, archivedTarget);
       if (!reverted.ok) {
         this.logDiagnostic("warn", "live_server_revert_approve_rejected", { identityId, requestId, error: reverted.error });
         return json({ ok: false, error: reverted.error }, 409);
@@ -701,8 +771,8 @@ export class GameRoomDO {
       if (!scenario) {
         return json({ ok: false, error: "invalid_scenario_payload" }, 400);
       }
-      if (game.moves.length > 0) {
-        return json({ ok: false, error: "scenario_target_not_empty" }, 409);
+      if (game.moves.length > 0 || [game.player1, game.player2].some(player => player && player.identityId !== identityId) || game.computer) {
+        return json({ ok: false, error: "scenario_target_not_empty_or_solely_owned" }, 409);
       }
       const role = findRoleForIdentity(game, identityId);
       if (role !== "Player 1" && role !== "Player 2") {
@@ -1108,6 +1178,18 @@ export class GameRoomDO {
     const ownerSeat = command.kind === "end_turn" ? getActiveTurn(game)?.playerSeat : getSideToMoveSeat(game);
     if (!ownerSeat || getSeatIdentity(game, ownerSeat) !== command.identityId) return reject("not_your_turn");
     const payload = command.payload;
+    if (game.computer) {
+      const error = computerCommandError(game.computer, { ownerId: command.identityId, authContextId: this.requestAuthority?.contextId ?? '', side: ownerSeat === "Player 1" ? "P1" : "P2", turnIndex: getActiveTurn(game)?.index ?? game.board.state.turnIndex ?? 0, proof: payload.computer, now: Date.now() });
+      if (error) return reject(error);
+      if (payload.computer && command.kind !== 'action') return reject('invalid_computer_action');
+      if (payload.computer) {
+        const proof = payload.computer as ComputerProof;
+        const attempt = await readAttempt(this.env, game.id, command.identityId, proof.attemptId, 'computer');
+        if (!attempt || canonicalCommandJson(attempt.proof) !== canonicalCommandJson(proof) || attempt.gameplayRevision !== game.gameplayRevision
+          || attempt.fingerprint !== deterministicStateHash(game.board.state) || attempt.outcome !== 'ready'
+          || canonicalCommandJson(attempt.result?.action) !== canonicalCommandJson(payload.action)) return reject('invalid_computer_evidence');
+      }
+    } else if (payload.computer !== undefined) return reject('not_computer_game');
     let result;
     if (command.kind === "end_turn") result = endServerTurn(game);
     else if (command.kind === "move") result = applyServerMove(game, typeof payload.notation === "string" ? payload.notation : undefined, command.clientCommandId);
@@ -1117,6 +1199,9 @@ export class GameRoomDO {
       result = applyServerActionWithExpectedState(game, action, asGameState(command.expectedState), typeof payload.notation === "string" ? payload.notation : undefined, command.clientCommandId);
     }
     if (!result.ok) return reject(result.error);
+    if (payload.computer && game.moves.length) game.moves[game.moves.length - 1].computerProof = clone(payload.computer as ComputerProof);
+    if (game.computer?.singleStep && payload.computer) { game.computer.paused = true; game.computer.singleStep = false; game.computer.generation++; }
+    if (game.computer?.takeoverTurn !== null && game.computer?.takeoverTurn !== undefined && game.computer.takeoverTurn !== getActiveTurn(game)?.index) { game.computer.takeoverTurn = null; game.computer.generation++; }
     const accepted = { ...outcome("accepted", null, this.eventSeq + 1, game.gameplayRevision + 1), result: {
       ...("turn" in result ? { turn: result.turn } : {}),
       ...("removedPieces" in result ? { removedPieces: result.removedPieces } : {}),
@@ -1128,7 +1213,7 @@ export class GameRoomDO {
     return accepted;
   }
 
-  private async persistCandidate(game: LiveGame, event: (ServerEvent & { eventSeq: number }) | null, receipt?: CommandReceipt, systemPresence = false) {
+  private async persistCandidate(game: LiveGame, event: (ServerEvent & { eventSeq: number }) | null, receipt?: CommandReceipt, systemPresence = false, additionalStatements: D1Statement[] = []) {
     this.env = await withCutoverPolicy(this.env);
     if (authActive(this.env) && (this.env.AUTH_ENABLED !== "true" || !maintenanceAllowed(this.env,this.requestAuthority?.accountId))) throw new AuthProblem("temporarily_unavailable",503);
     const permit = cutoverWritePermit(this.env,game.id,this.requestAuthority,systemPresence);
@@ -1137,6 +1222,7 @@ export class GameRoomDO {
     const base = this.eventSeq;
     const gameplay = (value: LiveGame | null) => value ? JSON.stringify([value.board, value.moves, value.turns]) : null;
     game.gameplayRevision = (this.game?.gameplayRevision ?? 0) + (this.game && gameplay(this.game) !== gameplay(game) ? 1 : 0);
+    const archive = archiveStatements(this.env, this.game, game, base + 1);
     event ??= { type: "state_sync", eventSeq: base + 1, reason: "projection_updated", game: clone(game) };
     if ("game" in event) event.game = clone(game);
     if (receipt) {
@@ -1144,7 +1230,7 @@ export class GameRoomDO {
       Object.assign(event, { commandOutcome: receipt });
     }
     try {
-      await persistGameState(this.env, game, base + 1, event, { baseEventSeq: base, before: permit.before as D1Statement[], after: permit.after as D1Statement[], statements: [...(this.requestAuthority && authActive(this.env) ? gameGuardStatements(this.env, this.requestAuthority) as D1Statement[] : []), ...(receipt ? [commandReceiptStatement(this.env, receipt)] : [])] });
+      await persistGameState(this.env, game, base + 1, event, { baseEventSeq: base, before: permit.before as D1Statement[], after: permit.after as D1Statement[], statements: [...archive, ...additionalStatements, ...(this.requestAuthority && authActive(this.env) ? gameGuardStatements(this.env, this.requestAuthority) as D1Statement[] : []), ...(receipt ? [commandReceiptStatement(this.env, receipt)] : [])] });
     } catch (error) {
       // A rejected batch response may follow a durable commit. Force a durable read
       // before any next mutation; never retain or acknowledge the speculative candidate.

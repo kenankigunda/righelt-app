@@ -1,3 +1,5 @@
+import { deterministicStateHash } from '../../game-engine/src/hash';
+import { readDecision } from './decision-archive';
 import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
 import { authorizeGameRequest, authActive, sanitizeGameResponse, type GameAuthority } from './auth-game';
 import { AuthProblem } from './auth-controls';
@@ -300,6 +302,7 @@ export const handleLiveGameRequest = async (
         gameId,
         selfPlayMode: body.selfPlayMode === true || body.playgroundMode === true,
         creatorSide: body.creatorSide === "p2" ? "p2" : "p1",
+        ...(body.computer === undefined ? {} : { computer: body.computer }),
       }),
     });
     return {
@@ -380,10 +383,8 @@ export const handleLiveGameRequest = async (
     const body = await parseBody(request);
     const identityId = asIdentity(body.identityId);
     const sourceGameId = asIdentity(body.sourceGameId);
-    const scenario = asScenarioRecord(body.scenario);
-    const initialSelectionAction = asAction(body.initialSelectionAction);
     const sourceMoveIndex = typeof body.sourceMoveIndex === "number" && Number.isInteger(body.sourceMoveIndex) ? body.sourceMoveIndex : null;
-    if (!identityId || !sourceGameId || sourceMoveIndex === null || !scenario || !initialSelectionAction) {
+    if (!identityId || !sourceGameId) {
       return { handled: true, status: 400, body: { ok: false, error: "invalid_history_branch_payload" }, cacheControl: CACHE_NO_STORE };
     }
     const sourceProjection = await loadGameProjection(env, sourceGameId);
@@ -398,7 +399,20 @@ export const handleLiveGameRequest = async (
         cacheControl: CACHE_NO_STORE,
       };
     }
-    const participantCopyMode = resolveLaunchParticipantCopyMode(sourceProjection.game, identityId);
+    const source = sourceProjection.game;
+    const sourceDecisionId = asIdentity(body.sourceDecisionId);
+    const archived = sourceDecisionId ? await readDecision(env, sourceGameId, sourceDecisionId) : null;
+    const selected = archived?.move ?? (sourceDecisionId ? source.moves.find(move => move.moveId === sourceDecisionId) : sourceMoveIndex !== null ? source.moves[sourceMoveIndex] : null);
+    const live = body.sourceGameplayRevision === source.gameplayRevision && !sourceDecisionId && sourceMoveIndex === null;
+    if (!selected && !archived?.state && !live) return { handled: true, status: 409, body: { ok: false, error: "branch_source_changed" }, cacheControl: CACHE_NO_STORE };
+    // Position and next selection are derived from the immutable archive, never client scenario bytes.
+    const state = structuredClone(selected?.selectionSnapshot ?? archived?.state ?? source.board.state);
+    const initialSelectionAction = selected?.action ?? null;
+    const scenario = {
+      formatVersion: 2, id: crypto.randomUUID(), title: "History branch", description: "A new game from an inspected position.", incorrect: false,
+      initialState: state, resultingState: state, moves: [], savedSelection: null,
+      expectedFinalStateHash: deterministicStateHash(resolveToStability(state, { artifactMode: "full" })), expectedOutcome: state.outcome.status,
+    };
     const requestedGameId = asIdentity(body.gameId);
     const newGameId = requestedGameId ?? nextGameId();
     const response = await fetchGameRoom(request, env, newGameId, "/create-from-scenario", {
@@ -409,9 +423,9 @@ export const handleLiveGameRequest = async (
         gameId: newGameId,
         scenario,
         initialSelectionAction,
-        selfPlayMode: sourceProjection.game.selfPlayMode === true,
-        sourceGame: sourceProjection.game,
-        participantCopyMode,
+        selfPlayMode: body.selfPlayMode === true,
+        creatorSide: body.creatorSide === "p2" ? "p2" : "p1",
+        ...(body.computer === undefined ? {} : { computer: body.computer }),
         preserveResultingState: true,
       }),
     });
@@ -510,6 +524,11 @@ export const handleLiveGameRequest = async (
     if (
       route.length === 3 &&
       [
+        "computer-control",
+        "decision-history",
+        "decision-notes",
+        "decision-attempt",
+        "decision-attempts",
         "approve",
         "moves",
         "apply",

@@ -60,3 +60,4 @@ docs/tickets/
 __pycache__/
 *.pyc
 .ai-runs
+apps/web/computer/runtime/

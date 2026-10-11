@@ -91,9 +91,10 @@ test("scenario flyout saves a selected source and destination after switching an
 
     await page.getByRole("button", { name: "Scenarios" }).click();
     await expect(page.locator('[data-scenario-save-field="title"]')).toBeVisible();
+    await page.locator('[data-action="begin-scenario-capture"]').click();
     await expect
       .poll(async () => cellHasClass(targetCell, "target"), {
-        message: "Expected opening the flyout to clear the transient hover target selection",
+        message: "Expected starting capture to clear the transient hover target selection",
       })
       .toBe(false);
 
@@ -118,7 +119,7 @@ test("scenario flyout saves a selected source and destination after switching an
         message: "Expected clicking the destination while the flyout is open to select it for scenario authoring",
       })
       .toBe(true);
-    await expect(page.locator("#shell-board-preview-label")).toContainText("Click again to");
+    await expect(targetCell).toHaveClass(/(?:^|\s)target(?:\s|$)/);
 
     await page.locator('[data-scenario-save-field="title"]').fill(`Selection mode scenario ${Date.now()}`);
     await page.locator('[data-scenario-save-field="description"]').fill("Verifies flyout authoring captures a clicked source/destination.");
@@ -163,9 +164,10 @@ test("closing the scenarios flyout restores hover target selection on an already
 
     await page.getByRole("button", { name: "Scenarios" }).click();
     await expect(page.locator('[data-scenario-save-field="title"]')).toBeVisible();
+    await page.locator('[data-action="begin-scenario-capture"]').click();
     await expect
       .poll(async () => cellHasClass(firstTargetCell, "target"), {
-        message: "Expected opening the flyout to clear the transient hover target selection",
+        message: "Expected starting capture to clear the transient hover target selection",
       })
       .toBe(false);
 
@@ -178,7 +180,7 @@ test("closing the scenarios flyout restores hover target selection on an already
 
     await expect(sourceCell).toHaveClass(/(?:^|\s)selected-piece(?:\s|$)/);
     await firstTargetCell.click();
-    await expect(page.locator("#shell-board-preview-label")).toContainText("Click again to");
+    await expect(firstTargetCell).toHaveClass(/(?:^|\s)target(?:\s|$)/);
 
     await page.getByRole("button", { name: "Scenarios" }).click();
     await expect(page.locator('[data-scenario-save-field="title"]')).toHaveCount(0);

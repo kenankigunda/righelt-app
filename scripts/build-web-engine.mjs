@@ -84,3 +84,6 @@ await writeFile(
   path.join(passwordData, "common-passwords.json"),
   await readFile(path.join(repoRoot, "packages", "shared-types", "data", "common-passwords.json")),
 );
+
+// Build the pinned browser runtime for local previews, CI and deployment together.
+await import('./build-computer-player.mjs');

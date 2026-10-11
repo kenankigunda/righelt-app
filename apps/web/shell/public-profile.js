@@ -1,3 +1,4 @@
+import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
 import { renderPlayerEmblem } from './player-emblem.js';
 const escape = (value) =>
   String(value ?? "").replace(
@@ -7,11 +8,16 @@ const escape = (value) =>
         c
       ],
   );
+export const participantDisplayName = (person, fallback = 'Guest player') =>
+  COMPUTER_PROFILES[person?.computerProfile]?.name || person?.profile?.displayName || person?.profile?.username || fallback;
 export const participantName = (person) =>
-  person?.profile
+  person?.computerProfile && COMPUTER_PROFILES[person.computerProfile]
+    ? `<span class="player-name">${COMPUTER_PROFILES[person.computerProfile].name}</span><span class="player-username">Computer · experimental</span>`
+    : person?.profile
     ? `<span class="player-name"><bdi>${escape(person.profile.displayName || person.profile.username)}</bdi></span><span class="player-username"><bdi>@${escape(person.profile.username)}</bdi></span>`
     : `<bdi>Guest player</bdi>`;
 export const participantButton = (person, {key = person?.profile?.username || person?.identityId || "guest", side = "neutral", presence = ""} = {}) => {
+  if (person?.computerProfile && COMPUTER_PROFILES[person.computerProfile]) return `<span class="participant-identity" data-player-side="${escape(side)}"><span class="participant-profile">${renderPlayerEmblem(person.computerProfile)}<span class="player-name-stack">${participantName(person)}</span></span></span>`;
   const username = person?.profile?.username;
   return `<span class="participant-identity" data-player-side="${escape(side)}"><button class="participant-profile" data-profile-key="${escape(key)}" aria-expanded="false" data-action="${username ? "public-profile" : "guest-profile"}" ${username ? `data-username="${escape(username)}"` : `data-identity-id="${escape(person?.identityId)}"`}>${renderPlayerEmblem(username || "guest")}<span class="player-name-stack">${participantName(person)}</span>${presence}</button><span class="player-profile-details" data-profile-slot="${escape(key)}"></span></span>`;
 };

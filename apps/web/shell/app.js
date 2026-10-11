@@ -1,9 +1,24 @@
+import { activeDecisionLineage } from './decision-history.js';
+import { beginScenarioCapture, scenarioCapturePosition, canLoadScenarioInPlace } from './scenario-capture.js';
+import { createComputerSession } from './computer-session.js';
+import { renderComputerProgress, renderDecisionDebug } from './computer-view.js';
+import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
+let computerSession = null;
+const decisionDebugStates = new Map();
+const getDecisionDebugState = (gameId) => {
+  if (!decisionDebugStates.has(gameId)) decisionDebugStates.set(gameId, { items: [], notes: [], drafts: new Map(), attempts: new Map(), attemptPages: { computer: { items: [], cursor: null }, analysis: { items: [], cursor: null } }, open: new Set(), cursor: null, partial: false, flaggedOnly: false, error: null });
+  return decisionDebugStates.get(gameId);
+};
+const patchToolHtml = (element, html) => {
+  const next = element.cloneNode(false); next.innerHTML = html;
+  patchSectionContent(element, next);
+};
 import { patchSectionContent } from "./dom-patch.js";
 import { SWIPE_EASING_CSS } from './navigation-motion.js';
 import { getGameResult, createResultTransitions, createRematchDialog } from './game-result.js';
 import { createRouteHydration } from './route-hydration.js';
 import { createRenderGestureGate, preserveBoardFocus } from './render-gesture.js';
-import { participantButton, participantName, createInlineProfiles } from './public-profile.js';
+import { participantButton, participantName, participantDisplayName, createInlineProfiles } from './public-profile.js';
 import { createAccountController, safeAccountIntent } from './account-controller.js';
 import { createAccountDialog } from './account-dialog.js';
 import { renderPieceSymbol } from '../piece-symbols.js';
@@ -16,7 +31,7 @@ import { createModal } from './modal.js';
 import { createOpponentStoryDialog, OPPONENT_STORIES } from './opponent-stories.js';
 import { recoveryMessage, sharedMutationActions } from "./recovery-view.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
-import { createEngineBoardAdapter, createInitialBoardSnapshot } from "../board-adapters/engine-board-adapter.js";
+import { createEngineBoardAdapter, createInitialBoardSnapshot, listBoardLegalActions } from "../board-adapters/engine-board-adapter.js";
 import { createMiniBoardPreview, syncMiniBoardPreviews } from "../board/mini-board-preview.js";
 import { createBoardRuntime } from "../board/runtime/board-runtime.js";
 import { createShellBoardHost } from "../board/hosts/shell-host.js";
@@ -344,6 +359,11 @@ const renderSeatLabel = (seat) => `<span class="${playerToneClassForSeat(seat)}"
 const isDualSeatIdentity = (game) =>
   Boolean(game?.player1?.identityId) && Boolean(game?.player2?.identityId) && game.player1.identityId === game.player2.identityId;
 const renderRoleLabel = (role, game = null) => {
+  if (isPlayerRole(role) && (game?.player1?.computerProfile || game?.player2?.computerProfile)) {
+    if (game.player1?.computerProfile && game.player2?.computerProfile) return '<strong>watching computers</strong>';
+    const humanSeat = game.player1?.computerProfile ? 'Player 2' : 'Player 1';
+    return `<strong class="${playerToneClassForSeat(humanSeat)}">${humanSeat}</strong>`;
+  }
   if (isDualSeatIdentity(game) && isPlayerRole(role)) {
     return '<strong class="player-tone-both">both players</strong>';
   }
@@ -606,10 +626,20 @@ const syncScenarioAuthoringControls = () => {
   }
   const saveButtonEl = appEl?.querySelector?.('[data-action="save-scenario"]');
   if (saveButtonEl instanceof HTMLButtonElement) {
-    saveButtonEl.disabled = !canSubmitSaveScenarioDraft() || isButtonPending(SCENARIO_SAVE_PENDING_KEY);
+    saveButtonEl.disabled = !scenarioCapture || !canSubmitSaveScenarioDraft() || isButtonPending(SCENARIO_SAVE_PENDING_KEY);
   }
 };
+let scenarioCapture = null;
+let scenarioEditingId = null;
+const scenarioMetadataDrafts = new Map();
+const capturePosition = () => scenarioCapturePosition(scenarioCapture, scenarioCapture ? transport.getAuthoritativeGame(scenarioCapture.gameId) : null);
 const getScenarioExportContext = (game) => {
+  if (scenarioCapture?.gameId === game?.id) {
+    const currentSnapshot = capturePosition();
+    const displayedCapture = currentRoute.scenarios && toStableKey(boardRuntime?.getState?.()) === toStableKey(currentSnapshot);
+    if (displayedCapture) scenarioCapture.selection = buildSavedSelectionFromRuntimeSelection(boardRuntime?.getSelection?.() ?? null, currentSnapshot);
+    return { currentSnapshot, moveLimit: 0, savedSelection: scenarioCapture.selection };
+  }
   const historyExportContext = resolveHistoryScenarioExportContext(game);
   if (historyExportContext) {
     return historyExportContext;
@@ -1747,7 +1777,7 @@ const renderTurnHistory = (game) => {
       actorSide: move.actorSide || null,
       html: `<li class="history-item${sectionClass} ${playerToneClassForSide(move.actorSide || "P1")}${selectedClass}${undoneClass}" data-action="jump-history" data-game-id="${escapeHtml(
         game.id,
-      )}" data-move-index="${move.index}" data-move-id="${escapeHtml(move.moveId || "")}" data-testid="history-move-item">
+      )}" data-move-index="${move.index}" data-move-id="${escapeHtml(move.moveId || "")}" data-key="${escapeHtml(move.moveId)}" data-testid="history-move-item">
           <div class="history-item-info">
             <span class="history-move-line">Move ${escapeHtml(
               String(move.displayMoveNumber ?? move.index + 1),
@@ -1901,11 +1931,13 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
   const scenarioPreviewSnapshot = scenarioPreviewPayload?.snapshot ?? getStaticCardPreviewSnapshot(scenarioCard);
   const moveLimit = game?.inHistoryMode && typeof game.historyIndex === "number" ? game.historyIndex : game?.moves?.length ?? 0;
   const canAuthorScenarios = Boolean(game) && canAuthorScenariosLocally();
-  const canLoadIntoCurrentGame = Boolean(game && Array.isArray(game.moves) && game.moves.length === 0 && selectedScenario);
+  const canLoadIntoCurrentGame = canLoadScenarioInPlace(game, transport.getIdentityId());
+  const capturing = scenarioCapture?.gameId === game?.id;
+  const editing = scenarioEditingId === selectedScenario?.id;
   const saveDraft = getSaveScenarioDraft();
-  const canSaveScenario = canAuthorScenarios && Boolean(saveDraft.title && saveDraft.description);
-  const selectedScenarioTitle = selectedScenario?.title ?? "";
-  const selectedScenarioDescription = selectedScenario?.description ?? "Scenarios replay canonical shell history into a game.";
+  const canSaveScenario = canAuthorScenarios && capturing && Boolean(saveDraft.title && saveDraft.description);
+  const selectedScenarioTitle = scenarioMetadataDrafts.get(selectedScenario?.id)?.title ?? selectedScenario?.title ?? "";
+  const selectedScenarioDescription = scenarioMetadataDrafts.get(selectedScenario?.id)?.description ?? selectedScenario?.description ?? "Scenarios replay canonical shell history into a game.";
   const canUpdateScenario = canAuthorScenarios && Boolean(selectedScenario);
   if (scenarioLoadPending) {
     return `
@@ -1933,14 +1965,14 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
               <div
                 class="scenario-selected-title"
                 data-scenario-editable="title"
-                ${canAuthorScenarios ? 'contenteditable="plaintext-only" role="textbox" aria-label="Scenario title"' : ""}
-                ${canAuthorScenarios ? "" : 'tabindex="0"'}
+                data-persist data-decision-id="${escapeHtml(selectedScenario?.id)}" ${canAuthorScenarios && editing ? 'contenteditable="plaintext-only" role="textbox" aria-label="Scenario title"' : ""}
+                ${canAuthorScenarios && editing ? "" : 'tabindex="0"'}
               >${escapeHtml(selectedScenarioTitle)}</div>
               <p
                 class="small"
                 data-scenario-editable="description"
-                ${canAuthorScenarios ? 'contenteditable="plaintext-only" role="textbox" aria-label="Scenario description"' : ""}
-                ${canAuthorScenarios ? "" : 'tabindex="0"'}
+                data-persist data-decision-id="${escapeHtml(selectedScenario?.id)}" ${canAuthorScenarios && editing ? 'contenteditable="plaintext-only" role="textbox" aria-label="Scenario description"' : ""}
+                ${canAuthorScenarios && editing ? "" : 'tabindex="0"'}
               >${escapeHtml(selectedScenarioDescription)}</p>
             </div>`
           : `<p class="small">${escapeHtml(selectedScenarioDescription)}</p>`
@@ -1967,21 +1999,24 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
           disabled: !selectedScenario,
         })}>${route.name === "home" ? "Open Scenario" : canLoadIntoCurrentGame ? "Load into This Game" : "Open in New Tab"}</button>
         ${
-          canUpdateScenario
+          canUpdateScenario && capturing
             ? `<button data-action="update-scenario"${renderButtonStateAttributes({
                 className: "secondary",
                 pendingKey: SCENARIO_UPDATE_PENDING_KEY,
                 disabled: !selectedScenarioTitle.trim() || !selectedScenarioDescription.trim(),
-              })}>Update to match current board</button>`
+              })}>Replace position with capture</button>`
             : ""
         }
       </div>
+      ${canUpdateScenario ? `<button class="secondary" data-action="${editing ? 'save-scenario-details' : 'edit-scenario-details'}">${editing ? 'Save details' : 'Edit details'}</button>` : ''}
       <pre class="debug-pre" aria-live="polite">${escapeHtml(selectedScenarioFeedback || formatScenarioInfo(selectedScenario))}</pre>
     </section>
     ${
       canAuthorScenarios
         ? `<section class="panel debug-panel scenario-panel scenario-panel-create">
-            <h2>Create a scenario</h2>
+            <h2>Capture a position</h2>
+            <p>${capturing ? scenarioCapture.mode === 'live' ? 'Following this manual game until you save. History inspection does not change the capture.' : 'Position frozen when capture began. Live play may continue separately.' : 'Start a capture to choose a piece and target, then save explicitly.'}</p>
+            <button class="secondary" data-action="${capturing ? 'end-scenario-capture' : 'begin-scenario-capture'}">${capturing ? 'End capture' : 'Capture this position'}</button>
             <div class="form-row">
               <label for="save-scenario-title">Title</label>
               <input id="save-scenario-title" data-scenario-save-field="title" value="${escapeHtml(saveDraft.title)}" />
@@ -1995,7 +2030,7 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
                 className: "secondary",
                 pendingKey: SCENARIO_SAVE_PENDING_KEY,
                 disabled: !canSaveScenario,
-              })}>Save current board as new scenario</button>
+              })}>Save capture as new scenario</button>
             </div>
             <pre class="debug-pre" aria-live="polite">${escapeHtml(saveScenarioFeedback || "No new scenario saved yet.")}</pre>
           </section>`
@@ -2004,63 +2039,21 @@ const renderScenarioPanel = ({ route, game = null } = {}) => {
   `;
 };
 
+let inspectedLegal = { key: null, actions: [] };
 const renderDebugContent = () => {
-  const route = currentRoute;
-  const gameId = route.name === "game" ? route.gameId : route.name === "invite" ? resolvedInvite?.gameId || null : null;
+  const gameId = getCurrentViewedGameId();
   const game = gameId ? transport.getGameViewModel(gameId) : null;
-  const selection = boardRuntime?.getSelection?.() ?? null;
-  const legalActions = boardRuntime?.getLegalActions?.() ?? (game?.legalActions ?? []);
-  const currentSnapshot = game?.currentSnapshot ?? null;
-  const routeDiagnostics =
-    route.name === "home"
-      ? {
-          identityId: transport.getIdentityId(),
-          loadedGames: transport.listGames().map((entry) => ({ id: entry.id, moves: entry.moves.length, role: entry.myRole })),
-        }
-      : route.name === "tutorial"
-        ? {
-            tutorial: tutorial.current(),
-            completed: account.snapshot().session.account?.preferences?.tutorial === "completed",
-          }
-        : {
-            route: route.name,
-            gameId,
-          };
-  return `
-    <section class="panel debug-panel">
-      <h2>Live Sync</h2>
-      <pre class="debug-pre">Identity <span id="shell-debug-identity" class="mono">${escapeHtml(transport.getIdentityId())}</span>
-Live sync: <span id="shell-debug-live-sync" class="mono">${escapeHtml(`${wsStatus.state}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`)}</span>
-Last event: <span id="shell-debug-last-event" class="mono">${escapeHtml(wsLastEvent)}</span>
-Sync metrics: <span id="shell-debug-sync-metrics" class="mono">${escapeHtml(JSON.stringify(transport.getSyncMetrics()))}</span></pre>
-    </section>
-    <section class="panel debug-panel">
-      <h2>Engine Status</h2>
-      <pre class="debug-pre">${escapeHtml(
-        JSON.stringify(
-          game
-            ? {
-                gameId: game.id,
-                moves: game.moves.length,
-                inHistoryMode: game.inHistoryMode,
-                historyIndex: game.historyIndex ?? null,
-                sideToMove: currentSnapshot?.sideToMove ?? null,
-                turnIndex: currentSnapshot?.turnIndex ?? null,
-                continuation: currentSnapshot?.continuation ?? null,
-                legalActions: legalActions.length,
-                selection,
-              }
-            : routeDiagnostics,
-          null,
-          2,
-        ),
-      )}</pre>
-    </section>
-    <section class="panel debug-panel">
-      <h2>Actions Diagnostics</h2>
-      <pre class="debug-pre">${escapeHtml(JSON.stringify(legalActions.slice(0, 20), null, 2))}</pre>
-    </section>
-  `;
+  const status = computerSession?.snapshot() ?? {};
+  const state = getDecisionDebugState(gameId);
+  const position = game?.currentSnapshot;
+  if (position && state.open.has('position')) {
+    const key = toStableKey(position);
+    if (inspectedLegal.key !== key) inspectedLegal = { key, actions: listBoardLegalActions(position) };
+  }
+  return renderDecisionDebug({ game, selection: boardRuntime?.getSelection?.() ?? null,
+    legalActions: state.open.has('position') ? inspectedLegal.actions : null, status,
+    diagnostics: { connection: wsStatus, lastEvent: wsLastEvent, sync: transport.getSyncMetrics(), pendingCommands: game?.pendingCommandCount, revision: game?.gameplayRevision, computer: game?.computer, runtime: { ...status, analysis: undefined } },
+    state: getDecisionDebugState(gameId), signedIn: account.canPlay() });
 };
 
 const renderFlyout = ({ title, variant, closeAction, body }) => `
@@ -2385,7 +2378,7 @@ const scrollHomeSectionToTop = (sectionKey) => {
   });
 };
 
-const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer opponents are being prepared.</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
+const renderStartChoices = () => `<section class="panel home-start"><p class="home-section-kicker">Take your seat</p><h2 class="home-start-title">Start something new</h2><p class="home-start-description">A familiar rival, or a new challenge? You decide.</p><div class="opponent-picker">${Object.entries(OPPONENT_STORIES).map(([id,story])=>`<button class="opponent-choice" data-action="opponent-story" data-opponent="${id}"><img src="/assets/opponents/${id}-portrait.webp" alt="" width="174" height="116"><strong>${story.name}</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">${story.difficulty}</span></button>`).join('')}<button class="opponent-choice" data-action="create-game" data-testid="home-create-game"><img src="/assets/opponents/friend-portrait.webp" alt="" width="174" height="116"><strong>Friend</strong><span class="opponent-choice-arrow">${icon('right')}</span><span class="small">Share a game</span></button></div><div class="home-start-footer"><span class="small">Computer players are experimental. Try a game.</span><button class="secondary" data-action="create-self-play">${icon('play')}Play both sides</button></div></section>`;
 const renderHome = () => `<section class="stack home-refresh">${renderHomeGameSection('my')}${renderStartChoices()}${getVisibleHomeSectionKeys().filter(key=>key!=='my').map(renderHomeGameSection).join('')}</section>`;
 
 const renderGameAlertsHtml = (game, inviteFromRole = null) => {
@@ -2609,8 +2602,8 @@ const renderParticipantsPanel = (game) => {
 
 const renderHistoryPanel = (game) => {
   const historyRows = renderTurnHistory(game);
-  const currentNames = [...new Map([game.player1,game.player2].filter(person => person?.profile).map(person => [person.profile.username,person])).values()].map(person => `<span class="history-player-name">${participantName(person)}</span>`).join("");
-  const selectedMove = typeof game.historyIndex === "number" && Array.isArray(game.moves) ? game.moves[game.historyIndex] ?? null : null;
+  const currentNames = [...new Map([game.player1,game.player2].filter(person => person?.profile || person?.computerProfile).map((person, index) => [person.computerProfile ? `computer-${index}` : person.profile.username,person])).values()].map(person => `<span class="history-player-name">${participantName(person)}</span>`).join("");
+  const selectedMove = game.inspectedDecision ?? (typeof game.historyIndex === "number" && Array.isArray(game.moves) ? game.moves[game.historyIndex] ?? null : null);
   const historyMoveNumber = typeof selectedMove?.displayMoveNumber === "number" ? String(selectedMove.displayMoveNumber) : "?";
   const hasHistoryMoves = Array.isArray(game.moves) && game.moves.length > 0;
   const historyBanner = game.inHistoryMode
@@ -2626,12 +2619,16 @@ const renderHistoryPanel = (game) => {
     ${getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId()) ? `<button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button>` : ""}
     <div class="section-followup">
       ${historyBanner}
+      ${game.inHistoryMode && selectedMove?.moveId ? `<div class="history-item-actions"><button class="secondary" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}">Create a new game before this decision</button>${game.myRoles?.some(role => role === 'Player 1' || role === 'Player 2') ? `<button class="secondary" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(selectedMove.moveId)}">Undo before this decision</button>` : ''}</div>` : ''}
       <ol class="history-list" data-testid="history-list">${historyRows}</ol>
+      <button class="secondary" data-action="debug-load-history">${getDecisionDebugState(game.id).cursor ? 'Load older archive page' : 'Browse full decision archive'}</button>
+      <ol class="debug-history">${getDecisionDebugState(game.id).items.filter(entry => entry.move && !game.moves.some(move => move.moveId === entry.id)).map(entry => `<li data-key="${escapeHtml(entry.id)}"><button class="secondary" data-action="debug-inspect-decision" data-decision-id="${escapeHtml(entry.id)}">${escapeHtml(entry.move.notation)} · ${escapeHtml(formatClientDateTime(entry.at))}</button></li>`).join('')}</ol>
     </div>
   `;
 };
 
 const renderBoardPanel = (game) => `
+  <div data-computer-status>${renderComputerProgress(game, computerSession?.snapshot())}</div>
   ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p class="alert" role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
   ${game.ownershipMode === "legacy_guest" && account.snapshot().enabled ? '<p class="alert" role="status">This older guest game is view-only. <button data-action="create-game">Start new game</button></p>' : ''}
   ${account.snapshot().enabled && account.snapshot().available && !account.snapshot().maintenance && !account.canPlay() ? '<p class="alert" role="status">Sign in to play or analyze. The board remains available to view.</p>' : ''}
@@ -2889,7 +2886,7 @@ const updateMountedFlyouts = () => {
       const existing=currentFlyoutStack.querySelector(`[data-flyout="${next.dataset.flyout}"]`);
       if(!existing){currentFlyoutStack.insertBefore(next,currentFlyoutStack.children[index] || null);continue;}
       const scroll=existing.querySelector('.shell-flyout-scroll'), nextScroll=next.querySelector('.shell-flyout-scroll');
-      if(scroll && nextScroll && scroll.innerHTML !== nextScroll.innerHTML){const top=scroll.scrollTop;scroll.innerHTML=nextScroll.innerHTML;scroll.scrollTop=top;}
+      if(scroll && nextScroll && scroll.innerHTML !== nextScroll.innerHTML){const top=scroll.scrollTop;patchSectionContent(scroll,nextScroll);scroll.scrollTop=top;}
       if(currentFlyoutStack.children[index] !== existing)currentFlyoutStack.insertBefore(existing,currentFlyoutStack.children[index] || null);
     }
   } else {
@@ -3009,6 +3006,8 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
     getCurrentFlyoutState(),
   )}`;
 
+  const computerStatusEl = shellRoot.querySelector('[data-computer-status]');
+  if (computerStatusEl) patchToolHtml(computerStatusEl, renderComputerProgress(game, computerSession?.snapshot()));
   if (alertsEl instanceof HTMLElement) {
     const html = renderGameAlertsHtml(game, inviteFromRole);
     if (alertsEl.innerHTML !== html) alertsEl.innerHTML = html;
@@ -3049,7 +3048,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
     participantsEl.innerHTML = renderParticipantsPanel(game);
   }
   if (historyEl instanceof HTMLElement) {
-    historyEl.innerHTML = renderHistoryPanel(game);
+    patchToolHtml(historyEl, renderHistoryPanel(game));
   }
   if (includeBoard || mountedBoardGameId === game.id || !document.querySelector("#shell-board .cell")) {
     mountBoardForGame(game);
@@ -3065,7 +3064,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
     if (scrollEl instanceof HTMLElement) {
       const body = renderFlyoutBodyByKey(flyoutKey);
       if (body) {
-        scrollEl.innerHTML = body;
+        patchToolHtml(scrollEl, body);
       }
     }
   });
@@ -3237,7 +3236,7 @@ const renderRevertWaitingGate = (game, request) => {
 const renderResult = game => {
   const result = getGameResult(transport.getAuthoritativeGame(game.id), transport.getIdentityId());
   if (!result) return "";
-  const names = game.selfPlayMode ? "Self-play" : [game.player1, game.player2].map((person, i) => person?.profile?.displayName || `Player ${i + 1}`).join(" vs ");
+  const names = game.selfPlayMode && !game.player1?.computerProfile && !game.player2?.computerProfile ? "Self-play" : [game.player1, game.player2].map((person, i) => participantDisplayName(person, `Player ${i + 1}`)).join(" vs ");
   return `<section class="panel game-result" data-testid="game-result"><p class="small">Game finished</p><h1 tabindex="-1">${escapeHtml(result.title)}</h1><p>${escapeHtml(result.reason)}</p><p>${escapeHtml(names)}</p><p class="small">Game ${escapeHtml(formatDisplayGameId(game.id))}</p><div class="story-modal-actions"><button data-action="analysis" data-game-id="${escapeHtml(game.id)}">${icon('back')}Review game</button><button class="secondary" data-action="rematch" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Play again</button><a class="button-link secondary" href="#/">Home</a></div></section>`;
 };
 
@@ -3411,11 +3410,12 @@ const mountBoardForGame = (game) => {
   document.querySelector('[data-shell-panel="board"]')?.setAttribute('data-turn-side', game.currentSnapshot?.sideToMove === 'P2' ? 'blue' : 'red');
   applySharedMutationGates(game);
   updateRecoveryAnnouncement(game);
-  const snapshot = game.currentSnapshot ?? null;
+  const capturing = currentRoute.scenarios && scenarioCapture?.gameId === game.id;
+  const snapshot = capturing ? capturePosition() : game.currentSnapshot ?? null;
   const historyMoveIndex = game.inHistoryMode ? game.historyIndex : null;
-  const historySelectionAction = game.inHistoryMode ? game.historySelectionAction ?? null : null;
-  const overlayMode = game.inHistoryMode ? "recorded-action" : "interactive";
-  const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode ? game.legalActions : [];
+  const historySelectionAction = game.inHistoryMode && !capturing ? game.historySelectionAction ?? null : null;
+  const overlayMode = game.inHistoryMode && !capturing ? "recorded-action" : "interactive";
+  const effectiveLegalActions = Array.isArray(game.legalActions) && !game.inHistoryMode && !(capturing && scenarioCapture.mode === 'frozen') ? game.legalActions : [];
   const scenarioSelectionHydration = resolvePendingScenarioHydration({
     game,
     snapshot,
@@ -3434,17 +3434,21 @@ const mountBoardForGame = (game) => {
 
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
-  const historyDestroyedPieces = getHistoryDestroyedPieceOverlays(game);
-  const historyRecordedActionStartPiece = getHistoryRecordedActionStartPiece(game);
-  const forceClickTargetSelection = currentRoute.scenarios;
-  const hydratedSelectionAction = scenarioSelectionHydration.selectionAction ?? initialSelectionHydration.selectionAction;
+  const historyDestroyedPieces = capturing ? [] : getHistoryDestroyedPieceOverlays(game);
+  const historyRecordedActionStartPiece = capturing ? null : getHistoryRecordedActionStartPiece(game);
+  const forceClickTargetSelection = Boolean(capturing);
+  const frozenCapture = capturing && scenarioCapture.mode === 'frozen';
+  const captureSelection = frozenCapture ? scenarioCapture.selection : null;
+  const capturePiece = captureSelection?.source ? snapshot.pieces.find(piece => piece.position?.row === captureSelection.source.row && piece.position?.col === captureSelection.source.col) : null;
+  const hydratedSelectionState = frozenCapture ? (capturePiece ? { selectedPieceId: capturePiece.id, source: captureSelection.source, target: captureSelection.target } : null) : scenarioSelectionHydration.selectionState;
+  const hydratedSelectionAction = frozenCapture ? null : scenarioSelectionHydration.selectionAction ?? initialSelectionHydration.selectionAction;
   const overlayKey = toStableKey({
     overlayMode,
     recordedAction: historySelectionAction,
     recordedActionStartPiece: historyRecordedActionStartPiece,
     destroyedPieces: historyDestroyedPieces,
     selectionAction: hydratedSelectionAction,
-    selectionState: scenarioSelectionHydration.selectionState,
+    selectionState: hydratedSelectionState,
     forceClickTargetSelection,
   });
 
@@ -3457,18 +3461,23 @@ const mountBoardForGame = (game) => {
       host: createShellBoardHost({
         transport,
         gameId: game.id,
+        getInspectionSnapshot: () => currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id ? capturePosition() : null,
+        canSelect: () => Boolean(currentRoute.scenarios && scenarioCapture?.gameId === game.id) || (hostInvite?.gameId !== game.id && canControlLiveBoard(transport.getGameViewModel(game.id))),
         canInteract: () => {
           const view = transport.getGameViewModel(game.id);
-          return hostInvite?.gameId !== game.id && canControlLiveBoard(view);
+          return !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view);
         },
       }),
       controls: {
         onInteractionSound: event => gameSound.interaction(event),
-        getAllowFreeSelection: () => false,
+        getAllowFreeSelection: () => Boolean(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id),
         getSupportsHover: () => hoverCapability.getSupportsHover(),
-        getForceClickTargetSelection: () => Boolean(currentRoute.scenarios),
+        getForceClickTargetSelection: () => Boolean(currentRoute.scenarios && scenarioCapture?.gameId === game.id),
         onVisualsUpdated: visible => updateLegendVisibility(document.querySelector('.overlay-key'), visible, prefersReducedMotion()),
-        onStateUpdated: ({ state, selectedPieceId }) => {
+        onStateUpdated: ({ state, selectedPieceId, selectedSource, selectedTarget }) => {
+          if (currentRoute.scenarios && scenarioCapture?.gameId === game.id && toStableKey(state) === toStableKey(capturePosition())) {
+            scenarioCapture.selection = buildSavedSelectionFromRuntimeSelection({ source: selectedSource, target: selectedTarget }, state);
+          }
           applyCommandLegendSwatch(document.getElementById("shell-command-legend-swatch"), state, selectedPieceId);
           applyCommandLegendSwatch(document.querySelector(".commander-key"), state, selectedPieceId);
           document.querySelector('.swatch.supply-point')?.style.setProperty('--supply-owner',getCommandLegendColor(state,selectedPieceId));
@@ -3493,7 +3502,7 @@ const mountBoardForGame = (game) => {
       legalActions: effectiveLegalActions,
       resetSelection: true,
       selectionAction: hydratedSelectionAction,
-      selectionState: scenarioSelectionHydration.selectionState,
+      selectionState: hydratedSelectionState,
       overlayMode,
       recordedAction: historySelectionAction,
       recordedActionStartPiece: historyRecordedActionStartPiece,
@@ -3508,13 +3517,14 @@ const mountBoardForGame = (game) => {
     failedOperationsKey,
   });
   const resetSelection =
-    mountedHistoryMoveIndex !== historyMoveIndex ||
+    (!frozenCapture && mountedHistoryMoveIndex !== historyMoveIndex) ||
     (mountedSyncStatusKey !== syncStatusKey && failedOperationsKey.length > 0) ||
     shouldResetBoardSelection({
       currentSnapshot: boardRuntime.getState?.() ?? null,
       nextSnapshot: snapshot,
       currentSelection: boardRuntime.getSelection?.() ?? null,
       nextLegalActions: effectiveLegalActions,
+      freeSelection: frozenCapture,
     });
   mountedHistoryMoveIndex = historyMoveIndex;
   boardRuntime.bindElements({ boardEl, overlayLinesEl, boardPreviewLabelEl, boardTurnIndicatorEl });
@@ -3555,7 +3565,7 @@ const mountBoardForGame = (game) => {
     legalActions: effectiveLegalActions,
     resetSelection,
     selectionAction: hydratedSelectionAction,
-    selectionState: scenarioSelectionHydration.selectionState,
+    selectionState: hydratedSelectionState,
     overlayMode,
     recordedAction: historySelectionAction,
     recordedActionStartPiece: historyRecordedActionStartPiece,
@@ -4185,6 +4195,21 @@ const makeAccountSyncStore = auth => createSyncStore({
 });
 let syncStore = makeAccountSyncStore(account.snapshot());
 let transport = syncStore;
+const updateComputerUi = () => {
+  const gameId = getCurrentViewedGameId(), game = gameId ? transport.getGameViewModel(gameId) : null;
+  const status = appEl.querySelector('[data-computer-status]');
+  if (status) patchToolHtml(status, renderComputerProgress(game, computerSession?.snapshot()));
+  const debug = appEl.querySelector('[data-flyout="debug"] .shell-flyout-scroll');
+  if (debug) patchToolHtml(debug, renderDebugContent());
+};
+computerSession = createComputerSession({ getContext: () => {
+  const state = account.snapshot(), gameId = currentRoute.name === 'game' ? currentRoute.gameId : null;
+  return { transport, game: gameId ? transport.getAuthoritativeGame(gameId) : null, accountGeneration: state.generation, authenticated: account.canPlay(), visible: !document.hidden && Boolean(gameId) };
+}, onChange: updateComputerUi });
+document.addEventListener('visibilitychange', () => { void computerSession.tick(); });
+window.addEventListener('pagehide', () => { computerSession.suspend(); });
+window.addEventListener('hashchange', () => { queueMicrotask(() => { void computerSession.tick(); }); });
+
 const closeFriendInvite = () => {
   hostInvite=null;inviteVisit++;render({animatePanels:false});
   document.querySelector('[data-action="copy-invite"]')?.focus({preventScroll:true});
@@ -4229,14 +4254,34 @@ const openFriendInvite = gameId => {
 const rematchDialog = createRematchDialog({createModal,onStart:async({opponent,side},{isCurrent})=>{
   if(!await waitForAccountGate() || !isCurrent())return;
   if(!account.canPlay())throw new Error('Sign in to start another game.');
-  if(!['self','friend'].includes(opponent))throw new Error('This opponent is still in training.');
-  const handle=transport.createGame({selfPlayMode:opponent==='self',creatorSide:side});
+  const computer = COMPUTER_PROFILES[opponent] ? { p1: side === 'p2' ? opponent : null, p2: side === 'p1' ? opponent : null } : undefined;
+  const handle=transport.createGame({selfPlayMode:opponent==='self',creatorSide:side,computer});
   rematchDialog.close();activeResultGameId=null;
   startGameEntryRouteTransition(handle.result.id,'game');navigateTo(buildGameHash(handle.result.id,null,getCurrentFlyoutState()));
   if(opponent==='friend')openFriendInvite(handle.result.id);
 }});
-const getComputerReadiness = () => ({ state:'unavailable', message:'This opponent is still in training. Friend games are ready to play.' });
-const opponentSession = createOpponentSession({ preferences:createIntroductionPreferences(storage), getReadiness:getComputerReadiness, createGame:async()=>{throw new Error('Trained computer play is not available yet.');} });
+let pendingBranch = null;
+const branchDialog = createRematchDialog({ createModal, title: 'Create a new game here', labelId: 'branch-title', onStart: async ({ opponent, side }, { isCurrent }) => {
+  if (!account.canPlay() || !pendingBranch || !isCurrent()) throw new Error('Sign in to create a game.');
+  const computer = COMPUTER_PROFILES[opponent] ? { p1: side === 'p2' ? opponent : null, p2: side === 'p1' ? opponent : null } : undefined;
+  const handle = transport.launchHistoryBranch({ ...pendingBranch, creatorSide: side, selfPlayMode: opponent === 'self', computer });
+  const nextHash = buildGameHash(handle.result.game.id, null, { debug: false, scenarios: false });
+  window.open(`${window.location.pathname}${window.location.search}${nextHash}`, '_blank', 'noopener');
+  await handle.committed;
+  pendingBranch = null;
+} });
+const getComputerReadiness = () => !account.snapshot().enabled ? { state: 'unavailable', message: 'Computer play needs accounts to be enabled.' } : typeof Worker === 'function' && typeof WebAssembly === 'object' ? { state:'ready', message:'Experimental computer play. Your device prepares the model when the game starts.' } : { state:'unavailable', message:'Computer play needs a browser with WebAssembly and workers.' };
+const opponentSession = createOpponentSession({ preferences:createIntroductionPreferences(storage), getReadiness:getComputerReadiness, createGame:async(intent,isCurrent)=>{
+  if(!await waitForAccountGate() || !isCurrent())throw new Error('Game start cancelled.');
+  if(!account.canPlay())throw new Error('Sign in to start your game.');
+  const side = intent.side === 'p2' ? 'p2' : 'p1';
+  const handle=transport.createGame({creatorSide:side,computer:{p1:side==='p2'?intent.opponent:null,p2:side==='p1'?intent.opponent:null}});
+  await handle.committed;
+  if(!isCurrent())return;
+  startGameEntryRouteTransition(handle.result.id,currentRoute.name);
+  navigateTo(buildGameHash(handle.result.id,null,getCurrentFlyoutState()));
+  return handle.result;
+} });
 const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: opponent => opponent === 'friend' ? {state:'ready',message:'Send an invitation. Let the rivalry begin.'} : getComputerReadiness(),
   onPlay: intent => {
     if(intent.opponent !== 'friend') return opponentSession.play(intent);
@@ -4251,7 +4296,40 @@ const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: oppon
   onPresentation: () => { const root=document.createElement('div');root.className='story-presentation-board';root.setAttribute('aria-hidden','true');document.body.append(root);const preview=createMiniBoardPreview({rootEl:root,preview:{snapshot:createInitialBoardSnapshot(),previewKey:'intro'},createAdapter:createEngineBoardAdapter});return ()=>{preview.destroy();root.remove();}; },
 });
 
+document.addEventListener('toggle', event => {
+  const key = event.target?.dataset?.debugSection;
+  if (!key) return;
+  const state = getDecisionDebugState(getCurrentViewedGameId());
+  const changed = state.open.has(key) !== event.target.open;
+  if (event.target.open) state.open.add(key); else state.open.delete(key);
+  if (changed && event.target.open && key === 'position') updateComputerUi();
+}, true);
+document.addEventListener('input', event => {
+  const field = event.target?.dataset?.debugNote;
+  if (!field) return;
+  const state = getDecisionDebugState(getCurrentViewedGameId()), id = event.target.dataset.decisionId;
+  const note = state.drafts.get(id) ?? { ...(state.notes.find(note => note.decisionId === id) ?? { text: '', flagged: false }) };
+  note[field] = field === 'flagged' ? event.target.checked : event.target.value;
+  state.drafts.set(id, note);
+});
+document.addEventListener('change', event => {
+  if (!event.target?.matches?.('[data-debug-filter]')) return;
+  getDecisionDebugState(getCurrentViewedGameId()).flaggedOnly = event.target.checked; updateComputerUi();
+});
+const loadDebugHistory = async (gameId, more = false) => {
+  const owner = transport, generation = account.snapshot().generation, state = getDecisionDebugState(gameId);
+  const [page, personal] = await Promise.all([owner.decisionHistory(gameId, more ? state.cursor : null), account.canPlay() ? owner.decisionNotes(gameId) : { notes: [] }]);
+  if (owner !== transport || generation !== account.snapshot().generation) return;
+  state.items = more ? [...state.items, ...page.items] : page.items;
+  state.loaded = true; state.cursor = page.nextCursor; state.partial = page.partial; state.notes = personal.notes; updateComputerUi();
+};
+
 const subscribeToTransport = () => transport.subscribe((change) => {
+  if (currentRoute.debug && currentRoute.gameId && !getDecisionDebugState(currentRoute.gameId).loaded && !getDecisionDebugState(currentRoute.gameId).loading) {
+    const state = getDecisionDebugState(currentRoute.gameId); state.loading = true;
+    void loadDebugHistory(currentRoute.gameId).catch(error => { state.error = error.message; state.loaded = true; }).finally(() => { state.loading = false; });
+  }
+  queueMicrotask(() => { void computerSession?.tick(); });
   gameSound.local(change, transport.getGameViewModel(change?.gameId), {silent:currentRoute.name!=='game' || currentRoute.gameId!==change?.gameId || Boolean(transport.getGameViewModel(change?.gameId)?.inHistoryMode)});
   if (change?.type === "upgrade_required") {
     try {
@@ -4272,8 +4350,9 @@ const subscribeToTransport = () => transport.subscribe((change) => {
 subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
+  computerSession?.suspend(); scenarioCapture = null; scenarioMetadataDrafts.clear(); decisionDebugStates.clear();
   clearAccountContinuation();
-  resultTransitions.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();
+  resultTransitions.clear();activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();branchDialog.close();pendingBranch=null;
   hostInvite=null;inviteVisit++;inviteFeedback="";inviteFallback=null;preparedPlayerInvitations.clear();
   gameSound.leaveGame();storyDialog.close();inlineProfiles.close();
   const gameId = getCurrentViewedGameId();
@@ -4463,7 +4542,7 @@ appEl.addEventListener("click", async (event) => {
   if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
   if (action === "account-open") { if (accountDialog.isOpen()) { void accountDialog.close(); return; } accountDialog.open(account.snapshot().session.authenticated ? "account" : "login", null, actionEl); return; }
-  const accountGatedActions = new Set(["create-game","create-self-play","rematch","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch"]);
+  const accountGatedActions = new Set(["create-game","create-self-play","rematch","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch","computer-watch","computer-control","debug-analyze","debug-save-note","computer-branch","debug-branch","debug-delete-note"]);
   if (accountGatedActions.has(action) && (!account.snapshot().ready || account.snapshot().pendingLogout)) {
     event.preventDefault();
     if (!await waitForAccountGate()) return;
@@ -4530,6 +4609,65 @@ appEl.addEventListener("click", async (event) => {
     }, 0);
   };
 
+  if (action === 'computer-control') { await withPendingButton(`computer:${actionEl.dataset.control}`, () => computerSession.action(actionEl.dataset.control)); return; }
+  if (action === 'computer-watch') {
+    const handle = transport.createGame({ selfPlayMode: true, computer: { p1: 'babs', p2: 'horus' } });
+    await handle.committed; navigateTo(buildGameHash(handle.result.id, null, getCurrentFlyoutState())); return;
+  }
+  if (action.startsWith('debug-') && action !== 'debug-branch') {
+    const gameId = getCurrentViewedGameId(), game = gameId ? transport.getGameViewModel(gameId) : null;
+    const state = getDecisionDebugState(gameId), selected = game?.inspectedDecision ?? (game?.inHistoryMode ? game.moves.find(move => move.index === game.historyIndex) : game?.moves.at(-1));
+    try {
+      if (action === 'debug-load-attempts') {
+        const kind = actionEl.dataset.kind, page = state.attemptPages[kind];
+        if (!page) return;
+        const result = await transport.decisionAttempts(gameId, kind, page.cursor);
+        page.items = page.cursor ? [...page.items, ...result.items] : result.items; page.cursor = result.nextCursor;
+      }
+      if (action === 'debug-analyze' && game) await computerSession.analyze(game.currentSnapshot, selected?.moveId ?? 'initial');
+      if (action === 'debug-cancel-analysis') computerSession.cancelAnalysis();
+      if (action === 'debug-load-history' && game) { await loadDebugHistory(gameId, Boolean(state.cursor)); render({ animatePanels: false, includeBoard: false }); }
+      if (action === 'debug-inspect-decision') {
+        const entry = state.items.find(entry => entry.id === actionEl.dataset.decisionId);
+        if (entry) transport.inspectDecision({ gameId, entry });
+      }
+      if (action === 'debug-save-note' || action === 'debug-delete-note') {
+        const id = actionEl.dataset.decisionId, note = state.drafts.get(id) ?? state.notes.find(note => note.decisionId === id) ?? { text: '', flagged: false };
+        const result = await transport.decisionNotes(gameId, { operation: 'write', decisionId: id, note: action === 'debug-delete-note' ? null : note });
+        state.notes = result.notes; state.drafts.delete(id); state.noteVersion = (state.noteVersion ?? 0) + 1;
+      }
+      if (action === 'debug-load-attempt' && selected?.computerProof) {
+        const result = await transport.decisionAttempt(gameId, { attemptId: selected.computerProof.attemptId, kind: 'computer' });
+        state.attempts.set(selected.computerProof.attemptId, result.attempt ?? { evidence: 'unavailable' });
+      }
+      if (action === 'debug-copy') await navigator.clipboard.writeText(JSON.stringify(game?.currentSnapshot, null, 2));
+      if (action === 'debug-export' && game) {
+        const owner = transport, generation = account.snapshot().generation;
+        const currentAnalysis = computerSession.snapshot().analysis;
+        const analysis = currentAnalysis?.gameId === gameId ? structuredClone(currentAnalysis) : null;
+        let cursor = null, entries = [];
+        do { const page = await owner.decisionHistory(gameId, cursor); entries.push(...page.items); cursor = page.nextCursor; } while (cursor);
+        const personal = account.canPlay() ? await owner.decisionNotes(gameId) : { notes: [] };
+        if (owner !== transport || generation !== account.snapshot().generation) return;
+        const attempts = [], analyses = [];
+        if (account.canPlay()) for (const kind of ['computer', 'analysis']) {
+          let after = null;
+          do {
+            const page = await owner.decisionAttempts(gameId, kind, after);
+            (kind === 'computer' ? attempts : analyses).push(...page.items); after = page.nextCursor;
+            if (owner !== transport || generation !== account.snapshot().generation) return;
+          } while (after);
+        }
+        if (owner !== transport || generation !== account.snapshot().generation) return;
+        const data = { attempts, analyses, gameId, exportedAt: new Date().toISOString(), selectedDecisionId: selected?.moveId, entries, notes: personal.notes, analysis };
+        const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+        const link = document.createElement('a'); link.href = url; link.download = `${gameId}-evidence.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+      state.error = null;
+    } catch (error) { state.error = error.message || 'Could not complete this action. Try again.'; }
+    updateComputerUi(); return;
+  }
+
   if(action==='close-invite'){closeFriendInvite();return;}
   if(action==='share-invite'){await withPendingButton(getCopyInviteButtonKey(actionEl.dataset.gameId),()=>copyGameInvitation(actionEl.dataset.gameId,actionEl.dataset.inviteRole,true));return;}
   if (action === 'guest-profile') { void inlineProfiles.open(null,actionEl);return; }
@@ -4544,27 +4682,22 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
-  if (action === "launch-history-branch") {
-    const gameId = actionEl.getAttribute("data-game-id");
-    const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
-    const activeGame = gameId ? transport.getGameViewModel(gameId) : null;
-    if (!activeGame || !Number.isFinite(moveIndex)) {
-      return;
-    }
-    const branchSeed = buildHistoryBranchSeedFromGame(activeGame, moveIndex);
-    const handle = transport.launchHistoryBranch({
-      sourceGameId: activeGame.id,
-      sourceMoveIndex: moveIndex,
-      scenario: branchSeed.scenario,
-      initialSelectionAction: branchSeed.initialSelectionAction,
-      participantCopyMode: branchSeed.participantCopyMode,
-    });
-    const nextHash = buildGameHash(handle.result.game.id, null, {
-      ...getCurrentFlyoutState(),
-      scenarios: false,
-    });
-    window.open(`${window.location.pathname}${window.location.search}${nextHash}`, "_blank", "noopener");
-    render({ animatePanels: false, includeBoard: false });
+  if (action === "launch-history-branch" || action === 'computer-branch' || action === 'debug-branch') {
+    const gameId = actionEl.dataset.gameId || currentRoute.gameId;
+    const game = transport.getGameViewModel(gameId);
+    if (!game) return;
+    const moveIndex = Number.parseInt(actionEl.dataset.moveIndex ?? '-1', 10);
+    const decisionId = actionEl.dataset.decisionId;
+    const entry = decisionId ? getDecisionDebugState(gameId).items.find(entry => entry.id === decisionId) : null;
+    const selected = decisionId ? entry?.move ?? game.moves.find(move => move.moveId === decisionId) ?? (game.inspectedDecision?.moveId === decisionId ? game.inspectedDecision : null) : (game.inspectedDecision ?? game.moves[moveIndex]);
+    const authoritative = transport.getAuthoritativeGame(gameId) ?? game;
+    const state = selected?.selectionSnapshot ?? entry?.state ?? authoritative.board.state;
+    pendingBranch = {
+      sourceGameId: gameId, sourceDecisionId: decisionId ?? selected?.moveId ?? null,
+      sourceGameplayRevision: authoritative.gameplayRevision,
+      scenario: { resultingState: structuredClone(state) }, initialSelectionAction: selected?.action ?? null,
+    };
+    branchDialog.open({ opponent: 'self', rematchSide: String(state.sideToMove).toLowerCase() === 'p2' ? 'p2' : 'p1' }, actionEl);
     return;
   }
 
@@ -4600,7 +4733,21 @@ appEl.addEventListener("click", async (event) => {
     if (!gameId || !moveId) {
       return;
     }
-    transport.requestRevertToMove({ gameId, targetMoveId: moveId });
+    const game = transport.getGameViewModel(gameId);
+    let targetMoveId = moveId;
+    if (game?.computer && game.canControlComputer) {
+      await computerSession.action('pause');
+      if (action === 'undo-last-move' && !game.computer.manual) {
+        const entries = [];
+        let cursor = null;
+        do { const page = await transport.decisionHistory(gameId, cursor); entries.push(...page.items); cursor = page.nextCursor; } while (cursor);
+        const human = activeDecisionLineage(entries).filter(move => !move.computerProof).at(-1);
+        if (!human) return;
+        targetMoveId = human.moveId;
+      }
+    }
+    const handle = transport.requestRevertToMove({ gameId, targetMoveId });
+    if (game?.computer && game.canControlComputer) { await handle.committed; await computerSession.tick(); await computerSession.action('resume'); }
     return;
   }
 
@@ -4750,6 +4897,8 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
   if (action === "open-debug") {
+    const debugGameId = getCurrentViewedGameId();
+    if (debugGameId) void loadDebugHistory(debugGameId).catch(error => { getDecisionDebugState(debugGameId).error = error.message; updateComputerUi(); });
     if (!currentRoute.debug) {
       saveDebugFlyoutOpen(storage, true);
       gameSound.play("flyout");
@@ -4887,7 +5036,7 @@ appEl.addEventListener("click", async (event) => {
     const activeGameId =
       currentRoute.name === "game" ? currentRoute.gameId : currentRoute.name === "invite" ? resolvedInvite?.gameId || null : null;
     const activeGame = activeGameId ? transport.getGameViewModel(activeGameId) : null;
-    const shouldApplyInPlace = Boolean(activeGame && activeGame.moves.length === 0);
+    const shouldApplyInPlace = canLoadScenarioInPlace(activeGame, transport.getIdentityId());
     await withPendingButton(
       SCENARIO_LOAD_PENDING_KEY,
       async () => {
@@ -4920,7 +5069,29 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === 'begin-scenario-capture' || action === 'end-scenario-capture') {
+    if (!canAuthorScenariosLocally()) return;
+    const game = getActiveScenarioGame(), historyContext = resolveHistoryScenarioExportContext(game);
+    scenarioCapture = action === 'begin-scenario-capture' ? beginScenarioCapture(game, transport.getIdentityId(), historyContext) : null;
+    if (scenarioCapture && !historyContext) {
+      boardRuntime?.syncInteractionCapabilities?.();
+      scenarioCapture.selection = buildSavedSelectionFromRuntimeSelection(boardRuntime?.getSelection?.(), scenarioCapture.snapshot);
+    }
+    render({ animatePanels: false });
+    return;
+  }
+  if (action === 'edit-scenario-details' || action === 'save-scenario-details') {
+    if (!canAuthorScenariosLocally()) return;
+    const selected = getSelectedScenario(); if (!selected) return;
+    if (action === 'edit-scenario-details') scenarioEditingId = selected.id;
+    else {
+      const result = await updateSelectedScenarioRecord({ activeGame: getActiveScenarioGame(), title: getScenarioEditableFieldText('title'), description: getScenarioEditableFieldText('description'), includeCurrentBoard: false, feedbackMessage: () => 'Details saved.' });
+      if (result.ok) { scenarioEditingId = null; scenarioMetadataDrafts.delete(selected.id); }
+    }
+    render({ animatePanels: false, includeBoard: false }); return;
+  }
   if (action === "update-scenario" || action === "save-scenario") {
+    if (!scenarioCapture) return;
     const activeGame = getActiveScenarioGame();
     if (!activeGame) {
       if (action === "update-scenario") {
@@ -5037,39 +5208,9 @@ appEl.addEventListener("input", (event) => {
     return;
   }
   if (target instanceof HTMLElement && target.hasAttribute("data-scenario-editable")) {
+    if (getSelectedScenario()) scenarioMetadataDrafts.set(getSelectedScenario().id, { title: getScenarioEditableFieldText('title'), description: getScenarioEditableFieldText('description') });
     syncScenarioAuthoringControls();
   }
-});
-
-appEl.addEventListener("focusout", (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLElement) || !target.hasAttribute("data-scenario-editable")) {
-    return;
-  }
-  window.setTimeout(async () => {
-    if (!canAuthorScenariosLocally()) {
-      return;
-    }
-    const activeGame = getActiveScenarioGame();
-    if (!activeGame || !getSelectedScenario()) {
-      return;
-    }
-    const title = getScenarioEditableFieldText("title");
-    const description = getScenarioEditableFieldText("description");
-    if (!title || !description) {
-      return;
-    }
-    const updated = await updateSelectedScenarioRecord({
-      activeGame,
-      title,
-      description,
-      includeCurrentBoard: false,
-      feedbackMessage: (scenario) => `Scenario ${scenario.id} details saved.`,
-    });
-    if (updated.ok && updated.reason === "updated") {
-      render({ animatePanels: false, includeBoard: false });
-    }
-  }, 0);
 });
 
 appEl.addEventListener("pointerdown", (event) => {

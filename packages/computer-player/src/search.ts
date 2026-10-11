@@ -14,6 +14,7 @@ export type Evaluator = (input: Float32Array, context: {
 export type SearchRequest = {
   state: GameState; seed: number; simulations?: number; temperature?: number;
   maxValueGap?: number; maxNodes?: number; deadlineMs?: number; signal?: AbortSignal; decisionCache?: boolean; observeEngine?: EngineComputationObserver;
+  onProgress?: (progress: { phase: "checking" | "looking-ahead"; simulations: number; total: number; nodes: number }) => void;
   /** Training self-play/development screen only. Browser and evaluation omit it. */
   rootExploration?: RootExplorationRequest;
 };
@@ -362,6 +363,7 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     node.visits++; node.sum += value;
     for (const item of path) { item.node.visits++; item.node.sum += value; item.edge.visits++; item.edge.sum += value; }
     completed++;
+    request.onProgress?.({ phase: "looking-ahead", simulations: completed, total: simulations, nodes });
   }
   const limitedVisits = new Set<number>();
   for (const preferred of [...eligible].sort((a, b) => b.prior - a.prior || a.index - b.index)) {
