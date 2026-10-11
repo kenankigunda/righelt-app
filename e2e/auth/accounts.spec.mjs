@@ -1,5 +1,5 @@
 import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
-import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup, signOutAndOpenSignIn } from "./helpers.mjs";
+import { continueFriendIntroduction, waitForFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup, signOutAndOpenSignIn } from "./helpers.mjs";
 import { profileLayoutDisplayName, sampleParticipantGeometry } from "../support/profile-layout.mjs";
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
@@ -25,6 +25,7 @@ async function register(page, username, { gate = false } = {}) {
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
+  await waitForFriendIntroduction(page);
   await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
   if (gate) {
     await expect(page).toHaveURL(/#\/game\//);
@@ -81,6 +82,49 @@ test("registration helper waits for a failed bootstrap retry before submitting",
     await registration;
     await page.unrouteAll({ behavior: "wait" });
   }
+});
+test("failed page reads after registration preserve the original action and resolved diagnostics", async ({page}) => {
+  let registered = false, failed = false, registrations = 0;
+  await page.route('**/api/auth/register', async route => {
+    registrations++;
+    const response = await route.fetch();
+    registered = response.ok();
+    await route.fulfill({response});
+  });
+  await page.route('**/api/shell/games?**', async route => {
+    if (registered && !failed && new URL(route.request().url()).searchParams.get('section') === 'other') {
+      failed = true;
+      await route.fulfill({status:503,contentType:'application/json',headers:{'X-Righelt-Server-Build':'continuation-test-build'},body:JSON.stringify({ok:false,error:'local_api_unavailable'})});
+    } else await route.continue();
+  });
+  await page.goto('/');
+  await openPlaySignIn(page);
+  await dialog(page).getByRole('button',{name:'Create account',exact:true}).click();
+  await enterUsername(page,uniqueName());
+  await dialog(page).getByLabel('Password',{exact:true}).fill(password);
+  await dialog(page).getByRole('button',{name:'Create account & continue',exact:true}).click();
+  const error = page.getByTestId('account-continuation-error');
+  await expect(error).toContainText('We couldn’t finish loading. Please try again.');
+  await expect(dialog(page)).not.toBeVisible();
+  const session = await page.evaluate(async () => (await (await fetch('/api/auth/session')).json()).contextId);
+  expect(session).toBeTruthy();
+  await error.getByRole('button',{name:'Diagnostic details'}).click();
+  const report = page.locator('.issue-diagnostic').filter({has:page.locator('.issue-details')});
+  await expect(report).toContainText('route_read_failed');
+  await expect(report).toContainText('503');
+  await expect(report).toContainText('continuation-test-build');
+  await expect(report).toContainText(/"requestId": "[0-9a-f-]{36}"/);
+  await expect(report).toContainText('durationMs');
+  const incident = await report.getAttribute('data-incident-id');
+  await error.getByRole('button',{name:'Try again',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'Friend',exact:true})).toBeVisible();
+  await expect(error).toHaveCount(0);
+  await expect(page.locator(`.issue-diagnostic[data-incident-id="${incident}"]`)).toContainText('Resolved');
+  expect(await page.evaluate(async () => (await (await fetch('/api/auth/session')).json()).contextId)).toBe(session);
+  expect(registrations).toBe(1);
+  await continueFriendIntroduction(page);
+  await expect(page.getByTestId('game-shell')).toBeVisible();
+  expect(registrations).toBe(1);
 });
 async function makeAccountMove(page) {
   const action = await page.evaluate(async () => {

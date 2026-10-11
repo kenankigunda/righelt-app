@@ -256,8 +256,17 @@ export const selectPlayableAction = async (page, action) => {
   // cycles the overlay away from action previews instead of selecting a move.
   if (!await source.evaluate(el => el.classList.contains("source"))) await source.click();
   const supportsHover = await page.locator('html').getAttribute('data-hover-capability') === 'hover';
-  if (supportsHover) await target.hover();
-  else await target.click();
+  // A single forced follow can already select its destination. Its next tap
+  // confirms the move, so do not submit it while trying to select it.
+  if (!await target.evaluate(el => el.classList.contains("target"))) {
+    if (supportsHover) {
+      // A blocked tap can leave the pointer on this square during recovery.
+      // Enter it again so the runtime receives a fresh hover event.
+      await page.mouse.move(0, 0);
+      await target.hover();
+    }
+    else await target.click();
+  }
   await expect(target, "The supported pointer interaction must select the legal destination before confirmation").toHaveClass(/(?:^|\s)target(?:\s|$)/, { timeout: 2000 });
   return target;
 };

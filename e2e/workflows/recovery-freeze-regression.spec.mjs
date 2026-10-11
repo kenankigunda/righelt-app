@@ -10,6 +10,9 @@ scenario.resultingState=structuredClone(scenario.initialState);
 
 test("guest play-both push retreat follow recovers with healthy HTTP and unavailable sockets",async({page,baseURL},info)=>{
  let socketsUnavailable=false,losePush=true;const commands=[], sockets=[];
+ let holdConfirmation=false,releaseConfirmation,confirmationRequested=false;
+ const confirmationGate=new Promise(resolve=>releaseConfirmation=resolve);
+ page.on("close",()=>releaseConfirmation());
  await page.routeWebSocket(/\/api\/shell\/games\//,socket=>{
   if(socketsUnavailable){socket.close({code:1012,reason:"Test deployment transition"});return;}
   sockets.push(socket);const server=socket.connectToServer();server.onMessage(message=>{if(!socketsUnavailable)socket.send(message);});
@@ -18,26 +21,51 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  const players=page.getByRole("button",{name:"Players",exact:true});if(await players.isVisible())await players.click();
  await page.getByRole("button",{name:"Play as both players",exact:true}).click();
  const boardTab=page.getByRole("button",{name:"Board",exact:true});if(await boardTab.isVisible())await boardTab.click();
+ await page.route(`**/api/shell/games/${gameId}/reconcile`,async route=>{
+  const response=await route.fetch();
+  if(holdConfirmation){confirmationRequested=true;await confirmationGate;}
+  await route.fulfill({response});
+ });
  await page.route(`**/api/shell/games/${gameId}/apply`,async route=>{
   const envelope=route.request().postDataJSON();commands.push(envelope);
-  if(envelope.payload?.action?.type==="push"&&losePush){socketsUnavailable=true;losePush=false;sockets.forEach(socket=>socket.close({code:1012,reason:"Test deployment transition"}));await route.fetch();await route.abort();return;}
+  if(envelope.payload?.action?.type==="push"&&losePush){holdConfirmation=true;socketsUnavailable=true;losePush=false;sockets.forEach(socket=>socket.close({code:1012,reason:"Test deployment transition"}));await route.fetch();await route.abort();return;}
   await route.continue();
  });
  let game=await currentGame(page,gameId);const push=game.legalActions.find(a=>a.type==="push");expect(push).toBeTruthy();
+ try {
+
  await submitPlayableAction(page,push);
  await expect.poll(async()=> (await currentGame(page,gameId)).moves.length,{timeout:10000}).toBe(1);
- await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0,{timeout:10000});
+
+ await expect.poll(()=>confirmationRequested).toBe(true);
+ await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toBeVisible();
  game=await currentGame(page,gameId);expect(game.board.state.continuation.phase).toBe("retreat");
+
  await expect(page.locator("#shell-board-preview-label")).toContainText("Choose where to retreat");
+ // The tentative retreat stays visible, but no command is allowed while the
+ // accepted push's response is still unknown. The quiet banner is not readiness.
+ const retreat=game.legalActions.find(a=>a.type==="retreat");expect(retreat).toBeTruthy();
+ const retreatTarget=page.locator(`[data-testid="game-board"] .cell[data-row="${retreat.to.row}"][data-col="${retreat.to.col}"]`);
+
+ await retreatTarget.click();await retreatTarget.click();
+ expect(commands.filter(c=>c.payload?.action?.type==="retreat")).toHaveLength(0);
+
+ holdConfirmation=false;releaseConfirmation();
+ await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
  await page.screenshot({path:info.outputPath("retreat-recovered.png")});
- const retreat=game.legalActions.find(a=>a.type==="retreat");expect(retreat).toBeTruthy();await submitPlayableAction(page,retreat);
+
+ await submitPlayableAction(page,retreat);
  await expect.poll(async()=> (await currentGame(page,gameId)).board.state.continuation?.phase).toBe("follow");
- game=await currentGame(page,gameId);const follow=game.legalActions.find(a=>a.type==="follow");expect(follow).toBeTruthy();await submitPlayableAction(page,follow);
+ await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
+ game=await currentGame(page,gameId);const follow=game.legalActions.find(a=>a.type==="follow");expect(follow).toBeTruthy();
+ await expect(page.locator(`[data-testid="game-board"] .cell[data-row="${follow.from.row}"][data-col="${follow.from.col}"]`)).toHaveClass(/(?:^|\s)source(?:\s|$)/);
+ await submitPlayableAction(page,follow);
  await expect.poll(async()=> (await currentGame(page,gameId)).moves.length).toBe(3);
  game=await currentGame(page,gameId);expect(game.board.state.continuation).toBeNull();
  expect(new Set(game.moves.map(m=>m.clientCommandId)).size).toBe(3);
  expect(new Set(commands.filter(c=>c.payload?.action?.type==="push").map(c=>c.clientCommandId)).size).toBe(1);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
+ } finally {holdConfirmation=false;releaseConfirmation();}
 });
 
 for(const reduced of [false,true])test(`routine reconnect stays quiet four seconds and preserves board${reduced?" with reduced motion":""}`,async({page},info)=>{

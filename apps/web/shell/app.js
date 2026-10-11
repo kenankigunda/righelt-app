@@ -150,6 +150,7 @@ let accountInitialized = false;
 let accountStartupError = "";
 let accountContinuation = null;
 let accountContinuationError = false;
+let accountContinuationIncidentId = null;
 const hydrateRoute = createRouteHydration();
 const account = createAccountController({ storage,
   onTransition: (next, source) => { if (accountInitialized) { accountDialog.onTransition(source); resetAccountTransport(next); } },
@@ -1864,7 +1865,7 @@ const renderHeader = () => `
     ${renderHeaderAlertZone()}
     ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
     ${account.snapshot().pendingLogout ? '<span role="status">Sign-out pending</span>' : ''}
-    ${accountContinuationError ? `<p role="alert">The page could not finish loading. Try again.</p><button class="secondary" data-action="retry-account-continuation">Try again</button>` : ""}
+    ${accountContinuationError ? `<div role="alert" data-testid="account-continuation-error"><p>We couldn’t finish loading. Please try again.</p><button class="secondary" data-action="retry-account-continuation">Try again</button>${renderDiagnosticDisclosure(accountContinuationIncidentId)}</div>` : issueDiagnostics.list().filter(report => report.key === "account-continuation" && isDiagnosticOpen(report.id)).map(report => renderDiagnosticDisclosure(report.id)).join("")}
     ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p role="status">Connecting</p>` : ""}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
@@ -4090,10 +4091,11 @@ const retryAccountContinuation = async () => {
   render({ animatePanels: false, includeBoard: false });
   try {
     await syncRouteDataAndLiveChannels();
-  } catch {
+  } catch (error) {
     if (accountContinuation === pending && routeReadIsCurrent(pending)) {
       pending.running = false;
       accountContinuationError = true;
+      accountContinuationIncidentId = issueDiagnostics.capture("account-continuation", { ...error?.diagnosticEvidence, operation: "account_continuation", stage: "route_read_failed", code: error?.code ?? "unavailable", status: error?.status ?? null, gameId: pending.route?.gameId });
       render({ animatePanels: false, includeBoard: false });
     }
     return;
@@ -4102,6 +4104,7 @@ const retryAccountContinuation = async () => {
   // Claim before invoking the original action. A failed write is never replayed.
   accountContinuation = null;
   accountContinuationError = false;
+  issueDiagnostics.resolve("account-continuation");
   routeHydrated = true;
   render({ animatePanels: false });
   const intent = pending.intent;
@@ -4121,6 +4124,7 @@ const completeAccountContinuation = async intent => {
 const clearAccountContinuation = () => {
   accountContinuation = null;
   accountContinuationError = false;
+  issueDiagnostics.resolve("account-continuation");
 };
 
 const canHydrateRouteFromLocalState = (route = currentRoute) => {

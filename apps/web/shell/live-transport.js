@@ -57,6 +57,7 @@ const mustOk = async (response) => {
     error.code = body.error || `HTTP_${response.status}`;
     error.body = body;
     error.status = response.status;
+    error.diagnosticEvidence = response.righeltDiagnosticEvidence;
     throw error;
   }
   return body;
@@ -101,14 +102,18 @@ export const createLiveTransportStore = ({
     let response;
     try { response = await rawFetcher(url, init); }
     catch(error) {
+      const data = { requestId, durationMs: Date.now() - started, status: null, stage: "request_failed", serverBuild: "unavailable" };
+      if (error && typeof error === "object") error.diagnosticEvidence = data;
       const gameId = /\/games\/([^/?]+)/.exec(url)?.[1];
-      if (gameId) getOptimisticState(gameId).requestEvidence = { requestId, durationMs: Date.now() - started, status: null, stage: "request_failed", serverBuild: "unavailable" };
+      if (gameId) getOptimisticState(gameId).requestEvidence = data;
       throw error;
     }
+    const data = { requestId, status: response.status, durationMs: Date.now() - started, serverBuild: response.headers?.get?.("X-Righelt-Server-Build") ?? "unavailable", stage: "response_received" };
+    response.righeltDiagnosticEvidence = data;
     const gameId = /\/games\/([^/?]+)/.exec(url)?.[1];
     if (gameId) {
       const optimistic = getOptimisticState(gameId);
-      const data = { gameId, requestId, status: response.status, durationMs: Date.now() - started, serverBuild: response.headers?.get?.("X-Righelt-Server-Build") ?? "unavailable", stage: "response_received" };
+      data.gameId = gameId;
       optimistic.requestEvidence = data;
       if (optimistic.incidentId) issueDiagnostics.capture(`recovery:${gameId}`, data);
     }
