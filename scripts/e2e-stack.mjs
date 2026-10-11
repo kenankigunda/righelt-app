@@ -64,6 +64,9 @@ const waitForHttp = async (url, label, timeoutMs = DEFAULT_E2E_READY_TIMEOUT_MS)
 const spawnLogged = (label, command, args, options) => {
   const child = spawn(process.execPath, [cliPath, "run", "--kind", "preview", "--", command, ...args], {
     ...options,
+    // Playwright signals the stack's process group at teardown. Keep service
+    // supervisors outside it so the stack records shutdown before stopping them.
+    detached: process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"],
   });
   managedChildren.add(child);
