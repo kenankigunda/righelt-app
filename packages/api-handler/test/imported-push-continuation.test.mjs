@@ -13,8 +13,9 @@ const fixture = catalog.scenarios.find(({ title }) => title === "Retreat after p
 const swapSides = (value) => {
   if (value === "P1") return "P2";
   if (value === "P2") return "P1";
+  if (typeof value === "string") return value.replace(/([CU])([12])(?=-|$)/g, (_, kind, side) => kind + (side === "1" ? "2" : "1"));
   if (Array.isArray(value)) return value.map(swapSides);
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, swapSides(child)]));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, child]) => [swapSides(key), (key === "row" || key === "col") && Number.isInteger(child) ? 9 - child : swapSides(child)]));
   return value;
 };
 
