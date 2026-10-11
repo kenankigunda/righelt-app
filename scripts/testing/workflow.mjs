@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { fullLanes, suiteById } from "./catalog.mjs";
 const expression = (value) => "${{ " + value + " }}";
 const setup = [
-  { name: "Checkout", uses: "actions/checkout@v5", with: { "fetch-depth": 0 } },
+  { name: "Checkout", uses: "actions/checkout@v5", with: { "fetch-depth": 0, ref: expression("github.event.pull_request.head.sha || github.sha") } },
   {
     name: "Setup pnpm",
     uses: "pnpm/action-setup@v4",
