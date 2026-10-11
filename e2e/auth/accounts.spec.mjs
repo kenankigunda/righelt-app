@@ -638,3 +638,24 @@ test("long profile names wrap inside participants without covering the board", a
   await expect(page.getByTestId("public-profile")).toContainText("Joined");
   await expect(profile).toContainText(displayName);
 });
+
+ test("username lookup diagnostics redact entries and dismiss resolved details with stable focus", async ({ page }) => {
+  let available = false;
+  await page.route("**/api/auth/username*", async route => {
+    if (available) await route.continue();
+    else await route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({ok:false,error:"temporarily_unavailable"})});
+  });
+  await page.goto("/"); await waitForAccountStartup(page); await openPlaySignIn(page);
+  await dialog(page).getByRole("button",{name:"Create account",exact:true}).click();
+  const name = uniqueName(); await enterUsername(page,name);
+  const status = dialog(page).locator("[data-username-status]");
+  await expect(status).toContainText("We couldn’t check that username");
+  await status.getByRole("button",{name:"Diagnostic details",exact:true}).click();
+  await expect(status.locator("pre")).toContainText("username_lookup");
+  await expect(status.locator("pre")).not.toContainText(name);
+  available = true; await enterUsername(page,uniqueName());
+  await expect(status).toContainText("Resolved");
+  await status.getByRole("button",{name:"Dismiss",exact:true}).click();
+  await expect(status.getByRole("button",{name:"Diagnostic details",exact:true})).toHaveCount(0);
+  await expect(dialog(page).getByLabel("Username",{exact:true})).toBeFocused();
+});

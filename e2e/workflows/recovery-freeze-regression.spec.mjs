@@ -60,6 +60,8 @@ for(const reduced of [false,true])test(`routine reconnect stays quiet four secon
  await expect(page.getByTestId("sync-recovery-banner")).toContainText("Reconnecting. We’ll be right back!");
  expect(await board.boundingBox()).toEqual(before);expect(await board.innerHTML()).toBe(contents);
  if(reduced)expect(await page.locator(".reconnect-background").evaluate(el=>getComputedStyle(el).animationName)).toBe("none");
+ // Deadline assertions are complete; let the alert entrance finish for pixels.
+ await page.clock.runFor(300);
  await page.screenshot({path:info.outputPath(reduced?"reconnect-static.png":"reconnect-sweep.png")});
  hold=false;release();await page.clock.resume();await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);

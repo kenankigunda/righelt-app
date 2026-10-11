@@ -428,7 +428,21 @@ export const createAccountDialog = ({
   });
   dialog.addEventListener("click", async (event) => {
     const diagnosticAction = event.target.closest?.('[data-action="toggle-diagnostic"], [data-action="copy-diagnostic"], [data-action="dismiss-diagnostic"]');
-    if (["toggle-diagnostic", "copy-diagnostic", "dismiss-diagnostic"].includes(diagnosticAction?.dataset?.action)) { event.stopPropagation?.(); await handleDiagnosticAction(diagnosticAction); const node = diagnosticAction.closest(".issue-diagnostic"); if (node) { node.outerHTML = renderDiagnosticDisclosure(diagnosticAction.dataset.incidentId, node.dataset.diagnosticScope); dialog.querySelector(`[data-incident-id="${diagnosticAction.dataset.incidentId}"] button`)?.focus({ preventScroll: true }); } return; }
+    if (["toggle-diagnostic", "copy-diagnostic", "dismiss-diagnostic"].includes(diagnosticAction?.dataset?.action)) {
+      event.stopPropagation?.(); await handleDiagnosticAction(diagnosticAction);
+      const node = diagnosticAction.closest(".issue-diagnostic"), id = diagnosticAction.dataset.incidentId;
+      if (node) {
+        if (issueDiagnostics.get(id)?.resolvedAt && !isDiagnosticOpen(id)) {
+          const lookup = node.dataset.diagnosticScope === "username-lookup";
+          node.remove();
+          dialog.querySelector(lookup ? '[name="username"]' : '#account-title')?.focus({ preventScroll: true });
+        } else {
+          node.outerHTML = renderDiagnosticDisclosure(id, node.dataset.diagnosticScope);
+          dialog.querySelector(`[data-incident-id="${id}"] button`)?.focus({ preventScroll: true });
+        }
+      }
+      return;
+    }
     endFeedbackGesture();
     discardPress = false;
     const dismiss = backdropPress && event.target === dialog && outsideDialog(event);
