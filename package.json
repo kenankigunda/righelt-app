@@ -48,7 +48,7 @@
     "test:web:unit": "node apps/web/test/run-web-tests.mjs --layer unit",
     "test:web:integration": "node apps/web/test/run-web-tests.mjs --layer integration",
     "e2e:install": "playwright install chromium firefox webkit",
-    "test:e2e": "node --test scripts/fault-lifecycle.test.mjs && node scripts/resources/cli.mjs run --kind heavy -- playwright test",
+    "test:e2e": "node scripts/resources/cli.mjs run --kind heavy -- playwright test",
     "test:e2e:headed": "node scripts/resources/cli.mjs run --kind heavy -- playwright test --headed",
     "cf:set-db": "node scripts/set-d1-binding.mjs",
     "db:local": "pnpm --dir apps/api exec wrangler d1 migrations apply ${CLOUDFLARE_D1_DB_NAME:-righelt-db-dev} --config wrangler.toml --local --persist-to ../../.wrangler/state/api-local-dev",

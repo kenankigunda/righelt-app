@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createFaultLifecycle,disposeFaultContexts} from '../e2e/support/fault-lifecycle.mjs';
+import {createFaultLifecycle,disposeFaultContexts} from '../../../e2e/support/fault-lifecycle.mjs';
 function fixture() {
  const timers=new Map();let next=0;
  const lifecycle=createFaultLifecycle({setTimer: callback=>{const id=++next;timers.set(id,callback);return id;},clearTimer:id=>timers.delete(id)});
