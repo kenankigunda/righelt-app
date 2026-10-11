@@ -1,3 +1,5 @@
+import { recordUnexpectedExit } from './testing/stack-status.mjs';
+import { cliPath } from './resources/supervisor.mjs';
 // Isolated local account stack. No remote resources or production auth flags are changed.
 import { localHttpsEnvironment } from "./local-https.mjs";
 import { spawn } from "node:child_process";
@@ -23,10 +25,10 @@ let control;
 let proxyDiagnosticsInstallation;
 
 function run(args, { cwd = root, service = false, captureStderr = false } = {}) {
-  const child = spawn("pnpm", args, { cwd, env: args.includes("https") ? localHttpsEnvironment({ cwd }) : process.env, stdio: captureStderr ? ["inherit", "inherit", "pipe"] : "inherit", detached: service });
+  const child = spawn(service ? process.execPath : "pnpm", service ? [cliPath,"run","--kind","preview","--","pnpm",...args] : args, { cwd, env: args.includes("https") ? localHttpsEnvironment({ cwd }) : process.env, stdio: captureStderr ? ["inherit", "inherit", "pipe"] : "inherit", detached: service });
   if (service) {
     children.add(child);
-    child.on("exit", code => { children.delete(child); if (!stopping) void shutdown(code || 1); });
+    child.on("exit", code => { children.delete(child); if (!stopping) { recordUnexpectedExit(args.join(" "),code,null); void shutdown(code || 1); } });
     return child;
   }
   return new Promise((resolve, reject) => {
@@ -114,7 +116,7 @@ try {
   await writeFile(fixtureFile,seedSql);
   await run([...d1,"execute","DB","--config",apiConfig,"--local","--persist-to",persist,"--file",fixtureFile]);
   run(["exec", "wrangler", "dev", ...configs.flatMap(file => ["--config", file]), "--local", "--port", apiPort,
-    "--inspector-port", "9997", "--persist-to", persist], { service: true });
+    "--inspector-port", String(Number(apiPort)+10), "--persist-to", persist], { service: true });
   await ready(`http://127.0.0.1:${apiPort}/api/health`);
   // Test-runner-only loopback control; never exposed through Pages or application routes.
   // Fixed SQL operations only, rejecting browser-origin requests. This is not an auth bypass.
@@ -122,7 +124,7 @@ try {
     run([...d1, "execute", "DB", "--config", apiConfig, "--local", "--persist-to", persist, "--command", sql],
       { captureStderr: true })
   )).listen(Number(webPort) + 100, "127.0.0.1");
-  run(["exec", "wrangler", "pages", "dev", ".", "--port", webPort, "--local-protocol", "https", "--inspector-port", "9998"],
+  run(["exec", "wrangler", "pages", "dev", ".", "--port", webPort, "--local-protocol", "https", "--inspector-port", String(Number(webPort)+10)],
     { cwd: path.join(root, "apps/web"), service: true });
   await ready(origin);
   console.log(`[auth-e2e] Ready at ${origin}`);

@@ -1,3 +1,4 @@
+import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { test, expect } from "@playwright/test";
 import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
@@ -7,7 +8,7 @@ const dialog = page => page.getByTestId("account-dialog");
 const uniqueName = () => `Invite_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
 test.beforeEach(async () => {
-  const response = await fetch("http://127.0.0.1:10088/reset-limits", { method: "POST" });
+  const response = await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`, { method: "POST" });
   expect(response.status).toBe(200);
 });
 

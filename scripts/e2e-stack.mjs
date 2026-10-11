@@ -1,3 +1,4 @@
+import { recordUnexpectedExit } from './testing/stack-status.mjs';
 import { cliPath, supervise } from './resources/supervisor.mjs';
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
@@ -77,9 +78,10 @@ const spawnLogged = (label, command, args, options) => {
     if (shuttingDown || intentionalStops.has(child)) {
       return;
     }
-    if (code !== 0) {
+    {
+      recordUnexpectedExit(label, code, signal);
       console.error(`[e2e-stack] ${label} exited with code ${code}${signal ? ` (signal ${signal})` : ""}`);
-      shutdown(code ?? 1);
+      shutdown(code || 1);
     }
   });
   return child;

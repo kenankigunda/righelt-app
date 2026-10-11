@@ -1,3 +1,4 @@
+import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { test, expect } from "@playwright/test";
 import { continueFriendIntroduction, enterUsername, openPlaySignIn } from "./helpers.mjs";
 
@@ -5,7 +6,7 @@ const dialog = page => page.getByTestId("account-dialog");
 const password = "A varied password 42! ".repeat(4);
 const uniqueName = () => `Inline_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`;
 test.beforeEach(async () => {
-  expect((await fetch("http://127.0.0.1:10088/reset-limits", { method: "POST" })).ok).toBe(true);
+  expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`, { method: "POST" })).ok).toBe(true);
 });
 
 async function proveInputAction(page, label, initialType) {

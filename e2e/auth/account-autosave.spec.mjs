@@ -1,7 +1,8 @@
+import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import {test,expect} from '@playwright/test';
 import {continueFriendIntroduction,openPlaySignIn} from './helpers.mjs';
 async function register(page,username){await page.goto('/');await openPlaySignIn(page);const d=page.getByTestId('account-dialog');await d.getByRole('button',{name:'Create account',exact:true}).click();await d.getByLabel('Username',{exact:true}).fill(username);await d.getByLabel('Password',{exact:true}).fill('Autosave testing password 42');await d.getByRole('button',{name:'Create account & continue',exact:true}).click();await expect(d).not.toBeVisible();await continueFriendIntroduction(page);await expect(page.getByTestId('game-role')).toContainText('Player 1');}
-test.beforeEach(async()=>{await fetch('http://127.0.0.1:10088/reset-limits',{method:'POST'});});
+test.beforeEach(async()=>{await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`,{method:'POST'});});
 test('display name autosaves inline, retries failures and preserves preferences',async({page},testInfo)=>{
  await register(page,`Auto_${Date.now().toString(36)}`,{gate:true});
  await page.getByRole('button',{name:'Account',exact:true}).click();

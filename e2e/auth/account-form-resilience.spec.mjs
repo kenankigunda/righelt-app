@@ -1,8 +1,9 @@
+import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { test, expect } from "@playwright/test";
 import { enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 const dialog = page => page.getByTestId("account-dialog");
 test.beforeEach(async () => {
-  expect((await fetch("http://127.0.0.1:10088/reset-limits", { method: "POST" })).status).toBe(200);
+  expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`, { method: "POST" })).status).toBe(200);
 });
 
 test("correctable creation errors preserve the username and allow correction without leaving the form", async ({ page }) => {
