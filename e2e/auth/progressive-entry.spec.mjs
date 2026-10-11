@@ -369,19 +369,22 @@ test("switching forms focuses password for a preserved username and username whe
   await expect(username).toBeFocused();
 });
 
-test("public landing has no sign-in shortcut and keyboard play opens a cancellable account gate", async ({ page }) => {
+test("public landing offers non-play sign-in and keyboard play opens a cancellable hosted lesson", async ({ page }) => {
   let creates = 0;
   page.on("request", request => {
     if (request.method() === "POST" && new URL(request.url()).pathname === "/api/shell/games") creates++;
   });
   await page.goto("/");
   await waitForAccountStartup(page);
-  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveCount(0);
   const original = page.url();
   const play = page.getByTestId("home-create-game");
   await play.focus();
   await page.keyboard.press("Enter");
+  const story=page.getByRole('dialog',{name:'Friend',exact:true});await expect(story).toBeVisible();
+  await story.getByRole('button',{name:'Start a friend game',exact:true}).click();
+  await page.locator('[data-lesson-skip-all]').click();
   await expect(dialog(page).getByRole("heading", { name: "Log in to start playing" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(dialog(page)).not.toBeVisible();

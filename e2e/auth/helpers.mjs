@@ -27,7 +27,7 @@ export async function openPlaySignIn(page) {
   }
   else {
     await waitForAccountStartup(page);
-    await page.getByTestId("home-create-game").click();
+    await page.locator('[data-action="account-open"]').click();
   }
   await expect(page.getByTestId("account-dialog")).toBeVisible();
 }
@@ -42,9 +42,16 @@ export async function signOutAndOpenSignIn(page) {
 // creates a match. Tests must explicitly choose whether to play or dismiss it.
 export async function continueFriendIntroduction(page, {play = true} = {}) {
   const story=page.getByRole('dialog',{name:'Friend',exact:true});
+  if(!await story.isVisible())await page.getByTestId('home-create-game').click();
   await expect(story).toBeVisible();
   if (!play) {await story.getByRole('button',{name:'Close opponent story',exact:true}).click();return;}
   await story.getByRole('button',{name:'Start a friend game',exact:true}).click();
+  await expect(page).toHaveURL(/#\/(tutorial(?:$|\/)|game\/)/);
+  // A saved result briefly passes through the tutorial route while its account
+  // acknowledgment completes. Only skip when an actual lesson is displayed.
+  const skip=page.locator('[data-lesson-skip-all]');
+  await expect.poll(async()=>new URL(page.url()).hash.startsWith('#/game/')||await skip.isVisible()).toBe(true);
+  if(await skip.isVisible())await skip.click();
   await expect(page).toHaveURL(/#\/game\//);
   await expect(page.getByTestId('game-role')).toContainText('Player 1');
   await page.getByRole('button',{name:'Close invite',exact:true}).click();

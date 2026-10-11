@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createAccountDialog, canonicalEntryUsername, validEntryUsername } from "../shell/account-dialog.js";
 
 // Production handlers at a DOM boundary; native autofill/focus/validity are E2E.
-function fixture({ failBlocklist = false } = {}) {
+function fixture({ failBlocklist = false, inline = false } = {}) {
   const listeners = new Map(), nodes = new Map(), timers = new Map(), lookups = [], acts = [], assets = [];
   let tick = 0, generation = 0, markup = "";
   const document = { documentElement:{style:{},dataset:{}},defaultView:{scrollX:0,scrollY:0,scrollTo(){}}, body: { append() {} }, activeElement: null, querySelector() { return null; } };
@@ -12,7 +12,7 @@ function fixture({ failBlocklist = false } = {}) {
     return nodes.get(key);
   }
   const query = key => key === "input" ? [...nodes.values()].find(value => value.name) : nodes.get(key) || null;
-  const element = { classList:{add(){},remove(){}},dataset: {}, open: false, setAttribute() {}, addEventListener(key, fn) { listeners.set(key, fn); }, showModal() { this.open = true; }, close() { this.open = false; }, replaceChildren() { nodes.clear(); markup = ""; }, querySelector: query, querySelectorAll() { return []; } };
+  const element = { classList:{add(){},remove(){}},dataset: {}, open: false, setAttribute() {}, addEventListener(key, fn) { listeners.set(key, fn); }, show() { this.open = true; }, removeAttribute() {}, showModal() { this.open = true; }, close() { this.open = false; }, replaceChildren() { nodes.clear(); markup = ""; }, querySelector: query, querySelectorAll() { return []; } };
   Object.defineProperty(element, "innerHTML", { get: () => markup, set(value) {
     markup = value; nodes.clear(); const form = node("form"); form.querySelectorAll = () => [node("button[type=submit]")];
     form.dataset.entryMode = value.match(/data-entry-mode="([^"]+)"/)?.[1];
@@ -40,7 +40,7 @@ function fixture({ failBlocklist = false } = {}) {
     globalThis.FormData = class { constructor() { return [...nodes.values()].filter(value => value.name).map(value => [value.name, value.value]); } };
     try { await listeners.get("submit")({ preventDefault() {}, target: node("form") }); } finally { globalThis.FormData = original; }
   };
-  dialog.open();
+  if(inline)dialog.openInline();else dialog.open();
   return { dialog, controller, element, node, input, click, debounce, flush, lookups, acts, assets, timers, document, listeners, submit, retire() { generation++; dialog.onTransition(); } };
 }
 
@@ -275,4 +275,12 @@ test("a held control keeps current validation and flushes lookup plus checklist 
   for (const [id, { fn, ms }] of [...f.timers]) if (ms === 0) { f.timers.delete(id); fn(); }
   assert.equal(f.node("[data-username-status]").dataset.state, "available");
   assert.equal(f.node('[data-requirement="notCommon"]').dataset.state, "unmet");
+});
+
+
+test("integrated account entry reuses validation and can return to the ordinary modal", async () => {
+ const f=fixture({inline:true});assert.equal(f.element.dataset.presentation,"inline");
+ f.input("username","a");await f.submit();assert.equal(f.acts.length,0);
+ assert.match(f.node('[data-account-status]').textContent,/3–24/);
+ await f.dialog.close(true);f.dialog.open();assert.equal(f.element.dataset.presentation,"modal");
 });

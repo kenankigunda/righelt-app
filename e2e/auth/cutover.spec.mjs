@@ -48,9 +48,12 @@ test("an old guest invite stays view-only and offers a fresh account game", asyn
   await expect(page.getByText("This older guest game is view-only.", { exact: false })).toBeVisible();
   const url = page.url();
   await page.getByRole("button", { name: "Start new game", exact: true }).click();
+  const story=page.getByRole('dialog',{name:'Friend',exact:true});
+  await story.getByRole('button',{name:'Start a friend game',exact:true}).click();
+  await page.locator('[data-lesson-skip-all]').click();
   await expect(dialog(page)).toBeVisible();
-  await dialog(page).getByRole("button", { name: "Close", exact: true }).click();
-  expect(page.url()).toBe(url);
+  await page.locator('[data-lesson-account] [data-lesson-exit]').click();
+  await expect(page).toHaveURL(url);
   await register(page, `Legacy_${Date.now().toString(36)}`);
   await page.goto(url);
   await expect(page.getByTestId("game-board")).toBeVisible();

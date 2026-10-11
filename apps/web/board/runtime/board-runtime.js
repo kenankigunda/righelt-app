@@ -106,6 +106,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   const getCurrentSelection = () => ({ selectedPieceId, source: selectedSource, target: selectedTarget });
   const getOverlay = () => ({
     mode: overlayMode,
+    phase: selectedPieceOverlayPhase,
     selection: overlayMode === OVERLAY_MODE.INTERACTIVE ? getCurrentSelection() : null,
     recordedAction: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedAction : null,
     recordedActionStartPiece: overlayMode === OVERLAY_MODE.RECORDED_ACTION ? recordedActionStartPiece : null,

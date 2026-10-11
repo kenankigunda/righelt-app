@@ -1,3 +1,4 @@
+import { TUTORIAL_CHAPTER_TITLES } from "../../shared-types/src/tutorial";
 import { AUTH_PROTOCOL_VERSION } from '../../shared-types/src/auth-policy.js';
 import { authorizeGameRequest, authActive, sanitizeGameResponse, type GameAuthority } from './auth-game';
 import { AuthProblem } from './auth-controls';
@@ -175,13 +176,7 @@ export const handleLiveGameRequest = async (
         authProtocolVersion: AUTH_PROTOCOL_VERSION, accountsRequired: authActive(env), accountsAvailable: env.AUTH_ENABLED === "true", maintenance: Boolean(env.ACCOUNT_POLICY?.maintenance),
         ...(authActive(env) && env.AUTH_TURNSTILE_SITE_KEY
           ? { turnstileSiteKey: env.AUTH_TURNSTILE_SITE_KEY } : {}),
-        tutorialSteps: [
-          "Select your role",
-          "Review board state",
-          "Make a move",
-          "Inspect history and return live",
-          "Invite participants",
-        ],
+        tutorialSteps: TUTORIAL_CHAPTER_TITLES,
       },
       cacheControl: CACHE_NO_STORE,
     };

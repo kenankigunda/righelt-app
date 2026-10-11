@@ -1161,3 +1161,14 @@ test("group strength badge sits inset from the square's upper-left corner", () =
 test("group strength badge only renders for strengths above one", () => {
   assert.match(adapterSource, /if \(anchorCell && typeof groupInfo\.strength === "number" && groupInfo\.strength > 1\) \{/);
 });
+
+
+test('board squares expose coordinates, pieces and supply points to screen readers', async () => {
+  await withFakeDocument(async () => {
+    const {adapter,boardEl,overlayLinesEl}=createMountedAdapter();
+    adapter.render({snapshot:{sideToMove:'P1',pieces:[{id:'C1',owner:'P1',kind:'commander',position:{row:3,col:6},supplied:true,commanded:true}]},selection:{},legalActions:[],selectedPieceMoves:[],selectedPieceMovePreviews:[],overlay:{mode:'interactive'},boardEl,overlayLinesEl});
+    assert.equal(getCell(boardEl,2,2).getAttribute('aria-label'),'Row 2, column 2: empty square');
+    assert.equal(getCell(boardEl,3,6).getAttribute('aria-label'),'Row 3, column 6: Red commander');
+    assert.equal(getCell(boardEl,0,9).getAttribute('aria-label'),'Row 0, column 9: Red supply point');
+  });
+});
