@@ -366,6 +366,45 @@ test("tutorial skipping and completion persist without manual replay resetting t
   } finally { await separate.close(); }
 });
 
+test("tutorial saving reports diagnostics, coalesces actions, and ignores a late response after leaving", async ({ page }) => {
+  await register(page, uniqueName());
+  await page.goto("/#/tutorial");
+  let attempts = 0, release, held;
+  const waiting = new Promise(resolve => { held = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route("**/api/account", async route => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    attempts++;
+    if (attempts === 1) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ ok: false, error: "temporarily_unavailable" }) });
+    const response = await route.fetch();
+    held();
+    await gate;
+    await route.fulfill({ response });
+  });
+  await page.getByRole("button", { name: "Finish Tutorial", exact: true }).click();
+  const error = page.getByTestId("tutorial-saving-error");
+  await expect(error).toContainText("We couldn’t save your lesson progress. Please try again.");
+  await error.getByRole("button", { name: "Diagnostic details", exact: true }).click();
+  await expect(error.locator("pre")).toContainText("lesson_progress");
+  await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("Denied"); } } }); });
+  await error.getByRole("button", { name: "Copy", exact: true }).click();
+  await expect(error).toContainText("Copy the details below");
+  await page.getByRole("button", { name: "Finish Tutorial", exact: true }).click();
+  await waiting;
+  await expect(page.getByRole("button", { name: "Finish Tutorial", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Skip tutorial", exact: true })).toBeDisabled();
+  await page.evaluate(() => { location.hash = "#/"; });
+  await expect(page.getByTestId("tutorial-saving-error")).toHaveCount(0);
+  const completed = page.waitForResponse(response => response.url().endsWith("/api/account") && response.request().method() === "PATCH");
+  release();
+  await completed;
+  await expect(page).toHaveURL(/#\/(?:\?|$)/);
+  expect(attempts).toBe(2);
+  await page.evaluate(() => { location.hash = "#/tutorial"; });
+  await expect(page.getByTestId("tutorial-saving-error")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Finish Tutorial", exact: true })).toBeEnabled();
+});
+
 for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load during a ${gesture} gesture does not swallow the play gate click`, async ({ page }) => {
   let release, held;
   const waiting = new Promise(resolve => { held = resolve; });

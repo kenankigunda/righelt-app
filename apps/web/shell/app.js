@@ -172,6 +172,9 @@ window.addEventListener('blur',()=>{document.documentElement.dataset.pageActive=
 window.addEventListener('focus',()=>{syncPageActivity();gameSound.activityChanged();});
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 let tutorialSavingError = null;
+let tutorialSaveOwner = null;
+let tutorialVisit = 0;
+const retireTutorialSave = () => { tutorialVisit++; tutorialSaveOwner = null; tutorialSavingError = null; };
 const boardAdapter = createEngineBoardAdapter();
 const hoverCapability = ensureHoverCapabilityController();
 assertGameBoardAdapter(boardAdapter);
@@ -3375,8 +3378,8 @@ const renderTutorial = (gameId) => {
       <div class="row">
         <button data-action="tutorial-next">Next</button>
         <button class="secondary" data-action="tutorial-skip">Skip Step</button>
-        <button class="secondary" data-action="tutorial-skip-all" data-game-id="${escapeHtml(gameId || "")}">Skip tutorial</button>
-        <button class="secondary" data-action="tutorial-complete" data-game-id="${escapeHtml(gameId || "")}">Finish Tutorial</button>
+        <button class="secondary" data-action="tutorial-skip-all" ${tutorialSaveOwner ? "disabled" : ""} data-game-id="${escapeHtml(gameId || "")}">Skip tutorial</button>
+        <button class="secondary" data-action="tutorial-complete" ${tutorialSaveOwner ? "disabled" : ""} data-game-id="${escapeHtml(gameId || "")}">Finish Tutorial</button>
       </div>
     </section>
   `;
@@ -4354,6 +4357,7 @@ const navigateTo = (hash) => {
   const previousRoute = currentRoute;
   closeHeaderMenu();
   if (window.location.hash === nextHash) {
+    if (previousRoute.name === "tutorial" && (nextRoute.name !== "tutorial" || nextRoute.gameId !== previousRoute.gameId)) retireTutorialSave();
     currentRoute = nextRoute;
     syncFlyoutRenderOrder(currentRoute);
     if (isFlyoutOnlyRouteChange(previousRoute, nextRoute)) {
@@ -4379,6 +4383,7 @@ window.addEventListener("hashchange", () => {
   if(hostInvite && (parsedRoute.name!=='game' || parsedRoute.gameId!==hostInvite.gameId)){hostInvite=null;inviteVisit++;}
   inlineProfiles.close();
   if(parsedRoute.gameId!==previousRoute.gameId){activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();}
+  if (previousRoute.name === "tutorial" && (parsedRoute.name !== "tutorial" || parsedRoute.gameId !== previousRoute.gameId)) retireTutorialSave();
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
   if(previousRoute.name !== 'game' && currentRoute.name === 'game' && !routeTransition)gameSound.play('enter');
   else if(previousRoute.name === 'game' && currentRoute.name !== 'game' && (currentRoute.name !== 'home' || prefersReducedMotion()))gameSound.play('leave');
@@ -4912,23 +4917,29 @@ appEl.addEventListener("click", async (event) => {
   }
 
   if (action === "tutorial-complete" || action === "tutorial-skip-all") {
-    if (account.snapshot().enabled && account.snapshot().session.authenticated) {
-      const epoch = account.snapshot().generation;
-      try { await account.updateAccount({ preferences: { tutorial: action === "tutorial-complete" ? "completed" : "skipped" } }); if (account.snapshot().generation !== epoch) return; }
-      catch (error) {
-        if (account.snapshot().generation !== epoch) return;
-        const message = "We couldn’t save your lesson progress. Please try again.";
-        tutorialSavingError = { message, incidentId: issueDiagnostics.capture("tutorial-saving", { ...latestRequestEvidence("account"), operation: "lesson_progress", stage: "failed", code: error?.code ?? "unavailable" }) };
-        window.__righeltLastError = message;
-        render({ animatePanels: false, includeBoard: false });
-        return;
-      }
-    } else if (!account.snapshot().enabled) saveTutorialCompleted(storage, true);
-    tutorialSavingError = null;
-    issueDiagnostics.resolve("tutorial-saving");
-    tutorial.reset();
-    const gameId = actionEl.getAttribute("data-game-id");
-    navigateTo(gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : buildHomeHash(getCurrentFlyoutState()));
+    if (currentRoute.name !== "tutorial" || tutorialSaveOwner) return;
+    const owner = { visit: tutorialVisit, epoch: account.snapshot().generation };
+    tutorialSaveOwner = owner;
+    const active = () => tutorialSaveOwner === owner && owner.visit === tutorialVisit && currentRoute.name === "tutorial" && account.snapshot().generation === owner.epoch;
+    const gameId = currentRoute.gameId;
+    render({ animatePanels: false, includeBoard: false });
+    try {
+      if (account.snapshot().enabled && account.snapshot().session.authenticated) {
+        await account.updateAccount({ preferences: { tutorial: action === "tutorial-complete" ? "completed" : "skipped" } });
+      } else if (!account.snapshot().enabled) saveTutorialCompleted(storage, true);
+      if (!active()) return;
+      tutorialSavingError = null;
+      issueDiagnostics.resolve("tutorial-saving");
+      tutorial.reset();
+      navigateTo(gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : buildHomeHash(getCurrentFlyoutState()));
+    } catch (error) {
+      if (!active()) return;
+      const message = "We couldn’t save your lesson progress. Please try again.";
+      tutorialSavingError = { message, incidentId: issueDiagnostics.capture("tutorial-saving", { ...latestRequestEvidence("account"), operation: "lesson_progress", stage: "failed", code: error?.code ?? "unavailable" }) };
+      window.__righeltLastError = message;
+    } finally {
+      if (tutorialSaveOwner === owner) { tutorialSaveOwner = null; if (currentRoute.name === "tutorial" && owner.visit === tutorialVisit) render({ animatePanels: false, includeBoard: false }); }
+    }
     return;
   }
 
