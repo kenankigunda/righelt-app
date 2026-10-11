@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "profileVersion": "experimental-grid-1-v1",
+  "finalCalibration": false,
+  "stepsPerProfile": 1000,
+  "sequencesPerProfile": 100,
+  "softStepMs": 5000,
+  "softSequenceStepMs": 3000,
+  "softSequenceMs": 15000,
+  "coldTargetMs": 10000,
+  "noProgressMs": 30000,
+  "provisionalStepWatchdogMs": 10000,
+  "provisionalSequenceWatchdogMs": 20000,
+  "maximumDerivedStepMs": 30000,
+  "maximumDerivedSequenceMs": 45000,
+  "profiles": {
+    "Babs": {"simulations": 8, "temperature": 1, "maxValueGap": 0.1},
+    "Tau": {"simulations": 32, "temperature": 0.5, "maxValueGap": 0.05},
+    "Horus": {"simulations": 128, "temperature": 0.1, "maxValueGap": 0.01}
+  }
+}

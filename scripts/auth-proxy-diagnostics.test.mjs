@@ -5,10 +5,11 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
-import { classifyProxyRejection, instrumentProxySource, installProxyDiagnostics } from "./auth-proxy-diagnostics.mjs";
+import { classifyProxyRejection, prepareProxySource, prepareRuntimeSource, installProxyRepair } from "./auth-proxy-diagnostics.mjs";
 
 const packageFile = createRequire(import.meta.url).resolve("wrangler/package.json");
 const source = await readFile(path.join(path.dirname(packageFile), "wrangler-dist/ProxyWorker.js"), "utf8");
+const runtime = await readFile(path.join(path.dirname(packageFile), "wrangler-dist/cli.js"), "utf8");
 
 test("diagnostics expose only allowlisted structure, never arbitrary error or request values", () => {
   const secret = "private-password-and-token";
@@ -28,34 +29,19 @@ test("diagnostics expose only allowlisted structure, never arbitrary error or re
 });
 
 test("source guard rejects changed versions, changed source and already patched source", () => {
-  assert.throws(() => instrumentProxySource(source, "4.68.0"), /exact reviewed/);
-  assert.throws(() => instrumentProxySource(source + "\n", "4.67.0"), /exact reviewed/);
-  const patched = instrumentProxySource(source, "4.67.0");
-  assert.throws(() => instrumentProxySource(patched, "4.67.0"), /exact reviewed/);
+  assert.throws(() => prepareProxySource(source, "4.68.0"), /exact reviewed/);
+  assert.throws(() => prepareProxySource(source + "\n", "4.67.0"), /exact reviewed/);
+  const patched = prepareProxySource(source, "4.67.0");
+  assert.throws(() => prepareProxySource(patched, "4.67.0"), /exact reviewed/);
 });
 
-test("instrumented actual proxy keeps forwarding failure response unchanged and logs safely", async () => {
-  class WorkerHeaders extends Headers { getAll(name) { return name.toLowerCase() === "set-cookie" ? this.getSetCookie() : []; } }
-  const invoke = async (input, log) => {
-    const script = input.replace('import assert from "node:assert";', "")
-      .replace(/export \{[\s\S]*?\};\s*$/, "globalThis.TestProxyWorker = ProxyWorker;");
-    const context = { URL, Request, Response, Headers: WorkerHeaders, assert,
-      console: { error: (...args) => log.push(args) },
-      fetch: async () => { throw new TypeError("Network connection lost: private-secret"); } };
-    vm.createContext(context); vm.runInContext(script, context);
-    const proxy = new context.TestProxyWorker({}, { PROXY_CONTROLLER_AUTH_SECRET: "unused" });
-    proxy.proxyData = { userWorkerUrl: { protocol: "http:", hostname: "127.0.0.1", port: "1234" }, headers: {} };
-    const response = await proxy.fetch(new Request("http://127.0.0.1:8787/api/auth/register?token=private-secret", { method: "POST", body: "private-secret" }));
-    return { status: response.status, headers: [...response.headers], body: await response.text() };
-  };
-  const log = [];
-  const original = await invoke(source, []);
-  assert.equal(original.status, 503);
-  assert.deepEqual(await invoke(instrumentProxySource(source, "4.67.0"), log), original);
-  assert.equal(log.length, 1);
-  assert.equal(log[0][0], "[auth-e2e-proxy-rejection]");
-  assert.equal(JSON.parse(log[0][1]).message, "network_connection_lost");
-  assert.ok(!JSON.stringify(log).includes("private-secret"));
+test("runtime guard binds both controller creation and teardown sites", () => {
+  for (const [input, version] of [[runtime, "4.68.0"], [runtime + "\n", "4.67.0"]])
+    assert.throws(() => prepareRuntimeSource(input, version), /exact reviewed/);
+  const patched = prepareRuntimeSource(runtime, "4.67.0");
+  assert.equal(patched.split(".workerConnectionOrigin(this,").length, 3);
+  assert.equal(patched.split(".closeWorkerConnections(this)").length, 3);
+  assert.throws(() => prepareRuntimeSource(patched, "4.67.0"), /exact reviewed/);
 });
 
 test("installation restores exact dependency bytes, and refuses to overwrite external changes", async () => {
@@ -64,15 +50,20 @@ test("installation restores exact dependency bytes, and refuses to overwrite ext
     await mkdir(path.join(directory, "wrangler-dist"));
     const metadata = path.join(directory, "package.json");
     const file = path.join(directory, "wrangler-dist/ProxyWorker.js");
+    const runtimeFile = path.join(directory, "wrangler-dist/cli.js");
     await writeFile(metadata, JSON.stringify({ version: "4.67.0" }));
     await writeFile(file, source);
-    const restore = await installProxyDiagnostics(metadata);
+    await writeFile(runtimeFile, runtime);
+    const restore = await installProxyRepair(metadata);
     assert.notEqual(await readFile(file, "utf8"), source);
+    assert.notEqual(await readFile(runtimeFile, "utf8"), runtime);
     await restore(); await restore();
     assert.equal(await readFile(file, "utf8"), source);
-    const restoreChanged = await installProxyDiagnostics(metadata);
+    assert.equal(await readFile(runtimeFile, "utf8"), runtime);
+    const restoreChanged = await installProxyRepair(metadata);
     await writeFile(file, "external change");
     await assert.rejects(restoreChanged(), /refusing to overwrite/);
     assert.equal(await readFile(file, "utf8"), "external change");
+    assert.equal(await readFile(runtimeFile, "utf8"), runtime);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

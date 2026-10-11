@@ -649,6 +649,11 @@ function applyContinuationPhase(state) {
         return false;
     }
     if (state.continuation.type === "rush") {
+        // A rush can close only when its obligations are supplied. While they are
+        // not, finding another legal rush cannot change the resolver's result.
+        if (!canCloseContinuationNow(state)) {
+            return false;
+        }
         const hasRushCandidate = state.pieces
             .filter((piece) => piece.owner === expectedOwner)
             .some((piece) => {
@@ -673,7 +678,7 @@ function applyContinuationPhase(state) {
             }
             return false;
         });
-        if (!hasRushCandidate && canCloseContinuationNow(state)) {
+        if (!hasRushCandidate) {
             state.continuation = null;
             state.sideToMove = expectedOwner === "P1" ? "P2" : "P1";
             state.turnIndex += 1;
