@@ -48,7 +48,10 @@ test("obsolete lookup completion cannot update a dismissed form", async ({
   try {
     await page.goto("/");
     await page.waitForFunction(() => window.fixtureReady);
-    await page.evaluate(() => window.accountFixture.open("register"));
+    await page.evaluate(() => {
+      window.accountFixture.ignoreLookupAbort();
+      window.accountFixture.open("register");
+    });
     await page.locator('[name="username"]').fill("controlled_user");
     await page.waitForRequest("**/lookup?**");
     await page.keyboard.press("Escape");

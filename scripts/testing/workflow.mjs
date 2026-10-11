@@ -45,7 +45,8 @@ export function workflow() {
           ? [
               {
                 name: "Install browsers",
-                run: "pnpm exec playwright install --with-deps chromium firefox webkit",
+                env: { PROJECT: expression("matrix.project") },
+                run: "node scripts/testing/install-browsers.mjs",
               },
             ]
           : []),

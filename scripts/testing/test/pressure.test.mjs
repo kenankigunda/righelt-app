@@ -175,3 +175,27 @@ test("partial rerun retains untouched lanes but rejects foreign or ambiguous art
     selectSuiteArtifacts([old, { ...old }], { runId: 7, headSha: "head" }),
   );
 });
+
+test("component browser fixture includes the production CSS inventory in order", async () => {
+  const { readFileSync } = await import("node:fs");
+  const styles = (text) =>
+    [...text.matchAll(/<link\b[^>]*rel="stylesheet"[^>]*href="([^"]+)"/g)].map(
+      (m) => m[1].replace(/^\.\//, "/apps/web/"),
+    );
+  const production = styles(
+    readFileSync(
+      new URL("../../../apps/web/index.html", import.meta.url),
+      "utf8",
+    ),
+  );
+  const fixture = styles(
+    readFileSync(
+      new URL(
+        "../../../browser-integration/support/account.html",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(fixture, production);
+});

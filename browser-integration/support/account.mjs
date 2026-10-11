@@ -1,13 +1,14 @@
 import { createAccountDialog } from "/apps/web/shell/account-dialog.js";
 // Only the controller boundary is controlled; rendering, focus and CSS are production code.
-let generation = 0;
+let generation = 0,
+  ignoreLookupAbort = false;
 const session = { authenticated: false, account: null };
 const controller = {
   snapshot: () => ({ session, generation, busy: false, pendingLogout: false }),
   lookupUsername: async (username, { signal } = {}) => {
     const response = await fetch(
       `/lookup?username=${encodeURIComponent(username)}`,
-      { signal },
+      { signal: ignoreLookupAbort ? undefined : signal },
     );
     if (!response.ok)
       throw Object.assign(new Error("Unavailable"), {
@@ -38,6 +39,9 @@ document
   .addEventListener("click", () => dialog.open("login"));
 window.accountFixture = {
   open: (mode) => dialog.open(mode),
+  ignoreLookupAbort: () => {
+    ignoreLookupAbort = true;
+  },
   close: () => dialog.close(),
   transition: () => dialog.onTransition({ owner: {} }),
 };
