@@ -1,10 +1,11 @@
+import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { test, expect } from "@playwright/test";
 import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
 const password = "A cutover account test password 482";
 const dialog = page => page.getByTestId("account-dialog");
 async function control(action) {
-  expect((await fetch(`http://127.0.0.1:10088/${action}`, { method: "POST" })).status).toBe(200);
+  expect((await fetch(`${AUTH_CONTROL_ORIGIN}/${action}`, { method: "POST" })).status).toBe(200);
 }
 test.beforeEach(async () => { await control("maintenance-off"); await control("reset-limits"); });
 test.afterEach(async () => control("maintenance-off"));

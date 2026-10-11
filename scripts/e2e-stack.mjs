@@ -1,3 +1,4 @@
+import { recordUnexpectedExit } from './testing/stack-status.mjs';
 import { cliPath, supervise } from './resources/supervisor.mjs';
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
@@ -29,8 +30,9 @@ const stopChild = async child => {
  const signal = value => { try { child.kill(value); } catch {} };
  const stopped = new Promise(resolve=>child.once("exit",resolve));
  signal("SIGTERM");
- const timer=setTimeout(()=>signal("SIGKILL"),5000);
- await Promise.race([stopped,new Promise(resolve=>setTimeout(resolve,6000))]);
+ // Give the supervisor its five-second grace period and cleanup verification.
+ const timer=setTimeout(()=>signal("SIGKILL"),9000);
+ await Promise.race([stopped,new Promise(resolve=>setTimeout(resolve,10000))]);
  clearTimeout(timer);
  signal("SIGKILL");
 };
@@ -63,6 +65,9 @@ const waitForHttp = async (url, label, timeoutMs = DEFAULT_E2E_READY_TIMEOUT_MS)
 const spawnLogged = (label, command, args, options) => {
   const child = spawn(process.execPath, [cliPath, "run", "--kind", "preview", "--", command, ...args], {
     ...options,
+    // Playwright signals the stack's process group at teardown. Keep service
+    // supervisors outside it so the stack records shutdown before stopping them.
+    detached: process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"],
   });
   managedChildren.add(child);
@@ -77,9 +82,10 @@ const spawnLogged = (label, command, args, options) => {
     if (shuttingDown || intentionalStops.has(child)) {
       return;
     }
-    if (code !== 0) {
+    {
+      recordUnexpectedExit(label, code, signal);
       console.error(`[e2e-stack] ${label} exited with code ${code}${signal ? ` (signal ${signal})` : ""}`);
-      shutdown(code ?? 1);
+      shutdown(code || 1);
     }
   });
   return child;

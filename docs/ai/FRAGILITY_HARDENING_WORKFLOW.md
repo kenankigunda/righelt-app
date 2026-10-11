@@ -77,6 +77,6 @@ When using this workflow, the result should include:
 
 This workflow extends, and does not replace, the normal testing policy in `AGENTS.md`.
 
-- Every behavioral change still needs unit and integration coverage unless it is purely non-functional.
+- Choose the lowest layer that proves each changed contract. Avoid duplicating assertions across unit, integration and E2E merely to satisfy test labels. See `TESTING_STRATEGY.md` for browser integration and the full validation gate.
 - Every touched workflow must still consider whether E2E coverage should be added or expanded.
 - The full relevant test pass remains a correctness gate before advancing the work.

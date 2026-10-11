@@ -634,14 +634,19 @@ test("username lookup is canonical, minimal, non-renewing, separately limited an
     };
     const lookup = (name) =>
       a.call("/api/auth/username", { username: name }, { env });
-    assert.deepEqual((await lookup(" kEnAn ")).data, {
+    const takenContract = (await lookup(" kEnAn ")).data;
+    assert.deepEqual(takenContract, {
       ok: true,
       exists: true,
     });
-    assert.deepEqual((await lookup("available")).data, {
+    const availableContract = (await lookup("available")).data;
+    assert.deepEqual(availableContract, {
       ok: true,
       exists: false,
     });
+    const browserContracts = JSON.parse(readFileSync(new URL("../../../browser-integration/support/lookup.json", import.meta.url), "utf8"));
+    assert.deepEqual(availableContract, browserContracts.available);
+    assert.deepEqual(takenContract, browserContracts.taken);
     assert.equal((await lookup("é")).status, 400);
     assert.deepEqual(
       (await f.db.prepare("SELECT * FROM account_sessions").all()).results,

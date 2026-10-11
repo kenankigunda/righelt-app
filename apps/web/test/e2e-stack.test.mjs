@@ -13,7 +13,8 @@ test("root scripts expose layered E2E commands", () => {
   assert.equal("test:e2e:smoke" in packageJson.scripts, false);
   assert.equal(packageJson.scripts["test:e2e"], "node scripts/resources/cli.mjs run --kind heavy -- playwright test");
   assert.equal(packageJson.scripts["test:e2e:headed"], "node scripts/resources/cli.mjs run --kind heavy -- playwright test --headed");
-  assert.equal(packageJson.scripts["test:e2e:auth"], "node scripts/resources/cli.mjs run --kind heavy -- playwright test --config playwright.auth.config.mjs");
+  assert.ok(packageJson.scripts["test:e2e:auth"].includes("test:e2e:auth:journeys"));
+  assert.ok(packageJson.scripts["test:e2e:auth"].includes("test:e2e:auth:controls"));
 });
 
 test("E2E stack launcher provisions isolated local state and split-stack readiness checks", () => {

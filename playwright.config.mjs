@@ -15,7 +15,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   outputDir,
-  reporter,
+  reporter: [...reporter,...(process.env.RIGHELT_TEST_OBSERVATIONS ? [["./scripts/testing/browser-reporter.mjs"]] : [])],
   timeout: 60_000,
   expect: {
     timeout: 10_000,
