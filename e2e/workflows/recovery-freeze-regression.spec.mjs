@@ -42,19 +42,25 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
 
 for(const reduced of [false,true])test(`routine reconnect stays quiet four seconds and preserves board${reduced?" with reduced motion":""}`,async({page},info)=>{
  await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:reduced?"reduce":"no-preference"});
- let hold=false,release;const gate=new Promise(r=>release=r);
+ let hold=false,release,held;const gate=new Promise(r=>release=r);const waiting=new Promise(r=>held=r);
  await page.routeWebSocket(/\/api\/shell\/games\//,socket=>{const server=socket.connectToServer();server.onMessage(message=>{if(!hold)socket.send(message);});});
  const {gameId}=await createGameFromHome(page);await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
- await page.route(`**/api/shell/games/${gameId}/reconcile`,async route=>{const response=await route.fetch();if(hold)await gate;await route.fulfill({response});});
+ await page.route(`**/api/shell/games/${gameId}/reconcile`,async route=>{const response=await route.fetch();if(hold){held();await gate;}await route.fulfill({response});});
+ await page.clock.install();await page.clock.pauseAt(new Date());
  const board=page.getByTestId("game-board");const before=await board.boundingBox();const contents=await board.innerHTML();
  hold=true;await page.evaluate(()=>{dispatchEvent(new Event("pagehide"));dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true}));});
  await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toBeVisible();
- await expect(page.locator('.board-wrap > .loading-pieces')).toBeVisible();
- await page.waitForTimeout(3200);await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
- await expect(page.getByTestId("sync-recovery-banner")).toContainText("Reconnecting. We’ll be right back!",{timeout:1500});
+ await waiting;
+ await expect(page.locator('.board-wrap > .loading-pieces')).toBeHidden();
+ await page.clock.runFor(199);await expect(page.locator('.board-wrap > .loading-pieces')).toBeHidden();
+ await page.clock.runFor(2);await expect(page.locator('.board-wrap > .loading-pieces')).toBeVisible();
+ await page.clock.runFor(3798);await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
+ await page.clock.runFor(2);
+ await expect(page.getByTestId("sync-recovery-banner")).toBeVisible();
+ await expect(page.getByTestId("sync-recovery-banner")).toContainText("Reconnecting. We’ll be right back!");
  expect(await board.boundingBox()).toEqual(before);expect(await board.innerHTML()).toBe(contents);
  if(reduced)expect(await page.locator(".reconnect-background").evaluate(el=>getComputedStyle(el).animationName)).toBe("none");
  await page.screenshot({path:info.outputPath(reduced?"reconnect-static.png":"reconnect-sweep.png")});
- hold=false;release();await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
+ hold=false;release();await page.clock.resume();await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
 });
