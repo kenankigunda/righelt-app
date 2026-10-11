@@ -12,7 +12,17 @@ const safe = (value, depth = 0) => {
   return "[unavailable]";
 };
 export const sanitizeDiagnostic = data => Object.fromEntries(Object.entries(data ?? {}).filter(([k]) => fields.has(k)).map(([k,v]) => [k, typeof v === "object" ? safe(v) : safe(v)]));
-export function createIssueDiagnostics({ storage, now = Date.now, schedule = setTimeout } = {}) {
+const diagnosticEnvironment = () => {
+  const read = getter => { try { return getter() ?? "unavailable"; } catch { return "unavailable"; } };
+  return {
+    browser: read(() => globalThis.navigator?.userAgent),
+    clientBuild: read(() => globalThis.__righeltClientBuild),
+    timezone: read(() => Intl.DateTimeFormat().resolvedOptions().timeZone),
+    online: read(() => globalThis.navigator?.onLine),
+    visibility: read(() => globalThis.document?.visibilityState),
+  };
+};
+export function createIssueDiagnostics({ storage, now = Date.now, schedule = setTimeout, environment = diagnosticEnvironment } = {}) {
   let reports = [], timer;
   try { const parsed = JSON.parse(storage?.getItem(KEY) ?? "[]"); if (Array.isArray(parsed)) reports = parsed.filter(r => r?.schemaVersion === 1 && typeof r.id === "string" && Number.isFinite(r.startedAt)).map(r => ({ schemaVersion: 1, id: r.id, key: String(r.key).slice(0,256), startedAt: r.startedAt, resolvedAt: Number.isFinite(r.resolvedAt) ? r.resolvedAt : null, initial: sanitizeDiagnostic(r.initial), truncated: r.truncated === true, events: (r.events ?? []).slice(-200).map(e => ({ at: e.at, ...sanitizeDiagnostic(e) })) })); } catch {}
   const trim = () => {
@@ -28,6 +38,8 @@ export function createIssueDiagnostics({ storage, now = Date.now, schedule = set
   const persist = () => { trim(); if (!timer) timer = schedule(() => { timer = null; try { storage?.setItem(KEY, JSON.stringify(reports)); } catch {} }, 100); };
   const api = {
     capture(key, data = {}) {
+      let context; try { context = environment(); } catch { context = { browser: "unavailable", clientBuild: "unavailable", timezone: "unavailable", online: "unavailable", visibility: "unavailable" }; }
+      data = { ...context, ...data };
       trim(); let report = reports.find(r => r.key === key && !r.resolvedAt);
       if (!report) { report = { schemaVersion: 1, id: crypto.randomUUID(), key, startedAt: now(), initial: sanitizeDiagnostic(data), events: [] }; reports.push(report); }
       report.events.push({ at: now(), ...sanitizeDiagnostic(data) }); if (report.events.length > DIAGNOSTIC_LIMITS.events) { report.events = report.events.slice(-DIAGNOSTIC_LIMITS.events); report.truncated = true; } persist(); return report.id;

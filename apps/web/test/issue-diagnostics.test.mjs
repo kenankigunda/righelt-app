@@ -3,6 +3,21 @@ import assert from "node:assert/strict";
 import { createIssueDiagnostics, sanitizeDiagnostic } from "../shell/issue-diagnostics.js";
 import { recoveryMessage } from "../shell/recovery-view.js";
 const memory = () => { const map = new Map(); return { getItem: k => map.get(k), setItem: (k,v) => map.set(k,v), removeItem: k => map.delete(k) }; };
+test("every issue captures guarded environment evidence without replacing initial context", () => {
+ let browser = "initial browser";
+ const d = createIssueDiagnostics({environment:()=>({browser,clientBuild:"build",timezone:"UTC",online:true,visibility:"visible",identityId:"secret"})});
+ const id = d.capture("account:retry",{operation:"account"});
+ browser = "later browser";d.capture("account:retry",{stage:"retry"});
+ assert.equal(d.get(id).initial.browser,"initial browser");
+ assert.equal(d.get(id).initial.clientBuild,"build");
+ assert.equal(d.get(id).initial.timezone,"UTC");
+ assert.equal(d.get(id).events.at(-1).browser,"later browser");
+ assert.equal(JSON.stringify(d.get(id)).includes("secret"),false);
+ const unavailable = createIssueDiagnostics({environment:()=>{throw Error("blocked")}});
+ const missing = unavailable.capture("invite",{operation:"invite"});
+ assert.equal(unavailable.get(missing).initial.browser,"unavailable");
+ assert.equal(unavailable.get(missing).initial.clientBuild,"unavailable");
+});
 test("diagnostic capture removes secrets and preserves reproducible board coordinates", () => {
  const value=sanitizeDiagnostic({gameId:"g",token:"secret",identityId:"private",headers:{authorization:"secret"},authoritativeState:{pieces:[{id:"piece",owner:"P1",kind:"unit",position:{row:2,col:3},identityId:"secret"}],sideToMove:"P1",turnIndex:4}});
  assert.equal(JSON.stringify(value).includes("secret"),false); assert.deepEqual(value.authoritativeState.pieces[0].position,{row:2,col:3});
