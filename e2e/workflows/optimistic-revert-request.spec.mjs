@@ -35,10 +35,10 @@ test("undo-last-move applies optimistically before the revert request response r
     await expect(page.locator('[data-action="undo-last-move"]')).toBeVisible();
     await page.locator('[data-action="undo-last-move"]').click();
 
-    await expect(page.getByText("Latest: Undo applied")).toBeVisible({ timeout: 700 });
+    await expect(page.getByText("Latest: Move undone")).toBeVisible({ timeout: 700 });
 
     await revertResponsePromise;
-    await expect(page.getByText(/Latest: (Undo applied|Player .* accepted the undo request)/)).toBeVisible();
+    await expect(page.getByText(/Latest: (Move undone|Undo request accepted)/)).toBeVisible();
     await expect(page.locator('[data-action="undo-last-move"]')).toHaveCount(0);
   } finally {
     await closeContextQuietly(context);

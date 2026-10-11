@@ -103,7 +103,7 @@ test("joining through a delayed direct-link flow only pulses the clicked join bu
     await viewerButton.click();
 
     await expect(viewerButton).toHaveAttribute("data-pending", "true");
-    await expect(viewerButton).toHaveText("Joining...");
+    await expect(viewerButton).toHaveText("Joining");
     await expect(otherButton).toBeEnabled();
 
     releaseJoin?.();
