@@ -368,6 +368,7 @@ test("tutorial skipping and completion persist without manual replay resetting t
 
 test("tutorial saving reports diagnostics, coalesces actions, and ignores a late response after leaving", async ({ page }) => {
   await register(page, uniqueName());
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/#/tutorial");
   let attempts = 0, release, held;
   const waiting = new Promise(resolve => { held = resolve; });
@@ -384,11 +385,17 @@ test("tutorial saving reports diagnostics, coalesces actions, and ignores a late
   await page.getByRole("button", { name: "Finish Tutorial", exact: true }).click();
   const error = page.getByTestId("tutorial-saving-error");
   await expect(error).toContainText("We couldn’t save your lesson progress. Please try again.");
-  await error.getByRole("button", { name: "Diagnostic details", exact: true }).click();
+  const caret = error.getByRole("button", { name: "Diagnostic details", exact: true });
+  const hitTarget = await caret.boundingBox();
+  expect(hitTarget.width).toBeGreaterThanOrEqual(44);
+  expect(hitTarget.height).toBeGreaterThanOrEqual(44);
+  await caret.click();
   await expect(error.locator("pre")).toContainText("lesson_progress");
   await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("Denied"); } } }); });
   await error.getByRole("button", { name: "Copy", exact: true }).click();
   await expect(error).toContainText("Copy the details below");
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("lesson-saving-diagnostics-phone.png") });
   await page.getByRole("button", { name: "Finish Tutorial", exact: true }).click();
   await waiting;
   await expect(page.getByRole("button", { name: "Finish Tutorial", exact: true })).toBeDisabled();
