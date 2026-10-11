@@ -66,7 +66,7 @@ test('Friend invite remains open after copy, viewer intent survives arrival, and
  await page.goto('/');await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
  const modal=page.getByRole('dialog',{name:'Invite a friend'});await expect(modal).toBeVisible();
  await modal.getByRole('button',{name:'Invite someone to view',exact:true}).click();
- await expect(modal.getByRole('status')).toHaveText('Link copied');await expect(modal).toBeVisible();
+ await expect(modal.getByRole('status')).toHaveText('Link copied! Ready to share.');await expect(modal).toBeVisible();
  const link=await page.evaluate(()=>window.copiedInvite);expect(link).toContain('as=viewer');
  const context=await browser.newContext();const guest=await context.newPage();await guest.goto(link);
  await expect(guest.getByRole('heading',{name:'Watch this game'})).toBeVisible();await expect(guest.getByTestId('invite-join-player')).toBeHidden();
@@ -165,7 +165,7 @@ test('copy feedback preserves focus and collapses its space when empty',async({p
  await page.evaluate(()=>document.fonts.ready);
  await expect.poll(()=>panel.evaluate(el=>el.getAnimations().length)).toBe(0);
  const before=(await panel.boundingBox()).height;await page.keyboard.press('Enter');
- await expect(panel.getByRole('status')).toHaveText('Link copied');await expect(copy).toBeFocused();
+ await expect(panel.getByRole('status')).toHaveText('Link copied! Ready to share.');await expect(copy).toBeFocused();
  await expect(panel.getByTestId('pending-invitation')).toHaveText('Awaiting player');
  await expect(panel.getByTestId('participant-player-1').getByRole('img',{name:'Connected',exact:true})).toBeVisible();
  await expect.poll(()=>panel.evaluate(el=>el.getAnimations().length)).toBe(0);

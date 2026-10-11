@@ -11,7 +11,7 @@ export async function waitForAccountStartup(page) {
   await expect.poll(() => page.evaluate(() => ({
     header: Boolean(document.querySelector('.shell-header')),
     retry: Boolean(document.querySelector('[data-action="retry-account-startup"]')),
-    connecting: [...document.querySelectorAll('[role="status"]')].some(node => /^Connecting…$/.test(node.textContent.trim())),
+    connecting: [...document.querySelectorAll('[role="status"]')].some(node => /^Connecting$/.test(node.textContent.trim())),
   }))).toEqual({ header: true, retry: false, connecting: false });
 }
 

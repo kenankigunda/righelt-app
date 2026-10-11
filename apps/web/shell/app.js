@@ -2172,7 +2172,10 @@ const updateHeaderFields = () => {
   }
 };
 
-const renderInviteFeedback = () => `<div class="invite-feedback" role="status" aria-live="polite" data-success="${inviteFeedback === 'Link copied! Ready to share.'}">${inviteFeedback ? `${icon(inviteFeedback === 'Link copied! Ready to share.' ? 'check' : 'copy')}<span>${escapeHtml(inviteFeedback)}</span>${renderDiagnosticDisclosure(issueDiagnostics.list().find(r => r.key === `invite:${currentRoute.gameId}` && !r.resolvedAt)?.id)}` : ''}</div>`;
+const renderInviteFeedback = (scope = "invite-panel") => {
+  const reports = issueDiagnostics.list().filter(report => report.key === `invite:${currentRoute.gameId}` && (!report.resolvedAt || isDiagnosticOpen(report.id)));
+  return `<div class="invite-feedback" role="status" aria-live="polite" data-success="${inviteFeedback === 'Link copied! Ready to share.'}">${inviteFeedback ? `${icon(inviteFeedback === 'Link copied! Ready to share.' ? 'check' : 'copy')}<span>${escapeHtml(inviteFeedback)}</span>` : ""}${reports.map(report => renderDiagnosticDisclosure(report.id, scope)).join("")}</div>`;
+};
 const setInviteFeedback = (message) => {
   inviteFeedback = message;
   render({ animatePanels: false, includeBoard: false });
@@ -4236,7 +4239,7 @@ const copyGameInvitation = async (gameId, role, fromHost=false) => {
     if(!active())return;
     const game=transport.getGameViewModel(gameId);
     const option=invitationOptions(game).find(option=>option.role===role);
-    if(!option)throw new Error('That seat is taken. You can still invite someone to watch.');
+    if(!option){setInviteFeedback('That seat is taken. You can still invite someone to watch.');return;}
     issueDiagnostics.resolve(`invite:${gameId}`);
     if(role !== "viewer") preparedPlayerInvitations.set(gameId, role);
     const hash=buildInviteHash(option.token,getCurrentFlyoutState());
@@ -4251,7 +4254,7 @@ const renderHostInvite = game => renderInvitationSurface({host:true,background:r
   <p class="small invite-gate-kicker">Your game is ready</p><h2 id="invite-surface-title">Invite a friend</h2>
   <p>Copy a link and send it their way.</p>
   <div class="invite-choice-list">${invitationOptions(game).map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id)})}>${icon('copy')}${isButtonPending(getCopyInviteButtonKey(game.id))?'Preparing link':option.label}</button>`).join('')}</div>
-  ${renderInviteFeedback()}
+  ${renderInviteFeedback("invite-modal")}
   ${inviteFallback?.gameId===game.id?`<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>`:''}
 `});
 const openFriendInvite = gameId => {
