@@ -3,7 +3,7 @@ export const LOADING_CUE_DELAY_MS = 200;
 export const LOADING_CONTEXT_DELAY_MS = 5000;
 export const loadingPhase = elapsed => elapsed >= LOADING_CONTEXT_DELAY_MS ? 'slow' : elapsed >= LOADING_CUE_DELAY_MS ? 'visible' : 'quiet';
 const escape = value => String(value).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-export const loadingAttributes = (key, message = 'Still loading…') => `data-loading-state="pending" data-loading-key="${escape(key)}" data-loading-message="${escape(message)}" aria-busy="true"`;
+export const loadingAttributes = (key, message = 'Still loading') => `data-loading-state="pending" data-loading-key="${escape(key)}" data-loading-message="${escape(message)}" aria-busy="true"`;
 export const loadingCue = () => '<span class="loading-pieces" aria-hidden="true"><i></i><i></i><i></i></span>';
 
 // Tracks continuous operations through synchronous DOM patches without restarting

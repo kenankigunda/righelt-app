@@ -50,6 +50,7 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
  const box=await banner.boundingBox();expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(width+1);
  if(width===390){
   const caret=banner.getByRole("button",{name:"Diagnostic details"});
+  expect(await caret.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
   const hit=await caret.boundingBox();expect(hit.width).toBeGreaterThanOrEqual(44);expect(hit.height).toBeGreaterThanOrEqual(44);
   await caret.click();await expect(caret).toHaveAttribute("aria-expanded","true");
   await page.evaluate(()=>Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async()=>{throw Error("Unavailable")}}}));
@@ -58,7 +59,8 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
   await expect(banner.locator("pre")).toContainText('"schemaVersion"');
   const details=await banner.locator(".issue-details").boundingBox();const expanded=await banner.boundingBox();
   expect(details.y+details.height).toBeLessThanOrEqual(expanded.y+expanded.height+1);
-  await page.screenshot({path:info.outputPath("diagnostics-mobile.png"),fullPage:true});
+  await page.mouse.move(0,0);
+  await page.screenshot({path:info.outputPath("diagnostics-mobile.png")});
   await caret.click();await expect(caret).toHaveAttribute("aria-expanded","false");
  }
  const placement=await page.locator('[data-shell-alert-zone]').evaluate(el=>getComputedStyle(el).position);

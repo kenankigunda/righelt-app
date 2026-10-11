@@ -1,4 +1,4 @@
-import { mountLoadingFeedback } from "./loading.js";
+import { mountLoadingFeedback, LOADING_CUE_DELAY_MS } from "./loading.js";
 import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
 import { latestRequestEvidence } from "./request-evidence.js";
 import { issueDiagnostics } from "./issue-diagnostics.js";
@@ -3425,7 +3425,7 @@ const updateReconnectPresentation = game => {
   clearTimeout(reconnectPresentationTimer);
   if (recovering) {
     const elapsed = Date.now() - game.recoveryStartedAt;
-    const remaining = elapsed < SYNC_TIMING.loadingCueMs ? SYNC_TIMING.loadingCueMs - elapsed : elapsed < SYNC_TIMING.reconnectAlertMs ? SYNC_TIMING.reconnectAlertMs - elapsed : null;
+    const remaining = elapsed < LOADING_CUE_DELAY_MS ? LOADING_CUE_DELAY_MS - elapsed : elapsed < SYNC_TIMING.reconnectAlertMs ? SYNC_TIMING.reconnectAlertMs - elapsed : null;
     if (remaining !== null) reconnectPresentationTimer = setTimeout(() => { const next = transport.getGameViewModel(game.id); updateReconnectPresentation(next); updateMountedHeader(); }, remaining + 1);
   }
 };
