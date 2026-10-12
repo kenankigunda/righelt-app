@@ -313,7 +313,8 @@ test("full game and identity journal caps drain durable receipts before retrying
 
 test("committed A excludes optimistic B and a late A receipt retains newer authoritative B", async () => {
   let firstBody, secondBody, releaseFirst, releaseSecond;
-  const f = await setup({ timing: { requestTimeoutMs: 500 }, fault: async (url, init, call) => {
+  // This case owns receipt ordering, not the separately covered overdue clock.
+  const f = await setup({ timing: { requestTimeoutMs: 5000, confirmationBudgetMs: 60000 }, fault: async (url, init, call) => {
     const response = await call(); if (!url.endsWith('/apply')) return response;
     const body = await response.json();
     if (!firstBody) { firstBody = body; return new Promise(resolve => { releaseFirst = () => resolve(Response.json(body)); }); }

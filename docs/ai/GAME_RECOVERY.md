@@ -2,6 +2,8 @@
 
 A game has one generation-fenced HTTP recovery owner. Socket repair runs independently. A confirmed receipt settles its original command; authoritative reconciliation can resume mutations while socket repair continues. Unknown outcomes retain the command journal and tentative projection. Timeout never means rejection.
 
+After successful HTTP recovery, failed replacement sockets that never became ready repair in the background without interrupting board input. Failed HTTP fallback, newer advertised state, lifecycle restoration, and loss of a ready socket require blocking recovery again. Stronger evidence supersedes an in-progress background pass and forces a fresh snapshot; late responses cannot restore obsolete readiness.
+
 ## Deadlines and lifecycle
 
 HTTP requests include body parsing within five seconds. Journal opening and each transaction have five-second deadlines. A complete recovery pass owns work for at most ten seconds, including hydration and existing attempts. Failure releases ownership and schedules another pass using bounded jittered backoff. Command overdue feedback starts fifteen seconds from durable submission metadata; retries and refresh restoration preserve that timestamp.

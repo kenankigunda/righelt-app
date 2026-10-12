@@ -118,6 +118,7 @@ export const createLiveSyncClient = ({
   const generations = new Map();
   const connectionState = new Map();
   const repairOwners = new Map();
+  const httpRecoveredGames = new Set();
   const reconnectGates = new Map();
   const advertisedEventSeqByGameId = new Map();
   let visibilitySuspendTimer = null;
@@ -333,13 +334,21 @@ export const createLiveSyncClient = ({
     );
   };
 
-  const repair = (gameId, reason) => {
+  const repair = (gameId, reason, evidence = {}) => {
     if (!desiredGameIds.has(gameId)) return Promise.resolve();
-    if (reason === "manual_reconnect") repairOwners.delete(gameId);
-    if (repairOwners.has(gameId)) return repairOwners.get(gameId).promise;
-    const owner = {};
+    // Once HTTP restores authority, an unready replacement socket has no new
+    // state to invalidate. Keep repairing it without interrupting board input.
+    const background = httpRecoveredGames.has(gameId)
+      && evidence.initialDone !== true && connectionState.get(gameId)?.initialDone !== true
+      && ["socket_closed", "socket_error", "initial_snapshot_timeout"].includes(reason)
+      && (advertisedEventSeqByGameId.get(gameId) ?? 0) <= Math.max(lastEventSeqByGameId.get(gameId) ?? 0, Number(getLastEventSeq(gameId) || 0));
+    const previous = repairOwners.get(gameId);
+    const superseded = Boolean(previous && previous.background && !background);
+    if (previous && !superseded && reason !== "manual_reconnect") return previous.promise;
+    const owner = { background };
     repairOwners.set(gameId, owner);
-    onRecovery({ gameId, reason });
+    if (!background) httpRecoveredGames.delete(gameId);
+    onRecovery({ gameId, reason, ...evidence, background, superseded });
     recordMetric("recovery_started", { gameId, reason });
     clearReconnect(gameId);
     cleanupSocket(gameId, { closeReason: `recovery:${reason}` });
@@ -349,12 +358,15 @@ export const createLiveSyncClient = ({
     }
     owner.promise = Promise.resolve().then(() => onReconcile({ gameId, reason })).then(() => {
       if (repairOwners.get(gameId) !== owner || !desiredGameIds.has(gameId)) return;
+      httpRecoveredGames.add(gameId);
       recordMetric("recovery_reconciled", { gameId, reason });
       // HTTP has restored authoritative state. A failed background socket must
       // not immediately reopen and re-block that evidence in this same pass.
       if (shouldKeepConnectionsActive() && !sockets.has(gameId) && !reconnectTimers.has(gameId)) scheduleReconnect(gameId);
     }).catch((error) => {
       if (repairOwners.get(gameId) !== owner) return;
+      httpRecoveredGames.delete(gameId);
+      if (background) onRecovery({ gameId, reason: "reconciliation_failed" });
       onError(error);
       scheduleReconnect(gameId);
     }).finally(() => { if (repairOwners.get(gameId) === owner) repairOwners.delete(gameId); });
@@ -412,6 +424,7 @@ export const createLiveSyncClient = ({
     const finishInitial = () => {
       if (connection.initialDone) return;
       connection.initialDone = true;
+      httpRecoveredGames.delete(gameId);
       reconnectAttemptsByGameId.set(gameId, 0);
       clearTimeout(connection.initialTimer);
       connection.resolveInitial();
@@ -468,7 +481,6 @@ export const createLiveSyncClient = ({
       closeReasonBySocket.delete(ws);
       clearHeartbeat(gameId);
       clearTimeout(connection.initialTimer); clearTimeout(connection.watchdog); connection.resolveInitial(); connectionState.delete(gameId);
-      onRecovery({ gameId, reason: closeReason, closeCode: event.code, closeClean: event.wasClean, socketGeneration: generation, advertisedEventSeq: advertisedEventSeqByGameId.get(gameId) ?? 0 });
       const reconnectGate = {};
       reconnectGate.promise = new Promise((resolve) => { reconnectGate.resolve = resolve; });
       reconnectGates.set(gameId, reconnectGate);
@@ -489,7 +501,7 @@ export const createLiveSyncClient = ({
       recordMetric("socket_closed", { gameId, reason: closeReason });
       if (desiredGameIds.has(gameId)) {
         // Receipt/snapshot recovery starts now, independently of socket backoff.
-        void repair(gameId, "socket_closed");
+        void repair(gameId, "socket_closed", { initialDone: connection.initialDone, closeCode: event.code, closeClean: event.wasClean, socketGeneration: generation, advertisedEventSeq: advertisedEventSeqByGameId.get(gameId) ?? 0 });
       }
     });
   };
@@ -499,6 +511,7 @@ export const createLiveSyncClient = ({
       return;
     }
     desiredGameIds.delete(gameId);
+    httpRecoveredGames.delete(gameId);
     repairOwners.delete(gameId);
     reconnectGates.get(gameId)?.resolve(); reconnectGates.delete(gameId);
     clearReconnect(gameId);
@@ -511,6 +524,7 @@ export const createLiveSyncClient = ({
     const gameIds = new Set([...desiredGameIds, ...sockets.keys()]);
     desiredGameIds.clear();
     repairOwners.clear();
+    httpRecoveredGames.clear();
     for (const gate of reconnectGates.values()) gate.resolve();
     reconnectGates.clear();
     for (const gameId of gameIds) {
@@ -1151,7 +1165,10 @@ export const createSyncStore = ({
     initialSnapshotTimeoutMs: timing?.requestTimeoutMs,
     inboundTimeoutMs: timing?.inboundTimeoutMs,
     heartbeatMs: timing?.heartbeatIntervalMs,
-    onRecovery: ({ gameId, closeCode, closeClean, socketGeneration, advertisedEventSeq }) => transport.setConnectionRecovering?.(gameId, true, { closeCode, closeClean, socketGeneration, advertisedEventSeq }),
+    onRecovery: ({ gameId, background, superseded, closeCode, closeClean, socketGeneration, advertisedEventSeq }) => {
+      if (superseded) transport.prepareSafeReconnect?.(gameId);
+      if (!background) transport.setConnectionRecovering?.(gameId, true, { closeCode, closeClean, socketGeneration, advertisedEventSeq });
+    },
     onReconcile: ({ gameId }) => transport.reconcileGame?.(gameId),
     onReady: async ({ gameId, isCurrent = () => true }) => {
       if (transport.getGameViewModel(gameId)?.pendingCommandCount > 0) await transport.reconcileGame?.(gameId);

@@ -695,11 +695,11 @@ test("pageshow restores desired games and retired lifecycle handlers stay inert"
 
 test("socket failures reconcile immediately but retain increasing capped reconnect backoff", async (t) => {
   const originals = { WebSocket:globalThis.WebSocket, window:globalThis.window, document:globalThis.document, random:Math.random };
-  let reconciles = 0; const delays = [];
+  let reconciles = 0, httpUnavailable = false; const delays = [], recoveries = [];
   globalThis.WebSocket = MockSocket; globalThis.window = createMockWindow(); globalThis.document = createMockDocument();
   MockSocket.instances = []; Math.random = () => 0.5;
   t.mock.timers.enable({apis:["setTimeout"]});
-  const client = createLiveSyncClient({identityId:"backoff-test",onEvent(){},onReconcile:async()=>{reconciles++;},reconnectBaseMs:5,reconnectMaxMs:20,onMetric:metric=>{if(metric.type==="reconnect_scheduled")delays.push(metric.delayMs);}});
+  const client = createLiveSyncClient({identityId:"backoff-test",onEvent(){},onRecovery:event=>recoveries.push(event),onReconcile:async()=>{reconciles++;if(httpUnavailable)throw new Error("offline");},reconnectBaseMs:5,reconnectMaxMs:20,onMetric:metric=>{if(metric.type==="reconnect_scheduled")delays.push(metric.delayMs);}});
   try {
     client.connectGame("backoff-game");
     for (const [index,delay] of [5,10,20,20].entries()) {
@@ -711,8 +711,42 @@ test("socket failures reconcile immediately but retain increasing capped reconne
       t.mock.timers.tick(1); assert.equal(MockSocket.instances.length,index+2);
     }
     assert.deepEqual(delays,[5,10,20,20]);
+    assert.equal(recoveries.filter(event=>!event.background).length,1,"failed replacement sockets must not re-block successful HTTP recovery");
+    httpUnavailable = true;
+    MockSocket.instances.at(-1).close();
+    for(let i=0;i<10;i++)await Promise.resolve();
+    assert.equal(recoveries.at(-1).reason,"reconciliation_failed","failed HTTP fallback must immediately restore blocking");
+    assert.equal(recoveries.at(-1).background,undefined);
+    httpUnavailable = false;
+    t.mock.timers.tick(20);
+    const restored = MockSocket.instances.at(-1);
+    restored.emit("open"); restored.emit("message", {data:JSON.stringify(snapshot("backoff-game",1))});
+    restored.close();
+    assert.equal(recoveries.at(-1).background,false,"loss of a ready socket invalidates freshness again");
   } finally {
     client.disconnectAll(); t.mock.timers.reset(); Math.random = originals.random;
     for(const key of ["WebSocket","window","document"])globalThis[key]=originals[key];
   }
+});
+
+test("new cursor evidence supersedes a held background HTTP repair", async t => {
+  const recoveries = []; let repairs = 0, release;
+  const client = controlledClient(t, {
+    getLastEventSeq: () => 1,
+    onRecovery: event => recoveries.push(event),
+    onReconcile: async () => { if (++repairs === 2) await new Promise(resolve => { release = resolve; }); },
+  });
+  client.connectGame("g"); MockSocket.instances[0].close();
+  await until(() => MockSocket.instances.length === 2);
+  MockSocket.instances[1].close();
+  await until(() => repairs === 2 && MockSocket.instances.length === 3);
+  assert.equal(recoveries.at(-1).background, true);
+  MockSocket.instances[2].emit("message", { data: JSON.stringify({ type:"heartbeat_ack", protocolVersion:2, gameId:"g", eventSeq:9 }) });
+  assert.equal(recoveries.at(-1).background, false);
+  assert.equal(recoveries.at(-1).superseded, true);
+  assert.equal(recoveries.at(-1).reason, "behind_server");
+  await until(() => repairs === 3);
+  release();
+  await flushAsync(5);
+  assert.equal(repairs, 3, "late superseded work cannot replace the fresh recovery owner");
 });
