@@ -467,6 +467,9 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
     await route.fulfill({ response });
   });
   try {
+  // This hold tests gesture continuity, not the real network deadline.
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
   await page.goto("/");
   const trigger = page.getByTestId("home-create-game");
   await expect(trigger).toBeVisible();
@@ -476,12 +479,13 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
   const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/shell/games");
   release();
   await refreshed;
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.clock.runFor(34);
   if (gesture === "pointer") await page.mouse.up();
   else await page.keyboard.up("Space");
   await expect(dialog(page)).toBeVisible();
   } finally {
     release();
+    await page.clock.resume();
     await page.unrouteAll({ behavior: "wait" });
   }
 });
