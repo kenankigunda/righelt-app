@@ -4,6 +4,7 @@ import {
   applyAction,
   createInitialState,
   deterministicStateHash,
+  equivalentGameStates,
   replayActions,
   serializeState,
 } from "../../src/index.ts";
@@ -70,4 +71,12 @@ test("A-003 no hidden randomness", () => {
   for (const value of rest) {
     assert.equal(value, first);
   }
+});
+
+test("semantic equivalence never mutates already fingerprinted command state", () => {
+ const left=createInitialState();delete left.artifacts;
+ const right=structuredClone(left);right.pieces.reverse();
+ const before=JSON.stringify(left), other=JSON.stringify(right);
+ assert.equal(equivalentGameStates(left,right),true);
+ assert.equal(JSON.stringify(left),before);assert.equal(JSON.stringify(right),other);
 });

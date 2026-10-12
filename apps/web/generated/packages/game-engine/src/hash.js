@@ -1,3 +1,4 @@
+import { resolveToStability } from "./resolve.js";
 import { serializeState } from "./serialize.js";
 export function deterministicStateHash(value) {
     const serialized = serializeState(value);
@@ -15,4 +16,8 @@ export function deterministicStateHash(value) {
         hash += h.toString(16).padStart(8, "0");
     }
     return hash;
+}
+/** Shared semantic board identity for execution and safe command replay. */
+export function equivalentGameStates(left, right) {
+    return deterministicStateHash(resolveToStability(structuredClone(left), { artifactMode: "full" })) === deterministicStateHash(resolveToStability(structuredClone(right), { artifactMode: "full" }));
 }

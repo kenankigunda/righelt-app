@@ -25,7 +25,7 @@ const buildLocalUpstreamRequest = (request) => {
   return new Request(upstream.toString(), request);
 };
 
-export const onRequest = async (context) => {
+const forwardRequest = async (context) => {
   if (isLocalDevRequest(context.request)) {
     try {
       return await fetch(buildLocalUpstreamRequest(context.request));
@@ -39,4 +39,15 @@ export const onRequest = async (context) => {
   }
 
   return json({ ok: false, error: API_SERVICE_BINDING_ERROR }, 500);
+};
+
+// Preserve attempt correlation even when the proxy cannot reach the API.
+export const onRequest = async context => {
+  const incoming = context.request.headers.get("X-Righelt-Request-Id") ?? "";
+  const requestId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(incoming) ? incoming : crypto.randomUUID();
+  const headers = new Headers(context.request.headers); headers.set("X-Righelt-Request-Id", requestId);
+  const response = await forwardRequest({ ...context, request: new Request(context.request, { headers }) });
+  if (response.status === 101) return response;
+  const responseHeaders = new Headers(response.headers); responseHeaders.set("X-Righelt-Request-Id", requestId);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers: responseHeaders });
 };

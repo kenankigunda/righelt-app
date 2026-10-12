@@ -1,3 +1,4 @@
+@import "./loading.css";
 :root {
   --bg: #f4f1e8;
   --ink: #1d2d35;
@@ -2104,3 +2105,25 @@ textarea:focus-visible {
 .account-autosave:is([data-state="error"], [data-state="invalid"]) { color: #b42318; }
 .account-autosave[data-state="saving"] { background-image: linear-gradient(100deg, transparent 35%, rgb(23 107 54 / 12%) 50%, transparent 65%); background-size: 200% 100%; animation: account-loading-swipe 1.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .account-autosave[data-state="saving"] { animation: none; background-image: none; } }
+
+/* Reconnect treatment stays behind the board and never captures input. */
+.board-wrap { position: relative; isolation: isolate; }
+.reconnect-background { display: none; position: absolute; inset: -8px; z-index: -1; pointer-events: none; border-radius: 14px; overflow: hidden; }
+.board-wrap[data-reconnecting="true"] .reconnect-background { display: block; background: linear-gradient(105deg, transparent 30%, rgb(49 94 139 / 7%) 50%, transparent 70%); background-size: 240% 100%; animation: reconnect-sweep 3s ease-in-out infinite; }
+@keyframes reconnect-sweep { from { background-position: 140% 0; } to { background-position: -40% 0; } }
+.issue-diagnostic > button.issue-caret { background: transparent; color: var(--muted); box-shadow: none; border: 0; min-width: 44px; min-height: 44px; padding: 0; opacity: .6; font-size: 20px; }
+.issue-details { font-size: 13px; line-height: 1.4; }
+.issue-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; user-select: text; }
+.shell-game-alert:has(.issue-diagnostic) { flex-wrap: wrap; }
+.shell-game-alert .issue-diagnostic { flex: 0 0 44px; }
+.shell-game-alert .issue-diagnostic:has(.issue-details) { flex-basis: 100%; }
+.shell-header-status:has(.issue-details) { height: auto; }
+.shell-game-alerts:has(.issue-details) { height: auto; min-height: var(--shell-game-alert-height, 100px); }
+.shell-game-alert-stack-card.is-active:has(.issue-details) { position: relative; }
+.shell-game-alert:has(.issue-details) { height: auto; overflow: visible; }
+.shell-game-alert:has(.issue-details) .shell-game-alert-copy { -webkit-line-clamp: unset; }
+@media (prefers-reduced-motion: reduce) {
+  .board-wrap[data-reconnecting="true"] .reconnect-background { animation: none; background: rgb(49 94 139 / 4%); }
+}
+
+.board-wrap > .loading-pieces { position: absolute; right: 8px; bottom: -22px; opacity: .35; color: var(--muted); z-index: -1; }

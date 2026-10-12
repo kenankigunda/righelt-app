@@ -36,36 +36,43 @@ test('creation helper waits for guest startup recovery before choosing Friend', 
   }
 });
 
-test('creation helper waits for initial synchronization before the first board activation', async ({ page }) => {
+test('authoritative HTTP creation permits the first move while initial socket synchronization is unavailable', async ({ page }) => {
   let release;
   const held = new Promise(resolve => { release = resolve; });
-  let received = false, finished = false, closing = false, creation;
+  let received = false, deliveredSeq = 0, finished = false, closing = false, creation;
   await page.routeWebSocket(/\/api\/shell\/games\/[^/]+\/ws/, socket => {
     const server = socket.connectToServer();
-    server.onMessage(async message => { received = true; await held; if (!closing) socket.send(message); });
-  });
-  // Reconciliation HTTP responses can also unblock the local recovery gate.
-  await page.route(/\/api\/shell\/games\/[^/]+(?:\/reconcile)?(?:\?.*)?$/, async route => {
-    const response = await route.fetch();
-    await held;
-    await route.fulfill({ response });
+    server.onMessage(async message => {
+      received = true;
+      await held;
+      if (!closing) {
+        socket.send(message);
+        deliveredSeq = Math.max(deliveredSeq, JSON.parse(String(message)).eventSeq || 0);
+      }
+    });
   });
   try {
     creation = createGameFromHome(page).then(value => { finished = true; return value; });
-    // Observe early rejection while polling the transport fault, but preserve the
-    // original promise so awaiting creation still reports its exact failure.
     void creation.catch(() => {});
+    const {gameId} = await creation;
     await expect.poll(() => received).toBe(true);
-    await expect(page.getByTestId('sync-recovery-banner')).toContainText('Reconnecting.');
-    await expect(page.locator('[data-action="play-as-both-players"]')).toBeDisabled();
-    // Negative observation window while the real initial synchronization is held.
-    // This is fault duration, not an increased helper timeout or repeated click.
-    await page.waitForTimeout(300);
-    expect(finished, 'creation must not return a board that rejects its first activation').toBe(false);
-    release();
-    await creation;
+    expect(finished, 'authoritative HTTP must permit play without socket readiness').toBe(true);
+    await expect(page.locator('[data-action="play-as-both-players"]')).toBeEnabled();
     await makeAnyLegalMove(page);
     expect(await getHistoryMoveCount(page)).toBe(1);
+    const recorded = await page.evaluate(async id => {
+      const identityId = localStorage.getItem('righelt.identity.id.v1');
+      return (await (await fetch(`/api/shell/games/${id}?identityId=${identityId}`)).json());
+    }, gameId);
+    const originalMoveId = recorded.game.moves[0].moveId;
+    expect(originalMoveId).toBeTruthy();
+    expect(deliveredSeq, 'the socket fault must remain active through the recorded move').toBe(0);
+    release();
+    await expect.poll(() => deliveredSeq).toBeGreaterThanOrEqual(recorded.eventSeq);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0);
+    expect(await getHistoryMoveCount(page)).toBe(1);
+    await expect(page.getByTestId('history-move-item')).toHaveAttribute('data-move-id', originalMoveId);
   } finally {
     closing = true;
     release();

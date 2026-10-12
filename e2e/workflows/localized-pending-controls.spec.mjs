@@ -48,7 +48,7 @@ test("copy invite waits for pending game creation and then copies the committed 
 
     await page.getByTestId("copy-invite").click();
 
-    await expect(page.getByTestId("copy-invite")).toHaveText("Preparing link…");
+    await expect(page.getByTestId("copy-invite")).toHaveText("Preparing link");
     await expect(page.getByTestId("copy-invite")).toHaveAttribute("data-pending", "true");
     await expect.poll(async () => page.evaluate(() => window.__copiedTexts.length)).toBe(0);
 
@@ -59,7 +59,7 @@ test("copy invite waits for pending game creation and then copies the committed 
     const expectedInviteToken = createBody?.game?.inviteToken;
 
     await expect(page.getByTestId("copy-invite")).toHaveText("Invite someone to play as blue");
-    await expect(page.getByText("Link copied")).toBeVisible();
+    await expect(page.getByText("Link copied! Ready to share.", { exact: true })).toBeVisible();
     await expect.poll(async () => page.evaluate(() => window.__copiedTexts[0] ?? null)).toContain(
       `#/invite/${expectedInviteToken}`,
     );
@@ -103,7 +103,7 @@ test("joining through a delayed direct-link flow only pulses the clicked join bu
     await viewerButton.click();
 
     await expect(viewerButton).toHaveAttribute("data-pending", "true");
-    await expect(viewerButton).toHaveText("Joining...");
+    await expect(viewerButton).toHaveText("Joining");
     await expect(otherButton).toBeEnabled();
 
     releaseJoin?.();
