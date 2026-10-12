@@ -334,9 +334,10 @@ test("live sync heartbeats only while visible and online, then resume after reco
     documentMock.hidden = false;
     documentMock.visibilityState = "visible";
     documentMock.dispatchEvent("visibilitychange");
+    const resumed = MockSocket.instances.at(-1); resumed.emit("open");
     await flushAsync(12);
-    const resumedHeartbeats = MockSocket.instances[0].sent.filter((payload) => JSON.parse(payload).type === "heartbeat").length;
-    assert.equal(resumedHeartbeats > hiddenCountAfter, true);
+    const resumedHeartbeats = resumed.sent.filter((payload) => JSON.parse(payload).type === "heartbeat").length;
+    assert.equal(resumedHeartbeats >= 2, true);
 
     globalThis.navigator.onLine = false;
     windowMock.dispatchEvent("offline");
@@ -346,9 +347,9 @@ test("live sync heartbeats only while visible and online, then resume after reco
 
     globalThis.navigator.onLine = true;
     windowMock.dispatchEvent("online");
-    MockSocket.instances[1].emit("open");
+    const recovered = MockSocket.instances.at(-1); recovered.emit("open");
     await flushAsync(12);
-    const recoveredHeartbeats = MockSocket.instances[1].sent.filter((payload) => JSON.parse(payload).type === "heartbeat").length;
+    const recoveredHeartbeats = recovered.sent.filter((payload) => JSON.parse(payload).type === "heartbeat").length;
     assert.equal(recoveredHeartbeats >= 2, true);
     client.disconnectAll();
   } finally {
@@ -631,7 +632,7 @@ test("silent foreground sockets recover without an offline event and coalesce re
   await until(() => repairs === 1);
   assert.equal(old.readyState, 3); assert.equal(globalThis.navigator.onLine, true);
   old.emit("error"); old.emit("close"); old.emit("message", { data: JSON.stringify(snapshot("g", 2)) });
-  await flushAsync(10); assert.equal(repairs, 1); assert.equal(MockSocket.instances.length, 1);
+  await flushAsync(10); assert.equal(repairs, 1); assert.equal(MockSocket.instances.length, 2);
   release(); await until(() => MockSocket.instances.length === 2);
   const next = MockSocket.instances[1]; assert.match(next.url, /lastEventSeq=1/);
   next.emit("open"); next.emit("message", { data: JSON.stringify({ type: "heartbeat_ack", protocolVersion: 2, gameId: "g", eventSeq: 1 }) });
@@ -644,10 +645,10 @@ test("initial socket timeout retires its generation before HTTP and reopen uses 
     return new Promise((resolve) => { release = () => { cursor = 8; resolve(); }; });
   } });
   client.connectGame("g"); const old = MockSocket.instances[0]; old.emit("open");
-  await until(() => repairs === 1); await client.waitForInitialSnapshot("g");
+  await until(() => repairs === 1); await until(() => MockSocket.instances.length === 2);
   old.emit("message", { data: JSON.stringify(snapshot("g", 999)) });
   release(); await until(() => MockSocket.instances.length === 2);
-  assert.match(MockSocket.instances[1].url, /lastEventSeq=8/);
+  assert.match(MockSocket.instances[1].url, /lastEventSeq=3/); // Socket reconnect is independent; HTTP advances the authoritative cursor.
   assert.equal(client.getAdvertisedEventSeq("g"), 0);
 });
 
@@ -678,4 +679,74 @@ test("initial waits are bounded while reconnect is suspended and disconnect rele
   await assert.rejects(client.waitForInitialSnapshot("g"), /initial_snapshot_wait_timeout/);
   const waiting = client.waitForInitialSnapshot("g"); client.disconnectGame("g"); await waiting;
   assert.deepEqual(client.getDesiredGameIds(), []);
+});
+
+test("pageshow restores desired games and retired lifecycle handlers stay inert", async t => {
+  let repairs = 0; const client = controlledClient(t, { onReconcile: async () => { repairs++; } });
+  client.connectGame("g");
+  globalThis.window.dispatchEvent("pagehide");
+  globalThis.window.dispatchEvent("pageshow");
+  await until(() => repairs === 1);
+  assert.ok(MockSocket.instances.length >= 2);
+  client.retire(); const count = MockSocket.instances.length;
+  globalThis.window.dispatchEvent("pageshow"); globalThis.window.dispatchEvent("online"); client.connectGame("g");
+  await flushAsync(5); assert.equal(MockSocket.instances.length, count);
+});
+
+test("socket failures reconcile immediately but retain increasing capped reconnect backoff", async (t) => {
+  const originals = { WebSocket:globalThis.WebSocket, window:globalThis.window, document:globalThis.document, random:Math.random };
+  let reconciles = 0, httpUnavailable = false; const delays = [], recoveries = [];
+  globalThis.WebSocket = MockSocket; globalThis.window = createMockWindow(); globalThis.document = createMockDocument();
+  MockSocket.instances = []; Math.random = () => 0.5;
+  t.mock.timers.enable({apis:["setTimeout"]});
+  const client = createLiveSyncClient({identityId:"backoff-test",onEvent(){},onRecovery:event=>recoveries.push(event),onReconcile:async()=>{reconciles++;if(httpUnavailable)throw new Error("offline");},reconnectBaseMs:5,reconnectMaxMs:20,onMetric:metric=>{if(metric.type==="reconnect_scheduled")delays.push(metric.delayMs);}});
+  try {
+    client.connectGame("backoff-game");
+    for (const [index,delay] of [5,10,20,20].entries()) {
+      const socket = MockSocket.instances.at(-1); socket.emit("open"); socket.close();
+      for(let i=0;i<10;i++)await Promise.resolve();
+      assert.equal(reconciles,index+1,"HTTP finishes before the socket retry");
+      assert.equal(MockSocket.instances.length,index+1);
+      t.mock.timers.tick(delay-1); assert.equal(MockSocket.instances.length,index+1);
+      t.mock.timers.tick(1); assert.equal(MockSocket.instances.length,index+2);
+    }
+    assert.deepEqual(delays,[5,10,20,20]);
+    assert.equal(recoveries.filter(event=>!event.background).length,1,"failed replacement sockets must not re-block successful HTTP recovery");
+    httpUnavailable = true;
+    MockSocket.instances.at(-1).close();
+    for(let i=0;i<10;i++)await Promise.resolve();
+    assert.equal(recoveries.at(-1).reason,"reconciliation_failed","failed HTTP fallback must immediately restore blocking");
+    assert.equal(recoveries.at(-1).background,undefined);
+    httpUnavailable = false;
+    t.mock.timers.tick(20);
+    const restored = MockSocket.instances.at(-1);
+    restored.emit("open"); restored.emit("message", {data:JSON.stringify(snapshot("backoff-game",1))});
+    restored.close();
+    assert.equal(recoveries.at(-1).background,false,"loss of a ready socket invalidates freshness again");
+  } finally {
+    client.disconnectAll(); t.mock.timers.reset(); Math.random = originals.random;
+    for(const key of ["WebSocket","window","document"])globalThis[key]=originals[key];
+  }
+});
+
+test("new cursor evidence supersedes a held background HTTP repair", async t => {
+  const recoveries = []; let repairs = 0, release;
+  const client = controlledClient(t, {
+    getLastEventSeq: () => 1,
+    onRecovery: event => recoveries.push(event),
+    onReconcile: async () => { if (++repairs === 2) await new Promise(resolve => { release = resolve; }); },
+  });
+  client.connectGame("g"); MockSocket.instances[0].close();
+  await until(() => MockSocket.instances.length === 2);
+  MockSocket.instances[1].close();
+  await until(() => repairs === 2 && MockSocket.instances.length === 3);
+  assert.equal(recoveries.at(-1).background, true);
+  MockSocket.instances[2].emit("message", { data: JSON.stringify({ type:"heartbeat_ack", protocolVersion:2, gameId:"g", eventSeq:9 }) });
+  assert.equal(recoveries.at(-1).background, false);
+  assert.equal(recoveries.at(-1).superseded, true);
+  assert.equal(recoveries.at(-1).reason, "behind_server");
+  await until(() => repairs === 3);
+  release();
+  await flushAsync(5);
+  assert.equal(repairs, 3, "late superseded work cannot replace the fresh recovery owner");
 });

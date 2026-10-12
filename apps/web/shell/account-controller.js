@@ -1,3 +1,4 @@
+import { withRequestEvidence } from "./request-evidence.js";
 import { parseRouteFromHash } from "./routes.js";
 import {
   AUTH_PROTOCOL_VERSION,
@@ -61,6 +62,7 @@ export const createAccountController = ({
   onTransition = () => {},
   onChange = () => {},
 } = {}) => {
+  fetcher = withRequestEvidence(fetcher, "account");
   let siteKey = null,
     enabled = true,
     available = true,
@@ -242,7 +244,7 @@ export const createAccountController = ({
       if (!response.ok || result.ok === false)
         throw Object.assign(
           failure(result.error || "temporarily_unavailable"),
-          { body: result, status: response.status },
+          { body: result, status: response.status, diagnosticEvidence: response.righeltDiagnosticEvidence },
         );
       return result;
     } finally {
@@ -519,7 +521,7 @@ export const createAccountController = ({
       });
       const result = await response.json();
       if (!response.ok || result.ok === false)
-        throw failure(result.error || "temporarily_unavailable");
+        throw Object.assign(failure(result.error || "temporarily_unavailable"), { diagnosticEvidence: response.righeltDiagnosticEvidence });
       accountMetadataRevision++;
       accept(result);
       return result;

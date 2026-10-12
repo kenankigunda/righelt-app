@@ -1,5 +1,5 @@
 import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
-import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup, signOutAndOpenSignIn } from "./helpers.mjs";
+import { continueFriendIntroduction, waitForFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup, signOutAndOpenSignIn } from "./helpers.mjs";
 import { profileLayoutDisplayName, sampleParticipantGeometry } from "../support/profile-layout.mjs";
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
@@ -25,6 +25,7 @@ async function register(page, username, { gate = false } = {}) {
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
+  await waitForFriendIntroduction(page);
   await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
   if (gate) {
     await expect(page).toHaveURL(/#\/game\//);
@@ -81,6 +82,49 @@ test("registration helper waits for a failed bootstrap retry before submitting",
     await registration;
     await page.unrouteAll({ behavior: "wait" });
   }
+});
+test("failed page reads after registration preserve the original action and resolved diagnostics", async ({page}) => {
+  let registered = false, failed = false, registrations = 0;
+  await page.route('**/api/auth/register', async route => {
+    registrations++;
+    const response = await route.fetch();
+    registered = response.ok();
+    await route.fulfill({response});
+  });
+  await page.route('**/api/shell/games?**', async route => {
+    if (registered && !failed && new URL(route.request().url()).searchParams.get('section') === 'other') {
+      failed = true;
+      await route.fulfill({status:503,contentType:'application/json',headers:{'X-Righelt-Server-Build':'continuation-test-build'},body:JSON.stringify({ok:false,error:'local_api_unavailable'})});
+    } else await route.continue();
+  });
+  await page.goto('/');
+  await openPlaySignIn(page);
+  await dialog(page).getByRole('button',{name:'Create account',exact:true}).click();
+  await enterUsername(page,uniqueName());
+  await dialog(page).getByLabel('Password',{exact:true}).fill(password);
+  await dialog(page).getByRole('button',{name:'Create account & continue',exact:true}).click();
+  const error = page.getByTestId('account-continuation-error');
+  await expect(error).toContainText('We couldn’t finish loading. Please try again.');
+  await expect(dialog(page)).not.toBeVisible();
+  const session = await page.evaluate(async () => (await (await fetch('/api/auth/session')).json()).contextId);
+  expect(session).toBeTruthy();
+  await error.getByRole('button',{name:'Diagnostic details'}).click();
+  const report = page.locator('.issue-diagnostic').filter({has:page.locator('.issue-details')});
+  await expect(report).toContainText('route_read_failed');
+  await expect(report).toContainText('503');
+  await expect(report).toContainText('continuation-test-build');
+  await expect(report).toContainText(/"requestId": "[0-9a-f-]{36}"/);
+  await expect(report).toContainText('durationMs');
+  const incident = await report.getAttribute('data-incident-id');
+  await error.getByRole('button',{name:'Try again',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'Friend',exact:true})).toBeVisible();
+  await expect(error).toHaveCount(0);
+  await expect(page.locator(`.issue-diagnostic[data-incident-id="${incident}"]`)).toContainText('Resolved');
+  expect(await page.evaluate(async () => (await (await fetch('/api/auth/session')).json()).contextId)).toBe(session);
+  expect(registrations).toBe(1);
+  await continueFriendIntroduction(page);
+  await expect(page.getByTestId('game-shell')).toBeVisible();
+  expect(registrations).toBe(1);
 });
 async function makeAccountMove(page) {
   const action = await page.evaluate(async () => {
@@ -366,6 +410,52 @@ test("tutorial skipping and completion persist without manual replay resetting t
   } finally { await separate.close(); }
 });
 
+test("tutorial saving reports diagnostics, coalesces actions, and ignores a late response after leaving", async ({ page }) => {
+  await register(page, uniqueName());
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/#/tutorial");
+  let attempts = 0, release, held;
+  const waiting = new Promise(resolve => { held = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route("**/api/account", async route => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    attempts++;
+    if (attempts === 1) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ ok: false, error: "temporarily_unavailable" }) });
+    const response = await route.fetch();
+    held();
+    await gate;
+    await route.fulfill({ response });
+  });
+  await page.getByRole("button", { name: "Finish Tutorial", exact: true }).click();
+  const error = page.getByTestId("tutorial-saving-error");
+  await expect(error).toContainText("We couldn’t save your lesson progress. Please try again.");
+  const caret = error.getByRole("button", { name: "Diagnostic details", exact: true });
+  const hitTarget = await caret.boundingBox();
+  expect(hitTarget.width).toBeGreaterThanOrEqual(44);
+  expect(hitTarget.height).toBeGreaterThanOrEqual(44);
+  await caret.click();
+  await expect(error.locator("pre")).toContainText("lesson_progress");
+  await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("Denied"); } } }); });
+  await error.getByRole("button", { name: "Copy", exact: true }).click();
+  await expect(error).toContainText("Copy the details below");
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath("lesson-saving-diagnostics-phone.png") });
+  await page.getByRole("button", { name: "Finish Tutorial", exact: true }).click();
+  await waiting;
+  await expect(page.getByRole("button", { name: "Finish Tutorial", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Skip tutorial", exact: true })).toBeDisabled();
+  await page.evaluate(() => { location.hash = "#/"; });
+  await expect(page.getByTestId("tutorial-saving-error")).toHaveCount(0);
+  const completed = page.waitForResponse(response => response.url().endsWith("/api/account") && response.request().method() === "PATCH");
+  release();
+  await completed;
+  await expect(page).toHaveURL(/#\/(?:\?|$)/);
+  expect(attempts).toBe(2);
+  await page.evaluate(() => { location.hash = "#/tutorial"; });
+  await expect(page.getByTestId("tutorial-saving-error")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Finish Tutorial", exact: true })).toBeEnabled();
+});
+
 for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load during a ${gesture} gesture does not swallow the play gate click`, async ({ page }) => {
   let release, held;
   const waiting = new Promise(resolve => { held = resolve; });
@@ -591,4 +681,25 @@ test("long profile names wrap inside participants without covering the board", a
   await profile.click();
   await expect(page.getByTestId("public-profile")).toContainText("Joined");
   await expect(profile).toContainText(displayName);
+});
+
+ test("username lookup diagnostics redact entries and dismiss resolved details with stable focus", async ({ page }) => {
+  let available = false;
+  await page.route("**/api/auth/username*", async route => {
+    if (available) await route.continue();
+    else await route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({ok:false,error:"temporarily_unavailable"})});
+  });
+  await page.goto("/"); await waitForAccountStartup(page); await openPlaySignIn(page);
+  await dialog(page).getByRole("button",{name:"Create account",exact:true}).click();
+  const name = uniqueName(); await enterUsername(page,name);
+  const status = dialog(page).locator("[data-username-status]");
+  await expect(status).toContainText("We couldn’t check that username");
+  await status.getByRole("button",{name:"Diagnostic details",exact:true}).click();
+  await expect(status.locator("pre")).toContainText("username_lookup");
+  await expect(status.locator("pre")).not.toContainText(name);
+  available = true; await enterUsername(page,uniqueName());
+  await expect(status).toContainText("Resolved");
+  await status.getByRole("button",{name:"Dismiss",exact:true}).click();
+  await expect(status.getByRole("button",{name:"Diagnostic details",exact:true})).toHaveCount(0);
+  await expect(dialog(page).getByLabel("Username",{exact:true})).toBeFocused();
 });

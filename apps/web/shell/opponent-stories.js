@@ -27,7 +27,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
     const readiness = getReadiness(opponent);
     const play = modal.element.querySelector("[data-story-play]");
     if (play) play.disabled = busy || readiness.state !== "ready";
-    modal.element.querySelector("[data-story-readiness]").textContent = readiness.message || (readiness.state === "ready" ? "Ready to play" : "Preparing opponent…");
+    modal.element.querySelector("[data-story-readiness]").textContent = readiness.message || (readiness.state === "ready" ? "Ready to play" : "Preparing opponent");
     const retry = modal.element.querySelector("[data-story-retry]");
     if (retry) retry.hidden = readiness.state !== "error";
   };

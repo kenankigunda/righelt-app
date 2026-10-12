@@ -1,3 +1,8 @@
+import { mountLoadingFeedback, LOADING_CUE_DELAY_MS } from "./loading.js";
+import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
+import { latestRequestEvidence } from "./request-evidence.js";
+import { issueDiagnostics } from "./issue-diagnostics.js";
+import { renderDiagnosticDisclosure, handleDiagnosticAction, isDiagnosticOpen, closeDiagnostic } from "./diagnostic-disclosure.js";
 import { patchSectionContent } from "./dom-patch.js";
 import { SWIPE_EASING_CSS } from './navigation-motion.js';
 import { getGameResult, createResultTransitions, createRematchDialog } from './game-result.js';
@@ -55,6 +60,8 @@ import {
 } from "./routes.js";
 import { createTutorialController } from "./tutorial.js";
 
+mountLoadingFeedback(document);
+void fetch("/deploy-meta.json", { cache: "no-store", signal: AbortSignal.timeout(5000) }).then(response => response.json()).then(meta => { globalThis.__righeltClientBuild = meta.sha ?? meta.commitSha ?? "unavailable"; }).catch(() => {});
 const appEl = document.getElementById("app");
 const dismissedRecoveryNotices = new Map();
 // This node survives header/panel rendering, including repeated heartbeat snapshots.
@@ -143,6 +150,7 @@ let accountInitialized = false;
 let accountStartupError = "";
 let accountContinuation = null;
 let accountContinuationError = false;
+let accountContinuationIncidentId = null;
 const hydrateRoute = createRouteHydration();
 const account = createAccountController({ storage,
   onTransition: (next, source) => { if (accountInitialized) { accountDialog.onTransition(source); resetAccountTransport(next); } },
@@ -164,6 +172,10 @@ document.addEventListener('visibilitychange',syncPageActivity);
 window.addEventListener('blur',()=>{document.documentElement.dataset.pageActive='false';gameSound.activityChanged();});
 window.addEventListener('focus',()=>{syncPageActivity();gameSound.activityChanged();});
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
+let tutorialSavingError = null;
+let tutorialSaveOwner = null;
+let tutorialVisit = 0;
+const retireTutorialSave = () => { tutorialVisit++; tutorialSaveOwner = null; tutorialSavingError = null; };
 const boardAdapter = createEngineBoardAdapter();
 const hoverCapability = ensureHoverCapabilityController();
 assertGameBoardAdapter(boardAdapter);
@@ -1564,7 +1576,7 @@ const getFailedOperationsKey = (gameId) =>
     .map((operation) => `${operation.id}:${operation.status}`)
     .join("|");
 
-const renderGameAlertCard = ({ tone = "", body = "", action = "", testId = "" } = {}) => {
+const renderGameAlertCard = ({ tone = "", body = "", action = "", testId = "", incidentId = null } = {}) => {
   const toneClass = tone ? ` ${tone}` : "";
   const testIdAttr = testId ? ` data-testid="${escapeHtml(testId)}"` : "";
   return `<div class="alert${toneClass} shell-game-alert${tone === "danger" ? " sync-failure-banner" : ""}"${testIdAttr}>
@@ -1572,6 +1584,7 @@ const renderGameAlertCard = ({ tone = "", body = "", action = "", testId = "" } 
         ${body}
       </div>
       ${action}
+      ${renderDiagnosticDisclosure(incidentId)}
     </div>`;
 };
 
@@ -1585,20 +1598,25 @@ const getGameAlertItems = (game) => {
       tone: "danger",
       body: escapeHtml(operation.error?.message || "The operation could not be completed."),
       action: `<button class="secondary mini-button" data-action="dismiss-failed-operation" data-operation-id="${escapeHtml(operation.id)}">Dismiss</button>`,
-      testId: "sync-failure-banner",
+      testId: "sync-failure-banner", incidentId: (issueDiagnostics.list().find(r => r.key === `operation:${operation.id}`)?.id ?? issueDiagnostics.capture(`operation:${operation.id}`, { operation: operation.kind ?? "game_operation", code: operation.error?.code, gameId: game.id, stage: "operation_failed" })),
     }),
   }));
 
   const message = recoveryMessage(game);
+  for (const report of issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.key.startsWith("operation:"))) if (!failedOperations.some(op => `operation:${op.id}` === report.key)) issueDiagnostics.resolve(report.key);
+  const retained = issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.resolvedAt && isDiagnosticOpen(r.id));
+  for (const report of retained) items.push({ key: `resolved:${report.id}`, html: renderGameAlertCard({ body: "Resolved", incidentId: report.id, action: `<button class="secondary mini-button" data-action="dismiss-diagnostic" data-incident-id="${report.id}">Dismiss</button>` }) });
   if (!message) dismissedRecoveryNotices.delete(game.id);
   const dismissed = dismissedRecoveryNotices.get(game.id) === message;
   if (message && (!dismissed || game.storageBlocked)) {
     items.unshift({
       key: `live-sync:${message}`,
-      html: renderGameAlertCard({ tone: "warn", body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner",
+      html: renderGameAlertCard({ tone: "warn", body: dismissed ? "Saving is paused." : escapeHtml(message), testId: "sync-recovery-banner", incidentId: game.incidentId,
         action: game.storageBlocked
           ? `<button class="secondary mini-button" data-action="retry-saving" data-game-id="${escapeHtml(game.id)}">Retry saving</button>${dismissed ? "" : `<button class="secondary mini-button" data-action="dismiss-recovery-notice" data-game-id="${escapeHtml(game.id)}">Dismiss</button>`}`
-          : "",
+          : game.upgradeRequired ? `<button class="secondary mini-button" data-action="refresh-game">Refresh</button>`
+          : ["session_changed", "invalid_credentials"].includes(game.recoveryIssue) ? `<button class="secondary mini-button" data-action="account-open">Sign in</button>`
+          : `<button class="secondary mini-button" data-action="reconnect-safely" data-game-id="${escapeHtml(game.id)}">Reload now</button>`,
       }),
     });
   }
@@ -1701,11 +1719,11 @@ const renderTurnHistory = (game) => {
   const controlSeat = activeTurn ? getControlSeatForTurn(liveState, activeTurn.playerSeat) : null;
   const liveContinuationText =
     !game.inHistoryMode && activeTurn && liveState?.continuation
-      ? `Live: Waiting for ${controlSeat || "next player"} to continue...`
+      ? `Live: Waiting for ${controlSeat || "next player"} to continue`
       : null;
   const liveWaitingText =
     !game.inHistoryMode && activeTurn && activeTurn.moveIndexes.length === 0
-      ? `Live: Waiting on ${activeTurn.playerSeat || "next player"} to move...`
+      ? `Live: Waiting on ${activeTurn.playerSeat || "next player"} to move`
       : null;
   const liveStatusText = liveContinuationText ?? liveWaitingText;
   const selectedMoveIndex =
@@ -1847,8 +1865,8 @@ const renderHeader = () => `
     ${renderHeaderAlertZone()}
     ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
     ${account.snapshot().pendingLogout ? '<span role="status">Sign-out pending</span>' : ''}
-    ${accountContinuationError ? `<p role="alert">The page could not finish loading. Try again.</p><button class="secondary" data-action="retry-account-continuation">Try again</button>` : ""}
-    ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p role="status">Connecting…</p>` : ""}
+    ${accountContinuationError ? `<div role="alert" data-testid="account-continuation-error"><p>We couldn’t finish loading. Please try again.</p><button class="secondary" data-action="retry-account-continuation">Try again</button>${renderDiagnosticDisclosure(accountContinuationIncidentId)}</div>` : issueDiagnostics.list().filter(report => report.key === "account-continuation" && isDiagnosticOpen(report.id)).map(report => renderDiagnosticDisclosure(report.id)).join("")}
+    ${accountStartupError ? `<p role="alert">${escapeHtml(accountStartupError)}</p><button class="secondary" data-action="retry-account-startup">Try again</button>` : !account.snapshot().ready ? `<p role="status">Connecting</p>` : ""}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
         ${account.snapshot().ready && account.snapshot().enabled && account.snapshot().available && account.snapshot().session.authenticated ? `<button class="secondary header-icon-action" type="button" data-action="account-open" data-testid="account-open" aria-label="Account" title="Account">${headerActionContent('account','Account')}</button>` : ""}
@@ -2028,6 +2046,9 @@ const renderDebugContent = () => {
           };
   return `
     <section class="panel debug-panel">
+      <h2>Recent issues</h2>
+      <button class="secondary" data-action="clear-diagnostics">Clear diagnostics</button>
+      ${issueDiagnostics.list().map(report => `<article class="recent-issue"><p class="small">${escapeHtml(new Date(report.startedAt).toISOString())} · ${escapeHtml(report.initial.operation ?? "Issue")} · ${report.resolvedAt ? "Resolved" : "Open"}</p>${renderDiagnosticDisclosure(report.id, "recent")}</article>`).join("")}
       <h2>Live Sync</h2>
       <pre class="debug-pre">Identity <span id="shell-debug-identity" class="mono">${escapeHtml(transport.getIdentityId())}</span>
 Live sync: <span id="shell-debug-live-sync" class="mono">${escapeHtml(`${wsStatus.state}${wsStatus.gameId ? `:${wsStatus.gameId}` : ""}`)}</span>
@@ -2152,7 +2173,10 @@ const updateHeaderFields = () => {
   }
 };
 
-const renderInviteFeedback = () => `<div class="invite-feedback" role="status" aria-live="polite" data-success="${inviteFeedback === 'Link copied'}">${inviteFeedback ? `${icon(inviteFeedback === 'Link copied' ? 'check' : 'copy')}<span>${escapeHtml(inviteFeedback)}</span>` : ''}</div>`;
+const renderInviteFeedback = (scope = "invite-panel") => {
+  const reports = issueDiagnostics.list().filter(report => report.key === `invite:${currentRoute.gameId}` && (!report.resolvedAt || isDiagnosticOpen(report.id)));
+  return `<div class="invite-feedback" role="status" aria-live="polite" data-success="${inviteFeedback === 'Link copied! Ready to share.'}">${inviteFeedback ? `${icon(inviteFeedback === 'Link copied! Ready to share.' ? 'check' : 'copy')}<span>${escapeHtml(inviteFeedback)}</span>` : ""}${reports.map(report => renderDiagnosticDisclosure(report.id, scope)).join("")}</div>`;
+};
 const setInviteFeedback = (message) => {
   inviteFeedback = message;
   render({ animatePanels: false, includeBoard: false });
@@ -2160,7 +2184,7 @@ const setInviteFeedback = (message) => {
     clearTimeout(inviteFeedbackTimer);
     inviteFeedbackTimer = null;
   }
-  if (message) {
+  if (message && !issueDiagnostics.list().some(r => r.key === `invite:${currentRoute.gameId}` && !r.resolvedAt)) {
     inviteFeedbackTimer = setTimeout(() => {
       inviteFeedback = "";
       render();
@@ -2200,7 +2224,8 @@ const maybeUpdateUndoRequestOutcomeFeedback = (game) => {
     return;
   }
   seenUndoRequestOutcomeByGameId.set(game.id, latestNote);
-  setUndoRequestFeedback(game.id, latestNote);
+  const undoMessage = /accepted/i.test(latestNote) ? "Undo request accepted" : /rejected/i.test(latestNote) ? "Undo request declined. Play can continue." : "Undo request cancelled. Play can continue.";
+  setUndoRequestFeedback(game.id, undoMessage);
 };
 
 let isBuildingGameAlerts = false;
@@ -2428,7 +2453,7 @@ const renderHomeSectionSkeleton = (title, { showStartButton = false, sectionKey 
     <div class="home-games-section-header" data-home-header-has-action="${showStartButton ? "true" : "false"}" data-home-header-paging="false">
       <div class="home-games-section-heading">
         <h2>${escapeHtml(title)}</h2>
-        <p class="small">Loading games...</p>
+        <p class="small">Loading games</p>
       </div>
       <div class="home-games-section-header-center"></div>
       <div class="home-games-section-header-actions">
@@ -2497,7 +2522,8 @@ const renderInvitePageSkeleton = () => `
 `;
 
 const renderGameSummaryPanel = (game) => {
-  const latestNote = game.notifications[0] || "Ready";
+  const rawNote = game.notifications[0] || "Ready";
+  const latestNote = ({ "Player request approved": "Join request approved", "Play as both players enabled": "You’re now playing both sides", "Undo applied": "Move undone" })[rawNote] ?? (/accepted the undo request$/.test(rawNote) ? "Undo request accepted" : /rejected the undo request$/.test(rawNote) ? "Undo request declined. Play can continue." : /rescinded the undo request$/.test(rawNote) ? "Undo request cancelled. Play can continue." : rawNote);
   return `
     <h2>Game <span class="mono">${escapeHtml(formatDisplayGameId(game.id))}</span></h2>
     <div class="section-stack">
@@ -2539,7 +2565,7 @@ const renderJoinInvitePanel = (game, inviteLink) => {
                 className: "secondary",
                 pendingKey: approveRequestButtonKey,
                 disabled: !Array.isArray(game.approvableRequesterIds) || !game.approvableRequesterIds.includes(request.identityId),
-              })}>${isButtonPending(approveRequestButtonKey) ? "Approving..." : "Approve"}</button>
+              })}>${isButtonPending(approveRequestButtonKey) ? "Approving" : "Approve"}</button>
             </li>`;
             },
           )
@@ -2549,19 +2575,19 @@ const renderJoinInvitePanel = (game, inviteLink) => {
       ? `<button data-action="join-viewer" data-game-id="${escapeHtml(game.id)}" data-testid="join-viewer"${renderButtonStateAttributes({
           className: "secondary",
           pendingKey: joinViewerButtonKey,
-        })}>${isButtonPending(joinViewerButtonKey) ? "Joining..." : "Join as viewer"}</button>`
+        })}>${isButtonPending(joinViewerButtonKey) ? "Joining" : "Join as viewer"}</button>`
       : "",
     game.canJoinAsPlayer && game.showJoinActions
       ? `<button data-action="join-player" data-game-id="${escapeHtml(game.id)}" data-testid="join-player"${renderButtonStateAttributes({
           pendingKey: joinPlayerButtonKey,
-        })}>${isButtonPending(joinPlayerButtonKey) ? "Joining..." : "Join as player"}</button>`
+        })}>${isButtonPending(joinPlayerButtonKey) ? "Joining" : "Join as player"}</button>`
       : "",
-    ...invitationOptions(game).map(option => `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="${option.role}" ${option.role==='viewer'?'data-testid="copy-viewer-invite"':'data-testid="copy-invite"'}${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:copyInviteButtonKey,disabled:!game.canInvite})}>${icon('invite')}${isButtonPending(copyInviteButtonKey)?'Preparing link…':option.label}</button>`),
+    ...invitationOptions(game).map(option => `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="${option.role}" ${option.role==='viewer'?'data-testid="copy-viewer-invite"':'data-testid="copy-invite"'}${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:copyInviteButtonKey,disabled:!game.canInvite})}>${icon('invite')}${isButtonPending(copyInviteButtonKey)?'Preparing link':option.label}</button>`),
     game.canPlayAsBothPlayers
       ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({
           className: "secondary",
           pendingKey: playAsBothButtonKey,
-        })}>${isButtonPending(playAsBothButtonKey) ? "Claiming seats..." : "Play as both players"}</button>`
+        })}>${isButtonPending(playAsBothButtonKey) ? "Claiming seats" : "Play as both players"}</button>`
       : "",
   ]);
 
@@ -2639,6 +2665,7 @@ const renderBoardPanel = (game) => `
   <p class="board-preview-label" id="shell-board-preview-label">Select a piece to preview moves; click it again for supply and command lines only:</p>
   <div class="board-wrap" data-testid="game-board-wrap">
     <div id="shell-board" class="board" data-testid="game-board"></div>
+    <div class="reconnect-background" aria-hidden="true"></div>
     <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
   </div>
   <div class="overlay-key" aria-label="Board legend">
@@ -2814,8 +2841,9 @@ const updateMountedHeader = () => {
   if (currentHeaderEl.isEqualNode(nextHeaderEl)) return true;
   const focused = currentHeaderEl.contains(document.activeElement) ? document.activeElement : null;
   const focusAction = focused?.getAttribute("data-action");
+  const focusIncident = focused?.getAttribute("data-incident-id");
   currentHeaderEl.replaceWith(nextHeaderEl);
-  if (focusAction) nextHeaderEl.querySelector(`[data-action="${CSS.escape(focusAction)}"]`)?.focus({ preventScroll: true });
+  if (focusAction) nextHeaderEl.querySelector(`[data-action="${CSS.escape(focusAction)}"]${focusIncident ? `[data-incident-id="${CSS.escape(focusIncident)}"]` : ""}`)?.focus({ preventScroll: true });
   return true;
 };
 const getFlyoutAwareHref = (element) => {
@@ -3136,7 +3164,7 @@ const renderApprovalGate = (game, request) => {
       <section class="panel invite-gate-modal">
         <p class="small invite-gate-kicker">Approval required</p>
         <h2>Respond to this player request</h2>
-        <p>${participantButton(request)} wants to join as ${renderSeatLabel(request.requestedSeat)}.</p>
+        <p>Someone wants to join. Request awaiting approval.</p><p>${participantButton(request)} · ${renderSeatLabel(request.requestedSeat)}</p>
         <div class="invite-choice-list">
           <div class="invite-choice-row">
             <button
@@ -3212,9 +3240,9 @@ const renderRevertWaitingGate = (game, request) => {
       <section class="panel invite-gate-modal">
         <p class="small invite-gate-kicker">Approval pending</p>
         <h2>Waiting for undo approval</h2>
-        <p>Your undo request for Move ${escapeHtml(String(move?.displayMoveNumber ?? "?"))}: ${escapeHtml(
+        <p>Undo requested for Move ${escapeHtml(String(move?.displayMoveNumber ?? "?"))}: ${escapeHtml(
           move?.notation ?? "Unknown move",
-        )} is pending the other player's response.</p>
+        )}. Waiting for the other player’s response.</p>
         <div class="invite-choice-list">
           <div class="invite-choice-row">
             <button
@@ -3222,8 +3250,8 @@ const renderRevertWaitingGate = (game, request) => {
               data-action="rescind-revert-request"
               data-game-id="${escapeHtml(game.id)}"
               data-request-id="${escapeHtml(request.requestId)}"
-            >Rescind</button>
-            <span class="small invite-choice-note">Cancel this request and unlock both players to continue without undoing.</span>
+            >Cancel request</button>
+            <span class="small invite-choice-note">Cancel your request to continue without undoing.</span>
           </div>
         </div>
       </section>
@@ -3282,8 +3310,8 @@ const renderInviteLanding = (inviteContext) => {
 
   if(game.pendingPlayerRequestSeat)return renderInvitationSurface({background,content:`
     <p class="small invite-gate-kicker">Invitation</p><h2 id="invite-surface-title">Waiting for approval</h2>
-    <p role="status" data-testid="pending-player-request-notice">A player needs to approve your request to join as ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</p>
-    <p class="small">The game will open here when your seat is approved.</p>
+    <p role="status" data-testid="pending-player-request-notice">Your request to play as ${renderSeatLabel(game.pendingPlayerRequestSeat)} is awaiting approval.</p>
+    <p class="small">Your game will open here once approved.</p>
     <div class="invite-choice-list"><a class="button-link secondary" href="${buildHomeHash(getCurrentFlyoutState())}" data-flyout-link="home">Back home</a></div>`});
   const canJoinPlayer = game.canJoinAsPlayer && game.showJoinActions;
   const canJoinViewer = account.snapshot().enabled || game.canJoinAsViewer;
@@ -3303,7 +3331,7 @@ const renderInviteLanding = (inviteContext) => {
     ? ""
     : game.joinAsViewerDisabledReason || "Viewer joining is unavailable.";
   const pendingNotice = game.pendingPlayerRequestSeat
-    ? `<div class="alert">Player join request pending approval for ${renderSeatLabel(game.pendingPlayerRequestSeat)}.</div>`
+    ? `<div class="alert">Your request to play as ${renderSeatLabel(game.pendingPlayerRequestSeat)} is awaiting approval.</div>`
     : "";
   const joinPlayerButtonKey = getJoinButtonKey("player", game.id);
   const joinViewerButtonKey = getJoinButtonKey("viewer", game.id);
@@ -3318,7 +3346,7 @@ const renderInviteLanding = (inviteContext) => {
             <button data-action="accept-invite-player" data-game-id="${escapeHtml(game.id)}" data-testid="invite-join-player"${renderButtonStateAttributes({
               pendingKey: joinPlayerButtonKey,
               disabled: !canJoinPlayer,
-            })}>${isButtonPending(joinPlayerButtonKey) ? "Joining..." : escapeHtml(playerActionLabel)}</button>
+            })}>${isButtonPending(joinPlayerButtonKey) ? "Joining" : escapeHtml(playerActionLabel)}</button>
             <span class="small invite-choice-note">${escapeHtml(playerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
@@ -3326,7 +3354,7 @@ const renderInviteLanding = (inviteContext) => {
               className: "secondary",
               pendingKey: joinViewerButtonKey,
               disabled: !canJoinViewer,
-            })}>${isButtonPending(joinViewerButtonKey) ? "Joining..." : "Join as viewer"}</button>
+            })}>${isButtonPending(joinViewerButtonKey) ? "Joining" : "Join as viewer"}</button>
             <span class="small invite-choice-note">${escapeHtml(viewerExplainer)}</span>
           </div>
           <div class="invite-choice-row">
@@ -3350,11 +3378,12 @@ const renderTutorial = (gameId) => {
       <h2>Tutorial ${renderPlaceholderBadge()}</h2>
       <p class="small">Step ${state.index + 1} of ${state.total}</p>
       <p>${escapeHtml(state.step)}</p>
+      ${tutorialSavingError ? `<div role="alert" data-testid="tutorial-saving-error"><p>${escapeHtml(tutorialSavingError.message)}</p>${renderDiagnosticDisclosure(tutorialSavingError.incidentId)}</div>` : issueDiagnostics.list().filter(report => report.key === "tutorial-saving" && isDiagnosticOpen(report.id)).map(report => renderDiagnosticDisclosure(report.id)).join("")}
       <div class="row">
         <button data-action="tutorial-next">Next</button>
         <button class="secondary" data-action="tutorial-skip">Skip Step</button>
-        <button class="secondary" data-action="tutorial-skip-all" data-game-id="${escapeHtml(gameId || "")}">Skip tutorial</button>
-        <button class="secondary" data-action="tutorial-complete" data-game-id="${escapeHtml(gameId || "")}">Finish Tutorial</button>
+        <button class="secondary" data-action="tutorial-skip-all" ${tutorialSaveOwner ? "disabled" : ""} data-game-id="${escapeHtml(gameId || "")}">Skip tutorial</button>
+        <button class="secondary" data-action="tutorial-complete" ${tutorialSaveOwner ? "disabled" : ""} data-game-id="${escapeHtml(gameId || "")}">Finish Tutorial</button>
       </div>
     </section>
   `;
@@ -3389,7 +3418,20 @@ const getHistoryRecordedActionStartPiece = (game) => {
   return findRecordedActionStartPiece(move.selectionSnapshot, move.action);
 };
 
+let reconnectPresentationTimer;
+const updateReconnectPresentation = game => {
+  const wrap = document.querySelector('[data-testid="game-board-wrap"]');
+  const recovering = Boolean(game?.recovering && game.recoveryStartedAt);
+  if (wrap) { wrap.dataset.reconnecting = String(recovering); wrap.dataset.loadingState = recovering ? "pending" : "idle"; wrap.dataset.loadingKey = `recovery:${game.recoveryEpisodeId}`; wrap.dataset.loadingContext = "external"; }
+  clearTimeout(reconnectPresentationTimer);
+  if (recovering) {
+    const elapsed = Date.now() - game.recoveryStartedAt;
+    const remaining = elapsed < LOADING_CUE_DELAY_MS ? LOADING_CUE_DELAY_MS - elapsed : elapsed < SYNC_TIMING.reconnectAlertMs ? SYNC_TIMING.reconnectAlertMs - elapsed : null;
+    if (remaining !== null) reconnectPresentationTimer = setTimeout(() => { const next = transport.getGameViewModel(game.id); updateReconnectPresentation(next); updateMountedHeader(); }, remaining + 1);
+  }
+};
 const mountBoardForGame = (game) => {
+  updateReconnectPresentation(game);
   const boardEl = document.getElementById("shell-board");
   const overlayLinesEl = document.getElementById("shell-overlay-lines");
   const boardPreviewLabelEl = document.getElementById("shell-board-preview-label");
@@ -4049,10 +4091,11 @@ const retryAccountContinuation = async () => {
   render({ animatePanels: false, includeBoard: false });
   try {
     await syncRouteDataAndLiveChannels();
-  } catch {
+  } catch (error) {
     if (accountContinuation === pending && routeReadIsCurrent(pending)) {
       pending.running = false;
       accountContinuationError = true;
+      accountContinuationIncidentId = issueDiagnostics.capture("account-continuation", { ...error?.diagnosticEvidence, operation: "account_continuation", stage: "route_read_failed", code: error?.code ?? "unavailable", status: error?.status ?? null, gameId: pending.route?.gameId });
       render({ animatePanels: false, includeBoard: false });
     }
     return;
@@ -4061,6 +4104,7 @@ const retryAccountContinuation = async () => {
   // Claim before invoking the original action. A failed write is never replayed.
   accountContinuation = null;
   accountContinuationError = false;
+  issueDiagnostics.resolve("account-continuation");
   routeHydrated = true;
   render({ animatePanels: false });
   const intent = pending.intent;
@@ -4080,6 +4124,7 @@ const completeAccountContinuation = async intent => {
 const clearAccountContinuation = () => {
   accountContinuation = null;
   accountContinuationError = false;
+  issueDiagnostics.resolve("account-continuation");
 };
 
 const canHydrateRouteFromLocalState = (route = currentRoute) => {
@@ -4198,21 +4243,22 @@ const copyGameInvitation = async (gameId, role, fromHost=false) => {
     if(!active())return;
     const game=transport.getGameViewModel(gameId);
     const option=invitationOptions(game).find(option=>option.role===role);
-    if(!option)throw new Error('That seat has been taken. Invite someone to view instead.');
+    if(!option){setInviteFeedback('That seat is taken. You can still invite someone to watch.');return;}
+    issueDiagnostics.resolve(`invite:${gameId}`);
     if(role !== "viewer") preparedPlayerInvitations.set(gameId, role);
     const hash=buildInviteHash(option.token,getCurrentFlyoutState());
     const link=`${window.location.origin}${window.location.pathname}${hash}${hash.includes('?')?'&':'?'}as=${role}`;
     window.__righeltLastInvite=link;
-    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied'); }
+    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }
     catch { if(!active())return;inviteFallback={gameId,link};setInviteFeedback('Copy the link below to share it.'); }
-  }catch(error){if(active())setInviteFeedback(error.message || 'Could not prepare the link. Try again.');}
+  }catch(error){if(active()){ issueDiagnostics.capture(`invite:${gameId}`, { gameId, operation: 'create_invite', stage: 'failed', code: error.code ?? 'unavailable' }); setInviteFeedback('We couldn’t create your invite link. Please try again.'); }}
 };
 const renderHostInvite = game => renderInvitationSurface({host:true,background:renderGameContent(game.id),content:`
   <button class="ui-icon-button invite-close" data-action="close-invite" aria-label="Close invite">${icon('close')}</button>
   <p class="small invite-gate-kicker">Your game is ready</p><h2 id="invite-surface-title">Invite a friend</h2>
   <p>Copy a link and send it their way.</p>
-  <div class="invite-choice-list">${invitationOptions(game).map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id)})}>${icon('copy')}${isButtonPending(getCopyInviteButtonKey(game.id))?'Preparing link…':option.label}</button>`).join('')}</div>
-  ${renderInviteFeedback()}
+  <div class="invite-choice-list">${invitationOptions(game).map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id)})}>${icon('copy')}${isButtonPending(getCopyInviteButtonKey(game.id))?'Preparing link':option.label}</button>`).join('')}</div>
+  ${renderInviteFeedback("invite-modal")}
   ${inviteFallback?.gameId===game.id?`<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>`:''}
 `});
 const openFriendInvite = gameId => {
@@ -4318,6 +4364,7 @@ const navigateTo = (hash) => {
   const previousRoute = currentRoute;
   closeHeaderMenu();
   if (window.location.hash === nextHash) {
+    if (previousRoute.name === "tutorial" && (nextRoute.name !== "tutorial" || nextRoute.gameId !== previousRoute.gameId)) retireTutorialSave();
     currentRoute = nextRoute;
     syncFlyoutRenderOrder(currentRoute);
     if (isFlyoutOnlyRouteChange(previousRoute, nextRoute)) {
@@ -4343,6 +4390,7 @@ window.addEventListener("hashchange", () => {
   if(hostInvite && (parsedRoute.name!=='game' || parsedRoute.gameId!==hostInvite.gameId)){hostInvite=null;inviteVisit++;}
   inlineProfiles.close();
   if(parsedRoute.gameId!==previousRoute.gameId){activeResultGameId=null;pendingResultReviewFocus=null;rematchDialog.close();}
+  if (previousRoute.name === "tutorial" && (parsedRoute.name !== "tutorial" || parsedRoute.gameId !== previousRoute.gameId)) retireTutorialSave();
   currentRoute = normalizeRouteFlyoutState(parsedRoute);
   if(previousRoute.name !== 'game' && currentRoute.name === 'game' && !routeTransition)gameSound.play('enter');
   else if(previousRoute.name === 'game' && currentRoute.name !== 'game' && (currentRoute.name !== 'home' || prefersReducedMotion()))gameSound.play('leave');
@@ -4458,7 +4506,19 @@ appEl.addEventListener("click", async (event) => {
   }
 
   const action = actionEl.getAttribute("data-action");
+  if (action === "toggle-diagnostic" || action === "copy-diagnostic" || action === "dismiss-diagnostic") {
+    event.stopPropagation();
+    await handleDiagnosticAction(actionEl);
+    const id = actionEl.dataset.incidentId;
+    const diagnostic = actionEl.closest(".issue-diagnostic");
+    if (action === "dismiss-diagnostic") { diagnostic?.remove(); render({ animatePanels: false, includeBoard: false }); return; }
+    if (diagnostic) { const scope = diagnostic.dataset.diagnosticScope; diagnostic.outerHTML = renderDiagnosticDisclosure(id, scope); appEl.querySelector(`[data-incident-id="${id}"][data-diagnostic-scope="${scope}"] [data-action="${action}"]`)?.focus({ preventScroll: true }); }
+    return;
+  }
+  if (action === "clear-diagnostics") { issueDiagnostics.clear(); render({ animatePanels: false }); return; }
   const actionGameId = actionEl.getAttribute("data-game-id") || currentRoute.gameId;
+  if (action === "refresh-game") { window.location.reload(); return; }
+  if (action === "reconnect-safely") { void transport.reconnectSafely(actionGameId).catch(() => {}); return; }
   if (action === "public-profile") { void inlineProfiles.open(actionEl.getAttribute("data-username"), actionEl); return; }
   if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
   if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
@@ -4864,14 +4924,29 @@ appEl.addEventListener("click", async (event) => {
   }
 
   if (action === "tutorial-complete" || action === "tutorial-skip-all") {
-    if (account.snapshot().enabled && account.snapshot().session.authenticated) {
-      const epoch = account.snapshot().generation;
-      try { await account.updateAccount({ preferences: { tutorial: action === "tutorial-complete" ? "completed" : "skipped" } }); if (account.snapshot().generation !== epoch) return; }
-      catch { window.__righeltLastError = "Could not save tutorial progress. Try again."; return; }
-    } else if (!account.snapshot().enabled) saveTutorialCompleted(storage, true);
-    tutorial.reset();
-    const gameId = actionEl.getAttribute("data-game-id");
-    navigateTo(gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : buildHomeHash(getCurrentFlyoutState()));
+    if (currentRoute.name !== "tutorial" || tutorialSaveOwner) return;
+    const owner = { visit: tutorialVisit, epoch: account.snapshot().generation };
+    tutorialSaveOwner = owner;
+    const active = () => tutorialSaveOwner === owner && owner.visit === tutorialVisit && currentRoute.name === "tutorial" && account.snapshot().generation === owner.epoch;
+    const gameId = currentRoute.gameId;
+    render({ animatePanels: false, includeBoard: false });
+    try {
+      if (account.snapshot().enabled && account.snapshot().session.authenticated) {
+        await account.updateAccount({ preferences: { tutorial: action === "tutorial-complete" ? "completed" : "skipped" } });
+      } else if (!account.snapshot().enabled) saveTutorialCompleted(storage, true);
+      if (!active()) return;
+      tutorialSavingError = null;
+      issueDiagnostics.resolve("tutorial-saving");
+      tutorial.reset();
+      navigateTo(gameId ? buildGameHash(gameId, null, getCurrentFlyoutState()) : buildHomeHash(getCurrentFlyoutState()));
+    } catch (error) {
+      if (!active()) return;
+      const message = "We couldn’t save your lesson progress. Please try again.";
+      tutorialSavingError = { message, incidentId: issueDiagnostics.capture("tutorial-saving", { ...latestRequestEvidence("account"), operation: "lesson_progress", stage: "failed", code: error?.code ?? "unavailable" }) };
+      window.__righeltLastError = message;
+    } finally {
+      if (tutorialSaveOwner === owner) { tutorialSaveOwner = null; if (currentRoute.name === "tutorial" && owner.visit === tutorialVisit) render({ animatePanels: false, includeBoard: false }); }
+    }
     return;
   }
 
@@ -5231,7 +5306,7 @@ const initialRender = async () => {
     window.__righeltLastError = error.code || error.message;
     if (error.code === "upgrade_required") {
       try { const key="righelt.auth-refresh"; if(!window.sessionStorage.getItem(key)){window.sessionStorage.setItem(key,"1");window.location.reload();return;} } catch {}
-      accountStartupError="Please refresh to update Righelt. Play is unavailable until the update completes.";render({animatePanels:false,includeBoard:false});
+      accountStartupError="Righelt has an update. Refresh to keep playing. Play is unavailable until the update completes.";render({animatePanels:false,includeBoard:false});
     }
     if (error.code !== "upgrade_required") {
       accountStartupError = "Could not connect. Retrying when the connection is available.";

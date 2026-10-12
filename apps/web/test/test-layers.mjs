@@ -17,6 +17,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "foundation-boundary.test.mjs",
   "hover-capability.test.mjs",
   "interaction.test.mjs",
+  "issue-diagnostics.test.mjs",
   "legend.test.mjs",
   "local-dev-ports.test.mjs",
   "local-dev-scripts.test.mjs",

@@ -20,10 +20,10 @@ test("history uses stable IDs across trimming and ignores same-identity tab sele
  next.moves=next.moves.filter(m=>m.moveId!=="m2").map((m,index)=>({...m,index}));
  t.applyLiveGameUpdate({game:next});
  assert.deepEqual(t.getGameViewModel("history").currentSnapshot,snapshot(1));
- assert.equal(t.getGameViewModel("history").historyNotice,"History changed. Showing the nearest available move.");
+ assert.equal(t.getGameViewModel("history").historyNotice,"History changed. Showing the closest available move.");
  t.applyLiveGameUpdate({game:{...next,moves:[]}});
  assert.equal(t.getGameViewModel("history").inHistoryMode,false);
- assert.equal(t.getGameViewModel("history").historyNotice,"History changed. Showing the current board.");
+ assert.equal(t.getGameViewModel("history").historyNotice,"History changed. You’re back at the current board.");
  assert.equal(t.getGameViewModel("history").sharedMutationsBlocked,true);
 });
 test("return live is immediate offline and remains live across later server history selections", () => {
@@ -33,14 +33,14 @@ test("return live is immediate offline and remains live across later server hist
  assert.deepEqual(t.getGameViewModel("history").currentSnapshot,snapshot(9));
 });
 test("recovery copy distinguishes pending, overdue, storage admission, cleanup and limits", () => {
- assert.equal(recoveryMessage({recovering:true,pendingCommandCount:1}),"Checking your move…");
- assert.equal(recoveryMessage({recovering:true,pendingCommandCount:2}),"Checking your moves…");
- assert.equal(recoveryMessage({recovering:true,pendingCommandCount:2,confirmationOverdue:true}),"Your moves are still being checked.");
- assert.equal(recoveryMessage({recovering:true,pendingCommandCount:1,confirmationOverdue:true}),"Your move is still being checked.");
- assert.equal(recoveryMessage({recovering:true}),"Reconnecting. Your board will update shortly.");
- assert.equal(recoveryMessage({storageBlocked:true,unsavedCommand:true}),"Your browser couldn't save this move. It wasn't sent.");
+ assert.equal(recoveryMessage({recovering:true,pendingCommandCount:1}),"Recording your move");
+ assert.equal(recoveryMessage({recovering:true,pendingCommandCount:2}),"Recording your move");
+ assert.equal(recoveryMessage({recovering:true,pendingCommandCount:2,confirmationOverdue:true}),"It’s taking a while to record your move. Hang tight!");
+ assert.equal(recoveryMessage({recovering:true,pendingCommandCount:1,confirmationOverdue:true}),"It’s taking a while to record your move. Hang tight!");
+ assert.equal(recoveryMessage({recovering:true}),"Reconnecting. We’ll be right back!");
+ assert.equal(recoveryMessage({storageBlocked:true,unsavedCommand:true}),"We couldn’t save your move. Please try again.");
  assert.doesNotMatch(recoveryMessage({storageBlocked:true}),/wasn't sent/);
- assert.match(recoveryMessage({storageBlocked:true,storageLimitReached:true}),/Earlier moves/);
+ assert.match(recoveryMessage({storageBlocked:true,storageLimitReached:true}),/earlier moves/);
  assert.equal(recoveryMessage({pendingCommandCount:1,syncStatus:"applying-update"}),"");
 });
 test("recovery gates every shared transport entrypoint and preserves home-card state", async () => {
@@ -61,7 +61,7 @@ test("uncertain undo forces a snapshot even at the same sequence and retries a f
   const t=createLiveTransportStore({storage:{getItem:()=>"actor",setItem(){}},commandJournal:{list:async()=>[],remove:async()=>{}},
    timing:{requestTimeoutMs:10,confirmationBudgetMs:100,retryDelaysMs:[5]},fetcher:async(url,init)=>{
     if(url.endsWith("revert-reject"))throw Error("lost response");
-    if(url.endsWith("reconcile")){known=JSON.parse(init.body).knownSnapshotEventSeq;if(++refreshes===1)throw Error("still disconnected");
+    if(url.endsWith("reconcile")){if(known===undefined)known=JSON.parse(init.body).knownSnapshotEventSeq;if(++refreshes===1)throw Error("still disconnected");
      return Response.json({ok:true,protocolVersion:2,gameId:"history",eventSeq:5,gameplayRevision:0,commandOutcomes:[],game:authoritative});}
     throw Error(url);
    }});

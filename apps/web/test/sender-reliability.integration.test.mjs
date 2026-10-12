@@ -26,6 +26,21 @@ const setup = async ({ journal: override, timing = {}, fault = (url, init, call)
   return { store, create, gameId, move, journal, requests, env, actual };
 };
 
+test("elapsed confirmation deadline blocks play before suspended timers execute", async () => {
+  const f = await setup({ timing: { requestTimeoutMs: 500, confirmationBudgetMs: 100 }, fault: (url, init, call) => url.endsWith("/apply") ? new Promise(() => {}) : call() });
+  const handle = await f.move();
+  await until(() => f.requests.some(request => request.kind === "action"));
+  const realNow = Date.now, resumedAt = realNow() + 1000;
+  try {
+    Date.now = () => resumedAt;
+    const game = f.store.getGameViewModel(f.gameId);
+    assert.equal(game.confirmationOverdue, true);
+    assert.equal(game.sharedMutationsBlocked, true);
+    assert.equal(game.canRecordMove, false);
+    assert.equal(handle.status, "pending", "elapsed time cannot reject an unknown command");
+  } finally { Date.now = realNow; f.store.retire(); }
+});
+
 test("hung request and hung body independently cross the confirmation budget without failing unknown handles", async () => {
   for (const hungBody of [false, true]) {
     let broken = true;
@@ -259,7 +274,7 @@ test("full game and identity journal caps drain durable receipts before retrying
   const { commandFingerprint } = await import("../generated/packages/shared-types/src/sync-protocol.js");
   for (const cap of [16, 128]) {
     let lost = true, unavailableGame;
-    const f = await setup({ timing: { requestTimeoutMs: 1000 }, fault: async (url, init, call) => {
+    const f = await setup({ timing: { requestTimeoutMs: 1000, confirmationBudgetMs: 60000 }, fault: async (url, init, call) => {
       if (unavailableGame && url.includes(unavailableGame) && url.endsWith("/reconcile")) return Response.json({ error: "not_found" }, { status: 404 });
       if (lost && url.endsWith("/apply")) { await call(); return new Promise(() => {}); }
       if (lost && url.endsWith("/reconcile")) return new Promise(() => {});
@@ -298,7 +313,8 @@ test("full game and identity journal caps drain durable receipts before retrying
 
 test("committed A excludes optimistic B and a late A receipt retains newer authoritative B", async () => {
   let firstBody, secondBody, releaseFirst, releaseSecond;
-  const f = await setup({ timing: { requestTimeoutMs: 500 }, fault: async (url, init, call) => {
+  // This case owns receipt ordering, not the separately covered overdue clock.
+  const f = await setup({ timing: { requestTimeoutMs: 5000, confirmationBudgetMs: 60000 }, fault: async (url, init, call) => {
     const response = await call(); if (!url.endsWith('/apply')) return response;
     const body = await response.json();
     if (!firstBody) { firstBody = body; return new Promise(resolve => { releaseFirst = () => resolve(Response.json(body)); }); }
