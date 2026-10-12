@@ -162,7 +162,11 @@ test('sound hover is quiet and clears when the page loses focus',async({page})=>
 test('copy feedback preserves focus and collapses its space when empty',async({page})=>{
  await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async()=>{}}}));
  await page.goto('/');await page.getByTestId('home-create-game').click();await page.getByRole('button',{name:'Start a friend game',exact:true}).click();await page.getByRole('button',{name:'Close invite',exact:true}).click();
- const panel=page.locator('[data-game-panel="join"]');const copy=panel.locator('[data-invite-role="blue"]');await copy.focus();
+ const panel=page.locator('[data-game-panel="join"]');const copy=panel.locator('[data-invite-role="blue"]');
+ // Measure the same authoritative controls before and after transient feedback.
+ await expect(panel.getByRole('button',{name:'Play as both players',exact:true})).toBeVisible();
+ await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
+ await copy.focus();
  await page.evaluate(()=>document.fonts.ready);
  await expect.poll(()=>panel.evaluate(el=>el.getAnimations().length)).toBe(0);
  const before=(await panel.boundingBox()).height;await page.keyboard.press('Enter');

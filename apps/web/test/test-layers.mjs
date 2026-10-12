@@ -19,6 +19,7 @@ export const WEB_UNIT_TEST_FILES = Object.freeze([
   "interaction.test.mjs",
   "issue-diagnostics.test.mjs",
   "legend.test.mjs",
+  "passive-click.test.mjs",
   "loading.test.mjs",
   "local-dev-ports.test.mjs",
   "local-dev-scripts.test.mjs",

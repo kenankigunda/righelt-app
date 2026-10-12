@@ -1,3 +1,4 @@
+import { isPassivePageClick } from "./passive-click.js";
 import { mountLoadingFeedback, loadingAttributes, LOADING_CUE_DELAY_MS } from "./loading.js";
 import { SYNC_TIMING } from "../generated/packages/shared-types/src/sync-protocol.js";
 import { latestRequestEvidence } from "./request-evidence.js";
@@ -4475,8 +4476,7 @@ const closeUtilityFlyouts = () => utilityCloseFlight ||= (async () => {
 // Passive page space dismisses utilities. Links, buttons, form fields, board
 // cells and other actionable content keep their own click and current state.
 appEl.addEventListener('click', event => {
-  const target = event.target;
-  if (!(target instanceof Element) || target.closest('.shell-header,.shell-flyout,dialog,button,a,input,select,textarea,label,[role="button"],[data-action],[tabindex],[contenteditable="true"]')) return;
+  if (!isPassivePageClick(event)) return;
   if (accountDialog.isOpen() && accountDialog.element.dataset.presentation === 'flyout') void accountDialog.close();
   else void closeUtilityFlyouts();
 });

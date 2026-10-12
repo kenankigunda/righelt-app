@@ -326,7 +326,9 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
     await expect(page.locator("#scenario-select")).toBeVisible();
 
     await sourceCell.click();
+    await expect(page.locator("#scenario-select")).toBeVisible();
     await targetCell.click();
+    await expect(page.locator("#scenario-select")).toBeVisible();
 
     await page.locator('[data-scenario-save-field="title"]').fill(scenarioTitle);
     await page.locator('[data-scenario-save-field="description"]').fill(scenarioDescription);
