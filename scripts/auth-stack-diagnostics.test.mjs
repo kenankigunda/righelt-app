@@ -9,6 +9,20 @@ import os from "node:os";
 import path from "node:path";
 import { recordAuthServiceExit, observeAuthService, summarizeWranglerLog } from "./auth-stack-diagnostics.mjs";
 const secret = "private-binding-password-cookie-and-query";
+test('general service diagnostics cannot pass with missing logs during expected shutdown', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'general-exit-missing-'));
+  try {
+    const child = new EventEmitter(); child.pid = 1;
+    let errors = 0, exit;
+    const pending = observeAuthService(child, { service: 'web', logDirectory: path.join(dir, 'missing'),
+      outputFile: path.join(dir, 'receipt.json'), requireLogs: true, isStopping: () => true,
+      onDiagnosticError: () => errors++, onUnexpectedExit: code => { exit = code; } });
+    child.emit('close', 0, 'SIGTERM');
+    assert.deepEqual(await pending, { expected: true, diagnosticsFailed: true });
+    assert.equal(errors, 1); assert.equal(exit, 1);
+    assert.deepEqual(JSON.parse(await readFile(path.join(dir, 'receipt.json'), 'utf8')).logs, []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
 test("missing receipt logs and receipt ACK failures cannot become a clean shutdown", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "auth-exit-test-"));
   try {

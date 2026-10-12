@@ -75,8 +75,9 @@ export const createGameFromHome = async (page, capabilities = {friendIntroductio
   });
   await page.getByTestId("home-create-game").click();
   await continueFriendIntroduction(page, capabilities);
-  await expect(page.getByRole("dialog", { name: "Invite a friend" })).toBeVisible();
   const createResponse = await createResponsePromise;
+  expect(createResponse.status(), `Game creation failed (request ${createResponse.headers()['x-righelt-request-id'] || 'unavailable'})`).toBe(200);
+  await expect(page.getByRole("dialog", { name: "Invite a friend" })).toBeVisible();
   await expect(page.getByTestId("game-shell")).toBeVisible();
   await closeHostInvitation(page);
   await expect(page.getByTestId("game-role")).toContainText("Player 1");

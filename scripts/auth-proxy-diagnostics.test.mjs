@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
-import { classifyProxyRejection, prepareProxySource, prepareRuntimeSource, installProxyRepair } from "./auth-proxy-diagnostics.mjs";
+import { classifyProxyRejection, prepareProxySource, prepareProxyDiagnosticSource, prepareRuntimeSource, installProxyRepair, installProxyDiagnostics } from "./auth-proxy-diagnostics.mjs";
 
 const packageFile = createRequire(import.meta.url).resolve("wrangler/package.json");
 const source = await readFile(path.join(path.dirname(packageFile), "wrangler-dist/ProxyWorker.js"), "utf8");
@@ -33,6 +33,32 @@ test("source guard rejects changed versions, changed source and already patched 
   assert.throws(() => prepareProxySource(source + "\n", "4.67.0"), /exact reviewed/);
   const patched = prepareProxySource(source, "4.67.0");
   assert.throws(() => prepareProxySource(patched, "4.67.0"), /exact reviewed/);
+});
+
+test('diagnostics-only installation preserves original forwarding and fatal branches', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'general-proxy-diagnostics-test-'));
+  try {
+    await mkdir(path.join(directory, 'wrangler-dist'));
+    const metadata = path.join(directory, 'package.json');
+    const file = path.join(directory, 'wrangler-dist/ProxyWorker.js');
+    const runtimeFile = path.join(directory, 'wrangler-dist/cli.js');
+    await writeFile(metadata, JSON.stringify({ version: '4.67.0' }));
+    await writeFile(file, source); await writeFile(runtimeFile, runtime);
+    const restore = await installProxyDiagnostics(metadata);
+    const patched = await readFile(file, 'utf8');
+    const lines = patched.split('\n');
+    const added = lines.filter(line => line.includes('[auth-e2e-proxy-rejection]'));
+    assert.equal(added.length, 1);
+    // Removing only the inserted console call recovers the exact original.
+    const start = patched.indexOf('        try { console.error("[auth-e2e-proxy-rejection]"');
+    const suffix = ')(error, request, userWorkerUrl, newUserWorkerUrl))); } catch {}\n';
+    const end = patched.indexOf(suffix, start) + suffix.length;
+    assert.equal(patched.slice(0, start) + patched.slice(end), source);
+    assert.equal(await readFile(runtimeFile, 'utf8'), runtime);
+    assert.throws(() => prepareProxyDiagnosticSource(patched, '4.67.0'), /exact reviewed/);
+    await restore();
+    assert.equal(await readFile(file, 'utf8'), source);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test("runtime guard binds both controller creation and teardown sites", () => {

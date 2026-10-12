@@ -29,7 +29,9 @@ test('ordinary computer play records real worker evidence, preserves private not
   await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();
   const create = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Play Babs', exact: true }).click();
-  const created = (await (await create).json()).game;
+  const createResponse = await create;
+  expect(createResponse.status(), `Computer game creation failed (request ${createResponse.headers()['x-righelt-request-id'] || 'unavailable'})`).toBe(200);
+  const created = (await createResponse.json()).game;
   expect(created.computer.seats).toEqual({ p1: null, p2: 'babs' });
   expect(created.computer.modelId).toBe('initial-1554');
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
@@ -124,7 +126,9 @@ test(`${profile} prepares and plays as Player 2 with the production model`, asyn
   await expect(story.locator('[data-story-readiness]')).toContainText('Ready to play');
   const create = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST');
   await story.locator('[data-story-play]').click();
-  const created = (await (await create).json()).game;
+  const createResponse = await create;
+  expect(createResponse.status(), `Computer game creation failed (request ${createResponse.headers()['x-righelt-request-id'] || 'unavailable'})`).toBe(200);
+  const created = (await createResponse.json()).game;
   expect(created.computer.seats).toEqual({ p1: null, p2: profile });
   await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id', created.id);
   await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase', 'idle');

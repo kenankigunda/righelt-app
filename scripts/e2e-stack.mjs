@@ -1,4 +1,6 @@
 import { recordUnexpectedExit } from './testing/stack-status.mjs';
+import { installProxyDiagnostics } from './auth-proxy-diagnostics.mjs';
+import { observeAuthService } from './auth-stack-diagnostics.mjs';
 import { cliPath, supervise } from './resources/supervisor.mjs';
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
@@ -25,6 +27,11 @@ let shuttingDown = false;
 const intentionalStops = new Set();
 let controlServer;
 let restartActive = false;
+let privateLogs;
+let proxyDiagnosticsInstallation;
+let diagnosticsFailed = false;
+let serviceSequence = 0;
+const serviceReceipts = [];
 const stopChild = async child => {
  intentionalStops.add(child);
  const signal = value => { try { child.kill(value); } catch {} };
@@ -63,8 +70,12 @@ const waitForHttp = async (url, label, timeoutMs = DEFAULT_E2E_READY_TIMEOUT_MS)
 };
 
 const spawnLogged = (label, command, args, options) => {
+  const service = label === 'pages' ? 'web' : label;
+  const instance = `${service}-${++serviceSequence}`;
+  const logDirectory = path.join(privateLogs, instance);
   const child = spawn(process.execPath, [cliPath, "run", "--kind", "preview", "--", command, ...args], {
     ...options,
+    env: { ...process.env, ...options?.env, WRANGLER_LOG_PATH: logDirectory },
     // Playwright signals the stack's process group at teardown. Keep service
     // supervisors outside it so the stack records shutdown before stopping them.
     detached: process.platform !== "win32",
@@ -77,17 +88,22 @@ const spawnLogged = (label, command, args, options) => {
   child.stderr?.on("data", (chunk) => {
     process.stderr.write(`[${label}] ${chunk}`);
   });
+  let exitWasExpected;
   child.on("exit", (code, signal) => {
-    managedChildren.delete(child);
-    if (shuttingDown || intentionalStops.has(child)) {
-      return;
-    }
-    {
+    exitWasExpected = shuttingDown || intentionalStops.has(child);
+    if (!exitWasExpected) {
       recordUnexpectedExit(label, code, signal);
       console.error(`[e2e-stack] ${label} exited with code ${code}${signal ? ` (signal ${signal})` : ""}`);
-      shutdown(code || 1);
     }
   });
+  child.once('close', () => managedChildren.delete(child));
+  serviceReceipts.push(observeAuthService(child, {
+    service, logDirectory, requireLogs: true,
+    outputFile: path.join(repoRoot, 'test-results/e2e-stack-diagnostics', path.basename(privateLogs), `${instance}.json`),
+    isStopping: () => exitWasExpected ?? (shuttingDown || intentionalStops.has(child)),
+    onDiagnosticError: () => { diagnosticsFailed = true; console.error('[e2e-stack] Could not record service exit diagnostics'); },
+    onUnexpectedExit: code => { void shutdown(code); },
+  }));
   return child;
 };
 
@@ -114,6 +130,10 @@ const shutdown = async (exitCode = 0) => {
   shuttingDown = true;
   controlServer?.close();
   await Promise.allSettled([...managedChildren].map(stopChild));
+  const receipts = await Promise.all(serviceReceipts);
+  if (diagnosticsFailed || receipts.some(receipt => !receipt.expected)) exitCode = 1;
+  try { const restore = await proxyDiagnosticsInstallation; await restore?.(); }
+  catch (error) { console.error(error); exitCode = 1; }
 
   if (tempRoot) {
     await rm(tempRoot, { recursive: true, force: true });
@@ -122,16 +142,19 @@ const shutdown = async (exitCode = 0) => {
 };
 
 const run = async () => {
+  process.on("SIGINT", () => { void shutdown(0); });
+  process.on("SIGTERM", () => { void shutdown(0); });
+  // Raw Wrangler logs can contain bindings. Keep them in a private directory
+  // outside uploaded artifacts, and publish only the sanitized exit summaries.
+  privateLogs = await mkdtemp(path.join(os.tmpdir(), 'righelt-e2e-service-logs-'));
+  if (shuttingDown) return;
+  proxyDiagnosticsInstallation = installProxyDiagnostics();
+  await proxyDiagnosticsInstallation;
+  if (shuttingDown) return;
   const persistRoot = await createE2ePersistRoot();
   const apiPersistPath = path.join(persistRoot, "api-state");
   await mkdir(apiPersistPath, { recursive: true });
-
-  process.on("SIGINT", () => {
-    void shutdown(0);
-  });
-  process.on("SIGTERM", () => {
-    void shutdown(0);
-  });
+  if (shuttingDown) return;
 
   await runBlocking(
     "local D1 migrations",

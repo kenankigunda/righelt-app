@@ -55,7 +55,7 @@ export async function recordAuthServiceExit({ service, supervisorPid, code, sign
 
 // Capture the initiating exit before triggering sibling cleanup. Expected
 // shutdowns still get a receipt, and diagnostics failure cannot make a run pass.
-export function observeAuthService(child, { isStopping, onUnexpectedExit, onDiagnosticError, requireProxyReceiptLogs = false, failureDirectory, failureRunId, ...options }) {
+export function observeAuthService(child, { isStopping, onUnexpectedExit, onDiagnosticError, requireLogs = false, requireProxyReceiptLogs = false, failureDirectory, failureRunId, ...options }) {
   return new Promise(resolve => {
     child.once("close", async (code, signal) => {
       const expected = isStopping();
@@ -63,6 +63,7 @@ export function observeAuthService(child, { isStopping, onUnexpectedExit, onDiag
       try {
         const record = await recordAuthServiceExit({ ...options, supervisorPid: child.pid, code, signal, expected });
         console.error("[auth-e2e-service-exit]", JSON.stringify(record));
+        if (requireLogs && !record.logs.length) throw new Error('Missing service diagnostic logs');
         if (requireProxyReceiptLogs) {
           if (!record.logs.length || record.logs.some(log => log.proxyReceiptFailed || log.malformedRequiredReceipt))
             throw new Error("Incomplete request failure accounting");
