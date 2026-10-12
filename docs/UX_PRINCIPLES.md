@@ -164,7 +164,7 @@ Examples illustrating the spirit:
 
 - Motion should communicate causality, feedback, and state change without adding churn.
 - Favor short, confident transitions over flashy flourishes.
-- Prefer a subtle loading swipe over the affected text or component instead of a spinner. Keep the label readable and the layout stable; pair motion with meaningful status text, and show a static status when reduced motion is requested.
+- Use the shared three-piece loading cue in the affected control or component. Keep the label readable and the layout stable; pair motion with meaningful status text, and show a static status when reduced motion is requested.
 - Pressed-state feedback should feel immediate. Release-state feedback should resolve as one short, coherent animation.
 - Animate changes in a surface’s size smoothly, including content appearing, disappearing, wrapping, or switching forms. Use a short, interruptible transition from the current size; preserve focus, readable text, scrolling, and viewport bounds. Avoid abrupt height jumps and blanket transitions on every property.
 - Animations that change layout should protect readability while moving.
@@ -189,7 +189,7 @@ Examples illustrating the spirit:
 - Prefer a small number of well-defined visual ideas repeated consistently over a grab bag of trendy effects.
 - Polished surfaces should feel lightweight and game-friendly, similar in usability spirit to the clearest casual game products, while still expressing Righelt's own brand.
 - Avoid bootstrap-like sameness: default cards, buttons, alerts, and forms should be treated as unfinished until they carry Righelt's own spacing, emphasis, and feedback language.
-- Small pleasant details matter when they do not distract: subtle hover depth, composed loading shimmer, quiet background atmosphere, and confident transition timing can all contribute to a memorable shell.
+- Small pleasant details matter when they do not distract: subtle hover depth, restrained piece-setting cues, quiet background atmosphere, and confident transition timing can all contribute to a memorable shell.
 - Personality should never come from noise. If an effect competes with turn-taking, move comprehension, or decision clarity, it is too much.
 
 ## Sound Principle
@@ -226,7 +226,7 @@ Examples illustrating the spirit:
 
 ### Simple account edits autosave
 
-Save lightweight account fields automatically after a short typing pause or on blur. Show Autosaves, Saving…, Saved, or Not saved in the field's inline action position. Use the shared subtle loading swipe while saving and state-appropriate text colors. Keep input and focus stable, serialize writes so the latest edit wins, and preserve drafts after errors with Retry and an explicit discard option. Credential changes remain deliberate submissions.
+Save lightweight account fields automatically after a short typing pause or on blur. Show Autosaves, Saving…, Saved, or Not saved in the field's inline action position. Use the shared three-piece cue while saving and state-appropriate text colors. Keep input and focus stable, serialize writes so the latest edit wins, and preserve drafts after errors with Retry and an explicit discard option. Credential changes remain deliberate submissions.
 
 
 ### Make new passwords easy to verify
@@ -277,7 +277,7 @@ Home sections alternate red/blue accents. On game pages, only the Board has colo
 
 Interaction backgrounds are quiet washes, never large saturated fills that compete with pieces or illustrations. Use outlines for emphasis and retain clear keyboard focus. Images belong to their surrounding component, using transparent negative space and crisp contours. Start uses simple character portraits, and Friend uses red/blue hands and pieces in the same faceted style. Full scenes belong to introductions.
 
-CTA icons use familiar concepts expressed through Righelt's clipped and angular construction. Share one vector family and consistent weight; retain labels on primary actions and accessible names on icon controls. Keep texture and bevel out of small icons. Prefer readable loading swipes over spinners. Size changes should be short, interruptible and preserve focus, scrolling and viewport bounds. Reduced motion removes movement without implying muted sound.
+CTA icons use familiar concepts expressed through Righelt's clipped and angular construction. Share one vector family and consistent weight; retain labels on primary actions and accessible names on icon controls. Keep texture and bevel out of small icons. Use the shared three-piece cue for pending operations. Size changes should be short, interruptible and preserve focus, scrolling and viewport bounds. Reduced motion removes movement without implying muted sound.
 
 The latest carousel rule supersedes hover/focus pause: cycle every three seconds, continuing through hover and mere focus. Deliberate keyboard or caret input stops cycling for the visit; reduced motion is manual.
 
@@ -431,7 +431,7 @@ Geometry acceptance checks wait for actual finite entry motion to finish before 
 
 ### Loading as setting up a game (October 11, supersedes loading swipes)
 
-Loading uses static low-contrast stone placeholders and a small cue of three angular pieces setting down. Do not pulse or shimmer whole surfaces, labels, or the page. Show the available shell immediately. Reserve an uncached board with an empty grid silhouette, never an invented game position. Keep known section titles visible.
+Loading uses static low-contrast stone placeholders and a small cue of three angular pieces setting down. Do not pulse or shimmer whole surfaces, labels, or the page. Show the available shell immediately. Reserve an uncached board with an empty grid silhouette, never an invented game position. Keep known section titles visible. Unknown home lists reserve at most one placeholder row based on their available container width, including when flyouts narrow the page, so available Start actions remain within reach.
 
 The shared loading presentation owns a 200 ms cue delay and a five-second explanatory threshold, not operation deadlines. Acknowledge and guard deliberate actions immediately. Keep button labels and dimensions unchanged, replacing their icon with the cue or reserving a matching slot for iconless controls. Complete immediately: no minimum dwell, artificial progress or extra animation cycle. Cancel presentation timers when an operation ends or its surface disappears; continuous operations retain their clock through DOM patches. Slow text describes waiting without inventing failure or enabling retries.
 

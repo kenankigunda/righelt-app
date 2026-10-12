@@ -103,3 +103,20 @@ test('a centered wide action replaces its icon in place without moving its label
  await expect(button).toHaveAccessibleName('Start a friend game');
  await expect(button.locator('svg')).not.toBeVisible();
 });
+
+
+test('unknown home content reserves one row at phone, medium and wide widths', async ({page}) => {
+  await page.goto('/browser-integration/support/loading.html');
+  await page.waitForFunction(()=>window.fixtureReady);
+  await page.evaluate(()=>{
+    document.querySelector('main').style.maxWidth='1200px';
+    document.querySelector('main').innerHTML='<section class="panel"><div class="mini-board-card-list mini-board-card-list-skeleton">'+Array.from({length:3},()=>'<article class="mini-board-card mini-board-card-skeleton"><div class="skeleton-board"></div></article>').join('')+'</div></section><button id="available">Start something new</button>';
+  });
+  for(const [width,available] of [[390,1200],[768,1200],[1024,1200],[1366,1200],[1366,842]]){
+    await page.setViewportSize({width,height:844});
+    await page.locator("main").evaluate((el,size)=>el.style.maxWidth=`${size}px`,available);
+    const rows=await page.locator('.mini-board-card-skeleton:visible').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().top));
+    expect(new Set(rows).size).toBe(1);
+    await expect(page.locator('#available')).toBeInViewport();
+  }
+});
