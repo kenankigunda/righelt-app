@@ -468,8 +468,9 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
   });
   try {
   // This hold tests gesture continuity, not the real network deadline.
-  await page.clock.install();
-  await page.clock.pauseAt(new Date());
+  const frozenAt = Date.now();
+  await page.clock.install({ time: frozenAt - 60_000 });
+  await page.clock.pauseAt(frozenAt);
   await page.goto("/");
   const trigger = page.getByTestId("home-create-game");
   await expect(trigger).toBeVisible();
