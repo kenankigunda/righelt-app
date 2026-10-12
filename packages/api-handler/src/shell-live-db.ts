@@ -44,6 +44,7 @@ export type D1DatabaseLike = {
 };
 
 export type LiveGameEnv = {
+  CF_VERSION_METADATA?: { id?: string; tag?: string; timestamp?: string };
   AUTH_ENABLED?: string;
   AUTH_REQUIRED?: string;
   ACCOUNT_POLICY?: CutoverPolicy;

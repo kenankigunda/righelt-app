@@ -8,7 +8,7 @@ import apiWorker from "../../api/index.js";
 import { createFakeD1 } from "../../../packages/api-handler/test/support/fake-d1.mjs";
 import { createFakeGameRooms } from "../../../packages/api-handler/test/support/fake-game-rooms.mjs";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const until = async (fn) => { for (let i = 0; i < 100; i++) { if (fn()) return; await sleep(3); } assert.fail("no convergence"); };
+const until = async (fn) => { for (let i = 0; i < 500; i++) { if (fn()) return; await sleep(3); } assert.fail("no convergence"); };
 const setup = async (t, { loseApply = false, timeout = 100 } = {}) => {
   const originals = { window: globalThis.window, document: globalThis.document, WebSocket: globalThis.WebSocket };
   const sockets = [], wire = [], reconciles = [];
@@ -60,16 +60,32 @@ test("WS-first recovery coalesces concurrent HTTP triggers and sends the unchang
   assert.equal(f.store.getGameViewModel(f.gameId).pendingCommandCount, 0);
 });
 
-test("fallback retires the initial socket before HTTP and a cursor-matched reopen needs no second snapshot", async (t) => {
+test("fallback retires the old socket and HTTP restores play independently of socket readiness", async (t) => {
   const f = await setup(t, { timeout: 20 });
   f.store.setActiveGameId(f.gameId); const old = f.sockets[0]; old.emit("open");
   await until(() => f.sockets.length === 2);
-  assert.equal(old.readyState, 3); assert.equal(f.reconciles.length, 1);
+  assert.equal(old.readyState, 3); await until(() => f.reconciles.length === 1);
   const snapshot = await f.current(); const next = f.sockets[1];
   assert.equal(new URL(next.url).searchParams.get("lastEventSeq"), String(snapshot.eventSeq));
+  await until(() => f.store.getLastEventSeq(f.gameId) === snapshot.eventSeq);
   next.emit("open"); next.receive({ type: "heartbeat_ack", protocolVersion: 2, gameId: f.gameId, eventSeq: snapshot.eventSeq });
   await until(() => f.store.getGameViewModel(f.gameId).recovering === false);
   assert.equal(f.wire.filter((payload) => payload.game).length, 1);
   old.receive({ ...snapshot, type: "state_sync", gameId: f.gameId, eventSeq: snapshot.eventSeq + 99 });
   assert.equal(f.store.getLastEventSeq(f.gameId), snapshot.eventSeq);
+});
+
+test("socket close starts HTTP recovery without waiting for reconnect readiness", async (t) => {
+  const f = await setup(t, { timeout: 1000 });
+  f.store.setActiveGameId(f.gameId); const original = f.sockets[0]; original.emit("open");
+  const snapshot = await f.current(); original.receive({ ...snapshot, protocolVersion:2, gameId:f.gameId, type:"state_sync" });
+  await until(() => !f.store.getGameViewModel(f.gameId).recovering);
+  original.close();
+  await until(() => f.reconciles.length === 1 && !f.store.getGameViewModel(f.gameId).recovering);
+  assert.equal(f.sockets.length, 1, "HTTP recovery finishes before socket backoff");
+  await until(() => f.sockets.length === 2);
+  assert.equal(f.sockets[1].readyState, 0, "HTTP recovery cannot depend on socket readiness");
+  const game = f.store.getGameViewModel(f.gameId);
+  assert.equal(game.sharedMutationsBlocked, false);
+  assert.equal(game.canRecordMove, true);
 });

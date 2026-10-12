@@ -29,7 +29,9 @@ test("Pages proxy forwards requests through API_SERVICE when present", async () 
     },
   });
 
-  assert.equal(forwardedRequest, request);
+  assert.equal(forwardedRequest.url, request.url);
+  assert.equal(forwardedRequest.headers.get("X-Righelt-Request-Id"), response.headers.get("X-Righelt-Request-Id"));
+  assert.match(response.headers.get("X-Righelt-Request-Id"), /^[0-9a-f-]{36}$/);
   assert.equal(response.status, 202);
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.deepEqual(await response.json(), { ok: true });
@@ -168,4 +170,12 @@ test("Pages proxy returns a stable 500 when no service binding or local fallback
     ok: false,
     error: "server_misconfigured_api_service_binding",
   });
+});
+
+test("Pages validates attempt IDs and returns correlation on proxy failures",async()=>{
+ const response=await onRequest({request:new Request("https://righelt.pages.dev/api/health",{headers:{"X-Righelt-Request-Id":"malformed"}}),env:{}});
+ assert.equal(response.status,500);assert.match(response.headers.get("X-Righelt-Request-Id"),/^[0-9a-f-]{36}$/);
+ const id=crypto.randomUUID();let forwarded;
+ const success=await onRequest({request:new Request("https://righelt.pages.dev/api/health",{headers:{"X-Righelt-Request-Id":id}}),env:{API_SERVICE:{fetch:async request=>{forwarded=request;return Response.json({ok:true},{headers:{"X-Righelt-Server-Build":"build"}});}}}});
+ assert.equal(forwarded.headers.get("X-Righelt-Request-Id"),id);assert.equal(success.headers.get("X-Righelt-Request-Id"),id);assert.equal(success.headers.get("X-Righelt-Server-Build"),"build");
 });

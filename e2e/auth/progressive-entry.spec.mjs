@@ -53,7 +53,7 @@ test("explicit creation retains a taken username without changing forms or disab
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveAttribute("type", "text");
   await enterUsername(page, taken);
   await expect(dialog(page).locator("form")).toHaveAttribute("data-lookup-state", "taken");
-  await expect(dialog(page)).toContainText("That username is taken. Choose another.");
+  await expect(dialog(page)).toContainText("That username is taken. Try another.");
   await expect(dialog(page).getByRole("button", { name: "Create account & continue", exact: true })).toBeEnabled();
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
@@ -248,7 +248,7 @@ test("registration collision stays in creation and never retries as login", asyn
   await enterUsername(page, username);
   await dialog(page).getByLabel("Password", { exact: true }).fill(password);
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
-  await expect(dialog(page)).toContainText("That username is taken. Choose another.");
+  await expect(dialog(page)).toContainText("That username is taken. Try another.");
   await expect(dialog(page).locator("form")).toHaveAttribute("data-entry-mode", "create");
   await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveValue(password);
   expect(registrations).toBe(1);
@@ -540,6 +540,6 @@ for (const gesture of ["pointer", "keyboard", "drag-away"]) test(`username feedb
     await page.clock.fastForward(1);
     await expect(dialog(page).locator("form")).toHaveAttribute("data-entry-mode", gesture === "drag-away" ? "create" : "login");
     await expect(dialog(page).getByLabel("Password", { exact: true })).toHaveValue(gesture === "drag-away" ? password : "");
-    if (gesture === "drag-away") await expect(dialog(page).locator("[data-username-status]")).toContainText("offline");
+    if (gesture === "drag-away") await expect(dialog(page).locator("[data-username-status]")).toContainText("We couldn’t check that username. You can still try creating your account.");
   } finally { await page.mouse.up(); await page.keyboard.up("Space"); await page.clock.resume(); }
 });

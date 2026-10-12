@@ -1759,7 +1759,7 @@ test("board runtime toggles overlay phase when the selected piece is clicked aga
   onCellClick({ row: 4, col: 2 });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(renderCalls.at(-1)?.selectedPieceOverlayPhase, "actionPreviews");
-  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Selected piece at"), true);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Choose where to move your piece at"), true);
 
   onCellClick({ row: 4, col: 2 });
   await new Promise((resolve) => setTimeout(resolve, 0));

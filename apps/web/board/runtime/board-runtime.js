@@ -56,6 +56,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   let state = null;
+  let snapshotRevision = 0;
+  let legalActionsRequestId = 0;
+  let submitting = false;
+  let destroyed = false;
   let legalActions = [];
   let selectedPieceMoves = [];
   let selectedPieceMovePreviews = [];
@@ -412,7 +416,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     if (!pushedPiece) {
       return null;
     }
-    const suffix = currentPieceId === pushedPiece.id ? "Select a square to retreat to:" : "Select it to retreat:";
+    const suffix = currentPieceId === pushedPiece.id ? "Choose where to retreat:" : "Select your piece to choose where to retreat:";
     return `Your piece at ${renderBoardPreviewCoordinate(pushedPiece.position)} has been pushed! ${escapeHtml(suffix)}`;
   };
 
@@ -534,7 +538,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       } else if (selectedPieceOverlayPhase === "actionPreviews") {
         if (selectedSource) {
           setBoardPreviewPromptHtml(
-            `Selected piece at ${renderBoardPreviewCoordinate(selectedSource)}. Select a square to move to or click piece again.`,
+            `Choose where to move your piece at ${renderBoardPreviewCoordinate(selectedSource)}, or select it again for more options.`,
           );
         } else {
           setBoardPreviewPrompt(
@@ -633,19 +637,44 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     invalidateSelectedPieceMovesRequests();
   };
 
-  const reloadLegalActions = async () => {
-    if (!state) {
+  const reconcileSelectedPiece = () => {
+    if (!selectedPieceId) return;
+    const piece = getBoardPieceById(selectedPieceId);
+    if (!piece) {
+      clearSelection();
       return;
     }
+    if (!sameCoordinate(selectedSource, piece.position)) {
+      selectedSource = { ...piece.position };
+      setSelectedTarget(null);
+    }
+  };
+
+  const refreshLegalActions = async () => {
+    if (!state || destroyed) {
+      return;
+    }
+    const revision = snapshotRevision;
+    const requestId = ++legalActionsRequestId;
     const body = await host.loadLegalActions(state);
+    if (destroyed || revision !== snapshotRevision || requestId !== legalActionsRequestId) return;
+    snapshotRevision += 1;
+    invalidateSelectedPieceMovesRequests();
     state = body.state ?? state;
     legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
-    applyForcedContinuationSelection();
+    if (!applyForcedContinuationSelection()) primeSelectedPieceMovesFromLegalActions();
+    refreshSelectionLabels();
     renderBoard();
     renderStatus();
   };
 
+  const reloadLegalActions = async () => {
+    if (submitting) return;
+    await refreshLegalActions();
+  };
+
   const primeSelectedPieceMovesFromLegalActions = () => {
+    reconcileSelectedPiece();
     if (!state || !selectedPieceId) {
       selectedPieceMoves = [];
       selectedPieceMovePreviews = [];
@@ -685,6 +714,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const reloadSelectedPieceMoves = async () => {
+    const requestId = ++selectedPieceMovesRequestId;
+    const revision = snapshotRevision;
+    selectedPieceMovesLoading = false;
+    if (destroyed) return;
     const selectedPiece = getBoardPieceById(selectedPieceId);
     if (!state || !selectedPiece) {
       selectedPieceMoves = [];
@@ -699,23 +732,25 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
     renderBoard();
     renderStatus();
 
-    const requestId = ++selectedPieceMovesRequestId;
     const requestedPieceId = selectedPiece.id;
+    const requestedSnapshot = JSON.stringify(state);
     selectedPieceMovesLoading = true;
-    const body = await host.loadPieceMoves(state, selectedPiece.id);
-
-    if (requestId !== selectedPieceMovesRequestId || selectedPieceId !== requestedPieceId) {
-      return;
+    try {
+      const body = await host.loadPieceMoves(state, selectedPiece.id);
+      if (destroyed || revision !== snapshotRevision || requestId !== selectedPieceMovesRequestId || selectedPieceId !== requestedPieceId) return;
+      if (body.state && JSON.stringify(body.state) !== requestedSnapshot) return;
+      // Move queries describe their input snapshot. They must not replace live state.
+      selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
+      selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
+      maybeAutoSelectTarget(selectedPieceMoves);
+      syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
+      renderBoard();
+      renderStatus();
+    } catch (error) {
+      if (!destroyed && revision === snapshotRevision && requestId === selectedPieceMovesRequestId) throw error;
+    } finally {
+      if (requestId === selectedPieceMovesRequestId) selectedPieceMovesLoading = false;
     }
-
-    selectedPieceMovesLoading = false;
-    state = body.state ?? state;
-    selectedPieceMoves = Array.isArray(body.actions) ? body.actions : [];
-    selectedPieceMovePreviews = Array.isArray(body.previewActions) ? body.previewActions : selectedPieceMoves;
-    maybeAutoSelectTarget(selectedPieceMoves);
-    syncActionTypeForSelectedTarget(selectedPieceMovePreviews);
-    renderBoard();
-    renderStatus();
   };
 
   const showRemovalEffects = (effects, previousState, { onComplete = null } = {}) => {
@@ -798,21 +833,27 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const submitCurrentAction = async (actionOverride = null) => {
-    if (!state || host.canInteract?.(state) === false) {
+    if (!state || destroyed || submitting || overlayMode !== OVERLAY_MODE.INTERACTIVE || host.canInteract?.(state) === false) {
       return;
     }
 
     controls.onInteractionSound?.({kind:'preview-leave'});
     const action = actionOverride ?? buildActionPayload(getActionType(), selectedSource, selectedTarget, selectedPieceId);
     const previousState = state;
+    let revision = snapshotRevision;
 
+    submitting = true;
+    legalActionsRequestId += 1;
     controls.onSubmitting?.(true);
     setResult("Applying action...");
 
     try {
       const body = await host.applyAction(state, action);
+      if (destroyed || revision !== snapshotRevision) return;
 
       if (body.accepted) {
+        snapshotRevision += 1;
+        revision = snapshotRevision;
         invalidateSelectedPieceMovesRequests();
         state = body.state;
         legalActions = Array.isArray(body.legalActions) ? body.legalActions : [];
@@ -830,6 +871,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
             clearSelection();
           } else {
             setSelectedTarget(null);
+            reconcileSelectedPiece();
           }
         }
 
@@ -837,23 +879,28 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         refreshSelectionLabels();
         renderBoard();
         renderStatus();
-        if (selectedPieceId) {
-          await reloadSelectedPieceMoves();
-        }
+        // The accepted snapshot is now actionable. Slow preview loads must not
+        // prevent the next continuation move from being submitted.
+        if (selectedPieceId) void reloadSelectedPieceMoves().catch(error => {
+          setResult({ ok: false, error: "piece_moves_load_failed", message: error instanceof Error ? error.message : "Unknown error" });
+        });
         setResult({ accepted: true, outcome: body.outcome ?? state.outcome });
 
         return;
       }
 
       state = body.state ?? state;
+      snapshotRevision += 1;
+      revision = snapshotRevision;
       invalidateSelectedPieceMovesRequests();
       selectedPieceMoves = [];
       selectedPieceMovePreviews = [];
       setResult({ accepted: false, validation: body.validation });
-      await reloadLegalActions();
+      await refreshLegalActions();
     } catch (error) {
-      setResult({ ok: false, error: "request_failed", message: error instanceof Error ? error.message : "Unknown error" });
+      if (!destroyed && revision === snapshotRevision) setResult({ ok: false, error: "request_failed", message: error instanceof Error ? error.message : "Unknown error" });
     } finally {
+      submitting = false;
       controls.onSubmitting?.(false);
     }
   };
@@ -913,7 +960,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const handleBoardCellClick = (clickedCoord) => {
-    if (!state || host.canInteract?.(state) === false) {
+    if (!state || destroyed || submitting || overlayMode !== OVERLAY_MODE.INTERACTIVE || host.canInteract?.(state) === false) {
       return;
     }
 
@@ -947,12 +994,19 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
         if (nextType && getActionType() !== nextType) {
           setActionType(nextType);
         }
-        void submitCurrentAction();
+        void submitCurrentAction(candidates.find(action => action.type === nextType));
         return;
       }
     }
 
     if (usesHoverTargetSelection && selectedSource && hasPreviewAtClicked) {
+      const candidates = actionsAtTarget(clickedCoord);
+      const nextType = pickBestActionTypeForTarget(candidates, getActionType());
+      if (nextType) {
+        setActionType(nextType);
+        setSelectedTarget(clickedCoord, TARGET_ORIGIN.MANUAL);
+        void submitCurrentAction(candidates.find(action => action.type === nextType));
+      }
       return;
     }
 
@@ -1054,17 +1108,22 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const endCurrentTurn = async () => {
-    if (!state || typeof host.endTurn !== "function" || host.canInteract?.(state) === false) {
+    if (!state || destroyed || submitting || overlayMode !== OVERLAY_MODE.INTERACTIVE || typeof host.endTurn !== "function" || host.canInteract?.(state) === false) {
       return;
     }
+    const revision = snapshotRevision;
+    submitting = true;
+    legalActionsRequestId += 1;
     controls.onSubmitting?.(true);
     try {
       const result = await host.endTurn(state);
+      if (destroyed || revision !== snapshotRevision) return;
       if (!result?.accepted) {
         setResult({ accepted: false, validation: result?.validation ?? null });
         return;
       }
       state = result.state ?? state;
+      snapshotRevision += 1;
       legalActions = Array.isArray(result.legalActions) ? result.legalActions : legalActions;
       clearSelection();
       refreshSelectionLabels();
@@ -1073,8 +1132,9 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       setResult({ accepted: true, outcome: result.outcome ?? state.outcome });
       controls.onBoardMessage?.(result.boardMessage ?? { type: "turn_ended", origin: "board-runtime" });
     } catch (error) {
-      setResult({ ok: false, error: "end_turn_failed", message: error instanceof Error ? error.message : "Unknown error" });
+      if (!destroyed && revision === snapshotRevision) setResult({ ok: false, error: "end_turn_failed", message: error instanceof Error ? error.message : "Unknown error" });
     } finally {
+      submitting = false;
       controls.onSubmitting?.(false);
     }
   };
@@ -1165,6 +1225,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
       destroyedPieces: nextDestroyedPieces = [],
     } = {},
   ) => {
+    if (destroyed) return;
+    snapshotRevision += 1;
     controls.onInteractionSound?.({kind:'preview-leave'});
     state = structuredClone(snapshot);
     legalActions = Array.isArray(incomingLegalActions) ? incomingLegalActions : [];
@@ -1261,6 +1323,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {} }) {
   };
 
   const destroy = () => {
+    destroyed = true;
+    snapshotRevision += 1;
+    invalidateSelectedPieceMovesRequests();
+    boardAdapter.unmount?.();
     controls.onInteractionSound?.({kind:'preview-leave'});
     document.removeEventListener("click", handleDocumentClick);
     document.removeEventListener("keydown", handleDocumentKeydown);

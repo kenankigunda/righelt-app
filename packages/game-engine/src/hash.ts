@@ -1,3 +1,4 @@
+import { resolveToStability } from "./resolve";
 import { serializeState } from "./serialize";
 import type { GameState } from "./types";
 
@@ -20,4 +21,9 @@ export function deterministicStateHash(value: GameState): string {
   }
 
   return hash;
+}
+
+/** Shared semantic board identity for execution and safe command replay. */
+export function equivalentGameStates(left: GameState, right: GameState): boolean {
+  return deterministicStateHash(resolveToStability(structuredClone(left), { artifactMode: "full" })) === deterministicStateHash(resolveToStability(structuredClone(right), { artifactMode: "full" }));
 }

@@ -16,6 +16,8 @@ export function getNextSeat(seat: PlayerSeat): PlayerSeat;
 
 export function getSideForSeat(seat: PlayerSeat): GameState["sideToMove"];
 
+export function getTurnOwnerSideForState(state: Pick<GameState, "continuation" | "sideToMove">): GameState["sideToMove"];
+
 export function getControlSeatForTurn(state: Pick<GameState, "continuation"> | null | undefined, turnOwnerSeat: PlayerSeat): PlayerSeat;
 
 export function clearTransientTurnFlags(pieces: GameState["pieces"] | null | undefined): GameState["pieces"];

@@ -12,7 +12,7 @@ export async function waitForAccountStartup(page) {
   await expect.poll(() => page.evaluate(() => ({
     header: Boolean(document.querySelector('.shell-header')),
     retry: Boolean(document.querySelector('[data-action="retry-account-startup"]')),
-    connecting: [...document.querySelectorAll('[role="status"]')].some(node => /^Connecting…$/.test(node.textContent.trim())),
+    connecting: [...document.querySelectorAll('[role="status"]')].some(node => /^Connecting$/.test(node.textContent.trim())),
   }))).toEqual({ header: true, retry: false, connecting: false });
 }
 
@@ -42,9 +42,18 @@ export async function signOutAndOpenSignIn(page) {
 
 // Home authentication resumes the chosen Friend introduction, never silently
 // creates a match. Tests must explicitly choose whether to play or dismiss it.
-export async function continueFriendIntroduction(page, {play = true} = {}) {
+export async function waitForFriendIntroduction(page) {
   const story=page.getByRole('dialog',{name:'Friend',exact:true});
+  const continuationError = page.getByTestId('account-continuation-error');
+  await expect(story.or(continuationError).first()).toBeVisible();
+  // Authentication already succeeded. This explicit action retries only page
+  // reads and resumes the saved intent, never another credential submission.
+  if (await continuationError.isVisible()) await continuationError.getByRole('button',{name:'Try again',exact:true}).click();
   await expect(story).toBeVisible();
+  return story;
+}
+export async function continueFriendIntroduction(page, {play = true} = {}) {
+  const story=await waitForFriendIntroduction(page);
   if (!play) {await story.getByRole('button',{name:'Close opponent story',exact:true}).click();return;}
   await story.getByRole('button',{name:'Start a friend game',exact:true}).click();
   await expect(page).toHaveURL(/#\/game\//);

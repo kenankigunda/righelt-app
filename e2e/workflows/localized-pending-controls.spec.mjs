@@ -61,7 +61,7 @@ test("copy invite waits for pending game creation and then copies the committed 
     const expectedInviteToken = createBody?.game?.inviteToken;
 
     await expect(page.getByTestId("copy-invite")).toHaveText("Invite someone to play as blue");
-    await expect(page.getByText("Link copied")).toBeVisible();
+    await expect(page.getByText("Link copied! Ready to share.", { exact: true })).toBeVisible();
     await expect.poll(async () => page.evaluate(() => window.__copiedTexts[0] ?? null)).toContain(
       `#/invite/${expectedInviteToken}`,
     );

@@ -401,7 +401,7 @@ test("sync store wraps optimistic transport responses in operation handles", asy
   listeners.forEach((listener) =>
     listener({ type: "optimistic_desynced", gameId: "game-1", clientCommandId: "cmd-turn" }),
   );
-  await assert.rejects(endTurnHandle.committed, /Sync failed/);
+  await assert.rejects(endTurnHandle.committed, /We couldn’t record/);
   assert.equal(endTurnHandle.status, "failed");
 });
 
@@ -517,7 +517,7 @@ test("sync store keeps a failed create-game stub mounted with a rollback banner"
   assert.equal(handle.status, "failed");
   assert.equal(
     store.getFailedOperations(handle.result.id)[0]?.error?.message,
-    "Game creation failed. The server could not create this game. Return home and try again.",
+    "We couldn’t start your game. Head home and try again.",
   );
   assert.equal(failedGame.notifications[0], "Game creation failed");
   assert.equal(failedGame.id, handle.result.id);

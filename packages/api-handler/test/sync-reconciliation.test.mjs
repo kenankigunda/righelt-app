@@ -170,3 +170,23 @@ test("end-turn preserves turn-owner authority when continuation control differs"
   assert.deepEqual(duplicate.turn, accepted.turn);
   assert.equal(duplicate.duplicate, true);
 });
+
+test("committed acknowledgment and reconciliation are independent of a stalled broadcast",async()=>{
+ const h=await harness();const original=GameRoomDO.prototype.broadcast;let release;
+ GameRoomDO.prototype.broadcast=()=>new Promise(r=>{release=r});
+ try {
+  const command=await h.command();
+  const response=await Promise.race([h.call("moves",command),new Promise((_,reject)=>setTimeout(()=>reject(Error("broadcast held acknowledgment")),200))]);
+  assert.equal(response.commandOutcomes[0].outcome,"accepted");
+  const receipt=await h.reconcile([command]);assert.equal(receipt.commandOutcomes[0].outcome,"accepted");
+  assert.equal(h.DB.getGameState("g").moves.filter(m=>m.clientCommandId===command.clientCommandId).length,1);
+ } finally {release?.();GameRoomDO.prototype.broadcast=original;}
+});
+test("request correlation replaces malformed IDs and echoes valid IDs without authority",async()=>{
+ const DB=createFakeD1(), id=crypto.randomUUID();
+ for(const value of [id,"invalid secret text"]){
+  const response=await handleApiRequest(new Request("https://test/api/health",{headers:{"X-Righelt-Request-Id":value}}),{DB,CF_VERSION_METADATA:{id:"deployed-version"}});
+  const actual=response.headers.get("X-Righelt-Request-Id");assert.match(actual,/^[0-9a-f-]{36}$/);if(value===id)assert.equal(actual,id);
+  assert.equal(response.headers.get("X-Righelt-Server-Build"),"deployed-version");
+ }
+});
