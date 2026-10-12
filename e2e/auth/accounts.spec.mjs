@@ -724,6 +724,8 @@ test("switching accounts in another tab retires the old settings form", async ({
     await dialog(sibling).getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(dialog(sibling)).not.toBeVisible();
     await expect(dialog(page)).not.toBeVisible();
+    // The old form closes on logout, before this tab has adopted the new session.
+    await expect(page.getByTestId("account-open")).toHaveAttribute("data-authenticated", "true");
     await account(page);
     await expect(dialog(page)).toContainText(`@${second}`);
     await expect(dialog(page).getByLabel("Display name", { exact: true })).toHaveValue(second);
