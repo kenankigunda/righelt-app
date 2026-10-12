@@ -3,6 +3,7 @@ import { parseRouteFromHash } from "./routes.js";
 import {
   AUTH_PROTOCOL_VERSION,
   AUTH_BOOTSTRAP_TIMEOUT_MS,
+  AUTH_LOGOUT_ATTEMPT_TIMEOUT_MS,
   USERNAME_LOOKUP_TIMEOUT_MS,
   AUTH_PROTOCOL_HEADER,
   AUTH_REQUEST_HEADER,
@@ -56,6 +57,7 @@ export const createAccountController = ({
   locks = globalThis.navigator?.locks,
   retryTimers = globalThis,
   bootstrapTimers = globalThis,
+  logoutTimers = globalThis,
   channelFactory = globalThis.window && globalThis.BroadcastChannel
     ? () => new BroadcastChannel("righelt.accounts.v1")
     : null,
@@ -269,11 +271,20 @@ export const createAccountController = ({
   const finishLogout = () => {
     if (logoutFlight) return logoutFlight;
     if (!readPending()) return Promise.resolve();
-    logoutFlight = (async () => {
+    const controller = new AbortController();
+    let timer;
+    const deadline = new Promise((_, reject) => {
+      timer = logoutTimers.setTimeout(() => {
+        controller.abort();
+        reject(failure("temporarily_unavailable"));
+      }, AUTH_LOGOUT_ATTEMPT_TIMEOUT_MS);
+      timer?.unref?.();
+    });
+    const attempt = (async () => {
       // Resolve the actual cookie before revocation, including a credential
       // response whose headers arrived without its body.
-      const current = await request("/api/auth/session");
-      await request("/api/auth/logout", {}, { context: current.contextId });
+      const current = await request("/api/auth/session", undefined, { signal: controller.signal });
+      await request("/api/auth/logout", {}, { context: current.contextId, signal: controller.signal });
       pendingLogout = null;
       clearLogoutRetry();
       logoutRetryDelay = 1000;
@@ -282,12 +293,17 @@ export const createAccountController = ({
       // Rebuild the anonymous transport without retiring a newer anonymous form
       // opened in this exact pending-logout generation.
       retire({ authenticated: false }, true, null, generation);
-    })()
+    })();
+    // Reconnect can leave a browser request pending without a network error.
+    // Release the attempt for the existing retry loop, preserving denied local
+    // authority until a later, confirmed server revocation succeeds.
+    logoutFlight = Promise.race([attempt, deadline])
       .catch((error) => {
         scheduleLogoutRetry();
         throw error;
       })
       .finally(() => {
+        logoutTimers.clearTimeout(timer);
         logoutFlight = null;
       });
     return logoutFlight;
