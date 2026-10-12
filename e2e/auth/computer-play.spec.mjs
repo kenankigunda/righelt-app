@@ -9,7 +9,7 @@ const projected = (page, id) => page.evaluate(async id => {
   return (await response.json()).game;
 }, id);
 
-async function registerComputerTester(page) {
+async function registerComputerTester(page, { home = true } = {}) {
   expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`, { method: 'POST' })).ok).toBe(true);
   await page.goto('/');
   await page.getByRole('button', { name: 'Play both sides', exact: true }).click();
@@ -19,7 +19,7 @@ async function registerComputerTester(page) {
   await account.getByLabel('Password', { exact: true }).fill('A computer play password 482');
   await account.getByRole('button', { name: 'Create account & continue', exact: true }).click();
   await expect(page.getByTestId('game-shell')).toBeVisible();
-  await page.goto('/#/');
+  if (home) await page.goto('/#/');
 }
 
 test('ordinary computer play records real worker evidence, preserves private notes, and branches from the displayed decision', async ({ page }, testInfo) => {
@@ -114,7 +114,8 @@ test('ordinary computer play records real worker evidence, preserves private not
 });
 
 
-for (const profile of ['tau', 'horus']) test(`${profile} prepares and plays both computer seats with the production model`, async ({ page }, info) => {
+for (const profile of ['tau', 'horus']) {
+test(`${profile} prepares and plays as Player 2 with the production model`, async ({ page }, info) => {
   await registerComputerTester(page);
   await page.locator(`[data-action="opponent-story"][data-opponent="${profile}"]`).click();
   const story = page.getByRole('dialog');
@@ -129,7 +130,20 @@ for (const profile of ['tau', 'horus']) test(`${profile} prepares and plays both
   await expect.poll(async () => (await projected(page, created.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, created.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
   await expect.poll(async () => (await projected(page, created.id)).moves.some(move => move.computerProof?.modelId === 'initial-1554')).toBe(true);
-  const played = await projected(page, created.id), human = played.moves.find(move => !move.computerProof);
+  const played = await projected(page, created.id);
+  expect(played.moves.find(move => move.computerProof)?.computerProof.profile).toBe(profile);
+  await info.attach('accepted-profile-decisions', { contentType: 'application/json', body: JSON.stringify({ profile, humanFirst: played.moves }) });
+});
+
+test(`${profile} branches from a human decision and plays as Player 1 with the production model`, async ({ page }, info) => {
+  // Each real-model journey keeps its own unchanged test budget and fresh account.
+  await registerComputerTester(page, { home: false });
+  const sourceId = await page.getByTestId('game-shell').getAttribute('data-game-id');
+  const created = await projected(page, sourceId);
+  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase', 'idle');
+  await submitPlayableAction(page, created.legalActions.find(action => action.from && action.to));
+  await expect.poll(async () => (await projected(page, sourceId)).moves.length).toBeGreaterThan(0);
+  const played = await projected(page, sourceId), human = played.moves.find(move => !move.computerProof);
   const historyRow = page.locator(`[data-testid="history-move-item"][data-move-id="${human.moveId}"]`);
   await historyRow.click();
   await historyRow.locator('[data-action="launch-history-branch"]').click();
@@ -147,10 +161,16 @@ for (const profile of ['tau', 'horus']) test(`${profile} prepares and plays both
     expect(branched.computer.seats).toEqual({ p1: profile, p2: null });
     await expect(popup.getByTestId('game-role')).toContainText('Player 2');
     await expect.poll(async () => (await projected(popup, branched.id)).moves.some(move => move.computerProof?.modelId === 'initial-1554')).toBe(true);
-    await info.attach('accepted-profile-decisions', { contentType: 'application/json', body: JSON.stringify({ profile, humanFirst: played.moves, computerFirst: (await projected(popup, branched.id)).moves }) });
+    const computerFirst = await projected(popup, branched.id);
+    expect(computerFirst.moves.find(move => move.computerProof)?.computerProof.profile).toBe(profile);
+    const unchangedSource = await projected(page, sourceId);
+    expect(unchangedSource.gameplayRevision).toBe(played.gameplayRevision);
+    expect(unchangedSource.board.state).toEqual(played.board.state);
+    await info.attach('accepted-profile-decisions', { contentType: 'application/json', body: JSON.stringify({ profile, source: played.moves, computerFirst: computerFirst.moves }) });
   } catch (error) {
     await info.attach('branch-computer-failure', { contentType: 'application/json', body: JSON.stringify({ profile, url: popup.url(), status: await popup.locator('[data-computer-status]').allTextContents(), visibility: await popup.evaluate(() => document.visibilityState) }) });
     await popup.screenshot({ path: info.outputPath('branch-computer-failure.png') });
     throw error;
   } finally { await popup.close(); }
 });
+}
