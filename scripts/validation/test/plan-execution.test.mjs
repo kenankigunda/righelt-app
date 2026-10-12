@@ -8,6 +8,12 @@ import {executeCheck,checkInputFingerprint} from '../execution.mjs';
 import {verifyGeneralEvidence,localRun,harnessRoot} from '../local.mjs';
 import {command} from '../io.mjs';
 const spec={version:2,questions:[{id:'transport',description:'Recovery retains history',paths:['apps/'],checks:['Integration','E2E'],boundaryChecks:['Integration']}],prs:[{number:1,tests:['e2e/workflows/reconnect-recovery.spec.mjs']},{number:2}]};
+test('AI tooling release questions can require their dedicated checks',()=>{
+ const ai={...spec,questions:[{id:'ai-tools',description:'Model and benchmark tooling passes its candidate checks',paths:['tools/ai-trainer/','tools/ai-benchmark/'],checks:['Trainer checks','AI benchmark checks']}]};
+ assert.equal(validatePlan(ai),ai);
+ const policy=stagePolicy(ai,2,{changed:['tools/ai-trainer/model.py']});
+ for(const name of ai.questions[0].checks)assert.ok(policy.selected.includes(name));
+});
 test('boundary selects explicit acceptance checks; final keeps broad assertions and limits visuals independently',()=>{
  const boundary=stagePolicy(spec,1,{changed:['apps/api/src/x.ts']});
  assert.equal(boundary.visualMode,'none');assert.ok(boundary.selected.includes('Integration'));assert.ok(!boundary.selected.includes('E2E'));assert.equal(boundary.tests.length,1);
