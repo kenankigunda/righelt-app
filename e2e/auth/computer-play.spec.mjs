@@ -1,13 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { submitPlayableAction } from '../support/app.mjs';
 import { AUTH_CONTROL_ORIGIN } from './fixture.mjs';
+import { readProjectedGame, waitForComputerDecision } from '../support/computer-projection.mjs';
 
-const projected = (page, id) => page.evaluate(async id => {
-  const session = await (await fetch('/api/auth/session')).json();
-  const response = await fetch(`/api/shell/games/${id}`, { headers: { 'X-Righelt-Auth-Version': '2', 'X-Righelt-Session': session.contextId } });
-  if (!response.ok) throw Error(`Projection failed: ${response.status}`);
-  return (await response.json()).game;
-}, id);
+const projected = (page, id) => page.evaluate(readProjectedGame, { id });
 
 async function registerComputerTester(page, { home = true } = {}) {
   expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`, { method: 'POST' })).ok).toBe(true);
@@ -135,8 +131,7 @@ test(`${profile} prepares and plays as Player 2 with the production model`, asyn
   await submitPlayableAction(page, created.legalActions.find(action => action.from && action.to));
   await expect.poll(async () => (await projected(page, created.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, created.id)).canEndTurn) await page.locator('[data-action="end-turn"]').click();
-  await expect.poll(async () => (await projected(page, created.id)).moves.some(move => move.computerProof?.modelId === 'initial-1554')).toBe(true);
-  const played = await projected(page, created.id);
+  const played = await waitForComputerDecision(page, created.id, profile);
   expect(played.moves.find(move => move.computerProof)?.computerProof.profile).toBe(profile);
   await info.attach('accepted-profile-decisions', { contentType: 'application/json', body: JSON.stringify({ profile, humanFirst: played.moves }) });
 });
@@ -166,8 +161,7 @@ test(`${profile} branches from a human decision and plays as Player 1 with the p
     expect(branched.board.state).toEqual(created.board.state);
     expect(branched.computer.seats).toEqual({ p1: profile, p2: null });
     await expect(popup.getByTestId('game-role')).toContainText('Player 2');
-    await expect.poll(async () => (await projected(popup, branched.id)).moves.some(move => move.computerProof?.modelId === 'initial-1554')).toBe(true);
-    const computerFirst = await projected(popup, branched.id);
+    const computerFirst = await waitForComputerDecision(popup, branched.id, profile);
     expect(computerFirst.moves.find(move => move.computerProof)?.computerProof.profile).toBe(profile);
     const unchangedSource = await projected(page, sourceId);
     expect(unchangedSource.gameplayRevision).toBe(played.gameplayRevision);
