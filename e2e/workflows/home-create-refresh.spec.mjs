@@ -19,7 +19,8 @@ test('early opponent introduction survives initial guest session adoption', asyn
   try {
     await page.goto('/');
     await intercepted;
-    await page.locator('[data-opponent="babs"]').click();
+    const trigger = page.locator('button[data-opponent="babs"]');
+    await trigger.click();
     const dialog = page.getByRole('dialog', { name: 'Babs', exact: true });
     await expect(dialog).not.toBeVisible();
     expect(creates).toHaveLength(0);
@@ -32,7 +33,7 @@ test('early opponent introduction survives initial guest session adoption', asyn
     expect(creates).toHaveLength(0);
     await page.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();
-    await expect(page.locator('[data-opponent="babs"]')).toBeFocused();
+    await expect(trigger).toBeFocused();
   } finally {
     release();
     await page.unrouteAll({ behavior: 'wait' });
