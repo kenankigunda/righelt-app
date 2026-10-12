@@ -5,6 +5,11 @@ import path from 'node:path';
 export async function candidateCapabilities(root) {
   const has = async file => { try { await access(path.join(root,file)); return true; } catch(e) { if(e.code==='ENOENT') return false; throw e; } };
   let alwaysVisibleAccount=false, separateAccountForms=false, usernameOnlySignup=false, playAccountEntry=false, friendIntroduction=false;
+  let trainedComputerPlay=false;
+  try {
+    const runtime=await readFile(path.join(root,'apps/web/shell/computer-runtime.js'),'utf8');
+    trainedComputerPlay=/^export const TRAINED_COMPUTER_PLAY\s*=\s*['"]enabled['"];?$/m.test(runtime);
+  } catch(error) { if(error.code!=='ENOENT') throw error; }
   try {
     const stories=await readFile(path.join(root,'apps/web/shell/opponent-stories.js'),'utf8');
     friendIntroduction=/^export const FRIEND_STORY\s*=/m.test(stories);
@@ -17,6 +22,7 @@ export async function candidateCapabilities(root) {
     separateAccountForms=/^export const ACCOUNT_ENTRY_LAYOUT\s*=\s*['"]separate['"];?$/m.test(dialog);
   } catch(error) { if(error.code!=='ENOENT') throw error; }
   return {
+    trainedComputerPlay,
     alwaysVisibleAccount,
     friendIntroduction,
     separateAccountForms,

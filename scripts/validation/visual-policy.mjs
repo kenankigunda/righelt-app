@@ -1,5 +1,5 @@
 import {viewports} from './model.mjs';
-export const WALKTHROUGH_CHECKPOINTS=['created','reconnected','account-home','sign-in','account-creation','recovery-acknowledgment','account-owned-move','account-settings','move-preview-before-confirm','returning-personal-home','unavailable-trained-story','friend-game-result','friend-rematch-choice'];
+export const WALKTHROUGH_CHECKPOINTS=['created','reconnected','account-home','sign-in','account-creation','recovery-acknowledgment','account-owned-move','account-settings','move-preview-before-confirm','returning-personal-home','unavailable-trained-story','friend-game-result','friend-rematch-choice','computer-ready-story','computer-accepted-play','computer-undo','computer-game-result','computer-rematch-choice','computer-rematch-created'];
 function stringList(value,name){let parsed;try{parsed=JSON.parse(value);}catch{throw Error(`${name} must be a JSON array of strings`);}if(!Array.isArray(parsed)||!parsed.length||parsed.some(x=>typeof x!=='string'||!x.trim())||new Set(parsed).size!==parsed.length)throw Error(`${name} must be a nonempty unique array of strings`);return parsed;}
 export function visualPolicy(env=process.env){const mode=env.RIGHELT_VISUAL_MODE||'legacy';if(!['none','walkthrough','legacy'].includes(mode))throw Error('Unknown visual mode');const visualViewports=env.RIGHELT_VISUAL_VIEWPORTS?stringList(env.RIGHELT_VISUAL_VIEWPORTS,'RIGHELT_VISUAL_VIEWPORTS'):['mobile','mid-wide'];if(visualViewports.some(name=>!viewports.some(v=>v.name===name)))throw Error('Unknown walkthrough visual viewport');return {mode,visualViewports,checkpoints:env.RIGHELT_VISUAL_CHECKPOINTS?stringList(env.RIGHELT_VISUAL_CHECKPOINTS,'RIGHELT_VISUAL_CHECKPOINTS'):WALKTHROUGH_CHECKPOINTS};}
 export function selectedViewports(env=process.env){const {mode}=visualPolicy(env);const names=env.RIGHELT_VALIDATION_VIEWPORTS?stringList(env.RIGHELT_VALIDATION_VIEWPORTS,'RIGHELT_VALIDATION_VIEWPORTS'):viewports.map(v=>v.name);if(names.some(name=>!viewports.some(v=>v.name===name)))throw Error('Unknown validation viewport');return names.map(name=>viewports.find(v=>v.name===name));}
@@ -7,6 +7,12 @@ export function shouldCapture(label,viewport,policy=visualPolicy()){return polic
 export function behaviorLabel(label){return String(label).replaceAll('-',' ');}
 
 const descriptions={
+ 'computer-ready-story':'After verified model preparation, check the usable introduction and enabled Play action. Closing creates no game.',
+ 'computer-accepted-play':'After a real human and trained-computer exchange, check the accepted board and recorded model decision.',
+ 'computer-undo':'After ordinary computer-game undo, check that the human decision and its computer reply are removed from live play and retained in the archive.',
+ 'computer-game-result':'After a real computer decision completes the catalog-backed position, check the authoritative result.',
+ 'computer-rematch-choice':'After choosing a computer rematch, check the swapped side and readiness before confirmation.',
+ 'computer-rematch-created':'After confirming the rematch, check its new game identity, pinned model and seats.',
  created:'After creating a game and choosing both players, check the board and play controls in context.',
  reconnected:'After the viewer reconnects following another move, check the recovered board and connection state.',
  'account-home':'On entry to play, check how the home page introduces the available game choices.',
