@@ -33,3 +33,5 @@ Use [the read-only Cloudflare workflow](CLOUDFLARE_INVESTIGATION.md). The report
 Regression coverage includes HTTP recovery with failed sockets, lost commit replies, stale generations, journal deadlines, response parsing deadlines, page restoration, two tabs, Worker restarts, history, push/retreat/follow, diagnostics, and quiet/reduced-motion presentation. Run installed pinned validation tools with an explicit candidate checkout and keep publication paused. Automated WebKit probes do not replace a physical iPhone acceptance pass.
 
 Merge and deployment activation require separate authorization. After authorized deployment, use a disposable game and inspect acknowledgment latency, queue wait, pending-command age, recovery duration, and repeated connection repairs. Do not resume paused schedules or create monitoring implicitly.
+
+Retreat selection must resolve the selected piece by ID: push participants temporarily share a square, and coordinate-first lookup can mistake the attacker for the defender. Socket status changes must preserve a still-legal defender selection during that overlap.

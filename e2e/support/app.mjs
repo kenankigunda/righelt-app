@@ -258,15 +258,12 @@ export const selectPlayableAction = async (page, action) => {
   const supportsHover = await page.locator('html').getAttribute('data-hover-capability') === 'hover';
   // A single forced follow can already select its destination. Its next tap
   // confirms the move, so do not submit it while trying to select it.
-  if (!await target.evaluate(el => el.classList.contains("target"))) {
-    if (supportsHover) {
-      // A blocked tap can leave the pointer on this square during recovery.
-      // Enter it again so the runtime receives a fresh hover event.
-      await page.mouse.move(0, 0);
-      await target.hover();
-    }
-    else await target.click();
-  }
+  if (supportsHover) {
+    // A blocked tap can leave the pointer on this square during recovery.
+    // Enter it again so the runtime receives a fresh hover event.
+    await page.mouse.move(0, 0);
+    await target.hover();
+  } else if (!await target.evaluate(el => el.classList.contains("target"))) await target.click();
   await expect(target, "The supported pointer interaction must select the legal destination before confirmation").toHaveClass(/(?:^|\s)target(?:\s|$)/, { timeout: 2000 });
   return target;
 };
