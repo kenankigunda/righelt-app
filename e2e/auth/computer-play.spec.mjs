@@ -148,5 +148,9 @@ for (const profile of ['tau', 'horus']) test(`${profile} prepares and plays both
     await expect(popup.getByTestId('game-role')).toContainText('Player 2');
     await expect.poll(async () => (await projected(popup, branched.id)).moves.some(move => move.computerProof?.modelId === 'initial-1554')).toBe(true);
     await info.attach('accepted-profile-decisions', { contentType: 'application/json', body: JSON.stringify({ profile, humanFirst: played.moves, computerFirst: (await projected(popup, branched.id)).moves }) });
+  } catch (error) {
+    await info.attach('branch-computer-failure', { contentType: 'application/json', body: JSON.stringify({ profile, url: popup.url(), status: await popup.locator('[data-computer-status]').allTextContents(), visibility: await popup.evaluate(() => document.visibilityState) }) });
+    await popup.screenshot({ path: info.outputPath('branch-computer-failure.png') });
+    throw error;
   } finally { await popup.close(); }
 });

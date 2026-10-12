@@ -129,7 +129,7 @@ const runAlertLayoutCase = async ({ context, page, zone }) => {
   await branchRequestSeen;
 
   await expect(popup.getByTestId("game-shell")).toBeVisible();
-  await expect(popup.getByTestId("game-role")).toContainText("Player 1");
+  await expect(popup.getByTestId("game-role")).toContainText("both players");
   const pendingSyncNotice = popup.getByText("Latest: History branch pending sync");
   await expect(pendingSyncNotice).toBeVisible();
   await expect(popup).toHaveURL(new RegExp(`#\\/game\\/${gameId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));

@@ -422,6 +422,7 @@ export const runDevWebAuto = async () => {
   startFixtureWriterServer();
 
   try {
+    await import("./build-computer-player.mjs");
     if (withApi) {
       startApiWrangler();
       await waitForLocalApiReady();

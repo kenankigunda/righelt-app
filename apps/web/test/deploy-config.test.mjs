@@ -38,3 +38,10 @@ test("API worker config owns DB and GameRoomDO bindings", () => {
   );
   assert.match(apiWranglerConfig, /\[\[migrations\]\][\s\S]*^new_sqlite_classes = \["GameRoomDO"\]$/m);
 });
+
+test("deployment builds production browser assets before publishing Pages", () => {
+  const source = readFileSync(new URL("../../../.github/workflows/deploy.yml", import.meta.url), "utf8");
+  const build = source.indexOf("run: pnpm build:web-engine");
+  assert.ok(build >= 0);
+  assert.ok(build < source.indexOf("wrangler pages deploy"));
+});

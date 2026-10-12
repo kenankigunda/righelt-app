@@ -1,4 +1,5 @@
 import { applyDecisionNotes } from './decision-notes.js';
+import { createUtilityMemory } from './utility-memory.js';
 import { activeDecisionLineage } from './decision-history.js';
 import { beginScenarioCapture, scenarioCapturePosition, canLoadScenarioInPlace } from './scenario-capture.js';
 import { createComputerPreparation } from './computer-preparation.js';
@@ -81,6 +82,7 @@ import { createTutorialController } from "./tutorial.js";
 mountLoadingFeedback(document);
 void fetch("/deploy-meta.json", { cache: "no-store", signal: AbortSignal.timeout(5000) }).then(response => response.json()).then(meta => { globalThis.__righeltClientBuild = meta.sha ?? meta.commitSha ?? "unavailable"; }).catch(() => {});
 const appEl = document.getElementById("app");
+const utilityMemory = createUtilityMemory({ root: appEl, getScope: key => `${account.snapshot().generation}:${key === 'debug' ? getCurrentViewedGameId() ?? 'home' : 'scenarios'}` });
 const dismissedRecoveryNotices = new Map();
 // This node survives header/panel rendering, including repeated heartbeat snapshots.
 const syncAnnouncement = document.createElement("div");
@@ -1745,12 +1747,13 @@ const renderGameAlertStackCard = ({ gameId, item, stackIndex, totalAlerts }) => 
 };
 
 const renderTurnHistory = (game) => {
-  if (!Array.isArray(game.turns) || game.turns.length === 0) {
+  const turns = Array.isArray(game.turns) ? game.turns : [];
+  if (!game.inHistoryMode && turns.length === 0) {
     return "<li class=\"small\">No turns yet.</li>";
   }
 
   const activeTurnIndex = typeof game.currentTurn?.index === "number" ? game.currentTurn.index : null;
-  const activeTurn = activeTurnIndex !== null ? game.turns.find((turn) => turn.index === activeTurnIndex) : null;
+  const activeTurn = activeTurnIndex !== null ? turns.find((turn) => turn.index === activeTurnIndex) : null;
   const liveState = game.currentSnapshot ?? game.board?.state ?? null;
   const controlSeat = activeTurn ? getControlSeatForTurn(liveState, activeTurn.playerSeat) : null;
   const liveContinuationText =
@@ -1872,7 +1875,7 @@ const renderTurnHistory = (game) => {
           liveContinuationText ? controlSeat : activeTurn.playerSeat,
         )} is-live-selected" aria-disabled="true"><span class="history-move-line">${escapeHtml(liveStatusText)}</span></li>`
       : "";
-  if (!activeTurn) {
+  if (!activeTurn && !game.inHistoryMode) {
     return `${reverseChronologicalPendingRows.join("")}${reverseChronologicalMoveRows.join("")}`;
   }
   if (!game.inHistoryMode && !liveStatusItem && activeTurn.moveIndexes.length > 0) {
@@ -3858,7 +3861,9 @@ const captureScenarioDraftFocus = (baseRouteKey) => {
 
 const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   if (renderGesture.defer({ animatePanels, includeBoard })) return;
+  utilityMemory.capture();
   const result = preserveBoardFocus({ document, getGameId: getCurrentViewedGameId }, () => renderContent({ animatePanels, includeBoard }));
+  utilityMemory.restore();
   inlineProfiles.sync();
   if (pendingResultReviewFocus === currentRoute.gameId && getGamePanel() === "history") {
     const heading = appEl.querySelector('[data-game-panel="history"] h2');
@@ -4403,6 +4408,7 @@ const subscribeToTransport = () => transport.subscribe((change) => {
 subscribeToTransport();
 accountInitialized = true;
 function resetAccountTransport(next) {
+  utilityMemory.clear();
   preparation.cancel();
   computerSession?.suspend(); scenarioCapture = null; scenarioMetadataDrafts.clear(); decisionDebugStates.clear();
   clearAccountContinuation();

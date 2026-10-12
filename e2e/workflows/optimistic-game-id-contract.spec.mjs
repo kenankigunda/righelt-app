@@ -116,7 +116,7 @@ test("optimistic history branch renders the popup shell before the branch respon
     const applyRequestPromise = waitForApplyRequestForGame(popup, gameId);
 
     await expect(popup.getByTestId("game-shell")).toBeVisible();
-    await expect(popup.getByTestId("game-role")).toContainText("Player 1");
+    await expect(popup.getByTestId("game-role")).toContainText("both players");
     await expect(popup.getByText("Latest: History branch pending sync")).toBeVisible();
     await expect(popup).toHaveURL(new RegExp(`#\\/game\\/${gameId.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}$`));
 

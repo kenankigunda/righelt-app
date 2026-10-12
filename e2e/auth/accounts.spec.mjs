@@ -31,7 +31,7 @@ async function register(page, username, { gate = false } = {}) {
   // A failed post-auth read retains the original play choice. Use its explicit
   // recovery once, without registering again or choosing a replacement game.
   if (await retry.isVisible()) {
-    await expect(page.getByRole("alert")).toHaveText("We couldn’t finish loading. Please try again.");
+    await expect(page.getByTestId("account-continuation-error").locator(":scope > p")).toHaveText("We couldn’t finish loading. Please try again.");
     await retry.click();
   }
   // The game URL and Player 1 role are optimistic. Finish the real creation
@@ -416,7 +416,8 @@ test("logout retries a stalled session read while keeping local play blocked", a
     await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
     await entered;
     await expect(page.getByText("Sign-out pending", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+    await expect(page.getByTestId("account-open")).toBeVisible();
+    await expect(page.getByTestId("account-open")).toHaveAttribute("data-authenticated", "false");
     await expect(page.getByTestId("game-board")).toBeVisible();
     // This is the existing ten-second assertion budget, including the bounded
     // attempt and ordinary retry. A stalled read must not suppress recovery.

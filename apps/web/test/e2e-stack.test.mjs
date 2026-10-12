@@ -44,3 +44,11 @@ test("Playwright config boots the shared local stack and captures failure artifa
   assert.match(playwrightConfigSource, /command: "node scripts\/resources\/cli\.mjs run --kind preview -- node scripts\/e2e-stack\.mjs"/);
   assert.match(playwrightConfigSource, /reuseExistingServer: false/);
 });
+
+// Account journeys exercise the production worker, including from clean CI checkouts.
+test("account stack builds the browser runtime before serving the app", () => {
+  const source = readFileSync(path.join(repoRoot, "scripts/e2e-auth-stack.mjs"), "utf8");
+  const build = source.indexOf('await run(["exec", "node", "scripts/build-computer-player.mjs"])');
+  assert.ok(build >= 0);
+  assert.ok(build < source.indexOf('run(["exec", "wrangler", "pages", "dev"'));
+});

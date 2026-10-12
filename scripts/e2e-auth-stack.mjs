@@ -106,6 +106,9 @@ try {
   // Test-only backport of the reviewed worker-identity fix. No request retries.
   proxyDiagnosticsInstallation = installProxyRepair();
   await proxyDiagnosticsInstallation;
+  // A clean checkout has no ignored runtime bundles. Build them before serving
+  // the real app so preparation cannot receive the SPA fallback for a manifest.
+  await run(["exec", "node", "scripts/build-computer-player.mjs"]);
   await mkdir(persist, { recursive: true });
   const apiConfig = path.join(temporary, "api.toml");
   let api = await readFile(path.join(root, "apps/api/wrangler.toml"), "utf8");

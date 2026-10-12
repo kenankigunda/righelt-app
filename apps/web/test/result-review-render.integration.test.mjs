@@ -122,3 +122,14 @@ test("computer seats have distinct human, watch, history and result labels despi
   const history = context.history(game);
   assert.match(history, />Owner</); assert.match(history, />Babs</);
 });
+
+test("retained historical turns keep an exit even after undo removes the live turn", () => {
+  const context = {escapeHtml:String,getControlSeatForTurn:(_state,seat)=>seat,
+    playerToneClassForSide:()=>"",playerToneClassForSeat:()=>"",formatClientDateTime:String,expandedUndoneGroups:new Set()};
+  runInNewContext(`${extract("const renderTurnHistory =", "const renderHeader =")}\n globalThis.history = renderTurnHistory;`, context);
+  for (const turns of [[], [{index:0,playerSeat:"Player 1",moveIndexes:[]}]]) {
+    const game={id:"retained",currentTurn:{index:2,playerSeat:"Player 1"},turns,moves:[],inHistoryMode:true,historyIndex:1};
+    assert.match(context.history(game), /data-testid="history-return-live"/);
+    assert.doesNotMatch(context.history({...game,inHistoryMode:false}), /data-testid="history-return-live"/);
+  }
+});

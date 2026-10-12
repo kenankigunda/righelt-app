@@ -189,3 +189,8 @@ test("web test runner forwards optional reporter settings into node --test", () 
   assert.match(webTestRunnerSource, /args\.push\("--test-reporter", reporter\);/);
   assert.match(webTestRunnerSource, /args\.push\("--test-reporter-destination", reporterDestination\);/);
 });
+
+test("local preview builds computer assets before starting Pages", () => {
+  const source = readFileSync(new URL("../../../scripts/dev-web-auto.mjs", import.meta.url), "utf8");
+  assert.match(source, /await import\("\.\/build-computer-player\.mjs"\);[\s\S]*startPagesWrangler\(\);/);
+});

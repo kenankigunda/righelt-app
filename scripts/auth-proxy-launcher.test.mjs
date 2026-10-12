@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 for (const mode of ["empty", "fault", "incomplete"]) test(`real Playwright reporter override cannot bypass ${mode} journal gate`, { timeout: 20000 }, async () => {
-  const directory = await mkdtemp(path.join(root, ".auth-receipt-test-"));
+  const fixtures = path.join(root, "test-results/auth-launcher-fixtures");
+  await mkdir(fixtures, {recursive:true});
+  const directory = await mkdtemp(path.join(fixtures, "receipt-"));
   try {
     const setup = `import {randomUUID} from 'node:crypto';
 import {createProxyFailureJournal,recordProxyFailure,completeProxyFailureJournal} from ${JSON.stringify(new URL("./auth-proxy-failures.mjs", import.meta.url).href)};
@@ -19,11 +21,14 @@ export default async function() {
 }`;
     await writeFile(path.join(directory, "setup.mjs"), setup);
     await writeFile(path.join(directory, "proof.spec.mjs"), "import {test,expect} from '@playwright/test'; test('browser assertion passes',()=>expect(1).toBe(1));\n");
+    const outerReceipt = path.join(directory, "outer-receipt.json");
+    await writeFile(outerReceipt, "outer suite evidence");
     const config = path.join(directory, "config.mjs");
-    await writeFile(config, "export default {testDir: ".concat(JSON.stringify(directory), ",globalSetup: './setup.mjs', workers:1};\n"));
-    const child = spawn(process.execPath, [path.join(root, "scripts/run-auth-e2e.mjs"), "--config", config, "--reporter=line"], { cwd: root, env: { ...process.env, CI: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+    await writeFile(config, "export default {testDir: ".concat(JSON.stringify(directory), ",outputDir: ".concat(JSON.stringify(path.join(directory, "playwright-output")), ",globalSetup: './setup.mjs', workers:1};\n")));
+    const child = spawn(process.execPath, [path.join(root, "scripts/run-auth-e2e.mjs"), "--config", config, "--reporter=line"], { cwd: root, env: { ...process.env, CI: "1", PLAYWRIGHT_OUTPUT_DIR: directory }, stdio: ["ignore", "pipe", "pipe"] });
     let output = ""; child.stdout.on("data", chunk => { output += chunk; }); child.stderr.on("data", chunk => { output += chunk; });
     const code = await new Promise((resolve, reject) => { child.once("error", reject); child.once("close", resolve); });
+    assert.equal(await readFile(outerReceipt, "utf8"), "outer suite evidence", "nested browser runner removed outer evidence");
     assert.match(output, /1 passed/); assert.equal(code, mode === "empty" ? 0 : 1, output);
     if (mode === "fault") assert.match(output, /1 unresolved transport failure/);
     if (mode === "incomplete") assert.match(output, /accounting is incomplete/);
