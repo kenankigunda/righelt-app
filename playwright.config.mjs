@@ -15,7 +15,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   outputDir,
-  reporter,
+  reporter: [...reporter,...(process.env.RIGHELT_TEST_OBSERVATIONS ? [["./scripts/testing/browser-reporter.mjs"]] : [])],
   timeout: 60_000,
   expect: {
     timeout: 10_000,
@@ -35,7 +35,7 @@ export default defineConfig({
     },
     ...["firefox", "webkit"].map(name => ({
       name,
-      testMatch: /(sync-recovery-(pressure|ux)|browser-move-input|home-create-refresh)\.spec\.mjs/,
+      testMatch: /(sync-recovery-(pressure|ux)|recovery-freeze-regression|browser-move-input|home-create-refresh)\.spec\.mjs/,
       use: { ...devices[name === "firefox" ? "Desktop Firefox" : "Desktop Safari"],
         launchOptions: browserLaunchOptions(name) },
     })),

@@ -2,6 +2,20 @@ export const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player
 
 export const getSideForSeat = (seat) => (seat === "Player 1" ? "P1" : "P2");
 
+// Retreat temporarily hands control to the defender; the attacker still owns the turn.
+export const getTurnOwnerSideForState = (state) => {
+  const continuation = state?.continuation;
+  if (continuation?.type === "push") {
+    if (continuation.attackerOwner === "P1" || continuation.attackerOwner === "P2") {
+      return continuation.attackerOwner;
+    }
+    if (continuation.phase === "retreat") {
+      return state.sideToMove === "P1" ? "P2" : "P1";
+    }
+  }
+  return state.sideToMove;
+};
+
 export const getControlSeatForTurn = (state, turnOwnerSeat) => {
   const continuation = state?.continuation;
   if (!continuation) {

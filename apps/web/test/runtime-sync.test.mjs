@@ -205,3 +205,14 @@ test('frozen capture preserves an inspect-only target across updates without adm
   assert.equal(shouldResetBoardSelection({ ...input, freeSelection: true }), false);
   assert.equal(shouldResetBoardSelection({ ...input, freeSelection: true, nextSnapshot: { ...state, pieces: [] } }), true);
 });
+for (const defenderFirst of [false, true]) {
+  test(`retreat selection survives status updates with overlapping push pieces (${defenderFirst ? "defender" : "attacker"} first)`, () => {
+    const attacker = { id: "A1", position: { row: 4, col: 2 } };
+    const defender = { id: "D1", position: { row: 4, col: 2 } };
+    const snapshot = { sideToMove: "P2", turnIndex: 0, continuation: { type: "push", phase: "retreat", pushedPieceId: "D1" }, pieces: defenderFirst ? [defender, attacker] : [attacker, defender] };
+    const selection = { selectedPieceId: "D1", source: { row: 4, col: 2 }, target: { row: 3, col: 2 } };
+    const actions = [{ type: "retreat", actorId: "D1", from: selection.source, to: selection.target }];
+    assert.equal(shouldResetBoardSelection({ currentSnapshot: snapshot, nextSnapshot: snapshot, currentSelection: selection, nextLegalActions: actions }), false);
+    assert.equal(shouldResetBoardSelection({ currentSnapshot: snapshot, nextSnapshot: snapshot, currentSelection: { ...selection, target: null }, nextLegalActions: actions }), false);
+  });
+}

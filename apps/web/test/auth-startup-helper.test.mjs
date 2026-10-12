@@ -25,7 +25,7 @@ test('startup wait cannot combine observations from connecting and retry renders
       const current = phase;
       const document = {
         querySelector: selector => selector === '.shell-header' || current === 'retry' ? {} : null,
-        querySelectorAll: () => current === 'connecting' ? [{ textContent: 'Connecting…' }] : [],
+        querySelectorAll: () => current === 'connecting' ? [{ textContent: 'Connecting' }] : [],
       };
       const value = vm.runInNewContext(`(${callback.toString()})()`, { document });
       if (current === 'retry') observedRetry('pending');

@@ -1,3 +1,4 @@
+import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import {test,expect} from '@playwright/test';
 import {continueFriendIntroduction,openPlaySignIn} from './helpers.mjs';
 import {AUTH_REQUEST_HEADER,AUTH_PROTOCOL_HEADER,AUTH_PROTOCOL_VERSION,SESSION_CONTEXT_HEADER} from '../../packages/shared-types/src/auth-policy.js';
@@ -22,7 +23,7 @@ async function prepareAutosaveAccount(page,baseURL,username){
  expect(browserSession.status).toBe(200);expect(browserSession.body.account.id).toBe(session.account.id);
  expect(browserSession.body.account.username).toBe(username);expect(browserSession.body.contextId).toBe(session.contextId);
 }
-test.beforeEach(async()=>{await fetch('http://127.0.0.1:10088/reset-limits',{method:'POST'});});
+test.beforeEach(async()=>{await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`,{method:'POST'});});
 test('display name autosaves inline, retries failures and preserves preferences',async({page,baseURL},testInfo)=>{
  await prepareAutosaveAccount(page,baseURL,`Auto_${Date.now().toString(36)}`);
  await page.getByRole('button',{name:'Account',exact:true}).click();

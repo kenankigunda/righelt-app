@@ -37,7 +37,7 @@ test("inline profiles retain one expanded player and discard stale responses", a
  const second=profiles.open("Bob",b.button);
  assert.equal(a.slot.innerHTML,'');assert.equal(b.button['aria-expanded'],'true');
  calls[0]({ok:true,json:async()=>({joinedMonth:"2026-01"})});await first;
- assert.match(b.slot.innerHTML,/Loading/);
+ assert.match(b.slot.innerHTML,/data-loading-state="pending"/);
  calls[1]({ok:true,json:async()=>({joinedMonth:"2026-02"})});await second;
  assert.match(b.slot.innerHTML,/Joined February 2026/);
  profiles.sync();assert.match(b.slot.innerHTML,/Joined February 2026/);

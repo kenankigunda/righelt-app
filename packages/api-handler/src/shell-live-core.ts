@@ -6,7 +6,7 @@ import { listLegalActions, validateAction } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import { createInitialState } from "../../game-engine/src/state";
 import { MAX_HISTORY } from "../../shared-types/src/history";
-import { finalizeResolvedTurn } from "../../shared-types/src/shell-live-turn.js";
+import { finalizeResolvedTurn, getTurnOwnerSideForState } from "../../shared-types/src/shell-live-turn.js";
 import { isUuidV4 } from "../../shared-types/src/validation";
 import type { Action, GameState } from "../../game-engine/src/types";
 
@@ -376,7 +376,7 @@ export const createInitialGame = ({
         index: initial.turnIndex ?? 0,
         startedAt: createdAt,
         endedAt: null,
-        playerSeat: getSeatForSide(initial.continuation?.owner ?? initial.sideToMove),
+        playerSeat: getSeatForSide(getTurnOwnerSideForState(initial)),
         status: "active",
         moveIndexes: [],
         lastMoveAt: null,
@@ -468,8 +468,16 @@ export const exportScenarioFromGame = (
   };
 };
 
+const resolveImportedState = (state: GameState) => {
+  const imported = clone(state);
+  if (imported.continuation?.type === "push" && !imported.continuation.attackerOwner) {
+    imported.continuation.attackerOwner = getTurnOwnerSideForState(imported);
+  }
+  return resolveToStability(imported, { artifactMode: "full" });
+};
+
 export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) => {
-  const initial = resolveToStability(clone(scenario.initialState), { artifactMode: "full" });
+  const initial = resolveImportedState(scenario.initialState);
   game.board.state = initial;
   game.moves = [];
   game.turns = [
@@ -477,7 +485,7 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
       index: initial.turnIndex ?? 0,
       startedAt: game.createdAt,
       endedAt: null,
-      playerSeat: getSeatForSide(initial.continuation?.owner ?? initial.sideToMove),
+      playerSeat: getSeatForSide(getTurnOwnerSideForState(initial)),
       status: "active",
       moveIndexes: [],
       lastMoveAt: null,
@@ -512,7 +520,7 @@ export const applyScenarioToGame = (game: LiveGame, scenario: ScenarioRecord) =>
 };
 
 export const reconcileGameToScenarioResultingState = (game: LiveGame, scenario: ScenarioRecord) => {
-  const reconciled = resolveToStability(clone(scenario.resultingState), { artifactMode: "full" });
+  const reconciled = resolveImportedState(scenario.resultingState);
   reconciled.sideToMove = scenario.resultingState.sideToMove;
   reconciled.turnIndex = scenario.resultingState.turnIndex;
   game.board.state = reconciled;
@@ -525,7 +533,7 @@ export const reconcileGameToScenarioResultingState = (game: LiveGame, scenario: 
       index: targetTurnIndex,
       startedAt: game.createdAt,
       endedAt: null,
-      playerSeat: getSeatForSide(reconciled.continuation?.owner ?? reconciled.sideToMove),
+      playerSeat: getSeatForSide(getTurnOwnerSideForState(reconciled)),
       status: "active",
       moveIndexes: [],
       lastMoveAt: null,
@@ -540,7 +548,7 @@ export const reconcileGameToScenarioResultingState = (game: LiveGame, scenario: 
       turn.endedAt = turn.lastMoveAt ?? turn.endedAt ?? game.createdAt;
       continue;
     }
-    turn.playerSeat = getSeatForSide(reconciled.continuation?.owner ?? reconciled.sideToMove);
+    turn.playerSeat = getSeatForSide(getTurnOwnerSideForState(reconciled));
     turn.status = "active";
     turn.endedAt = null;
     turn.lastMoveAt = turn.moveIndexes.length > 0 ? game.moves[turn.moveIndexes[turn.moveIndexes.length - 1]]?.at ?? null : null;
@@ -1096,7 +1104,7 @@ const rebuildTurnsFromActiveMoves = (game: LiveGame, referenceState: GameState) 
       index: move.turnIndex,
       startedAt: move.at,
       endedAt: null,
-      playerSeat: getSeatForSide(move.selectionSnapshot.continuation?.owner ?? move.actorSide),
+      playerSeat: getSeatForSide(getTurnOwnerSideForState(move.selectionSnapshot)),
       status: "complete",
       moveIndexes: [],
       lastMoveAt: null,
@@ -1110,12 +1118,12 @@ const rebuildTurnsFromActiveMoves = (game: LiveGame, referenceState: GameState) 
     index: activeTurnIndex,
     startedAt: now(),
     endedAt: null,
-    playerSeat: getSeatForSide(referenceState.continuation?.owner ?? referenceState.sideToMove),
+    playerSeat: getSeatForSide(getTurnOwnerSideForState(referenceState)),
     status: "active",
     moveIndexes: [],
     lastMoveAt: null,
   };
-  activeTurn.playerSeat = getSeatForSide(referenceState.continuation?.owner ?? referenceState.sideToMove);
+  activeTurn.playerSeat = getSeatForSide(getTurnOwnerSideForState(referenceState));
   activeTurn.status = "active";
   activeTurn.endedAt = null;
   turnsByIndex.set(activeTurnIndex, activeTurn);

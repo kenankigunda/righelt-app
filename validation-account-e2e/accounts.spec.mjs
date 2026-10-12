@@ -96,7 +96,10 @@ async function openSignedOutAccount(page){
   if(!capabilities.playAccountEntry){
     await page.getByRole('button',{name:'Sign in',exact:true}).click();
   }else{
-    await expect(page.getByTestId('account-open')).toHaveCount(0);
+    if(capabilities.alwaysVisibleAccount){
+      await expect(page.getByTestId('account-open')).toBeVisible();
+      await expect(page.getByTestId('account-open')).toHaveAttribute('data-authenticated','false');
+    }else await expect(page.getByTestId('account-open')).toHaveCount(0);
     if(new URL(page.url()).hash.startsWith('#/game/')){
       // A board click opens only account access, without a game or move intent.
       await page.getByTestId('game-board').locator('.cell').first().click();
@@ -261,7 +264,10 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
   await fits(page,dialog(page));await proof(page,info,'account-settings',dialog(page));
   await dialog(page).getByRole('button',{name:'Sign out',exact:true}).click();
   if(capabilities.playAccountEntry){
-    await expect(page.getByTestId('account-open')).toHaveCount(0);
+    if(capabilities.alwaysVisibleAccount){
+      await expect(page.getByTestId('account-open')).toBeVisible();
+      await expect(page.getByTestId('account-open')).toHaveAttribute('data-authenticated','false');
+    }else await expect(page.getByTestId('account-open')).toHaveCount(0);
     await expect.poll(async()=>(await session(page)).authenticated).toBe(false);
   }else await expect(page.getByRole('button',{name:'Sign in',exact:true})).toBeVisible();
   await expect(page.getByTestId('game-board')).toBeVisible();

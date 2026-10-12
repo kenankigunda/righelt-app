@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { issueDiagnostics } from "../shell/issue-diagnostics.js";
 import { createAccountDialog, canonicalEntryUsername, validEntryUsername } from "../shell/account-dialog.js";
 
 // Production handlers at a DOM boundary; native autofill/focus/validity are E2E.
@@ -8,7 +9,7 @@ function fixture({ failBlocklist = false } = {}) {
   let tick = 0, generation = 0, markup = "";
   const document = { documentElement:{style:{},dataset:{}},defaultView:{scrollX:0,scrollY:0,scrollTo(){}}, body: { append() {} }, activeElement: null, querySelector() { return null; } };
   function node(key) {
-    if (!nodes.has(key)) nodes.set(key, { value: "", type: "text", hidden: false, disabled: false, dataset: {}, parentElement: { dataset: {} }, textContent: "", setAttribute(name, value) { this[name] = value; }, focus() { document.activeElement = this; }, closest() { return null; }, querySelectorAll() { return []; } });
+    if (!nodes.has(key)) nodes.set(key, { value: "", type: "text", hidden: false, disabled: false, dataset: {}, parentElement: { dataset: {} }, textContent: "", setAttribute(name, value) { this[name] = value; }, removeAttribute(name) { delete this[name]; }, focus() { document.activeElement = this; }, closest() { return null; }, querySelectorAll() { return []; } });
     return nodes.get(key);
   }
   const query = key => key === "input" ? [...nodes.values()].find(value => value.name) : nodes.get(key) || null;
@@ -275,4 +276,19 @@ test("a held control keeps current validation and flushes lookup plus checklist 
   for (const [id, { fn, ms }] of [...f.timers]) if (ms === 0) { f.timers.delete(id); fn(); }
   assert.equal(f.node("[data-username-status]").dataset.state, "available");
   assert.equal(f.node('[data-requirement="notCommon"]').dataset.state, "unmet");
+});
+
+ test("unavailable username checks retain safe diagnostic evidence and rate-limit guidance", async () => {
+  issueDiagnostics.clear();
+  const f = fixture(); await f.click("data-create"); f.input("username", "PrivateName482"); f.debounce();
+  f.lookups[0].reject(Object.assign(new Error("offline"), { code: "temporarily_unavailable", diagnosticEvidence: { requestId: "lookup-request", status: 503, username: "PrivateName482" } })); await f.flush();
+  const report = issueDiagnostics.list().find(r => r.key === "account:username_lookup");
+  assert.equal(report.initial.requestId, "lookup-request"); assert.equal(report.initial.operation, "username_lookup");
+  assert.doesNotMatch(issueDiagnostics.text(report.id), /PrivateName482/);
+  f.input("username", "OtherPrivateName"); f.debounce();
+  f.lookups[1].reject(Object.assign(new Error("rate limited"), { code: "rate_limited" })); await f.flush();
+  assert.equal(f.node("[data-username-status]").textContent, "Too many attempts. Please wait before trying again.");
+  assert.ok(issueDiagnostics.get(report.id).resolvedAt);
+  assert.equal(issueDiagnostics.list().length, 1);
+  issueDiagnostics.clear();
 });

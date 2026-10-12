@@ -2,6 +2,8 @@ import { COMPUTER_LIMITS, COMPUTER_TIMING, COMPUTER_PROFILES, getComputerModel }
 import { deterministicStateHash } from '../generated/packages/game-engine/src/hash.js';
 import { fetchVerifiedAsset, sha256 } from './verified-assets.js';
 
+export const TRAINED_COMPUTER_PLAY = 'enabled';
+
 const CACHE_PREFIX = 'righelt-computer-model-';
 export async function loadComputerModel(model, { signal, onProgress, cacheStorage = globalThis.caches, fetchImpl = globalThis.fetch } = {}) {
   let cache;

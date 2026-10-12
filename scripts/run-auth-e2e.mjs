@@ -7,7 +7,9 @@ import { checkProxyFailureJournal } from "./auth-proxy-failures.mjs";
 
 const runId = randomUUID();
 const directory = path.resolve("test-results/auth-stack-diagnostics", runId);
-const child = spawn(process.execPath, [createRequire(import.meta.url).resolve("@playwright/test/cli"), "test", "--config", "playwright.auth.config.mjs", ...process.argv.slice(2)], {
+const args = process.argv.slice(2);
+const config = args.some(arg => arg === "--config" || arg.startsWith("--config=")) ? [] : ["--config", "playwright.auth.config.mjs"];
+const child = spawn(process.execPath, [createRequire(import.meta.url).resolve("@playwright/test/cli"), "test", ...config, ...args], {
   stdio: "inherit", env: { ...process.env, RIGHELT_AUTH_FAILURE_DIRECTORY: directory, RIGHELT_AUTH_FAILURE_RUN_ID: runId },
 });
 let interrupted = false;

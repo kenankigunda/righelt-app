@@ -1,6 +1,8 @@
+import { waitForOverlayEntry } from "./overlay-motion.mjs";
 import { expect } from "@playwright/test";
 
 export async function expectRematchRadioGeometry(dialog) {
+  await waitForOverlayEntry(dialog);
   const radios = dialog.getByRole("radio");
   await expect(radios).toHaveCount(2);
   for (const radio of await radios.all()) {

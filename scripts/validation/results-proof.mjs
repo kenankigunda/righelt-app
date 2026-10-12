@@ -64,6 +64,13 @@ export async function proveResultsRematch({ page, info, root }) {
   await expect(rematch.getByRole('combobox', { name: 'Opponent', exact: true })).toHaveValue('friend');
   await expect(rematch.getByRole('radio', { name: 'Player 1 · Red', exact: true })).toBeChecked();
   await expect(rematch.getByRole('radio')).toHaveCount(2);
+  // Measure controls after deliberate source-scale entry, not an intermediate frame.
+  // Do not suppress animation or wait for unrelated perpetual decorative motion.
+  await rematch.evaluate(async element=>{
+    await Promise.all(element.getAnimations().filter(animation=>
+      animation.effect?.getKeyframes().some(frame=>typeof frame.transform==='string'&&frame.transform.includes('scale('))
+    ).map(animation=>animation.finished.catch(()=>{})));
+  });
   for(const side of await rematch.getByRole('radio').all()){
     const box=await side.boundingBox();
     expect(box.width).toBeGreaterThanOrEqual(16);expect(box.width).toBeLessThanOrEqual(24);

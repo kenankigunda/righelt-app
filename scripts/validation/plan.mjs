@@ -1,7 +1,7 @@
 import path from 'node:path';
 import {readJSON} from './io.mjs';
 
-export const CHECKS = ['Typecheck','Generated runtime','Unit','Integration','E2E','Auth E2E','Responsive proof','Account responsive proof','Report viewer'];
+export const CHECKS = ['Typecheck','Generated runtime','Unit','Integration','E2E','Auth E2E','Responsive proof','Account responsive proof','Report viewer','Browser integration','Tooling','Performance'];
 export function validatePlan(spec) {
   if (spec.version !== 2) throw Error('Bounded validation requires manifest version 2');
   if (!Array.isArray(spec.questions) || !spec.questions.length) throw Error('Map release questions before validation');

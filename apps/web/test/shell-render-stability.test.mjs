@@ -114,7 +114,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const SHELL_VIEWPORT_GUTTER_PX = 16;/);
   assert.match(source, /const totalHorizontalGutter = SHELL_VIEWPORT_GUTTER_PX \* 2;/);
   assert.match(source, /return Math\.max\(0, viewportWidth - totalHorizontalGutter\);/);
-  assert.match(source, /return Math\.max\(0, viewportWidth - \(getWideFlyoutWidth\(viewportWidth\) \* openFlyoutCount\) - totalHorizontalGutter\);/);
+  assert.match(source, /return remaining >= SHELL_WIDE_SCREEN_MIN_WIDTH \? remaining : Math\.max\(0, viewportWidth - totalHorizontalGutter\);/);
   assert.match(source, /const getShellLayoutModeForRoute = \(route = currentRoute, viewportWidth = window\.innerWidth\) =>/);
   assert.match(source, /getAvailableShellContentWidth\(viewportWidth, route\) >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"/);
   assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) => getShellLayoutModeForRoute\(currentRoute, viewportWidth\);/);
@@ -203,7 +203,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /homeSectionResizeFrame = window\.requestAnimationFrame\(\(\) => \{/);
   assert.match(source, /const didUpdate = await syncResponsiveHomeSectionPageSizes\(\);/);
   assert.match(source, /render\(\{ animatePanels: false, includeBoard: false \}\);/);
-  assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
+  assert.match(source, /window\.addEventListener\("resize", \(\) => \{[\s\S]*?normalizeRouteFlyoutState\(currentRoute,[\s\S]*?scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
   assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
   assert.match(source, /syncFlyoutRenderOrder\(currentRoute\);/);
   assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, nextRoute\)\) \{[\s\S]*render\(\);\s*return;\s*\}/s);
@@ -284,8 +284,8 @@ test("history renderer emits move-only rows without visible turn wrappers", () =
   assert.match(source, /data-testid="history-pending-move-item"/);
   assert.match(source, /aria-busy="true"/);
   assert.match(source, /Pending<\/span>/);
-  assert.match(source, /const liveContinuationText =[\s\S]*Live: Waiting for \$\{controlSeat \|\| "next player"\} to continue\.\.\./s);
-  assert.match(source, /const liveWaitingText =[\s\S]*Live: Waiting on \$\{activeTurn\.playerSeat \|\| "next player"\} to move\.\.\./s);
+  assert.match(source, /const liveContinuationText =[\s\S]*Live: Waiting for \$\{controlSeat \|\| "next player"\} to continue/s);
+  assert.match(source, /const liveWaitingText =[\s\S]*Live: Waiting on \$\{activeTurn\.playerSeat \|\| "next player"\} to move/s);
   assert.match(source, /const liveStatusText = liveContinuationText \?\? liveWaitingText;/);
   assert.match(source, /class="history-item history-item-waiting history-empty-line/);
   assert.match(source, /return `\$\{reverseChronologicalPendingRows\.join\(""\)\}\$\{reverseChronologicalMoveRows\.join\(""\)\}`;/);
@@ -358,7 +358,7 @@ test("history branch launch keeps the source tab stable while opening a new tab"
   assert.match(source, /const handle = transport\.launchHistoryBranch\(/);
   assert.match(source, /window\.open\(`\$\{window\.location\.pathname\}\$\{window\.location\.search\}\$\{nextHash\}`,\s*["']_blank["'],\s*["']noopener["']\);/);
   assert.match(source, /const initialSelectionHydration = resolveInitialSelectionHydration\(/);
-  assert.match(source, /const hydratedSelectionAction = scenarioSelectionHydration\.selectionAction \?\? initialSelectionHydration\.selectionAction;/);
+  assert.match(source, /const hydratedSelectionAction = frozenCapture \? null : scenarioSelectionHydration\.selectionAction \?\? initialSelectionHydration\.selectionAction;/);
   assert.match(source, /selectionAction: hydratedSelectionAction,/);
 });
 

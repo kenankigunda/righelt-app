@@ -127,7 +127,7 @@ test('E01 lost committed response and socket receipt converge automatically',asy
   await converged(p.pages);
   p.faults[0].receive=true;p.faults[0].loseReply=true;
   await move(p.pages[0],p.gameId);
-  await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Checking your move');
+  await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Recording your move');
   p.faults[0].receive=false;p.faults[0].loseReply=false;const start=Date.now();
   await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,'lost-response',start,p.faults);
   const ids=p.faults[0].commands.map(c=>c.clientCommandId);expect(new Set(ids).size).toBe(1);
@@ -140,11 +140,11 @@ test('E02 silent online receive loss triggers watchdog and survives interrupted 
   expect(await p.pages[1].evaluate(()=>navigator.onLine)).toBe(true);
   await p.pages[1].evaluate(()=>{
    window.recoveryDetectedAt=null;
-   const observer=new MutationObserver(()=>{if(document.querySelector('[data-testid="sync-recovery-banner"]')?.textContent.includes('Reconnecting')){window.recoveryDetectedAt=Date.now();observer.disconnect();}});
+   const observer=new MutationObserver(()=>{if(document.querySelector('[data-testid="sync-recovery-banner"]')?.textContent.includes('Please reconnect')){window.recoveryDetectedAt=Date.now();observer.disconnect();}});
    observer.observe(document.body,{subtree:true,childList:true,characterData:true});
   });
   await move(p.pages[0],p.gameId);
-  await expect(p.pages[1].getByTestId('sync-recovery-banner')).toContainText('Reconnecting',{timeout:17000});
+  await expect(p.pages[1].getByTestId('sync-recovery-banner')).toContainText('We couldn’t record your move. Please reconnect.',{timeout:17000});
   const detectedAt=await p.pages[1].evaluate(()=>window.recoveryDetectedAt);
   expect(Number.isFinite(detectedAt)).toBe(true);expect(detectedAt).toBeGreaterThan(0);
   const detectionMs=detectedAt-p.faults[1].lastInbound;expect(detectionMs).toBeGreaterThanOrEqual(0);expect(detectionMs).toBeLessThanOrEqual(16000);
@@ -160,7 +160,7 @@ test('E04 reload unresolved journal then visibility resume preserves original ID
  const p=await party(browser,baseURL);try{
   p.faults[0].receive=true;p.faults[0].loseReply=true;
   await move(p.pages[0],p.gameId);
-  await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Checking');
+  await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Recording your move');
   const id=p.faults[0].commands[0].clientCommandId;
   expect(await p.pages[0].evaluate(()=>new Promise((resolve,reject)=>{const request=indexedDB.open('righelt.online-commands.v2');request.onsuccess=()=>{const db=request.result;const tx=db.transaction('commands');const read=tx.objectStore('commands').getAll();read.onsuccess=()=>resolve(read.result.length);};request.onerror=()=>reject(request.error);}))).toBe(1);
   if(info.project.name==='chromium'){
@@ -202,7 +202,7 @@ for(const phase of ['before','after'])test(`E03 actual Worker restart ${phase} c
   p.faults[0].holdApply=phase==='before';
   p.faults[0].receive=true;p.faults[0].loseReply=true;
   await move(p.pages[0],p.gameId);
-  await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Checking');
+  await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Recording your move');
   const response=await request.post(`http://127.0.0.1:${Number(new URL(baseURL).port)+100}/restart`);expect(response.ok()).toBe(true);
   p.faults[0].receive=false;p.faults[0].loseReply=false;p.faults[0].holdApply=false;const start=Date.now();
   await converged(p.pages);expect((await digest(p.pages[0])).history).toHaveLength(1);await evidence(info,`worker-restart-${phase}-commit`,start,p.faults);
@@ -325,7 +325,7 @@ test('I10 browser reconnect transfers one current snapshot after205 moves and30 
 test('E05 home reload recovers unopened journal games and retains pending card',async({browser,baseURL},info)=>{
  test.skip(info.project.name!=='chromium');const p=await party(browser,baseURL);try{
   p.faults[0].receive=true;p.faults[0].loseReply=true;await move(p.pages[0],p.gameId);
-  await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Checking');
+  await expect(p.pages[0].getByTestId('sync-recovery-banner')).toContainText('Recording your move');
   await p.pages[0].goto(baseURL);
   await expect(p.pages[0].locator(`[data-game-id="${p.gameId}"]`).first()).toContainText(/Recovering/i);
   p.faults[0].receive=false;p.faults[0].loseReply=false;const start=Date.now();

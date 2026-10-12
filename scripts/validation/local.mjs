@@ -65,6 +65,7 @@ export async function localRun({cwd=process.cwd(),dir,base='origin/main',full=fa
   if(capabilities.accounts&&!authChecks.length)throw Error('Account UI requires its candidate Auth E2E script');
   const accountChecks=capabilities.accounts?[['Account responsive proof',['node',path.join(harnessRoot,'node_modules/@playwright/test/cli.js'),'test','--config',path.join(harnessRoot,'playwright.validation-account.config.mjs')]]]:[];
   let checks=[['Typecheck',['pnpm','typecheck']],['Generated runtime',['pnpm','check:web-engine-generated']],['Unit',['pnpm','test:unit']],['Integration',['pnpm','test:integration']],['E2E',['pnpm','test:e2e',...(full?[]:selection.files)]],...authChecks,['Responsive proof',['node',path.join(harnessRoot,'node_modules/@playwright/test/cli.js'),'test','--config',path.join(harnessRoot,'playwright.validation.config.mjs')]],...accountChecks,['Report viewer',['node',path.join(harnessRoot,'scripts/validation/test/report-browser.mjs')]]];
+  for(const [name,script] of [['Browser integration','test:browser:integration'],['Tooling','test:tooling'],['Performance','test:performance']])if(candidateScripts[script])checks.push([name,['pnpm',script]]);
   if(policy){
    checks=checks.filter(([name])=>policy.selected.includes(name));
    if(policy.tests?.length)checks.splice(2,0,['Boundary E2E',['pnpm','test:e2e',...policy.tests,'--project=chromium']]);

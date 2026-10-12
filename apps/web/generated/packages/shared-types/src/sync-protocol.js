@@ -1,7 +1,7 @@
 /** Shared online command contract. Unknown is never a terminal outcome. */
 export const SYNC_PROTOCOL_VERSION = 2;
 export const SYNC_LIMITS = Object.freeze({ commandsPerRequest: 16, outstandingPerGame: 16, outstandingPerIdentity: 128, commandIdCharacters: 128, envelopeBytes: 64 * 1024, bodyBytes: 1024 * 1024 });
-export const SYNC_TIMING = Object.freeze({ requestTimeoutMs: 5_000, confirmationBudgetMs: 15_000, heartbeatIntervalMs: 5_000, inboundTimeoutMs: 15_000, retryDelaysMs: Object.freeze([500, 1_000, 2_000, 4_000, 5_000]), retryJitter: 0.2 });
+export const SYNC_TIMING = Object.freeze({ requestTimeoutMs: 5_000, recoveryPassMs: 10_000, reconnectAlertMs: 4_000, confirmationBudgetMs: 15_000, heartbeatIntervalMs: 5_000, inboundTimeoutMs: 15_000, retryDelaysMs: Object.freeze([500, 1_000, 2_000, 4_000, 5_000]), retryJitter: 0.2 });
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 export const isSyncRevision = (value) => Number.isSafeInteger(value) && Number(value) >= 0;
 const nonempty = (value) => typeof value === "string" && value.trim().length > 0;

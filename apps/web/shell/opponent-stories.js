@@ -21,12 +21,17 @@ export const shouldShowOpponentIntroduction = (opponent, introduced, readiness) 
 
 export const createOpponentStoryDialog = ({ createModal, document = globalThis.document, getReadiness, onPlay, onRetry = () => {}, onViewResult = () => {}, onPresentation = () => () => {}, onClose = () => {} }) => {
   let opponent, side, carousel, mode, gameId, busy = false, session = 0, destroyPresentation = () => {};
-  const modal = createModal({ document, labelId: "opponent-story-title", onClose: reason => { session++; busy = false; destroyPresentation(); destroyPresentation = () => {}; carousel?.destroy(); carousel = null; onClose(reason); } });
+  const modal = createModal({ document, labelId: "opponent-story-title", className: "opponent-story-modal", onClose: reason => { session++; busy = false; destroyPresentation(); destroyPresentation = () => {}; carousel?.destroy(); carousel = null; onClose(reason); } });
   const refresh = () => {
     if (!modal.element.open) return;
     const readiness = getReadiness(opponent);
     const play = modal.element.querySelector("[data-story-play]");
-    if (play) play.disabled = busy || readiness.state !== "ready";
+    if (play) { play.disabled = busy || readiness.state !== "ready"; play.dataset.loadingState = busy ? "pending" : "idle"; play.setAttribute("aria-busy",String(busy)); }
+    const status = modal.element.querySelector("[data-story-readiness]");
+    status.dataset.loadingKey = `opponent-preparation:${session}`;
+    status.dataset.loadingContext = 'external';
+    status.dataset.loadingMessage = "Preparing your opponent is taking a little longer than usual.";
+    status.dataset.loadingState = readiness.state === "preparing" ? "pending" : "idle";
     modal.element.querySelector("[data-story-readiness]").textContent = readiness.message || (readiness.state === "ready" ? "Ready to play" : "Preparing opponent…");
     const retry = modal.element.querySelector("[data-story-retry]");
     if (retry) retry.hidden = readiness.state !== "error";
@@ -94,6 +99,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
     destroy() { document.removeEventListener("visibilitychange", onVisibility); modal.destroy(); },
     isOpen: () => modal.element.open,
     gameId: () => gameId,
+    opponent: () => mode === "intro" ? opponent : null,
     refresh,
     setMatchStatus(text, finished = false) { if (!modal.element.open || mode !== "revisit") return; modal.element.querySelector("[data-story-readiness]").textContent = text; const result = modal.element.querySelector("[data-story-result]"); if (result) result.hidden = !finished; },
     open(id, options = {}) {

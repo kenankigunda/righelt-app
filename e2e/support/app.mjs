@@ -66,6 +66,9 @@ export const continueFriendIntroduction = async (page, {friendIntroduction = fal
 export const createGameFromHome = async (page, capabilities = {friendIntroduction:true}) => {
   await page.goto("/");
   await expect(page.getByTestId("home-create-game")).toBeVisible();
+  // This general-suite fixture starts after guest startup succeeds. A cold
+  // bootstrap can fail and retry while the shell already displays its cards.
+  await waitForLegacyIdentity(page);
   const createResponsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return response.request().method() === "POST" && url.pathname === "/api/shell/games";
@@ -251,10 +254,19 @@ const getFirstPlayableAction = async (page) =>
 export const selectPlayableAction = async (page, action) => {
   const cell = position => page.locator(`[data-testid="game-board"] .cell[data-row="${position.row}"][data-col="${position.col}"]`);
   const target = cell(action.to);
-  await cell(action.from).click();
+  const source = cell(action.from);
+  // Continuations select their required actor automatically. Clicking it again
+  // cycles the overlay away from action previews instead of selecting a move.
+  if (!await source.evaluate(el => el.classList.contains("source"))) await source.click();
   const supportsHover = await page.locator('html').getAttribute('data-hover-capability') === 'hover';
-  if (supportsHover) await target.hover();
-  else await target.click();
+  // A single forced follow can already select its destination. Its next tap
+  // confirms the move, so do not submit it while trying to select it.
+  if (supportsHover) {
+    // A blocked tap can leave the pointer on this square during recovery.
+    // Enter it again so the runtime receives a fresh hover event.
+    await page.mouse.move(0, 0);
+    await target.hover();
+  } else if (!await target.evaluate(el => el.classList.contains("target"))) await target.click();
   await expect(target, "The supported pointer interaction must select the legal destination before confirmation").toHaveClass(/(?:^|\s)target(?:\s|$)/, { timeout: 2000 });
   return target;
 };
@@ -328,7 +340,7 @@ export const launchHistoryBranchFromMove = async (page, moveIndex = 0) => {
     return response.request().method() === "POST" && url.pathname === "/api/shell/history/branch";
   });
   const popupPromise = page.waitForEvent("popup");
-  await page.locator('[data-action="launch-history-branch"]').click();
+  await historyMoveItems(page).nth(moveIndex).locator('[data-action="launch-history-branch"]').click();
   await page.getByRole('dialog', { name: 'Create a new game here' }).getByRole('button', { name: 'Start game' }).click();
   const [popup, branchResponse] = await Promise.all([popupPromise, branchResponsePromise]);
   await popup.waitForLoadState("domcontentloaded");
@@ -343,7 +355,7 @@ export const launchHistoryBranchFromMove = async (page, moveIndex = 0) => {
 export const openPendingHistoryBranchFromMove = async (page, moveIndex = 0) => {
   await openHistoryMode(page, moveIndex);
   const popupPromise = page.waitForEvent("popup");
-  await page.locator('[data-action="launch-history-branch"]').click();
+  await historyMoveItems(page).nth(moveIndex).locator('[data-action="launch-history-branch"]').click();
   await page.getByRole('dialog', { name: 'Create a new game here' }).getByRole('button', { name: 'Start game' }).click();
   const popup = await popupPromise;
   await popup.waitForLoadState("domcontentloaded");

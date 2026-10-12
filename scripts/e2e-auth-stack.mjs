@@ -1,3 +1,5 @@
+import { recordUnexpectedExit } from './testing/stack-status.mjs';
+import { cliPath } from './resources/supervisor.mjs';
 // Isolated local account stack. No remote resources or production auth flags are changed.
 import { localHttpsEnvironment } from "./local-https.mjs";
 import { spawnAuthStackCommand, stopAuthStackCommand } from "./auth-stack-process.mjs";
@@ -45,7 +47,7 @@ function run(args, { cwd = root, service = null, captureStderr = false } = {}) {
     serviceReceipts.push(observeAuthService(child, { service, logDirectory,
       requireProxyReceiptLogs: true, failureDirectory, failureRunId,
       outputFile: path.join(diagnostics, `${service}.json`), isStopping: () => stopping,
-      onUnexpectedExit: code => { void shutdown(code); },
+      onUnexpectedExit: code => { recordUnexpectedExit(service, code, null); void shutdown(code); },
       onDiagnosticError: () => { diagnosticsFailed = true; console.error("[auth-e2e] Could not record service exit diagnostics"); },
     }));
     return child;
@@ -138,7 +140,7 @@ try {
   await writeFile(fixtureFile,seedSql);
   await run([...d1,"execute","DB","--config",apiConfig,"--local","--persist-to",persist,"--file",fixtureFile]);
   run(["exec", "wrangler", "dev", ...configs.flatMap(file => ["--config", file]), "--local", "--port", apiPort,
-    "--inspector-port", "9997", "--persist-to", persist], { service: "api" });
+    "--inspector-port", String(Number(apiPort)+10), "--persist-to", persist], { service: "api" });
   await ready(`http://127.0.0.1:${apiPort}/api/health`);
   // Test-runner-only loopback control; never exposed through Pages or application routes.
   // Fixed SQL operations only, rejecting browser-origin requests. This is not an auth bypass.
@@ -146,7 +148,7 @@ try {
     run([...d1, "execute", "DB", "--config", apiConfig, "--local", "--persist-to", persist, "--command", sql],
       { captureStderr: true })
   )).listen(Number(webPort) + 100, "127.0.0.1");
-  run(["exec", "wrangler", "pages", "dev", ".", "--port", webPort, "--local-protocol", "https", "--inspector-port", "9998"],
+  run(["exec", "wrangler", "pages", "dev", ".", "--port", webPort, "--local-protocol", "https", "--inspector-port", String(Number(webPort)+10)],
     { cwd: path.join(root, "apps/web"), service: "web" });
   await ready(origin);
   console.log(`[auth-e2e] Ready at ${origin}`);

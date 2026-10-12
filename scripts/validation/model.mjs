@@ -89,7 +89,7 @@ export function coverage(files) {
     else if (/^tools\/ai-trainer\//.test(file)) { areas.add('tooling'); areas.add('ai-trainer'); }
     else if (/^tools\/ai-benchmark\//.test(file)) { areas.add('tooling'); areas.add('ai-benchmark'); }
     else if (/^tools\/t108-feasibility\//.test(file)) areas.add('tooling');
-    else if (/^(\.npmrc|validation-(?:account-)?e2e\/|scripts\/|skills\/|\.agents\/|docs\/|\.github\/|AGENTS\.md|README\.md|package\.json|pnpm-|playwright|tsconfig|\.gitignore)/.test(file)) areas.add('tooling');
+    else if (/^(\.npmrc|browser-integration\/|validation-(?:account-)?e2e\/|scripts\/|skills\/|\.agents\/|docs\/|\.github\/|AGENTS\.md|README\.md|package\.json|pnpm-|playwright|tsconfig|\.gitignore)/.test(file)) areas.add('tooling');
     else unmapped.push(file);
   }
   return {areas:[...areas],unmapped,files:areas.has('app')?[]:coreFiles};

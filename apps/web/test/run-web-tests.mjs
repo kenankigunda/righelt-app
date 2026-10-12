@@ -2,6 +2,7 @@ import { mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { TOOLING_WEB_FILES } from "../../../scripts/testing/catalog.mjs";
 import { classifyWebTestFile } from "./test-layers.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -50,7 +51,7 @@ if (!["all", "unit", "integration"].includes(requestedLayer)) {
 }
 
 const candidates = readdirSync(__dirname)
-  .filter((file) => file.endsWith(".test.mjs"))
+  .filter((file) => file.endsWith(".test.mjs") && !TOOLING_WEB_FILES.includes(file))
   .filter((file) => requestedLayer === "all" || classifyWebTestFile(file) === requestedLayer)
   .sort();
 

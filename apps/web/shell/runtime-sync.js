@@ -34,19 +34,13 @@ export const shouldResetBoardSelection = ({
     return true;
   }
 
-  const pieceAtSource = findPieceAt(nextSnapshot, currentSelection.source);
-  if (!pieceAtSource) {
+  // Push participants share a square until retreat. Coordinate lookup alone
+  // can find the attacker before the selected defender.
+  const selectedPiece = currentSelection.selectedPieceId
+    ? nextSnapshot?.pieces?.find((piece) => piece.id === currentSelection.selectedPieceId)
+    : findPieceAt(nextSnapshot, currentSelection.source);
+  if (!selectedPiece || !sameCoordinate(selectedPiece.position, currentSelection.source)) {
     return true;
-  }
-  if (currentSelection.selectedPieceId && pieceAtSource.id !== currentSelection.selectedPieceId) {
-    return true;
-  }
-
-  if (currentSelection.selectedPieceId) {
-    const selectedPiece = nextSnapshot?.pieces?.find((piece) => piece.id === currentSelection.selectedPieceId) ?? null;
-    if (!selectedPiece || !sameCoordinate(selectedPiece.position, currentSelection.source)) {
-      return true;
-    }
   }
 
   if (!currentSelection.target || freeSelection) {

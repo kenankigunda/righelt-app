@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Loading feedback</title><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"></head><body><main style="padding:24px;max-width:900px;margin:auto"><h1>Loading feedback</h1><section class="panel"><h2>Start something new</h2><button data-loading-key="start" id="start">Start a friend game</button><p id="existing">Your existing content stays in place.</p></section><section class="panel loading-region" id="region" data-loading-key="board" data-loading-state="idle" data-loading-message="Your game is taking a little longer to load."><h2>Board</h2><div class="loading-board-silhouette" aria-hidden="true"></div></section></main><script type="module">import {mountLoadingFeedback} from '/apps/web/shell/loading.js';window.stopLoading=mountLoadingFeedback(document);window.setPending=(value)=>{const b=document.querySelector('#start');b.dataset.pending=String(value);b.disabled=value;b.setAttribute('aria-busy',String(value));};window.fixtureReady=true;</script></body></html>
+<script type="module">
+import {createModal} from '/apps/web/shell/modal.js';
+import {createOpponentStoryDialog} from '/apps/web/shell/opponent-stories.js';
+import {createRematchDialog} from '/apps/web/shell/game-result.js';
+import {createInlineProfiles,participantButton} from '/apps/web/shell/public-profile.js';
+window.story=createOpponentStoryDialog({createModal,getReadiness:()=>({state:'ready'}),onPlay:()=>new Promise(resolve=>window.finishStart=resolve)});
+window.rematch=createRematchDialog({createModal,onStart:()=>new Promise(resolve=>window.finishRematch=resolve)});
+window.profiles=createInlineProfiles({fetcher:()=>new Promise(resolve=>window.finishProfile=()=>resolve({ok:true,json:async()=>({joinedMonth:'2026-01'})}))});
+document.querySelector('main').insertAdjacentHTML('beforeend',participantButton({profile:{username:'loading_player',displayName:'Player'}}));
+window.controllersReady=true;
+</script>

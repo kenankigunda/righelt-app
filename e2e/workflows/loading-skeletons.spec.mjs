@@ -81,6 +81,12 @@ test("game route shows a skeleton while the initial game load is still in flight
     await delayedPage.waitForLoadState("domcontentloaded");
     await expect.poll(() => snapshotSeen).toBe(true);
     await delayedPage.waitForSelector('[data-testid="game-view-skeleton"]', { state: "visible" });
+    const skeleton = delayedPage.getByTestId('game-view-skeleton');
+    await expect(skeleton.getByRole('heading',{name:'Board',exact:true})).toBeVisible();
+    await expect(skeleton.locator('.loading-board-silhouette')).toBeVisible();
+    await expect(skeleton.locator('.loading-pieces')).toBeVisible();
+    await expect(skeleton.locator('.loading-board-silhouette .loading-pieces')).toHaveCount(0);
+    await expect(skeleton.locator('.skeleton-pulse').first()).toHaveCSS('animation-name','none');
     deferredRequest.release();
     releaseSnapshot();
 
@@ -156,6 +162,8 @@ test("home pagination preserves its heading and cards while the next page loads"
     expect(await section.locator('h2').evaluate(el=>el===window.retainedPaginationHeading)).toBe(true);
     expect(await section.locator('.mini-board-card-link').allTextContents()).toEqual(before);
     await expect(section.locator('[data-action="home-page-next"]')).toHaveAttribute('aria-busy','true');
+    await expect(section.locator('[data-action="home-page-next"]')).toBeDisabled();
+    await expect(section.locator('[data-action="home-page-next"] .loading-pieces')).toBeVisible();
     await expect(page.getByTestId("home-create-game")).toHaveCount(1);
     await expect(page.getByTestId("home-create-game")).toBeVisible();
 

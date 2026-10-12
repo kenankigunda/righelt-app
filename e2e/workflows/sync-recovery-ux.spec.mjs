@@ -39,7 +39,7 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
  const to=await selectPlayableAction(page,action);
  before=await geometry();await to.click();
  const banner=page.getByTestId("sync-recovery-banner");
- await expect(banner).toContainText("Your browser couldn't save this move. It wasn't sent.");
+ await expect(banner).toContainText("We couldn’t save your move. Please try again.");
  expect((await runScopedAxeScan({page,include:'[data-testid="sync-recovery-banner"]'})).violations).toEqual([]);
  expect(await banner.evaluate(el=>getComputedStyle(el).animationName)).toBe("none");
  await page.getByRole("button",{name:"Retry saving"}).evaluate(el=>el.focus({preventScroll:true}));
@@ -48,6 +48,21 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
  expect(await page.evaluate(()=>({active:document.activeElement.textContent,scroll:window.scrollY}))).toEqual(focusBefore);
  const after=await geometry();expect(Math.abs(after.y-before.y)).toBeLessThanOrEqual(1);expect(Math.abs(after.x-before.x)).toBeLessThanOrEqual(1);
  const box=await banner.boundingBox();expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(width+1);
+ if(width===390){
+  const caret=banner.getByRole("button",{name:"Diagnostic details"});
+  expect(await caret.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+  const hit=await caret.boundingBox();expect(hit.width).toBeGreaterThanOrEqual(44);expect(hit.height).toBeGreaterThanOrEqual(44);
+  await caret.click();await expect(caret).toHaveAttribute("aria-expanded","true");
+  await page.evaluate(()=>Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async()=>{throw Error("Unavailable")}}}));
+  await banner.getByRole("button",{name:"Copy",exact:true}).click();
+  await expect(banner).toContainText("Copy the details below");
+  await expect(banner.locator("pre")).toContainText('"schemaVersion"');
+  const details=await banner.locator(".issue-details").boundingBox();const expanded=await banner.boundingBox();
+  expect(details.y+details.height).toBeLessThanOrEqual(expanded.y+expanded.height+1);
+  await page.mouse.move(0,0);
+  await page.screenshot({path:info.outputPath("diagnostics-mobile.png")});
+  await caret.click();await expect(caret).toHaveAttribute("aria-expanded","false");
+ }
  const placement=await page.locator('[data-shell-alert-zone]').evaluate(el=>getComputedStyle(el).position);
  expect(placement).toBe(width<=900?"fixed":"absolute");
  await page.getByRole("button",{name:"Dismiss",exact:true}).click();
@@ -62,7 +77,7 @@ for (const width of [901, 900, 899, 390]) test(`recovery overlay and storage gat
  await expect(banner).toHaveCount(0);
  expect(await page.evaluate(()=>document.getElementById("shell-sync-announcement")===window.announcementNode)).toBe(true);
  const announcements=await page.evaluate(()=>window.announcements.filter(Boolean));
- expect(announcements.filter(x=>x.includes("couldn't save this move")).length).toBe(1);
+ expect(announcements.filter(x=>x.includes("We couldn’t save your move")).length).toBe(1);
  if(await gated.count()) await expect(gated).toBeEnabled();
  await makeAnyLegalMove(page);
  const result={fault:`storage-${width}px`,restoredAt:new Date(restoredAt).toISOString(),convergenceMs:Date.now()-restoredAt,...metrics};
@@ -93,13 +108,13 @@ test("pending feedback reaches overdue once, then clears or explains definitive 
    return body.game.legalActions.find(a=>a.from&&a.to);
  },gameId);
  await submitPlayableAction(page,action);
- await expect(page.getByTestId("sync-recovery-banner")).toContainText("Checking your move…");
- await expect(page.getByTestId("sync-recovery-banner")).toContainText("Your move is still being checked.",{timeout:20000});
+ await expect(page.getByTestId("sync-recovery-banner")).toContainText("Recording your move");
+ await expect(page.getByTestId("sync-recovery-banner")).toContainText("It’s taking a while to record your move. Hang tight!",{timeout:20000});
  const board=await page.getByTestId("game-board").innerHTML();
  mode="reject";
- await expect(page.getByTestId("sync-failure-banner")).toContainText("The game changed before your move could be completed. Check the board and try again.",{timeout:10000});
+ await expect(page.getByTestId("sync-failure-banner")).toContainText("Board changed before your move was recorded. Check it and try again.",{timeout:10000});
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
- await expect(page.locator("#shell-sync-announcement")).toContainText("The game changed before your move");
+ await expect(page.locator("#shell-sync-announcement")).toContainText("Board changed before your move");
  expect(await page.getByTestId("game-board").innerHTML()).not.toBe(board);
  await page.getByRole("button",{name:"Dismiss",exact:true}).click();
  mode="accept";

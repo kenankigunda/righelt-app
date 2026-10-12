@@ -1,3 +1,4 @@
+import {AUTH_CONTROL_ORIGIN} from "./fixture.mjs";
 import { continueFriendIntroduction, enterUsername, openPlaySignIn, waitForAccountStartup } from "./helpers.mjs";
 import { test, expect } from "@playwright/test";
 import { getHistoryMoveCount, submitPlayableAction } from "../support/app.mjs";
@@ -8,7 +9,7 @@ const dialog = page => page.getByTestId("account-dialog");
 const uniqueName = () => `Invite_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
 test.beforeEach(async () => {
-  const response = await fetch("http://127.0.0.1:10088/reset-limits", { method: "POST" });
+  const response = await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`, { method: "POST" });
   expect(response.status).toBe(200);
 });
 
@@ -49,6 +50,13 @@ async function returningAccount(request, baseURL, username) {
     headers: { ...headers, [SESSION_CONTEXT_HEADER]: session.contextId }, data: {},
   });
   expect(loggedOut.status()).toBe(200);
+}
+async function signOut(page) {
+  await page.getByRole("button", { name: "Account", exact: true }).click();
+  await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(dialog(page)).not.toBeVisible();
+  await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
 }
 
 async function sharedInvite(host) {
@@ -136,7 +144,7 @@ for (const method of ["login", "registration"]) {
         await visitor.getByTestId("invite-join-viewer").click();
         await expect(visitor).toHaveURL(/#\/game\//);
         await expect(visitor.getByTestId("game-board")).toBeVisible();
-        await expect(visitor.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+        await expect(visitor.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
         await expect(dialog(visitor)).not.toBeVisible();
         const before = await getHistoryMoveCount(visitor);
         await playHostMove(page);

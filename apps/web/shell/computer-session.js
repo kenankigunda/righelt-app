@@ -63,7 +63,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     }
     const profile = computerProfileFor(game.computer, game.board.state.sideToMove, game.currentTurn?.index ?? game.board.state.turnIndex ?? 0);
     if (game.computer.paused || !profile || game.board.state.outcome?.status !== 'ongoing') {
-      if (!busy && status.phase !== (game.computer.paused ? 'paused' : 'idle')) publish({ phase: game.computer.paused ? 'paused' : 'idle' });
+      if (!busy && status.phase !== (game.computer.paused ? 'paused' : 'idle')) publish({ phase: game.computer.paused ? 'paused' : 'idle', message: null });
       return;
     }
     if (busy || leaseBusy || pendingSubmission || context.transport.getGameViewModel(game.id)?.pendingCommandCount > 0 || recovery === context.key) return;

@@ -41,10 +41,10 @@ test("root package scripts keep suffixed local dev entrypoints in sync", () => {
   assert.equal(scripts["dev:all:c"], "node scripts/resources/cli.mjs run --kind preview -- node scripts/dev-web-auto.mjs 8791 --with-api");
   assert.equal(scripts["check:web-engine-generated"], "node scripts/check-web-engine-generated.mjs");
   assert.equal(scripts["check:ticket-workflow"], "node scripts/check-ticket-workflow-setup.mjs");
-  assert.match(scripts.test, /^pnpm typecheck && pnpm check:web-engine-generated && /);
+  assert.ok(scripts.test.endsWith("node scripts/testing/cli.mjs full"));
   assert.equal(scripts["test:ci-report-selection"], "node --test scripts/select-junit-artifacts.test.mjs");
   assert.equal(scripts["test:auth-fixture"], "node --test scripts/auth-fixture-control.test.mjs");
-  assert.equal(scripts["test:unit"], "pnpm test:engine:unit && pnpm test:web:unit && pnpm test:auth-fixture && pnpm test:computer-player:unit && pnpm test:validation && pnpm test:ci-report-selection");
+  assert.equal(scripts["test:unit"], "pnpm test:engine:unit && pnpm test:web:unit && pnpm test:computer-player:unit");
   assert.equal(scripts["test:integration"], "pnpm test:engine:integration && pnpm test:api-handler && pnpm test:api-worker && pnpm test:web:integration && pnpm test:sync-stress && pnpm test:sync-runtime && pnpm test:computer-player:integration");
   assert.equal(scripts["test:engine"], "node scripts/run-node-tests.mjs packages/game-engine/test");
   assert.equal(scripts["test:engine:unit"], "node scripts/run-node-tests.mjs packages/game-engine/test/unit");

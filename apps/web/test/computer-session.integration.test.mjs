@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createComputerSession } from '../shell/computer-session.js';
+import { renderComputerProgress } from '../shell/computer-view.js';
 import { createComputerControl, changeComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { createInitialState } from '../generated/packages/game-engine/src/state.js';
 
@@ -35,6 +36,21 @@ test('a result is saved before it is submitted through the durable command path'
   const f = fixture(); await f.session.tick(); const computation = f.session.tick();
   f.pending().resolve({ result: { status: 'ready', action: { type: 'pass' } } }); await computation;
   assert.equal(f.saved.length, 1); assert.equal(f.saved[0].kind, 'computer'); assert.equal(f.submissions(), 1);
+  f.session.destroy();
+});
+
+test('a confirmed pause clears a stale control error while preserving its unfinished attempt', async () => {
+  const f = fixture(); await f.session.tick(); const computation = f.session.tick();
+  f.pending().reject(Error('computer_control_changed')); await computation;
+  assert.equal(f.session.snapshot().phase, 'recovery');
+  f.game().computer.paused = true; await f.session.tick();
+  assert.equal(f.session.snapshot().phase, 'paused');
+  assert.equal(f.session.snapshot().message, null);
+  const view = renderComputerProgress({ ...f.game(), canControlComputer: true }, f.session.snapshot());
+  assert.match(view, /Computer play paused/);
+  assert.doesNotMatch(view, /computer_control_changed/);
+  assert.equal(f.saved.at(-1).attempt.reason, 'computer_control_changed');
+  assert.equal(f.saved.at(-1).attempt.outcome, 'unfinished');
   f.session.destroy();
 });
 

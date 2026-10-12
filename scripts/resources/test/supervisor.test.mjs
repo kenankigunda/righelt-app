@@ -60,7 +60,7 @@ test('nested detached guardian is cleaned before outer run reports completion',{
 for (const keep of [false,true]) test(`sustained warning ${keep?'preserves requested':'releases disposable'} preview`,{skip:process.platform==='win32',timeout:15_000},async t=>{
  const f=await fixture(t),driver=path.join(f.dir,'warning.mjs');
  await writeFile(driver,`import {supervise} from ${JSON.stringify('file://'+supervisorModule)};const r=await supervise(${JSON.stringify([process.execPath,f.script])},{kind:'preview',keep:${keep},policy:${JSON.stringify({...POLICY,sampleMs:30,sustainedMs:90,ownershipSampleMs:20,graceMs:100})},sample:async()=>({level:'warning'})});process.exitCode=r.code;`);
- const p=spawn(process.execPath,[driver],{env:{...process.env,RIGHELT_RESOURCE_RUN:"",RIGHELT_RESOURCE_KEEP:"",COMPLETE:'1',RIGHELT_RESOURCE_REGISTRY:path.join(f.dir,'registry')},stdio:'ignore'});const done=new Promise(r=>p.on('close',r));const ids=await pids(f);assert.equal(await done,keep?0:75);await assertGone(ids);
+ const p=spawn(process.execPath,[driver],{env:{...process.env,RIGHELT_RESOURCE_RUN:"",RIGHELT_RESOURCE_KEEP:"",COMPLETE:'1',RIGHELT_RESOURCE_REGISTRY:path.join(f.dir,'registry')},stdio:['ignore','pipe','pipe']});let output='';p.stdout.on('data',c=>output+=c);p.stderr.on('data',c=>output+=c);const done=new Promise(r=>p.on('close',r));const ids=await pids(f);assert.equal(await done,keep?0:75,output);await assertGone(ids);
 });
 test('Windows fallback runs direct commands without Unix process inspection',{timeout:15_000},async t=>{
  const f=await fixture(t),driver=path.join(f.dir,'windows.mjs');
