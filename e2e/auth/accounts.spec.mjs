@@ -26,7 +26,14 @@ async function register(page, username, { gate = false } = {}) {
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
   await waitForFriendIntroduction(page);
+  // The local Player 1 preview precedes persistence. Callers may disconnect or
+  // reload immediately, so finish creating their fixture before returning.
+  const created = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/shell/games");
   await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
+  const response = await created;
+  expect(response.ok()).toBe(true);
+  const body = await response.json();
+  await expect(page).toHaveURL(new RegExp(`#/game/${body.game.id}(?:[/?]|$)`));
   if (gate) {
     await expect(page).toHaveURL(/#\/game\//);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
