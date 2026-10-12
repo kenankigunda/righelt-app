@@ -46,7 +46,9 @@ test('cancellation waits for an in-flight diagnostic installation and restores b
   assert.deepEqual(order, ['restored', 'exit:0']);
 });
 
-test('general stack captures each service exit before shutdown and preserves an unexpected exit during cleanup', async () => {
+for (const guardianStops of [false, true]) {
+test(`general service exit preserves the observed guardian stop state: ${guardianStops}`, async () => {
+  let guardianStopping = guardianStops, guardianReads = 0;
   const root = await mkdtemp(path.join(os.tmpdir(), 'general-exit-test-'));
   try {
     const privateLogs = path.join(root, 'private');
@@ -55,14 +57,19 @@ test('general stack captures each service exit before shutdown and preserves an 
     child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
     const run = new Function('dependencies', `
       const { path, observeAuthService, repoRoot, privateLogs, spawn, recordUnexpectedExit, shutdown } = dependencies;
+      const { isStackStopping } = dependencies;
       const cliPath = 'supervisor';
       const managedChildren = new Set(), intentionalStops = new Set(), serviceReceipts = [];
       let shuttingDown = false, diagnosticsFailed = false, serviceSequence = 0;
       ${launcher}
       return { spawnLogged, serviceReceipts, beginCleanup: () => { shuttingDown = true; } };
     `)({ path, observeAuthService, repoRoot: root, privateLogs,
+      isStackStopping: () => { guardianReads++; return guardianStopping; },
       spawn: (_command, _args, options) => { launchOptions = options; return child; },
-      recordUnexpectedExit: (label, code) => { assert.equal(label, 'pages'); assert.equal(code, 1); unexpected++; },
+      recordUnexpectedExit: (label, code, signal, state) => {
+        assert.equal(label, 'pages'); assert.equal(code, 1); assert.equal(signal, null);
+        assert.deepEqual(state, { stopping: false }); unexpected++;
+      },
       shutdown: code => { shutdownCode = code; },
     });
     run.spawnLogged('pages', 'pnpm', [], { cwd: root });
@@ -70,19 +77,24 @@ test('general stack captures each service exit before shutdown and preserves an 
     await mkdir(launchOptions.env.WRANGLER_LOG_PATH, { recursive: true });
     await writeFile(path.join(launchOptions.env.WRANGLER_LOG_PATH, 'wrangler-2026-10-12_09-01-40_000.log'),
       'private-binding\nError in ProxyController: Error inside ProxyWorker\nNetwork connection lost.');
-    child.emit('exit', 1, null);
-    assert.equal(unexpected, 1);
+    const code = guardianStops ? 130 : 1;
+    child.emit('exit', code, null);
+    assert.equal(unexpected, guardianStops ? 0 : 1);
     assert.equal(shutdownCode, undefined);
+    assert.equal(guardianReads, 1);
+    guardianStopping = !guardianStops;
     run.beginCleanup();
-    child.emit('close', 1, null);
+    child.emit('close', code, null);
     const [result] = await Promise.all(run.serviceReceipts);
-    assert.deepEqual(result, { expected: false, diagnosticsFailed: false });
-    assert.equal(shutdownCode, 1);
+    assert.deepEqual(result, { expected: guardianStops, diagnosticsFailed: false });
+    assert.equal(shutdownCode, guardianStops ? undefined : 1);
+    assert.equal(guardianReads, 1);
     const bytes = await readFile(path.join(root, 'test-results/e2e-stack-diagnostics/private/web-1.json'), 'utf8');
     assert.ok(!bytes.includes('private-binding'));
     const receipt = JSON.parse(bytes);
-    assert.equal(receipt.expected, false);
+    assert.equal(receipt.expected, guardianStops);
     assert.equal(receipt.logs[0].proxyControllerError, true);
     assert.equal(receipt.logs[0].networkConnectionLost, true);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+}

@@ -1,4 +1,4 @@
-import { recordUnexpectedExit } from './testing/stack-status.mjs';
+import { isStackStopping, recordUnexpectedExit } from './testing/stack-status.mjs';
 import { installProxyDiagnostics } from './auth-proxy-diagnostics.mjs';
 import { observeAuthService } from './auth-stack-diagnostics.mjs';
 import { cliPath, supervise } from './resources/supervisor.mjs';
@@ -90,9 +90,9 @@ const spawnLogged = (label, command, args, options) => {
   });
   let exitWasExpected;
   child.on("exit", (code, signal) => {
-    exitWasExpected = shuttingDown || intentionalStops.has(child);
+    exitWasExpected = shuttingDown || intentionalStops.has(child) || isStackStopping();
     if (!exitWasExpected) {
-      recordUnexpectedExit(label, code, signal);
+      recordUnexpectedExit(label, code, signal, { stopping: exitWasExpected });
       console.error(`[e2e-stack] ${label} exited with code ${code}${signal ? ` (signal ${signal})` : ""}`);
     }
   });
