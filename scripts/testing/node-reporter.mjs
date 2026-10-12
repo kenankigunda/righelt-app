@@ -1,4 +1,5 @@
 import { writeFileSync } from "node:fs";
+import { inspect } from "node:util";
 export default async function* reporter(source) {
   const observations = {
     total: 0,
@@ -28,7 +29,8 @@ export default async function* reporter(source) {
         durationMs: event.data.details?.duration_ms,
       });
     }
-    yield "";
+    if (event.type === 'test:fail') yield `${event.data.file ?? ''}: ${event.data.name}\n${inspect(event.data.details?.error, { depth: 5, colors: false })}\n`;
+    else if (event.type === 'test:stdout' || event.type === 'test:stderr') yield event.data.message;
   }
   if (process.env.RIGHELT_TEST_OBSERVATIONS)
     writeFileSync(

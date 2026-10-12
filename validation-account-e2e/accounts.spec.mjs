@@ -7,7 +7,8 @@ import {proof} from '../scripts/validation/proof.mjs';
 import {historySnapshot,assertHistoryPreserved} from '../scripts/validation/history-continuity.mjs';
 import {proveLegacyMutationDenied} from '../scripts/validation/legacy-account-proof.mjs';
 import {proveResultsRematch} from '../scripts/validation/results-proof.mjs';
-import {FRESH_ACCOUNT_WORKFLOW,RETAINED_ACCOUNT_WORKFLOW} from '../scripts/validation/account-evidence.mjs';
+import {proveComputerPlay} from '../scripts/validation/computer-proof.mjs';
+import {FRESH_ACCOUNT_WORKFLOW,RETAINED_ACCOUNT_WORKFLOW,COMPUTER_ACCOUNT_WORKFLOW} from '../scripts/validation/account-evidence.mjs';
 
 const root=process.env.RIGHELT_VALIDATION_TARGET_ROOT||process.cwd();
 const capabilities=await candidateCapabilities(root);
@@ -290,7 +291,7 @@ test(FRESH_ACCOUNT_WORKFLOW,async({page,browser},info)=>{
     await page.getByTestId('resume-slot').evaluate(element=>{element.scrollTop=0;});
   }
   // Stories are a separate capability from the old personal-home module.
-  if(capabilities.stories){
+  if(capabilities.stories&&!capabilities.trainedComputerPlay){
     await page.getByRole('link',{name:'Righelt',exact:true}).click();
     await settledHome(page);
     const priorPreferences=(await session(page)).account.preferences;
@@ -380,4 +381,13 @@ test(RETAINED_ACCOUNT_WORKFLOW,async({browser},info)=>{
     await login(page,prior.username,prior.password);expect((await session(page)).account.id).toBe(prior.account.id);
     expect((await gamePayload(page)).myRoles.slice().sort()).toEqual(['Player 1','Player 2']);
   }finally{await context.close();}
+});
+
+// Enabled play is a separate bounded journey. Its failed run cannot fall back
+// to the legacy unavailable story or satisfy retained-account continuity.
+test(COMPUTER_ACCOUNT_WORKFLOW,async({page},info)=>{
+  test.skip(!capabilities.trainedComputerPlay,'Candidate declares unavailable computer play');
+  const username=`Computer_${Date.now().toString(36)}_${info.project.name.replaceAll('-','').slice(0,4)}`;
+  await page.goto('/');await registerStandalone(page,username);
+  await proveComputerPlay({page,info,root,submitPlayableAction:(action)=>submitPlayableAction(page,action,info)});
 });
