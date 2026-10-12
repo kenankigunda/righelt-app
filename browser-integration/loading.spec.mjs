@@ -88,3 +88,18 @@ test('recovery can own its context without a second ordinary-loading announcemen
  await expect(page.locator('#region > .loading-pieces')).toBeVisible();
  await expect(page.getByRole('status')).toHaveCount(0);
 });
+
+test('a centered wide action replaces its icon in place without moving its label',async({page})=>{
+ await page.waitForFunction(()=>window.controllersReady);
+ await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});await page.clock.pauseAt(new Date('2026-01-01T00:00:00Z'));
+ await page.evaluate(()=>window.story.open('friend'));
+ const button=page.getByRole('dialog',{name:'Friend',exact:true}).locator('[data-story-play]');
+ await button.evaluate(el=>el.style.width='100%');
+ const icon=await button.locator('svg').boundingBox();const before=await button.boundingBox();
+ await button.evaluate(el=>el.click());await page.clock.runFor(201);
+ const cue=await button.locator('.loading-pieces').boundingBox();
+ expect(Math.abs(cue.x+cue.width/2-icon.x-icon.width/2)).toBeLessThan(1);
+ expect((await button.boundingBox()).width).toBe(before.width);
+ await expect(button).toHaveAccessibleName('Start a friend game');
+ await expect(button.locator('svg')).not.toBeVisible();
+});

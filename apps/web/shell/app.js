@@ -4990,7 +4990,7 @@ appEl.addEventListener("click", async (event) => {
           }
           render({ animatePanels: false, includeBoard: false });
         },
-        { renderEnd: false },
+        { renderEnd: true },
       );
       return;
     }
@@ -5029,7 +5029,7 @@ appEl.addEventListener("click", async (event) => {
         setSelectedScenarioFeedback("");
         render({ animatePanels: false, includeBoard: false });
       },
-      { renderEnd: false },
+      { renderEnd: true },
     );
   }
 });

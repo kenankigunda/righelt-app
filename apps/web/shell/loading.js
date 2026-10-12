@@ -22,12 +22,24 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
     let next = Infinity;
     for (const element of document.querySelectorAll(selector)) {
       const isButton = element.tagName === 'BUTTON';
-      if (isButton) element.classList.add('loading-control');
+      let cueHost = element;
+      if (isButton) {
+        element.classList.add('loading-control');
+        cueHost = element.querySelector(':scope > .loading-icon-slot');
+        if (!cueHost) {
+          cueHost = document.createElement('span');
+          cueHost.className = 'loading-icon-slot';
+          cueHost.setAttribute('aria-hidden','true');
+          const icon = element.querySelector(':scope > svg');
+          element.insertBefore(cueHost,icon || element.firstChild);
+          if (icon) cueHost.append(icon);
+        }
+      }
       const pending = element.dataset.loadingState === 'pending' || element.dataset.pending === 'true';
       const key = element.dataset.loadingKey || element;
       if (!pending || element.closest('dialog:not([open]), [hidden], [inert]')) {
         element.removeAttribute('data-loading-phase');
-        element.querySelector(':scope > .loading-pieces')?.remove();
+        cueHost.querySelector(':scope > .loading-pieces')?.remove();
         element.querySelector(':scope > .loading-context')?.remove();
         continue;
       }
@@ -45,7 +57,7 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
         }
       }
       if (element.dataset.loadingPhase !== phase) element.dataset.loadingPhase = phase;
-      if (!element.querySelector(':scope > .loading-pieces')) element.insertAdjacentHTML('beforeend', loadingCue());
+      if (!cueHost.querySelector(':scope > .loading-pieces')) cueHost.insertAdjacentHTML('beforeend', loadingCue());
       // The label remains unchanged. Status has no role in accessible button names.
       if (!isButton && element.dataset.loadingContext !== 'external' && phase === 'slow' && !element.querySelector(':scope > .loading-context')) {
         const status = document.createElement('span');
