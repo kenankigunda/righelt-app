@@ -313,14 +313,14 @@ for (const width of [375, 900, 1440]) test(`identity hierarchy remains aligned a
 
 for(const size of [{width:1440,height:900},{width:375,height:667},{width:900,height:500}])test(`shared story viewport fits ${size.width}x${size.height}`,async({page})=>{
  await page.setViewportSize(size);await page.goto('/');await page.getByTestId('home-create-game').click();
- const dialog=page.getByRole('dialog',{name:'Friend',exact:true});await expect(dialog).toBeVisible();await page.evaluate(()=>document.fonts.ready);
+ const dialog=page.getByRole('dialog',{name:'Friend',exact:true});await expect(dialog).toBeVisible();await page.evaluate(()=>document.fonts.ready);await waitForOverlayEntry(dialog);
  const content=dialog.locator('.modal-content');await content.evaluate(el=>el.scrollTop=el.scrollHeight);
  const action=dialog.getByRole('button',{name:'Start a friend game',exact:true});await expect(action).toBeInViewport();
  await expect(dialog.getByRole('button',{name:'Close opponent story'})).toBeInViewport();
  const bounds=await dialog.evaluate(el=>({outer:el.scrollHeight-el.clientHeight,rect:el.getBoundingClientRect().toJSON(),inner:el.querySelector('.modal-content').getBoundingClientRect().toJSON(),button:el.querySelector('[data-story-play]').getBoundingClientRect().toJSON()}));
  expect(bounds.outer).toBeLessThanOrEqual(1);expect(bounds.rect.top).toBeGreaterThanOrEqual(0);expect(bounds.rect.bottom).toBeLessThanOrEqual(size.height);
  expect(bounds.rect.bottom-bounds.button.bottom).toBeGreaterThanOrEqual(28);
- await dialog.getByRole('button',{name:'Close opponent story'}).click();await page.getByTestId('home-create-game').click();await expect(content).toHaveJSProperty('scrollTop',0);await expect(action).toBeEnabled();await page.screenshot({path:test.info().outputPath(`friend-${size.width}.png`)});
+ await dialog.getByRole('button',{name:'Close opponent story'}).click();await page.getByTestId('home-create-game').click();await waitForOverlayEntry(dialog);await expect(content).toHaveJSProperty('scrollTop',0);await expect(action).toBeEnabled();await page.screenshot({path:test.info().outputPath(`friend-${size.width}.png`)});
 });
 
 test('legend follows rendered overlays and commander follows selected ownership',async({page})=>{
