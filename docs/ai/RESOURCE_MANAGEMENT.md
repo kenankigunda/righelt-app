@@ -22,6 +22,8 @@ On macOS, run supervised commands with scoped outside-sandbox access when proces
 
 Normal completion, failure, timeout, cancellation and loss of the launching process terminate the owned process group. Cleanup sends SIGTERM, waits five seconds, then sends SIGKILL to remaining owned group members. It verifies that no live owned group members remain. Cleanup failure is an error, never success. A child deliberately escaping the group is outside this guarantee and must not be launched detached inside supervised commands.
 
+Monitoring and shutdown may persist the same record concurrently. Snapshot each update before asynchronous work, serialize writes to that record in call order, and publish through unique temporary files with atomic renames. Keep persistence failures visible to their caller; an older monitoring update must not overwrite a newer cleanup result.
+
 An abandoned record authorizes signals only to matching saved process identities. PID reuse or a process-name match never establishes ownership. Do not use broad process-name kills, kill unrelated servers, or delete worktrees as resource cleanup. A stable process-group leader waits for verified ownership before starting the command. If its guardian is killed, the IPC disconnect triggers group cleanup. Inspect any remaining registry record and explicitly clean that run before retrying.
 
 ## Pressure policy
