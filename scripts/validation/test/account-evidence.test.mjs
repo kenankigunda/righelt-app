@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {verifyAccountEvidence,FRESH_ACCOUNT_WORKFLOW,RETAINED_ACCOUNT_WORKFLOW} from '../account-evidence.mjs';
+import {verifyAccountEvidence,FRESH_ACCOUNT_WORKFLOW,RETAINED_ACCOUNT_WORKFLOW,COMPUTER_ACCOUNT_WORKFLOW,COMPUTER_CHECKPOINTS} from '../account-evidence.mjs';
 const labels=['account-home','sign-in','recovery-acknowledgment','account-owned-move','account-settings'];
 const item=(viewport,title,checkpoints)=>({viewport,title:`${viewport} / accounts.spec.mjs / ${title}`,status:'passed',images:checkpoints.flatMap(label=>['context','component'].map(kind=>({caption:`${label} · ${viewport} · ${kind}${kind==='component'?' (visible area)':''}`,src:'images/x.png',thumbnail:'images/t.png',digest:'hash'})))});
 test('account acceptance requires each exact workflow and viewport with both image roles',()=>{
@@ -44,4 +44,15 @@ test('simplified signup requires creation evidence and cannot be satisfied by re
  const revised=['mobile','mid-wide','full-wide'].map(v=>item(v,FRESH_ACCOUNT_WORKFLOW,labels.map(label=>label==='recovery-acknowledgment'?'account-creation':label)));
  verifyAccountEvidence(revised,{capabilities:{simplifiedAccounts:true}});
  assert.throws(()=>verifyAccountEvidence(revised),/recovery-acknowledgment/);
+});
+
+test('enabled computer contract requires its complete real workflow without legacy fallback',()=>{
+ const capabilities={stories:true,trainedComputerPlay:true};
+ const rows=['mobile','mid-wide','full-wide'].flatMap(v=>[item(v,FRESH_ACCOUNT_WORKFLOW,labels),item(v,COMPUTER_ACCOUNT_WORKFLOW,COMPUTER_CHECKPOINTS)]);
+ verifyAccountEvidence(rows,{capabilities});
+ for(const label of COMPUTER_CHECKPOINTS){const missing=structuredClone(rows);missing[1].images=missing[1].images.filter(image=>!image.caption.startsWith(label+' ·'));assert.throws(()=>verifyAccountEvidence(missing,{capabilities}),/Missing account checkpoint/);}
+ const failed=structuredClone(rows);failed[1].status='failed';assert.throws(()=>verifyAccountEvidence(failed,{capabilities,visualMode:'none'}),/Missing or duplicate/);
+ const legacy=['mobile','mid-wide','full-wide'].map(v=>item(v,FRESH_ACCOUNT_WORKFLOW,[...labels,'unavailable-trained-story']));
+ verifyAccountEvidence(legacy,{capabilities:{stories:true}});
+ assert.throws(()=>verifyAccountEvidence(legacy,{capabilities}),/trained computer/);
 });

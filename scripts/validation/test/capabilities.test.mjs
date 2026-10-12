@@ -5,6 +5,21 @@ import os from 'node:os';
 import path from 'node:path';
 import {candidateCapabilities} from '../capabilities.mjs';
 
+test('trained play is selected before execution by an explicit source contract',async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'computer-capabilities-'));
+ try {
+  const directory=path.join(root,'apps/web/shell');await mkdir(directory,{recursive:true});
+  const file=path.join(directory,'computer-runtime.js');
+  assert.equal((await candidateCapabilities(root)).trainedComputerPlay,false);
+  await writeFile(file,'// export const TRAINED_COMPUTER_PLAY = "enabled";');
+  assert.equal((await candidateCapabilities(root)).trainedComputerPlay,false);
+  await writeFile(file,'export const TRAINED_COMPUTER_PLAY = "enabled";\nthrow Error("Never execute candidate source");');
+  assert.equal((await candidateCapabilities(root)).trainedComputerPlay,true);
+  await writeFile(file,'export const TRAINED_COMPUTER_PLAY = "disabled";');
+  assert.equal((await candidateCapabilities(root)).trainedComputerPlay,false);
+ } finally {await rm(root,{recursive:true,force:true});}
+});
+
 test('account capabilities distinguish recovery, progressive, separate, minimal signup and play-gated forms without executing candidate code',async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),'account-capabilities-'));
  try {
