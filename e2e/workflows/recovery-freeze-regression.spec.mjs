@@ -65,7 +65,11 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  expect(new Set(game.moves.map(m=>m.clientCommandId)).size).toBe(3);
  expect(new Set(commands.filter(c=>c.payload?.action?.type==="push").map(c=>c.clientCommandId)).size).toBe(1);
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
- } finally {holdConfirmation=false;releaseConfirmation();}
+ } finally {
+  holdConfirmation=false;releaseConfirmation();
+  // Drain intercepted requests before the browser fixture closes.
+  await page.unrouteAll({behavior:"wait"});
+ }
 });
 
 for(const reduced of [false,true])test(`routine reconnect stays quiet four seconds and preserves board${reduced?" with reduced motion":""}`,async({page},info)=>{
@@ -74,6 +78,7 @@ for(const reduced of [false,true])test(`routine reconnect stays quiet four secon
  await page.routeWebSocket(/\/api\/shell\/games\//,socket=>{const server=socket.connectToServer();server.onMessage(message=>{if(!hold)socket.send(message);});});
  const {gameId}=await createGameFromHome(page);await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
  await page.route(`**/api/shell/games/${gameId}/reconcile`,async route=>{const response=await route.fetch();if(hold){held();await gate;}await route.fulfill({response});});
+ try {
  await page.clock.install();await page.clock.pauseAt(new Date());
  const board=page.getByTestId("game-board");const before=await board.boundingBox();const contents=await board.innerHTML();
  hold=true;await page.evaluate(()=>{dispatchEvent(new Event("pagehide"));dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true}));});
@@ -93,4 +98,8 @@ for(const reduced of [false,true])test(`routine reconnect stays quiet four secon
  await page.screenshot({path:info.outputPath(reduced?"reconnect-static.png":"reconnect-sweep.png")});
  hold=false;release();await page.clock.resume();await expect(page.locator('.board-wrap[data-reconnecting="true"]')).toHaveCount(0,{timeout:10000});
  await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
+ } finally {
+  hold=false;release();await page.clock.resume();
+  await page.unrouteAll({behavior:"wait"});
+ }
 });
