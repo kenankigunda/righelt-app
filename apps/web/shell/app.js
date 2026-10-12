@@ -4784,7 +4784,11 @@ appEl.addEventListener("click", async (event) => {
   if(action==='share-invite'){await withPendingButton(getCopyInviteButtonKey(actionEl.dataset.gameId),()=>copyGameInvitation(actionEl.dataset.gameId,actionEl.dataset.inviteRole,true));return;}
   if (action === 'guest-profile') { void inlineProfiles.open(null,actionEl);return; }
   if (action === 'toggle-sound') { const enabled=gameSound.toggle();actionEl.innerHTML=icon(enabled?'sound':'muted');actionEl.setAttribute('aria-label',enabled?'Mute sound':'Enable sound');actionEl.setAttribute('aria-pressed',String(enabled));actionEl.title=`Sound ${enabled?'on':'off'}`;return; }
-  if (action === 'opponent-story') { gameSound.play('intro'); storyDialog.open(actionEl.dataset.opponent,{trigger:actionEl}); void prepareOpponent('intro',actionEl.dataset.opponent); return; }
+  if (action === 'opponent-story') {
+    // Initial session adoption retires dialogs. Open only after it settles.
+    if (!await waitForAccountGate()) return;
+    gameSound.play('intro'); storyDialog.open(actionEl.dataset.opponent,{trigger:actionEl}); void prepareOpponent('intro',actionEl.dataset.opponent); return;
+  }
   if (action === "create-game" || action === 'create-self-play') {
     if(action === 'create-game'){gameSound.play('intro');storyDialog.open('friend',{trigger:actionEl});return;}
     const handle = transport.createGame({ selfPlayMode: action === 'create-self-play' });

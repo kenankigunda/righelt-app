@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
 const source = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
@@ -16,6 +17,27 @@ const extractSourceSegment = (startMarker, endMarker) => {
   assert.notEqual(end, -1, `expected end marker: ${endMarker}`);
   return source.slice(start, end);
 };
+
+test("opponent introduction waits for session readiness and respects a cancelled continuation", async () => {
+  const handler = extractSourceSegment("  if (action === 'opponent-story')", '  if (action === "create-game" ||');
+  for (const allowed of [true, false]) {
+    let release;
+    const ready = new Promise(resolve => { release = resolve; });
+    const events = [];
+    const context = { waitForAccountGate: () => ready,
+      gameSound: { play: cue => events.push(cue) },
+      storyDialog: { open: opponent => events.push(opponent) },
+      prepareOpponent: (mode, opponent) => events.push(`${mode}:${opponent}`),
+      actionEl: { dataset: { opponent: 'babs' } } };
+    runInNewContext(`globalThis.open = async () => { const action = 'opponent-story'; ${handler} };`, context);
+    const opening = context.open();
+    await Promise.resolve();
+    assert.deepEqual(events, [], "no sound, dialog or preparation before readiness");
+    release(allowed);
+    await opening;
+    assert.deepEqual(events, allowed ? ['intro', 'babs', 'intro:babs'] : []);
+  }
+});
 
 test("game controls do not render standalone record-move or end-turn buttons", () => {
   assert.doesNotMatch(source, /data-action="record-move"/);

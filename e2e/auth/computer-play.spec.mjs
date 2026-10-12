@@ -119,6 +119,8 @@ test(`${profile} prepares and plays as Player 2 with the production model`, asyn
   await registerComputerTester(page);
   await page.locator(`[data-action="opponent-story"][data-opponent="${profile}"]`).click();
   const story = page.getByRole('dialog');
+  // Preparation is an operation within the test budget, not a ten-second text transition.
+  await story.locator('[data-story-play]').click({ trial: true });
   await expect(story.locator('[data-story-readiness]')).toContainText('Ready to play');
   const create = page.waitForResponse(response => new URL(response.url()).pathname === '/api/shell/games' && response.request().method() === 'POST');
   await story.locator('[data-story-play]').click();
