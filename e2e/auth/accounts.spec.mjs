@@ -578,8 +578,18 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
   await page.addInitScript(() => {
     const original = window.fetch.bind(window);
     window.__heldAccountLists = [];
+    window.__accountSessionReads = { pending: 0, username: null };
     window.fetch = async (...args) => {
-      const response = await original(...args);
+      const sessionRead = new URL(args[0], location.href).pathname === "/api/auth/session";
+      if (sessionRead) window.__accountSessionReads.pending++;
+      let response;
+      try {
+        response = await original(...args);
+        if (sessionRead) {
+          const session = await response.clone().json();
+          window.__accountSessionReads.username = session.authenticated ? session.account.username : null;
+        }
+      } finally { if (sessionRead) window.__accountSessionReads.pending--; }
       if (window.__holdAccountLists && new URL(args[0], location.href).pathname === "/api/shell/games" && (!args[1]?.method || args[1].method === "GET")) {
         const json = response.json.bind(response);
         response.json = async () => {
@@ -631,6 +641,12 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
     await dialog(sibling).getByLabel("Password", { exact: true }).fill(password);
     await dialog(sibling).getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(dialog(sibling)).not.toBeVisible();
+    // The sibling closing its form does not mean this tab has consumed both
+    // storage/channel invalidations. Wait for its own settled second session.
+    await expect.poll(() => page.evaluate(() => ({
+      ...window.__accountSessionReads,
+      authenticated: document.querySelector('[data-testid="account-open"]')?.dataset.authenticated,
+    }))).toEqual({ pending: 0, username: second, authenticated: "true" });
     await account(page);
     await expect(dialog(page)).toContainText(`@${second}`);
     await dialog(page).getByRole("button", { name: "Close", exact: true }).click();

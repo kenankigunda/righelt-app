@@ -1,7 +1,16 @@
 import {test,expect} from '@playwright/test';
+// Freeze the target while pausing: install starts a running clock, so pausing
+// at its original epoch can race even a single real-time tick.
+async function freezeLoadingClock(page) {
+ const time=Date.parse('2026-01-01T00:00:00Z');
+ await page.clock.install({time});
+ await page.clock.setFixedTime(time);
+ await page.clock.pauseAt(time);
+ await page.clock.setSystemTime(time);
+}
 test.beforeEach(async({page})=>{await page.goto('/browser-integration/support/loading.html');await page.waitForFunction(()=>window.fixtureReady);});
 test('short operations stay quiet, delayed cue keeps label and dimensions, completion removes it',async({page})=>{
- await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});await page.clock.pauseAt(new Date('2026-01-01T00:00:00Z'));
+ await freezeLoadingClock(page);
  const button=page.getByRole('button',{name:'Start a friend game'});
  const before=await button.boundingBox();
  await page.evaluate(()=>window.setPending(true));
@@ -20,7 +29,7 @@ test('short operations stay quiet, delayed cue keeps label and dimensions, compl
  await expect(button.locator('.loading-pieces')).toHaveCount(0);
 });
 test('slow context is explanatory, cancellation clears timers and leaves surroundings intact',async({page})=>{
- await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});await page.clock.pauseAt(new Date('2026-01-01T00:00:00Z'));
+ await freezeLoadingClock(page);
  await page.evaluate(()=>{window.heading=document.querySelector('h2');document.querySelector('#region').dataset.loadingState='pending';document.querySelector('#region').setAttribute('aria-busy','true');});
  await page.clock.runFor(5001);
  await expect(page.getByRole('status')).toHaveText('Your game is taking a little longer to load.');
@@ -44,7 +53,7 @@ test('reduced motion, hidden state and unmount do not keep animation or stale st
  await expect(page.locator('.loading-pieces')).toHaveCount(0);
 });
 test('closing a pending opponent introduction retires its clock before the cue appears',async({page})=>{
- await page.waitForFunction(()=>window.controllersReady);await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});await page.clock.pauseAt(new Date('2026-01-01T00:00:00Z'));
+ await page.waitForFunction(()=>window.controllersReady);await freezeLoadingClock(page);
  await page.evaluate(()=>{window.story.open('friend');document.querySelector('[data-story-play]').click();});
  await expect(page.locator('[data-story-play]')).toHaveAttribute('data-loading-phase','quiet');
  await page.evaluate(()=>window.story.close());await page.clock.runFor(6000);
@@ -55,7 +64,7 @@ test('closing a pending opponent introduction retires its clock before the cue a
  await expect(page.getByRole('dialog',{name:'Friend',exact:true}).locator('[data-story-play]')).not.toHaveAttribute('data-loading-phase');
 });
 test('real rematch and profile controllers expose slow feedback then retire it on completion',async({page})=>{
- await page.waitForFunction(()=>window.controllersReady);await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});await page.clock.pauseAt(new Date('2026-01-01T00:00:00Z'));
+ await page.waitForFunction(()=>window.controllersReady);await freezeLoadingClock(page);
  await page.evaluate(()=>{window.rematch.open({opponent:'friend',rematchSide:'p1'});document.querySelector('[data-rematch-start]').click();});
  await page.clock.runFor(5001);
  await expect(page.getByText('Starting your game is taking a little longer than usual.')).toBeVisible();
@@ -71,7 +80,7 @@ test('real rematch and profile controllers expose slow feedback then retire it o
  await expect(page.locator('.loading-context')).toHaveCount(0);
 });
 test('replacing a pending region preserves its episode and does not invent a new delay',async({page})=>{
- await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});await page.clock.pauseAt(new Date('2026-01-01T00:00:00Z'));
+ await freezeLoadingClock(page);
  await page.evaluate(()=>document.querySelector('#region').dataset.loadingState='pending');
  await page.clock.runFor(4900);
  await page.evaluate(()=>{const old=document.querySelector('#region');const next=old.cloneNode(true);next.querySelector('.loading-pieces')?.remove();old.replaceWith(next);});
@@ -82,7 +91,7 @@ test('replacing a pending region preserves its episode and does not invent a new
  await expect(page.locator('.loading-context')).toHaveCount(0);
 });
 test('recovery can own its context without a second ordinary-loading announcement',async({page})=>{
- await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});await page.clock.pauseAt(new Date('2026-01-01T00:00:00Z'));
+ await freezeLoadingClock(page);
  await page.evaluate(()=>{const region=document.querySelector('#region');region.dataset.loadingContext='external';region.dataset.loadingState='pending';});
  await page.clock.runFor(6000);
  await expect(page.locator('#region > .loading-pieces')).toBeVisible();
@@ -91,7 +100,7 @@ test('recovery can own its context without a second ordinary-loading announcemen
 
 test('a centered wide action replaces its icon in place without moving its label',async({page})=>{
  await page.waitForFunction(()=>window.controllersReady);
- await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});await page.clock.pauseAt(new Date('2026-01-01T00:00:00Z'));
+ await freezeLoadingClock(page);
  await page.evaluate(()=>window.story.open('friend'));
  const button=page.getByRole('dialog',{name:'Friend',exact:true}).locator('[data-story-play]');
  await button.evaluate(el=>el.style.width='100%');
