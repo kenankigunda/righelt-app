@@ -1,3 +1,4 @@
+import { loadingAttributes } from "./loading.js";
 import { renderPlayerEmblem } from './player-emblem.js';
 const escape = (value) =>
   String(value ?? "").replace(
@@ -29,7 +30,7 @@ export const createInlineProfiles = ({document = globalThis.document, fetcher = 
       const slot = button.parentElement.querySelector('[data-profile-slot]');
       if (!slot) continue;
       slot.id = `player-profile-details-${index}`;button.setAttribute("aria-controls",slot.id);
-      const markup = open ? `<span data-testid="public-profile" role="status">${escape(state.text)}</span>` : '';
+      const markup = open ? `<span data-testid="public-profile" role="status" ${state.pending ? loadingAttributes(`profile:${state.key}`, "This profile is taking a little longer to load.") : ""}>${escape(state.text)}</span>` : '';
       if (slot.innerHTML === markup) continue;
       const from = slot.getBoundingClientRect().height;
       slot.getAnimations?.().forEach(animation => animation.cancel());
@@ -43,7 +44,7 @@ export const createInlineProfiles = ({document = globalThis.document, fetcher = 
     const key = source.dataset.profileKey;
     if (state?.key === key) {close();return;}
     const marker = ++generation;
-    state = {key,text:username ? 'Loading' : 'Playing as a guest.'};sync();
+    state = {key,pending:Boolean(username),text:username ? '' : 'Playing as a guest.'};sync();
     if (!username) return;
     try {
       const response = await fetcher(`/api/profiles/${encodeURIComponent(username)}`,{cache:'no-store'});
@@ -51,9 +52,9 @@ export const createInlineProfiles = ({document = globalThis.document, fetcher = 
       if (marker !== generation) return;
       if (!response.ok) throw Error('unavailable');
       const joined = formatJoinedMonth(profile.joinedMonth);
-      state.text = joined ? `Joined ${joined}` : 'Righelt player';sync();
+      state.pending = false; state.text = joined ? `Joined ${joined}` : 'Righelt player';sync();
     } catch {
-      if (marker === generation) {state.text = 'Could not load. Close and try again.';sync();}
+      if (marker === generation) {state.pending = false; state.text = 'Could not load. Close and try again.';sync();}
     }
   }};
 };

@@ -3,6 +3,7 @@ import {test,expect} from '@playwright/test';
 import {waitForAccountStartup} from './helpers.mjs';
 
 test('self-play resumes after account creation and uses the shared account and profile controls',async({page,browser},info)=>{
+ await page.setViewportSize({width:1920,height:1100});
  expect((await fetch(`${AUTH_CONTROL_ORIGIN}/reset-limits`,{method:'POST'})).status).toBe(200);
  await page.goto('/');await waitForAccountStartup(page);
  await page.getByRole('button',{name:'Play both sides',exact:true}).click();
@@ -30,8 +31,17 @@ test('self-play resumes after account creation and uses the shared account and p
  await page.getByTestId('participant-player-1').getByRole('button').click();
  const profile=page.getByTestId('public-profile');await expect(profile).toContainText('Joined');
  await expect(page.getByTestId('participant-player-1').getByRole('button')).toHaveAttribute('aria-expanded','true');
- expect(await page.getByTestId('participant-player-1').locator('.player-name').evaluate(el=>el.getBoundingClientRect().bottom<=el.parentElement.querySelector('.player-username').getBoundingClientRect().top)).toBe(true);
- await profile.evaluate(async el=>{await Promise.all(el.parentElement.getAnimations().map(a=>a.finished.catch(()=>{})));});
+ // Presence updates may replace profile nodes between locator resolution and
+ // evaluation. Inspect the current mounted geometry and motion atomically.
+ await expect.poll(()=>page.evaluate(()=>{
+  const row=document.querySelector('[data-testid="participant-player-1"]');
+  const name=row?.querySelector('.player-name'),username=row?.querySelector('.player-username');
+  const profile=row?.querySelector('[data-testid="public-profile"]');
+  if(!name?.isConnected||!username?.isConnected||!profile?.parentElement)return false;
+  if(profile.parentElement.getAnimations().some(a=>(a.playState==='running'||a.pending)&&Number.isFinite(a.effect?.getComputedTiming().endTime)))return false;
+  const nameRect=name.getBoundingClientRect(),usernameRect=username.getBoundingClientRect();
+  return nameRect.height>0&&usernameRect.height>0&&nameRect.bottom<=usernameRect.top;
+ })).toBe(true);
  await page.screenshot({path:info.outputPath('profile-wide.png')});
  const blue=page.getByTestId('participant-player-2').getByRole('button');await blue.click();
  await expect(page.getByTestId('participant-player-1').getByRole('button')).toHaveAttribute('aria-expanded','false');

@@ -89,7 +89,7 @@ test("scenario flyout saves a selected source and destination after switching an
       })
       .toBe(true);
 
-    await page.getByRole("button", { name: "Scenarios" }).click();
+    await page.getByRole("button", { name: "Scenarios", exact: true }).click();
     await expect(page.locator('[data-scenario-save-field="title"]')).toBeVisible();
     await expect
       .poll(async () => cellHasClass(targetCell, "target"), {
@@ -161,7 +161,7 @@ test("closing the scenarios flyout restores hover target selection on an already
       .toBe(true);
     await expect(page.locator("#shell-board-preview-label")).toContainText("Click to");
 
-    await page.getByRole("button", { name: "Scenarios" }).click();
+    await page.getByRole("button", { name: "Scenarios", exact: true }).click();
     await expect(page.locator('[data-scenario-save-field="title"]')).toBeVisible();
     await expect
       .poll(async () => cellHasClass(firstTargetCell, "target"), {
@@ -180,7 +180,7 @@ test("closing the scenarios flyout restores hover target selection on an already
     await firstTargetCell.click();
     await expect(page.locator("#shell-board-preview-label")).toContainText("Click again to");
 
-    await page.getByRole("button", { name: "Scenarios" }).click();
+    await page.getByRole("button", { name: "Scenarios", exact: true }).click();
     await expect(page.locator('[data-scenario-save-field="title"]')).toHaveCount(0);
 
     await expect(sourceCell).toHaveClass(/(?:^|\s)selected-piece(?:\s|$)/);

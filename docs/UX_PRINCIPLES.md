@@ -164,7 +164,7 @@ Examples illustrating the spirit:
 
 - Motion should communicate causality, feedback, and state change without adding churn.
 - Favor short, confident transitions over flashy flourishes.
-- Prefer a subtle loading swipe over the affected text or component instead of a spinner. Keep the label readable and the layout stable; pair motion with meaningful status text, and show a static status when reduced motion is requested.
+- Use the shared three-piece loading cue in the affected control or component. Keep the label readable and the layout stable; pair motion with meaningful status text, and show a static status when reduced motion is requested.
 - Pressed-state feedback should feel immediate. Release-state feedback should resolve as one short, coherent animation.
 - Animate changes in a surface’s size smoothly, including content appearing, disappearing, wrapping, or switching forms. Use a short, interruptible transition from the current size; preserve focus, readable text, scrolling, and viewport bounds. Avoid abrupt height jumps and blanket transitions on every property.
 - Animations that change layout should protect readability while moving.
@@ -189,7 +189,7 @@ Examples illustrating the spirit:
 - Prefer a small number of well-defined visual ideas repeated consistently over a grab bag of trendy effects.
 - Polished surfaces should feel lightweight and game-friendly, similar in usability spirit to the clearest casual game products, while still expressing Righelt's own brand.
 - Avoid bootstrap-like sameness: default cards, buttons, alerts, and forms should be treated as unfinished until they carry Righelt's own spacing, emphasis, and feedback language.
-- Small pleasant details matter when they do not distract: subtle hover depth, composed loading shimmer, quiet background atmosphere, and confident transition timing can all contribute to a memorable shell.
+- Small pleasant details matter when they do not distract: subtle hover depth, restrained piece-setting cues, quiet background atmosphere, and confident transition timing can all contribute to a memorable shell.
 - Personality should never come from noise. If an effect competes with turn-taking, move comprehension, or decision clarity, it is too much.
 
 ## Sound Principle
@@ -226,7 +226,7 @@ Examples illustrating the spirit:
 
 ### Simple account edits autosave
 
-Save lightweight account fields automatically after a short typing pause or on blur. Show Autosaves, Saving…, Saved, or Not saved in the field's inline action position. Use the shared subtle loading swipe while saving and state-appropriate text colors. Keep input and focus stable, serialize writes so the latest edit wins, and preserve drafts after errors with Retry and an explicit discard option. Credential changes remain deliberate submissions.
+Save lightweight account fields automatically after a short typing pause or on blur. Show Autosaves, Saving…, Saved, or Not saved in the field's inline action position. Use the shared three-piece cue while saving and state-appropriate text colors. Keep input and focus stable, serialize writes so the latest edit wins, and preserve drafts after errors with Retry and an explicit discard option. Credential changes remain deliberate submissions.
 
 
 ### Make new passwords easy to verify
@@ -277,7 +277,7 @@ Home sections alternate red/blue accents. On game pages, only the Board has colo
 
 Interaction backgrounds are quiet washes, never large saturated fills that compete with pieces or illustrations. Use outlines for emphasis and retain clear keyboard focus. Images belong to their surrounding component, using transparent negative space and crisp contours. Start uses simple character portraits, and Friend uses red/blue hands and pieces in the same faceted style. Full scenes belong to introductions.
 
-CTA icons use familiar concepts expressed through Righelt's clipped and angular construction. Share one vector family and consistent weight; retain labels on primary actions and accessible names on icon controls. Keep texture and bevel out of small icons. Prefer readable loading swipes over spinners. Size changes should be short, interruptible and preserve focus, scrolling and viewport bounds. Reduced motion removes movement without implying muted sound.
+CTA icons use familiar concepts expressed through Righelt's clipped and angular construction. Share one vector family and consistent weight; retain labels on primary actions and accessible names on icon controls. Keep texture and bevel out of small icons. Use the shared three-piece cue for pending operations. Size changes should be short, interruptible and preserve focus, scrolling and viewport bounds. Reduced motion removes movement without implying muted sound.
 
 The latest carousel rule supersedes hover/focus pause: cycle every three seconds, continuing through hover and mere focus. Deliberate keyboard or caret input stops cycling for the visit; reduced motion is manual.
 
@@ -337,7 +337,7 @@ Group an identity's emblem, display name, secondary username, and connection sta
 
 ### Overlay surface and scrolling contract
 
-The shared modal surface owns its stone decoration and persistent close control. A single padded inner viewport owns content scrolling. Never let decorative layers create scrollable overflow. Size artwork from the available width and its natural aspect ratio. Bound the scrolling viewport, not the scene scale. Reserve real space below the last action and around clipped corners. Short screens, enlarged text, and longer copy may require inner scrolling, but all content and actions must remain reachable without scrolling the background. Test both fitting and overflowing content, resize while open, and scroll restoration after dismissal. Apply this structure to new overlays rather than adding opponent-specific overflow patches.
+The shared modal surface owns its stone decoration and persistent close control. A single padded inner viewport owns content scrolling. Never let decorative layers create scrollable overflow. Compose artwork and copy together using the available width and height. Use a generous side-by-side composition on wide screens and a stacked composition on phones. Keep the primary action visible on first opening at common default-zoom viewports. Bound the scrolling viewport and preserve the scene aspect ratio. Reserve real space below the last action and around clipped corners. Short screens, enlarged text, and longer copy may require inner scrolling, but all content and actions must remain reachable without scrolling the background. Test both fitting and overflowing content, resize while open, and scroll restoration after dismissal. Apply this structure to new overlays rather than adding opponent-specific overflow patches.
 
 
 ## Current sound contract (October 5, supersedes earlier hover experiments)
@@ -377,7 +377,7 @@ The legend explains only the current board visualization. Commander and supply p
 Artwork that includes gameplay uses the current Righelt board and piece vocabulary: clipped unit pieces, the stepped commander with its open horizontal center, and the angular supply-point arch. Use the shared piece-symbol source and rendered board as references. Avoid generic checker discs. Preserve the characters, scene continuity, large composition, and surface-integrated negative space while updating the game details.
 
 
-Overlay scrollbars belong inside the clipped surface. Keep an inset scrolling viewport clear of all angled corners, with quiet native scrollbar styling, persistent close controls, and one scroll owner. Preserve this geometry at browser zoom and short viewport heights. Fit art to width and allow needed content scrolling rather than shrinking illustrations into thumbnails.
+Overlay scrollbars belong inside the clipped surface. Keep an inset scrolling viewport clear of all angled corners, with quiet native scrollbar styling, persistent close controls, and one scroll owner. Preserve this geometry at browser zoom and short viewport heights. Recompose wide introductions with art beside copy, preserve generous scene scale, and allow needed content scrolling at high zoom rather than shrinking illustrations into thumbnails.
 
 Friend's Start card uses the animated hands. Its narrative overlay expands those hands into a welcoming Righelt board and tabletop scene, without full human figures or animals. Animal characters are exclusive to computer opponents. Illustrated supply points always occupy opposing corner squares, never interior squares.
 
@@ -404,3 +404,39 @@ Initial section population uses its natural height. Animate size only between tw
 Decorative geometry should only change when its measured inputs change. Nested content updates, equal-size logo replacement, and no-op resize events must not rewrite the full-page grid. When scrolling changes only the origin, preserve its pitch and path. Regression checks should cover unchanged updates as well as real responsive realignment.
 
 Decoration must not delay deliberate actions. The background grid is static for this pass, following the October 7 decision. Preserve its logo alignment, corner emphasis, quieter center, mask and line colors at fixed opacity 1. This supersedes the requested breathing cycle and its stepped implementation. Controlled Linux WebKit measurements found that multiple animated grids added substantial frame-stability delays. Static rendering removed that additional cost. Any future motion must first demonstrate equivalent responsiveness with multiple pages open, and respect reduced motion and inactive pages. A new wrapper, canvas or animation scheduler is not inherently faster.
+
+
+
+### Introduction fit and quiet hover
+
+Opponent introductions should expose their Play action without scrolling at common default-zoom laptop, tablet, and phone sizes. Recompose wide introductions with artwork beside copy before reducing scene prominence. On narrow screens balance artwork height, readable fixed story text, and action spacing. Never crop important scene content to make a dialog fit. High zoom, enlarged text, and genuinely short viewports retain the single inset scrolling viewport and persistent close control. Tests inspect the initial action position without scrolling it into view, then separately test real overflow and resizing.
+
+An illustration must end intentionally inside its component. Props, sleeves, and other foreground elements must not be arbitrarily sliced at an inset image boundary. Use complete crisp silhouettes and clean transparent negative space so the actual card surface continues into the scene. Do not hide a cutoff with feathered masks or shrink the scene into a thumbnail.
+
+Hover intensity follows the control's role. Lightweight inline text actions, including ending a rush, use the same quiet surface token as icon controls. They must never inherit the saturated fill or shadow of primary CTAs merely because they are buttons inside a panel. Keep readable text, clear focus, and silent hover. Test the actual composed page so broader selector overrides cannot bypass this rule.
+
+
+### One utility system and source-linked overlays
+
+Keep sound immediately to the left of Account in one header control group. Account stays visible when signed out and opens sign-in. Authenticated Account opens settings. When account service is unavailable the visible control is disabled, without blocking browsing.
+
+Account, Scenarios, and Debug share the cut-stone utility surface, consistent inset scrolling, headings, and lightweight close controls. Opening Account replaces other utilities. Opening Scenarios or Debug replaces Account only after pending settings have saved successfully. Failed saves remain visible and prevent accidental loss. A click on passive main-page space dismisses an open utility. Actionable elements keep their own behavior and do not implicitly dismiss it.
+
+A utility must not squeeze a usable medium-width page into an awkward narrower layout. Reserve side space only when the main content still meets its normal wide-layout minimum. Otherwise overlay the utility while preserving page geometry and keeping header controls reachable. Right-attached surfaces enter and exit from the right, bottom-attached surfaces from below. Fullscreen phone Account settings retain their established modal behavior.
+
+A modal opened from a card or control should grow from that source and dismiss back toward it. Use one shared motion implementation, preserve background scroll and focus restoration, and use the paired opening/closing sounds already defined. A decorative exit copy may finish the visual transition after the real dialog has released its focus trap and scroll lock. Such copies must be inert, hidden from accessibility tools, and removed after animation. Reduced motion removes the transform entirely. If the source is missing or offscreen, omit source motion rather than inventing an origin. Game-entry transitions continue to own motion when Play starts a match.
+
+Geometry acceptance checks wait for actual finite entry motion to finish before measuring the settled component. Keep motion behavior in dedicated tests, including reduced motion, and do not replace completion waits with fixed sleeps or disable effects to satisfy layout assertions. Shared test helpers should distinguish source transforms from deliberately inspected height animations.
+
+
+### Loading as setting up a game (October 11, supersedes loading swipes)
+
+Loading uses static low-contrast stone placeholders and a small cue of three angular pieces setting down. Do not pulse or shimmer whole surfaces, labels, or the page. Show the available shell immediately. Reserve an uncached board with an empty grid silhouette, never an invented game position. Keep known section titles visible. Unknown home lists reserve at most one placeholder row based on their available container width, including when flyouts narrow the page, so available Start actions remain within reach.
+
+The shared loading presentation owns a 200 ms cue delay and a five-second explanatory threshold, not operation deadlines. Acknowledge and guard deliberate actions immediately. Keep button labels and dimensions unchanged, replacing their icon with the cue or reserving a matching slot for iconless controls. Complete immediately: no minimum dwell, artificial progress or extra animation cycle. Cancel presentation timers when an operation ends or its surface disappears; continuous operations retain their clock through DOM patches. Slow text describes waiting without inventing failure or enabling retries.
+
+Retain existing content, headings, scroll, focus and open flyouts during refresh. Routine automatic refresh stays quiet unless delayed or action-affecting. Reduced motion uses stationary pieces; hidden pages pause the cue. All loading is silent. Affiliation informs cue color, red when unknown, with contrasting pieces on filled controls; color does not imply success.
+
+The game-freeze/recovery stream owns connection state, safe retry, diagnostic disclosure and deadlines. Reconnecting alone retains its faint board-only sweep plus this shared cue, four-second continuous-episode message delay, and immediate confirmed failures. Do not reset recovery timing on retry or copy it into generic loading. Shared visual integration uses `data-loading-state="pending"` and an optional stable `data-loading-key`; removal/idle retires the presentation. Recovery sets `data-loading-context="external"` so its four-second message owns explanatory text instead of the generic five-second copy. Do not infer recovery or success from DOM appearance.
+
+Outside-click dismissal follows the original event path. An actionable child can be replaced during rendering before the shell receives its click. Do not treat that detached child as a click on passive page space or close an unrelated open flyout.

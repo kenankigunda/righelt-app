@@ -29,7 +29,7 @@ test("result automatic entry happens once on an observed live finish, never hydr
 
 test("cancelled rematch gate cannot create or close a reopened dialog", async () => {
   let click, release, created = 0;
-  const nodes = { "[name=rematch-opponent]": { value: "self" }, "[name=rematch-side]:checked": { value: "p2" }, "[data-rematch-start]": {}, "[role=status]": {} };
+  const nodes = { "[name=rematch-opponent]": { value: "self" }, "[name=rematch-side]:checked": { value: "p2" }, "[data-rematch-start]": { dataset: {}, setAttribute() {}, removeAttribute() {} }, "[role=status]": {} };
   const element = { open: false, dataset: {}, querySelector: selector => nodes[selector], addEventListener: (_, fn) => { click = fn; } };
   const createModal = ({ onClose }) => ({ element, open() { element.open = true; }, close() { element.open = false; onClose(); } });
   const gate = new Promise(resolve => { release = resolve; });

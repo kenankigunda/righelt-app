@@ -48,8 +48,10 @@ test("copy invite waits for pending game creation and then copies the committed 
 
     await page.getByTestId("copy-invite").click();
 
-    await expect(page.getByTestId("copy-invite")).toHaveText("Preparing link");
+    await expect(page.getByTestId("copy-invite")).toHaveText("Invite someone to play as blue");
     await expect(page.getByTestId("copy-invite")).toHaveAttribute("data-pending", "true");
+    await expect(page.getByTestId("copy-invite")).toBeDisabled();
+    await expect(page.getByTestId("copy-invite").locator(".loading-pieces")).toBeVisible();
     await expect.poll(async () => page.evaluate(() => window.__copiedTexts.length)).toBe(0);
 
     releaseCreate?.();
@@ -68,7 +70,7 @@ test("copy invite waits for pending game creation and then copies the committed 
   }
 });
 
-test("joining through a delayed direct-link flow only pulses the clicked join button", async ({ browser, baseURL }) => {
+test("joining through a delayed direct-link flow only marks the clicked join button", async ({ browser, baseURL }) => {
   const owner = await createIsolatedPage(browser);
   const guest = await createIsolatedPage(browser);
 
@@ -103,7 +105,9 @@ test("joining through a delayed direct-link flow only pulses the clicked join bu
     await viewerButton.click();
 
     await expect(viewerButton).toHaveAttribute("data-pending", "true");
-    await expect(viewerButton).toHaveText("Joining");
+    await expect(viewerButton).toBeDisabled();
+    await expect(viewerButton.locator(".loading-pieces")).toBeVisible();
+    await expect(viewerButton).toHaveText("Join as viewer");
     await expect(otherButton).toBeEnabled();
 
     releaseJoin?.();
@@ -115,7 +119,7 @@ test("joining through a delayed direct-link flow only pulses the clicked join bu
   }
 });
 
-test("scenario update only pulses the clicked scenario button while the local write is pending", async ({ browser }) => {
+test("scenario update only marks the clicked scenario button while the local write is pending", async ({ browser }) => {
   const { context, page } = await createIsolatedPage(browser);
 
   try {

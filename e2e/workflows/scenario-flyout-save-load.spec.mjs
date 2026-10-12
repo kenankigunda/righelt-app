@@ -286,7 +286,13 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
     await expect(page.locator("#shell-board-preview-label")).toContainText("Continue rushing on one of the");
     await expect(page.locator('[data-board-preview-action="end-turn"]')).toBeVisible();
 
-    await page.locator('[data-board-preview-action="end-turn"]').click();
+    const endTurn = page.locator('[data-board-preview-action="end-turn"]');
+    await endTurn.hover();
+    await expect.poll(() => endTurn.evaluate(el => {
+      const style = getComputedStyle(el);
+      return {background:style.backgroundColor,color:style.color,shadow:style.boxShadow};
+    })).toEqual({background:'rgba(37, 43, 45, 0.06)',color:'rgb(37, 43, 45)',shadow:'none'});
+    await endTurn.click();
 
     await expect(page.locator("#shell-board-turn-indicator")).toContainText("Player 1 to play");
     await expect(page.locator('[data-board-preview-action="end-turn"]')).toHaveCount(0);
@@ -320,7 +326,9 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
     await expect(page.locator("#scenario-select")).toBeVisible();
 
     await sourceCell.click();
+    await expect(page.locator("#scenario-select")).toBeVisible();
     await targetCell.click();
+    await expect(page.locator("#scenario-select")).toBeVisible();
 
     await page.locator('[data-scenario-save-field="title"]').fill(scenarioTitle);
     await page.locator('[data-scenario-save-field="description"]').fill(scenarioDescription);

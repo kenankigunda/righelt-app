@@ -1,3 +1,4 @@
+import { animateOverlayEntry, animateOverlayExit } from './overlay-motion.js';
 import { lockOverlayScroll } from './overlay-scroll.js';
 // Native modal dialogs provide background inertness and the browser focus trap.
 export const createModal = ({ document = globalThis.document, labelId, className = "", blocking = false, onClose = () => {} }) => {
@@ -6,6 +7,7 @@ export const createModal = ({ document = globalThis.document, labelId, className
   element.setAttribute("aria-labelledby", labelId);
   document.body.append(element);
   let sizeAnimation = null;
+  let entryAnimation = null;
   let lastHeight = null;
   const content = document.createElement("div");
   content.className = "modal-content";
@@ -31,6 +33,12 @@ export const createModal = ({ document = globalThis.document, labelId, className
   const close = (reason = "dismiss") => {
     if (!element.open) return;
     sizeAnimation?.cancel();sizeAnimation = null;lastHeight = null;
+    entryAnimation?.cancel();entryAnimation = null;
+    // Restore the page before measuring the return target; native dialog focus
+    // may have changed the underlying document's programmatic scroll offset.
+    releaseScroll?.();releaseScroll = null;
+    const animationSource = trigger?.isConnected ? trigger : resolveTrigger?.();
+    if (reason === 'dismiss') animateOverlayExit(element, animationSource);
     element.close();
     releaseScroll?.();releaseScroll = null;
     onClose(reason);
@@ -44,5 +52,5 @@ export const createModal = ({ document = globalThis.document, labelId, className
   element.addEventListener('pointercancel',()=>{backdropPress=false;});
   element.addEventListener("cancel", event => { event.preventDefault(); if(!blocking)close(); });
   element.addEventListener("click", event => { const dismiss=!blocking && backdropPress && event.target===element && outside(event);backdropPress=false;if (dismiss || event.target.closest("[data-modal-close]")) close(); });
-  return { element, close, open(html, source = document.activeElement, findTrigger = null) { trigger = source; resolveTrigger = findTrigger; element.dataset.actionAffiliation = document.querySelector("#app")?.dataset.actionAffiliation || "red"; content.innerHTML = html; content.scrollTop = 0; controls.replaceChildren(); const closeControl = content.querySelector(".story-close"); if (closeControl) controls.append(closeControl); const view = document.defaultView; const position = {left:view.scrollX, top:view.scrollY, behavior:"instant"}; if (!element.open) {releaseScroll = lockOverlayScroll(document);element.showModal();} element.querySelector("[autofocus], button")?.focus({preventScroll:true}); content.scrollTop = 0; view.scrollTo(position); }, destroy() { close(); resizeObserver?.disconnect(); element.remove(); } };
+  return { element, close, open(html, source = document.activeElement, findTrigger = null) { trigger = source; resolveTrigger = findTrigger; element.dataset.actionAffiliation = document.querySelector("#app")?.dataset.actionAffiliation || "red"; content.innerHTML = html; content.scrollTop = 0; controls.replaceChildren(); const closeControl = content.querySelector(".story-close"); if (closeControl) controls.append(closeControl); const view = document.defaultView; const position = {left:view.scrollX, top:view.scrollY, behavior:"instant"}; if (!element.open) {releaseScroll = lockOverlayScroll(document);element.showModal();} element.querySelector("[autofocus], button")?.focus({preventScroll:true}); content.scrollTop = 0; view.scrollTo(position); entryAnimation?.cancel(); entryAnimation = animateOverlayEntry(element, trigger); }, destroy() { close(); resizeObserver?.disconnect(); element.remove(); } };
 };

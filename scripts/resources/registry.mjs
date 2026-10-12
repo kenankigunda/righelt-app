@@ -2,15 +2,30 @@ import { POLICY } from './policy.mjs';
 import { mkdir, readFile, writeFile, rename, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { processTable, sameProcess, live } from './system.mjs';
 export const registryRoot = () => process.env.RIGHELT_RESOURCE_REGISTRY || path.join(os.homedir(), '.local', 'state', 'righelt', 'resources');
 export function recordPath(id) { if (!/^[a-zA-Z0-9-]{1,100}$/.test(id)) throw Error('Invalid resource run ID'); return path.join(registryRoot(), `${id}.json`); }
+const pendingWrites = new Map();
 export async function saveRecord(record) {
   const file = recordPath(record.id);
-  await mkdir(registryRoot(), { recursive: true, mode: 0o700 });
-  const tmp = `${file}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(record) + '\n', { mode: 0o600 });
-  await rename(tmp, file);
+  // Monitoring and shutdown can persist the same mutable record concurrently.
+  // Snapshot before yielding and publish in call order, including after failures.
+  const contents = JSON.stringify(record) + '\n';
+  const write = (pendingWrites.get(file) ?? Promise.resolve()).catch(() => {}).then(async () => {
+    await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(tmp, contents, { mode: 0o600 });
+      await rename(tmp, file);
+    } catch (error) {
+      await rm(tmp, { force: true }).catch(() => {});
+      throw error;
+    }
+  });
+  pendingWrites.set(file, write);
+  try { await write; }
+  finally { if (pendingWrites.get(file) === write) pendingWrites.delete(file); }
 }
 export async function records() {
   let names; try { names = await readdir(registryRoot()); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }

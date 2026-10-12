@@ -26,7 +26,14 @@ async function register(page, username, { gate = false } = {}) {
   await dialog(page).getByRole("button", { name: "Create account & continue", exact: true }).click();
   await expect(dialog(page)).not.toBeVisible();
   await waitForFriendIntroduction(page);
+  // The local Player 1 preview precedes persistence. Callers may disconnect or
+  // reload immediately, so finish creating their fixture before returning.
+  const created = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/shell/games");
   await page.getByRole('button',{name:'Start a friend game',exact:true}).click();
+  const response = await created;
+  expect(response.ok()).toBe(true);
+  const body = await response.json();
+  await expect(page).toHaveURL(new RegExp(`#/game/${body.game.id}(?:[/?]|$)`));
   if (gate) {
     await expect(page).toHaveURL(/#\/game\//);
     await expect(page.getByTestId("game-role")).toContainText("Player 1");
@@ -34,7 +41,7 @@ async function register(page, username, { gate = false } = {}) {
   } else {
     await expect(page).toHaveURL(/#\/game\//);
     await page.goto("/");
-    await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
   }
 }
 async function signIn(page, username, secret = password) {
@@ -159,7 +166,7 @@ test("registration preserves the play attempt and the same seat works in another
     const other = await second.newPage();
     await other.goto(gameUrl);
     await expect(other.getByTestId("game-shell")).toBeVisible();
-    await expect(other.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+    await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
     await signIn(other, username);
     await expect(other.getByTestId("game-role")).toContainText("Player 1");
     expect(other.url()).toBe(gameUrl);
@@ -217,15 +224,15 @@ test("password change and browser logout revoke the correct sessions across tabs
     await expect(dialog(page).getByTestId("password-requirements").locator('[data-state="met"]')).toHaveCount(3);
     await dialog(page).getByRole("button", { name: "Change password", exact: true }).click();
     await expect(dialog(page)).not.toBeVisible();
-    await expect(other.getByRole("button", { name: "Account", exact: true })).not.toBeVisible({ timeout: 15000 });
+    await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false", { timeout: 15000 });
     await expect(other.getByTestId("game-board")).toBeVisible();
     await other.reload();
-    await expect(other.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+    await expect(other.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
     await signIn(other, username, replacement);
     await account(page);
     await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
-    await expect(sibling.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
-    await expect(page.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+    await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
+    await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
     await expect(page.getByTestId("game-board")).toBeVisible();
     await other.reload();
     await expect(other.getByTestId("game-role")).toContainText("Player 1");
@@ -255,7 +262,7 @@ test("offline logout blocks local authority until server revocation finishes", a
   await page.context().setOffline(true);
   await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page.getByText("Sign-out pending", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
   await expect(page.getByTestId("game-board")).toBeVisible();
   await page.context().setOffline(false);
   try { await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible(); }
@@ -265,7 +272,7 @@ test("offline logout blocks local authority until server revocation finishes", a
     if (testInfo.status !== "passed") console.log("Account connectivity:", JSON.stringify(events));
   }
   await page.reload();
-  await expect(page.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
   await signIn(page, username);
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
   expect(await getHistoryMoveCount(page)).toBe(before);
@@ -278,7 +285,7 @@ test("expiry leaves the board visible and signing in restores the same seat", as
   await control("expire-sessions");
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await expect(page.getByTestId("game-board")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
   await signIn(page, username);
   await expect(page.getByTestId("game-role")).toContainText("Player 1");
   expect(await getHistoryMoveCount(page)).toBe(before);
@@ -467,6 +474,10 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
     await route.fulfill({ response });
   });
   try {
+  // This hold tests gesture continuity, not the real network deadline.
+  const frozenAt = Date.now();
+  await page.clock.install({ time: frozenAt - 60_000 });
+  await page.clock.pauseAt(frozenAt);
   await page.goto("/");
   const trigger = page.getByTestId("home-create-game");
   await expect(trigger).toBeVisible();
@@ -476,12 +487,13 @@ for (const gesture of ["pointer", "keyboard"]) test(`finishing the home load dur
   const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/shell/games");
   release();
   await refreshed;
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.clock.runFor(34);
   if (gesture === "pointer") await page.mouse.up();
   else await page.keyboard.up("Space");
   await expect(dialog(page)).toBeVisible();
   } finally {
     release();
+    await page.clock.resume();
     await page.unrouteAll({ behavior: "wait" });
   }
 });
@@ -514,7 +526,7 @@ test("switching accounts in another tab retires the old settings form", async ({
   const sibling = await page.context().newPage();
   try {
     await sibling.goto("/");
-    await expect(sibling.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+    await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
     await account(page);
     await dialog(page).getByLabel("Display name", { exact: true }).fill("Unsaved first account name");
     await account(sibling);
@@ -544,7 +556,7 @@ test("keyboard board activation opens sign in without losing the board", async (
     await dialog(page).getByRole("button", { name: "Sign out", exact: true }).click();
     await expect(dialog(page)).not.toBeVisible();
     await expect(page.getByText("Sign-out pending", { exact: true })).not.toBeVisible();
-    await expect(page.getByRole("button", { name: "Account", exact: true })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "false");
     const before = await getHistoryMoveCount(page);
     const cell = page.locator("#shell-board button").first();
     await expect(cell).toBeVisible();
@@ -612,7 +624,7 @@ test("a delayed play continuation is discarded after a cross-tab account switch"
     await dialog(page).getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(dialog(page)).not.toBeVisible();
     await expect.poll(() => page.evaluate(() => window.__heldAccountLists.length)).toBeGreaterThan(0);
-    await expect(sibling.getByRole("button", { name: "Account", exact: true })).toBeVisible();
+    await expect(sibling.getByRole("button", { name: "Account", exact: true })).toHaveAttribute("data-authenticated", "true");
     await account(sibling);
     await signOutAndOpenSignIn(sibling);
     await enterUsername(sibling, second);

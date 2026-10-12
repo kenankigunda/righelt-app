@@ -4,7 +4,7 @@ T-087 narrative illustrations generated with the built-in image-generation tool,
 
 ## Current visual contract
 
-Scenes fill their card generously. Plain ivory walls, linen, paving and negative space continue the card surface (#fffdf6). Use crisp selective boundaries, never fuzzy vignettes, feathered fades, halos, or CSS masks to hide a rectangular image. The scene scale follows available width and a 3:2 aspect ratio. The shared modal provides scrolling when needed rather than shrinking the art.
+Scenes fill their card generously. Plain ivory walls, linen, paving and negative space continue the card surface (#fffdf6). Use crisp selective boundaries, never fuzzy vignettes, feathered fades, halos, or CSS masks to hide a rectangular image. The scene scale follows a responsive composition and its natural 3:2 aspect ratio. Wide introductions place the scene beside the story. Narrow introductions stack them, balancing scene height and copy so Play is visible at common default zoom. The shared inset viewport retains scrolling for genuine overflow.
 
 Babs retains the rainy window, shelf, lantern, books and chair across discovery, rematch and research. Tau retains his golden shell and garden irrigation setting. Horus retains his watchtower and courtyard setting. Each opponent has three scenes and the approved fixed story.
 
@@ -19,3 +19,12 @@ The built-in edits preserve character identities, story actions and composition 
 The final generated files were inspected before encoding. Only resizing and WebP encoding followed generation (`cwebp -q 90 -resize 1200 800`), with no synthetic fades or retouching. Tau's gardening scene has no gameplay and retains its clean transparent negative space. Friend also uses clean transparency. All revised scenes use clean transparent negative space so the actual card texture continues between crisp scene elements. No blend mode approximates the surface color. Inspect every future revision in the actual component at mobile and desktop sizes, including transitions, before accepting it.
 
 Load the first image eagerly and defer subsequent scenes. A failed image must leave the story and controls usable. Artwork does not establish trained-computer readiness.
+
+
+## October 7 follow-up
+
+Friend's compact and full illustrations now use complete foreground silhouettes. Sleeves end at deliberate angles inside the scene, and cups, plates and plants remain inside the frame. True alpha reveals the actual textured card between objects. No CSS fade, blend mode, halo or clipped prop disguises an image boundary.
+
+Built-in generation edited the existing Friend assets. Full-scene prompt: preserve the faceted hands/tabletop invitation, extend cropped props and sleeves into complete angular silhouettes, use clean transparent negative space, keep red and blue supply arches on opposite corner squares, retain windowed commanders and octagonal pieces, and use no faces, animals, text, blur or feathering. Final corrective prompt: remove all colored background and shadows, preserve foreground objects, complete truncated sleeve and napkin ends, and output crisp true alpha with margin around the whole composition. Generation `2e5a3015-7164-4182-b516-aaf14719c5d8` is the delivered full scene. Generation `d32dbb90-ee46-48cd-b00f-5e32e0aa800b` is the delivered compact hands illustration. The compact prompt is recorded in `portrait-prompts.json`.
+
+Delivery conversion only resizes the compact illustration to 480 pixels wide and encodes WebP at quality 90. Alpha is preserved. Both assets were inspected in the real component, since transparent pixels may retain irrelevant RGB values in image-generation previews.

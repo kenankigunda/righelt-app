@@ -114,7 +114,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /const SHELL_VIEWPORT_GUTTER_PX = 16;/);
   assert.match(source, /const totalHorizontalGutter = SHELL_VIEWPORT_GUTTER_PX \* 2;/);
   assert.match(source, /return Math\.max\(0, viewportWidth - totalHorizontalGutter\);/);
-  assert.match(source, /return Math\.max\(0, viewportWidth - \(getWideFlyoutWidth\(viewportWidth\) \* openFlyoutCount\) - totalHorizontalGutter\);/);
+  assert.match(source, /return remaining >= SHELL_WIDE_SCREEN_MIN_WIDTH \? remaining : Math\.max\(0, viewportWidth - totalHorizontalGutter\);/);
   assert.match(source, /const getShellLayoutModeForRoute = \(route = currentRoute, viewportWidth = window\.innerWidth\) =>/);
   assert.match(source, /getAvailableShellContentWidth\(viewportWidth, route\) >= SHELL_WIDE_SCREEN_MIN_WIDTH \? "wide" : "narrow"/);
   assert.match(source, /const getShellLayoutMode = \(viewportWidth = window\.innerWidth\) => getShellLayoutModeForRoute\(currentRoute, viewportWidth\);/);
@@ -203,7 +203,7 @@ test("shell render patches same-route game updates without replacing the board p
   assert.match(source, /homeSectionResizeFrame = window\.requestAnimationFrame\(\(\) => \{/);
   assert.match(source, /const didUpdate = await syncResponsiveHomeSectionPageSizes\(\);/);
   assert.match(source, /render\(\{ animatePanels: false, includeBoard: false \}\);/);
-  assert.match(source, /window\.addEventListener\("resize", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
+  assert.match(source, /window\.addEventListener\("resize", \(\) => \{[\s\S]*?normalizeRouteFlyoutState\(currentRoute,[\s\S]*?scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
   assert.match(source, /window\.addEventListener\("load", \(\) => \{\s*scheduleGameShellStickyLayout\(\);\s*scheduleResponsiveHomeSectionPageSizes\(\);\s*\}\);/s);
   assert.match(source, /syncFlyoutRenderOrder\(currentRoute\);/);
   assert.match(source, /if \(isFlyoutOnlyRouteChange\(previousRoute, nextRoute\)\) \{[\s\S]*render\(\);\s*return;\s*\}/s);
